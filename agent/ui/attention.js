@@ -23,6 +23,7 @@ export const LONG_RUN_MS = 60_000
 
 /** What a working session is doing right now, in a few words. */
 export function activityOf(doc) {
+  if (doc?.status === STATUS.reconnecting) return "Waiting for the network…"
   if (!doc || doc.status !== STATUS.running) return null
   const turn = lastTurn(doc)
   const block = turn?.blocks?.at(-1)

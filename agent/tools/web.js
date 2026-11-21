@@ -25,6 +25,7 @@ import {
   MAX_PDF_BYTES, readOn,
 } from "./sources.js"
 import { fetcher, assertTarget } from "./guard.js"
+import { Interruption, isInterruption, asInterruption } from "../network.js"
 
 /**
  * Strip HTML down to readable text.
@@ -250,6 +251,10 @@ async function requestDirect(target, ctx, fetchImpl) {
     })
   } catch (err) {
     if (ctx.signal?.aborted) throw err
+    // This end has no network (or no relay): not the site's answer, and not
+    // the model's to hear. The call runs again when the network is back.
+    const interruption = asInterruption(err, `Could not fetch ${target}`)
+    if (interruption) throw interruption
     if (err?.refused) return { outcome: "refused", detail: err.reason, error: err }
     // A browser reports a CORS refusal and a network failure identically;
     // outside one there is no CORS to blame.
@@ -429,7 +434,10 @@ async function readDirect(target, input, ctx, fetchImpl, at) {
     // The site would not hand over the page itself — some refuse fetchers
     // like a relay or a server, some are down. The reader may still read it:
     // keep its text, and say plainly that it is not the original.
-    const read = await readInBrowser(target, "markdown", input, ctx, fetchImpl, at).catch(() => null)
+    const read = await readInBrowser(target, "markdown", input, ctx, fetchImpl, at).catch((err) => {
+      if (isInterruption(err)) throw err
+      return null
+    })
     if (read) return { ...read, lead: `${read.lead}. The page itself could not be had (${got.outcome}: ${got.detail}), so what is kept is the reader's text of it, not the original.` }
     throw new Error(`Could not fetch ${target} (${got.outcome}: ${got.detail}).`)
   }
@@ -578,7 +586,16 @@ export const webSearch = {
     const limit = Math.min(BRAVE_MAX, Math.max(1, Math.floor(Number(input.limit) || 8)))
 
     const at = Date.now()
-    const response = await ctx.search(query, limit, ctx.signal)
+    let response
+    try {
+      response = await ctx.search(query, limit, ctx.signal)
+    } catch (err) {
+      if (ctx.signal?.aborted) throw err
+      // Brave's endpoint is fixed and up, so no answer from it — or a name of
+      // its that would not resolve — is this end's network: an interruption,
+      // and the search runs again when the network is back (network.js).
+      throw isInterruption(err) ? err : new Interruption(`Could not reach the search API (${err?.reason ?? err?.message ?? err})`, { cause: err })
+    }
     if (!response.ok) throw new Error(searchFailed(response.status, !!response.relayed))
     const body = await response.text()
     let json

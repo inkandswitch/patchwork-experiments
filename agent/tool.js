@@ -16,6 +16,7 @@ import {
   sessionTitle,
   asksEveryTime,
   callScope,
+  stopReconnecting,
 } from "./session.js"
 import { handleStore } from "./store.js"
 import { decide, say, answerQuestion } from "./loop.js"
@@ -753,6 +754,9 @@ export function AgentTool(handle, element, options = {}) {
     event.preventDefault()
     runner?.interrupt()
     workerRunner?.interrupt()
+    // Waiting for the network, no run is under way to interrupt: stopping is
+    // a change to the session, so every runner stops trying.
+    if (store.doc()?.status === STATUS.reconnecting) store.change((d) => stopReconnecting(d))
   })
 
   input.addEventListener("keydown", (event) => {
@@ -1047,7 +1051,9 @@ export function AgentTool(handle, element, options = {}) {
     }
 
     const busy = doc.status === STATUS.running
-    stopButton.style.display = busy ? "" : "none"
+    // Set while it waits for the network, and through each attempt to reach it.
+    const reconnecting = doc.status === STATUS.reconnecting || (busy && !!doc.reconnecting)
+    stopButton.style.display = busy || reconnecting ? "" : "none"
     sendButton.disabled = !hasKey
 
     const pending = callsAwaitingApproval(doc).length
@@ -1072,6 +1078,8 @@ export function AgentTool(handle, element, options = {}) {
               ? "Another runner is working on this session"
               : doc.status === STATUS.parked
                 ? "Waiting for a tab to run a page tool"
+                : reconnecting
+                  ? `Waiting for the network — carries on when it is back (${doc.reconnecting?.reason ?? "no connection"})`
                 : busy
                   ? "Working… Enter to steer, Stop to interrupt"
                   : "")

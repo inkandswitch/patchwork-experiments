@@ -47,12 +47,14 @@ import {
   findResult,
   attachmentBlock,
   holdsLease,
+  markReconnecting,
 } from "./session.js"
 import { batchedAppender } from "./store.js"
 import { runTool } from "./tools/index.js"
 import { withFileData } from "./files.js"
 import { notesSection } from "./tools/notes.js"
 import { sessionKey } from "./providers/openrouter.js"
+import { isInterruption } from "./network.js"
 
 export const DEFAULT_SYSTEM = `You are an agent living inside Patchwork, a local-first workspace where everything is an automerge document.
 
@@ -84,6 +86,7 @@ export const OUTCOME = {
   silent: "silent", // the model kept stopping without a word or a call
   parked: "parked", // a host-tier call has no tab to run in
   aborted: "aborted",
+  reconnecting: "reconnecting", // the network went away; the runner resumes when it is back
   error: "error",
   budgetExhausted: "budget-exhausted",
 }
@@ -213,7 +216,13 @@ export async function run(opts) {
     }
 
     // ---- 2. Compact first if the conversation has outgrown the window.
-    await maybeCompact(settings)
+    try {
+      await maybeCompact(settings)
+    } catch (err) {
+      if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
+      if (isInterruption(err)) return reconnect(store, err, emit)
+      throw err
+    }
 
     // ---- 3. Ask the model.
     setStatus(store, STATUS.running)
@@ -226,6 +235,14 @@ export async function run(opts) {
       // a real session, rendering as nothing and telling nobody anything.
       dropTrailingEmptyTurn(store)
       if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
+      // The network went away. What streamed of the turn is half a turn — no
+      // call in it was committed — so it goes, and the turn is asked for again
+      // whole when the network is back. Nothing is said about it in the
+      // transcript: nothing happened that the model or the person must answer.
+      if (isInterruption(err)) {
+        dropTurn(store, err.turnId)
+        return reconnect(store, err, emit)
+      }
       appendTurn(store, makeTurn("assistant", [textBlock(`⚠ ${String(err?.message ?? err)}`)]))
       return finish(store, STATUS.error, OUTCOME.error, emit, String(err?.message ?? err))
     }
@@ -475,6 +492,8 @@ async function maybeCompact(settings) {
       if (event.type === "text") text += event.delta
     }
   } catch (err) {
+    // No network is no network for the turn after it either: wait for it.
+    if (isInterruption(err)) throw err
     emit({ type: "compact-failed", error: String(err?.message ?? err) })
     return false
   }
@@ -548,10 +567,16 @@ async function streamTurn(opts) {
 
   const blockPath = (blockIndex) => ["turns", turnIndex, "blocks", blockIndex, "text"]
 
+  let heard = false
   try {
     for await (const event of provider.stream(request)) {
       if (signal?.aborted) break
       if (repeated) break
+      // The model answered: whatever cut the network off is over.
+      if (!heard) {
+        heard = true
+        if (store.doc().reconnecting) store.change((d) => (d.reconnecting = null))
+      }
       // Another runner has the session now (a claim that won a merge late):
       // stop writing into its transcript at once, not at the end of the turn.
       if (stillOurs && !stillOurs()) {
@@ -590,6 +615,11 @@ async function streamTurn(opts) {
         stopReason = event.reason
       }
     }
+  } catch (err) {
+    // Which turn to take back, should this be an interruption: the person may
+    // have steered meanwhile, so it is not necessarily the last.
+    if (err && typeof err === "object") err.turnId = turn.id
+    throw err
   } finally {
     appender.flush()
   }
@@ -705,6 +735,26 @@ async function executeCalls(opts) {
     // `hasTool`: which tools this session has, so a result can point to one
     // that is here (web_fetch to web_capture) and never to one that is not.
     const outcome = await runTool(tool, call.input, { ...ctx, ...privileged(tool), signal, events, recall: storeRecall(store), hasTool: (id) => !!toolset.get(id) })
+
+    // The network went away under it. A tool says so only when its call had
+    // no effect (network.js), so the call goes back to waiting to run, exactly
+    // as it was before it was claimed, and runs again when the network is
+    // back. What ran before it in this batch stands.
+    if (outcome.interrupted && signal?.aborted) {
+      // Stopped by the person as well: that is what it was, and it is said as
+      // any stopped call is.
+      Object.assign(outcome, { output: `Error: ${outcome.reason}`, isError: true, summary: `${call.tool} stopped` })
+    } else if (outcome.interrupted) {
+      store.change((d) => {
+        const found = findCall(d, call.id)
+        if (found && found.block.status === CALL.running && found.block.runner === runnerUrl && found.block.generation === generation) {
+          found.block.status = CALL.approved
+        }
+      })
+      emit({ type: "call-end", tool: call.tool, summary: "interrupted: no network", isError: false })
+      commitResults(store, results)
+      return reconnect(store, { message: outcome.reason }, emit)
+    }
     emit({ type: "call-end", tool: call.tool, summary: outcome.summary, isError: outcome.isError })
 
     // Only while the claim is still this run's: a runner that took the session
@@ -806,6 +856,27 @@ export function releaseNowPermitted({ store, toolset, subject, sensitive }) {
   return freed.length
 }
 
+/** Take back a turn by id: a half-streamed one an interruption cut off. */
+function dropTurn(store, turnId) {
+  if (!turnId) return
+  store.change((d) => {
+    const i = (d.turns ?? []).findIndex((t) => t.id === turnId)
+    if (i >= 0 && d.turns[i].role === "assistant") d.turns.splice(i, 1)
+  })
+}
+
+/**
+ * Stop for the network, saying so on the session and nowhere else. `since` is
+ * when the network first went, kept across attempts so the person sees how
+ * long it has been; `attempts` counts them for the same reason.
+ */
+function reconnect(store, err, emit) {
+  const reason = String(err?.message ?? err ?? "the network went away")
+  store.change((d) => markReconnecting(d, reason))
+  emit?.({ type: "finish", outcome: OUTCOME.reconnecting, reason })
+  return { outcome: OUTCOME.reconnecting, reason }
+}
+
 /** Remove a just-appended assistant turn that never received anything. */
 function dropTrailingEmptyTurn(store) {
   store.change((d) => {
@@ -899,6 +970,8 @@ function stopForBudget(store, { spent, limit }, emit) {
 
 function finish(store, status, outcome, emit, reason = null) {
   setStatus(store, status)
+  // Any end but the network's own says it is back, or no longer matters.
+  if (store.doc().reconnecting) store.change((d) => (d.reconnecting = null))
   emit?.({ type: "finish", outcome, reason })
   return { outcome, reason }
 }

@@ -15,7 +15,8 @@
  *     subject: AutomergeUrl | null      the doc this session is about
  *     config:  { providerId, model, params }
  *     turns:   Turn[]
- *     status:  "idle" | "running" | "awaiting-approval" | "parked" | "error"
+ *     status:  "idle" | "running" | "awaiting-approval" | "parked" | "reconnecting" | "error"
+ *     reconnecting: { reason, since, attempts } | null   while the network is away (network.js)
  *     lease:   { runner, at, generation } | null
  *     grants:  { [grantKey]: "session" | "always" }
  *     made:    Artifact[]                 documents this session created
@@ -53,6 +54,9 @@ export const STATUS = {
   // question is being answered, and the answer becomes the call's result.
   awaitingAnswer: "awaiting-answer",
   parked: "parked",
+  // The network went away mid-run. Not an error: nothing was written for it,
+  // and the runner carries on when it comes back (network.js, runner.js).
+  reconnecting: "reconnecting",
   error: "error",
 }
 
@@ -426,6 +430,41 @@ export function resolveOrphans(doc, opts = {}) {
   if (!doc.turns) doc.turns = []
   doc.turns.push(makeTurn("tool", orphans.map((call) => resultBlock(call.id, INTERRUPTED, { isError: true, summary: "interrupted" }))))
   return orphans.length
+}
+
+/**
+ * Mark a session as waiting for the network, inside a change (network.js).
+ * `since` is when it first went, kept across attempts; `attempts` counts them.
+ */
+export function markReconnecting(doc, reason, now = Date.now()) {
+  const was = doc.reconnecting
+  doc.reconnecting = { reason: String(reason ?? "the network went away"), since: was?.since ?? now, attempts: (was?.attempts ?? 0) + 1 }
+  doc.status = STATUS.reconnecting
+}
+
+/** What a call put back for the network says, when a person stops the session instead. */
+export const STOPPED_OFFLINE = "Not run: the network went away before it could, and the person stopped the session rather than wait for it."
+
+/**
+ * A person stopping a session that is waiting for the network, inside a
+ * change. Every call put back to wait gets its answer, the session says in
+ * one line that it stopped, and nothing is left to run — otherwise the next
+ * look would find work and try again. Returns whether there was anything to stop.
+ */
+export function stopReconnecting(doc) {
+  if (doc.status !== STATUS.reconnecting) return false
+  const reason = doc.reconnecting?.reason ?? "the network went away"
+  const waiting = runnableCalls(doc)
+  for (const call of waiting) {
+    const found = findCall(doc, call.id)
+    if (found) found.block.status = CALL.error
+  }
+  if (!doc.turns) doc.turns = []
+  if (waiting.length) doc.turns.push(makeTurn("tool", waiting.map((call) => resultBlock(call.id, STOPPED_OFFLINE, { isError: true, summary: "stopped" }))))
+  doc.turns.push(makeTurn("assistant", [textBlock(`⚠ Stopped while waiting for the network (${reason}).`)]))
+  doc.reconnecting = null
+  doc.status = STATUS.idle
+  return true
 }
 
 /** Calls blocked on a human decision. */

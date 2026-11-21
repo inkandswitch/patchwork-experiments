@@ -12,6 +12,8 @@
  * out and `decodeStream` turns the wire format back into neutral events.
  */
 
+import { Interruption } from "../network.js"
+
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
 export const id = "openrouter"
@@ -273,7 +275,7 @@ export function buildBody({ system, messages, tools, model, params = {}, dropIma
  * the awkward places real networks produce them — mid-token, mid-JSON, and
  * between `\n` and `\n`.
  */
-export async function* sseEvents(chunks) {
+export async function* sseEvents(chunks, seen = {}) {
   let buffer = ""
   for await (const chunk of chunks) {
     buffer += chunk
@@ -284,14 +286,18 @@ export async function* sseEvents(chunks) {
       if (!line || line.startsWith(":")) continue
       if (!line.startsWith("data:")) continue
       const payload = line.slice(5).trim()
-      if (payload === "[DONE]") return
+      if (payload === "[DONE]") {
+        seen.done = true
+        return
+      }
       yield payload
     }
   }
   const tail = buffer.trim()
   if (tail.startsWith("data:")) {
     const payload = tail.slice(5).trim()
-    if (payload && payload !== "[DONE]") yield payload
+    if (payload === "[DONE]") seen.done = true
+    else if (payload) yield payload
   }
 }
 
@@ -306,9 +312,11 @@ export async function* sseEvents(chunks) {
 export async function* decodeStream(chunks) {
   const calls = new Map() // index -> { id, name, args }
   let stopReason = "end"
+  let finished = false
   let usage = null
+  const seen = {}
 
-  for await (const payload of sseEvents(chunks)) {
+  for await (const payload of sseEvents(chunks, seen)) {
     let frame
     try {
       frame = JSON.parse(payload)
@@ -342,9 +350,16 @@ export async function* decodeStream(chunks) {
     }
 
     if (choice.finish_reason) {
+      finished = true
       stopReason = choice.finish_reason === "tool_calls" ? "tool_use" : choice.finish_reason
     }
   }
+
+  // A reply ends with a finish reason, then [DONE]. A body that closed with
+  // neither was cut off in transit — a connection closed cleanly by a proxy or
+  // a dropped link — and what came of it is part of a turn, not a turn: its
+  // calls' arguments may be half-written. The loop discards it and asks again.
+  if (!finished && !seen.done) throw new Interruption("The reply from OpenRouter ended before it was finished")
 
   for (const [, acc] of [...calls.entries()].sort((a, b) => a[0] - b[0])) {
     let input = {}
@@ -382,15 +397,29 @@ export async function* decodeStream(chunks) {
   yield { type: "stop", reason: stopReason }
 }
 
-/** Turn a fetch Response body into the async-iterable of strings decodeStream wants. */
-async function* readBody(response) {
+/**
+ * Turn a fetch Response body into the async-iterable of strings decodeStream
+ * wants. Every chunk tells the watchdog the connection is alive; a read that
+ * fails is the connection lost, which is an interruption (network.js) — or the
+ * person stopping the run, which the loop tells apart by its signal.
+ */
+async function* readBody(response, dog = null) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   try {
     for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      yield decoder.decode(value, { stream: true })
+      let chunk
+      try {
+        chunk = await reader.read()
+      } catch (err) {
+        throw new Interruption(
+          dog?.fired() ? `OpenRouter went quiet mid-reply for ${dog.ms / 1000} s` : "The connection to OpenRouter dropped mid-reply",
+          { cause: err }
+        )
+      }
+      if (chunk.done) break
+      dog?.kick()
+      yield decoder.decode(chunk.value, { stream: true })
     }
   } finally {
     // The loop may stop reading early — a model caught repeating itself, say.
@@ -416,15 +445,60 @@ function isRetryable(status) {
   return status === 429 || status === 408 || (status >= 500 && status < 600)
 }
 
+/**
+ * Statuses that say "not now", never "not this": past the retries here, they
+ * are an interruption and the session waits (network.js). A plain 500 is not
+ * one of them — some upstreams answer a request they cannot take with it, and
+ * waiting for ever on that would be a session that never says why it stopped.
+ */
+export const NOT_NOW = new Set([408, 429, 502, 503, 504, 529])
+
+/**
+ * How long a connection may go without a byte before it is taken as lost. A
+ * dropped link often leaves a request hanging rather than failing; OpenRouter
+ * sends keep-alive comments while a model thinks, so a live one is never this
+ * quiet.
+ */
+export const QUIET_MS = 120_000
+
+/** An abort signal that also fires after `ms` without a `kick()`, following `signal`. */
+function watchdog(signal, ms) {
+  const controller = new AbortController()
+  let fired = false
+  let timer = null
+  const forward = () => controller.abort(signal.reason)
+  if (signal?.aborted) controller.abort(signal.reason)
+  else signal?.addEventListener?.("abort", forward, { once: true })
+  const dog = {
+    ms,
+    signal: controller.signal,
+    fired: () => fired,
+    kick() {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        fired = true
+        controller.abort(new Error(`no answer for ${ms / 1000} s`))
+      }, ms)
+    },
+    stop() {
+      clearTimeout(timer)
+      signal?.removeEventListener?.("abort", forward)
+    },
+  }
+  dog.kick()
+  return dog
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * Stream a completion, retrying transient failures.
  *
- * Retries happen only *before* the first byte of the body. Once tokens are
- * flowing they have already been written into the document, and starting over
- * would duplicate them — so a mid-stream failure is surfaced rather than
- * retried, and the loop records it as an error the user can respond to.
+ * Retries happen here only *before* the first byte of the body. Once tokens
+ * are flowing they have already been written into the document, so a reply
+ * lost part-way is thrown as an Interruption and the loop discards the partial
+ * turn before anyone asks again (network.js). So is a request that never got
+ * an answer, and a "not now" status, once the retries here are spent.
  *
  * `key` is passed per call rather than held in module state, so nothing here
  * ever caches a credential.
@@ -442,6 +516,7 @@ export async function* stream({
   fetchImpl = fetch,
   maxAttempts = 4,
   onRetry = null,
+  quietMs = QUIET_MS,
 }) {
   if (!key) throw new Error("No OpenRouter API key. Add one in the agent panel.")
 
@@ -458,10 +533,11 @@ export async function* stream({
     if (signal?.aborted) return
 
     let response
+    const dog = watchdog(signal, quietMs)
     try {
       response = await fetchImpl(ENDPOINT, {
         method: "POST",
-        signal,
+        signal: dog.signal,
         headers: {
           "content-type": "application/json",
           authorization: `Bearer ${key}`,
@@ -471,19 +547,28 @@ export async function* stream({
         body,
       })
     } catch (err) {
-      // A network fault: worth one more go unless we are out of attempts.
-      lastError = err
-      if (attempt === maxAttempts || signal?.aborted) throw err
+      dog.stop()
+      if (signal?.aborted) throw err
+      // No answer at all: worth another go, and past the last one an
+      // interruption, not an error — nothing reached the model (network.js).
+      const why = dog.fired() ? `no answer for ${quietMs / 1000} s` : String(err?.message ?? err)
+      lastError = new Interruption(`Could not reach OpenRouter (${why})`, { cause: err })
+      if (attempt === maxAttempts) throw lastError
       const delay = 500 * 2 ** (attempt - 1)
-      onRetry?.({ attempt, delay, reason: String(err?.message ?? err) })
+      onRetry?.({ attempt, delay, reason: why })
       await sleep(delay)
       continue
     }
 
     if (response.ok) {
-      yield* decodeStream(readBody(response))
+      try {
+        yield* decodeStream(readBody(response, dog))
+      } finally {
+        dog.stop()
+      }
       return
     }
+    dog.stop()
 
     const detail = await response.text().catch(() => "")
     lastError = new Error(`OpenRouter ${response.status}: ${detail.slice(0, 400)}`)
@@ -516,7 +601,11 @@ export async function* stream({
       continue
     }
 
-    if (!isRetryable(response.status) || attempt === maxAttempts) throw lastError
+    if (!isRetryable(response.status)) throw lastError
+    if (attempt === maxAttempts) {
+      if (NOT_NOW.has(response.status)) throw new Interruption(`OpenRouter is not taking requests just now (${response.status})`, { cause: lastError })
+      throw lastError
+    }
 
     // Honour Retry-After when the server sends one; it knows better than we do.
     const retryAfter = Number(response.headers?.get?.("retry-after"))

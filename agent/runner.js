@@ -34,12 +34,14 @@ import {
   unknownBlocks,
   makeTurn,
   textBlock,
+  markReconnecting,
 } from "./session.js"
 import { run, OUTCOME } from "./loop.js"
 import { scopeOf, assertScopeAgrees, confine, scopedToolset, kernelRepo, ScopeRefusal } from "./scope.js"
 import { WORKFLOW_TOOL_IDS } from "./workflow/plan.js"
 import { urlsIn } from "./doc-urls.js"
 import { rememberOwn } from "./own-changes.js"
+import { asInterruption, reconnectDelay, onOnline } from "./network.js"
 
 /**
  * The document URLs this conversation has seen — its subject, what it made,
@@ -167,6 +169,16 @@ export class SessionRunner {
     this.stopped = false
     this.controller = null
     this.heartbeat = null
+
+    // Waiting for the network (network.js). A run that ended for it is tried
+    // again after a backoff, or at once when the host says the network is
+    // back. Kept by this runner, judged by its clock: another runner — a
+    // machine whose network works — is free to take the session meanwhile.
+    this.onOnline = opts.onOnline ?? onOnline
+    this.reconnects = 0
+    this.resumeAt = 0
+    this.retry = null
+    this.unlisten = null
   }
 
   /** Begin watching for work. Returns a stop function. */
@@ -178,9 +190,33 @@ export class SessionRunner {
       this.beat()
       if (!this.running) this.tick()
     }, HEARTBEAT_MS)
+    this.unlisten = this.onOnline(() => this.resume())
     this.tick()
     this.restoreWatches()
     return () => this.stop()
+  }
+
+  /** The network is back, or may be: try now rather than at the end of the backoff. */
+  resume() {
+    if (this.retry) clearTimeout(this.retry)
+    this.retry = null
+    this.resumeAt = 0
+    this.tick()
+  }
+
+  /** How a run ended decides whether to wait for the network before the next. */
+  afterRun(outcome) {
+    if (outcome !== OUTCOME.reconnecting) {
+      this.reconnects = 0
+      this.resumeAt = 0
+      return
+    }
+    this.reconnects++
+    const delay = reconnectDelay(this.reconnects)
+    this.resumeAt = this.now() + delay
+    if (this.retry) clearTimeout(this.retry)
+    this.retry = this.stopped ? null : setTimeout(() => this.resume(), delay)
+    this.onEvent({ type: "reconnecting", attempt: this.reconnects, delay })
   }
 
   /**
@@ -206,6 +242,10 @@ export class SessionRunner {
     this.heartbeat = null
     if (this.later) clearTimeout(this.later)
     this.later = null
+    if (this.retry) clearTimeout(this.retry)
+    this.retry = null
+    this.unlisten?.()
+    this.unlisten = null
     this.interrupt()
   }
 
@@ -259,6 +299,10 @@ export class SessionRunner {
       this.wantedSince = null
       return
     }
+    // Waiting out a backoff for the network: its timer, or the network coming
+    // back, ticks again. Every other tick meanwhile — the poll, a change —
+    // would only be another request into no network.
+    if (this.resumeAt > this.now()) return
     // Something in the session this version cannot read: a newer version of
     // the agent wrote it. Leave it to a runner that can, rather than send the
     // model the session without it.
@@ -360,6 +404,7 @@ export class SessionRunner {
         onEvent: this.onEvent,
       })
 
+      this.afterRun(result?.outcome)
       this.onEvent({ type: "done", ...result })
       return result
     } catch (err) {
@@ -367,6 +412,19 @@ export class SessionRunner {
       if (generation !== null && !holdsLease(this.store.doc(), this.runnerUrl, generation)) {
         this.onEvent({ type: "error", error: String(err?.message ?? err) })
         return { outcome: OUTCOME.aborted, reason: "lease lost" }
+      }
+      // The network went before the run could start — the provider's module,
+      // the catalogue, a plan to check the scope against. Waited out like any
+      // other interruption, not recorded as the session failing.
+      const interruption = asInterruption(err, "Could not start the run")
+      if (interruption) {
+        try {
+          this.store.change((d) => markReconnecting(d, interruption.message))
+        } catch {
+          /* the document is unwritable; the backoff below still applies */
+        }
+        this.afterRun(OUTCOME.reconnecting)
+        return { outcome: OUTCOME.reconnecting, reason: interruption.message }
       }
       // Anything that escaped the loop (a provider that could not be
       // constructed, a toolset that failed to build) lands here. Recording the

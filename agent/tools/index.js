@@ -27,6 +27,7 @@
  */
 
 import { tryHostImport } from "./host.js"
+import { isInterruption } from "../network.js"
 import docTools from "./docs.js"
 import folderTools from "./folders.js"
 import environmentTools from "./environment.js"
@@ -243,6 +244,9 @@ export async function runTool(tool, input, ctx) {
     return { output, image, file, doc, made, isError: false, summary: summary ?? `${tool.id} ok` }
   } catch (err) {
     const message = String(err?.message ?? err)
+    // Not a result at all: the call had no effect and runs again when the
+    // network is back (network.js, loop.js executeCalls).
+    if (isInterruption(err)) return { interrupted: true, reason: message, output: "", isError: false, summary: "interrupted" }
     return { output: `Error: ${message}`, isError: true, summary: `${tool.id} failed` }
   }
 }

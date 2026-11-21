@@ -18,6 +18,7 @@ claimed by a node process with no tab open.
 | `store.js` | applies that model to a DocHandle (and to a plain object, for tests) |
 | `loop.js` | the agentic loop: stream, dispatch tools, stop for approval, resume |
 | `runner.js` | claims the lease, notices work, drives the loop; decides from the session what its tools may reach |
+| `network.js` | what an interruption is, and how long to wait before trying again |
 | `scope.js` | research steps: the confined context and repo, the scoped toolset, and the repo that keeps tools off sessions and plans |
 | `datatype.js` | the `agent-session` datatype |
 | `tool.js` | the view — sidebar panel and full-window pop-out, one render function |
@@ -28,7 +29,7 @@ claimed by a node process with no tab open.
 | `ui/attention.js` | what across your sessions and their workflows is working, waiting on you, or just finished |
 | `ui/notify.js` | opt-in browser notifications for those, while the tab is in the background |
 | `node-runner.mjs` | the same runner, outside the browser: durable, no CORS |
-| `providers/` | `openrouter.js` (real, with retry), `mock.js` (scripted, for tests) |
+| `providers/` | `openrouter.js` (real, with retry; a lost connection is an interruption — `network.js`), `mock.js` (scripted, for tests) |
 | `tools/` | the tool surface — documents, discovery, folders, environment, web, http, kept sources, authoring, checking |
 | `tools/guard.js` | where any tool may send a request: the guarded fetch every runner hands its tools |
 | `ui/` | transcript rendering and the provider-subscription protocol |
@@ -84,6 +85,29 @@ next runner to take the session over finds the claim no longer matches the live
 lease and closes the call with an error result saying it may or may not have
 taken effect — so the model checks, rather than a write silently happening
 twice, and the session does not sit looking busy forever.
+
+**The network going away is an interruption, not a failure** (`network.js`).
+A request that never reached the other end did nothing, so nothing is written
+for it: no ⚠ turn, no error result. A turn cut off part-way is taken back whole
+(none of its calls were committed) and asked for again; a tool call cut off goes
+back to waiting to run, as it was before it was claimed. The session's status
+is `reconnecting`, with `reconnecting: { reason, since, attempts }` for the
+panel and the workflow board, and a workflow step in that state is still
+running — never failed. The runner tries again when the page or worker hears
+`online`, or after a backoff from 2 s doubling to a minute; node has no such
+event and waits out the backoff. Stop ends the wait: every call put back to
+wait is answered as not run, and the session says in one line that it stopped.
+
+What counts is decided only where it is certain. The model's endpoint not
+answering, dropping a reply, going two minutes without a byte, ending a reply
+with neither a finish reason nor `[DONE]`, or answering 408/429/502/503/504/529
+past its retries; the fetch relay (ours, and it reports every site's failure as
+`x-relay-error`) not answering; Brave's API not answering; and this machine
+saying it has no network — a browser offline, or node's `ENETUNREACH`,
+`ENETDOWN`, `EAI_AGAIN`, `ENOTCONN`. A third-party site that will not answer is
+not one: it may be down for good, and the model hears that as before. A plain
+500 is an error too, since waiting would not change it. A tool throws an
+`Interruption` only when its call had no effect, because the call runs again.
 
 **What a session costs** is what OpenRouter charges: each response reports its
 cost, which the loop adds to `usage.cost` and the header shows. A provider that

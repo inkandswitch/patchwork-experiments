@@ -150,14 +150,17 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     const waits = waitingIn(doc)
     const state = waits.length
       ? STATE.needsInput
-      : doc?.status === STATUS.running
+      : doc?.status === STATUS.running || doc?.status === STATUS.reconnecting
         ? STATE.running
         : doc?.status === STATUS.error
           ? STATE.failed
           : plan.status === PLAN.running
             ? STATE.waiting
             : STATE.done
-    const label = { [STATE.needsInput]: "needs you", [STATE.running]: "working", [STATE.failed]: "stopped", [STATE.waiting]: "waiting for steps", [STATE.done]: "idle" }[state]
+    const label =
+      doc?.status === STATUS.reconnecting
+        ? "reconnecting"
+        : { [STATE.needsInput]: "needs you", [STATE.running]: "working", [STATE.failed]: "stopped", [STATE.waiting]: "waiting for steps", [STATE.done]: "idle" }[state]
 
     const card = el("article", "agent-wf-step agent-wf-orchestrator")
     card.dataset.state = state
@@ -214,7 +217,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       const turns = session.turns?.length ?? 0
       const used = (session.usage?.in ?? 0) + (session.usage?.out ?? 0)
       const spent = formatCost(session.usage)
-      card.append(el("p", "agent-wf-activity", `${session.status} · ${turns} turns · ${tokens(used)} tokens${spent ? ` · ${spent}` : ""}`))
+      const status = session.status === STATUS.reconnecting ? "waiting for the network" : session.status
+      card.append(el("p", "agent-wf-activity", `${status} · ${turns} turns · ${tokens(used)} tokens${spent ? ` · ${spent}` : ""}`))
     }
 
     // What it waits on you for, answerable here without opening the session.

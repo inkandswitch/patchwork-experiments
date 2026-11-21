@@ -12,6 +12,8 @@
  * is sent from the page as before.
  */
 
+import { Interruption } from "../network.js"
+
 /**
  * The one credential the relay carries, and the one host it is for: Brave's
  * key, so web_search works from a browser (Brave's API answers no page
@@ -43,7 +45,17 @@ export function relayFetch({ fetch: send, relay }) {
       if (passed.includes(name.toLowerCase())) headers[name] = value
     }
     if (config.key) headers["x-relay-key"] = config.key
-    const response = await send(`${config.url}/fetch?url=${encodeURIComponent(String(url))}`, { method, headers, signal: init.signal })
+    let response
+    try {
+      response = await send(`${config.url}/fetch?url=${encodeURIComponent(String(url))}`, { method, headers, signal: init.signal })
+    } catch (err) {
+      // The relay is ours, and it answers for every site — a site that will
+      // not answer comes back as x-relay-error below. So no answer from the
+      // relay itself is this end's network, not the site: an interruption,
+      // and the call runs again when the network is back (network.js).
+      if (init.signal?.aborted) throw err
+      throw new Interruption(`The fetch relay could not be reached (${err?.message ?? err})`, { cause: err })
+    }
 
     const error = response.headers?.get?.("x-relay-error")
     if (error) throw new Error(`The fetch relay did not fetch ${url}: ${error}.`)

@@ -118,6 +118,7 @@ async function claim(sessionUrl) {
       else if (event.type === "call-end") log(`  ← ${event.summary}`)
       else if (event.type === "compacting") log(`  compacting ${event.turns} turns`)
       else if (event.type === "retry") log(`  retrying (${event.status ?? event.reason}) in ${event.delay}ms`)
+      else if (event.type === "reconnecting") log(`  waiting for the network; attempt ${event.attempt + 1} in ${event.delay}ms`)
       else if (event.type === "finish") log(`  ${event.outcome}${event.reason ? `: ${event.reason}` : ""}`)
       else if (event.type === "error") log(`  error: ${event.error}`)
     },

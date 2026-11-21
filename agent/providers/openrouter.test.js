@@ -239,7 +239,7 @@ describe("decodeStream", () => {
   })
 
   it("reports malformed argument JSON instead of throwing", async () => {
-    const wire = frame({ tool_calls: [{ index: 0, id: "a", function: { name: "t", arguments: "{not json" } }] })
+    const wire = frame({ tool_calls: [{ index: 0, id: "a", function: { name: "t", arguments: "{not json" } }] }, "length")
     const call = (await collect(decodeStream(chunked(wire)))).find((e) => e.type === "call")
     expect(call.input).toEqual({})
     expect(call.parseError).toBeTruthy()
