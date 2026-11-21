@@ -40,6 +40,8 @@ import type { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import {
   addRootFolderColumnIn,
   cloneLayout,
+  repairLayout,
+  repairLayoutIn,
   collectLeafIds,
   ensureContentFrameIn,
   activateTabIn,
@@ -307,7 +309,7 @@ function useTabLayoutSession(
     // Claim the URL synchronously so a re-mount (e.g. StrictMode) reuses this
     // doc instead of minting a second one.
     writeLayoutParam(handle.url);
-    if (source && source !== handle.url) setCloneSourceUrl(source);
+    if (isValidAutomergeUrl(source) && source !== handle.url) setCloneSourceUrl(source);
     setLayoutUrl(handle.url);
   }, [layoutUrl, repo, accountHandle]);
 
@@ -1655,7 +1657,15 @@ export const PatchworkFrame = ({
 
   // The *structure* (panel tree, tools, sizes) is the synced doc's job; React
   // reflects it. Focus/selection is per-tab session state (see {@link TabFocus}).
-  const layout = layoutDoc?.layout ?? null;
+  //
+  // A url that names no document (see `repairLayout`) would throw from inside
+  // the hooks that render its tab, so the frame only ever renders the layout
+  // with those taken out, and puts the stored one right to match.
+  const rawLayout = layoutDoc?.layout ?? null;
+  const layout = useMemo(() => repairLayout(rawLayout), [rawLayout]);
+  useEffect(() => {
+    if (layout !== rawLayout) layoutHandle?.change(repairLayoutIn);
+  }, [layout, rawLayout, layoutHandle]);
 
   const focusStorageKey = layoutUrl ? `tiling-focus:${layoutUrl}` : null;
   const [focus, setFocus] = useState<TabFocus>(() =>
@@ -1808,7 +1818,7 @@ export const PatchworkFrame = ({
     }
     if (!current) current = docRef.current?.layout ?? null;
     if (!current) return;
-    const layout = current;
+    const layout = repairLayout(current);
     const order = focusRef.current.focusOrder;
     let leaf: LeafNode | null = null;
     for (let i = order.length - 1; i >= 0 && !leaf; i--) {
@@ -2073,7 +2083,7 @@ export const PatchworkFrame = ({
   // replaces anything.
   const openView = useCallback(
     (view: PanelView, sourceId: string | null, placement?: OpenPlacement) => {
-      if (!view.url) return;
+      if (!isValidAutomergeUrl(view.url)) return;
       const doc = docRef.current;
       const current = doc?.layout ?? null;
       if (!current) {
@@ -2346,7 +2356,7 @@ export const PatchworkFrame = ({
   // opens, which must never clobber the active panel (see `openView`).
   const openFromChrome = useCallback(
     (view: PanelView) => {
-      if (!view.url) return;
+      if (!isValidAutomergeUrl(view.url)) return;
       const current = docRef.current?.layout ?? null;
       if (!current) return;
       if (revealExisting(current, view.url)) return;
