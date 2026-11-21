@@ -53,6 +53,7 @@ import { batchedAppender } from "./store.js"
 import { runTool } from "./tools/index.js"
 import { withFileData } from "./files.js"
 import { notesSection } from "./tools/notes.js"
+import { packageSkillsSection } from "./tools/skills.js"
 import { sessionKey } from "./providers/openrouter.js"
 import { isInterruption } from "./network.js"
 
@@ -176,6 +177,18 @@ export async function run(opts) {
       if (learned) settings.system = `${system}\n\n${learned}`
     } catch {
       /* no notes this run */
+    }
+  }
+
+  // Skills installed packages bring: named here, because the built-ins are
+  // named in the prompt and these would otherwise be found only by a
+  // skill_list nobody had a reason to call.
+  if (opts.packageSkills !== false) {
+    try {
+      const section = await packageSkillsSection(ctx ?? {})
+      if (section) settings.system = `${settings.system ?? system}\n\n${section}`
+    } catch {
+      /* no package skills this run */
     }
   }
 

@@ -57,6 +57,10 @@ export function accountContext(account = globalThis.accountDocHandle) {
 export async function startTabRunner(handle, { repo, subject = null, element = null, canRun = null, onToolset = null } = {}) {
   return ensureSharedRunner(handle.url, async (emit) => {
     const { splice } = await hostImport("automerge").catch(() => ({ splice: null }))
+    // Skills installed packages contribute (tools/skills.js packageSkills).
+    const skillRegistry = await hostImport("plugins")
+      .then((plugins) => plugins.getRegistry("patchwork:skill"))
+      .catch(() => null)
     const liveStore = handleStore(handle, splice)
     // How tools wake this session after their calls are over. It belongs to the
     // runner, not the view: a tool may be watching long after the view has gone.
@@ -78,6 +82,7 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       element,
       ...accountContext(),
       skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
+      skillRegistry,
       // So view_screenshot can photograph a view that view_mount opened.
       getMount,
       fetchImpl,

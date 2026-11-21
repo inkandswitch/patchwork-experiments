@@ -815,6 +815,16 @@ and every tool must document every parameter it accepts. A parameter with no
 description is one the model has to guess at, which is not hypothetical — it is
 how `root: "automerge:"` got sent and cost a turn.
 
+Installed packages contribute skills too: a `patchwork:skill` plugin (name,
+description, and `load()` returning `{ documentation }`). They are listed by
+`skill_list` from their metadata, read on demand, and — unlike the built-ins,
+which the prompt already names — named in a "Skills from installed packages"
+section of the system prompt, since a skill the agent never hears of is one it
+never reads. That is how a package steers the agent toward working its way
+(`assumptions` does this for engineering tasks). The tab runner hands the
+host's registry in as `ctx.skillRegistry`; a worker has none. A package skill
+cannot take a built-in's name.
+
 Built-ins ship with the package so the agent is never knowledge-less, but a
 skill in the session's `skillsFolderUrl` shadows a built-in of the same name —
 a folder document with a `SKILL.md` in it. That matters because this guidance is

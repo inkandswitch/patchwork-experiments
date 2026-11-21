@@ -71,12 +71,70 @@ export function describeFrom(body) {
   return truncate((firstLine ?? "").trim(), 140)
 }
 
-/** Everything available, with folder skills shadowing built-ins by name. */
+/**
+ * Skills contributed by installed packages: `patchwork:skill` plugins, the
+ * same entries Patchwork's other agents read. The name and description come
+ * from the plugin's metadata, so listing them loads nothing; the body —
+ * `documentation` on what `load()` returns, or a string — is loaded when the
+ * skill is read. Installing the package is what puts its guidance here, the
+ * same trust boundary as its `agent:tool`s.
+ *
+ * `registry` is the host's `patchwork:skill` registry, which the tab runner
+ * puts on the context as `skillRegistry`; without one there are none.
+ */
+export async function packageSkills({ registry } = {}) {
+  if (!registry) return [] // a worker, node, or a test: no plugin registry
+  const found = []
+  for (const description of registry.all()) {
+    if (!description?.id) continue
+    found.push({
+      name: description.id,
+      description: truncate(String(description.description ?? description.name ?? ""), 400),
+      body: null,
+      source: `package skill '${description.name ?? description.id}'`,
+      async loadBody() {
+        const loaded = await registry.load(description.id)
+        const module = loaded?.module
+        const body = typeof module === "string" ? module : module?.documentation ?? module?.default?.documentation
+        if (!body) throw new Error(`The package behind skill '${description.id}' gives no documentation.`)
+        return String(body)
+      },
+    })
+  }
+  return found
+}
+
+/**
+ * Everything available. Built-ins first; package skills beside them, except
+ * that a package cannot take a built-in's name (it would replace guidance the
+ * harness depends on, invisibly — the rule plugin tools follow too); folder
+ * skills shadow both, because a person's correction should win.
+ */
 export async function resolveSkills(ctx) {
   const fromFolder = await folderSkills(ctx.repo, ctx.skillsFolderUrl)
+  const fromPackages = await packageSkills({ registry: ctx.skillRegistry })
   const byName = new Map(BUILTIN_SKILLS.map((skill) => [skill.name, { ...skill, source: "built-in" }]))
+  for (const skill of fromPackages) if (!byName.has(skill.name)) byName.set(skill.name, skill)
   for (const skill of fromFolder) byName.set(skill.name, { ...skill, source: skill.url })
   return [...byName.values()]
+}
+
+/**
+ * The part of the system prompt that names the skills installed packages
+ * bring. Built-ins are named in the prompt already; these are not, and a
+ * skill the agent never hears of is one it never reads. Null when there are
+ * none (or a person's folder skill has the name).
+ */
+export async function packageSkillsSection(ctx) {
+  const skills = (await resolveSkills(ctx)).filter((skill) => typeof skill.loadBody === "function")
+  if (!skills.length) return null
+  return [
+    "## Skills from installed packages",
+    "",
+    ...skills.map((skill) => `- ${skill.name} — ${skill.description}`),
+    "",
+    "When one describes the task in front of you, skill_read it before you start — and before you plan the task as a workflow, so the plan uses it.",
+  ].join("\n")
 }
 
 export const skillList = {
@@ -121,7 +179,8 @@ export const skillRead = {
     if (!skill) {
       return `No skill '${input.name}'. Available: ${skills.map((s) => s.name).join(", ") || "(none)"}`
     }
-    return `# ${skill.name} (${skill.source})\n\n${skill.body}`
+    const body = skill.body ?? (await skill.loadBody())
+    return `# ${skill.name} (${skill.source})\n\n${body}`
   },
   summarize(input) {
     return `read skill ${input?.name}`

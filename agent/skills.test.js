@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { skillList, skillRead, describeFrom, folderSkills, resolveSkills } from "./tools/skills.js"
+import { skillList, skillRead, describeFrom, folderSkills, resolveSkills, packageSkillsSection } from "./tools/skills.js"
 import { BUILTIN_SKILLS } from "./skills/builtin.js"
 
 function fakeRepo(docs) {
@@ -106,5 +106,56 @@ describe("skills from a folder document", () => {
     expect(skill.source).toBe("automerge:mine")
     // and the other built-ins are still there
     expect(skills.length).toBe(BUILTIN_SKILLS.length)
+  })
+})
+
+describe("skills from installed packages", () => {
+  // The registry as the host hands it: metadata from all(), the module from load().
+  function registry(entries) {
+    const loads = []
+    return {
+      loads,
+      all: () => entries.map(({ module, ...meta }) => meta),
+      async load(id) {
+        loads.push(id)
+        return { module: entries.find((e) => e.id === id)?.module }
+      },
+    }
+  }
+  const register = {
+    id: "assumptions-register",
+    name: "Assumptions register",
+    description: "Keep every number a task's models share in one register.",
+    module: { documentation: "# Working from an assumptions register\n\nMake the register first." },
+  }
+
+  it("are listed from metadata alone and read on demand", async () => {
+    const skillRegistry = registry([register])
+    const ctx = { repo: fakeRepo({}), skillRegistry }
+    expect(await skillList.execute({}, ctx)).toContain("assumptions-register — Keep every number")
+    expect(skillRegistry.loads).toEqual([])
+    const out = await skillRead.execute({ name: "assumptions-register" }, ctx)
+    expect(out).toContain("package skill 'Assumptions register'")
+    expect(out).toContain("Make the register first.")
+  })
+
+  it("cannot take a built-in's name, and a folder skill shadows them", async () => {
+    const builtinName = BUILTIN_SKILLS[0].name
+    const skillRegistry = registry([{ ...register, id: builtinName }, register])
+    const docs = {
+      "automerge:skills": { docs: [{ name: "assumptions-register.md", url: "automerge:mine" }] },
+      "automerge:mine": { content: "---\ndescription: my own\n---\nmine" },
+    }
+    const skills = await resolveSkills({ repo: fakeRepo(docs), skillRegistry, skillsFolderUrl: "automerge:skills" })
+    expect(skills.find((s) => s.name === builtinName).source).toBe("built-in")
+    expect(skills.find((s) => s.name === "assumptions-register")).toMatchObject({ description: "my own", source: "automerge:mine" })
+  })
+
+  it("are named in the system prompt section, and only they", async () => {
+    const section = await packageSkillsSection({ repo: fakeRepo({}), skillRegistry: registry([register]) })
+    expect(section).toContain("## Skills from installed packages")
+    expect(section).toContain("- assumptions-register — Keep every number")
+    expect(section).not.toContain(BUILTIN_SKILLS[0].name)
+    expect(await packageSkillsSection({ repo: fakeRepo({}), skillRegistry: registry([]) })).toBeNull()
   })
 })
