@@ -21,10 +21,10 @@
  * So steps spread over the browsers that have a key, and none runs twice.
  */
 
-import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch } from "../session.js"
+import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch, liftBudget, CALL } from "../session.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../runner.js"
 import { stringifyAutomergeUrl } from "@automerge/automerge-repo"
-import { PLAN, STEP, toStart, isSettled, stepPrompt, states, STATE, WORKFLOW_TOOL_IDS, shouldPause, budgetOf, notStarted, stepBudget } from "./plan.js"
+import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, shouldPause, budgetOf, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
 import { scopeOf, webScope, sameScope, KERNEL_TYPES } from "../scope.js"
 import { documentIdOf } from "../session.js"
 import { releaseNowPermitted } from "../loop.js"
@@ -266,12 +266,18 @@ export class WorkflowDriver {
     const usages = []
     const waiting = []
     const outOfBudget = []
+    const asked = []
+    const known = new Set((plan.requests ?? []).map((r) => r.id))
     for (const step of plan.steps) {
       if (!step.sessionUrl) continue
       const child = await this.session(step.sessionUrl)
       const doc = child?.doc()
       usages.push(doc?.usage)
       sessions[step.sessionUrl] = doc?.status ?? null
+      // What the step asked its orchestrator for: each workflow_request call
+      // that went through is one request, by its call's id, so reading it
+      // again adds nothing.
+      for (const call of requestCalls(doc)) if (!known.has(call.id)) asked.push(newRequest(step.id, call, this.now()))
       if (step.status !== STEP.running) continue
 
       const outcome = sessionOutcome(doc)
@@ -286,10 +292,19 @@ export class WorkflowDriver {
         s.status = outcome.state === "done" ? STEP.done : STEP.failed
         s.finishedAt = this.now()
         if (outcome.state === "done") {
+          // A new result: whatever was built on the last one is out of date.
+          s.version = (s.version ?? 0) + 1
           s.result = outcome.result.length > RESULT_KEPT ? `${outcome.result.slice(0, RESULT_KEPT)}\n…(cut; the rest is in the step's session)` : outcome.result
         } else {
           s.error = this.reasons.get(step.sessionUrl) ?? "Its session stopped with an error. Open it to see what happened."
         }
+      })
+    }
+    if (asked.length) {
+      this.write((d) => {
+        if (!d.requests) d.requests = []
+        const have = new Set(d.requests.map((r) => r.id))
+        for (const r of asked) if (!have.has(r.id)) d.requests.push(r)
       })
     }
     this.waiting = waiting
@@ -534,6 +549,7 @@ export class WorkflowDriver {
     const plan = this.handle.doc()
     const step = plan.steps.find((s) => s.id === stepId)
     if (!step || step.status !== STEP.pending) return
+    if (step.sessionUrl) return this.continueStep(step)
 
     const orchestrator = plan.sessionUrl ? (await this.session(plan.sessionUrl))?.doc() : null
     const toolIds = this.toolIds ?? (await defaultToolIds())
@@ -582,10 +598,82 @@ export class WorkflowDriver {
       s.sessionUrl = child.url
       s.startedAt = this.now()
       s.model = plan.tiers?.[step.tier] ?? null
+      // What it is built on, as versions: it is out of date once any changes.
+      s.inputs = inputsOf(d, s)
+      s.reopen = null
     })
     // Started only if the plan now names this session for the step — not
     // merely because the write was allowed.
     if (this.handle.doc().steps.find((x) => x.id === step.id)?.sessionUrl === child.url) await this.run(child.url)
+  }
+
+  /**
+   * Carry on a reopened step in its own session: it is told why, and handed
+   * what it depends on as that now stands (plan.js reopenPrompt). Whatever
+   * stopped it is undone — failed, cancelled, out of its budget — since it has
+   * new work: a fresh allowance on top of what it has spent.
+   */
+  async continueStep(step) {
+    const plan = this.handle.doc()
+    const handle = await this.session(step.sessionUrl)
+    if (!handle?.doc()) return
+    const message = reopenPrompt(plan, step)
+    handle.change((d) => {
+      if (d.lease?.runner?.endsWith?.("-cancel")) d.lease = null
+      d.halted = null
+      d.reconnecting = null
+      if (d.status !== STATUS.idle) d.status = STATUS.idle
+      if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || d.stopped?.reason === "budget") liftBudget(d, stepBudget(step))
+      d.turns.push(makeTurn("user", [textBlock(message)]))
+    })
+    this.reasons.delete(step.sessionUrl)
+    this.write((d) => {
+      const s = d.steps.find((x) => x.id === step.id)
+      if (s.status !== STEP.pending) return
+      s.status = STEP.running
+      s.startedAt = this.now()
+      s.inputs = inputsOf(d, s)
+      s.reopen = null
+    })
+    if (this.handle.doc().steps.find((x) => x.id === step.id)?.status === STEP.running) await this.run(step.sessionUrl)
+  }
+
+  /**
+   * Stop these sessions from outside, and keep them stopped: their lease is
+   * taken, so any runner stands down at its next look, and they are marked
+   * halted, so none takes them up again when that lease goes stale — not even
+   * one whose last call landed after the stop (runner.js needsWork). Spoken
+   * to, or continued by a reopen, they carry on.
+   */
+  async haltSessions(urls, reason) {
+    for (const url of urls) {
+      try {
+        const session = await this.repo.find(url)
+        session.change((d) => {
+          claimLease(d, `${this.runnerUrl}-cancel`, this.now())
+          if (d.status === STATUS.running || d.status === STATUS.parked || d.status === STATUS.reconnecting) d.status = STATUS.idle
+          d.halted = { reason: String(reason ?? "stopped by its workflow"), at: this.now() }
+        })
+        ;(await this.startSession(session))?.runner?.interrupt?.()
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+
+  /**
+   * Reopen closed steps (plan.js reopenSteps), stopping any running step a
+   * cascade reaches, then tick so the ready ones continue. Throws, changing
+   * nothing, if a named step cannot be reopened.
+   */
+  async reopen(ids, opts = {}) {
+    let result
+    this.handle.change((d) => {
+      result = reopenSteps(d, ids, { now: this.now(), ...opts })
+    })
+    if (result.interrupt.length) await this.haltSessions(result.interrupt, "reopened: something it is built on changed")
+    await this.kick()
+    return result
   }
 
   /** Cancel steps (all unfinished ones when none are named), interrupting their sessions. */
@@ -604,24 +692,13 @@ export class WorkflowDriver {
     const targets = plan.steps.filter(
       (s) => (stepIds ? stepIds.includes(s.id) : true) && (s.status === STEP.pending || s.status === STEP.running)
     )
-    for (const step of targets) {
-      if (step.status !== STEP.running || !step.sessionUrl) continue
-      try {
-        const session = await this.repo.find(step.sessionUrl)
-        // Through the document, not only the runner in this tab: the one doing
-        // the work may be in another tab, or gone with a reload — then an
-        // interrupt here reached nothing and the session said "running" for
-        // good. Taking its lease makes any runner stand down at its next
-        // check; marking it idle says it stopped.
-        session.change((d) => {
-          claimLease(d, `${this.runnerUrl}-cancel`, this.now())
-          if (d.status === STATUS.running || d.status === STATUS.parked) d.status = STATUS.idle
-        })
-        ;(await this.startSession(session))?.runner?.interrupt?.()
-      } catch {
-        /* already gone */
-      }
-    }
+    // Through the document, not only the runner in this tab: the one doing
+    // the work may be in another tab, or gone with a reload — then an
+    // interrupt here reached nothing and the session said "running" for good.
+    await this.haltSessions(
+      targets.filter((s) => s.status === STEP.running && s.sessionUrl).map((s) => s.sessionUrl),
+      reason ?? "cancelled by its workflow"
+    )
     this.handle.change((d) => {
       for (const s of d.steps) {
         if (!targets.some((t) => t.id === s.id)) continue
@@ -655,8 +732,12 @@ export class WorkflowDriver {
     const pauseUnreported = (plan) => !!plan.paused && !plan.paused.reported
     // A step out of budget is told once per time it stops.
     const budgetsUnreported = (plan) => (this.outOfBudget ?? []).filter((b) => plan.steps.find((s) => s.id === b.stepId)?.budgetNoticed !== b.at)
+    // Out of date: told once for each set of changed inputs, so a step that
+    // goes stale again over something new is news again.
+    const staleUnreported = (plan) => staleSteps(plan).filter((s) => s.staleNoticed !== staleKey(plan, s))
+    const requestsUnreported = (plan) => openRequests(plan).filter((r) => !r.reported)
     const plan = this.handle.doc()
-    if (!unreported(plan).length && !unasked(plan).length && !endUnreported(plan) && !pauseUnreported(plan) && !budgetsUnreported(plan).length) return
+    if (!unreported(plan).length && !unasked(plan).length && !endUnreported(plan) && !pauseUnreported(plan) && !budgetsUnreported(plan).length && !staleUnreported(plan).length && !requestsUnreported(plan).length) return
     this.channel ??= this.notify(this.handle.url, plan.title)
     this.channel?.notify(() => {
       // Read at delivery: a question answered meanwhile is no longer news.
@@ -666,7 +747,9 @@ export class WorkflowDriver {
       const end = endUnreported(now)
       const paused = pauseUnreported(now)
       const budgets = budgetsUnreported(now)
-      if (!news.length && !questions.length && !end && !paused && !budgets.length) return ""
+      const stale = staleUnreported(now)
+      const requests = requestsUnreported(now)
+      if (!news.length && !questions.length && !end && !paused && !budgets.length && !stale.length && !requests.length) return ""
       const recorded = this.write((d) => {
         for (const s of d.steps) if (news.some((n) => n.id === s.id)) s.reported = true
         if (questions.length) {
@@ -679,17 +762,47 @@ export class WorkflowDriver {
           const s = d.steps.find((x) => x.id === b.stepId)
           if (s) s.budgetNoticed = b.at
         }
+        for (const st of stale) {
+          const s = d.steps.find((x) => x.id === st.id)
+          if (s) s.staleNoticed = staleKey(now, st)
+        }
+        for (const r of d.requests ?? []) if (requests.some((x) => x.id === r.id)) r.reported = true
       })
       // A driver that has lost the plan leaves the telling to the one holding it.
       if (!recorded) return ""
       if (end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
-      return describeProgress(now, news, this.waiting, budgets)
+      return describeProgress(now, news, this.waiting, budgets, { stale, requests })
     })
   }
 }
 
+/** The workflow_request calls in a step's session that went through: each is a request. */
+export function requestCalls(doc) {
+  const calls = []
+  for (const turn of doc?.turns ?? []) {
+    for (const block of turn.blocks ?? []) {
+      if (block.type === "call" && STEP_TOOL_IDS.includes(block.tool) && block.status === CALL.done) calls.push(block)
+    }
+  }
+  return calls
+}
+
+/** Done steps whose inputs have changed since they were built on them. */
+export function staleSteps(plan) {
+  const derived = states(plan)
+  return (plan.steps ?? []).filter((s) => derived.get(s.id) === STATE.stale)
+}
+
+/** Which changes a stale step is out of date over, as a key: news again only when it differs. */
+function staleKey(plan, step) {
+  const byId = new Map(plan.steps.map((s) => [s.id, s]))
+  return staleInputs(plan, step, byId)
+    .map((id) => `${id}:${byId.get(id)?.status}:${byId.get(id)?.version ?? 0}`)
+    .join(",")
+}
+
 /** The news the orchestrator wakes to. */
-export function describeProgress(plan, news, waiting = [], outOfBudget = []) {
+export function describeProgress(plan, news, waiting = [], outOfBudget = [], { stale = [], requests = [] } = {}) {
   const derived = states(plan)
   const count = (state) => [...derived.values()].filter((s) => s === state).length
   const lines = [`Workflow "${plan.title}" (${plan.paused ? "paused" : plan.status === PLAN.running ? "running" : plan.status}).`]
@@ -728,6 +841,26 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = []) {
       "Answer it with workflow_answer if you know the answer from the work so far. If it is the person's call, ask them (ask_user) and pass their answer on."
     )
   }
+  for (const r of requests) {
+    const asks = [
+      r.add?.length ? `add ${r.add.map((st) => `${st.title} (${st.id}${st.after?.length ? `, after ${st.after.join(", ")}` : ""})`).join("; ")}` : null,
+      r.reopen?.length ? `reopen ${r.reopen.map((id) => `${title(id)} (${id})`).join(", ")}` : null,
+    ].filter(Boolean)
+    lines.push(
+      "",
+      `## Request from step ${title(r.stepId)} (${r.stepId}): ${asks.join(", and ")}`,
+      r.why,
+      `Decide with workflow_decide { request: "${r.id}", accept: true | false }. Accepting adds and reopens exactly what it asks${r.reopen?.length ? "; say whether to `cascade` the reopening to what is built on it" : ""}. The workflow does not finish while a request is open.`
+    )
+  }
+  for (const st of stale) {
+    const changed = staleInputs(plan, st)
+    lines.push(
+      "",
+      `## Out of date: ${st.title} (${st.id})`,
+      `It was built on ${changed.map((id) => `${title(id)} (${id})`).join(", ")}, which ${changed.length === 1 ? "has" : "have"} been reopened or changed since. Steps waiting on it are held. Reopen it (workflow_reopen) to revise its result, or keep it (workflow_keep) if it still stands.`
+    )
+  }
   const approvals = waiting.filter((w) => w.kind === "approval")
   if (approvals.length) {
     lines.push(
@@ -738,12 +871,16 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = []) {
   if (Object.keys(plan.sources ?? {}).length) lines.push("", `The research steps have ${keptLine(plan)}`)
   lines.push(
     "",
-    `Steps: ${count(STATE.done)} done, ${count(STATE.running) + count(STATE.needsInput)} running, ${count(STATE.ready) + count(STATE.waiting)} to come, ${count(STATE.failed)} failed, ${count(STATE.blocked)} blocked, ${count(STATE.cancelled)} cancelled.`
+    `Steps: ${count(STATE.done)} done, ${count(STATE.running) + count(STATE.needsInput)} running, ${count(STATE.ready) + count(STATE.waiting)} to come, ${count(STATE.failed)} failed, ${count(STATE.blocked)} blocked, ${count(STATE.cancelled)} cancelled${count(STATE.stale) ? `, ${count(STATE.stale)} out of date` : ""}.`
   )
   if (plan.status === PLAN.running) {
-    lines.push("Add steps with workflow_add_steps if these results call for more work; otherwise wait — you will hear when more finish.")
+    lines.push(
+      "If these results call for more work, add steps (workflow_add_steps) or change what waiting steps depend on (workflow_edit_steps). If something shows an earlier result was wrong, reopen that step (workflow_reopen) — a failed or cancelled one too. Otherwise wait — you will hear when more finish."
+    )
   } else {
-    lines.push("The workflow is over. Bring the results together for the person.")
+    lines.push(
+      "The workflow is over. Bring the results together for the person — or, if a result shows more is needed, reopen a step or add steps, and it runs again."
+    )
   }
   return lines.join("\n")
 }

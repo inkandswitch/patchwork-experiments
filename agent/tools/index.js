@@ -44,7 +44,7 @@ import namingTools from "./naming.js"
 import recallTools from "./recall.js"
 import noteTools from "./notes.js"
 import workflowTools from "./workflow.js"
-import { WORKFLOW_TOOL_IDS } from "../workflow/plan.js"
+import { WORKFLOW_TOOL_IDS, STEP_TOOL_IDS } from "../workflow/plan.js"
 import skillTools from "./skills.js"
 import buildTools from "./build.js"
 import testingTools from "./testing.js"
@@ -182,8 +182,10 @@ export async function buildToolset(sessionDoc, opts = {}) {
   const disabled = sessionDoc?.tools?.disabled ?? []
   // Orchestrating is opt-in per session: many sessions, real cost.
   const workflows = !!sessionDoc?.config?.workflows?.enabled
+  // Asking an orchestrator for more work means something only in a step.
+  const step = !!sessionDoc?.workflow?.planUrl
   const chosen = (Array.isArray(enabled) ? all.filter((t) => enabled.includes(t.id)) : all).filter(
-    (t) => !disabled.includes(t.id) && !SCOPED_ONLY_IDS.includes(t.id) && (workflows || !WORKFLOW_TOOL_IDS.includes(t.id))
+    (t) => !disabled.includes(t.id) && !SCOPED_ONLY_IDS.includes(t.id) && (workflows || !WORKFLOW_TOOL_IDS.includes(t.id)) && (step || !STEP_TOOL_IDS.includes(t.id))
   )
 
   const byId = new Map(chosen.map((t) => [t.id, t]))

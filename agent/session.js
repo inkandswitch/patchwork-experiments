@@ -17,6 +17,8 @@
  *     turns:   Turn[]
  *     status:  "idle" | "running" | "awaiting-approval" | "parked" | "reconnecting" | "error"
  *     reconnecting: { reason, since, attempts } | null   while the network is away (network.js)
+ *     halted:  { reason, at } | null      stopped from outside (a workflow step cancelled or
+ *                                         reopened): no runner takes it until it is spoken to
  *     lease:   { runner, at, generation } | null
  *     grants:  { [grantKey]: "session" | "always" }
  *     made:    Artifact[]                 documents this session created

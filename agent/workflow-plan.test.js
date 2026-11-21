@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   STEP, STATE, PLAN, TIERS, DEFAULT_LIMITS,
   initPlan, validateSteps, findCycle, states, toStart, isSettled, stepPrompt,
-  overBudget, shouldPause, resumePlan, budgetOf, notStarted,
+  overBudget, shouldPause, resumePlan, budgetOf, notStarted, reopenSteps, reopenPrompt,
 } from "./workflow/plan.js"
 
 const STATUSES = Object.values(STEP)
@@ -40,15 +40,27 @@ function* every(n, { wheres = ["host", "worker"], limits = [[1, 1], [2, 1], [3, 
 }
 
 /**
+ * The reference definition of out of date: a done step one of whose
+ * dependencies is not done, or is at a version other than the one it took.
+ */
+function outOfDate(p, id) {
+  const byId = new Map(p.steps.map((s) => [s.id, s]))
+  const s = byId.get(id)
+  if (s.status !== STEP.done) return false
+  return s.after.some((d) => byId.get(d).status !== STEP.done || (byId.get(d).version ?? 0) !== (s.inputs?.[d] ?? 0))
+}
+
+/**
  * The reference definition of blocked: a dependency failed or was cancelled,
- * or is itself pending and blocked. A running or finished dependency shields
- * what comes after it — it may yet succeed, or already has.
+ * is out of date, or is itself pending and blocked. A running dependency, or a
+ * finished one that is up to date, shields what comes after it — it may yet
+ * succeed, or already has.
  */
 function doomed(p, id) {
   const byId = new Map(p.steps.map((s) => [s.id, s]))
   return byId.get(id).after.some((d) => {
     const dep = byId.get(d)
-    return dep.status === STEP.failed || dep.status === STEP.cancelled || (dep.status === STEP.pending && doomed(p, d))
+    return dep.status === STEP.failed || dep.status === STEP.cancelled || outOfDate(p, d) || (dep.status === STEP.pending && doomed(p, d))
   })
 }
 
@@ -65,6 +77,7 @@ function checkInvariants(p) {
     const s = byId.get(id)
     if (s.status !== STEP.pending) return `started ${id}, which is ${s.status}`
     if (!s.after.every((d) => byId.get(d).status === STEP.done)) return `started ${id} before its dependencies were done`
+    if (s.after.some((d) => outOfDate(p, d))) return `started ${id} on a dependency that is out of date`
   }
   if (new Set(started).size !== started.length) return "started a step twice"
   // Whatever starts fits. (The space includes states the scheduler could not
@@ -86,6 +99,11 @@ function checkInvariants(p) {
     if (s.status !== STEP.pending) continue
     const expected = doomed(p, s.id)
     if (expected !== (derived.get(s.id) === STATE.blocked)) return `${s.id} blocked=${derived.get(s.id) === STATE.blocked}, expected ${expected}`
+  }
+
+  // Out of date exactly by the reference.
+  for (const s of p.steps) {
+    if (outOfDate(p, s.id) !== (derived.get(s.id) === STATE.stale)) return `${s.id} stale=${derived.get(s.id) === STATE.stale}, expected ${outOfDate(p, s.id)}`
   }
 
   // Settled exactly when nothing is running, ready or waiting.
@@ -190,6 +208,31 @@ describe("scheduling, over every small plan", () => {
     expect(count).toBe(64 * 5 ** 4)
   })
 
+  it("and for every three-step plan whose done steps took their inputs at every version, current or not", () => {
+    // Each done step's taken version of each dependency: the current one, one
+    // behind, or one ahead (a version it cannot have seen; still not current).
+    let count = 0
+    for (const base of every(3, { wheres: ["worker"], limits: [[3, 1]] })) {
+      for (const versions of product([0, 1, 2], 3)) {
+        const withVersions = base.steps.map((s, i) => ({ ...s, version: versions[i] }))
+        const done = withVersions.filter((s) => s.status === STEP.done && s.after.length)
+        for (const offsets of product([0, -1, 1], done.length)) {
+          const steps = withVersions.map((s) => {
+            const at = done.findIndex((d) => d.id === s.id)
+            if (at < 0) return s
+            const byId = new Map(withVersions.map((x) => [x.id, x]))
+            return { ...s, inputs: Object.fromEntries(s.after.map((d, k) => [d, byId.get(d).version + (k === 0 ? offsets[at] : 0)])) }
+          })
+          const p = { ...base, steps }
+          const broken = checkInvariants(p)
+          if (broken) throw new Error(`${broken}\n${JSON.stringify(steps.map(({ id, after, status, version, inputs }) => ({ id, after, status, version, inputs })))}`)
+          count++
+        }
+      }
+    }
+    expect(count).toBe(42120)
+  })
+
   it("starts nothing in a plan that is not running, or that has spent its budget", () => {
     const steps = [step("a")]
     expect(toStart(plan(steps, { status: PLAN.stopped }))).toEqual([])
@@ -230,11 +273,16 @@ describe("validateSteps", () => {
     expect(validateSteps(base, [step("b", { after: ["a"] }), step("c", { after: ["b"] })])).toEqual([])
   })
 
+  it("accepts a step on one that failed: it is blocked until that one is reopened", () => {
+    expect(validateSteps(base, [step("b", { after: ["x"] })])).toEqual([])
+    const p = plan([...base.steps, step("b", { after: ["x"] })])
+    expect(states(p).get("b")).toBe(STATE.blocked)
+  })
+
   it.each([
     [[step("a")], /already used/],
     [[step("b"), step("b")], /already used/],
     [[step("b", { after: ["nope"] })], /not a step/],
-    [[step("b", { after: ["x"] })], /which failed/],
     [[step("bad id!")], /id must be/],
     [[step("b", { where: "cloud" })], /'where' must be/],
     [[step("b", { tier: "huge" })], /'tier' must be/],
@@ -281,5 +329,50 @@ describe("initPlan and stepPrompt", () => {
     expect(text).toContain("Goal: no bugs")
     expect(text).toContain("fix them")
     expect(text).toContain("### Find (a)\nfound three bugs")
+  })
+})
+
+describe("reopening, as a change to the plan", () => {
+  it("a step cancelled before it began starts fresh, told why", () => {
+    const p = plan([step("a", { status: STEP.cancelled })], { status: PLAN.stopped })
+    reopenSteps(p, ["a"], { note: "Needed after all.", now: 5 })
+    expect(p.steps[0]).toMatchObject({ status: STEP.pending, reopen: { note: "Needed after all.", at: 5, by: "orchestrator" } })
+    expect(p.status).toBe(PLAN.running)
+    expect(stepPrompt(p, p.steps[0])).toContain("## Note\n\nNeeded after all.")
+  })
+
+  it("cascades through done and running steps, stopping at failed and cancelled ones, and says which to interrupt", () => {
+    const p = plan([
+      step("a", { status: STEP.done, version: 1 }),
+      step("b", { status: STEP.running, after: ["a"], sessionUrl: "automerge:b" }),
+      step("c", { status: STEP.done, after: ["b"] }),
+      step("d", { status: STEP.cancelled, after: ["a"] }),
+      step("e", { status: STEP.done, after: ["d"] }),
+      step("f", { status: STEP.pending, after: ["a"] }),
+      step("g", { status: STEP.done, after: ["f"] }),
+    ])
+    const { reopened, interrupt } = reopenSteps(p, ["a"], { note: "x", cascade: true })
+    // Through a pending step too: g was built on f, which waits on a.
+    expect([...reopened].sort()).toEqual(["a", "b", "c", "g"])
+    expect(interrupt).toEqual(["automerge:b"])
+    expect(p.steps.find((s) => s.id === "d").status).toBe(STEP.cancelled)
+    expect(p.steps.find((s) => s.id === "e").status).toBe(STEP.done)
+  })
+
+  it("refuses running and pending steps, and changes nothing", () => {
+    const p = plan([step("a", { status: STEP.running }), step("b"), step("c", { status: STEP.done })])
+    const before = JSON.stringify(p)
+    expect(() => reopenSteps(p, ["c", "a"], { note: "x" })).toThrow(/'a' is running/)
+    expect(() => reopenSteps(p, ["b"], { note: "x" })).toThrow(/'b' has not started yet/)
+    expect(JSON.stringify(p)).toBe(before)
+  })
+
+  it("the continuing message says what it was and hands the inputs as they stand", () => {
+    const p = plan([step("a", { status: STEP.done, result: "A v2" }), step("b", { status: STEP.failed, after: ["a"] })])
+    reopenSteps(p, ["b"], { note: "Try the other API." })
+    const text = reopenPrompt(p, p.steps[1])
+    expect(text).toMatch(/^\[Your step has been reopened\. It failed before/)
+    expect(text).toContain("Try the other API.")
+    expect(text).toContain("A v2")
   })
 })

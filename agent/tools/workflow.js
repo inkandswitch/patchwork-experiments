@@ -12,7 +12,29 @@
  * `privileges`). This is the only module that uses it.
  */
 
-import { initPlan, newStep, validateSteps, states, STATE, PLAN, STEP, TIERS, DEFAULT_LIMITS, DEFAULT_TIER_MODELS, DEFAULT_STEP_BUDGETS, budgetOf, stepBudget } from "../workflow/plan.js"
+import {
+  initPlan,
+  newStep,
+  validateSteps,
+  states,
+  STATE,
+  PLAN,
+  STEP,
+  TIERS,
+  DEFAULT_LIMITS,
+  DEFAULT_TIER_MODELS,
+  DEFAULT_STEP_BUDGETS,
+  budgetOf,
+  stepBudget,
+  staleInputs,
+  openRequests,
+  reopenErrors,
+  reopenSteps,
+  keepSteps,
+  editSteps,
+  requestErrors,
+  EDITABLE,
+} from "../workflow/plan.js"
 import { liftBudget } from "../session.js"
 import { drivePlanHere, getDriver, keptCounts } from "../workflow/driver.js"
 import { truncate } from "./format.js"
@@ -87,12 +109,26 @@ export function describePlan(plan, url) {
     const state = derived.get(step.id)
     lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier} · $${stepBudget(step).toFixed(2)} budget${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
     if (step.sessionUrl) lines.push(`  session: ${step.sessionUrl}`)
-    if (state === STATE.done && step.result) lines.push(`  result: ${truncate(step.result.replace(/\s+/g, " "), 400)}`)
-    if (state === STATE.failed && step.error) lines.push(`  error: ${step.error}`)
+    if ((state === STATE.done || state === STATE.stale) && step.result) lines.push(`  result: ${truncate(step.result.replace(/\s+/g, " "), 400)}`)
+    if (state === STATE.stale) lines.push(`  out of date: built on ${staleInputs(plan, step).join(", ")} as it was before — reopen or keep it`)
+    if ((state === STATE.failed || state === STATE.cancelled) && step.error) lines.push(`  error: ${step.error}`)
+    if (step.reopen) lines.push(`  reopened: ${truncate(String(step.reopen.note).replace(/\s+/g, " "), 200)}`)
+    if (step.previous?.length) lines.push(`  ran ${step.previous.length + (step.status === STEP.pending ? 0 : 1)} times`)
     if (state === STATE.needsInput) lines.push("  waiting on a person in its session")
+  }
+  const open = openRequests(plan)
+  if (open.length) {
+    lines.push("", "Open requests (workflow_decide):")
+    for (const r of open) {
+      const asks = [r.add?.length ? `add ${r.add.map((x) => x.id).join(", ")}` : null, r.reopen?.length ? `reopen ${r.reopen.join(", ")}` : null].filter(Boolean)
+      lines.push(`- ${r.id} from ${r.stepId}: ${asks.join(" and ")} — ${truncate(r.why.replace(/\s+/g, " "), 300)}`)
+    }
   }
   return lines.join("\n")
 }
+
+/** This page's driver for a plan, started if there is none. */
+const driverFor = async (url, ctx) => getDriver(url) ?? (await drive(url, ctx))
 
 export const workflowStart = {
   id: "workflow_start",
@@ -167,7 +203,7 @@ export const workflowAddSteps = {
   id: "workflow_add_steps",
   name: "Add workflow steps",
   description:
-    "Add steps to a workflow while it runs — typically one per thing an earlier step found. They may depend on finished steps (and receive their results) or on each other. A workflow that had finished starts again to run them.",
+    "Add steps to a workflow while it runs — typically one per thing an earlier step found. They may depend on finished steps (and receive their results) or on each other, or on a failed or cancelled step, which holds them until it is reopened. A workflow that had finished or was stopped starts again to run them.",
   where: "host",
   risk: "edit",
   input_schema: {
@@ -182,12 +218,12 @@ export const workflowAddSteps = {
     const url = await planUrlFor(input, ctx)
     const handle = await workflows(ctx).repo.find(url)
     const plan = handle.doc()
-    if (plan.status === PLAN.stopped) throw new Error("That workflow was stopped. Start a new one.")
     const errors = validateSteps(plan, input.steps)
     if (errors.length) throw new Error(`Those steps cannot be added:\n- ${errors.join("\n- ")}`)
     handle.change((d) => {
       for (const step of input.steps) d.steps.push(newStep(step))
       d.status = PLAN.running
+      d.finishedAt = null
       // Running again: its next end is news again.
       d.reportedEnd = false
     })
@@ -339,4 +375,214 @@ export const workflowBudget = {
   },
 }
 
-export default [workflowStart, workflowAddSteps, workflowStatus, workflowStop, workflowAnswer, workflowBudget]
+export const workflowReopen = {
+  id: "workflow_reopen",
+  name: "Reopen workflow steps",
+  description: [
+    "Reopen closed steps: resume one that failed or was cancelled, or send one that finished back to work because something learned since shows its result is wrong or incomplete. Each continues in its own session, from where it was, told your `note` and handed what it depends on as that now stands. Its result replaces the old one when it finishes. A workflow that had finished or was stopped runs again.",
+    "",
+    "`cascade` decides what happens to the steps built on a reopened one. true: every step that depends on it, directly or further down, and has finished or is running is reopened too — a running one is stopped first — and each revises its work once what it depends on is done again. false: they are left as they are, and once the reopened step finishes they are out of date; you are told, and reopen or keep (workflow_keep) each. Choose false when you expect the change not to matter to them.",
+  ].join("\n"),
+  where: "host",
+  risk: "edit",
+  input_schema: {
+    type: "object",
+    required: ["steps", "note", "cascade"],
+    properties: {
+      plan: { type: "string", description: "The workflow's URL. Defaults to the last one this session started." },
+      steps: { type: "array", items: { type: "string" }, description: "Ids of the steps to reopen: done, failed or cancelled." },
+      note: { type: "string", description: "Why, as the step will read it: what was learned, and what to do about it. For a failed step, what to do differently." },
+      cascade: { type: "boolean", description: "Reopen what is built on these steps too (true), or leave it to go out of date and decide each one later (false)." },
+    },
+  },
+  async execute(input, ctx) {
+    if (typeof input.cascade !== "boolean") throw new Error("Say `cascade`: true to reopen what is built on these steps too, false to leave it and decide later.")
+    if (!String(input.note ?? "").trim()) throw new Error("Give a `note`: why the step is reopened, as it will read it.")
+    const url = await planUrlFor(input, ctx)
+    const plan = (await workflows(ctx).repo.find(url)).doc()
+    const errors = reopenErrors(plan, input.steps)
+    if (errors.length) throw new Error(`Cannot reopen:\n- ${errors.join("\n- ")}`)
+    const { reopened } = await (await driverFor(url, ctx)).reopen(input.steps, { note: input.note, cascade: input.cascade, by: "orchestrator" })
+    const also = reopened.filter((id) => !input.steps.includes(id))
+    return `Reopened ${input.steps.join(", ")}${also.length ? `, and what is built on them: ${also.join(", ")}` : ""}.\n\n${describePlan((await workflows(ctx).repo.find(url)).doc(), url)}`
+  },
+  summarize(input) {
+    return `reopened ${(input?.steps ?? []).join(", ")}${input?.cascade ? " and what follows" : ""}`
+  },
+}
+
+export const workflowKeep = {
+  id: "workflow_keep",
+  name: "Keep workflow results",
+  description:
+    "Say that out-of-date steps' results still stand: something they were built on was reopened and has finished again, and you have judged the change does not affect them. They are up to date again, and the steps waiting on them can start. Reopen them instead (workflow_reopen) when it does.",
+  where: "worker",
+  risk: "edit",
+  input_schema: {
+    type: "object",
+    required: ["steps"],
+    properties: {
+      plan: { type: "string", description: "The workflow's URL. Defaults to the last one this session started." },
+      steps: { type: "array", items: { type: "string" }, description: "Ids of out-of-date steps whose results still stand." },
+    },
+  },
+  async execute(input, ctx) {
+    const url = await planUrlFor(input, ctx)
+    const handle = await workflows(ctx).repo.find(url)
+    handle.change((d) => keepSteps(d, input.steps))
+    ;(await driverFor(url, ctx)).kick()
+    return describePlan(handle.doc(), url)
+  },
+  summarize(input) {
+    return `kept ${(input?.steps ?? []).join(", ")}`
+  },
+}
+
+const EDIT_SCHEMA = {
+  type: "object",
+  required: ["id"],
+  properties: Object.fromEntries([["id", { type: "string", description: "The step to change." }], ...EDITABLE.map((k) => [k, STEP_SCHEMA.properties[k]])]),
+}
+
+export const workflowEditSteps = {
+  id: "workflow_edit_steps",
+  name: "Edit workflow steps",
+  description:
+    "Change steps that have not started: what they depend on (`after`) — to wait on a step added since, say — or their prompt, title, tier, placement or budget. Give only what changes. A reopened step waiting to continue takes `after` and `budget` only: its session already has its prompt, so say what changed in the reopen note. To change a step that has started, reopen it.",
+  where: "worker",
+  risk: "edit",
+  input_schema: {
+    type: "object",
+    required: ["steps"],
+    properties: {
+      plan: { type: "string", description: "The workflow's URL. Defaults to the last one this session started." },
+      steps: { type: "array", items: EDIT_SCHEMA, description: "One entry per step: its id and the fields to change." },
+    },
+  },
+  async execute(input, ctx) {
+    const url = await planUrlFor(input, ctx)
+    const handle = await workflows(ctx).repo.find(url)
+    handle.change((d) => editSteps(d, input.steps))
+    ;(await driverFor(url, ctx)).kick()
+    return describePlan(handle.doc(), url)
+  },
+  summarize(input) {
+    return `edited ${(input?.steps ?? []).map((s) => s?.id).join(", ")}`
+  },
+}
+
+export const workflowDecide = {
+  id: "workflow_decide",
+  name: "Decide a step's request",
+  description: [
+    "Accept or decline what a step asked for with workflow_request: steps to add, steps to reopen, or both. Accepting does exactly what it asks, checked against the plan as it is now; if that no longer fits — an id taken, a step that is running — decline it and do what is right yourself with workflow_add_steps or workflow_reopen.",
+    "",
+    "A step can only see its own work, and a research step reads the open web, so weigh the request against the goal before accepting. The workflow does not finish while a request is open.",
+  ].join("\n"),
+  where: "host",
+  risk: "edit",
+  input_schema: {
+    type: "object",
+    required: ["request", "accept"],
+    properties: {
+      plan: { type: "string", description: "The workflow's URL. Defaults to the last one this session started." },
+      request: { type: "string", description: "The request's id, as the news gave it." },
+      accept: { type: "boolean", description: "Do what it asks (true), or not (false)." },
+      note: { type: "string", description: "Why, kept with the request; when it reopens steps, added to what they are told." },
+      cascade: { type: "boolean", description: "When it reopens steps: reopen what is built on them too. Required then; see workflow_reopen." },
+    },
+  },
+  async execute(input, ctx) {
+    const url = await planUrlFor(input, ctx)
+    const handle = await workflows(ctx).repo.find(url)
+    const plan = handle.doc()
+    const request = (plan.requests ?? []).find((r) => r.id === input.request)
+    if (!request) throw new Error(`No request '${input.request}' in this workflow.`)
+    if (request.status !== "open") throw new Error(`Request '${input.request}' was already ${request.status}.`)
+    const note = String(input.note ?? "").trim() || null
+
+    if (input.accept !== true) {
+      handle.change((d) => Object.assign(d.requests.find((r) => r.id === request.id), { status: "declined", decidedAt: Date.now(), note }))
+      ;(await driverFor(url, ctx)).kick()
+      return `Declined ${request.stepId}'s request.\n\n${describePlan(handle.doc(), url)}`
+    }
+
+    const add = request.add ?? []
+    const reopen = request.reopen ?? []
+    if (reopen.length && typeof input.cascade !== "boolean") throw new Error("This request reopens steps: say `cascade`, true or false (see workflow_reopen).")
+    const errors = [...(add.length ? validateSteps(plan, add) : []), ...(reopen.length ? reopenErrors(plan, reopen) : [])]
+    if (errors.length) throw new Error(`It no longer fits the plan:\n- ${errors.join("\n- ")}\nDecline it, and do what is right with workflow_add_steps or workflow_reopen.`)
+
+    let interrupt = []
+    handle.change((d) => {
+      for (const step of add) d.steps.push(newStep(step))
+      if (reopen.length) {
+        const why = `Step '${request.stepId}' found: ${request.why}${note ? `\n\nThe orchestrator adds: ${note}` : ""}`
+        interrupt = reopenSteps(d, reopen, { note: why, cascade: input.cascade, by: `request from ${request.stepId}` }).interrupt
+      }
+      d.status = PLAN.running
+      d.finishedAt = null
+      d.reportedEnd = false
+      Object.assign(d.requests.find((r) => r.id === request.id), { status: "accepted", decidedAt: Date.now(), note })
+    })
+    const driver = await driverFor(url, ctx)
+    if (interrupt.length) await driver.haltSessions(interrupt, "reopened: something it is built on changed")
+    await driver.kick()
+    return `Accepted ${request.stepId}'s request.\n\n${describePlan(handle.doc(), url)}`
+  },
+  summarize(input) {
+    return `${input?.accept ? "accepted" : "declined"} request`
+  },
+}
+
+/**
+ * A step's one way to ask for more work. It writes nothing: the call itself,
+ * in the step's own session, is the request, and the driver copies it into the
+ * plan for the orchestrator to decide (workflow/driver.js requestCalls). So a
+ * step — a research step too — still cannot change the plan, and a request a
+ * hostile page talked it into reaches nothing but the orchestrator's judgement.
+ */
+export const workflowRequest = {
+  id: "workflow_request",
+  name: "Ask the orchestrator for more work",
+  target: "none",
+  description: [
+    "Ask the workflow's orchestrator for more work when what you find calls for it: steps to add (each as workflow_add_steps takes them: id, title, a prompt that stands alone, where, tier, why, after), and/or earlier steps to reopen because their result is wrong or incomplete. Say `why` — what you found. The orchestrator decides; you are not told the answer.",
+    "",
+    "Then carry on with your own step. Do not wait, and do not do the asked-for work yourself.",
+  ].join("\n"),
+  where: "worker",
+  risk: "read",
+  input_schema: {
+    type: "object",
+    required: ["why"],
+    properties: {
+      why: { type: "string", description: "What you found that calls for this, concretely, with the URLs it rests on." },
+      add_steps: { type: "array", items: STEP_SCHEMA, description: "Steps to add. They may depend on any step of the workflow by id." },
+      reopen: { type: "array", items: { type: "string" }, description: "Ids of earlier steps to reopen." },
+    },
+  },
+  async execute(input) {
+    const errors = requestErrors(input)
+    if (errors.length) throw new Error(`Not asked:\n- ${errors.join("\n- ")}`)
+    return "Asked. The orchestrator decides; carry on with your own step."
+  },
+  summarize(input) {
+    const asks = [input?.add_steps?.length ? `${input.add_steps.length} step${input.add_steps.length === 1 ? "" : "s"}` : null, input?.reopen?.length ? `reopening ${input.reopen.join(", ")}` : null].filter(Boolean)
+    return `asked for ${asks.join(" and ") || "more work"}`
+  },
+}
+
+export default [
+  workflowStart,
+  workflowAddSteps,
+  workflowEditSteps,
+  workflowStatus,
+  workflowStop,
+  workflowReopen,
+  workflowKeep,
+  workflowDecide,
+  workflowAnswer,
+  workflowBudget,
+  workflowRequest,
+]

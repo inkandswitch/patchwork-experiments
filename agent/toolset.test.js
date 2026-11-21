@@ -17,7 +17,7 @@ import { SessionRunner } from "./runner.js"
 import { memoryStore, handleStore } from "./store.js"
 import { initSession, makeTurn, textBlock } from "./session.js"
 import { makeMock } from "./providers/mock.js"
-import { initPlan, WORKFLOW_TOOL_IDS } from "./workflow/plan.js"
+import { initPlan, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS } from "./workflow/plan.js"
 import { buildToolset, loadPluginTools, BUILTIN_TOOLS, SCOPED_VARIANTS } from "./tools/index.js"
 import { SCOPED_TOOL_IDS, UNDECLARED_MID_RUN, scopedToolset, admitScoped, webScope } from "./scope.js"
 
@@ -46,7 +46,8 @@ const registry = (colliding) => {
 function expectedFull(enabled, disabled) {
   const pool = [...BUILTIN_IDS, "extra_tool"]
   const listed = Array.isArray(enabled) ? pool.filter((id) => enabled.includes(id)) : pool
-  return listed.filter((id) => !disabled.includes(id) && id !== RESEARCH_ONLY && !WORKFLOW_TOOL_IDS.includes(id))
+  // Not a step here, so not the step's tool either.
+  return listed.filter((id) => !disabled.includes(id) && id !== RESEARCH_ONLY && !WORKFLOW_TOOL_IDS.includes(id) && !STEP_TOOL_IDS.includes(id))
 }
 
 const repo = new Repo({ network: [] })

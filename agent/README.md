@@ -1229,7 +1229,7 @@ result calls for it.
   tools that run without the page. A research step is confined instead (see
   *Research steps keep things*).
 - **The plan decides; the driver acts.** `workflow/plan.js` is pure: five
-  stored step states, the rest (ready, waiting, blocked, needs-you) derived, and
+  stored step states, the rest (ready, waiting, blocked, needs-you, out of date) derived, and
   `toStart` choosing what may run. Its rules — only ready steps start, never more
   than `parallel` at once nor `hostParallel` on the page, blocked exactly when
   something it needs failed — are checked over every plan of up to three steps
@@ -1261,7 +1261,42 @@ result calls for it.
 - **News is told once**, recorded in the plan: a reload or another tab's driver
   does not repeat a step's result, and the end of a plan is one wake, not one
   per tick. Cancelling takes the step session's lease, so a runner in another
-  tab stands down too.
+  tab stands down too, and marks the session `halted`, so no runner takes it up
+  again — not even when a call that finished after the stop leaves it looking
+  like work. Speaking to it, or reopening its step, lifts that.
+
+**The graph changes as the work goes.** Nothing closed is final:
+
+- `workflow_reopen` takes a step that finished, failed or was cancelled back to
+  work. It continues in its own session, from where it was, told the note and
+  handed what it depends on as that now stands; its old outcome is kept in
+  `previous`, and its new result replaces the old. A stopped or finished
+  workflow runs again. The person can Resume a failed or cancelled step from
+  its card.
+- **Out of date is exact.** Each step records the versions of what it was built
+  on (`inputs`), and each finish bumps a step's `version`, so a done step is
+  `stale` exactly when a dependency is not done or has finished again since:
+  no clocks. Nothing starts on a stale input — what waits on one is blocked.
+- **Cascade is chosen per reopen.** With it, everything built on the step that
+  is done or running is reopened too (a running one halted first), all the way
+  down, and revises in order. Without, those go out of date; the orchestrator
+  is told and reopens or keeps (`workflow_keep`) each.
+- `workflow_edit_steps` changes a step that has not started — most often its
+  `after`, to wait on a step added since — checked for cycles over the whole
+  graph. A step may depend on one that failed or was cancelled; it is blocked
+  until that is reopened.
+- **Steps ask; the orchestrator decides.** A step's `workflow_request` (add
+  steps, reopen steps, why) writes nothing: the call in its own session is the
+  request, which the driver copies into the plan's `requests` and the
+  orchestrator is woken with. `workflow_decide` accepts — doing exactly what was
+  asked, checked against the plan as it is then — or declines. A research step
+  has the tool too: what a page talks it into reaches only the orchestrator's
+  judgement. A plan does not finish while a request is open.
+
+The scheduling rules, staleness included, are checked over every plan of up to
+three steps at every combination of versions, as well as the earlier spaces
+(`workflow-plan.test.js`); reopening, cascade, keeping, editing and requests
+run end to end with real sessions in `workflow-reopen.test.js`.
 
 Workflows are on by default. Limits are per session: steps at once (3), steps
 in all (24), and a budget in dollars ($20) for what the steps spend together, as OpenRouter reports it: spent with work still to start, the plan pauses, the orchestrator is told, and the person is offered Resume (the strip, the pop-over, the workflow view). Each step has a budget of its own, set by the orchestrator or its tier's default (fast $0.50, standard $2, deep $5); a step that spends it stops part-way and the orchestrator decides — `workflow_budget` for more, `workflow_stop`, or new steps. Every step runs in the tab today, because the SharedWorker runner is

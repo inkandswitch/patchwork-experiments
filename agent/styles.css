@@ -1259,6 +1259,7 @@
 .agent-wf-step[data-state="needs-input"] { border-left-color: var(--agent-warning); }
 .agent-wf-step[data-state="done"] { border-left-color: var(--agent-added); }
 .agent-wf-step[data-state="failed"] { border-left-color: var(--agent-danger); }
+.agent-wf-step[data-state="stale"] { border-left-color: var(--agent-warning); }
 .agent-wf-step[data-state="blocked"],
 .agent-wf-step[data-state="cancelled"] { opacity: 0.6; }
 
@@ -1298,6 +1299,17 @@
   border-radius: 4px;
   font-family: var(--agent-family-code);
 }
+
+.agent-wf-step[data-state="stale"] .agent-wf-chip { color: var(--agent-warning); }
+
+.agent-wf-stale,
+.agent-wf-request {
+  margin: 0;
+  font-size: 0.85em;
+}
+.agent-wf-stale { color: var(--agent-warning); }
+.agent-wf-request .agent-wf-chip { margin-left: 0.4rem; }
+.agent-wf-request[data-status="declined"] { color: var(--agent-muted); }
 
 .agent-wf-why,
 .agent-wf-activity,

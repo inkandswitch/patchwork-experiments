@@ -26,19 +26,49 @@
  *       tier, why,                            which model, and the reason
  *       status: "pending" | "running" | "done" | "failed" | "cancelled",
  *       sessionUrl, result, error, startedAt, finishedAt,
+ *       version,                              how many times it has finished done
+ *       inputs: { [depId]: version },         the versions of what it was built on
+ *       reopen: { note, at, by } | null,      pending again: continues its session
+ *       previous: [{ status, result, error, startedAt, finishedAt }],
  *     }],
+ *     requests: [{ id, stepId, why, add, reopen, status: "open" | "accepted"
+ *                | "declined", at, decidedAt, note }],
  *   }
  *
  * Only five step statuses are stored. Everything else a view shows — waiting,
- * ready, blocked behind a failure, waiting on a person — is derived here from
- * those and from the step's own session, so the document cannot hold a state
- * that contradicts itself.
+ * ready, blocked behind a failure, waiting on a person, out of date — is
+ * derived here from those and from the step's own session, so the document
+ * cannot hold a state that contradicts itself.
+ *
+ * The graph changes as the work goes. Steps are added, and a pending step's
+ * dependencies edited; any closed step — done, failed or cancelled — can be
+ * reopened, and it continues in its own session, told why. A done step whose
+ * inputs have since changed is out of date (`stale`): what it was built on is
+ * recorded as versions, not times, so this is exact, whatever the clocks say.
+ * Reopening with `cascade` reopens everything built on it as well; without,
+ * what was built on it is out of date until reopened or kept. A step asks for
+ * more work — steps to add, steps to reopen — with workflow_request, and only
+ * the orchestrator decides (`requests`).
  */
 
 export const TIERS = ["deep", "standard", "fast"]
 
 /** The tools that orchestrate. A step never gets them: workflows do not nest. */
-export const WORKFLOW_TOOL_IDS = ["workflow_start", "workflow_add_steps", "workflow_status", "workflow_stop", "workflow_answer", "workflow_budget"]
+export const WORKFLOW_TOOL_IDS = [
+  "workflow_start",
+  "workflow_add_steps",
+  "workflow_edit_steps",
+  "workflow_status",
+  "workflow_stop",
+  "workflow_reopen",
+  "workflow_keep",
+  "workflow_decide",
+  "workflow_answer",
+  "workflow_budget",
+]
+
+/** The tools only a step has: asking its orchestrator for more work. Writes nothing; the call is the request. */
+export const STEP_TOOL_IDS = ["workflow_request"]
 
 /** OpenRouter's aliases follow each family's newest release. */
 export const DEFAULT_TIER_MODELS = {
@@ -104,6 +134,7 @@ export const STATE = {
   running: "running",
   needsInput: "needs-input", // running, its session is waiting on a person
   done: "done",
+  stale: "stale", // done, but something it was built on has changed since
   failed: "failed",
   cancelled: "cancelled",
 }
@@ -111,6 +142,8 @@ export const STATE = {
 export const PLAN = { running: "running", done: "done", stopped: "stopped" }
 
 const TERMINAL = new Set([STEP.done, STEP.failed, STEP.cancelled])
+/** Derived states that need nothing more from the driver: over, or waiting on the orchestrator. */
+const SETTLED = new Set([STATE.done, STATE.stale, STATE.failed, STATE.cancelled, STATE.blocked])
 const ID = /^[a-z0-9][a-z0-9_-]{0,39}$/i
 
 /** Seed a plan document. Runs inside a change. Steps must already be valid. */
@@ -165,33 +198,20 @@ export function validateSteps(plan, incoming) {
   const ids = new Set(existing.map((s) => s.id))
   for (const [i, step] of incoming.entries()) {
     const at = `step ${i + 1}${step?.id ? ` ('${step.id}')` : ""}`
-    if (!step || typeof step !== "object") {
-      errors.push(`${at} is not an object.`)
-      continue
-    }
-    if (typeof step.id !== "string" || !ID.test(step.id)) errors.push(`${at}: id must be letters, digits, - or _, at most 40.`)
-    else if (ids.has(step.id)) errors.push(`${at}: id '${step.id}' is already used.`)
+    const own = stepFieldErrors(step, at)
+    errors.push(...own)
+    if (own.length || !step || typeof step !== "object") continue
+    if (ids.has(step.id)) errors.push(`${at}: id '${step.id}' is already used.`)
     else ids.add(step.id)
-    for (const field of ["title", "prompt", "why"]) {
-      if (typeof step[field] !== "string" || !step[field].trim()) errors.push(`${at}: '${field}' is required.`)
-    }
-    if (!WHERE.includes(step.where)) errors.push(`${at}: 'where' must be one of ${WHERE.join(", ")}.`)
-    if (!TIERS.includes(step.tier)) errors.push(`${at}: 'tier' must be one of ${TIERS.join(", ")}.`)
-    if (step.access != null && !ACCESS.includes(step.access)) errors.push(`${at}: 'access' must be one of ${ACCESS.join(", ")}.`)
-    if (step.budget != null && !(typeof step.budget === "number" && Number.isFinite(step.budget) && step.budget > 0)) errors.push(`${at}: 'budget' must be a positive number of dollars.`)
-    if (step.access === "web" && step.where !== "worker") errors.push(`${at}: a web-only step runs on a worker; it needs nothing from the page.`)
-    if (step.after != null && !Array.isArray(step.after)) errors.push(`${at}: 'after' must be a list of step ids.`)
   }
   if (errors.length) return errors
 
+  // A step may depend on one that failed or was cancelled: that one can be
+  // reopened, and until it is, this one is blocked rather than refused.
   const byId = new Map([...existing, ...incoming].map((s) => [s.id, s]))
   for (const step of incoming) {
     for (const dep of step.after ?? []) {
-      const target = byId.get(dep)
-      if (!target) errors.push(`'${step.id}' depends on '${dep}', which is not a step.`)
-      else if (target.status === STEP.failed || target.status === STEP.cancelled) {
-        errors.push(`'${step.id}' depends on '${dep}', which ${target.status === STEP.failed ? "failed" : "was cancelled"}.`)
-      }
+      if (!byId.get(dep)) errors.push(`'${step.id}' depends on '${dep}', which is not a step.`)
     }
   }
   if (errors.length) return errors
@@ -202,6 +222,23 @@ export function validateSteps(plan, incoming) {
   if (existing.length + incoming.length > limit) {
     errors.push(`That makes ${existing.length + incoming.length} steps; this workflow allows ${limit}.`)
   }
+  return errors
+}
+
+/** What is wrong with one step as given, on its own: every field, but nothing about the plan it joins. */
+export function stepFieldErrors(step, at = "the step") {
+  const errors = []
+  if (!step || typeof step !== "object") return [`${at} is not an object.`]
+  if (typeof step.id !== "string" || !ID.test(step.id)) errors.push(`${at}: id must be letters, digits, - or _, at most 40.`)
+  for (const field of ["title", "prompt", "why"]) {
+    if (typeof step[field] !== "string" || !step[field].trim()) errors.push(`${at}: '${field}' is required.`)
+  }
+  if (!WHERE.includes(step.where)) errors.push(`${at}: 'where' must be one of ${WHERE.join(", ")}.`)
+  if (!TIERS.includes(step.tier)) errors.push(`${at}: 'tier' must be one of ${TIERS.join(", ")}.`)
+  if (step.access != null && !ACCESS.includes(step.access)) errors.push(`${at}: 'access' must be one of ${ACCESS.join(", ")}.`)
+  if (step.budget != null && !(typeof step.budget === "number" && Number.isFinite(step.budget) && step.budget > 0)) errors.push(`${at}: 'budget' must be a positive number of dollars.`)
+  if (step.access === "web" && step.where !== "worker") errors.push(`${at}: a web-only step runs on a worker; it needs nothing from the page.`)
+  if (step.after != null && !Array.isArray(step.after)) errors.push(`${at}: 'after' must be a list of step ids.`)
   return errors
 }
 
@@ -249,7 +286,8 @@ export function states(plan, sessions = {}) {
   const stateOf = (step, seen = new Set()) => {
     if (out.has(step.id)) return out.get(step.id)
     let state
-    if (TERMINAL.has(step.status)) state = step.status
+    if (step.status === STEP.done) state = staleInputs(plan, step, byId).length ? STATE.stale : STATE.done
+    else if (TERMINAL.has(step.status)) state = step.status
     else if (step.status === STEP.running) {
       const session = sessions[step.sessionUrl]
       state = session === "awaiting-approval" || session === "awaiting-answer" ? STATE.needsInput : STATE.running
@@ -260,7 +298,9 @@ export function states(plan, sessions = {}) {
       seen.add(step.id)
       const deps = (step.after ?? []).map((id) => byId.get(id))
       const depStates = deps.map((dep) => (dep ? stateOf(dep, seen) : STATE.blocked))
-      if (depStates.some((s) => s === STATE.failed || s === STATE.cancelled || s === STATE.blocked)) state = STATE.blocked
+      // Out of date counts as blocking: nothing starts on an input that has
+      // changed under it until the orchestrator reopens or keeps it.
+      if (depStates.some((s) => s === STATE.failed || s === STATE.cancelled || s === STATE.blocked || s === STATE.stale)) state = STATE.blocked
       else if (depStates.every((s) => s === STATE.done)) state = STATE.ready
       else state = STATE.waiting
     }
@@ -304,10 +344,268 @@ export function toStart(plan, sessions = {}) {
   return start
 }
 
-/** Nothing is running and nothing more can start: every step finished, or is stuck behind one that did not. */
+/**
+ * Nothing is running and nothing more can start: every step finished, or is
+ * stuck behind one that did not, or is out of date — and no step's request is
+ * waiting on the orchestrator. A plan never calls itself done with a request
+ * nobody answered.
+ */
 export function isSettled(plan, sessions = {}) {
+  if (openRequests(plan).length) return false
   const derived = states(plan, sessions)
-  return [...derived.values()].every((s) => TERMINAL.has(s) || s === STATE.blocked)
+  return [...derived.values()].every((s) => SETTLED.has(s))
+}
+
+// ---------------------------------------------------------------- versions
+
+/** The versions of a step's dependencies as they stand: what it is built on, if it starts now. */
+export function inputsOf(plan, step) {
+  const byId = new Map((plan.steps ?? []).map((s) => [s.id, s]))
+  return Object.fromEntries((step.after ?? []).map((id) => [id, byId.get(id)?.version ?? 0]))
+}
+
+/**
+ * The dependencies a done step was not built on as they now stand: reopened
+ * since (not done), or finished again since it took their results. Empty for
+ * a step that is up to date. Versions, not times: exact on any clock.
+ */
+export function staleInputs(plan, step, byId = null) {
+  byId ??= new Map((plan.steps ?? []).map((s) => [s.id, s]))
+  const took = step.inputs ?? {}
+  return (step.after ?? []).filter((id) => {
+    const dep = byId.get(id)
+    return !dep || dep.status !== STEP.done || (dep.version ?? 0) !== (took[id] ?? 0)
+  })
+}
+
+/** The steps that depend on `id`, directly. */
+export function dependantsOf(plan, id) {
+  return (plan.steps ?? []).filter((s) => (s.after ?? []).includes(id))
+}
+
+// ---------------------------------------------------------------- reopening
+
+/** Why these steps cannot be reopened; empty when they can. */
+export function reopenErrors(plan, ids) {
+  if (!Array.isArray(ids) || !ids.length) return ["Name at least one step to reopen."]
+  const errors = []
+  for (const id of ids) {
+    const step = (plan.steps ?? []).find((s) => s.id === id)
+    if (!step) errors.push(`No step '${id}' in this workflow.`)
+    else if (step.status === STEP.running) errors.push(`'${id}' is running; it is not closed. Tell it what changed with workflow_answer if it asks, or stop it first.`)
+    else if (step.status === STEP.pending) errors.push(`'${id}' has not ${step.reopen ? "started again" : "started"} yet; edit it with workflow_edit_steps instead.`)
+  }
+  return errors
+}
+
+/**
+ * Reopen closed steps, inside a change: each goes back to pending, its last
+ * outcome kept in `previous`, and when it is ready it continues in its own
+ * session, told `note` (driver.js). With `cascade`, every step built on one
+ * of them that is done or running is reopened too, all the way down — a
+ * running one is stopped first, so it does not finish on an old input. Without,
+ * those are left as they are, and are out of date (`stale`) once done.
+ *
+ * Returns the ids reopened and the sessions to interrupt. Throws if any named
+ * step cannot be (reopenErrors); then nothing changes.
+ */
+export function reopenSteps(doc, ids, { note, cascade = false, now = Date.now(), by = "orchestrator" } = {}) {
+  const errors = reopenErrors(doc, ids)
+  if (errors.length) throw new Error(errors.join("\n"))
+  const why = String(note ?? "").trim() || "Reopened."
+  const reopened = []
+  const interrupt = []
+
+  const reopen = (step, text) => {
+    if (step.status === STEP.running && step.sessionUrl) interrupt.push(step.sessionUrl)
+    if (!step.previous) step.previous = []
+    step.previous.push({
+      status: step.status,
+      result: step.result ?? null,
+      error: step.error ?? null,
+      startedAt: step.startedAt ?? null,
+      finishedAt: step.finishedAt ?? null,
+    })
+    step.status = STEP.pending
+    step.reopen = { note: text, at: now, by }
+    step.result = null
+    step.error = null
+    step.finishedAt = null
+    // Its next end is news again.
+    step.reported = false
+    reopened.push(step.id)
+  }
+
+  const byId = new Map(doc.steps.map((s) => [s.id, s]))
+  for (const id of ids) reopen(byId.get(id), why)
+
+  if (cascade) {
+    const queue = [...ids]
+    const seen = new Set(ids)
+    while (queue.length) {
+      const from = queue.shift()
+      for (const dependant of dependantsOf(doc, from)) {
+        if (seen.has(dependant.id)) continue
+        seen.add(dependant.id)
+        // A failed or cancelled step stays closed: reopening it is a decision
+        // of its own. A pending one waits anyway; what it holds up may not.
+        if (dependant.status === STEP.failed || dependant.status === STEP.cancelled) continue
+        if (dependant.status === STEP.done || dependant.status === STEP.running) {
+          reopen(dependant, `'${from}', which this step is built on, was reopened (${why}). Its result may have changed: check yours against it, and revise what no longer holds.`)
+        }
+        queue.push(dependant.id)
+      }
+    }
+  }
+
+  doc.status = PLAN.running
+  doc.finishedAt = null
+  doc.reportedEnd = false
+  return { reopened, interrupt }
+}
+
+/** Why these steps' results cannot be kept as they are; empty when they can. */
+export function keepErrors(plan, ids) {
+  if (!Array.isArray(ids) || !ids.length) return ["Name at least one step to keep."]
+  return ids.flatMap((id) => {
+    const step = (plan.steps ?? []).find((s) => s.id === id)
+    if (!step) return [`No step '${id}' in this workflow.`]
+    if (step.status !== STEP.done) return [`'${id}' is ${step.status}; only a done step has a result to keep.`]
+    if (!staleInputs(plan, step).length) return [`'${id}' is up to date; there is nothing to keep.`]
+    const changed = staleInputs(plan, step).filter((dep) => (plan.steps ?? []).find((s) => s.id === dep)?.status !== STEP.done)
+    if (changed.length) return [`'${id}' is built on ${changed.map((d) => `'${d}'`).join(", ")}, which ${changed.length === 1 ? "is" : "are"} not done: wait for ${changed.length === 1 ? "it" : "them"}, then keep or reopen.`]
+    return []
+  })
+}
+
+/**
+ * Say that these done steps' results still stand on their inputs as they now
+ * are, inside a change: they are up to date again, and what waits on them can
+ * start. Throws if any cannot be kept (keepErrors); then nothing changes.
+ */
+export function keepSteps(doc, ids) {
+  const errors = keepErrors(doc, ids)
+  if (errors.length) throw new Error(errors.join("\n"))
+  for (const id of ids) {
+    const step = doc.steps.find((s) => s.id === id)
+    step.inputs = inputsOf(doc, step)
+    step.staleNoticed = null
+  }
+  wake(doc)
+}
+
+/**
+ * A plan that had settled may have work again — a step kept or rewired is
+ * ready now — so it runs, and its next end is news. A stopped one stays
+ * stopped: only reopening or adding restarts it, by someone's choice.
+ */
+function wake(doc) {
+  if (doc.status !== PLAN.done) return
+  doc.status = PLAN.running
+  doc.finishedAt = null
+  doc.reportedEnd = false
+}
+
+// ---------------------------------------------------------------- editing
+
+/** What workflow_edit_steps may change, on a step that has not started. */
+export const EDITABLE = ["title", "prompt", "why", "after", "where", "tier", "budget", "access"]
+
+/**
+ * Why these edits cannot be made; empty when they can. A step may be edited
+ * while pending; one reopened and waiting to continue takes only `after` and
+ * `budget`, since its session already has its prompt (say what changed in the
+ * reopen note instead). The whole graph is checked as it would be after.
+ */
+export function editErrors(plan, edits) {
+  if (!Array.isArray(edits) || !edits.length) return ["Give at least one edit."]
+  const errors = []
+  const byId = new Map((plan.steps ?? []).map((s) => [s.id, { ...s }]))
+  for (const edit of edits) {
+    const step = byId.get(edit?.id)
+    if (!step) {
+      errors.push(`No step '${edit?.id}' in this workflow.`)
+      continue
+    }
+    if (step.status !== STEP.pending) {
+      errors.push(`'${edit.id}' is ${step.status}; only a step that has not started can be edited. Reopen it first (workflow_reopen) to change what it depends on.`)
+      continue
+    }
+    const fields = Object.keys(edit).filter((k) => k !== "id")
+    const unknown = fields.filter((k) => !EDITABLE.includes(k))
+    if (unknown.length) errors.push(`'${edit.id}': ${unknown.join(", ")} cannot be edited.`)
+    if (step.sessionUrl) {
+      const fixed = fields.filter((k) => !["after", "budget"].includes(k))
+      if (fixed.length) errors.push(`'${edit.id}' was reopened and continues its own session, which already has its ${fixed.join(", ")}; put what changed in the reopen note.`)
+    }
+    const merged = { ...step, ...Object.fromEntries(fields.filter((k) => EDITABLE.includes(k)).map((k) => [k, edit[k]])) }
+    errors.push(...stepFieldErrors(merged, `'${edit.id}'`))
+    for (const dep of merged.after ?? []) {
+      if (dep === edit.id) errors.push(`'${edit.id}' cannot depend on itself.`)
+      else if (!byId.has(dep)) errors.push(`'${edit.id}' depends on '${dep}', which is not a step.`)
+    }
+    byId.set(edit.id, merged)
+  }
+  if (errors.length) return errors
+  const cycle = findCycle([...byId.values()])
+  if (cycle) errors.push(`These steps would depend on each other in a circle: ${cycle.join(" → ")}.`)
+  return errors
+}
+
+/** Apply edits, inside a change. Throws if any cannot be made (editErrors); then nothing changes. */
+export function editSteps(doc, edits) {
+  const errors = editErrors(doc, edits)
+  if (errors.length) throw new Error(errors.join("\n"))
+  for (const edit of edits) {
+    const step = doc.steps.find((s) => s.id === edit.id)
+    for (const key of EDITABLE) {
+      if (!(key in edit)) continue
+      if (key === "after") step.after = [...edit.after]
+      else if (key === "budget") step.budget = Number(edit.budget)
+      else if (key === "access") {
+        if (edit.access === "web") step.access = "web"
+        else delete step.access
+      } else step[key] = edit[key]
+    }
+  }
+  wake(doc)
+}
+
+// ---------------------------------------------------------------- requests
+
+/** Why a step's request is malformed, on its own; empty when it is well formed. The plan checks the rest when it is decided. */
+export function requestErrors(input) {
+  const errors = []
+  if (typeof input?.why !== "string" || !input.why.trim()) errors.push("Say `why`: what you found that calls for it.")
+  const add = input?.add_steps ?? []
+  const reopen = input?.reopen ?? []
+  if (!Array.isArray(add)) errors.push("`add_steps` must be a list of steps.")
+  if (!Array.isArray(reopen) || reopen.some((id) => typeof id !== "string")) errors.push("`reopen` must be a list of step ids.")
+  if (!errors.length && !add.length && !reopen.length) errors.push("Ask for something: `add_steps`, `reopen`, or both.")
+  if (Array.isArray(add)) add.forEach((step, i) => errors.push(...stepFieldErrors(step, `step ${i + 1}${step?.id ? ` ('${step.id}')` : ""}`)))
+  return errors
+}
+
+/** Requests the orchestrator has not decided. */
+export function openRequests(plan) {
+  return (plan?.requests ?? []).filter((r) => r.status === "open")
+}
+
+/** A step's request as the plan keeps it, from its workflow_request call. */
+export function newRequest(stepId, call, now = Date.now()) {
+  const input = call.input ?? {}
+  return {
+    id: String(call.id),
+    stepId,
+    why: String(input.why ?? ""),
+    add: (input.add_steps ?? []).length ? JSON.parse(JSON.stringify(input.add_steps)) : null,
+    reopen: (input.reopen ?? []).length ? [...input.reopen].map(String) : null,
+    status: "open",
+    at: now,
+    decidedAt: null,
+    note: null,
+    reported: false,
+  }
 }
 
 /** What the steps have spent, in dollars, and the budget for it. */
@@ -387,22 +685,10 @@ export function stepPrompt(plan, step) {
     `## Your step: ${step.title}`,
     ``,
     step.prompt,
+    // Cancelled before it began, then reopened: it starts fresh, told why.
+    ...(step.reopen?.note ? [``, `## Note`, ``, String(step.reopen.note)] : []),
   ]
-  const deps = (step.after ?? []).map((id) => byId.get(id)).filter(Boolean)
-  if (deps.length) {
-    lines.push(``, `## What the steps before you found`)
-    for (const dep of deps) {
-      lines.push(``, `### ${dep.title} (${dep.id})`)
-      if (web && dep.access !== "web") {
-        lines.push(WITHHELD)
-        continue
-      }
-      const result = String(dep.result ?? "(no result recorded)")
-      if (result.length <= RESULT_IN_PROMPT) lines.push(result)
-      else if (web) lines.push(`${result.slice(0, RESULT_IN_PROMPT)}\n…(cut; what it kept is in source_list)`)
-      else lines.push(`${result.slice(0, RESULT_IN_PROMPT)}\n…(cut; the full result ends that step's session: ${dep.sessionUrl})`)
-    }
-  }
+  lines.push(...depResults(step, byId, `## What the steps before you found`))
   if (web) {
     lines.push(
       ``,
@@ -423,9 +709,59 @@ export function stepPrompt(plan, step) {
     web
       ? `Your last message is your result, and it is all the orchestrator sees. Make it concrete: what you found, with the web URLs it rests on and the findings you wrote. If you could not do the step, say so and why.`
       : `Your last message is your result, and it is all the orchestrator sees. Make it concrete: what you found or did, with the URLs of anything you changed. If you could not do the step, say so and why.`,
-    `There is usually no one watching this session. Ask the user something only if you truly cannot continue without it.`
+    `There is usually no one watching this session. Ask the user something only if you truly cannot continue without it.`,
+    ``,
+    `## When the work calls for more`,
+    ``,
+    REQUEST_GUIDANCE
   )
   return lines.join("\n")
+}
+
+const REQUEST_GUIDANCE =
+  "If what you find means the workflow needs more steps, or that an earlier step's result is wrong and it should be reopened, ask with workflow_request — the orchestrator decides. Then carry on with your own step: do not wait for an answer, and do not do the other work yourself."
+
+/** The results of a step's dependencies, as a step is handed them, under `heading`. */
+function depResults(step, byId, heading) {
+  const web = step.access === "web"
+  const deps = (step.after ?? []).map((id) => byId.get(id)).filter(Boolean)
+  if (!deps.length) return []
+  const lines = [``, heading]
+  for (const dep of deps) {
+    lines.push(``, `### ${dep.title} (${dep.id})`)
+    if (web && dep.access !== "web") {
+      lines.push(WITHHELD)
+      continue
+    }
+    const result = String(dep.result ?? "(no result recorded)")
+    if (result.length <= RESULT_IN_PROMPT) lines.push(result)
+    else if (web) lines.push(`${result.slice(0, RESULT_IN_PROMPT)}\n…(cut; what it kept is in source_list)`)
+    else lines.push(`${result.slice(0, RESULT_IN_PROMPT)}\n…(cut; the full result ends that step's session: ${dep.sessionUrl})`)
+  }
+  return lines
+}
+
+/**
+ * The message a reopened step's session receives when it continues: why it
+ * was reopened, and what it depends on as it now stands — the same rules as
+ * stepPrompt for what a research step may be handed.
+ */
+export function reopenPrompt(plan, step) {
+  const byId = new Map((plan.steps ?? []).map((s) => [s.id, s]))
+  const last = step.previous?.at(-1)
+  const was = last?.status === STEP.done ? "finished" : last?.status === STEP.failed ? "failed" : last?.status === STEP.cancelled ? "was cancelled" : "stopped"
+  return [
+    `[Your step has been reopened. It ${was} before; carry on from where you are.]`,
+    ``,
+    `## Why`,
+    ``,
+    step.reopen?.note ?? "Reopened.",
+    ...depResults(step, byId, `## What the steps before you found, as it stands now`),
+    ``,
+    `## When you finish`,
+    ``,
+    `Your last message is your result again, and it replaces the one before: make it whole, not a list of changes. ${REQUEST_GUIDANCE}`,
+  ].join("\n")
 }
 
 /**

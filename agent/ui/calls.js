@@ -110,6 +110,15 @@ export const PRESENTATION = {
   workflow_start: { verb: "orchestrate", detail: (i) => (i.title ? `${i.title} · ${i.steps?.length ?? 0} steps` : null) },
   workflow_add_steps: { verb: "extend workflow", detail: (i) => `${i.steps?.length ?? 0} steps` },
   workflow_status: { verb: "check workflow", detail: () => null },
+  workflow_edit_steps: { verb: "edit steps", detail: (i) => (i.steps ?? []).map((x) => x?.id).filter(Boolean).join(", ") || null },
+  workflow_reopen: { verb: "reopen", detail: (i) => (i.steps?.length ? `${i.steps.join(", ")}${i.cascade ? " and what follows" : ""}` : null) },
+  workflow_keep: { verb: "keep results of", detail: (i) => (i.steps ?? []).join(", ") || null },
+  workflow_decide: { verb: "decide request", detail: (i) => (i.request ? `${i.request} · ${i.accept ? "accept" : "decline"}` : null) },
+  workflow_request: {
+    verb: "ask the orchestrator",
+    detail: (i) =>
+      [i.add_steps?.length ? `${i.add_steps.length} more step${i.add_steps.length === 1 ? "" : "s"}` : null, i.reopen?.length ? `reopen ${i.reopen.join(", ")}` : null].filter(Boolean).join(" and ") || null,
+  },
   workflow_stop: { verb: "stop", detail: (i) => (i.steps?.length ? i.steps.join(", ") : "workflow") },
   workflow_answer: { verb: "answer step", detail: (i) => i.step ?? null },
   citations_check: { verb: "check the citations in", detail: (i) => (i.url ? String(i.url).replace(/^automerge:/, "").slice(0, 8) + "…" : null) },

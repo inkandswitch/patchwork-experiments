@@ -101,6 +101,11 @@ export const DEFER_PER_BUSY_MS = 1000
  */
 export function needsWork(doc, canRun = () => true, live = null) {
   if (!doc) return false
+  // Stopped from outside — a workflow cancelled or reopened its step. Nothing
+  // it holds is work until it is spoken to again: a call that finished after
+  // the stop, its result landing last, used to look like work, and a runner
+  // took the cancelled step up again once the stop's lease went stale.
+  if (doc.halted) return false
   // A call whose runner died mid-flight has to be closed out before anything
   // else can happen — whatever else the session is waiting on.
   if (orphanedCalls(doc, live ? { live } : {}).length) return true

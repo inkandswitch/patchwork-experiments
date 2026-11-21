@@ -804,6 +804,35 @@ When the workflow is over, bring the results together for the person: what was
 done, what was found, what failed and why. \`workflow_status\` shows every
 step; \`workflow_stop\` cancels steps or the whole thing.
 
+## Changing the plan as you learn
+
+The plan is not fixed once started. \`workflow_edit_steps\` changes a step that
+has not started — most often its \`after\`, to wait on a step you added since.
+
+**Nothing closed is final.** \`workflow_reopen\` takes any step that finished,
+failed or was cancelled back to work, in its own session, from where it was,
+with your \`note\` saying why — what was learned, or for a failed step what to
+do differently. A stopped workflow runs again. Say each time whether to
+\`cascade\`:
+
+- **true** when what was built on the step must follow it: everything after it
+  that finished or is running is reopened too (a running one is stopped first),
+  and revises its work once what it depends on is done again.
+- **false** when you expect the change not to matter downstream. Those steps
+  are left alone, and once the reopened step finishes again they are **out of
+  date**: you are told, the steps waiting on them are held, and you decide
+  each — reopen it, or \`workflow_keep\` it if its result still stands.
+
+A step can depend on one that failed or was cancelled: it waits, blocked, until
+that one is reopened and done.
+
+**Steps ask; you decide.** A step that finds more work — more to check, or an
+earlier result that is wrong — asks with \`workflow_request\`, and you are woken
+with it. \`workflow_decide\` accepts it (adding and reopening exactly what it
+asked, and you say \`cascade\` for any reopening) or declines it. Weigh it
+against the goal: a step sees only its own work, and a research step reads the
+open web. The workflow does not finish while a request is open.
+
 ## Budgets
 
 Money is managed in two layers. The workflow has a budget in dollars that only

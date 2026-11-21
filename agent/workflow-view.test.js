@@ -3,7 +3,7 @@ import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { WorkflowView, stages } from "./workflow/view.js"
 import { initPlan, PLAN, STEP } from "./workflow/plan.js"
 import { initSession, STATUS, _resetIds } from "./session.js"
-import { _resetDrivers } from "./workflow/driver.js"
+import { _resetDrivers, ensureDriver } from "./workflow/driver.js"
 import { AgentTool } from "./tool.js"
 import { _reset as resetRunners } from "./runners.js"
 
@@ -133,6 +133,51 @@ describe("the workflow view", () => {
     plan.change((d) => Object.assign(d.steps[0], { status: STEP.cancelled, error: "its research scope was removed" }))
     const { element, cleanup } = mount(plan, repo)
     expect(element.querySelector(".agent-wf-error").textContent).toBe("its research scope was removed")
+    cleanup()
+  })
+
+  it("shows a step that is out of date, what steps asked for, and how many times a step has run", async () => {
+    const { repo, plan } = await planWith([step("a"), step("b", { after: ["a"] })], { status: PLAN.done })
+    plan.change((d) => {
+      Object.assign(d.steps[0], { status: STEP.done, result: "A v2", version: 2, previous: [{ status: STEP.done, result: "A v1", error: null, startedAt: 1, finishedAt: 2 }] })
+      Object.assign(d.steps[1], { status: STEP.done, result: "B on A v1", inputs: { a: 1 }, version: 1 })
+      d.requests = [
+        { id: "r1", stepId: "b", why: "A's figure looks off.", add: null, reopen: ["a"], status: "open", at: 3, decidedAt: null, note: null, reported: false },
+        { id: "r2", stepId: "b", why: "Another source.", add: [step("c")], reopen: null, status: "declined", at: 4, decidedAt: 5, note: null, reported: true },
+      ]
+    })
+    const { element, cleanup } = mount(plan, repo)
+    const [a, b] = element.querySelectorAll(".agent-wf-step")
+    expect(b.dataset.state).toBe("stale")
+    expect(b.querySelector(".agent-wf-chip").textContent).toBe("out of date")
+    expect(b.querySelector(".agent-wf-stale").textContent).toMatch(/^Out of date: built on a as it was before/)
+    expect(b.querySelector("summary").textContent).toBe("B on A v1")
+    expect([...b.querySelectorAll(".agent-wf-request")].map((r) => [r.dataset.status, r.textContent])).toEqual([
+      ["open", "Asks to reopen a: A's figure looks off.waiting on the orchestrator"],
+      ["declined", "Asks to add c: Another source.declined"],
+    ])
+    expect(a.textContent).toContain("run 2")
+    cleanup()
+  })
+
+  it("offers Resume on a failed step, which reopens it to continue in its own session", async () => {
+    const { repo, plan } = await planWith([step("a"), step("b", { after: ["a"] })], { status: PLAN.done })
+    const session = repo.create({})
+    session.change((d) => initSession(d, {}))
+    plan.change((d) => Object.assign(d.steps[0], { status: STEP.failed, error: "it broke", sessionUrl: session.url }))
+    await ensureDriver(plan.url, { repo, startSession: async () => null, confirmMs: 0, settleMs: 10 })
+    const { element, cleanup } = mount(plan, repo)
+    const cards = element.querySelectorAll(".agent-wf-step")
+    expect(cards[1].querySelector("button")?.textContent ?? null).not.toBe("Resume")
+    const resume = [...cards[0].querySelectorAll("button")].find((b) => b.textContent === "Resume")
+    resume.click()
+    await tick()
+    const a = plan.doc().steps[0]
+    expect(a.previous.map((p) => [p.status, p.error])).toEqual([[STEP.failed, "it broke"]])
+    expect(plan.doc().status).toBe(PLAN.running)
+    // It continues in the same session, told it was resumed.
+    expect(await (async () => { for (let i = 0; i < 50 && plan.doc().steps[0].status !== STEP.running; i++) await tick(); return plan.doc().steps[0] })()).toMatchObject({ status: STEP.running, sessionUrl: session.url })
+    expect(String(session.doc().turns.at(-1).blocks[0].text)).toContain("Resumed by the person")
     cleanup()
   })
 

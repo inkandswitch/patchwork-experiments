@@ -11,7 +11,7 @@
  * running when its tab closed resumes when anyone opens it again.
  */
 
-import { states, STATE, PLAN, DEFAULT_LIMITS, budgetOf, stepBudget } from "./plan.js"
+import { states, STATE, PLAN, DEFAULT_LIMITS, budgetOf, stepBudget, staleInputs, reopenSteps } from "./plan.js"
 import { budgetWaiting } from "./waiting.js"
 import { renderBudgetItem } from "../ui/waiting.js"
 import { formatCost, STATUS, sessionTitle } from "../session.js"
@@ -43,6 +43,7 @@ const STATE_LABEL = {
   [STATE.running]: "running",
   [STATE.needsInput]: "needs you",
   [STATE.done]: "done",
+  [STATE.stale]: "out of date",
   [STATE.failed]: "failed",
   [STATE.cancelled]: "cancelled",
 }
@@ -205,6 +206,9 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       el("span", "agent-wf-badge", `${step.tier} · ${shortModel(step.model ?? handle.doc()?.tiers?.[step.tier])}`)
     )
     if (step.after?.length) meta.append(el("span", "agent-wf-after", `after ${step.after.join(", ")}`))
+    // A step reopened has run before; how many times is part of its story.
+    const runs = (step.previous?.length ?? 0) + (step.status === "pending" ? 0 : 1)
+    if (runs > 1) meta.append(el("span", "agent-wf-badge", `run ${runs}`))
     card.append(meta)
     if (step.access === "web") {
       const { sources, findings } = keptCounts(handle.doc(), step.id)
@@ -229,13 +233,39 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       }
     }
 
-    if (step.result && state === STATE.done) {
+    if (step.reopen) card.append(el("p", "agent-wf-why", `Reopened: ${step.reopen.note}`))
+    if (state === STATE.stale) {
+      card.append(el("p", "agent-wf-stale", `Out of date: built on ${staleInputs(handle.doc(), step).join(", ")} as it was before. Steps waiting on it are held until the orchestrator reopens or keeps it.`))
+    }
+    if (step.result && (state === STATE.done || state === STATE.stale)) {
       const details = el("details", "agent-wf-result")
       details.append(el("summary", null, step.result.split("\n").find((l) => l.trim()) ?? "result"))
       details.append(el("pre", null, step.result))
       card.append(details)
     }
     if (step.error && (state === STATE.failed || state === STATE.cancelled)) card.append(el("p", "agent-wf-error", step.error))
+
+    // What it asked the orchestrator for, and what became of it.
+    for (const r of (handle.doc().requests ?? []).filter((x) => x.stepId === step.id)) {
+      const asks = [r.add?.length ? `add ${r.add.map((x) => x.id).join(", ")}` : null, r.reopen?.length ? `reopen ${r.reopen.join(", ")}` : null].filter(Boolean).join(" and ")
+      const line = el("p", "agent-wf-request", `Asks to ${asks}: ${r.why}`)
+      line.dataset.status = r.status
+      line.append(el("span", "agent-wf-chip", r.status === "open" ? "waiting on the orchestrator" : r.status))
+      card.append(line)
+    }
+
+    // A person can resume a step that failed or was cancelled, as it was:
+    // reopening a finished one, or with a note, is the orchestrator's.
+    if (repo && (state === STATE.failed || state === STATE.cancelled)) {
+      const resume = el("button", "agent-wf-open", "Resume")
+      resume.addEventListener("click", async (event) => {
+        event.preventDefault()
+        handle.change((d) => reopenSteps(d, [step.id], { note: "Resumed by the person: carry on from where you were.", cascade: false, by: "person" }))
+        const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo }))
+        driver.kick()
+      })
+      card.append(resume)
+    }
 
     if (step.sessionUrl) {
       const open = el("button", "agent-wf-open", state === STATE.needsInput ? "Answer in its session" : "Open session")

@@ -48,7 +48,7 @@ export const KERNEL_TYPES = ["agent-session", "agent-workflow"]
  * someone else's code, and a step fetches anything without asking, so a
  * plugin is never there by default.
  */
-export const SCOPED_TOOL_IDS = ["web_search", "web_fetch", "http_request", "source_read", "source_list", "finding_write", "session_recall"]
+export const SCOPED_TOOL_IDS = ["web_search", "web_fetch", "http_request", "source_read", "source_list", "finding_write", "session_recall", "workflow_request"]
 
 export const NOT_A_SOURCE = "Not one of this workflow's sources."
 export const EDITED_OUTSIDE = "This finding changed outside the research steps; write a new one."

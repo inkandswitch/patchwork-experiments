@@ -296,6 +296,10 @@ describe("whatever a research step is handed, it reaches only the web and its wo
       ["cites", (v) => ({ text: "cited", cites: v === undefined ? undefined : [v] })],
     ],
     session_recall: [["callId", (v) => ({ callId: v })]],
+    workflow_request: [
+      ["why", (v) => ({ why: v, reopen: ["r"] })],
+      ["reopen", (v) => ({ why: "found", reopen: v === undefined ? undefined : [v] })],
+    ],
   }
 
   const heads = () => new Map(Object.values(w.repo.handles).filter((h) => h.doc()).map((h) => [h.documentId, h.heads().join()]))

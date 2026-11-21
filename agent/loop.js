@@ -1100,6 +1100,8 @@ export function say(store, text, author = null, context = null, attachments = []
     }
     d.turns.push(makeTurn("user", blocks, { author }))
     d.status = STATUS.idle
+    // Speaking to a halted session is deciding it should carry on.
+    if (d.halted) d.halted = null
   })
 }
 
