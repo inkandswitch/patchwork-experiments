@@ -245,6 +245,39 @@ describe("the workflow view keeps your place", () => {
     cleanup()
   })
 
+  it("a step streaming leaves an opened result open, scrolled where you left it, and its buttons in place", async () => {
+    const { repo, plan } = await planWith([step("a"), step("b")], { status: PLAN.stopped })
+    const child = repo.create({})
+    child.change((d) => { initSession(d, {}); d.status = STATUS.running })
+    plan.change((d) => {
+      Object.assign(d.steps[0], { status: STEP.done, result: "Found 3 problems\nmore detail" })
+      Object.assign(d.steps[1], { status: STEP.running, sessionUrl: child.url })
+    })
+    const { element, cleanup } = mount(plan, repo)
+    await tick()
+    const details = element.querySelector(".agent-wf-result")
+    details.open = true
+    const pre = details.querySelector("pre")
+    pre.scrollTop = 80
+    const open = element.querySelectorAll(".agent-wf-step")[1].querySelector(".agent-wf-open")
+    // The running step's session changes, as it does many times a second while it streams.
+    for (let i = 0; i < 3; i++) {
+      child.change((d) => { d.usage = { in: 1000 * (i + 1), out: 10, cost: 0.01 * (i + 1) } })
+      await tick()
+    }
+    expect(element.querySelectorAll(".agent-wf-step")[1].querySelector(".agent-wf-activity").textContent).toContain("3k tokens")
+    expect(element.querySelector(".agent-wf-result")).toBe(details)
+    expect(details.open).toBe(true)
+    expect(details.querySelector("pre")).toBe(pre)
+    expect(pre.scrollTop).toBe(80)
+    expect(element.querySelectorAll(".agent-wf-step")[1].querySelector(".agent-wf-open")).toBe(open)
+    const opened = []
+    element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail.url))
+    open.click()
+    expect(opened).toEqual([child.url])
+    cleanup()
+  })
+
   it("waits while you type in it, and catches up when you stop", async () => {
     const { repo, plan } = await planWith([step("a")], { status: PLAN.stopped })
     const { element, cleanup } = mount(plan, repo)

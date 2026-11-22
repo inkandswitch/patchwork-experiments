@@ -19,6 +19,7 @@ import { activityOf } from "../ui/attention.js"
 import { drivePlanHere, getDriver, keptCounts } from "./driver.js"
 import { waitingIn } from "./waiting.js"
 import { renderWaitingItem } from "../ui/waiting.js"
+import { morph } from "../ui/morph.js"
 
 const STYLE_MARK = "data-patchwork-agent-styles"
 function ensureStyles() {
@@ -164,6 +165,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
         : { [STATE.needsInput]: "needs you", [STATE.running]: "working", [STATE.failed]: "stopped", [STATE.waiting]: "waiting for steps", [STATE.done]: "idle" }[state]
 
     const card = el("article", "agent-wf-step agent-wf-orchestrator")
+    card.dataset.key = "orchestrator"
     card.dataset.state = state
     const head = el("div", "agent-wf-step-head")
     head.append(el("span", "agent-wf-chip", label), el("strong", null, (doc && sessionTitle(doc)) || "Orchestrator"), moneyChip(doc?.usage?.cost ?? 0, null, doc?.usage?.costEstimated))
@@ -177,19 +179,15 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     // What it waits on you for, answerable here.
     const orchestratorHandle = sessions.get(url)?.handle
     for (const item of waits) {
-      card.append(renderWaitingItem({ ...item, handle: orchestratorHandle, stepTitle: "Orchestrator" }, { showStep: false }))
+      card.append(whole(renderWaitingItem({ ...item, handle: orchestratorHandle, stepTitle: "Orchestrator" }, { showStep: false })))
     }
-    const open = el("button", "agent-wf-open", waits.length ? "Answer in its session" : "Open session")
-    open.addEventListener("click", (event) => {
-      event.preventDefault()
-      openDoc(url)
-    })
-    card.append(open)
+    card.append(opener(waits.length ? "Answer in its session" : "Open session", url))
     return card
   }
 
   function stepCard(step, state) {
     const card = el("article", "agent-wf-step")
+    card.dataset.key = `step:${step.id}`
     card.dataset.state = state
 
     const head = el("div", "agent-wf-step-head")
@@ -229,7 +227,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     if (state === STATE.needsInput) {
       const childHandle = sessions.get(step.sessionUrl)?.handle
       for (const item of waitingIn(session)) {
-        card.append(renderWaitingItem({ ...item, handle: childHandle, stepTitle: step.title }, { showStep: false }))
+        card.append(whole(renderWaitingItem({ ...item, handle: childHandle, stepTitle: step.title }, { showStep: false })))
       }
     }
 
@@ -258,35 +256,27 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     // reopening a finished one, or with a note, is the orchestrator's.
     if (repo && (state === STATE.failed || state === STATE.cancelled)) {
       const resume = el("button", "agent-wf-open", "Resume")
-      resume.addEventListener("click", async (event) => {
-        event.preventDefault()
-        handle.change((d) => reopenSteps(d, [step.id], { note: "Resumed by the person: carry on from where you were.", cascade: false, by: "person" }))
-        const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo }))
-        driver.kick()
-      })
+      resume.dataset.wfResume = step.id
       card.append(resume)
     }
 
-    if (step.sessionUrl) {
-      const open = el("button", "agent-wf-open", state === STATE.needsInput ? "Answer in its session" : "Open session")
-      open.addEventListener("click", (event) => {
-        event.preventDefault()
-        openDoc(step.sessionUrl)
-      })
-      card.append(open)
-    }
+    if (step.sessionUrl) card.append(opener(state === STATE.needsInput ? "Answer in its session" : "Open session", step.sessionUrl))
     return card
   }
 
   /**
-   * Rebuild the view, keeping the person's place.
+   * Bring the view up to date, keeping the person's place.
    *
-   * Built off the page and swapped in at once: emptying the root first
-   * collapsed it for a moment, the browser clamped the scroll to the top, and
-   * a person reading further down was thrown back up every time a step's
-   * session changed — several times a second while one streamed. A render
-   * also waits while something in the view is being typed into, so an answer
-   * half-written in a step's card is not wiped.
+   * Built off the page, then morphed into the live view (ui/morph.js): only
+   * what changed is touched. Rebuilding it outright on every change — several
+   * times a second while a step streams — shut any result a person had opened,
+   * so the page shrank and the scroll jumped; put a result's scroll box back
+   * at its top; and dropped clicks whose press and release straddled a
+   * rebuild. So nothing here listens on a node of its own: clicks are
+   * delegated to the root and read what to do from `data-wf-*` attributes,
+   * and the waiting items, which bring their own listeners, are kept whole.
+   * A render also waits while something in the view is being typed into, so
+   * an answer half-written in a step's card is not wiped.
    */
   function render() {
     if (disposed) return
@@ -295,15 +285,49 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       return
     }
     held = false
-    const top = root.scrollTop
-    const left = root.querySelector(".agent-wf-board")?.scrollLeft ?? 0
     const out = document.createDocumentFragment()
     build(out)
-    root.replaceChildren(out)
-    root.scrollTop = top
-    const board = root.querySelector(".agent-wf-board")
-    if (board) board.scrollLeft = left
+    morph(root, out)
   }
+
+  /** A button that opens a document; the root's click handler reads the url. */
+  function opener(label, url) {
+    const button = el("button", "agent-wf-open", label)
+    button.dataset.wfOpen = url
+    return button
+  }
+
+  /** Mark an element that brings its own listeners, for morph to keep whole. */
+  function whole(node) {
+    node.dataset.morph = "whole"
+    return node
+  }
+
+  const actions = {
+    goal() {
+      goalOpen = !goalOpen
+      render()
+    },
+    async stop() {
+      const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo }))
+      await driver.cancel()
+    },
+  }
+  async function resume(stepId) {
+    handle.change((d) => reopenSteps(d, [stepId], { note: "Resumed by the person: carry on from where you were.", cascade: false, by: "person" }))
+    const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo }))
+    driver.kick()
+  }
+  const onClick = (event) => {
+    const target = event.target?.closest?.("[data-wf-open], [data-wf-resume], [data-wf-action]")
+    if (!target || !root.contains(target)) return
+    event.preventDefault()
+    const { wfOpen, wfResume, wfAction } = target.dataset
+    if (wfOpen) openDoc(wfOpen)
+    else if (wfResume) resume(wfResume)
+    else actions[wfAction]?.()
+  }
+  root.addEventListener("click", onClick)
 
   /** Is the person typing into this view? */
   function typing() {
@@ -347,11 +371,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     // Long goals — a whole brief — pushed the board off the screen.
     if (String(plan.goal ?? "").length > GOAL_FOLD) {
       const toggle = el("button", "agent-wf-goal-toggle", goalOpen ? "Show less" : "Show the whole goal")
-      toggle.addEventListener("click", (event) => {
-        event.preventDefault()
-        goalOpen = !goalOpen
-        render()
-      })
+      toggle.dataset.wfAction = "goal"
       header.append(toggle)
     }
 
@@ -370,35 +390,28 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       .join(" · ")
     header.append(summary)
 
-    const actions = el("div", "cluster")
+    const buttons = el("div", "cluster")
     if (plan.sourcesFolderUrl) {
       // What the research steps kept, filed for people. Shown once there is
       // something in it; the count is the ledger's, which the folder follows.
       const { sources, findings } = keptCounts(plan)
       if (sources + findings) {
         const kept = el("button", "agent-wf-sources", `Sources (${sources + findings})`)
-        kept.addEventListener("click", (event) => {
-          event.preventDefault()
-          openDoc(plan.sourcesFolderUrl)
-        })
-        actions.append(kept)
+        kept.dataset.wfOpen = plan.sourcesFolderUrl
+        buttons.append(kept)
       }
     }
     if (plan.status === PLAN.running) {
       const stop = el("button", null, "Stop workflow")
       stop.dataset.variant = "danger"
-      stop.addEventListener("click", async (event) => {
-        event.preventDefault()
-        const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo }))
-        await driver.cancel()
-      })
-      actions.append(stop)
+      stop.dataset.wfAction = "stop"
+      buttons.append(stop)
     }
-    header.append(actions)
+    header.append(buttons)
     // Paused for its budget: say so first, with Resume.
     const paused = budgetWaiting(plan, handle.url, handle)
     if (paused) {
-      const banner = renderBudgetItem({ ...paused, repo }, { showStep: false })
+      const banner = whole(renderBudgetItem({ ...paused, repo }, { showStep: false }))
       banner.classList.add("agent-wf-paused")
       header.append(banner)
     }
@@ -434,6 +447,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
   return () => {
     disposed = true
     handle.off("change", onChange)
+    root.removeEventListener("click", onClick)
+    root.removeEventListener("focusout", onFocusOut)
     for (const entry of sessions.values()) entry.off()
     root.remove()
   }
