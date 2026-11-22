@@ -1298,6 +1298,27 @@ three steps at every combination of versions, as well as the earlier spaces
 (`workflow-plan.test.js`); reopening, cascade, keeping, editing and requests
 run end to end with real sessions in `workflow-reopen.test.js`.
 
+**A step's session says where its step stands**, under its header and live
+with the plan: running, waiting for another step, done (and who uses its
+result), out of date (and what changed), failed, cancelled, and what the whole
+workflow is doing when it is paused, stopped or finished. The session that
+started a workflow shows it at a glance. A message to a step goes straight in
+only while the step is running. To any other step it waits for a choice:
+
+- **a question, in a side thread** — a copy of the step's session
+  (`repo.clone`) that is no longer a step (`workflow/aside.js`). It keeps the
+  step's model, tools, permissions and, for a research step, its confinement;
+  it loses the step's budget and the tool for asking the orchestrator for
+  work. The driver never reads it, so nothing said there is the step's result,
+  and the step never sees it if it is reopened later. Further questions
+  continue the same side thread until the step moves on.
+- **reopening the step with it**, alone or with the steps built on it —
+  exactly `workflow_reopen` done by the person, with the message as the note.
+
+What a message to a step does is checked over every state of three chained
+steps in `workflow-standing.test.js`, and in the panel in
+`tool-standing.test.js`.
+
 Workflows are on by default. Limits are per session: steps at once (3), steps
 in all (24), and a budget in dollars ($20) for what the steps spend together, as OpenRouter reports it: spent with work still to start, the plan pauses, the orchestrator is told, and the person is offered Resume (the strip, the pop-over, the workflow view). Each step has a budget of its own, set by the orchestrator or its tier's default (fast $0.50, standard $2, deep $5); a step that spends it stops part-way and the orchestrator decides — `workflow_budget` for more, `workflow_stop`, or new steps. Every step runs in the tab today, because the SharedWorker runner is
 still opt-in (below); `where` already decides which tools a step gets, so a

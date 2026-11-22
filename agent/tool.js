@@ -29,6 +29,8 @@ import { waitingIn } from "./workflow/waiting.js"
 import { markCitations } from "./ui/citations.js"
 import { attachmentTray, carriesAttachments, pastedImages } from "./ui/attachments.js"
 import { workflowOf } from "./workflow/plan.js"
+import { watchStanding, renderStandingLine, gateOf, renderChoices, placeOf } from "./ui/standing.js"
+import { askAside } from "./workflow/aside.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import {
   getProvider,
@@ -192,6 +194,13 @@ export function AgentTool(handle, element, options = {}) {
   }
   const waiting = repo ? watchWaiting(repo, handle, () => renderStrip()) : null
 
+  // Where this session stands in its workflow, kept up with the plan: a
+  // step's state, a workflow at a glance, or the step a side thread is about.
+  const standingLine = el("div", "agent-standing")
+  standingLine.hidden = true
+  header.after(standingLine)
+  const standing = repo ? watchStanding({ repo, handle, onChange: () => render() }) : null
+
   // ---- composer --------------------------------------------------------
   const input = document.createElement("textarea")
   input.placeholder = "Ask for a change…"
@@ -212,7 +221,11 @@ export function AgentTool(handle, element, options = {}) {
   // What is waiting to go with the next message: documents dragged in,
   // files dropped, images pasted (ui/attachments.js).
   const tray = attachmentTray({ repo, onChange: () => render() })
-  composer.append(tray.element, input, row)
+  // A message to a step that is not running needs a choice before it goes:
+  // a question in a side thread, or reopening the step (ui/standing.js).
+  const choices = el("div", "agent-send-choices")
+  choices.hidden = true
+  composer.append(tray.element, input, choices, row)
   composer.addEventListener("dragover", (event) => {
     if (!carriesAttachments(event.dataTransfer)) return
     event.preventDefault()
@@ -618,6 +631,20 @@ export function AgentTool(handle, element, options = {}) {
     if (wantDictation) stopListening()
     const text = input.value.trim()
     if (!text && !tray.size()) return
+    // A step's session takes a message straight only while its step runs.
+    // Until its plan has loaded, nothing is sent: the message waits in the box.
+    const now = standing?.current() ?? null
+    if (placeOf(handle.doc())?.role === "step" && !now) {
+      choices.replaceChildren(el("span", "agent-choices-say", "Loading this step's workflow… send again in a moment."))
+      choices.hidden = false
+      return
+    }
+    const gate = gateOf(now)
+    if (gate) {
+      renderChoices(choices, gate, { pick: (choice) => sendAs(choice, now), attachments: tray.size() > 0 })
+      choices.hidden = false
+      return
+    }
     input.value = ""
     // An attachment still being read or kept is waited for, briefly: it was
     // dropped to go with this message.
@@ -628,6 +655,35 @@ export function AgentTool(handle, element, options = {}) {
     say(store, text || "(attached)", await myContactUrl(), context, attachments)
     render()
     kick()
+  }
+
+  /** Send what is in the box as the choice made for a gated step. */
+  async function sendAs(choice, now) {
+    choices.hidden = true
+    if (choice === "cancel") return input.focus()
+    const text = input.value.trim()
+    try {
+      if (choice === "ask") {
+        for (let waited = 0; tray.pending() && waited < 10_000; waited += 100) await new Promise((resolve) => setTimeout(resolve, 100))
+        const attachments = tray.take()
+        const context = (await contextFor?.().catch(() => null)) ?? null
+        input.value = ""
+        onOpenDoc(await askAside(repo, handle, text || "(attached)", { author: await myContactUrl(), context, attachments }))
+      } else {
+        const { getDriver, drivePlanHere } = await import("./workflow/driver.js")
+        const driver = getDriver(now.planUrl) ?? (await drivePlanHere(now.planUrl, { repo }))
+        await driver.reopen([now.stepId], { note: text, cascade: choice === "reopen-later", by: "person" })
+        input.value = ""
+      }
+    } catch (err) {
+      // Said where the choice was made, which stays up while the step still
+      // takes no message straight; the message is still in the box.
+      render()
+      choices.replaceChildren(el("span", "agent-choices-say", `Could not send: ${err?.message ?? err}`))
+      choices.hidden = false
+      return
+    }
+    render()
   }
 
   function onDecide(callId, decision) {
@@ -1002,6 +1058,13 @@ export function AgentTool(handle, element, options = {}) {
 
     uiState.subject = doc.subject ?? null
     renderWorkflowLink(doc)
+    standing?.refresh(doc)
+    const place = standing?.current() ?? null
+    renderStandingLine(standingLine, place, { openDoc: onOpenDoc })
+    const gate = gateOf(place)
+    input.placeholder = gate?.placeholder ?? "Ask for a change…"
+    // The step started running again meanwhile: a message goes straight to it.
+    if (!gate) choices.hidden = true
     renderTranscript(transcript, doc, uiState, {
       decide: onDecide,
       answer: onAnswer,
@@ -1152,6 +1215,7 @@ export function AgentTool(handle, element, options = {}) {
     if (wantDictation) stopListening()
     workspace?.dispose()
     waiting?.dispose()
+    standing?.dispose()
     detachView?.()
     workerRunner?.close()
     root.remove()

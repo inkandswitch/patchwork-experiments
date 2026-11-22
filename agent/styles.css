@@ -138,6 +138,49 @@
 .patchwork-agent .agent-workflow-link:hover { background: var(--agent-surface); }
 .patchwork-agent .agent-workflow-link[hidden] { display: none; }
 
+/* Where this session stands in its workflow (ui/standing.js). */
+.patchwork-agent .agent-standing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--agent-muted);
+  border-bottom: 1px solid var(--agent-border);
+  background: var(--agent-surface);
+}
+.patchwork-agent .agent-standing[hidden] { display: none; }
+.patchwork-agent .agent-standing strong { color: var(--agent-fg); font-weight: 600; }
+.patchwork-agent .agent-standing-chip {
+  flex: none;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--agent-surface-2);
+  color: var(--agent-fg);
+}
+.patchwork-agent .agent-standing[data-state="running"] .agent-standing-chip { background: var(--agent-accent); color: var(--agent-accent-line); }
+.patchwork-agent .agent-standing[data-state="needs-input"] .agent-standing-chip { background: var(--agent-warning); color: var(--agent-bg); }
+.patchwork-agent .agent-standing[data-state="done"] .agent-standing-chip { color: var(--agent-added); }
+.patchwork-agent .agent-standing[data-state="stale"] .agent-standing-chip { color: var(--agent-warning); }
+.patchwork-agent .agent-standing[data-state="failed"] .agent-standing-chip { color: var(--agent-danger-text); }
+.patchwork-agent .agent-standing-run { color: var(--agent-faint); }
+.patchwork-agent .agent-standing-detail::before,
+.patchwork-agent .agent-standing-plan::before { content: "· "; }
+.patchwork-agent .agent-standing-plan { color: var(--agent-warning); }
+.patchwork-agent .agent-standing-link { color: var(--agent-accent-text); }
+
+/* The choice a message to a step that is not running needs before it goes. */
+.patchwork-agent .agent-send-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  font-size: 0.8rem;
+}
+.patchwork-agent .agent-send-choices[hidden] { display: none; }
+.patchwork-agent .agent-choices-say { color: var(--agent-muted); flex-basis: 100%; }
+
 /* ---- Transcript -------------------------------------------------------- */
 
 .patchwork-agent .agent-transcript {

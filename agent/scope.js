@@ -374,10 +374,15 @@ export async function admitScoped(plugins = []) {
  * Loaded late: the tool registry imports the workflow driver, which imports
  * the runner, which imports this.
  */
-export async function scopedToolset({ plugins = [] } = {}) {
+export async function scopedToolset({ plugins = [], step = true } = {}) {
   const { BUILTIN_TOOLS, SCOPED_VARIANTS, UNSCOPED_ONLY_IDS, toSchema } = await import("./tools/index.js")
+  const { STEP_TOOL_IDS } = await import("./workflow/plan.js")
   const byId = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
-  const builtins = SCOPED_TOOL_IDS.filter((id) => !UNSCOPED_ONLY_IDS.includes(id)).map((id) => SCOPED_VARIANTS[id] ?? byId.get(id))
+  // A confined session that is not a step — a side thread copied from one
+  // (workflow/aside.js) — keeps the step's confinement but has no orchestrator
+  // to ask for work, so it does not get the tools for asking.
+  const ids = SCOPED_TOOL_IDS.filter((id) => !UNSCOPED_ONLY_IDS.includes(id) && (step || !STEP_TOOL_IDS.includes(id)))
+  const builtins = ids.map((id) => SCOPED_VARIANTS[id] ?? byId.get(id))
   if (builtins.some((t) => !t)) throw new Error("A research step's tool is missing from the registry.")
   const frozen = Object.freeze([...builtins, ...(await admitScoped(plugins))])
   const index = new Map(frozen.map((t) => [t.id, t]))
