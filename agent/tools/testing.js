@@ -244,6 +244,43 @@ async function runInPage(file, code, options, { engine, runBundle = defaultRunBu
   }
 }
 
+const AUTOMERGE_SLIM = "@automerge/automerge/slim"
+const AUTOMERGE_WASM = /\/automerge[^/]*\.wasm(\?|$)/
+
+/**
+ * What a fresh worker needs before a test's imports work as they do in the
+ * page. Patchwork's importmap serves automerge's slim build, which the page's
+ * boot initialises with its wasm (initializeWasm); a worker gets the module
+ * uninitialised, and the first Repo dies with "Automerge.use() not called".
+ * So the worker initialises it the same way, from the wasm this page loaded
+ * (its resource timings name the build's own hashed copy).
+ *
+ * @returns {{ automerge: string, wasm: string } | null}
+ */
+export function workerPreparation(importMap, { resources = pageResources(), origin = pageOrigin() } = {}) {
+  const automerge = importMap?.[AUTOMERGE_SLIM]
+  if (!automerge) return null
+  const loaded = resources.find((name) => AUTOMERGE_WASM.test(new URL(name, "http://x").pathname))
+  const wasm = loaded ?? (origin ? new URL("/automerge.wasm", origin).href : null)
+  return wasm ? { automerge, wasm } : null
+}
+
+function pageResources() {
+  try {
+    return globalThis.performance?.getEntriesByType?.("resource").map((e) => e.name) ?? []
+  } catch {
+    return []
+  }
+}
+
+function pageOrigin() {
+  try {
+    return new URL(globalThis.document.baseURI).origin
+  } catch {
+    return null
+  }
+}
+
 /** Run one bundle in a fresh module worker (test-worker.js). Replaceable in tests. */
 function defaultRunInWorker(file, code, options, { deadlineMs = WORKER_FILE_DEADLINE_MS } = {}) {
   return new Promise((resolve) => {
@@ -323,6 +360,7 @@ export const packageTest = {
     const baseUrl = ctx.packageBaseUrl ?? packageBaseUrl(input.url)
     const engine = await loadEngine()
     const options = { testTimeout: input.timeoutMs ?? 5000 }
+    const prepare = host === "worker" ? (ctx.workerPreparation ?? workerPreparation(importMap)) : null
     const fileResults = []
 
     for (const file of testFiles) {
@@ -355,7 +393,7 @@ export const packageTest = {
       const report =
         host === "page"
           ? await runInPage(file, bundle, options, { engine, runBundle: ctx.runBundle })
-          : await (ctx.runInWorker ?? defaultRunInWorker)(file, bundle, options)
+          : await (ctx.runInWorker ?? defaultRunInWorker)(file, bundle, { ...options, prepare })
       fileResults.push({ file, ...report })
     }
 

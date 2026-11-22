@@ -8,14 +8,32 @@
  * file, so a file that never finishes can be terminated without taking the
  * tab with it.
  *
- *   in:  { file, code, options }
+ * What the page set up before any package ran, the worker sets up itself:
+ * `options.prepare` names Patchwork's slim automerge and its wasm, which the
+ * page's boot initialised and a fresh worker hasn't (testing.js,
+ * workerPreparation).
+ *
+ *   in:  { file, code, options: { prepare?, ...runFile's options } }
  *   out: { results, error?, unhandled, logged }
  */
 
 import * as engine from "./vendor/vitest-engine.js"
 import { createRuntime, captureConsole } from "./vitest-runtime.js"
 
+async function prepareHost(prepare) {
+  if (!prepare?.automerge) return
+  const automerge = await import(/* @vite-ignore */ prepare.automerge)
+  if (automerge.isWasmInitialized?.()) return
+  await automerge.initializeWasm(new Request(prepare.wasm))
+}
+
 self.onmessage = async ({ data: { file, code, options } }) => {
+  try {
+    await prepareHost(options?.prepare)
+  } catch (err) {
+    self.postMessage({ error: `could not initialise automerge's wasm in the worker: ${err?.message ?? err}`, logged: [] })
+    return
+  }
   const runtime = createRuntime(engine)
   globalThis.__patchworkVitest = runtime.api
   const consoled = captureConsole()

@@ -9,11 +9,22 @@
  * The package under test deliberately contains one passing test and one failing
  * one, because a runner that only ever reports success is not a runner.
  *
- * Usage: node probes/browser-test.mjs [--package automerge:…]
+ * Runs it in a page and in a worker (package_test's `in`). With --target, it
+ * also runs an existing package's own tests in both, and prints the reports.
+ *
+ * A fresh profile syncs the agent folder after the shell boots, and an early
+ * read runs whatever version arrived first. --heads (the root heads
+ * `pushwork sync` printed) makes it wait for the version just published.
+ *
+ * Pinning the root folder doesn't pin the documents beneath it, so it also
+ * waits until the files on the test path read as they do on disk here.
+ *
+ * Usage: node probes/browser-test.mjs [--package automerge:…] [--heads …]
+ *          [--target automerge:… [--target-dir <its folder on disk>]]
  */
 
 import { spawn } from "node:child_process"
-import { readFileSync, mkdtempSync } from "node:fs"
+import { readFileSync, readdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -30,6 +41,35 @@ const PACKAGE =
   option("package", null) ??
   JSON.parse(readFileSync(join(here, "..", ".pushwork", "config.json"), "utf8")).rootUrl
 const PORT = Number(option("port", String(9400 + Math.floor(Math.random() * 400))))
+const TARGET = option("target", null)
+const HEADS = option("heads", null)
+// --target-dir: the target package on disk, as published; the probe waits
+// until the browser has those files before running the target's tests.
+const TARGET_DIR = option("target-dir", null)
+function textFiles(root, dir = "", out = {}) {
+  for (const e of readdirSync(join(root, dir), { withFileTypes: true })) {
+    if (["node_modules", "dist"].includes(e.name) || e.name.startsWith(".")) continue
+    const rel = dir ? `${dir}/${e.name}` : e.name
+    if (e.isDirectory()) textFiles(root, rel, out)
+    else if (/\.(m?[jt]sx?|json|md|ya?ml)$/.test(e.name)) out[rel] = readFileSync(join(root, rel), "utf8")
+  }
+  return out
+}
+const TARGET_FILES = TARGET_DIR ? textFiles(TARGET_DIR) : {}
+// The test path's modules, as this checkout has them (the version synced).
+const ON_DISK = Object.fromEntries(
+  [
+    "tools/testing.js",
+    "tools/test-worker.js",
+    "tools/vitest-runtime.js",
+    "tools/vendor/vitest-engine.js",
+    "tools/build.js",
+    "tools/format.js",
+    "tools/folders.js",
+    "tools/host.js",
+    "worker-client.js",
+  ].map((path) => [path, readFileSync(join(here, "..", path), "utf8")])
+)
 const CHROME = option("chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -130,10 +170,35 @@ try {
       // Import the agent's modules PINNED TO HEADS. An unpinned URL is served
       // from the browser's module cache, so a freshly synced fix silently does
       // not run — which looks exactly like the fix not working.
+      // A pushwork directory is one map from each file's path to its document.
+      // Wait (up to four minutes) until each named file reads as given.
+      const waitForFiles = async (handle, files) => {
+        const text = (c) => (typeof c === "string" ? c : c instanceof Uint8Array ? new TextDecoder().decode(c) : String(c ?? ""))
+        const fileDoc = async (path) => {
+          const url = handle.doc()?.[path]
+          return typeof url === "string" && url.startsWith("automerge:") ? (await window.repo.find(url)).doc() : null
+        }
+        let behind = Object.keys(files)
+        for (let i = 0; i < 480 && behind.length; i++) {
+          const still = []
+          for (const path of behind) if (text((await fileDoc(path))?.content) !== files[path]) still.push(path)
+          behind = still
+          if (behind.length) await new Promise((r) => setTimeout(r, 500))
+        }
+        return behind
+      }
+
       const agentUrl = ${JSON.stringify(PACKAGE)}
       const pinned = await (async () => {
         const handle = await window.repo.find(agentUrl)
+        const want = ${JSON.stringify(HEADS)}
+        for (let i = 0; want && i < 240 && [...(handle.heads?.() ?? [])].sort().join("|") !== want; i++) {
+          await new Promise((r) => setTimeout(r, 500))
+        }
         const heads = handle.heads?.() ?? []
+        out.agentHeads = [...heads].sort().join("|")
+        // Every file on the test path, as published, before anything imports it.
+        out.behind = await waitForFiles(handle, ${JSON.stringify(ON_DISK)})
         const bare = agentUrl.split("#")[0]
         return "/" + encodeURIComponent(heads.length ? bare + "#" + [...heads].sort().join("|") : bare) + "/"
       })()
@@ -214,9 +279,23 @@ try {
         out.packageUrl = pkg.url
 
         const testing = await import(pinned + "tools/testing.js")
-        const started = Date.now()
-        out.report = await testing.packageTest.execute({ url: pkg.url }, { repo: window.repo })
-        out.ms = Date.now() - started
+        const run = async (url, host) => {
+          const started = Date.now()
+          try {
+            const report = await testing.packageTest.execute({ url, in: host }, { repo: window.repo })
+            return { report, ms: Date.now() - started }
+          } catch (err) {
+            return { report: "THREW: " + String(err?.stack ?? err), ms: Date.now() - started }
+          }
+        }
+        out.hosts = {}
+        for (const host of ["page", "worker"]) out.hosts[host] = await run(pkg.url, host)
+        const target = ${JSON.stringify(TARGET)}
+        if (target) {
+          out.targetBehind = await waitForFiles(await window.repo.find(target), ${JSON.stringify(TARGET_FILES)})
+          out.target = {}
+          for (const host of ["page", "worker"]) out.target[host] = await run(target, host)
+        }
         out.ok = true
         return out
       } catch (err) {
@@ -229,26 +308,36 @@ try {
 
   if (!report.ok) {
     console.log("\n=== FAILED ===")
+    console.log(`agent heads: ${report.agentHeads}; still behind: ${report.behind?.join(", ") || "nothing"}`)
     console.log(report.error)
   } else {
-    console.log(`\n=== report (${report.ms}ms) ===`)
-    console.log(report.report)
-
-    const text = report.report
-    const checks = [
-      ["it ran the tests in the browser", /passed/.test(text)],
-      ["seven pass, one fails by design", /7 passed/.test(text)],
-      ["the deliberate failure was caught", /1 failed/.test(text) && /is wrong on purpose/.test(text)],
-      ["the failure message is useful", /to be 6|expected 5/.test(text)],
-      ["passing tests are not listed individually", !/adds two numbers/.test(text)],
-      ["asymmetric matchers worked", !/supports asymmetric matchers/.test(text)],
-      ["vi.fn spies worked", !/supports vi\.fn spies/.test(text)],
-      ["deep property paths worked", !/deep property paths/.test(text)],
-      ["it used the real vitest engine", /assertions: vitest@/.test(text)],
-    ]
-    console.log("\n=== verdict ===")
-    for (const [label, ok] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${label}`)
-    exitCode = checks.every(([, ok]) => ok) ? 0 : 1
+    console.log(`agent heads: ${report.agentHeads}${HEADS && report.agentHeads !== HEADS ? `  (WANTED ${HEADS})` : ""}`)
+    if (report.behind?.length) console.log(`STILL BEHIND what's on disk: ${report.behind.join(", ")}`)
+    const results = []
+    for (const [host, { report: text, ms }] of Object.entries(report.hosts)) {
+      console.log(`\n=== in a ${host} (${ms}ms) ===`)
+      console.log(text)
+      const checks = [
+        ["it ran the tests", /passed/.test(text)],
+        ["seven pass, one fails by design", /7 passed/.test(text)],
+        ["the deliberate failure was caught", /1 failed/.test(text) && /is wrong on purpose/.test(text)],
+        ["the failure message is useful", /to be 6|expected 5/.test(text)],
+        ["passing tests are not listed individually", !/adds two numbers/.test(text)],
+        ["asymmetric matchers worked", !/supports asymmetric matchers/.test(text)],
+        ["vi.fn spies worked", !/supports vi\.fn spies/.test(text)],
+        ["deep property paths worked", !/deep property paths/.test(text)],
+        ["it used vitest's engine, in this host", new RegExp(`vitest \\d+\\.\\d+\\.\\d+, in a ${host}`).test(text)],
+      ]
+      console.log(`\n=== verdict, in a ${host} ===`)
+      for (const [label, ok] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${label}`)
+      results.push(...checks)
+    }
+    if (report.targetBehind?.length) console.log(`\ntarget STILL BEHIND what's on disk: ${report.targetBehind.join(", ")}`)
+    for (const [host, { report: text, ms }] of Object.entries(report.target ?? {})) {
+      console.log(`\n=== ${TARGET}, in a ${host} (${ms}ms) ===`)
+      console.log(text)
+    }
+    exitCode = results.every(([, ok]) => ok) ? 0 : 1
     console.log(`\npackage: ${report.packageUrl}`)
   }
 

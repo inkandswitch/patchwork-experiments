@@ -3,7 +3,7 @@ import * as esbuild from "esbuild"
 import { createRequire } from "node:module"
 import {
   findTestFiles, formatResults, testPlugin, packageTest, VITEST_BRIDGE, TEST_FILE_PATTERN,
-  resolveSpecifier, domEnvironmentOf, packageBaseUrl, LOGGED_MAX_LINES,
+  resolveSpecifier, domEnvironmentOf, packageBaseUrl, LOGGED_MAX_LINES, workerPreparation,
 } from "./tools/testing.js"
 import { _resetEsbuild } from "./tools/build.js"
 import * as engine from "./tools/vendor/vitest-engine.js"
@@ -173,6 +173,28 @@ describe("where the package's files are served", () => {
       else delete globalThis.location
       if (document) globalThis.document = document
     }
+  })
+})
+
+describe("preparing a worker", () => {
+  const slim = { "@automerge/automerge/slim": "https://p.example/assets/slim-1.js" }
+
+  it("needs nothing when the importmap has no slim automerge", () => {
+    expect(workerPreparation({}, { resources: [], origin: "https://p.example" })).toBeNull()
+    expect(workerPreparation(null, { resources: [], origin: "https://p.example" })).toBeNull()
+  })
+
+  it("initialises slim automerge with the wasm this page loaded", () => {
+    const resources = ["https://p.example/assets/index-2.js", "https://p.example/assets/automerge-3f9a.wasm", "https://p.example/assets/subduction-1.wasm"]
+    expect(workerPreparation(slim, { resources, origin: "https://p.example" })).toEqual({
+      automerge: "https://p.example/assets/slim-1.js",
+      wasm: "https://p.example/assets/automerge-3f9a.wasm",
+    })
+  })
+
+  it("falls back to the origin's /automerge.wasm, and to nothing without an origin", () => {
+    expect(workerPreparation(slim, { resources: [], origin: "https://p.example" }).wasm).toBe("https://p.example/automerge.wasm")
+    expect(workerPreparation(slim, { resources: [], origin: null })).toBeNull()
   })
 })
 
@@ -361,8 +383,8 @@ describe("package_test", () => {
 
   it("in a worker: skips files that need a DOM, and sends the rest with externals as URLs", async () => {
     const sent = []
-    const runInWorker = async (file, code) => {
-      sent.push({ file, code })
+    const runInWorker = async (file, code, options) => {
+      sent.push({ file, code, options })
       return { results: [{ label: "x", status: "passed" }], unhandled: [], logged: [] }
     }
     const out = await run(
@@ -374,10 +396,15 @@ describe("package_test", () => {
           import { it } from "vitest"; it("x", () => document.body)`,
       },
       { in: "worker" },
-      { runInWorker, importMap: { "@automerge/automerge-repo": "https://p.example/repo.js" } }
+      {
+        runInWorker,
+        importMap: { "@automerge/automerge-repo": "https://p.example/repo.js" },
+        workerPreparation: { automerge: "https://p.example/slim.js", wasm: "https://p.example/a.wasm" },
+      }
     )
     expect(sent.map((s) => s.file)).toEqual(["repo.test.js"])
     expect(sent[0].code).toContain('"https://p.example/repo.js"')
+    expect(sent[0].options.prepare).toEqual({ automerge: "https://p.example/slim.js", wasm: "https://p.example/a.wasm" })
     expect(out).toContain('- view.test.js  (skipped: needs a DOM (@vitest-environment happy-dom); run it with in: "page")')
     expect(out).toContain("in a worker")
   })
