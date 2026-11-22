@@ -854,9 +854,16 @@ export function AssumptionsView(handle, element, options = {}) {
 }
 
 const CSS = `
-.asm { --ink: #1d1d1f; --quiet: #6e6e73; --rule: #e3e3e6; --panel: #f7f7f8; --accent: #2a5bd7; --warn: #a15c00; --warn-bg: #fff3df; --fail: #b3261e; --fail-bg: #fde7e5;
-  font: 13px/1.45 system-ui, -apple-system, sans-serif; color: var(--ink); background: Canvas; height: 100%; display: flex; flex-direction: column; outline: none; }
-@media (prefers-color-scheme: dark) { .asm { --ink: #ececf0; --quiet: #9a9aa2; --rule: #333338; --panel: #1f1f23; --accent: #7aa2ff; --warn: #f3b25a; --warn-bg: #3a2a10; --fail: #ff8a80; --fail-bg: #3d1614; } }
+/* Colours come from Patchwork's theme (--studio-*), which also sets color-scheme;
+   the fallbacks follow color-scheme too, so text and background never disagree. */
+.asm { --bg: var(--studio-fill, Canvas); --ink: var(--studio-line, CanvasText);
+  --quiet: var(--studio-line-offset-30, color-mix(in oklch, var(--ink), var(--bg) 40%));
+  --rule: var(--studio-fill-offset-30, color-mix(in oklch, var(--bg), var(--ink) 15%));
+  --panel: var(--studio-fill-offset-20, color-mix(in oklch, var(--bg), var(--ink) 5%));
+  --accent: var(--studio-link, light-dark(#2a5bd7, #7aa2ff));
+  --warn: var(--studio-warning, light-dark(#a15c00, #f3b25a)); --fail: var(--studio-danger, light-dark(#b3261e, #ff8a80));
+  --warn-bg: color-mix(in oklch, var(--warn) 18%, var(--bg)); --fail-bg: color-mix(in oklch, var(--fail) 18%, var(--bg));
+  font: 13px/1.45 system-ui, -apple-system, sans-serif; color: var(--ink); background: var(--bg); height: 100%; display: flex; flex-direction: column; outline: none; }
 .asm header { padding: 12px 16px 0; border-bottom: 1px solid var(--rule); }
 .asm h1 { font-size: 16px; margin: 0 0 2px; }
 .asm .summary { margin: 0 0 8px; color: var(--quiet); }
@@ -873,7 +880,7 @@ const CSS = `
 .asm a { color: var(--accent); text-decoration: none; }
 .asm a:hover { text-decoration: underline; }
 .asm table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-.asm th { text-align: left; font-weight: 500; color: var(--quiet); border-bottom: 1px solid var(--rule); padding: 4px 6px; position: sticky; top: 0; background: Canvas; }
+.asm th { text-align: left; font-weight: 500; color: var(--quiet); border-bottom: 1px solid var(--rule); padding: 4px 6px; position: sticky; top: 0; background: var(--bg); }
 .asm td { padding: 3px 6px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 .asm td.value { text-align: right; white-space: nowrap; }
 .asm td.bounds, .asm td.evidence, .asm td.uses, .asm td.judgements { color: var(--quiet); }
@@ -888,15 +895,15 @@ const CSS = `
 .asm td.status::before, .asm .glyph::before { margin-right: 4px; }
 .asm [data-level=corroborated]::before { content: "●"; } .asm [data-level=supported]::before { content: "◐"; }
 .asm [data-level=weak]::before { content: "○"; } .asm [data-level=none]::before { content: "◌"; } .asm [data-level=chosen]::before { content: "◆"; }
-.asm .chip { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .03em; padding: 0 5px; border-radius: 3px; }
-.asm .chip.warn { color: var(--warn); background: var(--warn-bg); }
-.asm .chip.fail { color: var(--fail); background: var(--fail-bg); }
+.asm .chip { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .03em; padding: 0 5px; border-radius: 3px; color: var(--ink); border: 1px solid transparent; }
+.asm .chip.warn { background: var(--warn-bg); border-color: var(--warn); }
+.asm .chip.fail { background: var(--fail-bg); border-color: var(--fail); }
 .asm ul.queue { list-style: none; padding: 0; margin: 0; }
 .asm ul.queue li { padding: 6px 4px; border-bottom: 1px solid var(--rule); cursor: pointer; }
 .asm .fix { color: var(--quiet); margin-left: 2em; }
 .asm .filters { display: flex; gap: 8px; margin: 4px 0 8px; flex-wrap: wrap; }
 .asm .filters input { flex: 1; min-width: 160px; }
-.asm input, .asm select, .asm textarea { font: inherit; padding: 3px 6px; border: 1px solid var(--rule); border-radius: 4px; background: Canvas; color: var(--ink); }
+.asm input, .asm select, .asm textarea { font: inherit; padding: 3px 6px; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); color: var(--ink); }
 .asm .margin svg .range { fill: var(--quiet); opacity: .5; } .asm .margin svg .range.over, .asm .margin svg .arrow.over { fill: var(--fail); opacity: .8; }
 .asm .margin svg .arrow { fill: var(--quiet); } .asm .margin svg .limit { stroke: var(--ink); stroke-width: 1; } .asm .margin svg .nominal { stroke: var(--ink); stroke-width: 2; }
 .asm .crumbs { display: flex; align-items: center; gap: 2px; color: var(--quiet); font-family: ui-monospace, monospace; font-size: 12px; flex-wrap: wrap; }
@@ -910,8 +917,8 @@ const CSS = `
 .asm li.disagrees { box-shadow: inset 3px 0 0 var(--warn); }
 .asm button.link { font: inherit; background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; }
 .asm .controls { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
-.asm .controls button, .asm form button { font: inherit; padding: 3px 10px; border: 1px solid var(--rule); border-radius: 4px; background: Canvas; color: var(--ink); cursor: pointer; }
-.asm form { display: grid; gap: 6px; margin-top: 10px; padding: 10px; border: 1px solid var(--rule); border-radius: 6px; background: Canvas; }
+.asm .controls button, .asm form button { font: inherit; padding: 3px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); color: var(--ink); cursor: pointer; }
+.asm form { display: grid; gap: 6px; margin-top: 10px; padding: 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); }
 .asm form label { display: grid; gap: 2px; color: var(--quiet); }
 .asm .error { color: var(--fail); margin: 0; } .asm .preview { margin: 0; }
 `
