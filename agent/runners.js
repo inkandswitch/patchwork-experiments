@@ -195,7 +195,25 @@ export function reapIdle({ now = Date.now(), graceMs = IDLE_GRACE_MS } = {}) {
   return reaped
 }
 
-/** Stop everything. For page unload, so leases are released rather than left stale. */
+/**
+ * The page is going away: give every session up, then stop. Giving up first
+ * is what keeps the stop from writing (loop.js): a reply half-streamed stays
+ * marked as such, and the next runner — this page reloaded, or another —
+ * takes it out and asks again, at once if the release reached it and after
+ * the lease goes stale if it did not.
+ */
+export function releaseAll() {
+  for (const entry of live.values()) {
+    try {
+      entry.runner?.release?.()
+    } catch {
+      /* the document is gone; the lease goes stale instead */
+    }
+  }
+  return stopAll()
+}
+
+/** Stop everything. */
 export function stopAll() {
   const urls = [...live.keys()]
   for (const url of urls) stopRunner(url)
@@ -210,5 +228,5 @@ export function _reset() {
 // Release leases on the way out, so another runner does not have to wait out a
 // staleness timeout to pick the session up.
 if (typeof globalThis.addEventListener === "function") {
-  globalThis.addEventListener("pagehide", () => stopAll())
+  globalThis.addEventListener("pagehide", () => releaseAll())
 }

@@ -132,6 +132,10 @@ export async function run(opts) {
   }
 
   const stillOurs = () => holdsLease(store.doc(), runnerUrl, generation)
+  // Stopped. Said in the session only while it is still this runner's: a
+  // page going away gives its leases up first (runners.js), and must leave
+  // what it was in the middle of for the next runner, not mark it idle.
+  const stopped = () => (stillOurs() ? finish(store, STATUS.idle, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: "lease lost" })
 
   // Defaults are applied above by destructuring, which does not write them back
   // onto `opts`. The helpers below read their settings from this normalized
@@ -199,7 +203,7 @@ export async function run(opts) {
   let silences = 0
 
   for (let turnNumber = 0; turnNumber < maxTurns; turnNumber++) {
-    if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
+    if (signal?.aborted) return stopped()
     if (!stillOurs()) return { outcome: OUTCOME.aborted, reason: "lease lost" }
     const spent = spentBudget(store.doc())
     if (spent) return stopForBudget(store, spent, emit)
@@ -232,7 +236,7 @@ export async function run(opts) {
     try {
       await maybeCompact(settings)
     } catch (err) {
-      if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
+      if (signal?.aborted) return stopped()
       if (isInterruption(err)) return reconnect(store, err, emit)
       throw err
     }
@@ -247,7 +251,7 @@ export async function run(opts) {
       // so a request that dies leaves an empty one behind. Two of those sit in
       // a real session, rendering as nothing and telling nobody anything.
       dropTrailingEmptyTurn(store)
-      if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
+      if (signal?.aborted) return stopped()
       // The network went away. What streamed of the turn is half a turn — no
       // call in it was committed — so it goes, and the turn is asked for again
       // whole when the network is back. Nothing is said about it in the
@@ -260,7 +264,7 @@ export async function run(opts) {
       return finish(store, STATUS.error, OUTCOME.error, emit, String(err?.message ?? err))
     }
 
-    if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
+    if (signal?.aborted) return stopped()
     // Lost mid-stream: the session is another runner's, so write nothing more.
     if (assistant.lost) return { outcome: OUTCOME.aborted, reason: "lease lost" }
 
@@ -552,7 +556,10 @@ async function streamTurn(opts) {
     },
   }
 
+  // Marked while it streams, so a runner that finds it after this page has
+  // gone knows it is half a reply and asks again (session.js interruptedTurns).
   const turn = makeTurn("assistant", [])
+  turn.streaming = { runner: opts.runnerUrl ?? null, generation: opts.generation ?? null }
   appendTurn(store, turn)
   const turnIndex = store.doc().turns.length - 1
 
@@ -581,6 +588,7 @@ async function streamTurn(opts) {
   const blockPath = (blockIndex) => ["turns", turnIndex, "blocks", blockIndex, "text"]
 
   let heard = false
+  let interrupted = false
   try {
     for await (const event of provider.stream(request)) {
       if (signal?.aborted) break
@@ -632,9 +640,20 @@ async function streamTurn(opts) {
     // Which turn to take back, should this be an interruption: the person may
     // have steered meanwhile, so it is not necessarily the last.
     if (err && typeof err === "object") err.turnId = turn.id
+    interrupted = isInterruption(err)
     throw err
   } finally {
     appender.flush()
+    // The stream is over and this runner saw it end — finished, stopped by
+    // the person, or failed — so what is there is what happened. Not when it
+    // was cut off by the network (the turn is taken back), nor when another
+    // runner has the session (it is that runner's to settle).
+    if (!lost && !interrupted && (!stillOurs || stillOurs())) {
+      store.change((d) => {
+        const t = d.turns?.[turnIndex]
+        if (t?.id === turn.id && t.streaming) delete t.streaming
+      })
+    }
   }
 
   if (lost) return { calls: [], stopReason: "lease-lost", turnIndex, lost: true }
@@ -702,7 +721,7 @@ async function executeCalls(opts) {
   for (const call of runnable) {
     if (signal?.aborted) {
       commitResults(store, results)
-      return finish(store, STATUS.idle, OUTCOME.aborted, emit)
+      return stillOurs() ? finish(store, STATUS.idle, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: "lease lost" }
     }
     if (!stillOurs()) {
       // What already ran, ran: record it. Its calls are marked done, and a

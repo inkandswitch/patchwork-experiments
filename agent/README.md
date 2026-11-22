@@ -79,12 +79,33 @@ delay, start offset, clock skew (to nine minutes) and keys.
 A call the current runner cannot execute **parks** the session rather than
 failing it, and resumes when a capable runner appears.
 
-**An interrupted call is closed, not repeated.** A call is claimed under the
-lease of the runner executing it. If that runner's tab reloads mid-call, the
-next runner to take the session over finds the claim no longer matches the live
-lease and closes the call with an error result saying it may or may not have
-taken effect — so the model checks, rather than a write silently happening
-twice, and the session does not sit looking busy forever.
+**Refreshing a page with a working agent in it is safe** (`reload.test.js`).
+Whatever the runner in it was doing is settled by the next runner to take the
+session — the page reloaded, another tab, a worker:
+
+- **A reply cut off mid-stream is asked for again.** A reply is marked
+  `streaming: { runner, generation }` while it is written, and the mark comes
+  off when its runner sees the stream end, however it ends. A marked reply
+  whose mark is not the live lease is half a reply that nobody will finish:
+  it is taken out, as one the network cut off is, and the model is asked again
+  from where the conversation was. Nothing is said about it in the transcript.
+- **A call cut off mid-run is re-run if it only reads, and closed otherwise.**
+  A call is claimed under the lease of the runner executing it; one whose
+  claim no longer matches the live lease is orphaned. If its tool's risk is
+  `read`, doing it twice changes nothing, so it goes back to run again. Any
+  other call gets an error result saying it may or may not have taken effect —
+  so the model checks, rather than a write silently happening twice.
+- **A page that says it is going gives its sessions up.** On `pagehide` every
+  runner in the page drops its lease before it stops (`runners.js`
+  `releaseAll`), so the next runner takes over at once instead of after the
+  lease goes stale (15 s), the fallback when the page dies without saying so.
+  A runner that no longer holds the lease writes nothing as it stops, so a
+  reply half-streamed stays marked for the next runner rather than being left
+  as an idle session's last word. Stopping a reply on purpose is different:
+  the runner still holds the lease, so what was said stays, unmarked.
+- **Generations never repeat within a session** (`lastGeneration`). Every
+  claim that is not a renewal gets a new one, so a runner that loses a session
+  and later takes it up again never mistakes its own dead work for live work.
 
 **The network going away is an interruption, not a failure** (`network.js`).
 A request that never reached the other end did nothing, so nothing is written
