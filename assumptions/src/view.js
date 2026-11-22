@@ -35,8 +35,10 @@ const LENSES = [
   ["attention", "Needs attention"],
   ["entries", "Entries"],
   ["requirements", "Requirements"],
+  ["structure", "Structure"],
 ]
 const NAME_KEY = "assumptions:name"
+const DOC_URL = /automerge:[1-9A-HJ-NP-Za-km-z]+(?:#[1-9A-HJ-NP-Za-km-z|]+)?/g
 const MEMO = ["value", "support", "derived", "confidence", "outcome", "stale", "broken"]
 
 function h(tag, attrs = {}, ...children) {
@@ -87,6 +89,27 @@ export function AssumptionsView(handle, element, options = {}) {
   const root = h("div", { class: "asm", tabindex: "-1" })
   element.append(style, root)
   let doc, evaluation, problems, counts
+  let disposed = false
+
+  // Documents are shown by name, never as a bare automerge: URL. Titles load
+  // as the documents do, and the view redraws when one arrives.
+  const titles = new Map()
+  const docName = (d) => d?.title || d?.name || d?.["@patchwork"]?.title || null
+  function titleOf(url) {
+    if (titles.has(url)) return titles.get(url)
+    titles.set(url, null)
+    if (repo) {
+      Promise.resolve()
+        .then(() => repo.find(url))
+        .then((found) => {
+          const name = docName(found?.doc?.())
+          if (name) titles.set(url, name)
+          if (name && !disposed) render()
+        })
+        .catch(() => {})
+    }
+    return null
+  }
 
   const heads = () => (typeof handle.heads === "function" ? [...(handle.heads() ?? [])] : [])
 
@@ -134,6 +157,7 @@ export function AssumptionsView(handle, element, options = {}) {
     const main = h("main", { class: `lens lens-${state.lens}`, "data-key": `lens:${state.lens}` })
     if (state.lens === "attention") main.append(...attention())
     else if (state.lens === "entries") main.append(...entriesLens())
+    else if (state.lens === "structure") main.append(...structureLens())
     else main.append(...requirementsLens())
     return main
   }
@@ -154,6 +178,31 @@ export function AssumptionsView(handle, element, options = {}) {
     return parts
   }
 
+  /** A link to a document, named by its title: a kept source, a model's run, a web page. */
+  function docLink(url, fallback = "a document") {
+    if (/^https?:/i.test(url)) {
+      let host = url
+      try {
+        host = new URL(url).hostname
+      } catch {}
+      return h("a", { href: url, target: "_blank", rel: "noopener", class: "doc" }, fallback === "a document" ? host : fallback)
+    }
+    return h("a", { href: "#", class: "doc", "data-doc": url }, titleOf(url) ?? fallback)
+  }
+
+  /** Text with entry ids and document URLs in it turned into links. */
+  function rich(text) {
+    const s = String(text ?? "")
+    const out = []
+    let last = 0
+    for (const m of s.matchAll(DOC_URL)) {
+      out.push(linkify(s.slice(last, m.index)), docLink(m[0]))
+      last = m.index + m[0].length
+    }
+    out.push(linkify(s.slice(last)))
+    return out
+  }
+
   // ------------------------------------------------------------ needs attention
 
   function attention() {
@@ -166,14 +215,14 @@ export function AssumptionsView(handle, element, options = {}) {
           "ul",
           { class: "queue" },
           evaluation.judgements.map(({ id, judgement: j }) =>
-            item(id, `j:${id}:${j.key}`, h("span", { class: "chip warn" }, "JUDGEMENT"), " ", idLink(id), ` · ${j.by?.who ?? "a person"}${j.on ? ` on ${j.on}` : ""}: `, h("q", {}, j.says ?? j.verdict), j.path ? h("span", { class: "quiet" }, ` · ${j.path}`) : null),
+            item(id, `j:${id}:${j.key}`, h("span", { class: "chip warn" }, "JUDGEMENT"), " ", idLink(id), ` · ${j.by?.who ?? "a person"}${j.on ? ` on ${j.on}` : ""}: `, h("q", {}, rich(j.says ?? j.verdict)), j.path ? h("span", { class: "quiet" }, ` · ${j.path}`) : null),
           ),
         ),
       )
     }
     out.push(h("h2", {}, problems.length ? `Problems (${problems.length})` : "Problems"))
     if (!problems.length) out.push(h("p", { class: "quiet" }, "Nothing needs attention."))
-    else out.push(h("ul", { class: "queue" }, problems.map((p, i) => item(p.id, `p:${i}:${p.kind}:${p.id}`, chip(p.kind), " ", linkify(p.text), p.fix ? h("div", { class: "fix" }, `fix: ${p.fix}`) : null))))
+    else out.push(h("ul", { class: "queue" }, problems.map((p, i) => item(p.id, `p:${i}:${p.kind}:${p.id}`, chip(p.kind), " ", rich(p.text), p.fix ? h("div", { class: "fix" }, "fix: ", rich(p.fix)) : null))))
     const weak = weakLeaves()
     if (weak.length) {
       out.push(
@@ -248,7 +297,7 @@ export function AssumptionsView(handle, element, options = {}) {
         if (p.part === "id") return h("td", { class: "id" }, idLink(id, entry.label ?? null))
         if (p.part === "status") return h("td", { class: "status", "data-level": levelOf(ev) ?? "" }, p.text)
         if (p.part === "flags") return h("td", { class: "flags" }, p.text ? p.text.split(" ").map((f, i) => [i ? " " : "", chip(f)]) : "")
-        return h("td", { class: p.part }, p.text)
+        return h("td", { class: p.part }, p.part === "evidence" ? rich(p.text) : p.text)
       })
     return h("tr", { class: `entry${state.stack[state.at] === id ? " selected" : ""}${state.cursor === id ? " cursor" : ""}`, "data-id": id, "data-key": `e:${id}`, tabindex: "0" }, cells)
   }
@@ -332,6 +381,155 @@ export function AssumptionsView(handle, element, options = {}) {
     ]
   }
 
+  // ------------------------------------------------------------ structure
+
+  /**
+   * What an entry rests on and what it feeds, drawn left to right: inputs in
+   * the first columns, the entry, then what reads it. Solid edges are formula
+   * and check inputs (always current); dashed edges are a model's inputs,
+   * recorded when it ran, which can go stale. Every box says its id, value,
+   * kind and basis in words, and opens its entry — which re-centres the graph.
+   */
+  function structureLens() {
+    const ids = Object.keys(doc.entries)
+    const inputsOf = new Map(ids.map((id) => [id, new Set()]))
+    for (const [input, readers] of evaluation.readers) for (const r of readers) if (r !== input) inputsOf.get(r)?.add(input)
+    const focus = doc.entries[state.stack[state.at]] ? state.stack[state.at] : defaultFocus(inputsOf)
+    if (!focus) return [h("p", { class: "quiet" }, "No entries yet.")]
+
+    const closure = (next) => {
+      const seen = new Set()
+      const todo = [focus]
+      while (todo.length) for (const n of next(todo.pop())) if (n !== focus && !seen.has(n)) seen.add(n), todo.push(n)
+      return seen
+    }
+    const up = closure((n) => inputsOf.get(n) ?? [])
+    const down = closure((n) => evaluation.readers.get(n) ?? [])
+    const nodes = [focus, ...new Set([...up, ...down])]
+    const inGraph = new Set(nodes)
+    const edges = []
+    for (const v of nodes) for (const u of inputsOf.get(v) ?? []) if (inGraph.has(u)) edges.push({ u, v, model: doc.entries[v].basis === "model" })
+
+    const layout = layered(nodes, edges)
+    const W = 216, H = 58, GAP = 56, SLOT = 14, PAD = 8
+    const ns = "http://www.w3.org/2000/svg"
+    const el = (tag, attrs = {}, ...kids) => {
+      const n = document.createElementNS(ns, tag)
+      for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, String(v))
+      for (const k of kids.flat()) if (k != null) n.append(typeof k === "string" ? document.createTextNode(k) : k)
+      return n
+    }
+    // Columns are stacked top-down and centred on the tallest.
+    const heightOf = (item) => (item.virtual ? SLOT : H)
+    const colHeights = layout.layers.map((col) => col.reduce((sum, item, i) => sum + heightOf(item) + (i ? 12 : 0), 0))
+    const tallest = Math.max(...colHeights)
+    const pos = new Map()
+    layout.layers.forEach((col, li) => {
+      let y = PAD + (tallest - colHeights[li]) / 2
+      for (const item of col) {
+        pos.set(item.key, { x: PAD + li * (W + GAP), y, h: heightOf(item), virtual: item.virtual })
+        y += heightOf(item) + 12
+      }
+    })
+    const width = PAD * 2 + layout.layers.length * W + (layout.layers.length - 1) * GAP
+    const height = PAD * 2 + tallest
+    const svg = el("svg", { class: "graph", width, height, viewBox: `0 0 ${width} ${height}`, role: "group", "aria-label": `structure of ${focus}` })
+    svg.append(el("defs", {}, el("marker", { id: "asm-arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" }, el("path", { d: "M0 0L10 5L0 10z", class: "arrowhead" }))))
+
+    // Edges: each chain of segments leaves a box's right side and enters the next one's left,
+    // at ports spread down the box so edges into one box stay apart.
+    const outs = new Map(), ins = new Map()
+    for (const chain of layout.chains) {
+      for (let i = 0; i < chain.keys.length - 1; i++) {
+        const a = chain.keys[i], b = chain.keys[i + 1]
+        if (!outs.has(a)) outs.set(a, [])
+        if (!ins.has(b)) ins.set(b, [])
+        outs.get(a).push({ chain, i, other: b })
+        ins.get(b).push({ chain, i, other: a })
+      }
+    }
+    const port = (map, key, chain, i, side) => {
+      const p = pos.get(key)
+      if (p.virtual) return p.y + p.h / 2
+      const list = (map.get(key) ?? []).slice().sort((x, y) => pos.get(x.other).y - pos.get(y.other).y)
+      const at = list.findIndex((e) => e.chain === chain && e.i === i)
+      return p.y + ((at + 1) * p.h) / (list.length + 1)
+    }
+    const edgeLayer = el("g", { class: "edges" })
+    for (const chain of layout.chains) {
+      let d = ""
+      for (let i = 0; i < chain.keys.length - 1; i++) {
+        const a = pos.get(chain.keys[i]), b = pos.get(chain.keys[i + 1])
+        const y1 = port(outs, chain.keys[i], chain, i, "out")
+        const y2 = port(ins, chain.keys[i + 1], chain, i, "in")
+        const x1 = a.x + W, x2 = b.x, mid = x1 + GAP / 2
+        d += `${i ? "" : `M${x1} ${y1}`}H${mid}V${y2}H${x2}`
+        if (i < chain.keys.length - 2) d += `H${b.x + W}` // through a virtual slot
+      }
+      edgeLayer.append(el("path", { d, class: `edge${chain.model ? " model" : ""}${chain.back ? " back" : ""}`, "marker-end": "url(#asm-arrow)" }))
+    }
+    svg.append(edgeLayer)
+
+    const clip = (text, chars) => (text.length > chars ? `${text.slice(0, chars - 1)}…` : text)
+    for (const id of nodes) {
+      const p = pos.get(id)
+      const entry = doc.entries[id]
+      const ev = evaluation.byId.get(id)
+      const o = ev.outcome
+      const flags = problems.filter((pr) => pr.id === id).map((pr) => pr.kind)
+      const outcome = entry.basis === "check" ? o?.result ?? "?" : null
+      const valueText = entry.basis === "check" ? `${outcome === "fails" ? "FAILS" : outcome === "depends" ? "DEPENDS" : outcome}` : formatValue(ev.value, entry.unit)
+      const meta = `${{ corroborated: "●", supported: "◐", weak: "○", none: "◌", chosen: "◆" }[levelOf(ev)] ?? ""} ${entry.kind} · ${entry.basis}`.trim()
+      const flag = flags.find((f) => f !== "FAILS" && f !== "DEPENDS")
+      const cls = ["node", id === focus ? "focus" : null, outcome === "fails" || flags.includes("FAILS") ? "fails" : outcome === "depends" || flag ? "warn" : null].filter(Boolean).join(" ")
+      const label = figureLabel(id, entry, ev, valueText, meta, flag)
+      svg.append(
+        el(
+          "g",
+          { class: cls, "data-open": id, "data-id": id, role: "link", tabindex: "0", "aria-label": label },
+          el("title", {}, label),
+          el("rect", { x: p.x, y: p.y, width: W, height: H, rx: 7, class: "box" }),
+          el("text", { x: p.x + 10, y: p.y + 17, class: "g-id" }, clip(id, 26)),
+          el("text", { x: p.x + 10, y: p.y + 34, class: `g-val${outcome === "fails" ? " fail" : outcome === "depends" ? " warn" : ""}` }, clip(valueText, 30)),
+          el("text", { x: p.x + 10, y: p.y + 50, class: "g-meta" }, clip(meta, flag ? 22 : 34), flag ? el("tspan", { class: "g-flag" }, ` · ${flag}`) : null),
+        ),
+      )
+    }
+
+    return [
+      h(
+        "p",
+        { class: "structure-head" },
+        "Structure of ",
+        idLink(focus),
+        ` · rests on ${up.size} entr${up.size === 1 ? "y" : "ies"} (left) · feeds ${down.size} (right). Open any box to follow it.`,
+      ),
+      h("p", { class: "quiet legend" }, "solid: formula or check input, always current · dashed: model input, recorded when the model ran, can go stale"),
+      h("div", { class: "graph-wrap", "data-key": `graph:${focus}` }, svg),
+    ]
+  }
+
+  function figureLabel(id, entry, ev, valueText, meta, flag) {
+    return `${id}${entry.label ? ` (${entry.label})` : ""}: ${valueText} · ${meta.replace(/^[●◐○◌◆] /, "")}${levelOf(ev) ? `, ${levelOf(ev)}` : ""}${flag ? ` · ${flag}` : ""}`
+  }
+
+  /** With no entry open: the worst requirement, else the result resting on the most. */
+  function defaultFocus(inputsOf) {
+    const order = { fails: 0, broken: 1, depends: 2, holds: 3, "n/a": 4 }
+    const checks = Object.keys(doc.entries).filter((id) => doc.entries[id].basis === "check")
+    if (checks.length) return checks.sort((a, b) => (order[evaluation.byId.get(a).outcome?.result] ?? 9) - (order[evaluation.byId.get(b).outcome?.result] ?? 9) || (a < b ? -1 : 1))[0]
+    // The sink (nothing reads it) that rests on the most entries.
+    let best = null, most = 0
+    for (const id of Object.keys(doc.entries)) {
+      if ((evaluation.readers.get(id)?.size ?? 0) > 0) continue
+      const seen = new Set()
+      const todo = [id]
+      while (todo.length) for (const n of inputsOf.get(todo.pop()) ?? []) if (!seen.has(n)) seen.add(n), todo.push(n)
+      if (seen.size > most) (best = id), (most = seen.size)
+    }
+    return best ?? Object.keys(doc.entries).sort()[0] ?? null
+  }
+
   // ------------------------------------------------------------ panel
 
   function panel() {
@@ -357,7 +555,7 @@ export function AssumptionsView(handle, element, options = {}) {
         h("p", {}, parts.find((p) => p.part === "status").text),
         cite ? h("p", { class: "quiet" }, "cite as ", h("code", {}, cite.replace(/^cite: /, ""))) : null,
         ev.confidence ? h("p", {}, confidenceText(entry, ev, evaluation)) : null,
-        entry.note ? h("p", { class: "quiet" }, entry.note) : null,
+        entry.note ? h("p", { class: "quiet" }, rich(entry.note)) : null,
       ]),
       section("Basis", basis(id, entry, ev)),
       section("Rests on and feeds", restsOn(id, ev)),
@@ -389,10 +587,10 @@ export function AssumptionsView(handle, element, options = {}) {
               h("div", {}, h("strong", {}, c.key), ` · ${used ? "used" : set ? `${set.verdict}: ${set.says ?? ""}` : "considered, not used"} · ${[c.sourceKind, c.subject].filter(Boolean).join(" · ") || "source"}${c.by?.kind === "person" ? ` · added by ${c.by.who ?? "a person"}` : ""}`),
               c.quote ? h("blockquote", {}, ctx ? [h("span", { class: "quiet" }, `…${ctx.before.slice(-120)}`), h("mark", {}, ctx.quote), h("span", { class: "quiet" }, `${ctx.after.slice(0, 120)}…`)] : h("mark", {}, c.quote)) : h("p", { class: "quiet" }, "no quote"),
               h("div", { class: "quiet" }, `read as: ${c.reading ?? "?"}${c.factor && c.factor !== 1 ? ` · × ${c.factor} into ${entry.unit ?? "the entry's unit"}` : ""} · ${c.verified ? "found in the kept source" : "quote not verified"}${c.section ? ` · near "${c.section}"` : ""}${c.conditions ? ` · ${c.conditions}` : ""}`),
-              c.source ? h("button", { type: "button", class: "link", "data-doc": c.source }, /^automerge:/.test(c.source) ? "Open source" : c.source) : null,
+              c.source ? h("div", {}, "source: ", docLink(c.source, "the kept source")) : h("div", { class: "quiet" }, "no source given"),
             )
           }),
-          entry.pick ? h("p", {}, `pick: ${entry.pick.rule}${entry.pick.claim ? ` ${entry.pick.claim}` : ""}${entry.pick.reason ? ` — ${entry.pick.reason}` : ""}`) : null,
+          entry.pick ? h("p", {}, `pick: ${entry.pick.rule}${entry.pick.claim ? ` ${entry.pick.claim}` : ""}`, entry.pick.reason ? [" — ", rich(entry.pick.reason)] : null) : null,
         ]
       }
       case "formula": {
@@ -412,18 +610,18 @@ export function AssumptionsView(handle, element, options = {}) {
       }
       case "model":
         return [
-          h("p", {}, `${entry.model?.name ?? "A model"}, tolerance ${entry.model?.tolerance ?? 0}`, entry.model?.url ? [" · ", h("button", { type: "button", class: "link", "data-doc": entry.model.url }, "open the run")] : null),
+          h("p", {}, entry.model?.url ? docLink(entry.model.url, entry.model?.name ?? "the model's run") : entry.model?.name ?? "A model", `, tolerance ${entry.model?.tolerance ?? 0}`),
           h("ul", {}, Object.entries(entry.model?.inputs ?? {}).map(([input, v]) => h("li", {}, idLink(input), ` ran with ${formatValue(v, doc.entries[input]?.unit)}, now ${formatValue(evaluation.byId.get(input)?.value, doc.entries[input]?.unit)}`))),
           ev.stale ? h("p", {}, chip("STALE"), ` ${ev.stale.map((s) => `${s.input} ${s.reason}`).join(", ")}`) : null,
         ]
       case "estimate":
-        return h("p", {}, `estimate: ${formatValue(entry.estimate?.value, entry.unit)} — ${entry.estimate?.reasoning ?? "no reasoning given"}`)
+        return h("p", {}, `estimate: ${formatValue(entry.estimate?.value, entry.unit)} — `, rich(entry.estimate?.reasoning ?? "no reasoning given"))
       case "unknown":
-        return h("p", {}, `unknown${entry.unknown?.range ? `, somewhere in ${formatValue(entry.unknown.range, entry.unit)}` : ""}${entry.unknown?.settle ? `; settle by ${entry.unknown.settle}` : ""}`)
+        return h("p", {}, `unknown${entry.unknown?.range ? `, somewhere in ${formatValue(entry.unknown.range, entry.unit)}` : ""}`, entry.unknown?.settle ? ["; settle by ", rich(entry.unknown.settle)] : null)
       case "choice":
         return [
-          h("p", {}, `chosen: ${formatValue(entry.choice?.value, entry.unit)}${entry.choice?.rationale ? ` — ${entry.choice.rationale}` : ""}`),
-          (entry.choice?.alternatives ?? []).length ? h("ul", {}, entry.choice.alternatives.map((a) => h("li", {}, `over ${formatValue(a.value, entry.unit)}${a.note ? ` — ${a.note}` : ""}`))) : null,
+          h("p", {}, `chosen: ${formatValue(entry.choice?.value, entry.unit)}`, entry.choice?.rationale ? [" — ", rich(entry.choice.rationale)] : null),
+          (entry.choice?.alternatives ?? []).length ? h("ul", {}, entry.choice.alternatives.map((a) => h("li", {}, `over ${formatValue(a.value, entry.unit)}`, a.note ? [" — ", rich(a.note)] : null))) : null,
         ]
       case "check": {
         const o = ev.outcome ?? {}
@@ -487,7 +685,7 @@ export function AssumptionsView(handle, element, options = {}) {
         { "data-key": `jj:${j.key}` },
         ev.support?.conflicts?.some((c) => c.from === j.key) ? [chip("CONFLICT"), " "] : null,
         `${j.by?.kind === "person" ? j.by.who ?? "a person" : "the agent"}${j.on ? ` on ${j.on}` : ""}: ${j.verdict}${j.value != null ? ` ${formatValue(j.value, entry.unit)}` : ""}`,
-        j.says ? [" — ", h("q", {}, j.says)] : null,
+        j.says ? [" — ", h("q", {}, rich(j.says))] : null,
         changed ? h("span", { class: "quiet" }, " · the entry has changed since") : null,
         j.answer ? h("div", { class: "answer" }, `answered: ${j.answer.says}`) : null,
       )
@@ -762,7 +960,10 @@ export function AssumptionsView(handle, element, options = {}) {
       state.error = null
       state.preview = null
       render()
-    } else if (d.doc) root.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url: d.doc }, bubbles: true, composed: true }))
+    } else if (d.doc) {
+      event.preventDefault()
+      root.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url: d.doc, title: titles.get(d.doc) ?? undefined }, bubbles: true, composed: true }))
+    }
     else if (d.history) {
       state.history = { id: d.history, items: historyOf(d.history) }
       render()
@@ -808,7 +1009,7 @@ export function AssumptionsView(handle, element, options = {}) {
     const keys = {
       j: () => move(1),
       k: () => move(-1),
-      Enter: () => state.cursor && openEntry(state.cursor),
+      Enter: () => (event.target.dataset?.open ? openEntry(event.target.dataset.open) : state.cursor && openEntry(state.cursor)),
       a: () => openForm("claim"),
       d: () => openForm("judgement"),
       "[": () => {
@@ -842,6 +1043,7 @@ export function AssumptionsView(handle, element, options = {}) {
   root.addEventListener("submit", onSubmit)
   root.addEventListener("keydown", onKey)
   return () => {
+    disposed = true
     handle.off("change", render)
     root.removeEventListener("click", onClick)
     root.removeEventListener("input", onInput)
@@ -851,6 +1053,88 @@ export function AssumptionsView(handle, element, options = {}) {
     root.remove()
     style.remove()
   }
+}
+
+/**
+ * A layered drawing of a directed graph (inputs → readers), left to right.
+ * Layers are longest paths from the inputs; an edge that would close a cycle
+ * (only model results may) is reversed for layering and marked `back`. An edge
+ * spanning several layers runs through a virtual slot in each, so no edge
+ * crosses a box. Within a layer, order follows the mean position of
+ * neighbours, swept both ways a few times.
+ *
+ * @returns {{ layers: Array<Array<{ key, virtual }>>, chains: Array<{ keys, model, back }> }}
+ */
+export function layered(nodes, edges) {
+  const index = new Map(nodes.map((n, i) => [n, i]))
+  const inputs = new Map(nodes.map((n) => [n, []]))
+  for (const e of edges) inputs.get(e.v)?.push(e)
+  // Longest-path layering; an input still on the stack closes a cycle.
+  const layer = new Map()
+  const onStack = new Set()
+  const back = new Set()
+  const depth = (n) => {
+    if (layer.has(n)) return layer.get(n)
+    onStack.add(n)
+    let d = 0
+    for (const e of inputs.get(n)) {
+      if (onStack.has(e.u)) {
+        back.add(e)
+        continue
+      }
+      d = Math.max(d, depth(e.u) + 1)
+    }
+    onStack.delete(n)
+    layer.set(n, d)
+    return d
+  }
+  for (const n of nodes) depth(n)
+  const count = Math.max(0, ...layer.values()) + 1
+  const layers = Array.from({ length: count }, () => [])
+  for (const n of nodes) layers[layer.get(n)].push({ key: n, virtual: false })
+  const chains = []
+  let v = 0
+  for (const e of edges) {
+    const isBack = back.has(e)
+    const [from, to] = isBack ? [e.v, e.u] : [e.u, e.v]
+    const keys = [from]
+    for (let l = layer.get(from) + 1; l < layer.get(to); l++) {
+      const key = `~${v++}`
+      layers[l].push({ key, virtual: true })
+      keys.push(key)
+    }
+    keys.push(to)
+    chains.push({ keys: isBack ? keys.reverse() : keys, model: Boolean(e.model), back: isBack })
+  }
+  // Neighbours of each slot, from the chains, for ordering.
+  const nbrs = new Map()
+  const link = (a, b) => {
+    if (!nbrs.has(a)) nbrs.set(a, [])
+    nbrs.get(a).push(b)
+  }
+  for (const c of chains) for (let i = 0; i < c.keys.length - 1; i++) link(c.keys[i], c.keys[i + 1]), link(c.keys[i + 1], c.keys[i])
+  const position = new Map()
+  const place = () => layers.forEach((col) => col.forEach((item, i) => position.set(item.key, i)))
+  for (const col of layers) col.sort((a, b) => (a.virtual - b.virtual) || (index.get(a.key) ?? 0) - (index.get(b.key) ?? 0) || (a.key < b.key ? -1 : 1))
+  place()
+  const sweep = (range) => {
+    for (const l of range) {
+      const prev = new Set(layers[l + (range[0] < range[range.length - 1] ? -1 : 1)]?.map((i) => i.key) ?? [])
+      const score = (item) => {
+        const ps = (nbrs.get(item.key) ?? []).filter((k) => prev.has(k)).map((k) => position.get(k))
+        return ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : position.get(item.key)
+      }
+      layers[l] = layers[l].map((item) => [item, score(item)]).sort((a, b) => a[1] - b[1] || (a[0].key < b[0].key ? -1 : 1)).map(([item]) => item)
+      layers[l].forEach((item, i) => position.set(item.key, i))
+    }
+  }
+  const forward = [...Array(count).keys()].slice(1)
+  const backward = [...Array(count).keys()].reverse().slice(1)
+  for (let i = 0; i < 4; i++) {
+    sweep(forward)
+    sweep(backward)
+  }
+  return { layers, chains }
 }
 
 const CSS = `
@@ -921,4 +1205,19 @@ const CSS = `
 .asm form { display: grid; gap: 6px; margin-top: 10px; padding: 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--bg); }
 .asm form label { display: grid; gap: 2px; color: var(--quiet); }
 .asm .error { color: var(--fail); margin: 0; } .asm .preview { margin: 0; }
+.asm .structure-head { margin: 4px 0 0; } .asm .legend { margin: 2px 0 8px; font-size: 12px; }
+.asm .graph-wrap { overflow: auto; }
+.asm svg.graph { display: block; }
+.asm svg.graph .box { fill: var(--bg); stroke: var(--quiet); stroke-width: 1.25; }
+.asm svg.graph .node { cursor: pointer; outline: none; }
+.asm svg.graph .node:hover .box, .asm svg.graph .node:focus .box { stroke: var(--accent); stroke-width: 2; }
+.asm svg.graph .node.focus .box { stroke: var(--accent); stroke-width: 2; fill: color-mix(in oklch, var(--accent) 12%, var(--bg)); }
+.asm svg.graph .node.warn .box { stroke: var(--warn); } .asm svg.graph .node.fails .box { stroke: var(--fail); }
+.asm svg.graph .node.focus.warn .box { stroke: var(--warn); } .asm svg.graph .node.focus.fails .box { stroke: var(--fail); }
+.asm svg.graph .g-id { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; fill: var(--ink); }
+.asm svg.graph .g-val { font-size: 12px; fill: var(--ink); font-variant-numeric: tabular-nums; } .asm svg.graph .g-val.fail { fill: var(--fail); font-weight: 600; } .asm svg.graph .g-val.warn { font-weight: 600; }
+.asm svg.graph .g-meta { font-size: 11px; fill: var(--quiet); } .asm svg.graph .g-flag { font-weight: 600; fill: var(--ink); }
+.asm svg.graph .edge { fill: none; stroke: var(--quiet); stroke-width: 1.25; } .asm svg.graph .edge.model { stroke-dasharray: 4 3; }
+.asm svg.graph .arrowhead { fill: var(--quiet); }
+.asm a.doc { color: var(--accent); }
 `

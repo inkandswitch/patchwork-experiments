@@ -4,7 +4,7 @@ import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { AssumptionsDatatype } from "./datatype.js"
 import { evaluate, materialize } from "./register.js"
 import { entryParts, sheetOrder } from "./text.js"
-import { AssumptionsView } from "./view.js"
+import { AssumptionsView, layered } from "./view.js"
 
 await initSubduction()
 
@@ -203,4 +203,105 @@ describe("materialize on load", () => {
     const copy = JSON.parse(JSON.stringify(handle.doc()))
     expect(materialize(copy, evaluate(copy))).toEqual([])
   })
+})
+
+describe("the structure lens", () => {
+  it("draws the open entry with what it rests on and what it feeds, one box each, in words", () => {
+    click(element.querySelector('[data-open="pack_I_kA"]') ?? (lens("entries"), element.querySelector('tr[data-id="pack_I_kA"] a')))
+    lens("structure")
+    const boxes = [...element.querySelectorAll("svg.graph g.node")].map((g) => g.getAttribute("data-open"))
+    // pack_I_kA rests on pack_V_max, pack_R_mOhm and through it cell_R_ac_mOhm, busbar_R_mOhm; it feeds fuse_ok.
+    expect(new Set(boxes)).toEqual(new Set(["pack_I_kA", "pack_V_max", "pack_R_mOhm", "cell_R_ac_mOhm", "busbar_R_mOhm", "fuse_ok"]))
+    for (const g of element.querySelectorAll("svg.graph g.node")) {
+      expect(g.getAttribute("aria-label")).toMatch(new RegExp(`^${g.getAttribute("data-open")}`))
+      expect(g.querySelector("title").textContent).toBe(g.getAttribute("aria-label"))
+    }
+    expect(element.querySelector('g.node[data-open="pack_I_kA"]').getAttribute("class")).toContain("focus")
+    expect(element.querySelector('g.node[data-open="fuse_ok"]').getAttribute("aria-label")).toMatch(/DEPENDS/)
+  })
+
+  it("re-centres on a box when it is opened", () => {
+    lens("structure")
+    click(element.querySelector('g.node[data-open="busbar_R_mOhm"]') ?? element.querySelector("g.node"))
+    const focus = element.querySelector("g.node.focus")?.getAttribute("data-open")
+    expect(focus).toBe(element.querySelector(".panel h2").textContent.trim().split(/\s+/).find((w) => /_/.test(w)))
+  })
+})
+
+describe("documents are links by name, never bare URLs", () => {
+  it("shows a source, a model run and URLs in reasoning as their documents' titles", async () => {
+    const source = repo.create()
+    source.change((d) => Object.assign(d, { title: "EVE LF280K datasheet", content: "Nominal capacity 280Ah" }))
+    const run = repo.create()
+    run.change((d) => Object.assign(d, { title: "CFD run 1" }))
+    handle.change((d) => {
+      d.entries.cell_Ah = { kind: "fact", unit: "Ah", basis: "claims", claims: [{ key: "c1", source: source.url, quote: "Nominal capacity 280Ah", stated: { nominal: 280, dp: 0 }, verified: true, reading: "280 Ah" }] }
+      d.entries.hull_R_N = { kind: "result", unit: "N", basis: "model", model: { url: run.url, name: "CFD", tolerance: 0, inputs: { cell_Ah: { nominal: 280, dp: 0 } }, value: { nominal: 2691, dp: 0 } } }
+      d.entries.busbar_R_mOhm.estimate.reasoning = `Cited ${source.url} without a quote; see ${run.url}.`
+    })
+    for (const id of ["cell_Ah", "hull_R_N", "busbar_R_mOhm"]) {
+      click(element.querySelector('[data-close]') ?? element)
+      lens("entries")
+      for (const button of element.querySelectorAll('tr.group button[aria-expanded="false"]')) click(button)
+      click(element.querySelector(`tr[data-id="${id}"]`))
+      await new Promise((r) => setTimeout(r, 20))
+      expect(element.textContent, id).not.toMatch(/automerge:/)
+    }
+    const names = [...element.querySelectorAll("a.doc")].map((a) => a.textContent)
+    expect(names).toContain("EVE LF280K datasheet")
+    expect(names).toContain("CFD run 1")
+    for (const a of element.querySelectorAll("a.doc")) expect(a.getAttribute("data-doc")).toMatch(/^automerge:/)
+  })
+
+  it("opens a document through Patchwork, not the browser", () => {
+    const source = repo.create()
+    handle.change((d) => (d.entries.busbar_R_mOhm.estimate.reasoning = `see ${source.url}`))
+    lens("entries")
+    for (const button of element.querySelectorAll('tr.group button[aria-expanded="false"]')) click(button)
+    let opened = null
+    element.addEventListener("patchwork:open-document", (e) => (opened = e.detail.url))
+    const link = element.querySelector(`tr[data-id="busbar_R_mOhm"] a.doc`)
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true })
+    link.dispatchEvent(event)
+    expect(opened).toBe(source.url)
+    expect(event.defaultPrevented).toBe(true)
+  })
+})
+
+describe("the layered layout", () => {
+  // Every directed graph on 4 nodes (12 possible edges, 4096 graphs), cycles included.
+  const N = ["a", "b", "c", "d"]
+  const pairs = N.flatMap((u) => N.filter((v) => v !== u).map((v) => [u, v]))
+  it("puts every box in one layer, and every edge one layer per step, left to right unless it closes a cycle", () => {
+    for (let mask = 0; mask < 1 << pairs.length; mask++) {
+      const edges = pairs.filter((_, i) => mask & (1 << i)).map(([u, v]) => ({ u, v, model: false }))
+      const { layers, chains } = layered(N, edges)
+      const layerOf = new Map()
+      layers.forEach((col, l) => col.forEach((item) => {
+        expect(layerOf.has(item.key)).toBe(false)
+        layerOf.set(item.key, l)
+      }))
+      for (const n of N) expect(layerOf.has(n)).toBe(true)
+      expect(chains.length).toBe(edges.length)
+      for (const [i, c] of chains.entries()) {
+        expect([c.keys[0], c.keys.at(-1)]).toEqual([edges[i].u, edges[i].v])
+        const step = c.back ? -1 : 1
+        for (let k = 0; k < c.keys.length - 1; k++) expect(layerOf.get(c.keys[k + 1]) - layerOf.get(c.keys[k])).toBe(step)
+        for (const key of c.keys.slice(1, -1)) expect(key.startsWith("~")).toBe(true)
+      }
+      // Without a cycle no edge is drawn backwards.
+      const acyclic = !hasCycle(N, edges)
+      if (acyclic) expect(chains.some((c) => c.back)).toBe(false)
+    }
+  })
+  function hasCycle(nodes, edges) {
+    const state = new Map()
+    const visit = (n) => {
+      state.set(n, 1)
+      for (const e of edges) if (e.u === n && (state.get(e.v) === 1 || (!state.has(e.v) && visit(e.v)))) return true
+      state.set(n, 2)
+      return false
+    }
+    return nodes.some((n) => !state.has(n) && visit(n))
+  }
 })
