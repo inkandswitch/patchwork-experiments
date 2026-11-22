@@ -31,6 +31,8 @@ import {
   questionsAwaitingAnswer,
   orphanedCalls,
   resolveOrphans,
+  interruptedTurns,
+  dropInterruptedTurns,
   unknownBlocks,
   makeTurn,
   textBlock,
@@ -106,9 +108,11 @@ export function needsWork(doc, canRun = () => true, live = null) {
   // the stop, its result landing last, used to look like work, and a runner
   // took the cancelled step up again once the stop's lease went stale.
   if (doc.halted) return false
-  // A call whose runner died mid-flight has to be closed out before anything
-  // else can happen — whatever else the session is waiting on.
-  if (orphanedCalls(doc, live ? { live } : {}).length) return true
+  // A call or a reply whose runner died mid-flight — a page reloaded or
+  // closed — has to be settled before anything else can happen, whatever else
+  // the session is waiting on.
+  const liveness = live ? { live } : {}
+  if (orphanedCalls(doc, liveness).length || interruptedTurns(doc, liveness).length) return true
   if (callsAwaitingApproval(doc).length) return false
   // A question the agent asked is work for a person, not for a runner.
   if (questionsAwaitingAnswer(doc).length) return false
@@ -382,11 +386,16 @@ export class SessionRunner {
       }
 
       // Ours for certain now. Anything the previous runner was in the middle
-      // of will never finish: say so, so the model can check and carry on.
-      // Not before: a claim that loses must not close a live runner's calls.
-      if (orphanedCalls(this.store.doc(), { live: this.live }).length) {
+      // of will never finish. A half-streamed reply is taken out, to be asked
+      // for again whole; a call that only reads is put back to run again; any
+      // other call is answered as interrupted, so the model can check and
+      // carry on. Not before: a claim that loses must not touch a live
+      // runner's work.
+      const liveness = { live: this.live }
+      if (orphanedCalls(this.store.doc(), liveness).length || interruptedTurns(this.store.doc(), liveness).length) {
         this.store.change((d) => {
-          resolveOrphans(d, { live: this.live })
+          dropInterruptedTurns(d, liveness)
+          resolveOrphans(d, { ...liveness, rerun: (call) => toolset.get(call.tool)?.risk === "read" })
         })
       }
 
@@ -485,6 +494,23 @@ export class SessionRunner {
     } catch {
       return []
     }
+  }
+
+  /**
+   * Give the session up because this page is going away (runners.js). Only
+   * the lease: what was under way is left as it is, a reply still marked as
+   * streaming and a call still marked as running, for the next runner to
+   * settle at once instead of after the lease goes stale. Called before the
+   * runner is stopped, so the stop, no longer holding the lease, writes
+   * nothing (loop.js).
+   */
+  release() {
+    const doc = this.store.doc()
+    if (doc?.lease?.runner !== this.runnerUrl) return false
+    this.store.change((d) => {
+      d.lease = null
+    })
+    return true
   }
 
   /**
