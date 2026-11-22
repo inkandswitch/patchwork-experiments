@@ -471,7 +471,7 @@ export class SessionRunner {
     const scope = scopeOf(doc)
     await assertScopeAgrees(doc, scope, this.ctx.repo)
     const prepared = scope
-      ? { toolset: await scopedToolset({ plugins: await this.scopedPlugins() }), ctx: await confine(this.ctx, scope), privileged: () => null }
+      ? { toolset: await scopedToolset({ plugins: await this.scopedPlugins(), step: !!doc?.workflow?.planUrl }), ctx: await confine(this.ctx, scope), privileged: () => null }
       : { toolset: await this.buildToolset(doc), ctx: this.fullCtx, privileged: (this.privileged ??= await privileges(this.ctx, this.store)) }
     this.onToolset?.(prepared.toolset)
     return prepared
