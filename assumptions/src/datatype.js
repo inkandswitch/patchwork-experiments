@@ -1,8 +1,8 @@
 /**
- * The assumptions datatype. The shape is documented in model.js.
+ * The assumptions datatype. The shape is documented in register.js.
  */
 
-import { ASSUMPTIONS } from "./model.js"
+import { ASSUMPTIONS } from "./register.js"
 
 export const AssumptionsDatatype = {
   init(doc) {
@@ -10,7 +10,7 @@ export const AssumptionsDatatype = {
     doc.title = "Assumptions"
     doc.scope = null
     doc.entries = {}
-    doc.variants = {}
+    doc.scan = null
   },
   getTitle(doc) {
     return doc.title || "Assumptions"

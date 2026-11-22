@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { plugins } from "./index.js"
 
 const tools = plugins.filter((p) => p.type === "agent:tool")
-const source = readFileSync(join(process.cwd(), "src/agent-tools.js"), "utf8")
+// fetch, not node:fs, so this file runs in a page and a worker too; under
+// `vitest run`, vitest.setup.js lets fetch read file: URLs.
+const source = await (await fetch(new URL("./src/agent-tools.js", import.meta.url))).text()
 
 describe("plugin metadata", () => {
   it("is plain data apart from load()", () => {
