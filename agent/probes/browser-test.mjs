@@ -2,7 +2,7 @@
  * Can Patchwork run a package's tests, in the browser?
  *
  * Same machinery as the build, pointed at a test file: bundle it, rewrite its
- * `vitest` import to the injected harness, execute the bundle, and collect what
+ * `vitest` import to the runtime (vitest's own engine), import the bundle, and collect what
  * passed and failed. If this works, the agent can write a test and find out
  * whether it holds — which it otherwise cannot.
  *

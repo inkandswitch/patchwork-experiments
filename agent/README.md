@@ -576,45 +576,54 @@ Measured: a TypeScript tool importing three.js builds in about one second to a
 727 kB self-contained bundle, which registers, mounts, and draws to a live
 WebGL canvas.
 
-## Tests run in the browser too — with real vitest
+## Tests run in a page or a worker — on vitest's own engine
 
 `tool_check` answers "does this mount and respond to a click". It cannot answer
 "is this function correct", so an agent that writes tests it cannot run has
 written documentation.
 
 `package_test` bundles each `*.test.ts` with the same esbuild machinery,
-rewrites its `vitest` import to an injected harness, executes the bundle, and
-reports what passed and failed.
+rewrites its `vitest` import to a bridge to the runtime, and imports the bundle
+while vitest's runner collects it.
 
-**The assertions are the real thing.** "vitest is a node program" is true of the
-CLI and false of the parts that matter — measured in a browser with
-`probes/vitest-feasibility.mjs`:
+**The engine is vitest's, at the version the package's own `vitest run` uses.**
+"vitest is a node program" is true of the CLI and false of the parts that
+decide what a test means: `@vitest/runner` (collection, hooks, `each`, `only`,
+`skip`, `todo`, timeouts), `@vitest/expect` (chai with vitest's plugins, so
+every matcher and asymmetric matcher, with vitest's diffs) and `@vitest/spy`.
+None of them need Node. `scripts/vendor-vitest.mjs` bundles them into
+`tools/vendor/vitest-engine.js` (`pnpm vendor:vitest`; a test fails when it
+drifts from the installed vitest), so a run needs no network, and a page, a
+worker and this package's own tests all import the same file.
+`tools/vitest-runtime.js` is the only code of ours in the path: it assembles
+`expect` the way vitest does, imports the file, and flattens the result into
+the report.
 
-| | |
-|---|---|
-| `@vitest/expect` | loads — it exports chai plugins, which is how vitest itself assembles `expect` |
-| `@vitest/spy` | loads — real `vi.fn()` / `vi.spyOn()` with `mock.calls` and `mock.results` |
-| `@vitest/runner` | loads — the real collection engine |
-| `vitest` (the CLI) | does not load, and never will |
+**Two hosts.** `in: "page"` (the default) has the real DOM. `in: "worker"` runs
+each file in a fresh module worker (`tools/test-worker.js`), which has none, for
+code meant to run in one. A worker has no importmap, so the tab resolves
+Patchwork's importmap to absolute URLs and the build writes them into the
+bundle, the same table `worker-client.js` hands the shared runner. A file that
+declares `// @vitest-environment happy-dom` (or jsdom) is skipped in a worker,
+with that reason. A worker that does not finish a file in 60 s is terminated.
 
-So `expect` is chai with `JestChaiExpect`, `JestExtend` and
-`JestAsymmetricMatchers` installed: every matcher, asymmetric matchers
-(`expect.objectContaining`, `expect.arrayContaining`, `expect.any`), and chai's
-own diffs. What stays hand-written is only the collector — describe/it/hooks and
-the run loop — because that part is sixty lines, and owning it is what lets
-results be reported into a transcript rather than a terminal.
+**Package files are read by URL.** The bundle runs from a `blob:` URL, so the
+build sets each package module's `import.meta.url` to its file's
+service-worker URL (`/automerge%3A<folder>/<path>`, Patchwork's
+`getImportableUrlFromAutomergeUrl`). `fetch(new URL("./data.json",
+import.meta.url))` then reads the package in a page and a worker; under
+`vitest run`, a setup file lets Node's `fetch` read `file:` URLs.
 
-What is genuinely missing is what the CLI provides: `vi.mock`, snapshots,
-coverage, watch.
+**The report.** Failures with vitest's diff, errors nothing caught while a file
+ran (Chrome delivers `unhandledrejection` after the next task, so each file gets
+100 ms to settle), and up to 60 lines of what the file logged.
 
-The built-in matchers remain as a **fallback**, not the product: with no network
-the run still happens and the report says `assertions: built-in matchers`
-instead of pretending.
+What needs the CLI is not here: `vi.mock` (vite rewrites the file to hoist it),
+fake timers, snapshots, coverage, watch. `vi.mock` says so when called.
 
-Measured: eight TypeScript tests — a relative import, `toThrow`, an async case,
-asymmetric matchers, `vi.fn` spies and a deep property path — run in 625ms, with
-a deliberate failure reported as chai's `expected 5 to be 6 // Object.is
-equality`.
+Measured in headless Chrome, on the assumptions package: 300 of 300 tests in a
+page in about 2 s; in a worker, 116 of 116, with its two DOM files skipped.
+The same files pass under `vitest run`.
 
 ## Risk lives on the document
 

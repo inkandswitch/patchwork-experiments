@@ -9,9 +9,15 @@
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "runner": "node node-runner.mjs"
+    "runner": "node node-runner.mjs",
+    "vendor:vitest": "node scripts/vendor-vitest.mjs"
   },
   "devDependencies": {
+    "@vitest/expect": "3.2.7",
+    "@vitest/runner": "3.2.7",
+    "@vitest/spy": "3.2.7",
+    "chai": "5.3.3",
+    "esbuild": "0.28.2",
     "happy-dom": "^15.11.7",
     "vitest": "^3.2.4"
   },

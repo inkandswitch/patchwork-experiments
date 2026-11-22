@@ -1,21 +1,30 @@
 /**
- * Running a package's tests, in the browser.
+ * Running a package's tests, in a page or a worker.
  *
  * `tool_check` answers "does this tool mount and respond to a click". It cannot
  * answer "is this function correct", which is what tests are for — and an agent
  * that writes tests it cannot run has written documentation, not tests.
  *
- * The mechanism is the build machinery pointed at a different entry point: each
- * test file is bundled with esbuild, its `vitest` import rewritten to a harness
- * we inject, and the bundle executed. What comes back is a pass/fail list with
- * real failure messages.
+ * The mechanism is the build machinery pointed at a different entry point:
+ * each test file is bundled with esbuild, its `vitest` import rewritten to a
+ * bridge to the runtime, and the bundle imported while vitest's own runner
+ * collects it (vitest-runtime.js, over the vendored engine). The same engine
+ * runs the package's tests under `vitest run`, so a test means the same thing
+ * in every host.
  *
- * Host tier, because tests routinely touch the DOM and a SharedWorker has none.
+ * Two hosts: the page, which has the real DOM, and a worker, which has none —
+ * where code meant for workers has to be shown to work. A file that declares
+ * a DOM environment (`// @vitest-environment happy-dom`) is skipped in the
+ * worker, with the reason.
+ *
+ * Host tier either way: the build and the importmap are the tab's.
  */
 
-import { materialize, loadEsbuild, packagePlugin } from "./build.js"
-import { createHarness, loadVitestAssertions } from "./harness.js"
-import { truncate } from "./format.js"
+import { materialize, loadEsbuild, packagePlugin, isExternal, loaderFor } from "./build.js"
+import { createRuntime, captureConsole } from "./vitest-runtime.js"
+import { resolveImportMap } from "../worker-client.js"
+
+export { captureConsole }
 
 /** Test files, by the conventions everyone already uses. */
 export const TEST_FILE_PATTERN = /\.(test|spec)\.(ts|tsx|js|jsx|mjs)$/
@@ -32,47 +41,88 @@ export function findTestFiles(files, filter) {
   return all.filter((path) => pattern.test(path)).sort()
 }
 
+/** The DOM environment a test file asks for in its pragma, or null. */
+export function domEnvironmentOf(source) {
+  return /@vitest-environment\s+(happy-dom|jsdom)\b/.exec(String(source ?? ""))?.[1] ?? null
+}
+
 /**
- * The module a test file gets when it imports `vitest`.
- *
- * Ten lines, because the harness itself is real code living on the page — the
- * bundle only needs a bridge to it. Inlining the whole harness as a string
- * would make it untestable, which would be a poor joke in a testing tool.
+ * The module a test file gets when it imports `vitest`: a bridge to the
+ * runtime the host installed, so the file registers its suites with the
+ * runner that is collecting it.
  */
-export const HARNESS_SHIM = `
-const harness = globalThis.__patchworkHarness
-if (!harness) throw new Error("test harness missing — run these through package_test")
-export const describe = harness.describe
-export const it = harness.it
-export const test = harness.test
-export const expect = harness.expect
-export const vi = harness.vi
-export const beforeEach = harness.beforeEach
-export const afterEach = harness.afterEach
-export const beforeAll = harness.beforeAll
-export const afterAll = harness.afterAll
-export default harness
+export const VITEST_BRIDGE = `
+const vitest = globalThis.__patchworkVitest
+if (!vitest) throw new Error("no vitest runtime — run these through package_test")
+export const { describe, suite, it, test, beforeAll, afterAll, beforeEach, afterEach, onTestFailed, onTestFinished, expect, assert, chai, vi } = vitest
+export { vi as vitest }
+export default vitest
 `
 
-/** The specifiers a test file might import a harness from. */
-const HARNESS_SPECIFIERS = ["vitest", "jest", "node:test", "@jest/globals", "bun:test"]
+/** Specifiers a test file might import the API from; the jest-shaped ones mean the same calls. */
+const VITEST_SPECIFIERS = ["vitest", "@jest/globals", "bun:test"]
 
-/** Wrap the package plugin so harness imports resolve to the shim. */
-export function testPlugin(files, options = {}) {
+/**
+ * A specifier through an importmap's `imports`: an exact entry, else the
+ * longest prefix entry ending in "/".
+ */
+export function resolveSpecifier(imports, specifier) {
+  if (Object.hasOwn(imports, specifier)) return imports[specifier]
+  let best = null
+  for (const key of Object.keys(imports)) {
+    if (key.endsWith("/") && specifier.startsWith(key) && (!best || key.length > best.length)) best = key
+  }
+  return best ? imports[best] + specifier.slice(best.length) : null
+}
+
+/**
+ * Where the service worker serves a package's files: Patchwork's
+ * `getImportableUrlFromAutomergeUrl`. Null outside a browser.
+ */
+export function packageBaseUrl(folderUrl) {
+  let origin
+  try {
+    origin = new URL(globalThis.document.baseURI).origin
+  } catch {
+    origin = globalThis.location?.origin
+  }
+  return origin && origin !== "null" ? `${origin}/${encodeURIComponent(folderUrl)}/` : null
+}
+
+/**
+ * The package plugin, with `vitest` resolved to the bridge.
+ *
+ * With `importMap` (resolved to absolute URLs), Patchwork's externals are
+ * rewritten to those URLs, for a worker, which has no importmap of its own.
+ *
+ * With `baseUrl`, each package module's `import.meta.url` is its own file's
+ * service-worker URL, as if it had been imported unbundled — so
+ * `fetch(new URL("./data.json", import.meta.url))` reads the package, rather
+ * than resolving against the blob the bundle runs from.
+ */
+export function testPlugin(files, { importMap = null, baseUrl = null, ...options } = {}) {
   const inner = packagePlugin(files, options)
   return {
     name: "patchwork-test",
     setup(build) {
+      if (baseUrl) {
+        build.onLoad({ filter: /.*/, namespace: "package" }, (args) => {
+          const contents = files.get(args.path) ?? ""
+          if (typeof contents !== "string") return undefined
+          const url = JSON.stringify(new URL(args.path, baseUrl).href)
+          return { contents: contents.replace(/\bimport\.meta\.url\b/g, url), loader: loaderFor(args.path) }
+        })
+      }
       build.onResolve({ filter: /.*/ }, (args) => {
-        if (HARNESS_SPECIFIERS.includes(args.path)) {
-          return { path: "__harness__", namespace: "harness" }
+        if (VITEST_SPECIFIERS.includes(args.path)) return { path: "vitest", namespace: "vitest" }
+        if (importMap && isExternal(args.path)) {
+          const url = resolveSpecifier(importMap, args.path)
+          if (url) return { path: url, external: true }
+          return { errors: [{ text: `'${args.path}' comes from Patchwork's importmap, which has no entry for it` }] }
         }
         return undefined // fall through to the package plugin
       })
-      build.onLoad({ filter: /.*/, namespace: "harness" }, () => ({
-        contents: HARNESS_SHIM,
-        loader: "js",
-      }))
+      build.onLoad({ filter: /.*/, namespace: "vitest" }, () => ({ contents: VITEST_BRIDGE, loader: "js" }))
       inner.setup(build)
     },
   }
@@ -81,40 +131,10 @@ export function testPlugin(files, options = {}) {
 /** How much of what a file logged the report keeps. */
 export const LOGGED_MAX_LINES = 60
 export const LOGGED_MAX_CHARS = 6000
-
-/** Render one console argument as a person reads it in a console. */
-function logArgument(value) {
-  if (typeof value === "string") return value
-  if (value instanceof Error) return value.stack ?? `${value.name}: ${value.message}`
-  try {
-    return JSON.stringify(value) ?? String(value)
-  } catch {
-    return String(value)
-  }
-}
-
-/**
- * Collect what the page's console is given until `stop()`, still passing it
- * through. A test that logs was shown nothing: the sailing note's way to see a
- * value was to throw an Error with the JSON in it.
- */
-export function captureConsole(target = globalThis.console) {
-  const lines = []
-  const originals = {}
-  for (const level of ["log", "info", "warn", "error", "debug"]) {
-    originals[level] = target[level]
-    target[level] = (...args) => {
-      lines.push(`${level === "log" ? "" : `[${level}] `}${args.map(logArgument).join(" ")}`)
-      originals[level]?.apply(target, args)
-    }
-  }
-  return {
-    lines,
-    stop() {
-      Object.assign(target, originals)
-    },
-  }
-}
+/** How many lines of a failure's diff the report keeps. */
+export const DIFF_MAX_LINES = 16
+/** How long a worker gets for one file before it is terminated. */
+export const WORKER_FILE_DEADLINE_MS = 60_000
 
 function describeLogged(logged) {
   if (!logged.length) return []
@@ -131,14 +151,27 @@ function describeLogged(logged) {
   return out
 }
 
+function describeDiff(diff) {
+  if (!diff) return []
+  const lines = diff.split("\n")
+  const kept = lines.slice(0, DIFF_MAX_LINES).map((line) => `      ${line}`)
+  if (lines.length > DIFF_MAX_LINES) kept.push(`      … ${lines.length - DIFF_MAX_LINES} more lines`)
+  return kept
+}
+
 /** Render results the way a test runner does, because that is what people read. */
 export function formatResults(fileResults) {
   const lines = []
   let passed = 0
   let failed = 0
   let skipped = 0
+  let unhandledCount = 0
 
-  for (const { file, results, error, logged = [] } of fileResults) {
+  for (const { file, results = [], error, skippedBecause, unhandled = [], logged = [] } of fileResults) {
+    if (skippedBecause) {
+      lines.push(`- ${file}  (skipped: ${skippedBecause})`)
+      continue
+    }
     if (error) {
       lines.push(`✗ ${file}`)
       lines.push(`  could not run: ${error}`)
@@ -147,8 +180,8 @@ export function formatResults(fileResults) {
       continue
     }
 
-    const fileFailed = results.filter((r) => r.status === "failed")
-    lines.push(`${fileFailed.length ? "✗" : "✓"} ${file}  (${results.length} test${results.length === 1 ? "" : "s"})`)
+    const fileFailed = results.some((r) => r.status === "failed") || unhandled.length > 0
+    lines.push(`${fileFailed ? "✗" : "✓"} ${file}  (${results.length} test${results.length === 1 ? "" : "s"})`)
 
     for (const result of results) {
       if (result.status === "passed") passed++
@@ -158,17 +191,85 @@ export function formatResults(fileResults) {
       if (result.status === "failed") {
         lines.push(`  ✗ ${result.label}`)
         lines.push(`      ${result.error}`)
+        lines.push(...describeDiff(result.diff))
         if (result.stack) lines.push(`      ${result.stack.split("\n")[0]?.trim() ?? ""}`)
       } else if (result.status === "skipped") {
         lines.push(`  - ${result.label} (skipped)`)
       }
     }
+    for (const message of unhandled) lines.push(`  ✗ unhandled error while this file ran: ${message}`)
+    unhandledCount += unhandled.length
     lines.push(...describeLogged(logged))
   }
 
   lines.push("")
-  lines.push(`${passed} passed, ${failed} failed${skipped ? `, ${skipped} skipped` : ""}`)
-  return { report: lines.join("\n"), passed, failed, skipped }
+  lines.push(
+    `${passed} passed, ${failed} failed${skipped ? `, ${skipped} skipped` : ""}` +
+      (unhandledCount ? `, ${unhandledCount} unhandled error${unhandledCount === 1 ? "" : "s"}` : "")
+  )
+  return { report: lines.join("\n"), passed, failed, skipped, unhandled: unhandledCount }
+}
+
+/** The vendored engine, loaded on first use: it is half a megabyte. */
+function loadEngine() {
+  return import("./vendor/vitest-engine.js")
+}
+
+/** Execute a bundle by importing it. Replaceable in tests. */
+async function defaultRunBundle(code) {
+  const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }))
+  try {
+    await import(/* @vite-ignore */ url)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+/** Run one bundle in this page, under the runtime. */
+async function runInPage(file, code, options, { engine, runBundle = defaultRunBundle }) {
+  const runtime = createRuntime(engine)
+  const previous = globalThis.__patchworkVitest
+  globalThis.__patchworkVitest = runtime.api
+  // Files run one after another, so what is logged meanwhile is this file's.
+  const consoled = captureConsole()
+  try {
+    const report = await runtime.runFile(file, () => runBundle(code), options)
+    return { ...report, logged: consoled.lines }
+  } catch (err) {
+    return { error: String(err?.message ?? err), logged: consoled.lines }
+  } finally {
+    consoled.stop()
+    if (previous === undefined) delete globalThis.__patchworkVitest
+    else globalThis.__patchworkVitest = previous
+  }
+}
+
+/** Run one bundle in a fresh module worker (test-worker.js). Replaceable in tests. */
+function defaultRunInWorker(file, code, options, { deadlineMs = WORKER_FILE_DEADLINE_MS } = {}) {
+  return new Promise((resolve) => {
+    let worker
+    try {
+      worker = new Worker(new URL("./test-worker.js", import.meta.url), { type: "module" })
+    } catch (err) {
+      resolve({ error: `could not start a worker: ${err?.message ?? err}` })
+      return
+    }
+    const finish = (report) => {
+      clearTimeout(timer)
+      worker.terminate()
+      resolve(report)
+    }
+    const timer = setTimeout(
+      () => finish({ error: `did not finish within ${deadlineMs / 1000}s; the worker was terminated` }),
+      deadlineMs
+    )
+    worker.onmessage = (event) => finish(event.data)
+    worker.onerror = (event) => {
+      event.preventDefault?.()
+      finish({ error: `the worker failed: ${event.message ?? "it could not load"}` })
+    }
+    worker.postMessage({ file, code, options })
+  })
 }
 
 export const packageTest = {
@@ -181,8 +282,10 @@ export const packageTest = {
     "  import { describe, it, expect } from 'vitest'",
     "  describe('thing', () => { it('works', () => { expect(add(1, 2)).toBe(3) }) })",
     "",
-    "They run in the browser: each file is bundled and executed. The assertions are REAL vitest — @vitest/expect on chai, so every matcher you know works, including asymmetric ones (expect.objectContaining, expect.arrayContaining, expect.any) — and `vi.fn()` / `vi.spyOn()` come from @vitest/spy. Only vitest's CLI cannot run here, so there is no vi.mock, no snapshots and no coverage.",
-    "With no network it falls back to a smaller built-in matcher set and says so in the report, rather than pretending.",
+    "This is vitest's own engine (@vitest/runner, @vitest/expect, @vitest/spy), the version the package's `vitest run` uses, so describe/it/each/hooks/only/skip/todo, every matcher (including expect.objectContaining and friends) and vi.fn / vi.spyOn behave as they do there. What needs vitest's CLI is not here: vi.mock, fake timers, snapshots, coverage.",
+    "",
+    "`in` picks the host. \"page\" (the default) has the real DOM. \"worker\" has none; use it for code meant to run in a worker. A file that starts with `// @vitest-environment happy-dom` (or jsdom) needs a DOM, and is skipped in a worker with that reason.",
+    "Read a package file from a test with fetch(new URL('./data.json', import.meta.url)), not node:fs.",
     "",
     "What the tests log with console.log (or warn, error) is shown under each file in the report.",
     "Test the logic you can test this way; use tool_check for whether the tool mounts and renders.",
@@ -195,11 +298,15 @@ export const packageTest = {
     properties: {
       url: { type: "string", description: "The package folder document URL." },
       filter: { type: "string", description: "Only run test files matching this pattern." },
+      in: { type: "string", enum: ["page", "worker"], description: 'Where to run them. Default "page".' },
       timeoutMs: { type: "number", description: "Per-test timeout. Default 5000." },
     },
   },
 
   async execute(input, ctx) {
+    const host = input.in ?? "page"
+    if (host !== "page" && host !== "worker") throw new Error(`'in' is "page" or "worker", not ${JSON.stringify(input.in)}.`)
+
     const files = await materialize(ctx.repo, input.url)
     if (!files.size) throw new Error(`${input.url} has no files in it.`)
 
@@ -212,14 +319,19 @@ export const packageTest = {
     }
 
     const esbuild = await loadEsbuild({ importModule: ctx.importModule })
-
-    // Real vitest matchers where the network allows, the built-in subset where
-    // it does not. Loaded once for the whole run, not once per file.
-    const assertions = await loadVitestAssertions({ importModule: ctx.importModule })
+    const importMap = host === "worker" ? (ctx.importMap ?? resolveImportMap() ?? {}) : null
+    const baseUrl = ctx.packageBaseUrl ?? packageBaseUrl(input.url)
+    const engine = await loadEngine()
+    const options = { testTimeout: input.timeoutMs ?? 5000 }
     const fileResults = []
-    let engine = null
 
     for (const file of testFiles) {
+      const environment = domEnvironmentOf(files.get(file))
+      if (host === "worker" && environment) {
+        fileResults.push({ file, skippedBecause: `needs a DOM (@vitest-environment ${environment}); run it with in: "page"` })
+        continue
+      }
+
       let bundle
       try {
         const built = await esbuild.build({
@@ -230,7 +342,7 @@ export const packageTest = {
           platform: "browser",
           write: false,
           sourcemap: false,
-          plugins: [testPlugin(files, { fetchImpl: ctx.fetchImpl })],
+          plugins: [testPlugin(files, { fetchImpl: ctx.fetchImpl, importMap, baseUrl })],
           logLevel: "silent",
         })
         bundle = built.outputFiles?.[0]?.text
@@ -240,31 +352,16 @@ export const packageTest = {
         continue
       }
 
-      // A harness per file, so one file's suites and hooks cannot leak into
-      // another's.
-      const harness = createHarness({ timeoutMs: input.timeoutMs ?? 5000, assertions })
-      engine = harness.engine
-      const previous = globalThis.__patchworkHarness
-      globalThis.__patchworkHarness = harness.api
-
-      const run = ctx.runBundle ?? defaultRunBundle
-      // Files run one after another, so what is logged meanwhile is this file's.
-      const consoled = captureConsole()
-      try {
-        await run(bundle)
-        const results = await harness.run()
-        fileResults.push({ file, results, logged: consoled.lines })
-      } catch (err) {
-        fileResults.push({ file, error: String(err?.message ?? err), logged: consoled.lines })
-      } finally {
-        consoled.stop()
-        globalThis.__patchworkHarness = previous
-      }
+      const report =
+        host === "page"
+          ? await runInPage(file, bundle, options, { engine, runBundle: ctx.runBundle })
+          : await (ctx.runInWorker ?? defaultRunInWorker)(file, bundle, options)
+      fileResults.push({ file, ...report })
     }
 
-    const { report, failed } = formatResults(fileResults)
-    const footer = `\nassertions: ${engine ?? "none"}`
-    return failed
+    const { report, failed, unhandled } = formatResults(fileResults)
+    const footer = `\nvitest ${engine.versions["@vitest/runner"]}, in a ${host}`
+    return failed || unhandled
       ? `${report}${footer}\n\nFix the failures and run package_test again.`
       : `${report}${footer}`
   },
@@ -272,19 +369,8 @@ export const packageTest = {
   summarize(input, output) {
     const counts = String(output ?? "").match(/(\d+) passed, (\d+) failed/)
     if (!counts) return "ran tests"
-    return `tests · ${counts[1]} passed${counts[2] === "0" ? "" : `, ${counts[2]} failed`}`
+    return `tests · ${counts[1]} passed${counts[2] === "0" ? "" : `, ${counts[2]} failed`}${input?.in === "worker" ? " (worker)" : ""}`
   },
-}
-
-/** Execute a bundle by importing it. Replaceable in tests. */
-async function defaultRunBundle(code) {
-  const blob = new Blob([code], { type: "text/javascript" })
-  const url = URL.createObjectURL(blob)
-  try {
-    await import(/* @vite-ignore */ url)
-  } finally {
-    URL.revokeObjectURL(url)
-  }
 }
 
 export default [packageTest]
