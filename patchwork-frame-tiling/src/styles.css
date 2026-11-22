@@ -324,18 +324,106 @@ patchwork-view {
 /* A stack: its documents as text, the showing one in the header's ink and the
    rest fainter. No tab shapes; a hover wash shows each one's extent, and its
    × appears only then. */
+/* A long stack scrolls sideways rather than squeezing its tabs to nothing,
+   fading at an edge with more beyond it; the list button after it names
+   them all. */
 .tile-panel__tabs {
   flex: 0 1 auto;
   min-width: 0;
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 0.125rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  --tile-strip-fade: 1.5rem;
+}
+
+.tile-panel__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tile-panel__tabs--more-left {
+  mask-image: linear-gradient(to right, transparent, #000 var(--tile-strip-fade));
+}
+
+.tile-panel__tabs--more-right {
+  mask-image: linear-gradient(
+    to left,
+    transparent,
+    #000 var(--tile-strip-fade)
+  );
+}
+
+.tile-panel__tabs--more-left.tile-panel__tabs--more-right {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--tile-strip-fade),
+    #000 calc(100% - var(--tile-strip-fade)),
+    transparent
+  );
+}
+
+.tile-panel__tab-list-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  height: 20px;
+  padding: 0 0.3rem;
+  font: inherit;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.tile-panel__tab-list-btn:hover,
+.tile-panel__tab-list-btn:focus-visible,
+.tile-panel__tab-list-btn[aria-expanded="true"] {
+  color: var(--tile-fg);
+  background: var(--tile-fill-offset);
+  outline: none;
+}
+
+/* The tab list hangs from the header's right end, and scrolls when long. */
+.tile-tool-menu.tile-tab-list {
+  left: auto;
+  right: 0.25rem;
+  max-width: min(20rem, 90%);
+  max-height: min(60vh, 24rem);
+  overflow-y: auto;
+}
+
+.tile-tool-menu__item.tile-tab-list__item {
+  align-items: center;
+  gap: 0;
+}
+
+.tile-tab-list__item .tile-tool-menu__name {
+  min-width: 0;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A preview (a document opened but not yet engaged with, which the next open
+   in its panel replaces) is named in italic, as editors mark theirs. */
+.tile-panel__tab--preview .tile-panel__tab-label,
+.tile-panel__title--preview,
+.tile-tab-list__item--preview .tile-tool-menu__name {
+  font-style: italic;
 }
 
 .tile-panel__tab {
   flex: 0 1 auto;
-  min-width: 3rem;
+  min-width: 6rem;
   max-width: 12rem;
   display: inline-flex;
   align-items: center;

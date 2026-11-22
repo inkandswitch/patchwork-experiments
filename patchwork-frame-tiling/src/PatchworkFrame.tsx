@@ -56,7 +56,6 @@ import {
   makeLeaf,
   moveLeafIn,
   moveTabIn,
-  navigateLeafIn,
   removeLeafIn,
   setDrawerWidthIn,
   showDrawerToolIn,
@@ -65,7 +64,9 @@ import {
   setSizesIn,
   splitLeafIn,
   stackIntoIn,
-  stackViewIn,
+  keepShowingIn,
+  openInLeafIn,
+  type OpenMode,
 } from "./layout";
 import { TopBar } from "./TopBar";
 import {
@@ -144,6 +145,41 @@ const writeTabFocus = (key: string | null, focus: TabFocus): void => {
     sessionStorage.setItem(key, JSON.stringify(focus));
   } catch {
     // Storage may be full or disabled; focus just won't survive reload.
+  }
+};
+
+// A new browser tab starts with empty sessionStorage, but it clones the
+// layout of the tab you were last looking at (leaf ids and all), so it should
+// start with that tab's focus too: otherwise "the focused panel", where a link
+// opened in the new tab lands, is just the first panel in tree order. The
+// visible tab keeps one slot in localStorage naming its layout and focus; a
+// new tab takes it only if it names the layout being cloned. A tab with no
+// focus yet writes nothing: that's a new tab, which claims to be the visible
+// one before it has read the slot.
+const CARRIED_FOCUS_KEY = "tiling-focus:last";
+
+const writeCarriedFocus = (layoutUrl: string | undefined, focus: TabFocus): void => {
+  if (!layoutUrl || !focus.focusOrder.length || document.visibilityState !== "visible")
+    return;
+  try {
+    localStorage.setItem(CARRIED_FOCUS_KEY, JSON.stringify({ layoutUrl, ...focus }));
+  } catch {
+    // Storage disabled: a new tab just starts without focus.
+  }
+};
+
+const readCarriedFocus = (layoutUrl: string): TabFocus | null => {
+  try {
+    const raw = localStorage.getItem(CARRIED_FOCUS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<TabFocus> & { layoutUrl?: unknown };
+    if (parsed.layoutUrl !== layoutUrl || !Array.isArray(parsed.focusOrder)) return null;
+    return {
+      activeLeafId: typeof parsed.activeLeafId === "string" ? parsed.activeLeafId : null,
+      focusOrder: parsed.focusOrder.filter((id): id is string => typeof id === "string"),
+    };
+  } catch {
+    return null;
   }
 };
 
@@ -233,9 +269,26 @@ const docLinkView = (href: string): PanelView | null => {
 const readDeepLink = (): PanelView | null =>
   docLinkView(window.location.href);
 
+// **Navigation history.** Each open you make (a folder click, a link, Shift
+// or Alt, the top bar) is one browser history entry, and nothing else is:
+// focusing a panel, switching tabs, and opens that come *from* the URL (Back
+// and Forward among them) rewrite the current entry in place. An entry's
+// state records the panel its document was in, so Back reopens a document
+// you've since replaced or closed where it was (see `FROM_URL`), and only
+// shows one that's still open.
+type EntryState = { tilingLeaf?: string };
+
+/** The panel the current history entry's document was in, if it says. */
+const entryLeaf = (): string | undefined => {
+  const state = window.history.state as EntryState | null;
+  return typeof state?.tilingLeaf === "string" ? state.tilingLeaf : undefined;
+};
+
 const syncDocParam = (
   url: AutomergeUrl | undefined,
   toolId: string | null,
+  leafId: string | null,
+  push = false,
 ): void => {
   try {
     const params = new URLSearchParams(window.location.hash.slice(1));
@@ -256,11 +309,20 @@ const syncDocParam = (
     // `type` from being applied to a different document.
     params.delete("title");
     params.delete("type");
-    if (params.toString() === before) return;
+    const unchanged = params.toString() === before;
+    if (unchanged && entryLeaf() === (leafId ?? undefined)) return;
     const href = `${window.location.pathname}${window.location.search}#${params.toString()}`;
-    // replaceState (not `location.hash =`) so we don't add history entries or
-    // fire a `hashchange` that would loop back through the host's router.
-    window.history.replaceState(window.history.state, "", href);
+    const prior: unknown = window.history.state;
+    const state: Record<string, unknown> =
+      prior && typeof prior === "object" ? { ...prior } : {};
+    if (leafId) state.tilingLeaf = leafId;
+    else delete state.tilingLeaf;
+    // pushState/replaceState (not `location.hash =`): neither fires a
+    // `hashchange` that would loop back through the host's router. An open
+    // that leaves the URL as it was (showing what's already shown) is no
+    // navigation, so it rewrites the entry rather than adding one.
+    if (push && !unchanged) window.history.pushState(state, "", href);
+    else window.history.replaceState(state, "", href);
   } catch {
     // Non-fatal: the URL just won't reflect the selection.
   }
@@ -338,7 +400,8 @@ type OpenPlacement = "stack" | SplitDirection;
 type LayoutOps = {
   activeLeafId: string | null;
   focusLeaf: (id: string) => void;
-  navigate: (leafId: string, view: PanelView) => void;
+  /** A pointer or key went into a panel's document: keep its tab. */
+  engage: (leafId: string) => void;
   close: (leafId: string) => void;
   /** Show tab `index` of a panel's stack. */
   activateTab: (leafId: string, index: number) => void;
@@ -408,6 +471,38 @@ const CloseIcon = () => (
 );
 
 /** A tool that renders any document (`supportedDatatypes: "*"`): Raw, say. */
+/**
+ * How soon (ms) after a click or key in a preview an open from the same panel
+ * counts as that gesture following a link, rather than engaging with it.
+ */
+const ENGAGE_FOLLOW_MS = 1500;
+
+/**
+ * The source of an open that came from the URL (the address bar, back and
+ * forward, a plain `#doc=…` link, a deep link): it's treated as a link
+ * followed from the focused document panel. Not a panel id.
+ */
+const FROM_URL = "#url";
+
+/** The focused element, looking through shadow roots. */
+const deepActiveElement = (): Element | null => {
+  let el: Element | null = document.activeElement;
+  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+  return el;
+};
+
+/** The panel (`data-leaf-id`) a node is in, looking out through shadow roots. */
+const leafIdOf = (node: Node): string | null => {
+  let at: Node | null = node;
+  while (at) {
+    const leaf = at instanceof Element ? at.closest("[data-leaf-id]") : null;
+    if (leaf) return leaf.getAttribute("data-leaf-id");
+    const root: Node = at.getRootNode();
+    at = root instanceof ShadowRoot ? root.host : null;
+  }
+  return null;
+};
+
 const isGenericTool = (tool: ToolDescription): boolean => {
   const supported = (tool as { supportedDatatypes?: unknown }).supportedDatatypes;
   return supported === "*" || (Array.isArray(supported) && supported.includes("*"));
@@ -679,6 +774,7 @@ const StackTab = ({
   url,
   index,
   active,
+  preview,
   ops,
   icon,
   onEditing,
@@ -688,6 +784,8 @@ const StackTab = ({
   url: AutomergeUrl;
   index: number;
   active: boolean;
+  /** Not yet engaged with (see `PanelView.preview`): its name is set in italic. */
+  preview?: boolean;
   ops: LayoutOps;
   /**
    * The showing tab's icon: the panel's own datatype icon button (drag the
@@ -711,7 +809,10 @@ const StackTab = ({
   );
   return (
     <div
-      className={`tile-panel__tab${active ? " tile-panel__tab--active" : ""}`}
+      className={`tile-panel__tab${active ? " tile-panel__tab--active" : ""}${
+        preview ? " tile-panel__tab--preview" : ""
+      }`}
+      data-tab-index={index}
       role="tab"
       aria-selected={active}
       tabIndex={0}
@@ -776,6 +877,98 @@ const StackTab = ({
   );
 };
 
+/** One entry of a panel's tab list: its datatype icon and name. */
+const TabListItem = ({
+  url,
+  active,
+  preview,
+  onChoose,
+}: {
+  url: AutomergeUrl;
+  active: boolean;
+  preview: boolean;
+  onChoose: () => void;
+}) => {
+  const title = useDocTitle(url);
+  const icon = useDatatypeIcon(useDocType(url));
+  return (
+    <button
+      type="button"
+      className={`tile-tool-menu__item tile-tab-list__item${
+        preview ? " tile-tab-list__item--preview" : ""
+      }`}
+      role="menuitemradio"
+      aria-checked={active}
+      onClick={onChoose}
+    >
+      <span className="tile-panel__tab-icon">
+        <DocIcon name={icon} />
+      </span>
+      <span className="tile-tool-menu__name">{title}</span>
+    </button>
+  );
+};
+
+/**
+ * Every tab of a panel, as a menu under the header's right end: for a stack
+ * too long for its strip. Choosing one shows it.
+ */
+const TabListMenu = ({
+  leafId,
+  tabs,
+  active,
+  ops,
+  headerRef,
+  onClose,
+}: {
+  leafId: string;
+  tabs: PanelView[];
+  active: number;
+  ops: LayoutOps;
+  headerRef: RefObject<HTMLDivElement>;
+  onClose: () => void;
+}) => {
+  useEffect(() => {
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      const toggle = target?.closest?.("[data-tab-list-toggle]");
+      if (toggle && headerRef.current?.contains(toggle)) return;
+      if (!target?.closest?.(".tile-tab-list")) onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [headerRef, onClose]);
+  return (
+    <div
+      className="tile-tool-menu tile-tab-list"
+      role="menu"
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      {tabs.map((tab, index) =>
+        tab.url ? (
+          <TabListItem
+            key={tab.url}
+            url={tab.url}
+            active={index === active}
+            preview={!!tab.preview}
+            onChoose={() => {
+              ops.activateTab(leafId, index);
+              onClose();
+            }}
+          />
+        ) : null,
+      )}
+    </div>
+  );
+};
+
 const TilePanel = ({
   leaf,
   ops,
@@ -831,7 +1024,16 @@ const TilePanel = ({
   const headerRef = useRef<HTMLDivElement>(null);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   // While any name in the header is being edited, the header doesn't drag.
+  // Renaming a document is engaging with it, so it keeps the tab.
   const [editingTitle, setEditingTitle] = useState(false);
+  const { engage } = ops;
+  const onEditingTitle = useCallback(
+    (editing: boolean) => {
+      setEditingTitle(editing);
+      if (editing) engage(leaf.id);
+    },
+    [engage, leaf.id],
+  );
   const closeToolMenu = useCallback(() => setToolMenuOpen(false), []);
   // The menu hangs under whichever control opened it (in a stack, that's
   // partway along the header), measured from the header's left edge.
@@ -861,6 +1063,54 @@ const TilePanel = ({
 
   const { tabs: stackTabs, active: activeTab } = leafTabs(leaf);
   const stacked = !isRootFolder && stackTabs.length > 1;
+
+  // Many tabs: the strip scrolls sideways (a mouse wheel scrolls it too),
+  // fades at an edge with more beyond it, keeps the showing tab in view, and
+  // offers the whole list from a button at its end.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [stripOverflow, setStripOverflow] = useState({ left: false, right: false });
+  const measureStrip = useCallback(() => {
+    const strip = stripRef.current;
+    const next = strip
+      ? {
+          left: strip.scrollLeft > 1,
+          right: strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1,
+        }
+      : { left: false, right: false };
+    setStripOverflow((prev) =>
+      prev.left === next.left && prev.right === next.right ? prev : next,
+    );
+  }, []);
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) {
+      measureStrip();
+      return;
+    }
+    const observer = new ResizeObserver(measureStrip);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, [stacked, measureStrip]);
+  const showingTabUrl = stackTabs[activeTab]?.url;
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    const tab = strip?.querySelector<HTMLElement>(`[data-tab-index="${activeTab}"]`);
+    if (strip && tab) {
+      const left = tab.offsetLeft - strip.offsetLeft;
+      const right = left + tab.offsetWidth;
+      if (left < strip.scrollLeft) strip.scrollLeft = left;
+      else if (right > strip.scrollLeft + strip.clientWidth)
+        strip.scrollLeft = right - strip.clientWidth;
+    }
+    measureStrip();
+  }, [activeTab, showingTabUrl, stackTabs.length, measureStrip]);
+  const onStripWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const strip = stripRef.current;
+    if (!strip || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+    strip.scrollLeft += event.deltaY;
+  };
+  const [tabListOpen, setTabListOpen] = useState(false);
+  const closeTabList = useCallback(() => setTabListOpen(false), []);
 
   // The header is a drop target too: documents dragged over it go into this
   // panel's stack at the position between tabs nearest the pointer (onto a
@@ -1009,7 +1259,15 @@ const TilePanel = ({
       )}
       {!stacked && docIconButton}
       {stacked ? (
-        <div className="tile-panel__tabs" role="tablist">
+        <div
+          ref={stripRef}
+          className={`tile-panel__tabs${
+            stripOverflow.left ? " tile-panel__tabs--more-left" : ""
+          }${stripOverflow.right ? " tile-panel__tabs--more-right" : ""}`}
+          role="tablist"
+          onWheel={onStripWheel}
+          onScroll={measureStrip}
+        >
           {stackTabs.map((tab, index) =>
             tab.url ? (
               <StackTab
@@ -1018,9 +1276,10 @@ const TilePanel = ({
                 url={tab.url}
                 index={index}
                 active={index === activeTab}
+                preview={!!tab.preview}
                 ops={ops}
                 icon={index === activeTab ? docIconButton : undefined}
-                onEditing={setEditingTitle}
+                onEditing={onEditingTitle}
               >
                 {index === activeTab && toolLabel}
               </StackTab>
@@ -1030,13 +1289,41 @@ const TilePanel = ({
       ) : (
         <>
           <EditableTitle
-            className="tile-panel__title"
+            className={`tile-panel__title${
+              leaf.view.preview ? " tile-panel__title--preview" : ""
+            }`}
             url={isEmpty ? undefined : resolvedUrl}
             title={title}
-            onEditing={setEditingTitle}
+            onEditing={onEditingTitle}
           />
           {toolLabel}
         </>
+      )}
+      {stacked && (stripOverflow.left || stripOverflow.right) && (
+        <button
+          type="button"
+          className="tile-panel__tab-list-btn"
+          title={`All ${stackTabs.length} tabs`}
+          aria-haspopup="menu"
+          aria-expanded={tabListOpen}
+          data-tab-list-toggle
+          onClick={() => setTabListOpen((open) => !open)}
+        >
+          {stackTabs.length}
+          <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden>
+            <path d="M1 2.5l3 3 3-3" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          </svg>
+        </button>
+      )}
+      {tabListOpen && stacked && (
+        <TabListMenu
+          leafId={leaf.id}
+          tabs={stackTabs}
+          active={activeTab}
+          ops={ops}
+          headerRef={headerRef}
+          onClose={closeTabList}
+        />
       )}
       {toolMenuOpen && hasToolChoice && (
         <ToolMenu
@@ -1426,7 +1713,7 @@ const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
     leaf.view.toolId,
     ops.toolPreferences,
   );
-  const { focusLeaf } = ops;
+  const { focusLeaf, engage } = ops;
   const peekRail = usePeekAtEdge();
 
   // A stack's documents, in a fixed order (by url) rather than tab order:
@@ -1447,6 +1734,17 @@ const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
     <div
       className="tile-panel__content-inner"
       onMouseDownCapture={() => focusLeaf(leaf.id)}
+      // Engaging with a document keeps its tab (see `engage`). Only documents:
+      // the root folder is a navigator, and an empty frame has nothing to keep.
+      onPointerDownCapture={
+        isRootFolder || isEmpty
+          ? undefined
+          : (event) => {
+              // The mouse's Back/Forward buttons (3, 4) aren't engagement.
+              if (event.button < 3) engage(leaf.id);
+            }
+      }
+      onKeyDownCapture={isRootFolder || isEmpty ? undefined : () => engage(leaf.id)}
       onPointerMove={peekRail.onPointerMove}
       onPointerLeave={peekRail.onPointerLeave}
     >
@@ -1645,6 +1943,7 @@ export const PatchworkFrame = ({
     if (!layoutUrl || !accountHandle) return;
     const markCurrent = () => {
       if (document.visibilityState !== "visible") return;
+      writeCarriedFocus(layoutUrl, focusRef.current);
       if (accountHandle.doc()?.currentLayoutUrl === layoutUrl) return;
       accountHandle.change((d) => {
         d.currentLayoutUrl = layoutUrl;
@@ -1677,6 +1976,8 @@ export const PatchworkFrame = ({
   // `commitFocus` always persists under the current key).
   const focusKeyRef = useRef(focusStorageKey);
   focusKeyRef.current = focusStorageKey;
+  const layoutUrlRef = useRef(layoutUrl);
+  layoutUrlRef.current = layoutUrl;
   const activeLeafId = focus.activeLeafId;
   const focusOrder = focus.focusOrder;
 
@@ -1689,6 +1990,7 @@ export const PatchworkFrame = ({
     focusRef.current = next;
     setFocus(next);
     writeTabFocus(focusKeyRef.current, next);
+    writeCarriedFocus(layoutUrlRef.current, next);
   }, []);
 
   // This tab's layout url may only resolve after the first render (a fresh
@@ -1790,6 +2092,19 @@ export const PatchworkFrame = ({
   const handleRef = useRef<DocHandle<TilingLayoutDoc> | undefined>(undefined);
   handleRef.current = layoutHandle;
 
+  // The layout as of now: off the handle, which has a change the moment it's
+  // made, where `layoutDoc` waits for the next render. Whatever runs within an
+  // open (the host's replay of it, an engagement, the URL) must see the open.
+  const layoutNow = useCallback((): LayoutNode | null => {
+    try {
+      const layout = handleRef.current?.doc()?.layout;
+      if (layout) return layout;
+    } catch {
+      // Not ready: fall back to what's rendered.
+    }
+    return docRef.current?.layout ?? null;
+  }, []);
+
   // Mirror the selected content panel into the URL's `doc`/`tool` params (see
   // `syncDocParam`). Two subtleties:
   //  - We read the *post-change* layout straight off the handle (`doc()` is
@@ -1809,15 +2124,13 @@ export const PatchworkFrame = ({
     return () => clearTimeout(t);
   }, []);
 
-  const syncUrlToSelection = useCallback(() => {
-    let current: TilingLayoutDoc["layout"] | null = null;
-    try {
-      current = handleRef.current?.doc()?.layout ?? null;
-    } catch {
-      current = null;
-    }
-    if (!current) current = docRef.current?.layout ?? null;
-    if (!current) return;
+  // Held while an open is being made, so its first write is the new entry
+  // (see `navigate`) rather than a rewrite of the one it leaves.
+  const holdUrlRef = useRef(false);
+  const syncUrlToSelection = useCallback((push = false): LeafNode | null => {
+    if (holdUrlRef.current && !push) return null;
+    const current = layoutNow();
+    if (!current) return null;
     const layout = repairLayout(current);
     const order = focusRef.current.focusOrder;
     let leaf: LeafNode | null = null;
@@ -1839,11 +2152,12 @@ export const PatchworkFrame = ({
       const have = leaf?.view.url
         ? parseAutomergeUrl(leaf.view.url).documentId
         : null;
-      if (want && want !== have) return; // deep-link not opened yet — leave it
+      if (want && want !== have) return null; // deep-link not opened yet — leave it
       syncEnabledRef.current = true;
     }
-    syncDocParam(leaf?.view.url, leaf?.view.toolId ?? null);
-  }, []);
+    syncDocParam(leaf?.view.url, leaf?.view.toolId ?? null, leaf?.id ?? null, push);
+    return leaf;
+  }, [layoutNow]);
 
   const change = useCallback(
     (fn: (doc: TilingLayoutDoc) => void) => {
@@ -1878,6 +2192,10 @@ export const PatchworkFrame = ({
       const sourceLayout = cloneSourceDoc.layout;
       if (sourceLayout) {
         seededRef.current = true;
+        // Focus first: the deep link waiting on the layout (see
+        // `pendingOpenRef`) lands in the focused panel.
+        const carried = readCarriedFocus(cloneSourceUrl);
+        if (carried) commitFocus(() => carried);
         layoutHandle.change((doc) => {
           doc.layout = cloneLayout(sourceLayout);
         });
@@ -1889,7 +2207,7 @@ export const PatchworkFrame = ({
     layoutHandle.change((doc) => {
       doc.layout = makeInitialLayout();
     });
-  }, [layoutDoc, layoutHandle, cloneSourceUrl, cloneSourceDoc]);
+  }, [layoutDoc, layoutHandle, cloneSourceUrl, cloneSourceDoc, commitFocus]);
 
   const focusLeaf = useCallback(
     (id: string) => {
@@ -1909,13 +2227,6 @@ export const PatchworkFrame = ({
       syncUrlToSelection();
     },
     [commitFocus, syncUrlToSelection],
-  );
-
-  const navigate = useCallback(
-    (leafId: string, view: PanelView) => {
-      change((d) => navigateLeafIn(d, leafId, view));
-    },
-    [change],
   );
 
   const setTool = useCallback(
@@ -2068,6 +2379,55 @@ export const PatchworkFrame = ({
     [change, focusLeaf],
   );
 
+  // **Engagement**: a pointer or key going into a document keeps its tab (see
+  // `PanelView.preview`). Scrolling doesn't, and nor does anything in the
+  // header. The frame can't tell a click that edits from a click that follows
+  // a link until the link's open arrives, so it keeps the tab at once and
+  // remembers having done so: an open that comes from that same panel soon
+  // after (`tookEngagement`) was that click following a link, which isn't
+  // engagement, so it replaces the tab after all.
+  const lastEngageRef = useRef<{ leafId: string; url: string; at: number } | null>(
+    null,
+  );
+  const engage = useCallback(
+    (leafId: string) => {
+      const leaf = findLeaf(layoutNow(), leafId);
+      const url = leaf?.view.url;
+      if (!leaf || !url || !leaf.view.preview) {
+        lastEngageRef.current = null;
+        return;
+      }
+      lastEngageRef.current = { leafId, url, at: performance.now() };
+      handleRef.current?.change((d) => keepShowingIn(d, leafId));
+    },
+    [layoutNow],
+  );
+  const tookEngagement = useCallback((leafId: string): boolean => {
+    const last = lastEngageRef.current;
+    lastEngageRef.current = null;
+    if (!last || last.leafId !== leafId) return false;
+    if (performance.now() - last.at > ENGAGE_FOLLOW_MS) return false;
+    const leaf = findLeaf(layoutNow(), leafId);
+    return leaf?.view.url === last.url;
+  }, [layoutNow]);
+
+  // A tool isolated in an iframe keeps its pointer and keys to itself; the
+  // window losing focus to one is all the frame hears. That's engagement too
+  // (and focuses its panel, as a click anywhere else in it would).
+  useEffect(() => {
+    const onBlur = () =>
+      setTimeout(() => {
+        const frame = deepActiveElement();
+        if (!(frame instanceof HTMLIFrameElement)) return;
+        const leafId = leafIdOf(frame);
+        if (!leafId) return;
+        focusLeaf(leafId);
+        engage(leafId);
+      }, 0);
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, [focusLeaf, engage]);
+
   // Route a document-open request. `sourceId` is the panel the request came
   // from (null for app chrome and for URL/deep-link opens, which arrive on the
   // mount element).
@@ -2076,16 +2436,13 @@ export const PatchworkFrame = ({
   // `pendingOpenRef` and replayed once it has (see below), rather than dropped.
   //
   // `placement` (from a modified click; see `openIntentRef`) means "don't
-  // replace anything": where the open would replace the document an existing
-  // panel shows, it stacks the new one there (`"stack"`, Shift-click) or
-  // splits that panel (a direction, Alt-click) instead. Showing an
-  // already-open doc and filling an empty frame are unchanged — neither
-  // replaces anything.
+  // replace anything": `"stack"` (Shift-click) keeps the tab the target panel
+  // is showing and stacks the new one over it; a direction (Alt-click) splits
+  // the target panel instead. Showing an already-open doc is unchanged.
   const openView = useCallback(
     (view: PanelView, sourceId: string | null, placement?: OpenPlacement) => {
       if (!isValidAutomergeUrl(view.url)) return;
-      const doc = docRef.current;
-      const current = doc?.layout ?? null;
+      const current = layoutNow();
       if (!current) {
         pendingOpenRef.current = { view, sourceId };
         return;
@@ -2093,6 +2450,19 @@ export const PatchworkFrame = ({
 
       const leafIds = collectLeafIds(current);
       const liveIds = new Set(leafIds);
+      if (sourceId === FROM_URL) {
+        // Back/Forward to an entry the frame made: the panel it records.
+        // Otherwise (an edited address bar, a plain link) the focused one.
+        const order = focusRef.current.focusOrder;
+        const isContent = (id: string) =>
+          liveIds.has(id) && isContentLeaf(findLeaf(current, id));
+        const recorded = entryLeaf();
+        sourceId =
+          (recorded && isContent(recorded) ? recorded : undefined) ??
+          [...order].reverse().find(isContent) ??
+          leafIds.find(isContent) ??
+          null;
+      }
 
       // A normal document must never land in (rule 1) the root-folder
       // navigator: it stays put so the folder tree stays beside the content.
@@ -2113,9 +2483,15 @@ export const PatchworkFrame = ({
         return;
       }
 
-      // 2. Fill an empty content frame if one is waiting (the seeded slot beside
-      //    the folder). Preferring it means a doc never splits the folder or
-      //    clobbers an open document while a ready slot sits empty.
+      // 2. Where it goes. A request from inside a document panel is
+      //    navigation within it: it opens *there* (over the document it came
+      //    from). From anywhere else (the folder navigator), it goes to the
+      //    panel you're working in: an empty content frame if one is waiting
+      //    (the seeded slot beside the folder), else the last-focused content
+      //    panel. An open from the URL is a link followed from the focused
+      //    document panel (see `FROM_URL`). Other sourceless opens (overlays)
+      //    skip this: they split a new panel (step 4) rather than touch the
+      //    one you're in.
       const isEmptyId = (id: string): boolean =>
         isContentLeaf(findLeaf(current, id)) &&
         !findLeaf(current, id)?.view.url;
@@ -2125,36 +2501,41 @@ export const PatchworkFrame = ({
         if (liveIds.has(order[i]) && isEmptyId(order[i])) emptyId = order[i];
       }
       if (!emptyId) emptyId = leafIds.find((id) => isEmptyId(id)) ?? null;
-      if (emptyId) {
-        navigate(emptyId, view);
-        focusLeaf(emptyId);
-        return;
+
+      let target: string | null = null;
+      if (isContentId(sourceId) && !isEmptyId(sourceId)) {
+        target = sourceId;
+      } else if (emptyId) {
+        target = emptyId;
+      } else if (sourceId !== null) {
+        for (let i = order.length - 1; i >= 0 && !target; i--) {
+          if (order[i] !== sourceId && isContentId(order[i])) target = order[i];
+        }
       }
 
-      // 3. A request *from* a panel (e.g. the folder tree) navigates the
-      //    last-focused *other content* panel, so the source pane isn't
-      //    replaced and the doc never lands in the folder pane.
-      //    Sourceless opens (URL deep-links, top bar) deliberately skip this:
-      //    they must not navigate — i.e. clobber — whatever panel is active.
-      if (sourceId !== null) {
-        const order = focusRef.current.focusOrder;
-        for (let i = order.length - 1; i >= 0; i--) {
-          const id = order[i];
-          if (id !== sourceId && isContentId(id)) {
-            if (placement === "stack") {
-              change((d) => stackViewIn(d, id, view));
-              focusLeaf(id);
-            } else if (placement) {
-              const newLeaf = makeLeaf(view);
-              change((d) => splitLeafIn(d, id, placement, newLeaf));
-              focusLeaf(newLeaf.id);
-            } else {
-              navigate(id, view);
-              focusLeaf(id);
-            }
-            return;
-          }
+      // 3. Open it there, by the preview rule (see `openInLeafIn`): it
+      //    replaces a tab you haven't engaged with, and otherwise stacks over
+      //    the one showing. Shift keeps the showing tab regardless; Alt opens
+      //    it beside the panel instead (Alt+Shift: below). A link followed
+      //    from a preview doesn't keep it — the click that followed it isn't
+      //    engagement (see `engage`) — so skimming through links, like
+      //    skimming the folder, leaves one tab.
+      if (target) {
+        if (placement && placement !== "stack") {
+          const newLeaf = makeLeaf({ ...view, preview: true });
+          change((d) => splitLeafIn(d, target, placement, newLeaf));
+          focusLeaf(newLeaf.id);
+          return;
         }
+        const mode: OpenMode =
+          placement === "stack"
+            ? "keep"
+            : target === sourceId && tookEngagement(target)
+              ? "replace"
+              : "auto";
+        change((d) => openInLeafIn(d, target, view, mode));
+        focusLeaf(target);
+        return;
       }
 
       // 4. Otherwise open a new panel by splitting a *content* panel, so we
@@ -2172,16 +2553,44 @@ export const PatchworkFrame = ({
         leafIds.find((id) => id !== folderId) ||
         leafIds[0];
       if (!splitSource) return;
-      const newLeaf = makeLeaf(view);
+      const newLeaf = makeLeaf({ ...view, preview: true });
       const direction =
         placement && placement !== "stack" ? placement : "horizontal";
       change((d) => splitLeafIn(d, splitSource, direction, newLeaf));
       focusLeaf(newLeaf.id);
     },
-    [change, navigate, focusLeaf, rootFolderUrl, revealExisting],
+    [change, focusLeaf, rootFolderUrl, revealExisting, tookEngagement, layoutNow],
   );
   const openViewRef = useRef(openView);
   openViewRef.current = openView;
+
+  // Make an open as one navigation (see `EntryState`): the URL is held while
+  // the layout changes, then written once, as a new history entry naming the
+  // panel now showing. Then the host is told what's showing, as if it had
+  // come from the URL: its router writes the same hash (no navigation, by
+  // the spec) and retitles the page, and the frame's own replay of it only
+  // shows what's already shown.
+  const navigate = useCallback(
+    (open: () => void) => {
+      holdUrlRef.current = true;
+      try {
+        open();
+      } finally {
+        holdUrlRef.current = false;
+      }
+      const leaf = syncUrlToSelection(true);
+      if (!leaf?.view.url) return;
+      const host = element instanceof ShadowRoot ? element.host : element;
+      host.dispatchEvent(
+        new CustomEvent("patchwork:open-document", {
+          detail: { url: leaf.view.url, toolId: leaf.view.toolId },
+        }),
+      );
+    },
+    [syncUrlToSelection, element],
+  );
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
 
   // A modified click opens without replacing anything: Shift stacks the
   // document in the panel it would have replaced; Alt opens it beside that
@@ -2216,7 +2625,7 @@ export const PatchworkFrame = ({
   if (!deepLinkReadRef.current) {
     deepLinkReadRef.current = true;
     const view = readDeepLink();
-    if (view) pendingOpenRef.current = { view, sourceId: null };
+    if (view) pendingOpenRef.current = { view, sourceId: FROM_URL };
   }
   useEffect(() => {
     if (!layout) return;
@@ -2231,6 +2640,14 @@ export const PatchworkFrame = ({
       const url = event.detail.url;
       if (!url) return;
       const target = event.target as Element | null;
+      // The host dispatches the opens that come from the URL (the address
+      // bar edited, back/forward, a plain `#doc=…` link, a deep link) on the
+      // mount element itself: those are links, followed from where you are.
+      const host = element instanceof ShadowRoot ? element.host : element;
+      if (target === host || (target as Node | null) === element) {
+        openView({ url, toolId: event.detail.toolId }, FROM_URL, takeOpenIntent());
+        return;
+      }
       const sourceId =
         target?.closest?.("[data-leaf-id]")?.getAttribute("data-leaf-id") ??
         null;
@@ -2260,7 +2677,7 @@ export const PatchworkFrame = ({
         return;
       }
       if (sourceId) {
-        const layout = docRef.current?.layout;
+        const layout = layoutNow();
         const leaf = layout ? findLeaf(layout, sourceId) : null;
         // The symbolic folder pane resolves to the viewer's root folder, so
         // compare against that when deciding if this is a self-announcement.
@@ -2272,9 +2689,13 @@ export const PatchworkFrame = ({
         }
       }
 
-      openView({ url, toolId: event.detail.toolId }, sourceId, takeOpenIntent());
+      // A genuine open: the frame makes the history entry and tells the host
+      // (see `navigate`), so the open itself goes no further.
+      event.stopImmediatePropagation();
+      const placement = takeOpenIntent();
+      navigate(() => openView({ url, toolId: event.detail.toolId }, sourceId, placement));
     },
-    [openView, rootFolderUrl, takeOpenIntent],
+    [openView, rootFolderUrl, takeOpenIntent, element, navigate, layoutNow],
   );
 
   // Keep the latest handler in a ref so the once-attached listener always
@@ -2336,11 +2757,8 @@ export const PatchworkFrame = ({
           (node): node is Element =>
             node instanceof Element && node.hasAttribute("data-leaf-id"),
         );
-        openViewRef.current(
-          view,
-          leafEl?.getAttribute("data-leaf-id") ?? null,
-          placement,
-        );
+        const sourceId = leafEl?.getAttribute("data-leaf-id") ?? null;
+        navigateRef.current(() => openViewRef.current(view, sourceId, placement));
       }
     };
     el.addEventListener("click", onClick, true);
@@ -2351,13 +2769,14 @@ export const PatchworkFrame = ({
   // active panel (or open a new one if the frame is somehow empty).
   // App-chrome opens (home, create-new, settings, account) act on the panel
   // you're in: show the doc where it's already open (focusing its panel, and
-  // its tab if it's stacked), else navigate the active panel to it. This is
+  // its tab if it's stacked), else open it in the active panel by the preview
+  // rule (see `openInLeafIn`). This is
   // deliberately different from passive URL/deep-link
   // opens, which must never clobber the active panel (see `openView`).
-  const openFromChrome = useCallback(
+  const openFromChromeNow = useCallback(
     (view: PanelView) => {
       if (!isValidAutomergeUrl(view.url)) return;
-      const current = docRef.current?.layout ?? null;
+      const current = layoutNow();
       if (!current) return;
       if (revealExisting(current, view.url)) return;
       const ids = collectLeafIds(current);
@@ -2371,7 +2790,7 @@ export const PatchworkFrame = ({
       const target =
         (isContentId(active) && active) || ids.find((id) => isContentId(id)) || null;
       if (target) {
-        navigate(target, view);
+        change((d) => openInLeafIn(d, target, view));
         focusLeaf(target);
         return;
       }
@@ -2380,17 +2799,21 @@ export const PatchworkFrame = ({
       // (we still must split the lone folder pane to make room for the doc).
       const splitSource = (active && liveIds.has(active) && active) || ids[0];
       if (!splitSource) return;
-      const newLeaf = makeLeaf(view);
+      const newLeaf = makeLeaf({ ...view, preview: true });
       change((d) => splitLeafIn(d, splitSource, "horizontal", newLeaf));
       focusLeaf(newLeaf.id);
     },
-    [navigate, focusLeaf, change, revealExisting],
+    [focusLeaf, change, revealExisting, layoutNow],
+  );
+  const openFromChrome = useCallback(
+    (view: PanelView) => navigate(() => openFromChromeNow(view)),
+    [navigate, openFromChromeNow],
   );
 
   // Home: focus the (symbolic) root-folder navigator if it's open, else open it
   // as a full-height column on the left, wrapping the current arrangement.
   const goHome = useCallback(() => {
-    const current = docRef.current?.layout ?? null;
+    const current = layoutNow();
     const folderId = current
       ? findRootFolderLeafId(current)
       : null;
@@ -2403,7 +2826,7 @@ export const PatchworkFrame = ({
       newId = addRootFolderColumnIn(d);
     });
     if (newId) focusLeaf(newId);
-  }, [focusLeaf, change]);
+  }, [focusLeaf, change, layoutNow]);
 
   // Each panel's content container, by leaf id (see `PanelContent`), and an
   // off-screen park to hold one while its panel is rebuilt mid-commit.
@@ -2446,7 +2869,7 @@ export const PatchworkFrame = ({
   const ops: LayoutOps = {
     activeLeafId,
     focusLeaf,
-    navigate,
+    engage,
     close,
     activateTab,
     closeTab,

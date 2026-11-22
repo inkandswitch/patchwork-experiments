@@ -60,6 +60,14 @@ export type PanelView = {
    * the author's folder — the recipient sees their own folders instead.
    */
   role?: "root-folder";
+  /**
+   * A **preview**: opened, but not yet engaged with (no pointer or key went
+   * into it). The next plain open in its panel replaces it instead of
+   * stacking beside it, so clicking through documents leaves one tab rather
+   * than a trail. Engaging with it, or dragging it somewhere, keeps it (the
+   * flag is dropped). A panel holds at most one. Absent means kept.
+   */
+  preview?: true;
 };
 
 export type SplitDirection = "horizontal" | "vertical";

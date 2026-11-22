@@ -28,19 +28,47 @@ and resize freely.
   time. So sharing a layout (by copying its URL) never carries your folder
   document — the recipient sees **their own** folders in that pane.
 - Documents only ever open into **content** panels — never the root-folder
-  navigator. Opening one:
-  - **fills an empty content frame** if one is waiting (the seeded slot beside
-    the folder), otherwise
-  - navigates the **last-focused other content panel** (so clicking an entry in
-    the folder view opens it next to the folder, not in it), otherwise
-  - splits an existing **content** panel — never the folder — to open a new one.
+  navigator. Where one goes:
+  - opened from **inside a document** (a link, a folder shown in a panel),
+    it opens **in that same panel**, over the document it came from;
+  - opened from the **folder navigator**, it **fills an empty content frame**
+    if one is waiting (the seeded slot beside the folder), else goes to the
+    **last-focused content panel**;
+  - opened from the **URL** — the address bar edited, back/forward, a plain
+    `#doc=…` link, a deep link on load — it's a link followed from the
+    **focused document panel**, and opens there by the same rule. A new browser tab clones the
+    layout of the tab you were last looking at along with its focus, so a link
+    opened into it lands in the panel you were last in;
+  - opened from nowhere in particular (an overlay, say), it splits an
+    existing **content** panel — never the folder — into a new one.
 
-  A plain open *replaces* the panel's document; there's no back-history. To
-  keep a document around, open the next one without replacing it:
-  **Shift-click** stacks it into that panel, and **Alt-click** opens it beside
-  (Alt+Shift-click: below). Both work for anything a tool opens from a click,
-  and for `#doc=…` links. Tools isolated in an iframe don't share the frame's
-  clicks, so there they're ordinary clicks.
+  **Back and Forward** are the browser's. Each open you make (the folder, a
+  link, Shift, Alt, the top bar) is one history entry, recording the panel it
+  landed in; nothing else is one. Focusing another panel or switching tabs
+  rewrites the current entry, since the URL always names the selected
+  document. Back to a document still open shows it; Back to one replaced or
+  closed since reopens it as a preview in the panel it was in (or the focused
+  one, if that's gone). The frame makes the entry itself and keeps the open
+  from the host's router, then tells the host what's showing so it retitles
+  the page; the host's hash write is then the hash already there, which by
+  the spec is no navigation.
+
+  A document opens as a **preview**, its name in *italic*: until you engage
+  with it — a click or a key in the document, renaming it, or dragging it
+  somewhere — the next open in its panel **replaces** it. Once engaged, the
+  next open **stacks** over it as a new tab. So clicking through the folder
+  looking for something leaves one tab, while opening something after working
+  in a document starts a second. Scrolling isn't engaging. Nor is the click
+  that follows a link: following links from a preview replaces it each time,
+  so a chain of links you only skimmed also leaves one tab. A panel holds at
+  most one preview; one left behind another tab goes when the panel next
+  opens something.
+
+  **Shift-click** keeps the tab that would be replaced and stacks over it.
+  **Alt-click** opens beside the panel instead (Alt+Shift-click: below), as a
+  preview of its own. Both work for anything a tool opens from a click, and
+  for `#doc=…` links. Tools isolated in an iframe don't share the frame's
+  clicks, so there they're ordinary clicks (clicking into one does engage it).
 - A content panel can hold a **stack** of documents, one showing. The header
   lists them as plain text, the showing one in full ink; click one to show it,
   middle-click or its × to remove it. Every stacked document stays mounted, so
@@ -52,7 +80,9 @@ and resize freely.
   tab does. Dropping onto a panel's **header** puts them in its strip at the
   position marked between tabs (before or after a lone document's title), and
   dragging a tab along its own strip reorders it. Opening a document that's
-  stacked somewhere shows its tab.
+  stacked somewhere shows its tab. A stack too long for its header scrolls
+  sideways (a mouse wheel scrolls it too), fades at an edge with more beyond
+  it, and keeps the showing tab in view; a count at its end lists every tab.
 - Drag the handles between panels to **resize**.
 - The whole arrangement (panels, splits, sizes, stacks, active
   panel) is **persisted to its own document**, so a reload restores your
@@ -154,8 +184,10 @@ and resize freely.
     "root-folder"`, no url), so a shared layout resolves the folder to the
     viewer's own `rootFolderUrl` instead of embedding the author's.
 - `datatype.ts` — the **`patchwork-frame-tiling:layout`** datatype. Its
-  document (`TilingLayoutDoc`) is the **single source of truth**: it stores the
-  layout tree, the active panel id, and the focus order. The frame derives all
+  document (`TilingLayoutDoc`) is the **single source of truth** for the
+  layout tree. Focus is this browser tab's own: it lives in `sessionStorage`,
+  and the visible tab also leaves it in one `localStorage` slot for a new tab
+  that clones its layout to pick up. The frame derives all
   rendering from `useDocument`, and every op is a granular `handle.change(...)`
   — no React copy of the layout, and no whole-tree rewrites. Each tab has its
   own layout document, named in the URL (`layout=`); the account's

@@ -39,6 +39,14 @@ const cleanView = (view: PanelView): PanelView => {
   if (hasBadUrl(view)) return out;
   if (view.url !== undefined && view.url !== null) out.url = view.url;
   if (view.toolId !== undefined && view.toolId !== null) out.toolId = view.toolId;
+  if (view.preview === true && out.url) out.preview = true;
+  return out;
+};
+
+/** `view`, kept: a clean copy without the preview flag. */
+const kept = (view: PanelView): PanelView => {
+  const out = cleanView(view);
+  delete out.preview;
   return out;
 };
 
@@ -311,6 +319,11 @@ const writeView = (target: PanelView, given: PanelView): void => {
   } else if (target.toolId !== toolId) {
     target.toolId = toolId;
   }
+  if (view.preview) {
+    if (!target.preview) target.preview = true;
+  } else if (target.preview !== undefined) {
+    delete target.preview;
+  }
 };
 
 // --- In-place mutators (operate on the Automerge document draft) ---
@@ -377,6 +390,59 @@ export const stackViewIn = (
 };
 
 /**
+ * How {@link openInLeafIn} treats the tab a panel is showing:
+ * - `"auto"`: replace it if it's a preview, else stack the new one over it;
+ * - `"keep"`: keep it (dropping its preview flag) and stack over it;
+ * - `"replace"`: replace it even though it's kept (the gesture that opened
+ *   this document is the one that kept it — see the frame's `engage`).
+ */
+export type OpenMode = "auto" | "keep" | "replace";
+
+/**
+ * Open a document in a panel, as a preview, by the preview rule: it replaces
+ * the showing tab if that's a preview (or with `mode`, see {@link OpenMode}),
+ * and otherwise goes in just after it. An empty frame is simply filled. A
+ * document the panel already holds is shown instead, as it is.
+ *
+ * A panel holds at most one preview, so any other preview tab in it — one
+ * that was browsed past and then left behind another — goes.
+ */
+export const openInLeafIn = (
+  doc: TilingLayoutDoc,
+  leafId: string,
+  view: PanelView,
+  mode: OpenMode = "auto",
+): void => {
+  const leaf = findLeaf(doc.layout, leafId);
+  if (!leaf || !view.url) return;
+  const incoming: PanelView = { ...kept(view), preview: true };
+  if (!leaf.view.url) {
+    writeTabs(leaf, [incoming], 0);
+    return;
+  }
+  const { tabs, active } = leafTabs(leaf);
+  const existing = tabs.findIndex((tab) => tab.url === view.url);
+  if (existing >= 0) {
+    writeTabs(leaf, tabs, existing);
+    return;
+  }
+  const showing = cleanView(tabs[active]);
+  const replace = mode === "replace" || (mode === "auto" && !!showing.preview);
+  const before = tabs.slice(0, active).map(cleanView).filter((t) => !t.preview);
+  const after = tabs.slice(active + 1).map(cleanView).filter((t) => !t.preview);
+  const next = replace
+    ? [...before, incoming, ...after]
+    : [...before, kept(showing), incoming, ...after];
+  writeTabs(leaf, next, replace ? before.length : before.length + 1);
+};
+
+/** Keep the tab a panel is showing: drop its preview flag. */
+export const keepShowingIn = (doc: TilingLayoutDoc, leafId: string): void => {
+  const leaf = findLeaf(doc.layout, leafId);
+  if (leaf?.view.preview !== undefined) delete leaf.view.preview;
+};
+
+/**
  * Remove tab `index` from a leaf's stack, returning it (copied). A leaf keeps
  * at least one tab, so a lone document isn't removable this way (close the
  * panel instead). Closing the showing tab shows its right-hand neighbour, or
@@ -433,13 +499,14 @@ export const stackIntoIn = (
     const tabs = from.tabs.map(cleanView);
     const [moving] = tabs.splice(tab, 1);
     const pos = Math.max(0, Math.min(at > tab ? at - 1 : at, tabs.length));
-    tabs.splice(pos, 0, moving);
+    tabs.splice(pos, 0, kept(moving));
     writeTabs(source, tabs, pos);
     return targetLeafId;
   }
 
+  // Dragging a document somewhere is engaging with it: what moves is kept.
   const moving = (tab === null ? from.tabs : [from.tabs[tab]])
-    .map(cleanView)
+    .map(kept)
     .filter((view) => view.url);
   // An empty source brings nothing, and leaves the target showing what it was.
   const shownUrl =
@@ -502,7 +569,7 @@ export const moveTabIn = (
   }
   const view = closeTabIn(doc, sourceLeafId, index);
   if (!view) return null;
-  const leaf = makeLeaf(view);
+  const leaf = makeLeaf(kept(view));
   splitLeafIn(doc, targetLeafId, directionOf(side), leaf, insertsAfter(side));
   return leaf.id;
 };
@@ -641,6 +708,8 @@ export const moveLeafIn = (
   if (!source) return;
   // Snapshot the dragged leaf before removal drops it from the tree.
   const moved = cloneLayout(source) as LeafNode;
+  // Moving a panel is engaging with what it shows: that's kept.
+  delete moved.view.preview;
 
   removeLeafIn(doc, sourceLeafId);
   // The only way the tree is now empty is if `source` was the sole leaf, which
