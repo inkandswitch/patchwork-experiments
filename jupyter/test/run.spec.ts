@@ -2,7 +2,7 @@ import * as Automerge from "@automerge/automerge"
 import { beforeAll, describe, expect, test } from "vitest"
 import { automergeStandIn, setAutomerge } from "../shared/automerge"
 import { CellRunner } from "../shared/cells"
-import { outputsFingerprint, runOf } from "../shared/imports"
+import { outputsFingerprint, readHash, runOf } from "../shared/imports"
 import { notebookDoc } from "../shared/notebook-doc"
 import { NotebookWriter } from "../shared/notebook-writer"
 import { runHooks } from "../shared/run"
@@ -28,9 +28,13 @@ const code = (id: string, source: string) => ({ id, cell_type: "code", source, m
  * A kernel that runs a tiny language: each line `print X` prints X, `raise X`
  * fails with X, and anything else is ok. Silent code is recorded.
  */
-function fakeKernel(): KernelClient & { silent: string[]; restartCount: number } {
+function fakeKernel(): KernelClient & { silent: string[]; restartCount: number; loaded: unknown[] } {
   let count = 0
   const kernel = {
+    loaded: [] as unknown[],
+    async capture(source: string) {
+      return source.includes("reads()") ? JSON.stringify(kernel.loaded) : ""
+    },
     status: "idle" as const,
     generation: 1,
     silent: [] as string[],
@@ -71,7 +75,8 @@ function setup(cells: any[], metadata: any = {}) {
   const writer = new NotebookWriter(handle as any)
   const kernel = fakeKernel()
   const docs: Record<string, any> = {
-    "automerge:reg": { doc: () => ({ "@patchwork": { type: "assumptions" }, title: "Nootka assumptions", entries: {} }), heads: () => ["regA", "regB"] },
+    "automerge:reg": { doc: () => ({ "@patchwork": { type: "assumptions" }, title: "Nootka assumptions", entries: { boat_mass_kg: { value: { nominal: 8330 } }, boat_speed_kn: { value: { nominal: 8 } } } }), heads: () => ["regA", "regB"] },
+    "automerge:4NMNnkMhL8jXrdJ9jamS7Z": { doc: () => ({ "@patchwork": { type: "datagrid" }, title: "Loads", data: [[1, 2]] }), heads: () => ["grid"] },
     "automerge:m1": { doc: () => ({ "@patchwork": { type: "jupyter-notebook" }, title: "Model 1", cells: [code("x", "def f(): pass")] }), heads: () => ["m1"] },
   }
   let clock = Date.parse("2026-11-22T10:00:00Z")
@@ -79,11 +84,11 @@ function setup(cells: any[], metadata: any = {}) {
     writer,
     kernel,
     find: async url => docs[url] ?? Promise.reject(new Error("unavailable")),
-    datatype: async type => (type === "assumptions" ? { asSource: (_doc: unknown, ext: string) => (ext === "py" ? "boat_mass_kg = 8330\n" : null) } : null),
+    datatype: async type => (type === "assumptions" ? { asSource: (_doc: unknown, ext: string) => (ext === "py" ? "boat_mass_kg = 8330\n" : ext === "json" ? '{"boat_mass_kg": 8330}' : null) } : null),
     by: "agent",
     now: () => new Date((clock += 1000)),
   })
-  return { handle, writer, kernel, hooks, runner: new CellRunner(writer, kernel, hooks) }
+  return { handle, writer, kernel, hooks, docs, runner: new CellRunner(writer, kernel, hooks) }
 }
 
 const imports = [
@@ -116,9 +121,10 @@ describe("a run", () => {
       // The record names the outputs it sits beside.
       outputs: outputsFingerprint(doc),
       imports: [
-        { name: "reg", docUrl: "automerge:reg", title: "Nootka assumptions", heads: ["regA", "regB"], as: "hook", type: "assumptions" },
-        { name: "model_1", docUrl: "automerge:m1", title: "Model 1", heads: ["m1"], as: "notebook", type: "jupyter-notebook" },
+        { name: "reg", docUrl: "automerge:reg", title: "Nootka assumptions", heads: ["regA", "regB"], as: "hook", type: "assumptions", hash: expect.any(String) },
+        { name: "model_1", docUrl: "automerge:m1", title: "Model 1", heads: ["m1"], as: "notebook", type: "jupyter-notebook", hash: expect.any(String) },
       ],
+      reads: [],
     })
   })
 
@@ -164,6 +170,41 @@ describe("a run", () => {
     expect(first.results[0].status).toBe("ok")
     expect(second.results[0].status).toBe("ok")
     expect(runOf(handle.doc())!.cells).toEqual(["a", "b"])
+  })
+})
+
+describe("documents a run may load", () => {
+  test("every import and every URL in the code is written for patchwork.load, with its JSON view where the datatype has one", async () => {
+    const { kernel, runner } = setup([code("a", 'print 1\n# patchwork.load("automerge:4NMNnkMhL8jXrdJ9jamS7Z")')], { patchwork: { imports: [imports[0]] } })
+    await runner.run(["a"])
+    const setup_ = kernel.silent[0]
+    const index = JSON.parse(JSON.parse(setup_.match(/_pw_documents\(__import__\("json"\)\.loads\(("(?:[^"\\]|\\.)*")\)/)![1]))
+    expect(index).toEqual({
+      names: { reg: "automerge:reg" },
+      documents: {
+        "automerge:reg": { title: "Nootka assumptions", raw: expect.stringMatching(/raw\.json$/), json: expect.stringMatching(/view\.json$/) },
+        "automerge:4NMNnkMhL8jXrdJ9jamS7Z": { title: "Loads", raw: expect.stringMatching(/raw\.json$/) },
+      },
+    })
+  })
+
+  test("what the cells loaded is recorded with the version read and a hash of each path read", async () => {
+    const { handle, kernel, runner } = setup([code("a", "print 1")], { patchwork: { imports: [imports[0]] } })
+    kernel.loaded = [{ docUrl: "automerge:reg", as: "raw", paths: [{ path: ["entries", "boat_mass_kg", "value", "nominal"] }, { path: ["entries"], keys: true }] }]
+    await runner.run(["a"])
+    const reads = runOf(handle.doc())!.reads
+    expect(reads).toEqual([
+      {
+        docUrl: "automerge:reg",
+        title: "Nootka assumptions",
+        heads: ["regA", "regB"],
+        as: "raw",
+        paths: [
+          { path: ["entries", "boat_mass_kg", "value", "nominal"], hash: readHash({ entries: { boat_mass_kg: { value: { nominal: 8330 } } } }, ["entries", "boat_mass_kg", "value", "nominal"]) },
+          { path: ["entries"], keys: true, hash: readHash({ entries: { boat_mass_kg: 1, boat_speed_kn: 1 } }, ["entries"], true) },
+        ],
+      },
+    ])
   })
 })
 

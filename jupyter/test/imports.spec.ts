@@ -68,7 +68,7 @@ describe("module text", () => {
   })
 
   test("JSON drops Patchwork's keys and keeps plain values", () => {
-    expect(docToJson(table)).toEqual({ title: "Loads", data: [[1, 2]], counter: 3, blob: { bytes: 4 } })
+    expect(docToJson(table)).toEqual({ title: "Loads", data: [[1, 2]], counter: { value: 3 }, blob: { $bytes: "AAAAAA==" } })
   })
 
   test("each kind's module names its document", () => {

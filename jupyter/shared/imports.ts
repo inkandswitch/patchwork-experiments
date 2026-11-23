@@ -64,9 +64,26 @@ export type RunRecord = {
   code: string
   /** The notebook's outputs when it finished (outputsFingerprint): which outputs this record describes. */
   outputs: string | null
-  imports: Array<{ name: string; docUrl: string; title: string; heads: string[]; as: SourceKind; type: string | null; problem?: string }>
+  /** Each import as resolved: its document's version and how it was bound; `hash` is its module text's. */
+  imports: Array<{ name: string; docUrl: string; title: string; heads: string[]; as: SourceKind; type: string | null; hash: string; problem?: string }>
+  /** Every document the cells read with patchwork.load, at the version they read, and what they read of it. */
+  reads: ReadRecord[]
   /** Why the run didn't start, when it couldn't. */
   problem?: string
+}
+
+/**
+ * One document a run read with patchwork.load: its version, which view
+ * ("raw": the document; "json": its datatype's JSON view), and each path the
+ * cells read, with the hash of what was there (a value, or with `keys` the
+ * keys of a mapping or length of a list). Path [] is the whole document.
+ */
+export type ReadRecord = {
+  docUrl: string
+  title: string
+  heads: string[]
+  as: "raw" | "json"
+  paths: Array<{ path: Array<string | number>; keys?: boolean; hash: string }>
 }
 
 /** A datatype implementation as the registry hands it out, as far as this file cares. */
@@ -167,30 +184,50 @@ export function notebookCode(doc: any): string {
     .join("\n\n")
 }
 
+const IMMUTABLE_STRING = Symbol.for("_am_immutableString")
+const COUNTER = Symbol.for("_am_counter")
+const own = (value: object, symbol: symbol) => Object.prototype.hasOwnProperty.call(value, symbol)
+
+/** The tag bytes travel under in JSON; patchwork.load turns `{"$bytes": base64}` back into Python bytes. */
+export const BYTES_TAG = "$bytes"
+
+function base64(bytes: Uint8Array): string {
+  let binary = ""
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(binary)
+}
+
 /**
- * A document as plain JSON for the `data` dict: Patchwork's own keys (those
- * starting with "@") dropped, Automerge's strings and counters as plain
- * values, bytes as their length.
+ * The one conversion from an Automerge document to plain JSON, used for
+ * patchwork.load's data, its datatype JSON views' input, the `data` dict of
+ * an import bound as JSON, and the hashes in the read record:
+ *
+ *   ImmutableString   a string (anywhere: top level, nested, in lists)
+ *   Text              a string (Automerge already reads it as one)
+ *   Counter           its number
+ *   Uint8Array        { "$bytes": base64 }, which arrives in Python as bytes
+ *   Date              its ISO 8601 string (UTC); Python gets a str, not a datetime
+ *   keys starting "@" dropped (Patchwork's own bookkeeping), as are
+ *   functions and undefined; anything else unrecognised is null.
  */
 export function docToJson(value: unknown): unknown {
   if (value == null) return null
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
-  if (typeof (value as { val?: unknown }).val === "string") return (value as { val: string }).val
+  if (typeof value === "string" || typeof value === "boolean") return value
+  if (typeof value === "number") return Number.isFinite(value) ? value : null
+  if (typeof value === "bigint") return Number(value)
+  if (typeof value !== "object") return null
+  if (own(value, IMMUTABLE_STRING)) return String((value as { val: unknown }).val)
+  if (own(value, COUNTER)) return Number((value as { value: unknown }).value)
   if (value instanceof Date) return value.toISOString()
-  if (value instanceof Uint8Array || ArrayBuffer.isView(value)) return { bytes: (value as Uint8Array).byteLength }
-  if (Array.isArray(value)) return value.map(docToJson)
-  if (typeof (value as { value?: unknown }).value === "number" && typeof (value as { increment?: unknown }).increment === "function") {
-    return (value as { value: number }).value
+  if (value instanceof Uint8Array) return { [BYTES_TAG]: base64(value) }
+  if (ArrayBuffer.isView(value)) return { [BYTES_TAG]: base64(new Uint8Array(value.buffer, value.byteOffset, value.byteLength)) }
+  if (Array.isArray(value)) return Array.from(value, docToJson)
+  const out: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (key.startsWith("@") || typeof item === "function" || item === undefined) continue
+    out[key] = docToJson(item)
   }
-  if (typeof value === "object") {
-    const out: Record<string, unknown> = {}
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      if (key.startsWith("@") || typeof item === "function" || item === undefined) continue
-      out[key] = docToJson(item)
-    }
-    return out
-  }
-  return null
+  return out
 }
 
 /** A Python string literal for any text. JSON's string syntax is a subset of Python's. */
@@ -238,10 +275,86 @@ export function moduleSource(
         "",
       ].join("\n")
     case "json":
-      return [header, "import json as _pw_json", `data = _pw_json.loads(${pyString(resolved.text)})`, "del _pw_json", ""].join("\n")
+      return [
+        header,
+        "import base64 as _pw_base64, json as _pw_json",
+        `data = _pw_json.loads(${pyString(resolved.text)}, object_hook=lambda o: _pw_base64.b64decode(o[${pyString(BYTES_TAG)}]) if len(o) == 1 and ${pyString(BYTES_TAG)} in o else o)`,
+        "del _pw_base64, _pw_json",
+        "",
+      ].join("\n")
     case "missing":
       return `${header}\nraise ImportError(${pyString(`couldn't open "${resolved.title}" for import ${imp.name}: ${resolved.problem ?? "it isn't available"}`)})\n`
   }
+}
+
+/** Where the documents a run can patchwork.load are written, with index.json naming them. */
+export const DOCUMENTS_DIR = "/tmp/patchwork_documents"
+
+/**
+ * What patchwork.load reads: `index.names` maps import names to URLs;
+ * `index.documents[url]` names the files holding the document (`raw`) and
+ * its datatype's JSON view (`json`, when it has one), or says why it couldn't
+ * be opened (`problem`).
+ */
+export type DocumentFiles = {
+  index: { names: Record<string, string>; documents: Record<string, { title: string; raw?: string; json?: string; problem?: string }> }
+  files: Record<string, string>
+}
+
+/** The code that reads which documents and which paths the run's cells loaded, printed as JSON. */
+export const READS_CODE = [
+  "def _pw_reads():",
+  "    import json",
+  "    try:",
+  "        import patchwork.documents",
+  "    except ImportError:",
+  "        return '[]'",
+  "    return json.dumps(patchwork.documents.reads())",
+  "print(_pw_reads())",
+  "del _pw_reads",
+].join("\n")
+
+/** Document URLs written as literals in the notebook's code cells: the documents patchwork.load may read. */
+export function documentUrlsIn(doc: any): string[] {
+  const cells: any[] = Array.isArray(doc?.cells) ? doc.cells : []
+  const out = new Set<string>()
+  for (const cell of cells) {
+    if (str(cell?.cell_type) !== "code") continue
+    for (const m of joined(cell.source).matchAll(/automerge:[1-9A-HJ-NP-Za-km-z]{16,}/g)) out.add(m[0])
+  }
+  return [...out]
+}
+
+/** The value at a path in plain data, or undefined. */
+export function valueAt(data: unknown, path: ReadonlyArray<string | number>): unknown {
+  let at: any = data
+  for (const key of path) {
+    if (at == null || typeof at !== "object") return undefined
+    at = at[key as any]
+  }
+  return at
+}
+
+/** JSON with keys sorted, so equal values hash equally. */
+function canonical(value: unknown): string {
+  if (value === undefined) return "\u2205"
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`
+  return `{${Object.keys(value as object).sort().map(k => `${JSON.stringify(k)}:${canonical((value as any)[k])}`).join(",")}}`
+}
+
+/** What a read saw at a path: the value's hash, or with `keys` the hash of a mapping's keys or a list's length. */
+export function readHash(data: unknown, path: ReadonlyArray<string | number>, keys = false): string {
+  const at = valueAt(data, path)
+  if (!keys) return hash(canonical(at))
+  if (Array.isArray(at)) return hash(`#${at.length}`)
+  if (at && typeof at === "object") return hash(canonical(Object.keys(at).sort()))
+  return hash(canonical(at))
+}
+
+/** A module's hash without its header line, so a document's title doesn't count as a change to what it gives. */
+export function moduleHash(module: string): string {
+  return hash(module.slice(module.indexOf("\n") + 1))
 }
 
 /** The directory in the kernel's filesystem the modules are written to, first on sys.path. */
@@ -256,8 +369,24 @@ export const IMPORTS_DIR = "/tmp/patchwork_imports"
  * naming them, when a name would hide one of Python's own modules or an
  * installed package.
  */
-export function setupCode(modules: Record<string, string>): string {
-  return `def _pw_imports(modules, root=${pyString(IMPORTS_DIR)}):
+export function setupCode(modules: Record<string, string>, documents: DocumentFiles = { index: { names: {}, documents: {} }, files: {} }): string {
+  return `def _pw_documents(index, files, root=${pyString(DOCUMENTS_DIR)}):
+    import os, shutil
+    shutil.rmtree(root, ignore_errors=True)
+    os.makedirs(root, exist_ok=True)
+    for name, text in files.items():
+        with open(os.path.join(root, name), "w", encoding="utf-8") as f:
+            f.write(text)
+    with open(os.path.join(root, "index.json"), "w", encoding="utf-8") as f:
+        f.write(__import__("json").dumps(index))
+    try:
+        import patchwork.documents
+        patchwork.documents._begin(index)
+    except ImportError:
+        pass
+_pw_documents(__import__("json").loads(${pyString(JSON.stringify(documents.index))}), __import__("json").loads(${pyString(JSON.stringify(documents.files))}))
+del _pw_documents
+def _pw_imports(modules, root=${pyString(IMPORTS_DIR)}):
     import importlib, importlib.util, os, sys, types
     import __main__
     os.makedirs(root, exist_ok=True)

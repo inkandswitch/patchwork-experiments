@@ -8,11 +8,19 @@ A mounted folder is mirrored into the kernel's filesystem and kept up to date
 as collaborators edit it. Whatever Python writes, creates or deletes there is
 written back to the documents as soon as Python is idle, or when `sync()` is
 called.
+
+Read any document as plain Python, as of the run (see documents.py):
+
+    reg = patchwork.load("automerge:...")            # or an import's name
+    reg["entries"]["pack_series"]["value"]["nominal"]
+    patchwork.load("register", as_="json")["pack_series"]
 """
 
 import json
 
-__all__ = ["mount", "unmount", "sync", "flush", "connected"]
+from .documents import load
+
+__all__ = ["mount", "unmount", "sync", "flush", "connected", "load"]
 
 MOUNT_ROOT = "/patchwork"
 

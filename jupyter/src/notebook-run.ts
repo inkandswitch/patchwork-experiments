@@ -6,6 +6,22 @@
 import type { CellResult, RunOutcome } from "../shared/cells"
 import { importName, type NotebookImport, nameProblem, resultLines, str } from "../shared/imports"
 import type { LastRun } from "../shared/run"
+import { type Staleness, staleText } from "../shared/staleness"
+import type { RunRecord } from "../shared/imports"
+
+/** Whether the last run is out of date, as a line: what it read that changed, or that it is current. */
+export function staleLine(run: RunRecord | null, staleness: Staleness): string {
+  if (!run) return "It had no recorded run."
+  if (!staleness.stale) return `It was up to date: nothing its last run read (${run.imports.length + (run.reads ?? []).length} document${run.imports.length + (run.reads ?? []).length === 1 ? "" : "s"}) has changed in what it read.`
+  return `It was stale: ${staleText(staleness, 6)} since its last run.`
+}
+
+/** notebook_run with \`check\`: staleness alone, without running. */
+export function checkReport(title: string, run: RunRecord | null, staleness: Staleness): string {
+  const line = staleLine(run, staleness).replace(/^It was /, "It is ").replace(/^It had /, "It has ")
+  const when = run ? ` Last run ${run.at}${run.by === "agent" ? " by the agent" : ""}, ${run.status}.` : ""
+  return `"${title}": ${line}${when}${staleness.stale ? " Run it (notebook_run) to bring its outputs up to date." : ""}`
+}
 
 export type Input = {
   url: string
@@ -14,6 +30,7 @@ export type Input = {
   timeout?: number
   link?: Array<{ url: string; name?: string }>
   unlink?: string[]
+  check?: boolean
 }
 
 // ---------------------------------------------------------------- input
@@ -77,6 +94,7 @@ export function report({
   elapsedMs,
   notes = [],
   timedOut = false,
+  before = null,
 }: {
   title: string
   doc: any
@@ -85,6 +103,8 @@ export function report({
   elapsedMs: number
   notes?: string[]
   timedOut?: boolean
+  /** Whether it was stale before this run, and why. */
+  before?: string | null
 }): string {
   const cells: any[] = Array.isArray(doc?.cells) ? doc.cells : []
   const number = (id: string) => cells.findIndex(c => str(c?.id) === id) + 1
@@ -93,6 +113,7 @@ export function report({
   const lines: string[] = []
   const kernel = last?.record.kernel === "fresh" ? "fresh kernel" : "kernel carried on from earlier runs"
   lines.push(`Ran "${title}": ${tally || "nothing"} in ${(elapsedMs / 1000).toFixed(1)} s (${kernel}).`)
+  if (before) lines.push(before)
   if (timedOut) lines.push("Stopped: it ran past the time limit, so the kernel was shut down. Pass a longer `timeout` or fix the cell that hangs.")
   if (outcome.problem) lines.push(`It didn't run: ${outcome.problem}`)
   if (last?.resolved.length) {

@@ -66,7 +66,7 @@ export default function NativeNotebookTool(handle: DocHandle<NotebookDoc>, eleme
         compare={trackCompare(store, watchCompare(element))}
         kernel={kernel}
         executor={executor}
-        links={{ find, url: handle.url, open }}
+        links={{ find, datatype, url: handle.url, open }}
       />
     )
   }, host)

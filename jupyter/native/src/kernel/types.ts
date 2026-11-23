@@ -20,6 +20,8 @@ export interface KernelClient {
   ): Promise<KernelMessage.IExecuteReplyMsg["content"]>
   /** Runs code without outputs, history or an execution count; resolves with the reply. */
   executeSilent(code: string): Promise<KernelMessage.IExecuteReplyMsg["content"]>
+  /** Runs code without history or an execution count and resolves with what it printed to stdout; nothing reaches a cell. */
+  capture(code: string): Promise<string>
   complete(code: string, cursor: number): Promise<KernelMessage.ICompleteReplyMsg["content"]>
   inspect(code: string, cursor: number): Promise<KernelMessage.IInspectReplyMsg["content"]>
   /** Throws the current kernel away and starts a fresh one. */

@@ -694,3 +694,26 @@
 .pwnb-run-changed {
   color: var(--pwnb-changed);
 }
+
+.pwnb-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  color: var(--pwnb-changed);
+}
+
+.pwnb-rerun {
+  padding: 1px 8px;
+  border: 1px solid var(--pwnb-changed);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--pwnb-fill);
+  color: var(--pwnb-line);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pwnb-rerun-setting {
+  margin-inline-start: auto;
+  color: var(--pwnb-muted);
+}

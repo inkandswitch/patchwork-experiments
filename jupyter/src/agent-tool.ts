@@ -12,13 +12,14 @@
 
 import { automergeStandIn, hasAutomerge, setAutomerge, type Automerge } from "../shared/automerge"
 import { CellRunner, type RunOutcome } from "../shared/cells"
-import { importsOf, titleOf } from "../shared/imports"
+import { importsOf, runOf, titleOf } from "../shared/imports"
+import { assess } from "../shared/staleness"
 import { kernelConfig } from "../shared/kernel-config"
 import { NotebookWriter } from "../shared/notebook-writer"
 import { type DatatypeLookup, type LastRun, lookupIn, noRegistry, runHooks } from "../shared/run"
 import { kernelBootstrap } from "../shared/types"
 import { PyodideKernelClient } from "../native/src/kernel/pyodide"
-import { type Input, linkImports, pickCells, report, strip } from "./notebook-run"
+import { checkReport, type Input, linkImports, pickCells, report, staleLine, strip } from "./notebook-run"
 
 export { linkImports, pickCells, report }
 
@@ -115,9 +116,12 @@ export const notebookRun = {
       writer.setPatchworkMetadata({ imports })
     }
 
+    const datatype = await datatypeLookup(ctx)
+    const previous = runOf(handle.doc())
+    const staleness = await assess(previous, { find: u => ctx.repo.find(u), datatype })
+    if (input.check) return checkReport(titleOf(handle.doc()), previous, staleness)
     const ids = pickCells(handle.doc(), input.cells)
     if (!ids.length) return `"${titleOf(doc)}" has no code cells; nothing ran.`
-    const datatype = await datatypeLookup(ctx)
     if (input.restart) drop(url)
     const session = sessionFor(url, handle, ctx, datatype)
     keepAlive(session)
@@ -137,7 +141,7 @@ export const notebookRun = {
     ]).finally(() => clearTimeout(timer))
     if (timedOut) drop(url)
     const last = session.last()
-    return report({ title: titleOf(handle.doc()), doc: handle.doc(), outcome, last, elapsedMs: Date.now() - started, notes: last?.notes ?? [], timedOut })
+    return report({ title: titleOf(handle.doc()), doc: handle.doc(), outcome, last, elapsedMs: Date.now() - started, notes: last?.notes ?? [], timedOut, before: staleLine(previous, staleness) })
   },
 
   summarize(input: Input, output: string): string {

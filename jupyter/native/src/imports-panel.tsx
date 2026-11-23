@@ -1,6 +1,8 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { importName, importsOf, nameProblem, type NotebookImport, runOf, type RunRecord, titleOf } from "../../shared/imports"
-import type { FindDoc } from "../../shared/run"
+import { AutoRerun } from "../../shared/rerun"
+import type { DatatypeLookup, FindDoc } from "../../shared/run"
+import { assess, readUrls, type Staleness, staleText } from "../../shared/staleness"
 import type { NotebookStore } from "./doc"
 
 /**
@@ -8,6 +10,9 @@ import type { NotebookStore } from "./doc"
  * by its module name and its document's title (open it, rename it, remove
  * it), and what the last run read, by name and version, with what has
  * changed since. Documents dropped anywhere on the notebook are imported.
+ * When a document the last run read changes in what it read, the run is
+ * marked stale, with a Rerun button; with "Rerun when inputs change" on (the
+ * default), it reruns once those documents have been quiet for a moment.
  */
 
 const DND_MIME = "text/x-patchwork-dnd"
@@ -50,6 +55,7 @@ export function withDropped(imports: NotebookImport[], items: DropItem[], self?:
 type Live = { title: string; heads: string[]; type: string | null; missing?: boolean }
 
 const KIND: Record<string, string> = {
+  load: "loaded",
   hook: "Python from its datatype",
   "py-file": "Python file",
   notebook: "notebook's code",
@@ -78,6 +84,9 @@ export function ImportsPanel(props: {
   open(url: string, title?: string): void
   dragging: () => boolean
   running: () => boolean
+  datatype: DatatypeLookup
+  canRun: () => boolean
+  rerun(): Promise<unknown> | void
 }) {
   const imports = createMemo(() => importsOf(props.store.doc()), [], { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) })
   const run = createMemo(() => runOf(props.store.doc()), null, { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) })
@@ -85,6 +94,26 @@ export function ImportsPanel(props: {
   const [now, setNow] = createSignal(Date.now())
   const tick = setInterval(() => setNow(Date.now()), 30_000)
   onCleanup(() => clearInterval(tick))
+
+  // Staleness, recomputed shortly after anything the run read changes, or the run itself.
+  const [staleness, setStaleness] = createSignal<Staleness>({ stale: false, reasons: [] })
+  const judge = () => assess(run(), { find: props.find, datatype: props.datatype })
+  let judging: ReturnType<typeof setTimeout> | undefined
+  const rejudge = () => {
+    clearTimeout(judging)
+    judging = setTimeout(() => void judge().then(setStaleness, () => {}), 300)
+  }
+  onCleanup(() => clearTimeout(judging))
+  createEffect(() => {
+    run()
+    rejudge()
+  })
+  const rerunOn = () => props.store.doc()?.metadata?.patchwork?.rerun !== false
+  const auto = new AutoRerun({
+    check: async () => rerunOn() && props.canRun() && !props.running() && (await judge()).stale,
+    run: () => props.rerun(),
+  })
+  onCleanup(() => auto.dispose())
 
   // Every document an import or the last run names, opened once and watched, for titles and versions.
   const watched = new Map<string, () => void>()
@@ -104,6 +133,8 @@ export function ImportsPanel(props: {
           const doc = handle.doc()
           live().set(url, { title: titleOf(doc), heads: [...(handle.heads?.() ?? [])], type: doc?.["@patchwork"]?.type ?? null })
           setLive(live())
+          rejudge()
+          auto.poke()
         }
         const h = handle as unknown as { on?(e: string, f: () => void): void; off?(e: string, f: () => void): void }
         h.on?.("change", update)
@@ -117,7 +148,7 @@ export function ImportsPanel(props: {
       })
   }
   createEffect(() => {
-    const urls = new Set([...imports().map(i => i.docUrl), ...(run()?.imports ?? []).map(i => i.docUrl)])
+    const urls = new Set([...imports().map(i => i.docUrl), ...readUrls(run())])
     for (const url of urls) watch(url)
     for (const [url, stop] of watched) {
       if (urls.has(url)) continue
@@ -208,6 +239,17 @@ export function ImportsPanel(props: {
         </Show>
         <Show when={problem()}>{why => <span class="pwnb-links-problem">Can't rename: {why()}</span>}</Show>
       </div>
+      <Show when={staleness().stale && !props.running()}>
+        <div class="pwnb-stale" role="status">
+          <span class="pwnb-links-label">Stale</span>
+          <span>{staleText(staleness())} since the last run.</span>
+          <Show when={props.canRun()}>
+            <button type="button" class="pwnb-rerun" onClick={() => void props.rerun()}>
+              Rerun
+            </button>
+          </Show>
+        </div>
+      </Show>
       <Show when={run()}>
         {r => (
           <div class="pwnb-run" aria-label="Last run" data-status={r().status}>
@@ -216,10 +258,10 @@ export function ImportsPanel(props: {
               {ago(r().at, now())} by {r().by === "agent" ? "the agent" : "a person"} · {r().cells.length} cell{r().cells.length === 1 ? "" : "s"} ·{" "}
               {r().kernel === "fresh" ? "fresh kernel" : "same kernel"} · <span class="pwnb-run-status">{props.running() && r().status === "running" ? "running…" : statusText(r())}</span>
             </span>
-            <Show when={r().imports.length}>
+            <Show when={r().imports.length + (r().reads ?? []).length}>
               <span>
                 read{" "}
-                <For each={r().imports}>
+                <For each={[...r().imports, ...(r().reads ?? []).filter(x => !r().imports.some(i => i.docUrl === x.docUrl)).map(x => ({ ...x, name: x.as === "json" ? "patchwork.load(…, as_=\"json\")" : "patchwork.load(…)", as: "load" as const, type: null, hash: "" }))]}>
                   {(i, n) => {
                     const changed = () => {
                       const now = live().get(i.docUrl)
@@ -253,6 +295,11 @@ export function ImportsPanel(props: {
                   }}
                 </For>
               </span>
+            </Show>
+            <Show when={readUrls(r()).length && !props.readOnly()}>
+              <label class="pwnb-rerun-setting" title="Rerun all cells when a document the last run read changes in what it read, once it has been quiet for a few seconds. Only while this notebook is open somewhere.">
+                <input type="checkbox" checked={rerunOn()} onChange={e => props.store.setPatchworkMetadata({ rerun: e.currentTarget.checked })} /> Rerun when inputs change
+              </label>
             </Show>
           </div>
         )}

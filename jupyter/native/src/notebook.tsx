@@ -14,7 +14,7 @@ import type { KernelClient, KernelStatus } from "./kernel/types"
 import { icons } from "./icons"
 import { acceptDrops, ImportsPanel, withDropped } from "./imports-panel"
 import { importsOf } from "../../shared/imports"
-import type { FindDoc } from "../../shared/run"
+import type { DatatypeLookup, FindDoc } from "../../shared/run"
 import { outputBundle, renderBundle } from "./outputs"
 
 export type NotebookProps = {
@@ -25,7 +25,7 @@ export type NotebookProps = {
   kernel?: KernelClient
   executor?: Executor
   /** Linked documents: how to open them, the notebook's own URL, and how to show one. */
-  links?: { find: FindDoc; url: string; open(url: string, title?: string): void }
+  links?: { find: FindDoc; datatype: DatatypeLookup; url: string; open(url: string, title?: string): void }
 }
 
 type Mode = "command" | "edit"
@@ -309,6 +309,9 @@ export function Notebook(props: NotebookProps) {
             readOnly={readOnly}
             dragging={dragging}
             running={() => !!executor && (executor.running() !== null || executor.queued().size > 0)}
+            datatype={links().datatype}
+            canRun={canRun}
+            rerun={() => executor?.run(cellIds().filter(id => cellType(id) === "code"))}
           />
         )}
       </Show>

@@ -59,6 +59,20 @@ export class PyodideKernelClient implements KernelClient {
     })
   }
 
+  async capture(code: string) {
+    let out = ""
+    const reply = await this._request<"execute_request", KernelMessage.IExecuteReplyMsg["content"]>(
+      "execute_request",
+      { code, silent: false, store_history: false, user_expressions: {}, allow_stdin: false, stop_on_error: false },
+      message => {
+        const content = message.content as any
+        if (message.header.msg_type === "stream" && content.name === "stdout") out += content.text
+      },
+    )
+    if (reply.status !== "ok") throw new Error(`${(reply as any).ename}: ${(reply as any).evalue}`)
+    return out
+  }
+
   complete(code: string, cursor: number) {
     return this._request<"complete_request", KernelMessage.ICompleteReplyMsg["content"]>("complete_request", {
       code,
