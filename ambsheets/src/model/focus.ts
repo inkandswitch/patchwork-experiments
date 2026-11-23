@@ -10,7 +10,7 @@
 // (on text, say) can only answer yes or no, and are met by chance or not at all.
 
 import type { ConditionedStatus } from '../engine/amb-engine';
-import { ambKey, type CellInfo, type CompiledSheet, type Scenario } from './compile';
+import type { CellInfo, CompiledSheet, Scenario } from './compile';
 import { passes, type Filter, type Filters, type Sample } from './analysis';
 
 export interface FocusSettings {
@@ -105,7 +105,7 @@ export class FocusEvaluation {
         : null;
     this.checks = [...filters].filter(([addr]) => compiled.cells.get(addr)?.kind !== 'const');
 
-    for (const info of compiled.ambs) this.keys.push(ambKey(info.addr));
+    for (const amb of compiled.ambs) this.keys.push(amb.key);
     for (const info of compiled.varying) this.keys.push(info.addr);
     const columns: Record<string, any[]> = {};
     for (const key of this.keys) columns[key] = [];

@@ -4,8 +4,8 @@
 
 import { For, Index, Show, createMemo, createSignal } from 'solid-js';
 import { examples } from '../examples';
-import { isError, posOf, printNumber, printValue, valueKey } from '../lang/values';
-import { ambSize, displayName, type CellInfo } from '../model/compile';
+import { isError, posOf, printNumber, printValue } from '../lang/values';
+import { ambLabel, ambSize, displayName, type AmbInfo, type CellInfo } from '../model/compile';
 import {
   aggregate,
   histogram,
@@ -125,7 +125,12 @@ function Viewers(props: { info: CellInfo; summary: Summary }) {
       ? props.summary.stats !== null
       : vs.filter((v) => typeof v.value === 'number').length > 1;
   };
-  const dependencies = () => props.info.deps.filter((addr) => addr !== props.info.addr);
+  // the choices this cell depends on (other than the cell itself, if it is one)
+  const dependencies = () =>
+    props.info.deps
+      .filter((id) => id !== props.info.addr)
+      .map((id) => s.run().compiled.ambsById.get(id))
+      .filter((amb): amb is AmbInfo => amb !== undefined);
   const dimensions = createMemo(() => tableDimensions(s.run(), props.info));
   const ranges = () => isRangeValued(s.run(), props.info.addr);
   const showTable = () => dimensions().length > 0 && props.info.kind === 'formula' && !ranges();
@@ -147,16 +152,13 @@ function Viewers(props: { info: CellInfo; summary: Summary }) {
           <div class="hint">This result depends on choices made in:</div>
           <ul class="dependencies">
             <For each={dependencies()}>
-              {(addr) => {
-                const dep = () => s.run().compiled.cells.get(addr);
-                return (
-                  <li>
-                    <button class="link" onClick={() => s.select(posOf(addr))}>
-                      {dep() ? displayName(dep()!) : addr}
-                    </button>
-                  </li>
-                );
-              }}
+              {(amb) => (
+                <li>
+                  <button class="link" onClick={() => s.select(posOf(amb.addr))}>
+                    {amb.addr === props.info.addr ? `${amb.source} (in this cell)` : ambLabel(amb, s.run().compiled)}
+                  </button>
+                </li>
+              )}
             </For>
           </ul>
         </Section>
@@ -355,39 +357,31 @@ function StatsTable(props: { all: NumberSummary; passing: NumberSummary | null; 
 const MAX_TABLE_CHOICES = 20;
 
 /** The cell's values broken down by the choices made in one or two of its dimensions. */
-function TableViewer(props: { info: CellInfo; dimensions: CellInfo[] }) {
+function TableViewer(props: { info: CellInfo; dimensions: AmbInfo[] }) {
   const s = useSheet();
   const [aggregation, setAggregation] = createSignal<Aggregation>('avg');
   const [xAddr, setXAddr] = createSignal<string | null>(null);
   const [yAddr, setYAddr] = createSignal<string | null | undefined>(undefined);
 
   // Default to the first two dimensions, and recover if a chosen one goes away.
-  const x = () => props.dimensions.find((d) => d.addr === xAddr()) ?? props.dimensions[0];
+  const x = () => props.dimensions.find((d) => d.id === xAddr()) ?? props.dimensions[0];
   const y = () => {
     if (yAddr() === null) return null;
     const others = props.dimensions.filter((d) => d !== x());
-    return others.find((d) => d.addr === yAddr()) ?? others[0] ?? null;
+    return others.find((d) => d.id === yAddr()) ?? others[0] ?? null;
   };
-  const tooBig = () => ambSize(x().spec!) > MAX_TABLE_CHOICES || (y() !== null && ambSize(y()!.spec!) > MAX_TABLE_CHOICES);
+  const tooBig = () => ambSize(x().spec) > MAX_TABLE_CHOICES || (y() !== null && ambSize(y()!.spec) > MAX_TABLE_CHOICES);
   const table = createMemo(() => (tooBig() ? null : pivot(s.view(), props.info.addr, x(), y())));
   const filtering = s.filtering;
 
-  /** Previews a filter on a choice of a dimension (when its values are known up front). */
-  const hoverChoice = (choices: [CellInfo, number][]) => {
-    const filters = new Map<string, Filter>();
-    for (const [dim, index] of choices) {
-      if (dim.spec?.kind !== 'discrete') continue;
-      filters.set(dim.addr, { kind: 'values', keys: new Set([valueKey(dim.spec.values[index])]) });
-    }
-    s.setHover(filters.size > 0 ? filters : null);
-  };
+  const hoverChoice = s.hoverChoices;
 
   const DimensionSelect = (p: { value: string | null; onChange: (addr: string | null) => void; optional?: boolean }) => (
     <select value={p.value ?? ''} onChange={(e) => p.onChange(e.currentTarget.value || null)}>
       <Show when={p.optional}>
         <option value="">(none)</option>
       </Show>
-      <For each={props.dimensions}>{(dim) => <option value={dim.addr}>{displayName(dim)}</option>}</For>
+      <For each={props.dimensions}>{(dim) => <option value={dim.id}>{ambLabel(dim, s.run().compiled)}</option>}</For>
     </select>
   );
 
@@ -395,11 +389,11 @@ function TableViewer(props: { info: CellInfo; dimensions: CellInfo[] }) {
     <div class="pivot">
       <div class="pivot-controls">
         <label>
-          Columns <DimensionSelect value={x().addr} onChange={(addr) => setXAddr(addr)} />
+          Columns <DimensionSelect value={x().id} onChange={(id) => setXAddr(id)} />
         </label>
         <Show when={props.dimensions.length > 1}>
           <label>
-            Rows <DimensionSelect value={y()?.addr ?? null} onChange={(addr) => setYAddr(addr)} optional />
+            Rows <DimensionSelect value={y()?.id ?? null} onChange={(id) => setYAddr(id)} optional />
           </label>
         </Show>
         <label>
@@ -477,14 +471,7 @@ function LineChartViewer(props: { info: CellInfo }) {
       .join(' ');
   const xLabel = (x: number) => chart()!.categories?.[x] ?? printNumber(x);
 
-  const hoverSeries = (choices: [CellInfo, number][]) => {
-    const filters = new Map<string, Filter>();
-    for (const [dep, index] of choices) {
-      if (dep.spec?.kind !== 'discrete') continue;
-      filters.set(dep.addr, { kind: 'values', keys: new Set([valueKey(dep.spec.values[index])]) });
-    }
-    s.setHover(filters.size > 0 ? filters : null);
-  };
+  const hoverSeries = s.hoverChoices;
 
   return (
     <Show when={chart()} fallback={<div class="hint">No numbers to chart.</div>}>

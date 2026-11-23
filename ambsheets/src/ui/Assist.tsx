@@ -117,9 +117,6 @@ export function FunctionHelp(props: { doc: FunctionDoc; param: number }) {
         fallback={
           <>
             <div class="summary">{props.doc.summary}</div>
-            <Show when={props.doc.whole}>
-              <div class="note">Has to be the whole formula, not part of a larger one.</div>
-            </Show>
             <dl>
               <For each={props.doc.params}>
                 {(param) => (

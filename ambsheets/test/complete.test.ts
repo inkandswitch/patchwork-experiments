@@ -80,13 +80,15 @@ describe('completions', () => {
     expect(at('=dist|').labels).toEqual(['normal', 'uniform']);
     expect(at('=rand|').labels).toEqual(['normal', 'uniform']);
     expect(at('=B3 + mea|').labels).toEqual(['AVG']);
+    expect(at('=B3 * rand|').labels).toEqual(['normal', 'uniform']);
     expect(accept('=rand|', 'uniform')).toBe('=uniform(|');
   });
 
-  test('normal and friends are only offered where they are allowed: as the whole formula', () => {
-    expect(at('=B3 + no|').labels).toEqual(['NOT']);
-    expect(at('=SUM(uni|').labels).toEqual(['UNIQUE']);
+  test('normal and friends are offered anywhere in a formula', () => {
+    expect(at('=B3 + no|').labels).toEqual(['normal', 'NOT']);
+    expect(at('=SUM(uni|').labels).toEqual(['uniform', 'UNIQUE']);
     expect(at('budget = no|').labels).toEqual(['normal', 'NOT']);
+    expect(accept('=B3 * (1 + rand|', 'normal')).toBe('=B3 * (1 + normal(|');
   });
 
   test('nothing is offered where it would only get in the way', () => {
@@ -106,7 +108,7 @@ describe('completions', () => {
   test('but everything can be asked for anywhere', () => {
     const { labels } = at('=B3 + |', true);
     expect(labels).toContain('SUM');
-    expect(labels).not.toContain('normal');
+    expect(labels).toContain('normal');
   });
 
   test('accepting a completion', () => {

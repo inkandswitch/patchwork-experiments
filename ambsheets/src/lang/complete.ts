@@ -120,8 +120,6 @@ export function completionsAt(
     });
   }
   for (const fn of FUNCTIONS) {
-    // the functions that make several values have to be the whole formula
-    if (fn.whole && !atStart) continue;
     candidates.push({
       kind: 'function',
       label: fn.name,

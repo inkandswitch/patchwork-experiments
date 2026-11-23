@@ -12,7 +12,7 @@
 // filters is computed here, from stored scenarios.
 
 import { isRange, printValue, valueKey, type RangeValue, type RawValue } from '../lang/values';
-import { ambKey, ambSize, choiceLabel, isContinuous, type CellInfo } from './compile';
+import { ambName, ambSize, choiceLabel, isContinuous, type AmbInfo, type CellInfo } from './compile';
 import type { Run } from './run';
 
 /** A filter keeps the scenarios in which a cell has one of some values, or is in a range. */
@@ -322,18 +322,18 @@ export interface Pivot {
 }
 
 /** The ambs a cell depends on that can serve as the axes of a table. */
-export function tableDimensions(run: Run, info: CellInfo): CellInfo[] {
+export function tableDimensions(run: Run, info: CellInfo): AmbInfo[] {
   return info.deps
-    .map((addr) => run.compiled.cells.get(addr)!)
-    .filter((dep) => dep?.spec && !isContinuous(dep.spec));
+    .map((id) => run.compiled.ambsById.get(id)!)
+    .filter((amb) => amb && !isContinuous(amb.spec));
 }
 
 /** Breaks a cell's values down by the choices made in one or two ambs. */
-export function pivot(view: View, addr: string, x: CellInfo, y: CellInfo | null): Pivot {
+export function pivot(view: View, addr: string, x: AmbInfo, y: AmbInfo | null): Pivot {
   const { all: run, matching, mask } = view;
   const separate = isFocused(view);
-  const xSize = ambSize(x.spec!);
-  const ySize = y ? ambSize(y.spec!) : 1;
+  const xSize = ambSize(x.spec);
+  const ySize = y ? ambSize(y.spec) : 1;
   const cells: PivotCell[][] = Array.from({ length: ySize }, () =>
     Array.from({ length: xSize }, () => ({
       scenarios: 0,
@@ -346,8 +346,8 @@ export function pivot(view: View, addr: string, x: CellInfo, y: CellInfo | null)
   );
 
   const column = run.columns[addr];
-  const xs = run.columns[ambKey(x.addr)];
-  const ys = y ? run.columns[ambKey(y.addr)] : null;
+  const xs = run.columns[x.key];
+  const ys = y ? run.columns[y.key] : null;
   for (let i = 0; i < run.n; i++) {
     const cell = cells[ys ? ys[i] : 0][xs[i]];
     cell.scenarios++;
@@ -361,16 +361,16 @@ export function pivot(view: View, addr: string, x: CellInfo, y: CellInfo | null)
     }
   }
   if (separate) {
-    const mxs = matching.columns[ambKey(x.addr)];
-    const mys = y ? matching.columns[ambKey(y.addr)] : null;
+    const mxs = matching.columns[x.key];
+    const mys = y ? matching.columns[y.key] : null;
     for (let i = 0; i < matching.n; i++) {
       if (!mask || mask[i]) cells[mys ? mys[i] : 0][mxs[i]].passing++;
     }
   }
 
   return {
-    xLabels: Array.from({ length: xSize }, (_, i) => choiceLabel(x.spec!, i)),
-    yLabels: y ? Array.from({ length: ySize }, (_, i) => choiceLabel(y.spec!, i)) : [''],
+    xLabels: Array.from({ length: xSize }, (_, i) => choiceLabel(x.spec, i)),
+    yLabels: y ? Array.from({ length: ySize }, (_, i) => choiceLabel(y.spec, i)) : [''],
     cells,
   };
 }
@@ -398,8 +398,8 @@ export function isRangeValued(run: Run, addr: string): boolean {
 export interface Series {
   /** Which choices this line is for, like "car=500, apartment=2,800". */
   label: string;
-  /** The choices themselves: [amb cell, index of the choice]. */
-  choices: [CellInfo, number][];
+  /** The choices themselves: [amb, index of the choice]. */
+  choices: [AmbInfo, number][];
   points: [number, number][];
   /** Whether any scenario that draws this line satisfies the filters. */
   passing: boolean;
@@ -424,8 +424,8 @@ export function lineChart(view: View, info: CellInfo, maxSeries = 150): LineChar
   const { all: run, matching, mask } = view;
   if (!run.columns[info.addr]) return null;
   const separate = isFocused(view);
-  const deps = info.deps.map((addr) => run.compiled.cells.get(addr)!).filter((dep) => dep?.spec);
-  const discrete = deps.every((dep) => !isContinuous(dep.spec!));
+  const deps = info.deps.map((id) => run.compiled.ambsById.get(id)!).filter(Boolean);
+  const discrete = deps.every((dep) => !isContinuous(dep.spec));
 
   const categories = new Map<string, number>();
   let categorical: boolean | null = null;
@@ -456,7 +456,7 @@ export function lineChart(view: View, info: CellInfo, maxSeries = 150): LineChar
   /** Adds the lines of a sample; `counts` says whether its rows can make a line "passing". */
   const add = (sample: Sample, prefix: string, counts: (i: number) => boolean) => {
     const column = sample.columns[info.addr];
-    const depColumns = deps.map((dep) => sample.columns[ambKey(dep.addr)]);
+    const depColumns = deps.map((dep) => sample.columns[dep.key]);
     for (let i = 0; i < sample.n; i++) {
       const value = column[i];
       if (!isRange(value)) continue;
@@ -466,10 +466,10 @@ export function lineChart(view: View, info: CellInfo, maxSeries = 150): LineChar
       if (s === undefined) {
         s = null;
         if (series.length < maxSeries) {
-          const choices = discrete ? deps.map((dep, d): [CellInfo, number] => [dep, depColumns[d][i]]) : [];
+          const choices = discrete ? deps.map((dep, d): [AmbInfo, number] => [dep, depColumns[d][i]]) : [];
           s = {
             label: choices
-              .map(([dep, index]) => `${dep.name ?? dep.addr}=${choiceLabel(dep.spec!, index)}`)
+              .map(([dep, index]) => `${ambName(dep, run.compiled)}=${choiceLabel(dep.spec, index)}`)
               .join(', '),
             choices,
             points: toPoints(value),

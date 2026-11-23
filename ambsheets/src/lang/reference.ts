@@ -25,11 +25,6 @@ export interface FunctionDoc {
    * autocomplete and by the reference's search.
    */
   keywords?: string[];
-  /**
-   * True for the functions that make a cell hold several values. They can't be used
-   * inside a larger formula: they have to be the whole thing, as in =normal(100, 15).
-   */
-  whole?: boolean;
 }
 
 const values: Param = { name: 'values', doc: 'Numbers, cells or ranges.', rest: true };
@@ -39,7 +34,6 @@ export const FUNCTIONS: FunctionDoc[] = [
   {
     name: 'normal',
     category: 'Several values',
-    whole: true,
     params: [
       { name: 'mean', doc: 'The centre of the distribution.' },
       { name: 'stdev', doc: 'The standard deviation: how spread out the values are.' },
@@ -57,7 +51,6 @@ export const FUNCTIONS: FunctionDoc[] = [
   {
     name: 'uniform',
     category: 'Several values',
-    whole: true,
     params: [
       { name: 'min', doc: 'The smallest possible value.' },
       { name: 'max', doc: 'The largest possible value.' },
@@ -70,7 +63,6 @@ export const FUNCTIONS: FunctionDoc[] = [
   {
     name: 'ambify',
     category: 'Several values',
-    whole: true,
     params: [{ name: 'range', doc: 'The cells to choose among, like A1:A5. Empty cells are skipped.' }],
     summary: 'One of the values in a range: a choice with one option per cell.',
     example: '=ambify(A1:A5)',
@@ -79,7 +71,6 @@ export const FUNCTIONS: FunctionDoc[] = [
   {
     name: 'deambify',
     category: 'Several values',
-    whole: true,
     params: [{ name: 'cell', doc: 'A cell that holds several values.' }],
     summary:
       'All of a cell\'s values at once, as a range. The opposite of ambify: =SUM(deambify(B3)) adds up every value B3 can have.',
@@ -249,6 +240,10 @@ export const SYNTAX: { title: string; intro?: string; forms: SyntaxDoc[] }[] = [
       { syntax: '{1 to 10}', doc: 'Every whole number from 1 to 10.' },
       { syntax: '{0 to 1 by 0.25}', doc: 'From 0 to 1 in steps of 0.25.' },
       { syntax: '{true, false x 3}', doc: 'Repeats: false is three times as likely as true.' },
+      {
+        syntax: '=B2 * normal(1, 0.1)',
+        doc: 'Ambs and distributions can be part of a larger formula. Each one you write is a separate choice: =normal(0, 1) + normal(0, 1) adds two different numbers. To use the same one twice, give it a cell of its own and refer to that.',
+      },
     ],
   },
   {

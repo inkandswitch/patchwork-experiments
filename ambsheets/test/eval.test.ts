@@ -57,8 +57,8 @@ describe('parsing', () => {
 
   test('ambs, with and without "=" and a name', () => {
     const bare = parseCell('{500, 1200}');
-    expect(bare).toMatchObject({ kind: 'formula', name: null, formula: { type: 'amb' } });
-    expect(parseCell('={1 to 3}')).toMatchObject({ kind: 'formula', formula: { type: 'amb' } });
+    expect(bare).toMatchObject({ kind: 'formula', name: null, expr: { type: 'amb' } });
+    expect(parseCell('={1 to 3}')).toMatchObject({ kind: 'formula', expr: { type: 'amb' } });
     expect(parseCell('car = {500, 1200}')).toMatchObject({ kind: 'formula', name: 'car' });
   });
 
@@ -69,11 +69,15 @@ describe('parsing', () => {
 
   test('distributions', () => {
     expect(parseCell('=normal(100, 15)')).toMatchObject({
-      formula: { type: 'normal', mean: 100, stdev: 15, samples: null },
+      expr: { type: 'normal', mean: 100, stdev: 15, samples: null, source: 'normal(100, 15)' },
     });
-    expect(parseCell('=normal(100, 15, 30)')).toMatchObject({ formula: { samples: 30 } });
+    expect(parseCell('=normal(100, 15, 30)')).toMatchObject({ expr: { samples: 30 } });
     expect(parseCell('=uniform(B1, 10)')).toMatchObject({
-      formula: { type: 'uniform', min: { type: 'cellRef', row: 0, col: 1 }, max: 10 },
+      expr: { type: 'uniform', min: { type: 'cellRef', row: 0, col: 1 }, max: 10 },
+    });
+    // ...which can be part of a larger formula
+    expect(parseCell('=B2 * normal(1, 0.1) + {1, 2}')).toMatchObject({
+      expr: { type: 'call', funcName: '+', args: [{ type: 'call', funcName: '*' }, { type: 'amb', source: '{1, 2}' }] },
     });
   });
 });

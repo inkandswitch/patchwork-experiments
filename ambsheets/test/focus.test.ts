@@ -99,7 +99,7 @@ describe('finding scenarios that match filters', () => {
     expect(bars.all.count).toBe(20_000);
     expect(bars.max).toBeGreaterThanOrEqual(bars.passing!.max);
 
-    const [first, second] = [compiled.cells.get('A1')!, compiled.cells.get('A2')!];
+    const [first, second] = [compiled.ambsById.get('A1')!, compiled.ambsById.get('A2')!];
     const table = pivot(view, 'B1', first, second);
     const matchingInTable = table.cells.flat().reduce((sum, cell) => sum + cell.passing, 0);
     expect(matchingInTable).toBe(5_000);

@@ -26,6 +26,7 @@ A cell holds a literal, an amb, or a formula.
 | `=uniform(0, 10)` | a uniform distribution (continuous; new) |
 | `=normal(100, 15, 30)` | 30 fixed samples of a normal distribution, as in the original |
 | `=deambify(B3)` | all of B3's values, collected into a range |
+| `=B2 * normal(1, 0.1)`, `=100 + {1, 2, 3}` | any of the above inside a larger formula (new) |
 | `=SUM(B3:B5)`, `=IF(total <= 4200, "ok", "no")` | ordinary formulas |
 | `total = SUM(B3:B5)` | a formula with a name, which other formulas can use |
 | `=A6:B11` | a range as a value; the cell is shown as a line chart (one line per scenario) |
@@ -33,6 +34,13 @@ A cell holds a literal, an amb, or a formula.
 Functions: `sum product count avg min max and or not concat unique vlookup abs sqrt exp ln
 floor ceil round pow mod`. Parameters of distributions must be numbers or cells that don't
 vary.
+
+Every amb or distribution that is *written* is a separate choice, so
+`=normal(0, 1) + normal(0, 1)` adds two different numbers, while `=A1 + A1` (with A1 a
+normal) adds the same number twice. A cell that is nothing but an amb is an "input": it
+gets its own entry in the Filters panel. An amb inside a larger formula has no cell of
+its own to filter on, but it still shows up as a choice in the cell's dependencies and as
+a dimension for tables (as, say, "`{1, 2, 3}` in D4").
 
 ## Help while typing
 
@@ -52,9 +60,10 @@ suggest where is decided in `src/lang/complete.ts` (no DOM, unit-tested).
 
 ## How evaluation works
 
-- `src/model/compile.ts` turns the sheet into an amb-engine model: each amb cell becomes
-  an amb, each cell that varies becomes a formula, and everything else is folded into
-  constants (including reference cycles and syntax errors, which become error values).
+- `src/model/compile.ts` turns the sheet into an amb-engine model: each amb that is
+  written becomes an amb, each cell that varies becomes a formula, and everything else is
+  folded into constants (including reference cycles and syntax errors, which become error
+  values).
 - `src/model/run.ts` runs the model and decides how. In **Auto** mode it enumerates every
   scenario when that is cheap and samples otherwise, based on the model's cardinality (how
   many scenarios exist) and a measurement of how long one scenario takes:

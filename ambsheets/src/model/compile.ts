@@ -5,9 +5,11 @@
 // back one scenario at a time, either enumerating all of them or drawing them at random.
 // The mapping from a sheet is:
 //
-//   - every amb cell (B3 = {500, 1200}) becomes an amb named "?B3". For a discrete amb
-//     the amb's value is the *index* of the choice, which keeps repeated values distinct;
-//     for a distribution it is the sampled number.
+//   - every amb that is written ({500, 1200}, normal(100, 15), ...) becomes an amb of the
+//     engine. An amb that is a whole cell (B3 = {500, 1200}) is named "?B3"; ambs written
+//     inside a larger formula (D4 = B2 * normal(1, 0.1)) are numbered: "?D4#1". For a
+//     discrete amb the amb's value is the *index* of the choice, which keeps repeated
+//     values distinct; for a distribution it is the sampled number.
 //   - every cell whose value varies from scenario to scenario becomes a formula named
 //     after its address ("B7"). Formulas read other cells through the scenario
 //     (`s.B3`), which is how amb-engine evaluates them lazily and in dependency order.
@@ -18,7 +20,9 @@ import * as d3 from 'd3-random';
 import { AmbEngine } from '../engine/amb-engine';
 import { builtins } from '../lang/builtins';
 import {
+  isAmbNode,
   parseCell,
+  type AmbNode,
   type AmbPart,
   type DistArg,
   type Expr,
@@ -44,11 +48,26 @@ export type CellFn = (scenario: Scenario) => RawValue;
 
 export type AmbSpec =
   /** One of a fixed list of values: an amb literal, or ambify() over constants. */
-  | { kind: 'discrete'; addr: string; values: BasicRawValue[] }
+  | { kind: 'discrete'; values: BasicRawValue[] }
   /** ambify() over cells that themselves vary: a choice of which cell to read. */
-  | { kind: 'pick'; addr: string; cells: string[] }
-  | { kind: 'normal'; addr: string; mean: number; stdev: number }
-  | { kind: 'uniform'; addr: string; min: number; max: number };
+  | { kind: 'pick'; cells: string[] }
+  | { kind: 'normal'; mean: number; stdev: number }
+  | { kind: 'uniform'; min: number; max: number };
+
+/** One choice: an amb, as written somewhere in the sheet. */
+export interface AmbInfo {
+  /** "B3" when the amb is all there is in B3; "D4#1" for the first amb inside D4's formula. */
+  id: string;
+  /** Its name in the engine, and so the name of its column in a run: ambKey(id). */
+  key: string;
+  /** The cell it is written in. */
+  addr: string;
+  /** True if the cell is nothing but this amb. */
+  whole: boolean;
+  spec: AmbSpec;
+  /** How it is written, like "normal(1, 0.1)". */
+  source: string;
+}
 
 export interface CellInfo {
   addr: string;
@@ -57,11 +76,13 @@ export interface CellInfo {
   kind: 'const' | 'amb' | 'formula';
   /** The value of a constant cell (null for the other kinds). */
   value: RawValue;
-  /** Amb cells only. */
+  /** For cells that are nothing but an amb (kind 'amb'): what kind of amb. */
   spec: AmbSpec | null;
+  /** The ambs written in this cell: the cell itself, or ambs inside its formula. */
+  ambs: AmbInfo[];
   /** Varying cells only: the cell's value in a scenario. */
   fn: CellFn | null;
-  /** The amb cells this cell's value depends on (an amb depends on itself), in sheet order. */
+  /** The ambs (by id) this cell's value depends on, its own included, in sheet order. */
   deps: string[];
   /** The varying cells this cell reads directly. */
   refs: string[];
@@ -95,8 +116,9 @@ export interface CompiledSheet {
   cells: Map<string, CellInfo>;
   /** Lower-cased cell name -> address. */
   names: Map<string, string>;
-  /** The amb cells, in sheet order. These are the dimensions of the possibility space. */
-  ambs: CellInfo[];
+  /** The ambs, in sheet order. These are the dimensions of the possibility space. */
+  ambs: AmbInfo[];
+  ambsById: Map<string, AmbInfo>;
   /** The cells whose value differs between scenarios (ambs included), in sheet order. */
   varying: CellInfo[];
   /** How many scenarios there are. Infinity if any amb is a continuous distribution. */
@@ -106,7 +128,7 @@ export interface CompiledSheet {
   engine: AmbEngine<any, any> | null;
 }
 
-export const ambKey = (addr: string) => '?' + addr;
+export const ambKey = (id: string) => '?' + id;
 
 export const isContinuous = (spec: AmbSpec) => spec.kind === 'normal' || spec.kind === 'uniform';
 
@@ -135,6 +157,18 @@ export function choiceLabel(spec: AmbSpec, index: number): string {
 
 export function displayName(info: { addr: string; name: string | null }): string {
   return info.name ? `${info.name} (${info.addr})` : info.addr;
+}
+
+/** What to call a choice: its cell, or (for an amb inside a formula) its text and its cell. */
+export function ambLabel(amb: AmbInfo, compiled: CompiledSheet): string {
+  const cell = compiled.cells.get(amb.addr);
+  const where = cell ? displayName(cell) : amb.addr;
+  return amb.whole ? where : `${amb.source} in ${where}`;
+}
+
+/** A short name for a choice, for labelling its values: "car", "B3", or "normal(1, 0.1)". */
+export function ambName(amb: AmbInfo, compiled: CompiledSheet): string {
+  return amb.whole ? (compiled.cells.get(amb.addr)?.name ?? amb.addr) : amb.source;
 }
 
 // The original Ambsheets drew normal(mean, stdev, samples) from a generator with this
@@ -235,7 +269,30 @@ export function compileSheet(data: unknown): CompiledSheet {
     return (s) => s[addr];
   };
 
-  const compileExpr = (node: Expr, refs: Set<string>): CellFn => {
+  /** What is known about the cell whose formula is being compiled. */
+  interface Context {
+    addr: string;
+    /** The whole formula. An amb that is the whole formula is the cell's own amb. */
+    top: Expr;
+    /** The varying cells the formula reads. */
+    refs: Set<string>;
+    /** The ambs written in the formula. */
+    ambs: AmbInfo[];
+    /** What each node compiled to, so that no node (and no amb) is ever compiled twice. */
+    compiled: Map<Expr, CellFn>;
+  }
+
+  const compileExpr = (node: Expr, ctx: Context): CellFn => {
+    let fn = ctx.compiled.get(node);
+    if (!fn) {
+      fn = compileNode(node, ctx);
+      ctx.compiled.set(node, fn);
+    }
+    return fn;
+  };
+
+  const compileNode = (node: Expr, ctx: Context): CellFn => {
+    const { refs } = ctx;
     switch (node.type) {
       case 'const': {
         const value = node.value;
@@ -263,9 +320,9 @@ export function compileSheet(data: unknown): CompiledSheet {
         };
       }
       case 'if': {
-        const cond = compileExpr(node.cond, refs);
-        const thenFn = compileExpr(node.then, refs);
-        const elseFn = compileExpr(node.else, refs);
+        const cond = compileExpr(node.cond, ctx);
+        const thenFn = compileExpr(node.then, ctx);
+        const elseFn = compileExpr(node.else, ctx);
         return (s) => {
           const c = cond(s);
           return isError(c) ? c : c ? thenFn(s) : elseFn(s);
@@ -277,7 +334,7 @@ export function compileSheet(data: unknown): CompiledSheet {
           const error = new ASError('#NAME?', 'unknown function: ' + node.funcName);
           return () => error;
         }
-        const args = node.args.map((arg) => compileExpr(arg, refs));
+        const args = node.args.map((arg) => compileExpr(arg, ctx));
         return (s) => {
           const values: RawValue[] = [];
           for (const arg of args) {
@@ -288,7 +345,109 @@ export function compileSheet(data: unknown): CompiledSheet {
           return fn(values);
         };
       }
+      case 'deambify': {
+        const values = deambify(node.ref);
+        return () => values;
+      }
+      default:
+        return compileAmb(node, ctx);
     }
+  };
+
+  /**
+   * An amb, wherever it is written, becomes an amb of the engine, and its value in a
+   * scenario is read from the scenario. Every amb that is written is a choice of its own:
+   * =normal(0, 1) + normal(0, 1) adds two different numbers. (To use the same number
+   * twice, give it a cell and refer to the cell twice.)
+   */
+  const compileAmb = (node: AmbNode, ctx: Context): CellFn => {
+    const spec = ambSpec(node);
+    if (isError(spec)) return () => spec;
+
+    const whole = node === ctx.top;
+    const id = whole ? ctx.addr : `${ctx.addr}#${ctx.ambs.length + 1}`;
+    const key = ambKey(id);
+    ctx.ambs.push({ id, key, addr: ctx.addr, whole, spec, source: node.source.trim() });
+
+    switch (spec.kind) {
+      case 'discrete': {
+        const values = spec.values;
+        return (s) => values[s[key]];
+      }
+      case 'pick': {
+        const readers = spec.cells.map((cell) => reader(cell, ctx.refs));
+        return (s) => readers[s[key]](s);
+      }
+      default:
+        return (s) => s[key];
+    }
+  };
+
+  /** What kind of amb a node describes. (Or what is wrong with it.) */
+  const ambSpec = (node: AmbNode): AmbSpec | ASError => {
+    switch (node.type) {
+      case 'amb': {
+        const values = expandAmbParts(node.parts);
+        return isError(values) ? values : { kind: 'discrete', values };
+      }
+
+      case 'normal': {
+        const mean = constNumber(node.mean, 'the mean');
+        if (isError(mean)) return mean;
+        const stdev = constNumber(node.stdev, 'the standard deviation');
+        if (isError(stdev)) return stdev;
+        if (stdev < 0) return new ASError('#VALUE!', "the standard deviation can't be negative");
+        if (node.samples === null) return { kind: 'normal', mean, stdev };
+
+        // The legacy form: a fixed number of samples, treated as a discrete amb.
+        const samples = constNumber(node.samples, 'the number of samples');
+        if (isError(samples)) return samples;
+        if (!Number.isInteger(samples) || samples < 1 || samples > MAX_AMB_VALUES) {
+          return new ASError('#VALUE!', `the number of samples must be between 1 and ${MAX_AMB_VALUES}`);
+        }
+        const next = d3.randomNormal.source(d3.randomLcg(LEGACY_NORMAL_SEED))(mean, stdev);
+        return { kind: 'discrete', values: Array.from({ length: samples }, next).sort((a, b) => a - b) };
+      }
+
+      case 'uniform': {
+        const min = constNumber(node.min, 'the minimum');
+        if (isError(min)) return min;
+        const max = constNumber(node.max, 'the maximum');
+        if (isError(max)) return max;
+        if (min > max) return new ASError('#VALUE!', "the minimum can't exceed the maximum");
+        return { kind: 'uniform', min, max };
+      }
+
+      case 'ambify': {
+        const cells = rangeCells(node.range);
+        if (isError(cells)) return cells;
+        // Empty cells aren't choices.
+        const choices = cells.addrs.filter((cell) => resolve(cell) !== null);
+        if (choices.length === 0) return new ASError('#N/A', 'ambify() needs at least one non-empty cell');
+        const choiceInfos = choices.map((cell) => infos.get(cell)!);
+        const error = choiceInfos.find((info) => info.kind === 'const' && isError(info.value));
+        if (error) return error.value as ASError;
+        if (choiceInfos.every((info) => info.kind === 'const' && !isRange(info.value))) {
+          return { kind: 'discrete', values: choiceInfos.map((info) => info.value as BasicRawValue) };
+        }
+        return { kind: 'pick', cells: choices };
+      }
+    }
+  };
+
+  /** All of a cell's values, as a range with one row. (Or the first error among them.) */
+  const deambify = (ref: Ref): RawValue => {
+    const target = resolveRef(ref);
+    if (isError(target)) return target;
+    const info = resolve(target);
+    const values = info === null ? [null] : info.kind === 'const' ? [info.value] : collectValues(info, infos);
+    const flat: BasicRawValue[] = [];
+    for (const value of values) {
+      if (isError(value)) return value;
+      if (isRange(value)) flat.push(...value.flat());
+      else flat.push(value);
+    }
+    return [flat];
   };
 
   /**
@@ -312,7 +471,7 @@ export function compileSheet(data: unknown): CompiledSheet {
    *
    * Anything else has no margin (null).
    */
-  const compileMargin = (node: Expr): Margin | null => {
+  const compileMargin = (node: Expr, ctx: Context): Margin | null => {
     if (node.type === 'cellRef' || node.type === 'nameRef') {
       const addr = resolveRef(node);
       return isError(addr) ? null : (resolve(addr)?.margin ?? null);
@@ -321,7 +480,7 @@ export function compileSheet(data: unknown): CompiledSheet {
 
     const comparison = COMPARISON_MARGINS[node.funcName];
     if (comparison && node.args.length === 2) {
-      const [left, right] = node.args.map((arg) => compileExpr(arg, new Set()));
+      const [left, right] = node.args.map((arg) => compileExpr(arg, ctx));
       return (s) => {
         const [x, y] = [left(s), right(s)];
         return typeof x === 'number' && typeof y === 'number' ? comparison(x, y) : NaN;
@@ -330,9 +489,9 @@ export function compileSheet(data: unknown): CompiledSheet {
 
     /** A part of an AND/OR/NOT: its margin if it has one, or else just whether it is true. */
     const part = (arg: Expr): Margin => {
-      const margin = compileMargin(arg);
+      const margin = compileMargin(arg, ctx);
       if (margin) return margin;
-      const value = compileExpr(arg, new Set());
+      const value = compileExpr(arg, ctx);
       return (s) => {
         const v = value(s);
         return v === true ? Infinity : v === false ? -Infinity : NaN;
@@ -362,147 +521,34 @@ export function compileSheet(data: unknown): CompiledSheet {
     return new ASError('#VALUE!', `${what} must be a number that doesn't vary (${addr} isn't)`);
   };
 
-  const depsOf = (addrs: Iterable<string>, self?: string): string[] => {
-    const deps = new Set<string>(self ? [self] : []);
-    for (const addr of addrs) {
-      for (const dep of infos.get(addr)?.deps ?? []) deps.add(dep);
-    }
-    return [...deps].sort(inSheetOrder);
-  };
-
-  const amb = (addr: string, name: string | null, spec: AmbSpec, refs: string[] = []): CellInfo => {
-    const key = ambKey(addr);
-    let fn: CellFn;
-    switch (spec.kind) {
-      case 'discrete': {
-        const values = spec.values;
-        fn = (s) => values[s[key]];
-        break;
-      }
-      case 'pick': {
-        const readers = spec.cells.map((cell) => reader(cell, new Set()));
-        fn = (s) => readers[s[key]](s);
-        break;
-      }
-      default:
-        fn = (s) => s[key];
-    }
-    return {
-      addr,
-      pos: posOf(addr),
-      name,
-      kind: 'amb',
-      value: null,
-      spec,
-      fn,
-      deps: depsOf(refs, addr),
-      refs,
-      margin: null,
-    };
-  };
-
   const build = (addr: string, name: string | null, p: Parsed): CellInfo | null => {
     if (p.kind === 'empty') return null;
     if (p.kind === 'literal') return constant(addr, name, p.value);
     if (p.kind === 'error') return constant(addr, name, p.error);
 
-    const formula = p.formula;
-    switch (formula.type) {
-      case 'amb': {
-        const values = expandAmbParts(formula.parts);
-        return isError(values)
-          ? constant(addr, name, values)
-          : amb(addr, name, { kind: 'discrete', addr, values });
-      }
+    const ctx: Context = { addr, top: p.expr, refs: new Set(), ambs: [], compiled: new Map() };
+    const fn = guarded(compileExpr(p.expr, ctx));
+    // A formula with no amb in it, and none upstream, has one value: work it out now.
+    if (ctx.refs.size === 0 && ctx.ambs.length === 0) return constant(addr, name, fn({}));
 
-      case 'normal': {
-        const mean = constNumber(formula.mean, 'the mean');
-        if (isError(mean)) return constant(addr, name, mean);
-        const stdev = constNumber(formula.stdev, 'the standard deviation');
-        if (isError(stdev)) return constant(addr, name, stdev);
-        if (stdev < 0) {
-          return constant(addr, name, new ASError('#VALUE!', "the standard deviation can't be negative"));
-        }
-        if (formula.samples === null) {
-          return amb(addr, name, { kind: 'normal', addr, mean, stdev });
-        }
-        // The legacy form: a fixed number of samples, treated as a discrete amb.
-        const samples = constNumber(formula.samples, 'the number of samples');
-        if (isError(samples)) return constant(addr, name, samples);
-        if (!Number.isInteger(samples) || samples < 1 || samples > MAX_AMB_VALUES) {
-          return constant(
-            addr,
-            name,
-            new ASError('#VALUE!', `the number of samples must be between 1 and ${MAX_AMB_VALUES}`),
-          );
-        }
-        const next = d3.randomNormal.source(d3.randomLcg(LEGACY_NORMAL_SEED))(mean, stdev);
-        const values = Array.from({ length: samples }, next).sort((a, b) => a - b);
-        return amb(addr, name, { kind: 'discrete', addr, values });
-      }
-
-      case 'uniform': {
-        const min = constNumber(formula.min, 'the minimum');
-        if (isError(min)) return constant(addr, name, min);
-        const max = constNumber(formula.max, 'the maximum');
-        if (isError(max)) return constant(addr, name, max);
-        if (min > max) {
-          return constant(addr, name, new ASError('#VALUE!', "the minimum can't exceed the maximum"));
-        }
-        return amb(addr, name, { kind: 'uniform', addr, min, max });
-      }
-
-      case 'ambify': {
-        const cells = rangeCells(formula.range);
-        if (isError(cells)) return constant(addr, name, cells);
-        // Empty cells aren't choices.
-        const choices = cells.addrs.filter((cell) => resolve(cell) !== null);
-        if (choices.length === 0) {
-          return constant(addr, name, new ASError('#N/A', 'ambify() needs at least one non-empty cell'));
-        }
-        const choiceInfos = choices.map((cell) => infos.get(cell)!);
-        const error = choiceInfos.find((info) => info.kind === 'const' && isError(info.value));
-        if (error) return constant(addr, name, error.value);
-        if (choiceInfos.every((info) => info.kind === 'const' && !isRange(info.value))) {
-          const values = choiceInfos.map((info) => info.value as BasicRawValue);
-          return amb(addr, name, { kind: 'discrete', addr, values });
-        }
-        const refs = choiceInfos.filter((info) => info.kind !== 'const').map((info) => info.addr);
-        return amb(addr, name, { kind: 'pick', addr, cells: choices }, refs);
-      }
-
-      case 'deambify': {
-        const target = resolveRef(formula.ref);
-        if (isError(target)) return constant(addr, name, target);
-        const info = resolve(target);
-        const values = info === null ? [null] : info.kind === 'const' ? [info.value] : collectValues(info, infos);
-        const flat: BasicRawValue[] = [];
-        for (const value of values) {
-          if (isError(value)) return constant(addr, name, value);
-          if (isRange(value)) flat.push(...value.flat());
-          else flat.push(value);
-        }
-        return constant(addr, name, [flat]);
-      }
-
-      case 'expr': {
-        const refs = new Set<string>();
-        const fn = guarded(compileExpr(formula.expr, refs));
-        if (refs.size === 0) return constant(addr, name, fn({}));
-        return {
-          addr,
-          pos: posOf(addr),
-          name,
-          kind: 'formula',
-          value: null,
-          spec: null,
-          fn,
-          deps: depsOf(refs),
-          refs: [...refs],
-          margin: compileMargin(formula.expr),
-        };
-      }
+    const deps = new Set(ctx.ambs.map((amb) => amb.id));
+    for (const ref of ctx.refs) {
+      for (const dep of infos.get(ref)?.deps ?? []) deps.add(dep);
     }
+    const whole = isAmbNode(p.expr);
+    return {
+      addr,
+      pos: posOf(addr),
+      name,
+      kind: whole ? 'amb' : 'formula',
+      value: null,
+      spec: whole ? ctx.ambs[0].spec : null,
+      ambs: ctx.ambs,
+      fn,
+      deps: [...deps].sort(inSheetOrder),
+      refs: [...ctx.refs],
+      margin: compileMargin(p.expr, ctx),
+    };
   };
 
   for (const addr of parsed.keys()) resolve(addr);
@@ -514,8 +560,8 @@ export function compileSheet(data: unknown): CompiledSheet {
     if (info) cells.set(addr, info);
   }
   const varying = [...cells.values()].filter((info) => info.kind !== 'const');
-  const ambs = varying.filter((info) => info.kind === 'amb');
-  const cardinality = ambs.reduce((n, info) => n * ambSize(info.spec!), 1);
+  const ambs = varying.flatMap((info) => info.ambs);
+  const cardinality = ambs.reduce((n, amb) => n * ambSize(amb.spec), 1);
 
   return {
     rows,
@@ -523,9 +569,10 @@ export function compileSheet(data: unknown): CompiledSheet {
     cells,
     names,
     ambs,
+    ambsById: new Map(ambs.map((amb) => [amb.id, amb])),
     varying,
     cardinality,
-    continuous: ambs.some((info) => isContinuous(info.spec!)),
+    continuous: ambs.some((amb) => isContinuous(amb.spec)),
     engine: varying.length > 0 ? makeEngine(ambs, varying) : null,
   };
 }
@@ -538,6 +585,7 @@ function constant(addr: string, name: string | null, value: RawValue): CellInfo 
     kind: 'const',
     value,
     spec: null,
+    ambs: [],
     fn: null,
     deps: [],
     refs: [],
@@ -574,9 +622,11 @@ function intern(error: ASError): ASError {
   return interned;
 }
 
+/** Orders amb ids ("B3", "D4#2") by cell, then by position within the cell. */
 function inSheetOrder(a: string, b: string) {
-  const [p, q] = [posOf(a), posOf(b)];
-  return p.row - q.row || p.col - q.col;
+  const [[cellA, nthA = '0'], [cellB, nthB = '0']] = [a.split('#'), b.split('#')];
+  const [p, q] = [posOf(cellA), posOf(cellB)];
+  return p.row - q.row || p.col - q.col || Number(nthA) - Number(nthB);
 }
 
 function expandAmbParts(parts: AmbPart[]): BasicRawValue[] | ASError {
@@ -615,9 +665,9 @@ function makeAmb(factory: AmbFactory, spec: AmbSpec) {
   }
 }
 
-function makeEngine(ambs: CellInfo[], cells: CellInfo[]): AmbEngine<any, any> {
+function makeEngine(ambs: AmbInfo[], cells: CellInfo[]): AmbEngine<any, any> {
   return new AmbEngine<any, any>(
-    (factory) => Object.fromEntries(ambs.map(({ spec }) => [ambKey(spec!.addr), makeAmb(factory, spec!)])),
+    (factory) => Object.fromEntries(ambs.map((amb) => [amb.key, makeAmb(factory, amb.spec)])),
     Object.fromEntries(cells.map((info) => [info.addr, info.fn!])),
   );
 }
@@ -636,8 +686,8 @@ function collectValues(target: CellInfo, infos: Map<string, CellInfo | null>): R
   visit(target);
 
   const cells = [...cone.values()];
-  const ambs = cells.filter((info) => info.kind === 'amb');
-  const cardinality = ambs.reduce((n, info) => n * ambSize(info.spec!), 1);
+  const ambs = cells.flatMap((info) => info.ambs);
+  const cardinality = ambs.reduce((n, amb) => n * ambSize(amb.spec), 1);
   const exhaustive = cardinality <= DEAMBIFY_MAX_SCENARIOS;
   const sampler = makeEngine(ambs, cells).sampler({
     preferExhaustive: exhaustive,
@@ -685,27 +735,17 @@ function staticRefs(
         return [node.cond, node.then, node.else].forEach(walk);
       case 'call':
         return node.args.forEach(walk);
+      case 'ambify':
+        return addRange(node.range);
+      case 'deambify':
+        return addRef(node.ref);
+      case 'normal':
+        return [node.mean, node.stdev, node.samples].forEach(addDistArg);
+      case 'uniform':
+        return [node.min, node.max].forEach(addDistArg);
     }
   };
-
-  const formula = p.formula;
-  switch (formula.type) {
-    case 'ambify':
-      addRange(formula.range);
-      break;
-    case 'deambify':
-      addRef(formula.ref);
-      break;
-    case 'normal':
-      [formula.mean, formula.stdev, formula.samples].forEach(addDistArg);
-      break;
-    case 'uniform':
-      [formula.min, formula.max].forEach(addDistArg);
-      break;
-    case 'expr':
-      walk(formula.expr);
-      break;
-  }
+  walk(p.expr);
   return refs;
 }
 

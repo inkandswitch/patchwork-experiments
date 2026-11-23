@@ -8,8 +8,9 @@
 //       =normal(100, 15)          a normal distribution (continuous)
 //       =normal(100, 15, 30)      30 fixed samples of one (discrete)
 //       =uniform(0, 1)            a uniform distribution (continuous)
-//   - =deambify(B3), which collects all of a cell's values into a range, or
 //   - an ordinary spreadsheet expression like =SUM(B3:B5) or =IF(B7 < 4200, "ok", "no").
+// Ambs are expressions too, so they can be part of a larger formula: =B2 * normal(1, 0.1),
+// or =100 + {1, 2, 3}. So is deambify(B3), which collects all of a cell's values into a range.
 // Any formula can be named by writing the name before the "=": total = SUM(B3:B5).
 
 import * as ohm from 'ohm-js';
@@ -32,7 +33,9 @@ export type Expr =
   | RangeNode
   | { type: 'const'; value: BasicRawValue }
   | { type: 'if'; cond: Expr; then: Expr; else: Expr }
-  | { type: 'call'; funcName: string; args: Expr[] };
+  | { type: 'call'; funcName: string; args: Expr[] }
+  | AmbNode
+  | { type: 'deambify'; ref: Ref };
 
 export type AmbPart =
   | { type: 'range'; from: number; to: number; step: number }
@@ -41,30 +44,30 @@ export type AmbPart =
 /** A distribution parameter: a number, or a reference to a cell that holds one. */
 export type DistArg = number | Ref;
 
-export type Formula =
-  | { type: 'amb'; parts: AmbPart[] }
-  | { type: 'ambify'; range: RangeNode }
-  | { type: 'deambify'; ref: Ref }
-  | { type: 'normal'; mean: DistArg; stdev: DistArg; samples: DistArg | null }
-  | { type: 'uniform'; min: DistArg; max: DistArg }
-  | { type: 'expr'; expr: Expr };
+/**
+ * An expression with several possible values. Each one that is written is a choice of
+ * its own. (`source` is its text, for telling the choices in a formula apart.)
+ */
+export type AmbNode =
+  | { type: 'amb'; parts: AmbPart[]; source: string }
+  | { type: 'ambify'; range: RangeNode; source: string }
+  | { type: 'normal'; mean: DistArg; stdev: DistArg; samples: DistArg | null; source: string }
+  | { type: 'uniform'; min: DistArg; max: DistArg; source: string };
+
+export const isAmbNode = (node: Expr): node is AmbNode =>
+  node.type === 'amb' || node.type === 'ambify' || node.type === 'normal' || node.type === 'uniform';
 
 export type Parsed =
   | { kind: 'empty' }
   | { kind: 'literal'; value: BasicRawValue }
-  | { kind: 'formula'; name: string | null; formula: Formula }
+  | { kind: 'formula'; name: string | null; expr: Expr }
   | { kind: 'error'; error: ASError };
 
 const grammar = ohm.grammar(String.raw`
   Ambsheets {
     Formula
-      = ident? "=" ambify "(" CellRange ")"                            -- ambify
-      | ident? "=" deambify "(" cellRef ")"                            -- deambify
-      | ident? "=" normal "(" DistArg "," DistArg ("," DistArg)? ")"   -- normal
-      | ident? "=" uniform "(" DistArg "," DistArg ")"                 -- uniform
-      | ident? "=" Exp                                                 -- expression
-      | ident? "=" Amb                                                 -- amb
-      | Amb                                                            -- bareAmb
+      = ident? "=" Exp  -- expression
+      | Amb             -- bareAmb
 
     DistArg
       = number
@@ -101,8 +104,13 @@ const grammar = ohm.grammar(String.raw`
       | PriExp
 
     PriExp
-      = "(" Exp ")"  -- paren
-      | Literal      -- const
+      = "(" Exp ")"                                         -- paren
+      | Amb
+      | ambify "(" CellRange ")"                            -- ambify
+      | deambify "(" cellRef ")"                            -- deambify
+      | normal "(" DistArg "," DistArg ("," DistArg)? ")"   -- normal
+      | uniform "(" DistArg "," DistArg ")"                 -- uniform
+      | Literal                                             -- const
       | CellRange
       | cellRef
 
@@ -167,12 +175,6 @@ const grammar = ohm.grammar(String.raw`
 
 type N = ohm.Node;
 
-const named = (name: N, formula: Formula): Parsed => ({
-  kind: 'formula',
-  name: name.sourceString === '' ? null : name.sourceString,
-  formula,
-});
-
 const binary = (funcName: string) => (left: N, _op: N, right: N): Expr => ({
   type: 'call',
   funcName,
@@ -180,31 +182,11 @@ const binary = (funcName: string) => (left: N, _op: N, right: N): Expr => ({
 });
 
 const semantics = grammar.createSemantics().addOperation<any>('ast', {
-  Formula_ambify(name, _eq, _ambify, _lp, range, _rp) {
-    return named(name, { type: 'ambify', range: range.ast() });
+  Formula_expression(name, _eq, exp): Parsed {
+    return { kind: 'formula', name: name.sourceString === '' ? null : name.sourceString, expr: exp.ast() };
   },
-  Formula_deambify(name, _eq, _deambify, _lp, ref, _rp) {
-    return named(name, { type: 'deambify', ref: ref.ast() });
-  },
-  Formula_normal(name, _eq, _normal, _lp, mean, _c1, stdev, _c2, samples, _rp) {
-    return named(name, {
-      type: 'normal',
-      mean: mean.ast(),
-      stdev: stdev.ast(),
-      samples: samples.numChildren > 0 ? samples.child(0).ast() : null,
-    });
-  },
-  Formula_uniform(name, _eq, _uniform, _lp, min, _c, max, _rp) {
-    return named(name, { type: 'uniform', min: min.ast(), max: max.ast() });
-  },
-  Formula_expression(name, _eq, exp) {
-    return named(name, { type: 'expr', expr: exp.ast() });
-  },
-  Formula_amb(name, _eq, amb) {
-    return named(name, amb.ast());
-  },
-  Formula_bareAmb(amb) {
-    return { kind: 'formula', name: null, formula: amb.ast() } satisfies Parsed;
+  Formula_bareAmb(amb): Parsed {
+    return { kind: 'formula', name: null, expr: amb.ast() };
   },
 
   RelExp_eq: binary('='),
@@ -237,9 +219,31 @@ const semantics = grammar.createSemantics().addOperation<any>('ast', {
   PriExp_const(literal): Expr {
     return { type: 'const', value: literal.ast() };
   },
+  PriExp_ambify(_ambify, _lp, range, _rp): Expr {
+    return { type: 'ambify', range: range.ast(), source: this.sourceString };
+  },
+  PriExp_deambify(_deambify, _lp, ref, _rp): Expr {
+    return { type: 'deambify', ref: ref.ast() };
+  },
+  PriExp_normal(_normal, _lp, mean, _c1, stdev, _c2, samples, _rp): Expr {
+    return {
+      type: 'normal',
+      mean: mean.ast(),
+      stdev: stdev.ast(),
+      samples: samples.numChildren > 0 ? samples.child(0).ast() : null,
+      source: this.sourceString,
+    };
+  },
+  PriExp_uniform(_uniform, _lp, min, _c, max, _rp): Expr {
+    return { type: 'uniform', min: min.ast(), max: max.ast(), source: this.sourceString };
+  },
 
-  Amb(_lb, parts, _rb): Formula {
-    return { type: 'amb', parts: parts.asIteration().children.map((part: N) => part.ast()) };
+  Amb(_lb, parts, _rb): Expr {
+    return {
+      type: 'amb',
+      parts: parts.asIteration().children.map((part: N) => part.ast()),
+      source: this.sourceString,
+    };
   },
   AmbPart_rangeWithStep(from, _to, to, _by, step): AmbPart {
     return { type: 'range', from: from.ast(), to: to.ast(), step: step.ast() };

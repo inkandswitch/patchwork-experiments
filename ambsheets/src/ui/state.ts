@@ -4,7 +4,7 @@ import { createContext, createEffect, createMemo, createSignal, onCleanup, untra
 import type { AmbsheetDoc, AmbsheetHandle } from '../datatype';
 import { moveRefs, shiftAddr, type StructuralEdit } from '../lang/rewrite';
 import { MAX_COLS, addrOf, valueKey, type Pos, type RawValue } from '../lang/values';
-import { cellText, compileSheet, type CellInfo } from '../model/compile';
+import { cellText, compileSheet, type AmbInfo, type CellInfo } from '../model/compile';
 import {
   countMatching,
   isFiltering,
@@ -233,6 +233,19 @@ export function createSheetState(handle: AmbsheetHandle) {
   const hoverValues = (addr: string, values: RawValue[]) =>
     setHover(new Map([[addr, { kind: 'values', keys: new Set(values.map(valueKey)) } as Filter]]));
 
+  /**
+   * Previews what the sheet looks like when some choices are made a certain way. (Only
+   * choices that are a cell of their own can be filtered on, and only by a known value.)
+   */
+  const hoverChoices = (choices: [AmbInfo, number][]) => {
+    const preview = new Map<string, Filter>();
+    for (const [amb, index] of choices) {
+      if (!amb.whole || amb.spec.kind !== 'discrete') continue;
+      preview.set(amb.addr, { kind: 'values', keys: new Set([valueKey(amb.spec.values[index])]) });
+    }
+    setHover(preview.size > 0 ? preview : null);
+  };
+
   // --- selection and editing ---
 
   const [selection, setSelection] = createSignal<Selection>({ row: 0, col: 0, row2: 0, col2: 0 });
@@ -415,6 +428,7 @@ export function createSheetState(handle: AmbsheetHandle) {
     hover,
     setHover,
     hoverValues,
+    hoverChoices,
     view,
     filtering,
     passing,

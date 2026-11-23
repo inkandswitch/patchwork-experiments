@@ -17,7 +17,7 @@
 
 import type { NumberStats } from '../engine/amb-engine';
 import { printCount } from '../lang/values';
-import { ambKey, type CompiledSheet } from './compile';
+import type { CompiledSheet } from './compile';
 
 export type EvalMode = 'auto' | 'exhaustive' | 'montecarlo';
 
@@ -61,7 +61,7 @@ export interface Run {
   done: boolean;
   /**
    * The scenarios themselves, by column. Varying cells are stored under their address,
-   * ambs under ambKey(address) (a choice index, or the number drawn from a distribution).
+   * ambs under their key (a choice index, or the number drawn from a distribution).
    * Only the first `n` entries of each column are meaningful.
    */
   columns: Record<string, any[]>;
@@ -191,7 +191,7 @@ export class Evaluation {
       randomSeed: settings.seed,
     });
 
-    for (const info of compiled.ambs) this.keys.push(ambKey(info.addr));
+    for (const amb of compiled.ambs) this.keys.push(amb.key);
     for (const info of compiled.varying) this.keys.push(info.addr);
     const columns: Record<string, any[]> = {};
     for (const key of this.keys) columns[key] = [];

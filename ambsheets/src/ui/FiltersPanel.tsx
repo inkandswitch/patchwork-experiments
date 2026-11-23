@@ -14,7 +14,9 @@ const COLLAPSED_VALUES = 5;
 
 export function FiltersPanel() {
   const s = useSheet();
-  const inputs = () => s.run().compiled.ambs;
+  // (an amb written inside a larger formula has no cell of its own to filter on; the
+  // formula's cell shows up among the outputs)
+  const inputs = () => s.run().compiled.varying.filter((info) => info.kind === 'amb');
   const outputs = createMemo(() =>
     s.run().compiled.varying.filter((info) => {
       if (info.kind !== 'formula' || isRangeValued(s.run(), info.addr)) return false;
