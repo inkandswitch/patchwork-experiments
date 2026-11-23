@@ -370,7 +370,7 @@ async function nativeSuite(context, watch) {
     })
     await page.evaluate(() => window.harness.handle.change(doc => { doc.cells[0].source = "changed later" }))
     const history = watch(await context.newPage())
-    await history.goto(`${ORIGIN}/dist/harness.html&doc=${url}&heads=${heads}`)
+    await history.goto(`${ORIGIN}/dist/harness.html?doc=${url}&heads=${heads}`)
     await history.waitForSelector(`${cells} .cm-content:has-text(${JSON.stringify(source.split("\n")[0])})`, { timeout: 30_000 })
     await history.waitForSelector(".pwnb-read-only .cm-content[contenteditable='false']", { timeout: 5_000 })
     const text = await history.textContent(`${cells} .cm-content`)

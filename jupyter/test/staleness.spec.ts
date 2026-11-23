@@ -31,6 +31,8 @@ function runThatRead(paths: Array<{ path: Array<string | number>; keys?: boolean
     kernel: "fresh",
     code: "t:x",
     outputs: "r:x",
+    startHeads: ["n1"],
+    finishHeads: ["n2"],
     imports: withImport ? [{ name: "reg", docUrl: "automerge:reg", title: before.title, heads: ["h1"], as: "hook", type: "assumptions", hash: moduleHash(module) }] : [],
     reads: paths.length ? [{ docUrl: "automerge:reg", title: before.title, heads: ["h1"], as: view, paths: paths.map(p => ({ ...p, hash: readHash(data, p.path, !!p.keys) })) }] : [],
   }

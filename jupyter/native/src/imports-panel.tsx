@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
-import { importName, importsOf, nameProblem, type NotebookImport, runOf, type RunRecord, titleOf } from "../../shared/imports"
+import { importName, importsOf, nameProblem, type NotebookImport, runOf, type RunRecord, titleOf, typeOf } from "../../shared/imports"
 import { AutoRerun } from "../../shared/rerun"
 import type { DatatypeLookup, FindDoc } from "../../shared/run"
 import { assess, readUrls, type Staleness, staleText } from "../../shared/staleness"
@@ -131,7 +131,7 @@ export function ImportsPanel(props: {
         if (stopped) return
         const update = () => {
           const doc = handle.doc()
-          live().set(url, { title: titleOf(doc), heads: [...(handle.heads?.() ?? [])], type: doc?.["@patchwork"]?.type ?? null })
+          live().set(url, { title: titleOf(doc), heads: [...(handle.heads?.() ?? [])], type: typeOf(doc) })
           setLive(live())
           rejudge()
           auto.poke()

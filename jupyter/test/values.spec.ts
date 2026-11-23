@@ -4,8 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Automerge from "@automerge/automerge"
 import { describe, expect, test } from "vitest"
-import { docToJson, moduleSource, readHash, sourceOf } from "../shared/imports"
-import { documentFiles, type Opened } from "../shared/run"
+import { docToJson, moduleSource, readHash, sourceOf, typeOf } from "../shared/imports"
+import { documentFiles, type Opened, openDocuments } from "../shared/run"
 
 /**
  * Every non-JSON value Automerge hands back, read from a real Automerge
@@ -56,6 +56,13 @@ describe("Automerge's values as plain data", () => {
   test("docToJson turns every kind, everywhere, into JSON", () => {
     expect(docToJson(doc)).toEqual(expected)
     expect(JSON.parse(JSON.stringify(docToJson(doc)))).toEqual(expected)
+  })
+
+  test("a datatype id held as an ImmutableString is still found, and its hook used", async () => {
+    const reg = Automerge.from<any>({ "@patchwork": { type: I("assumptions") }, title: I("R"), entries: {} })
+    const docs = await openDocuments(["automerge:r"], { find: async () => ({ doc: () => reg, heads: () => ["h"] }), datatype: async type => (type === "assumptions" ? { asSource: () => "x = 1" } : null) })
+    expect(docs.get("automerge:r")).toMatchObject({ type: "assumptions", title: "R" })
+    expect(typeOf(Automerge.from<any>({ "@patchwork": { type: I("jupyter-notebook") } }))).toBe("jupyter-notebook")
   })
 
   test("a file whose content is an ImmutableString gives its text", () => {

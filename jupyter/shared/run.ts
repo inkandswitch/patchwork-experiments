@@ -29,6 +29,7 @@ import {
   setupCode,
   sourceOf,
   titleOf,
+  typeOf,
 } from "./imports"
 import type { NotebookWriter } from "./notebook-writer"
 
@@ -85,7 +86,7 @@ export async function openDocuments(urls: string[], { find, datatype, timeoutMs 
         const doc = handle.doc()
         if (!doc) throw new Error("it is empty or unavailable")
         const heads = [...(handle.heads?.() ?? [])]
-        const type: string | null = typeof doc["@patchwork"]?.type === "string" ? doc["@patchwork"].type : null
+        const type = typeOf(doc)
         out.set(url, { url, doc, heads, type, title: titleOf(doc), hook: type ? await datatype(type) : null })
       } catch (error) {
         out.set(url, { url, problem: (error as Error)?.message ?? String(error) })
@@ -233,6 +234,7 @@ export function runHooks(context: RunContext): Pick<RunnerHooks, "prepare" | "fi
   return {
     last: () => last,
     async prepare(ids) {
+      const startHeads = writer.heads()
       const doc = writer.current()
       const fresh = lastGeneration !== kernel.generation
       lastGeneration = kernel.generation
@@ -249,6 +251,8 @@ export function runHooks(context: RunContext): Pick<RunnerHooks, "prepare" | "fi
         kernel: fresh ? "fresh" : "continued",
         code: codeFingerprint(doc, writer.heads()),
         outputs: null,
+        startHeads,
+        finishHeads: null,
         imports: importsRecord(resolved),
         reads: [],
       }
@@ -262,7 +266,7 @@ export function runHooks(context: RunContext): Pick<RunnerHooks, "prepare" | "fi
         }
       }
       if (problem) {
-        last.record = { ...record, status: "error", finished: now(), cells: [], outputs: outputsFingerprint(writer.current()), problem }
+        last.record = { ...record, status: "error", finished: now(), cells: [], outputs: outputsFingerprint(writer.current()), finishHeads: writer.heads(), problem }
         writer.setPatchworkMetadata({ run: last.record })
         throw new Error(problem)
       }
@@ -271,6 +275,9 @@ export function runHooks(context: RunContext): Pick<RunnerHooks, "prepare" | "fi
     async finish(outcome: RunOutcome) {
       if (outcome.problem || !last) return
       const current = last
+      // Right after the last output write: nothing below writes outputs.
+      const finishHeads = writer.heads()
+      const outputs = outputsFingerprint(writer.current())
       let reads: ReadRecord[] = []
       try {
         reads = readsRecord(JSON.parse((await kernel.capture(READS_CODE)).trim() || "[]"), current.snapshots)
@@ -279,7 +286,7 @@ export function runHooks(context: RunContext): Pick<RunnerHooks, "prepare" | "fi
       }
       const ran = outcome.results.filter(r => r.status === "ok" || r.status === "error")
       const status = outcome.results.some(r => r.status === "error") ? "error" : outcome.results.some(r => r.status === "stopped") ? "stopped" : "ok"
-      current.record = { ...current.record, finished: now(), status, cells: ran.map(r => r.id), outputs: outputsFingerprint(writer.current()), reads }
+      current.record = { ...current.record, finished: now(), status, cells: ran.map(r => r.id), outputs, finishHeads, reads }
       writer.setPatchworkMetadata({ run: current.record })
     },
   }

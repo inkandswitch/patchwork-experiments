@@ -120,12 +120,29 @@ describe("a run", () => {
       code: expect.stringMatching(/^t:/),
       // The record names the outputs it sits beside.
       outputs: outputsFingerprint(doc),
+      startHeads: expect.any(Array),
+      finishHeads: expect.any(Array),
       imports: [
         { name: "reg", docUrl: "automerge:reg", title: "Nootka assumptions", heads: ["regA", "regB"], as: "hook", type: "assumptions", hash: expect.any(String) },
         { name: "model_1", docUrl: "automerge:m1", title: "Model 1", heads: ["m1"], as: "notebook", type: "jupyter-notebook", hash: expect.any(String) },
       ],
       reads: [],
     })
+  })
+
+  test("the record names the notebook's heads before the run and after its last output", async () => {
+    const { handle, runner } = setup([code("a", "print 1"), code("b", "print 2")], { patchwork: { imports } })
+    const before = Automerge.getHeads(handle.doc() as any)
+    await runner.run(["a", "b"])
+    const run = runOf(handle.doc())!
+    expect(run.startHeads).toEqual(before)
+    // At finishHeads the outputs are exactly what the record describes, and only the record changed after.
+    const atFinish = Automerge.view(handle.doc() as any, run.finishHeads!)
+    expect(outputsFingerprint(atFinish)).toBe(run.outputs)
+    expect(String((atFinish as any).cells[1].outputs[0].text)).toBe("2\n")
+    expect((atFinish as any).metadata.patchwork.run.finished).toBeNull()
+    const after = Automerge.diff(handle.doc() as any, run.finishHeads!, Automerge.getHeads(handle.doc() as any))
+    expect(after.every(p => p.path[0] === "metadata" && p.path[1] === "patchwork" && p.path[2] === "run")).toBe(true)
   })
 
   test("a later run on the same kernel carries on; after a restart it is fresh again", async () => {
@@ -153,7 +170,7 @@ describe("a run", () => {
     const outcome = await runner.run(["a"])
     expect(outcome.problem).toMatch(/the imports couldn't be set up: ImportError: rename the import json/)
     expect(outcome.results.map(r => r.status)).toEqual(["stopped"])
-    expect(runOf(handle.doc())).toMatchObject({ status: "error", cells: [], problem: outcome.problem })
+    expect(runOf(handle.doc())).toMatchObject({ status: "error", cells: [], problem: outcome.problem, finishHeads: expect.any(Array) })
     expect((handle.doc() as any).cells[0].execution_count).toBeNull()
   })
 

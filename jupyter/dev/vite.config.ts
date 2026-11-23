@@ -28,6 +28,7 @@ export default defineConfig({
       input: {
         harness: fileURLToPath(new URL("./harness.html", import.meta.url)),
         kernel: fileURLToPath(new URL("./kernel.html", import.meta.url)),
+        probe: fileURLToPath(new URL("./probe.html", import.meta.url)),
       },
       output: {
         entryFileNames: "harness-[hash].js",

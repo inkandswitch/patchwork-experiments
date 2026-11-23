@@ -64,6 +64,15 @@ export type RunRecord = {
   code: string
   /** The notebook's outputs when it finished (outputsFingerprint): which outputs this record describes. */
   outputs: string | null
+  /** The notebook's own heads when the run began, before it wrote anything. */
+  startHeads: string[]
+  /**
+   * The notebook's heads right after the run's last output write, taken
+   * before the change that finishes this record (which writes only
+   * metadata.patchwork.run, so the outputs at finishHeads are the outputs
+   * after it). Null while running.
+   */
+  finishHeads: string[] | null
   /** Each import as resolved: its document's version and how it was bound; `hash` is its module text's. */
   imports: Array<{ name: string; docUrl: string; title: string; heads: string[]; as: SourceKind; type: string | null; hash: string; problem?: string }>
   /** Every document the cells read with patchwork.load, at the version they read, and what they read of it. */
@@ -154,6 +163,11 @@ export function importName(title: string | undefined, taken: Iterable<string> = 
 
 // ---------------------------------------------------------------- sources
 
+/** A document's datatype id, however Automerge holds the string; null when it has none. */
+export function typeOf(doc: any): string | null {
+  return str(doc?.["@patchwork"]?.type) || null
+}
+
 /** A linked document's title, as Patchwork shows it. */
 export function titleOf(doc: any): string {
   return str(doc?.title) || str(doc?.name) || "Untitled"
@@ -167,7 +181,7 @@ export function isPythonFile(doc: any): boolean {
 }
 
 export function isNotebook(doc: any): boolean {
-  return doc?.["@patchwork"]?.type === "jupyter-notebook" || Array.isArray(doc?.cells)
+  return typeOf(doc) === "jupyter-notebook" || Array.isArray(doc?.cells)
 }
 
 /** A notebook's code cells, joined, with IPython-only lines (%magic, !shell) kept as comments so the module still compiles. */

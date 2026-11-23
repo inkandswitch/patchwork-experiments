@@ -6,13 +6,15 @@
 import type { CellResult, RunOutcome } from "../shared/cells"
 import { importName, type NotebookImport, nameProblem, resultLines, str } from "../shared/imports"
 import type { LastRun } from "../shared/run"
-import { type Staleness, staleText } from "../shared/staleness"
+import { readUrls, type Staleness, staleText } from "../shared/staleness"
 import type { RunRecord } from "../shared/imports"
 
 /** Whether the last run is out of date, as a line: what it read that changed, or that it is current. */
 export function staleLine(run: RunRecord | null, staleness: Staleness): string {
   if (!run) return "It had no recorded run."
-  if (!staleness.stale) return `It was up to date: nothing its last run read (${run.imports.length + (run.reads ?? []).length} document${run.imports.length + (run.reads ?? []).length === 1 ? "" : "s"}) has changed in what it read.`
+  const n = readUrls(run).length
+  if (!n) return "It was up to date: its last run read no documents."
+  if (!staleness.stale) return `It was up to date: nothing its last run read (${n} document${n === 1 ? "" : "s"}) has changed in what it read.`
   return `It was stale: ${staleText(staleness, 6)} since its last run.`
 }
 
