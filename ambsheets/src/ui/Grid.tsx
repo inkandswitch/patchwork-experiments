@@ -190,6 +190,16 @@ export function Grid() {
   function onKeyDown(e: KeyboardEvent) {
     if (inInput(e)) return;
     const command = e.metaKey || e.ctrlKey;
+    // While looking at one scenario at a time: Alt+arrows step, and Escape goes back to all.
+    if (s.scenarioIndex() !== null) {
+      const step = e.altKey && e.key === 'ArrowRight' ? 1 : e.altKey && e.key === 'ArrowLeft' ? -1 : 0;
+      if (step !== 0 || e.key === 'Escape') {
+        if (step !== 0) s.stepScenario(step);
+        else s.setScenario(null);
+        e.preventDefault();
+        return;
+      }
+    }
     if (command && e.key.toLowerCase() === 'd') {
       s.fillDown();
       e.preventDefault();
@@ -475,7 +485,8 @@ function VaryingCell(props: { info: CellInfo }) {
     return vs.length <= MAX_CHIPS ? vs : vs.slice(0, MAX_CHIPS - 1);
   };
   const stats = () => summary()?.passingStats ?? null;
-  const showAverage = () => stats() !== null && (values() === null || values()!.length > 1);
+  const showAverage = () =>
+    s.scenarioRow() === null && stats() !== null && (values() === null || values()!.length > 1);
   const equals = () => (s.run().mode === 'montecarlo' ? '≈' : '=');
 
   return (
@@ -491,6 +502,17 @@ function VaryingCell(props: { info: CellInfo }) {
         </div>
       </Show>
       <Switch>
+        <Match when={s.scenarioRow() !== null}>
+          {/* one scenario at a time: the cell has the one value it has in that scenario */}
+          <div
+            class="cell-value"
+            data-scenario=""
+            data-type={typeOf(s.scenarioValue(addr()) ?? null)}
+            title="This cell's value in the scenario on show"
+          >
+            {printValue(s.scenarioValue(addr()))}
+          </div>
+        </Match>
         <Match when={isRangeValued(s.run(), addr())}>
           <div class="cell-spread" title="Select this cell to see its values as a line chart">
             {printValue(s.run().columns[addr()][0])}

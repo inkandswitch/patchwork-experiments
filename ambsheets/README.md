@@ -100,6 +100,15 @@ suggest where is decided in `src/lang/complete.ts` (no DOM, unit-tested).
 - `src/model/analysis.ts` computes everything that involves filters (which scenarios
   pass, filtered statistics, histograms, pivot tables) from stored scenarios.
 
+## One scenario at a time
+
+A cell normally shows everything it could be. "One at a time" in the status bar shows the
+whole sheet as it *is* in a single scenario, like an ordinary spreadsheet, with buttons
+(and Alt+← / Alt+→) to step through the scenarios; Esc goes back to showing them all.
+The scenarios stepped through are the ones that match the filters, including ones that
+focused sampling sought out. The details panel shows the selected cell's value in the
+scenario, and what each choice it depends on came out as.
+
 ## Filters that hardly anything matches
 
 Filtering a Monte Carlo sample only helps if the sample contains scenarios that match. If

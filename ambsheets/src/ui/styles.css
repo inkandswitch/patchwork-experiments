@@ -405,6 +405,12 @@
   white-space: nowrap;
 }
 
+.ambsheet .cell-value[data-scenario] {
+  /* one of this cell's values: the one it has in the scenario on show */
+  background: var(--ambsheet-accent-softer);
+  box-shadow: inset 2px 0 0 var(--ambsheet-accent);
+}
+
 .ambsheet .cell-value[data-type='number'] {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -1095,6 +1101,29 @@
   50% {
     opacity: 0.45;
   }
+}
+
+.ambsheet .status .stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ambsheet .status .stepper input {
+  width: 6em;
+  padding: 0 4px;
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+  text-align: right;
+}
+
+.ambsheet .in-scenario {
+  margin-bottom: var(--studio-space-sm, 0.5rem);
+  padding: 4px 6px;
+  background: var(--ambsheet-accent-softer);
+  box-shadow: inset 2px 0 0 var(--ambsheet-accent);
 }
 
 .ambsheet .status .reason {

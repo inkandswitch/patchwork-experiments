@@ -86,6 +86,20 @@ export function viewOf(run: Run, filters: Filters = new Map()): View {
   return { all: run, matching: run, mask: passMask(run, filters) };
 }
 
+/**
+ * Where the k-th scenario that satisfies the filters is (a row of view.matching), counting
+ * from 0. Null if there aren't that many.
+ */
+export function matchingRow(view: View, k: number): number | null {
+  const { matching, mask } = view;
+  if (k < 0) return null;
+  if (!mask) return k < matching.n ? k : null;
+  for (let i = 0; i < matching.n; i++) {
+    if (mask[i] && k-- === 0) return i;
+  }
+  return null;
+}
+
 /** How many scenarios satisfy the filters (out of view.matching.n). */
 export function countMatching(view: View): number {
   if (!view.mask) return view.matching.n;

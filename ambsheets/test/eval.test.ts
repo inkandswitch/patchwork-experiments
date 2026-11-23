@@ -16,6 +16,7 @@ import {
   aggregate,
   histogram,
   lineChart,
+  matchingRow,
   passMask,
   pivot,
   summarize,
@@ -629,5 +630,39 @@ describe('histograms of whole numbers', () => {
   test('other numbers are binned as before', () => {
     const r = run({ A1: '{0 to 1 by 0.25}' });
     expect(histogram(viewOf(r), 'A1')!.bins.length).toBe(20);
+  });
+});
+
+describe('one scenario at a time', () => {
+  test('the scenarios that match the filters, in order', () => {
+    const r = run(BUDGET);
+    const all = viewOf(r);
+    expect([0, 5, 6].map((k) => matchingRow(all, k))).toEqual([0, 5, null]);
+    expect(matchingRow(all, -1)).toBeNull();
+
+    // the scenarios with the cheaper car: rows 0, 1 and 2 (the car is the outermost choice)
+    const cheap = viewOf(r, new Map([['B3', only(500)]]));
+    const rows = [0, 1, 2, 3].map((k) => matchingRow(cheap, k));
+    expect(rows).toEqual([0, 1, 2, null]);
+    expect(rows.slice(0, 3).map((row) => [r.columns.B3[row!], r.columns.B4[row!], r.columns.B7[row!]])).toEqual([
+      [500, 2800, 3318],
+      [500, 3700, 4218],
+      [500, 4200, 4718],
+    ]);
+
+    // the affordable ones are not next to each other
+    const affordable = viewOf(r, new Map([['B8', only(true)]]));
+    expect([0, 1, 2].map((k) => matchingRow(affordable, k))).toEqual([0, 3, null]);
+  });
+
+  test('when the matching scenarios were sought out, they are the ones stepped through', () => {
+    const compiled = compileSheet(sheet({ A1: '=normal(0, 1)', A2: '=A1 > 4' }));
+    const r = evaluate(compiled, { mode: 'auto', samples: 1_000, seed: 0.5 });
+    const focus = findMatching(compiled, new Map([['A2', only(true)]]), { target: 50, seed: 0.5 });
+    const view = { all: r, matching: focus, mask: null };
+    const row = matchingRow(view, 49)!;
+    expect(row).toBe(49);
+    expect(view.matching.columns.A1[row]).toBeGreaterThan(4);
+    expect(matchingRow(view, 50)).toBeNull();
   });
 });

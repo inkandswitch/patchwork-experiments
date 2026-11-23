@@ -51,6 +51,11 @@ export function Details() {
           {(info) => (
             <>
               <div class="cell-kind">{describe(info())}</div>
+              <Show when={info().kind !== 'const' && s.scenarioRow() !== null}>
+                <div class="in-scenario">
+                  In the scenario on show: <b>{printValue(s.scenarioValue(info().addr)) || '(empty)'}</b>
+                </div>
+              </Show>
               <Show when={info().kind === 'const' && isError(info().value)}>
                 <div class="error">
                   {printValue(info().value)}: {(info().value as any).msg}
@@ -161,6 +166,10 @@ function Viewers(props: { info: CellInfo; summary: Summary }) {
                   <button class="link" onClick={() => s.select(posOf(amb.addr))}>
                     {amb.addr === props.info.addr ? `${amb.source} (in this cell)` : ambLabel(amb, s.run().compiled)}
                   </button>
+                  <Show when={s.scenarioRow() !== null}>
+                    {' '}
+                    = <b>{printValue(s.scenarioValue(amb.id))}</b>
+                  </Show>
                 </li>
               )}
             </For>

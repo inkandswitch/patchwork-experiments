@@ -8,6 +8,7 @@ import { cellText, compileSheet, type AmbInfo, type CellInfo } from '../model/co
 import {
   countMatching,
   isFiltering,
+  matchingRow,
   passMask,
   summarize,
   type Filter,
@@ -255,6 +256,35 @@ export function createSheetState(handle: AmbsheetHandle) {
   });
   const filtering = createMemo(() => isFiltering(view()));
   const passing = createMemo(() => countMatching(view()));
+
+  // --- one scenario at a time ---
+  //
+  // Normally a cell shows everything it could be. Stepping through scenarios shows what
+  // everything *is* in one of them: the whole sheet as an ordinary spreadsheet, for one
+  // particular way things could turn out. The scenarios stepped through are the ones
+  // that match the filters (all of them, if there are no filters).
+
+  /** Which of the matching scenarios is on show (counting from 0). Null: none, show them all. */
+  const [scenario, setScenarioIndex] = createSignal<number | null>(null);
+  const scenarioIndex = createMemo(() => {
+    const k = scenario();
+    return k === null || passing() === 0 ? null : Math.min(k, passing() - 1);
+  });
+  const scenarioRow = createMemo(() => {
+    const k = scenarioIndex();
+    return k === null ? null : matchingRow(view(), k);
+  });
+  /** The value of a cell (or of an amb inside a formula) in the scenario on show. */
+  const scenarioValue = (id: string): RawValue | undefined => {
+    const row = scenarioRow();
+    return row === null ? undefined : view().matching.columns[id]?.[row];
+  };
+  const setScenario = (k: number | null) =>
+    setScenarioIndex(k === null ? null : Math.max(0, Math.min(Math.round(k), Math.max(0, passing() - 1))));
+  const stepScenario = (by: number) => {
+    const k = scenarioIndex();
+    if (k !== null && passing() > 0) setScenarioIndex((k + by + passing()) % passing());
+  };
   /** The filters that apply to cells that (still) vary. */
   const activeFilters = createMemo(() => [...filters().keys()].filter((addr) => addr in run().columns));
 
@@ -489,6 +519,11 @@ export function createSheetState(handle: AmbsheetHandle) {
     view,
     filtering,
     passing,
+    scenarioIndex,
+    scenarioRow,
+    scenarioValue,
+    setScenario,
+    stepScenario,
     focus,
     exact,
     focusEnabled,

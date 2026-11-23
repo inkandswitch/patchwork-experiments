@@ -111,6 +111,41 @@ export function StatusBar() {
           </span>
         )}
       </Show>
+      <span class="stepper">
+        <Show
+          when={s.scenarioIndex() !== null}
+          fallback={
+            <button
+              disabled={s.passing() === 0}
+              title="See the whole sheet as it is in one scenario, and step through the scenarios (the ones that match the filters, if there are filters)."
+              onClick={() => s.setScenario(0)}
+            >
+              One at a time
+            </button>
+          }
+        >
+          <button title="Previous scenario (Alt+←)" onClick={() => s.stepScenario(-1)}>
+            ‹
+          </button>
+          <span>
+            {s.filtering() ? 'Matching scenario' : 'Scenario'}{' '}
+            <input
+              type="number"
+              min="1"
+              max={s.passing()}
+              value={s.scenarioIndex()! + 1}
+              onChange={(e) => s.setScenario(Number(e.currentTarget.value) - 1)}
+            />{' '}
+            of {printNumber(s.passing())}
+          </span>
+          <button title="Next scenario (Alt+→)" onClick={() => s.stepScenario(1)}>
+            ›
+          </button>
+          <button title="Back to showing every scenario at once (Esc)" onClick={() => s.setScenario(null)}>
+            Show all
+          </button>
+        </Show>
+      </span>
       <span class="reason">{run().reason}</span>
 
       <span class="controls">
