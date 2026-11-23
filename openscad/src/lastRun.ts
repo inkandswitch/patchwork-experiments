@@ -12,14 +12,22 @@
  *                  itself (timings, cache sizes); at most MAX_LINES
  *   elapsedMillis  how long OpenSCAD took
  *   input          a fingerprint of the source it rendered
+ *   parts          what made the model, when known (render/sourceMap.ts
+ *                  summarize): per part, its label (the innermost of the
+ *                  model's own modules that placed it, else the shape), the
+ *                  chain of calls as "name:line" (outermost first), its
+ *                  triangles and bounding box; biggest first, at most
+ *                  MAX_PARTS. The same thing a click on the model shows.
  *
- * Written only when the source, whether it worked, or what it printed
- * changed. Not when only a linked document changed and the model printed the
+ * Written only when the source, whether it worked, what it printed or its
+ * parts changed. Not when only a linked document changed and the model printed the
  * same: a model that imports a document it also feeds (an assumptions
  * register, say) would otherwise write on every change to it, and the two
  * would answer each other forever. Every open editor renders the same thing,
  * and only the first to finish writes.
  */
+
+import type {PartSummary} from "./render/sourceMap"
 
 export type LastRun = {
 	at: string
@@ -28,6 +36,7 @@ export type LastRun = {
 	logs: string[]
 	elapsedMillis: number | null
 	input: string
+	parts?: PartSummary[]
 }
 
 export const MAX_LINES = 2000
@@ -55,7 +64,7 @@ export function keptLogs(logs: readonly string[]): string[] {
 }
 
 /** The run to keep, from what a render was given and what it did. */
-export function lastRunFrom(args: {heads: readonly string[]; source: string; imports: unknown; ok: boolean; logs: readonly string[]; elapsedMillis?: number | null; at?: Date}): LastRun {
+export function lastRunFrom(args: {heads: readonly string[]; source: string; imports: unknown; ok: boolean; logs: readonly string[]; elapsedMillis?: number | null; parts?: PartSummary[] | null; at?: Date}): LastRun {
 	return {
 		at: (args.at ?? new Date()).toISOString(),
 		heads: [...args.heads],
@@ -63,6 +72,7 @@ export function lastRunFrom(args: {heads: readonly string[]; source: string; imp
 		logs: keptLogs(args.logs),
 		elapsedMillis: args.elapsedMillis ?? null,
 		input: fingerprint(args.source),
+		...(args.parts ? {parts: args.parts} : {}),
 	}
 }
 
@@ -71,7 +81,8 @@ export function worthSaving(prev: Partial<LastRun> | null | undefined, next: Las
 	if (!prev) return true
 	if (prev.input !== next.input || prev.ok !== next.ok) return true
 	const before = prev.logs ?? []
-	return before.length !== next.logs.length || before.some((line, i) => String(line) !== next.logs[i])
+	if (before.length !== next.logs.length || before.some((line, i) => String(line) !== next.logs[i])) return true
+	return JSON.stringify(prev.parts ?? null) !== JSON.stringify(next.parts ?? null)
 }
 
 /** Save a run in the document if it says something new. Returns whether it wrote. */

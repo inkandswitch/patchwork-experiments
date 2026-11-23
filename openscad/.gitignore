@@ -1,3 +1,5 @@
 dist
 node_modules
 .pushwork
+probes/harness/dist
+probes/shots

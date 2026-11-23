@@ -474,6 +474,134 @@ export function labelOf(map: Pick<SourceMap, "sites" | "records">, record: numbe
 	return call?.name ?? chain[chain.length - 1]?.name ?? "?"
 }
 
+/** The triangles (9 floats each) of `model` whose record is in `records`, one soup across parts. */
+export function trianglesOf(model: Model, map: Pick<SourceMap, "faces">, records: ReadonlySet<number>): Float32Array {
+	let count = 0
+	map.faces.forEach(ids => ids.forEach(r => (count += records.has(r) ? 1 : 0)))
+	const out = new Float32Array(count * 9)
+	let o = 0
+	model.parts.forEach((part, pi) => {
+		const ids = map.faces[pi]
+		if (!ids) return
+		for (let t = 0; t < ids.length; t++) {
+			if (!records.has(ids[t])) continue
+			out.set(part.positions.subarray(t * 9, t * 9 + 9), o)
+			o += 9
+		}
+	})
+	return out
+}
+
+/**
+ * The piece a click landed on: the triangles of the same record connected to
+ * triangle `tri` of part `part` through shared corners. A loop or a repeated
+ * call makes one record of many pieces (six cells from one line); this is the
+ * one you clicked.
+ */
+export function pieceOf(model: Model, map: Pick<SourceMap, "faces">, part: number, tri: number): Float32Array {
+	const record = map.faces[part]?.[tri]
+	if (record == null || record < 0) return new Float32Array(0)
+	// the record's triangles, and which share each corner
+	const tris: {p: Float32Array; t: number}[] = []
+	const byCorner = new Map<string, number[]>()
+	let start = -1
+	model.parts.forEach((pt, pi) => {
+		const ids = map.faces[pi]
+		if (!ids) return
+		for (let t = 0; t < ids.length; t++) {
+			if (ids[t] !== record) continue
+			const k = tris.length
+			if (pi === part && t === tri) start = k
+			tris.push({p: pt.positions, t})
+			for (let v = 0; v < 3; v++) {
+				const o = t * 9 + v * 3
+				const key = `${pt.positions[o]},${pt.positions[o + 1]},${pt.positions[o + 2]}`
+				let list = byCorner.get(key)
+				if (!list) byCorner.set(key, (list = []))
+				list.push(k)
+			}
+		}
+	})
+	if (start < 0) return new Float32Array(0)
+	const seen = new Uint8Array(tris.length)
+	const stack = [start]
+	seen[start] = 1
+	const piece: number[] = []
+	while (stack.length) {
+		const k = stack.pop()!
+		piece.push(k)
+		const {p, t} = tris[k]
+		for (let v = 0; v < 3; v++) {
+			const o = t * 9 + v * 3
+			for (const n of byCorner.get(`${p[o]},${p[o + 1]},${p[o + 2]}`) ?? []) {
+				if (seen[n]) continue
+				seen[n] = 1
+				stack.push(n)
+			}
+		}
+	}
+	const out = new Float32Array(piece.length * 9)
+	piece.forEach((k, i) => out.set(tris[k].p.subarray(tris[k].t * 9, tris[k].t * 9 + 9), i * 9))
+	return out
+}
+
+/** The records whose chain passes through a call in the document's own source that spans `offset`. */
+export function recordsAt(map: Pick<SourceMap, "sites" | "records">, offset: number): Set<number> {
+	const here = new Set(map.sites.filter(s => s.file === "" && s.from <= offset && offset <= s.to).map(s => s.id))
+	const out = new Set<number>()
+	if (!here.size) return out
+	map.records.forEach((r, i) => {
+		if (r.path.some(id => here.has(id))) out.add(i)
+	})
+	return out
+}
+
+/** One part of the model, as the document's last run lists it for other tools (lastRun.ts). */
+export type PartSummary = {
+	/** the innermost of your modules that placed it, else the shape (labelOf) */
+	label: string
+	/** the calls that placed it, outermost first: "name:line", with "file:" in front for a library's */
+	chain: string[]
+	triangles: number
+	/** its bounding box in the model's own units and axes: [[minX, minY, minZ], [maxX, maxY, maxZ]] */
+	box: [number[], number[]]
+}
+
+/** Most parts a summary lists (the biggest by triangles), so a vast model can't swell the document. */
+export const MAX_PARTS = 200
+
+/** Every part that drew triangles, biggest first. */
+export function summarize(model: Model, map: SourceMap): PartSummary[] {
+	const rows = new Map<number, {triangles: number; min: number[]; max: number[]}>()
+	model.parts.forEach((part, pi) => {
+		const ids = map.faces[pi]
+		if (!ids) return
+		for (let t = 0; t < ids.length; t++) {
+			const r = ids[t]
+			if (r < 0) continue
+			let row = rows.get(r)
+			if (!row) rows.set(r, (row = {triangles: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity]}))
+			row.triangles++
+			for (let v = 0; v < 3; v++)
+				for (let k = 0; k < 3; k++) {
+					const x = part.positions[t * 9 + v * 3 + k]
+					if (x < row.min[k]) row.min[k] = x
+					if (x > row.max[k]) row.max[k] = x
+				}
+		}
+	})
+	const round = (x: number) => Math.round(x * 1000) / 1000
+	return [...rows]
+		.sort((a, b) => b[1].triangles - a[1].triangles || a[0] - b[0])
+		.slice(0, MAX_PARTS)
+		.map(([r, row]) => ({
+			label: labelOf(map, r),
+			chain: chainOf(map, r).map(s => `${s.file ? `${s.file}:` : ""}${s.name}:${s.line}`),
+			triangles: row.triangles,
+			box: [row.min.map(round), row.max.map(round)],
+		}))
+}
+
 /** Where a module is defined, by name, preferring the file a call came from. */
 export function definitionOf(map: Pick<SourceMap, "modules">, name: string, file?: string): ModuleDef | undefined {
 	return map.modules.find(m => m.name === name && m.file === file) ?? map.modules.find(m => m.name === name)

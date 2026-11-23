@@ -43,8 +43,9 @@ export const plugins = [
 		// params; renders built by an older version (or none) go stale once.
 		// The fingerprint stays content-only. v1: the Manifold backend.
 		// v2: colours (a primitive per color()). v3: the vendored engine,
-		// OpenSCAD 2026.11.20 with Manifold 3.5.4.
-		version: 3,
+		// OpenSCAD 2026.11.20 with Manifold 3.5.4. v4: a node per part, named
+		// by the module that placed it, its source in extras.source.
+		version: 4,
 		params: [
 			{
 				key: "unit",

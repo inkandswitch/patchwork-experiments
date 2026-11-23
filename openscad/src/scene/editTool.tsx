@@ -8,7 +8,10 @@
 // objects), in the object's frame and its build's units (hosted.ts
 // modelFrame). Its writes go on the scene's undo (hosted.ts hostedHandle).
 // Escape: a focused field first (the scene's ladder), then it puts the hand
-// down. The scene's contract: patchwork-experiments/scene, STAGE.md ("View
+// down. Clicking the drawn model picks a part: the editor shows the call that
+// made it and the chain of calls (render/sourceMap.ts), and the part is
+// washed in the accent here; the code's cursor lights the parts it made.
+// The scene's contract: patchwork-experiments/scene, STAGE.md ("View
 // plugins", "Hands") and EDITOR.md ("A command", "Undo").
 
 import {render} from "solid-js/web"
@@ -19,6 +22,8 @@ import type {OpenscadDoc} from "../types"
 import {hostedHandle, modelFrame, type Edits} from "./hosted"
 import {UNIT_METERS, type Unit} from "./axes"
 import type {Model} from "../render/model"
+import {pieceOf, trianglesOf, type SourceMap} from "../render/sourceMap"
+import {accentOf, chooseHit, disposeAll, highlightObjects} from "../components/highlight"
 
 /** The scene source whose objects this edits (index.ts). */
 export const SOURCE_ID = "openscad-model"
@@ -39,8 +44,12 @@ type ViewApi = {
 	use(name: string): unknown
 	focus(): Stage | null
 	overlay(): HTMLElement
-	hand(spec: {kind: string; name: string; input: object; pointer?: boolean; escape?: () => boolean; put?: () => void}): () => void
+		hand(spec: {kind: string; name: string; input: HandInput; pointer?: boolean; escape?: () => boolean; put?: () => void}): () => void
 }
+
+/** A scene input event, as much of it as this uses (STAGE.md, "The input chain"). */
+type InputEvent = {ray: {origin: number[]; dir: number[]} | null; alt: boolean}
+type HandInput = {click?(ev: InputEvent): boolean; cursor?(ev: InputEvent): string | null}
 
 interface Session {
 	id: string
@@ -65,9 +74,20 @@ export function create(api: ViewApi) {
 		const {THREE} = stage
 		const layer = stage.world()
 		layer.userData["noPick"] = true
-		const root = new THREE.Group()
+				const root = new THREE.Group()
 		root.matrixAutoUpdate = false
 		layer.add(root)
+		// the model's parts (a mesh per colour) and, over them, the picked and lit parts
+		const drawn = new THREE.Group()
+		const marks = new THREE.Group()
+		root.add(drawn, marks)
+		let partMeshes: Three.Mesh[] = []
+		let model: Model | null = null
+		let map: SourceMap | null = null
+		let controls: {pick(record: number | null): void} | null = null
+		/** the piece of the picked part that was clicked (one cell of a loop's six) */
+		let piece: {record: number; positions: Float32Array; model: Model} | null = null
+		let lastHighlight: {selected: number | null; lit: ReadonlySet<number>} = {selected: null, lit: new Set()}
 		const show = stage.display(id, {hidden: true})
 		let unit: Unit = "mm"
 		let triangles = 0
@@ -78,39 +98,71 @@ export function create(api: ViewApi) {
 			root.matrixWorldNeedsUpdate = true
 			stage.invalidate()
 		}
-		const clear = () => {
-			for (const c of [...root.children]) {
-				c.removeFromParent()
-				const o = c as Three.Mesh
-				o.geometry?.dispose()
-				;(o.material as Three.Material | undefined)?.dispose()
-			}
+				const clear = () => {
+			disposeAll([...drawn.children])
+			disposeAll([...marks.children])
+			partMeshes = []
 		}
 		/**
 		 * A render: each of the model's parts (its triangles of one colour, in its own units, Z up) and their
 		 * creases, in its frame; a part's colour as the built GLB has it (source.ts), none in the body grey.
 		 * A failed render keeps the last.
 		 */
-		const draw = (model: Model | null) => {
-			if (!model) return
+				const draw = (next: Model | null) => {
+			if (!next) return
 			clear()
-			triangles = model.triangles
-			for (const part of model.parts) {
+			model = next
+			map = null
+			triangles = next.triangles
+			for (const part of next.parts) {
 				const g = new THREE.BufferGeometry()
 				g.setAttribute("position", new THREE.Float32BufferAttribute(part.positions, 3))
 				g.computeVertexNormals()
 				const [r, gr, b, a] = part.color ?? [0, 0, 0, 1]
 				const color = part.color ? new THREE.Color().setRGB(r, gr, b, THREE.SRGBColorSpace) : new THREE.Color("#a9aeb5")
 				const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({color, transparent: a < 1, opacity: a, roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1}))
-				const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({color: "#1e1e1e"}))
-				root.add(mesh, edges)
+								const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({color: "#1e1e1e"}))
+				drawn.add(mesh, edges)
+				partMeshes.push(mesh)
 			}
 			moved()
+		}
+				/** The part a world ray hits, see-through surfaces passed over unless `front` (Alt). */
+		const raycaster = new THREE.Raycaster()
+		const hitAt = (ray: InputEvent["ray"], front: boolean): {record: number; part: number; tri: number} | null => {
+			if (!map || !ray || !root.visible) return null
+			root.updateMatrixWorld(true)
+			raycaster.set(new THREE.Vector3().fromArray(ray.origin), new THREE.Vector3().fromArray(ray.dir).normalize())
+			const hits = raycaster.intersectObjects(partMeshes, false)
+			const hit = chooseHit(hits, h => !!((h.object as Three.Mesh).material as Three.Material).transparent, front)
+			if (!hit || hit.faceIndex == null) return null
+			const part = partMeshes.indexOf(hit.object as Three.Mesh)
+			const record = map.faces[part]?.[hit.faceIndex]
+			return record == null || record < 0 ? null : {record, part, tri: hit.faceIndex}
 		}
 		const element = document.createElement("div")
 		element.className = "openscad-scene-editor"
 		element.style.cssText = "position: absolute; top: 0; left: 0; bottom: 0; width: min(46%, 560px); pointer-events: auto; box-shadow: 0 0 12px rgb(0 0 0 / 15%);"
-		overlay.append(element)
+				overlay.append(element)
+		const accent = accentOf(element)
+		const highlight = (selected: number | null, lit: ReadonlySet<number>) => {
+			lastHighlight = {selected, lit}
+			disposeAll([...marks.children])
+			if (model && map) {
+				const add = (positions: Float32Array, strong: boolean) => {
+					for (const o of highlightObjects(THREE, positions, strong, accent)) marks.add(o)
+				}
+				const soft = new Set([...lit].filter(r => r !== selected))
+				add(trianglesOf(model, map, soft), false)
+				if (selected != null) {
+					// the clicked piece strongest, the part's other pieces softly
+					const clicked = piece && piece.record === selected && piece.model === model ? piece.positions : null
+					add(trianglesOf(model, map, new Set([selected])), !clicked)
+					if (clicked) add(clicked, true)
+				}
+			}
+			stage.invalidate()
+		}
 		let unmount = () => {}
 		let offRender = () => {}
 		let stopped = false
@@ -150,7 +202,25 @@ export function create(api: ViewApi) {
 			handle => {
 				if (stopped) return
 				const hosted = hostedHandle(handle as DocHandle<OpenscadDoc>, () => (api.use("edits") as Edits | null) ?? null)
-				unmount = render(() => <OpenscadEditor handle={hosted} element={{repo: stage.repo as never}} hosted={{onModel: draw}} />, element)
+									unmount = render(
+						() => (
+							<OpenscadEditor
+								handle={hosted}
+								element={{repo: stage.repo as never}}
+								hosted={{
+									onModel: draw,
+									onSourceMap: next => {
+										map = next
+									},
+									onHighlight: highlight,
+									connect: c => {
+										controls = c
+									},
+								}}
+							/>
+						),
+						element,
+					)
 			},
 			() => stop(),
 		)
@@ -158,8 +228,20 @@ export function create(api: ViewApi) {
 			kind: "openscad",
 			name: `Editing ${object.name ?? "model"}`,
 			pointer: true,
-			// it passes every event: the scene's orbit, selection and the rest go on as they do
-			input: {},
+						// A click on the model picks a part (the editor shows its source); every
+			// other event passes: the scene's orbit, selection and the rest go on.
+			input: {
+				click(ev) {
+					const hit = hitAt(ev.ray, ev.alt)
+					if (!hit || !model || !map) return false
+					piece = {record: hit.record, positions: pieceOf(model, map, hit.part, hit.tri), model}
+					// the same part again (another of its pieces) changes nothing in the editor: redraw here
+					if (lastHighlight.selected === hit.record) highlight(hit.record, lastHighlight.lit)
+					controls?.pick(hit.record)
+					return true
+				},
+				cursor: ev => (hitAt(ev.ray, ev.alt) == null ? null : "pointer"),
+			},
 			// nothing of its own to step out of (a focused field is the ladder's own rung): Escape leaves
 			escape: () => false,
 			put: () => stop(),
