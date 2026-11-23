@@ -80,6 +80,8 @@ function describe(info: CellInfo): string {
         return `Uniform distribution (from ${printNumber(spec.min)} to ${printNumber(spec.max)})`;
       case 'derived':
         return spec.description;
+      case 'permutation':
+        return `${printNumber(spec.values.length)} values in any order (${printNumber(ambSize(spec))} possible orders)`;
     }
   }
   if (info.kind === 'formula') return 'Formula with several possible values';

@@ -58,7 +58,9 @@ export type AmbSpec =
    * A distribution whose value is worked out from a standard draw (see distributions.ts),
    * because its parameters depend on the scenario.
    */
-  | { kind: 'derived'; base: 'normal' | 'uniform'; description: string };
+  | { kind: 'derived'; base: 'normal' | 'uniform'; description: string }
+  /** Some values in one of every possible order. */
+  | { kind: 'permutation'; values: BasicRawValue[] };
 
 /** One choice: an amb, as written somewhere in the sheet. */
 export interface AmbInfo {
@@ -174,10 +176,18 @@ export function ambSize(spec: AmbSpec): number {
       return spec.values.length;
     case 'pick':
       return spec.cells.length;
+    case 'permutation': {
+      let orders = 1;
+      for (let n = 2; n <= spec.values.length; n++) orders *= n;
+      return orders;
+    }
     default:
       return Infinity;
   }
 }
+
+/** True for a choice among a known list of options (as opposed to a number, or an order). */
+export const isChoice = (spec: AmbSpec) => spec.kind === 'discrete' || spec.kind === 'pick';
 
 /**
  * The distinct options of an amb that is a choice among known things. A value that is
@@ -185,9 +195,8 @@ export function ambSize(spec: AmbSpec): number {
  * index i belongs to, and `first[o]` is a choice index for option o.
  */
 export function options(spec: AmbSpec): { slot: number[]; first: number[]; labels: string[] } {
-  const size = ambSize(spec);
   if (spec.kind !== 'discrete') {
-    const indexes = Array.from({ length: Number.isFinite(size) ? size : 0 }, (_, i) => i);
+    const indexes = Array.from({ length: spec.kind === 'pick' ? spec.cells.length : 0 }, (_, i) => i);
     return { slot: indexes, first: indexes, labels: indexes.map((i) => choiceLabel(spec, i)) };
   }
   const byKey = new Map<string, number>();
@@ -422,7 +431,8 @@ export function compileSheet(data: unknown): CompiledSheet {
    * twice, give it a cell and refer to the cell twice.)
    */
   const compileAmb = (node: AmbNode, ctx: Context): CellFn => {
-    const made = node.type === 'dist' ? distribution(node, ctx) : ambSpec(node);
+    const made =
+      node.type === 'dist' ? distribution(node, ctx) : node.type === 'permutation' ? permutation(node, ctx) : ambSpec(node);
     if (isError(made)) return () => made;
     const { spec, derive } = 'spec' in made ? made : { spec: made, derive: undefined };
 
@@ -439,6 +449,8 @@ export function compileSheet(data: unknown): CompiledSheet {
     } else if (spec.kind === 'pick') {
       const readers = spec.cells.map((cell) => reader(cell, ctx.refs));
       fn = guarded((s) => readers[s[key]](s));
+    } else if (spec.kind === 'permutation') {
+      fn = (s) => [s[key]]; // a range with one row
     } else {
       fn = (s) => s[key];
     }
@@ -504,6 +516,27 @@ export function compileSheet(data: unknown): CompiledSheet {
       spec: { kind: 'derived', base: dist.base, description: dist.describe(values.map(printValue)) },
       derive: (draw) => dist.derive(draw, values),
     };
+  };
+
+  /** permutation(...): the given values (numbers, cells, ranges) in some order. */
+  const permutation = (node: AmbNode & { type: 'permutation' }, ctx: Context): AmbSpec | ASError => {
+    const argCtx: Context = { ...ctx, refs: new Set() };
+    const ambsBefore = ctx.ambs.length;
+    const args = node.args.map((arg) => compileExpr(arg, argCtx));
+    if (argCtx.refs.size > 0 || ctx.ambs.length > ambsBefore) {
+      ctx.ambs.length = ambsBefore;
+      return new ASError('#VALUE!', "permutation() needs values that don't vary");
+    }
+    const values: BasicRawValue[] = [];
+    for (const arg of args) {
+      const value = arg({});
+      if (isError(value)) return value;
+      if (isRange(value)) values.push(...value.flat().filter((v) => v !== null));
+      else if (value !== null) values.push(value);
+    }
+    if (values.length === 0) return new ASError('#N/A', 'permutation() needs at least one value');
+    if (values.length > 100) return new ASError('#N/A', 'permutation() takes at most 100 values');
+    return { kind: 'permutation', values };
   };
 
   /** What kind of choice an amb literal or ambify() describes. (Or what is wrong with it.) */
@@ -803,6 +836,8 @@ function makeAmb(factory: AmbFactory, spec: AmbSpec) {
       return factory.uniform(spec.min, spec.max);
     case 'derived':
       return spec.base === 'normal' ? factory.normal(0, 1) : factory.uniform(0, 1);
+    case 'permutation':
+      return factory.permutationOf(spec.values);
   }
 }
 
@@ -882,6 +917,7 @@ function staticRefs(
       case 'deambify':
         return addRef(node.ref);
       case 'dist':
+      case 'permutation':
         return node.args.forEach(walk);
     }
   };

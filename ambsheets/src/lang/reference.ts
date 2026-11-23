@@ -86,6 +86,15 @@ export const FUNCTIONS: FunctionDoc[] = [
     keywords: ['distribution', 'random', 'skewed', 'tail', 'probability', 'uncertain'],
   },
   {
+    name: 'permutation',
+    category: 'Several values',
+    params: [{ name: 'values', doc: 'Values, cells or ranges (which must not vary).', rest: true }],
+    summary:
+      'The values in some order, as a range: one scenario for every possible order. Take it apart with INDEX. Good for puzzles and for "who does what" assignments.',
+    example: '=permutation(1, 2, 3, 4)',
+    keywords: ['shuffle', 'order', 'arrangement', 'assignment', 'random'],
+  },
+  {
     name: 'ambify',
     category: 'Several values',
     params: [{ name: 'range', doc: 'The cells to choose among, like A1:A5. Empty cells are skipped.' }],
@@ -218,6 +227,18 @@ export const FUNCTIONS: FunctionDoc[] = [
     params: [{ name: 'values', doc: 'Values, cells or ranges.', rest: true }],
     summary: 'True if no two of the values are the same (ignoring empty cells).',
     example: '=UNIQUE(A1:A9)',
+  },
+  {
+    name: 'INDEX',
+    category: 'Text and lookup',
+    params: [
+      { name: 'range', doc: 'A range, like A1:C10, or a cell that holds one (a permutation, say).' },
+      { name: 'row', doc: 'Which value: counting from 1, left to right and then down. Or, with a column, which row.' },
+      { name: 'column', doc: 'Which column of that row.', optional: true },
+    ],
+    summary: 'One value out of a range.',
+    example: '=INDEX(A1:A9, 3)',
+    keywords: ['nth', 'element', 'item', 'pick'],
   },
   {
     name: 'VLOOKUP',

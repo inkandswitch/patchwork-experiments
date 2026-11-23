@@ -94,6 +94,23 @@ export const examples: Example[] = [
     },
   },
   {
+    name: 'Digits puzzle',
+    blurb: 'AB × CDE = FGHI using each digit from 1 to 9 once. Filter on "Solved?" to find the seven answers.',
+    cells: {
+      A1: 'AB × CDE = FGHI, using each digit from 1 to 9 once',
+      A3: 'Digits',
+      B3: 'digits = permutation(1, 2, 3, 4, 5, 6, 7, 8, 9)',
+      A4: 'AB',
+      B4: 'ab = INDEX(digits, 1) * 10 + INDEX(digits, 2)',
+      A5: 'CDE',
+      B5: 'cde = INDEX(digits, 3) * 100 + INDEX(digits, 4) * 10 + INDEX(digits, 5)',
+      A6: 'FGHI',
+      B6: 'fghi = INDEX(digits, 6) * 1000 + INDEX(digits, 7) * 100 + INDEX(digits, 8) * 10 + INDEX(digits, 9)',
+      A7: 'Solved?',
+      B7: '=ab * cde = fghi',
+    },
+  },
+  {
     name: 'Ten dice',
     blurb: '60 million scenarios, so they are sampled. Filter on the rare "true" to see matches being sought out.',
     cells: {

@@ -16,7 +16,7 @@ import {
   ambName,
   choiceLabel,
   options,
-  isContinuous,
+  isChoice,
   type AmbInfo,
   type AmbSpec,
   type CellInfo,
@@ -339,7 +339,7 @@ export interface Pivot {
 export function tableDimensions(run: Run, info: CellInfo): AmbInfo[] {
   return info.deps
     .map((id) => run.compiled.ambsById.get(id)!)
-    .filter((amb) => amb && !isContinuous(amb.spec));
+    .filter((amb) => amb && isChoice(amb.spec));
 }
 
 /** Breaks a cell's values down by the choices made in one or two ambs. */
@@ -444,7 +444,7 @@ export function lineChart(view: View, info: CellInfo, maxSeries = 150): LineChar
   if (!run.columns[info.addr]) return null;
   const separate = isFocused(view);
   const deps = info.deps.map((id) => run.compiled.ambsById.get(id)!).filter(Boolean);
-  const discrete = deps.every((dep) => !isContinuous(dep.spec));
+  const discrete = deps.every((dep) => isChoice(dep.spec));
 
   const categories = new Map<string, number>();
   let categorical: boolean | null = null;

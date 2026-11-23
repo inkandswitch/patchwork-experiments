@@ -35,6 +35,7 @@ describe('the reference', () => {
       'uniform',
       'triangular',
       'lognormal',
+      'permutation',
       'ambify',
       'deambify',
     ].sort();
@@ -71,8 +72,8 @@ describe('completions', () => {
       'uniform',
       'triangular',
       'lognormal',
+      'permutation',
       'ambify',
-      'deambify',
     ]);
     expect(labels).toContain('SUM');
     expect(labels).toContain('VLOOKUP');
@@ -90,9 +91,9 @@ describe('completions', () => {
     expect(at('=amb|').labels).toEqual(['ambify', 'deambify']);
     // and a word for what a function does finds it too
     expect(at('=dist|').labels).toEqual(['normal', 'uniform', 'triangular', 'lognormal']);
-    expect(at('=rand|').labels).toEqual(['normal', 'uniform', 'triangular', 'lognormal']);
+    expect(at('=rand|').labels).toEqual(['normal', 'uniform', 'triangular', 'lognormal', 'permutation']);
     expect(at('=B3 + mea|').labels).toEqual(['AVG']);
-    expect(at('=B3 * rand|').labels).toEqual(['normal', 'uniform', 'triangular', 'lognormal']);
+    expect(at('=B3 * rand|').labels).toEqual(['normal', 'uniform', 'triangular', 'lognormal', 'permutation']);
     expect(accept('=rand|', 'uniform')).toBe('=uniform(|');
   });
 

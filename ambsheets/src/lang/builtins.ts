@@ -118,6 +118,15 @@ export const builtins: Record<string, Builtin> = {
     return new ASError('#N/A', 'key not found');
   },
 
+  index: ([range, a, b]) => {
+    if (!isRange(range) || typeof a !== 'number' || (b !== undefined && typeof b !== 'number')) {
+      return new ASError('#VALUE!', 'index() expects a range and a position (or a row and a column)');
+    }
+    // one number counts along the range (left to right, then down); two are a row and a column
+    const value = b === undefined ? range.flat()[a - 1] : range[a - 1]?.[(b as number) - 1];
+    return value === undefined ? new ASError('#REF!', 'index() is outside the range') : value;
+  },
+
   abs: numeric('abs', 1, Math.abs),
   sqrt: numeric('sqrt', 1, Math.sqrt),
   exp: numeric('exp', 1, Math.exp),

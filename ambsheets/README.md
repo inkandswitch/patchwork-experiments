@@ -23,6 +23,7 @@ A cell holds a literal, an amb, or a formula.
 | `{true, false x 3}` | repeats: `false` is three times as likely as `true` |
 | `{"Barn": 70%, "Library": 30%}` | weights: how likely each value is (new) |
 | `=ambify(A1:A5)` | one choice per (non-empty) cell of a range |
+| `=permutation(1, 2, 3)` | the values in every possible order, as a range; take it apart with `INDEX` (new) |
 | `=normal(100, 15)` | a normal distribution (continuous; new) |
 | `=uniform(0, 10)` | a uniform distribution (continuous; new) |
 | `=triangular(2, 5, 12)` | at least 2, most likely 5, at most 12 (new) |
@@ -34,8 +35,8 @@ A cell holds a literal, an amb, or a formula.
 | `total = SUM(B3:B5)` | a formula with a name, which other formulas can use |
 | `=A6:B11` | a range as a value; the cell is shown as a line chart (one line per scenario) |
 
-Functions: `sum product count avg min max and or not concat unique vlookup abs sqrt exp ln
-floor ceil round pow mod`.
+Functions: `sum product count avg min max and or not concat unique vlookup index abs sqrt
+exp ln floor ceil round pow mod`.
 
 The parameters of a distribution are formulas, and they may themselves be uncertain:
 `=normal(B1, 2)` with B1 a distribution is a value spread around an uncertain centre.

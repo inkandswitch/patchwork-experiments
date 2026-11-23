@@ -9,6 +9,7 @@
 //       =normal(100, 15, 30)      30 fixed samples of one (discrete)
 //       =uniform(0, 1)            a uniform distribution (continuous)
 //       =triangular(2, 5, 12)     and =lognormal(1, 0.5): two more distributions
+//       =permutation(A1:A9)       the values in every possible order
 //   - an ordinary spreadsheet expression like =SUM(B3:B5) or =IF(B7 < 4200, "ok", "no").
 // Ambs are expressions too, so they can be part of a larger formula: =B2 * normal(1, 0.1),
 // or =100 + {1, 2, 3}. So is deambify(B3), which collects all of a cell's values into a range.
@@ -52,10 +53,12 @@ export type AmbNode =
   | { type: 'amb'; parts: AmbPart[]; source: string }
   | { type: 'ambify'; range: RangeNode; source: string }
   /** A probability distribution, like normal(100, 15). Its parameters are expressions. */
-  | { type: 'dist'; name: string; args: Expr[]; source: string };
+  | { type: 'dist'; name: string; args: Expr[]; source: string }
+  /** Some values in every possible order. */
+  | { type: 'permutation'; args: Expr[]; source: string };
 
 export const isAmbNode = (node: Expr): node is AmbNode =>
-  node.type === 'amb' || node.type === 'ambify' || node.type === 'dist';
+  node.type === 'amb' || node.type === 'ambify' || node.type === 'dist' || node.type === 'permutation';
 
 export type Parsed =
   | { kind: 'empty' }
@@ -105,6 +108,7 @@ const grammar = ohm.grammar(String.raw`
       | ambify "(" CellRange ")"                            -- ambify
       | deambify "(" cellRef ")"                            -- deambify
       | dist "(" ListOf<Exp, ","> ")"                       -- dist
+      | permutation "(" ListOf<Exp, ","> ")"                -- permutation
       | Literal                                             -- const
       | CellRange
       | cellRef
@@ -161,8 +165,8 @@ const grammar = ohm.grammar(String.raw`
     dist = normal | uniform | triangular | lognormal
 
     keyword
-      = ambify | by | deambify | false | if | lognormal | normal | to | triangular | true
-      | uniform | x
+      = ambify | by | deambify | false | if | lognormal | normal | permutation | to
+      | triangular | true | uniform | x
     ambify = caseInsensitive<"ambify"> ~identRest
     deambify = caseInsensitive<"deambify"> ~identRest
     by = caseInsensitive<"by"> ~identRest
@@ -174,6 +178,7 @@ const grammar = ohm.grammar(String.raw`
     uniform = caseInsensitive<"uniform"> ~identRest
     triangular = caseInsensitive<"triangular"> ~identRest
     lognormal = caseInsensitive<"lognormal"> ~identRest
+    permutation = caseInsensitive<"permutation"> ~identRest
     x = caseInsensitive<"x"> ~letter
   }
 `);
@@ -229,6 +234,13 @@ const semantics = grammar.createSemantics().addOperation<any>('ast', {
   },
   PriExp_deambify(_deambify, _lp, ref, _rp): Expr {
     return { type: 'deambify', ref: ref.ast() };
+  },
+  PriExp_permutation(_permutation, _lp, args, _rp): Expr {
+    return {
+      type: 'permutation',
+      args: args.asIteration().children.map((arg: N) => arg.ast()),
+      source: this.sourceString,
+    };
   },
   PriExp_dist(name, _lp, args, _rp): Expr {
     return {

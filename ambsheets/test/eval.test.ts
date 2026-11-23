@@ -23,6 +23,7 @@ import {
   viewOf,
   type Filters,
 } from '../src/model/analysis';
+import { findMatching } from '../src/model/focus';
 import { BUDGET, sheet } from './sheet';
 
 function run(cells: Record<string, string>, settings: Partial<EvalSettings> = {}): Run {
@@ -546,4 +547,56 @@ describe('more distributions', () => {
     const r = run({ A1: '=triangular(5, 2, 12)', A2: '=lognormal(1, -1)', A3: '=triangular(1, 2)' });
     for (const addr of ['A1', 'A2', 'A3']) expect(constant(r, addr)).toBeInstanceOf(ASError);
   });
+});
+
+describe('permutations', () => {
+  test('every order of some values, one scenario each', () => {
+    const r = run({ A1: '=permutation(1, 2, 3)', A2: '=INDEX(A1, 1) * 100 + INDEX(A1, 2) * 10 + INDEX(A1, 3)' });
+    expect(r.compiled.cardinality).toBe(6);
+    expect(r.mode).toBe('exhaustive');
+    expect(values(r, 'A2')).toEqual([123, 132, 213, 231, 312, 321]);
+    expect(r.columns.A1[0]).toEqual([[1, 2, 3]]);
+    expect(r.compiled.cells.get('A1')!.spec).toMatchObject({ kind: 'permutation', values: [1, 2, 3] });
+  });
+
+  test('of cells and ranges, as long as they do not vary', () => {
+    const r = run({ A1: 'x1', A2: 'y', A3: 'z', B1: '=permutation(A1:A3)', B2: '=CONCAT(B1)', C1: '{1, 2}', C2: '=permutation(C1, 5)' });
+    expect(values(r, 'B2').length).toBe(6);
+    expect(values(r, 'B2')).toContain('zyx1');
+    expect(constant(r, 'C2')).toBeInstanceOf(ASError);
+    // (the mistake doesn't leave a stray choice behind)
+    expect(r.compiled.ambs.map((amb) => amb.id)).toEqual(['B1', 'C1']);
+  });
+
+  test('INDEX', () => {
+    const r = run({ A1: '1', B1: '2', A2: '3', B2: '4', C1: '=INDEX(A1:B2, 3)', C2: '=INDEX(A1:B2, 2, 2)', C3: '=INDEX(A1:B2, 9)' });
+    expect(constant(r, 'C1')).toBe(3);
+    expect(constant(r, 'C2')).toBe(4);
+    expect((constant(r, 'C3') as ASError).shortMsg).toBe('#REF!');
+  });
+
+  test('the digits puzzle: AB x CDE = FGHI has seven answers among 362,880 orders', async () => {
+    const { examples } = await import('../src/examples');
+    const puzzle = examples.find((example) => example.name === 'Digits puzzle')!;
+    const compiled = compileSheet(sheet(puzzle.cells));
+    expect(compiled.cardinality).toBe(362_880);
+
+    // exactly, by checking every order...
+    const exact = evaluate(compiled, { mode: 'exhaustive', samples: 1_000, seed: 0.5 });
+    expect(exact.n).toBe(362_880);
+    const solved = summarize(compiled.cells.get('B7')!, viewOf(exact));
+    expect(solved.values!.find((v) => v.value === true)!.count).toBe(7);
+
+    // ...and by homing in on them: the sampler moves through orders by swapping two values
+    const focus = findMatching(compiled, new Map([['B7', only(true)]]), { target: 500, seed: 0.5 });
+    expect(focus.phase).toBe('sampling');
+    const found = new Set<string>();
+    for (let i = 0; i < focus.n; i++) {
+      expect(focus.columns.B4[i] * focus.columns.B5[i]).toBe(focus.columns.B6[i]);
+      found.add(`${focus.columns.B4[i]} x ${focus.columns.B5[i]}`);
+    }
+    expect(found.size).toBeGreaterThanOrEqual(1);
+    expect(focus.probability * 362_880).toBeGreaterThan(1.5);
+    expect(focus.probability * 362_880).toBeLessThan(30);
+  }, 60_000);
 });
