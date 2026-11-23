@@ -10,7 +10,7 @@
  * what it is looking at.
  */
 
-import { isImmutableString } from "@automerge/automerge"
+import { Automerge } from "../host-modules.js"
 import { hostImport } from "./host.js"
 import { applyOps, opLabel, valueAt, OP_NAMES } from "./ops.js"
 import { previewJson, preview, shape, bytes, truncate } from "./format.js"
@@ -19,6 +19,8 @@ import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.j
 import { imageForModel } from "../images.js"
 import { findAll, MAX_MATCHES, pdfOf, pdfWithoutText } from "./read-source.js"
 import { fileKind, officeText, describeFile } from "../files.js"
+
+const { isImmutableString } = Automerge
 
 /** Resolve a url argument against the session's subject. */
 function targetUrl(input, ctx) {

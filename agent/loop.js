@@ -57,6 +57,7 @@ import { packageSkillsSection } from "./tools/skills.js"
 import { guidesSection, surfaceGuides } from "./tools/guides.js"
 import { sessionKey } from "./providers/openrouter.js"
 import { isInterruption } from "./network.js"
+import { callNeeds } from "./placement.js"
 
 export const DEFAULT_SYSTEM = `You are an agent living inside Patchwork, a local-first workspace where everything is an automerge document.
 
@@ -743,12 +744,21 @@ async function executeCalls(opts) {
     }
 
     const tool = toolset.get(call.tool)
-    const where = tool?.where ?? call.where ?? WHERE.worker
+    const where = callNeeds(call, tool)
 
     // A call this runner cannot execute parks the session rather than failing
-    // it: a host-tier call waits for a tab, it does not error.
+    // it: a host-tier call waits for a tab, it does not error. What it needs
+    // is written on the call, so the runner that can run it is the one that
+    // sees work in it — a plugin the worker cannot load here was recorded as
+    // a worker call by whichever runner made it (placement.js callNeeds).
     if (!canRun(where)) {
       commitResults(store, results)
+      if (call.where !== where) {
+        store.change((d) => {
+          const found = findCall(d, call.id)
+          if (found) found.block.where = where
+        })
+      }
       return finish(store, STATUS.parked, OUTCOME.parked, emit, `needs ${where}`)
     }
 

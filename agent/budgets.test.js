@@ -117,7 +117,6 @@ async function workflow(steps, { limits = {}, behaviour = {} } = {}) {
     notify: () => ({ notify: (render) => news.push(render()), close() {} }),
     heartbeatMs: 1e9,
     confirmMs: 0,
-    toolIds: { worker: [] },
   })
   drivers.push(driver)
   driver.start()

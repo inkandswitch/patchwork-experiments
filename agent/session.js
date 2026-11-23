@@ -41,8 +41,10 @@
  * or `null` — never assigned undefined. See patchwork-skill §5.
  */
 
-import { ImmutableString } from "@automerge/automerge"
-import { interpretAsDocumentId } from "@automerge/automerge-repo"
+import { Automerge, AutomergeRepo } from "./host-modules.js"
+
+const { ImmutableString } = Automerge
+const { interpretAsDocumentId } = AutomergeRepo
 
 export const SCHEMA_VERSION = 1
 

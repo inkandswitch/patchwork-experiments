@@ -23,6 +23,10 @@ claimed by a node process with no tab open.
 | `datatype.js` | the `agent-session` datatype |
 | `tool.js` | the view — sidebar panel and full-window pop-out, one render function |
 | `tab-runner.js` | runs a session in this tab, with or without a view of it |
+| `worker-runner.js`, `worker-client.js` | the SharedWorker runner, and the page's half that hands it what it cannot get itself |
+| `worker-plugins.js` | the SharedWorker's plugin tools: the page registry's metadata, loaded in the worker where they can be |
+| `placement.js` | where a tool runs, which tools a session placed on a worker gets, and the check a step's prompt gets before it starts |
+| `host-modules.js` | automerge and automerge-repo as the host provides them, imported by every module here instead of by bare specifier |
 | `workflow/` | workflows: the plan model, the driver that runs it, its datatype and view |
 | `panel.js` | the `context-tool` variant that attaches to whatever you are looking at |
 | `ambient.js` | the pop-over at the bottom centre: the session (⌘J), a pill while it works, a peek when it needs you |
@@ -76,8 +80,18 @@ delay, start offset, clock skew (to nine minutes) and keys.
   registry, which is page state, not repo state)
 - `task` — for work that belongs outside the browser; the seam exists, nothing uses it yet
 
+A package's `agent:tool` declares `where` the same way, and the declaration is
+all that decides who gets a tool: a session placed on a worker — a workflow
+step, `tools.where = "worker"` — gets every tool declared `worker`, built-in
+or plugin, and none declared `host`, filtered when a runner builds its toolset
+(`placement.js`, `tools/index.js` `buildToolset`).
+
 A call the current runner cannot execute **parks** the session rather than
-failing it, and resumes when a capable runner appears.
+failing it, and resumes when a capable runner appears. Which tier a call needs
+is the page if either the runner that recorded it or the runner about to run
+it says so, and a runner that parks a call writes that on it, so the runner
+that can run it is the one that sees work in it: the SharedWorker lists a
+plugin whose code will not load there, but as host-tier, and a tab runs it.
 
 **Refreshing a page with a working agent in it is safe** (`reload.test.js`).
 Whatever the runner in it was doing is settled by the next runner to take the
@@ -462,9 +476,12 @@ from the registry of the runner running the step. It is handed what the
 step's built-ins are handed, the confined context, and nothing more. So
 everything the agent controls still holds for it: it gets no field of the
 person's, its repo opens only the ledger and its new documents go into it,
-and its every request goes through the guard. A worker or node runner has no
-plugin registry, so a step running there gets the built-ins alone; only a
-step running in a tab gets a package's tools.
+and its every request goes through the guard. A tab admits from its own
+registry and the SharedWorker from the metadata the page hands it
+(`worker-plugins.js`), by what each plugin declared, so a step gets the same
+plugins in either; one that will not load in the worker runs in a tab, with
+the confined context that tab builds. The node runner has no registry, so a
+step running there gets the built-ins alone.
 
 **The trust this asks for, plainly:** a package declaring `scoped: true`
 vouches that its tool works only through the context it is given — no
@@ -519,6 +536,16 @@ the interface, both built on one shared module so they cannot disagree about
 what cloning means. `registry_list { type: "agent:tool" }` is where an agent
 finds what has been exposed, and `writing-patchwork-tools` tells an author how
 to expose it.
+
+`where: "worker"` (the default) says a repo is all the tool needs, and it runs
+wherever the session does, the SharedWorker included: the page hands the
+worker every entry's metadata, again whenever the registry changes, and the
+worker loads the code from the entry's `importUrl` the way the page does
+(`worker-plugins.js`). Code that cannot load in a worker — it imports a bare
+specifier, or touches the DOM as it loads — still works: its calls go to a
+tab. A tool that genuinely needs the page says `where: "host"`; a workflow
+step placed on a worker does not get it, and one whose prompt names it is
+moved to the page.
 
 A tool that works only through the context it is handed — `ctx.fetchImpl`
 for the network, `ctx.repo` for documents, nothing global — can say so with
@@ -1135,6 +1162,11 @@ Other probes:
   every byte against an independent fetch.
 - `probes/agent-tool-plugin.mjs` — a package that contributes an `agent:tool`,
   installed and called for real.
+- `probes/worker-plugin-tool.mjs [--plugin ../assumptions]` — the SharedWorker
+  runner, served from this folder with no importmap in the worker, runs a
+  worker step that calls a package's agent tools (the assumptions register's,
+  by default), with a scripted model and a local stand-in for Patchwork's
+  importmap and registry. No network.
 - `probes/revise-loop.mjs` — writes a tool, checks it, edits it, checks again.
   No model, so it runs in seconds; it exists because a stale import made every
   check after the first one a lie.
@@ -1294,9 +1326,19 @@ result calls for it.
   standard and fast default to the latest Opus, Sonnet and Haiku, and the
   mapping is a setting — with the goal, its prompt and the results of the
   steps it waits for. A full step inherits the orchestrator's grants, never
-  gets the workflow tools (no nesting), and a `worker` step gets only the
-  tools that run without the page. A research step is confined instead (see
-  *Research steps keep things*).
+  gets the workflow tools (no nesting), and a `worker` step gets every tool
+  that runs without the page, the tools of installed packages included
+  (`placement.js`). A research step is confined instead (see *Research steps
+  keep things*).
+- **A step that cannot work as written is told so at start, not left to find
+  out.** Before a step begins, the driver checks its prompt for the names of
+  tools this page knows that the step would not get. A worker step naming
+  one that needs the page — `view_mount`, a package's `host` tool — is moved
+  to the page and starts when the page is free, its card and
+  `workflow_status` saying why. A research step naming a tool it cannot have,
+  or any step naming the orchestrator's tools, fails at once with the reason.
+  Only names of tools this page knows count: `cell_capacity` in a prompt is
+  not a tool because it looks like one.
 - **The plan decides; the driver acts.** `workflow/plan.js` is pure: five
   stored step states, the rest (ready, waiting, blocked, needs-you, out of date) derived, and
   `toStart` choosing what may run. Its rules — only ready steps start, never more
@@ -1389,20 +1431,28 @@ steps in `workflow-standing.test.js`, and in the panel in
 `tool-standing.test.js`.
 
 Workflows are on by default. Limits are per session: steps at once (3), steps
-in all (24), and a budget in dollars ($20) for what the steps and the orchestrator's own turns spend together, as OpenRouter reports it: spent with work still to start, the plan pauses, the orchestrator is told, and the person is offered Resume (the strip, the pop-over, the workflow view). Each step has a budget of its own, set by the orchestrator or its tier's default (fast $0.50, standard $2, deep $5); a step that spends it stops part-way and wakes the orchestrator, not the person: it extends the step out of the plan's remainder with `workflow_budget { step, add, why }` (the reason is kept on the step), or stops it, or adds steps. Asking for more than the remainder extends nothing and puts the request to the person; so does a step stopped when the cap is already reached. Resume then tells the orchestrator again about steps stopped part-way. A step is done only when its whole session is quiet: no unanswered call, no reply streaming, no live runner; an empty last message takes the last words the session said. Steps wait with `doc_watch`, and `view_interact` refuses a `settleMs` over 30 s. Every step runs in the tab today, because the SharedWorker runner is
-still opt-in (below); `where` already decides which tools a step gets, so a
-`worker` step will move to the worker or the node runner without changing.
+in all (24), and a budget in dollars ($20) for what the steps and the orchestrator's own turns spend together, as OpenRouter reports it: spent with work still to start, the plan pauses, the orchestrator is told, and the person is offered Resume (the strip, the pop-over, the workflow view). Each step has a budget of its own, set by the orchestrator or its tier's default (fast $0.50, standard $2, deep $5); a step that spends it stops part-way and wakes the orchestrator, not the person: it extends the step out of the plan's remainder with `workflow_budget { step, add, why }` (the reason is kept on the step), or stops it, or adds steps. Asking for more than the remainder extends nothing and puts the request to the person; so does a step stopped when the cap is already reached. Resume then tells the orchestrator again about steps stopped part-way. A step is done only when its whole session is quiet: no unanswered call, no reply streaming, no live runner; an empty last message takes the last words the session said. Steps wait with `doc_watch`, and `view_interact` refuses a `settleMs` over 30 s. Every step runs in a tab today, because the SharedWorker runner is still
+opt-in (below). `where` decides only which tools a step gets and how many
+steps share the page (`hostParallel`, one), so a `worker` step runs the same in
+the SharedWorker; in the node runner, which has no plugin registry, it would
+have the built-ins alone.
 
 ## What is not built yet
 
 - **The SharedWorker runner is opt-in, not default.** Turn it on with
-  `localStorage["patchwork-agent:worker"] = "on"`. The hard part is measured
-  working (`probes/worker-repo.mjs`, 8/8): the page hands the worker its
-  resolved importmap, the worker imports automerge with **no CDN shim**,
-  initializes the subduction wasm behind a six-property `document` shim, builds
-  a Repo over a donated MessagePort, and reads and writes the page's documents.
-  What is not proven is ongoing sync — the worker takes the lease and runs the
-  first turn, then misses the approval the page writes and stalls. The likely
+  `localStorage["patchwork-agent:worker"] = "on"`. The page hands the worker its
+  resolved importmap, which it imports automerge by with **no CDN shim** —
+  this package's own modules included, through `host-modules.js`, since a
+  worker cannot resolve a bare specifier — initializes automerge's slim build
+  from the wasm the page loaded and the subduction wasm behind a six-property
+  `document` shim, builds a Repo over a donated MessagePort, and gets the page
+  registry's plugin tools. `probes/worker-repo.mjs` measured the repo part on
+  the deployed shell (8/8); `probes/worker-plugin-tool.mjs` runs the whole
+  runner in headless Chrome against a stand-in for Patchwork's importmap and
+  registry: a worker step offered a package's tools, calling two of them in
+  the worker, and parking one that cannot load there for a tab. What is not
+  proven is ongoing sync with real Patchwork — the worker took the lease and
+  ran the first turn, then missed the approval the page wrote and stalled. The likely
   cause is that `window.repo` is itself a client of Patchwork's own automerge
   worker, so attaching a second network adapter may not relay changes;
   `worker-port`'s `donatePort`/`makePortProvider` look purpose-built for this

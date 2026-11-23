@@ -213,6 +213,9 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       if (sources || findings) card.append(el("p", "agent-wf-kept", `kept ${sources} source${sources === 1 ? "" : "s"} · ${findings} finding${findings === 1 ? "" : "s"}`))
     }
     if (step.why) card.append(el("p", "agent-wf-why", step.why))
+    // Placed on a worker by the orchestrator, moved to the page at start
+    // because its prompt names tools that need the page (placement.js).
+    if (step.moved) card.append(el("p", "agent-wf-why", step.moved))
 
     const session = step.sessionUrl ? sessionDoc(step.sessionUrl) : null
     if (session && (state === STATE.running || state === STATE.needsInput)) {

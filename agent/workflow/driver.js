@@ -23,13 +23,16 @@
 
 import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch, liftBudget, CALL, unansweredCalls } from "../session.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../runner.js"
-import { stringifyAutomergeUrl } from "@automerge/automerge-repo"
+import { AutomergeRepo } from "../host-modules.js"
 import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
-import { scopeOf, webScope, sameScope, KERNEL_TYPES } from "../scope.js"
+import { scopeOf, webScope, sameScope, KERNEL_TYPES, SCOPED_TOOL_IDS } from "../scope.js"
 import { documentIdOf } from "../session.js"
 import { releaseNowPermitted } from "../loop.js"
 import { handleStore } from "../store.js"
 import { waitingIn } from "./waiting.js"
+import { checkStepTools } from "../placement.js"
+
+const { stringifyAutomergeUrl } = AutomergeRepo
 
 export { WORKFLOW_TOOL_IDS } from "./plan.js"
 
@@ -140,12 +143,14 @@ export function _resetDrivers() {
 }
 
 export class WorkflowDriver {
-  constructor({ repo, handle, startSession, notify = null, toolIds = null, toolset = null, sensitive = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
+  constructor({ repo, handle, startSession, notify = null, catalogue = null, toolset = null, sensitive = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
     this.repo = repo
     this.handle = handle
     this.startSession = startSession
     this.notify = notify
-    this.toolIds = toolIds
+    // Every tool this page knows, for checking a step's prompt before it
+    // starts (placement.js checkStepTools); this page's own by default.
+    this.catalogue = catalogue
     this.toolset = toolset
     // Documents a grant never covers: the account and its module settings.
     this.sensitive = sensitive ?? (() => [globalThis.accountDocHandle?.doc?.()?.moduleSettingsUrl, globalThis.accountDocHandle?.url].filter(Boolean))
@@ -585,8 +590,11 @@ export class WorkflowDriver {
     if (!step || step.status !== STEP.pending) return
     if (step.sessionUrl) return this.continueStep(step)
 
+    // A step whose prompt names a tool it would not get is moved to the page
+    // or failed now, said once, rather than left to find out by searching.
+    if (await this.misplaced(step)) return
+
     const orchestrator = plan.sessionUrl ? (await this.session(plan.sessionUrl))?.doc() : null
-    const toolIds = this.toolIds ?? (await defaultToolIds())
     const web = step.access === "web"
     const child = await this.repo.create2()
     child.change((d) => {
@@ -614,9 +622,11 @@ export class WorkflowDriver {
         d.scope = webScope(this.handle.url, step.id)
         d.grants = { [WEB_GRANT]: "session" }
       } else {
-        // A worker step gets only what runs without the page, so it can run
-        // anywhere a repo is. Neither kind can start a workflow of its own.
-        d.tools = step.where === "worker" ? { enabled: toolIds.worker } : { disabled: WORKFLOW_TOOL_IDS }
+        // A worker step gets every tool that runs without the page, built-in
+        // or plugin, decided by whichever runner builds its toolset — so it
+        // can run anywhere a repo is (placement.js). Neither kind can start a
+        // workflow of its own.
+        d.tools = step.where === "worker" ? { where: "worker", disabled: WORKFLOW_TOOL_IDS } : { disabled: WORKFLOW_TOOL_IDS }
         // What the person already allowed the orchestrator carries into its
         // steps; asking again for each one would put the same question in front
         // of them once per step.
@@ -639,6 +649,37 @@ export class WorkflowDriver {
     // Started only if the plan now names this session for the step — not
     // merely because the write was allowed.
     if (this.handle.doc().steps.find((x) => x.id === step.id)?.sessionUrl === child.url) await this.run(child.url)
+  }
+
+  /**
+   * Check a step's prompt against the tools it would get (placement.js), and
+   * act on the answer: a worker step that needs the page is moved there, to
+   * start when the page is free; one that cannot work as written fails with
+   * the reason, which the orchestrator is told like any failure. True when
+   * the step is not to start now.
+   */
+  async misplaced(step) {
+    let verdict = null
+    try {
+      verdict = checkStepTools(step, await (this.catalogue ?? defaultCatalogue)(), { scopedIds: SCOPED_TOOL_IDS, orchestratorIds: WORKFLOW_TOOL_IDS })
+    } catch {
+      return false // no catalogue is no check, not no step
+    }
+    if (!verdict) return false
+    this.write((d) => {
+      const s = d.steps.find((x) => x.id === step.id)
+      if (s.status !== STEP.pending) return
+      if (verdict.where) {
+        s.where = verdict.where
+        s.moved = verdict.why
+      } else {
+        s.status = STEP.failed
+        s.finishedAt = this.now()
+        s.error = verdict.fail
+      }
+    })
+    if (verdict.where) this.kick()
+    return true
   }
 
   /**
@@ -951,12 +992,17 @@ async function builtinToolset() {
   return (await import("../tools/index.js")).builtinToolset()
 }
 
-/** Which built-in tools a worker step may have. Loaded late: the toolset imports this module. */
-async function defaultToolIds() {
-  const { BUILTIN_TOOLS, SCOPED_ONLY_IDS } = await import("../tools/index.js")
-  return {
-    worker: BUILTIN_TOOLS.filter((t) => t.where === "worker" && !WORKFLOW_TOOL_IDS.includes(t.id) && !SCOPED_ONLY_IDS.includes(t.id)).map((t) => t.id),
-  }
+/**
+ * Every tool this page knows, built-in and plugin, as placement.js reads
+ * them: metadata only, nothing loaded. Loaded late: the toolset imports this
+ * module.
+ */
+async function defaultCatalogue() {
+  const { BUILTIN_TOOLS, SCOPED_ONLY_IDS, pluginDescriptions } = await import("../tools/index.js")
+  const builtins = BUILTIN_TOOLS.filter((t) => !SCOPED_ONLY_IDS.includes(t.id)).map((t) => ({ id: t.id, where: t.where, builtin: true }))
+  const taken = new Set(BUILTIN_TOOLS.map((t) => t.id))
+  const plugins = (await pluginDescriptions()).filter((d) => !taken.has(d.id)).map((d) => ({ id: d.id, where: d.where ?? "worker", scoped: d.scoped === true }))
+  return [...builtins, ...plugins]
 }
 
 /**

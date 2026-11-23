@@ -18,13 +18,15 @@
  * given, as doc_read already can.
  */
 
-import { interpretAsDocumentId, isValidAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo"
+import { AutomergeRepo } from "../host-modules.js"
 import { repairDocUrl } from "../doc-urls.js"
 import { readable, sessionDoc, keptSources, headingAt, outline, formatOf, readOn } from "./sources.js"
 import { bytes } from "./format.js"
 import { imageForModel } from "../images.js"
 import { fileKind, officeText, MAX_FILE_BYTES } from "../files.js"
 import { readPdf, pdfSummary } from "../pdf-text.js"
+
+const { interpretAsDocumentId, isValidAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } = AutomergeRepo
 
 export const READ_LIMIT = 8000
 export const MAX_READ = 20000

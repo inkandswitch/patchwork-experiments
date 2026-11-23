@@ -59,7 +59,7 @@ const STEP_SCHEMA = {
     where: {
       type: "string",
       enum: ["worker", "host"],
-      description: "'worker' unless the step needs the page: mounting or driving a view, screenshots, package_test, doc_create, the plugin registry. Worker steps can run side by side; host steps take turns on the page.",
+      description: "'worker' unless the step needs the page: mounting or driving a view (view_mount, view_interact, view_inspect), screenshots, package_test, doc_create, registry_list or plugin_source. A worker step has every other tool, the tools of installed packages included (an assumptions register's, say) unless a package declares one needs the page. Worker steps run side by side; host steps take turns on the page, one at a time. A worker step whose prompt names a tool that needs the page is moved to the page when it starts.",
     },
     tier: {
       type: "string",
@@ -74,7 +74,7 @@ const STEP_SCHEMA = {
     access: {
       type: "string",
       enum: ["full", "web"],
-      description: "'web' for a research step that only needs the web: it gets web_search, web_fetch, http_request (GET and HEAD), source_read, source_list, finding_write and session_recall — and web_capture when the Web snapshot package is installed and the step runs in a tab — and none of the person's documents, so it fetches without asking. Everything it fetches and every finding it writes is kept, shared with the workflow's other research steps and filed in its Sources folder. It is never handed the result of a step that had the person's documents: write what it needs into its prompt, and no document URLs. Default 'full'.",
+      description: "'web' for a research step that only needs the web: it gets web_search, web_fetch, http_request (GET and HEAD), source_read, source_list, finding_write and session_recall — and installed packages' tools that declare they work within those limits, such as web_capture from the Web snapshot package — and none of the person's documents, so it fetches without asking. Everything it fetches and every finding it writes is kept, shared with the workflow's other research steps and filed in its Sources folder. It is never handed the result of a step that had the person's documents: write what it needs into its prompt, and no document URLs. Default 'full'.",
     },
   },
 }
@@ -118,6 +118,7 @@ export function describePlan(plan, url) {
   for (const step of plan.steps ?? []) {
     const state = derived.get(step.id)
     lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier} · $${stepBudget(step).toFixed(2)} budget${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
+    if (step.moved) lines.push(`  ${step.moved}`)
     if (step.sessionUrl) lines.push(`  session: ${step.sessionUrl}`)
     if ((state === STATE.done || state === STATE.stale) && step.result) lines.push(`  result: ${truncate(step.result.replace(/\s+/g, " "), 400)}`)
     if (state === STATE.stale) lines.push(`  out of date: built on ${staleInputs(plan, step).join(", ")} as it was before — reopen or keep it`)
