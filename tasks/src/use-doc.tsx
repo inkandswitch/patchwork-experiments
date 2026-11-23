@@ -79,7 +79,11 @@ export function useHandle<T>(url: () => AutomergeUrl | null | undefined, repo = 
 
 /** The doc at `url`, kept current: undefined until it has loaded. See {@link useHandle}. */
 export function useDoc<T>(url: () => AutomergeUrl | null | undefined, repo = useRepo()) {
-  const handle = useHandle<T>(url, repo);
+  return useHandleDocWhenThere(useHandle<T>(url, repo));
+}
+
+/** The doc behind a handle that may not have loaded yet, kept current. */
+export function useHandleDocWhenThere<T>(handle: () => DocHandle<T> | undefined) {
   const [doc, setDoc] = createSignal<T>();
 
   createEffect(() => {

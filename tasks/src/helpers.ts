@@ -1,5 +1,4 @@
 import { type AutomergeUrl, type DocHandle, type Repo } from '@automerge/automerge-repo/slim';
-import { TaskQueueSet } from './datatype';
 
 export const TASK_QUEUE_URLS_FIELD_NAME = '__taskQueues__';
 
@@ -38,16 +37,45 @@ export async function getSelfContactUrl(repo: Repo): Promise<AutomergeUrl> {
 
 export type TaskQueues = { [taskQueueUrl: AutomergeUrl]: true };
 
+/**
+ * The queue everyone works on who hasn't chosen otherwise. An account that has
+ * never joined or left a queue has no list of its own, and is taken to be on
+ * this one.
+ */
+export const DEFAULT_TASK_QUEUE_URL = 'automerge:2xrHArq3QwSGHaeUdquP7ECTpnEL' as AutomergeUrl;
+
+/** The queues this account's browsers lend their workers to. */
 export function getTaskQueues(account: any): TaskQueues {
-  return account[TASK_QUEUE_URLS_FIELD_NAME] ?? { 'automerge:2xrHArq3QwSGHaeUdquP7ECTpnEL': true };
+  return account?.[TASK_QUEUE_URLS_FIELD_NAME] ?? { [DEFAULT_TASK_QUEUE_URL]: true };
 }
 
-export function addTaskQueue(account: any, taskQueueUrl: AutomergeUrl) {
-  let taskQueues: TaskQueueSet | null = account[TASK_QUEUE_URLS_FIELD_NAME];
-  if (!taskQueues) {
-    taskQueues = account[TASK_QUEUE_URLS_FIELD_NAME] = {};
+export function isOnTaskQueue(account: any, taskQueueUrl: AutomergeUrl) {
+  return !!getTaskQueues(account)[taskQueueUrl];
+}
+
+/**
+ * Adds a queue to the account's list. Call it inside a change to the account
+ * doc.
+ *
+ * An account with no list yet is on the default queue without saying so, and
+ * stays on it: its first list starts from that, not from nothing. Otherwise
+ * joining a second queue would quietly take it off the first.
+ */
+export function joinTaskQueue(account: any, taskQueueUrl: AutomergeUrl) {
+  ownTaskQueues(account)[taskQueueUrl] = true;
+}
+
+/** Takes a queue off the account's list. Call it inside a change to the account doc. */
+export function leaveTaskQueue(account: any, taskQueueUrl: AutomergeUrl) {
+  delete ownTaskQueues(account)[taskQueueUrl];
+}
+
+/** The account's own list, written down first if it was only implied. */
+function ownTaskQueues(account: any): TaskQueues {
+  if (!account[TASK_QUEUE_URLS_FIELD_NAME]) {
+    account[TASK_QUEUE_URLS_FIELD_NAME] = { ...getTaskQueues(account) };
   }
-  taskQueues![taskQueueUrl] = true;
+  return account[TASK_QUEUE_URLS_FIELD_NAME];
 }
 
 export const seconds = async (s: number) =>

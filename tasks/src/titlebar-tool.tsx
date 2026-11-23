@@ -98,7 +98,20 @@ const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo }) => {
           </button>
         </Show>
         <WithTasksRepo>
-          <For each={queueUrls()}>
+          <For
+            each={queueUrls()}
+            fallback={
+              // Left every queue: say so, or the badge would just vanish.
+              <Show when={account()}>
+                <span
+                  class="task-titlebar task-titlebar--none"
+                  title="This browser isn't working on any task queue. Open one and choose Join queue."
+                >
+                  No task queues
+                </span>
+              </Show>
+            }
+          >
             {(taskQueueUrl) => <QueueBadge element={props.element} taskQueueUrl={taskQueueUrl} />}
           </For>
         </WithTasksRepo>

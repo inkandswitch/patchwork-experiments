@@ -127,6 +127,54 @@
   font-size: 0.8125rem;
 }
 
+/* the offer to join, on a queue this browser isn't working on */
+
+.tq-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid color-mix(in oklch, var(--tq-busy) 55%, var(--tq-border));
+  border-radius: var(--tq-radius);
+  background: color-mix(in oklch, var(--tq-busy) 7%, var(--tq-bg));
+}
+
+.tq-callout-text {
+  display: flex;
+  flex: 1 1 16rem;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.tq-callout-text > span {
+  color: var(--tq-muted);
+  font-size: 0.875rem;
+}
+
+/* a button that reads as part of a sentence */
+
+.tq-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--tq-fg);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: var(--studio-cursor-pointer, pointer);
+}
+
+.tq-link:hover {
+  color: var(--tq-bad);
+}
+
+.tq-link:focus-visible {
+  outline: 2px solid var(--tq-busy);
+  outline-offset: 2px;
+}
+
 /* a status dot: on the router line and on each worker */
 
 .tq-dot {
@@ -710,6 +758,12 @@
 .task-titlebar--broken {
   border-style: dashed;
   cursor: help;
+}
+
+.task-titlebar--none {
+  border-style: dashed;
+  cursor: default;
+  opacity: 0.7;
 }
 
 .task-titlebar-dot {

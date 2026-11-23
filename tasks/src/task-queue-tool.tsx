@@ -9,7 +9,7 @@ import {
 import { createStore } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import './index.css';
-import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
+import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
 import type { RouterDoc, RunInfo, WorkerDoc, TaskDoc, TaskQueueDoc } from './datatype';
 import type { MessageToTaskQueueChannel } from './protocol';
 import { DELIVERY_STATS_CHANNEL, type DeliveryReport } from './delivery-stats';
@@ -26,7 +26,15 @@ import {
   setAvailabilityMode,
 } from './host-activity';
 import { listen } from './messages';
-import { useDoc, useHandle, useHandleDoc, useRepo, WithTasksRepo } from './use-doc';
+import { getAccountDocUrl, isOnTaskQueue, joinTaskQueue, leaveTaskQueue } from './helpers';
+import {
+  useDoc,
+  useHandle,
+  useHandleDoc,
+  useHandleDocWhenThere,
+  useRepo,
+  WithTasksRepo,
+} from './use-doc';
 
 const DEFAULT_INPUT_EXPR = `[
   Math.floor(Math.random() * 10) + 1,
@@ -58,13 +66,13 @@ export const TaskQueueTool = (handle: DocHandle<unknown>, element: HTMLElement) 
   render(
     () => (
       <WithTasksRepo fallback={<div class="tq tq-loading">Starting…</div>}>
-        <TaskQueue url={handle.url} />
+        <TaskQueue url={handle.url} hostRepo={(element as any).repo} />
       </WithTasksRepo>
     ),
     element,
   );
 
-const TaskQueue = (props: { url: AutomergeUrl }) => {
+const TaskQueue = (props: { url: AutomergeUrl; hostRepo: Repo }) => {
   const handle = useHandle<TaskQueueDoc>(() => props.url);
   return (
     <Show
@@ -73,14 +81,35 @@ const TaskQueue = (props: { url: AutomergeUrl }) => {
         <div class="tq tq-loading">Waiting for this queue to reach this browser's task workers…</div>
       }
     >
-      {(ready) => <TaskQueueBrowser handle={ready()} />}
+      {(ready) => <TaskQueueBrowser handle={ready()} hostRepo={props.hostRepo} />}
     </Show>
   );
 };
 
-const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
+/**
+ * Whether this account's browsers work on a queue, and how to change that.
+ *
+ * The list of queues is on the account, which is the site's document, so it's
+ * read and written through the site's Repo and not the tasks one. The worker
+ * pool watches the same list (see worker-pool-proxy.ts), so joining or leaving
+ * takes effect at once, in every tab, with nothing to reload.
+ */
+function useMembership(queueUrl: AutomergeUrl, hostRepo: Repo) {
+  const accountHandle = useHandle<any>(getAccountDocUrl, hostRepo);
+  const account = useHandleDocWhenThere(accountHandle);
+  return {
+    /** False until the account has loaded; before that there's nothing to say. */
+    known: () => !!account(),
+    joined: () => isOnTaskQueue(account(), queueUrl),
+    join: () => accountHandle()?.change((doc: any) => joinTaskQueue(doc, queueUrl)),
+    leave: () => accountHandle()?.change((doc: any) => leaveTaskQueue(doc, queueUrl)),
+  };
+}
+
+const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc>; hostRepo: Repo }) => {
   const repo = useRepo();
   const queue = useHandleDoc(props.handle);
+  const membership = useMembership(props.handle.url, props.hostRepo);
 
   // Who the router says is working for this queue, and which of them have asked
   // not to be given work just now. A heartbeat a second mostly repeats the last
@@ -148,6 +177,21 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
           <RouterStatus activeRouter={queue().activeRouter} lastHeartbeatAt={lastHeartbeatAt} />
         </header>
 
+        <Show when={membership.known() && !membership.joined()}>
+          <div class="tq-callout">
+            <div class="tq-callout-text">
+              <strong>This browser isn't working on this queue.</strong>
+              <span>
+                Joining lends the queue this browser's task workers, and lets this browser take a
+                turn at routing.
+              </span>
+            </div>
+            <button class="tq-button" onClick={membership.join}>
+              Join queue
+            </button>
+          </div>
+        </Show>
+
         <section class="tq-section">
           <h2 class="tq-section-title">
             Workers <span class="tq-count">{workers().length}</span>
@@ -184,7 +228,11 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
           </Show>
         </section>
 
-        <HostManners newestBuild={builds.newest} />
+        <HostManners
+          newestBuild={builds.newest}
+          joined={membership.known() && membership.joined()}
+          onLeave={membership.leave}
+        />
 
         <NewTaskForm onAdd={addTask} />
 
@@ -288,6 +336,9 @@ const AVAILABILITY_MODES: { mode: AvailabilityMode; label: string; explanation: 
 const HostManners = (props: {
   /** The newest build among this queue's router and workers, for comparison. */
   newestBuild: number;
+  /** Whether this account's browsers work on the queue being shown. */
+  joined: boolean;
+  onLeave: () => void;
 }) => {
   const [mode, setMode] = createSignal(getAvailabilityMode());
   onCleanup(onAvailabilityModeChange(() => setMode(getAvailabilityMode())));
@@ -350,6 +401,14 @@ const HostManners = (props: {
         <span class="tq-dot" />
         <span>{describeAvailability(status())}</span>
       </div>
+      <Show when={props.joined}>
+        <p class="tq-choice-note">
+          This browser is working on this queue.{' '}
+          <button class="tq-link" onClick={props.onLeave}>
+            Leave queue
+          </button>
+        </p>
+      </Show>
       <Show when={status()?.build}>
         {(build) => (
           // which build this browser's workers are, to see an update arrive

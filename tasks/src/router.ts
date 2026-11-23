@@ -483,6 +483,14 @@ async function joinTaskQueue(taskQueueUrl: AutomergeUrl) {
 
 async function leaveTaskQueue(taskQueueUrl: AutomergeUrl) {
   const handle = taskQueueHandles.get(taskQueueUrl);
+  // If this router runs the queue, say it no longer does: a queue with no
+  // active router is taken at once, where one whose router had just gone quiet
+  // would be waited on for ten seconds first.
+  if (handle && handle.doc().activeRouter === thisRouterHandle?.url) {
+    handle.change((doc) => {
+      doc.activeRouter = null;
+    });
+  }
   stopListeningTo.get(taskQueueUrl)?.();
   stopListeningTo.delete(taskQueueUrl);
   handle?.off('change', routeSoon);

@@ -13,7 +13,8 @@ export const plugins: Plugin<any>[] = [
     id: QUEUE_DATATYPE_ID,
     name: 'Task Queue (experimental)',
     icon: 'CirclePlus',
-    unlisted: true,
+    // Listed, so a queue can be made the way any document is. Opening it then
+    // offers to join it (see the queue browser).
     load: async () => (await import('./datatype')).TaskQueueDatatype
   },
   {
