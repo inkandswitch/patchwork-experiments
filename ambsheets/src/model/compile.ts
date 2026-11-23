@@ -594,8 +594,30 @@ export function compileSheet(data: unknown): CompiledSheet {
    *   IF(c, p, q)        that of OR(AND(c, p), AND(NOT(c), q)), which says the same thing
    *   a reference        the margin of the cell it refers to
    *
-   * Anything else has no margin (null).
+   * Anything else has no margin (null). So a formula has a margin exactly when it is known
+   * to be a yes-or-no formula, which is also how the UI knows to offer both "true" and
+   * "false" for it even if only one of them has turned up in the scenarios so far.
    */
+  /** True for an expression that can be told, without evaluating it, to be true or false. */
+  const isYesOrNo = (node: Expr): boolean => {
+    switch (node.type) {
+      case 'const':
+        return typeof node.value === 'boolean';
+      case 'call':
+        return node.funcName in COMPARISON_MARGINS || ['and', 'or', 'not'].includes(node.funcName);
+      case 'if':
+        return isYesOrNo(node.then) && isYesOrNo(node.else);
+      case 'cellRef':
+      case 'nameRef': {
+        const addr = resolveRef(node);
+        const info = isError(addr) ? null : resolve(addr);
+        return !!info && (info.margin !== null || typeof info.value === 'boolean');
+      }
+      default:
+        return false;
+    }
+  };
+
   const compileMargin = (node: Expr, ctx: Context): Margin | null => {
     /** A part of an AND/OR/NOT/IF: its margin if it has one, or else just whether it is true. */
     const part = (arg: Expr): Margin => {
@@ -613,6 +635,8 @@ export function compileSheet(data: unknown): CompiledSheet {
       return isError(addr) ? null : (resolve(addr)?.margin ?? null);
     }
     if (node.type === 'if') {
+      // (only an IF between two yes-or-no things is itself a yes-or-no thing)
+      if (!isYesOrNo(node.then) || !isYesOrNo(node.else)) return null;
       const [cond, then, otherwise] = [part(node.cond), part(node.then), part(node.else)];
       return (s) => {
         const c = cond(s);

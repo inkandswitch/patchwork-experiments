@@ -68,6 +68,8 @@ describe('margins: how true a comparison is', () => {
 
   test('other formulas have none', () => {
     expect(compiled.cells.get('A9')!.margin).toBeNull();
+    // (an IF between numbers is not a yes-or-no formula, whatever its condition)
+    expect(compileSheet(sheet({ A1: '{1, 2}', A2: '=IF(A1 > 1, 10, 0)' })).cells.get('A2')!.margin).toBeNull();
     expect(compiled.cells.get('A1')!.margin).toBeNull();
   });
 });
@@ -224,5 +226,28 @@ describe('counting exactly', () => {
     }
     expect(slices).toBeGreaterThan(1);
     expect(evaluation.count.matching).toBe(6 ** 5);
+  });
+});
+
+describe('a yes-or-no formula that is almost never true', () => {
+  test('offers "true" to filter on even when no sampled scenario has it', () => {
+    const compiled = compileSheet(sheet({ A1: '=normal(0, 1)', A2: '=A1 > 6', A3: '=IF(A1 > 6, 1, 0)' }));
+    const run = evaluate(compiled, { mode: 'auto', samples: 5_000, seed: 0.5 });
+    const a2 = summarize(compiled.cells.get('A2')!, viewOf(run));
+    expect(a2.values!.map((v) => [v.value, v.count])).toEqual([
+      [false, 5_000],
+      [true, 0],
+    ]);
+    // (only for formulas known to be yes-or-no)
+    expect(summarize(compiled.cells.get('A3')!, viewOf(run)).values!.map((v) => v.value)).toEqual([0]);
+
+    // and once the scenarios where it is true have been sought out, they are counted
+    const filters: Filters = new Map([['A2', only(true)]]);
+    const focus = findMatching(compiled, filters, { target: 1_000, seed: 0.5 });
+    const focused = summarize(compiled.cells.get('A2')!, { all: run, matching: focus, mask: null });
+    expect(focused.values!.map((v) => [v.value, v.count, v.passing])).toEqual([
+      [false, 5_000, 0],
+      [true, 0, 1_000],
+    ]);
   });
 });

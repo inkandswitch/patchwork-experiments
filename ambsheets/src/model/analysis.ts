@@ -126,7 +126,10 @@ export interface Summary {
  * What to show for a varying cell, or for anything else that has a column in a run (an
  * amb inside a formula does, under its id).
  */
-export function summarize(info: { addr: string; spec: AmbSpec | null }, view: View): Summary {
+export function summarize(
+  info: { addr: string; spec: AmbSpec | null; margin?: unknown },
+  view: View,
+): Summary {
   const run = view.all;
   const analysis = run.analysis[info.addr];
   const n = run.n;
@@ -171,10 +174,20 @@ export function summarize(info: { addr: string; spec: AmbSpec | null }, view: Vi
         passing: passingCounts ? (passingCounts.get(value) ?? 0) : count,
       });
     }
+    if (info.margin) {
+      // A yes-or-no formula can be both, even if only one has been seen so far. Listing
+      // the other anyway is what makes it possible to filter on it (and so to go looking
+      // for the scenarios where it holds).
+      for (const value of [false, true]) {
+        if (!analysis.histogram.has(value)) {
+          values.push({ value, key: valueKey(value), count: 0, passing: passingCounts?.get(value) ?? 0 });
+        }
+      }
+    }
     if (passingCounts && isFocused(view)) {
       // values that only turned up among the scenarios that were sought out
       for (const [value, count] of passingCounts) {
-        if (!analysis.histogram.has(value)) {
+        if (!analysis.histogram.has(value) && !(info.margin && typeof value === 'boolean')) {
           values.push({ value, key: valueKey(value), count: 0, passing: count });
         }
       }

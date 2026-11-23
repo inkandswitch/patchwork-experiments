@@ -262,7 +262,7 @@ export function createSheetState(handle: AmbsheetHandle) {
     const r = run();
     const v = view();
     const result = new Map<string, Summary>();
-    for (const { id, spec } of r.compiled.subjects) result.set(id, summarize({ addr: id, spec }, v));
+    for (const { id, spec, margin } of r.compiled.subjects) result.set(id, summarize({ addr: id, spec, margin }, v));
     return result;
   });
 
