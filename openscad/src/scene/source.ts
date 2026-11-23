@@ -231,7 +231,7 @@ export function createOpenscadSource(render: () => Promise<Render>, loadDatatype
 			// A fixed mesh name: the title is not in the fingerprint, so a name
 			// taken from it would go stale on rename. The scene outline shows
 			// the scene object's own name anyway.
-						// a node per part, named by its label, when the second render says which source made what
+			// a node per part, named by its label, when the second render says which source made what
 			const map = (await result.sourceMap) ?? null
 			const {triangles, ...out} = modelToGLB(result.model, unit, "OpenSCAD", map)
 			const notes = [`${triangles} triangles`]

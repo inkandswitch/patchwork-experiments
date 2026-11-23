@@ -106,7 +106,7 @@ export function OpenscadEditor(props: {
 		let importPayload: unknown = null
 		try {
 			importPayload = await resolver.payload(doc?.imports ?? [])
-						const result = await renderScad(source, importPayload as any)
+			const result = await renderScad(source, importPayload as any)
 			if (id !== runId) return
 			const keep = selectionKey()
 			batch(() => {
@@ -220,7 +220,7 @@ export function OpenscadEditor(props: {
 		resolver.sync(props.handle.doc()?.imports ?? [])
 		props.handle.on("change", onDocChange)
 		// waits for the imports just requested before compiling (see renderNow)
-				void renderNow()
+		void renderNow()
 		props.hosted?.connect?.({pick})
 		onCleanup(() => {
 			unsubProgress()
@@ -331,6 +331,13 @@ export function OpenscadEditor(props: {
 		for (const item of parsePatchworkDrop(e.dataTransfer)) addImport(item)
 	}
 
+	/** The picked part's chain of calls, floating over the foot of the view (or, hosted, of the code). */
+	const trail = () => (
+		<Show when={sourceMap() && selected() != null ? sourceMap() : null}>
+			{map => <SourceTrail map={map()} record={selected()!} onReveal={reveal} onClose={() => setSelected(null)} />}
+		</Show>
+	)
+
 	return (
 		<div class="openscad-tool" classList={{"openscad-tool--hosted": !!props.hosted}}>
 			<style>{styles}</style>
@@ -416,36 +423,37 @@ export function OpenscadEditor(props: {
 					<CodeEditor
 						source={initialDoc?.source ?? ""}
 						handle={props.handle}
-													onRenderRequested={renderImmediately}
-							onReady={api => (code = api)}
-							onCursor={onCursor}
-						/>
+						onRenderRequested={renderImmediately}
+						onReady={api => (code = api)}
+						onCursor={onCursor}
+					/>
+					{/* hosted (in a scene): the trail floats over the code's foot, so the code doesn't move */}
+					<Show when={props.hosted}>{trail()}</Show>
 				</div>
 				<div class="openscad-pane-view">
 					<Show when={!props.hosted}>
-													<div
-								class="openscad-view-stage"
-								tabIndex={-1}
-								onKeyDown={e => {
-									if (e.key === "Escape" && selected() != null) {
-										e.preventDefault()
-										setSelected(null)
-									}
-								}}
-							>
-								<Viewer3D model={model()} sourceMap={sourceMap()} selected={selected()} lit={lit()} onPick={pick} />
+						<div
+							class="openscad-view-stage"
+							tabIndex={-1}
+							onKeyDown={e => {
+								if (e.key === "Escape" && selected() != null) {
+									e.preventDefault()
+									setSelected(null)
+								}
+							}}
+						>
+							<Viewer3D model={model()} sourceMap={sourceMap()} selected={selected()} lit={lit()} onPick={pick} />
 							<Show when={!model()}>
 								<div class="openscad-viewer-placeholder">
 									{status() === "error" ? "Fix the error below and render again" : "Rendering your model…"}
 								</div>
 							</Show>
+							{/* the trail floats over the view's foot: the view keeps its size, so nothing moves */}
+							{trail()}
 						</div>
 					</Show>
-											<Show when={sourceMap() && selected() != null ? sourceMap() : null}>
-							{map => <SourceTrail map={map()} record={selected()!} onReveal={reveal} onClose={() => setSelected(null)} />}
-						</Show>
-						<div
-							class="openscad-console"
+					<div
+						class="openscad-console"
 						data-state={status() === "error" ? "error" : undefined}
 						data-empty={logs().length === 0 ? "" : undefined}
 					>
