@@ -96,20 +96,87 @@ describe("set", () => {
     expect(doc.entries.d_x.value).toMatchObject({ nominal: 6 })
   })
 
-  it("records a model's inputs itself, pins its document, and marks it stale when one moves", async () => {
+  it("records a model's inputs itself, the version of the document it read, and marks it stale when an input moves", async () => {
     const register = await newRegister()
     const cfd = makeDoc({ "@patchwork": { type: "file" }, name: "case" })
     await set.execute({ register, entries: [{ id: "boat_mass_kg", estimate: { value: { nominal: 1500, min: 1400, max: 1600 }, reasoning: "hull + rig" } }] }, ctx)
     await set.execute({ register, entries: [{ id: "boat_drag_N", model: { url: cfd.url, name: "CFD", inputs: ["boat_mass_kg"], tolerance: 0.02 }, value: { nominal: 40, min: 38, max: 42 } }] }, ctx)
     let doc = (await repo.find(register)).doc()
     expect(doc.entries.boat_drag_N.model.inputs.boat_mass_kg).toMatchObject({ nominal: 1500, min: 1400, max: 1600 })
-    expect(doc.entries.boat_drag_N.model.url).toContain("#")
+    expect(doc.entries.boat_drag_N.model.url).toBe(cfd.url)
+    expect(doc.entries.boat_drag_N.model.ran[cfd.url]).toMatchObject({ heads: [...cfd.heads()], code: expect.stringMatching(/^[th]:/) })
+    expect(doc.entries.boat_drag_N.model.by).toEqual({ kind: "agent", session: "automerge:session" })
     await set.execute({ register, entries: [{ id: "boat_mass_kg", estimate: { value: { nominal: 1520, min: 1420, max: 1620 }, reasoning: "hull + rig" } }] }, ctx)
     expect((await repo.find(register)).doc().entries.boat_drag_N.stale ?? null).toBeNull()
     await set.execute({ register, entries: [{ id: "boat_mass_kg", estimate: { value: { nominal: 1600, min: 1500, max: 1700 }, reasoning: "battery added" } }] }, ctx)
     doc = (await repo.find(register)).doc()
     expect(doc.entries.boat_drag_N.stale).toEqual([{ input: "boat_mass_kg", reason: "moved" }])
     expect(await read.execute({ register }, ctx)).toMatch(/STALE\s+boat_drag_N: boat_mass_kg moved since the model ran/)
+    // A label is not a new run: it leaves what the run recorded, and so its staleness, alone.
+    await set.execute({ register, entries: [{ id: "boat_drag_N", label: "Drag at 6 kn" }] }, ctx)
+    doc = (await repo.find(register)).doc()
+    expect(doc.entries.boat_drag_N.stale).toEqual([{ input: "boat_mass_kg", reason: "moved" }])
+    expect(doc.entries.boat_drag_N.model.inputs.boat_mass_kg.nominal).toBe(1500)
+    // A new output is a new run: inputs and documents are recorded again.
+    await set.execute({ register, entries: [{ id: "boat_drag_N", value: { nominal: 42, min: 40, max: 44 } }] }, ctx)
+    doc = (await repo.find(register)).doc()
+    expect(doc.entries.boat_drag_N.stale ?? null).toBeNull()
+    expect(Object.keys(doc.entries.boat_drag_N.model.ran)).toEqual([cfd.url])
+  })
+
+  it("marks a run stale when the code of a document it read changes, outputs and prose cells aside", async () => {
+    const register = await newRegister()
+    const notebook = file("thermal.ipynb", {
+      "@patchwork": { type: "jupyter-notebook" },
+      cells: [
+        { cell_type: "markdown", source: "# Thermal" },
+        { cell_type: "code", source: "P = pack_I_cont_A ** 2 * pack_R_mOhm / 1000", outputs: [] },
+      ],
+    })
+    const cad = makeDoc({ "@patchwork": { type: "openscad" }, title: "Bay", source: "cube([400, 300, 250]);" })
+    await set.execute(
+      {
+        register,
+        entries: [
+          { id: "pack_I_cont_A", unit: "A", estimate: { value: { nominal: 100, min: 90, max: 110 }, reasoning: "design day" } },
+          { id: "pack_R_mOhm", unit: "mΩ", estimate: { value: { nominal: 6, min: 5, max: 7 }, reasoning: "cells + busbars" } },
+          { id: "pack_heat_W", unit: "W", model: { url: notebook.url, name: "thermal", inputs: ["pack_I_cont_A", "pack_R_mOhm"], ran: [notebook.url, cad.url] }, value: 60 },
+        ],
+      },
+      ctx,
+    )
+    let out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/STALE/)
+    // The CAD file is outside the folder; the check reads it anyway, and names it by its title.
+    expect((await repo.find(register)).doc().scan.docs[cad.url]).toMatchObject({ path: "Bay" })
+
+    // Running the notebook rewrites its outputs; editing its prose is not a change to the model.
+    notebook.change((d) => {
+      d.cells[1].outputs.push({ text: "60.0" })
+      d.cells[0].source = "# Thermal model"
+    })
+    out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/STALE/)
+
+    // A comment is a change to the code: conservative.
+    notebook.change((d) => (d.cells[1].source += "  # I²R"))
+    cad.change((d) => (d.source = "cube([400, 300, 260]);"))
+    out = await check.execute({ register }, ctx)
+    // Reasons come in document order, which is random here: check each.
+    expect(out).toMatch(/STALE\s+pack_heat_W: the code in "(thermal.ipynb|Bay)" changed, the code in "(thermal.ipynb|Bay)" changed since the model ran/)
+    expect(out).toContain('"thermal.ipynb" changed')
+    expect(out).toContain('"Bay" changed')
+    expect(out).toMatch(/fix: re-run thermal and record its output/)
+    expect((await repo.find(register)).doc().entries.pack_heat_W.stale).toEqual([
+      { doc: cad.url, path: "Bay", reason: "changed" },
+      { doc: notebook.url, path: "thermal.ipynb", reason: "changed" },
+    ].sort((a, b) => (a.doc < b.doc ? -1 : 1)))
+
+    // Recording a new run clears it, and the next check agrees.
+    await set.execute({ register, entries: [{ id: "pack_heat_W", value: 61 }] }, ctx)
+    expect((await repo.find(register)).doc().entries.pack_heat_W.stale ?? null).toBeNull()
+    out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/STALE/)
   })
 
   it("writes results back in the same change, with the why as the change's message", async () => {
@@ -199,6 +266,39 @@ describe("check and where", () => {
     out = await where.execute({ register, id: "pack_R_min_mOhm" }, ctx)
     expect(out).toMatch(/register: pack_Isc_kA/)
     expect(out).toMatch(/model: 1\n {4}model.py:2 {2}I = V \/ pack_R_min_mOhm/)
+  })
+
+  it("looks for a quote again when its source changes: still there, nothing to do; gone, the claim is no longer verified", async () => {
+    const register = await newRegister()
+    const datasheet = sheet()
+    await set.execute({ register, entries: [{ id: "cell_R_ac_mOhm", unit: "mΩ", claims: [{ source: datasheet.url, quote: "AC Impedance Resistance(1KHz)  ≤0.25 mΩ", stated: 0.25, sourceKind: "datasheet" }] }] }, ctx)
+    let claim = (await repo.find(register)).doc().entries.cell_R_ac_mOhm.claims[0]
+    expect(claim).toMatchObject({ verified: true, lost: null, seen: { heads: [...datasheet.heads()], text: expect.stringMatching(/^t:/) } })
+    let out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/SOURCE/)
+
+    // Edited elsewhere, the quote still there: checked against the new version.
+    datasheet.change((d) => (d.content += "Cycle life 6000\n"))
+    out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/SOURCE/)
+    claim = (await repo.find(register)).doc().entries.cell_R_ac_mOhm.claims[0]
+    expect(claim).toMatchObject({ verified: true, lost: null, seen: { heads: [...datasheet.heads()] } })
+
+    // The quoted line changes: the claim is no longer verified, and the check says why.
+    datasheet.change((d) => (d.content = d.content.replace("≤0.25 mΩ", "≤0.22 mΩ")))
+    out = await check.execute({ register }, ctx)
+    expect(out).toMatch(/SOURCE\s+cell_R_ac_mOhm: claim c1's quote is no longer in "EVE LF280K Ver B.md", which changed since the quote was found/)
+    let doc = (await repo.find(register)).doc()
+    expect(doc.entries.cell_R_ac_mOhm.claims[0]).toMatchObject({ verified: false, lost: "missing" })
+    expect(doc.entries.cell_R_ac_mOhm.support.level).toBe("weak")
+
+    // Back again, it recovers.
+    datasheet.change((d) => (d.content = d.content.replace("≤0.22 mΩ", "≤0.25 mΩ")))
+    out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/SOURCE/)
+    doc = (await repo.find(register)).doc()
+    expect(doc.entries.cell_R_ac_mOhm.claims[0]).toMatchObject({ verified: true, lost: null })
+    expect(doc.entries.cell_R_ac_mOhm.support.level).toBe("supported")
   })
 
   it("exports nominals and stated bounds only, at full precision", async () => {

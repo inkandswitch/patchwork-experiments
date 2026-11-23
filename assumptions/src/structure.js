@@ -34,7 +34,7 @@ export function inputsOf(doc, evaluation) {
 /** Every reader pair `input>reader` along which a result went stale. */
 export function staleLinks(evaluation) {
   const out = new Set()
-  for (const [id, ev] of evaluation.byId) for (const s of ev.stale ?? []) out.add(`${s.input}>${id}`)
+  for (const [id, ev] of evaluation.byId) for (const s of ev.stale ?? []) if (s.input) out.add(`${s.input}>${id}`)
   return out
 }
 
@@ -179,7 +179,7 @@ export function entryIO(doc, evaluation, id, inputs = inputsOf(doc, evaluation))
   const ev = evaluation.byId.get(id)
   if (!entry || !ev) return null
   const recorded = entry.basis === "model" ? entry.model?.inputs ?? {} : null
-  const why = new Map((ev.stale ?? []).map((s) => [s.input, s.reason]))
+  const why = new Map((ev.stale ?? []).filter((s) => s.input).map((s) => [s.input, s.reason]))
   const readersOf = (n) => [...(evaluation.readers.get(n) ?? [])].filter((r) => r !== n && entries[r])
   const direct = sorted(readersOf(id))
   const seen = new Set([id, ...direct])

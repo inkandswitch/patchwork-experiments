@@ -62,7 +62,7 @@ describe("the view", () => {
 
   it("opens on what needs a person: problems with fixes, and the weak leaves that matter", () => {
     const text = element.querySelector("main").textContent
-    expect(element.querySelector(".summary").textContent).toMatch(/^11 entries · \d+ needs? attention · requirements: 1 fail, 1 depend · 1 unknown · not yet scanned$/)
+    expect(element.querySelector(".summary").textContent).toMatch(/^11 entries · \d+ needs? attention · requirements: 1 fail, 1 depend · 1 unknown · not yet scanned Check the folder$/)
     expect(text).toMatch(/FAILS\s*temp_ok/)
     expect(text).toMatch(/DEPENDS\s*fuse_ok/)
     expect(text).toMatch(/Weak leaves that matter/)
@@ -359,5 +359,93 @@ describe("documents are links by name, never bare URLs", () => {
     link.dispatchEvent(event)
     expect(opened).toBe(source.url)
     expect(event.defaultPrevented).toBe(true)
+  })
+})
+
+describe("checking from the view", () => {
+  const until = async (ok, what) => {
+    for (let i = 0; i < 400; i++) {
+      if (ok()) return
+      await new Promise((r) => setTimeout(r, 5))
+    }
+    throw new Error(`timed out waiting for ${what}`)
+  }
+  const make = (value) => {
+    const h = repo.create()
+    h.change((d) => Object.assign(d, value))
+    return h
+  }
+  let folder, notebook, register
+  beforeEach(() => {
+    dispose?.()
+    element.replaceChildren()
+    notebook = make({ "@patchwork": { type: "jupyter-notebook" }, cells: [{ cell_type: "code", source: "P = pack_I_A ** 2 * pack_R_mOhm / 1000", outputs: [] }] })
+    const report = make({ "@patchwork": { type: "file" }, name: "report.md", extension: "md", content: "Pack resistance 7 mΩ (`pack_R_mOhm`).\n" })
+    folder = make({ "@patchwork": { type: "folder" }, title: "Task", docs: [{ name: "thermal.ipynb", type: "jupyter-notebook", url: notebook.url }, { name: "report.md", type: "file", url: report.url }] })
+    register = repo.create()
+    register.change((d) => {
+      AssumptionsDatatype.init(d)
+      d.title = "Thermal"
+      d.scope = folder.url
+      Object.assign(d.entries, {
+        pack_I_A: { kind: "fact", unit: "A", basis: "estimate", estimate: { value: { nominal: 100, min: 90, max: 110 }, reasoning: "design day" } },
+        pack_R_mOhm: { kind: "fact", unit: "mΩ", basis: "estimate", estimate: { value: { nominal: 6, min: 5, max: 7 }, reasoning: "cells + busbars" } },
+        pack_heat_W: { kind: "result", unit: "W", basis: "model", model: { url: notebook.url, name: "thermal", tolerance: 0, inputs: { pack_I_A: { nominal: 100, min: 90, max: 110 }, pack_R_mOhm: { nominal: 6, min: 5, max: 7 } }, value: { nominal: 60 }, ran: {}, ranAt: null } },
+      })
+    })
+  })
+  const open = () => {
+    dispose = AssumptionsView(register, element, { repo })
+  }
+
+  it("rescans the folder when it opens, and adds no change when nothing moved", async () => {
+    open()
+    await until(() => register.doc().scan, "the scan")
+    expect(element.querySelector(".lens").textContent).toMatch(/PROSE\s*pack_R_mOhm = 6 mΩ: "report.md" line 1 says 7/)
+    const heads = [...register.heads()]
+    dispose()
+    open()
+    await new Promise((r) => setTimeout(r, 50))
+    expect([...register.heads()]).toEqual(heads)
+  })
+
+  it("shows its progress while it checks, and Stop leaves the last check standing", async () => {
+    const slow = { find: async (url) => (await new Promise((r) => setTimeout(r, 30)), repo.find(url)) }
+    dispose = AssumptionsView(register, element, { repo: slow })
+    await until(() => element.querySelector(".summary .progress"), "progress")
+    expect(element.querySelector(".summary").textContent).toMatch(/checking…/)
+    await until(() => register.doc().scan, "the first check")
+    expect(element.querySelector(".summary").textContent).toMatch(/Check the folder/)
+    const heads = [...register.heads()]
+    click(element.querySelector("[data-check]"))
+    await until(() => /\d+ documents?/.test(element.querySelector(".summary .progress")?.textContent ?? ""), "a count")
+    click(element.querySelector("[data-check-stop]"))
+    await until(() => /Stopped; the last check stands/.test(element.querySelector(".summary").textContent), "the stop")
+    expect([...register.heads()]).toEqual(heads)
+  })
+
+  it("records a run from the panel, and Check the folder marks it stale when its code changes", async () => {
+    open()
+    await until(() => register.doc().scan, "the scan")
+    entriesOpen()
+    click(element.querySelector('tr[data-id="pack_heat_W"]'))
+    expect(element.querySelector(".panel").textContent).toMatch(/No documents are recorded for this run/)
+    click(element.querySelector('[data-form="run"]'))
+    const form = element.querySelector('form[data-submit="run"]')
+    form.querySelector('input[name="value"]').value = "61"
+    form.querySelector('input[name="who"]').value = "Sam"
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+    await until(() => register.doc().entries.pack_heat_W.model.ranAt, "the run")
+    const model = register.doc().entries.pack_heat_W.model
+    expect(model).toMatchObject({ value: { nominal: 61 }, by: { kind: "person", who: "Sam" } })
+    expect(Object.keys(model.ran)).toEqual([notebook.url])
+
+    notebook.change((d) => (d.cells[0].source += "  # I²R"))
+    click(element.querySelector("[data-check]"))
+    await until(() => register.doc().entries.pack_heat_W.stale, "staleness")
+    expect(register.doc().entries.pack_heat_W.stale).toEqual([{ doc: notebook.url, path: "thermal.ipynb", reason: "changed" }])
+    expect(element.querySelector(".panel").textContent).toMatch(/CODE CHANGED/)
+    expect(element.querySelector(".panel").textContent).toMatch(/STALE the code in "thermal.ipynb" changed/)
+    expect(register.doc().entries.pack_heat_W.value.nominal).toBe(61)
   })
 })

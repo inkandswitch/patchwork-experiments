@@ -13,7 +13,7 @@
  */
 
 import { render } from "./formula.js"
-import { groupOf, intendedUse, sortProblems } from "./register.js"
+import { groupOf, intendedUse, sortProblems, staleReason } from "./register.js"
 import { entryIO, groupGraph, groupMap, inputsOf } from "./structure.js"
 import { RANK } from "./support.js"
 import { observedUse } from "./uses.js"
@@ -269,7 +269,7 @@ export function detailText(id, doc, evaluation, problems) {
         const picked = (ev.used ?? []).includes(c.key)
         const set = aside.get(c.key)
         lines.push(`    ${c.key}${picked ? " (used)" : ""}${set && set.verdict !== "agrees" ? ` (${set.verdict}: ${set.says ?? ""})` : ""}: ${[c.sourceKind, c.subject].filter(Boolean).join(", ") || "source"} — ${c.source ?? "no source"}`)
-        if (c.quote) lines.push(`      "${c.quote}" · read as ${c.reading ?? "?"}${c.factor && c.factor !== 1 ? ` · × ${c.factor}` : ""} · ${c.verified ? "found in the kept source" : "not verified"}${c.section ? ` · under "${c.section}"` : ""}`)
+        if (c.quote) lines.push(`      "${c.quote}" · read as ${c.reading ?? "?"}${c.factor && c.factor !== 1 ? ` · × ${c.factor}` : ""} · ${c.lost === "missing" ? "QUOTE NO LONGER IN THE SOURCE" : c.lost === "unavailable" ? "source can't be opened to check" : c.verified ? "found in the kept source" : "not verified"}${c.section ? ` · under "${c.section}"` : ""}`)
         if (c.conditions) lines.push(`      conditions: ${c.conditions}`)
       }
       if (entry.pick) lines.push(`    pick: ${entry.pick.rule}${entry.pick.claim ? ` ${entry.pick.claim}` : ""}${entry.pick.reason ? ` — ${entry.pick.reason}` : ""}`)
@@ -290,8 +290,13 @@ export function detailText(id, doc, evaluation, problems) {
       if (ev.confidence) lines.push(`    ${confidenceText(entry, ev, evaluation)}`)
       break
     case "model":
-      lines.push(`    ${entry.model?.name ?? "model"} (${entry.model?.url ?? "no url"}), tolerance ${entry.model?.tolerance ?? 0}`)
+      lines.push(`    ${entry.model?.name ?? "model"} (${entry.model?.url ?? "no url"}), tolerance ${entry.model?.tolerance ?? 0}${entry.model?.ranAt ? `, ran ${entry.model.ranAt}` : ""}`)
       for (const [input, v] of Object.entries(entry.model?.inputs ?? {})) lines.push(`    ran with ${input} = ${formatValue(v, doc.entries[input]?.unit)}`)
+      for (const url of Object.keys(entry.model?.ran ?? {})) {
+        const s = (ev.stale ?? []).find((r) => r.doc === url)
+        lines.push(`    read ${doc.scan?.docs?.[url]?.path || url}${s ? ` · ${s.reason === "changed" ? "CODE CHANGED since the run" : "CAN'T BE OPENED"}` : ""}`)
+      }
+      if (!Object.keys(entry.model?.ran ?? {}).length) lines.push("    no documents recorded for the run: a change to the model can't be detected")
       break
     case "check": {
       const o = ev.outcome ?? {}
@@ -340,7 +345,7 @@ export function valueText(id, doc, evaluation) {
 
 /** Why a result is stale, in words: "cable_ampacity_A moved, pack_I_cont_A stale". */
 export function staleText(stale) {
-  return (stale ?? []).map((s) => (s.reason === "moved" ? `${s.input} moved` : `${s.input} ${s.reason}`)).join(", ")
+  return (stale ?? []).map(staleReason).join(", ")
 }
 
 /** What an entry is when it reads nothing. */
@@ -425,7 +430,7 @@ export function structureText(doc, evaluation, target = "") {
     lines.push("STALE PATHS (a result went stale along each):")
     for (const l of hot) {
       const why = []
-      for (const id of map.groups.get(l.to).ids) for (const s of evaluation.byId.get(id)?.stale ?? []) if (groupOf(s.input) === l.from) why.push(`${id} (${staleText([s])})`)
+      for (const id of map.groups.get(l.to).ids) for (const s of evaluation.byId.get(id)?.stale ?? []) if (s.input && groupOf(s.input) === l.from) why.push(`${id} (${staleText([s])})`)
       lines.push(`  ${l.from} → ${l.to}: ${why.join(", ")}`)
     }
   }
@@ -479,6 +484,21 @@ export function readText(doc, evaluation, extraProblems = [], { ids = null, pref
   return lines.join("\n").trimEnd()
 }
 
+/** A check in progress, in words: "checking… 12 documents (9 unchanged), now thermal.ipynb · sources 3 of 13". */
+export function progressText({ documents = null, sources = null } = {}) {
+  const bits = []
+  if (documents) bits.push(`${documents.opened} document${documents.opened === 1 ? "" : "s"}${documents.reused ? ` (${documents.reused} unchanged)` : ""}${documents.current && !sources ? `, now ${documents.current}` : ""}`)
+  if (sources?.total) bits.push(`sources ${sources.done} of ${sources.total}`)
+  return `checking… ${bits.join(" · ")}`.trimEnd()
+}
+
+/** Documents the last check couldn't open, one line each. */
+export function unopenedText(scan) {
+  const list = scan?.unopened ?? []
+  if (!list.length) return []
+  return [`COULDN'T OPEN (${list.length}): documents in the folder the check couldn't look at; check again once they're available`, ...list.slice(0, 30).map((u) => `  ${u.path || u.url}: ${u.why}`), ""]
+}
+
 /** What assumptions_check returns: everything to act on, in queue order, and where effort pays. */
 export function checkText(doc, evaluation, extraProblems, { constants = [], drift = [], exports = [], pinned = null, heads = [] } = {}) {
   const entries = doc.entries ?? {}
@@ -509,6 +529,7 @@ export function checkText(doc, evaluation, extraProblems, { constants = [], drif
     for (const d of drift.slice(0, 30)) lines.push(`  ${d.doc}${d.part ? ` ${d.part}` : ""}:${d.line}  ${d.name} = ${d.written ?? d.value}, register says ${formatNumber(d.register)}`)
     lines.push("")
   }
+  lines.push(...unopenedText(doc.scan))
   if (exports.length) lines.push(`Exports of this register: ${exports.map((e) => `${e.doc} (${e.url})`).join(", ")}`, "")
   lines.push("Problems are things to fix or to explain. Weak support, estimates and unknowns are reported, never blockers.")
   if (pinned) lines.push(`Checked at ${heads.join(",")}. Link the register as it stood: ${pinned}`)

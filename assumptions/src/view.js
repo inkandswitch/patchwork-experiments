@@ -10,6 +10,11 @@
  *   Structure         the map of groups, one group's entries, one entry's
  *                     inputs and outputs (structure.js)
  *
+ * Check the folder (and a quiet rescan whenever the view opens) runs the
+ * same check as the agent's assumptions_check (check.js): where entries are
+ * used, model runs whose code changed, quotes whose sources changed. A model
+ * entry's panel records a new run, as the agent's assumptions_set does.
+ *
  * The panel answers the questions about the entry it shows: its value, its
  * basis (claims with quotes in context, or the calculation), its inputs and
  * outputs, where it is used, and what people have said. Ids are
@@ -23,16 +28,17 @@
  * keeps scroll, open sections, focus and typed text; events are delegated.
  */
 
+import { checkFolder, readSource, recordInputs, runRecord } from "./check.js"
 import { render as renderFormula } from "./formula.js"
 import { morph } from "./morph.js"
 import { checkClaim } from "./quote.js"
 import { evaluate, groupOf, intendedUse, materialize, peoplesMarks } from "./register.js"
 import { RANK, SET_ASIDE, SOURCE_KINDS } from "./support.js"
 import { entryIO, groupGraph, groupMap, inputsOf, layered, placeLayered, staleLinks } from "./structure.js"
-import { allProblems, confidenceText, entryParts, groupLine, readsNothingText, restsOnText, sheetOrder, staleText, summaryLine, valueText } from "./text.js"
+import { allProblems, progressText, unopenedText, confidenceText, entryParts, groupLine, readsNothingText, restsOnText, sheetOrder, staleText, summaryLine, valueText } from "./text.js"
 import { observedUse, scanProblems } from "./uses.js"
 import { formatBounds, formatValue, isNumeric, parseValue } from "./values.js"
-import { sourceText, useCounts, usesOf } from "./where.js"
+import { useCounts, usesOf } from "./where.js"
 
 const LENSES = [
   ["attention", "Needs attention"],
@@ -88,7 +94,7 @@ function definition(entry) {
 export function AssumptionsView(handle, element, options = {}) {
   // Patchwork hands a tool its repo on the element; window.repo is the older way.
   const repo = options.repo ?? element.repo ?? globalThis.repo ?? null
-  const state = { lens: "attention", stack: [], at: -1, q: "", support: "", kind: "", open: new Set(), closed: new Set(), form: null, error: null, preview: null, history: null, cursor: null, structure: { group: null, entry: null, unread: false } }
+  const state = { lens: "attention", stack: [], at: -1, q: "", support: "", kind: "", open: new Set(), closed: new Set(), form: null, error: null, preview: null, history: null, cursor: null, structure: { group: null, entry: null, unread: false }, checking: false, checkError: null, checkNote: null, progress: { documents: null, sources: null } }
   const style = h("style")
   style.textContent = CSS
   const root = h("div", { class: "asm", tabindex: "-1" })
@@ -149,7 +155,17 @@ export function AssumptionsView(handle, element, options = {}) {
       "header",
       { "data-key": "header" },
       h("h1", {}, doc.title || "Assumptions"),
-      h("p", { class: "summary" }, summaryLine(doc, evaluation, problems, { title: false })),
+      h(
+        "p",
+        { class: "summary" },
+        summaryLine(doc, evaluation, problems, { title: false }),
+        " ",
+        state.checking
+          ? [h("span", { class: "progress", role: "status" }, progressText(state.progress)), " ", h("button", { type: "button", class: "link", "data-check-stop": "1" }, "Stop")]
+          : h("button", { type: "button", class: "link", "data-check": "1", disabled: !repo, title: "Look through the task folder for where entries are used, model runs whose code changed, and quotes whose source changed" }, "Check the folder"),
+        state.checkError ? h("span", { class: "error", role: "alert" }, ` ${state.checkError}`) : null,
+        !state.checking && state.checkNote ? h("span", { class: "quiet" }, ` ${state.checkNote}`) : null,
+      ),
       h(
         "nav",
         { role: "tablist" },
@@ -228,6 +244,14 @@ export function AssumptionsView(handle, element, options = {}) {
     out.push(h("h2", {}, problems.length ? `Problems (${problems.length})` : "Problems"))
     if (!problems.length) out.push(h("p", { class: "quiet" }, "Nothing needs attention."))
     else out.push(h("ul", { class: "queue" }, problems.map((p, i) => item(p.id, `p:${i}:${p.kind}:${p.id}`, chip(p.kind), " ", rich(p.text), p.fix ? h("div", { class: "fix" }, "fix: ", rich(p.fix)) : null))))
+    const unopened = doc.scan?.unopened ?? []
+    if (unopened.length) {
+      out.push(
+        h("h2", {}, `Couldn't open (${unopened.length})`),
+        h("p", { class: "quiet" }, "The last check couldn't open these documents in the folder, so it couldn't look at them. Check the folder again once they're available."),
+        h("ul", { class: "queue" }, unopened.map((u) => h("li", { "data-key": `u:${u.url}` }, docLink(u.url, u.path || "a document"), h("span", { class: "quiet" }, ` · ${u.why}`)))),
+      )
+    }
     const weak = weakLeaves()
     if (weak.length) {
       out.push(
@@ -661,6 +685,7 @@ export function AssumptionsView(handle, element, options = {}) {
         h("button", { type: "button", "data-form": "claim" }, "Add a claim"),
         h("button", { type: "button", "data-form": "judgement" }, "Add a judgement"),
         ["estimate", "choice", "formula", "check", "unknown"].includes(entry.basis) ? h("button", { type: "button", "data-form": "edit" }, "Edit") : null,
+        entry.basis === "model" ? h("button", { type: "button", "data-form": "run" }, "Record a run") : null,
       ),
       state.form ? form(id, entry) : null,
     )
@@ -680,7 +705,7 @@ export function AssumptionsView(handle, element, options = {}) {
               { class: `claim${used ? " used" : ""}`, "data-key": `c:${c.key}` },
               h("div", {}, h("strong", {}, c.key), ` · ${used ? "used" : set ? `${set.verdict}: ${set.says ?? ""}` : "considered, not used"} · ${[c.sourceKind, c.subject].filter(Boolean).join(" · ") || "source"}${c.by?.kind === "person" ? ` · added by ${c.by.who ?? "a person"}` : ""}`),
               c.quote ? h("blockquote", {}, ctx ? [h("span", { class: "quiet" }, `…${ctx.before.slice(-120)}`), h("mark", {}, ctx.quote), h("span", { class: "quiet" }, `${ctx.after.slice(0, 120)}…`)] : h("mark", {}, c.quote)) : h("p", { class: "quiet" }, "no quote"),
-              h("div", { class: "quiet" }, `read as: ${c.reading ?? "?"}${c.factor && c.factor !== 1 ? ` · × ${c.factor} into ${entry.unit ?? "the entry's unit"}` : ""} · ${c.verified ? "found in the kept source" : "quote not verified"}${c.section ? ` · near "${c.section}"` : ""}${c.conditions ? ` · ${c.conditions}` : ""}`),
+              h("div", { class: "quiet" }, `read as: ${c.reading ?? "?"}${c.factor && c.factor !== 1 ? ` · × ${c.factor} into ${entry.unit ?? "the entry's unit"}` : ""} · ${c.lost === "missing" ? "QUOTE NO LONGER IN THE SOURCE" : c.lost === "unavailable" ? "source can't be opened to check" : c.verified ? "found in the kept source" : "quote not verified"}${c.section ? ` · near "${c.section}"` : ""}${c.conditions ? ` · ${c.conditions}` : ""}`),
               c.source ? h("div", {}, "source: ", docLink(c.source, "the kept source")) : h("div", { class: "quiet" }, "no source given"),
             )
           }),
@@ -701,11 +726,23 @@ export function AssumptionsView(handle, element, options = {}) {
           ),
         ]
       }
-      case "model":
+      case "model": {
+        const ran = Object.keys(entry.model?.ran ?? {})
         return [
-          h("p", {}, entry.model?.url ? docLink(entry.model.url, entry.model?.name ?? "the model's run") : entry.model?.name ?? "A model", `, tolerance ${entry.model?.tolerance ?? 0}`),
-          ev.stale ? h("p", {}, chip("STALE"), ` ${ev.stale.map((s) => `${s.input} ${s.reason}`).join(", ")}`) : null,
+          h("p", {}, entry.model?.url ? docLink(entry.model.url, entry.model?.name ?? "the model") : entry.model?.name ?? "A model", `, tolerance ${entry.model?.tolerance ?? 0}`, entry.model?.ranAt ? ` · ran ${new Date(entry.model.ranAt).toLocaleString()}` : null, entry.model?.by?.kind === "person" ? ` by ${entry.model.by.who ?? "a person"}` : null),
+          ran.length
+            ? h(
+                "ul",
+                { class: "io" },
+                ran.map((url) => {
+                  const s = (ev.stale ?? []).find((r) => r.doc === url)
+                  return h("li", {}, "read ", docLink(url, doc.scan?.docs?.[url]?.path || "a document"), s ? [" ", chip(s.reason === "changed" ? "CODE CHANGED" : "CAN'T OPEN")] : h("span", { class: "quiet" }, doc.scan?.docs?.[url] ? " · unchanged since the run" : " · not checked yet"))
+                }),
+              )
+            : h("p", { class: "quiet" }, "No documents are recorded for this run, so a change to the model can't be noticed. Record a run to start."),
+          ev.stale ? h("p", {}, chip("STALE"), ` ${staleText(ev.stale)}`) : null,
         ]
+      }
       case "estimate":
         return h("p", {}, `estimate: ${formatValue(entry.estimate?.value, entry.unit)} — `, rich(entry.estimate?.reasoning ?? "no reasoning given"))
       case "unknown":
@@ -783,7 +820,7 @@ export function AssumptionsView(handle, element, options = {}) {
   }
 
   function usedIn(id) {
-    if (!doc.scan) return h("p", { class: "quiet" }, "not yet scanned: assumptions_check scans the task folder")
+    if (!doc.scan) return h("p", { class: "quiet" }, "Not checked yet: Check the folder looks through the task folder.")
     const uses = usesOf(doc.scan, id)
     const disagreeing = problems.filter((p) => p.kind === "PROSE" && p.id === id).map((p) => p.text)
     return [
@@ -871,6 +908,21 @@ export function AssumptionsView(handle, element, options = {}) {
         buttons("Add claim"),
       )
     }
+    if (state.form === "run") {
+      const ran = Object.keys(entry.model?.ran ?? {})
+      const docs = ran.length ? ran : entry.model?.url ? [entry.model.url] : []
+      const current = entry.model?.value
+      return h(
+        "form",
+        { "data-submit": "run", "data-key": "form:run" },
+        h("h3", {}, "Record a run"),
+        h("p", { class: "quiet" }, `Run ${entry.model?.name ?? "the model"} with the inputs as they are now, then give its output here. The register records the inputs' values and the version of `, docs.length ? docs.map((u, i) => [i ? ", " : "", docLink(u, doc.scan?.docs?.[u]?.path || "a document")]) : "no documents", "."),
+        field("value", "Its output ('42', '40–44', '42 (40–44)')", current == null ? "" : `${formatValue(current).replace(/^"|"$/g, "")}${formatBounds(current)?.startsWith("(") ? ` ${formatBounds(current)}` : ""}`),
+        field("who", "Your name", name),
+        error,
+        buttons("Record run"),
+      )
+    }
     if (state.form === "judgement") {
       const onClaims = (entry.claims ?? []).flatMap((c) => SET_ASIDE.map((v) => [`${v}:${c.key}`, `claim ${c.key} is ${v.replace("-", " ")}`]))
       return h(
@@ -944,12 +996,8 @@ export function AssumptionsView(handle, element, options = {}) {
     }
     if (kind === "claim") {
       const source = String(data.get("source") ?? "").trim() || null
-      let text = null
-      if (source && /^automerge:/.test(source) && repo) {
-        try {
-          text = sourceText((await repo.find(source)).doc())
-        } catch {}
-      }
+      const read = await readSource(repo, source)
+      const text = read?.text ?? null
       const raw = { source, quote: String(data.get("quote") ?? "").trim() || null, stated: String(data.get("stated") ?? "").trim(), sourceKind: String(data.get("sourceKind")) }
       const checked = checkClaim(raw, { sourceText: text, unit: entry.unit ?? "" })
       if (checked.problem) return fail(checked.problem)
@@ -958,7 +1006,7 @@ export function AssumptionsView(handle, element, options = {}) {
       handle.change(
         (d) => {
           const e = d.entries[id]
-          const claim = plain({ key: nextKey(e.claims, "c"), source, quote: raw.quote, stated: checked.claim.stated, factor, subject: String(data.get("subject") ?? "") || null, sourceKind: raw.sourceKind, origin: null, verified: checked.claim.verified, reading: checked.claim.reading, section: checked.claim.section, context: checked.claim.context, by, at })
+          const claim = plain({ key: nextKey(e.claims, "c"), source, quote: raw.quote, stated: checked.claim.stated, factor, subject: String(data.get("subject") ?? "") || null, sourceKind: raw.sourceKind, origin: null, verified: checked.claim.verified, reading: checked.claim.reading, section: checked.claim.section, context: checked.claim.context, seen: checked.claim.verified ? read.seen : null, lost: null, by, at })
           if (!e.claims) e.claims = []
           e.claims.push(claim)
           if (e.basis === "estimate" || e.basis === "unknown") {
@@ -969,6 +1017,29 @@ export function AssumptionsView(handle, element, options = {}) {
           materialize(d, evaluate(d), { at })
         },
         { message: message(`add a claim to ${id}`) },
+      )
+    } else if (kind === "run") {
+      const parsed = parseValue(String(data.get("value") ?? ""))
+      if (parsed.problem) return fail(`Its output: ${parsed.problem}`)
+      const ran = Object.keys(entry.model?.ran ?? {})
+      let run
+      try {
+        run = await runRecord(repo, ran.length ? ran : entry.model?.url ? [entry.model.url] : [])
+      } catch (error) {
+        return fail(`Couldn't record the run: ${error.message}.`)
+      }
+      handle.change(
+        (d) => {
+          const e = d.entries[id]
+          e.model.value = plain(parsed.value)
+          e.model.ran = plain(run.ran)
+          e.model.ranAt = run.ranAt
+          e.model.at = plain(at)
+          e.model.by = plain(by)
+          recordInputs(e, evaluate(d))
+          materialize(d, evaluate(d), { at })
+        },
+        { message: message(`record a run of ${entry.model?.name ?? id}: ${formatValue(parsed.value, entry.unit)}`) },
       )
     } else if (kind === "judgement") {
       const [verdict, on = null] = String(data.get("verdict")).split(":")
@@ -1058,7 +1129,7 @@ export function AssumptionsView(handle, element, options = {}) {
   }
 
   function onClick(event) {
-    const target = event.target.closest?.("[data-open], [data-lens], [data-group], [data-sgroup], [data-structure], [data-structure-entry], [data-show-unread], [data-crumb], [data-close], [data-form], [data-cancel], [data-doc], [data-history], [data-preview], tr[data-id], li[data-id]")
+    const target = event.target.closest?.("[data-open], [data-lens], [data-group], [data-sgroup], [data-structure], [data-structure-entry], [data-show-unread], [data-crumb], [data-close], [data-form], [data-cancel], [data-check], [data-check-stop], [data-doc], [data-history], [data-preview], tr[data-id], li[data-id]")
     if (!target || !root.contains(target)) return
     const d = target.dataset
     if (d.open) {
@@ -1099,7 +1170,9 @@ export function AssumptionsView(handle, element, options = {}) {
       state.at = -1
       state.form = null
       render()
-    } else if (d.form) openForm(d.form)
+    } else if (d.checkStop) checkController?.abort()
+    else if (d.check) void check(false)
+    else if (d.form) openForm(d.form)
     else if (d.cancel) {
       state.form = null
       state.error = null
@@ -1114,6 +1187,47 @@ export function AssumptionsView(handle, element, options = {}) {
       render()
     } else if (d.preview) preview(new FormData(target.closest("form")))
     else if (d.id) openEntry(d.id)
+  }
+
+  /**
+   * The folder check, as the agent runs it, with its progress on the summary
+   * line and a Stop. `quiet` (on open) adds no change unless it found something.
+   */
+  let checkController = null
+  let redraw = null
+  const soon = () => {
+    redraw ??= setTimeout(() => {
+      redraw = null
+      if (!disposed) render()
+    }, 100)
+  }
+  async function check(quiet) {
+    if (!repo || state.checking) return
+    checkController = new AbortController()
+    state.checking = true
+    state.checkError = null
+    state.checkNote = null
+    state.progress = { documents: null, sources: null }
+    render()
+    try {
+      const who = readName()
+      const result = await checkFolder(handle, repo, {
+        quiet,
+        signal: checkController.signal,
+        onProgress: (p) => {
+          state.progress = { ...state.progress, [p.phase]: p }
+          soon()
+        },
+        message: quiet ? "register: rescan on open" : `${who || "a person"}: check the folder`,
+      })
+      if (result.stopped) state.checkNote = "Stopped; the last check stands."
+      else if (!result.scan && !quiet) state.checkError = "Nothing to check: this register has no task folder, model runs or kept sources."
+    } catch (error) {
+      state.checkError = `The check stopped: ${error.message}`
+    }
+    checkController = null
+    state.checking = false
+    if (!disposed) render()
   }
 
   function onInput(event) {
@@ -1205,6 +1319,7 @@ export function AssumptionsView(handle, element, options = {}) {
   repair()
   render()
   handle.on("change", render)
+  void check(true)
   root.addEventListener("pointerover", light)
   root.addEventListener("pointerout", unlight)
   root.addEventListener("focusin", light)
@@ -1216,6 +1331,8 @@ export function AssumptionsView(handle, element, options = {}) {
   root.addEventListener("keydown", onKey)
   return () => {
     disposed = true
+    checkController?.abort()
+    clearTimeout(redraw)
     handle.off("change", render)
     root.removeEventListener("pointerover", light)
     root.removeEventListener("pointerout", unlight)
@@ -1276,6 +1393,7 @@ const CSS = `
 .asm header { padding: 12px 16px 0; border-bottom: 1px solid var(--rule); }
 .asm h1 { font-size: 16px; margin: 0 0 2px; }
 .asm .summary { margin: 0 0 8px; color: var(--quiet); }
+.asm .summary .progress { color: var(--ink); font-variant-numeric: tabular-nums; }
 .asm nav[role=tablist] button { font: inherit; background: none; border: none; border-bottom: 2px solid transparent; padding: 6px 10px; color: var(--quiet); cursor: pointer; }
 .asm nav[role=tablist] button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); }
 .asm .body { flex: 1; display: flex; min-height: 0; }

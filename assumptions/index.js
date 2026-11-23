@@ -164,9 +164,10 @@ export const plugins = [
               formula: { type: "string", description: "Basis: arithmetic over other entries — + − × ÷ ^, min, max, sqrt, abs, pow, numbers — e.g. 'pack_V_max / pack_R_min_mOhm'. The register computes it over nominals and bounds and stores the result with its inputs. No cycles." },
               model: {
                 type: "object",
-                description: "Basis: an external model's output (a notebook, a CFD case). The register records the inputs' values now and marks the result stale when one moves beyond `tolerance`.",
+                description: "Basis: an external model's output (a notebook, a CFD case): one run. The register records the inputs' values now and the version of every document the run read, and marks the result stale when an input moves beyond `tolerance` or the code of a document it read changes. Give `model` (or a new output `value`) only when you record a new run; a label or note change leaves the run alone.",
                 properties: {
-                  url: { type: "string", description: "automerge: URL of the model document; pinned to its heads now." },
+                  url: { type: "string", description: "automerge: URL of the model document." },
+                  ran: { type: "array", items: { type: "string" }, description: "automerge: URLs of every document the run read: the notebook, a CAD file it measured, a CFD case. Pin one (#heads) to the version the run used; unpinned means as it is now. Default: the documents the last run read, or `url`." },
                   name: { type: "string", description: "The model's name." },
                   inputs: { type: "array", items: { type: "string" }, description: "The entry ids it read." },
                   tolerance: { type: "number", description: "Relative tolerance for staleness: 0.02 = an input may move 2% before the result is stale. Default 0." },
@@ -208,7 +209,7 @@ export const plugins = [
     where: "worker",
     risk: "edit",
     description:
-      "The before-you-finish call. Scans the task folder (rereading only documents that changed), saves the scan in the register, and returns everything to act on in order: judgements to answer, problems (failing checks, conflicts, subject mismatches, stale model results, prose that disagrees with the register, entries used against their intent), where effort pays (the leaf that would settle each requirement that depends), unknowns, constants written into model code, drifted copies. Weak support and unknowns are reported, not blockers. Ends with a link to the register pinned as checked.",
+      "The before-you-finish call, and the same check a person runs with Check the folder. Scans the task folder, every document a model run read and every kept source a claim quotes (rereading only documents that changed), saves the scan in the register, looks for each quote again in a source that changed, and returns everything to act on in order: judgements to answer, problems (failing checks, conflicts, subject mismatches, quotes no longer in their source, stale model results — an input moved or the code of a document the run read changed —, prose that disagrees with the register, entries used against their intent), where effort pays (the leaf that would settle each requirement that depends), unknowns, constants written into model code, drifted copies. Weak support and unknowns are reported, not blockers. Ends with a link to the register pinned as checked.",
     input_schema: {
       type: "object",
       required: ["register"],

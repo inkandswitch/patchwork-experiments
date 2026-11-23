@@ -77,10 +77,14 @@ every one of them:
    id is the nominal (only if there is one), bounds are \`id_min\` / \`id_max\`.
    Export again after any change.
 5. **Model outputs come back as model results**: \`assumptions_set\` with
-   \`model: { url, name, inputs, tolerance }\` and \`value\`. The register records
-   the inputs as they are now; when one moves beyond the tolerance the result
-   is **stale**. That is how one model's output becomes another's constraint,
-   and how coupled loops close.
+   \`model: { url, name, inputs, tolerance, ran }\` and \`value\`, once per run.
+   \`ran\` lists every document the run read — the notebook, a CAD file it
+   measured, a CFD case — and defaults to \`url\`. The register records the
+   inputs as they are now and each document's version; the result is **stale**
+   when an input moves beyond the tolerance or the code of a document it read
+   changes (comments count). That is how one model's output becomes another's
+   constraint, and how coupled loops close. A label or note change is not a
+   run: leave \`model\` and \`value\` out. People record runs too, from the panel.
 6. **Prose cites by the cite string.** \`assumptions_read\` gives every entry's
    cite string — "≤ 0.25 mΩ (\`cell_R_ac_mOhm\`)". Paste it; the qualifier
    comes with it, and the prose check passes by construction.
@@ -94,10 +98,12 @@ every one of them:
    \`assumptions_read\` lists them first; answer each with \`answers\` after
    finding evidence or changing the value, or say why the value stands. When no
    source turns up, record an estimate with bounds and move on.
-8. **Before finishing, run \`assumptions_check\`.** It scans the folder and lists
-   problems in order — failing checks, conflicts, subject mismatches, stale
-   results, prose that disagrees, entries used against their intent — and
-   where effort pays. Resolve every use flag: wire the value into a model, or
+8. **Before finishing, run \`assumptions_check\`.** It scans the folder, the
+   documents model runs read and the kept sources claims quote, and lists
+   problems in order — failing checks, conflicts, subject mismatches, quotes no
+   longer in a source that changed, stale results, prose that disagrees,
+   entries used against their intent — and where effort pays. It is the same
+   check a person runs with Check the folder. Resolve every use flag: wire the value into a model, or
    set \`use\` to "reference", or "unused" with a \`useNote\`. Move every constant
    it finds in model code into the register. Weak support and unknowns are
    reported, not blockers: say what they are in the report. Link the register

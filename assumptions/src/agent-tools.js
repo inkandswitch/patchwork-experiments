@@ -11,7 +11,9 @@
  *              qualifier (≤, ±, typ) wins over a bare stated number.
  *   values     a claims entry's value comes from its pick; a formula's from
  *              the register's own arithmetic; nobody types them in.
- *   inputs     a model result names its inputs; the tool records their values.
+ *   inputs     a model result names its inputs; the tool records their values,
+ *              and the heads and code fingerprint of every document the run
+ *              read (check.js), so a changed model makes the result stale.
  *   support    computed from the evidence. There is no accept: people add
  *              claims and judgements, and the agent answers judgements.
  *
@@ -19,6 +21,7 @@
  * and the why, and the register writes its results back in the same change.
  */
 
+import { checkFolder, headsOf, plain, readSource, recordInputs, runRecord, settle } from "./check.js"
 import { AssumptionsDatatype } from "./datatype.js"
 import { EXPORT_FORMATS, renderExport } from "./export.js"
 import { parse } from "./formula.js"
@@ -42,8 +45,8 @@ import {
 import { SOURCE_KINDS } from "./support.js"
 import { checkText, detailText, figureLine, entryParts, readText, allProblems, structureText } from "./text.js"
 import { observedUse, scanProblems } from "./uses.js"
-import { constantsIn, driftIn, exportsIn, scanFolder, sourceText, usesOf } from "./where.js"
-import { isText, parseValue, plainValue, sameValue } from "./values.js"
+import { constantsIn, driftIn, exportsIn, usesOf } from "./where.js"
+import { isText, parseValue, sameValue } from "./values.js"
 
 // ---------------------------------------------------------------- helpers
 
@@ -67,8 +70,6 @@ async function fileInFolder(ctx, folderUrl, { name, type, url }) {
   })
 }
 
-const headsOf = (handle) => (typeof handle.heads === "function" ? [...(handle.heads() ?? [])] : [])
-
 function pinnedUrl(handle) {
   try {
     const heads = handle.heads?.()
@@ -84,8 +85,6 @@ function message(ctx, why) {
   return `agent${ctx?.sessionUrl ? ` ${ctx.sessionUrl}` : ""}: ${why}`
 }
 
-const plain = (value) => (value == null ? value : JSON.parse(JSON.stringify(value)))
-
 /** Write `want`'s fields onto an Automerge object, touching only what differs. */
 function assignFields(target, want) {
   for (const key of Object.keys(target)) if (!(key in want)) delete target[key]
@@ -96,41 +95,12 @@ function assignFields(target, want) {
   }
 }
 
-/** Save a scan, rewriting only the documents whose record changed. */
-function writeScan(d, scan) {
-  if (!d.scan) {
-    d.scan = plain(scan)
-    return
-  }
-  for (const key of ["at", "time", "idsKey", "read", "reused", "truncated", "folder"]) {
-    if (JSON.stringify(d.scan[key] ?? null) !== JSON.stringify(scan[key] ?? null)) d.scan[key] = plain(scan[key] ?? null)
-  }
-  if (!d.scan.docs) d.scan.docs = {}
-  for (const url of Object.keys(d.scan.docs)) if (!(url in scan.docs)) delete d.scan.docs[url]
-  for (const [url, record] of Object.entries(scan.docs)) {
-    if (JSON.stringify(d.scan.docs[url] ?? null) !== JSON.stringify(record)) d.scan.docs[url] = plain(record)
-  }
-}
 
-/** Re-evaluate and write every entry's results back. Inside a change. */
-function settle(d, at) {
-  const evaluation = evaluate(d)
-  materialize(d, evaluation, { at })
-  return evaluation
-}
-
-async function readSource(ctx, source, cache) {
+/** A kept source's text and version, once per call; "" for one that can't be opened, null for a web source. */
+async function sourceOnce(ctx, source, cache) {
   if (!/^automerge:/.test(String(source ?? ""))) return null
-  if (cache.has(source)) return cache.get(source)
-  let text = null
-  try {
-    const kept = (await ctx.repo.find(String(source))).doc()
-    text = sourceText(kept)
-  } catch {
-    text = ""
-  }
-  cache.set(source, text)
-  return text
+  if (!cache.has(source)) cache.set(source, (await readSource(ctx.repo, source)) ?? { text: "", seen: null })
+  return cache.get(source)
 }
 
 // ---------------------------------------------------------------- create
@@ -212,6 +182,29 @@ async function buildEntry(id, raw, existing, ctx, { at, sources }) {
   if (!KINDS.includes(entry.kind)) return { problem: `${id}: kind is one of ${KINDS.join(", ")}.` }
   for (const field of ["label", "unit", "note"]) if (raw[field] !== undefined) entry[field] = raw[field] === "" ? null : String(raw[field])
   const dropped = []
+  // The rest of the entry's fields, after its basis. `run`: it records a new model run.
+  const finish = (run) => {
+    if (raw.appliesIf !== undefined) {
+      if (raw.appliesIf === null || raw.appliesIf === "") entry.appliesIf = null
+      else {
+        try {
+          if (parse(raw.appliesIf).kind !== "boolean") throw new SyntaxError("`appliesIf` is a condition, such as boat_len_m >= 8")
+        } catch (error) {
+          return { problem: `${id}: appliesIf: ${error.message}.` }
+        }
+        entry.appliesIf = String(raw.appliesIf)
+      }
+    }
+    if (raw.about !== undefined) entry.about = raw.about ? String(raw.about) : null
+    if (raw.use !== undefined || raw.useNote !== undefined) {
+      const intent = typeof raw.use === "object" && raw.use ? raw.use.intent : raw.use ?? entry.use?.intent ?? "model"
+      const note = (typeof raw.use === "object" && raw.use ? raw.use.note : null) ?? raw.useNote ?? entry.use?.note ?? null
+      if (!USES.includes(intent)) return { problem: `${id}: use is one of ${USES.join(", ")}.` }
+      if (intent === "unused" && !note) return { problem: `${id}: an entry kept unused on purpose says why (\`useNote\`): an alternative, a cross-check…` }
+      entry.use = { intent, note }
+    }
+    return { entry, dropped, run }
+  }
 
   switch (basis) {
     case "claims": {
@@ -228,7 +221,8 @@ async function buildEntry(id, raw, existing, ctx, { at, sources }) {
           }
           if (c?.stated === undefined) return { problem: `${id}: claim ${i + 1} has no \`stated\`: the figure as the quote gives it, in the source's unit.` }
           if (c.sourceKind && !SOURCE_KINDS.includes(c.sourceKind)) return { problem: `${id}: claim ${i + 1}'s sourceKind is one of ${SOURCE_KINDS.join(", ")}.` }
-          const text = await readSource(ctx, c.source, sources)
+          const read = await sourceOnce(ctx, c.source, sources)
+          const text = read?.text ?? null
           const checked = checkClaim(c, { sourceText: text === "" ? null : text, unit: entry.unit ?? "" })
           if (checked.problem) return { problem: `${id}: claim ${i + 1}: ${checked.problem}` }
           const factor = c.factor == null ? 1 : Number(c.factor)
@@ -248,6 +242,8 @@ async function buildEntry(id, raw, existing, ctx, { at, sources }) {
             reading: checked.claim.reading,
             section: checked.claim.section,
             context: checked.claim.context,
+            seen: checked.claim.verified ? read.seen : null,
+            lost: null,
             by: agentBy(ctx),
             at: [...at],
           })
@@ -320,21 +316,29 @@ async function buildEntry(id, raw, existing, ctx, { at, sources }) {
       break
     }
     case "model": {
+      // Only a new run (a `model` or an output `value`) re-records the run: a
+      // label or a note leaves what it ran with, and so its staleness, alone.
+      if (raw.model === undefined && raw.value === undefined && existing?.model) break
       const m = raw.model ?? existing?.model
       const inputs = Array.isArray(m?.inputs) ? m.inputs.map(String) : Object.keys(m?.inputs ?? {})
       if (!inputs.length) return { problem: `${id}: a model result names the entries it was computed from in \`model.inputs\`, so the register can tell when it goes stale.` }
       const parsed = parseValue(raw.value ?? m?.value)
       if (parsed.problem) return { problem: `${id}: the model's output (\`value\`): ${parsed.problem}` }
-      let url = m.url ?? null
-      if (url && /^automerge:/.test(url) && !url.includes("#")) {
-        try {
-          url = pinnedUrl(await ctx.repo.find(url))
-        } catch {}
-      }
+      const url = m.url ? String(m.url).split("#")[0] : null
       const tolerance = m.tolerance == null ? 0 : Number(m.tolerance)
       if (!Number.isFinite(tolerance) || tolerance < 0) return { problem: `${id}: model.tolerance is a relative tolerance, 0 or more (0.02 = 2%).` }
-      entry.model = { url, name: m.name ?? null, tolerance, inputs: Object.fromEntries(inputs.map((i) => [i, null])), value: parsed.value, at: [...at] }
-      break
+      // The documents the run read: as given, or the ones the last run read, or the model's own.
+      const read = Array.isArray(m.ran) ? m.ran.map(String) : m.ran && typeof m.ran === "object" ? Object.keys(m.ran) : m.url ? [String(m.url)] : []
+      const notDocs = read.filter((u) => !/^automerge:/.test(u))
+      if (notDocs.length) return { problem: `${id}: model.ran lists the Patchwork documents the run read (automerge: URLs); ${notDocs.join(", ")} isn't one.` }
+      let run
+      try {
+        run = await runRecord(ctx.repo, read)
+      } catch (error) {
+        return { problem: `${id}: ${error.message}.` }
+      }
+      entry.model = { url, name: m.name ?? null, tolerance, inputs: Object.fromEntries(inputs.map((i) => [i, null])), value: parsed.value, at: [...at], ...run, by: agentBy(ctx) }
+      return finish(true)
     }
     case "check": {
       const text = String(raw.check ?? existing?.check ?? "").trim()
@@ -347,26 +351,7 @@ async function buildEntry(id, raw, existing, ctx, { at, sources }) {
       break
     }
   }
-  if (raw.appliesIf !== undefined) {
-    if (raw.appliesIf === null || raw.appliesIf === "") entry.appliesIf = null
-    else {
-      try {
-        if (parse(raw.appliesIf).kind !== "boolean") throw new SyntaxError("`appliesIf` is a condition, such as boat_len_m >= 8")
-      } catch (error) {
-        return { problem: `${id}: appliesIf: ${error.message}.` }
-      }
-      entry.appliesIf = String(raw.appliesIf)
-    }
-  }
-  if (raw.about !== undefined) entry.about = raw.about ? String(raw.about) : null
-  if (raw.use !== undefined || raw.useNote !== undefined) {
-    const intent = typeof raw.use === "object" && raw.use ? raw.use.intent : raw.use ?? entry.use?.intent ?? "model"
-    const note = (typeof raw.use === "object" && raw.use ? raw.use.note : null) ?? raw.useNote ?? entry.use?.note ?? null
-    if (!USES.includes(intent)) return { problem: `${id}: use is one of ${USES.join(", ")}.` }
-    if (intent === "unused" && !note) return { problem: `${id}: an entry kept unused on purpose says why (\`useNote\`): an alternative, a cross-check…` }
-    entry.use = { intent, note }
-  }
-  return { entry, dropped }
+  return finish(false)
 }
 
 export const set = {
@@ -383,6 +368,7 @@ export const set = {
     const draft = plain(doc.entries ?? {})
     const problems = []
     const written = new Set()
+    const runs = new Set()
     const sources = new Map()
     for (const raw of list) {
       const id = String(raw?.id ?? "").trim()
@@ -402,6 +388,7 @@ export const set = {
       }
       draft[id] = built.entry
       written.add(id)
+      if (built.run) runs.add(id)
     }
     const removed = []
     for (const id of remove) {
@@ -460,13 +447,11 @@ export const set = {
       }
     }
 
-    // Model results record their inputs as they are now.
-    const models = [...written].filter((id) => draft[id].basis === "model")
+    // A new model run records its inputs as they are now.
+    const models = [...written].filter((id) => runs.has(id) && draft[id].basis === "model")
     if (models.length) {
       const evaluation = evaluate({ entries: draft })
-      for (const id of models) {
-        for (const input of Object.keys(draft[id].model.inputs)) draft[id].model.inputs[input] = plainValue(evaluation.byId.get(input)?.value ?? null)
-      }
+      for (const id of models) recordInputs(draft[id], evaluation)
     }
 
     const answered = []
@@ -523,29 +508,17 @@ export const set = {
 
 // ---------------------------------------------------------------- check
 
-async function scanAndSave(handle, ctx, folderUrl) {
-  const doc = handle.doc()
-  const at = headsOf(handle)
-  const scan = folderUrl ? await scanFolder(ctx.repo, { entries: doc.entries ?? {}, registerUrl: handle.url, folderUrl, previous: doc.scan ?? null, at }) : null
-  handle.change(
-    (d) => {
-      if (scan) writeScan(d, scan)
-      const evaluation = settle(d, at)
-      // A reference entry a model now reads: the mark is outdated, so correct it quietly.
-      for (const [id, entry] of Object.entries(d.entries ?? {})) {
-        if (entry.use?.intent === "reference" && observedUse(id, entry, evaluation.readers, d.scan) === "model") entry.use.intent = "model"
-      }
-    },
-    { message: message(ctx, scan ? `check: scanned ${scan.read} document${scan.read === 1 ? "" : "s"}, reused ${scan.reused}` : "check") },
-  )
-  return scan
+function scanAndSave(handle, ctx, folderUrl) {
+  return checkFolder(handle, ctx.repo, { folderUrl, signal: ctx?.signal ?? null, message: (scan) => message(ctx, scan ? `check: scanned ${scan.read} document${scan.read === 1 ? "" : "s"}, reused ${scan.reused}` : "check") })
 }
 
 export const check = {
   async execute(input, ctx) {
     const handle = await openRegister(ctx, input.register)
     const folderUrl = input.folder || handle.doc().scope
-    await scanAndSave(handle, ctx, folderUrl)
+    const { scan, stopped } = await scanAndSave(handle, ctx, folderUrl)
+    if (stopped) return "The check was stopped before it finished; nothing was saved, and the last check stands."
+    if (!scan) handle.change((d) => void settle(d, headsOf(handle)), { message: message(ctx, "check") })
     const doc = handle.doc()
     const evaluation = evaluate(doc)
     const extra = scanProblems(doc, evaluation)

@@ -19,6 +19,10 @@
  * read, so everyone sees it without rescanning, and a rescan reads only the
  * documents whose heads have moved (or all of them, if the register's ids
  * have changed since).
+ *
+ * It also reads the documents model runs read, wherever they are, and keeps
+ * each one's code fingerprint (codeOf): a run whose fingerprint no longer
+ * matches is stale.
  */
 
 import { GENERATED_MARK, exportedNames } from "./export.js"
@@ -27,6 +31,8 @@ import { isNumeric } from "./values.js"
 const CODE_EXTENSIONS = new Set(["py", "scad", "js", "mjs", "ts", "jl", "m", "r"])
 const MAX_DOCS = 400
 const MAX_DEPTH = 8
+const CONCURRENCY = 8
+const OPEN_TIMEOUT_MS = 15000
 
 function textOf(content) {
   if (content == null) return ""
@@ -62,11 +68,47 @@ export function partsOf(doc, name = "") {
   return []
 }
 
+/** A short, stable hash of a string (cyrb53), as hex. */
+function hash(text) {
+  let h1 = 0xdeadbeef
+  let h2 = 0x41c6ce57
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    h1 = Math.imul(h1 ^ c, 2654435761)
+    h2 = Math.imul(h2 ^ c, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)
+}
+
+/**
+ * What a model run rests on in a document, as a fingerprint: its code (a
+ * notebook's code cells, an OpenSCAD source, a code file); all its text when
+ * it has no code (a case file, a table); its heads when it has no text
+ * either. Conservative: any change to the code counts, comments and
+ * whitespace included. A notebook's outputs and prose cells don't count,
+ * since running it rewrites them.
+ */
+export function codeOf(doc, heads = []) {
+  const parts = partsOf(doc)
+  const code = parts.filter((p) => p.code)
+  const texts = (code.length ? code : parts).map((p) => p.text)
+  if (texts.some((t) => t.trim())) return `t:${hash(texts.join("\n\u0000\n"))}`
+  return `h:${[...heads].sort().join(",")}`
+}
+
 /** Everything readable in a kept source: the parts any model reads, plus a capture's extracted text. */
 export function sourceText(doc) {
   const parts = partsOf({ ...doc, capture: null }).map((p) => p.text)
   for (const key of ["text", "content", "markdown"]) if (typeof doc?.[key] === "string" && !parts.includes(doc[key])) parts.push(doc[key])
   return parts.join("\n")
+}
+
+/** A kept source's fingerprint: all its readable text, or its heads when it has none. Any change counts. */
+export function sourceFingerprint(doc, heads = []) {
+  const text = sourceText(doc ?? {})
+  return text.trim() ? `t:${hash(text)}` : `h:${[...heads].sort().join(",")}`
 }
 
 /** Every exported name of every entry, mapped back to its id. */
@@ -148,6 +190,55 @@ export function driftIn(scan, entries) {
 const idsKeyOf = (entries) => Object.keys(entries ?? {}).sort().join(" ")
 const strip = (url) => String(url).split("#")[0]
 
+/** The error a stopped check throws. */
+export const stopped = () => Object.assign(new Error("the check was stopped"), { name: "AbortError" })
+
+/**
+ * Open a document, giving up after `ms` (it is then "couldn't be opened") or
+ * when `signal` stops the check.
+ */
+export async function openWithin(find, url, { ms = OPEN_TIMEOUT_MS, signal = null } = {}) {
+  if (signal?.aborted) throw stopped()
+  let timer
+  let onAbort
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => find(url)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Object.assign(new Error(`didn't open within ${Math.round(ms / 1000)} s`), { name: "TimeoutError" })), ms)
+      }),
+      new Promise((_, reject) => {
+        onAbort = () => reject(stopped())
+        signal?.addEventListener?.("abort", onAbort, { once: true })
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener?.("abort", onAbort)
+  }
+}
+
+/** At most `limit` of the functions it is given run at once. */
+export function limiter(limit) {
+  let active = 0
+  const waiting = []
+  return async (fn) => {
+    while (active >= limit) await new Promise((resolve) => waiting.push(resolve))
+    active++
+    try {
+      return await fn()
+    } finally {
+      active--
+      waiting.shift()?.()
+    }
+  }
+}
+
+const byOrder = (a, b) => {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i]
+  return a.length - b.length
+}
+
 /**
  * Scan a folder, reusing what the previous scan read from documents that
  * haven't changed. Returns the new scan, to be saved as the register's `scan`:
@@ -155,61 +246,109 @@ const strip = (url) => String(url).split("#")[0]
  *   at        the register's heads when it ran
  *   time      when it ran (ISO)
  *   idsKey    the register's ids it searched for
- *   docs      { [url]: { path, heads, export, hits: [{ id, use, part, line, text }],
+ *   docs      { [url]: { path, heads, code, export, hits: [{ id, use, part, line, text }],
  *               assigns: [{ name, value, comment, part, line, text }] } }
+ *             a run's document that couldn't be opened: { path, missing: true }
+ *   unopened  [{ url, path, why }]: folder documents that couldn't be opened
  *   read, reused, truncated
+ *
+ * Documents open `concurrency` at a time, each given `timeout` ms. Which
+ * documents are kept under the limit doesn't depend on the order they
+ * arrive in: the first MAX_DOCS in folder order. `onProgress({ phase:
+ * "documents", opened, read, reused, current })` after each one; `signal`
+ * stops it, throwing an AbortError.
  */
-export async function scanFolder(repo, { entries, registerUrl, folderUrl, previous = null, at = [], find = (url) => repo.find(url) }) {
+export async function scanFolder(repo, { entries, registerUrl, folderUrl, also = [], previous = null, at = [], find = (url) => repo.find(url), concurrency = CONCURRENCY, timeout = OPEN_TIMEOUT_MS, signal = null, onProgress = null }) {
   const index = nameIndex(entries)
   const idsKey = idsKeyOf(entries)
   const reusable = previous?.idsKey === idsKey ? previous.docs ?? {} : {}
-  const docs = {}
+  const required = new Set(also.map(strip))
   const seen = new Set(registerUrl ? [strip(registerUrl)] : [])
+  const leaves = [] // { order, key, record, reused, required }
+  const unopened = []
+  const limit = limiter(concurrency)
+  let opened = 0
   let read = 0
   let reused = 0
-  let count = 0
   let truncated = false
+  const progress = (current) => onProgress?.({ phase: "documents", opened, read, reused, current })
 
-  const visit = async (url, path, depth) => {
+  // A document a model run read is kept past the limit and recorded as
+  // missing if it can't be opened, so the run can't pass unchecked.
+  const visit = async (url, path, depth, order) => {
     const key = strip(url)
     if (seen.has(key) || depth > MAX_DEPTH) return
     seen.add(key)
-    if (count >= MAX_DOCS) return void (truncated = true)
+    const needed = required.has(key)
+    if (opened >= MAX_DOCS * 2 && !needed) return void (truncated = true)
     let handle
     let doc
     try {
-      handle = await find(url)
+      handle = await limit(() => {
+        progress(path || (depth === 0 && !needed ? "the folder" : "a document"))
+        return openWithin(find, url, { ms: timeout, signal })
+      })
       doc = handle.doc()
-    } catch {
+      if (!doc) throw new Error("it is empty or not available")
+    } catch (error) {
+      if (error?.name === "AbortError") throw error
+      if (needed) leaves.push({ order, key, record: { path, missing: true, heads: [], hits: [], assigns: [] }, required: true })
+      else unopened.push({ url: key, path, why: error?.message ?? "it couldn't be opened" })
       return
     }
+    if (needed && !path) path = doc?.title || doc?.name || ""
     if (Array.isArray(doc?.docs)) {
-      for (const child of doc.docs) if (child?.url) await visit(child.url, path ? `${path}/${child.name}` : child.name, depth + 1)
+      await Promise.all(doc.docs.map((child, i) => (child?.url ? visit(child.url, path ? `${path}/${child.name}` : child.name, depth + 1, [...order, i]) : null)))
       return
     }
     if (doc?.["@patchwork"]?.type === "assumptions") return
-    count++
+    opened++
     const heads = typeof handle.heads === "function" ? [...(handle.heads() ?? [])] : []
     const before = reusable[key]
-    if (before && heads.length && JSON.stringify(before.heads) === JSON.stringify(heads)) {
-      docs[key] = { ...before, path }
-      reused++
-      return
-    }
-    read++
-    const parts = partsOf(doc, path)
-    const record = { path, heads, export: parts.some((p) => p.text.includes(GENERATED_MARK)), hits: [], assigns: [] }
-    if (!record.export) {
-      for (const { part, text, code } of parts) {
-        for (const hit of usesIn(text, index)) record.hits.push({ ...hit, use: code ? "model" : "prose", part })
-        if (code) for (const a of assignmentsIn(text)) record.assigns.push({ ...a, part })
+    if (before && before.code !== undefined && heads.length && JSON.stringify(before.heads) === JSON.stringify(heads)) {
+      leaves.push({ order, key, record: { ...before, path }, reused: true, required: needed })
+    } else {
+      const parts = partsOf(doc, path)
+      const record = { path, heads, code: codeOf(doc, heads), export: parts.some((p) => p.text.includes(GENERATED_MARK)), hits: [], assigns: [] }
+      if (!record.export) {
+        for (const { part, text, code } of parts) {
+          for (const hit of usesIn(text, index)) record.hits.push({ ...hit, use: code ? "model" : "prose", part })
+          if (code) for (const a of assignmentsIn(text)) record.assigns.push({ ...a, part })
+        }
       }
+      leaves.push({ order, key, record, reused: false, required: needed })
     }
-    docs[key] = record
+    if (leaves.at(-1).reused) reused++
+    else read++
+    progress(path)
   }
 
-  if (folderUrl) await visit(folderUrl, "", 0)
-  return { at: [...at], time: new Date().toISOString(), idsKey, docs, read, reused, truncated, folder: folderUrl ?? null }
+  // The folder first, so a run's document in it keeps its folder path; then any run document outside it.
+  if (folderUrl) await visit(folderUrl, "", 0, [0])
+  await Promise.all([...required].map((url, i) => visit(url, "", 0, [1, i])))
+  if (signal?.aborted) throw stopped()
+
+  // The first MAX_DOCS in folder order, plus every document a run read.
+  leaves.sort((a, b) => byOrder(a.order, b.order))
+  const docs = {}
+  let kept = 0
+  read = 0
+  reused = 0
+  for (const leaf of leaves) {
+    if (!leaf.required && !leaf.record.missing) {
+      if (kept >= MAX_DOCS) {
+        truncated = true
+        continue
+      }
+      kept++
+    }
+    docs[leaf.key] = leaf.record
+    if (leaf.record.missing) continue
+    if (leaf.reused) reused++
+    else read++
+  }
+  unopened.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  return { at: [...at], time: new Date().toISOString(), idsKey, docs, unopened, read, reused, truncated, folder: folderUrl ?? null }
 }
 
 /** Every use of one id in a scan: [{ doc, url, use, part, line, text }]. */

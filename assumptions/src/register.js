@@ -21,11 +21,16 @@
  *               unknown   { range?, settle? }: a named gap, maybe with a range
  *               choice    { value, rationale, alternatives }
  *               formula   arithmetic over other entries
- *               model     { url, name, tolerance, inputs, value }: an external
- *                         model's output, its inputs recorded when it was set
+ *               model     { url, name, tolerance, inputs, value, ran, ranAt }:
+ *                         an external model's output, with its inputs' values
+ *                         and each document it read ({ [url]: { heads, code } })
+ *                         recorded when the run was
  *               check     a predicate over entries, with `appliesIf`
  *   claims      [{ key, source, quote, stated, factor, subject, conditions,
- *                  sourceKind, origin, verified, reading, section, context, by, at }]
+ *                  sourceKind, origin, verified, reading, section, context, seen, lost, by, at }]
+ *               seen: the kept source's { heads, text } its quote was last
+ *               looked for in; lost: "missing" (not there any more) or
+ *               "unavailable" (couldn't open it), else null
  *   pick        { rule: one | lowest | highest | envelope, claim, reason, considered }
  *   about       a decision's id: the claims' subjects must name its value
  *   use         { intent: model | reference | unused, note }
@@ -39,7 +44,8 @@
  *   derived     formula results: { how, inputs: { [id]: Value }, at }
  *   confidence  results: what the value rests on and what makes it wide
  *   outcome     requirements with a check
- *   stale       what moved under a result
+ *   stale       what moved under a result: an input, or the code of a document
+ *               a model run read
  *
  * Formulas form a DAG (a cycle is refused); only model results close loops.
  * So evaluation always terminates, and staleness is a monotone fixed point.
@@ -444,8 +450,11 @@ export function evaluate(doc) {
   }
 
   // Staleness: a model result whose recorded input moved beyond its
-  // tolerance, and everything that rests on a stale entry.
+  // tolerance, or a document whose run read has different code now (by the
+  // scan, once it is newer than the run), and everything that rests on a
+  // stale entry.
   const stale = new Map()
+  const scan = doc?.scan ?? null
   for (const id of ids) {
     const entry = entries[id]
     if (entry.basis !== "model") continue
@@ -455,6 +464,14 @@ export function evaluate(doc) {
       const now = byId.get(input)
       if (!now || now.missing) reasons.push({ input, reason: "gone" })
       else if (moved(recorded, now.value, tolerance)) reasons.push({ input, reason: "moved", was: recorded, now: now.value })
+    }
+    if (scan?.time && entry.model?.ranAt && scan.time >= entry.model.ranAt) {
+      for (const [url, run] of Object.entries(entry.model?.ran ?? {}).sort(([a], [b]) => (a < b ? -1 : 1))) {
+        const now = scan.docs?.[url]
+        if (!now) continue
+        if (now.missing) reasons.push({ doc: url, path: now.path || null, reason: "unavailable" })
+        else if (now.code !== undefined && now.code !== run.code) reasons.push({ doc: url, path: now.path || null, reason: "changed" })
+      }
     }
     if (reasons.length) stale.set(id, reasons)
   }
@@ -500,7 +517,7 @@ export function evaluate(doc) {
   }
 
   const order = derivationOrder(ids, entries, parsed)
-  const problems = problemsOf({ ids, entries, byId, parsed, order })
+  const problems = problemsOf({ ids, entries, byId, parsed, order, scan })
   const judgements = []
   for (const id of ids) {
     for (const j of entries[id].judgements ?? []) {
@@ -652,9 +669,9 @@ function sidesOf(ast, get) {
 
 // ---------------------------------------------------------------- problems
 
-export const PROBLEM_ORDER = ["FAILS", "BROKEN", "CONFLICT", "PICK", "SUBJECT", "STALE", "PROSE", "UNUSED?", "DEPENDS"]
+export const PROBLEM_ORDER = ["FAILS", "BROKEN", "CONFLICT", "PICK", "SUBJECT", "SOURCE", "STALE", "PROSE", "UNUSED?", "DEPENDS"]
 
-function problemsOf({ ids, entries, byId }) {
+function problemsOf({ ids, entries, byId, scan }) {
   const problems = []
   const add = (kind, id, text, fix) => problems.push({ kind, id, text, fix })
   for (const id of ids) {
@@ -672,13 +689,22 @@ function problemsOf({ ids, entries, byId }) {
         lead ? `narrow ${lead.id}: add a claim with stated bounds, or a measurement, with assumptions_set (\`claims\`)` : `add bounds to its inputs with assumptions_set`,
       )
     }
+    for (const c of entry.claims ?? []) {
+      if (!c.lost) continue
+      const path = scan?.sources?.[c.source]?.path
+      const name = path ? `"${path}"` : "its source"
+      if (c.lost === "missing") add("SOURCE", id, `${id}: claim ${c.key}'s quote is no longer in ${name}, which changed since the quote was found`, `find the figure in the new version and set the claim again with assumptions_set (\`claims\`), or add a judgement setting it aside`)
+      else add("SOURCE", id, `${id}: claim ${c.key}'s source ${name} can't be opened to check its quote`, `open it or reconnect; the claim keeps its last check until then`)
+    }
     if (ev.pickProblem) add("PICK", id, `${id}: ${ev.pickProblem}`, `choose with assumptions_set (\`pick\`: one, lowest, highest or envelope, with a \`reason\`)`)
     if (ev.support?.conflicting) {
       for (const c of ev.support.conflicts) add("CONFLICT", id, `${id}: ${c.says}`, `weigh it with assumptions_set: change the \`pick\` with a \`reason\`, or answer the judgement (\`answers\`)`)
     }
-    if (ev.stale) {
-      const what = ev.stale.map((s) => (s.reason === "moved" ? `${s.input} moved` : `${s.input} ${s.reason}`)).join(", ")
-      if (entry.basis === "model") add("STALE", id, `${id}: ${what} since the model ran`, `re-run ${entry.model?.name ?? "the model"} and set the result again with assumptions_set (\`model\`)`)
+    if (ev.stale && entry.basis === "model") {
+      const since = ev.stale.filter((s) => s.reason !== "unavailable")
+      const lost = ev.stale.filter((s) => s.reason === "unavailable")
+      const what = [since.length ? `${since.map(staleReason).join(", ")} since the model ran` : null, ...lost.map(staleReason)].filter(Boolean).join("; ")
+      add("STALE", id, `${id}: ${what}`, `re-run ${entry.model?.name ?? "the model"} and record its output: Record a run on the entry, or assumptions_set (\`model\`)`)
     }
     if (entry.about) {
       const decision = entries[entry.about]
@@ -697,6 +723,14 @@ function problemsOf({ ids, entries, byId }) {
     }
   }
   return sortProblems(problems)
+}
+
+/** One reason a result is stale, in words: "cable_ampacity_A moved", 'the code in "thermal.ipynb" changed'. */
+export function staleReason(s) {
+  const name = s.path ? `"${s.path}"` : "a document the run read"
+  if (s.reason === "changed") return `the code in ${name} changed`
+  if (s.reason === "unavailable") return `${name}, which the run read, can't be opened to check`
+  return s.reason === "moved" ? `${s.input} moved` : `${s.input} ${s.reason}`
 }
 
 export function sortProblems(problems) {
@@ -726,7 +760,7 @@ export function memoOf(id, entry, ev, { at = [], byId } = {}) {
   }
   if (ev.confidence) memo.confidence = ev.confidence
   if (ev.outcome) memo.outcome = ev.outcome
-  memo.stale = ev.stale ? ev.stale.map((s) => ({ input: s.input, reason: s.reason })) : null
+  memo.stale = ev.stale ? ev.stale.map((s) => (s.doc ? { doc: s.doc, path: s.path, reason: s.reason } : { input: s.input, reason: s.reason })) : null
   if (ev.broken && !ev.missing) memo.broken = ev.broken
   else memo.broken = null
   return clean(memo)
