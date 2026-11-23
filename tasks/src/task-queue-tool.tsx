@@ -1,9 +1,15 @@
-import React, { Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
+import {
+  createEffect,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+  type Accessor,
+} from 'solid-js';
+import { createStore } from 'solid-js/store';
+import { render } from 'solid-js/web';
 import './index.css';
-import { useRepo, useDocument, useDocHandle } from '@automerge/automerge-repo-react-hooks';
-import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
-import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
 import type { RouterDoc, RunInfo, WorkerDoc, TaskDoc, TaskQueueDoc } from './datatype';
 import type { MessageToTaskQueueChannel } from './protocol';
 import { DELIVERY_STATS_CHANNEL, type DeliveryReport } from './delivery-stats';
@@ -19,6 +25,7 @@ import {
   requestIdleDetection,
   setAvailabilityMode,
 } from './host-activity';
+import { RepoContext, useDoc, useHandleDoc, useRepo } from './use-doc';
 
 const DEFAULT_INPUT_EXPR = `[
   Math.floor(Math.random() * 10) + 1,
@@ -30,7 +37,7 @@ const DEFAULT_CODE = `export default async function ([x, y]) {
   if (Math.random() < 0.1) { throw new Error("Oh no!") }
   return x + y;
 }
-  
+
 async function seconds(s) {
   return new Promise((resolve) => {
     setTimeout(resolve, s * 1000);
@@ -44,115 +51,99 @@ const MAX_TASKS_SHOWN = 20;
 const ROUTER_QUIET_AFTER_MS = 5_000;
 
 export const TaskQueueTool = (handle: DocHandle<unknown>, element: HTMLElement) => {
-  const repo = (element as any).repo; // TODO: better way to get the repo
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={repo}>
-      <Suspense fallback={<div className="tq tq-loading">Loading queue…</div>}>
-        <ITaskQueueBrowserTool docUrl={handle.url} />
-      </Suspense>
-    </RepoContext.Provider>,
+  const repo: Repo = (element as any).repo; // TODO: better way to get the repo
+  return render(
+    () => (
+      <RepoContext.Provider value={repo}>
+        <TaskQueueBrowser handle={handle as DocHandle<TaskQueueDoc>} />
+      </RepoContext.Provider>
+    ),
+    element,
   );
-  return () => root.unmount();
 };
 
-const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
+const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
   const repo = useRepo();
-  const handle = useDocHandle<TaskQueueDoc>(docUrl, { suspense: true });
-  const { title, activeRouter, pending, done } = handle.doc();
+  const queue = useHandleDoc(props.handle);
 
-  // `useDocHandle` doesn't render again when the doc changes, so do that here.
-  const [, rerender] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => {
-    handle.on('change', rerender);
-    return () => {
-      handle.off('change', rerender);
-    };
-  }, [handle]);
+  // Who the router says is working for this queue, and which of them have asked
+  // not to be given work just now. A heartbeat a second mostly repeats the last
+  // one, so only a change counts as one.
+  const [workers, setWorkers] = createSignal<AutomergeUrl[]>([], { equals: sameList });
+  const [paused, setPaused] = createSignal<AutomergeUrl[]>([], { equals: sameList });
+  const [lastHeartbeatAt, setLastHeartbeatAt] = createSignal<number | null>(null);
 
-  const [workers, setWorkers] = useState<AutomergeUrl[]>([]);
-  // Workers whose hosts have asked not to be given work just now.
-  const [paused, setPaused] = useState<AutomergeUrl[]>([]);
-  const lastHeartbeatAt = useRef<number | null>(null);
-  const deliveryReports = useDeliveryReports();
+  const onMessage = (payload: { message: unknown }) => {
+    const msg = payload.message as MessageToTaskQueueChannel;
+    // Other tools broadcast on this doc too (presence, for one).
+    if (msg?.type !== 'router heartbeat') {
+      return;
+    }
+    // Go by who the queue says its router is now: it changes on every takeover.
+    if (msg.routerUrl !== props.handle.doc().activeRouter) {
+      return;
+    }
+    setLastHeartbeatAt(Date.now());
+    setWorkers([...msg.workerUrls].sort());
+    setPaused([...(msg.pausedWorkerUrls ?? [])].sort());
+  };
+  props.handle.on('ephemeral-message', onMessage);
+  onCleanup(() => props.handle.off('ephemeral-message', onMessage));
 
   // What each worker says it's running, so a pending task can say "running".
-  const [runningBy, setRunningBy] = useState<Record<string, AutomergeUrl | null>>({});
-  const reportCurrentTask = useCallback((workerUrl: AutomergeUrl, taskUrl: AutomergeUrl | null) => {
-    setRunningBy((runningBy) =>
-      (runningBy[workerUrl] ?? null) === taskUrl
-        ? runningBy
-        : { ...runningBy, [workerUrl]: taskUrl },
-    );
-  }, []);
-  const running = new Set(workers.map((url) => runningBy[url]).filter((url) => !!url));
+  const [runningBy, setRunningBy] = createStore<Record<string, AutomergeUrl | null>>({});
+  const isRunning = (taskUrl: AutomergeUrl) => workers().some((url) => runningBy[url] === taskUrl);
 
-  useEffect(() => {
-    const messageHandler = (m: any) => {
-      const msg = m.message as MessageToTaskQueueChannel;
-      // Other tools broadcast on this doc too (presence, for one).
-      if (msg?.type !== 'router heartbeat') {
-        return;
-      }
-      // Read the active router now, not when this effect ran: it changes on
-      // every takeover, and a stale one makes every heartbeat look foreign.
-      if (msg.routerUrl !== handle.doc().activeRouter) {
-        return;
-      }
-      lastHeartbeatAt.current = Date.now();
-      // A heartbeat a second mostly says the same thing; only a change is news.
-      setWorkers((workers) => unlessSame(workers, [...msg.workerUrls].sort()));
-      setPaused((paused) => unlessSame(paused, [...(msg.pausedWorkerUrls ?? [])].sort()));
-    };
-    handle.on('ephemeral-message', messageHandler);
-    return () => {
-      handle.off('ephemeral-message', messageHandler);
-    };
-  }, [handle]);
+  const myContactUrl = (): AutomergeUrl | undefined =>
+    (window as any).patchwork?.account?.doc()?.contactUrl;
 
-  const myContactUrl: AutomergeUrl | undefined = (window as any).patchwork?.account?.doc()
-    ?.contactUrl;
+  function addTask(inputExpr: string, code: string) {
+    const input = eval(inputExpr);
+    const importUrl = `data:application/javascript;base64,${btoa(code)}`;
+    const taskDoc = repo.create<TaskDoc<any, any>>({ input, importUrl, runs: [] });
+    props.handle.change((doc) => doc.pending.push(taskDoc.url));
+  }
 
   return (
-    <div className="tq">
-      <div className="tq-page">
-        <header className="tq-header">
-          <h1 className="tq-title">{title ?? 'Task queue'}</h1>
-          <div className="tq-stats">
-            <Stat value={pending.length} label="pending" />
-            <Stat value={done.length} label="done" />
-            <Stat value={workers.length} label={workers.length === 1 ? 'worker' : 'workers'} />
+    <div class="tq">
+      <div class="tq-page">
+        <header class="tq-header">
+          <h1 class="tq-title">{queue().title ?? 'Task queue'}</h1>
+          <div class="tq-stats">
+            <Stat value={queue().pending.length} label="pending" />
+            <Stat value={queue().done.length} label="done" />
+            <Stat value={workers().length} label={workers().length === 1 ? 'worker' : 'workers'} />
           </div>
-          <RouterStatus
-            key={activeRouter ?? 'none'}
-            activeRouter={activeRouter}
-            lastHeartbeatAt={lastHeartbeatAt}
-          />
+          <RouterStatus activeRouter={queue().activeRouter} lastHeartbeatAt={lastHeartbeatAt} />
         </header>
 
-        <section className="tq-section">
-          <h2 className="tq-section-title">
-            Workers <span className="tq-count">{workers.length}</span>
+        <section class="tq-section">
+          <h2 class="tq-section-title">
+            Workers <span class="tq-count">{workers().length}</span>
           </h2>
-          {workers.length === 0 ? (
-            <p className="tq-empty">
-              {activeRouter
-                ? 'No workers have reported to the router yet.'
-                : 'Workers appear here once a router is in charge of this queue.'}
-            </p>
-          ) : (
-            <div className="tq-workers">
-              {workers.map((url) => (
-                <Worker
-                  key={url}
-                  docUrl={url}
-                  myContactUrl={myContactUrl}
-                  paused={paused.includes(url)}
-                  onCurrentTask={reportCurrentTask}
-                />
-              ))}
+          <Show
+            when={workers().length > 0}
+            fallback={
+              <p class="tq-empty">
+                {queue().activeRouter
+                  ? 'No workers have reported to the router yet.'
+                  : 'Workers appear here once a router is in charge of this queue.'}
+              </p>
+            }
+          >
+            <div class="tq-workers">
+              <For each={workers()}>
+                {(url) => (
+                  <Worker
+                    docUrl={url}
+                    mine={(contactUrl) => !!contactUrl && contactUrl === myContactUrl()}
+                    paused={paused().includes(url)}
+                    onCurrentTask={(taskUrl) => setRunningBy(url, taskUrl)}
+                  />
+                )}
+              </For>
             </div>
-          )}
+          </Show>
         </section>
 
         <HostManners />
@@ -161,81 +152,74 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
 
         <TaskList
           label="Pending"
-          urls={pending}
+          urls={queue().pending}
           shownNote="next"
-          running={running}
+          isRunning={isRunning}
           emptyText="Nothing is waiting to run."
         />
         <TaskList
           label="Done"
-          urls={done.toReversed()}
+          urls={queue().done.toReversed()}
           shownNote="latest"
           emptyText="Nothing has finished yet."
         />
 
-        <DeliveryFooter reports={deliveryReports} />
+        <DeliveryFooter />
       </div>
     </div>
   );
-
-  function addTask(inputExpr: string, code: string) {
-    const input = eval(inputExpr);
-    const importUrl = `data:application/javascript;base64,${btoa(code)}`;
-    const taskDoc = repo.create<TaskDoc<any, any>>({ input, importUrl, runs: [] });
-    handle.change((doc) => doc.pending.push(taskDoc.url));
-  }
 };
 
-const Stat: React.FC<{ value: number; label: string }> = ({ value, label }) => (
-  <div className="tq-stat">
-    <span className="tq-stat-value">{value.toLocaleString()}</span>
-    <span className="tq-stat-label">{label}</span>
+const Stat = (props: { value: number; label: string }) => (
+  <div class="tq-stat">
+    <span class="tq-stat-value">{props.value.toLocaleString()}</span>
+    <span class="tq-stat-label">{props.label}</span>
   </div>
 );
 
-/**
- * Who is routing this queue, and whether they can be heard. It keeps its own
- * clock so that "last heard 7s ago" counts up without the task lists rendering
- * again every second.
- */
-const RouterStatus: React.FC<{
+/** Who is routing this queue, and whether they can be heard. */
+const RouterStatus = (props: {
   activeRouter: AutomergeUrl | null;
-  lastHeartbeatAt: React.RefObject<number | null>;
-}> = ({ activeRouter, lastHeartbeatAt }) => {
-  const [now, setNow] = useState(Date.now());
-  const [since] = useState(Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(timer);
-  }, []);
+  lastHeartbeatAt: Accessor<number | null>;
+}) => {
+  // its own clock, so that "last heard 7s ago" counts up
+  const [now, setNow] = createSignal(Date.now());
+  const timer = setInterval(() => setNow(Date.now()), 1_000);
+  onCleanup(() => clearInterval(timer));
+  const since = Date.now();
 
-  if (!activeRouter) {
-    return (
-      <div className="tq-router tq-router--none">
-        <span className="tq-dot" />
-        <span>No router yet. One of the browsers contributing to this queue will pick it up.</span>
-      </div>
-    );
-  }
+  const quietFor = () => now() - (props.lastHeartbeatAt() ?? since);
+  const quiet = () => quietFor() > ROUTER_QUIET_AFTER_MS;
 
-  const heardAt = lastHeartbeatAt.current;
-  const quietFor = now - (heardAt ?? since);
-  const quiet = quietFor > ROUTER_QUIET_AFTER_MS;
   return (
-    <div className={`tq-router ${quiet ? 'tq-router--quiet' : 'tq-router--live'}`}>
-      <span className="tq-dot" />
-      <span className="tq-router-body">
-        <span className="tq-router-who">
-          Routed by <Router docUrl={activeRouter} />
-        </span>
-        {quiet ? (
-          <span className="tq-router-note">
-            {heardAt ? `last heard ${Math.round(quietFor / 1_000)}s ago` : 'not heard from yet'}
-            ; another router takes over if this goes on
+    <Show
+      when={props.activeRouter}
+      fallback={
+        <div class="tq-router tq-router--none">
+          <span class="tq-dot" />
+          <span>No router yet. One of the browsers contributing to this queue will pick it up.</span>
+        </div>
+      }
+    >
+      {(routerUrl) => (
+        <div class="tq-router" classList={{ 'tq-router--quiet': quiet(), 'tq-router--live': !quiet() }}>
+          <span class="tq-dot" />
+          <span class="tq-router-body">
+            <span class="tq-router-who">
+              Routed by <RouterName docUrl={routerUrl()} />
+            </span>
+            <Show when={quiet()}>
+              <span class="tq-router-note">
+                {props.lastHeartbeatAt()
+                  ? `last heard ${Math.round(quietFor() / 1_000)}s ago`
+                  : 'not heard from yet'}
+                ; another router takes over if this goes on
+              </span>
+            </Show>
           </span>
-        ) : null}
-      </span>
-    </div>
+        </div>
+      )}
+    </Show>
   );
 };
 
@@ -254,8 +238,7 @@ const AVAILABILITY_MODES: { mode: AvailabilityMode; label: string; explanation: 
   {
     mode: 'away',
     label: "Only when I'm away",
-    explanation:
-      "Waits until you've left the computer alone for a minute, or locked the screen.",
+    explanation: "Waits until you've left the computer alone for a minute, or locked the screen.",
   },
 ];
 
@@ -264,11 +247,11 @@ const AVAILABILITY_MODES: { mode: AvailabilityMode; label: string; explanation: 
  * they've decided just now. The choice is this browser's alone: it isn't in
  * the queue or the account, because a computer's manners are its own.
  */
-const HostManners: React.FC = () => {
-  const [mode, setMode] = useState(getAvailabilityMode);
-  useEffect(() => onAvailabilityModeChange(() => setMode(getAvailabilityMode())), []);
+const HostManners = () => {
+  const [mode, setMode] = createSignal(getAvailabilityMode());
+  onCleanup(onAvailabilityModeChange(() => setMode(getAvailabilityMode())));
   const status = useAvailabilityStatus();
-  const [refused, setRefused] = useState(false);
+  const [refused, setRefused] = createSignal(false);
   const canTellAway = idleDetectionSupported();
 
   async function choose(chosen: AvailabilityMode) {
@@ -283,89 +266,85 @@ const HostManners: React.FC = () => {
   }
 
   return (
-    <section className="tq-section">
-      <h2 className="tq-section-title">This browser's workers take tasks</h2>
-      <div className="tq-choice" role="radiogroup" aria-label="When this browser takes tasks">
-        {AVAILABILITY_MODES.map(({ mode: option, label }) => (
-          <button
-            key={option}
-            role="radio"
-            aria-checked={mode === option}
-            className={`tq-choice-option ${mode === option ? 'tq-choice-option--chosen' : ''}`}
-            disabled={option === 'away' && !canTellAway}
-            title={
-              option === 'away' && !canTellAway
-                ? "This browser can't tell when you're away"
-                : undefined
-            }
-            onClick={() => choose(option)}
-          >
-            {label}
-          </button>
-        ))}
+    <section class="tq-section">
+      <h2 class="tq-section-title">This browser's workers take tasks</h2>
+      <div class="tq-choice" role="radiogroup" aria-label="When this browser takes tasks">
+        <For each={AVAILABILITY_MODES}>
+          {(option) => (
+            <button
+              role="radio"
+              aria-checked={mode() === option.mode}
+              class="tq-choice-option"
+              classList={{ 'tq-choice-option--chosen': mode() === option.mode }}
+              disabled={option.mode === 'away' && !canTellAway}
+              title={
+                option.mode === 'away' && !canTellAway
+                  ? "This browser can't tell when you're away"
+                  : undefined
+              }
+              onClick={() => choose(option.mode)}
+            >
+              {option.label}
+            </button>
+          )}
+        </For>
       </div>
-      <p className="tq-choice-note">
-        {AVAILABILITY_MODES.find((option) => option.mode === mode)?.explanation}
+      <p class="tq-choice-note">
+        {AVAILABILITY_MODES.find((option) => option.mode === mode())?.explanation}
         {canTellAway ? null : " “Only when I'm away” needs Chrome or Edge."}
       </p>
-      {refused ? (
-        <p className="tq-error">
+      <Show when={refused()}>
+        <p class="tq-error">
           The browser didn't allow this site to know when you're away, so nothing changed.
         </p>
-      ) : null}
+      </Show>
       <div
-        className={`tq-router ${
-          !status ? 'tq-router--none' : status.available ? 'tq-router--live' : 'tq-router--quiet'
-        }`}
+        class="tq-router"
+        classList={{
+          'tq-router--none': !status(),
+          'tq-router--live': !!status()?.available,
+          'tq-router--quiet': !!status() && !status()!.available,
+        }}
       >
-        <span className="tq-dot" />
-        <span>
-          {!status
-            ? "Haven't heard from this browser's task workers yet."
-            : status.available
-              ? `Taking tasks ${status.mode === 'always' ? '' : 'because '}${status.reason}.`
-              : `Paused because ${pausedBecause(status.reason)}. A task already running is left to finish.`}
-        </span>
+        <span class="tq-dot" />
+        <span>{describeAvailability(status())}</span>
       </div>
     </section>
   );
 };
 
-/** "can't tell…" reads as a sentence after "because" only with a subject. */
-function pausedBecause(reason: string) {
-  return reason.startsWith("can't") ? `this browser ${reason}` : reason;
+function describeAvailability(status: AvailabilityStatus | undefined) {
+  if (!status) {
+    return "Haven't heard from this browser's task workers yet.";
+  }
+  if (status.available) {
+    return `Taking tasks ${status.mode === 'always' ? '' : 'because '}${status.reason}.`;
+  }
+  // "can't tell…" reads as a sentence after "because" only with a subject
+  const reason = status.reason.startsWith("can't") ? `this browser ${status.reason}` : status.reason;
+  return `Paused because ${reason}. A task already running is left to finish.`;
 }
 
 /** What this browser's worker pool last decided, once it has said. */
 function useAvailabilityStatus() {
-  const [status, setStatus] = useState<AvailabilityStatus | null>(null);
-  useEffect(() => {
-    const channel = new BroadcastChannel(AVAILABILITY_CHANNEL);
-    channel.onmessage = ({ data }: MessageEvent<AvailabilityStatus>) => {
-      setStatus((status) =>
-        status &&
-        status.available === data.available &&
-        status.reason === data.reason &&
-        status.mode === data.mode
-          ? status
-          : data,
-      );
-    };
-    return () => channel.close();
-  }, []);
+  const [status, setStatus] = createSignal<AvailabilityStatus | undefined>(undefined, {
+    equals: (a, b) =>
+      a?.available === b?.available && a?.reason === b?.reason && a?.mode === b?.mode,
+  });
+  const channel = new BroadcastChannel(AVAILABILITY_CHANNEL);
+  channel.onmessage = ({ data }: MessageEvent<AvailabilityStatus>) => setStatus(data);
+  onCleanup(() => channel.close());
   return status;
 }
 
-const NewTaskForm: React.FC<{ onAdd: (inputExpr: string, code: string) => void }> = ({
-  onAdd,
-}) => {
-  const [inputExpr, setInputExpr] = useState(DEFAULT_INPUT_EXPR);
-  const [code, setCode] = useState(DEFAULT_CODE);
-  const [error, setError] = useState<string | null>(null);
+const NewTaskForm = (props: { onAdd: (inputExpr: string, code: string) => void }) => {
+  const [inputExpr, setInputExpr] = createSignal(DEFAULT_INPUT_EXPR);
+  const [code, setCode] = createSignal(DEFAULT_CODE);
+  const [error, setError] = createSignal<string | null>(null);
 
   function add() {
     try {
-      onAdd(inputExpr, code);
+      props.onAdd(inputExpr(), code());
       setError(null);
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -373,372 +352,330 @@ const NewTaskForm: React.FC<{ onAdd: (inputExpr: string, code: string) => void }
   }
 
   return (
-    <details className="tq-section tq-new">
-      <summary className="tq-new-summary">New task</summary>
-      <div className="tq-new-fields">
-        <label className="tq-field">
-          <span className="tq-field-label">Input</span>
-          <span className="tq-field-hint">a JavaScript expression, evaluated here</span>
+    <details class="tq-section tq-new">
+      <summary class="tq-new-summary">New task</summary>
+      <div class="tq-new-fields">
+        <label class="tq-field">
+          <span class="tq-field-label">Input</span>
+          <span class="tq-field-hint">a JavaScript expression, evaluated here</span>
           <textarea
-            className="tq-textarea"
+            class="tq-textarea"
             rows={4}
-            spellCheck={false}
-            value={inputExpr}
-            onChange={(e) => setInputExpr(e.target.value)}
+            spellcheck={false}
+            value={inputExpr()}
+            onInput={(e) => setInputExpr(e.currentTarget.value)}
           />
         </label>
-        <label className="tq-field">
-          <span className="tq-field-label">Code</span>
-          <span className="tq-field-hint">a module whose default export takes the input</span>
+        <label class="tq-field">
+          <span class="tq-field-label">Code</span>
+          <span class="tq-field-hint">a module whose default export takes the input</span>
           <textarea
-            className="tq-textarea"
+            class="tq-textarea"
             rows={9}
-            spellCheck={false}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
+            spellcheck={false}
+            value={code()}
+            onInput={(e) => setCode(e.currentTarget.value)}
           />
         </label>
       </div>
-      <div className="tq-new-actions">
-        <button className="tq-button" onClick={add}>
+      <div class="tq-new-actions">
+        <button class="tq-button" onClick={add}>
           Add task
         </button>
-        {error ? <span className="tq-error">Couldn't read the input: {error}</span> : null}
+        <Show when={error()}>
+          <span class="tq-error">Couldn't read the input: {error()}</span>
+        </Show>
       </div>
     </details>
   );
 };
 
 /** The first few of `urls`, which the caller has put in the order worth reading. */
-const TaskList: React.FC<{
+const TaskList = (props: {
   label: string;
   urls: AutomergeUrl[];
   /** What the ones shown are, when there are more: the "next" 20, the "latest" 20. */
   shownNote: string;
-  running?: Set<AutomergeUrl | null>;
+  isRunning?: (taskUrl: AutomergeUrl) => boolean;
   emptyText: string;
-}> = ({ label, urls, shownNote, running, emptyText }) => {
-  const shown = [...new Set(urls)].slice(0, MAX_TASKS_SHOWN);
+}) => {
+  const shown = () => [...new Set(props.urls)].slice(0, MAX_TASKS_SHOWN);
   return (
-    <section className="tq-section">
-      <h2 className="tq-section-title">
-        {label} <span className="tq-count">{urls.length.toLocaleString()}</span>
-        {urls.length > shown.length ? (
-          <span className="tq-section-note">
-            {shownNote} {shown.length} shown
+    <section class="tq-section">
+      <h2 class="tq-section-title">
+        {props.label} <span class="tq-count">{props.urls.length.toLocaleString()}</span>
+        <Show when={props.urls.length > shown().length}>
+          <span class="tq-section-note">
+            {props.shownNote} {shown().length} shown
           </span>
-        ) : null}
+        </Show>
       </h2>
-      {shown.length === 0 ? (
-        <p className="tq-empty">{emptyText}</p>
-      ) : (
-        <div className="tq-tasks">
-          {shown.map((url) => (
-            <Task key={url} docUrl={url} running={running?.has(url)} />
-          ))}
+      <Show when={shown().length > 0} fallback={<p class="tq-empty">{props.emptyText}</p>}>
+        <div class="tq-tasks">
+          <For each={shown()}>
+            {(url) => <Task docUrl={url} running={props.isRunning?.(url) ?? false} />}
+          </For>
         </div>
-      )}
+      </Show>
     </section>
   );
 };
 
-const DeliveryFooter: React.FC<{ reports: DeliveryReport[] }> = ({ reports }) => {
-  if (reports.length === 0) {
-    return null;
-  }
-  const missed = reports.reduce((n, { totals }) => n + totals.missed, 0);
-  const duplicates = reports.reduce((n, { totals }) => n + totals.duplicates, 0);
-  const received = reports.reduce((n, { totals }) => n + totals.received, 0);
-  const trouble = missed + duplicates > 0;
+/** How this browser's shared workers have fared at hearing their messages. */
+const DeliveryFooter = () => {
+  const [reports, setReports] = createStore<Record<string, DeliveryReport>>({});
+  const channel = new BroadcastChannel(DELIVERY_STATS_CHANNEL);
+  channel.onmessage = ({ data }: MessageEvent<DeliveryReport>) => setReports(data.label, data);
+  onCleanup(() => channel.close());
+
+  const list = () => Object.values(reports).sort((a, b) => a.label.localeCompare(b.label));
+  const total = (count: keyof DeliveryReport['totals']) =>
+    list().reduce((n, report) => n + report.totals[count], 0);
+  const trouble = () => total('missed') + total('duplicates') > 0;
+
   return (
-    <details className={`tq-delivery ${trouble ? 'tq-delivery--trouble' : ''}`}>
-      <summary>
-        Messages to this browser's workers: {received.toLocaleString()} received,{' '}
-        {trouble ? `${missed} missed, ${duplicates} duplicated` : 'none missed'}
-      </summary>
-      <table className="tq-delivery-table">
-        <thead>
-          <tr>
-            <th>Receiver</th>
-            <th>Received</th>
-            <th>Missed</th>
-            <th>Out of order</th>
-            <th>Duplicated</th>
-          </tr>
-        </thead>
-        <tbody>
-          {reports.map(({ label, totals }) => (
-            <tr key={label}>
-              <td>{label}</td>
-              <td>{totals.received.toLocaleString()}</td>
-              <td>{totals.missed}</td>
-              <td>{totals.late}</td>
-              <td>{totals.duplicates}</td>
+    <Show when={list().length > 0}>
+      <details class="tq-delivery" classList={{ 'tq-delivery--trouble': trouble() }}>
+        <summary>
+          Messages to this browser's workers: {total('received').toLocaleString()} received,{' '}
+          {trouble()
+            ? `${total('missed')} missed, ${total('duplicates')} duplicated`
+            : 'none missed'}
+        </summary>
+        <table class="tq-delivery-table">
+          <thead>
+            <tr>
+              <th>Receiver</th>
+              <th>Received</th>
+              <th>Missed</th>
+              <th>Out of order</th>
+              <th>Duplicated</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </details>
+          </thead>
+          <tbody>
+            <For each={list()}>
+              {(report) => (
+                <tr>
+                  <td>{report.label}</td>
+                  <td>{report.totals.received.toLocaleString()}</td>
+                  <td>{report.totals.missed}</td>
+                  <td>{report.totals.late}</td>
+                  <td>{report.totals.duplicates}</td>
+                </tr>
+              )}
+            </For>
+          </tbody>
+        </table>
+      </details>
+    </Show>
   );
 };
 
-/**
- * Shows `children`, which read a doc that may not have arrived yet. A queue
- * names its tasks, workers and router by url, and a url can get here before the
- * doc it names does; `useDocument` then throws "unavailable". Left uncaught,
- * that one missing doc takes the whole tool off the screen, so each of them
- * gets one of these, which shows a placeholder and tries again shortly.
- */
-class WhenAvailable extends React.Component<
-  { children: React.ReactNode; placeholder?: React.ReactNode },
-  { failed: boolean; attempt: number }
-> {
-  state = { failed: false, attempt: 0 };
-  private retryTimer: ReturnType<typeof setTimeout> | undefined;
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  componentDidCatch() {
-    this.retryTimer = setTimeout(() => {
-      this.setState(({ attempt }) => ({ failed: false, attempt: attempt + 1 }));
-    }, 2_000);
-  }
-
-  componentWillUnmount() {
-    clearTimeout(this.retryTimer);
-  }
-
-  render() {
-    const placeholder = this.props.placeholder ?? <span className="tq-placeholder">…</span>;
-    if (this.state.failed) {
-      return placeholder;
-    }
-    return (
-      <Suspense key={this.state.attempt} fallback={placeholder}>
-        {this.props.children}
-      </Suspense>
-    );
-  }
-}
-
-/** The latest delivery report from each of this browser's task shared workers. */
-function useDeliveryReports() {
-  const [reports, setReports] = useState<Record<string, DeliveryReport>>({});
-  useEffect(() => {
-    const channel = new BroadcastChannel(DELIVERY_STATS_CHANNEL);
-    channel.onmessage = ({ data }: MessageEvent<DeliveryReport>) => {
-      setReports((reports) => ({ ...reports, [data.label]: data }));
-    };
-    return () => channel.close();
-  }, []);
-  return Object.values(reports).sort((a, b) => a.label.localeCompare(b.label));
-}
-
 /** Whose worker or router it is, then its own name: "Ada / wet-animal". */
-const Identity: React.FC<{ contactUrl?: AutomergeUrl | null; name: string }> = ({
-  contactUrl,
-  name,
-}) => (
-  <span className="tq-identity">
-    {contactUrl ? <patchwork-view doc-url={contactUrl} tool-id="contact-inline" /> : null}
-    <span className="tq-identity-name">{name}</span>
+const Identity = (props: { contactUrl?: AutomergeUrl | null; name: string }) => (
+  <span class="tq-identity">
+    <Show when={props.contactUrl}>
+      {(contactUrl) => <patchwork-view doc-url={contactUrl()} tool-id="contact-inline" />}
+    </Show>
+    <span class="tq-identity-name">{props.name}</span>
   </span>
 );
 
-export const Router: React.FC<{ docUrl: AutomergeUrl }> = (props) => (
-  <WhenAvailable>
-    <IRouter {...props} />
-  </WhenAvailable>
-);
+const Placeholder = () => <span class="tq-placeholder">…</span>;
 
-const IRouter: React.FC<{ docUrl: AutomergeUrl }> = ({ docUrl }) => {
-  const [{ name, contactUrl }] = useDocument<RouterDoc>(docUrl, { suspense: true });
-  return <Identity contactUrl={contactUrl} name={name} />;
+const RouterName = (props: { docUrl: AutomergeUrl }) => {
+  const router = useDoc<RouterDoc>(() => props.docUrl);
+  return (
+    <Show when={router()} fallback={<Placeholder />}>
+      {(doc) => <Identity contactUrl={doc().contactUrl} name={doc().name} />}
+    </Show>
+  );
 };
 
-interface WorkerProps {
+const Worker = (props: {
   docUrl: AutomergeUrl;
-  myContactUrl?: AutomergeUrl;
+  /** Whether a worker with this contact is this user's own. */
+  mine: (contactUrl: AutomergeUrl | undefined) => boolean;
   /** Its host has asked that it not be given work just now. */
-  paused?: boolean;
-  onCurrentTask: (workerUrl: AutomergeUrl, taskUrl: AutomergeUrl | null) => void;
-}
+  paused: boolean;
+  onCurrentTask: (taskUrl: AutomergeUrl | null) => void;
+}) => {
+  const worker = useDoc<WorkerDoc>(() => props.docUrl);
+  const currentTaskUrl = () => worker()?.currentTask?.taskUrl ?? null;
 
-export const Worker: React.FC<WorkerProps> = (props) => (
-  <WhenAvailable placeholder={<div className="tq-worker tq-worker--loading">…</div>}>
-    <IWorker {...props} />
-  </WhenAvailable>
-);
+  // tell the browser what this worker is on, so the pending list can say so
+  createEffect(() => props.onCurrentTask(currentTaskUrl()));
+  onCleanup(() => props.onCurrentTask(null));
 
-const IWorker: React.FC<WorkerProps> = ({ docUrl, myContactUrl, paused, onCurrentTask }) => {
-  const [{ name, contactUrl, currentTask }] = useDocument<WorkerDoc>(docUrl, { suspense: true });
-  const currentTaskUrl = currentTask?.taskUrl ?? null;
-  useEffect(() => {
-    onCurrentTask(docUrl, currentTaskUrl);
-    return () => onCurrentTask(docUrl, null);
-  }, [docUrl, currentTaskUrl, onCurrentTask]);
   return (
-    <div
-      className={`tq-worker ${
-        currentTask ? 'tq-worker--busy' : paused ? 'tq-worker--paused' : 'tq-worker--idle'
-      }`}
-    >
-      <span className="tq-dot" />
-      <Identity contactUrl={contactUrl} name={name} />
-      {myContactUrl && contactUrl === myContactUrl ? <span className="tq-tag">yours</span> : null}
-      <span className="tq-worker-state">
-        {currentTask ? <TaskInput docUrl={currentTask.taskUrl} /> : paused ? 'paused' : 'idle'}
-      </span>
-    </div>
+    <Show when={worker()} fallback={<div class="tq-worker tq-worker--loading">…</div>}>
+      {(doc) => (
+        <div
+          class="tq-worker"
+          classList={{
+            'tq-worker--busy': !!currentTaskUrl(),
+            'tq-worker--paused': !currentTaskUrl() && props.paused,
+            'tq-worker--idle': !currentTaskUrl() && !props.paused,
+          }}
+        >
+          <span class="tq-dot" />
+          <Identity contactUrl={doc().contactUrl} name={doc().name} />
+          <Show when={props.mine(doc().contactUrl)}>
+            <span class="tq-tag">yours</span>
+          </Show>
+          <span class="tq-worker-state">
+            <Show when={currentTaskUrl()} fallback={props.paused ? 'paused' : 'idle'}>
+              {(taskUrl) => <TaskInput docUrl={taskUrl()} />}
+            </Show>
+          </span>
+        </div>
+      )}
+    </Show>
   );
 };
 
 /** Just a task's input, for where there isn't room for the task: `[3, 7]`. */
-const TaskInput: React.FC<{ docUrl: AutomergeUrl }> = (props) => (
-  <WhenAvailable>
-    <ITaskInput {...props} />
-  </WhenAvailable>
-);
-
-const ITaskInput: React.FC<{ docUrl: AutomergeUrl }> = ({ docUrl }) => {
-  const [{ input }] = useDocument<TaskDoc<any, any>>(docUrl, { suspense: true });
-  return <code className="tq-code">{show(input)}</code>;
+const TaskInput = (props: { docUrl: AutomergeUrl }) => {
+  const task = useDoc<TaskDoc<any, any>>(() => props.docUrl);
+  return (
+    <Show when={task()} fallback={<Placeholder />}>
+      {(doc) => <code class="tq-code">{show(doc().input)}</code>}
+    </Show>
+  );
 };
 
-interface TaskProps {
+const Task = (props: {
   docUrl: AutomergeUrl;
   /** A worker says it's on this one right now. */
-  running?: boolean;
-}
+  running: boolean;
+}) => {
+  const task = useDoc<TaskDoc<any, any>>(() => props.docUrl);
+  return (
+    <Show
+      when={task()}
+      fallback={<div class="tq-task tq-task--loading">Waiting for this task to arrive…</div>}
+    >
+      <LoadedTask task={task()!} running={props.running} />
+    </Show>
+  );
+};
 
-const Task: React.FC<TaskProps> = (props) => (
-  <WhenAvailable
-    placeholder={<div className="tq-task tq-task--loading">Waiting for this task to arrive…</div>}
-  >
-    <ITask {...props} />
-  </WhenAvailable>
-);
+type TaskState = 'running' | 'queued' | 'ok' | 'failed';
+const MARKS: Record<TaskState, string> = { ok: '✓', failed: '✕', running: '●', queued: '·' };
 
-const ITask: React.FC<TaskProps> = ({ docUrl, running }) => {
-  const [{ importUrl, runs, input }] = useDocument<TaskDoc<any, any>>(docUrl, { suspense: true });
-  const lastRun = runs.at(-1);
-  const failures = runs.filter((run) => run.status === 'failed').length;
-  const state = running
-    ? 'running'
-    : !lastRun
-      ? 'queued'
-      : lastRun.status === 'succeeded'
-        ? 'ok'
-        : 'failed';
+const LoadedTask = (props: { task: TaskDoc<any, any>; running: boolean }) => {
+  const lastRun = () => props.task.runs.at(-1);
+  const failures = () => props.task.runs.filter((run) => run.status === 'failed').length;
+  const state = (): TaskState =>
+    props.running
+      ? 'running'
+      : !lastRun()
+        ? 'queued'
+        : lastRun()!.status === 'succeeded'
+          ? 'ok'
+          : 'failed';
 
   // Only read the code when someone opens the task: most rows never are.
-  const [open, setOpen] = useState(false);
-  const [code, setCode] = useState<string | null>(null);
-  useEffect(() => {
-    if (!open || code !== null) {
+  const [code, setCode] = createSignal<string | null>(null);
+  function onToggle(event: Event) {
+    if (!(event.currentTarget as HTMLDetailsElement).open || code() !== null) {
       return;
     }
-    let cancelled = false;
+    const importUrl = props.task.importUrl;
     fetch(importUrl)
       .then((res) => res.text())
       .catch(() => importUrl)
-      .then((text) => {
-        if (!cancelled) setCode(text);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, code, importUrl]);
+      .then(setCode);
+  }
 
   return (
-    <details
-      className={`tq-task tq-task--${state}`}
-      onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}
-    >
-      <summary className="tq-task-row">
-        <span className="tq-task-mark" aria-label={state}>
-          {state === 'ok' ? '✓' : state === 'failed' ? '✕' : state === 'running' ? '●' : '·'}
+    <details class={`tq-task tq-task--${state()}`} on:toggle={onToggle}>
+      <summary class="tq-task-row">
+        <span class="tq-task-mark" aria-label={state()}>
+          {MARKS[state()]}
         </span>
-        <code className="tq-code tq-task-input">{show(input)}</code>
-        <span className="tq-task-outcome">
-          {running ? (
-            <span className="tq-busy">running</span>
-          ) : !lastRun ? (
-            <span className="tq-muted">waiting</span>
-          ) : lastRun.status === 'succeeded' ? (
-            <>
-              <span className="tq-muted">→</span> <code className="tq-code">{show(lastRun.result)}</code>
-            </>
-          ) : (
-            <span className="tq-bad">{lastLog(lastRun) ?? 'failed'}</span>
+        <code class="tq-code tq-task-input">{show(props.task.input)}</code>
+        <span class="tq-task-outcome">
+          <Show when={!props.running} fallback={<span class="tq-busy">running</span>}>
+            <Show when={lastRun()} fallback={<span class="tq-muted">waiting</span>}>
+              {(run) => (
+                <Show
+                  when={run().status === 'succeeded'}
+                  fallback={<span class="tq-bad">{lastLog(run()) ?? 'failed'}</span>}
+                >
+                  <span class="tq-muted">→</span> <code class="tq-code">{show(run().result)}</code>
+                </Show>
+              )}
+            </Show>
+          </Show>
+        </span>
+        <Show when={failures() > 0}>
+          <span class="tq-tag tq-tag--warn">
+            {failures()} failed {failures() === 1 ? 'try' : 'tries'}
+          </span>
+        </Show>
+        <Show when={!props.running && lastRun()}>
+          {(run) => (
+            <span class="tq-task-time">
+              {duration(run().endTimeMillis - run().startTimeMillis)}
+            </span>
           )}
-        </span>
-        {failures > 0 ? (
-          <span className="tq-tag tq-tag--warn">
-            {failures} failed {failures === 1 ? 'try' : 'tries'}
-          </span>
-        ) : null}
-        {lastRun && !running ? (
-          <span className="tq-task-time">
-            {duration(lastRun.endTimeMillis - lastRun.startTimeMillis)}
-          </span>
-        ) : null}
+        </Show>
       </summary>
-      <div className="tq-task-detail">
-        {runs.length > 0 ? (
-          <ol className="tq-runs">
-            {runs.map((run: RunInfo<any>, idx) => (
-              <li key={idx}>
-                <WhenAvailable>
+      <div class="tq-task-detail">
+        <Show when={props.task.runs.length > 0}>
+          <ol class="tq-runs">
+            <For each={props.task.runs}>
+              {(run) => (
+                <li>
                   <Run run={run} />
-                </WhenAvailable>
-              </li>
-            ))}
+                </li>
+              )}
+            </For>
           </ol>
-        ) : null}
-        <pre className="tq-source">{code ?? 'Loading code…'}</pre>
+        </Show>
+        <pre class="tq-source">{code() ?? 'Loading code…'}</pre>
       </div>
     </details>
   );
 };
 
-const Run: React.FC<{ run: RunInfo<any> }> = ({ run }) => {
-  const [{ contactUrl, name }] = useDocument<WorkerDoc>(run.workerUrl as AutomergeUrl, {
-    suspense: true,
-  });
+const Run = (props: { run: RunInfo<any> }) => {
+  const worker = useDoc<WorkerDoc>(() => props.run.workerUrl);
   return (
-    <div className={`tq-run tq-run--${run.status}`}>
-      <div className="tq-run-line">
-        <span className="tq-task-mark">{run.status === 'succeeded' ? '✓' : '✕'}</span>
-        <Identity contactUrl={contactUrl} name={name} />
-        <span className="tq-muted">
-          {new Date(run.startTimeMillis).toLocaleTimeString()},{' '}
-          {duration(run.endTimeMillis - run.startTimeMillis)}
+    <div class={`tq-run tq-run--${props.run.status}`}>
+      <div class="tq-run-line">
+        <span class="tq-task-mark">{props.run.status === 'succeeded' ? '✓' : '✕'}</span>
+        <Show when={worker()} fallback={<Placeholder />}>
+          {(doc) => <Identity contactUrl={doc().contactUrl} name={doc().name} />}
+        </Show>
+        <span class="tq-muted">
+          {new Date(props.run.startTimeMillis).toLocaleTimeString()},{' '}
+          {duration(props.run.endTimeMillis - props.run.startTimeMillis)}
         </span>
       </div>
-      {run.logs && run.logs.length > 0 ? (
-        <ul className="tq-logs">
-          {run.logs.map(({ timestampMillis, message }, idx) => (
-            <li key={idx}>
-              <span className="tq-muted">{new Date(timestampMillis).toLocaleTimeString()}</span>{' '}
-              {message}
-            </li>
-          ))}
+      <Show when={props.run.logs?.length}>
+        <ul class="tq-logs">
+          <For each={props.run.logs}>
+            {(entry) => (
+              <li>
+                <span class="tq-muted">
+                  {new Date(entry.timestampMillis).toLocaleTimeString()}
+                </span>{' '}
+                {entry.message}
+              </li>
+            )}
+          </For>
         </ul>
-      ) : null}
+      </Show>
     </div>
   );
 };
 
 // helpers
 
-/** `next`, or `previous` itself when they hold the same things, so state doesn't change. */
-function unlessSame<T>(previous: T[], next: T[]) {
-  return previous.length === next.length && previous.every((item, idx) => item === next[idx])
-    ? previous
-    : next;
+function sameList<T>(a: T[], b: T[]) {
+  return a.length === b.length && a.every((item, idx) => item === b[idx]);
 }
 
 /** A value as it would be typed, cut short: task inputs and results can be anything. */

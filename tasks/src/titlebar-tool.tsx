@@ -1,13 +1,13 @@
-import React, { Suspense, useEffect } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createEffect, For, Show } from 'solid-js';
+import { render } from 'solid-js/web';
 import './index.css';
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
-import { RepoContext, useDocument } from '@automerge/automerge-repo-react-hooks';
 import type { OpenDocumentEventDetail } from '@inkandswitch/patchwork-elements';
 import type { TaskQueueDoc } from './datatype';
 import { WorkerPoolProxy } from './worker-pool-proxy';
 import { getAccountDocUrl, getTaskQueues } from './helpers';
 import { QUEUE_TOOL_ID } from './ids';
+import { RepoContext, useDoc } from './use-doc';
 
 // A shared worker's script has to come from the page's own origin. Installed by
 // its automerge url this package is served from there; installed from a web
@@ -29,15 +29,14 @@ export const TaskTray = (element: HTMLElement, repo?: Repo) =>
   mountTaskStatus(element, repo ?? (element as any).repo ?? (window as any).repo);
 
 function mountTaskStatus(element: HTMLElement, repo: Repo) {
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={repo}>
-      <Suspense fallback={null}>
+  return render(
+    () => (
+      <RepoContext.Provider value={repo}>
         <TaskStatus element={element} />
-      </Suspense>
-    </RepoContext.Provider>,
+      </RepoContext.Provider>
+    ),
+    element,
   );
-  return () => root.unmount();
 }
 
 /**
@@ -59,69 +58,78 @@ function ensureWorkerPool(contactUrl: AutomergeUrl) {
   tab.__patchworkTaskWorkerPool = proxy;
 }
 
-const TaskStatus: React.FC<{ element: HTMLElement }> = ({ element }) => {
-  const [accountDoc] = useDocument<any>(getAccountDocUrl(), { suspense: true });
-  const selfContactUrl: AutomergeUrl = accountDoc.contactUrl;
-  const taskQueueUrls = getTaskQueues(accountDoc);
+const TaskStatus = (props: { element: HTMLElement }) => {
+  const account = useDoc<any>(getAccountDocUrl);
+  const contactUrl = (): AutomergeUrl | undefined => account()?.contactUrl;
+  const queueUrls = () =>
+    account() ? (Object.keys(getTaskQueues(account())) as AutomergeUrl[]) : [];
 
-  useEffect(() => {
+  createEffect(() => {
+    const mine = contactUrl();
+    if (!mine) {
+      return;
+    }
     if (SAME_ORIGIN) {
-      ensureWorkerPool(selfContactUrl);
+      ensureWorkerPool(mine);
     } else {
       console.error(
         `tasks: loaded from ${new URL(import.meta.url).origin}, so its shared workers can't start on ${location.origin}. Install it by its automerge: url instead.`,
       );
     }
-  }, [selfContactUrl]);
-
-  if (!SAME_ORIGIN) {
-    return (
-      <span
-        className="task-titlebar task-titlebar--broken"
-        title="The task workers can't start: this package was installed from another website. Install it by its automerge: url instead."
-      >
-        Tasks: not running
-      </span>
-    );
-  }
+  });
 
   return (
-    <div className="task-titlebar-list">
-      {Object.keys(taskQueueUrls).map((taskQueueUrl) => (
-        <Suspense key={taskQueueUrl} fallback={null}>
-          <TaskQueue
-            element={element}
-            taskQueueUrl={taskQueueUrl as AutomergeUrl}
-          />
-        </Suspense>
-      ))}
-    </div>
+    <Show
+      when={SAME_ORIGIN}
+      fallback={
+        <span
+          class="task-titlebar task-titlebar--broken"
+          title="The task workers can't start: this package was installed from another website. Install it by its automerge: url instead."
+        >
+          Tasks: not running
+        </span>
+      }
+    >
+      <div class="task-titlebar-list">
+        <For each={queueUrls()}>
+          {(taskQueueUrl) => <QueueBadge element={props.element} taskQueueUrl={taskQueueUrl} />}
+        </For>
+      </div>
+    </Show>
   );
 };
 
-const TaskQueue: React.FC<{ element: HTMLElement; taskQueueUrl: AutomergeUrl }> = ({
-  element,
-  taskQueueUrl,
-}) => {
-  const [{ title, pending, done }] = useDocument<TaskQueueDoc>(taskQueueUrl, { suspense: true });
-  const name = title ?? 'Tasks';
-  const busy = pending.length > 0;
+const QueueBadge = (props: { element: HTMLElement; taskQueueUrl: AutomergeUrl }) => {
+  const queue = useDoc<TaskQueueDoc>(() => props.taskQueueUrl);
   return (
-    <button
-      className={`task-titlebar ${busy ? 'task-titlebar--busy' : ''}`}
-      title={`${name}: ${pending.length} pending, ${done.length} done`}
-      // Name the tool: a queue made by the older copy, or by tasklib, would
-      // otherwise open in the older browser or in nothing.
-      onClick={() =>
-        element.dispatchEvent(createOpenEvent({ url: taskQueueUrl, toolId: QUEUE_TOOL_ID }))
-      }
-    >
-      <span className="task-titlebar-dot" />
-      <span className="task-titlebar-name">{name}</span>
-      <span className="task-titlebar-count">
-        {busy ? `${pending.length} pending` : `${done.length.toLocaleString()} done`}
-      </span>
-    </button>
+    <Show when={queue()}>
+      {(doc) => {
+        const name = () => doc().title ?? 'Tasks';
+        const busy = () => doc().pending.length > 0;
+        return (
+          <button
+            class="task-titlebar"
+            classList={{ 'task-titlebar--busy': busy() }}
+            title={`${name()}: ${doc().pending.length} pending, ${doc().done.length} done`}
+            // Name the tool: a queue made by the older copy, or by tasklib, would
+            // otherwise open in the older browser or in nothing.
+            onClick={() =>
+              props.element.dispatchEvent(
+                createOpenEvent({ url: props.taskQueueUrl, toolId: QUEUE_TOOL_ID }),
+              )
+            }
+          >
+            <span class="task-titlebar-dot" />
+            <span class="task-titlebar-name">{name()}</span>
+            <span class="task-titlebar-count">
+              {busy()
+                ? `${doc().pending.length} pending`
+                : `${doc().done.length.toLocaleString()} done`}
+            </span>
+          </button>
+        );
+      }}
+    </Show>
   );
 };
 

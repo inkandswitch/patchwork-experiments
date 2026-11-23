@@ -1,11 +1,14 @@
 import { defineConfig } from "vitest/config";
-import react from "@vitejs/plugin-react";
+import solid from "vite-plugin-solid";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [solid()],
   test: {
     environment: "happy-dom",
     globals: true,
     passWithNoTests: true,
+  },
+  resolve: {
+    conditions: ["development", "browser"],
   },
 });
