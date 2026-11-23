@@ -470,6 +470,14 @@ const CloseIcon = () => (
   </svg>
 );
 
+/** A panel with its right-hand strip: the drawer. */
+const DrawerIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+    <path d="M10 3v10" stroke="currentColor" strokeWidth="1.2" />
+  </svg>
+);
+
 /** A tool that renders any document (`supportedDatatypes: "*"`): Raw, say. */
 /**
  * How soon (ms) after a click or key in a preview an open from the same panel
@@ -1340,6 +1348,20 @@ const TilePanel = ({
         />
       )}
       <div className="tile-panel__actions">
+        {!isRootFolder && !isEmpty && ops.contextTools.length > 0 && (
+          // The drawer's way in. A button here rather than anything over the
+          // document's right edge, which belongs to the document: its
+          // scrollbar, its own toolbars.
+          <button
+            type="button"
+            className="tile-panel__icon-btn tile-panel__icon-btn--drawer"
+            title={leaf.drawer?.open ? "Close drawer" : "Open drawer"}
+            aria-pressed={!!leaf.drawer?.open}
+            onClick={() => ops.toggleDrawer(leaf.id)}
+          >
+            <DrawerIcon />
+          </button>
+        )}
         {canClose && (
           <button
             className="tile-panel__icon-btn tile-panel__icon-btn--close"
@@ -1475,74 +1497,23 @@ const TabContent = ({
 const byUrl = (a: PanelView, b: PanelView): number =>
   (a.url ?? "") < (b.url ?? "") ? -1 : (a.url ?? "") > (b.url ?? "") ? 1 : 0;
 
-/** How near the right edge (px) the pointer must come to call up the rail. */
-const PEEK_EDGE_PX = 16;
-/** How far from the edge (px) it must go to dismiss it: past the rail. */
-const PEEK_AWAY_PX = 48;
-/** How long (ms) the pointer must stay at the edge, so sweeping past doesn't. */
-const PEEK_DWELL_MS = 120;
-
 /**
- * Whether a closed drawer's rail should peek in: once the pointer has stayed
- * within {@link PEEK_EDGE_PX} of the panel's right edge for
- * {@link PEEK_DWELL_MS}, until it goes {@link PEEK_AWAY_PX} away or leaves the
- * panel. Never while a button is held, so dragging a scrollbar or a selection
- * to the edge doesn't call it up. Pointer moves inside iframe-isolated tools
- * don't reach the frame, so there the rail answers only at the panel's own
- * edge pixels.
- */
-const usePeekAtEdge = () => {
-  const [visible, setVisible] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clear = () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-  };
-  useEffect(() => clear, []);
-  const onPointerMove = (event: React.PointerEvent<HTMLElement>) => {
-    const fromEdge = event.currentTarget.getBoundingClientRect().right - event.clientX;
-    if (fromEdge > PEEK_AWAY_PX || event.buttons !== 0) {
-      clear();
-      if (visible && fromEdge > PEEK_AWAY_PX) setVisible(false);
-      return;
-    }
-    if (fromEdge <= PEEK_EDGE_PX && !visible && !timer.current) {
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        setVisible(true);
-      }, PEEK_DWELL_MS);
-    }
-  };
-  const onPointerLeave = () => {
-    clear();
-    setVisible(false);
-  };
-  return { visible, onPointerMove, onPointerLeave };
-};
-
-/**
- * The rail of context tools: one icon per tool, down a document panel's right
- * edge, naming the tool on hover (or focus) at once. It's the drawer's spine:
- * inside the open drawer, with the shown tool lit; and, while the drawer is
- * closed, peeking in over the panel's right edge when the pointer comes to
- * that edge (see `usePeekAtEdge`; always, on touch screens). Picking a tool opens the drawer on it; picking
- * the lit one closes the drawer, as in VS Code's activity bar. The label is
- * drawn beside the icon list rather than in it, so its scrolling can't clip it.
+ * The rail of context tools: one icon per tool, down the open drawer's outer
+ * edge, naming the tool on hover (or focus) at once, the shown tool lit.
+ * Picking a tool shows it; picking the lit one closes the drawer, as in VS
+ * Code's activity bar. (The panel header's drawer button opens it.) The label
+ * is drawn beside the icon list rather than in it, so its scrolling can't
+ * clip it.
  */
 const ToolRail = ({
   tools,
   shownId,
   onPick,
-  peek = false,
-  visible = false,
 }: {
   tools: SlotTool[];
-  /** The lit tool, or undefined while the drawer is closed. */
+  /** The lit tool. */
   shownId: string | undefined;
   onPick: (toolId: string) => void;
-  /** Peeking in over a closed drawer's panel, shown while `visible`. */
-  peek?: boolean;
-  visible?: boolean;
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const [label, setLabel] = useState<{ name: string; top: number } | null>(null);
@@ -1554,8 +1525,7 @@ const ToolRail = ({
   return (
     <div
       ref={ref}
-      className={`tile-rail${peek ? " tile-rail--peek" : ""}`}
-      data-visible={(peek && visible) || undefined}
+      className="tile-rail"
     >
       <div
         className="tile-rail__icons"
@@ -1714,7 +1684,6 @@ const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
     ops.toolPreferences,
   );
   const { focusLeaf, engage } = ops;
-  const peekRail = usePeekAtEdge();
 
   // A stack's documents, in a fixed order (by url) rather than tab order:
   // showing a different tab then never moves them in the DOM, which would
@@ -1724,12 +1693,10 @@ const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
   const docs = tabs
     .filter((tab): tab is PanelView & { url: AutomergeUrl } => !!tab.url)
     .sort(byUrl);
-  const drawer = !isRootFolder && !isEmpty ? leaf.drawer : undefined;
 
   // React events follow the component tree, not the DOM, so the panel's own
-  // focus-on-mousedown never hears clicks in here: repeat it. The documents'
-  // wrapper is always the first child, so opening or closing the drawer
-  // beside it never remounts them.
+  // focus-on-mousedown never hears clicks in here: repeat it. (The open
+  // drawer lives in the showing tab; see `TabContent`.)
   return createPortal(
     <div
       className="tile-panel__content-inner"
@@ -1745,8 +1712,6 @@ const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
             }
       }
       onKeyDownCapture={isRootFolder || isEmpty ? undefined : () => engage(leaf.id)}
-      onPointerMove={peekRail.onPointerMove}
-      onPointerLeave={peekRail.onPointerLeave}
     >
       <div className="tile-panel__docs">
         {isEmpty ? (
@@ -1773,19 +1738,6 @@ const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
           ))
         )}
       </div>
-      {!isRootFolder &&
-        !isEmpty &&
-        ops.contextTools.length > 0 &&
-        !drawer?.open && (
-          // The open drawer lives in the showing tab (see `TabContent`).
-          <ToolRail
-            tools={ops.contextTools}
-            shownId={undefined}
-            onPick={(id) => ops.showDrawerTool(leaf.id, id)}
-            peek
-            visible={peekRail.visible}
-          />
-        )}
     </div>,
     ops.getContainer(leaf.id),
   );

@@ -691,6 +691,18 @@ patchwork-view {
   }
 }
 
+/* The drawer button is the drawer's only way in, so it never hides: faint
+   until wanted, full ink while its drawer is open. */
+.tile-panel__actions .tile-panel__icon-btn--drawer {
+  opacity: 0.45;
+}
+
+.tile-panel__header:hover .tile-panel__actions .tile-panel__icon-btn--drawer,
+.tile-panel__header:focus-within .tile-panel__actions .tile-panel__icon-btn--drawer,
+.tile-panel__actions .tile-panel__icon-btn--drawer[aria-pressed="true"] {
+  opacity: 1;
+}
+
 .tile-panel__body {
   flex: 1 1 auto;
   min-width: 0;
@@ -858,35 +870,6 @@ patchwork-view {
   box-shadow: 0 2px 6px oklch(0 0 0 / 0.06);
   pointer-events: none;
   transform: translateY(-50%);
-}
-
-/* While the drawer is closed, the rail peeks in over the panel's right edge
-   when the pointer comes to that edge (`data-visible`, see usePeekAtEdge) or
-   focus is in it, laid over the document rather than pushing it aside, so
-   nothing reflows. Below the drop zones, which take over during a drag.
-   Always there on touch screens. */
-.tile-rail--peek {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease;
-}
-
-.tile-rail--peek[data-visible],
-.tile-rail--peek:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-@media (hover: none) {
-  .tile-rail--peek {
-    opacity: 1;
-    pointer-events: auto;
-  }
 }
 
 .tile-drawer__body {
@@ -1129,13 +1112,6 @@ patchwork-view {
     flex: 0 0 auto;
     max-width: 10rem;
     height: 28px;
-  }
-
-  /* The rail stands beside the document rather than over its edge. */
-  .tile-rail--peek {
-    position: relative;
-    opacity: 1;
-    pointer-events: auto;
   }
 
   /* An open drawer covers its document; its width is a wide screen's. */

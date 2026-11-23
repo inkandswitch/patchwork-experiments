@@ -109,13 +109,13 @@ and resize freely.
   live in a document panel's **drawer**, along its right edge: a sheet a
   shade off the documents' white, so it reads as a layer over the panel
   without a shadow. Its spine is a **rail** of every context tool's icon,
-  naming each on hover. While the drawer is closed, the rail peeks in over the
-  panel's right edge when the pointer rests at that edge (within 16px, for a
-  moment, with no button held — so a scrollbar drag doesn't call it up), and
-  goes once the pointer moves away; on touch screens it's always there. Pick a
-  tool to open the drawer on it. Open, the rail runs down the
+  naming each on hover. The drawer button in the panel header (a panel with
+  its right strip, faint until the header is hovered, lit while open) opens
+  and closes it, on the tool it last showed. Nothing of the frame's lies over
+  the document's right edge while the drawer is closed: that edge belongs to
+  the document (its scrollbar, its own toolbars). Open, the rail runs down the
   drawer's outer edge with the shown tool lit; pick another to switch, or the
-  lit one to close the drawer. There's no separate toggle. The drawer shows
+  lit one to close the drawer. The drawer shows
   one tool at a time, under
   its name; a tool mounts the first time it's shown and stays mounted while
   the drawer is open. A drawer describes **its own panel's**
