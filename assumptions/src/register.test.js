@@ -3,6 +3,8 @@ import { outOfDate } from "./consistency.js"
 import { evaluate, formulaCycles, materialize, pickValue } from "./register.js"
 import { supportFor } from "./support.js"
 import { observedUse, useFlag } from "./uses.js"
+import { AssumptionsDatatype } from "./datatype.js"
+import { renderExport } from "./export.js"
 
 const claim = (key, stated, extra = {}) => ({ key, stated, sourceKind: "datasheet", verified: true, ...extra })
 
@@ -247,5 +249,24 @@ describe("use", () => {
     expect(observedUse("g_h", {}, readers, scan)).toBe("model")
     expect(observedUse("i_j", {}, readers, scan)).toBe("nowhere")
     expect(observedUse("i_j", {}, readers, null)).toBeNull()
+  })
+})
+
+
+describe("the register as source for other tools (asSource)", () => {
+  const doc = { title: "Nootka", entries: { boat_mass_kg: { basis: "estimate", value: { nominal: 8330, min: 8100 } } } }
+  it.each([
+    ["py", "python"],
+    ["scad", "scad"],
+    ["json", "json"],
+    [".PY", "python"],
+  ])("%s gives the %s export", (ext, format) => {
+    expect(AssumptionsDatatype.asSource(doc, ext)).toBe(renderExport(doc.entries, { format, title: "Nootka" }))
+  })
+  it.each([["md"], [""], [undefined]])("%j gives null", (ext) => {
+    expect(AssumptionsDatatype.asSource(doc, ext)).toBeNull()
+  })
+  it("the JSON is a flat id → value object", () => {
+    expect(JSON.parse(AssumptionsDatatype.asSource(doc, "json"))).toMatchObject({ boat_mass_kg: 8330, boat_mass_kg_min: 8100 })
   })
 })
