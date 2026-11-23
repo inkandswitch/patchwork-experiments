@@ -729,6 +729,19 @@ that behaves differently from its description. Write it then, while you know.
   yet; it refuses one that does, unless you pass \`overwrite: true\`.
 - A note that turned out wrong is worse than none. Fix it or \`note_delete\` it.
 
+## Notes and package guides
+
+How to use a particular package's tools — its inputs, working recipes, the
+pitfalls and their workarounds — is not a note. It goes in that package's usage
+guide (\`guide_write\`), one per package, which is pinned to the package version
+it was checked against and arrives with the result the first time a session
+uses the package. The first time you work out how a package's tools go, write
+its guide; when you find a pitfall in a package that has one, update the
+guide, not a loose note. When a guide is flagged as possibly out of date, read
+\`guide_changes\`, fix what the changes made wrong, and re-pin
+(\`guide_pin\`); \`guide_read\` with no package lists the guides. Notes stay for everything else: a datatype's shape, a
+preference, how this workspace behaves.
+
 ## Never
 
 No credentials, tokens, passwords or keys — notes are synced, and one that

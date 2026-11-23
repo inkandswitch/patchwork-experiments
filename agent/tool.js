@@ -47,6 +47,7 @@ import {
 import { describeModel, describeDefaults } from "./providers/openrouter.js"
 import { DEFAULT_LIMITS, DEFAULT_TIER_MODELS, TIERS } from "./workflow/plan.js"
 import { renderTranscript } from "./ui/transcript.js"
+import { createGuidesButton } from "./ui/guides.js"
 import { createInlineViews } from "./ui/views.js"
 import { getMount, mountForPerson, mountIdIn, parkMount } from "./tools/checking.js"
 import { applyInstall, applyUninstall } from "./ui/install.js"
@@ -144,7 +145,10 @@ export function AgentTool(handle, element, options = {}) {
   // The workflow this session started, or is a step of: one click to its view.
   const workflowButton = el("button", "agent-workflow-link", "Workflow")
   workflowButton.hidden = true
-  header.append(statusDot, subjectLabel, workflowButton, costLabel, modelButton)
+  // The usage guides the agent keeps, and whether each is up to date.
+  const guides = createGuidesButton({ repo, rootFolderUrl: accountContext().rootFolderUrl, openDoc: (url) => onOpenDoc(url) })
+  header.append(statusDot, subjectLabel, workflowButton, guides.button, costLabel, modelButton)
+  guides.refresh()
   let workflowShown = null
   workflowButton.addEventListener("click", (event) => {
     event.preventDefault()
@@ -171,7 +175,7 @@ export function AgentTool(handle, element, options = {}) {
   // both were places to look other than where the thing was talked about.
   const transcript = el("div", "agent-transcript")
   const composer = el("div", "agent-composer")
-  main.append(header, transcript, composer)
+  main.append(header, guides.panel, transcript, composer)
 
   // Workflow steps run in sessions nobody has open; what they wait on a person
   // for — a permission, a question — is shown here, above the transcript, and

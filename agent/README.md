@@ -862,6 +862,47 @@ the thing most likely to need correcting in the field: when the agent gets the
 render contract wrong, the fix should be editing a document, not redeploying the
 harness.
 
+## Package usage guides
+
+Notes hold what the agent learns in general; a **usage guide** holds what it has
+learned about using one package's tools, so no session reads plugin source to
+learn them again. There is one guide per package, a markdown document in a
+`Tool guides` folder inside the "Agent notes" folder (notes skip folders, so
+guides are never among them). A guide is written for a future agent and a
+person alike: the package's tools, datatypes and agent tools, their inputs, working
+recipes, and pitfalls with their workarounds. Tools: `guide_read` (one guide, or
+the list), `guide_write`, `guide_changes`, `guide_pin` (`tools/guides.js`).
+
+**Pin.** A guide records the package it describes and a pin in `pins.json`
+beside it: the package folder's heads and every file's heads when the guide was
+last reviewed against the package. (A file's edits live in its own document and
+never move the folder's heads, so the whole tree is pinned.) Against the package
+as it is now, a guide is `current`, `stale`, `gone` (the package will not load)
+or `unpinned` (never checked). The pin moves only when the guide is first
+written, when the package is unchanged, or when the agent says it reviewed
+(`guide_write` with `reviewed: true`, or `guide_pin`) — so adding a pitfall to a
+stale guide leaves it flagged. For a package installed pinned
+(`automerge:<id>#<heads>`), the version in use is the one compared.
+
+**Surfacing.** The system prompt lists each guide in a line (no packages are
+read to do so). The first time a session uses a package — a plugin tool call,
+`view_mount` of its tool or package folder, `doc_create` of its datatype,
+`plugin_source` of its plugin — the guide is appended to that result, with
+where it stands; a package with no guide gets a one-line prompt to write one.
+`registry_list` appends only a pointer for the plugins it lists. This needs the
+page's plugin registry (`ctx.packageOf`, set by the tab runner); a worker or node
+runner has none and surfaces nothing, but its guide tools take a package's folder
+URL. A stale guide says to read `guide_changes`: the files added, removed and
+changed since the pin and a bounded line diff of each, `file` for more of one.
+
+**Habit.** Package knowledge goes in the guide, not a note: write one after first
+working out a package, update it on finding a pitfall (the `keeping-notes` skill
+and the notes section of the prompt say so).
+
+**People.** Guides are ordinary documents. The agent header's "Guides" button
+lists them with their state in words ("May be out of date: 3 files changed in
+the package since this guide was checked on 22 Nov") and opens one on click.
+
 ## What a session makes, and installing it
 
 Every document a call makes or opens appears **in the transcript, beside that

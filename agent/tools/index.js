@@ -43,6 +43,7 @@ import askTools from "./ask.js"
 import namingTools from "./naming.js"
 import recallTools from "./recall.js"
 import noteTools from "./notes.js"
+import guideTools from "./guides.js"
 import workflowTools from "./workflow.js"
 import { WORKFLOW_TOOL_IDS, STEP_TOOL_IDS } from "../workflow/plan.js"
 import skillTools from "./skills.js"
@@ -51,7 +52,7 @@ import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
 import watchTools from "./watch.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...watchTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...citingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...workflowTools]
+export const BUILTIN_TOOLS = [...docTools, ...watchTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...citingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...guideTools, ...workflowTools]
 
 /**
  * Tools for one kind of session only. finding_write writes into a research
