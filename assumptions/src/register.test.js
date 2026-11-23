@@ -269,4 +269,19 @@ describe("the register as source for other tools (asSource)", () => {
   it("the JSON is a flat id → value object", () => {
     expect(JSON.parse(AssumptionsDatatype.asSource(doc, "json"))).toMatchObject({ boat_mass_kg: 8330, boat_mass_kg_min: 8100 })
   })
+  it("leaves out the results the asking document computes itself, and only those", () => {
+    const linked = {
+      title: "Nootka",
+      entries: {
+        boat_mass_kg: { basis: "estimate", value: { nominal: 8330 } },
+        cad_pack_volume_L: { basis: "model", model: { url: "automerge:bay#h1" }, value: { nominal: 1690.9 } },
+        cad_bay_L: { basis: "model", model: { url: null, ran: { "automerge:bay": {} } }, value: { nominal: 310 } },
+        prop_P_kW: { basis: "model", model: { url: "automerge:model1" }, value: { nominal: 47.2 } },
+      },
+    }
+    const ids = (opts) => Object.keys(JSON.parse(AssumptionsDatatype.asSource(linked, "json", opts))).filter((k) => !k.startsWith("_"))
+    expect(ids({ for: "automerge:bay" }).sort()).toEqual(["boat_mass_kg", "prop_P_kW"])
+    expect(ids({ for: "automerge:model1#x" }).sort()).toEqual(["boat_mass_kg", "cad_bay_L", "cad_pack_volume_L"])
+    expect(ids(undefined).sort()).toEqual(["boat_mass_kg", "cad_bay_L", "cad_pack_volume_L", "prop_P_kW"])
+  })
 })

@@ -219,9 +219,15 @@ export function registerReads(run, registerUrl) {
 export function runsToRead(doc, scan, evaluation = evaluate(doc), { registerUrl = null, registerAt = null } = {}) {
   const out = []
   // What each document's new outputs give: a result the same run gave is what
-  // another result of that run read, whatever the register held before.
+  // another result of that run read, whatever the register held before. Only
+  // that document's own results count: a run that prints an input for show
+  // (pack_parallel = 4) hasn't computed it.
+  const resultOf = (url, id) => {
+    const e = doc?.entries?.[id]
+    return e?.basis === "model" && ((kept(e.model?.url) && strip(e.model.url) === url) || url in (e.model?.ran ?? {}))
+  }
   const given = new Map()
-  for (const [url, record] of Object.entries(scan?.docs ?? {})) for (const o of record.outputs ?? []) given.set(`${url}|${o.id}`, o.value)
+  for (const [url, record] of Object.entries(scan?.docs ?? {})) for (const o of record.outputs ?? []) if (resultOf(url, o.id)) given.set(`${url}|${o.id}`, o.value)
   for (const [id, entry] of Object.entries(doc?.entries ?? {}).sort(([a], [b]) => (a < b ? -1 : 1))) {
     if (entry.basis !== "model") continue
     const urls = [...new Set([kept(entry.model?.url) ? strip(entry.model.url) : null, ...Object.keys(entry.model?.ran ?? {})].filter(Boolean))]

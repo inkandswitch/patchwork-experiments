@@ -155,3 +155,37 @@ describe("a document's kept last run (OpenSCAD's console)", () => {
     expect(runKeyOf(doc)).not.toBe(runKeyOf({ ...doc, lastRun: { ...doc.lastRun, logs: ["ECHO: cad_bay_L = 311"] } }))
   })
 })
+
+describe("a kept run's fingerprint", () => {
+  const base = { source: "", lastRun: { at: "2026-11-23T08:00:00Z", heads: ["h1"], ok: true, elapsedMillis: 90, input: "abc", logs: ["ECHO: cad_bay_L = 310", "Total rendering time: 0:00:00.039", "   Facets:        216"] } }
+  const bookkeeping = {
+    at: (r) => (r.at = "2026-11-23T08:00:02Z"),
+    heads: (r) => (r.heads = ["h2"]),
+    elapsed: (r) => (r.elapsedMillis = 95),
+    timing: (r) => (r.logs[1] = "Total rendering time: 0:00:00.041"),
+    cache: (r) => r.logs.push("Geometries in cache: 64"),
+  }
+  const meaning = {
+    input: (r) => (r.input = "abd"),
+    ok: (r) => (r.ok = false),
+    output: (r) => (r.logs[0] = "ECHO: cad_bay_L = 311"),
+  }
+  it("moves exactly when what was rendered, whether it worked, or what it printed changes; never for bookkeeping", () => {
+    const all = { ...bookkeeping, ...meaning }
+    const names = Object.keys(all)
+    const before = runKeyOf(base)
+    for (let mask = 0; mask < 1 << names.length; mask++) {
+      const doc = JSON.parse(JSON.stringify(base))
+      const chosen = names.filter((_, i) => mask & (1 << i))
+      for (const n of chosen) all[n](doc.lastRun)
+      expect(runKeyOf(doc) !== before, chosen.join("+") || "nothing").toBe(chosen.some((n) => n in meaning))
+    }
+  })
+
+  it("reads a quoted text result, and still no bare text", () => {
+    const ids = new Set(["thermal_battery_cooling", "pack_kind"])
+    const nb = { cells: [{ cell_type: "code", source: "", outputs: [{ output_type: "stream", text: "thermal_battery_cooling 'forced air'\npack_kind modular\n" }] }] }
+    expect(outputsOf(nb, ids).map((o) => [o.id, o.value])).toEqual([["thermal_battery_cooling", "forced air"]])
+    expect(outputsOf({ lastRun: { ok: true, logs: ['ECHO: thermal_battery_cooling = "liquid"'] } }, ids).map((o) => o.value)).toEqual(["liquid"])
+  })
+})

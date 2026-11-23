@@ -20,7 +20,7 @@ are this package's acceptance test (`src/run5.test.js`).
 
 | plugin | id | what |
 |---|---|---|
-| datatype | `assumptions` | the register document; `asSource(doc, ext)` gives the export for "py", "scad" or "json" |
+| datatype | `assumptions` | the register document; `asSource(doc, ext, { for })` gives the export for "py", "scad" or "json", without the asking document's own results |
 | tool | `assumptions` | the view: Needs attention, Entries, Requirements, and the entry panel |
 | skill | `assumptions-register` | when to keep a register and how to work from one |
 | agent:tool | `assumptions_create` | make a register, filed in and scoped to a task folder |
@@ -79,8 +79,10 @@ same name are refused.
   record heads. What-ifs are Patchwork drafts.
 - **Models read the register live.** A notebook (the `jupyter-linked`
   package) or an OpenSCAD model that links the register asks its datatype for
-  `asSource(doc, "py" | "scad" | "json")` and gets the export as the register
-  is now, so nothing is pasted.
+  `asSource(doc, "py" | "scad" | "json", { for: its own URL })` and gets the
+  export as the register is now, so nothing is pasted, without the results
+  that model computes itself (an included `id = value` would shadow its own
+  assignment).
 - **Use is intended against observed**: model, reference or unused, against
   what the scan sees. Five of the nine combinations are flagged; an entry kept
   unused says why (`uses.js`). Prose that cites an id without its number is

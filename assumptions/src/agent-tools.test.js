@@ -462,6 +462,34 @@ describe("check and where", () => {
     expect(out).not.toMatch(/STALE/)
   })
 
+  it("counts only a document's own results as given by its run: an input printed for show is not one, and text results are read", async () => {
+    const register = await newRegister()
+    const notebook = file("Model 3.ipynb", {
+      "@patchwork": { type: "jupyter-notebook" },
+      cells: [{ cell_type: "code", source: "pack_parallel = 4", outputs: [{ output_type: "stream", name: "stdout", text: "pack_parallel = 4\npack_heat_W 60.0\nthermal_battery_cooling 'forced air'\n" }] }],
+    })
+    await set.execute(
+      {
+        register,
+        entries: [
+          { id: "pack_parallel", kind: "decision", value: { nominal: 4, exact: true } },
+          { id: "pack_heat_W", unit: "W", model: { url: notebook.url, name: "Model 3", inputs: ["pack_parallel"] }, value: 50 },
+          { id: "thermal_battery_cooling", model: { url: notebook.url, name: "Model 3", inputs: ["pack_heat_W"] }, value: "passive" },
+        ],
+      },
+      ctx,
+    )
+    const out = await check.execute({ register }, ctx)
+    expect(out).toMatch(/READ FROM MODEL DOCUMENTS \(2\)/)
+    const doc = (await repo.find(register)).doc()
+    // pack_parallel was printed, not computed: its recorded input is the register's (exact), so nothing is stale.
+    expect(doc.entries.pack_heat_W.model.inputs.pack_parallel).toMatchObject({ nominal: 4, exact: true })
+    expect(out).not.toMatch(/STALE/)
+    // A text result is read like a figure; the result of the same run it rests on is that run's.
+    expect(doc.entries.thermal_battery_cooling.model.value).toBe("forced air")
+    expect(doc.entries.thermal_battery_cooling.model.inputs.pack_heat_W.nominal).toBe(60)
+  })
+
   it("knows which entries a run read: a module import or the whole document reads all; paths name entries by view", () => {
     const R = "automerge:reg"
     const at = (h) => [h]
