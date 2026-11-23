@@ -314,7 +314,7 @@ function sourceCode(doc) {
 function insteadOfKernel(doc) {
   const type = doc?.["@patchwork"]?.type
   if (type === "agent-workflow") {
-    return "This is a workflow plan: change it with the workflow tools — workflow_add_steps for more steps, workflow_edit_steps for a step that has not started (its prompt, after, tier, budget), workflow_reopen to send a finished step back, workflow_stop to stop one. From inside a step, workflow_request asks the orchestrator."
+    return "This is a workflow plan: change it with the workflow tools — workflow_add_steps for more steps, workflow_edit_steps for a step that has not started (its prompt, after, tier, budget, tools), workflow_reopen to send a finished step back, workflow_stop to stop one. From inside a step, workflow_request asks the orchestrator."
   }
   if (type === "agent-session") {
     return "This is an agent session: session_title renames it; workflow_answer or workflow_reopen (with a note) tells a step something; note_write keeps something for later sessions."

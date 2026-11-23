@@ -3,6 +3,7 @@ import {
   STEP, STATE, PLAN, TIERS, DEFAULT_LIMITS,
   initPlan, validateSteps, findCycle, states, toStart, isSettled, stepPrompt,
   overBudget, shouldPause, resumePlan, budgetOf, notStarted, reopenSteps, reopenPrompt,
+  newStep, editSteps, editErrors, EDITABLE,
 } from "./workflow/plan.js"
 
 const STATUSES = Object.values(STEP)
@@ -290,6 +291,9 @@ describe("validateSteps", () => {
     [[step("b", { prompt: " " })], /'prompt' is required/],
     [[step("b", { after: ["c"] }), step("c", { after: ["b"] })], /in a circle: (b → c → b|c → b → c)/],
     [[], /at least one/],
+    [[step("b", { tools: "doc_read" })], /'tools' must be a list of tool ids/],
+    [[step("b", { tools: ["doc_read", ""] })], /'tools' must be a list of tool ids/],
+    [[step("b", { tools: ["doc read"] })], /'tools' must be a list of tool ids/],
   ])("refuses %j", (steps, message) => {
     expect(validateSteps(base, steps).join("\n")).toMatch(message)
   })
@@ -298,6 +302,25 @@ describe("validateSteps", () => {
     const small = plan([step("a")], { limits: { ...DEFAULT_LIMITS, steps: 2 } })
     expect(validateSteps(small, [step("b")])).toEqual([])
     expect(validateSteps(small, [step("b"), step("c")]).join()).toMatch(/allows 2/)
+  })
+})
+
+describe("a step's tools", () => {
+  it("are kept as listed, once each, and left out when none are", () => {
+    expect(newStep(step("a", { tools: ["doc_read", "assumptions_set", "doc_read"] })).tools).toEqual(["doc_read", "assumptions_set"])
+    expect("tools" in newStep(step("a"))).toBe(false)
+    expect("tools" in newStep(step("a", { tools: [] }))).toBe(false)
+    expect(validateSteps(plan([]), [step("a", { tools: ["doc_read", "agent:x.y-z"] })])).toEqual([])
+  })
+
+  it("can be set, changed and cleared on a step that has not started", () => {
+    expect(EDITABLE).toContain("tools")
+    const doc = plan([step("a")])
+    editSteps(doc, [{ id: "a", tools: ["view_mount"] }])
+    expect(doc.steps[0].tools).toEqual(["view_mount"])
+    editSteps(doc, [{ id: "a", tools: [] }])
+    expect("tools" in doc.steps[0]).toBe(false)
+    expect(editErrors(doc, [{ id: "a", tools: [3] }]).join()).toMatch(/'tools' must be/)
   })
 })
 

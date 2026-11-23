@@ -147,6 +147,8 @@ const TERMINAL = new Set([STEP.done, STEP.failed, STEP.cancelled])
 /** Derived states that need nothing more from the driver: over, or waiting on the orchestrator. */
 const SETTLED = new Set([STATE.done, STATE.stale, STATE.failed, STATE.cancelled, STATE.blocked])
 const ID = /^[a-z0-9][a-z0-9_-]{0,39}$/i
+/** A tool id as tools and plugins declare them: `doc_read`, `assumptions_set`. */
+const TOOL_ID = /^[A-Za-z][A-Za-z0-9_:.-]{0,79}$/
 
 /** Seed a plan document. Runs inside a change. Steps must already be valid. */
 export function initPlan(doc, { title, goal, subject = null, sessionUrl = null, tiers = {}, limits = {}, steps = [], sourcesFolderUrl = null }) {
@@ -180,6 +182,7 @@ export function newStep(step) {
   }
   if (step.access === "web") out.access = "web"
   if (step.budget != null) out.budget = Number(step.budget)
+  if (step.tools?.length) out.tools = [...new Set(step.tools)]
   return out
 }
 
@@ -241,6 +244,7 @@ export function stepFieldErrors(step, at = "the step") {
   if (step.budget != null && !(typeof step.budget === "number" && Number.isFinite(step.budget) && step.budget > 0)) errors.push(`${at}: 'budget' must be a positive number of dollars.`)
   if (step.access === "web" && step.where !== "worker") errors.push(`${at}: a web-only step runs on a worker; it needs nothing from the page.`)
   if (step.after != null && !Array.isArray(step.after)) errors.push(`${at}: 'after' must be a list of step ids.`)
+  if (step.tools != null && !(Array.isArray(step.tools) && step.tools.every((id) => typeof id === "string" && TOOL_ID.test(id)))) errors.push(`${at}: 'tools' must be a list of tool ids, such as ["doc_read", "assumptions_set"].`)
   return errors
 }
 
@@ -511,7 +515,7 @@ function wake(doc) {
 // ---------------------------------------------------------------- editing
 
 /** What workflow_edit_steps may change, on a step that has not started. */
-export const EDITABLE = ["title", "prompt", "why", "after", "where", "tier", "budget", "access"]
+export const EDITABLE = ["title", "prompt", "why", "after", "where", "tier", "budget", "access", "tools"]
 
 /**
  * Why these edits cannot be made; empty when they can. A step may be edited
@@ -563,6 +567,10 @@ export function editSteps(doc, edits) {
     for (const key of EDITABLE) {
       if (!(key in edit)) continue
       if (key === "after") step.after = [...edit.after]
+      else if (key === "tools") {
+        if (edit.tools?.length) step.tools = [...new Set(edit.tools)]
+        else delete step.tools
+      }
       else if (key === "budget") step.budget = Number(edit.budget)
       else if (key === "access") {
         if (edit.access === "web") step.access = "web"

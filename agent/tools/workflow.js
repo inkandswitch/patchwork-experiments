@@ -59,7 +59,7 @@ const STEP_SCHEMA = {
     where: {
       type: "string",
       enum: ["worker", "host"],
-      description: "'worker' unless the step needs the page: mounting or driving a view (view_mount, view_interact, view_inspect), screenshots, package_test, doc_create, registry_list or plugin_source. A worker step has every other tool, the tools of installed packages included (an assumptions register's, say) unless a package declares one needs the page. Worker steps run side by side; host steps take turns on the page, one at a time. A worker step whose prompt names a tool that needs the page is moved to the page when it starts.",
+      description: "'worker' unless the step needs the page: mounting or driving a view (view_mount, view_interact, view_inspect), screenshots, package_test, doc_create, registry_list or plugin_source. A worker step has every other tool, the tools of installed packages included (an assumptions register's, say) unless a package declares one needs the page. Worker steps run side by side; host steps take turns on the page, one at a time. A worker step whose `tools` or prompt names a tool that needs the page is moved to the page when it starts.",
     },
     tier: {
       type: "string",
@@ -70,6 +70,11 @@ const STEP_SCHEMA = {
     budget: {
       type: "number",
       description: `Dollars the step may spend before it stops and waits for you to decide (workflow_budget, workflow_stop). Defaults by tier: ${Object.entries(DEFAULT_STEP_BUDGETS).map(([tier, dollars]) => `${tier} $${dollars}`).join(", ")}. Give a step more when it has more to do; a step going round in circles then wastes only its own.`,
+    },
+    tools: {
+      type: "array",
+      items: { type: "string" },
+      description: "The tools this step needs by id, e.g. [\"doc_read\", \"assumptions_set\"]. Checked when it starts: a tool no installed package provides fails it at once (\"Not installed: …\"), and a worker step listing a tool that needs the page moves there. The step still gets its whole toolset; this says what it cannot do without.",
     },
     access: {
       type: "string",
@@ -118,6 +123,7 @@ export function describePlan(plan, url) {
   for (const step of plan.steps ?? []) {
     const state = derived.get(step.id)
     lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier} · $${stepBudget(step).toFixed(2)} budget${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
+    if (step.tools?.length) lines.push(`  needs: ${step.tools.join(", ")}`)
     if (step.moved) lines.push(`  ${step.moved}`)
     if (step.sessionUrl) lines.push(`  session: ${step.sessionUrl}`)
     if ((state === STATE.done || state === STATE.stale) && step.result) lines.push(`  result: ${truncate(step.result.replace(/\s+/g, " "), 400)}`)
@@ -472,7 +478,7 @@ export const workflowEditSteps = {
   id: "workflow_edit_steps",
   name: "Edit workflow steps",
   description:
-    "Change steps that have not started: what they depend on (`after`) — to wait on a step added since, say — or their prompt, title, tier, placement or budget. Give only what changes. A reopened step waiting to continue takes `after` and `budget` only: its session already has its prompt, so say what changed in the reopen note. To change a step that has started, reopen it.",
+    "Change steps that have not started: what they depend on (`after`) — to wait on a step added since, say — or their prompt, title, tier, placement, budget or the tools they need. Give only what changes. A reopened step waiting to continue takes `after` and `budget` only: its session already has its prompt, so say what changed in the reopen note. To change a step that has started, reopen it.",
   where: "worker",
   risk: "edit",
   input_schema: {

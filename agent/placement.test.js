@@ -211,6 +211,46 @@ describe("a step's prompt, checked before it starts", () => {
     expect([...web].sort()).toEqual([...SCOPED_TOOL_IDS, "scoped_tool"].sort())
   })
 
+  // The same kinds of tool, listed in the step's `tools` instead of named in
+  // its prompt: [what, tools, worker step, host step, research step]. A
+  // listed id is checked against what is installed, so a word that only looks
+  // like a tool is no longer passed over: it is not installed.
+  const LISTED = [
+    ["nothing", [], null, null, null],
+    ["a worker built-in", ["doc_edit"], null, null, "fail"],
+    ["a page built-in", ["view_mount"], "host", null, "fail"],
+    ["a worker plugin", ["repo_tool"], null, null, "fail"],
+    ["a page-only plugin", ["page_tool"], "host", null, "fail"],
+    ["a scoped plugin", ["scoped_tool"], null, null, null],
+    ["a research step's own built-in", ["finding_write"], "fail", "fail", null],
+    ["a research built-in both kinds get", ["web_search"], null, null, null],
+    ["the step's own tool", ["workflow_request"], null, null, null],
+    ["an orchestrator's tool", ["workflow_start"], "fail", "fail", "fail"],
+    ["a tool no package provides", ["cell_capacity"], "fail", "fail", "fail"],
+    ["an installed tool and a missing one", ["doc_read", "nope_tool"], "fail", "fail", "fail"],
+  ]
+
+  for (const [what, tools, worker, host, web] of LISTED) {
+    for (const [placement, access, want] of [["worker", null, worker], ["host", null, host], ["worker", "web", web]]) {
+      it(`${access === "web" ? "a research step" : `a ${placement} step`} listing ${what} → ${want ?? "starts"}`, () => {
+        const verdict = checkStepTools({ ...step(placement, access, "Do the work."), tools }, catalogue, ctx)
+        if (want === null) expect(verdict).toBeNull()
+        else if (want === "host") expect(verdict).toEqual({ where: "host", why: expect.stringMatching(/^Moved to the page: it needs .+/) })
+        else expect(verdict).toEqual({ fail: expect.any(String) })
+      })
+    }
+  }
+
+  it("a listed tool nothing provides is said first, as not installed", () => {
+    const verdict = checkStepTools({ ...step("worker", null, "Open it with view_mount."), tools: ["view_mount", "cad_export", "nope_tool"] }, catalogue, ctx)
+    expect(verdict.fail).toMatch(/^Not installed: cad_export, nope_tool\. /)
+  })
+
+  it("listed tools and prompt names count together", () => {
+    const verdict = checkStepTools({ ...step("worker", null, "Then draw it with page_tool."), tools: ["view_mount"] }, catalogue, ctx)
+    expect(verdict).toEqual({ where: "host", why: "Moved to the page: it needs view_mount, page_tool, which need the page." })
+  })
+
   it("namedIn: whole words only", () => {
     expect(namedIn("use doc_read, then doc_reader", ["doc_read", "doc_reader", "doc_edit"])).toEqual(["doc_read", "doc_reader"])
     expect(namedIn("`view_mount`(x)", ["view_mount"])).toEqual(["view_mount"])
@@ -330,6 +370,21 @@ describe("the driver, starting a step", () => {
     const plugins = [{ id: "page_tool", where: "host" }, { id: "assumptions_set", where: "worker" }]
     const { plan } = await run([{ id: "p", prompt: "Draw it with page_tool." }, { id: "a", prompt: "Record each with assumptions_set." }], { plugins })
     expect(plan.steps.map((s) => [s.id, s.where, s.status])).toEqual([["p", "host", "done"], ["a", "worker", "done"]])
+  })
+
+  it("a step listing a tool no installed package provides fails at start, and gets no session", async () => {
+    const { plan, sessions } = await run([{ id: "x", tools: ["doc_read", "cad_export"], prompt: "Export the hull." }, { id: "ok", prompt: "Summarise." }])
+    const x = plan.steps.find((s) => s.id === "x")
+    expect([x.status, x.error.split(".")[0]]).toEqual(["failed", "Not installed: cad_export"])
+    expect(sessions.x).toBeUndefined()
+    expect(plan.steps.find((s) => s.id === "ok").status).toBe("done")
+  })
+
+  it("a worker step listing a page-only plugin moves to the page and runs there", async () => {
+    const { plan, sessions } = await run([{ id: "p", tools: ["page_tool"], prompt: "Draw it." }], { plugins: [{ id: "page_tool", where: "host" }] })
+    const p = plan.steps.find((s) => s.id === "p")
+    expect([p.status, p.where, p.moved]).toEqual(["done", "host", "Moved to the page: it needs page_tool, which needs the page."])
+    expect(sessions.p.tools).toEqual({ disabled: WORKFLOW_TOOL_IDS })
   })
 
   it("a research step naming a tool it cannot have fails at once, saying why, and gets no session", async () => {

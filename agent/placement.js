@@ -87,36 +87,53 @@ export function stepToolIds(step, catalogue, { scopedIds, orchestratorIds }) {
 }
 
 /**
- * Before a step starts: does its prompt name a tool it would not get?
+ * Before a step starts: does it need a tool it would not get? What it needs
+ * is the tools its `tools` field lists — the orchestrator's word — and those
+ * its prompt names.
  *
  *   null                       no — start it
- *   { where: "host", why }     a worker step naming tools that need the page:
- *                              move it there; it starts when the page is free
- *   { fail: why }              anything else — a research step naming a tool
- *                              that reads the person's documents, a step
- *                              naming the orchestrator's tools. Said once, at
+ *   { where: "host", why }     a worker step needing tools that need the
+ *                              page: move it there; it starts when the page
+ *                              is free
+ *   { fail: why }              anything else — a listed tool no installed
+ *                              package provides, a research step needing a
+ *                              tool that reads the person's documents, a full
+ *                              step needing a research step's own tool, a step
+ *                              needing the orchestrator's tools. Said once, at
  *                              start, instead of found out by searching.
  *
- * Only names of tools this page knows are recognised: a word in a prompt is
- * not a tool because it looks like one (an assumptions entry is called
- * `cell_capacity`).
+ * The listed tools are checked first, against everything installed: a tool
+ * listed and missing is a fact about this page, not a guess. In the prompt
+ * only names of tools this page knows are recognised: a word is not a tool
+ * because it looks like one (an assumptions entry is called `cell_capacity`).
  */
 export function checkStepTools(step, catalogue, ids) {
   const known = catalogue.map((t) => t.id)
-  const named = namedIn(step?.prompt, known)
+  const listed = Array.isArray(step?.tools) ? [...new Set(step.tools)] : []
+  const installed = new Set([...known, ...(ids.scopedIds ?? [])])
+  const absent = listed.filter((id) => !installed.has(id))
+  if (absent.length) {
+    return { fail: `Not installed: ${absent.join(", ")}. No package installed here provides ${absent.length === 1 ? "that tool" : "those tools"}, so the step cannot do its work as written. Ask the person to install the package, or plan the work without ${absent.length === 1 ? "it" : "them"}.` }
+  }
+  const named = [...new Set([...listed, ...namedIn(step?.prompt, known)])]
   if (!named.length) return null
   const gets = stepToolIds(step, catalogue, ids)
   const missing = named.filter((id) => !gets.has(id))
   if (!missing.length) return null
 
   const list = missing.join(", ")
+  const said = listed.length ? "It needs" : "Its prompt names"
   if (step.access === "web") {
-    return { fail: `Its prompt names ${list}, which a research step cannot have: it reaches only the web and what research steps kept. Make it a full step, or split the part that needs ${missing.length === 1 ? "that tool" : "those tools"} into one.` }
+    return { fail: `${said} ${list}, which a research step cannot have: it reaches only the web and what research steps kept. Make it a full step, or split the part that needs ${missing.length === 1 ? "that tool" : "those tools"} into one.` }
   }
   const orchestrating = missing.filter((id) => ids.orchestratorIds.includes(id))
   if (orchestrating.length) {
-    return { fail: `Its prompt names ${orchestrating.join(", ")}, which only the orchestrator has: a step cannot change the workflow. Ask with workflow_request instead.` }
+    return { fail: `${said} ${orchestrating.join(", ")}, which only the orchestrator has: a step cannot change the workflow. Ask with workflow_request instead.` }
+  }
+  const researchOnly = missing.filter((id) => !known.includes(id))
+  if (researchOnly.length) {
+    return { fail: `${said} ${researchOnly.join(", ")}, which only a research step (access: web) has.` }
   }
   // Everything else it lacks needs the page, and on the page it gets everything.
-  return { where: HOST, why: `Moved to the page: its prompt names ${list}, which ${missing.length === 1 ? "needs" : "need"} the page.` }
+  return { where: HOST, why: `Moved to the page: ${said.toLowerCase()} ${list}, which ${missing.length === 1 ? "needs" : "need"} the page.` }
 }
