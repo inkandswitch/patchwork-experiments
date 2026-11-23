@@ -38,6 +38,7 @@ import {
   isRange,
   posOf,
   printValue,
+  valueKey,
   type BasicRawValue,
   type Pos,
   type RawValue,
@@ -176,6 +177,31 @@ export function ambSize(spec: AmbSpec): number {
     default:
       return Infinity;
   }
+}
+
+/**
+ * The distinct options of an amb that is a choice among known things. A value that is
+ * repeated (to make it more likely) is one option. `slot[i]` is the option that choice
+ * index i belongs to, and `first[o]` is a choice index for option o.
+ */
+export function options(spec: AmbSpec): { slot: number[]; first: number[]; labels: string[] } {
+  const size = ambSize(spec);
+  if (spec.kind !== 'discrete') {
+    const indexes = Array.from({ length: Number.isFinite(size) ? size : 0 }, (_, i) => i);
+    return { slot: indexes, first: indexes, labels: indexes.map((i) => choiceLabel(spec, i)) };
+  }
+  const byKey = new Map<string, number>();
+  const slot: number[] = [];
+  const first: number[] = [];
+  spec.values.forEach((value, i) => {
+    const key = valueKey(value);
+    if (!byKey.has(key)) {
+      byKey.set(key, first.length);
+      first.push(i);
+    }
+    slot.push(byKey.get(key)!);
+  });
+  return { slot, first, labels: first.map((i) => printValue(spec.values[i])) };
 }
 
 /** A label for the i-th choice of a discrete amb. */
@@ -708,11 +734,45 @@ function inSheetOrder(a: string, b: string) {
   return p.row - q.row || p.col - q.col || Number(nthA) - Number(nthB);
 }
 
+/** The most copies of values a weighted amb may turn into. */
+const MAX_WEIGHT_UNITS = 10_000;
+
+/**
+ * Weights are shorthand for repeats: {"a": 70%, "b": 30%} is "a" seven times and "b"
+ * three times. That keeps a weighted choice an ordinary list of equally likely options,
+ * which is the only kind of choice that can be enumerated exactly.
+ */
+function expandWeights(parts: (AmbPart & { type: 'weighted' })[]): BasicRawValue[] | ASError {
+  // the smallest power of ten that makes every weight a whole number...
+  let scale = 1;
+  const isWhole = (x: number) => Math.abs(x - Math.round(x)) < 1e-9;
+  while (scale <= 1e6 && !parts.every((part) => isWhole(part.weight * scale))) scale *= 10;
+  let units = parts.map((part) => Math.round(part.weight * scale));
+  // ...and then the smallest whole numbers in the same proportions
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const divisor = units.reduce(gcd, 0);
+  if (divisor === 0) return new ASError('#N/A', 'the weights are all zero');
+  units = units.map((u) => u / divisor);
+  if (scale > 1e6 || units.reduce((a, b) => a + b, 0) > MAX_WEIGHT_UNITS) {
+    return new ASError('#N/A', 'these weights are too fine-grained: use rounder numbers');
+  }
+  return parts.flatMap((part, i) => new Array<BasicRawValue>(units[i]).fill(part.value));
+}
+
 function expandAmbParts(parts: AmbPart[]): BasicRawValue[] | ASError {
+  const weighted = parts.filter((part) => part.type === 'weighted');
+  if (weighted.length > 0) {
+    return weighted.length === parts.length
+      ? expandWeights(weighted)
+      : new ASError('#N/A', 'give every value in the amb a weight, or none of them');
+  }
+
   const values: BasicRawValue[] = [];
   const tooMany = () => new ASError('#N/A', `an amb can have at most ${MAX_AMB_VALUES} values`);
   for (const part of parts) {
-    if (part.type === 'repeat') {
+    if (part.type === 'weighted') {
+      continue;
+    } else if (part.type === 'repeat') {
       if (values.length + part.numRepeats > MAX_AMB_VALUES) return tooMany();
       for (let i = 0; i < part.numRepeats; i++) values.push(part.value);
     } else {

@@ -5,7 +5,7 @@
 import { For, Index, Show, createMemo, createSignal } from 'solid-js';
 import { examples } from '../examples';
 import { isError, posOf, printNumber, printValue } from '../lang/values';
-import { ambLabel, ambSize, displayName, type AmbInfo, type CellInfo } from '../model/compile';
+import { ambLabel, ambSize, displayName, options, type AmbInfo, type CellInfo } from '../model/compile';
 import {
   aggregate,
   histogram,
@@ -372,7 +372,8 @@ function TableViewer(props: { info: CellInfo; dimensions: AmbInfo[] }) {
     const others = props.dimensions.filter((d) => d !== x());
     return others.find((d) => d.id === yAddr()) ?? others[0] ?? null;
   };
-  const tooBig = () => ambSize(x().spec) > MAX_TABLE_CHOICES || (y() !== null && ambSize(y()!.spec) > MAX_TABLE_CHOICES);
+  const numOptions = (amb: AmbInfo) => options(amb.spec).first.length;
+  const tooBig = () => numOptions(x()) > MAX_TABLE_CHOICES || (y() !== null && numOptions(y()!) > MAX_TABLE_CHOICES);
   const table = createMemo(() => (tooBig() ? null : pivot(s.view(), props.info.addr, x(), y())));
   const filtering = s.filtering;
 
@@ -415,7 +416,7 @@ function TableViewer(props: { info: CellInfo; dimensions: AmbInfo[] }) {
                 <tr>
                   <th />
                   <Index each={table().xLabels}>
-                    {(label, i) => <th onMouseEnter={() => hoverChoice([[x(), i]])}>{label()}</th>}
+                    {(label, i) => <th onMouseEnter={() => hoverChoice([[x(), table().xChoices[i]]])}>{label()}</th>}
                   </Index>
                 </tr>
               </thead>
@@ -423,13 +424,19 @@ function TableViewer(props: { info: CellInfo; dimensions: AmbInfo[] }) {
                 <Index each={table().cells}>
                   {(row, j) => (
                     <tr>
-                      <th onMouseEnter={() => y() && hoverChoice([[y()!, j]])}>{table().yLabels[j]}</th>
+                      <th onMouseEnter={() => y() && hoverChoice([[y()!, table().yChoices[j]]])}>{table().yLabels[j]}</th>
                       <Index each={row()}>
                         {(cell, i) => (
                           <td
                             data-in={filtering() && cell().passing > 0 ? '' : undefined}
                             data-out={cell().passing === 0 ? '' : undefined}
-                            onMouseEnter={() => hoverChoice(y() ? [[x(), i], [y()!, j]] : [[x(), i]])}
+                            onMouseEnter={() =>
+                              hoverChoice(
+                                y()
+                                  ? [[x(), table().xChoices[i]], [y()!, table().yChoices[j]]]
+                                  : [[x(), table().xChoices[i]]],
+                              )
+                            }
                           >
                             {cell().scenarios === 0
                               ? ''

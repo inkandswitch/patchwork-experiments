@@ -14,8 +14,8 @@
 import { isRange, printValue, valueKey, type RangeValue, type RawValue } from '../lang/values';
 import {
   ambName,
-  ambSize,
   choiceLabel,
+  options,
   isContinuous,
   type AmbInfo,
   type AmbSpec,
@@ -328,6 +328,9 @@ export interface Pivot {
   xLabels: string[];
   /** A single unlabeled row when there is no second dimension. */
   yLabels: string[];
+  /** A choice index for each column and each row, for filtering on what it stands for. */
+  xChoices: number[];
+  yChoices: number[];
   /** cells[y][x] */
   cells: PivotCell[][];
 }
@@ -343,8 +346,11 @@ export function tableDimensions(run: Run, info: CellInfo): AmbInfo[] {
 export function pivot(view: View, addr: string, x: AmbInfo, y: AmbInfo | null): Pivot {
   const { all: run, matching, mask } = view;
   const separate = isFocused(view);
-  const xSize = ambSize(x.spec);
-  const ySize = y ? ambSize(y.spec) : 1;
+  // (a value that is repeated in an amb, or weighted, gets one column, not several)
+  const xOptions = options(x.spec);
+  const yOptions = y ? options(y.spec) : null;
+  const xSize = xOptions.first.length;
+  const ySize = yOptions ? yOptions.first.length : 1;
   const cells: PivotCell[][] = Array.from({ length: ySize }, () =>
     Array.from({ length: xSize }, () => ({
       scenarios: 0,
@@ -360,7 +366,7 @@ export function pivot(view: View, addr: string, x: AmbInfo, y: AmbInfo | null): 
   const xs = run.columns[x.key];
   const ys = y ? run.columns[y.key] : null;
   for (let i = 0; i < run.n; i++) {
-    const cell = cells[ys ? ys[i] : 0][xs[i]];
+    const cell = cells[ys ? yOptions!.slot[ys[i]] : 0][xOptions.slot[xs[i]]];
     cell.scenarios++;
     if (!separate && (!mask || mask[i])) cell.passing++;
     const value = column[i];
@@ -375,13 +381,15 @@ export function pivot(view: View, addr: string, x: AmbInfo, y: AmbInfo | null): 
     const mxs = matching.columns[x.key];
     const mys = y ? matching.columns[y.key] : null;
     for (let i = 0; i < matching.n; i++) {
-      if (!mask || mask[i]) cells[mys ? mys[i] : 0][mxs[i]].passing++;
+      if (!mask || mask[i]) cells[mys ? yOptions!.slot[mys[i]] : 0][xOptions.slot[mxs[i]]].passing++;
     }
   }
 
   return {
-    xLabels: Array.from({ length: xSize }, (_, i) => choiceLabel(x.spec, i)),
-    yLabels: y ? Array.from({ length: ySize }, (_, i) => choiceLabel(y.spec, i)) : [''],
+    xLabels: xOptions.labels,
+    yLabels: yOptions ? yOptions.labels : [''],
+    xChoices: xOptions.first,
+    yChoices: yOptions ? yOptions.first : [],
     cells,
   };
 }
@@ -468,11 +476,13 @@ export function lineChart(view: View, info: CellInfo, maxSeries = 150): LineChar
   const add = (sample: Sample, prefix: string, counts: (i: number) => boolean) => {
     const column = sample.columns[info.addr];
     const depColumns = deps.map((dep) => sample.columns[dep.key]);
+    const depOptions = deps.map((dep) => options(dep.spec));
     for (let i = 0; i < sample.n; i++) {
       const value = column[i];
       if (!isRange(value)) continue;
       // (without discrete choices to go by, every scenario is a line of its own)
-      const key = discrete ? depColumns.map((choices) => choices[i]).join(',') : prefix + i;
+      // (choices of the same value, in an amb that repeats it, draw the same line)
+      const key = discrete ? depColumns.map((choices, d) => depOptions[d].slot[choices[i]]).join(',') : prefix + i;
       let s = byKey.get(key);
       if (s === undefined) {
         s = null;

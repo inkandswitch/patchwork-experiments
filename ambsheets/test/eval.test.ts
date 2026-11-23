@@ -468,3 +468,49 @@ describe('line charts', () => {
     expect(chart.total).toBe(1_000);
   });
 });
+
+describe('weighted choices', () => {
+  test('weights say how likely each value is', () => {
+    const r = run({ A1: '{"Barn": 70%, "Library": 30%}', A2: '=IF(A1 = "Barn", 5000, 2500)' });
+    // seven Barns and three Libraries: ten equally likely scenarios, checked exactly
+    expect(r.mode).toBe('exhaustive');
+    expect(r.n).toBe(10);
+    const a1 = summarize(r.compiled.cells.get('A1')!, viewOf(r));
+    expect(a1.values!.map((v) => [v.value, v.count / r.n])).toEqual([
+      ['Barn', 0.7],
+      ['Library', 0.3],
+    ]);
+    expect(summarize(r.compiled.cells.get('A2')!, viewOf(r)).stats!.avg).toBe(4250);
+  });
+
+  test('only the proportions matter', () => {
+    const shares = (text: string) => {
+      const r = run({ A1: text });
+      return summarize(r.compiled.cells.get('A1')!, viewOf(r)).values!.map((v) => [v.value, v.count / r.n]);
+    };
+    expect(shares('{1: 50%, 2: 25%, 3: 25%}')).toEqual([[1, 0.5], [2, 0.25], [3, 0.25]]);
+    expect(shares('{1: 2, 2: 1, 3: 1}')).toEqual([[1, 0.5], [2, 0.25], [3, 0.25]]);
+    expect(shares('{true: 0.9, false: 0.1}')).toEqual([[true, 0.9], [false, 0.1]]);
+    expect(shares('{1: 0, 2: 5}')).toEqual([[2, 1]]);
+    expect(run({ A1: '{1: 33.3%, 2: 66.7%}' }).compiled.cardinality).toBe(1000);
+  });
+
+  test('what is not allowed', () => {
+    const r = run({ A1: '{1: 50%, 2}', A2: '{1: 0, 2: 0}', A3: '{1: 0.123456, 2: 0.876544}' });
+    for (const addr of ['A1', 'A2', 'A3']) expect(constant(r, addr)).toBeInstanceOf(ASError);
+  });
+
+  test('in tables, a value has one column however many times it is repeated', () => {
+    const r = run({ A1: '{"a": 70%, "b": 30%}', A2: '{true, false x 3}', A3: '=IF(A2, 1, 0) + IF(A1 = "a", 10, 20)' });
+    const [first, second] = tableDimensions(r, r.compiled.cells.get('A3')!);
+    const table = pivot(viewOf(r), 'A3', first, second);
+    expect(table.xLabels).toEqual(['a', 'b']);
+    expect(table.yLabels).toEqual(['true', 'false']);
+    expect(table.cells.map((row) => row.map((cell) => cell.scenarios))).toEqual([
+      [7, 3],
+      [21, 9],
+    ]);
+    expect(table.cells[0].map((cell) => aggregate(cell, 'avg'))).toEqual([11, 21]);
+    expect(table.xChoices).toEqual([0, 7]);
+  });
+});

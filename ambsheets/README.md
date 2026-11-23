@@ -21,6 +21,7 @@ A cell holds a literal, an amb, or a formula.
 | `{500, 1200}` | an amb: either 500 or 1200 |
 | `{1 to 10}`, `{0 to 1 by 0.25}` | a range of values |
 | `{true, false x 3}` | repeats: `false` is three times as likely as `true` |
+| `{"Barn": 70%, "Library": 30%}` | weights: how likely each value is (new) |
 | `=ambify(A1:A5)` | one choice per (non-empty) cell of a range |
 | `=normal(100, 15)` | a normal distribution (continuous; new) |
 | `=uniform(0, 10)` | a uniform distribution (continuous; new) |

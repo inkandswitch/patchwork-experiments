@@ -241,6 +241,10 @@ export const SYNTAX: { title: string; intro?: string; forms: SyntaxDoc[] }[] = [
       { syntax: '{0 to 1 by 0.25}', doc: 'From 0 to 1 in steps of 0.25.' },
       { syntax: '{true, false x 3}', doc: 'Repeats: false is three times as likely as true.' },
       {
+        syntax: '{"Barn": 70%, "Library": 30%}',
+        doc: 'Weights: how likely each value is. Only the proportions matter, so {"Barn": 7, "Library": 3} means the same.',
+      },
+      {
         syntax: '=B2 * normal(1, 0.1)',
         doc: 'Ambs and distributions can be part of a larger formula. Each one you write is a separate choice: =normal(0, 1) + normal(0, 1) adds two different numbers. To use the same one twice, give it a cell of its own and refer to that.',
       },

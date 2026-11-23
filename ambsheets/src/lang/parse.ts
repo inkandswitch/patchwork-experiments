@@ -3,7 +3,7 @@
 // A cell holds one of:
 //   - a literal (number, boolean, "string", or any other text),
 //   - an amb, which is what makes a cell hold several values at once:
-//       {500, 1200}   {1 to 10}   {0 to 1 by 0.25}   {5 x 3, 10}
+//       {500, 1200}   {1 to 10}   {0 to 1 by 0.25}   {5 x 3, 10}   {"a": 70%, "b": 30%}
 //       =ambify(A1:A5)            one choice per cell of a range
 //       =normal(100, 15)          a normal distribution (continuous)
 //       =normal(100, 15, 30)      30 fixed samples of one (discrete)
@@ -39,7 +39,9 @@ export type Expr =
 
 export type AmbPart =
   | { type: 'range'; from: number; to: number; step: number }
-  | { type: 'repeat'; value: BasicRawValue; numRepeats: number };
+  | { type: 'repeat'; value: BasicRawValue; numRepeats: number }
+  /** A value with a weight, as in {"Barn": 70%, "Library": 30%}. */
+  | { type: 'weighted'; value: BasicRawValue; weight: number };
 
 /**
  * An expression with several possible values. Each one that is written is a choice of
@@ -110,7 +112,8 @@ const grammar = ohm.grammar(String.raw`
       = "{" ListOf<AmbPart, ","> "}"
 
     AmbPart
-      = number to number by number  -- rangeWithStep
+      = Literal ":" weight          -- weighted
+      | number to number by number  -- rangeWithStep
       | number to number            -- rangeAutoStep
       | Literal x digit+            -- repeated
       | Literal                     -- single
@@ -127,6 +130,9 @@ const grammar = ohm.grammar(String.raw`
     unsignedNumber
       = digit* "." digit+  -- fract
       | digit+             -- whole
+
+    weight
+      = unsignedNumber "%"?
 
     boolean
       = true   -- true
@@ -234,6 +240,10 @@ const semantics = grammar.createSemantics().addOperation<any>('ast', {
       parts: parts.asIteration().children.map((part: N) => part.ast()),
       source: this.sourceString,
     };
+  },
+  AmbPart_weighted(literal, _colon, weight): AmbPart {
+    // (a "%" is allowed for readability; only the proportions matter)
+    return { type: 'weighted', value: literal.ast(), weight: parseFloat(weight.sourceString) };
   },
   AmbPart_rangeWithStep(from, _to, to, _by, step): AmbPart {
     return { type: 'range', from: from.ast(), to: to.ast(), step: step.ast() };
