@@ -47,7 +47,17 @@ export function AssistPopup() {
         // (mousedown is swallowed so that clicking in the popup doesn't take the focus
         // away from the formula, which would end the edit)
         <div class="assist" ref={popup} onMouseDown={(e) => e.preventDefault()}>
-          <Show when={v().completions} fallback={<Hint hint={v().hint!} />}>
+          <Show
+            when={v().completions}
+            fallback={
+              <>
+                <Show when={v().hint}>{(hint) => <Hint hint={hint()} />}</Show>
+                <Show when={v().problem}>
+                  <div class="assist-problem">{v().problem}</div>
+                </Show>
+              </>
+            }
+          >
             {(completions) => (
               <>
                 <div class="assist-list" ref={list} role="listbox">

@@ -559,6 +559,16 @@
   color: var(--ambsheet-fg);
 }
 
+.ambsheet .assist-problem {
+  padding: 5px 8px;
+  color: var(--ambsheet-danger);
+  overflow-wrap: anywhere;
+}
+
+.ambsheet .assist-doc + .assist-problem {
+  border-top: 1px solid var(--ambsheet-border);
+}
+
 .ambsheet .assist-doc .keys {
   color: var(--ambsheet-muted);
   font-size: 11px;

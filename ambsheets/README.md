@@ -62,6 +62,8 @@ in every run under its id (`B7`, or `D4#1`), and filters are keyed by that id.
   Related words work too: `=rand` or `=dist` finds `normal` and `uniform`.
 - **Argument hints.** Inside a call, a hint shows the function's arguments with the one
   being typed highlighted and explained.
+- **Syntax errors.** When typing pauses on a formula that doesn't parse, the popup says
+  what was expected and where ("Expected a value, a cell or a function at “* 2”").
 - **Reference.** The Reference button at the end of the formula bar opens a searchable
   page of the whole language. Clicking an example puts it in the formula bar for the
   selected cell.

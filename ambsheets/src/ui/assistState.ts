@@ -12,6 +12,7 @@ import {
   type Completions,
   type NamedCell,
 } from '../lang/complete';
+import { syntaxProblem } from '../lang/parse';
 import type { Edit } from './state';
 
 export interface AssistView {
@@ -26,9 +27,17 @@ export interface AssistView {
   selected: number;
   /** ...a reminder of the arguments of the function being called. */
   hint: CallHint | null;
+  /**
+   * What is wrong with the formula as it stands. Only shown after a pause in typing,
+   * since most formulas are wrong most of the time while they are being typed.
+   */
+  problem: string | null;
 }
 
 export type Assist = ReturnType<typeof createAssist>;
+
+/** How long typing has to pause before a formula's syntax error is pointed out. */
+const PROBLEM_DELAY_MS = 700;
 
 let measurer: CanvasRenderingContext2D | null | undefined;
 
@@ -48,8 +57,13 @@ export function createAssist(props: {
 }) {
   const [view, setView] = createSignal<AssistView | null>(null);
   let input: HTMLInputElement | null = null;
+  let problemTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const close = () => setView(null);
+  const close = () => {
+    if (problemTimer !== null) clearTimeout(problemTimer);
+    problemTimer = null;
+    setView(null);
+  };
 
   /** Works out what to show for the input as it is now. Call after anything changes it. */
   function refresh(el: HTMLInputElement, all = false) {
@@ -60,7 +74,10 @@ export function createAssist(props: {
 
     const completions = completionsAt(text, caret, props.names(), all);
     const hint = completions ? null : callAt(text, caret);
-    if (!completions && !hint) return close();
+    const problem = completions ? null : (syntaxProblem(text)?.message ?? null);
+    if (problemTimer !== null) clearTimeout(problemTimer);
+    problemTimer = null;
+    if (!completions && !hint && !problem) return close();
 
     // Keep the highlight on the same item while the list is being narrowed. When nothing
     // has been typed yet, nothing is highlighted, so that Enter still means Enter.
@@ -78,14 +95,22 @@ export function createAssist(props: {
     const style = getComputedStyle(el);
     const upTo = completions ? completions.from : caret;
     const offset = parseFloat(style.paddingLeft) + textWidth(el, text.slice(0, upTo)) - el.scrollLeft;
-    setView({
+    const next: AssistView = {
       x: rect.left - root.left + Math.max(0, Math.min(offset, rect.width - 24)),
       y: rect.bottom - root.top + 2,
       inputTop: rect.top - root.top,
       completions,
       selected,
       hint,
-    });
+      problem: null,
+    };
+    setView(completions || hint ? next : null);
+    if (problem) {
+      problemTimer = setTimeout(() => {
+        problemTimer = null;
+        setView({ ...next, problem });
+      }, PROBLEM_DELAY_MS);
+    }
   }
 
   function select(index: number) {

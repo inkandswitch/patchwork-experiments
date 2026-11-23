@@ -174,3 +174,29 @@ describe('argument hints', () => {
     expect(formulaStart('{1, 2}')).toBe(-1);
   });
 });
+
+describe('syntax problems', () => {
+  test('say what was expected, and where', async () => {
+    const { syntaxProblem } = await import('../src/lang/parse');
+    expect(syntaxProblem('=SUM(B3:B5')).toMatchObject({ pos: 10 });
+    expect(syntaxProblem('=SUM(B3:B5')!.message).toMatch(/^Expected .*"\)".* at the end$/);
+    expect(syntaxProblem('=1 + * 2')!.message).toBe('Expected a value, a cell or a function at “* 2”');
+    expect(syntaxProblem('=SUM(B3:B5')!.message).toBe('Expected ")" at the end');
+    expect(syntaxProblem('=1 + 2 3')!.message).toBe('Expected an operator or the end of the formula at “3”');
+    expect(syntaxProblem('total = ')!.message).toMatch(/at the end$/);
+  });
+
+  test('nothing to say about a formula that parses, or about text', async () => {
+    const { syntaxProblem } = await import('../src/lang/parse');
+    expect(syntaxProblem('=SUM(B3:B5)')).toBeNull();
+    expect(syntaxProblem('total = normal(1, 2) * {1, 2}')).toBeNull();
+    expect(syntaxProblem('Car payment')).toBeNull();
+    expect(syntaxProblem('{1, 2')).toBeNull(); // (not a formula: just text with a brace in it)
+    expect(syntaxProblem('')).toBeNull();
+  });
+
+  test('a broken formula that is committed says the same thing', () => {
+    const parsed = parseCell('=SUM(B3:B5');
+    expect(parsed.kind === 'error' && parsed.error.msg).toMatch(/^Expected .* at the end$/);
+  });
+});

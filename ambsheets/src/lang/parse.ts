@@ -397,12 +397,53 @@ export function parseCell(text: string | null | undefined): Parsed {
   return parsed;
 }
 
+/** What is wrong with a formula, in words, and where. */
+export interface SyntaxProblem {
+  /** How far into the text things went wrong. */
+  pos: number;
+  message: string;
+}
+
+/**
+ * Ohm lists everything that could have come next, which at the start of an expression is
+ * some twenty things. This boils the common cases down.
+ */
+function simplifyExpected(expected: string): string {
+  if (expected.includes('a number') && expected.includes('an identifier')) {
+    return 'a value, a cell or a function';
+  }
+  const text = expected.replace(/ \(case-insensitive\)/g, '').replace('end of input', 'the end of the formula');
+  if (text.includes('"+"') && text.includes('"*"')) {
+    const others = ['","', '")"', '"}"', 'the end of the formula'].filter((option) => text.includes(option));
+    return ['an operator', ...others].join(', ').replace(/, ([^,]*)$/, ' or $1');
+  }
+  return text;
+}
+
+function describeFailure(text: string, match: ohm.MatchResult): SyntaxProblem {
+  const pos = (match as any).getRightmostFailurePosition() as number;
+  const expected = simplifyExpected((match as any).getExpectedText() as string);
+  const rest = text.slice(pos).trim();
+  const where = rest === '' ? 'at the end' : `at “${rest.length > 12 ? rest.slice(0, 12) + '…' : rest}”`;
+  return { pos, message: `Expected ${expected} ${where}` };
+}
+
+/**
+ * What is wrong with a formula that doesn't parse. Null for a formula that does, and for
+ * text that isn't trying to be a formula at all (it doesn't start with "=" or "name =").
+ */
+export function syntaxProblem(text: string): SyntaxProblem | null {
+  if (!/^\s*(?:[A-Za-z][A-Za-z0-9_]*\s*)?=/.test(text)) return null;
+  const match: ohm.MatchResult = grammar.match(text);
+  return match.failed() ? describeFailure(text, match) : null;
+}
+
 function parseUncached(text: string): Parsed {
   const match: ohm.MatchResult = grammar.match(text);
   if (!match.failed()) return semantics(match).ast();
 
   if (text.trimStart().startsWith('=')) {
-    return { kind: 'error', error: new ASError('#SYNTAX!', match.shortMessage ?? 'syntax error') };
+    return { kind: 'error', error: new ASError('#SYNTAX!', describeFailure(text, match).message) };
   }
 
   const literal = grammar.match(text, 'Literal');
