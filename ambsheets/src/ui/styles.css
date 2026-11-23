@@ -1081,6 +1081,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.ambsheet .status .exactly {
+  padding-left: var(--studio-space-sm, 0.5rem);
+  border-left: 1px solid var(--ambsheet-border);
+  font-variant-numeric: tabular-nums;
+}
+
 .ambsheet .status .matching[data-searching] {
   animation: ambsheet-pulse 1.2s ease-in-out infinite;
 }

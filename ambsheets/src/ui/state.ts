@@ -14,6 +14,7 @@ import {
   type Summary,
   type View,
 } from '../model/analysis';
+import { ExactCounter, canCountExactly, type ExactCount } from '../model/exact';
 import { Focuser, type Focus } from '../model/focus';
 import { decodeFilters, encodeFilters, filtersSignature } from '../model/savedFilters';
 import { createAssist } from './assistState';
@@ -223,6 +224,25 @@ export function createSheetState(handle: AmbsheetHandle) {
     if (!scarce()) return;
     // (a short wait, so that dragging a slider doesn't start a search at every step)
     const timer = setTimeout(() => focuser.start(r.compiled, pinned, { target, seed: randomSeed }), 150);
+    onCleanup(() => clearTimeout(timer));
+  });
+
+  // --- a second opinion ---
+  //
+  // A sheet that is being sampled, but has few enough scenarios to visit them all, gets
+  // the true number that match the filters counted in the background (see exact.ts).
+
+  const [exact, setExact] = createSignal<ExactCount | null>(null);
+  const exactCounter = new ExactCounter(setExact);
+  onCleanup(() => exactCounter.stop());
+
+  createEffect(() => {
+    const [r, pinned] = [run(), filters()];
+    exactCounter.stop();
+    setExact(null);
+    const relevant = [...pinned.keys()].some((id) => id in r.columns);
+    if (!r.done || r.mode !== 'montecarlo' || !relevant || !canCountExactly(r.compiled)) return;
+    const timer = setTimeout(() => exactCounter.start(r.compiled, pinned), 300);
     onCleanup(() => clearTimeout(timer));
   });
 
@@ -473,6 +493,7 @@ export function createSheetState(handle: AmbsheetHandle) {
     filtering,
     passing,
     focus,
+    exact,
     focusEnabled,
     setFocusEnabled,
     summaries,

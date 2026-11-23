@@ -178,3 +178,51 @@ describe('finding scenarios that match filters', () => {
     expect(focus.phase).toBe('failed');
   });
 });
+
+describe('counting exactly', () => {
+  test('the true number of scenarios that match, for comparison with an estimate', async () => {
+    const { countExactly, canCountExactly } = await import('../src/model/exact');
+    const cells: Record<string, string> = { B1: 'total = SUM(A1:A4)', B2: '=total >= 20' };
+    for (let i = 1; i <= 4; i++) cells['A' + i] = '{1 to 6}';
+    const compiled = compileSheet(sheet(cells));
+    expect(canCountExactly(compiled)).toBe(true);
+
+    // four dice total 20 or more in 35 + 20 + 10 + 4 + 1 of their 1,296 scenarios
+    const filters: Filters = new Map([['B2', only(true)]]);
+    const exact = countExactly(compiled, filters);
+    expect(exact).toMatchObject({ cardinality: 1296, checked: 1296, matching: 70, done: true });
+
+    // ...which is what focused sampling estimates
+    const focus = findMatching(compiled, filters, settings);
+    expect(Math.abs(focus.probability - 70 / 1296) / (70 / 1296)).toBeLessThan(0.25);
+
+    // range filters, and filters on several cells at once
+    const both: Filters = new Map<string, Filter>([
+      ['B1', { kind: 'range', min: 4, max: 5 }],
+      ['A1', only(1)],
+    ]);
+    expect(countExactly(compiled, both).matching).toBe(1 + 3); // 1111, and 1112 three ways
+  });
+
+  test('what cannot be counted', async () => {
+    const { countExactly, canCountExactly, ExactEvaluation } = await import('../src/model/exact');
+    expect(canCountExactly(compileSheet(sheet({ A1: '=normal(0, 1)' })))).toBe(false);
+    expect(canCountExactly(compileSheet(sheet({ A1: '5' })))).toBe(false);
+
+    // a filter that a single-valued cell fails rules everything out
+    const compiled = compileSheet(sheet({ A1: '{1, 2}', B1: '7' }));
+    expect(countExactly(compiled, new Map([['B1', only(8)]]))).toMatchObject({ matching: 0, done: true });
+
+    // and it works a slice at a time
+    const dice: Record<string, string> = {};
+    for (let i = 1; i <= 6; i++) dice['A' + i] = '{1 to 6}';
+    const evaluation = new ExactEvaluation(compileSheet(sheet(dice)), new Map([['A1', only(6)]]));
+    let slices = 0;
+    while (!evaluation.count.done) {
+      evaluation.advance(1);
+      slices++;
+    }
+    expect(slices).toBeGreaterThan(1);
+    expect(evaluation.count.matching).toBe(6 ** 5);
+  });
+});

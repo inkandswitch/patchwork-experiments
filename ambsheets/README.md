@@ -116,6 +116,11 @@ status bar turns this off):
   distributed like the matching scenarios really are, and the culling fractions multiply
   out to an estimate of how rare matching is ("about 1 in 7,100 scenarios").
 
+A second opinion comes free when a sampled sheet has few enough scenarios to visit them
+all (up to 2 million): the true number that match the filters is counted in the
+background and shown next to the estimate ("Exactly: 1 in 7,560 scenarios"). See
+`src/model/exact.ts`.
+
 While that sample is in use, "filtered" statistics, greyed-out values and blue histogram
 bars all describe it, and "all" still describes the ordinary sample. The histogram draws
 the two to separate scales. The scenarios are correlated (each is a small change from

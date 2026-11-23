@@ -68,6 +68,19 @@ export function StatusBar() {
     return { text: `${printNumber(s.passing())} match the filters (${share}%)` };
   };
 
+  /** The true number of matching scenarios, when it can be (or is being) counted. */
+  const exactly = (): string | null => {
+    const exact = s.exact();
+    if (!exact) return null;
+    if (!exact.done) {
+      return `Counting exactly… ${Math.floor((exact.checked / Math.max(1, exact.cardinality)) * 100)}%`;
+    }
+    const of = `${printNumber(exact.matching)} of ${printCount(exact.cardinality)}`;
+    return exact.matching === 0
+      ? `Exactly: none of ${printCount(exact.cardinality)}`
+      : `Exactly: ${printShare(exact.matching / exact.cardinality)} scenarios (${of})`;
+  };
+
   return (
     <footer class="status">
       <span class="mode" data-mode={run().mode} title={run().reason}>
@@ -85,6 +98,16 @@ export function StatusBar() {
         {(matching) => (
           <span class="matching" data-searching={matching().searching ? '' : undefined} title={matching().title}>
             {matching().text}
+          </span>
+        )}
+      </Show>
+      <Show when={exactly()}>
+        {(exactly) => (
+          <span
+            class="exactly"
+            title="This sheet is being sampled, but it has few enough scenarios to check them all. This is the true number that match the filters, counted in the background."
+          >
+            {exactly()}
           </span>
         )}
       </Show>
