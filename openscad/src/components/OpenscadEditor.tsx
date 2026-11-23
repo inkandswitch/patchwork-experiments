@@ -71,6 +71,7 @@ export function OpenscadEditor(props: {
 	const resolver = createImportResolver({
 		// `as any`: the host's automerge-repo copy doesn't always unify with ours
 		find: url => props.element.repo.find(url) as any,
+		selfUrl: props.handle.url,
 		// a render waiting in renderNow() reads the imports after it wakes,
 		// so it already includes this change
 		onChange: () => {

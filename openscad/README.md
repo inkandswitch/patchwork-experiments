@@ -131,6 +131,14 @@ runs it too.
 
 Every import is still bound as JSON as above, whether or not it has source.
 
+`asSource` is called as `asSource(doc, "scad", {for: <this document's URL>})`,
+in the editor and in the scene build alike. A datatype that records the results
+of models (an assumptions register) uses `for` to leave out the results this
+document computes itself. So `include <register.scad>` is safe in a model whose
+results the register records: the include does not redefine the model's own
+results, which would make OpenSCAD evaluate them at the include's position and
+leave them `undef`. An implementation that ignores the third argument still works.
+
 An include that matches no attached document fails the render (OpenSCAD itself
 only warns, and carries on with every name undefined) with a message that says
 how to attach it: drag the document onto the Imports bar above the editor, and

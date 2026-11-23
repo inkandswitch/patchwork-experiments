@@ -90,6 +90,8 @@ export async function resolveImports(
 	doc: OpenscadDoc,
 	repo: RepoLike | undefined,
 	loadDatatype?: LoadDatatype,
+	/** the including document's own URL, passed to asSource as `for` */
+	selfUrl?: string,
 ): Promise<{imports: RenderImportInput[]; missing: string[]}> {
 	const missing: string[] = []
 	const imports = await Promise.all(
@@ -102,7 +104,7 @@ export async function resolveImports(
 				missing.push(imp.name)
 			}
 			// Same as the editor: an unavailable import binds to {} and has no source.
-			return importInput(imp, content, loadDatatype)
+			return importInput(imp, content, loadDatatype, selfUrl)
 		}),
 	)
 	return {imports, missing}
@@ -208,16 +210,16 @@ function countWarnings(logs: string[]): number {
  * by source + import JSON, so changing only the unit re-encodes without
  * running OpenSCAD again (and a render the editor already did is reused).
  */
-export function createOpenscadSource(render: () => Promise<Render>) {
+export function createOpenscadSource(render: () => Promise<Render>, loadDatatype?: LoadDatatype) {
 	return {
 		fingerprint,
 		dependencies,
 
-		async build({doc, params, repo}: BuildArgs): Promise<BuildResult> {
+		async build({doc, params, repo, url, handle}: BuildArgs): Promise<BuildResult> {
 			if (!doc) throw new Error("OpenSCAD document is not available")
 			const unit: Unit = params?.unit && params.unit in UNIT_METERS ? params.unit : "mm"
 			const source = String(doc.source ?? "")
-			const {imports, missing} = await resolveImports(doc, repo)
+			const {imports, missing} = await resolveImports(doc, repo, loadDatatype, url ?? (handle as {url?: string} | undefined)?.url)
 
 			let result
 			try {
