@@ -724,8 +724,9 @@ that behaves differently from its description. Write it then, while you know.
 - Start with \`# Title\` and one line saying what it is. That line is all a
   later session sees in the list, so make it decide whether to read on.
 - Say *why*, not only *what* — a rule without its reason gets misapplied.
-- Update instead of adding a near-duplicate: \`note_read\`, change it,
-  \`note_write\` the whole thing back (only the difference is written).
+- Update instead of adding a near-duplicate: \`note_edit\` appends to a note or
+  replaces one passage of it. \`note_write\` is for a note that does not exist
+  yet; it refuses one that does, unless you pass \`overwrite: true\`.
 - A note that turned out wrong is worse than none. Fix it or \`note_delete\` it.
 
 ## Never
