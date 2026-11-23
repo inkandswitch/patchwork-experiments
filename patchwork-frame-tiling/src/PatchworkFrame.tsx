@@ -105,6 +105,7 @@ import {
   type SlotTool,
 } from "./useDocTitle";
 import { rememberToolInDoc } from "./toolMemory";
+import { installUnloadGuard } from "./unloadGuard";
 
 /**
  * Which pane *this tab* is looking at. Deliberately **not** synced: focus and
@@ -1905,6 +1906,9 @@ export const PatchworkFrame = ({
     document.addEventListener("visibilitychange", markCurrent);
     return () => document.removeEventListener("visibilitychange", markCurrent);
   }, [layoutUrl, accountHandle]);
+
+  // Ask before ⌘W closes the browser tab (see `installUnloadGuard`).
+  useEffect(() => installUnloadGuard(window), []);
 
   // The *structure* (panel tree, tools, sizes) is the synced doc's job; React
   // reflects it. Focus/selection is per-tab session state (see {@link TabFocus}).

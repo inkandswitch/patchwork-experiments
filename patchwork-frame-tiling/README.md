@@ -42,6 +42,13 @@ and resize freely.
   - opened from nowhere in particular (an overlay, say), it splits an
     existing **content** panel — never the folder — into a new one.
 
+  **Closing the browser tab** (⌘W, which pages can't intercept) asks
+  first, while the frame is mounted: tools hold things outside their
+  documents (a call, unsent text, undo). It doesn't ask when the page itself
+  sent it: a reload key (⌘R, Ctrl-R, F5), or a click on a button or link just
+  before (the host's Reload for a new build, a link out). The layout itself
+  is never at risk: ⌘⇧T reopens the tab as it was. See `unloadGuard.ts`.
+
   **Back and Forward** are the browser's. Each open you make (the folder, a
   link, Shift, Alt, the top bar) is one history entry, recording the panel it
   landed in; nothing else is one. Focusing another panel or switching tabs
