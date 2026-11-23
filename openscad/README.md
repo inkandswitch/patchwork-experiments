@@ -124,6 +124,11 @@ A linked document's source is, in order:
    import and why it has no OpenSCAD source (for instance, its datatype has no
    `asSource`, or it is a binary file).
 
+OpenSCAD documents give their own source this way, so one OpenSCAD document
+linked into another is a library: `use <brackets.scad>` makes its modules and
+functions available without running its top-level geometry, and `include`
+runs it too.
+
 Every import is still bound as JSON as above, whether or not it has source.
 
 An include that matches no attached document fails the render (OpenSCAD itself
