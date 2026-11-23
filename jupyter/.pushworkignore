@@ -1,0 +1,16 @@
+# local environment and caches
+/.venv/
+/.cache/
+/.jupyterlite.doit.db
+# intermediate build output (dist/ has the result)
+/lab/lite/static/
+/lab/lite/.cache/
+/shared/python/build/
+/shared/python/*.egg-info/
+*.tsbuildinfo
+/lab/extension/lib/
+/lab/extension/labextension/
+/dist/harness*
+/dist/worker-entry*
+/dist/kernel.html
+__pycache__/
