@@ -23,8 +23,9 @@ describe('margins: how true a comparison is', () => {
       A5: '=OR(A2, B1 >= 4)',
       A6: '=NOT(A2)',
       A7: '=A1 = B1',
-      A8: '=IF(A1 > 7, true, false)',
+      A8: '=IF(A1 > 7, B1 >= 4, false)',
       A9: '=A1 + B1',
+      A10: '=IF(A1 > 7, B1 >= 4, B1 < 2)',
     }),
   );
   const margin = (addr: string, a1: number, b1: number) => {
@@ -48,8 +49,24 @@ describe('margins: how true a comparison is', () => {
     expect(margin('A6', 9, 0)).toBe(-2);
   });
 
+  test('IF is read as "the condition and the first, or not the condition and the second"', () => {
+    expect(margin('A8', 9, 6)).toBe(2); // both hold: min(2, 2)
+    expect(margin('A8', 9, 1)).toBe(-3); // the condition holds, but B1 >= 4 is off by 3
+    expect(margin('A8', 5, 9)).toBe(-2); // the condition is off by 2 (and the other branch is plain false)
+    expect(margin('A10', 5, 1)).toBe(1); // the condition is false (by 2), and B1 < 2 holds (by 1)
+    expect(margin('A10', 5, 6)).toBe(-2); // max(min(-2, 2), min(2, -4))
+    // the sign always agrees with the formula's value
+    const a10 = compiled.cells.get('A10')!;
+    for (let a = 1; a <= 10; a++) {
+      for (let b = 1; b <= 10; b++) {
+        const value = a > 7 ? b >= 4 : b < 2;
+        expect(margin('A10', a, b) > 0 || (margin('A10', a, b) === 0 && value)).toBe(value);
+      }
+    }
+    expect(a10.kind).toBe('formula');
+  });
+
   test('other formulas have none', () => {
-    expect(compiled.cells.get('A8')!.margin).toBeNull();
     expect(compiled.cells.get('A9')!.margin).toBeNull();
     expect(compiled.cells.get('A1')!.margin).toBeNull();
   });
@@ -116,10 +133,19 @@ describe('finding scenarios that match filters', () => {
     expect(focus.probability * 31_574).toBeLessThan(1.5);
   });
 
-  test('the same kind of filter on a formula without a margin is only met by chance', () => {
+  test('a filter on an IF homes in through its condition', () => {
+    const compiled = compileSheet(sheet({ A1: '=normal(0, 1)', A2: '=IF(A1 > 4, true, false)' }));
+    const focus = findMatching(compiled, new Map([['A2', only(true)]]), settings);
+    expect(focus.phase).toBe('sampling');
+    expect(focus.columns.A1.every((x: number) => x > 4)).toBe(true);
+    expect(focus.probability * 31_574).toBeGreaterThan(0.6);
+    expect(focus.probability * 31_574).toBeLessThan(1.5);
+  });
+
+  test('a filter on text has nothing to home in on, and is only met by chance', () => {
     // (X > 6 is one scenario in a billion: chance isn't going to do it)
-    const compiled = compileSheet(sheet({ A1: '=normal(0, 1)', A2: '=IF(A1 > 6, true, false)' }));
-    const focus = findMatching(compiled, new Map([['A2', only(true)]]), { ...settings, particles: 300 });
+    const compiled = compileSheet(sheet({ A1: '=normal(0, 1)', A2: '=IF(A1 > 6, "yes", "no")' }));
+    const focus = findMatching(compiled, new Map([['A2', only('yes')]]), { ...settings, particles: 300 });
     expect(focus.phase).toBe('failed');
     expect(focus.n).toBe(0);
     expect(focus.done).toBe(true);

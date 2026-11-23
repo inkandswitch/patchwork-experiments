@@ -329,7 +329,7 @@ export const NOTES: { title: string; paragraphs: string[] }[] = [
     title: 'How a sheet is evaluated',
     paragraphs: [
       'When there are few enough scenarios, all of them are checked and the results are exact. When there are too many (or infinitely many, with normal and uniform), scenarios are sampled at random and the results are estimates that keep improving. The status bar says which, and lets you choose.',
-      'If hardly any sampled scenario matches your filters, Ambsheets looks for ones that do. It can home in on filters on numbers, and on true/false cells that are comparisons (or AND, OR and NOT of comparisons). Filters on text, or on an IF, are only matched by chance.',
+      'If hardly any sampled scenario matches your filters, Ambsheets looks for ones that do. It can home in on filters on numbers, and on true/false cells that are built from comparisons (with AND, OR, NOT and IF). Filters on text are only matched by chance.',
     ],
   },
 ];

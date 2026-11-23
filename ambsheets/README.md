@@ -103,11 +103,11 @@ status bar turns this off):
 - `src/model/focus.ts` turns each filter into a *condition*: a function that says how far
   a scenario is from passing. For a range filter that is the distance to the range.
 - For a filter on a true/false cell it uses the formula's **margin**. Formulas are
-  compiled twice: once to their value, and (for comparisons, `AND`, `OR`, `NOT` and
+  compiled twice: once to their value, and (for comparisons, `AND`, `OR`, `NOT`, `IF` and
   references to such cells) once to a number saying how far they are from flipping.
   `=total <= 4200` has margin `4200 - total`. See `compileMargin` in `compile.ts`. A
-  true/false formula of any other shape (an `IF`, say), and any filter on text, can only
-  say yes or no, and is found by chance or not at all.
+  true/false formula of any other shape, and any filter on text, can only say yes or no,
+  and is found by chance or not at all.
 - amb-engine's conditioned sampler (`src/engine/conditioned-sampler.ts`) then homes in:
   a population of scenarios is repeatedly culled to its closer half and re-diversified
   with MCMC moves, until all of it matches. The scenarios it goes on to produce are

@@ -591,14 +591,33 @@ export function compileSheet(data: unknown): CompiledSheet {
    *   AND(p, q, ...)     the smallest of the parts' margins (it is as true as its weakest part)
    *   OR(p, q, ...)      the largest
    *   NOT(p)             minus p's margin
+   *   IF(c, p, q)        that of OR(AND(c, p), AND(NOT(c), q)), which says the same thing
    *   a reference        the margin of the cell it refers to
    *
    * Anything else has no margin (null).
    */
   const compileMargin = (node: Expr, ctx: Context): Margin | null => {
+    /** A part of an AND/OR/NOT/IF: its margin if it has one, or else just whether it is true. */
+    const part = (arg: Expr): Margin => {
+      const margin = compileMargin(arg, ctx);
+      if (margin) return margin;
+      const value = compileExpr(arg, ctx);
+      return (s) => {
+        const v = value(s);
+        return v === true ? Infinity : v === false ? -Infinity : NaN;
+      };
+    };
+
     if (node.type === 'cellRef' || node.type === 'nameRef') {
       const addr = resolveRef(node);
       return isError(addr) ? null : (resolve(addr)?.margin ?? null);
+    }
+    if (node.type === 'if') {
+      const [cond, then, otherwise] = [part(node.cond), part(node.then), part(node.else)];
+      return (s) => {
+        const c = cond(s);
+        return Math.max(Math.min(c, then(s)), Math.min(-c, otherwise(s)));
+      };
     }
     if (node.type !== 'call') return null;
 
@@ -610,17 +629,6 @@ export function compileSheet(data: unknown): CompiledSheet {
         return typeof x === 'number' && typeof y === 'number' ? comparison(x, y) : NaN;
       };
     }
-
-    /** A part of an AND/OR/NOT: its margin if it has one, or else just whether it is true. */
-    const part = (arg: Expr): Margin => {
-      const margin = compileMargin(arg, ctx);
-      if (margin) return margin;
-      const value = compileExpr(arg, ctx);
-      return (s) => {
-        const v = value(s);
-        return v === true ? Infinity : v === false ? -Infinity : NaN;
-      };
-    };
 
     if ((node.funcName === 'and' || node.funcName === 'or') && node.args.length > 0) {
       const parts = node.args.map(part);

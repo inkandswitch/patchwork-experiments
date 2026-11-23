@@ -48,7 +48,7 @@ export function StatusBar() {
         text: 'No matching scenarios found',
         title:
           `Ambsheets went looking for scenarios that match the filters (${printNumber(focus.evaluations)} tries) without finding any. ` +
-          'They may not exist. Or the filters may give it nothing to home in on: a filter on text, or on a true/false cell that is not a comparison, is only met by chance.',
+          'They may not exist. Or the filters may give it nothing to home in on: a filter on text, or on a true/false cell that is not built from comparisons, is only met by chance.',
       };
     }
     if (focus?.phase === 'sampling') {
