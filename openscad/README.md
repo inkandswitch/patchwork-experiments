@@ -157,6 +157,21 @@ A render that says `matches no attached document` means step 1 is missing; one
 that says `has no OpenSCAD source` means the document's datatype can't be
 written as OpenSCAD, so use the JSON binding instead.
 
+## The last run, kept in the document
+
+After each render the editor keeps the run in the document as `lastRun`
+(`src/lastRun.ts`): when it ran, the document's heads it rendered, whether it
+worked, how long it took, and OpenSCAD's console (ECHO, WARNING and ERROR
+lines; the engine's start-up noise left out; at most 2000 lines). Other tools
+read it instead of running OpenSCAD: an assumptions register reads
+`echo(name = value);` (or `echo("name", value);`) lines as the model's results,
+and knows from `heads` which version of the code gave them.
+
+It is written only when what was rendered, whether it worked, or what it
+printed changed, so several open editors rendering the same thing write once,
+and saving it doesn't trigger another render. Scenes render without writing;
+open the editor (or a scene's Edit) to run it.
+
 ## In a 3D scene
 
 The package also registers a `scene:source` provider, `openscad-model`, so an
