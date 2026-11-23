@@ -12,6 +12,9 @@ import { type CellType, type NotebookStore, plainCell } from "./doc"
 import type { Executor } from "./execution"
 import type { KernelClient, KernelStatus } from "./kernel/types"
 import { icons } from "./icons"
+import { acceptDrops, ImportsPanel, withDropped } from "./imports-panel"
+import { importsOf } from "../../shared/imports"
+import type { FindDoc } from "../../shared/run"
 import { outputBundle, renderBundle } from "./outputs"
 
 export type NotebookProps = {
@@ -21,6 +24,8 @@ export type NotebookProps = {
   /** Missing when the notebook can't run anything, such as a point in history. */
   kernel?: KernelClient
   executor?: Executor
+  /** Linked documents: how to open them, the notebook's own URL, and how to show one. */
+  links?: { find: FindDoc; url: string; open(url: string, title?: string): void }
 }
 
 type Mode = "command" | "edit"
@@ -42,6 +47,18 @@ export function Notebook(props: NotebookProps) {
   let pendingDelete = false
 
   if (kernel) onCleanup(kernel.onStatus(setStatus))
+
+  const [dragging, setDragging] = createSignal(false)
+  onMount(() => {
+    if (!props.links) return
+    onCleanup(
+      acceptDrops(root, {
+        enabled: () => !readOnly(),
+        onDragging: setDragging,
+        onDrop: items => store.setPatchworkMetadata({ imports: withDropped(importsOf(store.current()), items, props.links!.url) }),
+      }),
+    )
+  })
 
   const cellIds = createMemo(() => (store.doc()?.cells ?? []).map(cell => readString(cell.id)), [], {
     equals: (a, b) => a.length === b.length && a.every((id, i) => id === b[i]),
@@ -282,6 +299,19 @@ export function Notebook(props: NotebookProps) {
           )}
         </Show>
       </div>
+      <Show when={props.links}>
+        {links => (
+          <ImportsPanel
+            store={store}
+            find={links().find}
+            url={links().url}
+            open={links().open}
+            readOnly={readOnly}
+            dragging={dragging}
+            running={() => !!executor && (executor.running() !== null || executor.queued().size > 0)}
+          />
+        )}
+      </Show>
       <div class="pwnb-cells" classList={{ "pwnb-side": side() }}>
         <For each={cellIds()}>
           {(id, index) => (

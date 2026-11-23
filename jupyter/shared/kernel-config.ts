@@ -20,6 +20,7 @@ function storagePrefix(repo: Repo): string {
 }
 
 function syncServer(): string {
-  const link = document.querySelector<HTMLLinkElement>('link[rel="preconnect"]')
+  // No page in a worker: the default.
+  const link = typeof document === "undefined" ? null : document.querySelector<HTMLLinkElement>('link[rel="preconnect"]')
   return link ? link.href.replace(/^http/, "ws").replace(/\/$/, "") : DEFAULT_SYNC_SERVER
 }

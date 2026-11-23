@@ -31,6 +31,10 @@ export class PyodideKernelClient implements KernelClient {
     return this._status
   }
 
+  get generation(): number {
+    return this._generation
+  }
+
   onStatus(listener: (status: KernelStatus) => void): () => void {
     this._statusListeners.add(listener)
     return () => this._statusListeners.delete(listener)
@@ -42,6 +46,17 @@ export class PyodideKernelClient implements KernelClient {
       { code, silent: false, store_history: true, user_expressions: {}, allow_stdin: false, stop_on_error: true },
       onIOPub,
     )
+  }
+
+  executeSilent(code: string) {
+    return this._request<"execute_request", KernelMessage.IExecuteReplyMsg["content"]>("execute_request", {
+      code,
+      silent: true,
+      store_history: false,
+      user_expressions: {},
+      allow_stdin: false,
+      stop_on_error: true,
+    })
   }
 
   complete(code: string, cursor: number) {
@@ -71,6 +86,7 @@ export class PyodideKernelClient implements KernelClient {
   }
 
   private _start(): void {
+    this._generation++
     this._setStatus("starting")
     const kernel = new PyodideKernel({
       id: crypto.randomUUID(),
@@ -173,6 +189,7 @@ export class PyodideKernelClient implements KernelClient {
     for (const listener of this._statusListeners) listener(status)
   }
 
+  private _generation = 0
   private _kernel: PyodideKernel | null = null
   private _options: PyodideKernelOptions
   private _pending = new Map<string, Pending>()

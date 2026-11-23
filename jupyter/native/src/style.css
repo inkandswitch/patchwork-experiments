@@ -598,3 +598,99 @@
 .pwnb-host .ansi-blue-bg { background-color: #208ffb; }
 .pwnb-host .ansi-bold { font-weight: bold; }
 .pwnb-host .ansi-underline { text-decoration: underline; }
+
+/* Imports and the last run, under the toolbar. */
+.pwnb-links {
+  display: grid;
+  gap: 4px;
+  padding: 6px 12px;
+  border-block-end: 1px solid var(--pwnb-border);
+  background: var(--pwnb-subtle);
+  font-size: 12px;
+}
+
+.pwnb-links-dragging {
+  outline: 2px dashed var(--pwnb-accent);
+  outline-offset: -3px;
+}
+
+.pwnb-imports,
+.pwnb-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.pwnb-links-label {
+  min-inline-size: 64px;
+  color: var(--pwnb-muted);
+  font-weight: 600;
+}
+
+.pwnb-import {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 4px 1px 6px;
+  border: 1px solid var(--pwnb-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--pwnb-fill);
+}
+
+.pwnb-import-name {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: 12px var(--pwnb-mono);
+  cursor: text;
+}
+
+.pwnb-import-name:disabled {
+  cursor: default;
+}
+
+.pwnb-import-rename {
+  inline-size: 12ch;
+  font: 12px var(--pwnb-mono);
+}
+
+.pwnb-import-title,
+.pwnb-run-import {
+  color: var(--pwnb-accent);
+  text-decoration: none;
+}
+
+.pwnb-import-title:hover,
+.pwnb-run-import:hover {
+  text-decoration: underline;
+}
+
+.pwnb-import-kind,
+.pwnb-links-hint,
+.pwnb-run-version {
+  color: var(--pwnb-muted);
+}
+
+.pwnb-import-remove {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: var(--pwnb-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pwnb-import-remove:hover {
+  color: var(--pwnb-line);
+}
+
+.pwnb-links-problem,
+.pwnb-run[data-status="error"] .pwnb-run-status {
+  color: var(--pwnb-deleted);
+}
+
+.pwnb-run-changed {
+  color: var(--pwnb-changed);
+}

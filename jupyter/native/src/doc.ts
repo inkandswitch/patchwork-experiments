@@ -2,8 +2,9 @@ import type { DocHandle } from "@automerge/automerge-repo"
 import type * as nbformat from "@jupyterlab/nbformat"
 import { type Accessor, createSignal } from "solid-js"
 import { automerge } from "../../shared/automerge"
+import { NotebookWriter } from "../../shared/notebook-writer"
 import { emptyList, readString, toAutomerge, toPlain } from "../../shared/json"
-import { asList, cellToDoc, findCellIndex, outputsToDoc, sourcePath } from "../../shared/notebook-doc"
+import { asList, cellToDoc, findCellIndex, sourcePath } from "../../shared/notebook-doc"
 import type { CellDoc, NotebookDoc } from "../../shared/schema"
 
 export type CellType = "code" | "markdown" | "raw"
@@ -16,12 +17,12 @@ export type SourceEdit = { from: number; to: number; insert: string }
  * makes to it. Patchwork re-points the handle in place at a draft or a point
  * in history, so everything is re-read on each change rather than patched.
  */
-export class NotebookStore {
+export class NotebookStore extends NotebookWriter {
   readonly doc: Accessor<NotebookDoc | undefined>
   readonly readOnly: Accessor<boolean>
 
   constructor(handle: DocHandle<NotebookDoc>) {
-    this._handle = handle
+    super(handle)
     // Automerge returns the same object until the document changes.
     const [doc, setDoc] = createSignal(handle.doc())
     const [readOnly, setReadOnly] = createSignal(isReadOnly(handle))
@@ -35,15 +36,10 @@ export class NotebookStore {
   }
 
   dispose(): void {
-    this._handle.off("change", this._onChange)
+    this.handle.off("change", this._onChange)
   }
 
-  /** The document as it is now, for reading outside a reactive scope. */
-  current(): NotebookDoc | undefined {
-    return this._handle.doc()
-  }
-
-  cell(id: string, doc = this.doc()): CellDoc | undefined {
+  override cell(id: string, doc = this.doc()): CellDoc | undefined {
     if (!doc) return undefined
     const index = findCellIndex(doc, id)
     return index < 0 ? undefined : doc.cells![index]
@@ -127,71 +123,17 @@ export class NotebookStore {
     })
   }
 
-  clearOutputs(id: string): void {
-    this._change(doc => {
-      const cell = this._codeCell(doc, id)
-      if (!cell) return
-      cell.outputs = emptyList()
-      cell.execution_count = null
-    })
-  }
-
-  /** Appends an output, returning its index. */
-  appendOutput(id: string, output: nbformat.IOutput): number {
-    let index = -1
-    this._change(doc => {
-      const cell = this._codeCell(doc, id)
-      if (!cell) return
-      if (!cell.outputs) cell.outputs = emptyList()
-      index = cell.outputs.length
-      asList(cell.outputs).insertAt(index, ...outputsToDoc([output]))
-    })
-    return index
-  }
-
-  setOutput(id: string, index: number, output: nbformat.IOutput): void {
-    this._change(doc => {
-      const cell = this._codeCell(doc, id)
-      if (!cell?.outputs || index >= cell.outputs.length) return
-      cell.outputs[index] = outputsToDoc([output])[0] as any
-    })
-  }
-
-  /** Adds to a stream output's text, or replaces it all when `replace` is set. */
-  writeStream(id: string, index: number, text: string, replace: boolean): void {
-    this._change(doc => {
-      const cellIndex = findCellIndex(doc, id)
-      const output = doc.cells?.[cellIndex]?.outputs?.[index]
-      if (!output || readString(output.output_type) !== "stream") return
-      if (typeof output.text !== "string") output.text = readString(output.text)
-      const path = ["cells", cellIndex, "outputs", index, "text"]
-      const length = (output.text as string).length
-      if (replace) automerge().splice(doc, path, 0, length, text)
-      else automerge().splice(doc, path, length, 0, text)
-    })
-  }
-
-  setExecutionCount(id: string, count: number | null): void {
-    this._change(doc => {
-      const cell = this._codeCell(doc, id)
-      if (cell) cell.execution_count = count
-    })
-  }
-
-  private _codeCell(doc: NotebookDoc, id: string): CellDoc | undefined {
-    const index = findCellIndex(doc, id)
-    const cell = index < 0 ? undefined : doc.cells![index]
-    return cell && readString(cell.cell_type) === "code" ? cell : undefined
-  }
-
   /** Changes the document, and the `doc` signal with it rather than when the handle says so. */
-  private _change(fn: (doc: NotebookDoc) => void): void {
+  protected override change(fn: (doc: NotebookDoc) => void): void {
     if (this.readOnly()) return
-    this._handle.change(fn)
+    this.handle.change(fn)
     this._onChange()
   }
 
-  private _handle: DocHandle<NotebookDoc>
+  private _change(fn: (doc: NotebookDoc) => void): void {
+    this.change(fn)
+  }
+
   private _onChange: () => void
 }
 
