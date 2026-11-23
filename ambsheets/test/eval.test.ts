@@ -514,3 +514,36 @@ describe('weighted choices', () => {
     expect(table.xChoices).toEqual([0, 7]);
   });
 });
+
+describe('more distributions', () => {
+  test('triangular: between two bounds, most likely near the mode', () => {
+    const r = run({ A1: '=triangular(2, 5, 12)', A2: '{4, 6}', A3: '=triangular(0, A2, 10)' }, { samples: 60_000 });
+    const a1 = histogram(viewOf(r), 'A1')!;
+    expect(a1.all.min).toBeGreaterThanOrEqual(2);
+    expect(a1.all.max).toBeLessThanOrEqual(12);
+    expect(Math.abs(a1.all.avg - (2 + 5 + 12) / 3)).toBeLessThan(0.05);
+    // the tallest bar is the one the mode is in
+    const tallest = a1.bins.reduce((best, bin) => (bin.count > best.count ? bin : best));
+    expect(tallest.x0).toBeLessThanOrEqual(5.5);
+    expect(tallest.x1).toBeGreaterThanOrEqual(4.5);
+    // a mode that varies: the mean is (0 + 5 + 10) / 3 on average
+    expect(Math.abs(histogram(viewOf(r), 'A3')!.all.avg - 5)).toBeLessThan(0.05);
+    expect(r.compiled.cells.get('A1')!.spec).toMatchObject({
+      kind: 'derived',
+      description: 'Triangular distribution (from 2 to 12, most likely 5)',
+    });
+  });
+
+  test('lognormal: positive, with a long tail', () => {
+    const r = run({ A1: '=lognormal(LN(10), 0.5)' }, { samples: 80_000 });
+    const xs = (r.columns.A1 as number[]).slice().sort((a, b) => a - b);
+    expect(xs[0]).toBeGreaterThan(0);
+    expect(Math.abs(xs[xs.length / 2] - 10)).toBeLessThan(0.2); // the median is EXP(mu)
+    expect(Math.abs(histogram(viewOf(r), 'A1')!.all.avg - 10 * Math.exp(0.125))).toBeLessThan(0.15);
+  });
+
+  test('parameters that make no sense', () => {
+    const r = run({ A1: '=triangular(5, 2, 12)', A2: '=lognormal(1, -1)', A3: '=triangular(1, 2)' });
+    for (const addr of ['A1', 'A2', 'A3']) expect(constant(r, addr)).toBeInstanceOf(ASError);
+  });
+});

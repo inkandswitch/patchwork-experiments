@@ -25,6 +25,8 @@ A cell holds a literal, an amb, or a formula.
 | `=ambify(A1:A5)` | one choice per (non-empty) cell of a range |
 | `=normal(100, 15)` | a normal distribution (continuous; new) |
 | `=uniform(0, 10)` | a uniform distribution (continuous; new) |
+| `=triangular(2, 5, 12)` | at least 2, most likely 5, at most 12 (new) |
+| `=lognormal(LN(10), 0.5)` | positive with a long tail; the median is `EXP(mu)` (new) |
 | `=normal(100, 15, 30)` | 30 fixed samples of a normal distribution, as in the original |
 | `=deambify(B3)` | all of B3's values, collected into a range |
 | `=B2 * normal(1, 0.1)`, `=100 + {1, 2, 3}` | any of the above inside a larger formula (new) |

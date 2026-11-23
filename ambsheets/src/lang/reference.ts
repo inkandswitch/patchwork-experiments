@@ -61,6 +61,31 @@ export const FUNCTIONS: FunctionDoc[] = [
     keywords: ['distribution', 'random', 'between', 'probability', 'uncertain'],
   },
   {
+    name: 'triangular',
+    category: 'Several values',
+    params: [
+      { name: 'min', doc: 'The smallest possible value.' },
+      { name: 'mode', doc: 'The most likely value.' },
+      { name: 'max', doc: 'The largest possible value.' },
+    ],
+    summary:
+      'A number between min and max that is most likely to be near mode. Handy for estimates: "at least 2 days, probably 5, at most 12".',
+    example: '=triangular(2, 5, 12)',
+    keywords: ['distribution', 'random', 'estimate', 'three', 'point', 'probability', 'uncertain'],
+  },
+  {
+    name: 'lognormal',
+    category: 'Several values',
+    params: [
+      { name: 'mu', doc: 'The mean of the logarithm of the value. The median value is EXP(mu).' },
+      { name: 'sigma', doc: 'The standard deviation of the logarithm: how many multiples the value tends to be off by.' },
+    ],
+    summary:
+      'A positive number with a long tail of large values, for things that go wrong by factors rather than amounts. =lognormal(LN(10), 0.5) is typically 10 and occasionally 30.',
+    example: '=lognormal(LN(10), 0.5)',
+    keywords: ['distribution', 'random', 'skewed', 'tail', 'probability', 'uncertain'],
+  },
+  {
     name: 'ambify',
     category: 'Several values',
     params: [{ name: 'range', doc: 'The cells to choose among, like A1:A5. Empty cells are skipped.' }],

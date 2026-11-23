@@ -33,6 +33,8 @@ describe('the reference', () => {
       'if', // built into the grammar...
       'normal', // ...as are the functions that make several values
       'uniform',
+      'triangular',
+      'lognormal',
       'ambify',
       'deambify',
     ].sort();
@@ -62,32 +64,42 @@ describe('the reference', () => {
 describe('completions', () => {
   test('right after the =, everything is offered (names and the makers of several values first)', () => {
     const { labels } = at('=|');
-    expect(labels.slice(0, 6)).toEqual(['total', 'rate', 'normal', 'uniform', 'ambify', 'deambify']);
+    expect(labels.slice(0, 8)).toEqual([
+      'total',
+      'rate',
+      'normal',
+      'uniform',
+      'triangular',
+      'lognormal',
+      'ambify',
+      'deambify',
+    ]);
     expect(labels).toContain('SUM');
     expect(labels).toContain('VLOOKUP');
     expect(labels).not.toContain('true');
   });
 
   test('typing narrows the list', () => {
-    expect(at('=no|').labels).toEqual(['normal', 'NOT']);
+    expect(at('=no|').labels).toEqual(['normal', 'NOT', 'lognormal']);
     expect(at('=uni|').labels).toEqual(['uniform', 'UNIQUE']);
     expect(at('=SU|').labels).toEqual(['SUM']);
     expect(at('=B3 + to|').labels).toEqual(['total']);
-    expect(at('=IF(tr|').labels).toEqual(['true']);
+    expect(at('=IF(tr|').labels).toEqual(['triangular', 'true']);
+    expect(at('=IF(tru|').labels).toEqual(['true']);
     // matches inside a name come after matches at its start
     expect(at('=amb|').labels).toEqual(['ambify', 'deambify']);
     // and a word for what a function does finds it too
-    expect(at('=dist|').labels).toEqual(['normal', 'uniform']);
-    expect(at('=rand|').labels).toEqual(['normal', 'uniform']);
+    expect(at('=dist|').labels).toEqual(['normal', 'uniform', 'triangular', 'lognormal']);
+    expect(at('=rand|').labels).toEqual(['normal', 'uniform', 'triangular', 'lognormal']);
     expect(at('=B3 + mea|').labels).toEqual(['AVG']);
-    expect(at('=B3 * rand|').labels).toEqual(['normal', 'uniform']);
+    expect(at('=B3 * rand|').labels).toEqual(['normal', 'uniform', 'triangular', 'lognormal']);
     expect(accept('=rand|', 'uniform')).toBe('=uniform(|');
   });
 
   test('normal and friends are offered anywhere in a formula', () => {
-    expect(at('=B3 + no|').labels).toEqual(['normal', 'NOT']);
+    expect(at('=B3 + no|').labels).toEqual(['normal', 'NOT', 'lognormal']);
     expect(at('=SUM(uni|').labels).toEqual(['uniform', 'UNIQUE']);
-    expect(at('budget = no|').labels).toEqual(['normal', 'NOT']);
+    expect(at('budget = no|').labels).toEqual(['normal', 'NOT', 'lognormal']);
     expect(accept('=B3 * (1 + rand|', 'normal')).toBe('=B3 * (1 + normal(|');
   });
 

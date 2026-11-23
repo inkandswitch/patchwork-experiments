@@ -37,6 +37,28 @@ export const DISTRIBUTIONS: Record<string, Distribution> = {
     derive: (u, [min, max]) => min + (max - min) * u,
     describe: ([min, max]) => `Uniform distribution (from ${min} to ${max})`,
   },
+  triangular: {
+    params: ['the minimum', 'the most likely value', 'the maximum'],
+    check: ([min, mode, max]) =>
+      min <= mode && mode <= max ? null : 'the most likely value has to be between the minimum and the maximum',
+    base: 'uniform',
+    // (the inverse of the triangle's cumulative distribution)
+    derive: (u, [min, mode, max]) => {
+      const range = max - min;
+      if (range === 0) return min;
+      return u < (mode - min) / range
+        ? min + Math.sqrt(u * range * (mode - min))
+        : max - Math.sqrt((1 - u) * range * (max - mode));
+    },
+    describe: ([min, mode, max]) => `Triangular distribution (from ${min} to ${max}, most likely ${mode})`,
+  },
+  lognormal: {
+    params: ['mu', 'sigma'],
+    check: ([, sigma]) => (sigma < 0 ? "sigma can't be negative" : null),
+    base: 'normal',
+    derive: (z, [mu, sigma]) => Math.exp(mu + sigma * z),
+    describe: ([mu, sigma]) => `Lognormal distribution (mu ${mu}, sigma ${sigma})`,
+  },
 };
 
 /** The parameter values as numbers, or the first thing wrong with them. */

@@ -8,6 +8,7 @@
 //       =normal(100, 15)          a normal distribution (continuous)
 //       =normal(100, 15, 30)      30 fixed samples of one (discrete)
 //       =uniform(0, 1)            a uniform distribution (continuous)
+//       =triangular(2, 5, 12)     and =lognormal(1, 0.5): two more distributions
 //   - an ordinary spreadsheet expression like =SUM(B3:B5) or =IF(B7 < 4200, "ok", "no").
 // Ambs are expressions too, so they can be part of a larger formula: =B2 * normal(1, 0.1),
 // or =100 + {1, 2, 3}. So is deambify(B3), which collects all of a cell's values into a range.
@@ -157,9 +158,11 @@ const grammar = ohm.grammar(String.raw`
 
     identRest = alnum | "_"
 
-    dist = normal | uniform
+    dist = normal | uniform | triangular | lognormal
 
-    keyword = ambify | by | deambify | false | if | normal | to | true | uniform | x
+    keyword
+      = ambify | by | deambify | false | if | lognormal | normal | to | triangular | true
+      | uniform | x
     ambify = caseInsensitive<"ambify"> ~identRest
     deambify = caseInsensitive<"deambify"> ~identRest
     by = caseInsensitive<"by"> ~identRest
@@ -169,6 +172,8 @@ const grammar = ohm.grammar(String.raw`
     to = caseInsensitive<"to"> ~identRest
     true = caseInsensitive<"true"> ~identRest
     uniform = caseInsensitive<"uniform"> ~identRest
+    triangular = caseInsensitive<"triangular"> ~identRest
+    lognormal = caseInsensitive<"lognormal"> ~identRest
     x = caseInsensitive<"x"> ~letter
   }
 `);
