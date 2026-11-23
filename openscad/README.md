@@ -39,8 +39,8 @@ yet — see "Possible follow-ups" below.
   correctness: deterministic output across platforms, colour (`originalID`)
   tracking fixes, robustness, and error propagation.
 - **One cache for the whole bundle.** `renderScad()` in `src/render/engine.ts`
-  keeps the last 8 results, keyed by the source text plus each import's name
-  and JSON, and a request whose key is already rendering joins that render
+  keeps the last 8 results, keyed by the source text plus each import's name,
+  JSON and OpenSCAD source, and a request whose key is already rendering joins that render
   instead of starting another. The editor and the scene provider both call it,
   so with both open on a doc the source compiles once. Failures aren't cached
   (a crashed worker or failed engine download is worth retrying). A cache hit
@@ -93,16 +93,84 @@ its data available inside your `.scad` source as JSON.
 - A failed `repo.find()` is retried with backoff (1 s, 2 s, 4 s, … up to 30 s)
   for as long as the import is attached; when the doc arrives, the editor
   re-renders.
-- A single generated line — `<name> = import("imports/<name>.json");` for
-  every active import — is prepended to your source before compiling, so
-  `<name>` is just a normal variable by the time your code runs (see the
+- A generated binding — `<name> = import("imports/<name>.json");` for every
+  active import — is joined onto the first line of your source before
+  compiling, so `<name>` is just a normal variable by the time your code runs
+  (see the
   [OpenSCAD JSON import docs](https://en.wikibooks.org/wiki/OpenSCAD_User_Manual/Importing_Geometry#Importing_JSON)
   for the resulting object/array shape and dot-access semantics). `import()` of a
   `.json` file is standard in this OpenSCAD; no feature flag.
 - Imports are live: editing the source doc re-resolves and re-renders
   automatically, same as editing the `.scad` text itself.
-- Because of the generated line, reported error/warning line numbers are
-  off by exactly one (not one per import) whenever any import is attached.
+- The bindings share your first line rather than getting one of their own, so
+  reported error and warning line numbers are the lines in your source.
+
+### Including a linked document: `include <x.scad>` and `use <x.scad>`
+
+A linked document can also be OpenSCAD source. `include <register.scad>` and
+`use <register.scad>` read the import named `register`, live, and a file
+document named `parts.scad` is found by `include <parts.scad>` whatever its
+import is called. Imports are the only place these paths resolve: an include
+names an attached document, never a file in the folder.
+
+A linked document's source is, in order:
+
+1. what its datatype gives for `asSource(doc, "scad")`: the plugin registry is
+   asked for the datatype named by the doc's `@patchwork.type`, and if its
+   implementation has `asSource` and it returns a string, that is the source
+   (anything else, or an error, moves on or is reported);
+2. a file document's text;
+3. otherwise nothing, and an include of it fails with a message naming the
+   import and why it has no OpenSCAD source (for instance, its datatype has no
+   `asSource`, or it is a binary file).
+
+OpenSCAD documents give their own source this way, so one OpenSCAD document
+linked into another is a library: `use <brackets.scad>` makes its modules and
+functions available without running its top-level geometry, and `include`
+runs it too.
+
+Every import is still bound as JSON as above, whether or not it has source.
+
+An include that matches no attached document fails the render (OpenSCAD itself
+only warns, and carries on with every name undefined) with a message that says
+how to attach it: drag the document onto the Imports bar above the editor, and
+name it for the include (`register` for `<register.scad>`).
+
+An edit inside an included document re-renders, in the editor and in a scene.
+The render cache key includes the included source, so a changed register never
+shows a stale render.
+
+#### For agents
+
+To use a document's data as OpenSCAD source (the assumptions register, say):
+
+1. Attach it: add `{name: "assumptions", docUrl: "<its automerge url>",
+   label: "Assumptions"}` to the OpenSCAD doc's `imports` with doc_edit. The
+   name is what the include uses: `<assumptions.scad>` reads the import
+   `assumptions`.
+2. Write `include <assumptions.scad>` (variables and modules in scope) or
+   `use <assumptions.scad>` (modules and functions only) in the source. Don't
+   paste the register's lines into the CAD file: the include is live.
+3. Its values are also available as JSON, `assumptions.<key>`, with no include.
+
+A render that says `matches no attached document` means step 1 is missing; one
+that says `has no OpenSCAD source` means the document's datatype can't be
+written as OpenSCAD, so use the JSON binding instead.
+
+## The last run, kept in the document
+
+After each render the editor keeps the run in the document as `lastRun`
+(`src/lastRun.ts`): when it ran, the document's heads it rendered, whether it
+worked, how long it took, and OpenSCAD's console (ECHO, WARNING and ERROR
+lines; the engine's start-up noise left out; at most 2000 lines). Other tools
+read it instead of running OpenSCAD: an assumptions register reads
+`echo(name = value);` (or `echo("name", value);`) lines as the model's results,
+and knows from `heads` which version of the code gave them.
+
+It is written only when what was rendered, whether it worked, or what it
+printed changed, so several open editors rendering the same thing write once,
+and saving it doesn't trigger another render. Scenes render without writing;
+open the editor (or a scene's Edit) to run it.
 
 ## In a 3D scene
 
@@ -116,8 +184,9 @@ lives in `src/scene/`:
   own worker for OpenSCAD.
 - `build()` runs the same engine as the editor (same worker, same cache, same
   import binding: each `doc.imports` entry is fetched with `repo.find()` and
-  bound as JSON; an unavailable one binds to `{}`, and the host retries
-  dependencies that haven't loaded) and encodes a GLB with flat per-face
+  bound as JSON and, when it has OpenSCAD source, made includable (see
+  above); an unavailable one binds to `{}` with no source, and the host
+  retries dependencies that haven't loaded) and encodes a GLB with flat per-face
   normals: one mesh, one primitive per colour, uncoloured triangles without a
   material. OpenSCAD is Z-up and unitless; the `unit` param
   (default millimetres) scales to metres and `(x, y, z)` becomes `(x, z, -y)`
@@ -135,7 +204,8 @@ lives in `src/scene/`:
   an older version (or by none) go stale once; don't change the `scad1:`
   fingerprint prefix for that.
 - `dependencies()` lists the imported docs (once each, not transitively,
-  since imports are bound as plain JSON). The scene host records their heads
+  since imports are bound as plain JSON or as one source file each), included
+  ones among them. The scene host records their heads
   next to the source's, so an edit *inside* an imported doc rebuilds too.
 - `src/scene/glb.js` is a copy of the scene package's encoder. Don't edit it
   here; copy a newer one over it.

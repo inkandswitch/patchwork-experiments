@@ -65,7 +65,8 @@ describe("createImportResolver", () => {
 		await vi.advanceTimersByTimeAsync(0)
 		expect(settled).toBe(true)
 		expect(resolver.pending()).toBe(false)
-		expect(resolver.payload(imports)).toEqual([
+		const payload = await resolver.payload(imports)
+		expect(payload.map(({name, json}) => ({name, json}))).toEqual([
 			{name: "a", json: '{"w":1}'},
 			{name: "b", json: "{}"},
 		])
@@ -113,12 +114,12 @@ describe("createImportResolver", () => {
 		await vi.advanceTimersByTimeAsync(1) // 2 s after the second
 		expect(find).toHaveBeenCalledTimes(3)
 		expect(onChange).toHaveBeenCalledTimes(1)
-		expect(resolver.payload(imports)).toEqual([{name: "data", json: '{"w":7}'}])
+		expect((await resolver.payload(imports))[0].json).toBe('{"w":7}')
 
 		// and it is live from then on
 		doc.change({w: 8})
 		expect(onChange).toHaveBeenCalledTimes(2)
-		expect(resolver.payload(imports)[0].json).toBe('{"w":8}')
+		expect((await resolver.payload(imports))[0].json).toBe('{"w":8}')
 		resolver.dispose()
 		expect(doc.listeners.size).toBe(0)
 	})
@@ -151,7 +152,7 @@ describe("createImportResolver", () => {
 		resolver.sync([{docUrl: url("a")}, {docUrl: url("a")}])
 		await vi.advanceTimersByTimeAsync(0)
 		expect(find).toHaveBeenCalledTimes(1)
-		expect(resolver.payload([{name: "renamed", docUrl: url("a")}])).toEqual([{name: "renamed", json: '{"x":1}'}])
+		expect((await resolver.payload([{name: "renamed", docUrl: url("a")}]))[0]).toMatchObject({name: "renamed", json: '{"x":1}'})
 	})
 
 	it("treats a find that throws synchronously like a failed one", async () => {

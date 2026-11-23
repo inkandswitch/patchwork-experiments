@@ -11,7 +11,7 @@
 
 import type {AutomergeUrl} from "@automerge/automerge-repo"
 import type {OpenscadDoc} from "../types"
-import {docToJsonString} from "../imports"
+import {importInput, type LoadDatatype} from "../linkedSources"
 import type {Render, RenderImportInput} from "../render/engine"
 import {allPositions, toHexColor, type Model} from "../render/model"
 import {computeBounds, computeNormals, encodeGLB} from "./glb.js"
@@ -88,6 +88,7 @@ export function dependencies(doc: OpenscadDoc | undefined): AutomergeUrl[] {
 export async function resolveImports(
 	doc: OpenscadDoc,
 	repo: RepoLike | undefined,
+	loadDatatype?: LoadDatatype,
 ): Promise<{imports: RenderImportInput[]; missing: string[]}> {
 	const missing: string[] = []
 	const imports = await Promise.all(
@@ -99,8 +100,8 @@ export async function resolveImports(
 			} catch {
 				missing.push(imp.name)
 			}
-			// Same fallback as the editor: an unavailable import binds to {}.
-			return {name: String(imp.name), json: docToJsonString(content)}
+			// Same as the editor: an unavailable import binds to {} and has no source.
+			return importInput(imp, content, loadDatatype)
 		}),
 	)
 	return {imports, missing}
