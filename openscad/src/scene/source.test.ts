@@ -156,8 +156,8 @@ describe("dependencies", () => {
 	})
 
 	it("build() asks each import's datatype for source on behalf of the doc's own url", async () => {
-		const asSource = vi.fn(() => "x=1;")
-		const render = vi.fn(async (_s: string, _i: unknown[]) => rendered(emptyModel()))
+		const asSource = vi.fn((..._args: unknown[]) => "x=1;")
+		const render = vi.fn(async (_s: string, _i?: unknown[]) => rendered(emptyModel()))
 		const impl = createOpenscadSource(async () => render, async () => ({asSource}))
 		const find = async (_u: AutomergeUrl) => ({doc: () => ({"@patchwork": {type: "register"}})})
 		await impl.build({doc: {source: "", imports: [{name: "reg", docUrl: url("a")}]}, repo: {find}, url: "automerge:self"})
