@@ -7,6 +7,8 @@
 //  1. the linked doc's datatype, looked up in the plugin registry by its
 //     `@patchwork.type`: if the implementation has `asSource(doc, "scad")` and
 //     it returns a string, that string. (null or undefined: on to the next.)
+//     The third argument is `{for: <the including document's own URL>}`, so a
+//     register can leave out results the including model computes itself.
 //  2. a file document's text.
 //  3. nothing, with the reason in `noScad`, for the error an include of it gets.
 
@@ -24,11 +26,15 @@ export const registryDatatype: LoadDatatype = async type => {
 	return loaded?.module
 }
 
-type AsSource = {asSource?: (doc: unknown, format: string) => unknown}
+type AsSource = {asSource?: (doc: unknown, format: string, options?: {for?: string}) => unknown}
 
 export type LinkedSource = {scad?: string; scadFile?: string; noScad?: string}
 
-export async function linkedSource(doc: unknown, loadDatatype: LoadDatatype = registryDatatype): Promise<LinkedSource> {
+export async function linkedSource(
+	doc: unknown,
+	loadDatatype: LoadDatatype = registryDatatype,
+	forUrl?: string,
+): Promise<LinkedSource> {
 	if (doc === null || typeof doc !== "object") {
 		return {noScad: "the document is not available (still loading, or not reachable)"}
 	}
@@ -44,7 +50,7 @@ export async function linkedSource(doc: unknown, loadDatatype: LoadDatatype = re
 		}
 		if (typeof impl?.asSource === "function") {
 			try {
-				const text = impl.asSource(doc, "scad")
+				const text = impl.asSource(doc, "scad", forUrl ? {for: forUrl} : {})
 				if (typeof text === "string") return {scad: text}
 			} catch (err) {
 				return {noScad: `its "${type}" datatype's asSource(doc, "scad") failed: ${(err as Error)?.message ?? err}`}
@@ -71,11 +77,13 @@ export async function importInput(
 	imp: Pick<OpenscadImport, "name" | "label">,
 	doc: unknown,
 	loadDatatype?: LoadDatatype,
+	/** the including OpenSCAD document's own URL, passed to asSource as `for` */
+	forUrl?: string,
 ): Promise<RenderImportInput> {
 	return {
 		name: String(imp.name),
 		json: docToJsonString(doc),
 		...(imp.label ? {label: imp.label} : {}),
-		...(await linkedSource(doc, loadDatatype)),
+		...(await linkedSource(doc, loadDatatype, forUrl)),
 	}
 }

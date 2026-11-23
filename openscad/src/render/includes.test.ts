@@ -4,6 +4,7 @@ import {createRenderCache, renderKey, type RenderImportInput} from "./engine"
 import {explainMissingIncludes, importFor, missingIncludes, sourceFiles, withBindings} from "./includes"
 import {openscadArgs} from "./args"
 import {ENGINE_DIR} from "./engineFiles"
+import {importInput} from "../linkedSources"
 
 const imp = (o: Partial<RenderImportInput> & {name: string}): RenderImportInput => ({json: "{}", ...o})
 
@@ -124,6 +125,19 @@ describe("in the engine", () => {
 		const use = await run("use <register.scad>\nm();", [register])
 		expect(missingIncludes(use)).toEqual([])
 		expect(use.join("\n")).toContain("Facets:         6")
+	})
+	it("an including model that assigns its own results gets them defined when the register leaves them out", async () => {
+		// a register that records "cost" and "mass" as results; the including model computes "cost" itself
+		const asSource = (_doc: unknown, _ext: string, options?: {for?: string}) =>
+			(options?.for ? "" : "cost = 0;\n") + "mass = 4;\n"
+		const model = "include <register.scad>\nextra = 1;\ncost = 2 * mass + extra;\necho(cost = cost, mass = mass);"
+		const withFor = await importInput({name: "register"}, {"@patchwork": {type: "register"}, w: 1}, async () => ({asSource}), "automerge:self")
+		const without = await importInput({name: "register"}, {"@patchwork": {type: "register"}, w: 1}, async () => ({asSource}))
+		const ok = (await run(model, [withFor])).join("\n")
+		expect(ok).toContain("ECHO: cost = 9, mass = 4")
+		expect(ok).not.toContain("undef")
+		// the collision the option avoids
+		expect((await run(model, [without])).join("\n")).toContain("cost = undef")
 	})
 	it("finds a file doc by its file name", async () => {
 		const logs = await run("include <parts.scad>\ncube(width);", [imp({name: "doc", scad: "width=3;", scadFile: "parts.scad"})])

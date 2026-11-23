@@ -155,6 +155,19 @@ describe("dependencies", () => {
 		expect(dependencies(doc)).toEqual([url("c")])
 	})
 
+	it("build() asks each import's datatype for source on behalf of the doc's own url", async () => {
+		const asSource = vi.fn(() => "x=1;")
+		const render = vi.fn(async (_s: string, _i: unknown[]) => rendered(emptyModel()))
+		const impl = createOpenscadSource(async () => render, async () => ({asSource}))
+		const find = async (_u: AutomergeUrl) => ({doc: () => ({"@patchwork": {type: "register"}})})
+		await impl.build({doc: {source: "", imports: [{name: "reg", docUrl: url("a")}]}, repo: {find}, url: "automerge:self"})
+		expect(asSource.mock.calls[0]).toEqual([expect.anything(), "scad", {for: "automerge:self"}])
+		// falls back to the handle's url
+		await impl.build({doc: {source: "", imports: [{name: "reg", docUrl: url("a")}]}, repo: {find}, handle: {url: "automerge:viaHandle"}})
+		expect(asSource.mock.calls[1][2]).toEqual({for: "automerge:viaHandle"})
+		expect(render.mock.calls[0][1]).toMatchObject([{name: "reg", scad: "x=1;"}])
+	})
+
 	it("lists exactly the docs build() fetches", async () => {
 		const render = vi.fn(async () => rendered(emptyModel()))
 		const impl = createOpenscadSource(async () => render)

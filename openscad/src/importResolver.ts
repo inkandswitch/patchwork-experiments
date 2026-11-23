@@ -29,6 +29,8 @@ export type ImportResolverOptions = {
 	retryDelay?(attempt: number): number
 	/** how a doc's datatype is found for `asSource`; the plugin registry by default */
 	loadDatatype?: LoadDatatype
+	/** this document's own URL: handed to each import's asSource as `for` */
+	selfUrl?: string
 	onError?(url: AutomergeUrl, err: unknown, attempt: number): void
 }
 
@@ -139,7 +141,7 @@ export function createImportResolver(opts: ImportResolverOptions) {
 		 */
 		payload(imports: readonly OpenscadImport[]): Promise<RenderImportInput[]> {
 			return Promise.all(
-				imports.map(imp => importInput(imp, entries.get(imp.docUrl)?.handle?.doc(), opts.loadDatatype)),
+				imports.map(imp => importInput(imp, entries.get(imp.docUrl)?.handle?.doc(), opts.loadDatatype, opts.selfUrl)),
 			)
 		},
 
