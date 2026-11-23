@@ -28,7 +28,7 @@
  * keeps scroll, open sections, focus and typed text; events are delegated.
  */
 
-import { checkFolder, readSource, recordInputs, runRecord } from "./check.js"
+import { checkFolder, readSource, recordInputs, runDocuments, runRecord } from "./check.js"
 import { render as renderFormula } from "./formula.js"
 import { morph } from "./morph.js"
 import { checkClaim } from "./quote.js"
@@ -47,6 +47,8 @@ const LENSES = [
   ["structure", "Structure"],
 ]
 const NAME_KEY = "assumptions:name"
+/** How long a model document stays still before its new results are read: a run writes outputs cell by cell. */
+const MODEL_SETTLE_MS = 1500
 /** Bases in ring order, with what each says about how a value is known. */
 const BASIS_KEYS = [["claims", "sourced"], ["estimate", "estimated"], ["choice", "decided"], ["model", "computed by a model"], ["formula", "calculated"], ["check", "requirements"], ["unknown", "unknown"]]
 const DOC_URL = /automerge:[1-9A-HJ-NP-Za-km-z]+(?:#[1-9A-HJ-NP-Za-km-z|]+)?/g
@@ -145,6 +147,7 @@ export function AssumptionsView(handle, element, options = {}) {
 
   function render() {
     compute()
+    watchModels()
     const out = h("div")
     out.append(header(), h("div", { class: "body", "data-key": "body" }, lensView(), panel()))
     morph(root, out)
@@ -1221,6 +1224,7 @@ export function AssumptionsView(handle, element, options = {}) {
         message: quiet ? "register: rescan on open" : `${who || "a person"}: check the folder`,
       })
       if (result.stopped) state.checkNote = "Stopped; the last check stands."
+      else if (result.runs?.length) state.checkNote = `Read ${result.runs.length} result${result.runs.length === 1 ? "" : "s"} from ${[...new Set(result.runs.map((r) => r.path || "a model"))].join(", ")}.`
       else if (!result.scan && !quiet) state.checkError = "Nothing to check: this register has no task folder, model runs or kept sources."
     } catch (error) {
       state.checkError = `The check stopped: ${error.message}`
@@ -1228,6 +1232,39 @@ export function AssumptionsView(handle, element, options = {}) {
     checkController = null
     state.checking = false
     if (!disposed) render()
+    if (checkAgain && !disposed) {
+      checkAgain = false
+      void check(true)
+    }
+  }
+
+  // The model documents, watched while the register is open: run one (in
+  // another tab, say) and its results come in here without anyone copying them.
+  const watched = new Map()
+  let checkAgain = false
+  let modelTimer = null
+  const modelChanged = () => {
+    clearTimeout(modelTimer)
+    modelTimer = setTimeout(() => {
+      if (disposed) return
+      if (state.checking) checkAgain = true
+      else void check(true)
+    }, options.settleMs ?? MODEL_SETTLE_MS)
+  }
+  function watchModels() {
+    if (!repo) return
+    for (const url of runDocuments(doc.entries)) {
+      if (watched.has(url)) continue
+      watched.set(url, null)
+      Promise.resolve()
+        .then(() => repo.find(url))
+        .then((found) => {
+          if (disposed || typeof found?.on !== "function") return
+          found.on("change", modelChanged)
+          watched.set(url, found)
+        })
+        .catch(() => {})
+    }
   }
 
   function onInput(event) {
@@ -1333,6 +1370,8 @@ export function AssumptionsView(handle, element, options = {}) {
     disposed = true
     checkController?.abort()
     clearTimeout(redraw)
+    clearTimeout(modelTimer)
+    for (const found of watched.values()) found?.off?.("change", modelChanged)
     handle.off("change", render)
     root.removeEventListener("pointerover", light)
     root.removeEventListener("pointerout", unlight)

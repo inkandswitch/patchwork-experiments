@@ -500,10 +500,16 @@ export function unopenedText(scan) {
 }
 
 /** What assumptions_check returns: everything to act on, in queue order, and where effort pays. */
-export function checkText(doc, evaluation, extraProblems, { constants = [], drift = [], exports = [], pinned = null, heads = [] } = {}) {
+export function checkText(doc, evaluation, extraProblems, { constants = [], drift = [], exports = [], pinned = null, heads = [], runs = [] } = {}) {
   const entries = doc.entries ?? {}
   const problems = allProblems(evaluation, extraProblems)
   const lines = [summaryLine(doc, evaluation, problems), ""]
+  if (runs.length) {
+    lines.push(`READ FROM MODEL DOCUMENTS (${runs.length}): results their new outputs give, recorded as runs`)
+    for (const r of runs.slice(0, 40)) lines.push(`  ${r.id} = ${formatValue(r.value, entries[r.id]?.unit)}${r.was ? ` (was ${formatValue(r.was, entries[r.id]?.unit)})` : ""} · "${r.path || "a model"}" ${r.model?.by?.line ?? ""}`.trimEnd())
+    if (runs.length > 40) lines.push(`  …and ${runs.length - 40} more`)
+    lines.push("")
+  }
   lines.push(...judgementLines(doc, evaluation))
   lines.push(...problemLines(problems, 60))
 

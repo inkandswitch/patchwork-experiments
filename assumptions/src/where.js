@@ -26,7 +26,7 @@
  */
 
 import { GENERATED_MARK, exportedNames } from "./export.js"
-import { isNumeric } from "./values.js"
+import { isNumeric, parseValue } from "./values.js"
 
 const CODE_EXTENSIONS = new Set(["py", "scad", "js", "mjs", "ts", "jl", "m", "r"])
 const MAX_DOCS = 400
@@ -43,7 +43,7 @@ function textOf(content) {
 }
 
 function cellSource(cell) {
-  return Array.isArray(cell?.source) ? cell.source.join("") : textOf(cell?.source)
+  return Array.isArray(cell?.source) ? cell.source.map((v) => (typeof v === "string" ? v : typeof v?.val === "string" ? v.val : textOf(v))).join("") : typeof cell?.source?.val === "string" ? cell.source.val : textOf(cell?.source)
 }
 
 /** The readable parts of one document: [{ part, text, code }]. Empty for what is not read. */
@@ -52,7 +52,7 @@ export function partsOf(doc, name = "") {
   const type = doc["@patchwork"]?.type
   if (type === "web-snapshot" || doc.capture != null) return []
   if (Array.isArray(doc.cells)) {
-    return doc.cells.map((cell, i) => ({ part: `cell ${i + 1}`, text: cellSource(cell), code: cell?.cell_type === "code" }))
+    return doc.cells.map((cell, i) => ({ part: `cell ${i + 1}`, text: cellSource(cell), code: str(cell?.cell_type) === "code" }))
   }
   if (type === "openscad" || (typeof doc.source === "string" && !doc.content)) {
     return [{ part: "", text: textOf(doc.source), code: true }]
@@ -103,6 +103,53 @@ export function sourceText(doc) {
   const parts = partsOf({ ...doc, capture: null }).map((p) => p.text)
   for (const key of ["text", "content", "markdown"]) if (typeof doc?.[key] === "string" && !parts.includes(doc[key])) parts.push(doc[key])
   return parts.join("\n")
+}
+
+const ID_LINE = /^\s*([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+)\s*(?:[:=]\s*|\s+)(\S.*?)\s*$/
+
+/** A string as Automerge may hold it: plain, or an ImmutableString. */
+const str = (v) => (v == null ? "" : typeof v === "string" ? v : typeof v.val === "string" ? v.val : textOf(v))
+const joined = (v) => (Array.isArray(v) ? v.map(str).join("") : str(v))
+
+function outputText(out) {
+  if (str(out?.output_type) === "stream") return joined(out.text)
+  return joined(out?.data?.["text/plain"])
+}
+
+/**
+ * The results a model document gave in its last run: lines of its code cells'
+ * outputs that start with an entry's id and give a figure — "id 28.17",
+ * "id = 28.17 kW", "id: 42 (40–44)". The last such line for an id wins. Only
+ * notebooks have outputs; other documents give none (yet).
+ * Returns [{ id, value, part, line, text }].
+ */
+export function outputsOf(doc, ids) {
+  if (!Array.isArray(doc?.cells)) return []
+  const found = new Map()
+  doc.cells.forEach((cell, i) => {
+    if (str(cell?.cell_type) !== "code") return
+    for (const out of cell.outputs ?? []) {
+      outputText(out).split("\n").forEach((line, j) => {
+        const m = line.match(ID_LINE)
+        if (!m || !ids.has(m[1])) return
+        const parsed = parseValue(m[2])
+        if (parsed.problem || !isNumeric(parsed.value)) return
+        found.set(m[1], { id: m[1], value: parsed.value, part: `cell ${i + 1}`, line: j + 1, text: line.trim().slice(0, 160) })
+      })
+    }
+  })
+  return [...found.values()]
+}
+
+/**
+ * A fingerprint of a notebook's outputs (with execution counts, where kept):
+ * it moves when the notebook is run, not when its code is edited. Null for a
+ * document without outputs.
+ */
+export function runKeyOf(doc) {
+  if (!Array.isArray(doc?.cells)) return null
+  const cells = doc.cells.filter((c) => str(c?.cell_type) === "code").map((c) => [c.execution_count ?? null, (c.outputs ?? []).map(outputText)])
+  return `r:${hash(JSON.stringify(cells))}`
 }
 
 /** A kept source's fingerprint: all its readable text, or its heads when it has none. Any change counts. */
@@ -246,7 +293,8 @@ const byOrder = (a, b) => {
  *   at        the register's heads when it ran
  *   time      when it ran (ISO)
  *   idsKey    the register's ids it searched for
- *   docs      { [url]: { path, heads, code, export, hits: [{ id, use, part, line, text }],
+ *   docs      { [url]: { path, heads, code, runKey, outputs: [{ id, value, part, line, text }],
+ *               export, hits: [{ id, use, part, line, text }],
  *               assigns: [{ name, value, comment, part, line, text }] } }
  *             a run's document that couldn't be opened: { path, missing: true }
  *   unopened  [{ url, path, why }]: folder documents that couldn't be opened
@@ -260,6 +308,7 @@ const byOrder = (a, b) => {
  */
 export async function scanFolder(repo, { entries, registerUrl, folderUrl, also = [], previous = null, at = [], find = (url) => repo.find(url), concurrency = CONCURRENCY, timeout = OPEN_TIMEOUT_MS, signal = null, onProgress = null }) {
   const index = nameIndex(entries)
+  const ids = new Set(Object.keys(entries ?? {}))
   const idsKey = idsKeyOf(entries)
   const reusable = previous?.idsKey === idsKey ? previous.docs ?? {} : {}
   const required = new Set(also.map(strip))
@@ -305,11 +354,11 @@ export async function scanFolder(repo, { entries, registerUrl, folderUrl, also =
     opened++
     const heads = typeof handle.heads === "function" ? [...(handle.heads() ?? [])] : []
     const before = reusable[key]
-    if (before && before.code !== undefined && heads.length && JSON.stringify(before.heads) === JSON.stringify(heads)) {
+    if (before && before.code !== undefined && "runKey" in before && heads.length && JSON.stringify(before.heads) === JSON.stringify(heads)) {
       leaves.push({ order, key, record: { ...before, path }, reused: true, required: needed })
     } else {
       const parts = partsOf(doc, path)
-      const record = { path, heads, code: codeOf(doc, heads), export: parts.some((p) => p.text.includes(GENERATED_MARK)), hits: [], assigns: [] }
+      const record = { path, heads, code: codeOf(doc, heads), runKey: runKeyOf(doc), outputs: outputsOf(doc, ids), export: parts.some((p) => p.text.includes(GENERATED_MARK)), hits: [], assigns: [] }
       if (!record.export) {
         for (const { part, text, code } of parts) {
           for (const hit of usesIn(text, index)) record.hits.push({ ...hit, use: code ? "model" : "prose", part })

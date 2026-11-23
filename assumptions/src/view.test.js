@@ -409,6 +409,18 @@ describe("checking from the view", () => {
     expect([...register.heads()]).toEqual(heads)
   })
 
+  it("reads a model's new results by itself when the model runs while the register is open", async () => {
+    notebook.change((d) => d.cells[0].outputs.push({ output_type: "stream", name: "stdout", text: "pack_heat_W 60.0\n" }))
+    dispose = AssumptionsView(register, element, { repo, settleMs: 20 })
+    await until(() => register.doc().entries.pack_heat_W.model.ranAt, "the first read")
+    expect(register.doc().entries.pack_heat_W.model.by).toMatchObject({ kind: "document", url: notebook.url })
+    // Someone runs the notebook in another tab.
+    notebook.change((d) => (d.cells[0].outputs[0].text = "pack_heat_W 66.5\n"))
+    await until(() => register.doc().entries.pack_heat_W.value?.nominal === 66.5, "the new result")
+    await until(() => /Read 1 result from thermal.ipynb/.test(element.querySelector(".summary").textContent), "the note")
+    expect(register.doc().entries.pack_heat_W.stale ?? null).toBeNull()
+  })
+
   it("shows its progress while it checks, and Stop leaves the last check standing", async () => {
     const slow = { find: async (url) => (await new Promise((r) => setTimeout(r, 30)), repo.find(url)) }
     dispose = AssumptionsView(register, element, { repo: slow })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { codeOf, sourceFingerprint } from "./where.js"
+import { codeOf, outputsOf, runKeyOf, sourceFingerprint } from "./where.js"
 
 // Every combination of five edits to a notebook: the fingerprint moves
 // exactly when one of them touches code.
@@ -119,5 +119,25 @@ describe("scanning a folder in parallel", () => {
     setTimeout(() => stop.abort(), 5)
     await expect(run).rejects.toMatchObject({ name: "AbortError" })
     await expect(openWithin(slow.find, slow.root, { signal: stop.signal })).rejects.toMatchObject({ name: "AbortError" })
+  })
+})
+
+describe("a notebook's printed results", () => {
+  // Automerge may hand strings back as ImmutableString objects; both forms read the same.
+  const imm = (val) => ({ val, toString: () => val })
+  const nb = (wrap) => ({
+    cells: [
+      { cell_type: wrap("markdown"), source: "pack_x_W 1" },
+      { cell_type: wrap("code"), source: "", outputs: [{ output_type: wrap("stream"), name: "stdout", text: wrap("pack_heat_W   60.25\nnot_an_entry 3\npack_heat_W = 61.5 W\n") }] },
+      { cell_type: wrap("code"), source: "", outputs: [{ output_type: wrap("execute_result"), data: { "text/plain": [wrap("pack_R_mOhm: 6 (5–7)")] } }] },
+    ],
+  })
+  it("reads id-value lines from code cells' outputs, last line winning, from plain or immutable strings", () => {
+    for (const wrap of [(v) => v, imm]) {
+      const out = outputsOf(nb(wrap), new Set(["pack_heat_W", "pack_R_mOhm", "pack_x_W"]))
+      expect(out.map((o) => [o.id, o.value.nominal, o.part, o.line])).toEqual([["pack_heat_W", 61.5, "cell 2", 3], ["pack_R_mOhm", 6, "cell 3", 1]])
+      expect(out[1].value).toMatchObject({ min: 5, max: 7 })
+    }
+    expect(runKeyOf(nb((v) => v))).toBe(runKeyOf(nb(imm)))
   })
 })

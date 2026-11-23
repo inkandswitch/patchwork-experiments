@@ -268,6 +268,66 @@ describe("check and where", () => {
     expect(out).toMatch(/model: 1\n {4}model.py:2 {2}I = V \/ pack_R_min_mOhm/)
   })
 
+  it("reads model results from the document's new outputs: a run is recorded without anyone copying a value", async () => {
+    const register = await newRegister()
+    const cell = (source, printed) => ({ cell_type: "code", source, outputs: printed ? [{ output_type: "stream", name: "stdout", text: printed }] : [] })
+    const notebook = file("Model 1.ipynb", {
+      "@patchwork": { type: "jupyter-notebook" },
+      cells: [
+        { cell_type: "markdown", source: "# Hull resistance" },
+        cell("boat_mass_kg = 8330  # from the register\nboat_speed_kn = 8", ""),
+        cell("print(f'boat_drag_N {drag:.1f}')\nprint(f'prop_P_kW = {P:.2f} kW')", "boat_drag_N 1020.4\nprop_P_kW = 46.10 kW\n"),
+      ],
+    })
+    await set.execute(
+      {
+        register,
+        entries: [
+          { id: "boat_mass_kg", unit: "kg", estimate: { value: { nominal: 8330, min: 8100, max: 8600 }, reasoning: "weighed hull + pack" } },
+          { id: "boat_speed_kn", unit: "kn", kind: "decision", value: 8 },
+          { id: "boat_drag_N", unit: "N", model: { url: notebook.url, name: "Model 1", inputs: ["boat_mass_kg", "boat_speed_kn"] }, value: 1000 },
+          { id: "prop_P_kW", unit: "kW", model: { url: notebook.url, name: "Model 1", inputs: ["boat_drag_N"] }, value: 45 },
+        ],
+      },
+      ctx,
+    )
+    // The first check reads what the notebook printed.
+    let out = await check.execute({ register }, ctx)
+    expect(out).toMatch(/READ FROM MODEL DOCUMENTS \(2\)/)
+    expect(out).toMatch(/boat_drag_N = 1020.4 N \(was 1000 N\) · "Model 1.ipynb" cell 3:1/)
+    let doc = (await repo.find(register)).doc()
+    expect(doc.entries.prop_P_kW.value.nominal).toBe(46.1)
+    expect(doc.entries.boat_drag_N.model.by).toEqual({ kind: "document", url: notebook.url, line: "cell 3:1" })
+    // Inputs are what the notebook's own code assigns: 8330, not the register's bounds-only change.
+    expect(doc.entries.boat_drag_N.model.inputs.boat_mass_kg.nominal).toBe(8330)
+    expect(out).not.toMatch(/STALE/)
+
+    // Nothing ran: nothing is read again.
+    out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/READ FROM MODEL DOCUMENTS/)
+
+    // The register's mass moves; the notebook still has the old copy, so the result is stale until it is updated and re-run.
+    await set.execute({ register, entries: [{ id: "boat_mass_kg", estimate: { value: { nominal: 8900, min: 8700, max: 9100 }, reasoning: "pack added" } }] }, ctx)
+    out = await check.execute({ register }, ctx)
+    expect(out).toMatch(/STALE\s+boat_drag_N: boat_mass_kg moved since the model ran/)
+    expect(out).toMatch(/DRIFTED COPIES[\s\S]*boat_mass_kg = 8330, register says 8900/)
+
+    // Code edited, not run: outputs unchanged, so nothing is read and the code change shows.
+    notebook.change((d) => (d.cells[1].source = "boat_mass_kg = 8900  # from the register\nboat_speed_kn = 8"))
+    out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/READ FROM MODEL DOCUMENTS/)
+    expect(out).toMatch(/STALE\s+boat_drag_N: [^\n]*the code in "Model 1.ipynb" changed/)
+
+    // Run: new outputs. Both results are read, with the inputs the code now assigns, and nothing is stale.
+    notebook.change((d) => (d.cells[2].outputs[0].text = "boat_drag_N 1089.7\nprop_P_kW = 49.32 kW\n"))
+    out = await check.execute({ register }, ctx)
+    expect(out).toMatch(/READ FROM MODEL DOCUMENTS \(2\)/)
+    expect(out).not.toMatch(/STALE/)
+    doc = (await repo.find(register)).doc()
+    expect(doc.entries.boat_drag_N.value.nominal).toBe(1089.7)
+    expect(doc.entries.boat_drag_N.model.inputs.boat_mass_kg.nominal).toBe(8900)
+  })
+
   it("looks for a quote again when its source changes: still there, nothing to do; gone, the claim is no longer verified", async () => {
     const register = await newRegister()
     const datasheet = sheet()

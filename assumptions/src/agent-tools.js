@@ -516,7 +516,7 @@ export const check = {
   async execute(input, ctx) {
     const handle = await openRegister(ctx, input.register)
     const folderUrl = input.folder || handle.doc().scope
-    const { scan, stopped } = await scanAndSave(handle, ctx, folderUrl)
+    const { scan, stopped, runs } = await scanAndSave(handle, ctx, folderUrl)
     if (stopped) return "The check was stopped before it finished; nothing was saved, and the last check stands."
     if (!scan) handle.change((d) => void settle(d, headsOf(handle)), { message: message(ctx, "check") })
     const doc = handle.doc()
@@ -528,6 +528,7 @@ export const check = {
       exports: exportsIn(doc.scan),
       pinned: pinnedUrl(handle),
       heads: headsOf(handle),
+      runs,
     })
     return folderUrl ? text : `${text}\n\nThis register has no scope folder, so nothing was scanned; pass \`folder\`.`
   },
