@@ -26,7 +26,7 @@
 // never changes how likely a value is, "keep it if it's still within the level" is all
 // the bookkeeping a step needs.
 
-import type { Amb } from './amb-engine';
+import type { Amb } from './amb-engine.ts';
 
 export interface ConditionedConfig<S> {
   /**

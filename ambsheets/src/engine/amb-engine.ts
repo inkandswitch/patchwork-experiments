@@ -1,8 +1,8 @@
 import * as d3 from 'd3-random';
-import { ConditionedSampler, type ConditionedConfig } from './conditioned-sampler';
+import { ConditionedSampler, type ConditionedConfig } from './conditioned-sampler.ts';
 
 export { ConditionedSampler };
-export type { ConditionedConfig, ConditionedStatus } from './conditioned-sampler';
+export type { ConditionedConfig, ConditionedStatus } from './conditioned-sampler.ts';
 
 export abstract class Amb<T> {
   constructor(protected readonly random: () => number) {}

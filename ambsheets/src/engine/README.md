@@ -24,3 +24,7 @@ What has changed since that commit:
   exhaustive and Monte Carlo samplers behave as before (and got faster).
 
 `test/conditioned.test.ts` checks the sampler against cases whose exact answers are known.
+
+The two files here are kept identical to the ones on the `main` branch of a local checkout
+of amb-engine (`~/prog/amb-engine`), where the same changes are committed. (They import
+each other with explicit `.ts` extensions because that repository runs under Deno.)
