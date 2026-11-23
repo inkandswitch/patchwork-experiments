@@ -114,7 +114,7 @@ describe("writing into a directory document", () => {
 
   it("edits by path", async () => {
     const r = repo()
-    const out = await fsEdit.execute({ path: "src/runtime/eval.ts", old: "return 1", new: "return 3" }, ctx(r))
+    const out = await fsEdit.execute({ path: "src/runtime/eval.ts", edits: [{ op: "replace", find: "return 1", text: "return 3" }] }, ctx(r))
     expect(r.docs.get("automerge:eval").content).toContain("return 3")
     expect(out.text).toMatch(/Package version moved/)
   })

@@ -111,6 +111,25 @@ function writeBody(input) {
   return parts
 }
 
+const quoted = (text) => {
+  const line = String(text).replace(/\s+/g, " ").trim()
+  return `“${line.length > 40 ? `${line.slice(0, 39)}…` : line}”`
+}
+
+/** What one op puts in, in a few words: the row's right-hand side. */
+function opDetail(op) {
+  if (op?.op === "delete") return null
+  const what = op?.from
+    ? `the text at ${pathLabel(op.from.path) ?? "/"}${op.from.url ? " in another document" : ""}`
+    : op?.text !== undefined && op?.text !== null
+      ? isLong(op.text) ? `${String(op.text).slice(0, 60)}…` : quoted(op.text)
+      : isLong(op?.value) ? `${String(op.value).slice(0, 60)}…` : typeof op?.value === "string" ? op.value : JSON.stringify(op?.value)
+  if (op?.op === "replace") return `${quoted(op.find ?? "")} → ${op.text === "" ? "nothing" : what}`
+  if (op?.op === "insert" && (op.after != null || op.before != null)) return `${what} ${op.after != null ? "after" : "before"} ${quoted(op.after ?? op.before)}`
+  if (op?.op === "test") return `is ${what}`
+  return op?.op === "set" ? what : `${op?.op} ${what}`
+}
+
 /** An edit as the changes it makes, one line each, rather than as a blob. */
 function editBody(input) {
   const ops = Array.isArray(input.ops) ? input.ops : null
@@ -119,32 +138,19 @@ function editBody(input) {
   const parts = []
   const list = el("div", "agent-ops")
   for (const op of ops) {
-    const target = pathLabel(op?.path) ?? "/"
-    const where =
-      typeof op?.range === "string"
-        ? `${target === "/" ? "" : target}/${op.range}`
-        : Array.isArray(op?.range)
-          ? `${target}[${op.range[0]}…${op.range[1]}]`
-          : target
-
     const row = el("div", "agent-op")
-    row.append(el("span", "agent-op-where", where))
-    if (op?.value === undefined || op?.value === null) {
-      row.append(el("span", "agent-op-delete", "delete"))
-    } else if (isLong(op.value)) {
-      row.append(el("span", "agent-op-value", `${String(op.value).slice(0, 60)}…`))
-    } else {
-      row.append(el("span", "agent-op-value", typeof op.value === "string" ? op.value : JSON.stringify(op.value)))
-    }
+    row.append(el("span", "agent-op-where", pathLabel(op?.path) ?? "/"))
+    const detail = opDetail(op)
+    if (detail === null) row.append(el("span", "agent-op-delete", "delete"))
+    else row.append(el("span", "agent-op-value", detail))
     list.append(row)
   }
   parts.push(list)
 
-  // A long value is unreadable squeezed into a row, so it gets a block too.
+  // Long text is unreadable squeezed into a row, so it gets a block too.
   for (const op of ops) {
-    if (isLong(op?.value)) {
-      parts.push(el("div", "agent-block-label", pathLabel(op.path) ?? "value"), codeBlock(op.value))
-    }
+    const long = isLong(op?.text) ? op.text : isLong(op?.value) ? op.value : null
+    if (long !== null) parts.push(el("div", "agent-block-label", pathLabel(op.path) ?? "value"), codeBlock(long))
   }
   return parts
 }

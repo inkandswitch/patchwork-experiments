@@ -47,22 +47,27 @@ describe("an edit reads as the changes it makes", () => {
   it("shows one line per op", () => {
     const node = body("doc_edit", {
       ops: [
-        { path: [], range: "title", value: "Soup" },
-        { path: ["items"], range: [2, 2], value: ["milk"] },
-        { path: [], range: "draft" },
+        { op: "set", path: ["title"], value: "Soup" },
+        { op: "append", path: ["items"], value: "milk" },
+        { op: "delete", path: ["draft"] },
+        { op: "replace", path: ["body"], find: "teh cat", text: "the cat" },
+        { op: "insert", path: ["body"], after: "the cat", text: " sat" },
+        { op: "set", path: ["cells", 1, "source"], from: { url: "automerge:x", path: ["content"] } },
       ],
     })
     const rows = [...node.querySelectorAll(".agent-op")]
-    expect(rows).toHaveLength(3)
-    expect(rows[0].textContent).toContain("/title")
-    expect(rows[0].textContent).toContain("Soup")
-    expect(rows[1].textContent).toContain("/items[2…2]")
+    expect(rows).toHaveLength(6)
+    expect(rows[0].textContent).toBe("/titleSoup")
+    expect(rows[1].textContent).toBe("/itemsappend milk")
     expect(rows[2].querySelector(".agent-op-delete").textContent).toBe("delete")
+    expect(rows[3].textContent).toBe("/body“teh cat” → “the cat”")
+    expect(rows[4].textContent).toBe("/body“sat” after “the cat”")
+    expect(rows[5].textContent).toBe("/cells/1/sourcethe text at /content in another document")
   })
 
-  it("pulls a long value out into a block rather than squeezing it into a row", () => {
+  it("pulls long text out into a block rather than squeezing it into a row", () => {
     const long = "a line\n".repeat(20)
-    const node = body("doc_edit", { ops: [{ path: ["body"], range: [0, 0], value: long }] })
+    const node = body("doc_edit", { ops: [{ op: "append", path: ["body"], text: long }] })
     expect(node.querySelector("pre code").textContent).toBe(long)
     expect(node.querySelector(".agent-op-value").textContent.endsWith("…")).toBe(true)
   })

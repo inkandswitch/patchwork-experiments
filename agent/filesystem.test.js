@@ -288,7 +288,7 @@ describe("writing into a package moves the package's version", () => {
   it("bumps on fs_edit and fs_delete by path", async () => {
     const { repo, version } = await installed()
     let before = version()
-    const edited = await fsEdit.execute({ path: "lm-eval/agent.js", old: "stub", new: "real" }, ctx(repo))
+    const edited = await fsEdit.execute({ path: "lm-eval/agent.js", edits: [{ op: "replace", find: "stub", text: "real" }] }, ctx(repo))
     expect(version()).not.toBe(before)
     expect(edited.text).toMatch(/Package version moved/)
 
@@ -328,7 +328,7 @@ describe("writing into a package moves the package's version", () => {
     const agentUrl = entry(repo, url, "agent.js").url
     const written = await fsWrite.execute({ url: agentUrl, content: "real" }, ctx(repo))
     expect(written.text).toMatch(/write by `path` instead/)
-    const edited = await fsEdit.execute({ url: agentUrl, old: "real", new: "realer" }, ctx(repo))
+    const edited = await fsEdit.execute({ url: agentUrl, edits: [{ op: "replace", find: "real", text: "realer" }] }, ctx(repo))
     expect(edited.text).toMatch(/write by `path` instead/)
   })
 })

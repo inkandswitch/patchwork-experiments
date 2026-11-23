@@ -12,8 +12,8 @@
 
 import { isImmutableString } from "@automerge/automerge"
 import { hostImport } from "./host.js"
-import { applyOps, OpError } from "./ops.js"
-import { previewJson, preview, shape, bytes } from "./format.js"
+import { applyOps, opLabel, valueAt, OP_NAMES } from "./ops.js"
+import { previewJson, preview, shape, bytes, truncate } from "./format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
 import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
 import { imageForModel } from "../images.js"
@@ -288,25 +288,51 @@ function sourceCode(doc) {
   return null
 }
 
+/**
+ * What to use instead of doc_edit on the documents only the runtime writes.
+ * The repo is what refuses the write (scope.js); this only adds, to its
+ * refusal, the tools that do the job, which saves the model a turn of guessing.
+ */
+function insteadOfKernel(doc) {
+  const type = doc?.["@patchwork"]?.type
+  if (type === "agent-workflow") {
+    return "This is a workflow plan: change it with the workflow tools — workflow_add_steps for more steps, workflow_edit_steps for a step that has not started (its prompt, after, tier, budget), workflow_reopen to send a finished step back, workflow_stop to stop one. From inside a step, workflow_request asks the orchestrator."
+  }
+  if (type === "agent-session") {
+    return "This is an agent session: session_title renames it; workflow_answer or workflow_reopen (with a note) tells a step something; note_write keeps something for later sessions."
+  }
+  return null
+}
+
+const MAX_REPORT = 6000
+
 export const docEdit = {
   id: "doc_edit",
   name: "Edit document",
   // The url defaults to the session's subject in execute(), so it does here.
   target: { fields: ["url"], fallback: "subject" },
   description: [
-    "Edit any automerge document with one or more ops. Each op is { path, range, value }:",
-    "• path: array of keys/indices from the document root to what you are touching. [] is the root.",
-    "• range: [from, to] to SPLICE — replacing characters when the target is a string, items when it is a list.",
-    "  Insert without deleting by using [n, n]. Or give a key (string/number) to SET that key on the map/list at path.",
-    "• find: for a string, the exact text to replace instead of a range. It must occur exactly once. This is how to change text you have read — you never need to count characters.",
-    "• value: what to insert or set. Omit it (or null) to delete.",
-    "Examples: set a title — { path: [], range: 'title', value: 'New' }.",
-    "Append to a list — { path: ['items'], range: [2, 2], value: { done: false } }.",
-    "Change some text — { path: ['body'], find: 'teh cat', value: 'the cat' }.",
-    "Insert text at offset 10 — { path: ['body'], range: [10, 10], value: 'hello' }.",
-    "Setting a value writes only what differs, so sending back a whole object you read with one field changed writes just that field, and merges with anyone else's edits. Setting a counter to a number increments it.",
-    "Edits to documents run without asking: history keeps every overwritten value (doc_history). Source code is the exception — edit code files with fs_edit/fs_write, which ask first.",
-    "For a file, fs_edit does the same by path.",
+    "Edit any automerge document. `ops` run in order as one change: all of them or none.",
+    "Every op has `op` and `path` — the keys and indices from the root to the thing itself, as doc_read shows them, e.g. ['cells', 2, 'source'].",
+    "",
+    "Values (`value` is any JSON value, or one list item):",
+    "• {op:'set', path, value} — set a field or list item; a missing field is created. Writes only what differs, so sending back an object you read with one field changed writes that field.",
+    "• {op:'delete', path} — remove a field or list item.",
+    "• {op:'insert', path, value} — path ends at a list index: insert before it (the list's length inserts at the end).",
+    "• {op:'append' | 'prepend', path, value} — add an item at the end or start of a list (made if missing).",
+    "• {op:'test', path, value} — stop the whole edit unless path holds exactly this. Put it first to guard an edit on what you read.",
+    "",
+    "Text (`text` is text) — in a string, an ImmutableString, or a list of lines such as a notebook cell's source; each keeps its form:",
+    "• {op:'replace', path, find, text, all?} — replace the exact text `find` (it must occur once, unless all: true). text '' deletes it.",
+    "• {op:'insert', path, after | before, text} — insert next to an exact anchor that occurs once.",
+    "• {op:'append' | 'prepend', path, text} — add text at the end or start (made if missing).",
+    "• {op:'set', path, text} — replace the whole text; only the characters that differ are written.",
+    "Copy anchors exactly from a read, whitespace included. You never need character offsets.",
+    "Instead of `text`, `from: {url?, path}` takes the text at that path — in another document, or a version URL from doc_history — so you never retype text that already exists.",
+    "",
+    "Long text: write it in pieces of at most about 6 kB, one call each — set or append the first, append the rest. A call cut off by your output limit is never run, and each result shows how the text now ends.",
+    "",
+    "The result shows each change as a short diff. Edits run without asking: history keeps every overwritten value (doc_history). Source code is the exception — edit code files with fs_edit or fs_write, which ask first.",
   ].join("\n"),
   where: "worker",
   risk: "edit",
@@ -314,28 +340,32 @@ export const docEdit = {
     type: "object",
     required: ["ops"],
     properties: {
-      url: { type: "string", description: "Defaults to the session's document." },
+      url: { type: "string", description: "The document. Defaults to the session's document; a workflow step has none, so pass it there." },
       ops: {
         type: "array",
-        description: "Ops applied in order, in a single change.",
+        description: "Applied in order, in one change: all or none.",
         items: {
           type: "object",
+          required: ["op", "path"],
           properties: {
-            path: { type: "array", items: { type: ["string", "number"] } },
-            range: {
-              description: "[from,to] to splice, or a key to set/delete.",
-              oneOf: [
-                { type: "array", items: { type: "number" } },
-                { type: "string" },
-                { type: "number" },
-              ],
+            op: { type: "string", enum: OP_NAMES },
+            path: {
+              type: "array",
+              items: { type: ["string", "number"] },
+              description: "Keys and indices from the root to the thing itself. For insert with value, it ends at a list index.",
             },
-            find: {
-              type: "string",
-              description:
-                "For a string at path: the exact text to replace with `value` (omit value to delete it). Must occur exactly once. Use this instead of counting offsets for a range.",
+            value: { description: "set/insert/append/prepend: the value or list item. test: what path must hold." },
+            text: { type: "string", description: "Text ops: the text to put in. replace with '' deletes." },
+            find: { type: "string", description: "replace: the exact text to replace, copied from a read." },
+            all: { type: "boolean", description: "replace: every occurrence instead of exactly one." },
+            before: { type: "string", description: "insert text: the exact text to insert before (occurs once)." },
+            after: { type: "string", description: "insert text: the exact text to insert after (occurs once)." },
+            from: {
+              type: "object",
+              description: "Instead of `text`: the text at this path, in another document (or version) if url is given.",
+              properties: { url: { type: "string" }, path: { type: "array", items: { type: ["string", "number"] } } },
+              required: ["path"],
             },
-            value: { description: "What to insert or set. Omit to delete." },
           },
         },
       },
@@ -343,8 +373,8 @@ export const docEdit = {
   },
   async execute(input, ctx) {
     const url = targetUrl(input, ctx)
-    const ops = input.ops ?? []
-    if (!Array.isArray(ops) || !ops.length) throw new Error("Pass at least one op.")
+    const ops = input.ops
+    if (!Array.isArray(ops) || !ops.length) throw new Error("Pass `ops`: a list of at least one op, like [{ op: \"set\", path: [\"title\"], value: \"New\" }].")
 
     const { handle, doc } = await findDoc(url, ctx)
     const code = sourceCode(doc)
@@ -353,30 +383,43 @@ export const docEdit = {
         `${url} is ${code}. Edit source code with fs_edit or fs_write: doc_edit runs without asking because history can undo a document, but code runs with the user's authority on its next load, so the file tools ask first.`
       )
     }
-    let done = []
-    let failure = null
 
-    // One change for all ops: a partially-applied edit is worse than none, and
-    // automerge gives us the all-or-nothing for free if we throw inside.
-    handle.change((draft) => {
-      try {
-        done = applyOps(draft, ops, { spliceText: ctx.splice })
-      } catch (err) {
-        failure = err
-        throw err // abandon the change
+    // Text copied `from` another document, or another version of this one, is
+    // read before the change: the change callback cannot wait on the repo.
+    const others = new Map()
+    for (const op of ops) {
+      const from = op?.from?.url
+      if (typeof from === "string" && from !== url && !others.has(from)) {
+        try {
+          others.set(from, (await findDoc(from, ctx)).doc)
+        } catch (err) {
+          throw new Error(`${opLabel(op, ops.indexOf(op))}: from ${from}: ${err.message} Nothing was changed.`)
+        }
       }
-    })
+    }
+    const read = (from, draft) => (from.url && from.url !== url ? valueAt(others.get(from.url), from.path) : valueAt(draft, from.path))
 
-    if (failure) {
-      const hint = failure instanceof OpError ? "" : " (check the path exists — read the document first)"
-      throw new Error(`${failure.message}${hint}`)
+    // One change for all ops: a partly applied edit is worse than none, and a
+    // throw inside the change abandons it.
+    let done = []
+    try {
+      handle.change((draft) => {
+        done = applyOps(draft, ops, { spliceText: ctx.splice, read })
+      })
+    } catch (err) {
+      const instead = insteadOfKernel(doc)
+      const message = `${err.message}${/\.$/.test(err.message) ? "" : "."}`
+      throw new Error(instead ? `${message} ${instead}` : `${message} Nothing was changed: the ops apply together or not at all.`)
     }
 
-    return `Applied ${done.length} op(s) to ${url}:\n${done.map((d) => `• ${d}`).join("\n")}`
+    const title = doc?.title ?? doc?.name ?? doc?.["@patchwork"]?.title
+    const head = `Edited ${title ? `"${String(title)}" (${url})` : url} in one change:`
+    return truncate([head, ...done].join("\n"), MAX_REPORT)
   },
   summarize(input) {
-    const n = input?.ops?.length ?? 0
-    return `edited document · ${n} op${n === 1 ? "" : "s"}`
+    const ops = Array.isArray(input?.ops) ? input.ops : []
+    const kinds = [...new Set(ops.map((op) => op?.op).filter((op) => typeof op === "string"))]
+    return `edited document · ${ops.length} op${ops.length === 1 ? "" : "s"}${kinds.length ? ` (${kinds.join(", ")})` : ""}`
   },
 }
 

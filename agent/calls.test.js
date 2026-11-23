@@ -63,16 +63,16 @@ describe("what each kind of call reads like", () => {
     expect(
       show("doc_edit", {
         ops: [
-          { path: [], range: "title", value: "Soup" },
-          { path: ["items"], range: [2, 2], value: "milk" },
+          { op: "set", path: ["title"], value: "Soup" },
+          { op: "append", path: ["items"], value: "milk" },
         ],
       }).detail
-    ).toBe("title, /items[2…2]")
+    ).toBe("/title, /items")
   })
 
   it("counts the edits it does not have room for", () => {
-    const ops = ["a", "b", "c", "d", "e"].map((k) => ({ path: [], range: k }))
-    expect(describeOps(ops)).toBe("a, b, c +2 more")
+    const ops = ["a", "b", "c", "d", "e"].map((k) => ({ op: "delete", path: [k] }))
+    expect(describeOps(ops)).toBe("/a, /b, /c +2 more")
     expect(describeOps([])).toBe("no changes")
   })
 
@@ -104,9 +104,10 @@ describe("what each kind of call reads like", () => {
   })
 
   it("names the file an edit touched, and describes a find op by its anchor", () => {
-    expect(show("fs_edit", { path: "tally/tool.js", old: "a", new: "b" }).detail).toBe("tool.js")
-    expect(show("fs_edit", { url: "automerge:2qMVfMqBCLg7JkLaaxr6oPmr2umh", old: "a" }).detail).toBe("file")
-    expect(describeOps([{ path: ["body"], find: "createElement(\"svg\")", value: "x" }])).toBe("/body “createElement(\"sv…”")
+    expect(show("fs_edit", { path: "tally/tool.js", edits: [{ op: "replace", find: "a", text: "b" }] }).detail).toBe("tool.js")
+    expect(show("fs_edit", { url: "automerge:2qMVfMqBCLg7JkLaaxr6oPmr2umh", edits: [{ op: "replace", find: "a", text: "" }] }).detail).toBe("file")
+    expect(describeOps([{ op: "replace", path: ["body"], find: "createElement(\"svg\")", text: "x" }])).toBe("/body “createElement(\"sv…”")
+    expect(describeOps([{ op: "insert", path: ["body"], after: "end", text: "x" }])).toBe("/body “end”")
   })
 
   it("uses the action as the verb when driving a view", () => {

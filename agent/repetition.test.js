@@ -70,8 +70,8 @@ describe("a model that goes round in circles", () => {
   it("is stopped mid-turn and told to act, and then does", async () => {
     const store = session()
     const provider = makeMock([
-      [...circling(4), { type: "call", id: "c1", name: "fs_edit", input: { path: "tool.js", old: "a", new: "b" } }],
-      [{ type: "call", id: "c2", name: "fs_edit", input: { path: "tool.js", old: "a", new: "b" } }],
+      [...circling(4), { type: "call", id: "c1", name: "fs_edit", input: { path: "tool.js", edits: [{ op: "replace", find: "a", text: "b" }] } }],
+      [{ type: "call", id: "c2", name: "fs_edit", input: { path: "tool.js", edits: [{ op: "replace", find: "a", text: "b" }] } }],
       [{ type: "text", delta: "Fixed." }],
     ])
 
@@ -123,7 +123,7 @@ describe("a model that goes round in circles", () => {
   it("leaves a long but varied think alone", async () => {
     const store = session()
     const provider = makeMock([
-      [...varied(80), { type: "call", id: "c1", name: "fs_edit", input: { path: "t", old: "a", new: "b" } }],
+      [...varied(80), { type: "call", id: "c1", name: "fs_edit", input: { path: "t", edits: [{ op: "replace", find: "a", text: "b" }] } }],
       [{ type: "text", delta: "Done." }],
     ])
     const result = await run({ store, provider, toolset: toolset([editTool]), canRun: () => true, flushMs: 0 })

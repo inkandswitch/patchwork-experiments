@@ -4,7 +4,7 @@ import { applyOp, writeValue, OpError } from "./tools/ops.js"
 import { docEdit } from "./tools/docs.js"
 
 const splice = A.splice
-const set = (doc, path, range, value) => A.change(doc, (d) => { applyOp(d, { path, range, value }, { spliceText: splice }) })
+const set = (doc, path, key, value) => A.change(doc, (d) => { applyOp(d, { op: "set", path: [...path, key], value }, { spliceText: splice }) })
 const plain = (doc) => JSON.parse(JSON.stringify(doc))
 const changeCount = (doc) => A.getAllChanges(doc).length
 
@@ -46,9 +46,9 @@ describe("a set writes exactly the value asked for", () => {
     expect(plain(doc).v).toEqual(after)
   })
 
-  it.each(CASES)("%s — via a path, not a key", (_name, before, after) => {
-    const doc = A.change(A.from({ v: before }), (d) => { applyOp(d, { path: ["v"], value: after }, { spliceText: splice }) })
-    expect(plain(doc).v).toEqual(after)
+  it.each(CASES)("%s — inside a list", (_name, before, after) => {
+    const doc = A.change(A.from({ v: [before] }), (d) => { applyOp(d, { op: "set", path: ["v", 0], value: after }, { spliceText: splice }) })
+    expect(plain(doc).v).toEqual([after])
   })
 
   it("writes nothing at all when nothing changed", () => {
@@ -108,13 +108,13 @@ describe("out-of-range edits say how big the thing is", () => {
   const attempt = (op) => () => A.change(doc(), (d) => { applyOp(d, op, { spliceText: splice }) })
 
   it("setting past the end of a list", () => {
-    expect(attempt({ path: ["items"], range: 5, value: "x" })).toThrow(/has 2 items.*range: \[2, 2\]/)
+    expect(attempt({ op: "set", path: ["items", 5], value: "x" })).toThrow(/\/items\/5 is past the end of \/items, which has 2 items\. To add one, append, or insert at index 2\./)
   })
-  it("splicing past the end of a list", () => {
-    expect(attempt({ path: ["items"], range: [3, 3], value: "x" })).toThrow(/has 2 items\. \[2, 2\] appends/)
+  it("inserting past the end of a list", () => {
+    expect(attempt({ op: "insert", path: ["items", 3], value: "x" })).toThrow(/index 3 is past the end of \/items, which has 2 items: insert at 0–2, or append\./)
   })
-  it("splicing past the end of a string", () => {
-    expect(attempt({ path: ["body"], range: [4, 4], value: "x" })).toThrow(/has 3 characters/)
+  it("deleting what is not there", () => {
+    expect(attempt({ op: "delete", path: ["items", 2] })).toThrow(/\/items\/2 does not exist: \/items has 2 items \(0–1\)\. Nothing to delete\./)
   })
 })
 
@@ -129,12 +129,12 @@ describe("doc_edit and source code", () => {
     ["a package folder", { docs: [{ name: "package.json", type: "file", url: "automerge:p" }] }, /package folder/],
     ["a pushwork package", { "@patchwork": { type: "directory" }, "package.json": "automerge:p" }, /a package/],
   ])("refuses %s and points at the file tools", async (_name, doc, message) => {
-    await expect(docEdit.execute({ ops: [{ path: [], range: "x", value: 1 }] }, ctxFor(doc))).rejects.toThrow(message)
+    await expect(docEdit.execute({ ops: [{ op: "set", path: ["x"], value: 1 }] }, ctxFor(doc))).rejects.toThrow(message)
   })
 
   it("edits prose and data files", async () => {
     const doc = { name: "notes.md", content: "hi" }
-    await docEdit.execute({ ops: [{ path: [], range: "content", value: "hello" }] }, ctxFor(doc))
+    await docEdit.execute({ ops: [{ op: "set", path: ["content"], value: "hello" }] }, ctxFor(doc))
     expect(doc.content).toBe("hello")
   })
 })

@@ -67,7 +67,7 @@ describe("locate", () => {
 
   it("helps when the first line matches but the rest does not", () => {
     expect(() => locate("const a = 1\nconst b = 2", "const a = 1\nconst b = 3")).toThrow(
-      /first line does appear \(around line 1\)/
+      /first line does appear \(line 1\)/
     )
   })
 
@@ -76,149 +76,177 @@ describe("locate", () => {
   })
 })
 
-// ---------------------------------------------------------------- doc_edit find
+// ---------------------------------------------------------------- doc_edit replace
 
-describe("doc_edit with find", () => {
+describe("doc_edit replace", () => {
   it("replaces text by anchor, computing the splice itself", () => {
     const log = []
     const doc = { body: TOOL }
     const said = applyOp(
       doc,
-      { path: ["body"], find: 'document.createElement("svg")', value: 'document.createElementNS(SVG, "svg")' },
+      { op: "replace", path: ["body"], find: 'document.createElement("svg")', text: 'document.createElementNS(SVG, "svg")' },
       { spliceText: fakeSplice(log) }
     )
     expect(doc.body).toContain('createElementNS(SVG, "svg")')
     expect(doc.body).not.toContain('createElement("svg")')
-    expect(said).toMatch(/replaced 29 chars at line 3/)
+    expect(said).toBe(
+      ["replace /body:", "  line 3:", '  -     const canvas = document.createElement("svg");', '  +     const canvas = document.createElementNS(SVG, "svg");'].join("\n")
+    )
     // Only the characters that differ went through the splice: the shared
     // prefix `document.createElement` and suffix `"svg")` were left alone, so
     // the change is one deleted `(` and eight inserted characters.
     expect(log).toEqual([{ index: TOOL.indexOf('("svg")'), del: 1, text: "NS(SVG, " }])
   })
 
-  it("deletes the anchored text when no value is given", () => {
+  it("deletes the anchored text when text is empty", () => {
     const doc = { body: "keep this, drop this" }
-    applyOp(doc, { path: ["body"], find: ", drop this" })
+    applyOp(doc, { op: "replace", path: ["body"], find: ", drop this", text: "" })
     expect(doc.body).toBe("keep this")
   })
 
-  it("rejects find on something that is not a string, and find with a range", () => {
-    expect(() => applyOp({ items: [1] }, { path: ["items"], find: "1", value: "2" })).toThrow(/not a string/)
-    expect(() => applyOp({ b: "x" }, { path: ["b"], find: "x", range: [0, 1], value: "y" })).toThrow(/not both/)
+  it("rejects replace on something that is not text, and a range", () => {
+    expect(() => applyOp({ items: [1] }, { op: "replace", path: ["items"], find: "1", text: "2" })).toThrow(/a list of 1 item, not text/)
+    expect(() => applyOp({ b: "x" }, { op: "replace", path: ["b"], find: "x", range: [0, 1], text: "y" })).toThrow(/There is no range/)
   })
 
   it("works through the tool, all-or-nothing", async () => {
     const repo = fakeRepo()
     repo.docs.set("automerge:note", { body: "the quick brown fox" })
     const out = await docEdit.execute(
-      { url: "automerge:note", ops: [{ path: ["body"], find: "quick", value: "slow" }] },
+      { url: "automerge:note", ops: [{ op: "replace", path: ["body"], find: "quick", text: "slow" }] },
       ctx(repo)
     )
-    expect(out).toMatch(/replaced 5 chars at line 1/)
+    expect(out).toBe('Edited automerge:note in one change:\nreplace /body:\n  line 1:\n  - the quick brown fox\n  + the slow brown fox')
     expect(repo.docs.get("automerge:note").body).toBe("the slow brown fox")
 
     await expect(
-      docEdit.execute(
-        { url: "automerge:note", ops: [{ path: ["body"], find: "o", value: "0" }] },
-        ctx(repo)
-      )
-    ).rejects.toThrow(/occurs 3 times/)
-    expect(repo.docs.get("automerge:note").body).toBe("the slow brown fox") // nothing half-applied
+      docEdit.execute({ url: "automerge:note", ops: [{ op: "replace", path: ["body"], find: "o", text: "0" }] }, ctx(repo))
+    ).rejects.toThrow(/op 1 \(replace \/body\): `find` text occurs 3 times.*Nothing was changed/)
+    expect(repo.docs.get("automerge:note").body).toBe("the slow brown fox")
   })
 })
 
 // ---------------------------------------------------------------- fs_edit
 
 describe("fs_edit", () => {
-  async function seeded(splice = null) {
+  async function seeded() {
     const repo = fakeRepo()
     await fsWrite.execute({ path: "petri/tool.js", content: TOOL }, ctx(repo))
     return repo
   }
+  const replace = (find, text, all) => ({ op: "replace", find, text, ...(all ? { all } : {}) })
+  const contentOf = (repo) => repo.docs.get(repo.docs.get(fileUrl(repo, "petri")).docs[0].url).content
 
-  it("replaces the one place the old text occurs, and shows the result in context", async () => {
+  it("replaces the one place the text occurs, and shows the change as a diff", async () => {
     const repo = await seeded()
     const out = await fsEdit.execute(
-      {
-        path: "petri/tool.js",
-        old: 'document.createElement("svg")',
-        new: 'document.createElementNS("http://www.w3.org/2000/svg", "svg")',
-      },
+      { path: "petri/tool.js", edits: [replace('document.createElement("svg")', 'document.createElementNS("http://www.w3.org/2000/svg", "svg")')] },
       ctx(repo)
     )
-    expect(out.text).toMatch(/^Edited \/petri\/tool.js: replaced 1 occurrence of 29 chars at line 3/)
-    // Numbered like fs_read, with the lines either side, so the next edit can
-    // anchor on what is there now.
-    expect(out.text).toMatch(/\n2\t {2}render\(handle, element\) \{\n3\t {4}const canvas = document.createElementNS/)
-    expect(out.text).toMatch(/\n4\t {4}canvas.setAttribute/)
+    expect(out.text).toBe(
+      [
+        "Edited /petri/tool.js: 1 edit. Now 8 lines, 204 B.",
+        "",
+        "replace · line 3",
+        "  line 3:",
+        '  -     const canvas = document.createElement("svg");',
+        '  +     const canvas = document.createElementNS("http://www.w3.org/2000/svg", "svg");',
+      ].join("\n")
+    )
     expect(out.doc).toMatchObject({ kind: "file", name: "tool.js" })
-
-    const file = repo.docs.get(fileUrl(repo, "petri") && repo.docs.get(fileUrl(repo, "petri")).docs[0].url)
-    expect(file.content).toContain('createElementNS("http://www.w3.org/2000/svg", "svg")')
+    expect(contentOf(repo)).toContain('createElementNS("http://www.w3.org/2000/svg", "svg")')
   })
 
   it("splices only the characters that differ when the runner has a text splice", async () => {
     const repo = await seeded()
     const log = []
-    await fsEdit.execute(
-      { path: "petri/tool.js", old: '"width", "800"', new: '"width", "1200"' },
+    await fsEdit.execute({ path: "petri/tool.js", edits: [replace('"width", "800"', '"width", "1200"')] }, ctx(repo, fakeSplice(log)))
+    expect(log).toEqual([{ index: TOOL.indexOf('"800"') + 1, del: 1, text: "12" }])
+  })
+
+  it("applies several edits in order, in one change, each as its own splice", async () => {
+    const repo = await seeded()
+    const log = []
+    const changes = []
+    const find = repo.find
+    repo.find = async (u) => {
+      const handle = await find(u)
+      return { ...handle, change(fn) { changes.push(u); handle.change(fn) } }
+    }
+    const out = await fsEdit.execute(
+      {
+        path: "petri/tool.js",
+        edits: [
+          replace('"800"', '"1200"'),
+          { op: "insert", after: "element.append(canvas);\n", text: "    element.dataset.ready = 1;\n" },
+          { op: "prepend", text: "// petri\n" },
+          { op: "append", text: "// end\n" },
+        ],
+      },
       ctx(repo, fakeSplice(log))
     )
-    expect(log).toEqual([{ index: TOOL.indexOf('"800"') + 1, del: 1, text: "12" }])
+    expect(contentOf(repo)).toBe(`// petri\n${TOOL.replace('"800"', '"1200"').replace("element.append(canvas);\n", "element.append(canvas);\n    element.dataset.ready = 1;\n")}// end\n`)
+    expect(log).toHaveLength(4)
+    expect(changes.filter((u) => u !== "automerge:root").length).toBeLessThanOrEqual(2) // the file once (and its folder's pin)
+    expect(out.text).toContain("insert · line 6\n  line 6:\n  +     element.dataset.ready = 1;")
+    expect(out.text).toContain("append · line 10\n  line 10:\n  + // end")
   })
 
   it("takes a url instead of a path", async () => {
     const repo = await seeded()
     const url = repo.docs.get(fileUrl(repo, "petri")).docs[0].url
-    const out = await fsEdit.execute({ url, old: "element.append(canvas);", new: "element.replaceChildren(canvas);" }, ctx(repo))
-    expect(out.text).toMatch(/^Edited tool.js: replaced 1 occurrence/)
+    const out = await fsEdit.execute({ url, edits: [replace("element.append(canvas);", "element.replaceChildren(canvas);")] }, ctx(repo))
+    expect(out.text).toMatch(/^Edited tool.js: 1 edit/)
     expect(repo.docs.get(url).content).toContain("replaceChildren")
   })
 
   it("refuses an ambiguous anchor and says how to fix it", async () => {
     const repo = await seeded()
-    await expect(fsEdit.execute({ path: "petri/tool.js", old: "canvas", new: "svg" }, ctx(repo))).rejects.toThrow(
-      /occurs 3 times \(lines 3, 4, 5\).*Include more surrounding text/
+    await expect(fsEdit.execute({ path: "petri/tool.js", edits: [replace("canvas", "svg")] }, ctx(repo))).rejects.toThrow(
+      /edit 1 \(replace\): `find` text occurs 3 times \(lines 3, 4, 5\)\. Include more of the text around it so it matches one place, or pass all: true\. Nothing was changed\./
     )
   })
 
-  it("changes every occurrence with replaceAll, in one change", async () => {
+  it("changes every occurrence with all, in one change", async () => {
     const repo = await seeded()
-    const changes = []
-    const url = repo.docs.get(fileUrl(repo, "petri")).docs[0].url
-    repo.find = async (u) => ({ url: u, doc: () => repo.docs.get(u), change(fn) { changes.push(u); fn(repo.docs.get(u)) } })
-    const out = await fsEdit.execute({ path: "petri/tool.js", old: "canvas", new: "svg", replaceAll: true }, ctx(repo))
-    expect(out.text).toMatch(/replaced 3 occurrences of 6 chars/)
-    expect(repo.docs.get(url).content).not.toContain("canvas")
-    expect(repo.docs.get(url).content).toContain('const svg = document.createElement("svg")')
-    expect(changes.filter((u) => u === url)).toHaveLength(1)
+    const out = await fsEdit.execute({ path: "petri/tool.js", edits: [replace("canvas", "svg", true)] }, ctx(repo))
+    expect(out.text).toContain("replace · 3 places")
+    expect(contentOf(repo)).not.toContain("canvas")
+    expect(contentOf(repo)).toContain('const svg = document.createElement("svg")')
   })
 
-  it("explains a miss rather than failing blankly", async () => {
+  it("leaves the file alone when any edit fails", async () => {
     const repo = await seeded()
-    await expect(fsEdit.execute({ path: "petri/tool.js", old: "nothing like this", new: "x" }, ctx(repo))).rejects.toThrow(
-      /not found.*copy the anchor exactly/
-    )
-    await expect(fsEdit.execute({ path: "petri/tool.js", old: "", new: "x" }, ctx(repo))).rejects.toThrow(/Pass `old`/)
-    await expect(fsEdit.execute({ path: "petri/tool.js", old: "a", new: "a" }, ctx(repo))).rejects.toThrow(/identical/)
-    await expect(fsEdit.execute({ old: "a", new: "b" }, ctx(repo))).rejects.toThrow(/Pass `path`.*or `url`/)
+    await expect(
+      fsEdit.execute({ path: "petri/tool.js", edits: [replace('"800"', '"1200"'), replace("nothing like this", "x")] }, ctx(repo))
+    ).rejects.toThrow(/edit 2 \(replace\): `find` text not found.*Nothing was changed/)
+    expect(contentOf(repo)).toBe(TOOL)
   })
 
-  it("deletes the old text when new is omitted", async () => {
+  it("explains a malformed call rather than failing blankly", async () => {
     const repo = await seeded()
-    await fsEdit.execute({ path: "petri/tool.js", old: '    canvas.setAttribute("width", "800");\n' }, ctx(repo))
-    const url = repo.docs.get(fileUrl(repo, "petri")).docs[0].url
-    expect(repo.docs.get(url).content).not.toContain("setAttribute")
-    expect(repo.docs.get(url).content.split("\n")).toHaveLength(TOOL.split("\n").length - 1)
+    const attempt = (input) => fsEdit.execute({ path: "petri/tool.js", ...input }, ctx(repo))
+    await expect(attempt({})).rejects.toThrow(/Pass `edits`/)
+    await expect(attempt({ edits: [] })).rejects.toThrow(/Pass `edits`/)
+    await expect(attempt({ edits: [{ op: "replace", find: "", text: "x" }] })).rejects.toThrow(/replace takes `find`/)
+    await expect(attempt({ edits: [replace("a", "a")] })).rejects.toThrow(/`find` and `text` are the same/)
+    await expect(attempt({ edits: [{ op: "replace", old: "a", new: "b" }] })).rejects.toThrow(/use `find` for the text to replace and `text`/)
+    await expect(attempt({ edits: [{ op: "set", text: "x" }] })).rejects.toThrow(/op one of replace, insert, append, prepend/)
+    await expect(attempt({ edits: [{ op: "insert", text: "x" }] })).rejects.toThrow(/insert takes `before` or `after`/)
+    await expect(attempt({ edits: [{ op: "append" }] })).rejects.toThrow(/append takes `text`/)
+    await expect(fsEdit.execute({ edits: [replace("a", "b")] }, ctx(repo))).rejects.toThrow(/Pass `path`.*or `url`/)
+  })
+
+  it("deletes the text when text is empty", async () => {
+    const repo = await seeded()
+    await fsEdit.execute({ path: "petri/tool.js", edits: [replace('    canvas.setAttribute("width", "800");\n', "")] }, ctx(repo))
+    expect(contentOf(repo)).not.toContain("setAttribute")
+    expect(contentOf(repo).split("\n")).toHaveLength(TOOL.split("\n").length - 1)
   })
 
   it("summarizes as the file and the line", () => {
-    expect(fsEdit.summarize({ path: "petri/tool.js" }, "Edited /petri/tool.js: replaced 1 occurrence of 3 chars at line 3.")).toBe(
-      "edited tool.js · line 3"
-    )
-    expect(fsEdit.summarize({ url: "automerge:x" }, "Edited tool.js: replaced 3 occurrences of 6 chars.")).toBe(
-      "edited file · 3 places"
-    )
+    expect(fsEdit.summarize({ path: "petri/tool.js", edits: [{}] }, "Edited /petri/tool.js: 1 edit.\n\nreplace · line 3")).toBe("edited tool.js · line 3")
+    expect(fsEdit.summarize({ url: "automerge:x", edits: [{}, {}] }, "")).toBe("edited file · 2 edits")
   })
 })
 
