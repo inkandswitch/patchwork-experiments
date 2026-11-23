@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config"
+import solid from "vite-plugin-solid"
 
-// The root package's tests (shared/ and native/); lab/extension has its own.
 export default defineConfig({
-  test: { include: ["test/**/*.spec.ts"], environment: "node" },
+  plugins: [solid()],
+  test: { include: ["test/**/*.spec.ts"], environment: "node", passWithNoTests: true, maxWorkers: 2 },
 })

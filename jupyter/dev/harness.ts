@@ -36,10 +36,7 @@ async function main() {
   const shown = overlay(heads ? handle.view(heads.split(",") as any) : handle)
   const compare = compareView(document.body)
   Object.assign(window, { harness: { A, repo, handle, shown, compare } })
-  // ?tool=native shows the Patchwork-native notebook; anything else, the JupyterLab one.
-  const tool = new URLSearchParams(location.search).get("tool") === "native"
-    ? (await import("../native/tool")).default
-    : (await import("../lab/tool")).default
+  const tool = (await import("../native/tool")).default
   tool(shown, document.getElementById("app")!)
 }
 

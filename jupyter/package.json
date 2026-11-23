@@ -1,22 +1,18 @@
 {
-  "name": "@patchwork/jupyter",
+  "name": "@tiny-patchwork/jupyter-linked",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Jupyter notebooks on Automerge, twice: the real JupyterLab UI (lab/) and a Patchwork-native one (native/), both running Pyodide offline",
+  "description": "A fork of @patchwork/jupyter's native notebook: notebooks import other documents live (an assumptions register, another notebook, a .py file, any document's data), record what each run read, and run headless for the agent (notebook_run)",
   "main": "dist/index.js",
   "scripts": {
-    "setup": "uv venv --allow-existing .venv && uv pip install --python .venv -r lab/requirements.txt && pnpm --dir lab/extension install && pnpm install",
-    "build:extension": "PATH=\"$PWD/.venv/bin:$PATH\" pnpm --dir lab/extension build",
-    "build:lite": ".venv/bin/python lab/scripts/build_lite.py",
-    "build:lab": "pnpm build:extension && pnpm build:lite",
     "build:native": "python3 -I native/scripts/build_kernel.py",
     "build:pyfs": "vite build --config shared/pyfs/vite.config.ts",
     "build:tool": "rm -rf dist/*.js dist/assets && vite build",
-    "build": "pnpm build:lab && pnpm build:native && pnpm build:pyfs && pnpm build:tool",
-    "typecheck": "tsc -p . && pnpm --dir lab/extension exec tsc --noEmit",
-    "test": "vitest run && pnpm --dir lab/extension test",
-    "push": "pnpm build && pushwork sync"
+    "build": "pnpm build:native && pnpm build:pyfs && pnpm build:tool",
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@automerge/automerge": "3.5.0",
