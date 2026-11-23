@@ -35,6 +35,9 @@ importers:
       '@inkandswitch/patchwork-elements':
         specifier: ^0.0.5
         version: 0.0.5
+      '@inkandswitch/patchwork-plugins':
+        specifier: ^0.0.4
+        version: 0.0.4
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
@@ -401,6 +404,9 @@ packages:
 
   '@inkandswitch/patchwork-filesystem@0.0.3':
     resolution: {integrity: sha512-x6yqX1Xyr05ug4YfRyfKJ7jSm/zjhMxU7g/e70nz4QbxfLmcG98LHB9qAkFI2zd+VvKLnTvSpPGu2UvJzXGciw==}
+
+  '@inkandswitch/patchwork-plugins@0.0.4':
+    resolution: {integrity: sha512-Rh/5sUWxflG08de9Qj1SjBmuID2OydxC3QhlDgYwG/yGkftogvZsSAqIuAD9VSJCgILPU1MJ2708hOkbPLzn3w==}
 
   '@inkandswitch/patchwork-plugins@0.0.5':
     resolution: {integrity: sha512-pQv5M7asDdN8J2moTmLoSnqA8FC/vcOuNJnKveL3MzjEhH0GQdIl6vV3k5jxs83ZpB8stwceE85Zsve/QRnVSA==}
@@ -1484,6 +1490,19 @@ snapshots:
       '@types/debug': 4.1.13
       '@types/node': 20.19.43
       debug: 4.4.3
+      resolve.exports: 2.0.3
+    transitivePeerDependencies:
+      - supports-color
+
+  '@inkandswitch/patchwork-plugins@0.0.4':
+    dependencies:
+      '@automerge/automerge': 3.2.1
+      '@automerge/automerge-repo': 2.5.0
+      '@inkandswitch/patchwork-filesystem': 0.0.3
+      '@types/debug': 4.1.13
+      '@types/node': 20.19.43
+      debug: 4.4.3
+      eventemitter3: 5.0.4
       resolve.exports: 2.0.3
     transitivePeerDependencies:
       - supports-color
