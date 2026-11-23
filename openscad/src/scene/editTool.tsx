@@ -76,7 +76,7 @@ export function create(api: ViewApi) {
 		const {THREE} = stage
 		const layer = stage.world()
 		layer.userData["noPick"] = true
-				const root = new THREE.Group()
+		const root = new THREE.Group()
 		root.matrixAutoUpdate = false
 		layer.add(root)
 		// the model's parts (a mesh per colour) and, over them, the picked and lit parts
@@ -100,7 +100,7 @@ export function create(api: ViewApi) {
 			root.matrixWorldNeedsUpdate = true
 			stage.invalidate()
 		}
-				const clear = () => {
+		const clear = () => {
 			disposeAll([...drawn.children])
 			disposeAll([...marks.children])
 			partMeshes = []
@@ -110,7 +110,7 @@ export function create(api: ViewApi) {
 		 * creases, in its frame; a part's colour as the built GLB has it (source.ts), none in the body grey.
 		 * A failed render keeps the last.
 		 */
-				const draw = (next: Model | null) => {
+		const draw = (next: Model | null) => {
 			if (!next) return
 			clear()
 			model = next
@@ -123,13 +123,13 @@ export function create(api: ViewApi) {
 				const [r, gr, b, a] = part.color ?? [0, 0, 0, 1]
 				const color = part.color ? new THREE.Color().setRGB(r, gr, b, THREE.SRGBColorSpace) : new THREE.Color("#a9aeb5")
 				const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({color, transparent: a < 1, opacity: a, roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1}))
-								const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({color: "#1e1e1e"}))
+				const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({color: "#1e1e1e"}))
 				drawn.add(mesh, edges)
 				partMeshes.push(mesh)
 			}
 			moved()
 		}
-				/** The part a world ray hits, see-through surfaces passed over unless `front` (Alt). */
+		/** The part a world ray hits, see-through surfaces passed over unless `front` (Alt). */
 		const raycaster = new THREE.Raycaster()
 		const hitAt = (ray: InputEvent["ray"], front: boolean): {record: number; part: number; tri: number} | null => {
 			if (!map || !ray || !root.visible) return null
@@ -145,7 +145,7 @@ export function create(api: ViewApi) {
 		const element = document.createElement("div")
 		element.className = "openscad-scene-editor"
 		element.style.cssText = "position: absolute; top: 0; left: 0; bottom: 0; width: min(46%, 560px); pointer-events: auto; box-shadow: 0 0 12px rgb(0 0 0 / 15%);"
-				overlay.append(element)
+		overlay.append(element)
 		const accent = accentOf(element)
 		const highlight = (selected: number | null, lit: ReadonlySet<number>) => {
 			lastHighlight = {selected, lit}
@@ -204,25 +204,25 @@ export function create(api: ViewApi) {
 			handle => {
 				if (stopped) return
 				const hosted = hostedHandle(handle as DocHandle<OpenscadDoc>, () => (api.use("edits") as Edits | null) ?? null)
-									unmount = render(
-						() => (
-							<OpenscadEditor
-								handle={hosted}
-								element={{repo: stage.repo as never}}
-								hosted={{
-									onModel: draw,
-									onSourceMap: next => {
-										map = next
-									},
-									onHighlight: highlight,
-									connect: c => {
-										controls = c
-									},
-								}}
-							/>
-						),
-						element,
-					)
+				unmount = render(
+					() => (
+						<OpenscadEditor
+							handle={hosted}
+							element={{repo: stage.repo as never}}
+							hosted={{
+								onModel: draw,
+								onSourceMap: next => {
+									map = next
+								},
+								onHighlight: highlight,
+								connect: c => {
+									controls = c
+								},
+							}}
+						/>
+					),
+					element,
+				)
 			},
 			() => stop(),
 		)
@@ -230,7 +230,7 @@ export function create(api: ViewApi) {
 			kind: "openscad",
 			name: `Editing ${object.name ?? "model"}`,
 			pointer: true,
-						// A click on the model picks a part (the editor shows its source); every
+			// A click on the model picks a part (the editor shows its source); every
 			// other event passes: the scene's orbit, selection and the rest go on.
 			input: {
 				click(ev) {

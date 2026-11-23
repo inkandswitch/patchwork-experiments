@@ -333,17 +333,31 @@ export const styles = `
   outline: none;
 }
 
-/* The picked part's chain of calls: each shows its call in the code. */
+/* The picked part's chain of calls: each shows its call in the code. It
+   floats over the foot of the view (or, in a scene, of the code), so showing
+   it never resizes anything: a view that changed size would redraw shifted. */
 .openscad-trail {
+  position: absolute;
+  z-index: 3;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  width: fit-content;
+  max-width: calc(100% - 16px);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 2px;
-  flex-shrink: 0;
-  padding: 4px var(--studio-space-sm, 0.5rem);
-  border-top: 1px solid var(--openscad-border);
-  background: var(--openscad-bg);
+  padding: 3px 4px;
+  border: 1px solid var(--openscad-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: color-mix(in oklch, var(--openscad-bg) 92%, transparent);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
   font-size: 12px;
+}
+
+.openscad-pane-editor {
+  position: relative;
 }
 
 .openscad-trail-sep {
@@ -392,7 +406,7 @@ export const styles = `
 }
 
 .openscad-trail-def {
-  margin-left: auto;
+  margin-left: 6px;
   color: var(--openscad-muted) !important;
   font-size: 11px !important;
 }
