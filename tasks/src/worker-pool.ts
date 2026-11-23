@@ -7,6 +7,7 @@ import type { MessageToWorkerPool, MessageToRouterChannel, RepoConfig } from './
 import { getRepo, setUpImportMap } from './webworker-lib';
 import { seconds } from './helpers';
 import { Sequencer } from './delivery-stats';
+import { send } from './messages';
 import {
   AVAILABILITY_CHANNEL,
   decideAvailability,
@@ -17,7 +18,12 @@ import {
 } from './availability';
 
 interface TaskQueueState {
+  /** The queue's doc, once it has been found. */
+  handle: DocHandle<TaskQueueDoc> | null;
+  /** The doc of the router the queue names as active, once that has been found. */
   activeRouterHandle: DocHandle<RouterDoc> | null;
+  /** One of the two is being looked for right now. */
+  looking: boolean;
 }
 
 let repo: Repo;
@@ -111,8 +117,9 @@ async function updateTaskQueueSet(newTaskQueueUrls: TaskQueueSet) {
   }
 
   // remove task queues that are no longer in the set
-  for (const taskQueueUrl of taskQueueUrls) {
+  for (const [taskQueueUrl, state] of taskQueueState) {
     if (!newTaskQueueUrls[taskQueueUrl]) {
+      state.handle?.off('change', findWhatIsMissing);
       taskQueueUrls.delete(taskQueueUrl);
       taskQueueState.delete(taskQueueUrl);
     }
@@ -120,41 +127,78 @@ async function updateTaskQueueSet(newTaskQueueUrls: TaskQueueSet) {
 
   // add the new ones
   for (const taskQueueUrl of Object.keys(newTaskQueueUrls) as AutomergeUrl[]) {
-    if (taskQueueUrls.has(taskQueueUrl)) {
+    if (!taskQueueState.has(taskQueueUrl)) {
+      console.log('joining task queue', taskQueueUrl);
+      taskQueueState.set(taskQueueUrl, { handle: null, activeRouterHandle: null, looking: false });
+    }
+  }
+
+  findWhatIsMissing();
+}
+
+/**
+ * Looks for each joined queue's doc, and for the doc of whichever router each
+ * queue names as active, wherever the pool doesn't have them yet.
+ *
+ * Either can be asked for before it has got here: a queue's url is on the
+ * account before the queue has synced, and a router is named in the queue the
+ * moment it takes over, before its own doc has gone anywhere. So a lookup that
+ * fails is just early, and this is called again every second, and whenever a
+ * queue changes, until nothing is missing. Looking once and giving up left a
+ * pool sending its heartbeats to nobody until the queue next changed, which on
+ * a quiet queue was never.
+ */
+function findWhatIsMissing() {
+  for (const [taskQueueUrl, state] of taskQueueState) {
+    if (state.looking) {
+      continue;
+    }
+    const stillJoined = () => taskQueueState.get(taskQueueUrl) === state;
+
+    if (!state.handle) {
+      state.looking = true;
+      repo
+        .find<TaskQueueDoc>(taskQueueUrl)
+        .then(
+          (handle) => {
+            if (!stillJoined()) return;
+            state.handle = handle;
+            taskQueueUrls.add(taskQueueUrl);
+            handle.on('change', findWhatIsMissing);
+            console.log('done joining task queue', taskQueueUrl);
+          },
+          (error) => console.log('task queue not here yet', { taskQueueUrl, error }),
+        )
+        .finally(() => {
+          state.looking = false;
+          if (state.handle) findWhatIsMissing();
+        });
       continue;
     }
 
-    console.log('joining task queue', taskQueueUrl);
-
-    let taskQueueHandle: DocHandle<TaskQueueDoc>;
-    try {
-      taskQueueHandle = await repo.find<TaskQueueDoc>(taskQueueUrl);
-    } catch (error) {
-      console.error('did not join task queue, unable to get its doc handle', {
-        taskQueueUrl,
-        error,
+    const wanted = state.handle.doc().activeRouter;
+    if (wanted === (state.activeRouterHandle?.url ?? null)) {
+      continue;
+    }
+    if (!wanted) {
+      state.activeRouterHandle = null;
+      continue;
+    }
+    state.looking = true;
+    repo
+      .find<RouterDoc>(wanted)
+      .then(
+        (handle) => {
+          // the queue may have named another router while this one was loading
+          if (stillJoined() && state.handle?.doc().activeRouter === wanted) {
+            state.activeRouterHandle = handle;
+          }
+        },
+        (error) => console.log('active router not here yet', { taskQueueUrl, wanted, error }),
+      )
+      .finally(() => {
+        state.looking = false;
       });
-      return;
-    }
-
-    taskQueueUrls.add(taskQueueUrl);
-    taskQueueState.set(taskQueueUrl, { activeRouterHandle: null });
-
-    async function setTaskQueueState(taskQueue: TaskQueueDoc) {
-      try {
-        const activeRouterHandle = taskQueue.activeRouter
-          ? await repo.find<RouterDoc>(taskQueue.activeRouter)
-          : null;
-        taskQueueState.set(taskQueueUrl, { activeRouterHandle });
-      } catch (error) {
-        console.error('error finding doc for active router', { taskQueueUrl, error });
-      }
-    }
-
-    taskQueueHandle.on('change', (payload) => setTaskQueueState(payload.doc));
-    await setTaskQueueState(taskQueueHandle.doc());
-
-    console.log('done joining task queue', taskQueueUrl);
   }
 }
 
@@ -239,6 +283,7 @@ async function pSendWorkerStatuses() {
 
     // time passing changes the answer too: "quiet for 30 seconds" comes true
     updateAvailability();
+    findWhatIsMissing();
 
     const taskQueues: TaskQueueSet = {};
     for (const taskQueueUrl of taskQueueUrls) {
@@ -255,7 +300,7 @@ async function pSendWorkerStatuses() {
           // don't bother sending the heartbeats of workers that are busy with tasks from other queues
         } else {
           console.log('sending worker heartbeat to', activeRouterHandle.url, { workerUrl, currentTask });
-          activeRouterHandle.broadcast({
+          send(activeRouterHandle, {
             type: 'worker heartbeat',
             ...sequencer.stamp(activeRouterHandle.url),
             workerUrl,

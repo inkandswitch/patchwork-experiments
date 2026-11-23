@@ -1,5 +1,6 @@
 import type { Repo } from '@automerge/automerge-repo/slim';
 import type { RepoConfig } from './protocol';
+import { TASKS_DATABASE, TASKS_HEADS_CHANNEL } from './ids';
 
 const shimCodeUrl = 'https://ga.jspm.io/npm:es-module-shims@1.6.2/dist/es-module-shims.wasm.js';
 
@@ -66,15 +67,6 @@ function resolveImportMap(importMap: any, baseURI: string) {
   console.log('Import map configured from main thread', resolvedImportMap);
   return resolvedImportMap;
 }
-
-// The task workers keep their documents in a database of their own, and tell
-// each other what they've saved on a channel of their own, rather than sharing
-// the site's. A site's own Repo may not be an ordinary one: on a keyhive site
-// it is wrapped in keyhive's machinery, and what that leaves in the site's
-// database is its business. Kept apart, the workers are the same on every site.
-// They and the site's tabs still see each other's documents, through the server.
-const TASKS_DATABASE = 'patchwork-tasks';
-const TASKS_HEADS_CHANNEL = 'patchwork-tasks-heads';
 
 /**
  * A Repo for this shared worker: an ordinary Subduction node with a socket of

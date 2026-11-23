@@ -20,3 +20,12 @@ export const TRAY_COMPONENT_ID = 'task-tray-next';
 export const WORKER_POOL_NAME = 'task-next-worker-pool';
 export const ROUTER_NAME = 'task-next-router';
 export const workerName = (id: number) => `task-next-worker-${id}`;
+
+// The task framework's Repos, in the workers and in each tab, keep their
+// documents in a database of their own and tell each other what they've saved
+// on a channel of their own, rather than sharing the site's. That makes them
+// one family: what any of them saves, the rest have a moment later, with or
+// without a network. It's also what keeps them apart from the site's own Repo,
+// which on a keyhive site is no ordinary one.
+export const TASKS_DATABASE = 'patchwork-tasks';
+export const TASKS_HEADS_CHANNEL = 'patchwork-tasks-heads';

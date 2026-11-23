@@ -7,7 +7,7 @@ import type { TaskQueueDoc } from './datatype';
 import { WorkerPoolProxy } from './worker-pool-proxy';
 import { getAccountDocUrl, getTaskQueues } from './helpers';
 import { QUEUE_TOOL_ID } from './ids';
-import { RepoContext, useDoc } from './use-doc';
+import { useDoc, WithTasksRepo } from './use-doc';
 
 // A shared worker's script has to come from the page's own origin. Installed by
 // its automerge url this package is served from there; installed from a web
@@ -28,15 +28,8 @@ export const TitlebarTool = (_handle: DocHandle<unknown>, element: HTMLElement) 
 export const TaskTray = (element: HTMLElement, repo?: Repo) =>
   mountTaskStatus(element, repo ?? (element as any).repo ?? (window as any).repo);
 
-function mountTaskStatus(element: HTMLElement, repo: Repo) {
-  return render(
-    () => (
-      <RepoContext.Provider value={repo}>
-        <TaskStatus element={element} />
-      </RepoContext.Provider>
-    ),
-    element,
-  );
+function mountTaskStatus(element: HTMLElement, hostRepo: Repo) {
+  return render(() => <TaskStatus element={element} hostRepo={hostRepo} />, element);
 }
 
 /**
@@ -58,8 +51,11 @@ function ensureWorkerPool(contactUrl: AutomergeUrl) {
   tab.__patchworkTaskWorkerPool = proxy;
 }
 
-const TaskStatus = (props: { element: HTMLElement }) => {
-  const account = useDoc<any>(getAccountDocUrl);
+const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo }) => {
+  // The account is the site's document, so it comes from the site's Repo. The
+  // queues come from this tab's tasks Repo, like everything else of the
+  // framework's (see tasks-repo.ts).
+  const account = useDoc<any>(getAccountDocUrl, props.hostRepo);
   const contactUrl = (): AutomergeUrl | undefined => account()?.contactUrl;
   const queueUrls = () =>
     account() ? (Object.keys(getTaskQueues(account())) as AutomergeUrl[]) : [];
@@ -91,9 +87,11 @@ const TaskStatus = (props: { element: HTMLElement }) => {
       }
     >
       <div class="task-titlebar-list">
-        <For each={queueUrls()}>
-          {(taskQueueUrl) => <QueueBadge element={props.element} taskQueueUrl={taskQueueUrl} />}
-        </For>
+        <WithTasksRepo>
+          <For each={queueUrls()}>
+            {(taskQueueUrl) => <QueueBadge element={props.element} taskQueueUrl={taskQueueUrl} />}
+          </For>
+        </WithTasksRepo>
       </div>
     </Show>
   );

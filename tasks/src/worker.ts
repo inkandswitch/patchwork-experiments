@@ -15,6 +15,7 @@ import generateName from 'boring-name-generator';
 import { getRepo, setUpImportMap } from './webworker-lib';
 import { DeliveryStats, reportDeliveryStats } from './delivery-stats';
 import { assignmentId } from './claims';
+import { listen } from './messages';
 
 let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 
@@ -103,8 +104,7 @@ async function init(
   } satisfies MessageToWorkerPoolProxy);
 
   // listen to messages on my channel
-  workerHandle.on('ephemeral-message', (payload) => {
-    const msg: MessageToWorkerChannel = payload.message as any;
+  listen<MessageToWorkerChannel>(workerHandle, (msg) => {
     switch (msg.type) {
       case 'work on':
         deliveryStats.record(workerHandle.url, msg);

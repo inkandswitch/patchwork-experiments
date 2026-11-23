@@ -8,6 +8,7 @@ import type {
 
 import { getAccountHandle, getTaskQueues } from './helpers';
 import { watchHostActivity } from './host-activity';
+import { getRepoConfig } from './repo-config';
 import { ROUTER_NAME, WORKER_POOL_NAME, workerName } from './ids';
 
 import WorkerPool from './worker-pool.ts?sharedworker';
@@ -15,19 +16,6 @@ import TaskWorker from './worker.ts?sharedworker';
 import TaskRouter from './router.ts?sharedworker';
 
 const NUM_WORKERS = 2;
-
-// Patchwork doesn't say at runtime which sync server a site was built for, so
-// this is the one its bootloader falls back to. A site on another server sets
-// `localStorage.tasksSyncServerUrl`.
-const DEFAULT_SYNC_SERVER_URL = 'wss://subduction.sync.inkandswitch.com';
-const SYNC_SERVER_URL_KEY = 'tasksSyncServerUrl';
-
-/** What the shared workers need to build their Repos (see `getRepo` in webworker-lib.ts). */
-export function getRepoConfig(): RepoConfig {
-  return {
-    syncServerUrl: localStorage.getItem(SYNC_SERVER_URL_KEY) || DEFAULT_SYNC_SERVER_URL,
-  };
-}
 
 export class WorkerPoolProxy {
   private readonly workerPool: SharedWorker;

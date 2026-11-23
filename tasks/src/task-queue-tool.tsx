@@ -9,7 +9,7 @@ import {
 import { createStore } from 'solid-js/store';
 import { render } from 'solid-js/web';
 import './index.css';
-import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
+import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
 import type { RouterDoc, RunInfo, WorkerDoc, TaskDoc, TaskQueueDoc } from './datatype';
 import type { MessageToTaskQueueChannel } from './protocol';
 import { DELIVERY_STATS_CHANNEL, type DeliveryReport } from './delivery-stats';
@@ -25,7 +25,8 @@ import {
   requestIdleDetection,
   setAvailabilityMode,
 } from './host-activity';
-import { RepoContext, useDoc, useHandleDoc, useRepo } from './use-doc';
+import { listen } from './messages';
+import { useDoc, useHandle, useHandleDoc, useRepo, WithTasksRepo } from './use-doc';
 
 const DEFAULT_INPUT_EXPR = `[
   Math.floor(Math.random() * 10) + 1,
@@ -50,15 +51,30 @@ const MAX_TASKS_SHOWN = 20;
 /** A router sends a heartbeat every second; this long without one is worth saying. */
 const ROUTER_QUIET_AFTER_MS = 5_000;
 
-export const TaskQueueTool = (handle: DocHandle<unknown>, element: HTMLElement) => {
-  const repo: Repo = (element as any).repo; // TODO: better way to get the repo
-  return render(
+// The site hands this tool a handle from its own Repo. Only the url is used:
+// everything here goes through this tab's tasks Repo instead (see
+// tasks-repo.ts), which is what lets it keep working without a network.
+export const TaskQueueTool = (handle: DocHandle<unknown>, element: HTMLElement) =>
+  render(
     () => (
-      <RepoContext.Provider value={repo}>
-        <TaskQueueBrowser handle={handle as DocHandle<TaskQueueDoc>} />
-      </RepoContext.Provider>
+      <WithTasksRepo fallback={<div class="tq tq-loading">Starting…</div>}>
+        <TaskQueue url={handle.url} />
+      </WithTasksRepo>
     ),
     element,
+  );
+
+const TaskQueue = (props: { url: AutomergeUrl }) => {
+  const handle = useHandle<TaskQueueDoc>(() => props.url);
+  return (
+    <Show
+      when={handle()}
+      fallback={
+        <div class="tq tq-loading">Waiting for this queue to reach this browser's task workers…</div>
+      }
+    >
+      {(ready) => <TaskQueueBrowser handle={ready()} />}
+    </Show>
   );
 };
 
@@ -73,22 +89,20 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
   const [paused, setPaused] = createSignal<AutomergeUrl[]>([], { equals: sameList });
   const [lastHeartbeatAt, setLastHeartbeatAt] = createSignal<number | null>(null);
 
-  const onMessage = (payload: { message: unknown }) => {
-    const msg = payload.message as MessageToTaskQueueChannel;
-    // Other tools broadcast on this doc too (presence, for one).
-    if (msg?.type !== 'router heartbeat') {
-      return;
-    }
-    // Go by who the queue says its router is now: it changes on every takeover.
-    if (msg.routerUrl !== props.handle.doc().activeRouter) {
-      return;
-    }
-    setLastHeartbeatAt(Date.now());
-    setWorkers([...msg.workerUrls].sort());
-    setPaused([...(msg.pausedWorkerUrls ?? [])].sort());
-  };
-  props.handle.on('ephemeral-message', onMessage);
-  onCleanup(() => props.handle.off('ephemeral-message', onMessage));
+  onCleanup(
+    listen<MessageToTaskQueueChannel>(props.handle, (msg) => {
+      if (msg.type !== 'router heartbeat') {
+        return;
+      }
+      // Go by who the queue says its router is now: it changes on every takeover.
+      if (msg.routerUrl !== props.handle.doc().activeRouter) {
+        return;
+      }
+      setLastHeartbeatAt(Date.now());
+      setWorkers([...msg.workerUrls].sort());
+      setPaused([...(msg.pausedWorkerUrls ?? [])].sort());
+    }),
+  );
 
   // What each worker says it's running, so a pending task can say "running".
   const [runningBy, setRunningBy] = createStore<Record<string, AutomergeUrl | null>>({});
@@ -97,10 +111,13 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
   const myContactUrl = (): AutomergeUrl | undefined =>
     (window as any).patchwork?.account?.doc()?.contactUrl;
 
-  function addTask(inputExpr: string, code: string) {
+  async function addTask(inputExpr: string, code: string) {
     const input = eval(inputExpr);
     const importUrl = `data:application/javascript;base64,${btoa(code)}`;
     const taskDoc = repo.create<TaskDoc<any, any>>({ input, importUrl, runs: [] });
+    // Saved before the queue names it, so that a worker handed the task finds
+    // it in the shared database rather than having to wait for it.
+    await repo.flush([taskDoc.documentId]);
     props.handle.change((doc) => doc.pending.push(taskDoc.url));
   }
 
@@ -337,14 +354,16 @@ function useAvailabilityStatus() {
   return status;
 }
 
-const NewTaskForm = (props: { onAdd: (inputExpr: string, code: string) => void }) => {
+const NewTaskForm = (props: {
+  onAdd: (inputExpr: string, code: string) => Promise<void>;
+}) => {
   const [inputExpr, setInputExpr] = createSignal(DEFAULT_INPUT_EXPR);
   const [code, setCode] = createSignal(DEFAULT_CODE);
   const [error, setError] = createSignal<string | null>(null);
 
-  function add() {
+  async function add() {
     try {
-      props.onAdd(inputExpr(), code());
+      await props.onAdd(inputExpr(), code());
       setError(null);
     } catch (e: any) {
       setError(e?.message ?? String(e));

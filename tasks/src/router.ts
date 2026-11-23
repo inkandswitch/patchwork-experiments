@@ -11,7 +11,6 @@ import type {
 import type {
   AutomergeUrl,
   DocHandle,
-  DocHandleEphemeralMessagePayload,
   Repo,
 } from '@automerge/automerge-repo/slim';
 
@@ -21,6 +20,7 @@ import { seconds, shuffle } from './helpers';
 import { DeliveryStats, reportDeliveryStats, Sequencer } from './delivery-stats';
 import { RouterWatch } from './takeover';
 import { assignmentId, claimIsSettled, type Claim } from './claims';
+import { listen, send } from './messages';
 
 let repo: Repo;
 let contactUrl: AutomergeUrl;
@@ -31,6 +31,10 @@ let sequencer: Sequencer;
 const deliveryStats = new DeliveryStats();
 
 const taskQueueHandles = new Map<AutomergeUrl, DocHandle<TaskQueueDoc>>();
+/** The queues this router has been told to serve, joined yet or not. */
+const wantedTaskQueues = new Set<AutomergeUrl>();
+/** How to stop listening on each joined queue's channel. */
+const stopListeningTo = new Map<AutomergeUrl, () => void>();
 const routerWatch = new RouterWatch();
 
 // Tasks a worker has reported finished with, and when. A worker's "done" tends
@@ -105,9 +109,7 @@ async function init(
 
   thisRouterHandle = repo.create<RouterDoc>({ name: generateName().dashed, contactUrl });
   sequencer = new Sequencer(thisRouterHandle.url);
-  thisRouterHandle.on('ephemeral-message', (payload) => {
-    console.log('received ephemeral message directed at me (as the active router)');
-    const msg: MessageToRouterChannel = payload.message as any;
+  listen<MessageToRouterChannel>(thisRouterHandle, (msg) => {
     switch (msg.type) {
       case 'worker heartbeat':
         deliveryStats.record(thisRouterHandle.url, msg);
@@ -162,7 +164,7 @@ async function pRouteTasks() {
         issuedAt: Date.now(),
       };
       console.log('routing task', nextPendingTaskUrl, 'to worker', worker.handle.url);
-      worker.handle.broadcast({
+      send(worker.handle, {
         type: 'work on',
         ...stamp,
         taskUrl: nextPendingTaskUrl,
@@ -206,7 +208,7 @@ async function pSendHeartbeats() {
         const included = [...workers.values()].filter((worker) =>
           shouldIncludeInHeartbeat(worker, taskQueueHandle.url),
         );
-        taskQueueHandle.broadcast({
+        send(taskQueueHandle, {
           type: 'router heartbeat',
           ...sequencer.stamp(taskQueueHandle.url),
           routerUrl: thisRouterHandle.url,
@@ -367,9 +369,14 @@ function isReallyPending(taskUrl: AutomergeUrl) {
 }
 
 async function updateTaskQueueSet(taskQueues: TaskQueueSet) {
+  wantedTaskQueues.clear();
+  for (const taskQueueUrl of Object.keys(taskQueues) as AutomergeUrl[]) {
+    wantedTaskQueues.add(taskQueueUrl);
+  }
+
   // remove task queues that are no longer in the set
   for (const taskQueueUrl of taskQueueHandles.keys()) {
-    if (!Object.keys(taskQueues).includes(taskQueueUrl)) {
+    if (!wantedTaskQueues.has(taskQueueUrl)) {
       leaveTaskQueue(taskQueueUrl);
     }
   }
@@ -388,37 +395,44 @@ async function joinTaskQueue(taskQueueUrl: AutomergeUrl) {
     await repoPromise;
     handle = await repo.find<TaskQueueDoc>(taskQueueUrl);
   } catch (error) {
-    console.error('unable to get doc handle for task queue', { taskQueueUrl, error });
+    // Not here yet, most likely: a queue's url is on the account before the
+    // queue itself has synced. Ask again shortly, for as long as it's wanted.
+    console.log('task queue not here yet', { taskQueueUrl, error });
+    setTimeout(() => {
+      if (wantedTaskQueues.has(taskQueueUrl) && !taskQueueHandles.has(taskQueueUrl)) {
+        joinTaskQueue(taskQueueUrl);
+      }
+    }, 2_000);
+    return;
+  }
+  if (!wantedTaskQueues.has(taskQueueUrl) || taskQueueHandles.has(taskQueueUrl)) {
+    // left, or joined by an earlier attempt, while this one was loading
     return;
   }
 
   taskQueueHandles.set(taskQueueUrl, handle);
-  handle.on('ephemeral-message', handleEphemeralMessages);
+  stopListeningTo.set(
+    taskQueueUrl,
+    listen<MessageToTaskQueueChannel>(handle, (msg) => {
+      switch (msg.type) {
+        case 'router heartbeat':
+          deliveryStats.record(taskQueueUrl, msg);
+          routerWatch.heardFrom(msg.routerUrl);
+          break;
+      }
+    }),
+  );
   handle.on('change', routeSoon);
   routeSoon();
 }
 
 async function leaveTaskQueue(taskQueueUrl: AutomergeUrl) {
   const handle = taskQueueHandles.get(taskQueueUrl);
-  handle?.off('ephemeral-message', handleEphemeralMessages);
+  stopListeningTo.get(taskQueueUrl)?.();
+  stopListeningTo.delete(taskQueueUrl);
   handle?.off('change', routeSoon);
   taskQueueHandles.delete(taskQueueUrl);
   routerWatch.stopWatching(taskQueueUrl);
-}
-
-function handleEphemeralMessages(payload: DocHandleEphemeralMessagePayload<TaskQueueDoc>) {
-  const msg: MessageToTaskQueueChannel = payload.message as any;
-  console.log('received ephemeral message (directed at task queue)', msg);
-  switch (msg.type) {
-    case 'router heartbeat':
-      deliveryStats.record(payload.handle.url, msg);
-      processRouterHeartbeat(msg.routerUrl);
-      break;
-  }
-}
-
-function processRouterHeartbeat(routerUrl: AutomergeUrl) {
-  routerWatch.heardFrom(routerUrl);
 }
 
 async function processWorkerHeartbeat(
