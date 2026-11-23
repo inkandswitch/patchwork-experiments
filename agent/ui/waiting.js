@@ -259,10 +259,16 @@ export function renderLiftItem(item, { onOpen = null, showStep = true, splice = 
 }
 
 /** One line on a spent budget: a session's, or a whole workflow's. */
-export function describeBudget({ spent, limit, notStarted, scope }) {
+export function describeBudget({ spent, limit, notStarted, stopped = 0, ask: askFor = null, scope }) {
   if (scope === "session") return `Spent its $${Number(limit).toFixed(2)} budget ($${Number(spent).toFixed(2)}) and stopped part-way. It carries on from there if it is given more.`
 
-  return `Budget spent: $${Number(spent).toFixed(2)} of $${Number(limit).toFixed(2)}. ${notStarted} step${notStarted === 1 ? "" : "s"} waiting to start.`
+  const money = `$${Number(spent).toFixed(2)} of $${Number(limit).toFixed(2)}`
+  const blocked = [
+    notStarted ? `${notStarted} step${notStarted === 1 ? "" : "s"} waiting to start` : null,
+    stopped ? `${stopped} stopped part-way` : null,
+  ].filter(Boolean)
+  const ask = askFor ? ` The orchestrator wants to give ${askFor.stepTitle ?? askFor.stepId} $${Number(askFor.need).toFixed(2)} more${askFor.why ? `: ${askFor.why}` : ""}.` : ""
+  return `The workflow has spent its whole budget (${money}, orchestrator included), so ${blocked.join(" and ") || "nothing more can run"}.${ask} Resume raises the budget to what has been spent plus the amount you pick; the orchestrator then decides how to spend it.`
 }
 
 /** The strip above the orchestrator's transcript. Empty, it is hidden. */

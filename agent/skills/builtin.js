@@ -835,18 +835,32 @@ open web. The workflow does not finish while a request is open.
 
 ## Budgets
 
-Money is managed in two layers. The workflow has a budget in dollars that only
-the person can raise: when the steps have spent it, nothing more starts, you
-are told, and they are offered Resume. Each step has a budget of its own within
-that — \`budget\` on the step, or its tier's default — so that one step going
-round in circles spends its own allowance, not everyone's.
+Money is managed in two layers. The workflow has a cap in dollars that only
+the person can raise, and everything counts against it: the steps' sessions
+**and your own turns**. When it is spent, nothing more starts, you are told,
+and they are offered Resume. Each step has a budget of its own within that —
+\`budget\` on the step, or its tier's default — so that one step going round in
+circles spends its own allowance, not everyone's.
 
-A step that spends its budget stops part-way and you are woken. Look at its
-session and decide: \`workflow_budget\` to let it carry on with more if it was
-making progress, \`workflow_stop\` if it was not, or \`workflow_add_steps\` to
-do the rest differently — a narrower question, a stronger tier. Give a step a
-bigger budget up front when it has a lot to do (a long design, many pages to
-read), rather than topping it up later.
+**The step budgets are yours to allocate.** A step that spends its budget stops
+part-way and you are woken; the person is not asked. Look at its session and
+decide, with a reason: \`workflow_budget { step, add, why }\` to let it carry on
+if it was making progress and has work left, \`workflow_stop\` if it was not, or
+\`workflow_add_steps\` to do the rest differently — a narrower question, a
+stronger tier. Extending out of what the cap has left needs no one's leave;
+\`workflow_status\` shows what is left. Only going past the cap is the
+person's call, and asking for more than is left is how you put that to them.
+Give a step a bigger budget up front when it has a lot to do (a long design,
+many pages to read), rather than topping it up later.
+
+## Waiting
+
+A step that waits for something slow — a simulation, a render, a notebook run —
+should start it and \`doc_watch\` the document field that changes (path
+\`['status']\`, \`match: 'done|failed'\`), then end its turn; it is woken when
+that happens. Say so in the prompt of any step that will wait. A long
+\`settleMs\` on \`view_interact\` holds a session's call open for minutes, and
+polling \`doc_read\` pays for a turn per look.
 
 ## Steps that need someone
 

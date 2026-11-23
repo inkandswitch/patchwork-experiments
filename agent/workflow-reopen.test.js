@@ -270,7 +270,7 @@ describe("a step's requests", () => {
     const { SCOPED_TOOL_IDS } = await import("./scope.js")
     expect(SCOPED_TOOL_IDS).toContain("workflow_request")
     await expect(workflowRequest.execute({ why: "" })).rejects.toThrow(/Say `why`/)
-    await expect(workflowRequest.execute({ why: "x" })).rejects.toThrow(/Ask for something/)
+    await expect(workflowRequest.execute({ why: "x" })).rejects.toThrow(/`why` alone asks for nothing/)
     await expect(workflowRequest.execute({ why: "x", add_steps: [{ id: "bad id" }] })).rejects.toThrow(/id must be/)
     await expect(workflowRequest.execute({ why: "x", reopen: ["a"] })).resolves.toMatch(/orchestrator decides/)
   })

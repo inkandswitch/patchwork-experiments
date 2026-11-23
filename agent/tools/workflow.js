@@ -25,6 +25,8 @@ import {
   DEFAULT_TIER_MODELS,
   DEFAULT_STEP_BUDGETS,
   budgetOf,
+  canExtend,
+  askForBudget,
   stepBudget,
   staleInputs,
   openRequests,
@@ -94,13 +96,21 @@ async function planUrlFor(input, ctx) {
   return last.url
 }
 
+/** The workflow's money: steps and orchestrator together against the cap. */
+function budgetLine(plan) {
+  const b = budgetOf(plan)
+  const parts = b.orchestrator > 0 ? ` (steps $${b.steps.toFixed(2)} + you $${b.orchestrator.toFixed(2)})` : ""
+  const left = b.remaining > 0 ? ` — $${b.remaining.toFixed(2)} left to give steps` : " — the cap is reached"
+  return `Budget: $${b.spent.toFixed(2)} of $${b.limit.toFixed(2)} spent${parts}${left}${plan.paused ? "; paused: only the person can raise the cap (they are offered Resume)" : ""}`
+}
+
 /** The step table every workflow tool answers with. */
 export function describePlan(plan, url) {
   const derived = states(plan)
   const lines = [
     `${plan.title} — ${plan.status} (${url})`,
     `Goal: ${plan.goal}`,
-    `Budget: $${budgetOf(plan).spent.toFixed(2)} of $${budgetOf(plan).limit.toFixed(2)} spent${plan.paused ? " — paused: the budget is spent, and only the person can resume it" : ""}`,
+    budgetLine(plan),
   ]
   const kept = keptCounts(plan)
   if (kept.sources + kept.findings) lines.push(`Research kept: ${kept.sources} sources, ${kept.findings} findings — Sources: ${plan.sourcesFolderUrl}`)
@@ -327,30 +337,40 @@ export const workflowBudget = {
   id: "workflow_budget",
   name: "Give a workflow step more budget",
   description: [
-    "Give a step more to spend. A step that has spent its budget stops part-way and you are told; if it was making progress, this lets it carry on from where it stopped. It works on a step that has not started too.",
+    "Give a step more to spend, out of the workflow's remaining budget (its cap less what the steps and you have spent). A step that has spent its budget stops part-way and you are woken; if it was making progress and has work left, this lets it carry on from where it stopped. It works on a step that has not started too.",
     "",
-    "Look at what the step was doing first (its session): one going round in circles is better stopped (workflow_stop) or replaced (workflow_add_steps). The workflow as a whole has a budget only the person can raise.",
+    "You set the step budgets, so you may extend them within the remainder without asking anyone: look at what the step was doing first (its session), and say in `why` what it achieved and what it still has to do. One going round in circles is better stopped (workflow_stop) or replaced (workflow_add_steps). Asking for more than the remainder does not extend anything: it puts the request in front of the person, who is offered Resume, and you are told when they raise the cap.",
   ].join("\n"),
   where: "worker",
   risk: "edit",
   input_schema: {
     type: "object",
-    required: ["step", "add"],
+    required: ["step", "add", "why"],
     properties: {
       plan: { type: "string", description: "The workflow's URL. Defaults to the last one this session started." },
       step: { type: "string", description: "The id of the step." },
       add: { type: "number", description: "Dollars to add to what it may spend." },
+      why: { type: "string", description: "What the step has done and what is left; shown beside the step and, if the cap is reached, to the person." },
     },
   },
   async execute(input, ctx) {
     const add = Number(input.add)
     if (!Number.isFinite(add) || add <= 0) throw new Error("Pass `add`: a positive number of dollars.")
+    if (typeof input.why !== "string" || !input.why.trim()) throw new Error("Pass `why`: what the step has done and what is left, so the extension is on record.")
     const url = await planUrlFor(input, ctx)
     const { repo } = workflows(ctx)
     const planHandle = await repo.find(url)
     const step = planHandle.doc().steps.find((s) => s.id === input.step)
     if (!step) throw new Error(`No step '${input.step}' in this workflow.`)
     if (step.status !== STEP.pending && step.status !== STEP.running) throw new Error(`Step '${input.step}' is ${step.status}; only a step still to run or running can be given more.`)
+
+    // Within the remainder it is the orchestrator's call; past the cap it is
+    // a person's, and this is how they are asked.
+    if (!canExtend(planHandle.doc(), add)) {
+      const b = budgetOf(planHandle.doc())
+      planHandle.change((d) => askForBudget(d, step, add, input.why))
+      return `Not given: $${add.toFixed(2)} is more than the $${b.remaining.toFixed(2)} left under the workflow's cap ($${b.spent.toFixed(2)} of $${b.limit.toFixed(2)} spent, you included). Only the person can go past the cap. They have been asked, with your reason; nothing more starts until they resume it. Tell them briefly what is blocked, and call workflow_budget again if the step is still waiting after they resume. A smaller add (at most $${b.remaining.toFixed(2)}) would go through now.`
+    }
 
     let limit = Math.round((stepBudget(step) + add) * 100) / 100
     let resumed = false
@@ -365,10 +385,13 @@ export const workflowBudget = {
     }
     planHandle.change((d) => {
       const s = d.steps.find((x) => x.id === step.id)
-      if (s) s.budget = limit
+      if (!s) return
+      s.budget = limit
+      if (!s.budgetLog) s.budgetLog = []
+      s.budgetLog.push({ add, limit, why: String(input.why), at: Date.now() })
     })
     if (resumed) await drive(url, ctx)
-    return `Step '${input.step}' may now spend $${limit.toFixed(2)}${resumed ? "; it carries on from where it stopped" : ""}. The workflow has spent $${budgetOf(planHandle.doc()).spent.toFixed(2)} of its $${budgetOf(planHandle.doc()).limit.toFixed(2)}.`
+    return `Step '${input.step}' may now spend $${limit.toFixed(2)}${resumed ? "; it carries on from where it stopped" : ""}. ${budgetLine(planHandle.doc())}.`
   },
   summarize(input) {
     return `gave ${input?.step ?? "a step"} ${input?.add ?? "?"} more`
