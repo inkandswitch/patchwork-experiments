@@ -40,7 +40,7 @@ import {
   pickValue,
 } from "./register.js"
 import { SOURCE_KINDS } from "./support.js"
-import { checkText, detailText, figureLine, entryParts, readText, allProblems } from "./text.js"
+import { checkText, detailText, figureLine, entryParts, readText, allProblems, structureText } from "./text.js"
 import { observedUse, scanProblems } from "./uses.js"
 import { constantsIn, driftIn, exportsIn, scanFolder, sourceText, usesOf } from "./where.js"
 import { isText, parseValue, plainValue, sameValue } from "./values.js"
@@ -167,11 +167,13 @@ export const read = {
     const doc = handle.doc()
     const evaluation = evaluate(doc)
     const extra = scanProblems(doc, evaluation)
+    if (input.structure != null && input.structure !== false && input.structure !== "") return `${structureText(doc, evaluation, input.structure === true ? "all" : String(input.structure))}\n\n(${handle.url})`
     const ids = Array.isArray(input.ids) && input.ids.length ? input.ids.map(String) : null
     return `${readText(doc, evaluation, extra, { ids, prefix: input.prefix || null, detail: Boolean(input.detail), page: Number(input.page ?? 1) || 1 })}\n\n(${handle.url})`
   },
   summarize(input, output) {
     const first = String(output ?? "").split("\n")[0]
+    if (input?.structure) return `read register structure${input.structure === true || input.structure === "all" ? "" : ` · ${input.structure}`}`
     return `read register${input?.prefix ? ` · ${input.prefix}` : ""}${input?.ids?.length ? ` · ${input.ids.length} ids` : ""} · ${first.split(" · ").slice(1, 3).join(" · ")}`
   },
 }

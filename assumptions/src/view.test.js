@@ -4,7 +4,7 @@ import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { AssumptionsDatatype } from "./datatype.js"
 import { evaluate, materialize } from "./register.js"
 import { entryParts, sheetOrder } from "./text.js"
-import { AssumptionsView, layered } from "./view.js"
+import { AssumptionsView } from "./view.js"
 
 await initSubduction()
 
@@ -102,7 +102,7 @@ describe("the view", () => {
     entriesOpen()
     click(element.querySelector('[data-open="pack_I_kA"]'))
     const panel = () => element.querySelector("aside.panel")
-    expect([...panel().querySelectorAll("h3")].map((h) => h.textContent)).toEqual(["Value", "Basis", "Rests on and feeds", "Used in", "Judgements and history"])
+    expect([...panel().querySelectorAll("h3")].map((h) => h.textContent)).toEqual(["Value", "Basis", "Inputs", "Outputs", "Used in", "Judgements and history"])
     expect(panel().querySelector(".sheet").textContent).toMatch(/pack_I_kA = pack_V_max \/ pack_R_mOhm= 58.4 V \/ ≤ 4.4 mΩ/)
     click(panel().querySelector('[data-open="pack_R_mOhm"]'))
     click(panel().querySelector('[data-open="cell_R_ac_mOhm"]'))
@@ -206,25 +206,119 @@ describe("materialize on load", () => {
 })
 
 describe("the structure lens", () => {
-  it("draws the open entry with what it rests on and what it feeds, one box each, in words", () => {
-    click(element.querySelector('[data-open="pack_I_kA"]') ?? (lens("entries"), element.querySelector('tr[data-id="pack_I_kA"] a')))
+  const nodes = (sel) => [...element.querySelectorAll(`svg.graph ${sel}`)]
+  const crumbs = () => element.querySelector(".structure-crumbs").textContent.replace(/\s+/g, " ").trim()
+
+  it("opens on the map of groups, inputs left of outputs, with the groups linked to nothing listed below", () => {
     lens("structure")
-    const boxes = [...element.querySelectorAll("svg.graph g.node")].map((g) => g.getAttribute("data-open"))
-    // pack_I_kA rests on pack_V_max, pack_R_mOhm and through it cell_R_ac_mOhm, busbar_R_mOhm; it feeds fuse_ok.
+    expect(crumbs()).toBe("All groups")
+    expect(new Set(nodes("g.gnode").map((g) => g.getAttribute("data-sgroup")))).toEqual(new Set(["cell", "busbar", "pack", "fuse", "temp"]))
+    const x = (name) => Number(element.querySelector(`g.gnode[data-sgroup="${name}"] rect`).getAttribute("x"))
+    expect(x("cell")).toBeLessThan(x("pack"))
+    expect(x("pack")).toBeLessThan(x("fuse"))
+    expect(element.querySelector('g.gnode[data-sgroup="pack"]').getAttribute("aria-label")).toBe("pack: 3 entries (1 decided, 2 calculated)")
+    const lines = nodes("path.edge").map((p) => `${p.dataset.u}>${p.dataset.v}`)
+    expect(new Set(lines)).toEqual(new Set(["cell>pack", "busbar>pack", "pack>fuse", "pack>temp"]))
+    expect(element.querySelector(".lens").textContent).toMatch(/Not linked to any other group: bilge 1 · bms 1/)
+  })
+
+  it("opens a group into its entries, between the groups they read and the groups that read them", () => {
+    lens("structure")
+    click(element.querySelector('g.gnode[data-sgroup="pack"]'))
+    expect(crumbs()).toBe("All groups › pack")
+    expect(new Set(nodes("g.pill").map((g) => g.getAttribute("data-open")))).toEqual(new Set(["pack_R_mOhm", "pack_I_kA", "pack_V_max"]))
+    expect(new Set(nodes("g.gnode.end").map((g) => g.dataset.node))).toEqual(new Set(["in:cell", "in:busbar", "out:fuse", "out:temp"]))
+    const x = (key) => Number(element.querySelector(`[data-node="${key}"] rect`).getAttribute("x"))
+    expect(x("in:cell")).toBeLessThan(x("pack_V_max"))
+    expect(x("pack_I_kA")).toBeLessThan(x("out:fuse"))
+    expect(x("out:fuse")).toBe(x("out:temp"))
+    // An outside group opens that group.
+    click(element.querySelector('[data-node="in:cell"]'))
+    expect(crumbs()).toBe("All groups › cell")
+  })
+
+  it("folds a group's unlinked entries into a line that shows them", () => {
+    lens("structure")
+    click(element.querySelector('.lens a[data-sgroup="bms"]'))
+    expect(element.querySelector(".unread").textContent).toMatch(/1 entry reads nothing and nothing reads it/)
+    click(element.querySelector("[data-show-unread]"))
+    expect(element.querySelector('.unread a[data-open="bms_part"]')).not.toBeNull()
+  })
+
+  it("opens an entry from a group into its inputs and outputs, two steps each way, and the panel", () => {
+    lens("structure")
+    click(element.querySelector('g.gnode[data-sgroup="pack"]'))
+    click(element.querySelector('g.pill[data-open="pack_I_kA"]'))
+    expect(crumbs()).toBe("All groups › pack › pack_I_kA")
+    expect(element.querySelector(".panel h2").textContent).toMatch(/pack_I_kA/)
+    const boxes = nodes("g.node").map((g) => g.getAttribute("data-open"))
     expect(new Set(boxes)).toEqual(new Set(["pack_I_kA", "pack_V_max", "pack_R_mOhm", "cell_R_ac_mOhm", "busbar_R_mOhm", "fuse_ok"]))
-    for (const g of element.querySelectorAll("svg.graph g.node")) {
+    for (const g of nodes("g.node")) {
       expect(g.getAttribute("aria-label")).toMatch(new RegExp(`^${g.getAttribute("data-open")}`))
       expect(g.querySelector("title").textContent).toBe(g.getAttribute("aria-label"))
     }
     expect(element.querySelector('g.node[data-open="pack_I_kA"]').getAttribute("class")).toContain("focus")
     expect(element.querySelector('g.node[data-open="fuse_ok"]').getAttribute("aria-label")).toMatch(/DEPENDS/)
+    // Opening another box re-centres on it; the breadcrumb goes back up.
+    click(element.querySelector('g.node[data-open="busbar_R_mOhm"]'))
+    expect(crumbs()).toBe("All groups › busbar › busbar_R_mOhm")
+    click(element.querySelector('[data-structure="group"]'))
+    expect(crumbs()).toBe("All groups › busbar")
+    click(element.querySelector('[data-structure="map"]'))
+    expect(crumbs()).toBe("All groups")
   })
 
-  it("re-centres on a box when it is opened", () => {
+  it("jumps to an entry's structure from the panel's Outputs", () => {
+    lens("entries")
+    for (const button of element.querySelectorAll('tr.group button[aria-expanded="false"]')) click(button)
+    click(element.querySelector('tr[data-id="pack_R_mOhm"]'))
+    click(element.querySelector("[data-structure-entry]"))
+    expect(element.querySelector('[data-lens="structure"]').getAttribute("aria-selected")).toBe("true")
+    expect(crumbs()).toBe("All groups › pack › pack_R_mOhm")
+  })
+
+  it("lights a node's lines when it is pointed at", () => {
     lens("structure")
-    click(element.querySelector('g.node[data-open="busbar_R_mOhm"]') ?? element.querySelector("g.node"))
-    const focus = element.querySelector("g.node.focus")?.getAttribute("data-open")
-    expect(focus).toBe(element.querySelector(".panel h2").textContent.trim().split(/\s+/).find((w) => /_/.test(w)))
+    const pack = element.querySelector('g.gnode[data-sgroup="pack"]')
+    pack.dispatchEvent(new Event("pointerover", { bubbles: true }))
+    const svg = element.querySelector("svg.graph")
+    expect(svg.classList.contains("lit")).toBe(true)
+    expect(nodes("path.edge.on").length).toBe(4)
+    expect(element.querySelector('g.gnode[data-sgroup="cell"]').classList.contains("on")).toBe(true)
+    pack.dispatchEvent(new Event("pointerout", { bubbles: true }))
+    expect(svg.classList.contains("lit")).toBe(false)
+  })
+
+  it("marks a stale result's group and the link it went stale along", () => {
+    handle.change((d) => (d.entries.fuse_model_kA = { kind: "result", unit: "kA", basis: "model", model: { name: "Sim", tolerance: 0, inputs: { pack_V_max: { nominal: 50, dp: 1 } }, value: { nominal: 9, dp: 0 } } }))
+    lens("structure")
+    expect(element.querySelector('g.gnode[data-sgroup="fuse"]').getAttribute("class")).toContain("warn")
+    expect(element.querySelector('g.gnode[data-sgroup="fuse"]').getAttribute("aria-label")).toMatch(/1 stale/)
+    expect(element.querySelector('path.edge.hot[data-u="pack"][data-v="fuse"]')).not.toBeNull()
+    click(element.querySelector('g.gnode[data-sgroup="pack"]'))
+    expect(element.querySelector('g.pill[data-open="pack_V_max"]').getAttribute("class")).toContain("warn")
+    expect(element.querySelector('[data-node="out:fuse"]').getAttribute("class")).toContain("warn")
+  })
+})
+
+describe("the panel's inputs and outputs", () => {
+  it("says an estimate reads nothing, and lists what reads it", () => {
+    lens("entries")
+    for (const button of element.querySelectorAll('tr.group button[aria-expanded="false"]')) click(button)
+    click(element.querySelector('tr[data-id="busbar_R_mOhm"]'))
+    const section = (title) => [...element.querySelectorAll(".panel section")].find((s) => s.querySelector("h3").textContent === title)
+    expect(section("Inputs").textContent).toMatch(/None: an estimate reads no other entry/)
+    expect(section("Outputs").textContent).toMatch(/1 direct · 2 further/)
+    expect([...section("Outputs").querySelectorAll("a.id")].map((a) => a.textContent)).toEqual(["pack_R_mOhm", "pack_I_kA", "fuse_ok"])
+  })
+
+  it("lists a formula's inputs, and how far upstream it rests", () => {
+    lens("entries")
+    for (const button of element.querySelectorAll('tr.group button[aria-expanded="false"]')) click(button)
+    click(element.querySelector('tr[data-id="pack_I_kA"]'))
+    const inputs = [...element.querySelectorAll(".panel section")].find((s) => s.querySelector("h3").textContent === "Inputs")
+    expect([...inputs.querySelectorAll("ul.io a.id")].map((a) => a.textContent)).toEqual(["pack_R_mOhm", "pack_V_max"])
+    expect(inputs.textContent).toMatch(/At the far end it rests on/)
   })
 })
 
@@ -266,42 +360,4 @@ describe("documents are links by name, never bare URLs", () => {
     expect(opened).toBe(source.url)
     expect(event.defaultPrevented).toBe(true)
   })
-})
-
-describe("the layered layout", () => {
-  // Every directed graph on 4 nodes (12 possible edges, 4096 graphs), cycles included.
-  const N = ["a", "b", "c", "d"]
-  const pairs = N.flatMap((u) => N.filter((v) => v !== u).map((v) => [u, v]))
-  it("puts every box in one layer, and every edge one layer per step, left to right unless it closes a cycle", () => {
-    for (let mask = 0; mask < 1 << pairs.length; mask++) {
-      const edges = pairs.filter((_, i) => mask & (1 << i)).map(([u, v]) => ({ u, v, model: false }))
-      const { layers, chains } = layered(N, edges)
-      const layerOf = new Map()
-      layers.forEach((col, l) => col.forEach((item) => {
-        expect(layerOf.has(item.key)).toBe(false)
-        layerOf.set(item.key, l)
-      }))
-      for (const n of N) expect(layerOf.has(n)).toBe(true)
-      expect(chains.length).toBe(edges.length)
-      for (const [i, c] of chains.entries()) {
-        expect([c.keys[0], c.keys.at(-1)]).toEqual([edges[i].u, edges[i].v])
-        const step = c.back ? -1 : 1
-        for (let k = 0; k < c.keys.length - 1; k++) expect(layerOf.get(c.keys[k + 1]) - layerOf.get(c.keys[k])).toBe(step)
-        for (const key of c.keys.slice(1, -1)) expect(key.startsWith("~")).toBe(true)
-      }
-      // Without a cycle no edge is drawn backwards.
-      const acyclic = !hasCycle(N, edges)
-      if (acyclic) expect(chains.some((c) => c.back)).toBe(false)
-    }
-  })
-  function hasCycle(nodes, edges) {
-    const state = new Map()
-    const visit = (n) => {
-      state.set(n, 1)
-      for (const e of edges) if (e.u === n && (state.get(e.v) === 1 || (!state.has(e.v) && visit(e.v)))) return true
-      state.set(n, 2)
-      return false
-    }
-    return nodes.some((n) => !state.has(n) && visit(n))
-  }
 })

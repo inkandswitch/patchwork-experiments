@@ -91,7 +91,7 @@ export const plugins = [
     where: "worker",
     risk: "read",
     description:
-      "Read a register. Always starts with a one-line summary, then people's judgements to answer, then problems with a fix for each. With no filter it lists one line per group; with `prefix` or `ids` it gives each entry's figure line — value with its qualifier and bounds, kind and support (corroborated, supported, weak, none; chosen for decisions), evidence, uses — and its cite string, the exact text to paste into prose. With `detail` it adds sources and quotes, the calculation, what it rests on and feeds, uses and judgements.",
+      "Read a register. Always starts with a one-line summary, then people's judgements to answer, then problems with a fix for each. With no filter it lists one line per group; with `prefix` or `ids` it gives each entry's figure line — value with its qualifier and bounds, kind and support (corroborated, supported, weak, none; chosen for decisions), evidence, uses — and its cite string, the exact text to paste into prose. With `detail` it adds sources and quotes, the calculation, its inputs and outputs, uses and judgements. With `structure` it gives the register's structure: the map of groups, one group's entries, or one entry's inputs and outputs.",
     input_schema: {
       type: "object",
       required: ["register"],
@@ -99,8 +99,9 @@ export const plugins = [
         register: REGISTER,
         ids: { type: "array", items: { type: "string" }, description: "Only these entry ids." },
         prefix: { type: "string", description: "Only ids starting with this, e.g. 'cell_'." },
-        detail: { type: "boolean", description: "With `ids`: the full basis (claims, quotes and how they were read; the formula with values in), what it rests on and feeds, its uses and judgements." },
+        detail: { type: "boolean", description: "With `ids`: the full basis (claims, quotes and how they were read; the formula with values in), its inputs and outputs, its uses and judgements." },
         page: { type: "number", description: "Which page of 40 entries, from 1." },
+        structure: { type: "string", description: "The register's structure instead of its entries, as the Structure lens draws it. \"all\": the map of groups (an id's first word) in flow order, what each reads and how many links, and the stale paths. A group's name (\"pack\"): its entries, given and computed, what each reads and what reads it. An entry's id: its inputs and outputs." },
       },
     },
     async load() {

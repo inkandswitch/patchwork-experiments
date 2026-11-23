@@ -14,6 +14,7 @@
 
 import { render } from "./formula.js"
 import { groupOf, intendedUse, sortProblems } from "./register.js"
+import { entryIO, groupGraph, groupMap, inputsOf } from "./structure.js"
 import { RANK } from "./support.js"
 import { observedUse } from "./uses.js"
 import { useCounts, usesOf } from "./where.js"
@@ -302,11 +303,8 @@ export function detailText(id, doc, evaluation, problems) {
     }
   }
 
-  lines.push("  RESTS ON AND FEEDS")
-  const leaves = [...(ev.leaves ?? [])].filter((l) => l !== id).sort((a, b) => RANK[evaluation.byId.get(a)?.support?.level ?? "weak"] - RANK[evaluation.byId.get(b)?.support?.level ?? "weak"] || (a < b ? -1 : 1))
-  if (leaves.length) lines.push(`    rests on: ${leaves.map((l) => `${l} (${evaluation.byId.get(l)?.support?.level ?? "?"})`).join(", ")}`)
-  const feeds = [...(evaluation.readers.get(id) ?? [])].filter((r) => r !== id).sort()
-  lines.push(`    feeds: ${feeds.length ? feeds.join(", ") : "nothing in the register"}`)
+  lines.push("  INPUTS AND OUTPUTS")
+  lines.push(...ioLines(id, doc, evaluation).map((l) => `    ${l}`))
 
   lines.push("  USED IN")
   const uses = usesOf(doc.scan, id)
@@ -323,6 +321,116 @@ export function detailText(id, doc, evaluation, problems) {
     if (j.answer) lines.push(`      answered: "${j.answer.says}"`)
   }
   lines.push("    history: the register's document history (who changed it, when, and why)")
+  return lines.join("\n")
+}
+
+// ---------------------------------------------------------------- structure
+
+const BASIS_WORDS = { claims: "sourced", estimate: "estimated", choice: "decided", unknown: "unknown", formula: "calculated", model: "computed by a model", check: "requirements" }
+const BASIS_ORDER = ["claims", "estimate", "choice", "unknown", "formula", "model", "check"]
+
+/** An entry's value in words: a requirement's outcome, else its value and unit. */
+export function valueText(id, doc, evaluation) {
+  const entry = doc.entries?.[id]
+  const ev = evaluation.byId.get(id)
+  if (!entry || !ev) return "?"
+  if (entry.basis === "check") return { fails: "FAILS", depends: "DEPENDS", holds: "holds", broken: "BROKEN" }[ev.outcome?.result] ?? ev.outcome?.result ?? "?"
+  return formatValue(ev.value, entry.unit)
+}
+
+/** Why a result is stale, in words: "cable_ampacity_A moved, pack_I_cont_A stale". */
+export function staleText(stale) {
+  return (stale ?? []).map((s) => (s.reason === "moved" ? `${s.input} moved` : `${s.input} ${s.reason}`)).join(", ")
+}
+
+/** What an entry is when it reads nothing. */
+export function readsNothingText(entry) {
+  return `${{ claims: "a sourced value", estimate: "an estimate", choice: "a decision", unknown: "an unknown", model: "a model result with no recorded inputs" }[entry?.basis] ?? "it"} reads no other entry`
+}
+
+/** An entry's inputs and outputs, a line each, as the panel shows them. */
+export function ioLines(id, doc, evaluation, inputs = inputsOf(doc, evaluation)) {
+  const io = entryIO(doc, evaluation, id, inputs)
+  if (!io) return [`no entry ${id}`]
+  const entry = doc.entries[id]
+  const ev = evaluation.byId.get(id)
+  const lines = []
+  if (!io.inputs.length) lines.push(`inputs: none: ${readsNothingText(entry)}`)
+  else {
+    lines.push(`inputs (${io.inputs.length}):`)
+    for (const i of io.inputs) {
+      const ran = i.ranWith ? ` · ran with ${formatValue(i.ranWith, doc.entries[i.id]?.unit)}` : ""
+      lines.push(`  ${i.id} = ${valueText(i.id, doc, evaluation)}${ran}${i.stale ? ` · ${i.stale === "moved" ? "MOVED since the run" : i.stale.toUpperCase()}` : ""}`)
+    }
+  }
+  const leaves = [...(ev.leaves ?? [])].filter((l) => l !== id).sort((a, b) => RANK[evaluation.byId.get(a)?.support?.level ?? "weak"] - RANK[evaluation.byId.get(b)?.support?.level ?? "weak"] || (a < b ? -1 : 1))
+  if (leaves.length) lines.push(`rests on: ${leaves.map((l) => `${l} (${evaluation.byId.get(l)?.support?.level ?? "?"})`).join(", ")}`)
+  if (!io.outputs.length) lines.push("outputs: nothing in the register reads it")
+  else {
+    lines.push(`outputs (${io.outputs.length} direct, ${io.further.length} further):`)
+    for (const o of io.outputs) lines.push(`  ${o.id} = ${valueText(o.id, doc, evaluation)}${o.stale ? ` · STALE: ${staleText(o.stale)}` : ""}`)
+    if (io.further.length) lines.push(`  further: ${io.further.slice(0, 20).join(", ")}${io.further.length > 20 ? ` …and ${io.further.length - 20} more` : ""}`)
+  }
+  return lines
+}
+
+/**
+ * The register's structure in words, as the Structure lens draws it: with no
+ * target the map of groups, in flow order; a group's name for its entries
+ * between the groups they read and the groups that read them; an entry's id
+ * for its inputs and outputs.
+ */
+export function structureText(doc, evaluation, target = "") {
+  const entries = doc.entries ?? {}
+  const t = String(target ?? "").trim()
+  const map = groupMap(doc, evaluation)
+  if (t && t !== "all" && entries[t]) return [`STRUCTURE OF ${t} = ${valueText(t, doc, evaluation)} (group ${groupOf(t)})`, ...ioLines(t, doc, evaluation).map((l) => `  ${l}`)].join("\n")
+  if (t && t !== "all" && !map.groups.has(t)) return `No group or entry "${t}". Groups: ${[...map.groups.keys()].join(", ")}.`
+  const counted = (pairs) => pairs.map(([name, n]) => `${name} ${n}`).join(", ")
+  if (t && t !== "all") {
+    const g = groupGraph(doc, evaluation, t)
+    const reads = map.links.filter((l) => l.to === t).sort((a, b) => b.n - a.n)
+    const readBy = map.links.filter((l) => l.from === t).sort((a, b) => b.n - a.n)
+    const inputs = inputsOf(doc, evaluation)
+    const lines = [`STRUCTURE OF GROUP ${t}: ${g.ids.length} entries · reads ${reads.length ? counted(reads.map((l) => [l.from, l.n])) : "no other group"} · read by ${readBy.length ? counted(readBy.map((l) => [l.to, l.n])) : "no other group"}`]
+    const outside = (id) => {
+      const by = new Map()
+      for (const r of evaluation.readers.get(id) ?? []) if (entries[r] && groupOf(r) !== t) by.set(groupOf(r), (by.get(groupOf(r)) ?? 0) + 1)
+      return [...by].sort((a, b) => b[1] - a[1])
+    }
+    const line = (id) => {
+      const ev = evaluation.byId.get(id)
+      const ins = [...inputs.get(id)]
+      const inside = [...(evaluation.readers.get(id) ?? [])].filter((r) => r !== id && entries[r] && groupOf(r) === t)
+      const out = outside(id)
+      const flags = [ev.stale ? `STALE: ${staleText(ev.stale)}` : null, g.moved.has(id) ? "MOVED since a result read it" : null].filter(Boolean)
+      return `  ${id} = ${valueText(id, doc, evaluation)}${flags.length ? ` · ${flags.join(" · ")}` : ""}${ins.length ? ` · reads ${ins.sort().join(", ")}` : ""}${inside.length ? ` · read by ${inside.length} in ${t}` : ""}${out.length ? ` · and by ${counted(out)}` : ""}`
+    }
+    if (g.given.length) lines.push(`GIVEN (${g.given.length}): values that read no other entry`, ...g.given.map(line))
+    if (g.computed.length) lines.push(`COMPUTED (${g.computed.length}): values a formula, check or model makes from others`, ...g.computed.map(line))
+    if (g.unread.length) lines.push(`READ BY NOTHING AND READING NOTHING (${g.unread.length}): ${g.unread.join(", ")}`)
+    lines.push("", "One entry's inputs and outputs: `structure` with its id. The whole map: `structure: \"all\"`.")
+    return lines.join("\n")
+  }
+  const inside = [...map.groups.values()].reduce((s, g) => s + g.inside, 0)
+  const lines = [`STRUCTURE: ${map.groups.size} groups (an id's first word), ${map.total} links between entries, ${inside} of them inside a group. Groups in flow order: each comes after the groups it reads.`]
+  for (const name of map.order) {
+    const g = map.groups.get(name)
+    const kinds = BASIS_ORDER.filter((b) => g.basis[b]).map((b) => `${g.basis[b]} ${BASIS_WORDS[b]}`).join(", ")
+    const reads = map.links.filter((l) => l.to === name).sort((a, b) => b.n - a.n)
+    lines.push(`  ${name} ${g.ids.length} (${kinds})${g.stale ? ` · ${g.stale} STALE` : ""}${reads.length ? ` · reads ${counted(reads.map((l) => [l.from, l.n]))}` : " · reads no other group"}`)
+  }
+  const hot = map.links.filter((l) => l.stale)
+  if (hot.length) {
+    lines.push("STALE PATHS (a result went stale along each):")
+    for (const l of hot) {
+      const why = []
+      for (const id of map.groups.get(l.to).ids) for (const s of evaluation.byId.get(id)?.stale ?? []) if (groupOf(s.input) === l.from) why.push(`${id} (${staleText([s])})`)
+      lines.push(`  ${l.from} → ${l.to}: ${why.join(", ")}`)
+    }
+  }
+  if (map.loose.length) lines.push(`NOT LINKED TO ANY OTHER GROUP: ${map.loose.map((n) => `${n} ${map.groups.get(n).ids.length}`).join(", ")}`)
+  lines.push("", "One group's entries: `structure` with its name (\"pack\"). One entry's inputs and outputs: `structure` with its id.")
   return lines.join("\n")
 }
 

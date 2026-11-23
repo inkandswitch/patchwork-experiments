@@ -225,3 +225,47 @@ describe("check and where", () => {
     expect(exported).toMatch(/^bms_part = "REC 2Q"/m)
   })
 })
+
+describe("read with structure", () => {
+  async function wired() {
+    const register = await newRegister()
+    await set.execute(
+      {
+        register,
+        entries: [
+          { id: "cell_V", unit: "V", estimate: { value: { nominal: 3.2, min: 3.1, max: 3.3 }, reasoning: "LFP" } },
+          { id: "cell_n", kind: "decision", choice: { value: 16 } },
+          { id: "pack_V", unit: "V", formula: "cell_V * cell_n" },
+          { id: "pack_A", unit: "A", estimate: { value: { nominal: 100, min: 90, max: 110 }, reasoning: "motor" } },
+          { id: "fuse_ok", check: "pack_V <= 60" },
+          { id: "bms_note", estimate: { value: 1, reasoning: "spare" } },
+        ],
+      },
+      ctx,
+    )
+    return register
+  }
+
+  it("gives the map of groups in flow order, with what each reads, and the groups linked to nothing", async () => {
+    const out = await read.execute({ register: await wired(), structure: "all" }, ctx)
+    expect(out).toMatch(/^STRUCTURE: 4 groups \(an id's first word\), 3 links between entries, 0 of them inside a group/)
+    const lines = out.split("\n")
+    const at = (g) => lines.findIndex((l) => l.startsWith(`  ${g} `))
+    expect(at("cell")).toBeLessThan(at("pack"))
+    expect(at("pack")).toBeLessThan(at("fuse"))
+    expect(lines[at("pack")]).toBe("  pack 2 (1 estimated, 1 calculated) · reads cell 2")
+    expect(out).toMatch(/NOT LINKED TO ANY OTHER GROUP: bms 1/)
+  })
+
+  it("gives one group's entries, given and computed, and one entry's inputs and outputs", async () => {
+    const register = await wired()
+    const group = await read.execute({ register, structure: "pack" }, ctx)
+    expect(group).toMatch(/^STRUCTURE OF GROUP pack: 2 entries · reads cell 2 · read by fuse 1/)
+    expect(group).toMatch(/COMPUTED \(1\)[^\n]*\n  pack_V = [^\n]* · reads cell_V, cell_n · and by fuse 1/)
+    expect(group).toMatch(/READ BY NOTHING AND READING NOTHING \(1\): pack_A/)
+    const entry = await read.execute({ register, structure: "cell_V" }, ctx)
+    expect(entry).toMatch(/inputs: none: an estimate reads no other entry/)
+    expect(entry).toMatch(/outputs \(1 direct, 1 further\):\n\s+pack_V = [^\n]*\n\s+further: fuse_ok/)
+    expect(await read.execute({ register, structure: "nope" }, ctx)).toMatch(/No group or entry "nope". Groups: bms, cell, fuse, pack/)
+  })
+})

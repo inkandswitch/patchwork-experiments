@@ -7,10 +7,12 @@
  *                     rows in calculation order; groups with problems open
  *   Requirements      every check on one scale, the share of its limit it
  *                     uses, worst first
+ *   Structure         the map of groups, one group's entries, one entry's
+ *                     inputs and outputs (structure.js)
  *
- * The panel answers the five questions about the entry it shows: its value,
- * its basis (claims with quotes in context, or the calculation), what it
- * rests on and feeds, where it is used, and what people have said. Ids are
+ * The panel answers the questions about the entry it shows: its value, its
+ * basis (claims with quotes in context, or the calculation), its inputs and
+ * outputs, where it is used, and what people have said. Ids are
  * links; following one pushes the panel, and the breadcrumb is the line of
  * inquiry. People add claims and judgements here; nobody approves anything.
  *
@@ -26,7 +28,8 @@ import { morph } from "./morph.js"
 import { checkClaim } from "./quote.js"
 import { evaluate, groupOf, intendedUse, materialize, peoplesMarks } from "./register.js"
 import { RANK, SET_ASIDE, SOURCE_KINDS } from "./support.js"
-import { allProblems, confidenceText, entryParts, groupLine, restsOnText, sheetOrder, summaryLine } from "./text.js"
+import { entryIO, groupGraph, groupMap, inputsOf, layered, placeLayered, staleLinks } from "./structure.js"
+import { allProblems, confidenceText, entryParts, groupLine, readsNothingText, restsOnText, sheetOrder, staleText, summaryLine, valueText } from "./text.js"
 import { observedUse, scanProblems } from "./uses.js"
 import { formatBounds, formatValue, isNumeric, parseValue } from "./values.js"
 import { sourceText, useCounts, usesOf } from "./where.js"
@@ -38,6 +41,8 @@ const LENSES = [
   ["structure", "Structure"],
 ]
 const NAME_KEY = "assumptions:name"
+/** Bases in ring order, with what each says about how a value is known. */
+const BASIS_KEYS = [["claims", "sourced"], ["estimate", "estimated"], ["choice", "decided"], ["model", "computed by a model"], ["formula", "calculated"], ["check", "requirements"], ["unknown", "unknown"]]
 const DOC_URL = /automerge:[1-9A-HJ-NP-Za-km-z]+(?:#[1-9A-HJ-NP-Za-km-z|]+)?/g
 const MEMO = ["value", "support", "derived", "confidence", "outcome", "stale", "broken"]
 
@@ -83,7 +88,7 @@ function definition(entry) {
 export function AssumptionsView(handle, element, options = {}) {
   // Patchwork hands a tool its repo on the element; window.repo is the older way.
   const repo = options.repo ?? element.repo ?? globalThis.repo ?? null
-  const state = { lens: "attention", stack: [], at: -1, q: "", support: "", kind: "", open: new Set(), closed: new Set(), form: null, error: null, preview: null, history: null, cursor: null }
+  const state = { lens: "attention", stack: [], at: -1, q: "", support: "", kind: "", open: new Set(), closed: new Set(), form: null, error: null, preview: null, history: null, cursor: null, structure: { group: null, entry: null, unread: false } }
   const style = h("style")
   style.textContent = CSS
   const root = h("div", { class: "asm", tabindex: "-1" })
@@ -384,150 +389,238 @@ export function AssumptionsView(handle, element, options = {}) {
   // ------------------------------------------------------------ structure
 
   /**
-   * What an entry rests on and what it feeds, drawn left to right: inputs in
-   * the first columns, the entry, then what reads it. Solid edges are formula
-   * and check inputs (always current); dashed edges are a model's inputs,
-   * recorded when it ran, which can go stale. Every box says its id, value,
-   * kind and basis in words, and opens its entry — which re-centres the graph.
+   * The register's structure at three depths, with a breadcrumb between them:
+   *
+   *   All groups   every group (an id's first word), inputs on the left and
+   *                outputs on the right. The ring says how the group's values
+   *                are known; a line's width, how many entries one group reads
+   *                from another; amber, a stale result and the link it went
+   *                stale along. Dashed lines are read against the flow.
+   *   a group      its entries between the groups they read and the groups
+   *                that read them; entries linked to nothing fold into a line
+   *   an entry     what it reads and what reads it, two steps each way
+   *
+   * Pointing at a node lights its links. Every node is a link with its figure
+   * in words. assumptions_read with `structure` writes the same three views.
    */
   function structureLens() {
-    const ids = Object.keys(doc.entries)
-    const inputsOf = new Map(ids.map((id) => [id, new Set()]))
-    for (const [input, readers] of evaluation.readers) for (const r of readers) if (r !== input) inputsOf.get(r)?.add(input)
-    const focus = doc.entries[state.stack[state.at]] ? state.stack[state.at] : defaultFocus(inputsOf)
-    if (!focus) return [h("p", { class: "quiet" }, "No entries yet.")]
+    if (!Object.keys(doc.entries).length) return [h("p", { class: "quiet" }, "No entries yet.")]
+    const s = state.structure
+    if (s.entry && !doc.entries[s.entry]) s.entry = null
+    if (s.group && !Object.keys(doc.entries).some((id) => groupOf(id) === s.group)) s.group = null
+    const crumbs = h(
+      "nav",
+      { class: "crumbs structure-crumbs", "aria-label": "structure" },
+      s.group || s.entry ? h("a", { href: "#", "data-structure": "map" }, "All groups") : h("strong", {}, "All groups"),
+      s.group ? [" › ", s.entry ? h("a", { href: "#", "data-structure": "group" }, s.group) : h("strong", {}, s.group)] : null,
+      s.entry ? [" › ", h("strong", {}, s.entry)] : null,
+    )
+    if (s.entry) return [crumbs, ...entryGraph(s.entry)]
+    if (s.group) return [crumbs, ...groupView(s.group)]
+    return [crumbs, ...mapView()]
+  }
 
-    const closure = (next) => {
-      const seen = new Set()
-      const todo = [focus]
-      while (todo.length) for (const n of next(todo.pop())) if (n !== focus && !seen.has(n)) seen.add(n), todo.push(n)
-      return seen
-    }
-    const up = closure((n) => inputsOf.get(n) ?? [])
-    const down = closure((n) => evaluation.readers.get(n) ?? [])
-    const nodes = [focus, ...new Set([...up, ...down])]
-    const inGraph = new Set(nodes)
-    const edges = []
-    for (const v of nodes) for (const u of inputsOf.get(v) ?? []) if (inGraph.has(u)) edges.push({ u, v, model: doc.entries[v].basis === "model" })
+  const kindsText = (g) => BASIS_KEYS.filter(([b]) => g.basis[b]).map(([b, words]) => `${g.basis[b]} ${words}`).join(", ")
 
-    const layout = layered(nodes, edges)
-    const W = 216, H = 58, GAP = 56, SLOT = 14, PAD = 8
-    const ns = "http://www.w3.org/2000/svg"
-    const el = (tag, attrs = {}, ...kids) => {
-      const n = document.createElementNS(ns, tag)
-      for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, String(v))
-      for (const k of kids.flat()) if (k != null) n.append(typeof k === "string" ? document.createTextNode(k) : k)
-      return n
+  /** A group as a ring of its entries' bases, with its count inside. */
+  function donut(cx, cy, r, g, total) {
+    const out = []
+    let a = 0
+    const arc = (a0, a1) => {
+      const p = (t) => [cx + r * Math.sin(t), cy - r * Math.cos(t)]
+      const [x0, y0] = p(a0), [x1, y1] = p(a1)
+      return `M${x0.toFixed(1)} ${y0.toFixed(1)}A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`
     }
-    // Columns are stacked top-down and centred on the tallest.
-    const heightOf = (item) => (item.virtual ? SLOT : H)
-    const colHeights = layout.layers.map((col) => col.reduce((sum, item, i) => sum + heightOf(item) + (i ? 12 : 0), 0))
-    const tallest = Math.max(...colHeights)
-    const pos = new Map()
-    layout.layers.forEach((col, li) => {
-      let y = PAD + (tallest - colHeights[li]) / 2
-      for (const item of col) {
-        pos.set(item.key, { x: PAD + li * (W + GAP), y, h: heightOf(item), virtual: item.virtual })
-        y += heightOf(item) + 12
-      }
-    })
-    const width = PAD * 2 + layout.layers.length * W + (layout.layers.length - 1) * GAP
-    const height = PAD * 2 + tallest
-    const svg = el("svg", { class: "graph", width, height, viewBox: `0 0 ${width} ${height}`, role: "group", "aria-label": `structure of ${focus}` })
-    svg.append(el("defs", {}, el("marker", { id: "asm-arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" }, el("path", { d: "M0 0L10 5L0 10z", class: "arrowhead" }))))
+    for (const [b] of BASIS_KEYS) {
+      const k = g.basis[b]
+      if (!k) continue
+      const a1 = a + (k / total) * Math.PI * 2
+      const d = k === total ? `${arc(0, Math.PI)}${arc(Math.PI, Math.PI * 2 - 1e-4).replace(/^M[^A]*/, "")}` : arc(a + 0.04, a1 - 0.04)
+      out.push(el("path", { d, class: `ring b-${b}` }))
+      a = a1
+    }
+    return out
+  }
 
-    // Edges: each chain of segments leaves a box's right side and enters the next one's left,
-    // at ports spread down the box so edges into one box stay apart.
-    const outs = new Map(), ins = new Map()
-    for (const chain of layout.chains) {
-      for (let i = 0; i < chain.keys.length - 1; i++) {
-        const a = chain.keys[i], b = chain.keys[i + 1]
-        if (!outs.has(a)) outs.set(a, [])
-        if (!ins.has(b)) ins.set(b, [])
-        outs.get(a).push({ chain, i, other: b })
-        ins.get(b).push({ chain, i, other: a })
-      }
+  function mapView() {
+    const map = groupMap(doc, evaluation)
+    const inside = [...map.groups.values()].reduce((sum, g) => sum + g.inside, 0)
+    const loose = map.loose.length
+      ? h("p", { class: "quiet" }, "Not linked to any other group: ", map.loose.map((name, i) => [i ? " · " : "", h("a", { href: "#", "data-sgroup": name }, name), ` ${map.groups.get(name).ids.length}`]))
+      : null
+    const head = h("p", { class: "structure-head" }, `${map.groups.size} groups, named by the first word of their ids · ${map.total} links between entries, ${inside} inside a group. Inputs on the left, outputs on the right; open a group to see its entries.`)
+    if (!map.linked.length) return [head, h("p", { class: "quiet" }, "No group reads another yet."), loose]
+    const radius = (n) => 7 + Math.sqrt(n) * 1.25
+    const size = (name) => {
+      const g = map.groups.get(name)
+      const r = radius(g.ids.length)
+      const w = Math.max(2 * r + 14, name.length * 7.2 + 8)
+      return { w, h: 2 * r + 30 + (g.stale ? 14 : 0), portY: r + 6, inX: w / 2 - r - 8, outX: w / 2 + r + 6 }
     }
-    const port = (map, key, chain, i, side) => {
-      const p = pos.get(key)
-      if (p.virtual) return p.y + p.h / 2
-      const list = (map.get(key) ?? []).slice().sort((x, y) => pos.get(x.other).y - pos.get(y.other).y)
-      const at = list.findIndex((e) => e.chain === chain && e.i === i)
-      return p.y + ((at + 1) * p.h) / (list.length + 1)
-    }
-    const edgeLayer = el("g", { class: "edges" })
-    for (const chain of layout.chains) {
-      let d = ""
-      for (let i = 0; i < chain.keys.length - 1; i++) {
-        const a = pos.get(chain.keys[i]), b = pos.get(chain.keys[i + 1])
-        const y1 = port(outs, chain.keys[i], chain, i, "out")
-        const y2 = port(ins, chain.keys[i + 1], chain, i, "in")
-        const x1 = a.x + W, x2 = b.x, mid = x1 + GAP / 2
-        d += `${i ? "" : `M${x1} ${y1}`}H${mid}V${y2}H${x2}`
-        if (i < chain.keys.length - 2) d += `H${b.x + W}` // through a virtual slot
-      }
-      edgeLayer.append(el("path", { d, class: `edge${chain.model ? " model" : ""}${chain.back ? " back" : ""}`, "marker-end": "url(#asm-arrow)" }))
-    }
-    svg.append(edgeLayer)
-
-    const clip = (text, chars) => (text.length > chars ? `${text.slice(0, chars - 1)}…` : text)
-    for (const id of nodes) {
-      const p = pos.get(id)
-      const entry = doc.entries[id]
-      const ev = evaluation.byId.get(id)
-      const o = ev.outcome
-      const flags = problems.filter((pr) => pr.id === id).map((pr) => pr.kind)
-      const outcome = entry.basis === "check" ? o?.result ?? "?" : null
-      const valueText = entry.basis === "check" ? `${outcome === "fails" ? "FAILS" : outcome === "depends" ? "DEPENDS" : outcome}` : formatValue(ev.value, entry.unit)
-      const meta = `${{ corroborated: "●", supported: "◐", weak: "○", none: "◌", chosen: "◆" }[levelOf(ev)] ?? ""} ${entry.kind} · ${entry.basis}`.trim()
-      const flag = flags.find((f) => f !== "FAILS" && f !== "DEPENDS")
-      const cls = ["node", id === focus ? "focus" : null, outcome === "fails" || flags.includes("FAILS") ? "fails" : outcome === "depends" || flag ? "warn" : null].filter(Boolean).join(" ")
-      const label = figureLabel(id, entry, ev, valueText, meta, flag)
-      svg.append(
-        el(
+    const placed = placeLayered(map.layout, map.edges, size, { gap: 30, vgap: 10, slot: 8 })
+    const svg = drawGraph(placed, {
+      label: "the register's groups, inputs on the left, outputs on the right",
+      edge: ({ edge, chain }) => ({ cls: [edge.flipped !== chain.back ? "back" : null, edge.link.stale ? "hot" : null], width: Math.min(6, 0.9 + edge.link.n * 0.26), from: edge.link.from, to: edge.link.to, hot: edge.link.stale, flipped: edge.flipped }),
+      node: (name, box) => {
+        const g = map.groups.get(name)
+        const r = radius(g.ids.length)
+        const cx = box.x + box.w / 2, cy = box.y + r + 6
+        const label = `${name}: ${g.ids.length} entries (${kindsText(g)})${g.stale ? `, ${g.stale} stale` : ""}`
+        return el(
           "g",
-          { class: cls, "data-open": id, "data-id": id, role: "link", tabindex: "0", "aria-label": label },
+          { class: `gnode${g.stale ? " warn" : ""}`, "data-sgroup": name, "data-node": name, role: "link", tabindex: "0", "aria-label": label },
+          el("title", {}, label),
+          el("rect", { x: box.x, y: box.y, width: box.w, height: box.h, class: "hit" }),
+          g.stale ? el("circle", { cx, cy, r: r + 5, class: "stale-ring" }) : null,
+          donut(cx, cy, r, g, g.ids.length),
+          el("text", { x: cx, y: cy + 4, class: "g-count" }, String(g.ids.length)),
+          el("text", { x: cx, y: cy + r + 15, class: "g-name" }, name),
+          g.stale ? el("text", { x: cx, y: cy + r + 28, class: "g-stale" }, `${g.stale} STALE`) : null,
+        )
+      },
+    })
+    return [head, basisLegend("line width = how many entries one group reads from another · dashed = read against the flow · amber = a stale result and the link it went stale along"), h("div", { class: "graph-wrap", "data-key": "graph:map" }, svg), loose]
+  }
+
+  function basisLegend(rest) {
+    return h("p", { class: "quiet legend" }, BASIS_KEYS.slice(0, 4).map(([b, words]) => h("span", { class: `key b-${b}` }, words)), ` · ${rest}`)
+  }
+
+  function groupView(name) {
+    const g = groupGraph(doc, evaluation, name)
+    const stale = g.ids.filter((id) => evaluation.byId.get(id)?.stale).length
+    const head = h("p", { class: "structure-head" }, `${name}: ${g.ids.length} entries · ${g.given.length} given, ${g.computed.length} computed${stale ? ` · ${stale} STALE` : ""}. The groups they read on the left, the groups that read them on the right.`)
+    const unread = g.unread.length
+      ? h(
+          "div",
+          { class: "unread", "data-key": `unread:${name}` },
+          h("p", {}, `${g.unread.length} ${g.unread.length === 1 ? "entry reads" : "entries read"} nothing and nothing reads ${g.unread.length === 1 ? "it" : "them"}. `, h("button", { type: "button", class: "link", "data-show-unread": "1" }, state.structure.unread ? "Hide them" : "Show them")),
+          state.structure.unread ? h("p", {}, g.unread.map((id, i) => [i ? ", " : "", idLink(id)])) : null,
+        )
+      : null
+    if (!g.nodes.length) return [head, unread]
+    const prefix = `${name}_`
+    const short = (id) => (id.startsWith(prefix) ? id.slice(prefix.length) : id)
+    const end = (key) => key.slice(key.indexOf(":") + 1)
+    const size = (key) => {
+      const r = 9
+      if (key.startsWith("in:")) {
+        const w = Math.max(2 * r + 14, end(key).length * 7.2 + 8)
+        return { w, h: 2 * r + 30, portY: r + 6, inX: w / 2 - r - 6, outX: w / 2 + r + 6 }
+      }
+      if (key.startsWith("out:")) return { w: 2 * r + 18 + end(key).length * 7.2, h: 2 * r + 12, portY: r + 6, inX: 0, outX: 2 * r + 8 }
+      const v = valueText(key, doc, evaluation)
+      return { w: Math.min(280, Math.max(140, short(key).length * 6.8 + v.length * 6.4 + 30)), h: 22 }
+    }
+    const map = groupMap(doc, evaluation)
+    const hotEnd = new Set(g.edges.filter((e) => e.stale).flatMap((e) => [e.u, e.v]).filter((k) => k.includes(":")))
+    const placed = placeLayered(g.layout, g.edges, size, { gap: 48, vgap: 8, slot: 8 })
+    const svg = drawGraph(placed, {
+      label: `the entries of ${name}, between the groups they read and the groups that read them`,
+      edge: ({ edge, chain }) => ({ cls: [chain.back ? "back" : null, edge.stale ? "hot" : null], width: edge.u.includes(":") || edge.v.includes(":") ? Math.min(4, 1 + (edge.n - 1) * 0.4) : 1.1, from: edge.u, to: edge.v, hot: edge.stale }),
+      node: (key, box) => {
+        if (key.includes(":")) {
+          const other = end(key)
+          const og = map.groups.get(other)
+          const r = 9
+          const out = key.startsWith("out:")
+          const cx = out ? box.x + r + 4 : box.x + box.w / 2, cy = box.y + r + 6
+          const n = g.edges.filter((e) => e.u === key || e.v === key).reduce((sum, e) => sum + e.n, 0)
+          const label = `${other}: ${out ? `reads ${n} of ${name}'s entries` : `${n} of ${name}'s entries read it`}`
+          return el(
+            "g",
+            { class: `gnode end${hotEnd.has(key) ? " warn" : ""}`, "data-sgroup": other, "data-node": key, role: "link", tabindex: "0", "aria-label": label },
+            el("title", {}, label),
+            el("rect", { x: box.x, y: box.y, width: box.w, height: box.h, class: "hit" }),
+            hotEnd.has(key) ? el("circle", { cx, cy, r: r + 4, class: "stale-ring" }) : null,
+            donut(cx, cy, r, og, og.ids.length),
+            out ? el("text", { x: cx + r + 8, y: cy + 4, class: "g-name start" }, other) : el("text", { x: cx, y: cy + r + 15, class: "g-name" }, other),
+          )
+        }
+        const entry = doc.entries[key]
+        const ev = evaluation.byId.get(key)
+        const v = valueText(key, doc, evaluation)
+        const warn = ev.stale || g.moved.has(key)
+        const fails = entry.basis === "check" && ev.outcome?.result === "fails"
+        const room = Math.floor((box.w - v.length * 6.4 - 26) / 6.8)
+        const nm = short(key)
+        const label = `${figureLabel(key, entry, ev, v, `${entry.kind} · ${entry.basis}`, null)}${ev.stale ? ` · STALE: ${staleText(ev.stale)}` : g.moved.has(key) ? " · moved since a result read it" : ""}`
+        return el(
+          "g",
+          { class: ["node", "pill", key === state.stack[state.at] ? "focus" : null, fails ? "fails" : warn ? "warn" : null].filter(Boolean).join(" "), "data-open": key, "data-id": key, "data-node": key, role: "link", tabindex: "0", "aria-label": label },
+          el("title", {}, label),
+          el("rect", { x: box.x, y: box.y, width: box.w, height: box.h, rx: 6, class: "box" }),
+          el("text", { x: box.x + 8, y: box.y + 15, class: "p-id" }, nm.length > room ? `${nm.slice(0, Math.max(1, room - 1))}…` : nm),
+          el("text", { x: box.x + box.w - 8, y: box.y + 15, class: `p-val${fails ? " fail" : ""}` }, v),
+        )
+      },
+    })
+    return [head, basisLegend("amber = a stale result, an input that moved under one, or the line it went stale along"), h("div", { class: "graph-wrap", "data-key": `graph:group:${name}` }, svg), unread]
+  }
+
+  /** One entry, what it reads and what reads it, two steps each way. */
+  function entryGraph(focus) {
+    const inputs = inputsOf(doc, evaluation)
+    const reach = (next, limit) => {
+      const depth = new Map([[focus, 0]])
+      const todo = [focus]
+      while (todo.length) {
+        const n = todo.shift()
+        for (const m of next(n)) if (!depth.has(m) && doc.entries[m]) depth.set(m, depth.get(n) + 1), todo.push(m)
+      }
+      depth.delete(focus)
+      const near = [...depth].filter(([, d]) => d <= limit).map(([m]) => m)
+      return { near, further: depth.size - near.length }
+    }
+    const readersOf = (n) => [...(evaluation.readers.get(n) ?? [])].filter((r) => r !== n)
+    const up = reach((n) => inputs.get(n) ?? [], 2)
+    const down = reach(readersOf, 2)
+    const nodes = [focus, ...new Set([...up.near, ...down.near])]
+    const inGraph = new Set(nodes)
+    const hot = staleLinks(evaluation)
+    const edges = []
+    for (const v of nodes) for (const u of inputs.get(v) ?? []) if (inGraph.has(u)) edges.push({ u, v, model: doc.entries[v].basis === "model", stale: hot.has(`${u}>${v}`) })
+    const layout = layered(nodes, edges)
+    const W = 216, H = 58
+    const placed = placeLayered(layout, edges, () => ({ w: W, h: H, spread: true }), { gap: 56, vgap: 12, slot: 14 })
+    const clip = (text, chars) => (text.length > chars ? `${text.slice(0, chars - 1)}…` : text)
+    const svg = drawGraph(placed, {
+      label: `inputs and outputs of ${focus}`,
+      edge: ({ edge, chain }) => ({ cls: [edge.model ? "model" : null, chain.back ? "back" : null, edge.stale ? "hot" : null], width: 1.25, from: edge.u, to: edge.v, hot: edge.stale }),
+      node: (id, p) => {
+        const entry = doc.entries[id]
+        const ev = evaluation.byId.get(id)
+        const o = ev.outcome
+        const flags = problems.filter((pr) => pr.id === id).map((pr) => pr.kind)
+        const outcome = entry.basis === "check" ? o?.result ?? "?" : null
+        const valueStr = valueText(id, doc, evaluation)
+        const meta = `${{ corroborated: "●", supported: "◐", weak: "○", none: "◌", chosen: "◆" }[levelOf(ev)] ?? ""} ${entry.kind} · ${entry.basis}`.trim()
+        const flag = flags.find((f) => f !== "FAILS" && f !== "DEPENDS")
+        const cls = ["node", id === focus ? "focus" : null, outcome === "fails" || flags.includes("FAILS") ? "fails" : outcome === "depends" || flag ? "warn" : null].filter(Boolean).join(" ")
+        const label = figureLabel(id, entry, ev, valueStr, meta, flag)
+        return el(
+          "g",
+          { class: cls, "data-open": id, "data-id": id, "data-node": id, role: "link", tabindex: "0", "aria-label": label },
           el("title", {}, label),
           el("rect", { x: p.x, y: p.y, width: W, height: H, rx: 7, class: "box" }),
           el("text", { x: p.x + 10, y: p.y + 17, class: "g-id" }, clip(id, 26)),
-          el("text", { x: p.x + 10, y: p.y + 34, class: `g-val${outcome === "fails" ? " fail" : outcome === "depends" ? " warn" : ""}` }, clip(valueText, 30)),
+          el("text", { x: p.x + 10, y: p.y + 34, class: `g-val${outcome === "fails" ? " fail" : outcome === "depends" ? " warn" : ""}` }, clip(valueStr, 30)),
           el("text", { x: p.x + 10, y: p.y + 50, class: "g-meta" }, clip(meta, flag ? 22 : 34), flag ? el("tspan", { class: "g-flag" }, ` · ${flag}`) : null),
-        ),
-      )
-    }
-
+        )
+      },
+    })
+    const direct = (inputs.get(focus) ?? new Set()).size
+    const readBy = readersOf(focus).filter((r) => doc.entries[r]).length
+    const more = [up.further ? `${up.further} further input${up.further === 1 ? "" : "s"}` : null, down.further ? `${down.further} further output${down.further === 1 ? "" : "s"}` : null].filter(Boolean)
     return [
-      h(
-        "p",
-        { class: "structure-head" },
-        "Structure of ",
-        idLink(focus),
-        ` · rests on ${up.size} entr${up.size === 1 ? "y" : "ies"} (left) · feeds ${down.size} (right). Open any box to follow it.`,
-      ),
-      h("p", { class: "quiet legend" }, "solid: formula or check input, always current · dashed: model input, recorded when the model ran, can go stale"),
+      h("p", { class: "structure-head" }, idLink(focus), ` reads ${direct} entr${direct === 1 ? "y" : "ies"} and ${readBy} read${readBy === 1 ? "s" : ""} it. Inputs on the left, outputs on the right, two steps each way${more.length ? `; ${more.join(" and ")} not drawn` : ""}. Open any box to follow it.`),
+      h("p", { class: "quiet legend" }, "solid: formula or check input, always current · dashed: model input, recorded when the model ran · amber: went stale along this line"),
       h("div", { class: "graph-wrap", "data-key": `graph:${focus}` }, svg),
     ]
   }
 
   function figureLabel(id, entry, ev, valueText, meta, flag) {
     return `${id}${entry.label ? ` (${entry.label})` : ""}: ${valueText} · ${meta.replace(/^[●◐○◌◆] /, "")}${levelOf(ev) ? `, ${levelOf(ev)}` : ""}${flag ? ` · ${flag}` : ""}`
-  }
-
-  /** With no entry open: the worst requirement, else the result resting on the most. */
-  function defaultFocus(inputsOf) {
-    const order = { fails: 0, broken: 1, depends: 2, holds: 3, "n/a": 4 }
-    const checks = Object.keys(doc.entries).filter((id) => doc.entries[id].basis === "check")
-    if (checks.length) return checks.sort((a, b) => (order[evaluation.byId.get(a).outcome?.result] ?? 9) - (order[evaluation.byId.get(b).outcome?.result] ?? 9) || (a < b ? -1 : 1))[0]
-    // The sink (nothing reads it) that rests on the most entries.
-    let best = null, most = 0
-    for (const id of Object.keys(doc.entries)) {
-      if ((evaluation.readers.get(id)?.size ?? 0) > 0) continue
-      const seen = new Set()
-      const todo = [id]
-      while (todo.length) for (const n of inputsOf.get(todo.pop()) ?? []) if (!seen.has(n)) seen.add(n), todo.push(n)
-      if (seen.size > most) (best = id), (most = seen.size)
-    }
-    return best ?? Object.keys(doc.entries).sort()[0] ?? null
   }
 
   // ------------------------------------------------------------ panel
@@ -558,7 +651,8 @@ export function AssumptionsView(handle, element, options = {}) {
         entry.note ? h("p", { class: "quiet" }, rich(entry.note)) : null,
       ]),
       section("Basis", basis(id, entry, ev)),
-      section("Rests on and feeds", restsOn(id, ev)),
+      section("Inputs", inputsSection(id, entry, ev)),
+      section("Outputs", outputsSection(id)),
       section("Used in", usedIn(id)),
       section("Judgements and history", judgementsAndHistory(id, entry, ev)),
       h(
@@ -605,13 +699,11 @@ export function AssumptionsView(handle, element, options = {}) {
             h("div", {}, `= ${renderFormula(p.formula.ast, show)}`),
             h("div", { class: "result" }, ev.broken ? `(${ev.broken})` : `= ${formatValue(ev.value, entry.unit)}${formatBounds(ev.value) ? ` ${formatBounds(ev.value)}` : ""}`),
           ),
-          h("ul", { class: "inputs" }, p.formula.ids.map((input) => h("li", {}, glyph(levelOf(evaluation.byId.get(input))), " ", idLink(input), ` = ${show(input)}`))),
         ]
       }
       case "model":
         return [
           h("p", {}, entry.model?.url ? docLink(entry.model.url, entry.model?.name ?? "the model's run") : entry.model?.name ?? "A model", `, tolerance ${entry.model?.tolerance ?? 0}`),
-          h("ul", {}, Object.entries(entry.model?.inputs ?? {}).map(([input, v]) => h("li", {}, idLink(input), ` ran with ${formatValue(v, doc.entries[input]?.unit)}, now ${formatValue(evaluation.byId.get(input)?.value, doc.entries[input]?.unit)}`))),
           ev.stale ? h("p", {}, chip("STALE"), ` ${ev.stale.map((s) => `${s.input} ${s.reason}`).join(", ")}`) : null,
         ]
       case "estimate":
@@ -645,12 +737,48 @@ export function AssumptionsView(handle, element, options = {}) {
     return out
   }
 
-  function restsOn(id, ev) {
+  /** What it reads: each input now (and what a model ran with), then the leaves far upstream. */
+  function inputsSection(id, entry, ev) {
+    const io = entryIO(doc, evaluation, id)
+    const direct = new Set(io.inputs.map((i) => i.id))
     const leaves = [...(ev.leaves ?? [])].filter((l) => l !== id).sort((a, b) => RANK[levelOf(evaluation.byId.get(a)) ?? "weak"] - RANK[levelOf(evaluation.byId.get(b)) ?? "weak"] || (a < b ? -1 : 1))
-    const feeds = [...(evaluation.readers.get(id) ?? [])].filter((r) => r !== id).sort()
     return [
-      leaves.length ? h("p", {}, `${restsOnText(ev.confidence?.restsOn ?? countLevels(leaves))}: `, leaves.map((l, i) => [i ? ", " : "", glyph(levelOf(evaluation.byId.get(l))), idLink(l)])) : h("p", { class: "quiet" }, "a leaf: it rests on its own evidence"),
-      h("p", {}, "feeds: ", feeds.length ? feeds.map((f, i) => [i ? ", " : "", idLink(f)]) : h("span", { class: "quiet" }, "nothing in the register")),
+      io.inputs.length
+        ? h(
+            "ul",
+            { class: "io" },
+            io.inputs.map((i) =>
+              h(
+                "li",
+                {},
+                glyph(levelOf(evaluation.byId.get(i.id))),
+                " ",
+                idLink(i.id),
+                ` = ${valueText(i.id, doc, evaluation)}`,
+                i.ranWith ? h("span", { class: "quiet" }, ` · ran with ${formatValue(i.ranWith, doc.entries[i.id]?.unit)}`) : null,
+                i.stale ? [" ", chip(i.stale === "moved" ? "MOVED" : "STALE")] : null,
+              ),
+            ),
+          )
+        : h("p", { class: "quiet" }, `None: ${readsNothingText(entry)}.`),
+      leaves.some((l) => !direct.has(l)) ? h("p", { class: "quiet" }, `At the far end it ${restsOnText(ev.confidence?.restsOn ?? countLevels(leaves))}: `, leaves.map((l, i) => [i ? ", " : "", glyph(levelOf(evaluation.byId.get(l))), idLink(l)])) : null,
+    ]
+  }
+
+  /** What reads it, directly and further on, with any already stale. */
+  function outputsSection(id) {
+    const io = entryIO(doc, evaluation, id)
+    const open = h("p", {}, h("button", { type: "button", class: "link", "data-structure-entry": id }, "Open in Structure"))
+    if (!io.outputs.length) return [h("p", { class: "quiet" }, "Nothing in the register reads it."), open]
+    return [
+      h("p", { class: "quiet" }, `${io.outputs.length} direct · ${io.further.length} further`),
+      h(
+        "ul",
+        { class: "io" },
+        io.outputs.map((o) => h("li", {}, glyph(levelOf(evaluation.byId.get(o.id))), " ", idLink(o.id), ` = ${valueText(o.id, doc, evaluation)}`, o.stale ? [" ", chip("STALE"), h("span", { class: "quiet" }, ` ${staleText(o.stale)}`)] : null)),
+      ),
+      io.further.length ? h("p", {}, "further: ", io.further.slice(0, 12).map((f, i) => [i ? ", " : "", idLink(f)]), io.further.length > 12 ? ` and ${io.further.length - 12} more` : "") : null,
+      open,
     ]
   }
 
@@ -930,12 +1058,29 @@ export function AssumptionsView(handle, element, options = {}) {
   }
 
   function onClick(event) {
-    const target = event.target.closest?.("[data-open], [data-lens], [data-group], [data-crumb], [data-close], [data-form], [data-cancel], [data-doc], [data-history], [data-preview], tr[data-id], li[data-id]")
+    const target = event.target.closest?.("[data-open], [data-lens], [data-group], [data-sgroup], [data-structure], [data-structure-entry], [data-show-unread], [data-crumb], [data-close], [data-form], [data-cancel], [data-doc], [data-history], [data-preview], tr[data-id], li[data-id]")
     if (!target || !root.contains(target)) return
     const d = target.dataset
     if (d.open) {
       event.preventDefault()
+      if (state.lens === "structure" && doc.entries[d.open]) state.structure = { ...state.structure, group: groupOf(d.open), entry: d.open }
       openEntry(d.open)
+    } else if (d.sgroup) {
+      event.preventDefault()
+      state.structure = { group: d.sgroup, entry: null, unread: false }
+      render()
+    } else if (d.structure) {
+      event.preventDefault()
+      state.structure = d.structure === "map" ? { group: null, entry: null, unread: false } : { ...state.structure, entry: null }
+      render()
+    } else if (d.structureEntry) {
+      if (!doc.entries[d.structureEntry]) return
+      state.lens = "structure"
+      state.structure = { group: groupOf(d.structureEntry), entry: d.structureEntry, unread: false }
+      render()
+    } else if (d.showUnread) {
+      state.structure = { ...state.structure, unread: !state.structure.unread }
+      render()
     } else if (d.lens) {
       state.lens = d.lens
       state.cursor = null
@@ -1009,7 +1154,7 @@ export function AssumptionsView(handle, element, options = {}) {
     const keys = {
       j: () => move(1),
       k: () => move(-1),
-      Enter: () => (event.target.dataset?.open ? openEntry(event.target.dataset.open) : state.cursor && openEntry(state.cursor)),
+      Enter: () => (event.target.dataset?.open || event.target.dataset?.sgroup ? onClick({ target: event.target, preventDefault() {} }) : state.cursor && openEntry(state.cursor)),
       a: () => openForm("claim"),
       d: () => openForm("judgement"),
       "[": () => {
@@ -1034,9 +1179,36 @@ export function AssumptionsView(handle, element, options = {}) {
     action()
   }
 
+  // Pointing at (or tabbing to) a node in a graph lights its lines and the nodes at their other ends.
+  function light(event) {
+    const node = event.target.closest?.("svg.graph [data-node]")
+    if (!node) return
+    const svg = node.closest("svg")
+    const key = node.dataset.node
+    svg.classList.add("lit")
+    node.classList.add("on")
+    for (const path of svg.querySelectorAll("path.edge")) {
+      const { u, v } = path.dataset
+      if (u !== key && v !== key) continue
+      path.classList.add("on")
+      const other = u === key ? v : u
+      for (const n of svg.querySelectorAll("[data-node]")) if (n.dataset.node === other) n.classList.add("on")
+    }
+  }
+  function unlight(event) {
+    const svg = event.target.closest?.("svg.graph")
+    if (!svg) return
+    svg.classList.remove("lit")
+    for (const n of svg.querySelectorAll(".on")) n.classList.remove("on")
+  }
+
   repair()
   render()
   handle.on("change", render)
+  root.addEventListener("pointerover", light)
+  root.addEventListener("pointerout", unlight)
+  root.addEventListener("focusin", light)
+  root.addEventListener("focusout", unlight)
   root.addEventListener("click", onClick)
   root.addEventListener("input", onInput)
   root.addEventListener("change", onInput)
@@ -1045,6 +1217,10 @@ export function AssumptionsView(handle, element, options = {}) {
   return () => {
     disposed = true
     handle.off("change", render)
+    root.removeEventListener("pointerover", light)
+    root.removeEventListener("pointerout", unlight)
+    root.removeEventListener("focusin", light)
+    root.removeEventListener("focusout", unlight)
     root.removeEventListener("click", onClick)
     root.removeEventListener("input", onInput)
     root.removeEventListener("change", onInput)
@@ -1055,86 +1231,35 @@ export function AssumptionsView(handle, element, options = {}) {
   }
 }
 
+const SVG = "http://www.w3.org/2000/svg"
+
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElementNS(SVG, tag)
+  for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, String(v))
+  for (const k of kids.flat(Infinity)) if (k != null && k !== false) n.append(typeof k === "string" ? document.createTextNode(k) : k)
+  return n
+}
+
 /**
- * A layered drawing of a directed graph (inputs → readers), left to right.
- * Layers are longest paths from the inputs; an edge that would close a cycle
- * (only model results may) is reversed for layering and marked `back`. An edge
- * spanning several layers runs through a virtual slot in each, so no edge
- * crosses a box. Within a layer, order follows the mean position of
- * neighbours, swept both ways a few times.
- *
- * @returns {{ layers: Array<Array<{ key, virtual }>>, chains: Array<{ keys, model, back }> }}
+ * Draws a placed layered layout (structure.js, placeLayered): lines first,
+ * boxes over them. `edge(line)` gives a line's classes, width and true ends
+ * (`from` reads into `to`; a `flipped` line is drawn from its reader, so its
+ * arrowhead goes at the start). `node(key, box)` draws a box.
  */
-export function layered(nodes, edges) {
-  const index = new Map(nodes.map((n, i) => [n, i]))
-  const inputs = new Map(nodes.map((n) => [n, []]))
-  for (const e of edges) inputs.get(e.v)?.push(e)
-  // Longest-path layering; an input still on the stack closes a cycle.
-  const layer = new Map()
-  const onStack = new Set()
-  const back = new Set()
-  const depth = (n) => {
-    if (layer.has(n)) return layer.get(n)
-    onStack.add(n)
-    let d = 0
-    for (const e of inputs.get(n)) {
-      if (onStack.has(e.u)) {
-        back.add(e)
-        continue
-      }
-      d = Math.max(d, depth(e.u) + 1)
-    }
-    onStack.delete(n)
-    layer.set(n, d)
-    return d
+function drawGraph(placed, { label, edge, node }) {
+  const svg = el("svg", { class: "graph", width: Math.ceil(placed.width), height: Math.ceil(placed.height), viewBox: `0 0 ${Math.ceil(placed.width)} ${Math.ceil(placed.height)}`, role: "group", "aria-label": label })
+  const marker = (id, cls) => el("marker", { id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerUnits: "userSpaceOnUse", markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, el("path", { d: "M0 0L10 5L0 10z", class: cls }))
+  svg.append(el("defs", {}, marker("asm-arrow", "arrowhead"), marker("asm-arrow-hot", "arrowhead hot")))
+  const lines = el("g", { class: "edges" })
+  const hot = el("g", { class: "edges" })
+  for (const line of placed.lines) {
+    const a = edge(line)
+    const tip = a.hot ? "url(#asm-arrow-hot)" : "url(#asm-arrow)"
+    ;(a.hot ? hot : lines).append(el("path", { d: line.d, class: ["edge", ...(a.cls ?? [])].filter(Boolean).join(" "), "stroke-width": a.width, "data-u": a.from, "data-v": a.to, "marker-start": a.flipped ? tip : null, "marker-end": a.flipped ? null : tip }))
   }
-  for (const n of nodes) depth(n)
-  const count = Math.max(0, ...layer.values()) + 1
-  const layers = Array.from({ length: count }, () => [])
-  for (const n of nodes) layers[layer.get(n)].push({ key: n, virtual: false })
-  const chains = []
-  let v = 0
-  for (const e of edges) {
-    const isBack = back.has(e)
-    const [from, to] = isBack ? [e.v, e.u] : [e.u, e.v]
-    const keys = [from]
-    for (let l = layer.get(from) + 1; l < layer.get(to); l++) {
-      const key = `~${v++}`
-      layers[l].push({ key, virtual: true })
-      keys.push(key)
-    }
-    keys.push(to)
-    chains.push({ keys: isBack ? keys.reverse() : keys, model: Boolean(e.model), back: isBack })
-  }
-  // Neighbours of each slot, from the chains, for ordering.
-  const nbrs = new Map()
-  const link = (a, b) => {
-    if (!nbrs.has(a)) nbrs.set(a, [])
-    nbrs.get(a).push(b)
-  }
-  for (const c of chains) for (let i = 0; i < c.keys.length - 1; i++) link(c.keys[i], c.keys[i + 1]), link(c.keys[i + 1], c.keys[i])
-  const position = new Map()
-  const place = () => layers.forEach((col) => col.forEach((item, i) => position.set(item.key, i)))
-  for (const col of layers) col.sort((a, b) => (a.virtual - b.virtual) || (index.get(a.key) ?? 0) - (index.get(b.key) ?? 0) || (a.key < b.key ? -1 : 1))
-  place()
-  const sweep = (range) => {
-    for (const l of range) {
-      const prev = new Set(layers[l + (range[0] < range[range.length - 1] ? -1 : 1)]?.map((i) => i.key) ?? [])
-      const score = (item) => {
-        const ps = (nbrs.get(item.key) ?? []).filter((k) => prev.has(k)).map((k) => position.get(k))
-        return ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : position.get(item.key)
-      }
-      layers[l] = layers[l].map((item) => [item, score(item)]).sort((a, b) => a[1] - b[1] || (a[0].key < b[0].key ? -1 : 1)).map(([item]) => item)
-      layers[l].forEach((item, i) => position.set(item.key, i))
-    }
-  }
-  const forward = [...Array(count).keys()].slice(1)
-  const backward = [...Array(count).keys()].reverse().slice(1)
-  for (let i = 0; i < 4; i++) {
-    sweep(forward)
-    sweep(backward)
-  }
-  return { layers, chains }
+  svg.append(lines, hot)
+  for (const [key, box] of placed.boxes) if (!box.virtual) svg.append(node(key, box))
+  return svg
 }
 
 const CSS = `
@@ -1217,7 +1342,27 @@ const CSS = `
 .asm svg.graph .g-id { font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace; fill: var(--ink); }
 .asm svg.graph .g-val { font-size: 12px; fill: var(--ink); font-variant-numeric: tabular-nums; } .asm svg.graph .g-val.fail { fill: var(--fail); font-weight: 600; } .asm svg.graph .g-val.warn { font-weight: 600; }
 .asm svg.graph .g-meta { font-size: 11px; fill: var(--quiet); } .asm svg.graph .g-flag { font-weight: 600; fill: var(--ink); }
-.asm svg.graph .edge { fill: none; stroke: var(--quiet); stroke-width: 1.25; } .asm svg.graph .edge.model { stroke-dasharray: 4 3; }
-.asm svg.graph .arrowhead { fill: var(--quiet); }
+.asm svg.graph { max-width: 100%; height: auto; }
+.asm svg.graph .edge { fill: none; stroke: var(--quiet); stroke-opacity: .6; } .asm svg.graph .edge.model, .asm svg.graph .edge.back { stroke-dasharray: 4 3; }
+.asm svg.graph .edge.hot { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2; }
+.asm svg.graph .arrowhead { fill: var(--quiet); } .asm svg.graph .arrowhead.hot { fill: var(--warn); }
+.asm svg.graph .gnode { cursor: pointer; outline: none; } .asm svg.graph .hit { fill: transparent; }
+.asm svg.graph .gnode:hover .g-name, .asm svg.graph .gnode:focus .g-name { fill: var(--accent); }
+.asm svg.graph .ring { fill: none; stroke-width: 5; } .asm svg.graph .gnode.end .ring { stroke-width: 4; }
+.asm svg.graph .stale-ring { fill: none; stroke: var(--warn); stroke-width: 2; }
+.asm svg.graph .g-count { font: 600 11px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; }
+.asm svg.graph .g-name { font: 600 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; fill: var(--ink); text-anchor: middle; } .asm svg.graph .g-name.start { text-anchor: start; }
+.asm svg.graph .g-stale { font: 600 10.5px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; }
+.asm svg.graph .p-id { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; fill: var(--ink); }
+.asm svg.graph .p-val { font-size: 11px; fill: var(--quiet); text-anchor: end; font-variant-numeric: tabular-nums; } .asm svg.graph .p-val.fail { fill: var(--fail); font-weight: 600; }
+.asm svg.graph.lit .edge:not(.on) { opacity: .12; } .asm svg.graph.lit [data-node]:not(.on) { opacity: .35; }
+.asm svg.graph.lit .edge.on { stroke-opacity: 1; stroke: var(--accent); } .asm svg.graph.lit .edge.hot.on { stroke: var(--warn); }
+.asm .b-claims { --c: light-dark(#2a6fdb, #6ea0ff); } .asm .b-estimate { --c: light-dark(#7b52c9, #b08cff); }
+.asm .b-choice { --c: light-dark(#1f8f7a, #4cc9b0); } .asm .b-model { --c: light-dark(#4f6478, #a3b6c9); }
+.asm .b-formula, .asm .b-check, .asm .b-unknown { --c: var(--quiet); }
+.asm svg.graph .ring { stroke: var(--c); }
+.asm .legend .key { white-space: nowrap; margin-right: 10px; } .asm .legend .key::before { content: ""; display: inline-block; width: 14px; height: 4px; margin: 0 4px 2px 0; background: var(--c); vertical-align: middle; }
+.asm .structure-crumbs { margin: 4px 0 6px; } .asm .unread { margin-top: 8px; }
+.asm ul.io { padding-left: 0; list-style: none; margin: 4px 0; } .asm ul.io li { padding: 1px 0; }
 .asm a.doc { color: var(--accent); }
 `

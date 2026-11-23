@@ -84,6 +84,10 @@ every one of them:
 6. **Prose cites by the cite string.** \`assumptions_read\` gives every entry's
    cite string — "≤ 0.25 mΩ (\`cell_R_ac_mOhm\`)". Paste it; the qualifier
    comes with it, and the prose check passes by construction.
+   \`assumptions_read\` with \`structure\` shows how the register hangs
+   together: "all" for the map of groups, a group's name for its entries, an
+   id for its inputs and outputs. Read it before changing a much-read entry;
+   a person sees the same map in the Structure lens.
 7. **People add evidence and judgement; answer them first.** There is no
    approval. A person may add a claim or a judgement ("this figure is for NMC
    cells"); a judgement that disagrees makes the value conflicting.
