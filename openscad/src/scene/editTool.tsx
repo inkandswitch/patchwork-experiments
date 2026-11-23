@@ -58,6 +58,8 @@ interface Session {
 	/** The object moved: draw the render where it is now. */
 	moved(): void
 	triangles(): number
+	/** how many parts the source map names, or null while it isn't in */
+	parts(): number | null
 	stop(): void
 }
 
@@ -254,7 +256,7 @@ export function create(api: ViewApi) {
 			const box = new THREE.Box3().setFromObject(root)
 			return box.isEmpty() ? null : box.getSize(new THREE.Vector3()).toArray()
 		}
-		session = {id, moved, extent, triangles: () => triangles, stop}
+		session = {id, moved, extent, triangles: () => triangles, parts: () => (map ? map.records.length : null), stop}
 	}
 
 	const isModel = (target: unknown) => typeof target === "string" && api.focus()?.scene().objects[target]?.providerId === SOURCE_ID
@@ -284,8 +286,8 @@ export function create(api: ViewApi) {
 		dispose() {
 			session?.stop()
 		},
-		/** For probes: what is edited, and how many triangles its live render has. */
-		inspect: () => ({editing: session?.id ?? null, triangles: session?.triangles() ?? 0, extent: session?.extent() ?? null}),
+		/** For probes: what is edited, how many triangles its live render has, and how many parts its source map names. */
+		inspect: () => ({editing: session?.id ?? null, triangles: session?.triangles() ?? 0, extent: session?.extent() ?? null, parts: session?.parts() ?? null}),
 	}
 }
 
