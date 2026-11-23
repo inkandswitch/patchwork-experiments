@@ -106,6 +106,8 @@ import {
 } from "./useDocTitle";
 import { rememberToolInDoc } from "./toolMemory";
 import { installUnloadGuard } from "./unloadGuard";
+import { QuickOpen } from "./QuickOpen";
+import { isQuickOpenKey, openTabUrls, type QuickPlacement } from "./quickOpenItems";
 
 /**
  * Which pane *this tab* is looking at. Deliberately **not** synced: focus and
@@ -492,6 +494,13 @@ const ENGAGE_FOLLOW_MS = 1500;
  * followed from the focused document panel. Not a panel id.
  */
 const FROM_URL = "#url";
+
+/**
+ * The source of an open from Quick Open (⌘P). Not a panel id, so it lands as
+ * an open from the folder does: an empty content frame if one is waiting,
+ * else the last-focused content panel.
+ */
+const FROM_QUICK_OPEN = "#quick-open";
 
 /** The focused element, looking through shadow roots. */
 const deepActiveElement = (): Element | null => {
@@ -2766,6 +2775,41 @@ export const PatchworkFrame = ({
     [navigate, openFromChromeNow],
   );
 
+  // Quick Open: ⌘P (Ctrl-P off a Mac), from anywhere in the frame but inside
+  // an iframe-isolated tool, whose keys never reach it. It replaces printing.
+  const [quickOpen, setQuickOpen] = useState(false);
+  const quickOpenFocusRef = useRef<Element | null>(null);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!isQuickOpenKey(event)) return;
+      event.preventDefault();
+      setQuickOpen((open) => {
+        if (!open) quickOpenFocusRef.current = deepActiveElement();
+        return true;
+      });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+  const closeQuickOpen = useCallback(() => {
+    setQuickOpen(false);
+    const back = quickOpenFocusRef.current;
+    quickOpenFocusRef.current = null;
+    if (back instanceof HTMLElement && back.isConnected) back.focus();
+  }, []);
+  const chooseQuickOpen = useCallback(
+    (url: AutomergeUrl, placement: QuickPlacement) => {
+      quickOpenFocusRef.current = null;
+      setQuickOpen(false);
+      navigate(() => openView({ url }, FROM_QUICK_OPEN, placement));
+    },
+    [navigate, openView],
+  );
+  const quickOpenUrls = useMemo(
+    () => (quickOpen ? openTabUrls(layout, focusOrder) : []),
+    [quickOpen, layout, focusOrder],
+  );
+
   // Home: focus the (symbolic) root-folder navigator if it's open, else open it
   // as a full-height column on the left, wrapping the current arrangement.
   const goHome = useCallback(() => {
@@ -2876,6 +2920,16 @@ export const PatchworkFrame = ({
           onHome={goHome}
           onOpen={openFromChrome}
         />
+        {quickOpen && (
+          <QuickOpen
+            repo={repo}
+            rootFolderUrl={rootFolderUrl}
+            openUrls={quickOpenUrls}
+            currentUrl={selectedDocUrl}
+            onChoose={chooseQuickOpen}
+            onClose={closeQuickOpen}
+          />
+        )}
         <div className="tile-frame">
           <div className="tile-park" ref={parkRef} hidden />
           {leaves.map((leaf) => (

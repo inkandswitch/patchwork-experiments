@@ -170,6 +170,18 @@ patchwork-view {
   pointer-events: none;
 }
 
+/* contact-avatar draws itself at 2rem unless it's told to fill its view */
+.tile-topbar__avatar-btn patchwork-view .contact-avatar {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+}
+
 /* The create-new menu: a ruled list, lightly lifted. */
 .tile-topbar__popover {
   position: absolute;
@@ -1126,4 +1138,78 @@ patchwork-view {
   .tile-drawer__resize {
     display: none;
   }
+}
+
+/* Quick Open (⌘P): a box over the top of the frame, as in editors. */
+.tile-quick-open {
+  position: fixed;
+  z-index: 50;
+  top: 3rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(36rem, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  color: var(--tile-fg);
+  background: var(--tile-fill);
+  border: 1px solid var(--tile-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 28px oklch(0 0 0 / 0.18);
+  overflow: hidden;
+}
+
+.tile-quick-open__input {
+  font: inherit;
+  padding: 0.6rem 0.8rem;
+  border: 0;
+  border-bottom: 1px solid var(--tile-border);
+  background: transparent;
+  color: inherit;
+  outline: none;
+}
+
+.tile-quick-open__list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  max-height: min(60vh, 26rem);
+  overflow-y: auto;
+}
+
+.tile-quick-open__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.8rem;
+  cursor: pointer;
+}
+
+.tile-quick-open__row[aria-selected="true"] {
+  background: var(--tile-accent-wash);
+}
+
+.tile-quick-open__name,
+.tile-quick-open__where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-quick-open__name mark {
+  background: none;
+  color: inherit;
+  font-weight: 700;
+}
+
+.tile-quick-open__where {
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: 0.85em;
+  color: color-mix(in oklch, var(--tile-fg) 55%, transparent);
+}
+
+.tile-quick-open__none {
+  padding: 0.5rem 0.8rem;
+  color: color-mix(in oklch, var(--tile-fg) 55%, transparent);
 }

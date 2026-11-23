@@ -42,6 +42,16 @@ and resize freely.
   - opened from nowhere in particular (an overlay, say), it splits an
     existing **content** panel — never the folder — into a new one.
 
+  **Quick Open** (⌘P; Ctrl-P off a Mac) finds a document by name: every
+  open tab, the focused panel's first, then everything in your folder tree,
+  nearest first. Letters match in order, anywhere; a run at the start of a
+  name or word ranks first, then initials ("sp" for "Sail plan"). Enter opens
+  the choice as a folder click would (Shift keeps the tab it would replace,
+  Alt opens beside), and a document already open is only shown. With nothing
+  typed it starts on the one before the document in front of you, so ⌘P,
+  Enter goes back. Keys in an iframe-isolated tool don't reach the frame, so
+  ⌘P there prints. See `quickOpenItems.ts`.
+
   **Closing the browser tab** (⌘W, which pages can't intercept) asks
   first, while the frame is mounted: tools hold things outside their
   documents (a call, unsent text, undo). It doesn't ask when the page itself

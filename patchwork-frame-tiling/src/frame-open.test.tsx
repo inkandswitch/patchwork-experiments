@@ -18,7 +18,9 @@
 //  - each open is one history entry recording its panel: Back shows a
 //    document still open, and reopens one since replaced in its own panel;
 //  - a new browser tab clones the layout and its focus, so a link pasted into
-//    it lands in the panel you were last in.
+//    it lands in the panel you were last in;
+//  - Quick Open (⌘P) lists open tabs then the folder tree, and opens a choice
+//    where the folder would, or beside with Alt.
 //
 // The host's hash router runs throughout, copied from the bootloader
 // (`installHashRouting`): every open that bubbles out is written to
@@ -472,4 +474,129 @@ describe("opening documents in the tiling frame", () => {
     expect(before).toEqual(["C E [J*] F", "A [B*]"]);
     expect(panels()).toEqual(["C E [J*] F", "A [K*]"]);
   }, 15_000);
+
+  // Quick Open (⌘P; Ctrl-P off a Mac).
+
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  const palette = () => element.querySelector<HTMLElement>(".tile-quick-open");
+  const paletteInput = () => palette()!.querySelector("input")!;
+  const quickOpenKey = (target: EventTarget) => {
+    const event = new KeyboardEvent("keydown", {
+      key: "p",
+      metaKey: mac,
+      ctrlKey: !mac,
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    });
+    target.dispatchEvent(event);
+    return event;
+  };
+  const pressQuickOpen = async () => {
+    let event!: KeyboardEvent;
+    await act(async () => {
+      event = quickOpenKey(document.activeElement ?? document.body);
+    });
+    await act(() => sleep(100)); // the folder walk
+    return event;
+  };
+  const type = async (text: string) => {
+    const input = paletteInput();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+  };
+  const press = async (key: string, mods: { shiftKey?: boolean; altKey?: boolean } = {}) => {
+    await act(async () => {
+      paletteInput().dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods }),
+      );
+    });
+    await settle();
+  };
+  const rows = () =>
+    [...palette()!.querySelectorAll(".tile-quick-open__row")].map(
+      (row) => row.querySelector(".tile-quick-open__name")!.textContent,
+    );
+  const chosen = () =>
+    palette()!.querySelector('[aria-selected="true"] .tile-quick-open__name')?.textContent;
+
+  it("⌘P lists open tabs, the focused panel's first, then the folder tree", async () => {
+    // The folder tree: every document by name, G in a folder of its own.
+    const sub = repo.create({
+      "@patchwork": { type: "folder" },
+      title: "Sub",
+      docs: [{ name: "G", type: "essay", url: docs.get("G")! }],
+    });
+    const home = await repo.find<{ docs: { name: string; type: string; url: AutomergeUrl }[] }>(
+      account.doc()!.rootFolderUrl,
+    );
+    home.change((d) => {
+      for (const name of "ABCDEFHIJK") d.docs.push({ name, type: "essay", url: docs.get(name)! });
+      d.docs.push({ name: "Sub", type: "folder", url: sub.url });
+    });
+
+    const key = await pressQuickOpen();
+    expect(key.defaultPrevented).toBe(true); // not printing
+    expect(document.activeElement).toBe(paletteInput());
+    expect(rows()).toEqual(["K", "A", "J", "C", "E", "F", "B", "D", "H", "I", "Sub", "G"]);
+    // It starts on the one before the document in front of you.
+    expect(chosen()).toBe("A");
+    const where = [...palette()!.querySelectorAll(".tile-quick-open__where")].map((w) => w.textContent);
+    expect(where.slice(0, 6)).toEqual(Array(6).fill("open"));
+    expect(where[where.length - 1]).toBe("Sub");
+  });
+
+  it("Enter opens the choice where the folder would, as one history entry", async () => {
+    const before = hashHistory.depth;
+    await type("d");
+    expect(rows()).toEqual(["D"]);
+    await press("Enter");
+    expect(palette()).toBeNull();
+    expect(panels()).toEqual(["C E [J*] F", "A [D*]"]);
+    expect(hashHistory.depth).toBe(before + 1);
+  });
+
+  it("Alt+Enter opens it beside", async () => {
+    await pressQuickOpen();
+    await type("g");
+    await press("Enter", { altKey: true });
+    expect(panels()).toEqual(["C E [J*] F", "A [D*]", "[G*]"]);
+  });
+
+  it("a document already open is only shown", async () => {
+    await pressQuickOpen();
+    await type("e");
+    await press("Enter");
+    expect(panels()).toEqual(["C [E] J* F", "A [D*]", "[G*]"]);
+  });
+
+  it("⌘P again moves down; Escape closes it and gives focus back", async () => {
+    const button = document.createElement("button");
+    document.body.append(button);
+    button.focus();
+    await pressQuickOpen();
+    const first = chosen();
+    await act(async () => {
+      quickOpenKey(paletteInput());
+    });
+    await settle();
+    expect(chosen()).not.toBe(first);
+    await press("Escape");
+    expect(palette()).toBeNull();
+    expect(document.activeElement).toBe(button);
+    expect(panels()).toEqual(["C [E] J* F", "A [D*]", "[G*]"]);
+    button.remove();
+  });
+
+  it("a click elsewhere closes it", async () => {
+    await pressQuickOpen();
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    });
+    await settle();
+    expect(palette()).toBeNull();
+  });
 });
