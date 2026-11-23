@@ -14,6 +14,7 @@ import type {OpenscadDoc} from "../types"
 import {importInput, type LoadDatatype} from "../linkedSources"
 import type {Render, RenderImportInput} from "../render/engine"
 import {allPositions, toHexColor, type Model} from "../render/model"
+import {chainOf, labelOf, type SourceMap} from "../render/sourceMap"
 import {computeBounds, computeNormals, encodeGLB} from "./glb.js"
 import {zUpToYUpMeters, UNIT_METERS, type Unit} from "./axes"
 
@@ -108,17 +109,82 @@ export async function resolveImports(
 }
 
 /**
- * OpenSCAD model (Z-up, `unit`) -> GLB (Y-up, metres) with flat per-face
- * normals: one mesh, one primitive per colour. Uncoloured triangles get no
- * material, so the viewer's default applies; a colour with alpha < 1 blends.
- * Colours go to glb.js as sRGB hex, which it linearises.
+ * What a part's node says about its source, in `extras.source` (the glTF
+ * slot for anything else): its label (the innermost of the model's own
+ * modules that placed it, else the shape), the chain of calls that placed it
+ * as "name:line" (outermost first; a library's with "file:" in front), and
+ * the call in the document's own source that made it, to show in its code.
  */
-export function modelToGLB(model: Model, unit: Unit = "mm", name = "OpenSCAD"): BuildResult & {triangles: number} {
-	const primitives = model.parts.map(part => {
-		const positions = zUpToYUpMeters(part.positions, unit)
-		return {positions, normals: computeNormals(positions), ...(part.color ? {color: toHexColor(part.color)} : {})}
+export type PartSource = {
+	label: string
+	chain: string[]
+	at?: {line: number; col: number; from: number; to: number}
+}
+
+/** Each part's triangles, by colour: the meshes of a GLB with a node per part. */
+function partsOf(model: Model, map: SourceMap): {record: number; byColour: Map<number, number[]>}[] {
+	const parts = new Map<number, Map<number, number[]>>()
+	model.parts.forEach((part, pi) => {
+		const ids = map.faces[pi]
+		for (let t = 0; t < part.positions.length / 9; t++) {
+			const r = ids?.[t] ?? -1
+			let byColour = parts.get(r)
+			if (!byColour) parts.set(r, (byColour = new Map()))
+			let tris = byColour.get(pi)
+			if (!tris) byColour.set(pi, (tris = []))
+			tris.push(t)
+		}
 	})
-	const glb = encodeGLB({meshes: [{name, primitives}]})
+	return [...parts].sort((a, b) => a[0] - b[0]).map(([record, byColour]) => ({record, byColour}))
+}
+
+/**
+ * OpenSCAD model (Z-up, `unit`) -> GLB (Y-up, metres) with flat per-face
+ * normals, a primitive per colour. Uncoloured triangles get no material, so
+ * the viewer's default applies; a colour with alpha < 1 blends. Colours go to
+ * glb.js as sRGB hex, which it linearises.
+ *
+ * With a source map, a mesh and node per part, the node named by the part's
+ * label and saying where it came from in `extras.source` (PartSource); the
+ * triangles no part claims go in a last node named `name`. Without one, a
+ * single mesh named `name`.
+ */
+export function modelToGLB(model: Model, unit: Unit = "mm", name = "OpenSCAD", map: SourceMap | null = null): BuildResult & {triangles: number} {
+	const primitive = (pi: number, positions: Float32Array) => {
+		const p = zUpToYUpMeters(positions, unit)
+		const color = model.parts[pi].color
+		return {positions: p, normals: computeNormals(p), ...(color ? {color: toHexColor(color)} : {})}
+	}
+	let glb: Uint8Array
+	if (!map) {
+		glb = encodeGLB({meshes: [{name, primitives: model.parts.map((part, pi) => primitive(pi, part.positions))}]})
+	} else {
+		const meshes: {name: string; primitives: ReturnType<typeof primitive>[]}[] = []
+		const nodes: {name: string; mesh: number; extras?: {source: PartSource}}[] = []
+		for (const {record, byColour} of partsOf(model, map)) {
+			const primitives = [...byColour].map(([pi, tris]) => {
+				const src = model.parts[pi].positions
+				const out = new Float32Array(tris.length * 9)
+				tris.forEach((t, k) => out.set(src.subarray(t * 9, t * 9 + 9), k * 9))
+				return primitive(pi, out)
+			})
+			if (record < 0) {
+				meshes.push({name, primitives})
+				nodes.push({name, mesh: meshes.length - 1})
+				continue
+			}
+			const chain = chainOf(map, record)
+			const own = chain.filter(s => s.file === "").at(-1)
+			const source: PartSource = {
+				label: labelOf(map, record),
+				chain: chain.map(s => `${s.file ? `${s.file}:` : ""}${s.name}:${s.line}`),
+				...(own ? {at: {line: own.line, col: own.col, from: own.from, to: own.to}} : {}),
+			}
+			meshes.push({name: source.label, primitives})
+			nodes.push({name: source.label, mesh: meshes.length - 1, extras: {source}})
+		}
+		glb = encodeGLB({meshes, nodes})
+	}
 	const bounds = computeBounds(zUpToYUpMeters(allPositions(model), unit))
 	return {kind: "glb", glb, triangles: model.triangles, meta: bounds ? {bounds} : {}}
 }
@@ -163,7 +229,9 @@ export function createOpenscadSource(render: () => Promise<Render>) {
 			// A fixed mesh name: the title is not in the fingerprint, so a name
 			// taken from it would go stale on rename. The scene outline shows
 			// the scene object's own name anyway.
-			const {triangles, ...out} = modelToGLB(result.model, unit)
+						// a node per part, named by its label, when the second render says which source made what
+			const map = (await result.sourceMap) ?? null
+			const {triangles, ...out} = modelToGLB(result.model, unit, "OpenSCAD", map)
 			const notes = [`${triangles} triangles`]
 			if (!result.cached) notes.push(`rendered in ${(result.elapsedMillis / 1000).toFixed(1)} s`)
 			const warnings = countWarnings(result.logs)

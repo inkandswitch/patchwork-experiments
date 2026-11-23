@@ -15,13 +15,14 @@ describe("the last run kept in the document", () => {
 		expect(many.at(-1)).toBe("… 5 more lines not kept")
 	})
 
-	it("is saved exactly when the source, the outcome or the output differs; never for the time, the heads, a linked document or timings alone", () => {
+	it("is saved exactly when the source, the outcome, the output or the parts differ; never for the time, the heads, a linked document or timings alone", () => {
 		const base = run()
-		// Every combination of the four things that can differ.
+		// Every combination of the things that can differ.
 		const changes = {
 			source: {source: "echo(cad_pack_volume_L = 43); cube(1);"},
 			ok: {ok: false},
 			logs: {logs: ["ECHO: cad_pack_volume_L = 43"]},
+			parts: {parts: [{label: "cell", chain: ["cell:3", "cube:1"], triangles: 12, box: [[0, 0, 0], [1, 1, 1]]}]},
 		}
 		const names = Object.keys(changes) as (keyof typeof changes)[]
 		for (let mask = 0; mask < 1 << names.length; mask++) {

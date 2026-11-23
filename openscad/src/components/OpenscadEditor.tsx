@@ -1,10 +1,12 @@
-import {createSignal, For, onCleanup, onMount, Show} from "solid-js"
+import {batch, createEffect, createSignal, For, onCleanup, onMount, Show} from "solid-js"
 import type {AutomergeUrl, DocHandle} from "@automerge/automerge-repo"
 import type {PatchworkViewElement} from "@inkandswitch/patchwork-elements"
 import type {OpenscadDoc, OpenscadImport} from "../types"
 import {styles} from "../styles"
-import {CodeEditor} from "./CodeEditor"
+import {CodeEditor, type CodeEditorApi} from "./CodeEditor"
 import {Viewer3D} from "./Viewer3D"
+import {SourceTrail, type SourcePlace} from "./SourceTrail"
+import {chainOf, recordsAt, summarize, type SourceMap} from "../render/sourceMap"
 import {onLoadProgress, renderScad, RenderError, type LoadProgress} from "../render/engine"
 import {to3MF, toBinarySTL, type Model} from "../render/model"
 import {hasPatchworkDrop, parsePatchworkDrop, type PatchworkDropItem} from "../dnd"
@@ -31,7 +33,15 @@ export function OpenscadEditor(props: {
 	 * of its own, the console under the code, and each render's model handed to
 	 * the host (null when one fails, so the host keeps the last good one).
 	 */
-	hosted?: {onModel(model: Model | null): void}
+		hosted?: {
+		onModel(model: Model | null): void
+		/** which source made which triangle of the last model given, once known (null: not known) */
+		onSourceMap?(map: SourceMap | null): void
+		/** the picked part and the parts the code's cursor is in, for the host to highlight */
+		onHighlight?(selected: number | null, lit: ReadonlySet<number>): void
+		/** how the host picks a part: a click in its own view */
+		connect?(controls: {pick(record: number | null): void}): void
+	}
 }) {
 	const initialDoc = props.handle.doc()
 
@@ -45,7 +55,15 @@ export function OpenscadEditor(props: {
 	const [imports, setImports] = createSignal<OpenscadImport[]>(initialDoc?.imports ?? [])
 	const [dropActive, setDropActive] = createSignal(false)
 	const [renamingUrl, setRenamingUrl] = createSignal<AutomergeUrl | null>(null)
-	const [renameValue, setRenameValue] = createSignal("")
+		const [renameValue, setRenameValue] = createSignal("")
+	// Which source made which triangle (render/sourceMap.ts), the part picked
+	// in the view, and the parts the code's cursor is in.
+	const [sourceMap, setSourceMap] = createSignal<SourceMap | null>(null)
+	const [selected, setSelected] = createSignal<number | null>(null)
+	const [lit, setLit] = createSignal<ReadonlySet<number>>(new Set())
+	/** the source the shown model and its map were rendered from */
+	let renderedSource = ""
+	let code: CodeEditorApi | undefined
 
 	// Docs referenced by `doc.imports`, resolved via the repo and kept live:
 	// a change to one (or one finally arriving after a failed find, which is
@@ -87,17 +105,36 @@ export function OpenscadEditor(props: {
 		let importPayload: unknown = null
 		try {
 			importPayload = await resolver.payload(doc?.imports ?? [])
-			const result = await renderScad(source, importPayload as any)
+						const result = await renderScad(source, importPayload as any)
 			if (id !== runId) return
-			// The run goes in the document, so its console (echo() results above
-			// all) can be read by other tools without running OpenSCAD.
-			saveLastRun(props.handle, lastRunFrom({heads, source, imports: importPayload, ok: true, logs: result.logs, elapsedMillis: result.elapsedMillis}))
-			setModel(result.model)
+			const keep = selectionKey()
+			batch(() => {
+				setSourceMap(null)
+				setSelected(null)
+				setLit(new Set<number>())
+				setModel(result.model)
+				setLogs(result.logs)
+				setElapsedMillis(result.elapsedMillis)
+				setCached(!!result.cached)
+				setStatus("ready")
+			})
 			props.hosted?.onModel(result.model)
-			setLogs(result.logs)
-			setElapsedMillis(result.elapsedMillis)
-			setCached(!!result.cached)
-			setStatus("ready")
+			props.hosted?.onSourceMap?.(null)
+			// Then which source made what: a second render, after this one.
+			const map = (await result.sourceMap) ?? null
+			if (id !== runId) return
+			renderedSource = source
+			batch(() => {
+				setSourceMap(map)
+				setSelected(map && keep ? findByKey(map, keep) : null)
+			})
+			props.hosted?.onSourceMap?.(map)
+			// The run goes in the document, so its console (echo() results above
+			// all) and its parts can be read by other tools without running OpenSCAD.
+			saveLastRun(
+				props.handle,
+				lastRunFrom({heads, source, imports: importPayload, ok: true, logs: result.logs, elapsedMillis: result.elapsedMillis, parts: map ? summarize(result.model, map) : null}),
+			)
 		} catch (err) {
 			if (id !== runId) return
 			const message = err instanceof RenderError ? err.message : String((err as Error)?.message ?? err)
@@ -107,6 +144,56 @@ export function OpenscadEditor(props: {
 			props.hosted?.onModel(null)
 		}
 	}
+
+		// ─── from the model to its source, and back ───
+
+	/** What a selection is, across renders: its chain by name and line, then by name alone. */
+	function selectionKey(): {exact: string; names: string} | null {
+		const map = sourceMap()
+		const r = selected()
+		if (!map || r == null) return null
+		const chain = chainOf(map, r)
+		return {exact: chain.map(s => `${s.file}:${s.name}:${s.line}`).join(">"), names: chain.map(s => `${s.file}:${s.name}`).join(">")}
+	}
+	function findByKey(map: SourceMap, key: {exact: string; names: string}): number | null {
+		const keys = map.records.map((_, r) => chainOf(map, r))
+		const exact = keys.findIndex(c => c.map(s => `${s.file}:${s.name}:${s.line}`).join(">") === key.exact)
+		if (exact >= 0) return exact
+		const byName = keys.findIndex(c => c.map(s => `${s.file}:${s.name}`).join(">") === key.names)
+		return byName >= 0 ? byName : null
+	}
+
+	/** Show a call or definition in the code: exactly, or (the code changed since) at its line and column. */
+	function reveal(place: SourcePlace) {
+		if (!code || place.file !== "") return
+		const text = code.text()
+		if (text === renderedSource) return code.reveal(place.from, place.to)
+		let start = 0
+		for (let line = 1; line < place.line; line++) {
+			const nl = text.indexOf("\n", start)
+			if (nl === -1) break
+			start = nl + 1
+		}
+		code.reveal(start + place.col, start + place.col + (place.to - place.from))
+	}
+
+	/** A part picked in a view (or nothing): select it, and show the call in this document that made it. */
+	function pick(record: number | null) {
+		setSelected(record)
+		const map = sourceMap()
+		if (record == null || !map) return
+		const own = chainOf(map, record).filter(s => s.file === "")
+		const site = own[own.length - 1]
+		if (site) reveal(site)
+	}
+
+	/** The code's cursor moved: light the parts made by the call it's in. */
+	function onCursor(offset: number) {
+		const map = sourceMap()
+		setLit(map && code?.text() === renderedSource ? recordsAt(map, offset) : new Set<number>())
+	}
+
+	createEffect(() => props.hosted?.onHighlight?.(selected(), lit()))
 
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined
 	function scheduleRender() {
@@ -132,7 +219,8 @@ export function OpenscadEditor(props: {
 		resolver.sync(props.handle.doc()?.imports ?? [])
 		props.handle.on("change", onDocChange)
 		// waits for the imports just requested before compiling (see renderNow)
-		void renderNow()
+				void renderNow()
+		props.hosted?.connect?.({pick})
 		onCleanup(() => {
 			unsubProgress()
 			props.handle.off("change", onDocChange)
@@ -327,13 +415,24 @@ export function OpenscadEditor(props: {
 					<CodeEditor
 						source={initialDoc?.source ?? ""}
 						handle={props.handle}
-						onRenderRequested={renderImmediately}
-					/>
+													onRenderRequested={renderImmediately}
+							onReady={api => (code = api)}
+							onCursor={onCursor}
+						/>
 				</div>
 				<div class="openscad-pane-view">
 					<Show when={!props.hosted}>
-						<div class="openscad-view-stage">
-							<Viewer3D model={model()} />
+													<div
+								class="openscad-view-stage"
+								tabIndex={-1}
+								onKeyDown={e => {
+									if (e.key === "Escape" && selected() != null) {
+										e.preventDefault()
+										setSelected(null)
+									}
+								}}
+							>
+								<Viewer3D model={model()} sourceMap={sourceMap()} selected={selected()} lit={lit()} onPick={pick} />
 							<Show when={!model()}>
 								<div class="openscad-viewer-placeholder">
 									{status() === "error" ? "Fix the error below and render again" : "Rendering your model…"}
@@ -341,8 +440,11 @@ export function OpenscadEditor(props: {
 							</Show>
 						</div>
 					</Show>
-					<div
-						class="openscad-console"
+											<Show when={sourceMap() && selected() != null ? sourceMap() : null}>
+							{map => <SourceTrail map={map()} record={selected()!} onReveal={reveal} onClose={() => setSelected(null)} />}
+						</Show>
+						<div
+							class="openscad-console"
 						data-state={status() === "error" ? "error" : undefined}
 						data-empty={logs().length === 0 ? "" : undefined}
 					>
