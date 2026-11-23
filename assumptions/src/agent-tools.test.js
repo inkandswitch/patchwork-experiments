@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { check, create, exportTool, read, set, where } from "./agent-tools.js"
+import { registerReads } from "./check.js"
+import { runKeyOf } from "./where.js"
 import { outOfDate } from "./consistency.js"
 
 await initSubduction()
@@ -353,6 +355,74 @@ describe("check and where", () => {
     out = await check.execute({ register }, ctx)
     expect(out).toMatch(/cad_pack_volume_L = 31.2 L \(was 30 L\)/)
     expect(out).not.toMatch(/STALE/)
+  })
+
+  it("takes a linked notebook's inputs from its run record: the register as the run read it, not as it is now", async () => {
+    const register = await newRegister()
+    await set.execute(
+      {
+        register,
+        entries: [
+          { id: "boat_mass_kg", unit: "kg", estimate: { value: { nominal: 8330, min: 8100, max: 8600 }, reasoning: "weighed" } },
+          { id: "boat_drag_N", unit: "N", model: { name: "Model 1", inputs: ["boat_mass_kg"] }, value: 1000 },
+        ],
+      },
+      ctx,
+    )
+    const regHandle = await repo.find(register)
+    const notebook = file("Model 1.ipynb", { "@patchwork": { type: "jupyter-notebook" }, cells: [{ cell_type: "code", source: "m = patchwork.load(register)['boat_mass_kg']", outputs: [] }], metadata: { patchwork: {} } })
+    await set.execute({ register, entries: [{ id: "boat_drag_N", model: { url: notebook.url, name: "Model 1", inputs: ["boat_mass_kg"] }, value: 1000 }] }, ctx)
+    // A run, as jupyter-linked records it: it read boat_mass_kg from the register's json view at these heads.
+    const run = (status, text, over = {}) => {
+      const startHeads = [...notebook.heads()]
+      const readAt = [...regHandle.heads()]
+      notebook.change((d) => {
+        d.cells[0].outputs = text == null ? [] : [{ output_type: "stream", name: "stdout", text }]
+      })
+      const finishHeads = [...notebook.heads()]
+      const outputs = runKeyOf(notebook.doc())
+      notebook.change((d) => {
+        d.metadata.patchwork.run = { at: "t", finished: status === "running" ? null : "t", status, by: "agent", cells: ["c1"], kernel: "fresh", code: "x", outputs: status === "running" ? null : outputs, startHeads, finishHeads: status === "running" ? null : finishHeads, imports: [], reads: [{ docUrl: register, title: "r", heads: readAt, as: "json", paths: [{ path: ["boat_mass_kg"], hash: "h" }] }], ...over }
+      })
+    }
+    run("ok", "boat_drag_N 1020.4\n")
+    // The register's mass moves after the run read it, before anyone checks.
+    await set.execute({ register, entries: [{ id: "boat_mass_kg", estimate: { value: { nominal: 8900, min: 8700, max: 9100 }, reasoning: "pack added" } }] }, ctx)
+    let out = await check.execute({ register }, ctx)
+    expect(out).toMatch(/boat_drag_N = 1020.4 N/)
+    let doc = (await repo.find(register)).doc()
+    expect(doc.entries.boat_drag_N.model.inputs.boat_mass_kg.nominal).toBe(8330)
+    expect(doc.entries.boat_drag_N.model.by).toMatchObject({ kind: "document", runBy: "agent" })
+    expect(out).toMatch(/STALE\s+boat_drag_N: boat_mass_kg moved since the model ran/)
+
+    // A run that failed, or one still running, gives nothing.
+    run("error", "boat_drag_N 999\n")
+    out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/READ FROM MODEL DOCUMENTS/)
+    run("running", "boat_drag_N 998\n")
+    out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/READ FROM MODEL DOCUMENTS/)
+
+    // A good run at the register's new heads: read, with the new mass, and nothing is stale.
+    run("ok", "boat_drag_N 1089.7\n")
+    out = await check.execute({ register }, ctx)
+    doc = (await repo.find(register)).doc()
+    expect(doc.entries.boat_drag_N.value.nominal).toBe(1089.7)
+    expect(doc.entries.boat_drag_N.model.inputs.boat_mass_kg.nominal).toBe(8900)
+    expect(out).not.toMatch(/STALE/)
+  })
+
+  it("knows which entries a run read: a module import or the whole document reads all; paths name entries by view", () => {
+    const R = "automerge:reg"
+    const at = (h) => [h]
+    const run = (imports, reads) => ({ imports, reads })
+    expect([...registerReads(run([{ docUrl: R, heads: at("a"), as: "hook" }], []), R)]).toEqual([["*", ["a"]]])
+    expect([...registerReads(run([{ docUrl: R, heads: at("a"), as: "missing" }], []), R)]).toEqual([])
+    expect([...registerReads(run([], [{ docUrl: `${R}#x`, heads: at("b"), as: "raw", paths: [["entries", "x_y", "value"], ["title"]] }]), R)]).toEqual([["x_y", ["b"]]])
+    expect([...registerReads(run([], [{ docUrl: R, heads: at("c"), as: "json", paths: [["x_y"], ["z_w"]] }]), R)]).toEqual([["x_y", ["c"]], ["z_w", ["c"]]])
+    expect([...registerReads(run([], [{ docUrl: R, heads: at("d"), as: "raw", paths: [[]] }]), R)]).toEqual([["*", ["d"]]])
+    // The first access to read an entry wins; other documents don't count.
+    expect([...registerReads(run([], [{ docUrl: "automerge:other", heads: at("e"), as: "json", paths: [["x_y"]] }, { docUrl: R, heads: at("f"), as: "json", paths: [["x_y"]] }, { docUrl: R, heads: at("g"), as: "json", paths: [["x_y"]] }]), R)]).toEqual([["x_y", ["f"]]])
   })
 
   it("looks for a quote again when its source changes: still there, nothing to do; gone, the claim is no longer verified", async () => {

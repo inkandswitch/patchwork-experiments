@@ -11,7 +11,10 @@
  *               change (it was run), the check records the run itself: the
  *               printed value, the document's heads and code, and as inputs
  *               the values its own code assigns (what it ran with). Nobody
- *               copies a result by hand.
+ *               copies a result by hand. A linked notebook's run record
+ *               (metadata.patchwork.run, from jupyter-linked) says more: only
+ *               a run that finished well counts, and its inputs are the
+ *               register's entries at the heads the run read them.
  * runRecord     what a model run records about the documents it read: each
  *               one's heads and code fingerprint, and when. For a model that
  *               prints nothing, a person records a run from the panel, the
@@ -180,11 +183,40 @@ function ranWith(input, record, now) {
 }
 
 /**
+ * The register as a run read it, from a linked notebook's run record: for
+ * each entry the run read, the heads it read the register at. An import of
+ * the register (bound as a module) or a read of the whole document reads
+ * every entry; a read with paths reads the entries they name — `[id, …]`
+ * against the json view, `["entries", id, …]` against the raw document. The
+ * first access that reads an entry wins. Map<id | "*", heads>.
+ */
+export function registerReads(run, registerUrl) {
+  const out = new Map()
+  if (!run || !registerUrl) return out
+  const mine = (url) => strip(url) === strip(registerUrl)
+  const put = (key, heads) => {
+    if (heads?.length && !out.has(key)) out.set(key, heads)
+  }
+  for (const i of run.imports ?? []) if (mine(i.docUrl) && i.as !== "missing") put("*", i.heads)
+  for (const r of run.reads ?? []) {
+    if (!mine(r.docUrl)) continue
+    if (!r.paths || r.paths.some((p) => p.length === 0)) put("*", r.heads)
+    for (const p of r.paths ?? []) {
+      const id = r.as === "json" ? p[0] : p[0] === "entries" ? p[1] : null
+      if (id) put(id, r.heads)
+    }
+  }
+  return out
+}
+
+/**
  * Model results whose document has new outputs giving them: [{ id, url,
  * value, was, model }] where `model` is the entry's new model record. Pure:
- * reads the register and a scan, changes nothing.
+ * reads the register and a scan, changes nothing. `registerAt(heads)` gives
+ * the register's entries at earlier heads, for a run record that says which
+ * version of the register the run read.
  */
-export function runsToRead(doc, scan, evaluation = evaluate(doc)) {
+export function runsToRead(doc, scan, evaluation = evaluate(doc), { registerUrl = null, registerAt = null } = {}) {
   const out = []
   // What each document's new outputs give: a result the same run gave is what
   // another result of that run read, whatever the register held before.
@@ -198,6 +230,14 @@ export function runsToRead(doc, scan, evaluation = evaluate(doc)) {
       const mine = record?.outputs?.find((o) => o.id === id)
       if (!mine || record.missing) continue
       if (entry.model?.ran?.[url]?.runKey === record.runKey) break
+      // A notebook still running is writing its outputs: read nothing yet. A run
+      // record that describes these outputs is trusted only when the run
+      // finished well; one about other outputs (run since by other means) is
+      // set aside, and the outputs are read as any notebook's are.
+      if (record.run?.status === "running") break
+      const run = record.run && record.run.outputs === record.runKey ? record.run : null
+      if (run && (run.status !== "ok" || !run.finished)) break
+      const read = registerReads(run, registerUrl)
       const ran = {}
       for (const other of Object.keys(entry.model?.ran ?? {})) {
         const r = scan.docs?.[other]
@@ -205,8 +245,24 @@ export function runsToRead(doc, scan, evaluation = evaluate(doc)) {
       }
       // The code the run had: for a document that keeps its run, as of that run's heads.
       ran[url] = { heads: record.heads, code: record.runCode ?? record.code, runKey: record.runKey }
-      const inputs = Object.fromEntries(Object.keys(entry.model?.inputs ?? {}).map((input) => [input, given.has(`${url}|${input}`) ? plainValue(given.get(`${url}|${input}`)) : ranWith(input, record, evaluation.byId.get(input)?.value)]))
-      out.push({ id, url, path: record.path, value: mine.value, was: entry.model?.value ?? null, model: { ...plain(entry.model), value: mine.value, ran, ranAt: scan.time, inputs, by: { kind: "document", url, line: `${mine.part}:${mine.line}` } } })
+      // What the run read for each input: the same run's own result; else the
+      // register as the run record says it read it; else what the code assigns,
+      // over the register now.
+      const atHeads = (input) => {
+        const heads = read.get(input) ?? read.get("*")
+        if (!heads || !registerAt) return undefined
+        const then = registerAt(heads)
+        return then ? plainValue(then[input]?.value ?? null) : undefined
+      }
+      const inputs = Object.fromEntries(
+        Object.keys(entry.model?.inputs ?? {}).map((input) => {
+          if (given.has(`${url}|${input}`)) return [input, plainValue(given.get(`${url}|${input}`))]
+          const then = atHeads(input)
+          return [input, then !== undefined ? then : ranWith(input, record, evaluation.byId.get(input)?.value)]
+        }),
+      )
+      const by = { kind: "document", url, line: `${mine.part}:${mine.line}`, ...(run?.by ? { runBy: run.by } : {}) }
+      out.push({ id, url, path: record.path, value: mine.value, was: entry.model?.value ?? null, model: { ...plain(entry.model), value: mine.value, ran, ranAt: scan.time, inputs, by } })
       break
     }
   }
@@ -252,7 +308,20 @@ export async function checkFolder(handle, repo, { folderUrl = null, message = "c
   if (signal?.aborted) return { scan: null, saved: false, stopped: true, runs: [] }
   scan.sources = sources
   const sourcesMoved = canonical(sources) !== canonical(doc.scan?.sources ?? {})
-  const runs = runsToRead(doc, scan)
+  // The register at the heads a run record says the run read it at (cached per heads).
+  const views = new Map()
+  const registerAt = (heads) => {
+    const key = [...heads].sort().join(",")
+    if (!views.has(key)) {
+      try {
+        views.set(key, typeof handle.view === "function" ? plain(handle.view([...heads]).doc()?.entries ?? null) : null)
+      } catch {
+        views.set(key, null)
+      }
+    }
+    return views.get(key)
+  }
+  const runs = runsToRead(doc, scan, evaluate(doc), { registerUrl: handle.url, registerAt })
   if (quiet && !runs.length && !rechecks.length && !sourcesMoved && !worthSaving(doc.scan, scan, doc.entries)) return { scan, saved: false, stopped: false, runs }
   handle.change(
     (d) => {

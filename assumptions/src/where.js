@@ -167,6 +167,29 @@ export function runKeyOf(doc) {
   return `r:${hash(JSON.stringify(cells))}`
 }
 
+/**
+ * A linked notebook's record of its last run (metadata.patchwork.run, written
+ * by jupyter-linked; its README's "Run record" is the contract), cut down to
+ * what the register reads: whether it finished well, which outputs it
+ * describes, the notebook's heads when it started, and every document it
+ * imported or read, at the version it read and with the paths it read.
+ * Null for a document without one.
+ */
+export function runRecordOf(doc) {
+  const r = doc?.metadata?.patchwork?.run
+  if (!r || typeof r !== "object") return null
+  const heads = (h) => (Array.isArray(h) ? [...h].map(str) : null)
+  return {
+    status: str(r.status),
+    finished: r.finished ? str(r.finished) : null,
+    by: r.by ? str(r.by) : null,
+    outputs: r.outputs == null ? null : str(r.outputs),
+    startHeads: heads(r.startHeads),
+    imports: (r.imports ?? []).map((i) => ({ docUrl: str(i.docUrl), heads: heads(i.heads), as: str(i.as) })),
+    reads: (r.reads ?? []).map((x) => ({ docUrl: str(x.docUrl), heads: heads(x.heads), as: str(x.as), paths: Array.isArray(x.paths) ? x.paths.map((p) => (Array.isArray(p?.path) ? p.path.map(str) : [])) : null })),
+  }
+}
+
 /** A kept source's fingerprint: all its readable text, or its heads when it has none. Any change counts. */
 export function sourceFingerprint(doc, heads = []) {
   const text = sourceText(doc ?? {})
@@ -373,15 +396,17 @@ export async function scanFolder(repo, { entries, registerUrl, folderUrl, also =
       leaves.push({ order, key, record: { ...before, path }, reused: true, required: needed })
     } else {
       const parts = partsOf(doc, path)
-      // A document that keeps its last run: the code that run had, from its heads then.
+      // A document that keeps its last run (OpenSCAD's lastRun, a linked
+      // notebook's run record): the code that run had, from its heads then.
+      const run = runRecordOf(doc)
+      const startHeads = run?.startHeads ?? (Array.isArray(doc?.lastRun?.heads) ? [...doc.lastRun.heads].map(str) : null)
       let runCode
-      if (Array.isArray(doc?.lastRun?.heads) && doc.lastRun.heads.length && typeof handle.view === "function") {
+      if (startHeads?.length && typeof handle.view === "function") {
         try {
-          const then = [...doc.lastRun.heads].map(str)
-          runCode = codeOf(handle.view(then).doc(), then)
+          runCode = codeOf(handle.view(startHeads).doc(), startHeads)
         } catch {}
       }
-      const record = { path, heads, code: codeOf(doc, heads), ...(runCode ? { runCode } : {}), runKey: runKeyOf(doc), outputs: outputsOf(doc, ids), export: parts.some((p) => p.text.includes(GENERATED_MARK)), hits: [], assigns: [] }
+      const record = { path, heads, code: codeOf(doc, heads), ...(runCode ? { runCode } : {}), ...(run ? { run } : {}), runKey: runKeyOf(doc), outputs: outputsOf(doc, ids), export: parts.some((p) => p.text.includes(GENERATED_MARK)), hits: [], assigns: [] }
       if (!record.export) {
         for (const { part, text, code } of parts) {
           for (const hit of usesIn(text, index)) record.hits.push({ ...hit, use: code ? "model" : "prose", part })
