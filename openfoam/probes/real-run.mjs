@@ -54,12 +54,12 @@ try {
   }
   check("the daemon shows online", online, await text(".openfoam .server-box"));
   await fill('.openfoam select[data-k="mode"]', "double-body");
-  await fill('.openfoam select[data-k="speedUnit"]', "kn");
+  await fill('.openfoam select[data-k="speed-unit"]', "kn");
   await sleep(300);
   await fill('.openfoam input[data-k="speed"]', KNOTS);
   await sleep(800);
   const label = await text(".openfoam .run");
-  check(`Run names ${KNOTS} kn`, new RegExp(`${KNOTS.toFixed(2)} kn`).test(label ?? ""), label);
+  check(`Run names ${KNOTS} kn`, new RegExp(`Run at ${KNOTS} kn`).test(label ?? ""), label);
   const before = await b.js(`(${DEEP})(".openfoam .runs-table tr[data-url]").length`);
   await b.js(`${q(".openfoam .run")}.click()`);
   console.error(`${s()} pressed Run`);
