@@ -1,7 +1,7 @@
 // Ambs and distributions written inside larger formulas.
 
 import { describe, expect, test } from 'vitest';
-import { moveRefs, shiftRefs } from '../src/lang/rewrite';
+import { moveRefs, shiftAddr, shiftRefs } from '../src/lang/rewrite';
 import { ASError, valueKey, type RawValue } from '../src/lang/values';
 import { histogram, lineChart, pivot, summarize, tableDimensions, viewOf, type Filter } from '../src/model/analysis';
 import { ambLabel, compileSheet } from '../src/model/compile';
@@ -130,5 +130,52 @@ describe('everything else still works with them', () => {
     expect(moveRefs('=B2 * normal($A$1, A2) + SUM(ambify(C1:C3))', 1, 1)).toBe(
       '=C3 * normal($A$1, B3) + SUM(ambify(D2:D4))',
     );
+  });
+});
+
+describe('filtering on a choice inside a formula', () => {
+  test('its value is part of every scenario, under its id', () => {
+    const r = run({ A1: 'car = {100, 200}', A2: '=car + {1, 2, 3}' });
+    expect(r.compiled.subjects.map((s) => [s.id, s.label, s.isAmb])).toEqual([
+      ['A1', 'car (A1)', true],
+      ['A2', 'A2', false],
+      ['A2#1', '{1, 2, 3} in A2', true],
+    ]);
+    expect(r.columns['A2#1']).toEqual([1, 2, 3, 1, 2, 3]);
+    expect(r.columns['?A2#1']).toEqual([0, 1, 2, 0, 1, 2]); // (the raw choice)
+
+    const amb = r.compiled.ambsById.get('A2#1')!;
+    const summary = summarize({ addr: amb.id, spec: amb.spec }, viewOf(r));
+    expect(summary.values!.map((v) => [v.value, v.count])).toEqual([
+      [1, 2],
+      [2, 2],
+      [3, 2],
+    ]);
+  });
+
+  test('a filter on it narrows everything else', () => {
+    const r = run({ A1: 'car = {100, 200}', A2: '=car + {1, 2, 3}' });
+    const view = viewOf(r, new Map([['A2#1', only(3)]]));
+    const a2 = summarize(r.compiled.cells.get('A2')!, view);
+    expect(a2.passing).toBe(2);
+    expect(a2.values!.filter((v) => v.passing > 0).map((v) => v.value)).toEqual([103, 203]);
+  });
+
+  test('a rare range of a distribution inside a formula can be sought out', () => {
+    const compiled = compileSheet(sheet({ A1: '=1000 * normal(1, 0.1)' }));
+    const filters = new Map<string, Filter>([['A1#1', { kind: 'range', min: 1.4, max: 2 }]]);
+    const focus = findMatching(compiled, filters, { target: 2_000, seed: 0.5 });
+    expect(focus.phase).toBe('sampling');
+    expect(focus.columns['A1#1'].every((x: number) => x >= 1.4)).toBe(true);
+    expect(focus.columns.A1.every((x: number) => x >= 1400)).toBe(true);
+    // P(Z >= 4) = 1 in 31,574
+    expect(focus.probability * 31_574).toBeGreaterThan(0.6);
+    expect(focus.probability * 31_574).toBeLessThan(1.6);
+  });
+
+  test('its filter follows it when rows move', () => {
+    expect(shiftAddr('D4#2', { kind: 'insert', axis: 'row', index: 0, count: 1 })).toBe('D5#2');
+    expect(shiftAddr('D4#2', { kind: 'delete', axis: 'row', index: 3, count: 1 })).toBeNull();
+    expect(shiftAddr('D4', { kind: 'insert', axis: 'col', index: 0, count: 1 })).toBe('E4');
   });
 });

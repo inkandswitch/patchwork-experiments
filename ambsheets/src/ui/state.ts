@@ -205,7 +205,7 @@ export function createSheetState(handle: AmbsheetHandle) {
     const r = run();
     const v = view();
     const result = new Map<string, Summary>();
-    for (const info of r.compiled.varying) result.set(info.addr, summarize(info, v));
+    for (const { id, spec } of r.compiled.subjects) result.set(id, summarize({ addr: id, spec }, v));
     return result;
   });
 
@@ -235,13 +235,13 @@ export function createSheetState(handle: AmbsheetHandle) {
 
   /**
    * Previews what the sheet looks like when some choices are made a certain way. (Only
-   * choices that are a cell of their own can be filtered on, and only by a known value.)
+   * for choices among values that are known up front.)
    */
   const hoverChoices = (choices: [AmbInfo, number][]) => {
     const preview = new Map<string, Filter>();
     for (const [amb, index] of choices) {
-      if (!amb.whole || amb.spec.kind !== 'discrete') continue;
-      preview.set(amb.addr, { kind: 'values', keys: new Set([valueKey(amb.spec.values[index])]) });
+      if (amb.spec.kind !== 'discrete') continue;
+      preview.set(amb.id, { kind: 'values', keys: new Set([valueKey(amb.spec.values[index])]) });
     }
     setHover(preview.size > 0 ? preview : null);
   };

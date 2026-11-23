@@ -67,6 +67,30 @@ export interface AmbInfo {
   spec: AmbSpec;
   /** How it is written, like "normal(1, 0.1)". */
   source: string;
+  /** Its value in a scenario. (Which the scenario also has, under `id`.) */
+  fn: CellFn;
+}
+
+/**
+ * Something with several possible values that can be summarized and filtered on: a cell
+ * that varies, or an amb written inside a formula.
+ */
+export interface Subject {
+  /**
+   * A cell's address, or the id of an amb inside a formula ("D4#1"). In a scenario, and
+   * so in the columns of a run, this is the name its value goes by.
+   */
+  id: string;
+  /** The cell it is (in). */
+  pos: Pos;
+  /** What to call it: "total (B7)", or "{1, 2, 3} in D4". */
+  label: string;
+  /** For ambs: what kind. */
+  spec: AmbSpec | null;
+  /** For true/false formulas that have one: see compileMargin. */
+  margin: Margin | null;
+  /** True for the ambs (the inputs), false for the formulas that depend on them. */
+  isAmb: boolean;
 }
 
 export interface CellInfo {
@@ -119,6 +143,11 @@ export interface CompiledSheet {
   /** The ambs, in sheet order. These are the dimensions of the possibility space. */
   ambs: AmbInfo[];
   ambsById: Map<string, AmbInfo>;
+  /** Everything that can be summarized and filtered on, in sheet order. */
+  subjects: Subject[];
+  subjectsById: Map<string, Subject>;
+  /** The names of the values that make up a scenario: every amb's key, and every subject's id. */
+  columns: string[];
   /** The cells whose value differs between scenarios (ambs included), in sheet order. */
   varying: CellInfo[];
   /** How many scenarios there are. Infinity if any amb is a continuous distribution. */
@@ -367,20 +396,29 @@ export function compileSheet(data: unknown): CompiledSheet {
     const whole = node === ctx.top;
     const id = whole ? ctx.addr : `${ctx.addr}#${ctx.ambs.length + 1}`;
     const key = ambKey(id);
-    ctx.ambs.push({ id, key, addr: ctx.addr, whole, spec, source: node.source.trim() });
 
+    let fn: CellFn;
     switch (spec.kind) {
       case 'discrete': {
         const values = spec.values;
-        return (s) => values[s[key]];
+        fn = (s) => values[s[key]];
+        break;
       }
       case 'pick': {
         const readers = spec.cells.map((cell) => reader(cell, ctx.refs));
-        return (s) => readers[s[key]](s);
+        fn = guarded((s) => readers[s[key]](s));
+        break;
       }
       default:
-        return (s) => s[key];
+        fn = (s) => s[key];
     }
+    ctx.ambs.push({ id, key, addr: ctx.addr, whole, spec, source: node.source.trim(), fn });
+
+    // An amb that is the whole cell is the cell's formula. One inside a larger formula
+    // gets a formula of its own in the engine, named by its id, which the cell's formula
+    // reads. That gives its value a place in every scenario, to be summarized and
+    // filtered on like a cell's.
+    return whole ? fn : (s) => s[id];
   };
 
   /** What kind of amb a node describes. (Or what is wrong with it.) */
@@ -562,6 +600,26 @@ export function compileSheet(data: unknown): CompiledSheet {
   const varying = [...cells.values()].filter((info) => info.kind !== 'const');
   const ambs = varying.flatMap((info) => info.ambs);
   const cardinality = ambs.reduce((n, amb) => n * ambSize(amb.spec), 1);
+  const subjects = varying.flatMap((info): Subject[] => [
+    {
+      id: info.addr,
+      pos: info.pos,
+      label: displayName(info),
+      spec: info.spec,
+      margin: info.margin,
+      isAmb: info.kind === 'amb',
+    },
+    ...info.ambs
+      .filter((amb) => !amb.whole)
+      .map((amb) => ({
+        id: amb.id,
+        pos: info.pos,
+        label: `${amb.source} in ${displayName(info)}`,
+        spec: amb.spec,
+        margin: null,
+        isAmb: true,
+      })),
+  ]);
 
   return {
     rows,
@@ -570,6 +628,9 @@ export function compileSheet(data: unknown): CompiledSheet {
     names,
     ambs,
     ambsById: new Map(ambs.map((amb) => [amb.id, amb])),
+    subjects,
+    subjectsById: new Map(subjects.map((subject) => [subject.id, subject])),
+    columns: [...ambs.map((amb) => amb.key), ...subjects.map((subject) => subject.id)],
     varying,
     cardinality,
     continuous: ambs.some((amb) => isContinuous(amb.spec)),
@@ -668,7 +729,11 @@ function makeAmb(factory: AmbFactory, spec: AmbSpec) {
 function makeEngine(ambs: AmbInfo[], cells: CellInfo[]): AmbEngine<any, any> {
   return new AmbEngine<any, any>(
     (factory) => Object.fromEntries(ambs.map((amb) => [amb.key, makeAmb(factory, amb.spec)])),
-    Object.fromEntries(cells.map((info) => [info.addr, info.fn!])),
+    Object.fromEntries([
+      ...cells.map((info) => [info.addr, info.fn!]),
+      // (ambs inside formulas have formulas of their own: see compileAmb)
+      ...ambs.filter((amb) => !amb.whole).map((amb) => [amb.id, amb.fn]),
+    ]),
   );
 }
 

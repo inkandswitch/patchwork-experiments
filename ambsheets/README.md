@@ -37,10 +37,14 @@ vary.
 
 Every amb or distribution that is *written* is a separate choice, so
 `=normal(0, 1) + normal(0, 1)` adds two different numbers, while `=A1 + A1` (with A1 a
-normal) adds the same number twice. A cell that is nothing but an amb is an "input": it
-gets its own entry in the Filters panel. An amb inside a larger formula has no cell of
-its own to filter on, but it still shows up as a choice in the cell's dependencies and as
-a dimension for tables (as, say, "`{1, 2, 3}` in D4").
+normal) adds the same number twice. Either way it is an "input" with an entry of its own
+in the Filters panel: a cell that is nothing but an amb is listed as the cell, and an amb
+inside a larger formula as, say, "`{1, 2, 3}` in D4". The same names appear in the cell's
+dependencies and as dimensions for tables.
+
+In the model, anything that can be summarized and filtered on is a *subject*
+(`CompiledSheet.subjects`): a varying cell, or an amb inside a formula. Each has a column
+in every run under its id (`B7`, or `D4#1`), and filters are keyed by that id.
 
 ## Help while typing
 

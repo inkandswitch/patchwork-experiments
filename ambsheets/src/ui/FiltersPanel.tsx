@@ -1,11 +1,12 @@
-// The filters panel: every cell that has more than one value, split into inputs (the
-// ambs) and outputs (the formulas that depend on them). Checking values, or narrowing a
+// The filters panel: everything that has more than one value, split into inputs (the
+// ambs, whether they are a cell of their own or written inside a formula) and outputs
+// (the formulas that depend on them). Checking values, or narrowing a
 // range, keeps only the scenarios that match, and everything else on the sheet shows
 // which of its values are still possible.
 
 import { For, Index, Show, createMemo, createSignal } from 'solid-js';
 import { printNumber, printValue } from '../lang/values';
-import { displayName, type CellInfo } from '../model/compile';
+import type { Subject } from '../model/compile';
 import { isRangeValued, type Summary, type ValueCount } from '../model/analysis';
 import { RangeSlider } from './RangeSlider';
 import { useSheet } from './state';
@@ -14,13 +15,11 @@ const COLLAPSED_VALUES = 5;
 
 export function FiltersPanel() {
   const s = useSheet();
-  // (an amb written inside a larger formula has no cell of its own to filter on; the
-  // formula's cell shows up among the outputs)
-  const inputs = () => s.run().compiled.varying.filter((info) => info.kind === 'amb');
+  const inputs = () => s.run().compiled.subjects.filter((subject) => subject.isAmb);
   const outputs = createMemo(() =>
-    s.run().compiled.varying.filter((info) => {
-      if (info.kind !== 'formula' || isRangeValued(s.run(), info.addr)) return false;
-      const summary = s.summaries().get(info.addr);
+    s.run().compiled.subjects.filter((subject) => {
+      if (subject.isAmb || isRangeValued(s.run(), subject.id)) return false;
+      const summary = s.summaries().get(subject.id);
       return summary !== undefined && (summary.values === null || summary.values.length > 1);
     }),
   );
@@ -48,10 +47,10 @@ export function FiltersPanel() {
           }
         >
           <h3>Inputs</h3>
-          <For each={inputs()}>{(info) => <CellFilter info={info} />}</For>
+          <For each={inputs()}>{(subject) => <SubjectFilter subject={subject} />}</For>
           <Show when={outputs().length > 0}>
             <h3>Outputs</h3>
-            <For each={outputs()}>{(info) => <CellFilter info={info} />}</For>
+            <For each={outputs()}>{(subject) => <SubjectFilter subject={subject} />}</For>
           </Show>
         </Show>
       </div>
@@ -59,9 +58,9 @@ export function FiltersPanel() {
   );
 }
 
-function CellFilter(props: { info: CellInfo }) {
+function SubjectFilter(props: { subject: Subject }) {
   const s = useSheet();
-  const addr = () => props.info.addr;
+  const addr = () => props.subject.id;
   const summary = () => s.summaries().get(addr());
   const [expanded, setExpanded] = createSignal(false);
   const values = () => summary()?.values ?? null;
@@ -69,8 +68,8 @@ function CellFilter(props: { info: CellInfo }) {
 
   return (
     <div class="cell-filter" data-filtered={s.filters().has(addr()) ? '' : undefined}>
-      <button class="cell-filter-name" onClick={() => s.select(props.info.pos)} title="Select this cell">
-        {displayName(props.info)}
+      <button class="cell-filter-name" onClick={() => s.select(props.subject.pos)} title="Select this cell">
+        {props.subject.label}
       </button>
       <Show when={summary()}>
         {(summary) => (

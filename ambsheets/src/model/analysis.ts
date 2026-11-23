@@ -12,7 +12,15 @@
 // filters is computed here, from stored scenarios.
 
 import { isRange, printValue, valueKey, type RangeValue, type RawValue } from '../lang/values';
-import { ambName, ambSize, choiceLabel, isContinuous, type AmbInfo, type CellInfo } from './compile';
+import {
+  ambName,
+  ambSize,
+  choiceLabel,
+  isContinuous,
+  type AmbInfo,
+  type AmbSpec,
+  type CellInfo,
+} from './compile';
 import type { Run } from './run';
 
 /** A filter keeps the scenarios in which a cell has one of some values, or is in a range. */
@@ -114,8 +122,11 @@ export interface Summary {
   passingStats: Stats | null;
 }
 
-/** What to show for a varying cell. */
-export function summarize(info: CellInfo, view: View): Summary {
+/**
+ * What to show for a varying cell, or for anything else that has a column in a run (an
+ * amb inside a formula does, under its id).
+ */
+export function summarize(info: { addr: string; spec: AmbSpec | null }, view: View): Summary {
   const run = view.all;
   const analysis = run.analysis[info.addr];
   const n = run.n;
@@ -179,7 +190,7 @@ export function summarize(info: CellInfo, view: View): Summary {
  * samples are still arriving: an amb's values in the order they were written, numbers
  * ascending, and everything else alphabetically.
  */
-function sortValues(values: ValueCount[], info: CellInfo) {
+function sortValues(values: ValueCount[], info: { spec: AmbSpec | null }) {
   if (info.spec?.kind === 'discrete') {
     const order = new Map<string, number>();
     info.spec.values.forEach((value, i) => {

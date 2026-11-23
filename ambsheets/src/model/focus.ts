@@ -10,7 +10,7 @@
 // (on text, say) can only answer yes or no, and are met by chance or not at all.
 
 import type { ConditionedStatus } from '../engine/amb-engine';
-import type { CellInfo, CompiledSheet, Scenario } from './compile';
+import type { CompiledSheet, Scenario, Subject } from './compile';
 import { passes, type Filter, type Filters, type Sample } from './analysis';
 
 export interface FocusSettings {
@@ -33,8 +33,8 @@ export interface Focus extends Sample, ConditionedStatus {
 /** Above a failing filter, but small enough to disappear next to any real distance. */
 const BARELY = 1e-12;
 
-function condition(info: CellInfo, filter: Filter): (scenario: Scenario) => number {
-  const addr = info.addr;
+function condition(subject: Subject, filter: Filter): (scenario: Scenario) => number {
+  const addr = subject.id;
 
   if (filter.kind === 'range') {
     return (s) => {
@@ -47,7 +47,7 @@ function condition(info: CellInfo, filter: Filter): (scenario: Scenario) => numb
 
   const numbers = [...filter.keys].filter((key) => key[0] === 'n').map((key) => Number(key.slice(1)));
   const [wantsTrue, wantsFalse] = [filter.keys.has('true'), filter.keys.has('false')];
-  const margin = info.margin;
+  const margin = subject.margin;
   return (s) => {
     const value = s[addr];
     if (passes(filter, value)) return 0;
@@ -72,14 +72,15 @@ export function conditionsFor(
   filters: Filters,
 ): ((scenario: Scenario) => number)[] | null {
   const conditions: ((scenario: Scenario) => number)[] = [];
-  for (const [addr, filter] of filters) {
-    const info = compiled.cells.get(addr);
-    if (!info || info.kind === 'const') {
-      // a cell with a single value either passes its filter in every scenario or in none
-      if (!passes(filter, info?.value ?? null)) return null;
+  for (const [id, filter] of filters) {
+    const subject = compiled.subjectsById.get(id);
+    if (subject) {
+      conditions.push(condition(subject, filter));
       continue;
     }
-    conditions.push(condition(info, filter));
+    // a cell with a single value either passes its filter in every scenario or in none
+    const cell = compiled.cells.get(id);
+    if (cell && !passes(filter, cell.value)) return null;
   }
   return conditions.length > 0 ? conditions : null;
 }
@@ -103,10 +104,9 @@ export class FocusEvaluation {
             particles: settings.particles,
           })
         : null;
-    this.checks = [...filters].filter(([addr]) => compiled.cells.get(addr)?.kind !== 'const');
+    this.checks = [...filters].filter(([id]) => compiled.subjectsById.has(id));
 
-    for (const amb of compiled.ambs) this.keys.push(amb.key);
-    for (const info of compiled.varying) this.keys.push(info.addr);
+    this.keys.push(...compiled.columns);
     const columns: Record<string, any[]> = {};
     for (const key of this.keys) columns[key] = [];
 

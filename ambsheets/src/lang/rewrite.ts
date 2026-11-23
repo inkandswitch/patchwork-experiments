@@ -26,13 +26,18 @@ export function shiftIndex(i: number, edit: StructuralEdit): number | null {
   return i >= edit.index + edit.count ? i - edit.count : null;
 }
 
-/** Where the cell at `addr` ends up after the edit. Null if it was deleted (or pushed off the sheet). */
+/**
+ * Where the cell at `addr` ends up after the edit. Null if it was deleted (or pushed off
+ * the sheet). The id of an amb inside a formula ("D4#1") moves with its cell.
+ */
 export function shiftAddr(addr: string, edit: StructuralEdit): string | null {
-  const pos = posOf(addr);
+  const [cell, nth] = addr.split('#');
+  const pos = posOf(cell);
   const moved = shiftIndex(edit.axis === 'row' ? pos.row : pos.col, edit);
   if (moved === null) return null;
   const next = edit.axis === 'row' ? { row: moved, col: pos.col } : { row: pos.row, col: moved };
-  return next.col < MAX_COLS ? addrOf(next) : null;
+  if (next.col >= MAX_COLS) return null;
+  return nth === undefined ? addrOf(next) : `${addrOf(next)}#${nth}`;
 }
 
 const REF_ERROR = '#REF!';

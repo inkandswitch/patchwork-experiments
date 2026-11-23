@@ -60,12 +60,13 @@ export interface Run {
   target: number;
   done: boolean;
   /**
-   * The scenarios themselves, by column. Varying cells are stored under their address,
-   * ambs under their key (a choice index, or the number drawn from a distribution).
+   * The scenarios themselves, by column (see CompiledSheet.columns). Values are stored
+   * under the id of their subject: a varying cell's address, or the id of an amb inside a
+   * formula. Each amb's raw choice (an index, or the number drawn) is under its key.
    * Only the first `n` entries of each column are meaningful.
    */
   columns: Record<string, any[]>;
-  /** amb-engine's analysis of all scenarios so far, by cell address. */
+  /** amb-engine's analysis of all scenarios so far, by subject id. */
   analysis: Record<string, CellAnalysis>;
   /** Measured cost of one scenario, in milliseconds (0 until known). */
   msPerScenario: number;
@@ -191,8 +192,7 @@ export class Evaluation {
       randomSeed: settings.seed,
     });
 
-    for (const amb of compiled.ambs) this.keys.push(amb.key);
-    for (const info of compiled.varying) this.keys.push(info.addr);
+    this.keys.push(...compiled.columns);
     const columns: Record<string, any[]> = {};
     for (const key of this.keys) columns[key] = [];
 
@@ -309,9 +309,9 @@ export class Runner {
  */
 function snapshot(run: Run): Run {
   const analysis: Record<string, CellAnalysis> = {};
-  for (const { addr } of run.compiled.varying) {
-    const cell = run.analysis[addr];
-    if (cell) analysis[addr] = { stats: cell.stats, histogram: cell.histogram && new Map(cell.histogram) };
+  for (const { id } of run.compiled.subjects) {
+    const subject = run.analysis[id];
+    if (subject) analysis[id] = { stats: subject.stats, histogram: subject.histogram && new Map(subject.histogram) };
   }
   return { ...run, analysis };
 }
