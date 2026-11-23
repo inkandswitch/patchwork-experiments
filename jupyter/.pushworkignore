@@ -1,0 +1,10 @@
+# local caches
+/.cache/
+# intermediate build output (dist/ has the result)
+/shared/python/build/
+/shared/python/*.egg-info/
+*.tsbuildinfo
+/dist/harness*
+/dist/probe*
+/dist/kernel.html
+__pycache__/
