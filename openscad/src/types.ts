@@ -1,4 +1,5 @@
 import type {AutomergeUrl} from "@automerge/automerge-repo"
+import type {LastRun} from "./lastRun"
 
 /**
  * A reference to another Automerge document whose data should be made
@@ -21,4 +22,6 @@ export type OpenscadDoc = {
 	source: string
 	/** docs dragged in from the sidebar, exposed to `source` as JSON data */
 	imports?: OpenscadImport[]
+	/** the last run and its console, for other tools to read (see src/lastRun.ts) */
+	lastRun?: LastRun
 }
