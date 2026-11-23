@@ -33,7 +33,9 @@ export const plugins = [
     type: "agent:tool",
     id: "notebook_run",
     name: "Run a notebook",
-    where: "worker",
+    // The page: Pyodide runs in a dedicated Worker, and Chrome has no Worker
+    // inside a SharedWorker, so the agent's shared-worker runner can't start one.
+    where: "host",
     risk: "edit",
     description:
       "Run a Jupyter notebook's cells headless, the way a person runs them: first every linked document (the notebook's imports) is read as it is now and made importable from Python as a module, then the cells run in Pyodide, their outputs and execution counts are written into the notebook for anyone watching, and the run is recorded in the notebook (when, each import's version, the code's fingerprint). Returns, per cell, ok or the error with its traceback's tail, the `id value` result lines the cells printed (what an assumptions register reads), and the tail of what they printed. The kernel is kept between calls for the same notebook, so a later call can run just the cells that changed; `restart` starts a fresh one. To link a document, pass `link`: an assumptions register imports as its Python export (`import nootka as reg; reg.boat_mass_kg`), another notebook as its code cells (its functions), a .py file as its text, anything else as its JSON in the dict `data`. In a cell, `patchwork.load(url_or_import_name)` reads any document as plain Python (dicts, lists, str, numbers; `as_=\"json\"` for its datatype's JSON view, a register's flat id → value dict); write the URL literally in the code so the run reads it first. Every document read, and the keys read from it, is recorded, so the report says whether the notebook was stale before the run and why; `check` asks that alone, without running. Never paste a register's values or another notebook's code into a cell; link or load it.",
