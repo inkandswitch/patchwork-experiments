@@ -54,6 +54,7 @@ import { runTool } from "./tools/index.js"
 import { withFileData } from "./files.js"
 import { notesSection } from "./tools/notes.js"
 import { packageSkillsSection } from "./tools/skills.js"
+import { guidesSection, surfaceGuides } from "./tools/guides.js"
 import { sessionKey } from "./providers/openrouter.js"
 import { isInterruption } from "./network.js"
 
@@ -181,6 +182,17 @@ export async function run(opts) {
       if (learned) settings.system = `${system}\n\n${learned}`
     } catch {
       /* no notes this run */
+    }
+  }
+
+  // The package usage guides the agent keeps: listed here, and each one arrives
+  // with the result of the first call that uses its package (surfaceGuides).
+  if (opts.notes !== false) {
+    try {
+      const section = await guidesSection(ctx ?? {})
+      if (section) settings.system = `${settings.system ?? system}\n\n${section}`
+    } catch {
+      /* no guides this run */
     }
   }
 
@@ -788,6 +800,11 @@ async function executeCalls(opts) {
       return reconnect(store, { message: outcome.reason }, emit)
     }
     emit({ type: "call-end", tool: call.tool, summary: outcome.summary, isError: outcome.isError })
+
+    // The first use of a package this session brings its usage guide along
+    // (tools/guides.js): the result is where the agent is looking.
+    const guide = await surfaceGuides(ctx, call, tool, outcome.output)
+    if (guide) outcome.output = `${outcome.output}\n\n${guide}`
 
     // Only while the claim is still this run's: a runner that took the session
     // over meanwhile may have closed the call as interrupted, and that stands.

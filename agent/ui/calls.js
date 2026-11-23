@@ -125,6 +125,11 @@ export const PRESENTATION = {
   workflow_budget: { verb: "give more budget to", detail: (i) => (i.step ? `${i.step} (+${i.add ?? "?"})` : null) },
   note_read: { verb: "recall", detail: (i) => i.name ?? "notes" },
   note_delete: { verb: "forget", detail: (i) => i.name ?? null },
+  // A package is named by folder URL, which a person should not have to read.
+  guide_read: { verb: "recall the guide for", detail: (i) => (i.package && !/^automerge:/.test(i.package) ? i.package : i.package ? "a package" : "all packages") },
+  guide_changes: { verb: "see what changed in", detail: (i) => (i.package && !/^automerge:/.test(i.package) ? i.package : "a package") },
+  guide_pin: { verb: "mark reviewed", detail: (i) => (i.package && !/^automerge:/.test(i.package) ? i.package : "a guide") },
+  guide_write: { verb: "write the guide for", detail: (i) => i.name ?? (i.package && !/^automerge:/.test(i.package) ? i.package : "a package") },
   fs_edit: {
     verb: "edit",
     detail: (i) => (i.path ? baseName(i.path) : i.url ? "file" : null),

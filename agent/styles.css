@@ -124,6 +124,31 @@
 
 .patchwork-agent .agent-model:hover { background: var(--agent-surface); }
 
+/* Usage guides the agent keeps, and where each stands. */
+.patchwork-agent .agent-guides-link {
+  font-size: 0.72rem;
+  color: var(--agent-accent-text);
+  background: none;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 1px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.patchwork-agent .agent-guides-link:hover { background: var(--agent-surface); }
+.patchwork-agent .agent-guides-link[hidden], .patchwork-agent .agent-guides-panel[hidden] { display: none; }
+.patchwork-agent .agent-guides-panel {
+  border-bottom: 1px solid var(--agent-border);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  max-height: 40%;
+  overflow: auto;
+}
+.patchwork-agent .agent-guides-item { padding: 4px 0; }
+.patchwork-agent .agent-guides-summary, .patchwork-agent .agent-guides-words, .patchwork-agent .agent-guides-empty { opacity: 0.75; }
+.patchwork-agent .agent-guides-stale .agent-guides-words,
+.patchwork-agent .agent-guides-gone .agent-guides-words { opacity: 1; font-weight: 600; }
+
 /* The workflow this session started or is a step of. */
 .patchwork-agent .agent-workflow-link {
   font-size: 0.72rem;

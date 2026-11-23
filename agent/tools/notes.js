@@ -157,7 +157,7 @@ export async function notesSection(ctx) {
     lines.push("", "Before you start, note_read any that bear on the task.")
   }
   lines.push(
-    "When you work out something non-obvious that will matter again — and especially when you got it wrong first — note_write it before you finish."
+    "When you work out something non-obvious that will matter again — and especially when you got it wrong first — note_write it before you finish. How to use a package's tools is the exception: that goes in the package's usage guide (guide_write), not a note."
   )
   return lines.join("\n")
 }
@@ -179,7 +179,7 @@ export const noteWrite = {
   description: [
     "Keep something you learned, for every later session. Notes are markdown files in the user's \"Agent notes\" folder; each session starts with a list of them.",
     "",
-    "Worth keeping: what you could not have known at the start and had to work out — how a datatype or tool is actually shaped, a mistake and what fixed it, how something in this workspace behaves, a preference the user stated. Not worth keeping: a log of what you did, anything already in a skill, anything you could read straight off a document.",
+    "Worth keeping: what you could not have known at the start and had to work out — how a datatype or tool is actually shaped, a mistake and what fixed it, how something in this workspace behaves, a preference the user stated. Not worth keeping: a log of what you did, how to use a package's tools (that goes in the package's guide, guide_write), anything already in a skill, anything you could read straight off a document.",
     "",
     "One topic per note. Start with `# Title`, then one line saying what it is — that line is what later sessions see in the list. To add to a note, note_read it and write the whole thing back: only the difference is written. Rather than a second note on the same topic, update the first; if one turns out wrong, fix it or note_delete it.",
     "",

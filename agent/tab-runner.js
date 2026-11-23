@@ -19,6 +19,7 @@ import { hostImport } from "./tools/host.js"
 import { getMount } from "./tools/checking.js"
 import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "./tools/guard.js"
 import { braveSearch } from "./tools/web.js"
+import { packageRef } from "./tools/guides.js"
 
 /**
  * The fetch every tool in this tab uses. It refuses this page's own origin —
@@ -83,6 +84,13 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       ...accountContext(),
       skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
       skillRegistry,
+      // Which package a plugin came from, for usage guides (tools/guides.js):
+      // `{ url, heads, name }` for the package folder behind a plugin id.
+      packageOf: async (type, id) => {
+        const plugin = (await hostImport("plugins")).getRegistry(type).all().find((p) => p.id === id)
+        const ref = plugin?.importUrl ? packageRef(plugin.importUrl) : null
+        return ref ? { ...ref, name: plugin.name ?? plugin.id } : null
+      },
       // So view_screenshot can photograph a view that view_mount opened.
       getMount,
       fetchImpl,
