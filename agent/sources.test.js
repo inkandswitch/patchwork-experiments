@@ -306,7 +306,7 @@ describe("web_fetch answers from what was already kept", () => {
     const seen = []
     const fetchImpl = async (url) => (seen.push(url), url.startsWith("https://r.test/") ? respond(MARKDOWN) : respond(PDF, { type: "application/pdf" }))
     const read = await webFetch.execute({ url: PDF_URL }, { repo, session: sessionOf(repo), reader: "https://r.test/", fetchImpl })
-    expect(seen).toEqual([`https://r.test/${PDF_URL}`, PDF_URL])
+    expect(seen).toEqual([PDF_URL, `https://r.test/${PDF_URL}`])
     expect(read.doc.url).not.toBe(kept.doc.url)
     recordArtifact(repo.session, read.doc)
 

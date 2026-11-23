@@ -24,6 +24,7 @@ import { readable, sessionDoc, keptSources, headingAt, outline, formatOf, readOn
 import { bytes } from "./format.js"
 import { imageForModel } from "../images.js"
 import { fileKind, officeText, MAX_FILE_BYTES } from "../files.js"
+import { readPdf, pdfSummary } from "../pdf-text.js"
 
 export const READ_LIMIT = 8000
 export const MAX_READ = 20000
@@ -99,6 +100,33 @@ export async function openDocument(source, repo) {
 
 const titleOf = (doc) => doc.name ?? doc.title ?? "untitled"
 
+/**
+ * The text read from a kept PDF's bytes: `{text, marks, scanned, summary}` or
+ * `{error}`. Pages are numbered by `[Page N]` lines and marks.
+ */
+export async function pdfOf(doc, url) {
+  const kept = readable(doc)
+  if (kept != null) return { text: kept, marks: Array.isArray(doc.marks) ? doc.marks : [] }
+  try {
+    const read = await readPdf(doc.content, url)
+    const summary = pdfSummary(read.extracted)
+    return read.extracted.scanned ? { scanned: true, summary } : { text: read.text, marks: read.marks, summary }
+  } catch (err) {
+    return { error: err?.message ?? String(err), summary: `its text could not be read here (${err?.message ?? err})` }
+  }
+}
+
+/**
+ * A PDF with no text layer: said so, and the PDF handed over for a model that
+ * can look at pages, when it is small enough to send.
+ */
+export function pdfWithoutText(doc, url, name, mine) {
+  const size = bytes(doc.content.byteLength)
+  const lead = `'${name}' (${url}) — a PDF (${size}): ${mine.summary}`
+  if (doc.content.byteLength > MAX_FILE_BYTES) return `${lead}. It is too large to attach.`
+  return { text: `${lead}. The PDF itself is attached to this result, in case you can read page images; otherwise open it in Patchwork.`, file: { url, name: doc.name ?? "document.pdf", mimeType: "application/pdf" } }
+}
+
 export const sourceRead = {
   id: "source_read",
   name: "Read a kept source",
@@ -106,7 +134,7 @@ export const sourceRead = {
   description: [
     "Read a fetched page, PDF or response that was kept as a document — every web_fetch and http_request result names one — or a finding a research step wrote. Free, instant, and the offsets never shift, so prefer it to fetching again.",
     "",
-    "Page through with `offset` and `limit`: the result says which heading you are under and where to read on. Or pass `find` to search: it lists each match with its offset and the heading it is under, and then you read from one of those offsets.",
+    "A PDF reads as text, each page under a `[Page N]` line: cite the page with the quote. Page through with `offset` and `limit`: the result says which heading you are under and where to read on. Or pass `find` to search: it lists each match with its offset and the heading it is under, and then you read from one of those offsets.",
   ].join("\n"),
   where: "worker",
   risk: "read",
@@ -130,6 +158,7 @@ export const sourceRead = {
     const url = handle.url
     const name = titleOf(doc)
     let text = readable(doc)
+    let marks = Array.isArray(doc.marks) ? doc.marks : []
     if (text == null) {
       // What was kept with no text beside it: read it as what it is (files.js).
       const kind = fileKind(doc)
@@ -137,8 +166,13 @@ export const sourceRead = {
         const shown = await imageForModel(doc.content, kind.type)
         if (shown) return { text: `'${name}' (${url}) — an image (${kind.type}, ${bytes(doc.content.byteLength)}), attached to this result.`, image: shown.url }
       }
-      if (kind?.kind === "pdf" && doc.content.byteLength <= MAX_FILE_BYTES) {
-        return { text: `'${name}' (${url}) — a PDF (${bytes(doc.content.byteLength)}) with no text kept beside it; the PDF itself is attached to this result.`, file: { url, name: doc.name ?? "document.pdf", mimeType: "application/pdf" } }
+      if (kind?.kind === "pdf") {
+        // No text was kept beside it (the reader refused, or an older copy):
+        // read it from its bytes, which is the same text every time.
+        const mine = await pdfOf(doc, url)
+        if (mine.text == null) return pdfWithoutText(doc, url, name, mine)
+        text = mine.text
+        marks = mine.marks
       }
       if (kind?.kind === "office") text = await officeText(doc.content, kind.format).catch(() => null)
       if (kind?.kind === "text") text = kind.text
@@ -149,7 +183,6 @@ export const sourceRead = {
       const size = content?.byteLength != null ? `, ${bytes(content.byteLength)}` : ""
       return `This is binary (${kind}${size}) with no text kept; open it in Patchwork.`
     }
-    const marks = Array.isArray(doc.marks) ? doc.marks : []
 
     const find = String(input.find ?? "")
     if (find.trim()) {
@@ -217,7 +250,8 @@ export const sourceList = {
       } catch {
         /* listed below as unreadable */
       }
-      const text = readable(doc)
+      let text = readable(doc)
+      if (text == null && doc && fileKind(doc)?.kind === "pdf") text = (await pdfOf(doc, entry.url)).text ?? null
       const what = entry.what ?? (doc?.role === "extract" ? "extract" : doc?.mimeType === "application/pdf" ? "pdf" : "file")
       const size = text != null ? `${text.length} chars` : doc ? "binary" : "not loaded"
       if (find.trim()) {

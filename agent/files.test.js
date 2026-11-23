@@ -7,7 +7,8 @@ import { fileKind, decodeIfText, unzip, officeText, withFileData, MAX_FILE_BYTES
 import { initSession, makeTurn, textBlock, callBlock, resultBlock, attachmentBlock, toRequest, CALL, _resetIds } from "./session.js"
 import { toOpenAIMessages } from "./providers/openrouter.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
-import { sourceRead } from "./tools/read-source.js"
+import { sourceRead, sourceList } from "./tools/read-source.js"
+import { makePdf } from "./pdf-fixture.js"
 
 beforeEach(_resetIds)
 
@@ -134,10 +135,57 @@ describe("doc_read reads every kind", () => {
     expect(out).toMatch(/'spec\.docx' \(docx, .*\) — the text of this docx file, \d+ characters\.\n\nBattery spec/)
   })
 
-  it("a PDF, handed over whole by reference", async () => {
+  it("a PDF whose text cannot be read is handed over whole by reference", async () => {
     const out = await read({ name: "sheet.pdf", mimeType: "application/pdf", content: PDF })
-    expect(out.text).toMatch(/The PDF itself is attached to this result/)
+    expect(out.text).toMatch(/its text could not be read here.*The PDF itself is attached to this result/)
     expect(out.file).toEqual({ url: "automerge:file", name: "sheet.pdf", mimeType: "application/pdf" })
+  })
+
+  describe("a PDF is read as text, page by page", () => {
+    const SHEET = makePdf(["Capacity 280 Ah", "Cycle life 6000 cycles at 80% DoD"])
+    const SCAN = makePdf([null, null])
+
+    it("gives its text, each page under a [Page N] line", async () => {
+      const out = await read({ name: "sheet.pdf", mimeType: "application/pdf", content: SHEET })
+      expect(typeof out).toBe("string")
+      expect(out).toMatch(/the text of this PDF \(2 pages, \d+ characters of text, marked \[Page N\]\)/)
+      expect(out).toContain("[Page 1]\nCapacity 280 Ah\n\n[Page 2]\nCycle life 6000 cycles at 80% DoD")
+    })
+
+    it("pages through it with offset and limit, and finds words in it", async () => {
+      const doc = { name: "sheet.pdf", mimeType: "application/pdf", content: SHEET }
+      expect(await read(doc, { offset: 0, limit: 8 })).toMatch(/characters 0–8 of \d+.*\n\n\[Page 1\]/s)
+      const found = await read(doc, { find: "cycle life" })
+      expect(found).toMatch(/1 match/)
+      expect(found).toContain("[Page 2]")
+    })
+
+    it("reads the text a fetch kept beside the PDF, when there is some", async () => {
+      const out = await read({ name: "sheet.pdf", mimeType: "application/pdf", content: SHEET, text: "kept text" })
+      expect(out).toContain("kept text")
+      expect(out).not.toContain("[Page 1]")
+    })
+
+    it("says a scan is one, and hands the PDF over for a model that can look at pages", async () => {
+      const out = await read({ name: "scan.pdf", mimeType: "application/pdf", content: SCAN })
+      expect(out.text).toMatch(/2 pages, and none has a text layer: it is a scan.*no OCR\. The PDF itself is attached/)
+      expect(out.file).toEqual({ url: "automerge:file", name: "scan.pdf", mimeType: "application/pdf" })
+    })
+
+    it("source_read reads, finds and lists a PDF kept with no text beside it", async () => {
+      const doc = { name: "sheet.pdf", mimeType: "application/pdf", content: SHEET, text: null, marks: [] }
+      const repo = { find: async (url) => ({ url, doc: () => doc }) }
+      const url = "automerge:3bRKtaJ6tCZ7vXwze42qyo3RuATC"
+      const whole = await sourceRead.execute({ source: url }, { repo })
+      expect(whole).toContain("[Page 2]\nCycle life 6000")
+      expect(whole).toContain('under "## Page 1"')
+      const found = await sourceRead.execute({ source: url, find: "6000" }, { repo })
+      expect(found).toMatch(/1 match for "6000"/)
+      expect(found).toContain("## Page 2 ·")
+      const session = { made: [{ url, name: "sheet.pdf", kind: "source", source: "https://x.test/sheet.pdf", engine: "raw" }] }
+      const listed = await sourceList.execute({ find: "6000" }, { repo, session: { doc: () => session } })
+      expect(listed).toMatch(/"6000" appears in 1 of 1/)
+    })
   })
 
   it("other bytes: named for what they are, and said to be unreadable", async () => {

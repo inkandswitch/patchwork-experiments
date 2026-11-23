@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "runner": "node node-runner.mjs",
-    "vendor:vitest": "node scripts/vendor-vitest.mjs"
+    "vendor:vitest": "node scripts/vendor-vitest.mjs",
+    "vendor:pdfjs": "node scripts/vendor-pdfjs.mjs"
   },
   "devDependencies": {
     "@vitest/expect": "3.2.7",
@@ -19,6 +20,7 @@
     "chai": "5.3.3",
     "esbuild": "0.28.2",
     "happy-dom": "^15.11.7",
+    "pdfjs-dist": "6.5.438",
     "vitest": "^3.2.4"
   },
   "dependencies": {

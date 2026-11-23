@@ -194,7 +194,7 @@ describe("source_read", () => {
   it("hands over a PDF kept with no text beside it, as the PDF itself", async () => {
     const { ctx, pdf } = world()
     const out = await sourceRead.execute({ source: pdf }, ctx)
-    expect(out.text).toMatch(/a PDF \(12 B\) with no text kept beside it; the PDF itself is attached to this result/)
+    expect(out.text).toMatch(/a PDF \(12 B\): its text could not be read here.*The PDF itself is attached to this result/)
     expect(out.file).toMatchObject({ mimeType: "application/pdf" })
   })
 
