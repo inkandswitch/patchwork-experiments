@@ -26,6 +26,14 @@ export type RenderResult = {
 export type RenderImportInput = {
 	name: string
 	json: string
+	/** the linked document as OpenSCAD source, for `include <name.scad>` / `use <name.scad>` */
+	scad?: string
+	/** the name a file document goes by (e.g. "assumptions.scad"), a second path `scad` is written at */
+	scadFile?: string
+	/** why there is no `scad`, said when something includes this import anyway */
+	noScad?: string
+	/** the document's display name, for messages */
+	label?: string
 }
 
 export class RenderError extends Error {
@@ -147,11 +155,11 @@ function renderInWorker(source: string, imports: RenderImportInput[] = []): Prom
 
 /**
  * What a render's output depends on: the source text and the import bindings
- * (name and JSON, in binding order). Nothing else reaches the engine, so equal
+ * (name, JSON, OpenSCAD source and file name, in binding order). Nothing else reaches the engine, so equal
  * keys give equal output.
  */
 export function renderKey(source: string, imports: RenderImportInput[] = []): string {
-	return JSON.stringify([source, imports.map(imp => [imp.name, imp.json])])
+	return JSON.stringify([source, imports.map(imp => [imp.name, imp.json, imp.scad ?? null, imp.scadFile ?? null, imp.noScad ?? null])])
 }
 
 /**

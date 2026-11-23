@@ -11,7 +11,7 @@
 import type {AutomergeUrl} from "@automerge/automerge-repo"
 import type {OpenscadImport} from "./types"
 import type {RenderImportInput} from "./render/engine"
-import {docToJsonString} from "./imports"
+import {importInput, type LoadDatatype} from "./linkedSources"
 
 // Loosely typed: handles come from `element.repo.find()`, and the host app's
 // automerge-repo copy doesn't always unify structurally with this package's.
@@ -27,6 +27,8 @@ export type ImportResolverOptions = {
 	onChange(): void
 	/** delay before retry number `attempt` (1-based) after a failed find */
 	retryDelay?(attempt: number): number
+	/** how a doc's datatype is found for `asSource`; the plugin registry by default */
+	loadDatatype?: LoadDatatype
 	onError?(url: AutomergeUrl, err: unknown, attempt: number): void
 }
 
@@ -131,12 +133,14 @@ export function createImportResolver(opts: ImportResolverOptions) {
 			return false
 		},
 
-		/** The JSON each import binds right now; one that hasn't arrived binds `{}`. */
-		payload(imports: readonly OpenscadImport[]): RenderImportInput[] {
-			return imports.map(imp => ({
-				name: imp.name,
-				json: docToJsonString(entries.get(imp.docUrl)?.handle?.doc()),
-			}))
+		/**
+		 * What each import gives the render right now: its JSON (`{}` if it
+		 * hasn't arrived) and its OpenSCAD source, if it has some.
+		 */
+		payload(imports: readonly OpenscadImport[]): Promise<RenderImportInput[]> {
+			return Promise.all(
+				imports.map(imp => importInput(imp, entries.get(imp.docUrl)?.handle?.doc(), opts.loadDatatype)),
+			)
 		},
 
 		dispose() {

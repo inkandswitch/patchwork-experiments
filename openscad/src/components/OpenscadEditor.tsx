@@ -77,8 +77,8 @@ export function OpenscadEditor(props: {
 		}
 		const doc = props.handle.doc()
 		const source = doc?.source ?? ""
-		const importPayload = resolver.payload(doc?.imports ?? [])
 		try {
+			const importPayload = await resolver.payload(doc?.imports ?? [])
 			const result = await renderScad(source, importPayload)
 			if (id !== runId) return
 			setModel(result.model)
@@ -286,7 +286,7 @@ export function OpenscadEditor(props: {
 								<button
 									class="openscad-import-name"
 									onClick={() => startRename(imp)}
-									title={`Bound as import("imports/${imp.name}.json"). Source: ${imp.label ?? imp.docUrl}. Click to rename.`}
+									title={`Data: import("imports/${imp.name}.json"); OpenSCAD source, if it has some: include <${imp.name}.scad>. From: ${imp.label ?? imp.docUrl}. Click to rename.`}
 								>
 									{imp.name}
 								</button>
