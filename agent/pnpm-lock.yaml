@@ -34,7 +34,7 @@ importers:
         specifier: ^15.11.7
         version: 15.11.7
       pdfjs-dist:
-        specifier: ^6.5.438
+        specifier: 6.5.438
         version: 6.5.438
       vitest:
         specifier: ^3.2.4
