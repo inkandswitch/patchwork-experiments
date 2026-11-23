@@ -157,6 +157,59 @@ A render that says `matches no attached document` means step 1 is missing; one
 that says `has no OpenSCAD source` means the document's datatype can't be
 written as OpenSCAD, so use the JSON binding instead.
 
+## From the model to its source
+
+Hover over the model and it names the part under the pointer: the innermost
+of **your** modules that placed it (`cell`), then the shape and line that made
+that face (`cube, line 2`). Click it and:
+
+- the part is washed in the accent, and the piece you clicked is outlined
+  (one line of code inside a loop makes many pieces: six cells, say);
+- the call that made it is selected and marked in the code;
+- a trail of the calls that placed it shows under the view, outermost first
+  (`battery_module 18 › cell 13 › cube 2`), each a link to its call, with a
+  link to where the module is defined. Escape (or ×) clears it.
+
+See-through surfaces are passed over for whatever opaque one is behind them,
+as your eye does, so clicking a cell inside a translucent enclosure picks the
+cell; Alt-click picks the surface in front. Going the other way, the code's
+cursor lights the parts the call under it made.
+
+Name your modules well and these are your labels: the scene's model names
+each part's node after them, and the document's last run lists them. A shape
+drawn directly in a module is labelled with that module (busbars drawn inline
+in `module_detail()` are "module_detail"); wrap them in `module busbars()`
+and they're "busbars".
+
+**How.** OpenSCAD's render merges everything into one mesh with a colour per
+face and no record of what made it, so the worker renders twice
+(`src/render/sourceMap.ts`). The first render is the source as written: what
+you see, download and print. Once it's out, a second render runs on a
+*labelled* copy, in which:
+
+- every call of one of your modules gets `let($_sm = <path + this call>)`
+  in front, so the chain of calls rides down OpenSCAD's dynamic scope (and
+  through `children()`);
+- every shape (`cube`, `cylinder`, extrusions, `hull`, `minkowski`, mesh
+  `import`, …) also echoes its path and is painted `color(<id of the path>)`;
+- every `color()` becomes an empty `let()`, because the outermost colour wins
+  and would paint over the ids.
+
+Nothing else changes, and the helpers go on the first line, so geometry and
+line numbers are the original's; linked libraries are labelled too. A colour
+carries 24 bits through the Manifold render exactly, and the echoes say which
+path each id stands for. The labelled faces are matched to the real render's
+by their corners (all of them, in practice; a face that doesn't match takes
+the label of the face its centre lies on). A call is found only where
+OpenSCAD's grammar allows a module call (outside parentheses and brackets, not
+in an assignment or function body), so a function call like
+`import("x.json")` in an expression is never taken for one.
+
+The second render never holds up the model, never fails it (its map is
+simply missing), and is skipped when a newer render is waiting, so typing
+isn't slowed. On the battery-pack model it takes as long as the first
+(~170 ms) and matching takes ~10 ms.
+
 ## The last run, kept in the document
 
 After each render the editor keeps the run in the document as `lastRun`
@@ -167,8 +220,14 @@ read it instead of running OpenSCAD: an assumptions register reads
 `echo(name = value);` (or `echo("name", value);`) lines as the model's results,
 and knows from `heads` which version of the code gave them.
 
-It is written only when what was rendered, whether it worked, or what it
-printed changed, so several open editors rendering the same thing write once,
+Its `parts` list what made the model (see "From the model to its source"):
+per part, its label, its chain of calls as `name:line` (outermost first; a
+library's with `file:` in front), its triangles and its bounding box in the
+model's units, biggest first, at most 200. It's what a click shows, for
+agents and other tools.
+
+It is written only when what was rendered, whether it worked, what it
+printed or its parts changed, so several open editors rendering the same thing write once,
 and saving it doesn't trigger another render. Scenes render without writing;
 open the editor (or a scene's Edit) to run it.
 
@@ -232,6 +291,18 @@ on the scene's undo through its `edits` service (`hostedHandle`), leaving
 Patchwork's `@` keys out; without the service it writes directly. Escape
 leaves (a focused code field takes its own Escape first).
 
+Clicking the drawn model picks a part as in the editor's own view: the trail
+shows above the console, the call is marked in the code, and the part is
+washed in the accent in the scene. The hand hit-tests the meshes it draws
+itself, so this needs nothing from the scene's kernel; a click that misses
+the model goes on to the scene.
+
+The built GLB (provider version 4) has a mesh and node per part, the node
+named by the part's label with `extras.source = {label, chain, at}` (`at`:
+the call in the document's own source, `{line, col, from, to}`); triangles
+no part claims go in a last node named `OpenSCAD`. Without a source map it is
+one mesh, as before.
+
 ## Possible follow-ups
 
 - Customizer panel for OpenSCAD `/* [group] */` parameters.
@@ -249,6 +320,7 @@ pnpm install
 pnpm build            # build dist/
 pnpm test             # OFF -> model -> GLB/3MF/STL, fingerprint, dependencies, render cache, import retries
 pnpm typecheck
+npx vite build -c probes/harness/vite.config.ts && node probes/source-map.mjs  # hover, click, trail, in Chrome
 ```
 
 ## Sync to Patchwork
