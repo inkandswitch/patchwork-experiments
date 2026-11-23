@@ -3,7 +3,7 @@ import {
   STEP, STATE, PLAN, TIERS, DEFAULT_LIMITS,
   initPlan, validateSteps, findCycle, states, toStart, isSettled, stepPrompt,
   overBudget, shouldPause, resumePlan, budgetOf, notStarted, reopenSteps, reopenPrompt,
-  newStep, editSteps, editErrors, EDITABLE,
+  newStep, editSteps, editErrors, EDITABLE, MISSING_TOOL_GUIDANCE,
 } from "./workflow/plan.js"
 
 const STATUSES = Object.values(STEP)
@@ -352,6 +352,17 @@ describe("initPlan and stepPrompt", () => {
     expect(text).toContain("Goal: no bugs")
     expect(text).toContain("fix them")
     expect(text).toContain("### Find (a)\nfound three bugs")
+  })
+})
+
+describe("a step told to report a missing tool", () => {
+  it.each([["a full step", {}], ["a research step", { access: "web" }]])("%s reports it and does not search for it", (name, over) => {
+    const p = plan([step("a", over)], { title: "W", goal: "G" })
+    const text = stepPrompt(p, p.steps[0])
+    expect(text).toContain(MISSING_TOOL_GUIDANCE)
+    expect(MISSING_TOOL_GUIDANCE).toMatch(/say so in your result.*Do not search documents or code for it/s)
+    // web_capture is offered wherever the package is installed, worker or tab.
+    expect(text).not.toMatch(/runs in a tab/)
   })
 })
 

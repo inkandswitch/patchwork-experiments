@@ -745,7 +745,7 @@ export function stepPrompt(plan, step) {
       `You can reach the web and nothing else. Everything you fetch is kept, for you and for this workflow's other research steps:`,
       `- Check source_list before fetching: what is already kept is free to read, and source_list {find:"…"} searches all of it.`,
       `- Read kept pages and PDFs with source_read, by offset or with find, rather than fetching them again.`,
-      `- When the page itself is the evidence — a datasheet, a price, a statement that may change — keep it with web_capture if you have it: a frozen snapshot that opens later exactly as it looked, kept with this workflow's sources like everything else. You have it when the Web snapshot package is installed and this step runs in a tab. Without it, web_fetch keeps a PDF as its bytes and a page as the reader's text; say in your result which pages' looks mattered.`,
+      `- When the page itself is the evidence — a datasheet, a price, a statement that may change — keep it with web_capture if you have it: a frozen snapshot that opens later exactly as it looked, kept with this workflow's sources like everything else. You have it when the Web snapshot package is installed. Without it, web_fetch keeps a PDF as its bytes and a page as the reader's text; say in your result which pages' looks mattered.`,
       `- Write down what you learn with finding_write as you go, citing the kept sources it rests on. A finding is kept: it survives when older results here are shortened, and the person can read it.`,
       `- In your result, cite the web URLs that what you found rests on.`
     )
@@ -758,6 +758,7 @@ export function stepPrompt(plan, step) {
       ? `Your last message is your result, and it is all the orchestrator sees. Make it concrete: what you found, with the web URLs it rests on and the findings you wrote. If you could not do the step, say so and why.`
       : `Your last message is your result, and it is all the orchestrator sees. Make it concrete: what you found or did, with the URLs of anything you changed. If you could not do the step, say so and why.`,
     `There is usually no one watching this session. Ask the user something only if you truly cannot continue without it.`,
+    MISSING_TOOL_GUIDANCE,
     ``,
     ...(web ? [] : [`## Waiting`, ``, WAIT_GUIDANCE, ``]),
     `## When the work calls for more`,
@@ -766,6 +767,10 @@ export function stepPrompt(plan, step) {
   )
   return lines.join("\n")
 }
+
+/** What a step does when it lacks a tool: report it, rather than search documents or code for a way round. */
+export const MISSING_TOOL_GUIDANCE =
+  "If a tool you need is not in your toolset, say so in your result — which tool, and what it was for — and stop that part of the work. Do not search documents or code for it."
 
 /** How a step waits for something that takes a while: a watch, not a long click or a poll. */
 export const WAIT_GUIDANCE =

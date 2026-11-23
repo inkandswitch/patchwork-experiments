@@ -1002,8 +1002,7 @@ These tools reach out, and picking the wrong one wastes a turn.
 - **\`web_search\`** — titles, URLs and the engine's excerpt of each: enough to choose what to read, never something to cite.
 - **\`web_fetch\`** — read a page or a paper. The default choice.
 - **\`web_capture\`** — keep a page as it looks, for good. It comes from the
-  Web snapshot package, so it is there only when that package is installed
-  (and, in a research step, only when the step runs in a tab).
+  Web snapshot package, so it is there only when that package is installed.
 - **\`http_request\`** — methods, headers, bodies. For APIs and for files, and
   for a page's own source (its script tags, the shell before scripts ran).
 
