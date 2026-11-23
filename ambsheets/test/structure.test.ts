@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { shiftAddr, shiftRefs, type StructuralEdit } from '../src/lang/rewrite';
 import { ASError } from '../src/lang/values';
-import { summarize } from '../src/model/analysis';
+import { summarize, viewOf } from '../src/model/analysis';
 import { compileSheet } from '../src/model/compile';
 import { evaluate } from '../src/model/run';
 import { applyEdit, checkEdit } from '../src/model/structure';
@@ -68,7 +68,7 @@ describe('rewriting references', () => {
 describe('inserting and deleting rows and columns', () => {
   const totals = (data: (string | null)[][], addr: string) => {
     const run = evaluate(compileSheet(data));
-    return summarize(run, run.compiled.cells.get(addr)!, null).values!.map((v) => v.value);
+    return summarize(run.compiled.cells.get(addr)!, viewOf(run)).values!.map((v) => v.value);
   };
   const expected = [3318, 4018, 4218, 4718, 4918, 5418];
 

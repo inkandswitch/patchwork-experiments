@@ -866,6 +866,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+.ambsheet .status .matching[data-searching] {
+  animation: ambsheet-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes ambsheet-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 .ambsheet .status .reason {
   flex: 1;
   min-width: 0;
@@ -930,6 +940,7 @@
   border-radius: 0 var(--studio-radius-sm, 4px) var(--studio-radius-sm, 4px) 0;
 }
 
+.ambsheet .status button[data-on],
 .ambsheet .status .segmented button[data-on] {
   background: var(--ambsheet-accent-soft);
   border-color: var(--ambsheet-accent);

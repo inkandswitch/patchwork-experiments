@@ -78,6 +78,14 @@ export function printValue(value: RawValue | undefined): string {
   return value.toString();
 }
 
+/** A share of things, in words: "4.6% of" them, or "1 in 2,400,000" when it is small. */
+export function printShare(p: number): string {
+  if (!(p > 0)) return 'none of the';
+  if (p >= 0.01) return `${(p * 100).toFixed(1)}% of`;
+  if (p >= 0.001) return `${parseFloat((p * 100).toPrecision(2))}% of`;
+  return `1 in ${printCount(parseFloat((1 / p).toPrecision(2)))}`;
+}
+
 /** A count that may be astronomically large (or infinite), for status messages. */
 export function printCount(n: number): string {
   if (!Number.isFinite(n)) return '∞';

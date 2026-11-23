@@ -66,6 +66,8 @@ export const examples: Example[] = [
       B9: 'total = design + build + test + B7',
       A10: 'Done in 8 weeks?',
       B10: '=total <= 40',
+      A11: 'Done in 4 weeks?',
+      B11: '=total <= 20',
     },
   },
   {
@@ -93,11 +95,11 @@ export const examples: Example[] = [
   },
   {
     name: 'Ten dice',
-    blurb: '60 million scenarios: finite, but far too many to check, so they are sampled.',
+    blurb: '60 million scenarios, so they are sampled. Filter on the rare "true" to see matches being sought out.',
     cells: {
       A1: 'Ten dice',
       B1: 'total = SUM(A3:A12)',
-      C1: '=total >= 45',
+      C1: '=total >= 54',
       ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => ['A' + (i + 3), '{1 to 6}'])),
     },
   },

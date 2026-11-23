@@ -15,7 +15,7 @@
 // one scenario at a time, and it keeps a running analysis (per cell: a histogram of the
 // distinct values seen so far, and min/max/avg) that can be read at any moment.
 
-import type { NumberStats } from '../vendor/amb-engine';
+import type { NumberStats } from '../engine/amb-engine';
 import { printCount } from '../lang/values';
 import { ambKey, type CompiledSheet } from './compile';
 

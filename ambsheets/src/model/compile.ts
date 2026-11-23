@@ -15,7 +15,7 @@
 //     that don't depend on any amb, syntax errors, and cells caught in a reference cycle.
 
 import * as d3 from 'd3-random';
-import { AmbEngine } from '../vendor/amb-engine';
+import { AmbEngine } from '../engine/amb-engine';
 import { builtins } from '../lang/builtins';
 import {
   parseCell,
@@ -65,7 +65,28 @@ export interface CellInfo {
   deps: string[];
   /** The varying cells this cell reads directly. */
   refs: string[];
+  /**
+   * For formulas that are comparisons (or ANDs, ORs and NOTs of them): *how* true the
+   * formula is in a scenario. See compileMargin.
+   */
+  margin: Margin | null;
 }
+
+/**
+ * A second reading of a true-or-false formula: positive when it is true, negative when
+ * it is false, and larger in size the further it is from flipping. B7 > C3 has margin
+ * B7 - C3. (NaN when there is no telling, e.g. when text is being compared.)
+ */
+export type Margin = (scenario: Scenario) => number;
+
+const COMPARISON_MARGINS: Record<string, (x: number, y: number) => number> = {
+  '<': (x, y) => y - x,
+  '<=': (x, y) => y - x,
+  '>': (x, y) => x - y,
+  '>=': (x, y) => x - y,
+  '=': (x, y) => -Math.abs(x - y),
+  '<>': (x, y) => Math.abs(x - y),
+};
 
 export interface CompiledSheet {
   rows: number;
@@ -270,6 +291,66 @@ export function compileSheet(data: unknown): CompiledSheet {
     }
   };
 
+  /**
+   * Formulas are written once and read two ways. The ordinary reading (compileExpr) gives
+   * a formula's value, which is what the sheet shows. This one gives, for a formula whose
+   * value is true or false, a number that says how far it is from being the other. Nobody
+   * has to write anything differently to get it; it is derived from the same expression.
+   *
+   * It exists for the sake of filters on true/false cells. "Keep the scenarios where
+   * B7 > C3" gives a sampler nothing to go on, since a scenario either qualifies or
+   * doesn't. "B7 falls short of C3 by 12" tells it which scenarios are close.
+   *
+   *   x <= y, x < y      y - x
+   *   x >= y, x > y      x - y
+   *   x = y              -|x - y|
+   *   x <> y             |x - y|
+   *   AND(p, q, ...)     the smallest of the parts' margins (it is as true as its weakest part)
+   *   OR(p, q, ...)      the largest
+   *   NOT(p)             minus p's margin
+   *   a reference        the margin of the cell it refers to
+   *
+   * Anything else has no margin (null).
+   */
+  const compileMargin = (node: Expr): Margin | null => {
+    if (node.type === 'cellRef' || node.type === 'nameRef') {
+      const addr = resolveRef(node);
+      return isError(addr) ? null : (resolve(addr)?.margin ?? null);
+    }
+    if (node.type !== 'call') return null;
+
+    const comparison = COMPARISON_MARGINS[node.funcName];
+    if (comparison && node.args.length === 2) {
+      const [left, right] = node.args.map((arg) => compileExpr(arg, new Set()));
+      return (s) => {
+        const [x, y] = [left(s), right(s)];
+        return typeof x === 'number' && typeof y === 'number' ? comparison(x, y) : NaN;
+      };
+    }
+
+    /** A part of an AND/OR/NOT: its margin if it has one, or else just whether it is true. */
+    const part = (arg: Expr): Margin => {
+      const margin = compileMargin(arg);
+      if (margin) return margin;
+      const value = compileExpr(arg, new Set());
+      return (s) => {
+        const v = value(s);
+        return v === true ? Infinity : v === false ? -Infinity : NaN;
+      };
+    };
+
+    if ((node.funcName === 'and' || node.funcName === 'or') && node.args.length > 0) {
+      const parts = node.args.map(part);
+      const pick = node.funcName === 'and' ? Math.min : Math.max;
+      return (s) => parts.map((p) => p(s)).reduce((a, b) => pick(a, b));
+    }
+    if (node.funcName === 'not' && node.args.length === 1) {
+      const inner = part(node.args[0]);
+      return (s) => -inner(s);
+    }
+    return null;
+  };
+
   /** The value of a distribution parameter, which has to be a constant number. */
   const constNumber = (arg: DistArg, what: string): number | ASError => {
     if (typeof arg === 'number') return arg;
@@ -316,6 +397,7 @@ export function compileSheet(data: unknown): CompiledSheet {
       fn,
       deps: depsOf(refs, addr),
       refs,
+      margin: null,
     };
   };
 
@@ -417,6 +499,7 @@ export function compileSheet(data: unknown): CompiledSheet {
           fn,
           deps: depsOf(refs),
           refs: [...refs],
+          margin: compileMargin(formula.expr),
         };
       }
     }
@@ -448,7 +531,18 @@ export function compileSheet(data: unknown): CompiledSheet {
 }
 
 function constant(addr: string, name: string | null, value: RawValue): CellInfo {
-  return { addr, pos: posOf(addr), name, kind: 'const', value, spec: null, fn: null, deps: [], refs: [] };
+  return {
+    addr,
+    pos: posOf(addr),
+    name,
+    kind: 'const',
+    value,
+    spec: null,
+    fn: null,
+    deps: [],
+    refs: [],
+    margin: null,
+  };
 }
 
 /**

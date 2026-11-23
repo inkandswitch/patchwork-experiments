@@ -2,7 +2,7 @@
 // how many scenarios the filters let through, and the controls for changing it.
 
 import { For, Show } from 'solid-js';
-import { printCount, printNumber } from '../lang/values';
+import { printCount, printNumber, printShare } from '../lang/values';
 import { EXHAUSTIVE_MAX_FORCED, type EvalMode } from '../model/run';
 import { useSheet } from './state';
 
@@ -33,6 +33,41 @@ export function StatusBar() {
     return total === 1 ? '1 scenario' : `all ${printCount(total)} scenarios`;
   };
 
+  /** What to say about the scenarios that satisfy the filters. */
+  const matching = (): { text: string; title?: string; searching?: boolean } | null => {
+    const focus = s.focus();
+    if (focus?.phase === 'searching') {
+      return {
+        text: `Looking for scenarios that match the filters… (step ${focus.levels + 1})`,
+        title: `Too few of the sampled scenarios match, so Ambsheets is homing in on ones that do. ${printNumber(focus.evaluations)} scenarios tried so far.`,
+        searching: true,
+      };
+    }
+    if (focus?.phase === 'failed') {
+      return {
+        text: 'No matching scenarios found',
+        title:
+          `Ambsheets went looking for scenarios that match the filters (${printNumber(focus.evaluations)} tries) without finding any. ` +
+          'They may not exist. Or the filters may give it nothing to home in on: a filter on text, or on a true/false cell that is not a comparison, is only met by chance.',
+      };
+    }
+    if (focus?.phase === 'sampling') {
+      const error = Math.round(focus.relativeError * 100);
+      return {
+        text:
+          `About ${printShare(focus.probability)} scenarios match the filters · ${printNumber(s.passing())} of them shown` +
+          (focus.acceptance < 0.02 ? ' · little variety' : ''),
+        title:
+          `Too few of the sampled scenarios match, so these were sought out (${printNumber(focus.evaluations)} scenarios tried, in ${focus.levels} steps). ` +
+          `The estimate of how many match is rough: give or take ${Math.max(error, 5)}% or more. ` +
+          `Consecutive scenarios resemble each other; ${Math.round(focus.acceptance * 100)}% of the attempts to vary them succeeded.`,
+      };
+    }
+    if (!s.filtering()) return null;
+    const share = ((s.passing() / Math.max(1, run().n)) * 100).toFixed(1);
+    return { text: `${printNumber(s.passing())} match the filters (${share}%)` };
+  };
+
   return (
     <footer class="status">
       <span class="mode" data-mode={run().mode} title={run().reason}>
@@ -46,14 +81,25 @@ export function StatusBar() {
           <span style={{ width: progress() * 100 + '%' }} />
         </span>
       </Show>
-      <Show when={s.mask() !== null}>
-        <span class="matching">
-          {printNumber(s.passing())} match the filters ({((s.passing() / Math.max(1, run().n)) * 100).toFixed(1)}%)
-        </span>
+      <Show when={matching()}>
+        {(matching) => (
+          <span class="matching" data-searching={matching().searching ? '' : undefined} title={matching().title}>
+            {matching().text}
+          </span>
+        )}
       </Show>
       <span class="reason">{run().reason}</span>
 
       <span class="controls">
+        <Show when={sampling() && s.filters().size > 0}>
+          <button
+            data-on={s.focusEnabled() ? '' : undefined}
+            title="When few of the sampled scenarios match the filters, look for ones that do."
+            onClick={() => s.setFocusEnabled(!s.focusEnabled())}
+          >
+            Seek matches
+          </button>
+        </Show>
         <Show when={sampling()}>
           <select
             title="How many scenarios to sample"

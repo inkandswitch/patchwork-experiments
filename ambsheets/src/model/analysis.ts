@@ -1,8 +1,15 @@
-// Reading results out of a run: filters, per-cell summaries, histograms and pivot tables.
+// Reading results out of a run: filters, per-cell summaries, histograms, pivot tables
+// and line charts.
+//
+// Everything here looks at a *view*: the scenarios that stand for the whole possibility
+// space, and the scenarios that satisfy the filters. Usually the second are just some of
+// the first, picked out by a mask. But when hardly any sampled scenario satisfies the
+// filters, Ambsheets goes looking for ones that do (see focus.ts), and then they are a
+// sample of their own.
 //
 // Unfiltered summaries come straight from amb-engine's running analysis, which is kept
 // up to date as scenarios are evaluated and costs nothing to read. Anything that involves
-// filters is computed here, from the scenarios the run has stored.
+// filters is computed here, from stored scenarios.
 
 import { isRange, printValue, valueKey, type RangeValue, type RawValue } from '../lang/values';
 import { ambKey, ambSize, choiceLabel, isContinuous, type CellInfo } from './compile';
@@ -25,27 +32,57 @@ export function passes(filter: Filter, value: RawValue): boolean {
   );
 }
 
+/** Some scenarios, stored by column. Only the first `n` entries of a column count. */
+export interface Sample {
+  columns: Record<string, any[]>;
+  n: number;
+}
+
+export interface View {
+  /** The scenarios that stand for all scenarios (and amb-engine's analysis of them). */
+  all: Run;
+  /**
+   * Where the scenarios that satisfy the filters are: `all` itself, or a separate sample
+   * of scenarios that were sought out because so few of `all` qualify.
+   */
+  matching: Sample;
+  /** Which rows of `matching` count: mask[i] is 1 if row i does. Null means all of them. */
+  mask: Uint8Array | null;
+}
+
+/** True if the matching scenarios are a sample of their own. */
+export const isFocused = (view: View) => view.matching !== view.all;
+
+/** True if any filter is in effect. */
+export const isFiltering = (view: View) => isFocused(view) || view.mask !== null;
+
 /**
- * Which scenarios satisfy the filters: mask[i] is 1 if scenario i does. Null means that
- * no filter applies, i.e. every scenario passes.
+ * Which scenarios of a sample satisfy the filters. Null means that no filter applies,
+ * i.e. every scenario passes.
  */
-export function passMask(run: Run, filters: Filters): Uint8Array | null {
-  const active = [...filters].filter(([addr]) => addr in run.columns);
+export function passMask(sample: Sample, filters: Filters): Uint8Array | null {
+  const active = [...filters].filter(([addr]) => addr in sample.columns);
   if (active.length === 0) return null;
-  const mask = new Uint8Array(run.n).fill(1);
+  const mask = new Uint8Array(sample.n).fill(1);
   for (const [addr, filter] of active) {
-    const column = run.columns[addr];
-    for (let i = 0; i < run.n; i++) {
+    const column = sample.columns[addr];
+    for (let i = 0; i < sample.n; i++) {
       if (mask[i] && !passes(filter, column[i])) mask[i] = 0;
     }
   }
   return mask;
 }
 
-export function countPassing(run: Run, mask: Uint8Array | null): number {
-  if (!mask) return run.n;
+/** The plain view of a run: its own scenarios, filtered. */
+export function viewOf(run: Run, filters: Filters = new Map()): View {
+  return { all: run, matching: run, mask: passMask(run, filters) };
+}
+
+/** How many scenarios satisfy the filters (out of view.matching.n). */
+export function countMatching(view: View): number {
+  if (!view.mask) return view.matching.n;
   let count = 0;
-  for (let i = 0; i < run.n; i++) count += mask[i];
+  for (let i = 0; i < view.matching.n; i++) count += view.mask[i];
   return count;
 }
 
@@ -59,14 +96,14 @@ export interface Stats {
 export interface ValueCount {
   value: RawValue;
   key: string;
-  /** How many scenarios have this value... */
+  /** How many of all the scenarios have this value... */
   count: number;
-  /** ...and how many of those satisfy the filters. */
+  /** ...and how many of the matching ones do. */
   passing: number;
 }
 
 export interface Summary {
-  /** Scenarios evaluated so far, and how many of them satisfy the filters. */
+  /** How many scenarios there are in all, and how many matching ones. */
   n: number;
   passing: number;
   /** The distinct values of the cell. Null when there are too many to list. */
@@ -77,8 +114,9 @@ export interface Summary {
   passingStats: Stats | null;
 }
 
-/** What to show for a varying cell, given the filters (as a mask). */
-export function summarize(run: Run, info: CellInfo, mask: Uint8Array | null): Summary {
+/** What to show for a varying cell. */
+export function summarize(info: CellInfo, view: View): Summary {
+  const run = view.all;
   const analysis = run.analysis[info.addr];
   const n = run.n;
   const stats: Stats | null = analysis?.stats && n > 0 ? { count: n, ...analysis.stats } : null;
@@ -87,24 +125,28 @@ export function summarize(run: Run, info: CellInfo, mask: Uint8Array | null): Su
   let passingStats = stats;
   let passingCounts: Map<any, number> | null = null;
 
-  if (mask) {
-    // One pass over the stored scenarios for everything that depends on the filters.
-    const column = run.columns[info.addr];
+  if (isFiltering(view)) {
+    // One pass over the matching scenarios for everything that depends on the filters.
+    const { matching, mask } = view;
+    const column = matching.columns[info.addr];
     passingCounts = analysis?.histogram ? new Map() : null;
     passing = 0;
+    let numbers = 0;
     let [sum, min, max] = [0, Infinity, -Infinity];
-    for (let i = 0; i < n; i++) {
-      if (!mask[i]) continue;
+    for (let i = 0; i < matching.n; i++) {
+      if (mask && !mask[i]) continue;
       passing++;
       const value = column[i];
       if (passingCounts) passingCounts.set(value, (passingCounts.get(value) ?? 0) + 1);
-      if (stats) {
+      if (typeof value === 'number') {
+        numbers++;
         sum += value;
         if (value < min) min = value;
         if (value > max) max = value;
       }
     }
-    passingStats = stats && passing > 0 ? { count: passing, avg: sum / passing, min, max } : null;
+    passingStats =
+      passing > 0 && numbers === passing ? { count: passing, avg: sum / passing, min, max } : null;
   }
 
   let values: ValueCount[] | null = null;
@@ -117,6 +159,14 @@ export function summarize(run: Run, info: CellInfo, mask: Uint8Array | null): Su
         count,
         passing: passingCounts ? (passingCounts.get(value) ?? 0) : count,
       });
+    }
+    if (passingCounts && isFocused(view)) {
+      // values that only turned up among the scenarios that were sought out
+      for (const [value, count] of passingCounts) {
+        if (!analysis.histogram.has(value)) {
+          values.push({ value, key: valueKey(value), count: 0, passing: count });
+        }
+      }
     }
     sortValues(values, info);
   }
@@ -166,30 +216,42 @@ export interface Histogram {
   max: number;
   all: NumberSummary;
   passing: NumberSummary | null;
+  /**
+   * True when the matching scenarios are a sample of their own. Then `count` and
+   * `passing` aren't on the same scale, and each should be drawn relative to itself.
+   */
+  separate: boolean;
 }
 
 /** A histogram of the numbers in a cell (ignoring any other values it has). */
-export function histogram(
-  run: Run,
-  addr: string,
-  mask: Uint8Array | null,
-  numBins = 20,
-): Histogram | null {
+export function histogram(view: View, addr: string, numBins = 20): Histogram | null {
+  const { all: run, matching, mask } = view;
   const column = run.columns[addr];
-  if (!column) return null;
-  const n = run.n;
+  const matchingColumn = matching.columns[addr];
+  if (!column || !matchingColumn) return null;
+  const separate = isFocused(view);
+  const isNumber = (value: unknown): value is number =>
+    typeof value === 'number' && !Number.isNaN(value);
 
   const all = new Accumulator();
   const passing = new Accumulator();
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < run.n; i++) {
     const value = column[i];
-    if (typeof value !== 'number' || Number.isNaN(value)) continue;
+    if (!isNumber(value)) continue;
     all.add(value);
-    if (!mask || mask[i]) passing.add(value);
+    if (!separate && (!mask || mask[i])) passing.add(value);
+  }
+  if (separate) {
+    for (let i = 0; i < matching.n; i++) {
+      const value = matchingColumn[i];
+      if (isNumber(value) && (!mask || mask[i])) passing.add(value);
+    }
   }
   if (all.count === 0) return null;
 
-  const { min, max } = all;
+  // (the matching scenarios may lie outside the range the others happened to cover)
+  const min = Math.min(all.min, passing.min);
+  const max = Math.max(all.max, passing.max);
   const width = (max - min) / numBins || 1;
   const bins: Bin[] = Array.from({ length: max === min ? 1 : numBins }, (_, i) => ({
     x0: min + i * width,
@@ -197,15 +259,22 @@ export function histogram(
     count: 0,
     passing: 0,
   }));
-  for (let i = 0; i < n; i++) {
+  const binOf = (value: number) => bins[Math.min(bins.length - 1, Math.floor((value - min) / width))];
+  for (let i = 0; i < run.n; i++) {
     const value = column[i];
-    if (typeof value !== 'number' || Number.isNaN(value)) continue;
-    const bin = bins[Math.min(bins.length - 1, Math.floor((value - min) / width))];
+    if (!isNumber(value)) continue;
+    const bin = binOf(value);
     bin.count++;
-    if (!mask || mask[i]) bin.passing++;
+    if (!separate && (!mask || mask[i])) bin.passing++;
+  }
+  if (separate) {
+    for (let i = 0; i < matching.n; i++) {
+      const value = matchingColumn[i];
+      if (isNumber(value) && (!mask || mask[i])) binOf(value).passing++;
+    }
   }
 
-  return { bins, min, max, all: all.summary()!, passing: passing.summary() };
+  return { bins, min, max, all: all.summary()!, passing: passing.summary(), separate };
 }
 
 class Accumulator {
@@ -234,7 +303,7 @@ class Accumulator {
 export type Aggregation = 'avg' | 'sum' | 'count' | 'min' | 'max';
 
 export interface PivotCell {
-  /** Scenarios in this cell of the table, and how many of them satisfy the filters. */
+  /** Scenarios in this cell of the table, and how many matching scenarios fall in it. */
   scenarios: number;
   passing: number;
   /** Aggregates over the numeric values of those scenarios. */
@@ -260,13 +329,9 @@ export function tableDimensions(run: Run, info: CellInfo): CellInfo[] {
 }
 
 /** Breaks a cell's values down by the choices made in one or two ambs. */
-export function pivot(
-  run: Run,
-  addr: string,
-  mask: Uint8Array | null,
-  x: CellInfo,
-  y: CellInfo | null,
-): Pivot {
+export function pivot(view: View, addr: string, x: CellInfo, y: CellInfo | null): Pivot {
+  const { all: run, matching, mask } = view;
+  const separate = isFocused(view);
   const xSize = ambSize(x.spec!);
   const ySize = y ? ambSize(y.spec!) : 1;
   const cells: PivotCell[][] = Array.from({ length: ySize }, () =>
@@ -286,13 +351,20 @@ export function pivot(
   for (let i = 0; i < run.n; i++) {
     const cell = cells[ys ? ys[i] : 0][xs[i]];
     cell.scenarios++;
-    if (!mask || mask[i]) cell.passing++;
+    if (!separate && (!mask || mask[i])) cell.passing++;
     const value = column[i];
     if (typeof value === 'number') {
       cell.count++;
       cell.sum += value;
       if (value < cell.min) cell.min = value;
       if (value > cell.max) cell.max = value;
+    }
+  }
+  if (separate) {
+    const mxs = matching.columns[ambKey(x.addr)];
+    const mys = y ? matching.columns[ambKey(y.addr)] : null;
+    for (let i = 0; i < matching.n; i++) {
+      if (!mask || mask[i]) cells[mys ? mys[i] : 0][mxs[i]].passing++;
     }
   }
 
@@ -348,12 +420,12 @@ export interface LineChart {
  * (or, when it depends on a continuous distribution, one per sampled scenario). A range
  * with two columns is a list of (x, y) points; a single column or row is a list of ys.
  */
-export function lineChart(run: Run, info: CellInfo, mask: Uint8Array | null, maxSeries = 150): LineChart | null {
-  const column = run.columns[info.addr];
-  if (!column) return null;
+export function lineChart(view: View, info: CellInfo, maxSeries = 150): LineChart | null {
+  const { all: run, matching, mask } = view;
+  if (!run.columns[info.addr]) return null;
+  const separate = isFocused(view);
   const deps = info.deps.map((addr) => run.compiled.cells.get(addr)!).filter((dep) => dep?.spec);
   const discrete = deps.every((dep) => !isContinuous(dep.spec!));
-  const depColumns = deps.map((dep) => run.columns[ambKey(dep.addr)]);
 
   const categories = new Map<string, number>();
   let categorical: boolean | null = null;
@@ -379,28 +451,44 @@ export function lineChart(run: Run, info: CellInfo, mask: Uint8Array | null, max
     return points;
   };
 
-  const byKey = new Map<string | number, Series | null>();
+  const byKey = new Map<string, Series | null>();
   const series: Series[] = [];
-  for (let i = 0; i < run.n; i++) {
-    const value = column[i];
-    if (!isRange(value)) continue;
-    const key = discrete ? depColumns.map((choices) => choices[i]).join(',') : i;
-    let s = byKey.get(key);
-    if (s === undefined) {
-      s = null;
-      if (series.length < maxSeries) {
-        const choices = discrete ? deps.map((dep, d): [CellInfo, number] => [dep, depColumns[d][i]]) : [];
-        s = {
-          label: choices.map(([dep, index]) => `${dep.name ?? dep.addr}=${choiceLabel(dep.spec!, index)}`).join(', '),
-          choices,
-          points: toPoints(value),
-          passing: false,
-        };
-        series.push(s);
+  /** Adds the lines of a sample; `counts` says whether its rows can make a line "passing". */
+  const add = (sample: Sample, prefix: string, counts: (i: number) => boolean) => {
+    const column = sample.columns[info.addr];
+    const depColumns = deps.map((dep) => sample.columns[ambKey(dep.addr)]);
+    for (let i = 0; i < sample.n; i++) {
+      const value = column[i];
+      if (!isRange(value)) continue;
+      // (without discrete choices to go by, every scenario is a line of its own)
+      const key = discrete ? depColumns.map((choices) => choices[i]).join(',') : prefix + i;
+      let s = byKey.get(key);
+      if (s === undefined) {
+        s = null;
+        if (series.length < maxSeries) {
+          const choices = discrete ? deps.map((dep, d): [CellInfo, number] => [dep, depColumns[d][i]]) : [];
+          s = {
+            label: choices
+              .map(([dep, index]) => `${dep.name ?? dep.addr}=${choiceLabel(dep.spec!, index)}`)
+              .join(', '),
+            choices,
+            points: toPoints(value),
+            passing: false,
+          };
+          series.push(s);
+        }
+        byKey.set(key, s);
       }
-      byKey.set(key, s);
+      if (s && counts(i)) s.passing = true;
     }
-    if (s && (!mask || mask[i])) s.passing = true;
+  };
+
+  if (separate) {
+    // the lines that were sought out go first, so that they are sure to be drawn
+    add(matching, 'm', (i) => !mask || mask[i] === 1);
+    add(run, 'a', () => false);
+  } else {
+    add(run, 'a', (i) => !mask || mask[i] === 1);
   }
 
   const x: [number, number] = [Infinity, -Infinity];

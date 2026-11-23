@@ -6,7 +6,16 @@ import { DEFAULT_COLS } from '../datatype';
 import { shiftAddr, type StructuralEdit } from '../lang/rewrite';
 import { MAX_COLS, addrOf, valueKey, type Pos, type RawValue } from '../lang/values';
 import { cellText, compileSheet, type CellInfo } from '../model/compile';
-import { countPassing, passMask, summarize, type Filter, type Summary } from '../model/analysis';
+import {
+  countMatching,
+  isFiltering,
+  passMask,
+  summarize,
+  type Filter,
+  type Summary,
+  type View,
+} from '../model/analysis';
+import { Focuser, type Focus } from '../model/focus';
 import { applyEdit, checkEdit } from '../model/structure';
 import {
   DEFAULT_SETTINGS,
@@ -43,6 +52,11 @@ export interface Edit {
   /** Where the text is being typed: in the cell, or in the formula bar. */
   where: 'cell' | 'bar';
 }
+
+/** Look for matching scenarios when a sample has fewer than this many of them... */
+const FOCUS_BELOW = 1_000;
+/** ...and collect up to this many. */
+const FOCUS_TARGET = 20_000;
 
 export type SheetState = ReturnType<typeof createSheetState>;
 
@@ -124,16 +138,61 @@ export function createSheetState(handle: AmbsheetHandle) {
     const h = hover();
     return h ? new Map([...filters(), ...h]) : filters();
   });
-  const mask = createMemo(() => passMask(run(), effectiveFilters()));
-  const passing = createMemo(() => countPassing(run(), mask()));
+
+  // --- focused sampling ---
+  //
+  // Filtering is instant: it just picks out the sampled scenarios that satisfy the
+  // filters. But a Monte Carlo sample may contain very few of those, or none. When that
+  // happens a second, focused evaluation goes looking for scenarios that do satisfy the
+  // filters (see focus.ts), and as soon as it finds them they take over as "the
+  // scenarios that match".
+
+  const [focusEnabled, setFocusEnabled] = createSignal(true);
+  const [focus, setFocus] = createSignal<Focus | null>(null);
+  const focuser = new Focuser(setFocus);
+  onCleanup(() => focuser.stop());
+
+  /** True when the filters leave too little of a finished Monte Carlo sample to go on. */
+  const scarce = createMemo(() => {
+    const r = run();
+    if (!focusEnabled() || !r.done || r.mode !== 'montecarlo' || r.n === 0) return false;
+    const mask = passMask(r, filters());
+    if (mask === null) return false;
+    let count = 0;
+    for (let i = 0; i < r.n && count < FOCUS_BELOW; i++) count += mask[i];
+    return count < FOCUS_BELOW;
+  });
+
+  createEffect(() => {
+    const [r, pinned, target, randomSeed] = [run(), filters(), Math.min(samples(), FOCUS_TARGET), seed()];
+    focuser.stop();
+    setFocus(null);
+    if (!scarce()) return;
+    // (a short wait, so that dragging a slider doesn't start a search at every step)
+    const timer = setTimeout(() => focuser.start(r.compiled, pinned, { target, seed: randomSeed }), 150);
+    onCleanup(() => clearTimeout(timer));
+  });
+
+  const view = createMemo((): View => {
+    const r = run();
+    const f = focus();
+    if (f && f.phase === 'sampling' && f.n > 0 && f.filters === filters()) {
+      // Every scenario the focus found satisfies the filters; only hovering narrows them.
+      const h = hover();
+      return { all: r, matching: f, mask: h ? passMask(f, h) : null };
+    }
+    return { all: r, matching: r, mask: passMask(r, effectiveFilters()) };
+  });
+  const filtering = createMemo(() => isFiltering(view()));
+  const passing = createMemo(() => countMatching(view()));
   /** The filters that apply to cells that (still) vary. */
   const activeFilters = createMemo(() => [...filters().keys()].filter((addr) => addr in run().columns));
 
   const summaries = createMemo(() => {
     const r = run();
-    const m = mask();
+    const v = view();
     const result = new Map<string, Summary>();
-    for (const info of r.compiled.varying) result.set(info.addr, summarize(r, info, m));
+    for (const info of r.compiled.varying) result.set(info.addr, summarize(info, v));
     return result;
   });
 
@@ -260,8 +319,12 @@ export function createSheetState(handle: AmbsheetHandle) {
     hover,
     setHover,
     hoverValues,
-    mask,
+    view,
+    filtering,
     passing,
+    focus,
+    focusEnabled,
+    setFocusEnabled,
     summaries,
 
     selection,

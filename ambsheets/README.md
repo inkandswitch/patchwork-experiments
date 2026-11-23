@@ -54,7 +54,34 @@ vary.
   averages update as more scenarios are sampled. Unfiltered per-cell summaries come from
   amb-engine's own running analysis (`sampler.getLatestAnalysisResults()`).
 - `src/model/analysis.ts` computes everything that involves filters (which scenarios
-  pass, filtered statistics, histograms, pivot tables) from the scenarios the run stores.
+  pass, filtered statistics, histograms, pivot tables) from stored scenarios.
+
+## Filters that hardly anything matches
+
+Filtering a Monte Carlo sample only helps if the sample contains scenarios that match. If
+one scenario in a million does, 100,000 samples contain none. So when a finished sample
+has fewer than 1,000 matches, Ambsheets goes looking for more ("Seek matches" in the
+status bar turns this off):
+
+- `src/model/focus.ts` turns each filter into a *condition*: a function that says how far
+  a scenario is from passing. For a range filter that is the distance to the range.
+- For a filter on a true/false cell it uses the formula's **margin**. Formulas are
+  compiled twice: once to their value, and (for comparisons, `AND`, `OR`, `NOT` and
+  references to such cells) once to a number saying how far they are from flipping.
+  `=total <= 4200` has margin `4200 - total`. See `compileMargin` in `compile.ts`. A
+  true/false formula of any other shape (an `IF`, say), and any filter on text, can only
+  say yes or no, and is found by chance or not at all.
+- amb-engine's conditioned sampler (`src/engine/conditioned-sampler.ts`) then homes in:
+  a population of scenarios is repeatedly culled to its closer half and re-diversified
+  with MCMC moves, until all of it matches. The scenarios it goes on to produce are
+  distributed like the matching scenarios really are, and the culling fractions multiply
+  out to an estimate of how rare matching is ("about 1 in 7,100 scenarios").
+
+While that sample is in use, "filtered" statistics, greyed-out values and blue histogram
+bars all describe it, and "all" still describes the ordinary sample. The histogram draws
+the two to separate scales. The scenarios are correlated (each is a small change from
+another), which the status bar's tooltip reports as the share of attempted changes that
+succeeded.
 
 ## What changed from the original
 
@@ -78,10 +105,12 @@ vary.
 pnpm install
 pnpm test        # the language and the evaluation model (vitest, no DOM)
 pnpm dev         # the tool on an in-memory Automerge doc; add ?example=0..4 to the URL
+                 # (2 and 4 have a rare true/false cell to filter on)
 pnpm build       # dist/index.js + lazy chunks
 pnpm sync        # build, then pushwork sync
 ```
 
 `dev/dist-check.html` smoke-tests the built bundle the way Patchwork loads it.
 
-`src/vendor/amb-engine.ts` is an unmodified copy of amb-engine (see the README next to it).
+`src/engine/` is a working copy of amb-engine with conditioned sampling added (see the README
+next to it).

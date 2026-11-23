@@ -223,10 +223,14 @@ const CHART_HEIGHT = 96;
 function HistogramViewer(props: { info: CellInfo }) {
   const s = useSheet();
   const addr = () => props.info.addr;
-  const data = createMemo(() => histogram(s.run(), addr(), s.mask()));
+  const data = createMemo(() => histogram(s.view(), addr()));
   const tallest = () => Math.max(1, ...data()!.bins.map((bin) => bin.count));
+  // When the matching scenarios are a sample of their own (see focus.ts), their counts
+  // say nothing about how common they are, so their bars get a scale of their own.
+  const tallestPassing = () =>
+    data()!.separate ? Math.max(1, ...data()!.bins.map((bin) => bin.passing)) : tallest();
   const barWidth = () => CHART_WIDTH / data()!.bins.length;
-  const height = (count: number) => (count / tallest()) * CHART_HEIGHT;
+  const height = (count: number, most = tallest()) => (count / most) * CHART_HEIGHT;
 
   const rangeFilter = () => {
     const f = s.filters().get(addr());
@@ -265,9 +269,9 @@ function HistogramViewer(props: { info: CellInfo }) {
                 <rect
                   class="bar passing"
                   x={i * barWidth() + 0.5}
-                  y={CHART_HEIGHT - height(bin().passing)}
+                  y={CHART_HEIGHT - height(bin().passing, tallestPassing())}
                   width={Math.max(0.5, barWidth() - 1)}
-                  height={height(bin().passing)}
+                  height={height(bin().passing, tallestPassing())}
                 />
               </g>
             )}
@@ -286,13 +290,13 @@ function HistogramViewer(props: { info: CellInfo }) {
           <span>{printNumber(lo())}</span>
           <span>{printNumber(hi())}</span>
         </div>
-        <StatsTable all={data()!.all} passing={data()!.passing} />
+        <StatsTable all={data()!.all} passing={data()!.passing} focused={data()!.separate} />
       </div>
     </Show>
   );
 }
 
-function StatsTable(props: { all: NumberSummary; passing: NumberSummary | null }) {
+function StatsTable(props: { all: NumberSummary; passing: NumberSummary | null; focused: boolean }) {
   const s = useSheet();
   const rows: [string, (stats: NumberSummary) => number][] = [
     ['Count', (stats) => stats.count],
@@ -322,7 +326,14 @@ function StatsTable(props: { all: NumberSummary; passing: NumberSummary | null }
         </For>
       </tbody>
       <Show when={s.run().mode === 'montecarlo'}>
-        <caption>Estimated from {printNumber(s.run().n)} sampled scenarios.</caption>
+        <caption>
+          Estimated from {printNumber(s.run().n)} sampled scenarios.
+          <Show when={props.focused}>
+            {' '}
+            The filtered ones were sought out, and the blue bars are drawn to their own scale: they show where
+            matching scenarios fall, not how common they are.
+          </Show>
+        </caption>
       </Show>
     </table>
   );
@@ -345,8 +356,8 @@ function TableViewer(props: { info: CellInfo; dimensions: CellInfo[] }) {
     return others.find((d) => d.addr === yAddr()) ?? others[0] ?? null;
   };
   const tooBig = () => ambSize(x().spec!) > MAX_TABLE_CHOICES || (y() !== null && ambSize(y()!.spec!) > MAX_TABLE_CHOICES);
-  const table = createMemo(() => (tooBig() ? null : pivot(s.run(), props.info.addr, s.mask(), x(), y())));
-  const filtering = () => s.mask() !== null;
+  const table = createMemo(() => (tooBig() ? null : pivot(s.view(), props.info.addr, x(), y())));
+  const filtering = s.filtering;
 
   /** Previews a filter on a choice of a dimension (when its values are known up front). */
   const hoverChoice = (choices: [CellInfo, number][]) => {
@@ -442,7 +453,7 @@ const MAX_LEGEND = 12;
  */
 function LineChartViewer(props: { info: CellInfo }) {
   const s = useSheet();
-  const chart = createMemo(() => lineChart(s.run(), props.info, s.mask()));
+  const chart = createMemo(() => lineChart(s.view(), props.info));
   const many = () => chart()!.series.length > MAX_LEGEND;
 
   const scale = (value: number, [min, max]: [number, number], size: number) =>

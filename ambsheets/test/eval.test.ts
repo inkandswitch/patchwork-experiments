@@ -20,6 +20,7 @@ import {
   pivot,
   summarize,
   tableDimensions,
+  viewOf,
   type Filters,
 } from '../src/model/analysis';
 import { BUDGET, sheet } from './sheet';
@@ -37,7 +38,7 @@ function constant(r: Run, addr: string): RawValue {
 
 /** The distinct values of a varying cell. */
 function values(r: Run, addr: string, filters: Filters = new Map()) {
-  const summary = summarize(r, r.compiled.cells.get(addr)!, passMask(r, filters));
+  const summary = summarize(r.compiled.cells.get(addr)!, viewOf(r, filters));
   return summary.values!.map((v) => v.value);
 }
 
@@ -110,7 +111,7 @@ describe('filters (lab note 2)', () => {
 
   test('filtering on an input narrows the outputs', () => {
     const filters: Filters = new Map([['B3', only(500)]]);
-    const summary = summarize(r, r.compiled.cells.get('B7')!, passMask(r, filters));
+    const summary = summarize(r.compiled.cells.get('B7')!, viewOf(r, filters));
     expect(summary.passing).toBe(3);
     expect(summary.values!.filter((v) => v.passing > 0).map((v) => v.value)).toEqual([
       3318, 4218, 4718,
@@ -121,7 +122,7 @@ describe('filters (lab note 2)', () => {
 
   test('filtering on an output shows which inputs are still possible', () => {
     const filters: Filters = new Map([['B8', only(true)]]);
-    const apartments = summarize(r, r.compiled.cells.get('B4')!, passMask(r, filters));
+    const apartments = summarize(r.compiled.cells.get('B4')!, viewOf(r, filters));
     // only the cheapest apartment is affordable (with either car)
     expect(apartments.values!.map((v) => [v.value, v.passing])).toEqual([
       [2800, 2],
@@ -211,7 +212,7 @@ describe('formulas', () => {
     expect(values(r, 'C1')).toEqual([3, 2, 1]);
     // repeated values are separate choices: 7 is three times as likely as 9
     expect(r.compiled.cardinality).toBe(4 * 5 * 3 * 4);
-    const d1 = summarize(r, r.compiled.cells.get('D1')!, null);
+    const d1 = summarize(r.compiled.cells.get('D1')!, viewOf(r));
     expect(d1.values!.map((v) => [v.value, v.count / r.n])).toEqual([
       [7, 0.75],
       [9, 0.25],
@@ -280,7 +281,7 @@ describe('choosing how to evaluate', () => {
     expect(r.compiled.cardinality).toBe(6 ** 10);
     expect(r.mode).toBe('montecarlo');
     expect(r.n).toBe(5_000);
-    const total = summarize(r, r.compiled.cells.get('B1')!, null);
+    const total = summarize(r.compiled.cells.get('B1')!, viewOf(r));
     expect(total.stats!.avg).toBeGreaterThan(34);
     expect(total.stats!.avg).toBeLessThan(36);
   });
@@ -293,11 +294,11 @@ describe('Monte Carlo', () => {
     expect(r.mode).toBe('montecarlo');
     expect(r.n).toBe(20_000);
 
-    const a1 = summarize(r, r.compiled.cells.get('A1')!, null);
+    const a1 = summarize(r.compiled.cells.get('A1')!, viewOf(r));
     expect(a1.values).toBeNull(); // too many distinct values to list
     expect(Math.abs(a1.stats!.avg - 100)).toBeLessThan(0.5);
 
-    const a3 = histogram(r, 'A3', null)!;
+    const a3 = histogram(viewOf(r), 'A3')!;
     expect(Math.abs(a3.all.avg - 105)).toBeLessThan(0.5);
     expect(Math.abs(a3.all.stdev - Math.sqrt(15 ** 2 + 100 / 12))).toBeLessThan(0.5);
     expect(a3.bins.reduce((sum, bin) => sum + bin.count, 0)).toBe(20_000);
@@ -328,7 +329,7 @@ describe('Monte Carlo', () => {
     while (!evaluation.run.done) {
       evaluation.advance(1);
       seen.push(evaluation.run.n);
-      const summary = summarize(evaluation.run, compiled.cells.get('A2')!, null);
+      const summary = summarize(compiled.cells.get('A2')!, viewOf(evaluation.run));
       expect(summary.values!.reduce((sum, v) => sum + v.count, 0)).toBe(evaluation.run.n);
     }
     expect(seen.length).toBeGreaterThan(2);
@@ -356,7 +357,7 @@ describe('Monte Carlo', () => {
     expect(new Set(vs).size).toBe(30);
     expect([...vs].sort((a, b) => a - b)).toEqual(vs);
     // more distinct values than amb-engine's analysis lists, so it is summarized by its stats
-    const summary = summarize(r, r.compiled.cells.get('A1')!, null);
+    const summary = summarize(r.compiled.cells.get('A1')!, viewOf(r));
     expect(summary.values).toBeNull();
     expect(Math.abs(summary.stats!.avg - 100)).toBeLessThan(10);
   });
@@ -370,7 +371,7 @@ describe('tables', () => {
     expect([car.addr, apartment.addr]).toEqual(['B3', 'B4']);
 
     const filters: Filters = new Map([['B8', only(true)]]);
-    const table = pivot(r, 'B7', passMask(r, filters), car, apartment);
+    const table = pivot(viewOf(r, filters), 'B7', car, apartment);
     expect(table.xLabels).toEqual(['500', '1,200']);
     expect(table.yLabels).toEqual(['2,800', '3,700', '4,200']);
     expect(table.cells.map((row) => row.map((cell) => aggregate(cell, 'avg')))).toEqual([
@@ -398,7 +399,7 @@ describe('line charts', () => {
 
   test('a range-valued cell is one line per combination of choices', () => {
     const r = run(cells);
-    const chart = lineChart(r, r.compiled.cells.get('C1')!, null)!;
+    const chart = lineChart(viewOf(r), r.compiled.cells.get('C1')!)!;
     expect(chart.series.map((s) => [s.label, s.points])).toEqual([
       ['A1=1', [[2024, 10], [2025, 15]]],
       ['A1=2', [[2024, 20], [2025, 25]]],
@@ -410,23 +411,22 @@ describe('line charts', () => {
 
   test('filters grey out the lines that no longer apply', () => {
     const r = run(cells);
-    const mask = passMask(r, new Map([['A1', only(2)]]));
-    const chart = lineChart(r, r.compiled.cells.get('C1')!, mask)!;
+    const chart = lineChart(viewOf(r, new Map([['A1', only(2)]])), r.compiled.cells.get('C1')!)!;
     expect(chart.series.map((s) => s.passing)).toEqual([false, true]);
   });
 
   test('labels on the x axis, and a single column of ys', () => {
     const r = run({ ...cells, A3: 'Q1', A4: 'Q2', D1: '=B3:B4' });
-    const chart = lineChart(r, r.compiled.cells.get('C1')!, null)!;
+    const chart = lineChart(viewOf(r), r.compiled.cells.get('C1')!)!;
     expect(chart.categories).toEqual(['Q1', 'Q2']);
     expect(chart.series[1].points).toEqual([[0, 20], [1, 25]]);
-    const column = lineChart(r, r.compiled.cells.get('D1')!, null)!;
+    const column = lineChart(viewOf(r), r.compiled.cells.get('D1')!)!;
     expect(column.series[0].points).toEqual([[1, 10], [2, 15]]);
   });
 
   test('with a continuous input there is a line per sample, up to a limit', () => {
     const r = run({ ...cells, A1: '=normal(1, 0.1)' }, { samples: 1_000 });
-    const chart = lineChart(r, r.compiled.cells.get('C1')!, null, 50)!;
+    const chart = lineChart(viewOf(r), r.compiled.cells.get('C1')!, 50)!;
     expect(chart.series.length).toBe(50);
     expect(chart.total).toBe(1_000);
   });
