@@ -19,6 +19,7 @@ import {
   type Summary,
 } from '../model/analysis';
 import { RangeSlider } from './RangeSlider';
+import { Reference } from './Reference';
 import { useSheet } from './state';
 
 export function Details() {
@@ -29,8 +30,20 @@ export function Details() {
 
   return (
     <aside class="details">
-      <div class="panel-title">{info() ? displayName(info()!) : s.activeAddr()}</div>
-      <div class="panel-body">
+      <div class="panel-title">
+        <span>{s.panel() === 'reference' ? 'Reference' : info() ? displayName(info()!) : s.activeAddr()}</span>
+        <Show when={s.panel() === 'reference'}>
+          <button class="link" onClick={() => s.setPanel('cell')}>
+            Back to the cell
+          </button>
+        </Show>
+      </div>
+      <Show when={s.panel() === 'reference'}>
+        <div class="panel-body">
+          <Reference />
+        </div>
+      </Show>
+      <div class="panel-body" hidden={s.panel() === 'reference'}>
         <Show when={isEmptySheet()}>
           <Welcome />
         </Show>

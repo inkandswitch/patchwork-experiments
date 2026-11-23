@@ -160,6 +160,8 @@ export function Grid() {
   }
 
   function onEditorKeyDown(e: KeyboardEvent) {
+    // the autocomplete popup gets first refusal of the keys it uses
+    if (s.assist.onKeyDown(e)) return;
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       s.commitEdit();
@@ -294,6 +296,7 @@ export function Grid() {
                               queueMicrotask(() => {
                                 el.focus();
                                 el.setSelectionRange(el.value.length, el.value.length);
+                                s.assist.refresh(el);
                               })
                             }
                             value={s.edit()?.text ?? ''}
@@ -301,9 +304,15 @@ export function Grid() {
                             onInput={(e) => {
                               const edit = s.edit();
                               if (edit) s.setEdit({ ...edit, text: e.currentTarget.value });
+                              s.assist.refresh(e.currentTarget);
                             }}
                             onKeyDown={onEditorKeyDown}
-                            onBlur={() => s.commitEdit()}
+                            onKeyUp={s.assist.onKeyUp}
+                            onClick={(e) => s.assist.refresh(e.currentTarget)}
+                            onBlur={() => {
+                              s.assist.close();
+                              s.commitEdit();
+                            }}
                           />
                         </Show>
                       </td>

@@ -1,5 +1,6 @@
 import { Show } from 'solid-js';
 import type { AmbsheetHandle } from '../datatype';
+import { AssistPopup } from './Assist';
 import { ContextMenu } from './ContextMenu';
 import { Details } from './Details';
 import { FiltersPanel } from './FiltersPanel';
@@ -21,6 +22,7 @@ export function App(props: { handle: AmbsheetHandle }) {
         <Details />
         <StatusBar />
         <ContextMenu />
+        <AssistPopup />
       </Show>
     </SheetProvider>
   );
@@ -41,11 +43,19 @@ function FormulaBar() {
         spellcheck={false}
         placeholder="A value, an amb like {500, 1200}, or a formula like =SUM(B3:B5)"
         value={s.edit()?.text ?? s.text(s.selection())}
-        onFocus={() => {
+        onFocus={(e) => {
           if (!s.edit()) s.beginEdit('bar');
+          const el = e.currentTarget;
+          queueMicrotask(() => s.assist.refresh(el));
         }}
-        onInput={(e) => s.setEdit({ addr: s.activeAddr(), text: e.currentTarget.value, where: 'bar' })}
+        onInput={(e) => {
+          s.setEdit({ addr: s.activeAddr(), text: e.currentTarget.value, where: 'bar' });
+          s.assist.refresh(e.currentTarget);
+        }}
+        onKeyUp={s.assist.onKeyUp}
+        onClick={(e) => s.assist.refresh(e.currentTarget)}
         onKeyDown={(e) => {
+          if (s.assist.onKeyDown(e)) return;
           if (e.key === 'Enter') {
             e.preventDefault();
             s.commitEdit();
@@ -57,9 +67,18 @@ function FormulaBar() {
           }
         }}
         onBlur={() => {
+          s.assist.close();
           if (editingHere()) s.commitEdit();
         }}
       />
+      <button
+        class="help"
+        data-on={s.panel() === 'reference' ? '' : undefined}
+        title="Functions and syntax"
+        onClick={() => s.setPanel(s.panel() === 'reference' ? 'cell' : 'reference')}
+      >
+        Reference
+      </button>
     </header>
   );
 }

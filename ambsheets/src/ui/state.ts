@@ -16,6 +16,7 @@ import {
   type View,
 } from '../model/analysis';
 import { Focuser, type Focus } from '../model/focus';
+import { createAssist } from './assistState';
 import { applyEdit, checkEdit } from '../model/structure';
 import {
   DEFAULT_SETTINGS,
@@ -265,6 +266,21 @@ export function createSheetState(handle: AmbsheetHandle) {
 
   const cancelEdit = () => setEdit(null);
 
+  // --- help with formulas ---
+
+  /** Completions and argument hints for the formula being typed. */
+  const assist = createAssist({
+    edit,
+    setEdit,
+    names: () =>
+      [...run().compiled.cells.values()]
+        .filter((info) => info.name !== null)
+        .map((info) => ({ name: info.name!, addr: info.addr, text: text(info.pos) })),
+  });
+
+  /** What the side panel shows: the selected cell, or the reference. */
+  const [panel, setPanel] = createSignal<'cell' | 'reference'>('cell');
+
   // --- inserting and deleting rows and columns ---
 
   const [menu, setMenu] = createSignal<ContextMenu | null>(null);
@@ -331,6 +347,9 @@ export function createSheetState(handle: AmbsheetHandle) {
     selectedRect,
     activeAddr,
     activeInfo,
+    assist,
+    panel,
+    setPanel,
     select,
     selectRow,
     selectCol,

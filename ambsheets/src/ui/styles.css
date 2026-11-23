@@ -469,7 +469,8 @@
 
 .ambsheet .cell-editor {
   display: block;
-  width: 100%;
+  /* as wide as its text (the size attribute), and at least as wide as the cell */
+  width: auto;
   min-width: 100%;
   height: 24px;
   padding: 3px 6px;
@@ -478,6 +479,185 @@
   background: var(--ambsheet-bg);
   font-family: var(--ambsheet-family-code);
   font-size: 12.5px;
+}
+
+/* ---------- help with formulas: the autocomplete popup and the reference ---------- */
+
+.ambsheet .assist {
+  position: absolute;
+  z-index: 11;
+  width: 320px;
+  max-width: calc(100% - 8px);
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+  box-shadow: var(--studio-shadow-md, 0 4px 12px rgb(0 0 0 / 0.15));
+  font-size: 12px;
+}
+
+.ambsheet .assist-list {
+  position: relative;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--ambsheet-border);
+}
+
+.ambsheet .assist-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ambsheet .assist-item[data-selected] {
+  background: var(--ambsheet-accent-soft);
+}
+
+.ambsheet .assist-item .label {
+  font-family: var(--ambsheet-family-code);
+  font-weight: 600;
+}
+
+.ambsheet .assist-item[data-kind='name'] .label {
+  font-style: italic;
+}
+
+.ambsheet .assist-item .detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ambsheet-muted);
+  font-family: var(--ambsheet-family-code);
+  font-size: 11px;
+  text-align: right;
+}
+
+.ambsheet .assist-doc {
+  padding: 6px 8px;
+  color: var(--ambsheet-fg);
+}
+
+.ambsheet .assist-doc .keys {
+  color: var(--ambsheet-muted);
+  font-size: 11px;
+}
+
+.ambsheet .signature {
+  font-family: var(--ambsheet-family-code);
+  font-weight: 600;
+}
+
+.ambsheet .signature span[data-current] {
+  background: var(--ambsheet-accent-soft);
+  border-radius: 2px;
+  text-decoration: underline;
+}
+
+.ambsheet .assist-doc .param,
+.ambsheet .assist-doc .summary,
+.ambsheet .assist-doc .note,
+.ambsheet .reference .summary,
+.ambsheet .reference .note {
+  margin-top: 3px;
+}
+
+.ambsheet .assist-doc .param + .summary,
+.ambsheet .assist-doc .note,
+.ambsheet .reference .note {
+  color: var(--ambsheet-muted);
+}
+
+.ambsheet .assist-doc dl,
+.ambsheet .reference dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 4px 0 0;
+  color: var(--ambsheet-muted);
+}
+
+.ambsheet .assist-doc dt,
+.ambsheet .reference dt {
+  font-family: var(--ambsheet-family-code);
+  color: var(--ambsheet-fg);
+}
+
+.ambsheet .assist-doc dd,
+.ambsheet .reference dd {
+  margin: 0;
+}
+
+.ambsheet .formula-bar .help {
+  align-self: stretch;
+  padding: 0 12px;
+  border: none;
+  border-left: 1px solid var(--ambsheet-border);
+  background: var(--ambsheet-panel);
+  color: var(--ambsheet-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ambsheet .formula-bar .help:hover,
+.ambsheet .formula-bar .help[data-on] {
+  background: var(--ambsheet-accent-soft);
+  color: var(--ambsheet-fg);
+}
+
+.ambsheet .panel-title .link {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ambsheet .reference .search {
+  width: 100%;
+  margin-bottom: var(--studio-space-sm, 0.5rem);
+  padding: 4px 8px;
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+}
+
+.ambsheet .reference p {
+  margin: 0 0 var(--studio-space-sm, 0.5rem);
+}
+
+.ambsheet .reference section {
+  padding-top: var(--studio-space-sm, 0.5rem);
+  border-top: 1px solid var(--ambsheet-border);
+}
+
+.ambsheet .reference .entry {
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.ambsheet .reference .example-code {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+  font-family: var(--ambsheet-family-code);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.ambsheet .reference .example-code:hover {
+  border-color: var(--ambsheet-accent);
+}
+
+.ambsheet .reference .note-text {
+  font-size: 12px;
 }
 
 /* ---------- context menu ---------- */

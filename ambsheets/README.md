@@ -34,6 +34,22 @@ Functions: `sum product count avg min max and or not concat unique vlookup abs s
 floor ceil round pow mod`. Parameters of distributions must be numbers or cells that don't
 vary.
 
+## Help while typing
+
+- **Autocomplete.** In a formula, suggestions appear as you type: functions, named cells,
+  and (right after the `=`) the functions that make a cell hold several values. Arrow
+  keys choose, Tab or Enter inserts, Esc dismisses, and Ctrl+Space shows everything.
+  Related words work too: `=rand` or `=dist` finds `normal` and `uniform`.
+- **Argument hints.** Inside a call, a hint shows the function's arguments with the one
+  being typed highlighted and explained.
+- **Reference.** The Reference button at the end of the formula bar opens a searchable
+  page of the whole language. Clicking an example puts it in the formula bar for the
+  selected cell.
+
+All three are generated from one table, `src/lang/reference.ts`, and a test checks that
+it documents exactly the functions that exist and that every example parses. What to
+suggest where is decided in `src/lang/complete.ts` (no DOM, unit-tested).
+
 ## How evaluation works
 
 - `src/model/compile.ts` turns the sheet into an amb-engine model: each amb cell becomes
