@@ -56,6 +56,22 @@ export function lookupIn(plugins: any): DatatypeLookup {
   }
 }
 
+/**
+ * A lookup whose datatypes know which document is asking: each `asSource`
+ * gets `{ for: selfUrl }` as its third argument (the notebook's own URL, with
+ * or without #heads), so a register can leave out the results this notebook
+ * computes itself. Everything that turns a document into Python or JSON goes
+ * through the lookup (imports, patchwork.load, staleness), so they all agree.
+ */
+export function forDocument(lookup: DatatypeLookup, selfUrl: string): DatatypeLookup {
+  return async type => {
+    const hook = await lookup(type)
+    if (typeof hook?.asSource !== "function") return hook
+    const asSource = hook.asSource.bind(hook) as (doc: unknown, ext: string, options?: { for?: string }) => unknown
+    return { ...hook, asSource: (doc: unknown, ext: string) => asSource(doc, ext, { for: selfUrl }) }
+  }
+}
+
 /** A lookup for a realm with no registry. */
 export const noRegistry: DatatypeLookup = async () => undefined
 
@@ -143,7 +159,7 @@ export function jsonView(doc: any, hook: DatatypeHook | undefined): unknown {
 }
 
 /** What a document is as patchwork.load gives it: the raw data and its JSON view, if any. */
-export type Snapshot = { raw: unknown; json: unknown; title: string; heads: string[] }
+export type Snapshot = { raw: unknown; json: unknown; title: string; heads: string[]; type?: string | null }
 
 /**
  * The files patchwork.load reads, for every opened document (imports and
@@ -165,7 +181,7 @@ export function documentFiles(opened: Map<string, Opened>, imports: NotebookImpo
     files.files[`${n}.raw.json`] = JSON.stringify(raw)
     if (json !== undefined) files.files[`${n}.view.json`] = JSON.stringify(json)
     files.index.documents[url] = { title: it.title, raw: `${n}.raw.json`, ...(json !== undefined ? { json: `${n}.view.json` } : {}) }
-    snapshots.set(url, { raw, json, title: it.title, heads: it.heads })
+    snapshots.set(url, { raw, json, title: it.title, heads: it.heads, type: it.type })
   }
   return { files, snapshots }
 }

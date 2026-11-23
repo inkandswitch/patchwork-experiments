@@ -77,6 +77,9 @@ hashes in the run record; bytes travel as `{"$bytes": base64}`.
 
 `as_="json"` asks the datatype for `asSource(doc, "json")` (an assumptions
 register gives a flat id → value object) and falls back to the document.
+Every `asSource` call (imports, `load`, staleness) gets
+`{ for: <this notebook's URL> }` as its third argument, so a register can
+leave out the results this notebook computes itself.
 Values come back as read-only mappings and sequences that record what is
 read; `.plain()` gives ordinary dicts and lists.
 
@@ -125,6 +128,11 @@ A run is **stale** when something it read has changed in what it read
 a path a cell loaded. A change elsewhere in a document doesn't count, nor
 does renaming it; a document that can no longer be opened does.
 
+Only the last run is recorded, and a run that failed or was stopped may have
+read nothing (it failed early), so it can't vouch for being current. Instead of
+a staleness verdict the notebook_run report says "Its last run failed: <why>;
+rerun it."
+
 While the notebook is open, the view watches every document its last run
 read. When the run goes stale it says so ("Stale: "Nootka assumptions"
 changed (entries.pack_series.value) since the last run") with a **Rerun**
@@ -154,8 +162,14 @@ version, marked when changed since).
   execution counts are written into the notebook as they arrive.
 - The report: whether the notebook was stale before the run and why, one
   line per cell (ok, or the error and its traceback's tail), the `id value`
-  result lines the cells printed (what the register reads), and the tail of
-  what they printed. No need to read outputs back cell by cell.
+  result lines the cells printed (only lines whose id is an entry of a linked
+  assumptions register, an import or a `patchwork.load`; none when no register
+  is linked), and the tail of what they printed. No need to read outputs back cell by cell.
+- Before it runs, notebook_run waits (up to 4 s) until this realm holds
+  everything the sync server last advertised for the notebook
+  (`handle.isCaughtUpWith`, `remote-heads`; `shared/sync.ts`), so a change made
+  elsewhere a moment ago, such as a just-added import, is not missed. Offline or
+  past the time it runs on what is here and the report says so.
 - `notebook_run { url, check: true }` says whether it is stale, and why,
   without running anything.
 - Editing imports by hand: `metadata.patchwork.imports` is a list of

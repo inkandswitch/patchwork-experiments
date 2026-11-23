@@ -12,7 +12,7 @@ import { Executor } from "./src/execution"
 import { PyodideKernelClient } from "./src/kernel/pyodide"
 import { Notebook } from "./src/notebook"
 import { createRenderMime } from "./src/outputs"
-import { lookupIn, noRegistry, runHooks, type DatatypeLookup, type FindDoc } from "../shared/run"
+import { forDocument, lookupIn, noRegistry, runHooks, type DatatypeLookup, type FindDoc } from "../shared/run"
 import css from "./src/style.css?inline"
 
 declare global {
@@ -50,7 +50,7 @@ export default function NativeNotebookTool(handle: DocHandle<NotebookDoc>, eleme
       ? undefined
       : new PyodideKernelClient({ pyodideUrl: PYODIDE_URL, bootstrap: kernelBootstrap(kernelConfig(repo)) })
     // Before every run, the imports are resolved and the run recorded (shared/run.ts), as notebook_run does.
-    const datatype: DatatypeLookup = async type => (await registry)(type)
+    const datatype: DatatypeLookup = forDocument(async type => (await registry)(type), handle.url)
     const executor = kernel && new Executor(store, kernel, runHooks({ writer: store, kernel, find, datatype, by: "person" }))
     const open = (url: string, title?: string) =>
       element.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url, title }, bubbles: true, composed: true }))

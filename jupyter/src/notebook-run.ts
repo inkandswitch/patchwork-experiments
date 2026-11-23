@@ -12,6 +12,14 @@ import type { RunRecord } from "../shared/imports"
 /** Whether the last run is out of date, as a line: what it read that changed, or that it is current. */
 export function staleLine(run: RunRecord | null, staleness: Staleness): string {
   if (!run) return "It had no recorded run."
+  // Staleness is judged against the last run's record, and a run that failed or was stopped
+  // may have recorded no reads at all (it failed early): that is no evidence of being current.
+  // Only the last run is kept, so a failed run is reported as failed, not judged.
+  if (run.status === "error" || run.status === "stopped") {
+    const what = run.status === "stopped" ? "was stopped" : `failed: ${run.problem ?? "a cell raised an error"}`
+    const moved = staleness.stale ? ` What it read has also changed: ${staleText(staleness, 6)}.` : ""
+    return `Its last run ${what}; rerun it.${moved}`
+  }
   const n = readUrls(run).length
   if (!n) return "It was up to date: its last run read no documents."
   if (!staleness.stale) return `It was up to date: nothing its last run read (${n} document${n === 1 ? "" : "s"}) has changed in what it read.`
@@ -87,6 +95,24 @@ const KINDS: Record<string, string> = {
 }
 const version = (heads: string[]) => (heads.length ? heads.map(h => h.slice(0, 8)).join("+") : "?")
 
+/**
+ * The ids of every entry in a register the run linked: an import or a load
+ * whose datatype is assumptions. A line of output is a result line only when
+ * its id is one of these.
+ */
+export function registerIds(last: LastRun | null): Set<string> {
+  const ids = new Set<string>()
+  if (!last) return ids
+  const urls = new Set([...last.resolved.map(r => r.docUrl), ...last.record.reads.map(r => r.docUrl)])
+  for (const url of urls) {
+    const snap = last.snapshots.get(url)
+    if (snap?.type !== "assumptions") continue
+    const entries = (snap.raw as { entries?: unknown } | undefined)?.entries
+    if (entries && typeof entries === "object") for (const id of Object.keys(entries)) ids.add(id)
+  }
+  return ids
+}
+
 /** The run as compact text: a summary line, the imports, a line per cell, result lines, a stdout tail. Pure. */
 export function report({
   title,
@@ -139,6 +165,7 @@ export function report({
     else lines.push(`cell ${n} ok${r.executionCount != null ? ` [${r.executionCount}]` : ""}`)
   }
   const ran = new Set(outcome.results.filter(r => r.status === "ok" || r.status === "error").map(r => r.id))
+  const known = registerIds(last)
   const results: string[] = []
   const stdout: string[] = []
   for (const cell of cells) {
@@ -147,12 +174,12 @@ export function report({
       const type = str(out?.output_type)
       const text = type === "stream" ? str(out.text) : type === "execute_result" ? (Array.isArray(out.data?.["text/plain"]) ? out.data["text/plain"].map(str).join("") : str(out.data?.["text/plain"])) : ""
       if (!text) continue
-      for (const r of resultLines(text)) results.push(`  ${r.line}  (cell ${number(str(cell.id))})`)
+      for (const r of resultLines(text)) if (known.has(r.id)) results.push(`  ${r.line}  (cell ${number(str(cell.id))})`)
       if (type === "stream") for (const line of text.replace(/\n$/, "").split("\n")) stdout.push(`  ${clip(line, 200)}`)
     }
   }
   if (results.length) {
-    lines.push(`Result lines (id value), ${results.length}:`)
+    lines.push(`Result lines (register entry id and value), ${results.length}:`)
     lines.push(...results.slice(0, 40))
     if (results.length > 40) lines.push(`  … and ${results.length - 40} more`)
   }

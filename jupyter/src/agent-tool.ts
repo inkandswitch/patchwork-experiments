@@ -14,9 +14,10 @@ import { automergeStandIn, hasAutomerge, setAutomerge, type Automerge } from "..
 import { CellRunner, type RunOutcome } from "../shared/cells"
 import { importsOf, runOf, titleOf } from "../shared/imports"
 import { assess } from "../shared/staleness"
+import { syncedWithServer, syncNote } from "../shared/sync"
 import { kernelConfig } from "../shared/kernel-config"
 import { NotebookWriter } from "../shared/notebook-writer"
-import { type DatatypeLookup, type LastRun, lookupIn, noRegistry, runHooks } from "../shared/run"
+import { type DatatypeLookup, type LastRun, forDocument, lookupIn, noRegistry, runHooks } from "../shared/run"
 import { kernelBootstrap } from "../shared/types"
 import { PyodideKernelClient } from "../native/src/kernel/pyodide"
 import { checkReport, type Input, linkImports, pickCells, report, staleLine, strip } from "./notebook-run"
@@ -100,6 +101,8 @@ export const notebookRun = {
     if (!input?.url) throw new Error("Pass `url`: the automerge: URL of a Jupyter notebook.")
     const url = strip(input.url)
     const handle = await ctx.repo.find(url)
+    // The latest version the server has, not just some version: see shared/sync.ts.
+    const synced = syncNote(await syncedWithServer(ctx.repo as any, handle))
     const doc = handle.doc()
     if (!Array.isArray(doc?.cells)) throw new Error(`${url} isn't a Jupyter notebook (it has no cells).`)
     await ensureAutomerge(ctx)
@@ -116,10 +119,10 @@ export const notebookRun = {
       writer.setPatchworkMetadata({ imports })
     }
 
-    const datatype = await datatypeLookup(ctx)
+    const datatype = forDocument(await datatypeLookup(ctx), url)
     const previous = runOf(handle.doc())
     const staleness = await assess(previous, { find: u => ctx.repo.find(u), datatype })
-    if (input.check) return checkReport(titleOf(handle.doc()), previous, staleness)
+    if (input.check) return checkReport(titleOf(handle.doc()), previous, staleness) + (synced ? ` Note: ${synced}` : "")
     const ids = pickCells(handle.doc(), input.cells)
     if (!ids.length) return `"${titleOf(doc)}" has no code cells; nothing ran.`
     if (input.restart) drop(url)
@@ -141,7 +144,7 @@ export const notebookRun = {
     ]).finally(() => clearTimeout(timer))
     if (timedOut) drop(url)
     const last = session.last()
-    return report({ title: titleOf(handle.doc()), doc: handle.doc(), outcome, last, elapsedMs: Date.now() - started, notes: last?.notes ?? [], timedOut, before: staleLine(previous, staleness) })
+    return report({ title: titleOf(handle.doc()), doc: handle.doc(), outcome, last, elapsedMs: Date.now() - started, notes: [...(synced ? [synced] : []), ...(last?.notes ?? [])], timedOut, before: staleLine(previous, staleness) })
   },
 
   summarize(input: Input, output: string): string {
