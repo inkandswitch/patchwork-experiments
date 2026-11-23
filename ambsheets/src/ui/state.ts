@@ -14,16 +14,16 @@ import {
   type Summary,
   type View,
 } from '../model/analysis';
-import { ExactCounter, canCountExactly, type ExactCount } from '../model/exact';
-import { Focuser, type Focus } from '../model/focus';
+import { canCountExactly, type ExactCount } from '../model/exact';
+import type { Focus } from '../model/focus';
 import { decodeFilters, encodeFilters, filtersSignature } from '../model/savedFilters';
 import { createAssist } from './assistState';
+import { createBackend } from './backend';
 import { History, type Change } from '../model/history';
 import { checkEdit } from '../model/structure';
 import {
   DEFAULT_SETTINGS,
   Evaluation,
-  Runner,
   SAMPLE_SIZES,
   type EvalMode,
   type EvalSettings,
@@ -131,12 +131,15 @@ export function createSheetState(handle: AmbsheetHandle) {
   const [run, setRun] = createSignal<Run>(
     new Evaluation(untrack(compiled), untrack(settings)).run,
   );
-  const runner = new Runner(setRun);
-  onCleanup(() => runner.stop());
+  const [focus, setFocus] = createSignal<Focus | null>(null);
+  const [exact, setExact] = createSignal<ExactCount | null>(null);
+  // The work is done by a backend: in a worker when there is one (see backend.ts).
+  const backend = createBackend({ onRun: setRun, onFocus: setFocus, onExact: setExact });
+  onCleanup(() => backend.dispose());
   // Any change to the cells or to the settings starts the evaluation over. The first
   // slice of work happens right here, so small sheets are up to date immediately; bigger
   // ones keep publishing results as they go.
-  createEffect(() => runner.start(compiled(), settings()));
+  createEffect(() => backend.evaluate(compiled(), data(), settings()));
 
   function setEvaluation(changes: { mode?: EvalMode; samples?: number }) {
     handle.change((d) => {
@@ -202,9 +205,6 @@ export function createSheetState(handle: AmbsheetHandle) {
   // scenarios that match".
 
   const [focusEnabled, setFocusEnabled] = createSignal(true);
-  const [focus, setFocus] = createSignal<Focus | null>(null);
-  const focuser = new Focuser(setFocus);
-  onCleanup(() => focuser.stop());
 
   /** True when the filters leave too little of a finished Monte Carlo sample to go on. */
   const scarce = createMemo(() => {
@@ -219,11 +219,11 @@ export function createSheetState(handle: AmbsheetHandle) {
 
   createEffect(() => {
     const [r, pinned, target, randomSeed] = [run(), filters(), Math.min(samples(), FOCUS_TARGET), seed()];
-    focuser.stop();
+    backend.stopFocus();
     setFocus(null);
     if (!scarce()) return;
     // (a short wait, so that dragging a slider doesn't start a search at every step)
-    const timer = setTimeout(() => focuser.start(r.compiled, pinned, { target, seed: randomSeed }), 150);
+    const timer = setTimeout(() => backend.focus(r.compiled, pinned, { target, seed: randomSeed }), 150);
     onCleanup(() => clearTimeout(timer));
   });
 
@@ -232,17 +232,14 @@ export function createSheetState(handle: AmbsheetHandle) {
   // A sheet that is being sampled, but has few enough scenarios to visit them all, gets
   // the true number that match the filters counted in the background (see exact.ts).
 
-  const [exact, setExact] = createSignal<ExactCount | null>(null);
-  const exactCounter = new ExactCounter(setExact);
-  onCleanup(() => exactCounter.stop());
 
   createEffect(() => {
     const [r, pinned] = [run(), filters()];
-    exactCounter.stop();
+    backend.stopExact();
     setExact(null);
     const relevant = [...pinned.keys()].some((id) => id in r.columns);
     if (!r.done || r.mode !== 'montecarlo' || !relevant || !canCountExactly(r.compiled)) return;
-    const timer = setTimeout(() => exactCounter.start(r.compiled, pinned), 300);
+    const timer = setTimeout(() => backend.exact(r.compiled, pinned), 300);
     onCleanup(() => clearTimeout(timer));
   });
 
@@ -476,7 +473,7 @@ export function createSheetState(handle: AmbsheetHandle) {
     samples,
     setEvaluation,
     resample: () => setSeed(Math.random()),
-    sampleMore: () => runner.sampleMore(samples()),
+    sampleMore: () => backend.sampleMore(samples()),
     sampleSizes: SAMPLE_SIZES,
 
     filters,

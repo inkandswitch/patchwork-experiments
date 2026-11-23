@@ -88,9 +88,14 @@ suggest where is decided in `src/lang/complete.ts` (no DOM, unit-tested).
 
   The status bar says which was chosen and why, and lets you force either one. The choice
   (and the sample size) is stored in the document as `evaluation`.
-- Evaluation happens in short time slices on the UI thread, and results are published to
-  the UI as they accumulate, so during a Monte Carlo run you see values, counts and
-  averages update as more scenarios are sampled. Unfiltered per-cell summaries come from
+- Evaluation happens in short time slices, and results are published to the UI as they
+  accumulate, so during a Monte Carlo run you see values, counts and averages update as
+  more scenarios are sampled. A sheet that evaluates within a few milliseconds is
+  evaluated right on the UI thread; anything longer, and every focused search and exact
+  count, runs in a worker (`src/model/remote.ts`, `src/model/worker.ts`). Formulas
+  compile to closures, which can't cross threads, so the worker is sent the sheet's text,
+  compiles it for itself, and sends back scenarios in batches. If a worker can't be
+  started, everything runs on the UI thread as before (`src/ui/backend.ts`). Unfiltered per-cell summaries come from
   amb-engine's own running analysis (`sampler.getLatestAnalysisResults()`).
 - `src/model/analysis.ts` computes everything that involves filters (which scenarios
   pass, filtered statistics, histograms, pivot tables) from stored scenarios.
@@ -168,7 +173,8 @@ pnpm build       # dist/index.js + lazy chunks
 pnpm sync        # build, then pushwork sync
 ```
 
-`dev/dist-check.html` smoke-tests the built bundle the way Patchwork loads it.
+`dev/dist-check.html` smoke-tests the built bundle the way Patchwork loads it (add
+`?noworker` to check that it carries on when a worker can't be started).
 
 `src/engine/` is a working copy of amb-engine with conditioned sampling added (see the README
 next to it).

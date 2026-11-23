@@ -28,7 +28,10 @@
   <body>
     <div id="root"></div>
     <script type="module">
-      import { plugins } from '/dist/index.js';
+      // ?noworker makes starting a worker fail, to check that the tool carries on without one
+      if (location.search.includes('noworker')) window.Worker = undefined;
+
+      import('/dist/index.js').then(async ({ plugins }) => {
 
       const datatype = await plugins.find((p) => p.type === 'patchwork:datatype').load();
       const tool = await plugins.find((p) => p.type === 'patchwork:tool').load();
@@ -54,6 +57,7 @@
 
       window.cleanup = tool(handle, document.getElementById('root'));
       window.handle = handle;
+      });
     </script>
   </body>
 </html>

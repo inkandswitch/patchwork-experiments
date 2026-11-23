@@ -12,6 +12,8 @@ import external from '@inkandswitch/patchwork-bootloader/externals';
 export default defineConfig({
   base: './',
   plugins: [solid()],
+  // (the evaluation worker is a module of its own, next to the tool's)
+  worker: { format: 'es' },
   build: {
     target: 'es2022',
     minify: false,

@@ -6,6 +6,7 @@ import wasm from 'vite-plugin-wasm';
 export default defineConfig({
   root: 'dev',
   plugins: [wasm(), solid()],
+  worker: { format: 'es' },
   build: { target: 'esnext' },
   optimizeDeps: { exclude: ['@automerge/automerge'] },
   server: { port: 5199, strictPort: false },
