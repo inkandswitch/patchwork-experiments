@@ -303,4 +303,101 @@ export const styles = `
 .openscad-console[data-state="error"] pre {
   color: var(--openscad-danger);
 }
+
+/* Hovering a part: its label (the module that placed it) and the shape and line. */
+.openscad-hover {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 280px;
+  padding: 4px 8px;
+  border: 1px solid var(--openscad-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--openscad-bg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.openscad-hover span {
+  color: var(--openscad-muted);
+  font-family: var(--openscad-family-code);
+  font-size: 11px;
+}
+
+.openscad-view-stage:focus {
+  outline: none;
+}
+
+/* The picked part's chain of calls: each shows its call in the code. */
+.openscad-trail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 4px var(--studio-space-sm, 0.5rem);
+  border-top: 1px solid var(--openscad-border);
+  background: var(--openscad-bg);
+  font-size: 12px;
+}
+
+.openscad-trail-sep {
+  color: var(--openscad-muted);
+  padding: 0 1px;
+}
+
+.openscad-trail button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--studio-radius-sm, 4px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 1px 5px;
+  cursor: pointer;
+}
+
+.openscad-trail button:hover:not(:disabled) {
+  border-color: var(--openscad-border);
+  background: var(--openscad-panel);
+}
+
+.openscad-trail button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.openscad-trail-name {
+  font-family: var(--openscad-family-code);
+}
+
+.openscad-trail-step.is-label .openscad-trail-name {
+  font-weight: 600;
+}
+
+.openscad-trail-step.is-shape .openscad-trail-name {
+  color: var(--openscad-muted);
+}
+
+.openscad-trail-line {
+  color: var(--openscad-muted);
+  font-size: 11px;
+}
+
+.openscad-trail-def {
+  margin-left: auto;
+  color: var(--openscad-muted) !important;
+  font-size: 11px !important;
+}
+
+.openscad-trail-close {
+  color: var(--openscad-muted) !important;
+}
 `

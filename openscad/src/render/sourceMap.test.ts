@@ -1,6 +1,6 @@
 import {readFileSync} from "node:fs"
 import {describe, expect, it} from "vitest"
-import {buildSourceMap, chainOf, definitionOf, echoedPaths, labelAll, labelOf, labelSource, pathId, scan, tokenize, type SourceMap} from "./sourceMap"
+import {buildSourceMap, chainOf, definitionOf, echoedPaths, labelAll, labelOf, labelSource, pathId, pieceOf, recordsAt, scan, summarize, tokenize, trianglesOf, type SourceMap} from "./sourceMap"
 import {parseOFF, type Model} from "./model"
 import {openscadArgs} from "./args"
 import {ENGINE_DIR} from "./engineFiles"
@@ -168,5 +168,34 @@ describe("in the engine", () => {
 		const {map} = await mapped("hull() { cube(1); translate([3, 0, 0]) sphere(1, $fn = 8); }")
 		expect(map.unmapped).toBe(0)
 		expect(summary(map).filter(r => r.triangles > 0).map(r => r.chain)).toEqual(["hull@1"])
+	})
+
+	it("summarizes the parts, finds the parts a cursor is in, and gathers a part's triangles", async () => {
+		const src = "module post() cylinder(h = 10, r = 1, $fn = 8);\nmodule rail() cube([20, 1, 1]);\npost();\ntranslate([19, 0, 0]) post();\ntranslate([0, 0, 9]) rail();\n"
+		const {real, map} = await mapped(src)
+		const parts = summarize(real, map)
+		// each call is its own part: two posts, one rail
+		expect(parts.map(p => p.label)).toEqual(["post", "post", "rail"])
+		expect(parts.map(p => p.chain)).toEqual([["post:3", "cylinder:1"], ["post:4", "cylinder:1"], ["rail:5", "cube:2"]])
+		expect(parts[2].box).toEqual([[0, 0, 9], [20, 1, 10]])
+		// the cursor in "rail();" lights only the rail; in the post module's cylinder, both posts
+		expect([...recordsAt(map, src.indexOf("rail();"))].map(r => labelOf(map, r))).toEqual(["rail"])
+		expect([...recordsAt(map, src.indexOf("cube"))].map(r => labelOf(map, r))).toEqual(["rail"])
+		expect([...recordsAt(map, src.indexOf("cylinder"))].map(r => labelOf(map, r))).toEqual(["post", "post"])
+		expect(recordsAt(map, 0).size).toBe(0)
+		const rail = map.records.findIndex((_, r) => labelOf(map, r) === "rail")
+		expect(trianglesOf(real, map, new Set([rail])).length / 9).toBe(parts[2].triangles)
+	})
+
+	it("finds the piece a click landed on among a loop's many", async () => {
+		const {real, map} = await mapped("for (i = [0 : 3]) translate([i * 3, 0, 0]) cube(1);")
+		expect(map.records).toHaveLength(1)
+		const all = real.parts[0].positions.length / 9
+		const piece = pieceOf(real, map, 0, 0)
+		// one cube of four: 12 triangles, all within one unit box
+		expect(piece.length / 9).toBe(all / 4)
+		const xs = [...piece].filter((_, i) => i % 3 === 0)
+		expect(Math.max(...xs) - Math.min(...xs)).toBe(1)
+		expect(pieceOf(real, {faces: [new Int32Array(all).fill(-1)]}, 0, 0).length).toBe(0)
 	})
 })

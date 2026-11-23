@@ -3,7 +3,8 @@ import {GLTFLoader} from "three/examples/jsm/loaders/GLTFLoader.js"
 import type {Mesh} from "three"
 import {parseGLB} from "./glb.js"
 import {zUpToYUpMeters} from "./axes"
-import {createOpenscadSource, dependencies, fingerprint, modelToGLB} from "./source"
+import {createOpenscadSource, dependencies, fingerprint, modelToGLB, type PartSource} from "./source"
+import type {SourceMap} from "../render/sourceMap"
 import {importInput} from "../linkedSources"
 import {createRenderCache} from "../render/engine"
 import type {Model, RGBA} from "../render/model"
@@ -284,5 +285,39 @@ describe("cleanError", () => {
 		const {cleanError} = await import("./source")
 		const e = cleanError(new Error("Could not initialize localization (application path is '/').\nERROR: Parser error: syntax error in file /input.scad, line 33\nCan't parse file '/input.scad'!\n"))
 		expect(e.message).toBe("ERROR: Parser error: syntax error in file /input.scad, line 33\nCan't parse file '/input.scad'!")
+	})
+})
+
+describe("a node per part", () => {
+	// two colours; three triangles: a cell's (red), a cell's (blue), and one no part claims (red)
+	const tri = (z: number) => [0, 0, z, 1, 0, z, 0, 1, z]
+	const model: Model = {
+		parts: [
+			{color: [1, 0, 0, 1], positions: Float32Array.from([...tri(0), ...tri(1)])},
+			{color: [0, 0, 1, 1], positions: Float32Array.from(tri(2))},
+		],
+		triangles: 3,
+	}
+	const map: SourceMap = {
+		sites: [
+			{id: 1, file: "", name: "cell", kind: "call", from: 30, to: 36, line: 3, col: 0},
+			{id: 2, file: "", name: "cube", kind: "shape", from: 14, to: 21, line: 1, col: 14},
+		],
+		modules: [{name: "cell", file: "", from: 7, to: 11, line: 1, col: 7}],
+		records: [{path: [1, 2]}],
+		faces: [Int32Array.from([0, -1]), Int32Array.from([0])],
+		unmapped: 1,
+	}
+	it("names each part's node by its label and says its source", () => {
+		const {json} = parseGLB(modelToGLB(model, "mm", "OpenSCAD", map).glb)
+		expect(json.nodes.map((n: {name: string}) => n.name)).toEqual(["OpenSCAD", "cell"])
+		const cell = json.nodes.find((n: {name: string}) => n.name === "cell")
+		expect(cell.extras.source as PartSource).toEqual({label: "cell", chain: ["cell:3", "cube:1"], at: {line: 1, col: 14, from: 14, to: 21}})
+		// the cell keeps both its colours, a primitive each
+		expect(json.meshes[cell.mesh].primitives).toHaveLength(2)
+	})
+	it("is a single mesh without a map, as before", () => {
+		const {json} = parseGLB(modelToGLB(model, "mm").glb)
+		expect(json.meshes).toHaveLength(1)
 	})
 })

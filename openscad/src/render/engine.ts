@@ -8,6 +8,7 @@
 /// <reference types="vite/client" />
 import workerUrl from "./worker.ts?worker&url"
 import type {Model} from "./model"
+import type {SourceMap} from "./sourceMap"
 import type {EngineUrls, LoadProgress} from "./worker"
 import {ENGINE_DIR} from "./engineFiles"
 
@@ -21,6 +22,12 @@ export type RenderResult = {
 	elapsedMillis: number
 	/** true when this came out of the cache without running OpenSCAD */
 	cached?: boolean
+	/**
+	 * Which source made which triangle, from a second, labelled render that
+	 * starts once this one is done (render/sourceMap.ts). Null when that render
+	 * failed or was skipped for a newer request; never rejects.
+	 */
+	sourceMap?: Promise<SourceMap | null>
 }
 
 export type RenderImportInput = {
@@ -58,10 +65,14 @@ function emitProgress(p: LoadProgress) {
 type Pending = {
 	resolve: (value: RenderResult) => void
 	reject: (err: Error) => void
+	/** settles the result's sourceMap */
+	map: (map: SourceMap | null) => void
 }
 
 let worker: Promise<Worker> | null = null
 const pending = new Map<number, Pending>()
+/** each request's sourceMap, from when it's sent until its map arrives */
+const mapPromises = new Map<number, Promise<SourceMap | null>>()
 let nextId = 1
 
 // Resolved against this module's own URL (the package bundle), never the
@@ -110,16 +121,31 @@ function attach(w: Worker): Worker {
 		}
 		if (msg?.type === "result") {
 			const entry = pending.get(msg.id)
-			pending.delete(msg.id)
 			if (!entry) return
-			if (msg.ok) entry.resolve({model: msg.model, logs: msg.logs, elapsedMillis: msg.elapsedMillis})
-			else entry.reject(new RenderError(msg.error, msg.logs ?? []))
+			if (msg.ok) entry.resolve({model: msg.model, logs: msg.logs, elapsedMillis: msg.elapsedMillis, sourceMap: mapPromises.get(msg.id)})
+			else {
+				pending.delete(msg.id)
+				mapPromises.delete(msg.id)
+				entry.map(null)
+				entry.reject(new RenderError(msg.error, msg.logs ?? []))
+			}
+		}
+		if (msg?.type === "sourcemap") {
+			const entry = pending.get(msg.id)
+			pending.delete(msg.id)
+			mapPromises.delete(msg.id)
+			if (msg.error && msg.error !== "superseded") console.warn("openscad: no source map:", msg.error)
+			entry?.map(msg.map ?? null)
 		}
 	}
 	w.onerror = event => {
 		const err = new Error(event.message || "OpenSCAD worker crashed")
-		for (const entry of pending.values()) entry.reject(err)
+		for (const entry of pending.values()) {
+			entry.reject(err)
+			entry.map(null)
+		}
 		pending.clear()
+		mapPromises.clear()
 		w.terminate()
 		worker = null
 	}
@@ -142,11 +168,15 @@ export type Render = (source: string, imports?: RenderImportInput[]) => Promise<
 function renderInWorker(source: string, imports: RenderImportInput[] = []): Promise<RenderResult> {
 	return new Promise((resolve, reject) => {
 		const id = nextId++
-		pending.set(id, {resolve, reject})
+		let map!: (m: SourceMap | null) => void
+		mapPromises.set(id, new Promise<SourceMap | null>(r => (map = r)))
+		pending.set(id, {resolve, reject, map})
 		getWorker().then(
 			w => w.postMessage({id, type: "render", source, imports, engine: ENGINE}),
 			err => {
 				pending.delete(id)
+				mapPromises.delete(id)
+				map(null)
 				reject(err)
 			},
 		)
