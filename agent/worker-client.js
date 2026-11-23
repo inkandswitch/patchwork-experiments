@@ -6,7 +6,8 @@
  * with, a network port into this page's repo, the API key (which lives in
  * this page's localStorage and must never go into the session document), and
  * what this page's plugin registry holds — every `agent:tool` entry's
- * metadata, sent again whenever the registry changes (worker-plugins.js).
+ * metadata, and which package each tool, view and datatype came from — sent
+ * again whenever the registry changes (worker-plugins.js).
  *
  * Everything here degrades: if the worker cannot be started — no SharedWorker,
  * a CSP that forbids it, a module that fails to load — `connectWorkerRunner`
@@ -109,28 +110,37 @@ export async function connectWorkerRunner({
   // again when the registry changes, so a package installed, removed or
   // edited reaches the worker's next run as it reaches this page's.
   // Loaded late: the tool registry imports package_test, which imports this.
+  // With them, where each tool, view and datatype came from (packageIndex), so
+  // the worker can hand a session a package's usage guide as a tab would.
   const { pluginDescriptions } = await import("./tools/index.js")
-  const registry = (await tryHostImport("plugins"))?.getRegistry?.("agent:tool") ?? null
+  const { packageIndex, PACKAGE_TYPES } = await import("./worker-plugins.js")
+  const host = await tryHostImport("plugins")
+  const getRegistry = (type) => host?.getRegistry?.(type) ?? null
+  const registry = getRegistry("agent:tool")
   const plugins = await pluginDescriptions({ registry }).catch(() => [])
-  let unwatch = null
-  if (typeof registry?.on === "function") {
-    let queued = false
-    const resend = () => {
-      if (queued) return
-      queued = true
-      // One message for a package's worth of registrations.
-      queueMicrotask(async () => {
-        queued = false
-        try {
-          port.postMessage({ type: "plugins", plugins: await pluginDescriptions({ registry }) })
-        } catch {
-          /* the worker is gone */
-        }
-      })
-    }
-    const off = registry.on("changed", resend)
-    unwatch = typeof off === "function" ? off : () => registry.off?.("changed", resend)
+  const packages = packageIndex(getRegistry)
+  const unwatches = []
+  let queued = false
+  const resend = () => {
+    if (queued) return
+    queued = true
+    // One message for a package's worth of registrations.
+    queueMicrotask(async () => {
+      queued = false
+      try {
+        port.postMessage({ type: "plugins", plugins: await pluginDescriptions({ registry }), packages: packageIndex(getRegistry) })
+      } catch {
+        /* the worker is gone */
+      }
+    })
   }
+  for (const type of PACKAGE_TYPES) {
+    const watched = getRegistry(type)
+    if (typeof watched?.on !== "function") continue
+    const off = watched.on("changed", resend)
+    unwatches.push(typeof off === "function" ? off : () => watched.off?.("changed", resend))
+  }
+  const unwatch = () => unwatches.forEach((off) => off())
 
   port.postMessage(
     {
@@ -138,6 +148,7 @@ export async function connectWorkerRunner({
       urls,
       prepare: workerPreparation(urls),
       plugins,
+      packages,
       repoPort: channel.port2,
       sessionUrl,
       subject: subject ?? null,
@@ -151,7 +162,7 @@ export async function connectWorkerRunner({
 
   const answer = await ready
   if (!answer) {
-    unwatch?.()
+    unwatch()
     return null
   }
 
@@ -162,7 +173,7 @@ export async function connectWorkerRunner({
     interrupt: () => port.postMessage({ type: "interrupt", sessionUrl }),
     setKey: (value) => port.postMessage({ type: "key", sessionUrl, key: value }),
     close: () => {
-      unwatch?.()
+      unwatch()
       try {
         port.postMessage({ type: "detach", sessionUrl })
         port.close()

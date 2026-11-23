@@ -914,10 +914,13 @@ read to do so). The first time a session uses a package — a plugin tool call,
 `view_mount` of its tool or package folder, `doc_create` of its datatype,
 `plugin_source` of its plugin — the guide is appended to that result, with
 where it stands; a package with no guide gets a one-line prompt to write one.
-`registry_list` appends only a pointer for the plugins it lists. This needs the
-page's plugin registry (`ctx.packageOf`, set by the tab runner); a worker or node
-runner has none and surfaces nothing, but its guide tools take a package's folder
-URL. A stale guide says to read `guide_changes`: the files added, removed and
+`registry_list` appends only a pointer for the plugins it lists. Finding a
+plugin's package is `ctx.packageOf`: the tab runner reads the page's registry,
+and the SharedWorker runner reads the index of every tool, view and datatype
+the page sends it with its plugins (`worker-plugins.js` `packageIndex`), so
+worker steps surface guides on the same triggers. The node runner has no
+registry and no plugins, so it surfaces nothing; its guide tools take a
+package's folder URL. A stale guide says to read `guide_changes`: the files added, removed and
 changed since the pin and a bounded line diff of each, `file` for more of one.
 
 **Habit.** Package knowledge goes in the guide, not a note: write one after first

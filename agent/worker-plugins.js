@@ -33,8 +33,38 @@
 import { BUILTIN_TOOLS, pluginTool, takesBuiltin } from "./tools/index.js"
 import { hostImport } from "./tools/host.js"
 import { HOST, WORKER } from "./placement.js"
+import { packageOfPlugin } from "./tools/guides.js"
 
 const AGENT_TOOL = "agent:tool"
+
+/**
+ * The registry types a usage guide can be about (tools/guides.js): a
+ * package's agent tools, its views and its datatypes.
+ */
+export const PACKAGE_TYPES = [AGENT_TOOL, "patchwork:tool", "patchwork:datatype"]
+
+/**
+ * What the page's registry says about where each plugin came from, as plain
+ * JSON for the worker: `[{ type, id, name, importUrl }]`, for every plugin of
+ * `PACKAGE_TYPES` registered with the URL it came from. The worker answers
+ * `ctx.packageOf` from it, so its sessions are told a package's usage guide
+ * on the same triggers a tab's are.
+ */
+export function packageIndex(getRegistry, types = PACKAGE_TYPES) {
+  const index = []
+  for (const type of types) {
+    let all = []
+    try {
+      all = getRegistry(type)?.all?.() ?? []
+    } catch {
+      continue // no such registry here
+    }
+    for (const p of all) {
+      if (typeof p?.id === "string" && typeof p.importUrl === "string") index.push({ type, id: p.id, name: p.name ?? p.id, importUrl: p.importUrl })
+    }
+  }
+  return index
+}
 
 /**
  * Load one plugin's implementation in this realm, as the page would.
@@ -61,11 +91,16 @@ export async function importPluginHere(description, { importModule = (url) => im
 /**
  * The worker's plugin catalogue.
  *
- *   set(descriptions)  what the page's registry holds now
- *   tools()            the plugin tools for a run, loading what runs here
+ *   set(descriptions, packages)  what the page's registry holds now: its
+ *                                agent:tool entries, and the package index
+ *                                (packageIndex), when the page sent one
+ *   tools()                      the plugin tools for a run, loading what runs here
+ *   packageOf(type, id)          the package behind a plugin, as a tab's
+ *                                ctx.packageOf answers (tools/guides.js)
  */
 export function createPluginCatalogue({ importPlugin = importPluginHere, onError = null } = {}) {
   let entries = new Map() // id -> metadata
+  let packages = [] // packageIndex: { type, id, name, importUrl }
   const loads = new Map() // `${id} ${importUrl}` -> Promise<impl>
 
   function load(description) {
@@ -87,7 +122,8 @@ export function createPluginCatalogue({ importPlugin = importPluginHere, onError
   }
 
   return {
-    set(descriptions) {
+    set(descriptions, index = null) {
+      if (Array.isArray(index)) packages = index.filter((p) => typeof p?.type === "string" && typeof p.id === "string")
       const taken = new Set(BUILTIN_TOOLS.map((t) => t.id))
       const next = new Map()
       for (const d of Array.isArray(descriptions) ? descriptions : []) {
@@ -106,6 +142,12 @@ export function createPluginCatalogue({ importPlugin = importPluginHere, onError
     },
 
     descriptions: () => [...entries.values()],
+
+    async packageOf(type, id) {
+      const listed = packages.find((p) => p.type === type && p.id === id)
+      // An agent tool is in the catalogue itself, whether or not an index came.
+      return packageOfPlugin(listed ?? (type === AGENT_TOOL ? entries.get(id) : null))
+    },
 
     async tools() {
       const listed = [...entries.values()]

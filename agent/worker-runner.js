@@ -31,7 +31,9 @@
  *   4. No plugin registry. The page sends every `agent:tool` entry's metadata,
  *      and again when the registry changes; the worker loads and runs those
  *      it can, and lists the rest as host-tier, so their calls go to a tab
- *      (worker-plugins.js). Its sessions get the tools a tab's would.
+ *      (worker-plugins.js). Its sessions get the tools a tab's would. With
+ *      them comes where each plugin of every kind came from, so a session
+ *      here is handed a package's usage guide when a tab's would be.
  */
 
 import { setHostUrls } from "./host-urls.js"
@@ -142,6 +144,9 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
       contactUrl: account?.contactUrl ?? null,
       moduleSettingsUrl: account?.moduleSettingsUrl ?? null,
       sensitiveDocs: (account?.sensitiveDocs ?? []).filter(Boolean),
+      // Which package a plugin came from, for usage guides (tools/guides.js),
+      // from the index the page sends with its plugins.
+      packageOf: (type, id) => catalogue.packageOf(type, id),
       // The worker shares the page's origin, so it refuses the same places.
       fetchImpl: guardedFetch({ fetch: (url, init) => fetch(url, init), deny: [self.location.origin, ...SYNC_SERVERS] }),
     },
@@ -185,13 +190,13 @@ self.onconnect = (event) => {
     try {
       if (data.type === "init") {
         await ensureRepo(data.urls, data.repoPort, data.prepare)
-        if (data.plugins) catalogue.set(data.plugins)
+        if (data.plugins) catalogue.set(data.plugins, data.packages)
         port.postMessage(await startSession(data, port))
         return
       }
       // The page's registry changed: a package installed, removed, or edited.
       if (data.type === "plugins") {
-        catalogue?.set(data.plugins)
+        catalogue?.set(data.plugins, data.packages)
         return
       }
 
