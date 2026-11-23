@@ -22,7 +22,7 @@ describe("inflow turbulence", () => {
 
 for (const mode of ["double-body", "free-surface"])
   describe(`a ${mode} case`, () => {
-    const setup = normalizeSetup({ mode, speed: 3 * KNOT });
+    const setup = normalizeSetup({ mode, speed: { value: 3, unit: "kn" } });
     const { files, geometry: g, patches } = caseFiles(setup, info, { cores: 4 });
     const zero = zeroFiles(g);
     it("has the files its solver reads", () => {

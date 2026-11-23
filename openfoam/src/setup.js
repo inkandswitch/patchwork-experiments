@@ -5,13 +5,19 @@
 // ahead sees the stream come from +x (U = (−V, 0, 0)).
 
 /** @typedef {"double-body" | "free-surface"} Mode */
+/**
+ * A speed is one value with its unit, as whoever set it gave it: 8 kn is
+ * { value: 8, unit: "kn" }. Nothing infers a unit from a bare number, and
+ * nothing stores a speed converted: m/s is computed (metresPerSecond) where
+ * the physics needs it. So what is shown is what was set.
+ * @typedef {{ value: number, unit: "kn" | "m/s" }} Speed
+ */
 /** @typedef {"coarse" | "medium" | "fine"} MeshPreset */
 
 /**
  * @typedef {object} Setup
  * @property {Mode} mode
- * @property {number} speed            m/s, the boat's speed through the water
- * @property {"kn"|"m/s"} speedUnit    how the tool shows it (shared, so collaborators agree)
+ * @property {Speed} speed            the boat's speed through the water, in the unit it was given in
  * @property {"salt"|"fresh"} water
  * @property {number} temperature      °C, 0–30
  * @property {{ sinkage: number, trim: number }} attitude
@@ -38,6 +44,56 @@ export const MESH_PRESETS = Object.freeze(["coarse", "medium", "fine"]);
 export const KNOT = 1852 / 3600; // m/s
 export const G = 9.80665;
 
+/** Each speed unit, as m/s. */
+export const SPEED_UNITS = Object.freeze({ kn: KNOT, "m/s": 1 });
+/** The speeds a run can take, m/s. */
+export const SPEED_RANGE = Object.freeze([0.05, 40]);
+
+/** Is this a speed: a finite value with one of SPEED_UNITS? */
+export const isSpeed = (v) => !!v && typeof v === "object" && typeof v.value === "number" && Number.isFinite(v.value) && Object.hasOwn(SPEED_UNITS, v.unit);
+
+/** A speed in m/s. */
+export function metresPerSecond(speed) {
+  if (!isSpeed(speed)) throw new Error(`not a speed: ${JSON.stringify(speed)} (a speed is { value, unit } with unit ${Object.keys(SPEED_UNITS).join(" or ")})`);
+  return speed.value * SPEED_UNITS[speed.unit];
+}
+
+/** The same speed in another unit (to 6 decimals, so 8 kn → m/s → kn is 8 again). */
+export function speedIn(speed, unit) {
+  if (!Object.hasOwn(SPEED_UNITS, unit)) throw new Error(`unknown speed unit ${JSON.stringify(unit)}: use ${Object.keys(SPEED_UNITS).join(" or ")}`);
+  if (speed.unit === unit) return { value: speed.value, unit };
+  return { value: +(metresPerSecond(speed) / SPEED_UNITS[unit]).toFixed(6), unit };
+}
+
+const UNIT_WORDS = Object.freeze({ kn: "kn", kt: "kn", kts: "kn", knot: "kn", knots: "kn", "m/s": "m/s", mps: "m/s" });
+
+/**
+ * A speed from what a person or a tool wrote: { value, unit } or text such as
+ * "8 kn" or "4.1 m/s". A number with no unit is refused, never guessed at.
+ * @returns {Speed}
+ */
+export function parseSpeed(input) {
+  const units = Object.keys(SPEED_UNITS).join(" or ");
+  let speed = null;
+  if (typeof input === "string") {
+    const m = input.trim().match(/^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*([a-z/]+)$/i);
+    const unit = m ? UNIT_WORDS[m[2].toLowerCase()] : null;
+    if (!m || !unit) throw new Error(`speed ${JSON.stringify(input)}: give a number and its unit, e.g. "8 kn" or "4.1 m/s"`);
+    speed = { value: Number(m[1]), unit };
+  } else if (input && typeof input === "object") {
+    const unit = UNIT_WORDS[String(input.unit ?? "").toLowerCase()];
+    if (!unit) throw new Error(`speed ${JSON.stringify(input)}: its unit must be ${units}`);
+    speed = { value: Number(input.value), unit };
+  } else throw new Error(`speed ${JSON.stringify(input)}: give a number with its unit, e.g. "8 kn" or { "value": 8, "unit": "kn" } — a bare number has no unit`);
+  if (!Number.isFinite(speed.value)) throw new Error(`speed ${JSON.stringify(input)}: its value isn't a number`);
+  const V = metresPerSecond(speed);
+  if (V < SPEED_RANGE[0] || V > SPEED_RANGE[1]) {
+    const [lo, hi] = SPEED_RANGE.map((v) => speedIn({ value: v, unit: "m/s" }, speed.unit));
+    throw new Error(`speed ${formatSpeed(speed)} is outside ${+lo.value.toFixed(3)}–${formatSpeed(hi)}`);
+  }
+  return speed;
+}
+
 /** Iterations each mode needs to settle, by mesh preset. */
 export const DEFAULT_ITERATIONS = Object.freeze({
   "double-body": { coarse: 600, medium: 1000, fine: 1500 },
@@ -50,8 +106,7 @@ export const DEFAULT_ITERATIONS = Object.freeze({
 export function defaultSetup() {
   return {
     mode: "double-body",
-    speed: 6 * KNOT,
-    speedUnit: "kn",
+    speed: { value: 6, unit: "kn" },
     water: "salt",
     temperature: 15,
     attitude: { sinkage: 0, trim: 0, heel: 0 },
@@ -80,8 +135,7 @@ export function normalizeSetup(s) {
   const mesh = MESH_PRESETS.includes(s.mesh) ? s.mesh : d.mesh;
   return {
     mode,
-    speed: clamp(num(s.speed, d.speed), 0.05, 40),
-    speedUnit: s.speedUnit === "m/s" ? "m/s" : "kn",
+    speed: isSpeed(s.speed) ? clampSpeed(s.speed) : d.speed,
     water: s.water === "fresh" ? "fresh" : "salt",
     temperature: clamp(num(s.temperature, d.temperature), 0, 30),
     attitude: {
@@ -98,6 +152,87 @@ export function normalizeSetup(s) {
     // keep every cell's flow (the mesh and the last fields) in docs: big, so asked for
     keepVolume: s.keepVolume === true,
   };
+}
+
+/** A speed held to SPEED_RANGE, in its own unit. */
+function clampSpeed(speed) {
+  const V = metresPerSecond(speed);
+  const W = clamp(V, SPEED_RANGE[0], SPEED_RANGE[1]);
+  return W === V ? { value: speed.value, unit: speed.unit } : speedIn({ value: W, unit: "m/s" }, speed.unit);
+}
+
+/**
+ * What in a setup as written isn't what it reads as: every field that
+ * normalizeSetup() replaced or clamped, and any field a setup doesn't have.
+ * Empty for a setup that means exactly what it says. The case shows these,
+ * and the agent's tools refuse a change that would make one.
+ * @returns {string[]}
+ */
+export function setupProblems(raw) {
+  if (raw == null) return [];
+  if (typeof raw !== "object") return [`the setup is ${JSON.stringify(raw)}, not an object`];
+  const n = normalizeSetup(raw);
+  const out = [];
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  for (const k of Object.keys(raw)) {
+    if (!(k in n)) {
+      out.push(`setup.${k} isn't part of a setup (ignored)`);
+      continue;
+    }
+    if (k === "attitude" && raw.attitude && typeof raw.attitude === "object") {
+      for (const a of Object.keys(raw.attitude)) {
+        if (!(a in n.attitude)) out.push(`setup.attitude.${a} isn't part of an attitude (ignored)`);
+        else if (!same(raw.attitude[a], n.attitude[a])) out.push(`setup.attitude.${a} is ${JSON.stringify(raw.attitude[a])}; it reads as ${n.attitude[a]}`);
+      }
+      continue;
+    }
+    if (same(raw[k], n[k])) continue;
+    if (k === "speed" && !isSpeed(raw.speed))
+      out.push(`setup.speed is ${JSON.stringify(raw.speed)}, which isn't a speed with a unit; it reads as ${formatSpeed(n.speed)}. A speed is { "value": 8, "unit": "kn" } (unit kn or m/s)`);
+    else out.push(`setup.${k} is ${JSON.stringify(raw[k])}; it reads as ${k === "speed" ? formatSpeed(n.speed) : JSON.stringify(n[k])}`);
+  }
+  return out;
+}
+
+/**
+ * A setup with some fields changed, as the case's form and the agent's
+ * tools change it. `patch` holds setup fields; `attitude` and `speed` are
+ * merged field by field. A new analysis takes its own default iterations
+ * (the two need counts an order of magnitude apart); a new mesh does too,
+ * unless someone chose the count. A patch that names `iterations` keeps it.
+ * @returns {{ setup: Setup, problems: string[] }}  problems: what in the patch doesn't read as written
+ */
+export function patchSetup(current, patch) {
+  const s = normalizeSetup(current);
+  const raw = { ...s, ...patch, attitude: { ...s.attitude, ...(patch.attitude ?? {}) } };
+  if (patch.mode !== undefined || patch.mesh !== undefined) {
+    const wasDefault = Object.values(DEFAULT_ITERATIONS[s.mode]).includes(s.iterations);
+    const next = normalizeSetup(raw);
+    if (patch.iterations === undefined && ((patch.mode !== undefined && next.mode !== s.mode) || wasDefault)) raw.iterations = DEFAULT_ITERATIONS[next.mode][next.mesh];
+  }
+  const touched = new Set(Object.keys(patch).map((k) => `setup.${k}`));
+  const problems = setupProblems(raw).filter((p) => [...touched].some((t) => p.startsWith(`${t} `) || p.startsWith(`${t}.`)));
+  return { setup: normalizeSetup(raw), problems };
+}
+
+/**
+ * Write a setup into a doc's (inside a change), touching only the fields
+ * that differ, so two people changing two fields at once both keep theirs;
+ * fields a setup doesn't have are removed.
+ */
+export function writeSetup(doc, next) {
+  if (!doc.setup || typeof doc.setup !== "object") {
+    doc.setup = JSON.parse(JSON.stringify(next));
+    return;
+  }
+  const put = (target, want) => {
+    for (const k of Object.keys(target)) if (!(k in want)) delete target[k];
+    for (const [k, v] of Object.entries(want)) {
+      if (v && typeof v === "object" && !Array.isArray(v) && target[k] && typeof target[k] === "object" && !Array.isArray(target[k])) put(target[k], v);
+      else if (JSON.stringify(target[k]) !== JSON.stringify(v)) target[k] = v && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : v;
+    }
+  };
+  put(doc.setup, next);
 }
 
 // ---------------------------------------------------------------- water
@@ -213,7 +348,7 @@ export function domainFor(setup, hull, { half }) {
   ];
   let freeSurface = null;
   if (free) {
-    const V = setup.speed;
+    const V = metresPerSecond(setup.speed);
     const lambda = waveLength(V);
     const target = lambda / sz.cellsPerWave;
     const level = clampInt(Math.ceil(Math.log2(h0 / target)), 1, sz.hull[0]);
@@ -308,8 +443,17 @@ export function formatDuration(s) {
   return `${(s / 3600).toFixed(1)} h`;
 }
 
-export function formatSpeed(V, unit) {
-  return unit === "m/s" ? `${V.toFixed(2)} m/s` : `${(V / KNOT).toFixed(2)} kn`;
+/** A speed as it was given: "8 kn", "4.1 m/s" (at most 3 decimals). */
+export function formatSpeed(speed) {
+  if (!isSpeed(speed)) return "–";
+  return `${+speed.value.toFixed(3)} ${speed.unit}`;
+}
+
+/** A speed as given, with the other unit beside it: "8 kn (4.116 m/s)". */
+export function formatSpeedBoth(speed) {
+  if (!isSpeed(speed)) return "–";
+  const other = speedIn(speed, speed.unit === "kn" ? "m/s" : "kn");
+  return `${formatSpeed(speed)} (${formatSpeed(other)})`;
 }
 
 // ---------------------------------------------------------------- the case from a hull
