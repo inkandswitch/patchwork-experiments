@@ -51,12 +51,12 @@ describe("the asking document", () => {
 			options?.for?.split("#")[0] === "automerge:self" ? "width = 12;\n" : "width = 12;\nresult = 3;\n",
 	}
 	it("is passed to asSource as the third argument, `for`", async () => {
-		const asSource = vi.fn(() => "x=1;")
+		const asSource = vi.fn((..._args: unknown[]) => "x=1;")
 		await linkedSource(typed("register"), async () => ({asSource}), SELF)
 		expect(asSource).toHaveBeenCalledWith(expect.anything(), "scad", {for: SELF})
 	})
 	it("is passed through importInput", async () => {
-		const asSource = vi.fn(() => "x=1;")
+		const asSource = vi.fn((..._args: unknown[]) => "x=1;")
 		await importInput({name: "reg"}, typed("register"), async () => ({asSource}), SELF)
 		expect(asSource.mock.calls[0][2]).toEqual({for: SELF})
 	})
@@ -67,13 +67,13 @@ describe("the asking document", () => {
 		expect((await linkedSource(typed("register"), load)).scad).toContain("result = 3;")
 	})
 	it("passes an empty options object when the asker is unknown, and an old asSource still works", async () => {
-		const asSource = vi.fn(() => "x=1;")
+		const asSource = vi.fn((..._args: unknown[]) => "x=1;")
 		await linkedSource(typed("register"), async () => ({asSource}))
 		expect(asSource.mock.calls[0][2]).toEqual({})
 		expect(await linkedSource(typed("register"), async () => ({asSource: (_d: unknown, _e: string) => "old;"}), SELF)).toEqual({scad: "old;"})
 	})
 	it("reaches the hook in the scene's resolveImports", async () => {
-		const asSource = vi.fn(() => "x=1;")
+		const asSource = vi.fn((..._args: unknown[]) => "x=1;")
 		const doc: OpenscadDoc = {source: "", imports: [{name: "reg", docUrl: url("a")}]}
 		await resolveImports(doc, {find: async () => ({doc: () => typed("register")})}, async () => ({asSource}), "automerge:self")
 		expect(asSource.mock.calls[0][2]).toEqual({for: "automerge:self"})
