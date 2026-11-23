@@ -166,4 +166,22 @@ describe("createImportResolver", () => {
 		expect(find).toHaveBeenCalledTimes(2)
 		resolver.dispose()
 	})
+
+	it("asks each import's datatype for source on behalf of the editor's own document", async () => {
+		const asSource = vi.fn(() => "x=1;")
+		const doc = fakeHandle({"@patchwork": {type: "register"}})
+		const resolver = createImportResolver({
+			find: async () => doc.handle,
+			onChange: () => {},
+			loadDatatype: async () => ({asSource}),
+			selfUrl: "automerge:self",
+		})
+		const imports = [{name: "reg", docUrl: url("a")}]
+		resolver.sync(imports)
+		await vi.advanceTimersByTimeAsync(0)
+		const [payload] = await resolver.payload(imports)
+		expect(payload.scad).toBe("x=1;")
+		expect(asSource.mock.calls[0]).toEqual([expect.anything(), "scad", {for: "automerge:self"}])
+		resolver.dispose()
+	})
 })
