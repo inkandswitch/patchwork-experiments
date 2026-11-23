@@ -1395,8 +1395,8 @@ Workflows are on by default. Limits are per session: steps at once (3), steps
 in all (24), and a budget in dollars ($20) for what the steps spend together, as OpenRouter reports it: spent with work still to start, the plan pauses, the orchestrator is told, and the person is offered Resume (the strip, the pop-over, the workflow view). Each step has a budget of its own, set by the orchestrator or its tier's default (fast $0.50, standard $2, deep $5); a step that spends it stops part-way and the orchestrator decides — `workflow_budget` for more, `workflow_stop`, or new steps. Every step runs in a tab today, because the SharedWorker runner is still
 opt-in (below). `where` decides only which tools a step gets and how many
 steps share the page (`hostParallel`, one), so a `worker` step runs the same in
-the SharedWorker, and needs only the tools that are not the page's to run in
-the node runner.
+the SharedWorker; in the node runner, which has no plugin registry, it would
+have the built-ins alone.
 
 ## What is not built yet
 

@@ -25,7 +25,7 @@ import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STA
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../runner.js"
 import { AutomergeRepo } from "../host-modules.js"
 import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, shouldPause, budgetOf, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
-import { scopeOf, webScope, sameScope, KERNEL_TYPES } from "../scope.js"
+import { scopeOf, webScope, sameScope, KERNEL_TYPES, SCOPED_TOOL_IDS } from "../scope.js"
 import { documentIdOf } from "../session.js"
 import { releaseNowPermitted } from "../loop.js"
 import { handleStore } from "../store.js"
@@ -627,7 +627,7 @@ export class WorkflowDriver {
   async misplaced(step) {
     let verdict = null
     try {
-      verdict = checkStepTools(step, await (this.catalogue ?? defaultCatalogue)(), await stepIds())
+      verdict = checkStepTools(step, await (this.catalogue ?? defaultCatalogue)(), { scopedIds: SCOPED_TOOL_IDS, orchestratorIds: WORKFLOW_TOOL_IDS })
     } catch {
       return false // no catalogue is no check, not no step
     }
@@ -965,12 +965,6 @@ async function defaultCatalogue() {
   const taken = new Set(BUILTIN_TOOLS.map((t) => t.id))
   const plugins = (await pluginDescriptions()).filter((d) => !taken.has(d.id)).map((d) => ({ id: d.id, where: d.where ?? "worker", scoped: d.scoped === true }))
   return [...builtins, ...plugins]
-}
-
-/** What placement.js needs to know about the toolsets steps get. Loaded late, as above. */
-async function stepIds() {
-  const { SCOPED_TOOL_IDS } = await import("../scope.js")
-  return { scopedIds: SCOPED_TOOL_IDS, orchestratorIds: WORKFLOW_TOOL_IDS }
 }
 
 /**

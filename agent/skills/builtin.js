@@ -430,7 +430,11 @@ letting an agent reimplement you.
 - **input_schema** — describe every parameter. An undescribed one gets guessed
   at.
 - **where** — \`worker\` if a repo is all you need, \`host\` if you need the DOM or
-  the plugin registry.
+  the plugin registry. A \`worker\` tool is offered to workflow steps placed on
+  a worker and runs in the agent's shared worker too, loaded from your package
+  there; code that imports a bare specifier (\`@automerge/automerge\`) cannot
+  load in a worker, so its calls wait for a tab instead. Work through
+  \`ctx.repo\` and you need no import.
 - **risk** — \`read\` runs silently; \`write\` and \`external\` ask the user once and
   can then be granted more broadly; \`alwaysAsk: true\` asks every time, for
   anything that carries credentials somewhere.
