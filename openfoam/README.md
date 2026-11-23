@@ -25,12 +25,14 @@ pnpm install && pnpm build && pnpm test
    It prints an **inbox** link.
 3. **A case.** New document → "OpenFOAM case". It has two tabs:
    - **Model setup**: the **Model** (drop in a 3D file or hull, or paste
-     its link; choose its parts and which way its bow points; see it drawn
-     with its waterline, length, beam, draft, displacement and wetted area)
-     and the **Run setup** (how it floats: sinkage, trim, heel, or a mass to
-     float at; the flow; the solver; the server, where you paste the inbox
-     link). Beside the setup, what to expect: Froude and Reynolds numbers,
-     the friction floor, cells and time. Then **Run**, or a sweep of speeds.
+     its link; choose its parts, each listed with its size and, once the
+     list is open, whether it's a closed shell; which way its bow points;
+     see it drawn with its waterline, length, beam, draft, displacement and
+     wetted area) and the **Run setup** (how it floats: sinkage, trim, heel,
+     or a mass to float at; the flow; the solver; the server, where you paste
+     the inbox link). Beside the setup, what to expect: Froude and Reynolds
+     numbers, the friction floor, cells and time. Then **Run**, or a sweep of
+     speeds (in the speed's unit).
    - **Runs**: what's **Running** (stages, convergence, Finish now, Cancel)
      and the **Results**: the finished runs with their resistance, the curve
      against speed, and the one you pick, in tabs: Figures, each plot,
@@ -50,6 +52,70 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:datatype` | `openfoam-server` (unlisted) | a daemon's inbox and status |
 | `patchwork:tool` | `openfoam-server` | is it up, what runs, what waits, what it did |
 | `scene:source` | `openfoam-results` | a case (or a run) as a GLB: hull by Cp or Cf, the water surface, wake and centre planes, streamlines |
+| `agent:tool` | `openfoam_case`, `openfoam_setup`, `openfoam_run`, `openfoam_results`, `openfoam_stop` | the same case for an agent (below, *For agents*) |
+
+## The setup, and its speed
+
+A case's `setup` (`src/setup.js`) is what its next run will be: the
+analysis, the speed, the attitude, the water, the mesh and solver. **The
+speed is one value with its unit**, as it was given: 8 kn is
+`{ "value": 8, "unit": "kn" }`, and 4.1 m/s is `{ "value": 4.1, "unit": "m/s" }`.
+Nothing stores it converted and nothing reads a bare number as a speed: m/s
+is computed where the physics needs it (`metresPerSecond`). Choosing the
+other unit in the form converts the value, so the boat's speed stays what it
+was; a sweep's speeds are in the unit shown.
+
+Both the tool and the daemon read a setup through `normalizeSetup`, which
+fills and clamps. What it had to change (a bare-number speed, a trim out of
+range, a field a setup doesn't have) is listed by `setupProblems`: the case
+shows it under the run setup, and the next change from the form writes the
+setup as shown.
+
+## For agents
+
+The package registers five `agent:tool` plugins (`src/agent-meta.js` holds
+their descriptions and schemas; `src/agent-tools.js` the executors). They
+call the same model the case tool's buttons call (`src/case-model.js`), so an
+agent never drives the page, and what it can do a person can do in the case.
+Inputs are things other tools produce: automerge: URLs, numbers with their
+units (`"8 kn"`, `{ "value": 11984, "unit": "kg" }`), part names as listed.
+A value out of range or unknown is refused with what's allowed, never
+clamped; a refused call writes nothing. Every write is one change whose
+message names the agent session.
+
+| tool | does | a person does it with |
+|---|---|---|
+| `openfoam_case` | makes a case (filed in `folder`), links `hull`, `parts`, `bow`, `server`; `reread` reads the original model again. Every call reports the case: each part's extent in the model's frame and whether it's a closed shell, the hull as floated (displacement, draft, waterline, wetted area, LCB) and how sinkage is measured, the setup, what a run will cost, the server, and whether it can run | the Model section, the parts list, Re-read, the server box |
+| `openfoam_setup` | `analysis`, `speed` (with its unit), `attitude`, `float` (`mass` with its unit, or `keep_displacement`), `water`, `temperature`, `mesh`, `iterations`, `stop`, `domain`, `cores`, `keep_volume`, `start_from` | the Run setup form, Float at, Keep displacement |
+| `openfoam_run` | one run at the setup's speed, or `speeds` (a sweep, each with its unit, at most 20) | Run, and Sweep |
+| `openfoam_results` | one Markdown table of `runs` or a `case`'s runs (the latest 40) | the Results table and each run's Figures |
+| `openfoam_stop` | `keep: true` finishes now (while solving), `keep: false` cancels | Finish now, Cancel |
+
+**Floating.** `float` solves the sinkage at the trim and heel the same call
+ends with: `openfoam_setup { case, attitude: { trim: 1.5 }, float: { mass: "11984 kg" } }`
+sets the trim and floats at it in one change. Floating twice at one mass
+gives one sinkage (it's a position, not an increment).
+
+**Waiting.** A run's state is the small top-level field `status` of its
+document: `queued` → `meshing` → `solving` → `post` → `done`, or `failed`, or
+`cancelled`; only the daemon writes it. `openfoam_run` returns each run and
+the exact watch, e.g. `doc_watch { url: "automerge:…", path: ["status"], match: "done|failed|cancelled" }`,
+then `openfoam_results { runs: [...] }`. A double body takes about a minute
+once it starts, a free surface tens of minutes; a daemon runs its queue
+oldest first.
+
+**Results.** One row a run: status (with the iteration while solving),
+speed, analysis, mesh, sinkage / trim / heel, R<sub>T</sub> (± its scatter
+over the averaging window), its pressure and viscous parts, F<sub>z</sub>,
+the weight the hull floats at (displaced volume at rest × ρg) and
+F<sub>z</sub>/W (free surface only: a double body's F<sub>z</sub> is squat
+suction), convergence (converged, settled, stopped early, not converged),
+cells, iterations and time. Under it, a line for each run that failed (where,
+and its error cut to 240 characters), was cancelled, or hasn't finished.
+
+`openfoam_case`, `openfoam_setup` and `openfoam_run` are `where: "host"`
+(reading a model can take the page's geometry readers); `openfoam_results`
+and `openfoam_stop` need only documents (`where: "worker"`).
 
 ## What a run keeps, and comparing runs
 
@@ -200,8 +266,10 @@ view shows R<sub>T</sub> and its parts (pressure, viscous), C<sub>T</sub> on
 the wetted area at rest, ITTC-57 C<sub>F0</sub>, the form factor (double
 body) or C<sub>R</sub> = C<sub>T</sub> − C<sub>F0</sub> (free surface), the
 vertical force (the squat of a double body; for a free surface, what weight
-and buoyancy would answer), y⁺, the mesh, and whether it converged. Each
-figure says how it was made.
+and buoyancy would answer, beside the weight the hull floats at: its
+displaced volume at rest × ρg, and their ratio), y⁺, the mesh, and whether it
+converged. Each figure says how it was made (`src/results.js` reads them out
+of a run for the agent's table too).
 
 ### Measured (this Mac, M-series, 8 ranks, 2026-11-14)
 
@@ -355,7 +423,15 @@ inertia, wetted area, LWL, BWL, draft) and writes binary STL. A model of
 many separate surfaces (more openings than that: hull pieces, seams) is left
 open: the mesher copes, and the displacement and wetted area are flagged as
 unreliable instead of being made up. "Float at" solves the sinkage for a
-displacement by bisection.
+displacement by bisection, at the trim and heel the setup has then.
+
+**What sinkage means.** The hull is heeled about the waterline's centreline,
+trimmed about the point half-way along its length on the waterline, then
+lowered by the sinkage. So sinkage is where the hull floats, measured at
+that point (the case says its x), from as drawn: not a change from the last
+sinkage. Trimming moves that point's height not at all, but it changes what
+is under water, so a trim set after floating needs floating again (the case
+says the trim and heel it floated at).
 
 ## Tests and probes
 
@@ -365,7 +441,11 @@ waterline on a grid plane), the hull preparation on a box with known answers
 (volume 2, wetted area 9, LCB 2, an open end closed), the protocol, the case
 files, the parsers and results against **real OpenFOAM output**
 (`daemon/test/fixtures`, from the narrow-transom run above), the scene GLB,
-and the process-tree kill.
+the process-tree kill, the speed and its units, the agent's tools over a fake
+repo (a GLB of a closed box hull, an open cabin and a water plane: every
+part's report, floating at a mass and trim against the box's exact answer,
+one run and a sweep, the results table, every refusal), and the case tool in
+a page (happy-dom) doing the same through its form.
 
 Probes (need OpenFOAM, or Chrome):
 
