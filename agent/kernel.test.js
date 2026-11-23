@@ -283,11 +283,56 @@ describe("kernelRepo", () => {
   it("closes the repo's own ways around a handle", async () => {
     const w = world()
     const k = kernelRepo(w.repo)
-    expect(k.handles).toBeUndefined()
-    expect(k.findWithProgress).toBeUndefined()
     expect(() => k.delete(w.session.url)).toThrow(KERNEL_REFUSAL)
     expect(() => k.import(new Uint8Array(), { docId: w.plan.documentId })).toThrow(KERNEL_REFUSAL)
     expect(w.session.doc().scope).toBeTruthy()
+  })
+
+  // What a mounted view loads its document with (the file tool's
+  // useDocHandle, automerge-repo-react-hooks): it was hidden, so the view threw
+  // "findWithProgress is not a function". It is the same lookup `find` is, and
+  // gives the same guarded handle.
+  describe("findWithProgress, the lookup a mounted view makes", () => {
+    it("is there, and every handle it gives out refuses what find's refuse", async () => {
+      const w = world()
+      const k = kernelRepo(w.repo)
+      expect(k.findWithProgress).toBeTypeOf("function")
+      const progress = k.findWithProgress(w.session.url)
+      for (const handle of [await progress.whenReady(), progress.peek().handle, progress.handle]) {
+        expect(handle.doc()).toBeTruthy()
+        expect(() => handle.change((d) => { d.x = 1 })).toThrow(KERNEL_REFUSAL)
+      }
+    })
+
+    it("gives a plain document's handle that writes, and tells a subscriber the guarded one", async () => {
+      const w = world()
+      const k = kernelRepo(w.repo)
+      const progress = k.findWithProgress(w.plain.url)
+      const seen = []
+      progress.subscribe((state) => seen.push(state))
+      const handle = await progress.whenReady()
+      handle.change((d) => { d.title = "viewed" })
+      expect(w.plain.doc().title).toBe("viewed")
+      expect(progress.peek().state).toBe("ready")
+      w.plain.change((d) => { d["@patchwork"] = { type: "agent-workflow" } })
+      expect(() => handle.change((d) => { d.sources = {} })).toThrow(KERNEL_REFUSAL)
+    })
+
+    it("hands out nothing of the query that a view could use to fail or redirect it", () => {
+      const w = world()
+      const progress = kernelRepo(w.repo).findWithProgress(w.plain.url)
+      for (const key of ["fail", "sourceReady", "sourceUnavailable", "sourcePending"]) expect(progress[key]).toBeUndefined()
+    })
+
+    it("the table of live handles, which the solid hooks read, holds guarded handles", async () => {
+      const w = world()
+      const k = kernelRepo(w.repo)
+      const table = k.handles
+      const id = parseAutomergeUrl(w.session.url).documentId
+      expect(table[id]).toBeTruthy()
+      expect(() => table[id].change((d) => { d.x = 1 })).toThrow(KERNEL_REFUSAL)
+      expect(() => k.delete(w.session.url)).toThrow(KERNEL_REFUSAL)
+    })
   })
 
   it("a view handed out is a kernel handle too", async () => {
