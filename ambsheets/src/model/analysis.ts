@@ -263,8 +263,13 @@ export function histogram(view: View, addr: string, numBins = 20): Histogram | n
   // (the matching scenarios may lie outside the range the others happened to cover)
   const min = Math.min(all.min, passing.min);
   const max = Math.max(all.max, passing.max);
-  const width = (max - min) / numBins || 1;
-  const bins: Bin[] = Array.from({ length: max === min ? 1 : numBins }, (_, i) => ({
+  // Whole numbers get bins that each cover the same number of them (2-4, 5-7, ...).
+  // Dividing their range evenly instead would give some bins one number more than
+  // others, which shows up as gaps and spikes that aren't in the data.
+  const whole = all.whole && passing.whole;
+  const width = whole ? Math.ceil((max - min + 1) / numBins) : (max - min) / numBins || 1;
+  const count = whole ? Math.ceil((max - min + 1) / width) : max === min ? 1 : numBins;
+  const bins: Bin[] = Array.from({ length: count }, (_, i) => ({
     x0: min + i * width,
     x1: min + (i + 1) * width,
     count: 0,
@@ -294,8 +299,11 @@ class Accumulator {
   sumOfSquares = 0;
   min = Infinity;
   max = -Infinity;
+  /** True as long as every value has been a whole number. */
+  whole = true;
 
   add(value: number) {
+    if (this.whole && !Number.isInteger(value)) this.whole = false;
     this.count++;
     this.sum += value;
     this.sumOfSquares += value * value;

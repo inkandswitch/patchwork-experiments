@@ -600,3 +600,34 @@ describe('permutations', () => {
     expect(focus.probability * 362_880).toBeLessThan(30);
   }, 60_000);
 });
+
+describe('histograms of whole numbers', () => {
+  test('two dice: one bar per total, with no gaps', () => {
+    const r = run({ A1: '{1 to 6}', A2: '{1 to 6}', A3: '=A1 + A2' });
+    const bars = histogram(viewOf(r), 'A3')!;
+    expect(bars.bins.map((bin) => [bin.x0, bin.count])).toEqual([
+      [2, 1], [3, 2], [4, 3], [5, 4], [6, 5], [7, 6], [8, 5], [9, 4], [10, 3], [11, 2], [12, 1],
+    ]);
+  });
+
+  test('a wider range: every bar covers the same number of whole numbers', () => {
+    const cells: Record<string, string> = { B1: '=SUM(A1:A10)' };
+    for (let i = 1; i <= 10; i++) cells['A' + i] = '{1 to 6}';
+    const r = run(cells, { samples: 50_000 });
+    const bars = histogram(viewOf(r), 'B1')!;
+    const widths = new Set(bars.bins.map((bin) => bin.x1 - bin.x0));
+    expect(widths.size).toBe(1);
+    expect(Number.isInteger([...widths][0])).toBe(true);
+    // a bell shape with a single peak: up to the middle, then down
+    const counts = bars.bins.map((bin) => bin.count);
+    const peak = counts.indexOf(Math.max(...counts));
+    for (let i = 1; i <= peak; i++) expect(counts[i]).toBeGreaterThanOrEqual(counts[i - 1]);
+    for (let i = peak + 1; i < counts.length; i++) expect(counts[i]).toBeLessThanOrEqual(counts[i - 1]);
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(50_000);
+  });
+
+  test('other numbers are binned as before', () => {
+    const r = run({ A1: '{0 to 1 by 0.25}' });
+    expect(histogram(viewOf(r), 'A1')!.bins.length).toBe(20);
+  });
+});
