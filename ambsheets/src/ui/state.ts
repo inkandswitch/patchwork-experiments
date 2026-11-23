@@ -15,6 +15,7 @@ import {
   type View,
 } from '../model/analysis';
 import { Focuser, type Focus } from '../model/focus';
+import { decodeFilters, encodeFilters, filtersSignature } from '../model/savedFilters';
 import { createAssist } from './assistState';
 import { History, type Change } from '../model/history';
 import { checkEdit } from '../model/structure';
@@ -61,6 +62,9 @@ export interface Edit {
   /** Where the text is being typed: in the cell, or in the formula bar. */
   where: 'cell' | 'bar';
 }
+
+/** How long after the filters change they are written to the document. */
+const SAVE_FILTERS_AFTER_MS = 400;
 
 /** Look for matching scenarios when a sample has fewer than this many of them... */
 const FOCUS_BELOW = 1_000;
@@ -143,7 +147,43 @@ export function createSheetState(handle: AmbsheetHandle) {
 
   // --- filters ---
 
-  const [filters, setFilters] = createSignal<ReadonlyMap<string, Filter>>(new Map());
+  // The filters are kept in the document, so they survive a reload and everyone looking
+  // at the sheet sees the same ones. They are read from it whenever it changes, and
+  // written to it a moment after they change here (a moment, so that dragging a slider
+  // isn't a write per pixel).
+  const [filters, setLocalFilters] = createSignal<ReadonlyMap<string, Filter>>(new Map());
+  const savedSignature = createMemo(() => filtersSignature(decodeFilters(doc()?.filters)));
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const saveFilters = () => {
+    saveTimer = null;
+    const current = untrack(filters);
+    if (filtersSignature(current) === untrack(savedSignature)) return;
+    handle.change((d) => {
+      if (current.size > 0) d.filters = encodeFilters(current);
+      else delete d.filters;
+    });
+  };
+
+  const setFilters = (next: ReadonlyMap<string, Filter>) => {
+    setLocalFilters(next);
+    if (saveTimer !== null) clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveFilters, SAVE_FILTERS_AFTER_MS);
+  };
+
+  createEffect(() => {
+    // (the document's filters changed: loaded, or changed by someone else)
+    if (savedSignature() === filtersSignature(untrack(filters))) return;
+    if (saveTimer !== null) clearTimeout(saveTimer);
+    saveTimer = null;
+    setLocalFilters(decodeFilters(untrack(doc)?.filters));
+  });
+
+  onCleanup(() => {
+    if (saveTimer === null) return;
+    clearTimeout(saveTimer);
+    saveFilters();
+  });
   /** Temporary filters, in effect while the pointer is over something (a bar, a row...). */
   const [hover, setHover] = createSignal<ReadonlyMap<string, Filter> | null>(null);
 

@@ -1,4 +1,5 @@
 import type { EvalMode } from './model/run';
+import type { SavedFilters } from './model/savedFilters';
 
 /**
  * An Ambsheet document. `title` and `data` are exactly what the original Ambsheets
@@ -17,6 +18,8 @@ export interface AmbsheetDoc {
   data: (string | null)[][];
   /** How to evaluate the sheet. Absent means { mode: "auto" } with the default sample size. */
   evaluation?: { mode?: EvalMode; samples?: number };
+  /** The filters in effect (see model/savedFilters.ts). Shared by everyone viewing the sheet. */
+  filters?: SavedFilters;
 }
 
 /** A DocHandle, as far as this tool is concerned. */

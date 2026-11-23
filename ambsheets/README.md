@@ -128,7 +128,10 @@ succeeded.
   sampling, shares). The original listed one value per combination of upstream choices.
 - A cell with more than 25 distinct values is summarized (min … max, average) instead of
   listed, and is filtered with a range slider. (25 is amb-engine's limit for histograms.)
-- Filters are value-based and local to your view, as before. Filter state isn't saved.
+- Filters are saved in the document (as `filters`), so they survive a reload and are
+  shared: everyone looking at the sheet sees it narrowed down the same way. (In the
+  original they were local to a view and lost on reload.) Hovering over a chart or table
+  still only previews a filter for you.
 - Rows and columns are inserted and deleted from a right-click menu (on a cell, or on a
   row or column header; it acts on the selected rows/columns). Unlike the original, this
   rewrites the formulas that refer to cells that moved (`src/lang/rewrite.ts`): `B7`
