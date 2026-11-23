@@ -183,6 +183,7 @@ export function newStep(step) {
   if (step.access === "web") out.access = "web"
   if (step.budget != null) out.budget = Number(step.budget)
   if (step.tools?.length) out.tools = [...new Set(step.tools)]
+  if (step.subject) out.subject = step.subject
   return out
 }
 
@@ -245,6 +246,10 @@ export function stepFieldErrors(step, at = "the step") {
   if (step.access === "web" && step.where !== "worker") errors.push(`${at}: a web-only step runs on a worker; it needs nothing from the page.`)
   if (step.after != null && !Array.isArray(step.after)) errors.push(`${at}: 'after' must be a list of step ids.`)
   if (step.tools != null && !(Array.isArray(step.tools) && step.tools.every((id) => typeof id === "string" && TOOL_ID.test(id)))) errors.push(`${at}: 'tools' must be a list of tool ids, such as ["doc_read", "assumptions_set"].`)
+  if (step.subject != null && step.subject !== "") {
+    if (typeof step.subject !== "string" || !step.subject.startsWith("automerge:")) errors.push(`${at}: 'subject' must be a document's automerge: URL.`)
+    else if (step.access === "web") errors.push(`${at}: a research step has no document of the person's, so it takes no 'subject'; put what it needs in its prompt.`)
+  }
   return errors
 }
 
@@ -515,7 +520,7 @@ function wake(doc) {
 // ---------------------------------------------------------------- editing
 
 /** What workflow_edit_steps may change, on a step that has not started. */
-export const EDITABLE = ["title", "prompt", "why", "after", "where", "tier", "budget", "access", "tools"]
+export const EDITABLE = ["title", "prompt", "why", "after", "where", "tier", "budget", "access", "tools", "subject"]
 
 /**
  * Why these edits cannot be made; empty when they can. A step may be edited
@@ -567,7 +572,10 @@ export function editSteps(doc, edits) {
     for (const key of EDITABLE) {
       if (!(key in edit)) continue
       if (key === "after") step.after = [...edit.after]
-      else if (key === "tools") {
+      else if (key === "subject") {
+        if (edit.subject) step.subject = edit.subject
+        else delete step.subject
+      } else if (key === "tools") {
         if (edit.tools?.length) step.tools = [...new Set(edit.tools)]
         else delete step.tools
       }

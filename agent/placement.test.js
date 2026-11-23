@@ -380,6 +380,15 @@ describe("the driver, starting a step", () => {
     expect(plan.steps.find((s) => s.id === "ok").status).toBe("done")
   })
 
+  it("a step's session is attached to the step's own document, else the workflow's; a research step's to none", async () => {
+    const { sessions } = await run([
+      { id: "own", subject: "automerge:4NMNnkMhL8jXrdJ9jamS58PAVdXq", prompt: "Write the report." },
+      { id: "none", prompt: "Summarise." },
+    ])
+    expect(sessions.own.subject).toBe("automerge:4NMNnkMhL8jXrdJ9jamS58PAVdXq")
+    expect(sessions.none.subject).toBeNull()
+  })
+
   it("a worker step listing a page-only plugin moves to the page and runs there", async () => {
     const { plan, sessions } = await run([{ id: "p", tools: ["page_tool"], prompt: "Draw it." }], { plugins: [{ id: "page_tool", where: "host" }] })
     const p = plan.steps.find((s) => s.id === "p")

@@ -600,8 +600,10 @@ export class WorkflowDriver {
     child.change((d) => {
       initSession(d, {
         title: `${plan.title} · ${step.title}`,
-        // A research step is about no document of the person's.
-        subject: web ? null : plan.subject ?? null,
+        // The step's own document, which tools that take a url default to;
+        // else the workflow's. A research step is about no document of the
+        // person's.
+        subject: web ? null : step.subject ?? plan.subject ?? null,
         config: {
           providerId: orchestrator?.config?.providerId ?? "openrouter",
           model: plan.tiers?.[step.tier],

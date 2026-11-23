@@ -268,6 +268,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     }
 
     if (step.sessionUrl) card.append(opener(state === STATE.needsInput ? "Answer in its session" : "Open session", step.sessionUrl))
+    // The document the step works on (its session's subject).
+    if (step.subject) card.append(opener("Open its document", step.subject))
     return card
   }
 

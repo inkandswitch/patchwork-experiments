@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { ImmutableString } from "@automerge/automerge"
-import { docRead, matchLine } from "./tools/docs.js"
+import { docRead, docEdit, matchLine } from "./tools/docs.js"
+import { docWatch } from "./tools/watch.js"
 
 describe("reading a long string in ranges", () => {
   const body = Array.from({ length: 30000 }, (_, i) => String.fromCharCode(97 + (i % 26))).join("")
@@ -165,5 +166,24 @@ describe("the line a match is on", () => {
     const { number, line } = matchLine(text, 500, 6)
     expect(number).toBe(1)
     expect(line).toBe(`…${"a".repeat(120)}NEEDLE${"b".repeat(174)}…`)
+  })
+})
+
+describe("a call with no url, in a session attached to no document", () => {
+  const session = (doc) => ({ url: "automerge:s", doc: () => doc })
+  const repo = { find: async () => ({ doc: () => ({}) }) }
+
+  it("a workflow step is told to pass url, since it has no document of its own", async () => {
+    const ctx = { repo, subject: null, session: session({ workflow: { planUrl: "automerge:p", stepId: "a" } }) }
+    await expect(docRead.execute({}, ctx)).rejects.toThrow("Pass `url` (the document's automerge: URL) on every call: this step has no document of its own.")
+    await expect(docEdit.execute({ ops: [] }, ctx)).rejects.toThrow(/this step has no document of its own/)
+    const watching = { ...ctx, watches: { change() {}, doc: () => ({}) }, events: {} }
+    await expect(docWatch.execute({ path: ["status"] }, watching)).rejects.toThrow(/this step has no document of its own/)
+  })
+
+  it("any other session is told it is attached to none", async () => {
+    const ctx = { repo, subject: null, session: session({}) }
+    await expect(docRead.execute({}, ctx)).rejects.toThrow(/This session is not attached to a document, so say which one: pass `url`/)
+    await expect(docRead.execute({}, { repo, subject: null })).rejects.toThrow(/not attached to a document/)
   })
 })

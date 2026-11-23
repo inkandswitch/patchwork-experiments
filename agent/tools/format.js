@@ -138,3 +138,22 @@ export function shape(value, depth = 0) {
   const entries = Object.entries(value).map(([k, v]) => `${k}: ${shape(v, depth + 1)}`)
   return `{ ${entries.join(", ")} }`
 }
+
+/**
+ * The error for a call that names no document in a session attached to none.
+ * A workflow step is told it has none of its own — the orchestrator gives a
+ * step one with `subject` — so it passes the URL rather than looking for one.
+ */
+export function noDocumentError(ctx) {
+  let step = false
+  try {
+    step = Boolean(ctx?.session?.doc?.()?.workflow)
+  } catch {
+    /* no session to ask */
+  }
+  return new Error(
+    step
+      ? "Pass `url` (the document's automerge: URL) on every call: this step has no document of its own."
+      : "This session is not attached to a document, so say which one: pass `url` (its automerge: URL) on every call."
+  )
+}

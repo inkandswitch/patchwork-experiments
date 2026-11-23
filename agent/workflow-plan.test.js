@@ -294,6 +294,8 @@ describe("validateSteps", () => {
     [[step("b", { tools: "doc_read" })], /'tools' must be a list of tool ids/],
     [[step("b", { tools: ["doc_read", ""] })], /'tools' must be a list of tool ids/],
     [[step("b", { tools: ["doc read"] })], /'tools' must be a list of tool ids/],
+    [[step("b", { subject: "report.md" })], /'subject' must be a document's automerge: URL/],
+    [[step("b", { subject: "automerge:abc", access: "web" })], /a research step has no document of the person's/],
   ])("refuses %j", (steps, message) => {
     expect(validateSteps(base, steps).join("\n")).toMatch(message)
   })
@@ -321,6 +323,21 @@ describe("a step's tools", () => {
     editSteps(doc, [{ id: "a", tools: [] }])
     expect("tools" in doc.steps[0]).toBe(false)
     expect(editErrors(doc, [{ id: "a", tools: [3] }]).join()).toMatch(/'tools' must be/)
+  })
+})
+
+describe("a step's main document", () => {
+  it("is kept on the step, and can be set, changed and cleared before it starts", () => {
+    expect(newStep(step("a", { subject: "automerge:abc" })).subject).toBe("automerge:abc")
+    expect("subject" in newStep(step("a"))).toBe(false)
+    const doc = plan([step("a")])
+    editSteps(doc, [{ id: "a", subject: "automerge:def" }])
+    expect(doc.steps[0].subject).toBe("automerge:def")
+    editSteps(doc, [{ id: "a", subject: "" }])
+    expect("subject" in doc.steps[0]).toBe(false)
+    // Made a research step while it has one: refused, whichever field changes.
+    editSteps(doc, [{ id: "a", subject: "automerge:def" }])
+    expect(editErrors(doc, [{ id: "a", access: "web" }]).join()).toMatch(/takes no 'subject'/)
   })
 })
 

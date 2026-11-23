@@ -41,7 +41,7 @@
  */
 
 import { hostImport } from "./host.js"
-import { preview } from "./format.js"
+import { preview, noDocumentError } from "./format.js"
 import { editsBetween, editsOfPatches, matchEdit, touchesPath } from "./history.js"
 import { addedHeads, isOwn } from "../own-changes.js"
 
@@ -379,7 +379,7 @@ export const docWatch = {
     }
 
     const url = input.url ?? ctx.subject
-    if (!url) throw new Error("No document specified and this session is not attached to one. Pass `url`.")
+    if (!url) throw noDocumentError(ctx)
     const target = splitTarget(url, input.path ?? [])
     if (input.match != null && String(input.match).trim() === "") throw new Error("`match` is empty. Leave it out to hear every edit.")
 

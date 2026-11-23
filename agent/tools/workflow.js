@@ -76,6 +76,10 @@ const STEP_SCHEMA = {
       items: { type: "string" },
       description: "The tools this step needs by id, e.g. [\"doc_read\", \"assumptions_set\"]. Checked when it starts: a tool no installed package provides fails it at once (\"Not installed: …\"), and a worker step listing a tool that needs the page moves there. The step still gets its whole toolset; this says what it cannot do without.",
     },
+    subject: {
+      type: "string",
+      description: "The step's main document, as its automerge: URL: the report it writes, the model it edits. The step's session is attached to it, so doc_read, doc_edit and doc_watch work on it without a url. Without one, the step passes a url on every call. Not for research steps.",
+    },
     access: {
       type: "string",
       enum: ["full", "web"],
@@ -123,6 +127,7 @@ export function describePlan(plan, url) {
   for (const step of plan.steps ?? []) {
     const state = derived.get(step.id)
     lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier} · $${stepBudget(step).toFixed(2)} budget${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
+    if (step.subject) lines.push(`  document: ${step.subject}`)
     if (step.tools?.length) lines.push(`  needs: ${step.tools.join(", ")}`)
     if (step.moved) lines.push(`  ${step.moved}`)
     if (step.sessionUrl) lines.push(`  session: ${step.sessionUrl}`)
@@ -478,7 +483,7 @@ export const workflowEditSteps = {
   id: "workflow_edit_steps",
   name: "Edit workflow steps",
   description:
-    "Change steps that have not started: what they depend on (`after`) — to wait on a step added since, say — or their prompt, title, tier, placement, budget or the tools they need. Give only what changes. A reopened step waiting to continue takes `after` and `budget` only: its session already has its prompt, so say what changed in the reopen note. To change a step that has started, reopen it.",
+    "Change steps that have not started: what they depend on (`after`) — to wait on a step added since, say — or their prompt, title, tier, placement, budget, the tools they need or their main document. Give only what changes. A reopened step waiting to continue takes `after` and `budget` only: its session already has its prompt, so say what changed in the reopen note. To change a step that has started, reopen it.",
   where: "worker",
   risk: "edit",
   input_schema: {

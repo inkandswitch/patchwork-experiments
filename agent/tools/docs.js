@@ -13,7 +13,7 @@
 import { Automerge } from "../host-modules.js"
 import { hostImport } from "./host.js"
 import { applyOps, opLabel, valueAt, OP_NAMES } from "./ops.js"
-import { previewJson, preview, shape, bytes, truncate } from "./format.js"
+import { previewJson, preview, shape, bytes, truncate, noDocumentError } from "./format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
 import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
 import { imageForModel } from "../images.js"
@@ -26,7 +26,7 @@ const { isImmutableString } = Automerge
 function targetUrl(input, ctx) {
   const url = input?.url ?? ctx.subject
   if (!url) {
-    throw new Error("This session is not attached to a document, so say which one: pass `url` (its automerge: URL) on every call.")
+    throw noDocumentError(ctx)
   }
   return url
 }
