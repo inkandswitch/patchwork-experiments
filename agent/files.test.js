@@ -157,7 +157,8 @@ describe("doc_read reads every kind", () => {
       expect(await read(doc, { offset: 0, limit: 8 })).toMatch(/characters 0–8 of \d+.*\n\n\[Page 1\]/s)
       const found = await read(doc, { find: "cycle life" })
       expect(found).toMatch(/1 match/)
-      expect(found).toContain("[Page 2]")
+      // Docedit's find format (path, line, the line as written), with the page to cite.
+      expect(found).toMatch(/\["content"\] page 2, line \d+ @\d+: Cycle life 6000 cycles/)
     })
 
     it("reads the text a fetch kept beside the PDF, when there is some", async () => {

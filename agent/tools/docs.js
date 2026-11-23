@@ -131,12 +131,19 @@ export function matchLine(text, at, length) {
   return { number, line }
 }
 
+/** The page a PDF's text has `at` on: the last `[Page N]` line before it (pdf-text.js), or null. */
+export function pageAt(text, at) {
+  const before = text.slice(0, at)
+  const marks = [...before.matchAll(/^\[Page (\d+)\]$/gm)]
+  return marks.length ? Number(marks[marks.length - 1][1]) : null
+}
+
 /**
  * What a doc_read with `find` says: each match as the path of its string, its
  * line there and the line itself, exactly as written — the path and anchor a
  * doc_edit takes — and how to read around one.
  */
-function foundIn(url, path, find, { count, strings, hits }) {
+function foundIn(url, path, find, { count, strings, hits }, { pages = false } = {}) {
   const where = `${url} /${path.join("/")}`
   if (!count) return `${where} — no match for "${find}".`
   const first = hits[0]
@@ -145,7 +152,8 @@ function foundIn(url, path, find, { count, strings, hits }) {
     `${where} — ${count} match${count === 1 ? "" : "es"} for "${find}" in ${strings} string${strings === 1 ? "" : "s"}${count > hits.length ? `, first ${hits.length} shown` : ""}. Each is its string's path, line and @offset, then the line as written. Read around one with ${read}.`,
     ...hits.map((hit) => {
       const { number, line } = matchLine(hit.text, hit.at, find.length)
-      return `${JSON.stringify(hit.path)} line ${number} @${hit.at}: ${line}`
+      const page = pages ? pageAt(hit.text, hit.at) : null
+      return `${JSON.stringify(hit.path)}${page ? ` page ${page},` : ""} line ${number} @${hit.at}: ${line}`
     }),
   ].join("\n")
 }
@@ -159,7 +167,7 @@ export const docRead = {
     "",
     "Point `path` at text — a string, an ImmutableString, or a notebook cell's list of lines — and it is shown as itself, not JSON-escaped, so you can quote it exactly as a doc_edit anchor. Up to 8000 characters come at once; page on with `offset` and `limit`, and the result says how much is left. Inside a bigger value, long strings and byte arrays are summarized. For a page, PDF or response a fetch kept, source_read is better: it searches, and knows the headings.",
     "",
-    "To find something without reading everything, pass `find`: it lists each match as its string's path and line, then the line exactly as written — the `path` and the anchor text doc_edit takes. Read around one with `path` and `offset`.",
+    "To find something without reading everything, pass `find`: it lists each match as its string's path and line (in a PDF, its page too), then the line exactly as written — the `path` and the anchor text doc_edit takes. Read around one with `path` and `offset`.",
   ].join("\n"),
   where: "worker",
   risk: "read",
@@ -221,7 +229,7 @@ export const docRead = {
       }
       if (kind?.kind === "pdf") {
         const mine = await pdfOf(doc, url)
-        if (mine.text != null) return foundIn(url, ["content"], find, findInValue(mine.text, ["content"], find))
+        if (mine.text != null) return foundIn(url, ["content"], find, findInValue(mine.text, ["content"], find), { pages: true })
       }
       return foundIn(url, path, find, findInValue(value, path, find))
     }
