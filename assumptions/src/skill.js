@@ -90,7 +90,10 @@ every one of them:
    \`id = value\`); an OpenSCAD model echoes them (\`echo(id = value);\`) and its
    editor keeps the run's console in the document. When a model runs, the
    check (and the open register) reads each result, records the run and the
-   inputs its code assigns, and you copy nothing. Never transcribe a model's
+   inputs its code assigns, and you copy nothing. A notebook run through
+   jupyter-linked (\`notebook_run\`, or a person's run there) does better: it
+   reads the register live, and its run record says which version it read, so
+   the inputs recorded are exactly the ones it used. Never transcribe a model's
    output into \`value\` when the model can print it.
 6. **Prose cites by the cite string.** \`assumptions_read\` gives every entry's
    cite string — "≤ 0.25 mΩ (\`cell_R_ac_mOhm\`)". Paste it; the qualifier

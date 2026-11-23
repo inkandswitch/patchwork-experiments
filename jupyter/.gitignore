@@ -1,0 +1,9 @@
+dist
+node_modules
+.pushwork
+# local caches and intermediate build output
+/.cache/
+/shared/python/build/
+/shared/python/*.egg-info/
+*.tsbuildinfo
+__pycache__/
