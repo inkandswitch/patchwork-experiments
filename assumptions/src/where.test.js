@@ -141,3 +141,17 @@ describe("a notebook's printed results", () => {
     expect(runKeyOf(nb((v) => v))).toBe(runKeyOf(nb(imm)))
   })
 })
+
+describe("a document's kept last run (OpenSCAD's console)", () => {
+  const ids = new Set(["cad_pack_volume_L", "cad_pack_centroid_x_m", "cad_bay_L"])
+  it("reads echo() in each of its forms, and nothing from a failed run", () => {
+    const doc = { source: "", lastRun: { ok: true, heads: ["h"], logs: ['ECHO: cad_pack_volume_L = 42.5', 'ECHO: "cad_pack_centroid_x_m", -6.27', 'ECHO: "cad_bay_L 310"', "WARNING: something", 'ECHO: "not_an_entry", 3'] } }
+    expect(outputsOf(doc, ids).map((o) => [o.id, o.value.nominal, o.part, o.line])).toEqual([
+      ["cad_pack_volume_L", 42.5, "console", 1],
+      ["cad_pack_centroid_x_m", -6.27, "console", 2],
+      ["cad_bay_L", 310, "console", 3],
+    ])
+    expect(outputsOf({ ...doc, lastRun: { ...doc.lastRun, ok: false } }, ids)).toEqual([])
+    expect(runKeyOf(doc)).not.toBe(runKeyOf({ ...doc, lastRun: { ...doc.lastRun, logs: ["ECHO: cad_bay_L = 311"] } }))
+  })
+})

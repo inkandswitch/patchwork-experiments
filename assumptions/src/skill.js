@@ -85,6 +85,13 @@ every one of them:
    changes (comments count). That is how one model's output becomes another's
    constraint, and how coupled loops close. A label or note change is not a
    run: leave \`model\` and \`value\` out. People record runs too, from the panel.
+   **Better: let the model give its results itself.** A notebook prints one
+   line per result in a code cell's output (\`print(f"{id} {value}")\`, or
+   \`id = value\`); an OpenSCAD model echoes them (\`echo(id = value);\`) and its
+   editor keeps the run's console in the document. When a model runs, the
+   check (and the open register) reads each result, records the run and the
+   inputs its code assigns, and you copy nothing. Never transcribe a model's
+   output into \`value\` when the model can print it.
 6. **Prose cites by the cite string.** \`assumptions_read\` gives every entry's
    cite string — "≤ 0.25 mΩ (\`cell_R_ac_mOhm\`)". Paste it; the qualifier
    comes with it, and the prose check passes by construction.

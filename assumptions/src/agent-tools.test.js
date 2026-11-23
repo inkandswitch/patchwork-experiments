@@ -328,6 +328,33 @@ describe("check and where", () => {
     expect(doc.entries.boat_drag_N.model.inputs.boat_mass_kg.nominal).toBe(8900)
   })
 
+  it("reads an OpenSCAD model's results from the run it keeps, and goes stale when its source changes without a render", async () => {
+    const register = await newRegister()
+    const scad = file("Battery bay.scad", { "@patchwork": { type: "openscad" }, title: "Battery bay", source: "v = 400*300*250/1e6; echo(cad_pack_volume_L = v); cube([400,300,250]);" })
+    // What the OpenSCAD editor does after a render: keep the run, with the heads it rendered.
+    const render = (logs) => {
+      const heads = [...scad.heads()]
+      scad.change((d) => (d.lastRun = { at: new Date().toISOString(), heads, ok: true, logs, elapsedMillis: 120, input: String(Math.random()) }))
+    }
+    render(["ECHO: cad_pack_volume_L = 30"])
+    await set.execute({ register, entries: [{ id: "pack_cells_n", kind: "decision", value: 16 }, { id: "cad_pack_volume_L", unit: "L", model: { url: scad.url, name: "Battery bay", inputs: ["pack_cells_n"] }, value: 29 }] }, ctx)
+    let out = await check.execute({ register }, ctx)
+    expect(out).toMatch(/READ FROM MODEL DOCUMENTS \(1\)[^\n]*\n  cad_pack_volume_L = 30 L \(was 29 L\) · "Battery bay.scad" console:1/)
+    expect(out).not.toMatch(/STALE/)
+
+    // The source is edited and nobody renders: the kept run is from the old code.
+    scad.change((d) => (d.source = d.source.replace("250", "260")))
+    out = await check.execute({ register }, ctx)
+    expect(out).not.toMatch(/READ FROM MODEL DOCUMENTS/)
+    expect(out).toMatch(/STALE\s+cad_pack_volume_L: the code in "Battery bay.scad" changed since the model ran/)
+
+    // Rendered: the new run is read, and nothing is stale.
+    render(["ECHO: cad_pack_volume_L = 31.2"])
+    out = await check.execute({ register }, ctx)
+    expect(out).toMatch(/cad_pack_volume_L = 31.2 L \(was 30 L\)/)
+    expect(out).not.toMatch(/STALE/)
+  })
+
   it("looks for a quote again when its source changes: still there, nothing to do; gone, the claim is no longer verified", async () => {
     const register = await newRegister()
     const datasheet = sheet()

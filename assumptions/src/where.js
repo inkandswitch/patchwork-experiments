@@ -116,26 +116,40 @@ function outputText(out) {
   return joined(out?.data?.["text/plain"])
 }
 
+/** An OpenSCAD console line as a plain one: `ECHO: "id", 42` and `ECHO: id = 42` read as "id 42". */
+const consoleLine = (line) =>
+  String(line)
+    .replace(/^\s*ECHO:\s*/, "")
+    .replace(/^"([^"]*)"\s*,\s*/, "$1 ")
+    .replace(/^"(.*)"$/, "$1")
+
 /**
- * The results a model document gave in its last run: lines of its code cells'
- * outputs that start with an entry's id and give a figure — "id 28.17",
- * "id = 28.17 kW", "id: 42 (40–44)". The last such line for an id wins. Only
- * notebooks have outputs; other documents give none (yet).
+ * The results a model document gave in its last run: lines that start with an
+ * entry's id and give a figure — "id 28.17", "id = 28.17 kW", "id: 42
+ * (40–44)". The last such line for an id wins. A notebook's are in its code
+ * cells' outputs; a document that keeps its last run (`lastRun: { ok, logs,
+ * heads }`, as OpenSCAD does) in that run's console, where `echo(id = 42)`
+ * counts. A failed run gives nothing.
  * Returns [{ id, value, part, line, text }].
  */
 export function outputsOf(doc, ids) {
-  if (!Array.isArray(doc?.cells)) return []
   const found = new Map()
+  const take = (line, part, j) => {
+    const m = line.match(ID_LINE)
+    if (!m || !ids.has(m[1])) return
+    const parsed = parseValue(m[2])
+    if (parsed.problem || !isNumeric(parsed.value)) return
+    found.set(m[1], { id: m[1], value: parsed.value, part, line: j + 1, text: line.trim().slice(0, 160) })
+  }
+  if (doc?.lastRun && Array.isArray(doc.lastRun.logs)) {
+    if (doc.lastRun.ok !== false) doc.lastRun.logs.forEach((line, j) => take(consoleLine(str(line)), "console", j))
+    return [...found.values()]
+  }
+  if (!Array.isArray(doc?.cells)) return []
   doc.cells.forEach((cell, i) => {
     if (str(cell?.cell_type) !== "code") return
     for (const out of cell.outputs ?? []) {
-      outputText(out).split("\n").forEach((line, j) => {
-        const m = line.match(ID_LINE)
-        if (!m || !ids.has(m[1])) return
-        const parsed = parseValue(m[2])
-        if (parsed.problem || !isNumeric(parsed.value)) return
-        found.set(m[1], { id: m[1], value: parsed.value, part: `cell ${i + 1}`, line: j + 1, text: line.trim().slice(0, 160) })
-      })
+      outputText(out).split("\n").forEach((line, j) => take(line, `cell ${i + 1}`, j))
     }
   })
   return [...found.values()]
@@ -147,6 +161,7 @@ export function outputsOf(doc, ids) {
  * document without outputs.
  */
 export function runKeyOf(doc) {
+  if (doc?.lastRun && Array.isArray(doc.lastRun.logs)) return `l:${hash(JSON.stringify([str(doc.lastRun.at), str(doc.lastRun.input), doc.lastRun.ok !== false, doc.lastRun.logs.map(str)]))}`
   if (!Array.isArray(doc?.cells)) return null
   const cells = doc.cells.filter((c) => str(c?.cell_type) === "code").map((c) => [c.execution_count ?? null, (c.outputs ?? []).map(outputText)])
   return `r:${hash(JSON.stringify(cells))}`
@@ -358,7 +373,15 @@ export async function scanFolder(repo, { entries, registerUrl, folderUrl, also =
       leaves.push({ order, key, record: { ...before, path }, reused: true, required: needed })
     } else {
       const parts = partsOf(doc, path)
-      const record = { path, heads, code: codeOf(doc, heads), runKey: runKeyOf(doc), outputs: outputsOf(doc, ids), export: parts.some((p) => p.text.includes(GENERATED_MARK)), hits: [], assigns: [] }
+      // A document that keeps its last run: the code that run had, from its heads then.
+      let runCode
+      if (Array.isArray(doc?.lastRun?.heads) && doc.lastRun.heads.length && typeof handle.view === "function") {
+        try {
+          const then = [...doc.lastRun.heads].map(str)
+          runCode = codeOf(handle.view(then).doc(), then)
+        } catch {}
+      }
+      const record = { path, heads, code: codeOf(doc, heads), ...(runCode ? { runCode } : {}), runKey: runKeyOf(doc), outputs: outputsOf(doc, ids), export: parts.some((p) => p.text.includes(GENERATED_MARK)), hits: [], assigns: [] }
       if (!record.export) {
         for (const { part, text, code } of parts) {
           for (const hit of usesIn(text, index)) record.hits.push({ ...hit, use: code ? "model" : "prose", part })

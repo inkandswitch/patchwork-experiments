@@ -198,7 +198,8 @@ export function runsToRead(doc, scan, evaluation = evaluate(doc)) {
         const r = scan.docs?.[other]
         ran[other] = r && !r.missing ? { heads: r.heads, code: r.code, runKey: r.runKey ?? null } : entry.model.ran[other]
       }
-      ran[url] = { heads: record.heads, code: record.code, runKey: record.runKey }
+      // The code the run had: for a document that keeps its run, as of that run's heads.
+      ran[url] = { heads: record.heads, code: record.runCode ?? record.code, runKey: record.runKey }
       const inputs = Object.fromEntries(Object.keys(entry.model?.inputs ?? {}).map((input) => [input, given.has(`${url}|${input}`) ? plainValue(given.get(`${url}|${input}`)) : ranWith(input, record, evaluation.byId.get(input)?.value)]))
       out.push({ id, url, path: record.path, value: mine.value, was: entry.model?.value ?? null, model: { ...plain(entry.model), value: mine.value, ran, ranAt: scan.time, inputs, by: { kind: "document", url, line: `${mine.part}:${mine.line}` } } })
       break
