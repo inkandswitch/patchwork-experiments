@@ -14,6 +14,7 @@ import type { Repo, AutomergeUrl, DocHandle } from '@automerge/automerge-repo/sl
 import generateName from 'boring-name-generator';
 import { getRepo, setUpImportMap } from './webworker-lib';
 import { DeliveryStats, reportDeliveryStats } from './delivery-stats';
+import { assignmentId } from './claims';
 
 let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 
@@ -90,6 +91,8 @@ async function init(
     name: generateName().dashed,
     contactUrl: _contactUrl,
     currentTask: null,
+    // present from the start, so a router can tell this worker will report
+    lastFinished: null,
   });
 
   // tell the worker pool proxy that I exist
@@ -112,7 +115,7 @@ async function init(
           console.log('busy, ignoring request to work on', msg.taskUrl);
           break;
         }
-        processTask(msg.taskUrl, msg.taskQueueUrl);
+        processTask(msg.taskUrl, msg.taskQueueUrl, assignmentId(msg));
         break;
     }
   });
@@ -141,7 +144,11 @@ function logTally() {
 
 const MAX_TRIES = 3;
 
-async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
+async function processTask(
+  taskUrl: AutomergeUrl,
+  taskQueueUrl: AutomergeUrl,
+  assignment: string,
+) {
   console.log('executing task', taskUrl);
 
   workerHandle.change((doc) => {
@@ -173,6 +180,7 @@ async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
     tally.numBails++;
     workerHandle.change((doc) => {
       doc.currentTask = null;
+      doc.lastFinished = { assignment, done: false };
     });
     logTally();
     return;
@@ -181,6 +189,8 @@ async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   taskHandle = taskHandle!;
   taskQueueHandle = taskQueueHandle!;
 
+  // whether the task has left its queue's pending list, as far as this worker knows
+  let done = false;
   try {
     const status = await execute(taskHandle);
     if (status === 'succeeded') {
@@ -192,12 +202,14 @@ async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
     }
     if (status === 'succeeded' || failedTooManyTimes(taskHandle)) {
       moveToDone(taskUrl, taskQueueHandle);
+      done = true;
     }
   } catch (error) {
     console.error('impossible error:', error);
   } finally {
     workerHandle.change((doc) => {
       doc.currentTask = null;
+      doc.lastFinished = { assignment, done };
     });
   }
   logTally();

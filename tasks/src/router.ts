@@ -20,6 +20,7 @@ import generateName from 'boring-name-generator';
 import { seconds, shuffle } from './helpers';
 import { DeliveryStats, reportDeliveryStats, Sequencer } from './delivery-stats';
 import { RouterWatch } from './takeover';
+import { assignmentId, claimIsSettled, type Claim } from './claims';
 
 let repo: Repo;
 let contactUrl: AutomergeUrl;
@@ -31,16 +32,20 @@ const deliveryStats = new DeliveryStats();
 
 const taskQueueHandles = new Map<AutomergeUrl, DocHandle<TaskQueueDoc>>();
 const routerWatch = new RouterWatch();
+
+// Tasks a worker has reported finished with, and when. A worker's "done" tends
+// to get here before the queue's own record of it does; until then the task
+// still looks pending, and this is what stops it being handed out again.
+const finishedTasks = new Map<AutomergeUrl, number>();
+const FINISHED_TASK_MEMORY_MS = 60_000;
 const attemptingToTakeOverTaskQueueUrls = new Set<AutomergeUrl>();
 
 interface WorkerState {
   handle: DocHandle<WorkerDoc>;
   /** Last task URL reported by the worker pool heartbeat (replica of WorkerDoc). */
   currentTaskUrl: AutomergeUrl | null;
-  /** Task URL this router assigned via broadcast but the worker doc may not reflect yet. */
-  claimedTaskUrl: AutomergeUrl | null;
-  /** When {@link claimedTaskUrl} was set; used to drop stuck claims if replicas miss the busy state. */
-  claimIssuedAt: number;
+  /** The task this router has handed the worker and not yet heard about (see claims.ts). */
+  claim: Claim | null;
   taskQueues: TaskQueueSet;
   lastTimestamp: number;
   /** Whether the worker's host wants it given work just now (see availability.ts). */
@@ -130,7 +135,7 @@ async function init(
 
 async function pRouteTasks() {
   while (true) {
-    releaseRouterClaimsAckedByWorkerDoc();
+    releaseSettledClaims();
     const idleWorkersByTaskQueueUrl = getIdleWorkersByTaskQueueUrl();
     const taskQueuesWithPendingTasks = shuffle(
       [...taskQueueHandles.values()]
@@ -150,12 +155,16 @@ async function pRouteTasks() {
       }
 
       const worker = shuffle([...idleWorkers])[0];
-      worker.claimedTaskUrl = nextPendingTaskUrl;
-      worker.claimIssuedAt = Date.now();
+      const stamp = sequencer.stamp(worker.handle.url);
+      worker.claim = {
+        taskUrl: nextPendingTaskUrl,
+        assignment: assignmentId(stamp),
+        issuedAt: Date.now(),
+      };
       console.log('routing task', nextPendingTaskUrl, 'to worker', worker.handle.url);
       worker.handle.broadcast({
         type: 'work on',
-        ...sequencer.stamp(worker.handle.url),
+        ...stamp,
         taskUrl: nextPendingTaskUrl,
         taskQueueUrl: taskQueue.url,
       } satisfies MessageToWorkerChannel);
@@ -169,8 +178,24 @@ async function pRouteTasks() {
       taskQueuesWithPendingTasks.push(taskQueue);
     }
 
-    await seconds(1);
+    await untilThereMayBeWorkToRoute();
   }
+}
+
+// Routing used to happen once a second, so a new task waited up to a second to
+// be noticed and a worker that had just finished waited up to another. Now a
+// change to a queue or to a worker's doc brings the next round forward. The
+// second is still there for what arrives no other way: heartbeats, and time
+// passing.
+let routeNow: (() => void) | null = null;
+
+function routeSoon() {
+  routeNow?.();
+}
+
+async function untilThereMayBeWorkToRoute() {
+  await Promise.race([seconds(1), new Promise<void>((resolve) => (routeNow = resolve))]);
+  routeNow = null;
 }
 
 async function pSendHeartbeats() {
@@ -211,6 +236,7 @@ async function pDropStaleWorkerInfos() {
   while (true) {
     for (const { handle, lastTimestamp: timestamp } of workers.values()) {
       if (Date.now() - timestamp! > 10 * 1_000) {
+        handle.off('change', routeSoon);
         workers.delete(handle.url);
       }
     }
@@ -261,31 +287,37 @@ function attemptToTakeOver(taskQueueHandle: DocHandle<TaskQueueDoc>) {
 
 // helpers
 
-/** Drop router-side claims once we know the worker took the task, or recover from missed replicas. */
-function releaseRouterClaimsAckedByWorkerDoc() {
-  const now = Date.now();
+/** Lets go of every claim that has run its course (see claims.ts). */
+function releaseSettledClaims() {
   for (const worker of workers.values()) {
-    const claimed = worker.claimedTaskUrl;
-    if (!claimed) {
+    if (!worker.claim) {
       continue;
     }
-
-    const docTask = worker.handle.doc().currentTask?.taskUrl;
-    if (docTask === claimed) {
-      worker.claimedTaskUrl = null;
-      continue;
+    const doc = worker.handle.doc();
+    const view = {
+      docTaskUrl: doc.currentTask?.taskUrl ?? null,
+      heartbeatTaskUrl: worker.currentTaskUrl,
+      lastFinished: doc.lastFinished,
+    };
+    if (claimIsSettled(worker.claim, view)) {
+      if (view.lastFinished?.assignment === worker.claim.assignment && view.lastFinished.done) {
+        finishedTasks.set(worker.claim.taskUrl as AutomergeUrl, Date.now());
+      }
+      worker.claim = null;
     }
+  }
 
-    // Pool heartbeat saw this worker busy with our claim — safe to drop claim; busy is tracked via currentTaskUrl.
-    if (worker.currentTaskUrl === claimed) {
-      worker.claimedTaskUrl = null;
-      continue;
+  // Forget the ones the queues have caught up on. The age limit is for a task
+  // that somehow stays pending anyway: better it runs twice than never again.
+  const stillPending = new Set<AutomergeUrl>();
+  for (const taskQueueHandle of taskQueueHandles.values()) {
+    for (const taskUrl of taskQueueHandle.doc().pending) {
+      stillPending.add(taskUrl);
     }
-
-    // Fast tasks can finish between heartbeats so we never observe currentTask === claimed on this replica.
-    const idleOnRouter = !docTask && !worker.currentTaskUrl;
-    if (idleOnRouter && now - worker.claimIssuedAt > 4_000) {
-      worker.claimedTaskUrl = null;
+  }
+  for (const [taskUrl, finishedAt] of finishedTasks) {
+    if (!stillPending.has(taskUrl) || Date.now() - finishedAt > FINISHED_TASK_MEMORY_MS) {
+      finishedTasks.delete(taskUrl);
     }
   }
 }
@@ -294,7 +326,7 @@ function getIdleWorkersByTaskQueueUrl() {
   const idleWorkers = [...workers.values()].filter((worker) => {
     const docBusy = !!worker.handle.doc().currentTask;
     const heartbeatBusy = !!worker.currentTaskUrl;
-    return worker.available && !docBusy && !heartbeatBusy && !worker.claimedTaskUrl;
+    return worker.available && !docBusy && !heartbeatBusy && !worker.claim;
   });
   const idleWorkersByTaskQueueUrl = new Map<AutomergeUrl, Set<WorkerState>>();
   for (const worker of idleWorkers) {
@@ -318,11 +350,14 @@ function nextPendingTask(taskQueueHandle: DocHandle<TaskQueueDoc>) {
 }
 
 function isReallyPending(taskUrl: AutomergeUrl) {
+  if (finishedTasks.has(taskUrl)) {
+    return false;
+  }
   for (const worker of workers.values()) {
     const docTask = worker.handle.doc().currentTask?.taskUrl;
     if (
       taskUrl === docTask ||
-      taskUrl === worker.claimedTaskUrl ||
+      taskUrl === worker.claim?.taskUrl ||
       taskUrl === worker.currentTaskUrl
     ) {
       return false;
@@ -359,11 +394,14 @@ async function joinTaskQueue(taskQueueUrl: AutomergeUrl) {
 
   taskQueueHandles.set(taskQueueUrl, handle);
   handle.on('ephemeral-message', handleEphemeralMessages);
+  handle.on('change', routeSoon);
+  routeSoon();
 }
 
 async function leaveTaskQueue(taskQueueUrl: AutomergeUrl) {
   const handle = taskQueueHandles.get(taskQueueUrl);
   handle?.off('ephemeral-message', handleEphemeralMessages);
+  handle?.off('change', routeSoon);
   taskQueueHandles.delete(taskQueueUrl);
   routerWatch.stopWatching(taskQueueUrl);
 }
@@ -396,22 +434,24 @@ async function processWorkerHeartbeat(
     state.taskQueues = taskQueues;
     state.lastTimestamp = lastTimestamp;
     state.available = available;
-    // Heartbeat proves the pool saw the worker pick up this assignment; router doc can still lag.
-    if (state.claimedTaskUrl && currentTaskUrl === state.claimedTaskUrl) {
-      state.claimedTaskUrl = null;
-    }
   } else {
     try {
       await repoPromise;
+      const handle = await repo.find<WorkerDoc>(workerUrl);
+      if (workers.has(workerUrl)) {
+        // another heartbeat for this worker got here while its doc was loading
+        return;
+      }
       workers.set(workerUrl, {
-        handle: await repo.find(workerUrl),
+        handle,
         currentTaskUrl,
-        claimedTaskUrl: null,
-        claimIssuedAt: 0,
+        claim: null,
         taskQueues,
         lastTimestamp,
         available,
       });
+      handle.on('change', routeSoon);
+      routeSoon();
     } catch (error) {
       console.error('unable to get doc handle for worker', { workerUrl, error });
     }

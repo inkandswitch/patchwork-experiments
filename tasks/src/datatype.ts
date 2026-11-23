@@ -71,6 +71,16 @@ export interface WorkerDoc {
   name: string;
   contactUrl: AutomergeUrl;
   currentTask: { taskUrl: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null;
+  /**
+   * The hand-out (see `assignmentId` in claims.ts) this worker last finished,
+   * whether the task succeeded, failed, or couldn't be loaded. It tells the
+   * router the worker is free the moment it is.
+   *
+   * `done` says the task is finished with: the worker has moved it out of its
+   * queue's pending list. The router usually hears this before it sees the
+   * queue change, and without it would hand the same task straight out again.
+   */
+  lastFinished?: { assignment: string; done: boolean } | null;
 }
 
 // Router
