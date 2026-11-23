@@ -1,0 +1,293 @@
+// The state behind the UI: the document, its evaluation, the filters and the selection.
+
+import { createContext, createEffect, createMemo, createSignal, onCleanup, untrack, useContext } from 'solid-js';
+import type { AmbsheetDoc, AmbsheetHandle } from '../datatype';
+import { DEFAULT_COLS } from '../datatype';
+import { shiftAddr, type StructuralEdit } from '../lang/rewrite';
+import { MAX_COLS, addrOf, valueKey, type Pos, type RawValue } from '../lang/values';
+import { cellText, compileSheet, type CellInfo } from '../model/compile';
+import { countPassing, passMask, summarize, type Filter, type Summary } from '../model/analysis';
+import { applyEdit, checkEdit } from '../model/structure';
+import {
+  DEFAULT_SETTINGS,
+  Evaluation,
+  Runner,
+  SAMPLE_SIZES,
+  type EvalMode,
+  type EvalSettings,
+  type Run,
+} from '../model/run';
+
+export interface Selection {
+  /** The active cell... */
+  row: number;
+  col: number;
+  /** ...and the opposite corner of the selected range (the same cell if there is no range). */
+  row2: number;
+  col2: number;
+  /** Set when a whole row or column was selected, which shouldn't scroll the grid. */
+  quiet?: boolean;
+}
+
+/** The menu for inserting and deleting rows and columns, and where it is (in the tool). */
+export interface ContextMenu {
+  x: number;
+  y: number;
+  rows: boolean;
+  cols: boolean;
+}
+
+export interface Edit {
+  addr: string;
+  text: string;
+  /** Where the text is being typed: in the cell, or in the formula bar. */
+  where: 'cell' | 'bar';
+}
+
+export type SheetState = ReturnType<typeof createSheetState>;
+
+export function createSheetState(handle: AmbsheetHandle) {
+  // --- the document ---
+
+  const [doc, setDoc] = createSignal<AmbsheetDoc | undefined>(handle.doc(), { equals: false });
+  const onChange = () => setDoc(() => handle.doc());
+  handle.on('change', onChange);
+  onCleanup(() => handle.off('change', onChange));
+
+  // Automerge keeps unchanged parts of a document identical from one version to the next,
+  // so this memo (and the compilation that hangs off it) only reruns when cells change.
+  const data = createMemo(() => doc()?.data);
+  const numRows = createMemo(() => data()?.length ?? 0);
+  const numCols = createMemo(() => {
+    let cols = 0;
+    for (const row of data() ?? []) cols = Math.max(cols, row?.length ?? 0);
+    return Math.min(cols, MAX_COLS);
+  });
+  const text = (pos: Pos) => cellText(data(), pos.row, pos.col);
+
+  /** Writes cell texts, in one change. */
+  function setCells(updates: { row: number; col: number; text: string }[]) {
+    const changed = updates.filter(
+      (u) => u.col < MAX_COLS && u.row >= 0 && u.col >= 0 && cellText(data(), u.row, u.col) !== u.text,
+    );
+    if (changed.length === 0) return;
+    handle.change((d) => {
+      if (!Array.isArray(d.data)) d.data = [];
+      for (const { row, col, text } of changed) {
+        while (d.data.length <= row) d.data.push(new Array(numCols() || DEFAULT_COLS).fill(null));
+        while (d.data[row].length <= col) d.data[row].push(null);
+        d.data[row][col] = text === '' ? null : text;
+      }
+    });
+  }
+
+  // --- evaluation ---
+
+  const [seed, setSeed] = createSignal(DEFAULT_SETTINGS.seed);
+  const mode = createMemo<EvalMode>(() => {
+    const m = doc()?.evaluation?.mode;
+    return m === 'exhaustive' || m === 'montecarlo' ? m : 'auto';
+  });
+  const samples = createMemo(() => {
+    const n = doc()?.evaluation?.samples;
+    return typeof n === 'number' && n >= 1 ? Math.floor(n) : DEFAULT_SETTINGS.samples;
+  });
+  const settings = (): EvalSettings => ({ mode: mode(), samples: samples(), seed: seed() });
+
+  const compiled = createMemo(() => compileSheet(data()));
+
+  const [run, setRun] = createSignal<Run>(
+    new Evaluation(untrack(compiled), untrack(settings)).run,
+  );
+  const runner = new Runner(setRun);
+  onCleanup(() => runner.stop());
+  // Any change to the cells or to the settings starts the evaluation over. The first
+  // slice of work happens right here, so small sheets are up to date immediately; bigger
+  // ones keep publishing results as they go.
+  createEffect(() => runner.start(compiled(), settings()));
+
+  function setEvaluation(changes: { mode?: EvalMode; samples?: number }) {
+    handle.change((d) => {
+      if (!d.evaluation) d.evaluation = {};
+      if (changes.mode !== undefined) d.evaluation.mode = changes.mode;
+      if (changes.samples !== undefined) d.evaluation.samples = changes.samples;
+    });
+  }
+
+  // --- filters ---
+
+  const [filters, setFilters] = createSignal<ReadonlyMap<string, Filter>>(new Map());
+  /** Temporary filters, in effect while the pointer is over something (a bar, a row...). */
+  const [hover, setHover] = createSignal<ReadonlyMap<string, Filter> | null>(null);
+
+  const effectiveFilters = createMemo(() => {
+    const h = hover();
+    return h ? new Map([...filters(), ...h]) : filters();
+  });
+  const mask = createMemo(() => passMask(run(), effectiveFilters()));
+  const passing = createMemo(() => countPassing(run(), mask()));
+  /** The filters that apply to cells that (still) vary. */
+  const activeFilters = createMemo(() => [...filters().keys()].filter((addr) => addr in run().columns));
+
+  const summaries = createMemo(() => {
+    const r = run();
+    const m = mask();
+    const result = new Map<string, Summary>();
+    for (const info of r.compiled.varying) result.set(info.addr, summarize(r, info, m));
+    return result;
+  });
+
+  function setFilter(addr: string, filter: Filter | null) {
+    const next = new Map(filters());
+    if (filter) next.set(addr, filter);
+    else next.delete(addr);
+    setFilters(next);
+  }
+
+  function toggleValue(addr: string, value: RawValue) {
+    const key = valueKey(value);
+    const current = filters().get(addr);
+    const keys = new Set(current?.kind === 'values' ? current.keys : []);
+    if (keys.has(key)) keys.delete(key);
+    else keys.add(key);
+    setFilter(addr, keys.size > 0 ? { kind: 'values', keys } : null);
+  }
+
+  const isValueSelected = (addr: string, key: string) => {
+    const filter = filters().get(addr);
+    return filter?.kind === 'values' && filter.keys.has(key);
+  };
+
+  const hoverValues = (addr: string, values: RawValue[]) =>
+    setHover(new Map([[addr, { kind: 'values', keys: new Set(values.map(valueKey)) } as Filter]]));
+
+  // --- selection and editing ---
+
+  const [selection, setSelection] = createSignal<Selection>({ row: 0, col: 0, row2: 0, col2: 0 });
+  const [edit, setEdit] = createSignal<Edit | null>(null);
+  const activeAddr = createMemo(() => addrOf(selection()));
+  const activeInfo = createMemo((): CellInfo | undefined => run().compiled.cells.get(activeAddr()));
+
+  function select(pos: Pos, extend = false) {
+    const row = Math.max(0, Math.min(numRows() - 1, pos.row));
+    const col = Math.max(0, Math.min(numCols() - 1, pos.col));
+    const s = selection();
+    setSelection(extend ? { ...s, row2: row, col2: col } : { row, col, row2: row, col2: col });
+  }
+
+  const selectRow = (row: number) =>
+    setSelection({ row, col: 0, row2: row, col2: Math.max(0, numCols() - 1), quiet: true });
+  const selectCol = (col: number) =>
+    setSelection({ row: 0, col, row2: Math.max(0, numRows() - 1), col2: col, quiet: true });
+
+  const selectedRect = createMemo(() => {
+    const s = selection();
+    return {
+      top: Math.min(s.row, s.row2),
+      bottom: Math.max(s.row, s.row2),
+      left: Math.min(s.col, s.col2),
+      right: Math.max(s.col, s.col2),
+    };
+  });
+
+  function beginEdit(where: Edit['where'], initialText?: string) {
+    const s = selection();
+    setSelection({ ...s, row2: s.row, col2: s.col });
+    setEdit({ addr: activeAddr(), text: initialText ?? text(s), where });
+  }
+
+  function commitEdit() {
+    const e = edit();
+    if (!e) return;
+    setEdit(null);
+    const s = selection();
+    if (e.addr === addrOf(s)) setCells([{ row: s.row, col: s.col, text: e.text }]);
+  }
+
+  const cancelEdit = () => setEdit(null);
+
+  // --- inserting and deleting rows and columns ---
+
+  const [menu, setMenu] = createSignal<ContextMenu | null>(null);
+
+  /** Why a structural edit can't be made right now (null if it can). */
+  const whyNot = (edit: StructuralEdit) => checkEdit(data() ?? [], edit);
+
+  function structuralEdit(edit: StructuralEdit) {
+    if (whyNot(edit) !== null) return;
+    setEdit(null);
+    handle.change((d) => applyEdit(d.data, edit));
+
+    // The filters follow their cells.
+    const moved = new Map<string, Filter>();
+    for (const [addr, filter] of filters()) {
+      const to = shiftAddr(addr, edit);
+      if (to !== null) moved.set(to, filter);
+    }
+    setFilters(moved);
+    setHover(null);
+
+    // And the selection stays where it was on screen, within the sheet.
+    const sel = selection();
+    const row = Math.max(0, Math.min(numRows() - 1, Math.min(sel.row, sel.row2)));
+    const col = Math.max(0, Math.min(numCols() - 1, Math.min(sel.col, sel.col2)));
+    setSelection({ row, col, row2: row, col2: col, quiet: true });
+  }
+
+  return {
+    handle,
+    doc,
+    data,
+    numRows,
+    numCols,
+    text,
+    setCells,
+
+    run,
+    mode,
+    samples,
+    setEvaluation,
+    resample: () => setSeed(Math.random()),
+    sampleMore: () => runner.sampleMore(samples()),
+    sampleSizes: SAMPLE_SIZES,
+
+    filters,
+    activeFilters,
+    setFilter,
+    clearFilters: () => setFilters(new Map()),
+    toggleValue,
+    isValueSelected,
+    hover,
+    setHover,
+    hoverValues,
+    mask,
+    passing,
+    summaries,
+
+    selection,
+    selectedRect,
+    activeAddr,
+    activeInfo,
+    select,
+    selectRow,
+    selectCol,
+    menu,
+    setMenu,
+    whyNot,
+    structuralEdit,
+    edit,
+    setEdit,
+    beginEdit,
+    commitEdit,
+    cancelEdit,
+  };
+}
+
+const SheetContext = createContext<SheetState>();
+export const SheetProvider = SheetContext.Provider;
+
+export function useSheet(): SheetState {
+  const state = useContext(SheetContext);
+  if (!state) throw new Error('no sheet state');
+  return state;
+}

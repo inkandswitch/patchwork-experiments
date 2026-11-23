@@ -1,0 +1,937 @@
+/* Ambsheets. Everything is scoped under .ambsheet (Patchwork tools share the light DOM). */
+
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --ambsheet-bg: var(--editor-fill, white);
+    --ambsheet-fg: var(--editor-line, black);
+    --ambsheet-muted: color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 45%);
+    --ambsheet-faint: color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 72%);
+    --ambsheet-border: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 14%);
+    --ambsheet-panel: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 4%);
+    --ambsheet-hover: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 8%);
+    --ambsheet-accent: var(--studio-secondary, #3b82f6);
+    --ambsheet-accent-soft: color-mix(in oklch, var(--studio-secondary, #3b82f6), var(--editor-fill, white) 80%);
+    --ambsheet-accent-softer: color-mix(in oklch, var(--studio-secondary, #3b82f6), var(--editor-fill, white) 91%);
+    --ambsheet-danger: var(--studio-danger, #dc2626);
+    --ambsheet-family: var(--editor-family-sans, system-ui, sans-serif);
+    --ambsheet-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
+}
+
+.ambsheet {
+  position: relative;
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr) 340px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  background: var(--ambsheet-bg);
+  color: var(--ambsheet-fg);
+  font-family: var(--ambsheet-family);
+  font-size: 13px;
+  line-height: 1.35;
+  box-sizing: border-box;
+}
+
+.ambsheet *,
+.ambsheet *::before,
+.ambsheet *::after {
+  box-sizing: border-box;
+}
+
+.ambsheet button,
+.ambsheet select,
+.ambsheet input {
+  font: inherit;
+  color: inherit;
+}
+
+.ambsheet code {
+  font-family: var(--ambsheet-family-code);
+  font-size: 0.95em;
+  background: var(--ambsheet-hover);
+  padding: 0 3px;
+  border-radius: var(--studio-radius-sm, 4px);
+}
+
+.ambsheet .not-a-sheet {
+  grid-column: 1 / -1;
+  padding: var(--studio-space-lg, 1.5rem);
+  color: var(--ambsheet-muted);
+}
+
+.ambsheet .link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--ambsheet-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ambsheet .link:hover {
+  color: var(--ambsheet-fg);
+}
+
+.ambsheet .hint {
+  color: var(--ambsheet-muted);
+  font-size: 12px;
+}
+
+/* ---------- formula bar ---------- */
+
+.ambsheet .formula-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--ambsheet-border);
+  background: var(--ambsheet-panel);
+}
+
+.ambsheet .formula-bar .address {
+  width: 210px;
+  padding: 0 var(--studio-space-sm, 0.5rem);
+  font-weight: 600;
+  color: var(--ambsheet-muted);
+  border-right: 1px solid var(--ambsheet-border);
+}
+
+.ambsheet .formula-bar input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px var(--studio-space-sm, 0.5rem);
+  border: none;
+  outline: none;
+  background: var(--ambsheet-bg);
+  font-family: var(--ambsheet-family-code);
+  font-size: 12.5px;
+}
+
+.ambsheet .formula-bar input::placeholder {
+  color: var(--ambsheet-faint);
+  font-family: var(--ambsheet-family);
+}
+
+/* ---------- side panels ---------- */
+
+.ambsheet .filters,
+.ambsheet .details {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--ambsheet-panel);
+}
+
+.ambsheet .filters {
+  border-right: 1px solid var(--ambsheet-border);
+}
+
+.ambsheet .details {
+  border-left: 1px solid var(--ambsheet-border);
+}
+
+.ambsheet .panel-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--studio-space-sm, 0.5rem);
+  padding: 6px var(--studio-space-sm, 0.5rem);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ambsheet-muted);
+  border-bottom: 1px solid var(--ambsheet-border);
+}
+
+.ambsheet .panel-title .filter-count {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ambsheet .panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--studio-space-sm, 0.5rem);
+}
+
+.ambsheet .panel-body h3 {
+  margin: var(--studio-space-sm, 0.5rem) 0 var(--studio-space-2xs, 0.25rem);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ambsheet-muted);
+}
+
+.ambsheet .panel-body h3:first-child {
+  margin-top: 0;
+}
+
+/* ---------- filters ---------- */
+
+.ambsheet .cell-filter {
+  margin-bottom: var(--studio-space-sm, 0.5rem);
+}
+
+.ambsheet .cell-filter-name {
+  display: block;
+  width: 100%;
+  margin-bottom: 3px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-hover);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ambsheet .cell-filter[data-filtered] .cell-filter-name {
+  background: var(--ambsheet-accent-soft);
+}
+
+.ambsheet .value-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.ambsheet .value-option .value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ambsheet .value-option .count {
+  color: var(--ambsheet-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ambsheet .value-option[data-out] .value {
+  color: var(--ambsheet-faint);
+}
+
+.ambsheet .cell-filter > .link {
+  margin-left: 6px;
+  font-size: 12px;
+}
+
+.ambsheet .range-filter {
+  padding: 2px 6px;
+}
+
+.ambsheet .range-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ambsheet-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- range slider ---------- */
+
+.ambsheet .range-slider {
+  position: relative;
+  height: 18px;
+}
+
+.ambsheet .range-slider .track,
+.ambsheet .range-slider .fill {
+  position: absolute;
+  top: 7px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.ambsheet .range-slider .track {
+  left: 0;
+  right: 0;
+  background: var(--ambsheet-border);
+}
+
+.ambsheet .range-slider .fill {
+  background: var(--ambsheet-accent);
+}
+
+.ambsheet .range-slider input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.ambsheet .range-slider input::-webkit-slider-runnable-track {
+  background: none;
+}
+
+.ambsheet .range-slider input::-moz-range-track {
+  background: none;
+}
+
+.ambsheet .range-slider input::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ambsheet-accent);
+  border-radius: 50%;
+  background: var(--ambsheet-bg);
+  cursor: ew-resize;
+  pointer-events: auto;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.ambsheet .range-slider input::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--ambsheet-accent);
+  border-radius: 50%;
+  background: var(--ambsheet-bg);
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+/* ---------- grid ---------- */
+
+.ambsheet .grid {
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+  outline: none;
+  background: var(--ambsheet-bg);
+}
+
+.ambsheet .grid table {
+  border-collapse: separate;
+  border-spacing: 0;
+  user-select: none;
+}
+
+.ambsheet .grid th,
+.ambsheet .grid td {
+  border-right: 1px solid var(--ambsheet-border);
+  border-bottom: 1px solid var(--ambsheet-border);
+}
+
+.ambsheet .grid th {
+  position: sticky;
+  z-index: 1;
+  padding: 2px 6px;
+  background: var(--ambsheet-panel);
+  color: var(--ambsheet-muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.ambsheet .grid thead th {
+  top: 0;
+  z-index: 2;
+}
+
+.ambsheet .grid tbody th,
+.ambsheet .grid th.corner {
+  left: 0;
+  min-width: 36px;
+}
+
+.ambsheet .grid th.corner {
+  z-index: 3;
+}
+
+.ambsheet .grid th[data-row],
+.ambsheet .grid th[data-col] {
+  cursor: pointer;
+}
+
+.ambsheet .grid th[data-active] {
+  background: var(--ambsheet-accent-soft);
+  color: var(--ambsheet-fg);
+}
+
+.ambsheet .grid td {
+  min-width: 84px;
+  max-width: 320px;
+  height: 24px;
+  padding: 0;
+  vertical-align: top;
+  cursor: cell;
+}
+
+.ambsheet .grid td[data-selected] {
+  background: var(--ambsheet-accent-softer);
+}
+
+.ambsheet .grid td[data-active] {
+  outline: 2px solid var(--ambsheet-accent);
+  outline-offset: -1px;
+}
+
+.ambsheet .cell-value {
+  padding: 3px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ambsheet .cell-value[data-type='number'] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ambsheet .cell-value[data-type='boolean'] {
+  text-align: center;
+}
+
+.ambsheet .cell-value[data-type='error'],
+.ambsheet .chip[data-type='error'] {
+  color: var(--ambsheet-danger);
+}
+
+.ambsheet .cell-value[data-type='range'] {
+  color: var(--ambsheet-muted);
+}
+
+.ambsheet .cell-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--studio-space-sm, 0.5rem);
+  padding: 2px 6px 0;
+  color: var(--ambsheet-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ambsheet .cell-avg {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.ambsheet .cell-avg i {
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.ambsheet .chips {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px 3px;
+  white-space: nowrap;
+}
+
+.ambsheet .chip {
+  padding: 0 5px;
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.ambsheet .chip:hover {
+  border-color: var(--ambsheet-accent);
+}
+
+.ambsheet .chip[data-on] {
+  background: var(--ambsheet-accent-soft);
+  border-color: var(--ambsheet-accent);
+}
+
+.ambsheet .chip[data-out] {
+  color: var(--ambsheet-faint);
+}
+
+.ambsheet .chips .more {
+  padding-left: 2px;
+  color: var(--ambsheet-muted);
+  font-size: 11px;
+}
+
+.ambsheet .cell-spread {
+  padding: 2px 6px 3px;
+  color: var(--ambsheet-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ambsheet .cell-editor {
+  display: block;
+  width: 100%;
+  min-width: 100%;
+  height: 24px;
+  padding: 3px 6px;
+  border: none;
+  outline: none;
+  background: var(--ambsheet-bg);
+  font-family: var(--ambsheet-family-code);
+  font-size: 12.5px;
+}
+
+/* ---------- context menu ---------- */
+
+.ambsheet .context-menu {
+  position: absolute;
+  z-index: 10;
+  min-width: 180px;
+  padding: 4px 0;
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+  box-shadow: var(--studio-shadow-md, 0 4px 12px rgb(0 0 0 / 0.15));
+}
+
+.ambsheet .context-menu .group + .group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ambsheet-border);
+}
+
+.ambsheet .context-menu button {
+  display: block;
+  width: 100%;
+  padding: 3px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ambsheet .context-menu button:hover:not(:disabled) {
+  background: var(--ambsheet-accent-soft);
+}
+
+.ambsheet .context-menu button:disabled {
+  color: var(--ambsheet-faint);
+  cursor: default;
+}
+
+/* ---------- details ---------- */
+
+.ambsheet .cell-kind {
+  color: var(--ambsheet-muted);
+  margin-bottom: var(--studio-space-sm, 0.5rem);
+}
+
+.ambsheet .error {
+  color: var(--ambsheet-danger);
+}
+
+.ambsheet .viewer {
+  padding: var(--studio-space-sm, 0.5rem) 0;
+  border-top: 1px solid var(--ambsheet-border);
+}
+
+.ambsheet .dependencies {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+
+.ambsheet .welcome p {
+  margin: 0 0 var(--studio-space-sm, 0.5rem);
+}
+
+.ambsheet .example {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ambsheet .example:hover {
+  border-color: var(--ambsheet-accent);
+}
+
+.ambsheet .example span {
+  color: var(--ambsheet-muted);
+  font-size: 12px;
+}
+
+/* stacks */
+
+.ambsheet .stacks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 6px;
+}
+
+.ambsheet .stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.ambsheet .stack .cards {
+  display: grid;
+  padding: 6px 6px 0 0;
+}
+
+.ambsheet .stack .card {
+  grid-area: 1 / 1;
+  padding: 2px 10px;
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+  white-space: nowrap;
+}
+
+.ambsheet .stack[data-on] .card {
+  background: var(--ambsheet-accent-soft);
+  border-color: var(--ambsheet-accent);
+}
+
+.ambsheet .stack[data-out] .card {
+  color: var(--ambsheet-faint);
+}
+
+.ambsheet .stack .count {
+  color: var(--ambsheet-muted);
+  font-size: 11px;
+}
+
+/* histogram */
+
+.ambsheet .histogram svg {
+  display: block;
+  width: 100%;
+  height: 96px;
+  margin-bottom: 2px;
+}
+
+.ambsheet .histogram .target {
+  fill: transparent;
+}
+
+.ambsheet .histogram .bar {
+  fill: var(--ambsheet-border);
+  pointer-events: none;
+}
+
+.ambsheet .histogram .bar.passing {
+  fill: var(--ambsheet-accent);
+}
+
+.ambsheet .stats {
+  width: 100%;
+  margin-top: var(--studio-space-sm, 0.5rem);
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ambsheet .stats th,
+.ambsheet .stats td {
+  padding: 1px 6px;
+  text-align: right;
+  font-weight: 400;
+}
+
+.ambsheet .stats thead th,
+.ambsheet .stats tbody th {
+  color: var(--ambsheet-muted);
+}
+
+.ambsheet .stats tbody th {
+  text-align: left;
+}
+
+.ambsheet .stats .passing {
+  background: var(--ambsheet-accent-softer);
+}
+
+.ambsheet .stats caption {
+  caption-side: bottom;
+  padding-top: 4px;
+  color: var(--ambsheet-muted);
+  font-size: 11px;
+  text-align: left;
+}
+
+/* table */
+
+.ambsheet .pivot-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 6px;
+  color: var(--ambsheet-muted);
+  font-size: 12px;
+}
+
+.ambsheet .pivot-controls select,
+.ambsheet .status select {
+  padding: 1px 2px;
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+  max-width: 130px;
+}
+
+.ambsheet .pivot-scroll {
+  overflow: auto;
+}
+
+.ambsheet .pivot table {
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.ambsheet .pivot th,
+.ambsheet .pivot td {
+  padding: 2px 8px;
+  border: 1px solid var(--ambsheet-border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ambsheet .pivot th {
+  background: var(--ambsheet-hover);
+  color: var(--ambsheet-muted);
+  font-weight: 500;
+}
+
+.ambsheet .pivot td {
+  background: var(--ambsheet-bg);
+}
+
+.ambsheet .pivot td[data-in] {
+  background: var(--ambsheet-accent-soft);
+}
+
+.ambsheet .pivot td[data-out] {
+  color: var(--ambsheet-faint);
+}
+
+/* line chart */
+
+.ambsheet .line-chart svg {
+  display: block;
+  width: 100%;
+  height: 150px;
+  overflow: visible;
+}
+
+.ambsheet .line-chart .frame {
+  fill: none;
+  stroke: var(--ambsheet-border);
+  vector-effect: non-scaling-stroke;
+}
+
+.ambsheet .line-chart polyline {
+  fill: none;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.ambsheet .line-chart .line {
+  /* one hue per series, fanned out from the theme's accent */
+  stroke: oklch(from var(--ambsheet-accent) l c calc(h + var(--series) * 47));
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.ambsheet .line-chart[data-many] .line {
+  stroke: var(--ambsheet-accent);
+  stroke-width: 1;
+  opacity: 0.3;
+}
+
+.ambsheet .line-chart .line[data-out] {
+  stroke: var(--ambsheet-border);
+  opacity: 1;
+}
+
+.ambsheet .line-chart .target {
+  stroke: transparent;
+  stroke-width: 10;
+  pointer-events: stroke;
+}
+
+.ambsheet .line-chart .axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ambsheet-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ambsheet .line-chart .legend {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.ambsheet .line-chart .legend div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ambsheet .line-chart .legend div[data-out] {
+  color: var(--ambsheet-faint);
+}
+
+.ambsheet .line-chart .legend i {
+  flex: none;
+  width: 14px;
+  height: 3px;
+  background: oklch(from var(--ambsheet-accent) l c calc(h + var(--series) * 47));
+}
+
+.ambsheet .line-chart .legend div[data-out] i {
+  background: var(--ambsheet-border);
+}
+
+/* shades */
+
+.ambsheet .shades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ambsheet .shade {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--ambsheet-muted);
+  background: color-mix(in oklch, var(--ambsheet-accent) var(--strength, 50%), var(--ambsheet-bg));
+}
+
+.ambsheet .shade[data-out] {
+  border-color: var(--ambsheet-border);
+  opacity: 0.45;
+}
+
+/* ---------- status bar ---------- */
+
+.ambsheet .status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-sm, 0.5rem);
+  padding: 4px var(--studio-space-sm, 0.5rem);
+  border-top: 1px solid var(--ambsheet-border);
+  background: var(--ambsheet-panel);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ambsheet .status .mode {
+  padding: 0 8px;
+  border-radius: var(--studio-radius-round, 9999px);
+  background: var(--ambsheet-hover);
+  font-weight: 600;
+}
+
+.ambsheet .status .mode[data-mode='montecarlo'] {
+  background: var(--ambsheet-accent-soft);
+}
+
+.ambsheet .status .summary {
+  font-variant-numeric: tabular-nums;
+}
+
+.ambsheet .status .matching {
+  color: var(--ambsheet-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.ambsheet .status .reason {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ambsheet-muted);
+}
+
+.ambsheet .status .progress {
+  width: 80px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ambsheet-border);
+  overflow: hidden;
+}
+
+.ambsheet .status .progress span {
+  display: block;
+  height: 100%;
+  background: var(--ambsheet-accent);
+}
+
+.ambsheet .status .controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.ambsheet .status button {
+  padding: 1px 8px;
+  border: 1px solid var(--ambsheet-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--ambsheet-bg);
+  cursor: pointer;
+}
+
+.ambsheet .status button:hover:not(:disabled) {
+  border-color: var(--ambsheet-accent);
+}
+
+.ambsheet .status button:disabled {
+  color: var(--ambsheet-faint);
+  cursor: default;
+}
+
+.ambsheet .status .segmented {
+  display: flex;
+}
+
+.ambsheet .status .segmented button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.ambsheet .status .segmented button:first-child {
+  margin-left: 0;
+  border-radius: var(--studio-radius-sm, 4px) 0 0 var(--studio-radius-sm, 4px);
+}
+
+.ambsheet .status .segmented button:last-child {
+  border-radius: 0 var(--studio-radius-sm, 4px) var(--studio-radius-sm, 4px) 0;
+}
+
+.ambsheet .status .segmented button[data-on] {
+  background: var(--ambsheet-accent-soft);
+  border-color: var(--ambsheet-accent);
+  position: relative;
+}
