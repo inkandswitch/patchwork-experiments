@@ -29,7 +29,7 @@ describe("a finished case", () => {
   copyFileSync(fx("wake.vtk"), join(dir, "postProcessing/surfaces/264/wake.vtk"));
   writeFileSync(join(dir, "postProcessing/surfaces/100/wake.vtk"), "not this one");
   const info = prepareHull(boxTriangles()).info;
-  const g = caseGeometry(normalizeSetup({ speed: 6 * KNOT }), info);
+  const g = caseGeometry(normalizeSetup({ speed: { value: 6, unit: "kn" } }), info);
 
   it("reads the newest time", () => expect(latestTimeDir(join(dir, "postProcessing/surfaces"))).toMatch(/264$/));
   it("sums the figures", () => {

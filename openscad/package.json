@@ -37,6 +37,7 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.40.0",
     "@inkandswitch/patchwork-elements": "^0.0.5",
+    "@inkandswitch/patchwork-plugins": "^0.0.4",
     "@lezer/highlight": "^1.2.3",
     "codemirror": "^6.0.0",
     "fflate": "^0.8.3",

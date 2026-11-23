@@ -10,6 +10,7 @@ import {to3MF, toBinarySTL, type Model} from "../render/model"
 import {hasPatchworkDrop, parsePatchworkDrop, type PatchworkDropItem} from "../dnd"
 import {sanitizeIdentifier, uniqueIdentifier} from "../imports"
 import {createImportResolver} from "../importResolver"
+import {lastRunFrom, saveLastRun} from "../lastRun"
 
 const AUTO_RENDER_DELAY_MS = 700
 /** Longest the editor holds a render for imports that are still loading (as the scene host does). */
@@ -63,6 +64,10 @@ export function OpenscadEditor(props: {
 	})
 
 	let runId = 0
+	// What the last render was asked to draw: a change to the document that
+	// leaves it alone (the run being saved, a rename) doesn't render again.
+	let renderedInput = ""
+	const inputOf = (doc: OpenscadDoc | undefined) => JSON.stringify([doc?.source ?? "", doc?.imports ?? []])
 	async function renderNow() {
 		const id = ++runId
 		setStatus("rendering")
@@ -77,10 +82,16 @@ export function OpenscadEditor(props: {
 		}
 		const doc = props.handle.doc()
 		const source = doc?.source ?? ""
-		const importPayload = resolver.payload(doc?.imports ?? [])
+		const heads = [...((props.handle as any).heads?.() ?? [])] as string[]
+		renderedInput = inputOf(doc)
+		let importPayload: unknown = null
 		try {
-			const result = await renderScad(source, importPayload)
+			importPayload = await resolver.payload(doc?.imports ?? [])
+			const result = await renderScad(source, importPayload as any)
 			if (id !== runId) return
+			// The run goes in the document, so its console (echo() results above
+			// all) can be read by other tools without running OpenSCAD.
+			saveLastRun(props.handle, lastRunFrom({heads, source, imports: importPayload, ok: true, logs: result.logs, elapsedMillis: result.elapsedMillis}))
 			setModel(result.model)
 			props.hosted?.onModel(result.model)
 			setLogs(result.logs)
@@ -90,6 +101,7 @@ export function OpenscadEditor(props: {
 		} catch (err) {
 			if (id !== runId) return
 			const message = err instanceof RenderError ? err.message : String((err as Error)?.message ?? err)
+			saveLastRun(props.handle, lastRunFrom({heads, source, imports: importPayload, ok: false, logs: message.split("\n")}))
 			setLogs(message.split("\n"))
 			setStatus("error")
 			props.hosted?.onModel(null)
@@ -111,6 +123,7 @@ export function OpenscadEditor(props: {
 		const doc = props.handle.doc()
 		setImports(doc?.imports ?? [])
 		resolver.sync(doc?.imports ?? [])
+		if (inputOf(doc) === renderedInput) return
 		scheduleRender()
 	}
 
@@ -286,7 +299,7 @@ export function OpenscadEditor(props: {
 								<button
 									class="openscad-import-name"
 									onClick={() => startRename(imp)}
-									title={`Bound as import("imports/${imp.name}.json"). Source: ${imp.label ?? imp.docUrl}. Click to rename.`}
+									title={`Data: import("imports/${imp.name}.json"); OpenSCAD source, if it has some: include <${imp.name}.scad>. From: ${imp.label ?? imp.docUrl}. Click to rename.`}
 								>
 									{imp.name}
 								</button>

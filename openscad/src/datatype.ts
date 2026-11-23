@@ -49,4 +49,18 @@ export const OpenscadDatatype = {
 	markCopy(doc: OpenscadDoc) {
 		doc.title = `Copy of ${OpenscadDatatype.getTitle(doc)}`
 	},
+
+	/**
+	 * The document as source another tool can include: its OpenSCAD text for
+	 * "scad", nothing for any other format. This is what lets one OpenSCAD
+	 * document `include <name.scad>` or `use <name.scad>` another linked into
+	 * its imports, as a library of modules (see linkedSources.ts).
+	 */
+	asSource(doc: OpenscadDoc, format: string): string | null {
+		if (format !== "scad") return null
+		const source = doc?.source as unknown
+		if (typeof source === "string") return source
+		const val = (source as {val?: unknown} | null)?.val
+		return typeof val === "string" ? val : null
+	},
 }

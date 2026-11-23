@@ -1,8 +1,9 @@
 // Plugin metadata only. This module is evaluated in a worker and each entry is
 // structuredClone'd, so: no functions except load(), and no imports but
-// scene-params.js (plain data, itself import-free).
+// scene-params.js and agent-meta.js (plain data, themselves import-free).
 
 import { SCENE_PARAMS } from "./scene-params.js";
+import { AGENT_TOOLS } from "./agent-meta.js";
 
 /**
  * Bump when the scene build makes different output from the same run and params.
@@ -96,4 +97,6 @@ export const plugins = [
       return (await import("./scene-source.js")).default;
     },
   },
+  // the same case, for an agent: make, set up, run, read results, stop (src/agent-tools.js)
+  ...AGENT_TOOLS,
 ];

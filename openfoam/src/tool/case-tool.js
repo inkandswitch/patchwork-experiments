@@ -2,20 +2,17 @@
 // send it to a daemon, watch it run, and read what it found.
 
 import css from "./styles.css?inline";
-import { normalizeSetup, MODE_LABELS, MESH_PRESETS, DEFAULT_ITERATIONS, KNOT, waterProperties, froude, reynolds, frictionEstimate, waveLength, estimateCells, estimateSeconds, formatDuration, formatSpeed, domainForHull } from "../setup.js";
-import { newRun, enqueue, daemonOnline, queueView, isTerminal, SERVER_TYPE } from "../protocol.js";
-import { acquireHull, pathLabel } from "../hull/acquire.js";
-import { prepareHull, sinkageForVolume } from "../hull/prepare.js";
-import { partsOf, waterPlanes, defaultParts, hullTriangles } from "../hull/parts.js";
-import { makeStash, fromStash, stashCovers } from "../hull/stash.js";
-import { findWhenThere } from "../find.js";
-import { putBytes, externalize, internalize, isRef, SEGMENT_BYTES } from "../segments.js";
+import { normalizeSetup, patchSetup, writeSetup, setupProblems, speedIn, MODE_LABELS, MESH_PRESETS, KNOT, formatDuration, formatSpeed } from "../setup.js";
+import { daemonOnline, queueView, isTerminal, SERVER_TYPE } from "../protocol.js";
+import { pathLabel } from "../hull/acquire.js";
+import { stashCovers } from "../hull/stash.js";
+import { readHull, hullModel, prepareModel, partShells, floatAt, keepDisplacement, writeAttitude, keepHull as keepHullDoc, runBlocker, queueRuns, queueRerun, sinkageMeaning, preflight } from "../case-model.js";
 import { renderKey } from "../render-read.js";
 import { hasPatchworkDrop, parsePatchworkDrop, parseAutomergeUrl } from "../dnd.js";
 import { drawHull } from "./fields.js";
 import { mountRunView, fmtN, fmtW } from "./run-view.js";
 import { lineChart, seriesColors } from "./charts.js";
-import { geometryDigest, variantKey, variantLetters, setupFromRun } from "../inputs.js";
+import { variantKey, variantLetters, setupFromRun } from "../inputs.js";
 import { version as TOOL_VERSION } from "../../package.json";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -82,7 +79,7 @@ export default function CaseTool(handle, element) {
             <fieldset>
               <legend>Flow</legend>
               <label class="field"><span>Analysis</span><select data-k="mode">${Object.entries(MODE_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>
-              <label class="field"><span>Speed</span><span class="pair"><input type="number" step="0.1" min="0" data-k="speed"><select data-k="speedUnit"><option value="kn">kn</option><option value="m/s">m/s</option></select></span></label>
+              <label class="field"><span>Speed</span><span class="pair"><input type="number" step="0.1" min="0" data-k="speed"><select data-k="speed-unit"><option value="kn">kn</option><option value="m/s">m/s</option></select></span></label>
               <label class="field"><span>Water</span><span class="pair"><select data-k="water"><option value="salt">Seawater</option><option value="fresh">Fresh</option></select><input type="number" step="1" min="0" max="30" data-k="temperature" title="°C"></span></label>
             </fieldset>
             <fieldset>
@@ -95,6 +92,7 @@ export default function CaseTool(handle, element) {
               <label class="field"><span>Cores</span><input type="number" step="1" min="0" data-k="cores" title="0: the daemon decides"></label>
               <label class="field"><span>Keep volume</span><input type="checkbox" data-k="keepVolume" title="Every cell's flow (the mesh and the last fields), kept in docs after the run so it can be explored: about 200 bytes a cell, so hundreds of MB for a medium mesh"></label>
             </fieldset>
+            <div class="setup-problems warn" hidden></div>
             <fieldset>
               <legend>Server</legend>
               <div class="server-box"></div>
@@ -144,15 +142,7 @@ export default function CaseTool(handle, element) {
   root.querySelectorAll(".case-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   // a double-body run's predicted running attitude, as the setup of a free-surface run
   const useAttitude = (attitude) =>
-      handle.change((d) => {
-        if (!d.setup) d.setup = setup();
-        d.setup.attitude = { sinkage: +attitude.sinkage.toFixed(4), trim: +attitude.trim.toFixed(3) };
-        if (d.setup.mode !== "free-surface") {
-          const s = normalizeSetup(d.setup);
-          d.setup.mode = "free-surface";
-          d.setup.iterations = DEFAULT_ITERATIONS["free-surface"][s.mesh];
-        }
-      });
+      handle.change((d) => writeSetup(d, patchSetup(d.setup, { mode: "free-surface", attitude: { sinkage: +attitude.sinkage.toFixed(4), trim: +attitude.trim.toFixed(3) } }).setup));
   // the run going now (stages, convergence, stop), and the finished run being read
   const variantOf = (run) => (run ? (variants.get(variantKey(run)) ?? null) : null);
   const liveView = mountRunView($(".live-host"), { repo, showTitle: true, variant: variantOf });
@@ -194,7 +184,8 @@ export default function CaseTool(handle, element) {
   title.addEventListener("change", () => handle.change((d) => (d.title = title.value)));
   const fieldValue = (k, s) => {
     if (k === "sinkage" || k === "trim" || k === "heel") return s.attitude[k];
-    if (k === "speed") return s.speedUnit === "kn" ? +(s.speed / KNOT).toFixed(3) : +s.speed.toFixed(3);
+    if (k === "speed") return +s.speed.value.toFixed(3);
+    if (k === "speed-unit") return s.speed.unit;
     if (k === "warmStart") return s.warmStart ?? "";
     return s[k];
   };
@@ -205,26 +196,29 @@ export default function CaseTool(handle, element) {
       if (input.type === "number" && !Number.isFinite(raw)) return;
       handle.change((d) => {
         const s = normalizeSetup(d.setup);
-        if (!d.setup) d.setup = s;
-        if (k === "sinkage" || k === "trim" || k === "heel") {
-          if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0, heel: 0 };
-          d.setup.attitude[k] = raw;
-        } else if (k === "speed") d.setup.speed = s.speedUnit === "kn" ? raw * KNOT : raw;
-        else if (k === "warmStart") d.setup.warmStart = raw || null;
-        else if (k === "mode" || k === "mesh") {
-          // the two modes need iterations an order of magnitude apart, so a new
-          // mode always takes its default; a new mesh keeps a count someone chose
-          const wasDefault = Object.values(DEFAULT_ITERATIONS[s.mode]).includes(s.iterations);
-          d.setup[k] = raw;
-          const next = normalizeSetup({ ...s, [k]: raw });
-          if (k === "mode" || wasDefault) d.setup.iterations = DEFAULT_ITERATIONS[next.mode][next.mesh];
-        } else d.setup[k] = raw;
+        // the speed is typed in its unit; a new unit converts it, so the boat's speed stays what it was
+        const patch =
+          k === "sinkage" || k === "trim" || k === "heel"
+            ? { attitude: { [k]: raw } }
+            : k === "speed"
+              ? { speed: { value: raw, unit: s.speed.unit } }
+              : k === "speed-unit"
+                ? { speed: speedIn(s.speed, raw) }
+                : k === "warmStart"
+                  ? { warmStart: raw || null }
+                  : { [k]: raw };
+        writeSetup(d, patchSetup(s, patch).setup);
       });
     });
   });
   function syncForm() {
     const d = doc();
     const s = setup();
+    // what the doc's setup holds that doesn't read as written (a hand edit, a bare-number speed)
+    const problems = setupProblems(d?.setup);
+    const pbox = $(".setup-problems");
+    pbox.hidden = !problems.length;
+    pbox.textContent = problems.length ? `The setup as stored: ${problems.join("; ")}. Changing a field here writes it as shown.` : "";
     if (document.activeElement !== title) title.value = d.title ?? "";
     root.querySelectorAll("[data-k]").forEach((input) => {
       if (document.activeElement === input) return;
@@ -289,22 +283,9 @@ export default function CaseTool(handle, element) {
         }
         hull.loading = true;
         renderHull();
-        // the hull kept with the case, when it has one and it holds the parts wanted
-        let r = null;
-        const stashUrl = doc()?.hull?.stash;
-        if (stashUrl && !acq.fromSource) {
-          try {
-            r = fromStash(await internalize(repo, (await findWhenThere(repo, stashUrl, { tries: 4 })).doc()));
-          } catch {
-            r = null;
-          }
-          if (r) {
-            r.stashUrl = stashUrl;
-            if (!stashCovers(r.kept, wantedParts(r))) r = null; // parts it doesn't hold: read the original
-          }
-        }
-        const fromStashDoc = !!r;
-        if (!r) r = await acquireHull(repo, url).catch((err) => ({ ok: false, error: String(err?.message ?? err) }));
+        // the hull kept with the case, when it has one and it holds the parts wanted; else the original
+        const r = await readHull(repo, doc()?.hull, { fromSource: acq.fromSource });
+        const fromStashDoc = r.path === "stash";
         if (disposed) return;
         if (doc()?.hull?.url !== url) {
           acq.again = true;
@@ -323,37 +304,18 @@ export default function CaseTool(handle, element) {
       acq.running = false;
     }
   }
-  /** The parts the case wants from a read model: its choice, else the default. */
-  function wantedParts(r) {
-    const chosen = doc()?.hull?.parts;
-    if (Array.isArray(chosen)) return chosen;
-    const parts = r.parts ?? partsOf(r.triangles, r.ranges ?? []);
-    const water = waterPlanes(parts)[0] ?? null;
-    return defaultParts(parts, water ? water.min[2] : 0);
-  }
-
   /** Keep the chosen parts of a model just read from its original with the case. */
   let keepNote = null;
   async function keepHull(r, url) {
-    const m = model();
-    const stash = makeStash({
-      triangles: r.triangles,
-      ranges: m.ranges,
-      parts: m.parts,
-      chosen: m.names,
-      source: { url, heads: r.heads ?? null, path: r.path, providerId: r.providerId ?? null, providerName: r.providerName ?? null, title: r.title },
-      now: Date.now(),
-    });
-    if (!stash) {
+    const stashUrl = await keepHullDoc(repo, r, model(), url);
+    if (!stashUrl) {
       keepNote = "the hull is too big to keep with the case: it's read from the model each time";
       renderHull();
       return;
     }
-    // a big hull's triangles go in segment docs (src/segments.js)
-    const h = await repo.create2((await externalize(repo, stash, { title: stash.title })).value);
     if (disposed) return;
     handle.change((d) => {
-      if (d.hull?.url === url) d.hull.stash = h.url;
+      if (d.hull?.url === url) d.hull.stash = stashUrl;
     });
     keepNote = null;
   }
@@ -410,17 +372,7 @@ export default function CaseTool(handle, element) {
    * reaching the waterline), the water plane if it draws one (its z is the
    * waterline), and which way its bow points.
    */
-  function model() {
-    const r = hull.result;
-    const ranges = r?.ranges?.length ? r.ranges : [{ name: "hull", from: 0, to: (r?.triangles?.length ?? 0) / 9 }];
-    const parts = r?.parts ?? r?.partsCache ?? (r ? (r.partsCache = partsOf(r.triangles, ranges)) : []);
-    const water = waterPlanes(parts)[0] ?? null;
-    const waterZ = water ? water.min[2] : 0;
-    const chosen = doc()?.hull?.parts;
-    const names = Array.isArray(chosen) ? chosen.filter((n) => parts.some((p) => p.name === n)) : defaultParts(parts, waterZ);
-    const bow = doc()?.hull?.bow === "-x" ? "-x" : "+x";
-    return { ranges, parts, water, names, frame: { bow, waterZ } };
-  }
+  const model = () => hullModel(hull.result, doc()?.hull);
 
   let prepTimer = null;
   function prepare() {
@@ -443,8 +395,7 @@ export default function CaseTool(handle, element) {
       const key = JSON.stringify([s.attitude, m.names, m.frame]);
       if (prepared?.attitudeKey === key && prepared.result === r) return renderHull();
       try {
-        if (!m.names.length) throw new Error("no parts chosen for the hull");
-        prepared = { ...prepareHull(hullTriangles(r.triangles, m.ranges, m.names, m.frame), s.attitude), attitudeKey: key, result: r, model: m };
+        prepared = { ...prepareModel(r, m, s.attitude), attitudeKey: key, result: r };
       } catch (err) {
         prepared = { error: String(err?.message ?? err), attitudeKey: key, result: r };
       }
@@ -454,33 +405,23 @@ export default function CaseTool(handle, element) {
 
   $(".keep-displacement").addEventListener("click", () => {
     if (!hull.result?.ok) return;
-    const s = setup();
-    const md = model();
-    const tris = hullTriangles(hull.result.triangles, md.ranges, md.names, md.frame);
     // what it displaces upright at this sinkage and trim, then the sinkage that displaces that heeled
-    const upright = prepareHull(tris, { ...s.attitude, heel: 0 }).info.volume;
-    const sink = sinkageForVolume(tris, upright, { trim: s.attitude.trim, heel: s.attitude.heel });
+    const sink = keepDisplacement(hull.result, model(), setup().attitude);
     $(".float-why").textContent = sink == null ? "the hull can't displace its upright volume at this heel" : "";
-    if (sink == null) return;
-    handle.change((d) => {
-      if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0, heel: 0 };
-      d.setup.attitude.sinkage = +sink.toFixed(4);
-    });
+    if (sink != null) handle.change((d) => writeAttitude(d, { sinkage: sink }));
   });
 
+  // floats at the trim and heel above: set those first (or after: then float again)
   $(".float-go").addEventListener("click", () => {
     const m = Number($(".float-mass").value) * ($(".float-unit").value === "t" ? 1000 : 1);
     if (!(m > 0) || !hull.result?.ok) return;
     const s = setup();
-    const { rho } = waterProperties(s.water, s.temperature);
-    const md = model();
-    const sink = sinkageForVolume(hullTriangles(hull.result.triangles, md.ranges, md.names, md.frame), m / rho, { trim: s.attitude.trim, heel: s.attitude.heel });
-    $(".float-why").textContent = sink == null ? `the whole hull displaces less than ${(m / 1000).toFixed(2)} t` : "";
-    if (sink == null) return;
-    handle.change((d) => {
-      if (!d.setup.attitude) d.setup.attitude = { sinkage: 0, trim: 0, heel: 0 };
-      d.setup.attitude.sinkage = +sink.toFixed(4);
-    });
+    const f = floatAt(hull.result, model(), { mass: m, water: s.water, temperature: s.temperature, trim: s.attitude.trim, heel: s.attitude.heel });
+    $(".float-why").textContent =
+      f == null
+        ? `the whole hull displaces less than ${(m / 1000).toFixed(2)} t`
+        : `${m.toLocaleString("en")} kg floats at sinkage ${f.sinkage.toFixed(4)} m with trim ${s.attitude.trim}° and heel ${s.attitude.heel}°: change either and float again`;
+    if (f) handle.change((d) => writeAttitude(d, { sinkage: f.sinkage }));
   });
 
   function renderHull() {
@@ -521,15 +462,24 @@ export default function CaseTool(handle, element) {
     const m = model();
     if (m.parts.length < 2) return void (box.innerHTML = "");
     const chosen = new Set(m.names);
-    const key = JSON.stringify([m.parts.map((p) => p.name), [...chosen], m.water?.name]);
+    // whether each part is a closed shell costs a weld a part: only once the list is opened
+    const open = box.dataset.open === "1" || (box.dataset.open !== "0" && Array.isArray(doc()?.hull?.parts));
+    const shells = open ? partShells(r, m) : {};
+    const key = JSON.stringify([m.parts.map((p) => p.name), [...chosen], m.water?.name, open, r.path]);
     if (box.dataset.key === key) return;
     box.dataset.key = key;
     const tag = (p) => (p === m.water ? `water plane: the waterline (z = ${m.frame.waterZ.toFixed(3)} m)` : p.min[2] <= m.frame.waterZ ? "meets the water" : "above the water");
-    box.innerHTML = `<details ${Array.isArray(doc()?.hull?.parts) ? "open" : ""}><summary class="hint">Hull: ${chosen.size} of ${m.parts.length} parts${m.water ? `; waterline from “${esc(m.water.name)}”` : ""}</summary>
+    const size = (p) => `${p.min.map((v, k) => (p.max[k] - v).toFixed(2)).join(" × ")} m`;
+    const shell = (p) => {
+      const v = shells[p.name];
+      if (!v || p === m.water) return "";
+      return v.checked ? ` · ${v.closed ? "closed" : `${v.openEdges.toLocaleString("en")} open edges`}` : "";
+    };
+    box.innerHTML = `<details ${open ? "open" : ""}><summary class="hint">Hull: ${chosen.size} of ${m.parts.length} parts${m.water ? `; waterline from “${esc(m.water.name)}”` : ""}</summary>
       ${m.parts
         .map(
           (p) => `<label class="part" style="display:flex;gap:6px;align-items:baseline"><input type="checkbox" data-part="${esc(p.name)}" ${chosen.has(p.name) ? "checked" : ""} ${p === m.water ? "disabled" : ""}>
-          <span>${esc(p.name)}</span><span class="hint">${p.triangles.toLocaleString("en")} triangles · ${tag(p)}</span></label>`,
+          <span>${esc(p.name)}</span><span class="hint" title="x from ${p.min[0].toFixed(3)} to ${p.max[0].toFixed(3)}, y ${p.min[1].toFixed(3)} to ${p.max[1].toFixed(3)}, z ${p.min[2].toFixed(3)} to ${p.max[2].toFixed(3)} m, in the model's frame">${p.triangles.toLocaleString("en")} triangles · ${size(p)} · ${tag(p)}${shell(p)}</span></label>`,
         )
         .join("")}
       ${Array.isArray(doc()?.hull?.parts) ? `<button class="parts-reset">Back to what meets the water</button>` : ""}</details>`;
@@ -539,12 +489,16 @@ export default function CaseTool(handle, element) {
         handle.change((d) => d.hull && (d.hull.parts = names));
       }),
     );
+    box.querySelector("details").addEventListener("toggle", (e) => {
+      const now = e.target.open ? "1" : "0";
+      if (box.dataset.open === now) return;
+      box.dataset.open = now;
+      renderParts();
+    });
     box.querySelector(".parts-reset")?.addEventListener("click", () => handle.change((d) => d.hull && delete d.hull.parts));
   }
 
   // ------------------------------------------------------------ the model's figures, and what a run will cost
-  // measured: the mesh and last fields of double-body runs, 200 B/cell (154k cells) to 210 (1.08M)
-  const VOLUME_BYTES_PER_CELL = 205;
   const row = (k, v, how = "") => `<tr><td>${k}</td><td>${v}</td><td class="method">${how}</td></tr>`;
   function renderPreflight() {
     const box = $(".model-figures");
@@ -568,9 +522,8 @@ export default function CaseTool(handle, element) {
       canvas.__drawn = prepared;
       canvas.__drawKey = drawKey;
     }
-    const { rho, nu, source } = waterProperties(s.water, s.temperature);
-    const L = i.lwl > 0 ? i.lwl : i.loa;
-    const V = s.speed;
+    const pf = preflight(s, i, server.handle?.doc());
+    const { rho, nu, L, cells, cores, upTo, dom } = pf;
     const a = s.attitude;
     const floated = [a.sinkage && `sunk ${a.sinkage.toFixed(3)} m`, a.trim && `trimmed ${Math.abs(a.trim)}° ${a.trim > 0 ? "bow down" : "bow up"}`, a.heel && `heeled ${Math.abs(a.heel)}° to ${a.heel > 0 ? "starboard" : "port"}`].filter(Boolean);
     box.innerHTML = `
@@ -581,26 +534,22 @@ export default function CaseTool(handle, element) {
         ${row("Displacement", `${((i.volume * rho) / 1000).toFixed(2)} t`, `${i.volume.toFixed(3)} m³ of ${s.water === "fresh" ? "fresh water" : "seawater"} at ${s.temperature} °C`)}
         ${row("Wetted area", `${i.wettedArea.toFixed(2)} m²`, "at rest")}
       </table>
-      <div class="hint">${floated.length ? `Floating as the run setup has it: ${floated.join(", ")}.` : "Floating as drawn: the run setup can sink, trim and heel it."}</div>`;
+      <div class="hint">${floated.length ? `Floating as the run setup has it: ${floated.join(", ")}.` : "Floating as drawn: the run setup can sink, trim and heel it."}</div>
+      <div class="hint">${esc(sinkageMeaning(i.attitude.pivotX).replace(/^s/, "S"))}.</div>`;
     $(".model-sum").textContent = `${hull.result?.title ?? ""} · ${L.toFixed(2)} m on the waterline · ${((i.volume * rho) / 1000).toFixed(2)} t`;
 
-    const fr = frictionEstimate({ V, S: i.wettedArea, L, rho, nu });
-    const pv = domainForHull(s, i);
-    const cells = estimateCells(pv.dom, i.wettedArea);
-    const sv = server.handle?.doc();
-    const cores = s.cores || sv?.daemon?.cores || 8;
-    const secs = estimateSeconds(s, cells, cores);
-    const upTo = s.stop === "settled" || s.mode === "double-body";
+    const fr = pf.friction;
+    const secs = pf.seconds;
     est.innerHTML = `
       <table class="figures">
-        ${row("Froude number", froude(V, L).toFixed(3), `${formatSpeed(V, s.speedUnit)} on the waterline length`)}
-        ${row("Reynolds number", reynolds(V, L, nu).toExponential(2), `ν = ${nu.toExponential(3)} m²/s (${source})`)}
+        ${row("Froude number", pf.Fn.toFixed(3), `${formatSpeed(s.speed)} on the waterline length`)}
+        ${row("Reynolds number", pf.Re.toExponential(2), `ν = ${nu.toExponential(3)} m²/s (${pf.water})`)}
         ${row("Friction alone", fmtN(fr.R), `ITTC-57 C<sub>F</sub> = ${(fr.Cf * 1000).toFixed(3)}×10⁻³ on the wetted area: the floor the CFD's total should sit above`)}
-        ${s.mode === "free-surface" ? row("Wavelength at this speed", `${waveLength(V).toFixed(2)} m`, `${pv.dom.freeSurface ? `${pv.dom.freeSurface.cellsPerWave.toFixed(0)} cells a wave near the hull` : ""}`) : ""}
+        ${s.mode === "free-surface" ? row("Wavelength at this speed", `${pf.lambda.toFixed(2)} m`, `${dom.freeSurface ? `${dom.freeSurface.cellsPerWave.toFixed(0)} cells a wave near the hull` : ""}`) : ""}
         ${row(
           "Domain",
-          pv.half ? "half (y ≤ 0)" : "full",
-          pv.half
+          pf.half ? "half (y ≤ 0)" : "full",
+          pf.half
             ? "the hull is symmetric, so a symmetry plane halves the cost"
             : Math.abs(a.heel) > 1e-9
               ? `heeled ${Math.abs(a.heel)}° to ${a.heel > 0 ? "starboard" : "port"}: no symmetry plane${s.domain === "half" ? " (a half model can't be heeled)" : ""}`
@@ -610,14 +559,14 @@ export default function CaseTool(handle, element) {
         )}
         ${row("Cells", `≈ ${Math.round(cells / 1000)}k`, `${s.mesh} preset; checkMesh gives the real count (to within a factor of two or so)`)}
         ${row("Time", `${upTo ? "at most " : ""}≈ ${formatDuration(secs)}`, `on ${cores} cores, ${s.iterations} iterations${upTo ? "; it stops sooner once the resistance settles" : ""}`)}
-        ${s.keepVolume ? row("Flow volume", `≈ ${Math.max(1, Math.round((cells * VOLUME_BYTES_PER_CELL) / 1048576))} MB`, "kept after the run, about 200 bytes a cell; fetching it ran at about 1 MB/s (2026-11)") : ""}
+        ${s.keepVolume ? row("Flow volume", `≈ ${Math.max(1, Math.round(pf.volumeBytes / 1048576))} MB`, "kept after the run, about 200 bytes a cell; fetching it ran at about 1 MB/s (2026-11)") : ""}
       </table>`;
     renderSetupSum(`${upTo ? "up to " : ""}≈ ${formatDuration(secs)}`);
   }
   function renderSetupSum(time) {
     const s = setup();
     const heel = s.attitude.heel ? `, ${Math.abs(s.attitude.heel)}° heel` : "";
-    $(".setup-sum").textContent = `${MODE_LABELS[s.mode]} · ${formatSpeed(s.speed, s.speedUnit)}${heel} · ${s.mesh} mesh${time ? ` · ${time}` : ""}`;
+    $(".setup-sum").textContent = `${MODE_LABELS[s.mode]} · ${formatSpeed(s.speed)}${heel} · ${s.mesh} mesh${time ? ` · ${time}` : ""}`;
   }
 
   // ------------------------------------------------------------ server
@@ -674,75 +623,30 @@ export default function CaseTool(handle, element) {
   }
 
   // ------------------------------------------------------------ run
-  function whyNot() {
-    if (!doc()?.hull?.url) return "Link a hull first.";
-    if (!hull.result?.ok) return hull.loading ? "Loading the hull…" : "The hull can't be read here.";
-    if (!prepared?.info) return "Measuring the hull…";
-    if (!prepared.info.pierces) return "The hull doesn't cross the waterline: set its sinkage.";
-    if (!server.url) return "Choose a server.";
-    if (server.error) return server.error;
-    if (!server.handle) return "Loading the server…";
-    return null;
-  }
+  const whyNot = () =>
+    runBlocker({ hullUrl: doc()?.hull?.url, result: hull.result, loading: hull.loading, prepared, serverUrl: server.url, serverDoc: server.handle?.doc() ?? null, serverError: server.error });
   function renderRunButton() {
     const why = whyNot();
     $(".run").disabled = !!why;
     $(".run-sweep").disabled = !!why;
     const s = setup();
-    $(".run").textContent = `Run at ${formatSpeed(s.speed, s.speedUnit)}`;
+    $(".run").textContent = `Run at ${formatSpeed(s.speed)}`;
+    $(".sweep").placeholder = `speeds in ${s.speed.unit}, e.g. 4, 5, 6, 7`;
     $(".run-why").textContent = why ?? (server.handle && !daemonOnline(server.handle.doc(), Date.now()) ? "The daemon is offline: the run will wait for it." : "");
   }
   async function runAt(speeds) {
     if (whyNot()) return;
     const by = await whoAmI(repo);
-    const d = doc();
-    const p = prepared;
-    const r = hull.result;
-    // the hull's geometry before it's floated: which variation of the model this is (src/inputs.js)
-    const tris = hullTriangles(r.triangles, p.model.ranges, p.model.names, p.model.frame);
-    const geometry = { digest: await geometryDigest(tris), triangles: tris.length / 9 };
-    const heads = r.heads ?? r.stash?.source?.heads ?? null;
     showTab("runs");
-    // a big STL goes in segment docs, once for the whole sweep (src/segments.js)
-    const stl = p.stl.byteLength > SEGMENT_BYTES / 2 ? (await putBytes(repo, p.stl, { title: `${r.title} · hull.stl` })).ref : p.stl;
-    for (const speed of speeds) {
-      const s = normalizeSetup({ ...setup(), speed });
-      const run = newRun({
-        caseUrl: handle.url,
-        serverUrl: server.url,
-        setup: s,
-        hull: {
-          stl,
-          info: JSON.parse(JSON.stringify(p.info)),
-          warnings: [...p.warnings],
-          source: {
-            url: d.hull.url,
-            heads: Array.isArray(heads) ? [...heads].map(String).sort() : null,
-            path: r.path,
-            title: r.title,
-            providerId: r.providerId ?? null,
-            providerName: r.providerName ?? null,
-            parts: [...p.model.names],
-            stash: r.stashUrl ?? null,
-          },
-          // how the analysis frame sits in the model's (the scene draws results back in the model's)
-          frame: { ...p.model.frame },
-          geometry,
-        },
-        by,
-        now: Date.now(),
-        made: { tool: "openfoam", version: TOOL_VERSION },
-      });
-      const suggested = d["@patchwork"]?.suggestedImportUrl;
-      if (suggested) run["@patchwork"].suggestedImportUrl = suggested;
-      const rh = await repo.create2(run);
-      handle.change((x) => {
-        if (!Array.isArray(x.runs)) x.runs = [];
-        x.runs.push(rh.url);
-        x.selected = rh.url;
-      });
-      server.handle.change((x) => enqueue(x, rh.url, { now: Date.now(), by }));
-    }
+    await queueRuns(repo, {
+      caseHandle: handle,
+      serverHandle: server.handle,
+      result: hull.result,
+      prepared,
+      setups: speeds.map((speed) => ({ ...setup(), speed })),
+      by,
+      made: { tool: "openfoam", version: TOOL_VERSION },
+    });
   }
   $(".run").addEventListener("click", () => runAt([setup().speed]));
 
@@ -765,23 +669,12 @@ export default function CaseTool(handle, element) {
   async function rerun(run) {
     if (!server.handle || server.error) return;
     const by = await whoAmI(repo);
-    const copy = JSON.parse(JSON.stringify({ setup: run.setup, hull: { ...run.hull, stl: null } }));
-    // segments never change, so a ref is copied as it is
-    copy.hull.stl = isRef(run.hull.stl) ? JSON.parse(JSON.stringify(run.hull.stl)) : new Uint8Array(run.hull.stl);
-    const rh = await repo.create2(
-      newRun({ caseUrl: handle.url, serverUrl: server.url, setup: copy.setup, hull: copy.hull, by, now: Date.now(), title: `${run.title} (again)`, made: { tool: "openfoam", version: TOOL_VERSION } }),
-    );
-    handle.change((x) => {
-      if (!Array.isArray(x.runs)) x.runs = [];
-      x.runs.push(rh.url);
-      x.selected = rh.url;
-    });
-    server.handle.change((x) => enqueue(x, rh.url, { now: Date.now(), by }));
+    await queueRerun(repo, { caseHandle: handle, serverHandle: server.handle, run, by, made: { tool: "openfoam", version: TOOL_VERSION } });
   }
   $(".run-sweep").addEventListener("click", () => {
-    const s = setup();
-    const k = s.speedUnit === "kn" ? KNOT : 1;
-    const speeds = $(".sweep").value.split(/[\s,;]+/).map(Number).filter((v) => v > 0).map((v) => v * k);
+    // the sweep's speeds are in the speed's unit, as the field beside it says
+    const unit = setup().speed.unit;
+    const speeds = $(".sweep").value.split(/[\s,;]+/).map(Number).filter((v) => v > 0).map((value) => normalizeSetup({ speed: { value, unit } }).speed);
     if (speeds.length) runAt(speeds);
   });
 

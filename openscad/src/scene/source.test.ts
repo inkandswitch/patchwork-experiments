@@ -4,6 +4,7 @@ import type {Mesh} from "three"
 import {parseGLB} from "./glb.js"
 import {zUpToYUpMeters} from "./axes"
 import {createOpenscadSource, dependencies, fingerprint, modelToGLB} from "./source"
+import {importInput} from "../linkedSources"
 import {createRenderCache} from "../render/engine"
 import type {Model, RGBA} from "../render/model"
 import type {OpenscadDoc} from "../types"
@@ -207,7 +208,7 @@ describe("the SourceImpl", () => {
 		const result = await impl.build({doc, params: {unit: "mm"}, repo})
 		expect(render).toHaveBeenCalledTimes(1)
 		expect(render.mock.calls[0][0]).toBe("cube(data.width);")
-		expect(render.mock.calls[0][1]).toEqual([
+		expect(render.mock.calls[0][1]).toMatchObject([
 			{name: "data", json: '{"width":3}'},
 			{name: "lost", json: "{}"},
 		])
@@ -255,8 +256,8 @@ describe("the SourceImpl", () => {
 		const impl = createOpenscadSource(async () => shared)
 		const repo = {find: async () => ({doc: () => ({w: 3})})}
 		const doc: OpenscadDoc = {source: "cube(data.w);", imports: [{name: "data", docUrl: url("a")}]}
-		// the editor binds imports the same way: docToJsonString of the doc
-		const editor = shared("cube(data.w);", [{name: "data", json: '{"w":3}'}])
+		// the editor builds its import inputs the same way (importInput)
+		const editor = importInput({name: "data"}, {w: 3}).then(input => shared("cube(data.w);", [input]))
 		const [, built] = await Promise.all([editor, impl.build({doc, repo})])
 		expect(render).toHaveBeenCalledTimes(1)
 		expect(built.kind).toBe("glb")

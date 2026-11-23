@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { unpackChunks } from "../src/protocol.js";
 import { settled, settledAt } from "../src/convergence.js";
 import { runningAttitude } from "../src/attitude.js";
+import { formatSpeed } from "../src/setup.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
@@ -95,7 +96,7 @@ for (const [arm, r] of Object.entries({ source, cold, attitude: attitudeArm, war
   const Rt = t.rows.map((x) => x[t.cols.indexOf("Rt")]);
   const at = settledAt(Rt);
   const wall = r.finishedAt && r.startedAt ? (r.finishedAt - r.startedAt) / 60000 : NaN;
-  rows.push({ arm, kn: +(r.setup.speed / (1852 / 3600)).toFixed(2), iterations: Rt.length, settledAt: at, stoppedBy: r.summary?.stoppedBy, Rt: +r.summary?.Rt?.toFixed(1), now: settled(Rt).why, minutes: +wall.toFixed(1) });
+  rows.push({ arm, speed: formatSpeed(r.setup.speed), iterations: Rt.length, settledAt: at, stoppedBy: r.summary?.stoppedBy, Rt: +r.summary?.Rt?.toFixed(1), now: settled(Rt).why, minutes: +wall.toFixed(1) });
 }
 console.table(rows);
 writeFileSync(join(OUT, "report.json"), JSON.stringify(rows, null, 2));

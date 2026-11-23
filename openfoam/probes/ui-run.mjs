@@ -63,7 +63,7 @@ try {
   check("the open transom is reported closed", /closed 1 opening/.test(await P("hullWarn()")), await P("hullWarn()"));
   check("the server shows online with its cores", /online/.test(await P("server()")) && /8 cores/.test(await P("server()")), await P("server()"));
   const rb = await P("runButton()");
-  check("Run is enabled and names the speed", rb.disabled === false && /6\.00 kn/.test(rb.text), rb);
+  check("Run is enabled and names the speed", rb.disabled === false && /6 kn/.test(rb.text), rb);
   const ph = await P("phases()");
   report.phases = ph;
   const tb = await P("tabs()");
@@ -71,7 +71,7 @@ try {
   check(
     "Model setup holds the model and the run setup, each summed up in a line; Runs holds running and results",
     ph.map((x) => `${x.tab}:${x.phase}`).join() === "setup:model,setup:setup,runs:running,runs:results" &&
-      ph[0].shown && ph[1].shown && !ph[3].shown && /narrow-transom/.test(ph[0].sum) && /9\.91 m/.test(ph[0].sum) && /6\.00 kn/.test(ph[1].sum) && /none yet/.test(ph[3].sum),
+      ph[0].shown && ph[1].shown && !ph[3].shown && /narrow-transom/.test(ph[0].sum) && /9\.91 m/.test(ph[0].sum) && /6 kn/.test(ph[1].sum) && /none yet/.test(ph[3].sum),
     ph,
   );
   check("nothing going or finished: neither run view shows", !(await P(`runView("live")`)).shown && !(await P(`runView("result")`)).shown);

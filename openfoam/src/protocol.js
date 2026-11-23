@@ -21,6 +21,8 @@
 //                                          error, startedAt, finishedAt
 //   server    ← people: requests[id]      daemon: daemon, handled[id], active[id]
 
+import { formatSpeed } from "./setup.js";
+
 export const CASE_TYPE = "openfoam-case";
 export const RUN_TYPE = "openfoam-run";
 export const SERVER_TYPE = "openfoam-server";
@@ -122,10 +124,9 @@ export function newRun({ caseUrl, serverUrl, setup, hull, by = null, now, title,
 }
 
 export function runTitle(setup, hullTitle) {
-  const kn = (setup.speed / (1852 / 3600)).toFixed(1);
   const what = setup.mode === "free-surface" ? "free surface" : "double body";
   const heel = Math.abs(setup.attitude?.heel ?? 0) > 1e-9 ? ` · ${Math.abs(setup.attitude.heel)}° heel to ${setup.attitude.heel > 0 ? "starboard" : "port"}` : "";
-  return `${hullTitle ? `${hullTitle} · ` : ""}${kn} kn${heel} · ${what} · ${setup.mesh}`;
+  return `${hullTitle ? `${hullTitle} · ` : ""}${formatSpeed(setup.speed)}${heel} · ${what} · ${setup.mesh}`;
 }
 
 /** People: ask the daemon to stop. `finish` keeps what it has (writes now); otherwise it is killed. */

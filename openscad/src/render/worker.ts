@@ -7,6 +7,8 @@
 
 import {openscadArgs} from "./args"
 import {parseOFF, type Model} from "./model"
+import {explainMissingIncludes, sourceFiles, withBindings} from "./includes"
+import type {RenderImportInput as ImportInput} from "./engine"
 
 declare const self: DedicatedWorkerGlobalScope
 
@@ -22,12 +24,6 @@ export type EngineUrls = {
 	wasm: string
 }
 
-type ImportInput = {
-	/** valid OpenSCAD identifier, bound to `import("imports/<name>.json")` */
-	name: string
-	/** JSON text for that document's content */
-	json: string
-}
 
 type RenderRequest = {
 	id: number
@@ -115,19 +111,15 @@ async function render(
 	})
 
 	// Imported docs are written as JSON files and bound to a variable of the
-	// same name via a single generated line prepended to the source (so the
-	// offset is a constant +1, not +N, when at least one import is present).
-	// import() of a .json file returns its parsed data.
-	let finalSource = source
+	// same name by a line joined onto the source's first line (so line numbers
+	// stay exact). Linked docs with OpenSCAD source are also written where
+	// include <name.scad> / use <name.scad> find them, next to /input.scad.
 	if (imports.length > 0) {
 		instance.FS.mkdir("/imports")
-		const bindings: string[] = []
-		for (const imp of imports) {
-			instance.FS.writeFile(`/imports/${imp.name}.json`, imp.json)
-			bindings.push(`${imp.name} = import("imports/${imp.name}.json");`)
-		}
-		finalSource = `${bindings.join(" ")}\n${source}`
+		for (const imp of imports) instance.FS.writeFile(`/imports/${imp.name}.json`, imp.json)
+		for (const file of sourceFiles(imports)) instance.FS.writeFile(`/${file.path}`, file.text)
 	}
+	const finalSource = withBindings(source, imports)
 
 	instance.FS.writeFile("/input.scad", finalSource)
 
@@ -135,8 +127,12 @@ async function render(
 	try {
 		exitCode = instance.callMain(openscadArgs({input: "/input.scad", output: "/model.off"}))
 	} catch (e) {
-		throw new Error(`${(e as Error)?.message ?? e}\n${logs.join("\n")}`)
+		throw new Error([explainMissingIncludes(logs, imports), `${(e as Error)?.message ?? e}`, ...logs].filter(Boolean).join("\n"))
 	}
+	// OpenSCAD only warns about an include it can't find and carries on with
+	// every name undefined; say what to do instead of rendering that.
+	const missing = explainMissingIncludes(logs, imports)
+	if (missing) throw new Error([missing, ...logs].join("\n"))
 	if (exitCode !== 0) {
 		throw new Error(logs.join("\n") || `OpenSCAD exited with code ${exitCode}`)
 	}
