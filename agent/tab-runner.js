@@ -57,11 +57,12 @@ export function accountContext(account = globalThis.accountDocHandle) {
  */
 export async function startTabRunner(handle, { repo, subject = null, element = null, canRun = null, onToolset = null } = {}) {
   return ensureSharedRunner(handle.url, async (emit) => {
-    const { splice } = await hostImport("automerge").catch(() => ({ splice: null }))
+    const automerge = await hostImport("automerge").catch(() => null)
+    const splice = automerge?.splice ?? null
+    // The registry module, for plugin tools as ctx.plugins.
+    const plugins = await hostImport("plugins").catch(() => null)
     // Skills installed packages contribute (tools/skills.js packageSkills).
-    const skillRegistry = await hostImport("plugins")
-      .then((plugins) => plugins.getRegistry("patchwork:skill"))
-      .catch(() => null)
+    const skillRegistry = plugins?.getRegistry?.("patchwork:skill") ?? null
     const liveStore = handleStore(handle, splice)
     // How tools wake this session after their calls are over. It belongs to the
     // runner, not the view: a tool may be watching long after the view has gone.
@@ -79,6 +80,10 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       // never by this.
       sessionUrl: handle.url,
       splice,
+      // For plugin tools: the page's registry and its automerge, initialised
+      // (README, "Writing an agent tool").
+      plugins,
+      automerge,
       events,
       element,
       ...accountContext(),

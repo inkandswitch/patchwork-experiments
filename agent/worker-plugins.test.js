@@ -4,7 +4,7 @@
  * where it cannot, following re-registration.
  */
 import { describe, it, expect } from "vitest"
-import { createPluginCatalogue, importPluginHere } from "./worker-plugins.js"
+import { createPluginCatalogue, importPluginHere, createRegistryMirror } from "./worker-plugins.js"
 import { describePlugin, pluginDescriptions } from "./tools/index.js"
 
 const entry = (id, more = {}) => ({ id, name: id, description: `${id}.`, where: "worker", risk: "read", importUrl: `https://p.example/${id}@1/index.js`, ...more })
@@ -139,5 +139,72 @@ describe("what the page hands the worker", () => {
     expect(loaded).toBe(0)
     // Outside Patchwork there is no registry: no plugins.
     expect(await pluginDescriptions()).toEqual([])
+  })
+})
+
+/** As much of @inkandswitch/patchwork-plugins as the mirror and a tool use. */
+function pluginsModule() {
+  const registries = new Map()
+  return {
+    getRegistry(type) {
+      if (!registries.has(type)) {
+        const entries = new Map()
+        registries.set(type, {
+          all: () => [...entries.values()],
+          has: (id) => entries.has(id),
+          register: (entry, importUrl) => entries.set(entry.id, { ...entry, importUrl }),
+          remove: (id) => entries.delete(id),
+          async load(id) {
+            const e = entries.get(id)
+            return e && { ...e, module: await e.load() }
+          },
+        })
+      }
+      return registries.get(type)
+    },
+  }
+}
+
+describe("the worker's registry, mirrored from the page's (ctx.plugins)", () => {
+  const index = (v = 1) => [
+    { type: "agent:tool", id: "pkg_do", name: "Do", importUrl: `https://p.example/pkg@${v}/index.js` },
+    { type: "patchwork:datatype", id: "notes", name: "Notes", importUrl: `https://p.example/pkg@${v}/index.js` },
+    { type: "patchwork:tool", id: "notes-view", name: "Notes view", importUrl: `https://p.example/pkg@${v}/index.js` },
+  ]
+
+  it("registers the page's views and datatypes, loading each from where the page did", async () => {
+    const plugins = pluginsModule()
+    const loads = []
+    const mirror = createRegistryMirror(plugins, { importPlugin: async (d) => (loads.push(`${d.type} ${d.id} ${d.importUrl}`), { asSource: () => `source v${d.importUrl.match(/@(\d)/)[1]}` }) })
+    mirror.set(index())
+    // Agent tools are the catalogue's; the registry gets the rest.
+    expect(plugins.getRegistry("agent:tool").all()).toEqual([])
+    expect(plugins.getRegistry("patchwork:tool").all().map((p) => p.id)).toEqual(["notes-view"])
+    const loaded = await plugins.getRegistry("patchwork:datatype").load("notes")
+    expect(loaded.module.asSource()).toBe("source v1")
+    expect(loads).toEqual(["patchwork:datatype notes https://p.example/pkg@1/index.js"])
+
+    // A new version is registered under its new URL; one the page dropped goes.
+    mirror.set(index(2).filter((p) => p.id !== "notes-view"))
+    expect((await plugins.getRegistry("patchwork:datatype").load("notes")).module.asSource()).toBe("source v2")
+    expect(plugins.getRegistry("patchwork:tool").all()).toEqual([])
+  })
+
+  it("leaves alone what something else registered here, and does nothing with no registry or no index", () => {
+    const plugins = pluginsModule()
+    plugins.getRegistry("patchwork:datatype").register({ id: "notes", name: "Mine", load: async () => ({}) }, "https://own.example/x.js")
+    const mirror = createRegistryMirror(plugins)
+    mirror.set(index())
+    expect(plugins.getRegistry("patchwork:datatype").all().map((p) => p.name)).toEqual(["Mine"])
+    mirror.set([])
+    expect(plugins.getRegistry("patchwork:datatype").all().map((p) => p.name)).toEqual(["Mine"])
+    expect(() => createRegistryMirror(null).set(index())).not.toThrow()
+    expect(() => createRegistryMirror(plugins).set(undefined)).not.toThrow()
+  })
+
+  it("importPluginHere loads a plugin of any type, not only agent tools", async () => {
+    const mod = { plugins: [{ type: "patchwork:datatype", id: "notes", load: async () => ({ asSource: () => "s" }) }] }
+    const impl = await importPluginHere({ type: "patchwork:datatype", id: "notes", importUrl: "https://p.example/x.js" }, { importModule: async () => mod })
+    expect(impl.asSource()).toBe("s")
   })
 })

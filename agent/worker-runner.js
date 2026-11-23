@@ -60,6 +60,8 @@ let booting = null
 let automerge = null
 let lib = null // this package's modules, imported once the table is set
 let catalogue = null // the page registry's agent:tool plugins (worker-plugins.js)
+let pluginsModule = null // @inkandswitch/patchwork-plugins in this realm, for ctx.plugins
+let mirror = null // fills its registry from the page's (worker-plugins.js)
 const runners = new Map() // sessionUrl -> { runner, store, ports:Set }
 const clients = new Set()
 
@@ -76,7 +78,7 @@ async function boot(urls, repoPort, prepare) {
   setHostUrls(urls)
   shimDocument()
 
-  const { initAutomergeHere } = await import("./tools/host.js")
+  const { initAutomergeHere, tryHostImport } = await import("./tools/host.js")
   await initAutomergeHere(prepare)
   const [store, runner, events, tools, providers, guard, plugins] = await Promise.all([
     import("./store.js"),
@@ -89,6 +91,10 @@ async function boot(urls, repoPort, prepare) {
   ])
   lib = { ...store, ...runner, ...events, ...tools, ...providers, ...guard }
   catalogue = plugins.createPluginCatalogue()
+  // The registry module, for plugin tools as ctx.plugins, holding the page's
+  // views and datatypes (worker-plugins.js createRegistryMirror).
+  pluginsModule = await tryHostImport("plugins")
+  mirror = plugins.createRegistryMirror(pluginsModule)
 
   const repoModule = await import(/* @vite-ignore */ urls["@automerge/automerge-repo"])
   automerge = await import(/* @vite-ignore */ urls["@automerge/automerge/slim"])
@@ -147,6 +153,10 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
       // Which package a plugin came from, for usage guides (tools/guides.js),
       // from the index the page sends with its plugins.
       packageOf: (type, id) => catalogue.packageOf(type, id),
+      // For plugin tools, as a tab gives them: the registry, and automerge
+      // initialised (README, "Writing an agent tool").
+      plugins: pluginsModule,
+      automerge,
       // The worker shares the page's origin, so it refuses the same places.
       fetchImpl: guardedFetch({ fetch: (url, init) => fetch(url, init), deny: [self.location.origin, ...SYNC_SERVERS] }),
     },
@@ -191,12 +201,14 @@ self.onconnect = (event) => {
       if (data.type === "init") {
         await ensureRepo(data.urls, data.repoPort, data.prepare)
         if (data.plugins) catalogue.set(data.plugins, data.packages)
+        mirror?.set(data.packages)
         port.postMessage(await startSession(data, port))
         return
       }
       // The page's registry changed: a package installed, removed, or edited.
       if (data.type === "plugins") {
         catalogue?.set(data.plugins, data.packages)
+        mirror?.set(data.packages)
         return
       }
 

@@ -16,8 +16,13 @@
  *     the page; the worker gets the module uninitialised);
  *   - the step was offered the package's tools, and not the page's;
  *   - both assumptions tools ran in the worker and wrote the register;
+ *   - a plugin tool there gets ctx.automerge (initialised) and ctx.plugins,
+ *     whose registry holds a datatype the page registered, hook and all;
  *   - the tool that cannot load there was offered too, and its call parked
  *     as host-tier, for a tab.
+ *
+ * It also reports, without judging, whether the SharedWorker can start a
+ * nested dedicated Worker (module and classic), as a Pyodide kernel would.
  *
  * It stands in for what Patchwork provides, and nothing else:
  *
@@ -138,6 +143,42 @@ const BROKEN = {
   "impl.js": `import { getHeads } from "@automerge/automerge"\nexport default { execute: () => "ran " + typeof getHeads }`,
 }
 
+// A package whose tool reports what its ctx holds in the worker — the
+// registry (with a datatype the page registered, and its hook) and
+// automerge — and whether it can start a nested dedicated Worker there, as a
+// Pyodide kernel would. Its datatype is registered in the page only.
+const CTX = {
+  "index.js": `export const plugins = [
+    { type: "agent:tool", id: "ctx_probe", name: "What ctx holds", description: "Reports ctx.plugins, ctx.automerge and nested workers.", where: "worker", risk: "read", input_schema: { type: "object", properties: {} }, async load() { return (await import("./impl.js")).default } },
+    { type: "patchwork:datatype", id: "probe-type", name: "Probe type", async load() { return { asSource: () => "source of probe-type" } } },
+  ]`,
+  "impl.js": `
+    const nested = (url, options) => new Promise((resolve) => {
+      let w
+      try { w = new Worker(url, options) } catch (e) { return resolve("throws: " + e.message) }
+      w.onmessage = (e) => { resolve(e.data); w.terminate() }
+      w.onerror = (e) => resolve("error: " + (e.message ?? "unknown"))
+      setTimeout(() => resolve("timeout"), 5000)
+    })
+    export default { async execute(input, ctx) {
+      const out = {
+        inSharedWorker: typeof SharedWorkerGlobalScope !== "undefined" && self instanceof SharedWorkerGlobalScope,
+        automerge: typeof ctx.automerge?.getHeads === "function",
+        automergeReady: ctx.automerge?.isWasmInitialized?.() ?? null,
+        plugins: typeof ctx.plugins?.getRegistry === "function",
+        workerConstructor: typeof Worker,
+      }
+      try {
+        const dt = await ctx.plugins.getRegistry("patchwork:datatype").load("probe-type")
+        out.hook = dt?.module?.asSource?.() ?? null
+      } catch (e) { out.hook = "throws: " + e.message }
+      out.nestedModule = await nested(new URL("./nested.js", import.meta.url), { type: "module" })
+      out.nestedClassic = await nested(new URL("./nested.js", import.meta.url))
+      return JSON.stringify(out)
+    } }`,
+  "nested.js": `postMessage("hello from a nested worker")`,
+}
+
 // ------------------------------------------------------------ the model
 
 const SCRIPT = `
@@ -149,7 +190,8 @@ register({
   ...__makeMock([
     (request) => [{ type: "text", delta: "offered: " + __offered(request).join(" ") + "\\n" }, { type: "call", id: "c1", name: "assumptions_create", input: { folder: __urls(request.messages)[0], title: "Probe register" } }],
     (request) => [{ type: "call", id: "c2", name: "assumptions_read", input: { register: __urls(request.messages.at(-1))[0] } }],
-    () => [{ type: "call", id: "c3", name: "broken_tool", input: {} }],
+    () => [{ type: "call", id: "c3", name: "ctx_probe", input: {} }],
+    () => [{ type: "call", id: "c4", name: "broken_tool", input: {} }],
     () => [{ type: "text", delta: "done" }],
   ]),
   id: "probe",
@@ -179,10 +221,10 @@ try {
   await initSubduction()
   const repo = new Repo({ network: [] })
   // Its registry, holding the packages' agent:tool entries.
-  const registry = (await import("@inkandswitch/patchwork-plugins")).getRegistry("agent:tool")
-  for (const url of ["/plugin/index.js", "/broken/index.js"]) {
+  const plugins = await import("@inkandswitch/patchwork-plugins")
+  for (const url of ["/plugin/index.js", "/broken/index.js", "/ctx/index.js"]) {
     const absolute = new URL(url, location.href).href
-    for (const p of (await import(absolute)).plugins) if (p.type === "agent:tool") registry.register(p, absolute)
+    for (const p of (await import(absolute)).plugins) if (["agent:tool", "patchwork:datatype"].includes(p.type)) plugins.getRegistry(p.type).register(p, absolute)
   }
 
   const { initSession, makeTurn, textBlock } = await import("/agent/session.js")
@@ -237,6 +279,7 @@ const server = createServer(async (req, res) => {
     if (packages.has(path)) return send("text/javascript", packages.get(path))
     if (path === "/automerge.wasm") return send("application/wasm", await readFile(WASM))
     if (path.startsWith("/broken/") && BROKEN[path.slice(8)]) return send("text/javascript", BROKEN[path.slice(8)])
+    if (path.startsWith("/ctx/") && CTX[path.slice(5)]) return send("text/javascript", CTX[path.slice(5)])
     if (path === "/agent/providers/index.js") return send("text/javascript", (await readFile(join(agent, "providers", "index.js"), "utf8")) + SCRIPT)
     const file = path.startsWith("/agent/") ? join(agent, path.slice(7)) : path.startsWith("/plugin/") ? join(plugin, path.slice(8)) : null
     if (!file) throw new Error("not found")
@@ -298,17 +341,28 @@ try {
   const call = (n) => blocks.find((b) => b.type === "call" && b.id === `c${n}`)
   const result = (n) => blocks.find((b) => b.type === "result" && b.callId === `c${n}`)
   const offered = (blocks.find((b) => b.type === "text" && b.text?.startsWith("offered: "))?.text ?? "").slice(9).trim().split(/\s+/)
-  const c3 = call(3)
-  console.log(JSON.stringify({ connected: out.connected, runnerUrl: out.runnerUrl, status: out.status, events: [...new Set(out.events)], offered: offered.filter((t) => /^(assumptions_|broken_|view_|doc_edit|workflow_)/.test(t)), results: [result(1), result(2)].map((r) => r && { isError: r.isError, output: String(r.output ?? "").slice(0, 160) }), c3, folderDocs: out.folderDocs, registerTitle: out.register?.title }, null, 2))
+  const c4 = call(4)
+  let seen = {}
+  try {
+    seen = JSON.parse(result(3)?.output ?? "{}")
+  } catch {
+    /* an error message */
+  }
+  console.log(JSON.stringify({ connected: out.connected, runnerUrl: out.runnerUrl, status: out.status, events: [...new Set(out.events)], offered: offered.filter((t) => /^(assumptions_|broken_|ctx_|view_|doc_edit|workflow_)/.test(t)), results: [result(1), result(2), result(3)].map((r) => r && { isError: r.isError, output: String(r.output ?? "").slice(0, 400) }), c4, folderDocs: out.folderDocs, registerTitle: out.register?.title }, null, 2))
+  // Reported, not checked: whether Chrome lets a SharedWorker start a nested
+  // dedicated Worker (a Pyodide kernel needs one).
+  console.log(`\nnested Worker in the SharedWorker: constructor ${seen.workerConstructor}; module: ${seen.nestedModule}; classic: ${seen.nestedClassic}`)
 
   const checks = [
     ["the shared runner connected (its modules loaded with no importmap)", out.connected === true && /^worker-/.test(out.runnerUrl ?? "")],
-    ["the step was offered the package's tools", ["assumptions_create", "assumptions_read", "assumptions_set", "broken_tool"].every((t) => offered.includes(t))],
+    ["the step was offered the package's tools", ["assumptions_create", "assumptions_read", "assumptions_set", "broken_tool", "ctx_probe"].every((t) => offered.includes(t))],
     ["…and the worker tools, and not the page's", offered.includes("doc_edit") && !offered.includes("view_mount") && !offered.some((t) => t?.startsWith("workflow_") && t !== "workflow_request")],
     ["assumptions_create ran in the worker", result(1) && !result(1).isError && /Created the assumptions register/.test(result(1).output)],
     ["…and filed the register in the folder", out.folderDocs?.length === 1 && out.register?.title === "Probe register"],
     ["assumptions_read ran in the worker and read it back", result(2) && !result(2).isError && /automerge:/.test(result(2).output)],
-    ["the tool that cannot load there was parked for a tab", c3?.tool === "broken_tool" && c3.where === "host" && out.status === "parked"],
+    ["a plugin tool in the worker gets ctx.automerge, initialised", seen.inSharedWorker === true && seen.automerge === true && seen.automergeReady !== false],
+    ["…and ctx.plugins, holding the datatype the page registered, loadable with its hook", seen.plugins === true && seen.hook === "source of probe-type"],
+    ["the tool that cannot load there was parked for a tab", c4?.tool === "broken_tool" && c4.where === "host" && out.status === "parked"],
   ]
   console.log("\n=== verdict ===")
   for (const [label, ok] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${label}`)

@@ -547,6 +547,22 @@ tab. A tool that genuinely needs the page says `where: "host"`; a workflow
 step placed on a worker does not get it, and one whose prompt names it is
 moved to the page.
 
+`execute(input, ctx)` gets the runner's context. In a tab and in the
+SharedWorker alike it holds `ctx.repo`, `ctx.subject`, `ctx.fetchImpl` and:
+
+- **`ctx.automerge`** — the host's automerge module, initialised, the one that
+  owns the documents. Take it from here rather than importing
+  `@automerge/automerge`, which a worker cannot resolve.
+- **`ctx.plugins`** — the `@inkandswitch/patchwork-plugins` module: the
+  registry (`getRegistry(type)`). In a tab it is the page's. In the
+  SharedWorker it is the worker's own copy, holding every view and datatype
+  the page has registered, each loaded from its `importUrl` on first use
+  (`worker-plugins.js` `createRegistryMirror`), so a datatype's hooks are found
+  through it there too.
+
+Neither is in a research step's confined context, and the node runner has
+neither.
+
 A tool that works only through the context it is handed — `ctx.fetchImpl`
 for the network, `ctx.repo` for documents, nothing global — can say so with
 `scoped: true` beside its `where` and `risk`. Research steps then get it too,

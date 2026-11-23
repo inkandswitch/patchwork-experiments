@@ -75,17 +75,54 @@ export function packageIndex(getRegistry, types = PACKAGE_TYPES) {
  */
 export async function importPluginHere(description, { importModule = (url) => import(/* @vite-ignore */ url), filesystem = () => hostImport("filesystem") } = {}) {
   const url = description?.importUrl
+  const type = description?.type ?? AGENT_TOOL
   if (!url) throw new Error(`${description?.id} was registered without the URL it came from.`)
   if (url.startsWith("automerge:")) {
     const fs = await filesystem()
-    return fs.importPluginFromFolderDocUrl(url, AGENT_TOOL, description.id)
+    return fs.importPluginFromFolderDocUrl(url, type, description.id)
   }
   const mod = await importModule(url)
-  const entry = (Array.isArray(mod?.plugins) ? mod.plugins : []).find((p) => p?.type === AGENT_TOOL && p?.id === description.id)
-  if (!entry) throw new Error(`${url} exports no ${AGENT_TOOL} called ${description.id}.`)
+  const entry = (Array.isArray(mod?.plugins) ? mod.plugins : []).find((p) => p?.type === type && p?.id === description.id)
+  if (!entry) throw new Error(`${url} exports no ${type} called ${description.id}.`)
   if (typeof entry.load === "function") return entry.load()
   if (typeof entry.import === "string") return importModule(entry.import)
   throw new Error(`${description.id} has neither load() nor import.`)
+}
+
+/**
+ * The worker's own plugin registry (`@inkandswitch/patchwork-plugins`, which
+ * plugin tools get as `ctx.plugins`), filled from the page's package index:
+ * each view and datatype the page has registered is registered here too,
+ * loading from its `importUrl` as the page would (importPluginHere). So a tool
+ * that looks a datatype up through `ctx.plugins` finds it in the worker as in
+ * a tab. `set(index)` follows the page: what it no longer lists is removed,
+ * and only what this mirror registered is ever touched.
+ */
+export function createRegistryMirror(plugins, { importPlugin = importPluginHere } = {}) {
+  const mirrored = new Map() // `${type} ${id}` -> importUrl
+  return {
+    set(index) {
+      if (!plugins?.getRegistry || !Array.isArray(index)) return
+      const next = new Map()
+      for (const p of index) {
+        if (p.type === AGENT_TOOL) continue // the catalogue's, not the registry's
+        const key = `${p.type} ${p.id}`
+        next.set(key, p)
+        const registry = plugins.getRegistry(p.type)
+        if (mirrored.get(key) === p.importUrl) continue
+        if (!mirrored.has(key) && registry.has?.(p.id)) continue // registered here by something else
+        const entry = { type: p.type, id: p.id, name: p.name, importUrl: p.importUrl, load: () => importPlugin({ ...p }) }
+        registry.register(entry, p.importUrl)
+        mirrored.set(key, p.importUrl)
+      }
+      for (const key of [...mirrored.keys()]) {
+        if (next.has(key)) continue
+        const [type, id] = [key.slice(0, key.indexOf(" ")), key.slice(key.indexOf(" ") + 1)]
+        plugins.getRegistry(type).remove?.(id)
+        mirrored.delete(key)
+      }
+    },
+  }
 }
 
 /**

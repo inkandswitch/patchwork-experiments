@@ -434,7 +434,8 @@ letting an agent reimplement you.
   a worker and runs in the agent's shared worker too, loaded from your package
   there; code that imports a bare specifier (\`@automerge/automerge\`) cannot
   load in a worker, so its calls wait for a tab instead. Work through
-  \`ctx.repo\` and you need no import.
+  \`ctx.repo\`, \`ctx.automerge\` (automerge, initialised) and \`ctx.plugins\`
+  (the plugin registry) and you need no import.
 - **risk** — \`read\` runs silently; \`write\` and \`external\` ask the user once and
   can then be granted more broadly; \`alwaysAsk: true\` asks every time, for
   anything that carries credentials somewhere.
