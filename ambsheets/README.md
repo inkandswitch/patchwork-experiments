@@ -112,6 +112,13 @@ succeeded.
   becomes `B8`, `SUM(B3:B5)` grows or shrinks, and a reference to something deleted
   becomes `#REF!`. A sheet has at most 26 columns (they are named by a single letter), so
   inserting a column into a full sheet needs its last column to be empty.
+- Copying a formula to another cell moves its references along with it, as in other
+  spreadsheets: `=B6 * 2` pasted one row down reads `=B7 * 2`. A `$` pins a column or a
+  row (`$B$6`, `B$6`, `$B6`). This applies to paste (of something copied from the same
+  sheet; cut and paste moves cells unchanged), to Fill down (Cmd/Ctrl+D) and Fill right
+  (in the right-click menu), and to dragging the small square at the corner of the
+  selection. A copy doesn't keep the original's name. See `moveRefs` in
+  `src/lang/rewrite.ts`. (The original pasted formula text unchanged.)
 - The line chart viewer draws one line per combination of the choices a range-valued cell
   depends on; with continuous inputs it draws a sample of 150 lines.
 

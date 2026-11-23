@@ -3,7 +3,7 @@
 import { createContext, createEffect, createMemo, createSignal, onCleanup, untrack, useContext } from 'solid-js';
 import type { AmbsheetDoc, AmbsheetHandle } from '../datatype';
 import { DEFAULT_COLS } from '../datatype';
-import { shiftAddr, type StructuralEdit } from '../lang/rewrite';
+import { moveRefs, shiftAddr, type StructuralEdit } from '../lang/rewrite';
 import { MAX_COLS, addrOf, valueKey, type Pos, type RawValue } from '../lang/values';
 import { cellText, compileSheet, type CellInfo } from '../model/compile';
 import {
@@ -37,6 +37,14 @@ export interface Selection {
   col2: number;
   /** Set when a whole row or column was selected, which shouldn't scroll the grid. */
   quiet?: boolean;
+}
+
+/** A block of cells. */
+export interface Rect {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
 }
 
 /** The menu for inserting and deleting rows and columns, and where it is (in the tool). */
@@ -281,6 +289,47 @@ export function createSheetState(handle: AmbsheetHandle) {
   /** What the side panel shows: the selected cell, or the reference. */
   const [panel, setPanel] = createSignal<'cell' | 'reference'>('cell');
 
+  // --- filling ---
+
+  const selectRect = (r: Rect) =>
+    setSelection({ row: r.top, col: r.left, row2: r.bottom, col2: r.right, quiet: true });
+
+  /**
+   * Fills `target` with copies of the cells in `source` (which it contains), repeating
+   * them like tiles. Formulas are adjusted for where they land: see moveRefs.
+   */
+  function fill(source: Rect, target: Rect) {
+    const height = source.bottom - source.top + 1;
+    const width = source.right - source.left + 1;
+    const wrap = (offset: number, size: number) => ((offset % size) + size) % size;
+    const updates = [];
+    for (let row = target.top; row <= target.bottom; row++) {
+      for (let col = target.left; col <= target.right; col++) {
+        const from = {
+          row: source.top + wrap(row - source.top, height),
+          col: source.left + wrap(col - source.left, width),
+        };
+        if (from.row === row && from.col === col) continue;
+        updates.push({ row, col, text: moveRefs(text(from), row - from.row, col - from.col) });
+      }
+    }
+    setCells(updates);
+  }
+
+  /** Copies the top row of the selection down through it (or, for one cell, the cell above). */
+  function fillDown() {
+    const r = selectedRect();
+    if (r.top < r.bottom) fill({ ...r, bottom: r.top }, r);
+    else if (r.top > 0) fill({ ...r, top: r.top - 1, bottom: r.top - 1 }, { ...r, top: r.top - 1 });
+  }
+
+  /** Copies the left column of the selection across it (or, for one cell, the cell to its left). */
+  function fillRight() {
+    const r = selectedRect();
+    if (r.left < r.right) fill({ ...r, right: r.left }, r);
+    else if (r.left > 0) fill({ ...r, left: r.left - 1, right: r.left - 1 }, { ...r, left: r.left - 1 });
+  }
+
   // --- inserting and deleting rows and columns ---
 
   const [menu, setMenu] = createSignal<ContextMenu | null>(null);
@@ -351,6 +400,10 @@ export function createSheetState(handle: AmbsheetHandle) {
     panel,
     setPanel,
     select,
+    selectRect,
+    fill,
+    fillDown,
+    fillRight,
     selectRow,
     selectCol,
     menu,

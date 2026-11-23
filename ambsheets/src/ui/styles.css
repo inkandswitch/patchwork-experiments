@@ -328,7 +328,7 @@
 
 .ambsheet .grid th {
   position: sticky;
-  z-index: 1;
+  z-index: 2;
   padding: 2px 6px;
   background: var(--ambsheet-panel);
   color: var(--ambsheet-muted);
@@ -339,7 +339,7 @@
 
 .ambsheet .grid thead th {
   top: 0;
-  z-index: 2;
+  z-index: 3;
 }
 
 .ambsheet .grid tbody th,
@@ -349,7 +349,7 @@
 }
 
 .ambsheet .grid th.corner {
-  z-index: 3;
+  z-index: 4;
 }
 
 .ambsheet .grid th[data-row],
@@ -363,12 +363,30 @@
 }
 
 .ambsheet .grid td {
+  position: relative;
   min-width: 84px;
   max-width: 320px;
   height: 24px;
   padding: 0;
   vertical-align: top;
   cursor: cell;
+}
+
+.ambsheet .grid td[data-fill] {
+  outline: 1px dashed var(--ambsheet-accent);
+  outline-offset: -1px;
+}
+
+.ambsheet .fill-handle {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--ambsheet-bg);
+  background: var(--ambsheet-accent);
+  cursor: crosshair;
 }
 
 .ambsheet .grid td[data-selected] {

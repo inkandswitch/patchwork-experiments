@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { shiftAddr, shiftRefs, type StructuralEdit } from '../src/lang/rewrite';
+import { parseCell } from '../src/lang/parse';
+import { moveRefs, shiftAddr, shiftRefs, type StructuralEdit } from '../src/lang/rewrite';
 import { ASError } from '../src/lang/values';
 import { summarize, viewOf } from '../src/model/analysis';
 import { compileSheet } from '../src/model/compile';
@@ -121,5 +122,43 @@ describe('inserting and deleting rows and columns', () => {
     expect(checkEdit(data, deleteRows(0, 5))).toMatch(/all of its rows/);
     expect(checkEdit(data, deleteCols(0, 4))).toMatch(/all of its columns/);
     expect(checkEdit(data, deleteRows(0, 4))).toBeNull();
+  });
+});
+
+describe('copying a formula to another cell', () => {
+  test('references move along with it', () => {
+    expect(moveRefs('=B6 * 2', 1, 0)).toBe('=B7 * 2');
+    expect(moveRefs('=B6 * 2', 0, 2)).toBe('=D6 * 2');
+    expect(moveRefs('=SUM(B3:B5) + C1', 2, 1)).toBe('=SUM(C5:C7) + D3');
+    expect(moveRefs('=B6 * 2', -3, -1)).toBe('=A3 * 2');
+    expect(moveRefs('=B6 * 2', 0, 0)).toBe('=B6 * 2');
+  });
+
+  test('a $ pins a column or a row', () => {
+    expect(moveRefs('=$B$6 + B6', 2, 2)).toBe('=$B$6 + D8');
+    expect(moveRefs('=B$6 + $B6', 2, 2)).toBe('=D$6 + $B8');
+    expect(moveRefs('=SUM($A$1:A3)', 1, 0)).toBe('=SUM($A$1:A4)'); // a running total
+  });
+
+  test('names, text and ambs stay as they are', () => {
+    expect(moveRefs('=B6 * (1 + rate) + deposit', 1, 0)).toBe('=B7 * (1 + rate) + deposit');
+    expect(moveRefs('=IF(B6 > 0, "B6", 0)', 1, 0)).toBe('=IF(B7 > 0, "B6", 0)');
+    expect(moveRefs('{1 to 6}', 3, 0)).toBe('{1 to 6}');
+    expect(moveRefs('B6 is a cell', 3, 0)).toBe('B6 is a cell');
+    expect(moveRefs('=normal(A1, A2)', 0, 1)).toBe('=normal(B1, B2)');
+  });
+
+  test('a reference that would leave the sheet becomes #REF!', () => {
+    expect(moveRefs('=A1 + B2', -1, 0)).toBe('=#REF! + B1');
+    expect(moveRefs('=A1 + B2', 0, -1)).toBe('=#REF! + A2');
+    expect(moveRefs('=SUM(A1:B2)', -1, 0)).toBe('=SUM(#REF!)');
+    expect(moveRefs('=Z1', 0, 1)).toBe('=#REF!');
+  });
+
+  test('a copy does not keep the name of the original', () => {
+    expect(moveRefs('total = SUM(B3:B5)', 0, 1)).toBe('=SUM(C3:C5)');
+    expect(moveRefs('car = {500, 1200}', 1, 0)).toBe('={500, 1200}');
+    expect(moveRefs('total=B3', 1, 0)).toBe('=B4');
+    expect(parseCell(moveRefs('car = {500, 1200}', 1, 0))).toMatchObject({ kind: 'formula', name: null });
   });
 });

@@ -1,5 +1,5 @@
-// The right-click menu: insert and delete rows and columns. It acts on the rows and
-// columns that the selection covers.
+// The right-click menu: fill, and insert and delete rows and columns. It acts on the
+// rows and columns that the selection covers.
 
 import { For, Show, onCleanup, onMount } from 'solid-js';
 import type { StructuralEdit } from '../lang/rewrite';
@@ -44,8 +44,14 @@ function Menu(props: { x: number; y: number; rows: boolean; cols: boolean }) {
   const numCols = () => rect().right - rect().left + 1;
   const plural = (n: number, noun: string) => (n === 1 ? noun : `${n} ${noun}s`);
 
-  const items = (): { label: string; edit: StructuralEdit }[][] => {
-    const groups: { label: string; edit: StructuralEdit }[][] = [];
+  type Item = { label: string; edit?: StructuralEdit; run?: () => void };
+
+  const items = (): Item[][] => {
+    const groups: Item[][] = [];
+    const fills: Item[] = [];
+    if (numRows() > 1) fills.push({ label: 'Fill down', run: s.fillDown });
+    if (numCols() > 1) fills.push({ label: 'Fill right', run: s.fillRight });
+    if (fills.length > 0) groups.push(fills);
     if (props.rows) {
       const [index, count] = [rect().top, numRows()];
       groups.push([
@@ -80,11 +86,12 @@ function Menu(props: { x: number; y: number; rows: boolean; cols: boolean }) {
               {(item) => (
                 <button
                   role="menuitem"
-                  disabled={s.whyNot(item.edit) !== null}
-                  title={s.whyNot(item.edit) ?? undefined}
+                  disabled={item.edit !== undefined && s.whyNot(item.edit) !== null}
+                  title={(item.edit && s.whyNot(item.edit)) ?? undefined}
                   onClick={() => {
                     close();
-                    s.structuralEdit(item.edit);
+                    if (item.edit) s.structuralEdit(item.edit);
+                    else item.run?.();
                   }}
                 >
                   {item.label}

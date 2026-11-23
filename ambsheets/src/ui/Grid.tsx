@@ -1,7 +1,20 @@
 // The spreadsheet grid: selection, keyboard navigation, in-cell editing, copy and paste,
 // and the rendering of cells (which, in an ambsheet, may hold several values).
 
-import { For, Index, Match, Show, Switch, createEffect, createMemo, createSelector, on, onCleanup } from 'solid-js';
+import {
+  For,
+  Index,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSelector,
+  createSignal,
+  on,
+  onCleanup,
+} from 'solid-js';
+import { moveRefs } from '../lang/rewrite';
 import { addrOf, isError, posOf, printNumber, printValue, type Pos, type RawValue } from '../lang/values';
 import { isRangeValued } from '../model/analysis';
 import type { CellInfo } from '../model/compile';
@@ -35,9 +48,47 @@ export function Grid() {
   // --- mouse ---
 
   let dragging = false;
-  const stopDragging = () => (dragging = false);
-  window.addEventListener('mouseup', stopDragging);
-  onCleanup(() => window.removeEventListener('mouseup', stopDragging));
+
+  // Dragging the little square at the corner of the selection fills the cells it is
+  // dragged over with copies of the selection (down, right, up or left).
+  let filling = false;
+  const [fillTo, setFillTo] = createSignal<Pos | null>(null);
+  const fillRect = createMemo(() => {
+    const to = fillTo();
+    if (!to) return null;
+    const r = s.selectedRect();
+    const [down, right, up, left] = [to.row - r.bottom, to.col - r.right, r.top - to.row, r.left - to.col];
+    const furthest = Math.max(down, right, up, left);
+    if (furthest <= 0) return null;
+    if (furthest === down) return { ...r, bottom: to.row };
+    if (furthest === right) return { ...r, right: to.col };
+    if (furthest === up) return { ...r, top: to.row };
+    return { ...r, left: to.col };
+  });
+  const within = (r: { top: number; bottom: number; left: number; right: number }, row: number, col: number) =>
+    r.top <= row && row <= r.bottom && r.left <= col && col <= r.right;
+  const isBeingFilled = (row: number, col: number) => {
+    const target = fillRect();
+    return target !== null && within(target, row, col) && !within(s.selectedRect(), row, col);
+  };
+  const isFillCorner = (row: number, col: number) => {
+    const r = s.selectedRect();
+    return r.bottom === row && r.right === col;
+  };
+
+  const onMouseUp = () => {
+    dragging = false;
+    if (!filling) return;
+    filling = false;
+    const target = fillRect();
+    setFillTo(null);
+    if (target) {
+      s.fill(s.selectedRect(), target);
+      s.selectRect(target);
+    }
+  };
+  window.addEventListener('mouseup', onMouseUp);
+  onCleanup(() => window.removeEventListener('mouseup', onMouseUp));
 
   /** The row or column whose header an event landed on. */
   const headerAt = (e: Event): { row?: number; col?: number } | null => {
@@ -49,6 +100,13 @@ export function Grid() {
 
   function onMouseDown(e: MouseEvent) {
     if (inInput(e) || e.button !== 0) return;
+    if ((e.target as Element).classList?.contains('fill-handle')) {
+      s.commitEdit();
+      filling = true;
+      e.preventDefault();
+      container.focus();
+      return;
+    }
     const header = headerAt(e);
     if (header) {
       // clicking a header selects its whole row or column
@@ -69,6 +127,11 @@ export function Grid() {
   }
 
   function onMouseOver(e: MouseEvent) {
+    if (filling) {
+      const to = cellAt(e);
+      if (to) setFillTo(to);
+      return;
+    }
     if (!dragging || !(e.buttons & 1)) return;
     const pos = cellAt(e);
     if (pos) s.select(pos, true);
@@ -127,6 +190,11 @@ export function Grid() {
   function onKeyDown(e: KeyboardEvent) {
     if (inInput(e)) return;
     const command = e.metaKey || e.ctrlKey;
+    if (command && e.key.toLowerCase() === 'd') {
+      s.fillDown();
+      e.preventDefault();
+      return;
+    }
     switch (e.key) {
       case 'ArrowUp':
         move(-1, 0, e.shiftKey);
@@ -177,6 +245,13 @@ export function Grid() {
 
   // --- clipboard (the text of cells, tab-separated, like every other spreadsheet) ---
 
+  /**
+   * What was last copied from this sheet, and from where. Pasting it somewhere else
+   * adjusts its formulas to the new place (see moveRefs). Text from anywhere else, or
+   * that was cut, is pasted as it is.
+   */
+  let copied: { text: string; top: number; left: number } | null = null;
+
   function onCopy(e: ClipboardEvent) {
     if (inInput(e)) return;
     const r = s.selectedRect();
@@ -186,13 +261,17 @@ export function Grid() {
       for (let col = r.left; col <= r.right; col++) cells.push(s.text({ row, col }));
       lines.push(cells.join('\t'));
     }
-    e.clipboardData?.setData('text/plain', lines.join('\n'));
+    const text = lines.join('\n');
+    e.clipboardData?.setData('text/plain', text);
     e.preventDefault();
+    copied = { text, top: r.top, left: r.left };
   }
 
   function onCut(e: ClipboardEvent) {
     if (inInput(e)) return;
     onCopy(e);
+    // What is cut is being moved, not copied: it is pasted exactly as it was.
+    copied = null;
     clearSelected();
   }
 
@@ -201,19 +280,25 @@ export function Grid() {
     const text = e.clipboardData?.getData('text/plain');
     if (text === undefined || text === '') return;
     e.preventDefault();
-    const lines = text.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n');
+    const normalized = text.replace(/\r\n?/g, '\n');
+    const lines = normalized.replace(/\n$/, '').split('\n');
     const block = lines.map((line) => line.split('\t'));
+    const source = copied && copied.text === normalized ? copied : null;
+    /** The text for a cell, given which cell of the block it is a copy of. */
+    const placed = (row: number, col: number, i: number, j: number) => ({
+      row,
+      col,
+      text: source ? moveRefs(block[i][j], row - (source.top + i), col - (source.left + j)) : block[i][j],
+    });
     const r = s.selectedRect();
     const updates = [];
     if (block.length === 1 && block[0].length === 1) {
-      // one value fills the whole selection
+      // one cell fills the whole selection
       for (let row = r.top; row <= r.bottom; row++) {
-        for (let col = r.left; col <= r.right; col++) updates.push({ row, col, text: block[0][0] });
+        for (let col = r.left; col <= r.right; col++) updates.push(placed(row, col, 0, 0));
       }
     } else {
-      block.forEach((cells, i) =>
-        cells.forEach((cell, j) => updates.push({ row: r.top + i, col: r.left + j, text: cell })),
-      );
+      block.forEach((cells, i) => cells.forEach((_, j) => updates.push(placed(r.top + i, r.left + j, i, j))));
     }
     s.setCells(updates);
   }
@@ -287,7 +372,11 @@ export function Grid() {
                         data-addr={addr}
                         data-active={isActive(addr) ? '' : undefined}
                         data-selected={isSelected(row, col) ? '' : undefined}
+                        data-fill={isBeingFilled(row, col) ? '' : undefined}
                       >
+                        <Show when={isFillCorner(row, col) && !isEditing(addr)}>
+                          <div class="fill-handle" title="Drag to fill (formulas adjust to where they land)" />
+                        </Show>
                         <Show when={isEditing(addr)} fallback={<CellContent addr={addr} />}>
                           <input
                             class="cell-editor"
