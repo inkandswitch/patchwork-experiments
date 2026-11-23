@@ -32,6 +32,27 @@ export const BUILD: number = typeof __TASKS_BUILD__ === 'number' ? __TASKS_BUILD
  */
 export const START_PROTOCOL = 1;
 
+/**
+ * What routers, pools and workers say to each other, across computers: the
+ * messages in protocol.ts, and what they leave in their documents. Raised only
+ * when a build changes that in a way older builds would get wrong.
+ *
+ * It is separate from `BUILD` on purpose. Most builds change nothing that
+ * another computer could notice, and people on them work together perfectly
+ * well; a newer build is something to mention, not a reason to shut anyone
+ * out. A different protocol is: the router gives no work to workers that don't
+ * speak its protocol, and of two routers the one on the newer protocol runs
+ * the queue.
+ */
+export const WIRE_PROTOCOL = 1;
+
+/** The protocol a message was sent in. Builds from before they said so all spoke the first. */
+export const protocolOf = (stated: number | undefined) => stated ?? 1;
+
+/** Whether whoever stated that protocol can work with this build. */
+export const compatible = (stated: number | undefined, mine = WIRE_PROTOCOL) =>
+  protocolOf(stated) === mine;
+
 /** BroadcastChannel on which this origin's tabs tell each other what they're running. */
 export const VERSION_CHANNEL = 'patchwork-tasks-version';
 

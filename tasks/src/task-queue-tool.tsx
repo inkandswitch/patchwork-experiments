@@ -89,6 +89,15 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
   const [paused, setPaused] = createSignal<AutomergeUrl[]>([], { equals: sameList });
   const [lastHeartbeatAt, setLastHeartbeatAt] = createSignal<number | null>(null);
 
+  // What build everyone is on, as far as the router can tell (see version.ts):
+  // the workers that speak another protocol than the router and so get no work,
+  // and the newest build among the router and its workers.
+  const [incompatible, setIncompatible] = createSignal<AutomergeUrl[]>([], { equals: sameList });
+  const [builds, setBuilds] = createStore<{ workers: Record<string, number>; newest: number }>({
+    workers: {},
+    newest: 0,
+  });
+
   onCleanup(
     listen<MessageToTaskQueueChannel>(props.handle, (msg) => {
       if (msg.type !== 'router heartbeat') {
@@ -101,6 +110,11 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
       setLastHeartbeatAt(Date.now());
       setWorkers([...msg.workerUrls].sort());
       setPaused([...(msg.pausedWorkerUrls ?? [])].sort());
+      setIncompatible([...(msg.incompatibleWorkerUrls ?? [])].sort());
+      setBuilds({
+        workers: msg.workerBuilds ?? {},
+        newest: Math.max(msg.build ?? 0, ...Object.values(msg.workerBuilds ?? {})),
+      });
     }),
   );
 
@@ -155,6 +169,13 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
                     docUrl={url}
                     mine={(contactUrl) => !!contactUrl && contactUrl === myContactUrl()}
                     paused={paused().includes(url)}
+                    version={
+                      incompatible().includes(url)
+                        ? 'incompatible'
+                        : builds.workers[url] !== undefined && builds.workers[url] < builds.newest
+                          ? 'older'
+                          : 'current'
+                    }
                     onCurrentTask={(taskUrl) => setRunningBy(url, taskUrl)}
                   />
                 )}
@@ -163,7 +184,7 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc> }) => {
           </Show>
         </section>
 
-        <HostManners />
+        <HostManners newestBuild={builds.newest} />
 
         <NewTaskForm onAdd={addTask} />
 
@@ -264,7 +285,10 @@ const AVAILABILITY_MODES: { mode: AvailabilityMode; label: string; explanation: 
  * they've decided just now. The choice is this browser's alone: it isn't in
  * the queue or the account, because a computer's manners are its own.
  */
-const HostManners = () => {
+const HostManners = (props: {
+  /** The newest build among this queue's router and workers, for comparison. */
+  newestBuild: number;
+}) => {
   const [mode, setMode] = createSignal(getAvailabilityMode());
   onCleanup(onAvailabilityModeChange(() => setMode(getAvailabilityMode())));
   const status = useAvailabilityStatus();
@@ -319,8 +343,8 @@ const HostManners = () => {
         class="tq-router"
         classList={{
           'tq-router--none': !status(),
-          'tq-router--live': !!status()?.available,
-          'tq-router--quiet': !!status() && !status()!.available,
+          'tq-router--live': !!status()?.available && !status()?.outdated,
+          'tq-router--quiet': !!status() && (!status()!.available || !!status()!.outdated),
         }}
       >
         <span class="tq-dot" />
@@ -329,7 +353,13 @@ const HostManners = () => {
       <Show when={status()?.build}>
         {(build) => (
           // which build this browser's workers are, to see an update arrive
-          <p class="tq-choice-note">Workers built {new Date(build()).toLocaleString()}.</p>
+          <p class="tq-choice-note">
+            Workers built {new Date(build()).toLocaleString()}.
+            <Show when={!status()?.outdated && build() < props.newestBuild}>
+              {' '}
+              Others on this queue are on a newer build; reload to get it.
+            </Show>
+          </p>
         )}
       </Show>
     </section>
@@ -339,6 +369,9 @@ const HostManners = () => {
 function describeAvailability(status: AvailabilityStatus | undefined) {
   if (!status) {
     return "Haven't heard from this browser's task workers yet.";
+  }
+  if (status.outdated) {
+    return "Paused: this browser's task workers are too old for this queue's router. Reload to update them.";
   }
   if (status.available) {
     return `Taking tasks ${status.mode === 'always' ? '' : 'because '}${status.reason}.`;
@@ -355,7 +388,8 @@ function useAvailabilityStatus() {
       a?.available === b?.available &&
       a?.reason === b?.reason &&
       a?.mode === b?.mode &&
-      a?.build === b?.build,
+      a?.build === b?.build &&
+      a?.outdated === b?.outdated,
   });
   const channel = new BroadcastChannel(AVAILABILITY_CHANNEL);
   channel.onmessage = ({ data }: MessageEvent<AvailabilityStatus>) => setStatus(data);
@@ -526,6 +560,12 @@ const Worker = (props: {
   mine: (contactUrl: AutomergeUrl | undefined) => boolean;
   /** Its host has asked that it not be given work just now. */
   paused: boolean;
+  /**
+   * How its build stands (see version.ts): `incompatible` speaks another
+   * protocol than the router and gets no work; `older` works fine but isn't
+   * the newest build around.
+   */
+  version: 'current' | 'older' | 'incompatible';
   onCurrentTask: (taskUrl: AutomergeUrl | null) => void;
 }) => {
   const worker = useDoc<WorkerDoc>(() => props.docUrl);
@@ -550,6 +590,19 @@ const Worker = (props: {
           <Identity contactUrl={doc().contactUrl} name={doc().name} />
           <Show when={props.mine(doc().contactUrl)}>
             <span class="tq-tag">yours</span>
+          </Show>
+          <Show when={props.version === 'incompatible'}>
+            <span
+              class="tq-tag tq-tag--warn"
+              title="On a build that can't work with this queue's router, so it's given no tasks until its browser is reloaded"
+            >
+              needs update
+            </span>
+          </Show>
+          <Show when={props.version === 'older'}>
+            <span class="tq-tag" title="Works fine, but a newer build is in use on this queue">
+              older build
+            </span>
           </Show>
           <span class="tq-worker-state">
             <Show when={currentTaskUrl()} fallback={props.paused ? 'paused' : 'idle'}>

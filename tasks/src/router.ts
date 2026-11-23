@@ -22,6 +22,7 @@ import { RouterWatch } from './takeover';
 import { assignmentId, claimIsSettled, type Claim } from './claims';
 import { listen, send } from './messages';
 import { retireForNewerBuild } from './retire';
+import { BUILD, compatible, protocolOf, WIRE_PROTOCOL } from './version';
 
 let repo: Repo;
 let contactUrl: AutomergeUrl;
@@ -59,6 +60,9 @@ interface WorkerState {
   lastTimestamp: number;
   /** Whether the worker's host wants it given work just now (see availability.ts). */
   available: boolean;
+  /** Its pool's build, where the pool says, and the protocol it speaks (see version.ts). */
+  build: number | undefined;
+  protocol: number;
 }
 
 const workers = new Map<AutomergeUrl, WorkerState>();
@@ -124,6 +128,8 @@ async function init(
           msg.taskQueues,
           // a pool from before there was a choice is always available
           msg.available ?? true,
+          msg.build,
+          protocolOf(msg.protocol),
         );
         break;
     }
@@ -220,6 +226,16 @@ async function pSendHeartbeats() {
           workerUrls: included.map((worker) => worker.handle.url),
           pausedWorkerUrls: included
             .filter((worker) => !worker.available)
+            .map((worker) => worker.handle.url),
+          build: BUILD,
+          protocol: WIRE_PROTOCOL,
+          workerBuilds: Object.fromEntries(
+            included
+              .filter((worker) => worker.build !== undefined)
+              .map((worker) => [worker.handle.url, worker.build!]),
+          ),
+          incompatibleWorkerUrls: included
+            .filter((worker) => !compatible(worker.protocol))
             .map((worker) => worker.handle.url),
         } satisfies MessageToTaskQueueChannel);
       }
@@ -360,7 +376,14 @@ function getIdleWorkersByTaskQueueUrl() {
   const idleWorkers = [...workers.values()].filter((worker) => {
     const docBusy = !!worker.handle.doc().currentTask;
     const heartbeatBusy = !!worker.currentTaskUrl;
-    return worker.available && !docBusy && !heartbeatBusy && !worker.claim;
+    return (
+      worker.available &&
+      // one that speaks another protocol wouldn't understand what it was sent
+      compatible(worker.protocol) &&
+      !docBusy &&
+      !heartbeatBusy &&
+      !worker.claim
+    );
   });
   const idleWorkersByTaskQueueUrl = new Map<AutomergeUrl, Set<WorkerState>>();
   for (const worker of idleWorkers) {
@@ -449,7 +472,7 @@ async function joinTaskQueue(taskQueueUrl: AutomergeUrl) {
       switch (msg.type) {
         case 'router heartbeat':
           deliveryStats.record(taskQueueUrl, msg);
-          routerWatch.heardFrom(msg.routerUrl);
+          routerWatch.heardFrom(msg.routerUrl, Date.now(), protocolOf(msg.protocol));
           break;
       }
     }),
@@ -472,6 +495,8 @@ async function processWorkerHeartbeat(
   currentTaskUrl: AutomergeUrl | null,
   taskQueues: TaskQueueSet,
   available: boolean,
+  build: number | undefined,
+  protocol: number,
 ) {
   const lastTimestamp = Date.now();
   const state = workers.get(workerUrl);
@@ -480,6 +505,8 @@ async function processWorkerHeartbeat(
     state.taskQueues = taskQueues;
     state.lastTimestamp = lastTimestamp;
     state.available = available;
+    state.build = build;
+    state.protocol = protocol;
   } else {
     try {
       await repoPromise;
@@ -495,6 +522,8 @@ async function processWorkerHeartbeat(
         taskQueues,
         lastTimestamp,
         available,
+        build,
+        protocol,
       });
       handle.on('change', routeSoon);
       routeSoon();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideHandover, type Release } from './version';
+import { compatible, decideHandover, protocolOf, type Release } from './version';
 
 const scripts = { pool: 'pool.js', router: 'router.js', worker: 'worker.js' };
 const release = (build: number, startProtocol = 1): Release => ({ build, startProtocol, scripts });
@@ -28,5 +28,19 @@ describe('decideHandover', () => {
 
   it('keeps what it has when the offer carries no usable build', () => {
     expect(decideHandover(release(100), release(NaN), 1)).toBe('keep');
+  });
+});
+
+describe('compatible', () => {
+  it('takes a build that says nothing to be on the first protocol', () => {
+    expect(protocolOf(undefined)).toBe(1);
+    expect(compatible(undefined, 1)).toBe(true);
+    expect(compatible(undefined, 2)).toBe(false);
+  });
+
+  it('is only ever the same protocol, newer or older', () => {
+    expect(compatible(2, 2)).toBe(true);
+    expect(compatible(1, 2)).toBe(false);
+    expect(compatible(3, 2)).toBe(false);
   });
 });

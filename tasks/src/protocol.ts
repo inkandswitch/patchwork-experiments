@@ -99,6 +99,9 @@ export interface WorkerHeartbeatMessage extends Stamp {
    * is always available.
    */
   available?: boolean;
+  /** The pool's build and the protocol it speaks (see version.ts). */
+  build?: number;
+  protocol?: number;
 }
 
 export interface RouterHeartbeatMessage extends Stamp {
@@ -107,6 +110,13 @@ export interface RouterHeartbeatMessage extends Stamp {
   workerUrls: AutomergeUrl[];
   /** Those of `workerUrls` whose hosts have asked not to be given work just now. */
   pausedWorkerUrls?: AutomergeUrl[];
+  /** The router's build and the protocol it speaks (see version.ts). */
+  build?: number;
+  protocol?: number;
+  /** The build each of `workerUrls` says it is, where it says. */
+  workerBuilds?: Record<AutomergeUrl, number>;
+  /** Those of `workerUrls` that speak another protocol than the router, and so get no work from it. */
+  incompatibleWorkerUrls?: AutomergeUrl[];
 };
 
 export interface WorkOnTaskMessage extends Stamp {

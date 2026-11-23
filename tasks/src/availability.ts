@@ -89,6 +89,13 @@ export interface AvailabilityStatus extends Availability {
    * predate the idea.
    */
   build?: number;
+  /**
+   * True when a queue this pool works for is run by a router on a newer
+   * protocol than the pool's own (see version.ts). That router gives these
+   * workers nothing, so they have stood down, and there is nothing to be done
+   * about it from here but load a newer build: reload.
+   */
+  outdated?: boolean;
 }
 
 export function decideAvailability(

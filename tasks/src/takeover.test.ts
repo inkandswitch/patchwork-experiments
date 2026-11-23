@@ -57,6 +57,32 @@ describe('RouterWatch', () => {
     expect(watch.shouldTakeOver(queue, 'router-a', later + TAKEOVER_THRESHOLD_MS + 1)).toBe(true);
   });
 
+  it('takes a queue from a live router on an older protocol without waiting', () => {
+    const watch = new RouterWatch();
+    watch.shouldTakeOver(queue, 'router-old', 0, 2);
+    // very much alive, and no use to anyone on protocol 2
+    watch.heardFrom('router-old', 1 * second, 1);
+    expect(watch.shouldTakeOver(queue, 'router-old', 1 * second, 2)).toBe(true);
+  });
+
+  it('leaves a live router on a newer protocol alone, and one on the same', () => {
+    const watch = new RouterWatch();
+    for (let now = 0; now < 30 * second; now += second) {
+      watch.heardFrom('router-new', now, 3);
+      expect(watch.shouldTakeOver(queue, 'router-new', now, 2)).toBe(false);
+      watch.heardFrom('router-same', now, 2);
+      expect(watch.shouldTakeOver('automerge:other-queue', 'router-same', now, 2)).toBe(false);
+    }
+  });
+
+  it('still replaces a router on a newer protocol once it has gone quiet', () => {
+    // the one person on the newer build went home; the queue must not be stranded
+    const watch = new RouterWatch();
+    watch.heardFrom('router-new', 0, 3);
+    watch.shouldTakeOver(queue, 'router-new', 0, 2);
+    expect(watch.shouldTakeOver(queue, 'router-new', TAKEOVER_THRESHOLD_MS + 1, 2)).toBe(true);
+  });
+
   it('settles on one router when three start at once', () => {
     // Each router takes over as the rule allows; the queue doc is modelled as
     // one shared value, and a router sends heartbeats from 3s after taking over

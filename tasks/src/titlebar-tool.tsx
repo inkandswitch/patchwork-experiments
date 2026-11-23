@@ -8,6 +8,7 @@ import { ensureWorkers, needsReload, NEEDS_RELOAD_EVENT } from './worker-handove
 import { getAccountDocUrl, getTaskQueues } from './helpers';
 import { QUEUE_TOOL_ID } from './ids';
 import { useDoc, WithTasksRepo } from './use-doc';
+import { AVAILABILITY_CHANNEL, type AvailabilityStatus } from './availability';
 
 // A shared worker's script has to come from the page's own origin. Installed by
 // its automerge url this package is served from there; installed from a web
@@ -62,6 +63,14 @@ const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo }) => {
   window.addEventListener(NEEDS_RELOAD_EVENT, onStale);
   onCleanup(() => window.removeEventListener(NEEDS_RELOAD_EVENT, onStale));
 
+  // Or a queue has moved to a protocol this browser's workers don't speak, and
+  // they have stood down (see `outdated` in availability.ts).
+  const [outdated, setOutdated] = createSignal(false);
+  const statusChannel = new BroadcastChannel(AVAILABILITY_CHANNEL);
+  statusChannel.onmessage = ({ data }: MessageEvent<AvailabilityStatus>) =>
+    setOutdated(!!data?.outdated);
+  onCleanup(() => statusChannel.close());
+
   return (
     <Show
       when={SAME_ORIGIN}
@@ -75,10 +84,14 @@ const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo }) => {
       }
     >
       <div class="task-titlebar-list">
-        <Show when={stale()}>
+        <Show when={stale() || outdated()}>
           <button
             class="task-titlebar task-titlebar--broken"
-            title="A newer version of the task workers is running in another tab. Reload this one to join it."
+            title={
+              stale()
+                ? 'A newer version of the task workers is running in another tab. Reload this one to join it.'
+                : "This browser's task workers are too old for a queue they work for. Reload to update them."
+            }
             onClick={() => location.reload()}
           >
             Tasks: reload to update

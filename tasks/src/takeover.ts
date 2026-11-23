@@ -1,3 +1,5 @@
+import { WIRE_PROTOCOL } from './version';
+
 // When may a router replace a task queue's active router? When that router has
 // been quiet for too long. "Quiet" has to be measured from when this router
 // first saw it in charge, not from its last heartbeat alone: a router that has
@@ -14,11 +16,15 @@ export const TAKEOVER_THRESHOLD_MS = 10_000;
 
 export class RouterWatch {
   private readonly lastHeartbeat = new Map<string, number>();
+  private readonly protocols = new Map<string, number>();
   private readonly inCharge = new Map<string, { routerUrl: string; since: number }>();
 
-  /** A heartbeat arrived from `routerUrl`. */
-  heardFrom(routerUrl: string, now = Date.now()) {
+  /** A heartbeat arrived from `routerUrl`, which speaks `protocol` (see version.ts). */
+  heardFrom(routerUrl: string, now = Date.now(), protocol?: number) {
     this.lastHeartbeat.set(routerUrl, now);
+    if (protocol !== undefined) {
+      this.protocols.set(routerUrl, protocol);
+    }
   }
 
   /**
@@ -26,10 +32,24 @@ export class RouterWatch {
    * active. Call it each time round with what the doc says now: that is how it
    * notices a new router taking over, and starts that router's grace period.
    */
-  shouldTakeOver(queueUrl: string, activeRouterUrl: string | null, now = Date.now()) {
+  shouldTakeOver(
+    queueUrl: string,
+    activeRouterUrl: string | null,
+    now = Date.now(),
+    myProtocol = WIRE_PROTOCOL,
+  ) {
     if (!activeRouterUrl) {
       // nobody to wait for
       this.inCharge.delete(queueUrl);
+      return true;
+    }
+
+    // A router on an older protocol can't give work to this browser's workers,
+    // nor to anyone else's who has moved on, so there's no waiting for it to
+    // go quiet. It gives way without a fight: it goes on hearing heartbeats,
+    // and so sees no reason to take the queue back.
+    const theirProtocol = this.protocols.get(activeRouterUrl);
+    if (theirProtocol !== undefined && theirProtocol < myProtocol) {
       return true;
     }
 

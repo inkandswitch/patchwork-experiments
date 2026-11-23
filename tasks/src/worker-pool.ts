@@ -2,14 +2,19 @@
 
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
 import type { WorkerDoc, RouterDoc, TaskQueueDoc, TaskQueueSet } from './datatype';
-import type { MessageToWorkerPool, MessageToRouterChannel, RepoConfig } from './protocol';
+import type {
+  MessageToRouterChannel,
+  MessageToTaskQueueChannel,
+  MessageToWorkerPool,
+  RepoConfig,
+} from './protocol';
 
 import { getRepo, setUpImportMap } from './webworker-lib';
 import { seconds } from './helpers';
 import { Sequencer } from './delivery-stats';
-import { send } from './messages';
+import { listen, send } from './messages';
 import { retireForNewerBuild } from './retire';
-import { BUILD } from './version';
+import { BUILD, protocolOf, WIRE_PROTOCOL } from './version';
 import {
   AVAILABILITY_CHANNEL,
   decideAvailability,
@@ -26,6 +31,28 @@ interface TaskQueueState {
   activeRouterHandle: DocHandle<RouterDoc> | null;
   /** One of the two is being looked for right now. */
   looking: boolean;
+  /** Stops listening for the queue's router's heartbeats. */
+  stopListening?: () => void;
+  /** The last heartbeat heard from a router of this queue: who, on what protocol, when. */
+  router?: { routerUrl: AutomergeUrl; protocol: number; heardAt: number };
+}
+
+/** How long a router's word on its protocol holds without another heartbeat from it. */
+const ROUTER_WORD_GOOD_FOR_MS = 10_000;
+
+/**
+ * Whether the queue is run by a router on a newer protocol than this pool's
+ * (see version.ts). Such a router gives this pool's workers no work, so they
+ * are reported unavailable to it, and the tabs are told why.
+ */
+function outdatedFor(state: TaskQueueState) {
+  const router = state.router;
+  return (
+    !!router &&
+    router.routerUrl === state.handle?.doc().activeRouter &&
+    Date.now() - router.heardAt < ROUTER_WORD_GOOD_FOR_MS &&
+    router.protocol > WIRE_PROTOCOL
+  );
 }
 
 let repo: Repo;
@@ -127,6 +154,7 @@ async function updateTaskQueueSet(newTaskQueueUrls: TaskQueueSet) {
   for (const [taskQueueUrl, state] of taskQueueState) {
     if (!newTaskQueueUrls[taskQueueUrl]) {
       state.handle?.off('change', findWhatIsMissing);
+      state.stopListening?.();
       taskQueueUrls.delete(taskQueueUrl);
       taskQueueState.delete(taskQueueUrl);
     }
@@ -172,6 +200,15 @@ function findWhatIsMissing() {
             state.handle = handle;
             taskQueueUrls.add(taskQueueUrl);
             handle.on('change', findWhatIsMissing);
+            state.stopListening = listen<MessageToTaskQueueChannel>(handle, (msg) => {
+              if (msg.type === 'router heartbeat') {
+                state.router = {
+                  routerUrl: msg.routerUrl,
+                  protocol: protocolOf(msg.protocol),
+                  heardAt: Date.now(),
+                };
+              }
+            });
             console.log('done joining task queue', taskQueueUrl);
           },
           (error) => console.log('task queue not here yet', { taskQueueUrl, error }),
@@ -254,14 +291,19 @@ function updateAvailability() {
   // The mode is whatever the tabs last said. With none left to say, keep it.
   const mode = latest?.mode ?? availability.mode;
   const decision = decideAvailability(mode, { tabs: [...tabReports.values()], pressure }, now);
+  const outdated = [...taskQueueState.values()].some(outdatedFor);
   if (
+    outdated !== !!availability.outdated ||
     decision.available !== availability.available ||
     decision.reason !== availability.reason ||
     mode !== availability.mode
   ) {
     console.log(decision.available ? 'taking tasks:' : 'not taking tasks:', decision.reason);
+    if (outdated) {
+      console.warn('a queue is run by a router on a newer protocol; these workers are out of date');
+    }
   }
-  availability = { mode, ...decision, build: BUILD };
+  availability = { mode, ...decision, build: BUILD, outdated };
   if (status === 'ready' && !retiring) {
     // Only once it's really running, and not on the way out: older workers
     // step down for a pool they hear this from, and newer ones mustn't hear
@@ -322,7 +364,8 @@ function sendWorkerHeartbeats() {
     taskQueues[taskQueueUrl] = true;
   }
 
-  for (const [taskQueueUrl, { activeRouterHandle }] of taskQueueState.entries()) {
+  for (const [taskQueueUrl, state] of taskQueueState.entries()) {
+    const { activeRouterHandle } = state;
     if (!activeRouterHandle) {
       continue;
     }
@@ -337,7 +380,9 @@ function sendWorkerHeartbeats() {
           workerUrl,
           currentTask,
           taskQueues,
-          available: availability.available && !retiring,
+          build: BUILD,
+          protocol: WIRE_PROTOCOL,
+          available: availability.available && !retiring && !outdatedFor(state),
         } satisfies MessageToRouterChannel);
       }
     }
