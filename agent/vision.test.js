@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { initSession, makeTurn, callBlock, resultBlock, toRequest, MAX_IMAGES_IN_REQUEST } from "./session.js"
 import { toOpenAIMessages } from "./providers/openrouter.js"
 import { runTool } from "./tools/index.js"
-import { canvasWithin, viewScreenshot } from "./tools/screenshot.js"
+import { canvasWithin, viewScreenshot, layOut } from "./tools/screenshot.js"
 
 const IMAGE = "data:image/jpeg;base64,AAAA"
 
@@ -116,6 +116,54 @@ describe("view_screenshot", () => {
     await expect(
       viewScreenshot.execute({ mountId: "m" }, { getMount: () => ({ container: element }) })
     ).rejects.toThrow(/no size/)
+  })
+})
+
+describe("a mount whose transcript view is collapsed", () => {
+  /** A container that has a size only where a browser would give it one: in the off-screen holder. */
+  function collapsed() {
+    const hidden = document.createElement("div") // the transcript's display:none body
+    const after = document.createElement("span")
+    const container = document.createElement("div")
+    hidden.append(container, after)
+    document.body.append(hidden)
+    const laidOut = () => container.parentElement?.classList.contains("agent-mount-holder")
+    Object.defineProperties(container, {
+      clientWidth: { get: () => (laidOut() ? 600 : 0) },
+      clientHeight: { get: () => (laidOut() ? 400 : 0) },
+    })
+    return { hidden, container, after, laidOut }
+  }
+
+  it("is laid out for the capture and put back exactly where it was", async () => {
+    const { hidden, container, after, laidOut } = collapsed()
+    const putBack = await layOut(container, document)
+    expect(laidOut()).toBe(true)
+    putBack()
+    expect([...hidden.children]).toEqual([container, after])
+    expect(document.querySelector(".agent-mount-holder")).toBeNull()
+  })
+
+  it("view_screenshot measures it laid out instead of failing with 0×0", async () => {
+    const { hidden, container, laidOut } = collapsed()
+    let measuredLaidOut = null
+    const canvas = document.createElement("canvas")
+    canvas.toDataURL = () => (measuredLaidOut = laidOut(), "x") // too short to be a picture: stops after the size check
+    container.append(canvas)
+    const attempt = viewScreenshot.execute({ mountId: "m" }, { getMount: () => ({ container }) })
+    await expect(attempt).rejects.toThrow(/canvas read back empty/)
+    expect(measuredLaidOut).toBe(true)
+    expect(container.parentElement).toBe(hidden)
+  })
+
+  it("leaves a container that already has a size where it is", async () => {
+    const container = document.createElement("div")
+    Object.defineProperties(container, { clientWidth: { value: 300 }, clientHeight: { value: 200 } })
+    document.body.append(container)
+    const putBack = await layOut(container, document)
+    expect(container.parentElement).toBe(document.body)
+    putBack()
+    expect(container.parentElement).toBe(document.body)
   })
 })
 
