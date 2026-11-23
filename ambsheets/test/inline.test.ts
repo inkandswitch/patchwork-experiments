@@ -75,13 +75,15 @@ describe('an amb inside a formula', () => {
   });
 
   test('mistakes are errors in the cell, wherever the amb is', () => {
-    const r = run({ A1: '{1, 2}', A2: '=5 + normal(A1, 1)', A3: '=1 + uniform(3, 2)', A4: '=2 * {}' });
-    for (const addr of ['A2', 'A3', 'A4']) {
+    const r = run({ A1: '{1, 2}', A2: '=5 + normal(A1, -1)', A3: '=1 + uniform(3, 2)', A4: '=2 * {}' });
+    for (const addr of ['A3', 'A4']) {
       const info = r.compiled.cells.get(addr)!;
       expect(info.kind).toBe('const');
       expect(info.value).toBeInstanceOf(ASError);
     }
-    expect((r.compiled.cells.get('A2')!.value as ASError).shortMsg).toBe('#VALUE!');
+    expect((r.compiled.cells.get('A3')!.value as ASError).shortMsg).toBe('#VALUE!');
+    // (a bad parameter in a distribution that isn't the whole formula still takes the cell down)
+    expect((r.columns.A2 as RawValue[]).every((v) => v instanceof ASError)).toBe(true);
   });
 
   test('downstream cells depend on the choice', () => {

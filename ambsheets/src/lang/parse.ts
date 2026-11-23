@@ -41,9 +41,6 @@ export type AmbPart =
   | { type: 'range'; from: number; to: number; step: number }
   | { type: 'repeat'; value: BasicRawValue; numRepeats: number };
 
-/** A distribution parameter: a number, or a reference to a cell that holds one. */
-export type DistArg = number | Ref;
-
 /**
  * An expression with several possible values. Each one that is written is a choice of
  * its own. (`source` is its text, for telling the choices in a formula apart.)
@@ -51,11 +48,11 @@ export type DistArg = number | Ref;
 export type AmbNode =
   | { type: 'amb'; parts: AmbPart[]; source: string }
   | { type: 'ambify'; range: RangeNode; source: string }
-  | { type: 'normal'; mean: DistArg; stdev: DistArg; samples: DistArg | null; source: string }
-  | { type: 'uniform'; min: DistArg; max: DistArg; source: string };
+  /** A probability distribution, like normal(100, 15). Its parameters are expressions. */
+  | { type: 'dist'; name: string; args: Expr[]; source: string };
 
 export const isAmbNode = (node: Expr): node is AmbNode =>
-  node.type === 'amb' || node.type === 'ambify' || node.type === 'normal' || node.type === 'uniform';
+  node.type === 'amb' || node.type === 'ambify' || node.type === 'dist';
 
 export type Parsed =
   | { kind: 'empty' }
@@ -68,10 +65,6 @@ const grammar = ohm.grammar(String.raw`
     Formula
       = ident? "=" Exp  -- expression
       | Amb             -- bareAmb
-
-    DistArg
-      = number
-      | cellRef
 
     Exp = RelExp
 
@@ -108,8 +101,7 @@ const grammar = ohm.grammar(String.raw`
       | Amb
       | ambify "(" CellRange ")"                            -- ambify
       | deambify "(" cellRef ")"                            -- deambify
-      | normal "(" DistArg "," DistArg ("," DistArg)? ")"   -- normal
-      | uniform "(" DistArg "," DistArg ")"                 -- uniform
+      | dist "(" ListOf<Exp, ","> ")"                       -- dist
       | Literal                                             -- const
       | CellRange
       | cellRef
@@ -158,6 +150,8 @@ const grammar = ohm.grammar(String.raw`
       = ~keyword letter identRest*
 
     identRest = alnum | "_"
+
+    dist = normal | uniform
 
     keyword = ambify | by | deambify | false | if | normal | to | true | uniform | x
     ambify = caseInsensitive<"ambify"> ~identRest
@@ -225,17 +219,13 @@ const semantics = grammar.createSemantics().addOperation<any>('ast', {
   PriExp_deambify(_deambify, _lp, ref, _rp): Expr {
     return { type: 'deambify', ref: ref.ast() };
   },
-  PriExp_normal(_normal, _lp, mean, _c1, stdev, _c2, samples, _rp): Expr {
+  PriExp_dist(name, _lp, args, _rp): Expr {
     return {
-      type: 'normal',
-      mean: mean.ast(),
-      stdev: stdev.ast(),
-      samples: samples.numChildren > 0 ? samples.child(0).ast() : null,
+      type: 'dist',
+      name: name.sourceString.toLowerCase(),
+      args: args.asIteration().children.map((arg: N) => arg.ast()),
       source: this.sourceString,
     };
-  },
-  PriExp_uniform(_uniform, _lp, min, _c, max, _rp): Expr {
-    return { type: 'uniform', min: min.ast(), max: max.ast(), source: this.sourceString };
   },
 
   Amb(_lb, parts, _rb): Expr {

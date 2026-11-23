@@ -32,8 +32,12 @@ A cell holds a literal, an amb, or a formula.
 | `=A6:B11` | a range as a value; the cell is shown as a line chart (one line per scenario) |
 
 Functions: `sum product count avg min max and or not concat unique vlookup abs sqrt exp ln
-floor ceil round pow mod`. Parameters of distributions must be numbers or cells that don't
-vary.
+floor ceil round pow mod`.
+
+The parameters of a distribution are formulas, and they may themselves be uncertain:
+`=normal(B1, 2)` with B1 a distribution is a value spread around an uncertain centre.
+(`src/model/distributions.ts` explains how: such a distribution is derived from a standard
+draw.)
 
 Every amb or distribution that is *written* is a separate choice, so
 `=normal(0, 1) + normal(0, 1)` adds two different numbers, while `=A1 + A1` (with A1 a

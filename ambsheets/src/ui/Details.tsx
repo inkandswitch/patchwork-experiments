@@ -78,6 +78,8 @@ function describe(info: CellInfo): string {
         return `Normal distribution (mean ${printNumber(spec.mean)}, standard deviation ${printNumber(spec.stdev)})`;
       case 'uniform':
         return `Uniform distribution (from ${printNumber(spec.min)} to ${printNumber(spec.max)})`;
+      case 'derived':
+        return spec.description;
     }
   }
   if (info.kind === 'formula') return 'Formula with several possible values';

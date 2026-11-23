@@ -35,7 +35,7 @@ export const FUNCTIONS: FunctionDoc[] = [
     name: 'normal',
     category: 'Several values',
     params: [
-      { name: 'mean', doc: 'The centre of the distribution.' },
+      { name: 'mean', doc: 'The centre of the distribution. Can be a formula, even one that is itself uncertain.' },
       { name: 'stdev', doc: 'The standard deviation: how spread out the values are.' },
       {
         name: 'samples',

@@ -69,11 +69,16 @@ describe('parsing', () => {
 
   test('distributions', () => {
     expect(parseCell('=normal(100, 15)')).toMatchObject({
-      expr: { type: 'normal', mean: 100, stdev: 15, samples: null, source: 'normal(100, 15)' },
+      expr: {
+        type: 'dist',
+        name: 'normal',
+        args: [{ type: 'const', value: 100 }, { type: 'const', value: 15 }],
+        source: 'normal(100, 15)',
+      },
     });
-    expect(parseCell('=normal(100, 15, 30)')).toMatchObject({ expr: { samples: 30 } });
-    expect(parseCell('=uniform(B1, 10)')).toMatchObject({
-      expr: { type: 'uniform', min: { type: 'cellRef', row: 0, col: 1 }, max: 10 },
+    expect((parseCell('=normal(100, 15, 30)') as any).expr.args.length).toBe(3);
+    expect(parseCell('=UNIFORM(B1, 10)')).toMatchObject({
+      expr: { type: 'dist', name: 'uniform', args: [{ type: 'cellRef', row: 0, col: 1 }, { value: 10 }] },
     });
     // ...which can be part of a larger formula
     expect(parseCell('=B2 * normal(1, 0.1) + {1, 2}')).toMatchObject({
@@ -313,9 +318,37 @@ describe('Monte Carlo', () => {
     expect(r.compiled.cells.get('A3')!.spec).toMatchObject({ kind: 'normal', mean: 100, stdev: 10 });
   });
 
-  test('but not from cells that vary', () => {
-    const r = run({ A1: '{1, 2}', A2: '=normal(A1, 1)' });
-    expect((constant(r, 'A2') as ASError).shortMsg).toBe('#VALUE!');
+  test('or from formulas, as long as nothing in them varies', () => {
+    const r = run({ A1: '100', A2: '=normal(A1 * 2, SQRT(16))' }, { samples: 2_000 });
+    expect(r.compiled.cells.get('A2')!.spec).toMatchObject({ kind: 'normal', mean: 200, stdev: 4 });
+  });
+
+  test('parameters that vary: a distribution around an uncertain centre', () => {
+    const r = run(
+      { A1: '=normal(10, 3)', A2: '=normal(A1, 4)', A3: '{1, 10}', A4: '=uniform(0, A3)', A5: '=normal(0, A3)' },
+      { samples: 60_000 },
+    );
+    expect(r.compiled.cells.get('A2')).toMatchObject({ kind: 'amb', spec: { kind: 'derived', base: 'normal' } });
+    expect(r.compiled.cells.get('A2')!.deps).toEqual(['A1', 'A2']);
+    // the spreads add up: sqrt(3^2 + 4^2) = 5
+    const a2 = histogram(viewOf(r), 'A2')!.all;
+    expect(Math.abs(a2.avg - 10)).toBeLessThan(0.1);
+    expect(Math.abs(a2.stdev - 5)).toBeLessThan(0.1);
+    // uniform(0, 1) half the time and uniform(0, 10) the other half: the mean is 2.75
+    const a4 = histogram(viewOf(r), 'A4')!.all;
+    expect(Math.abs(a4.avg - 2.75)).toBeLessThan(0.05);
+    expect(a4.max).toBeLessThanOrEqual(10);
+    expect(a4.min).toBeGreaterThanOrEqual(0);
+    // a standard deviation that varies: the variance is (1 + 100) / 2
+    expect(Math.abs(histogram(viewOf(r), 'A5')!.all.stdev - Math.sqrt(50.5))).toBeLessThan(0.15);
+  });
+
+  test('bad parameters are errors: always, or just in the scenarios where they are bad', () => {
+    const r = run({ A1: '=normal(1, -1)', A2: '=uniform(5, 1)', A3: '=normal("a", 1)', A4: '=normal(1)', B1: '{-1, 1}', B2: '=normal(0, B1)' });
+    for (const addr of ['A1', 'A2', 'A3', 'A4']) expect(constant(r, addr)).toBeInstanceOf(ASError);
+    const b2 = r.columns.B2 as RawValue[];
+    expect(b2.some((v) => v instanceof ASError)).toBe(true);
+    expect(b2.some((v) => typeof v === 'number')).toBe(true);
   });
 
   test('the same seed gives the same samples', () => {

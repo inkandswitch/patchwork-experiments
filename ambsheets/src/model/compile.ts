@@ -19,12 +19,12 @@
 import * as d3 from 'd3-random';
 import { AmbEngine } from '../engine/amb-engine';
 import { builtins } from '../lang/builtins';
+import { DISTRIBUTIONS, checkArgs } from './distributions';
 import {
   isAmbNode,
   parseCell,
   type AmbNode,
   type AmbPart,
-  type DistArg,
   type Expr,
   type Parsed,
   type RangeNode,
@@ -52,7 +52,12 @@ export type AmbSpec =
   /** ambify() over cells that themselves vary: a choice of which cell to read. */
   | { kind: 'pick'; cells: string[] }
   | { kind: 'normal'; mean: number; stdev: number }
-  | { kind: 'uniform'; min: number; max: number };
+  | { kind: 'uniform'; min: number; max: number }
+  /**
+   * A distribution whose value is worked out from a standard draw (see distributions.ts),
+   * because its parameters depend on the scenario.
+   */
+  | { kind: 'derived'; base: 'normal' | 'uniform'; description: string };
 
 /** One choice: an amb, as written somewhere in the sheet. */
 export interface AmbInfo {
@@ -159,7 +164,8 @@ export interface CompiledSheet {
 
 export const ambKey = (id: string) => '?' + id;
 
-export const isContinuous = (spec: AmbSpec) => spec.kind === 'normal' || spec.kind === 'uniform';
+export const isContinuous = (spec: AmbSpec) =>
+  spec.kind === 'normal' || spec.kind === 'uniform' || spec.kind === 'derived';
 
 export function ambSize(spec: AmbSpec): number {
   switch (spec.kind) {
@@ -390,27 +396,25 @@ export function compileSheet(data: unknown): CompiledSheet {
    * twice, give it a cell and refer to the cell twice.)
    */
   const compileAmb = (node: AmbNode, ctx: Context): CellFn => {
-    const spec = ambSpec(node);
-    if (isError(spec)) return () => spec;
+    const made = node.type === 'dist' ? distribution(node, ctx) : ambSpec(node);
+    if (isError(made)) return () => made;
+    const { spec, derive } = 'spec' in made ? made : { spec: made, derive: undefined };
 
     const whole = node === ctx.top;
     const id = whole ? ctx.addr : `${ctx.addr}#${ctx.ambs.length + 1}`;
     const key = ambKey(id);
 
     let fn: CellFn;
-    switch (spec.kind) {
-      case 'discrete': {
-        const values = spec.values;
-        fn = (s) => values[s[key]];
-        break;
-      }
-      case 'pick': {
-        const readers = spec.cells.map((cell) => reader(cell, ctx.refs));
-        fn = guarded((s) => readers[s[key]](s));
-        break;
-      }
-      default:
-        fn = (s) => s[key];
+    if (derive) {
+      fn = guarded((s) => derive(s[key], s));
+    } else if (spec.kind === 'discrete') {
+      const values = spec.values;
+      fn = (s) => values[s[key]];
+    } else if (spec.kind === 'pick') {
+      const readers = spec.cells.map((cell) => reader(cell, ctx.refs));
+      fn = guarded((s) => readers[s[key]](s));
+    } else {
+      fn = (s) => s[key];
     }
     ctx.ambs.push({ id, key, addr: ctx.addr, whole, spec, source: node.source.trim(), fn });
 
@@ -421,56 +425,79 @@ export function compileSheet(data: unknown): CompiledSheet {
     return whole ? fn : (s) => s[id];
   };
 
-  /** What kind of amb a node describes. (Or what is wrong with it.) */
-  const ambSpec = (node: AmbNode): AmbSpec | ASError => {
-    switch (node.type) {
-      case 'amb': {
-        const values = expandAmbParts(node.parts);
-        return isError(values) ? values : { kind: 'discrete', values };
-      }
-
-      case 'normal': {
-        const mean = constNumber(node.mean, 'the mean');
-        if (isError(mean)) return mean;
-        const stdev = constNumber(node.stdev, 'the standard deviation');
-        if (isError(stdev)) return stdev;
-        if (stdev < 0) return new ASError('#VALUE!', "the standard deviation can't be negative");
-        if (node.samples === null) return { kind: 'normal', mean, stdev };
-
-        // The legacy form: a fixed number of samples, treated as a discrete amb.
-        const samples = constNumber(node.samples, 'the number of samples');
-        if (isError(samples)) return samples;
-        if (!Number.isInteger(samples) || samples < 1 || samples > MAX_AMB_VALUES) {
-          return new ASError('#VALUE!', `the number of samples must be between 1 and ${MAX_AMB_VALUES}`);
-        }
-        const next = d3.randomNormal.source(d3.randomLcg(LEGACY_NORMAL_SEED))(mean, stdev);
-        return { kind: 'discrete', values: Array.from({ length: samples }, next).sort((a, b) => a - b) };
-      }
-
-      case 'uniform': {
-        const min = constNumber(node.min, 'the minimum');
-        if (isError(min)) return min;
-        const max = constNumber(node.max, 'the maximum');
-        if (isError(max)) return max;
-        if (min > max) return new ASError('#VALUE!', "the minimum can't exceed the maximum");
-        return { kind: 'uniform', min, max };
-      }
-
-      case 'ambify': {
-        const cells = rangeCells(node.range);
-        if (isError(cells)) return cells;
-        // Empty cells aren't choices.
-        const choices = cells.addrs.filter((cell) => resolve(cell) !== null);
-        if (choices.length === 0) return new ASError('#N/A', 'ambify() needs at least one non-empty cell');
-        const choiceInfos = choices.map((cell) => infos.get(cell)!);
-        const error = choiceInfos.find((info) => info.kind === 'const' && isError(info.value));
-        if (error) return error.value as ASError;
-        if (choiceInfos.every((info) => info.kind === 'const' && !isRange(info.value))) {
-          return { kind: 'discrete', values: choiceInfos.map((info) => info.value as BasicRawValue) };
-        }
-        return { kind: 'pick', cells: choices };
-      }
+  /**
+   * A probability distribution. With parameters that are fixed it is one of the engine's
+   * own distributions. With parameters that vary it is derived from a standard draw: see
+   * distributions.ts.
+   */
+  const distribution = (
+    node: AmbNode & { type: 'dist' },
+    ctx: Context,
+  ): { spec: AmbSpec; derive?: (draw: number, s: Scenario) => RawValue } | ASError => {
+    const dist = DISTRIBUTIONS[node.name];
+    // normal(mean, stdev, samples) is the original Ambsheets' way of writing a normal
+    // distribution: a fixed number of samples from one, treated as a discrete amb.
+    const legacy = node.name === 'normal' && node.args.length === 3;
+    if (node.args.length !== dist.params.length && !legacy) {
+      return new ASError('#N/A', `${node.name}() takes ${dist.params.length} arguments`);
     }
+
+    // Compile the parameters, and see whether anything in them varies.
+    const argCtx: Context = { ...ctx, refs: new Set() };
+    const ambsBefore = ctx.ambs.length;
+    const args = node.args.map((arg) => compileExpr(arg, argCtx));
+    const varying = argCtx.refs.size > 0 || ctx.ambs.length > ambsBefore;
+    for (const ref of argCtx.refs) ctx.refs.add(ref);
+
+    if (varying) {
+      if (legacy) return new ASError('#VALUE!', 'normal() with a number of samples needs parameters that are fixed');
+      return {
+        spec: { kind: 'derived', base: dist.base, description: `${capitalize(node.name)} distribution whose parameters vary` },
+        derive: (draw, s) => {
+          const values = checkArgs(dist, args.map((arg) => arg(s)));
+          return isError(values) ? values : dist.derive(draw, values);
+        },
+      };
+    }
+
+    const values = checkArgs(dist, args.slice(0, dist.params.length).map((arg) => arg({})));
+    if (isError(values)) return values;
+    if (legacy) {
+      const samples = args[2]({});
+      if (typeof samples !== 'number' || !Number.isInteger(samples) || samples < 1 || samples > MAX_AMB_VALUES) {
+        return new ASError('#VALUE!', `the number of samples must be between 1 and ${MAX_AMB_VALUES}`);
+      }
+      const [mean, stdev] = values;
+      const next = d3.randomNormal.source(d3.randomLcg(LEGACY_NORMAL_SEED))(mean, stdev);
+      return { spec: { kind: 'discrete', values: Array.from({ length: samples }, next).sort((a, b) => a - b) } };
+    }
+    if (node.name === 'normal') return { spec: { kind: 'normal', mean: values[0], stdev: values[1] } };
+    if (node.name === 'uniform') return { spec: { kind: 'uniform', min: values[0], max: values[1] } };
+    // (the other distributions are always derived, from fixed parameters in this case)
+    return {
+      spec: { kind: 'derived', base: dist.base, description: dist.describe(values.map(printValue)) },
+      derive: (draw) => dist.derive(draw, values),
+    };
+  };
+
+  /** What kind of choice an amb literal or ambify() describes. (Or what is wrong with it.) */
+  const ambSpec = (node: AmbNode & { type: 'amb' | 'ambify' }): AmbSpec | ASError => {
+    if (node.type === 'amb') {
+      const values = expandAmbParts(node.parts);
+      return isError(values) ? values : { kind: 'discrete', values };
+    }
+    const cells = rangeCells(node.range);
+    if (isError(cells)) return cells;
+    // Empty cells aren't choices.
+    const choices = cells.addrs.filter((cell) => resolve(cell) !== null);
+    if (choices.length === 0) return new ASError('#N/A', 'ambify() needs at least one non-empty cell');
+    const choiceInfos = choices.map((cell) => infos.get(cell)!);
+    const error = choiceInfos.find((info) => info.kind === 'const' && isError(info.value));
+    if (error) return error.value as ASError;
+    if (choiceInfos.every((info) => info.kind === 'const' && !isRange(info.value))) {
+      return { kind: 'discrete', values: choiceInfos.map((info) => info.value as BasicRawValue) };
+    }
+    return { kind: 'pick', cells: choices };
   };
 
   /** All of a cell's values, as a range with one row. (Or the first error among them.) */
@@ -546,17 +573,6 @@ export function compileSheet(data: unknown): CompiledSheet {
       return (s) => -inner(s);
     }
     return null;
-  };
-
-  /** The value of a distribution parameter, which has to be a constant number. */
-  const constNumber = (arg: DistArg, what: string): number | ASError => {
-    if (typeof arg === 'number') return arg;
-    const addr = resolveRef(arg);
-    if (isError(addr)) return addr;
-    const info = resolve(addr);
-    if (info?.kind === 'const' && typeof info.value === 'number') return info.value;
-    if (info?.kind === 'const' && isError(info.value)) return info.value;
-    return new ASError('#VALUE!', `${what} must be a number that doesn't vary (${addr} isn't)`);
   };
 
   const build = (addr: string, name: string | null, p: Parsed): CellInfo | null => {
@@ -683,6 +699,8 @@ function intern(error: ASError): ASError {
   return interned;
 }
 
+const capitalize = (word: string) => word[0].toUpperCase() + word.slice(1);
+
 /** Orders amb ids ("B3", "D4#2") by cell, then by position within the cell. */
 function inSheetOrder(a: string, b: string) {
   const [[cellA, nthA = '0'], [cellB, nthB = '0']] = [a.split('#'), b.split('#')];
@@ -723,6 +741,8 @@ function makeAmb(factory: AmbFactory, spec: AmbSpec) {
       return factory.normal(spec.mean, spec.stdev);
     case 'uniform':
       return factory.uniform(spec.min, spec.max);
+    case 'derived':
+      return spec.base === 'normal' ? factory.normal(0, 1) : factory.uniform(0, 1);
   }
 }
 
@@ -785,9 +805,6 @@ function staticRefs(
     const cells = rangeCells(range);
     if (!isError(cells)) refs.push(...cells.addrs);
   };
-  const addDistArg = (arg: DistArg | null) => {
-    if (arg !== null && typeof arg !== 'number') addRef(arg);
-  };
   const walk = (node: Expr) => {
     switch (node.type) {
       case 'cellRef':
@@ -804,10 +821,8 @@ function staticRefs(
         return addRange(node.range);
       case 'deambify':
         return addRef(node.ref);
-      case 'normal':
-        return [node.mean, node.stdev, node.samples].forEach(addDistArg);
-      case 'uniform':
-        return [node.min, node.max].forEach(addDistArg);
+      case 'dist':
+        return node.args.forEach(walk);
     }
   };
   walk(p.expr);
