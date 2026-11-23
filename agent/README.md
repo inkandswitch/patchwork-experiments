@@ -222,21 +222,19 @@ are only shared prefixes, and build output is linked pinned to heads. Writing a
 file behind a pinned link moves the pin to the new heads, or Patchwork would
 keep serving the old build.
 
-`fs_edit` exists because of a session that did not end. The model had found a
-one-line bug in a 500-line file, and `fs_write`'s description told it that for
-a small edit it should prefer `doc_edit` with a splice range — which takes
-character offsets. Nothing in the toolset produces a character offset:
-`fs_grep` gives line numbers, `fs_read` gives numbered lines, `doc_read` pages
-by character but leaves the counting to the reader. The model saw that the
-recommended path was impossible and the workable one discouraged, and spent
-sixty seconds and seven thousand characters of reasoning oscillating between
-them until someone pressed Stop. The rule that came out of it: **every value a
-tool asks for must be something another tool hands back.** Text and line
-numbers are; offsets are not. So `fs_edit` (and `doc_edit`'s `find`) take the
-old text and the new, and compute the splice themselves — the merge-friendly
-edit the recommendation was reaching for, without the arithmetic. `fs_write`
-over an existing file now splices only the characters that differ, so the
-fallback is fine too.
+**Edits never take character offsets.** Every value a tool asks for must be
+something another tool hands back: text and line numbers are, offsets are not,
+and an offset read earlier drifts as soon as the text changes. `doc_edit` takes
+ops (`set`, `delete`, `insert`, `append`, `prepend`, `replace`, `test`) whose
+`path` names the thing itself, exactly as `doc_read` prints it; text is changed
+by quoting it (`replace` an exact `find`, `insert` `before`/`after` an exact
+anchor) or at its ends, the way the str_replace tools coding agents use work.
+`fs_edit` takes the same text edits for a file. A string, an ImmutableString
+and a notebook's list of lines are all text, each written back in its own form,
+and only the characters that differ are written, so edits merge. Long text goes
+in pieces — `append` creates a missing field, so every piece is the same call —
+and `from` copies text that already exists in a document instead of the model
+retyping it under its output limit. `tools/ops.js` opens with the design.
 
 There is deliberately **no tool for writing a tool**. A Patchwork tool is a
 folder of files, so writing one is `fs_write`; installing one is `doc_edit` on
@@ -836,7 +834,7 @@ described in the system prompt, read in full on demand.
 |---|---|
 | `writing-patchwork-tools` | the plugin shape, the render contract, and the four mistakes actually made |
 | `driving-a-view` | mount → interact → inspect → unmount, and what it does not simulate |
-| `editing-documents` | `doc_edit`'s op vocabulary, and why text edits anchor on text (`find`, `fs_edit`) rather than offsets |
+| `editing-documents` | `doc_edit`'s ops, why text edits anchor on text rather than offsets, and writing long text in pieces |
 | `working-with-the-web` | which outside-world tool to reach for, and reading back what was kept |
 | `finding-things` | how to orient in a Patchwork you have not seen |
 

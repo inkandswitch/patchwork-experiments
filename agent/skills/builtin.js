@@ -689,8 +689,9 @@ When *you* edit a document with \`doc_edit\`, setting a value writes only what
 differs: send back the whole object you read with one field changed, and only
 that field is written; set a string and only the changed characters are; set a
 counter to a number and it is incremented. So whole-value sets are safe there.
-What it cannot do is guess an id — remove list items with a splice range on
-their index, from a fresh read.`,
+What it cannot do is guess an id — remove a list item by its index, from a
+fresh read, and put a \`test\` of its id first so the edit stops if the list
+moved.`,
   },
   {
     name: "keeping-notes",
@@ -860,57 +861,76 @@ view.`,
   {
     name: "editing-documents",
     description:
-      "How to change any Patchwork document safely with doc_edit's path/range/value ops, and how to change text by anchoring on it (find, fs_edit) rather than counting characters.",
+      "How to change any Patchwork document safely with doc_edit's ops (set, delete, insert, append, prepend, replace, test), how to change text by anchoring on it rather than counting characters, and how to write long text in pieces.",
     body: `# Editing documents
 
-\`doc_edit\` takes ops of \`{ path, range, value }\`. One verb covers every edit to
-every datatype.
+\`doc_edit\` takes a list of ops, applied in order as one change: all of them or
+none. Every op has \`op\` and \`path\` — the keys and indices from the document
+root to the thing itself, exactly as \`doc_read\` shows them.
 
-- **path** — keys and indices from the document root. \`[]\` is the root.
-- **range** — an array \`[from, to]\` SPLICES: characters if the target is a
-  string, items if it is a list. A string or number SETS that key on the map or
-  list at \`path\`. Omit \`value\` (or pass null) to delete.
-- **find** — for a string, the exact text to replace with \`value\`, instead of a
-  range. It must occur exactly once.
+- **\`value\`** is any value, or one list item.
+- **\`text\`** is text, put into a string, an ImmutableString, or a list of lines
+  (a notebook cell's source). Each keeps its form.
 
 ## Recipes
 
-    set a title            { path: [], range: "title", value: "New" }
-    delete a field         { path: [], range: "draft" }
-    append to a list       { path: ["items"], range: [2, 2], value: "milk" }
-    replace list items     { path: ["items"], range: [1, 3], value: ["a"] }
-    change some text       { path: ["body"], find: "teh cat", value: "the cat" }
-    insert text at 10      { path: ["body"], range: [10, 10], value: "hello" }
+    set a title             { op: "set", path: ["title"], value: "New" }
+    delete a field          { op: "delete", path: ["draft"] }
+    add to a list           { op: "append", path: ["items"], value: "milk" }
+    insert an item          { op: "insert", path: ["items", 2], value: "eggs" }
+    remove item 3, safely   { op: "test", path: ["items", 3, "id"], value: "t9" },
+                            { op: "delete", path: ["items", 3] }
+    fix some text           { op: "replace", path: ["body"], find: "teh cat", text: "the cat" }
+    every occurrence        { op: "replace", path: ["body"], find: "colour", text: "color", all: true }
+    add a line after one    { op: "insert", path: ["body"], after: "## Notes\\n", text: "- new\\n" }
+    add to the end          { op: "append", path: ["body"], text: "\\nThe end.\\n" }
+    rewrite a cell          { op: "set", path: ["cells", 2, "source"], text: "x = 1\\n" }
+    copy a file into a cell { op: "set", path: ["cells", 1, "source"], from: { url: "automerge:…", path: ["content"] } }
 
-## Changing text: anchor on it, do not count
+## Changing text: anchor on it, never count
 
-You have line numbers (fs_grep, fs_read) and you have the text itself. You do
-not have character offsets, and working them out by eye does not end well. So:
+You have the text and its line numbers; you do not have character offsets,
+and an offset you read goes stale as soon as anyone types. So text is changed
+by quoting it:
 
-- **In a file**, use \`fs_edit\` with the old text and the new. Copy the old text
-  exactly from what you read. If it occurs more than once, include a line
-  around it.
-- **In any other document's string**, use \`doc_edit\` with \`find\`. Same rule.
-- **A numeric range** is for lists, and for inserting at the very start or end
-  of a string (\`[0, 0]\`, or \`[n, n]\` where n is the length the read reported).
-- Rewriting the whole thing with \`fs_write\` is fine too: it changes only the
-  characters that differ. It just costs you the tokens to re-emit the file.
+- **\`replace\`** the exact text \`find\` with \`text\` (\`""\` deletes). It must occur
+  once; if it does not, the error says where it does occur — add a line of
+  context, or pass \`all: true\`.
+- **\`insert\`** \`text\` \`before\` or \`after\` an exact anchor that occurs once.
+- **\`append\`** / **\`prepend\`** add at the ends — no anchor, no length.
+- Copy anchors from \`doc_read\`: pointed at text it shows the text itself, not
+  JSON-escaped, and with \`find\` it shows each match's path and line exactly as
+  written.
+- **In a file**, \`fs_edit\` takes the same text edits, without the path.
 
-Either way the change lands as a splice of just the differing characters, so
-it merges with other people's concurrent edits.
+Whichever you use, only the characters that differ are written, so the edit
+merges with other people's concurrent edits.
+
+## Long text goes in pieces
+
+Your output has a limit, and a call cut off by it is never run. So write long
+text in pieces of at most about 6 kB, one call each: \`set\` (or \`append\`) the
+first piece — a missing field is created — then \`append\` the rest. Each result
+shows how the text now ends, so you know where you are. No placeholders, no
+offsets.
+
+If the text already exists somewhere — an export file, another cell, an older
+version from \`doc_history\` — do not retype it: \`from: { url, path }\` takes it
+from there.
 
 ## Rules worth following
 
 - **Read before you write.** Documents have no fixed schema, so \`doc_read\` first
   — \`shapeOnly: true\` for anything large — and make your paths real.
-- **Anchor text edits on the text** (\`find\`, or \`fs_edit\`), as above. If you do
-  give a numeric range, the offsets must come from a read of that exact path —
-  a whole-document read summarizes long strings, so its offsets are fictional.
-- **All the ops in one call apply together or not at all**, so group an edit
-  that must be atomic into a single \`doc_edit\`.
+- **Guard what you read.** A \`test\` op first stops the whole edit if the value
+  changed since you read it — before deleting by index, say.
+- **Group what must be atomic** into one \`doc_edit\`: its ops apply together or
+  not at all, and the error names the op that failed.
 - **Nothing validates against the datatype.** A document you write into a shape
   its tool does not expect will render badly or not at all — check with
   \`view_mount\` afterwards if it matters.
+- **Sessions and workflow plans** are written only by the runtime: change a
+  plan with the workflow tools.
 
 ## The other document tools
 
