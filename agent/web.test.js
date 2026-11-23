@@ -7,6 +7,7 @@ import { MAX_PDF_BYTES, sha256Hex } from "./tools/sources.js"
 import { guardedFetch, Refused } from "./tools/guard.js"
 import { httpRequest } from "./tools/http.js"
 import { bytes } from "./tools/format.js"
+import { makePdf } from "./pdf-fixture.js"
 
 /** A repo double that makes real-looking URLs and records every document. */
 function fakeRepo() {
@@ -417,8 +418,9 @@ describe("a PDF is kept as the PDF", () => {
           const repo = fakeRepo()
           const attempt = webFetch.execute({ url: TARGET }, { repo, reader: READER, direct, fetchImpl })
 
-          // The browser asks the reader first, which it needs anyway; node gets the bytes first.
-          const order = direct ? ["bytes", "reader"] : ["reader", "bytes"]
+          // A PDF's own bytes are asked for first, in a browser as in node: the
+          // reader is asked only when they gave no text (these are not real PDFs).
+          const order = ["bytes", "reader"]
 
           if (bytesCase !== "ok" && readerCase !== "ok") {
             const [outcome, detail] = missing(bytesCase, direct)
@@ -450,7 +452,7 @@ describe("a PDF is kept as the PDF", () => {
             } else {
               expect(doc.text).toBeNull()
               expect(doc.textVia).toBeNull()
-              expect(out.text).toBe(`Kept the PDF itself (12 bytes, sha256 ${sha.slice(0, 8)}…) at ${out.doc.url}. It has no text: the reader was unavailable (429), so open it in Patchwork to read it.`)
+              expect(out.text).toBe(`Kept the PDF itself (12 bytes, sha256 ${sha.slice(0, 8)}…) at ${out.doc.url}. It has no text to read here (the reader was unavailable too: 429). Open it in Patchwork to look at it.`)
             }
             return
           }
@@ -553,6 +555,42 @@ describe("a PDF is kept as the PDF", () => {
     const out = await webFetch.execute({ url: TARGET }, { repo, reader: READER, fetchImpl })
     expect(read).toBe(0)
     expect(repo.docs.get(out.doc.url).missing.outcome).toBe("over-budget")
+  })
+
+  describe("reads the PDF itself, with no reader", () => {
+    const SHEET = makePdf(["Capacity 280 Ah", "Cycle life 6000 cycles"])
+    const SCAN = makePdf([null])
+    for (const direct of [false, true]) {
+      it(`${direct ? "node" : "browser"}: the text comes from the bytes and the reader is never asked, even when it would say 429`, async () => {
+        const seen = []
+        const fetchImpl = async (url) => (seen.push(url), url.startsWith(READER) ? respond("rate limited", { status: 429 }) : respond(SHEET, { type: "application/pdf", url: TARGET }))
+        const repo = fakeRepo()
+        const out = await webFetch.execute({ url: TARGET }, { repo, reader: READER, direct, fetchImpl })
+        expect(seen).toEqual([TARGET])
+        const doc = repo.docs.get(out.doc.url)
+        expect(doc.textVia).toBe("pdf")
+        expect(String(doc.text)).toBe("[Page 1]\nCapacity 280 Ah\n\n[Page 2]\nCycle life 6000 cycles")
+        expect(doc.marks.map((m) => m.label)).toEqual(["## Page 1", "## Page 2"])
+        expect(out.text).toContain("read from the PDF: 2 pages")
+        expect(out.text).toContain("[Page 2]\nCycle life 6000 cycles")
+      })
+    }
+
+    it("a scan is kept without text, and the answer says it is a scan", async () => {
+      const fetchImpl = async (url) => (url.startsWith(READER) ? respond("rate limited", { status: 429 }) : respond(SCAN, { type: "application/pdf", url: TARGET }))
+      const repo = fakeRepo()
+      const out = await webFetch.execute({ url: TARGET }, { repo, reader: READER, fetchImpl })
+      expect(out.text).toMatch(/It has no text: 1 page, and none has a text layer: it is a scan.*no OCR\. Open it in Patchwork/)
+      expect(repo.docs.get(out.doc.url).text).toBeNull()
+    })
+
+    it("a scan's reader text, when the reader has some, is kept and the scan said", async () => {
+      const fetchImpl = async (url) => (url.startsWith(READER) ? respond(MARKDOWN) : respond(SCAN, { type: "application/pdf", url: TARGET }))
+      const repo = fakeRepo()
+      const out = await webFetch.execute({ url: TARGET }, { repo, reader: READER, fetchImpl })
+      expect(out.text.split("\n")[0]).toMatch(/via reader; 1 page, and none has a text layer/)
+      expect(repo.docs.get(out.doc.url).textVia).toBe("reader")
+    })
   })
 
   it("records a refused PDF as refused", async () => {

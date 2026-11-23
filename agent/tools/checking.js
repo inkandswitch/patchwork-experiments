@@ -26,7 +26,7 @@
 
 import { hostImport } from "./host.js"
 import { truncate, preview, changesBetween } from "./format.js"
-import { rasterize, shrink, canvasWithin } from "./screenshot.js"
+import { rasterize, shrink, canvasWithin, HOLDER_STYLE } from "./screenshot.js"
 import { contentToText, treeNode, treeEntries } from "./folders.js"
 
 /**
@@ -376,7 +376,7 @@ export function mountHolder(doc = globalThis.document) {
   if (!holder) {
     holder = doc.createElement("div")
     holder.className = "agent-mount-holder"
-    holder.style.cssText = "position:fixed;left:-10000px;top:0;width:600px;height:400px;overflow:auto"
+    holder.style.cssText = HOLDER_STYLE
     doc.body.append(holder)
   }
   return holder

@@ -26,6 +26,7 @@ import {
 } from "./sources.js"
 import { fetcher, assertTarget } from "./guard.js"
 import { Interruption, isInterruption, asInterruption } from "../network.js"
+import { readPdf, pdfSummary } from "../pdf-text.js"
 
 /**
  * Strip HTML down to readable text.
@@ -339,16 +340,41 @@ async function readerText(response) {
   return site ? { markdown: null, why: `the site answered it ${site}`, site } : { markdown, why: null }
 }
 
-/** Keep the PDF's bytes with the reader's text, or the reader's text with the reason the PDF is missing. */
-export async function keepPdf(target, { pdf, markdown, readerStatus, readerCache, at }, ctx) {
+/**
+ * The PDF's own text, read from its bytes here (pdf-text.js): `{text, marks,
+ * summary}`, or null when there is none — bytes pdf.js cannot open, or a scan
+ * with no text layer, whose `summary` says so.
+ */
+async function ownText(body) {
+  let read
+  try {
+    read = await readPdf(body)
+  } catch {
+    return null
+  }
+  const summary = pdfSummary(read.extracted)
+  return read.extracted.scanned ? { text: null, marks: [], summary } : { text: read.text, marks: read.marks, summary }
+}
+
+/**
+ * Keep the PDF's bytes with the text read from them, or — when they hold none,
+ * or could not be had — the reader's text, which is asked for only then:
+ * `askReader()` gives `{markdown, why}`. The reader's text with the reason the
+ * PDF is missing is kept when the bytes could not be fetched.
+ */
+export async function keepPdf(target, { pdf, markdown = null, readerStatus = null, readerCache, at, askReader }, ctx) {
   if (pdf.ok) {
+    const mine = await ownText(pdf.body)
+    if (!mine?.text && markdown == null && askReader) ({ markdown, why: readerStatus } = await askReader())
+    const text = mine?.text ?? markdown
     const { ref, marks, capture } = await keepSource(ctx, {
       source: target,
       content: pdf.body,
       mimeType: "application/pdf",
       title: titleFrom(markdown),
-      text: markdown,
-      textVia: "reader",
+      text,
+      textVia: mine?.text ? "pdf" : "reader",
+      marks: mine?.text ? mine.marks : undefined,
       capture: {
         at,
         finalUrl: pdf.response.url || null,
@@ -358,12 +384,15 @@ export async function keepPdf(target, { pdf, markdown, readerStatus, readerCache
         contentType: pdf.response.headers?.get?.("content-type") ?? null,
       },
     })
-    const what =
-      markdown != null
-        ? `Kept the PDF itself (${n(ref.bytes)} bytes, sha256 ${capture.sha256.slice(0, 8)}…) and its text (${n(ref.chars)} chars, via reader) at ${ref.url}`
-        : `Kept the PDF itself (${n(ref.bytes)} bytes, sha256 ${capture.sha256.slice(0, 8)}…) at ${ref.url}. It has no text: the reader was unavailable (${readerStatus}), so open it in Patchwork to read it.`
-    return { ref, marks, text: markdown, lead: what }
+    const head = `Kept the PDF itself (${n(ref.bytes)} bytes, sha256 ${capture.sha256.slice(0, 8)}…)`
+    const what = mine?.text
+      ? `${head} and its text (${n(ref.chars)} chars, read from the PDF: ${mine.summary}) at ${ref.url}`
+      : markdown != null
+        ? `${head} and its text (${n(ref.chars)} chars, via reader${mine ? `; ${mine.summary}` : ""}) at ${ref.url}`
+        : `${head} at ${ref.url}. It has no text${mine ? `: ${mine.summary}` : ` to read here (the reader was unavailable too: ${readerStatus})`}. Open it in Patchwork to look at it.`
+    return { ref, marks, text, lead: what }
   }
+  if (markdown == null && askReader) ({ markdown, why: readerStatus } = await askReader())
   if (markdown == null) {
     throw new Error(
       `Could not keep ${target}: the PDF could not be fetched from here (${pdf.outcome}: ${pdf.detail}) and the reader was unavailable (${readerStatus}).`
@@ -384,17 +413,23 @@ export async function keepPdf(target, { pdf, markdown, readerStatus, readerCache
 /** In a browser: the reader first (it is needed anyway), then a PDF's bytes when there is a signal for one. */
 async function readInBrowser(target, format, input, ctx, fetchImpl, at) {
   const readerCache = input.fresh ? "no-cache" : "allowed"
+  // A PDF's own bytes carry its words (pdf-text.js), so when the path says PDF
+  // they are asked for first and the reader only when they hold none.
+  if (pdfByPath(target)) {
+    const pdf = await fetchPdf(target, ctx, fetchImpl)
+    const askReader = async () => {
+      const { markdown, why } = await readerText(await viaReader(target, format, input, ctx, fetchImpl))
+      return { markdown, why }
+    }
+    return keepPdf(target, { pdf, readerCache, at, askReader }, ctx)
+  }
   const response = await viaReader(target, format, input, ctx, fetchImpl)
   const { markdown, why, site } = await readerText(response)
   if (markdown == null) {
-    if (!pdfByPath(target)) {
-      if (site) throw new Error(`Could not fetch ${target} (http-error: HTTP ${site}, as the reader found it).`)
-      throw readerRefused(target, response.status)
-    }
-    const pdf = await fetchPdf(target, ctx, fetchImpl)
-    return keepPdf(target, { pdf, markdown: null, readerStatus: why, at }, ctx)
+    if (site) throw new Error(`Could not fetch ${target} (http-error: HTTP ${site}, as the reader found it).`)
+    throw readerRefused(target, response.status)
   }
-  if (pdfByPath(target) || readerSaysPdf(markdown)) {
+  if (readerSaysPdf(markdown)) {
     const pdf = await fetchPdf(target, ctx, fetchImpl)
     return keepPdf(target, { pdf, markdown, readerCache, at }, ctx)
   }
@@ -421,8 +456,11 @@ async function readInBrowser(target, format, input, ctx, fetchImpl, at) {
  */
 async function readDirect(target, input, ctx, fetchImpl, at) {
   const withReader = async (pdf) => {
-    const { markdown, why } = await readerText(await viaReader(target, "markdown", input, ctx, fetchImpl))
-    return keepPdf(target, { pdf, markdown, readerStatus: why, readerCache: input.fresh ? "no-cache" : "allowed", at }, ctx)
+    const askReader = async () => {
+      const { markdown, why } = await readerText(await viaReader(target, "markdown", input, ctx, fetchImpl))
+      return { markdown, why }
+    }
+    return keepPdf(target, { pdf, readerCache: input.fresh ? "no-cache" : "allowed", at, askReader }, ctx)
   }
 
   const got = await requestDirect(target, ctx, fetchImpl)
@@ -479,7 +517,7 @@ export const webFetch = {
   description: [
     "Fetch a web page and return the start of its readable text. Use it to read documentation, articles, papers, or anything you found with web_search.",
     "",
-    "Everything fetched is kept as a document, and the result says where. A PDF is kept as the PDF itself, with its text beside it, whenever it can be fetched from here. Read further with source_read on that document — by offset, or with `find` to jump to what you need — rather than fetching again: it is free, and the offsets never shift.",
+    "Everything fetched is kept as a document, and the result says where. A PDF is kept as the PDF itself, whenever it can be fetched from here, with the text read from it beside it, each page under a `[Page N]` line so you can cite the page. A scan with no text layer is kept without text, and the result says so. Read further with source_read on that document — by offset, or with `find` to jump to what you need — rather than fetching again: it is free, and the offsets never shift.",
     "",
     "Fetching a URL this conversation already kept answers from the kept copy without a request; pass `fresh` when you need what it says now.",
   ].join("\n"),

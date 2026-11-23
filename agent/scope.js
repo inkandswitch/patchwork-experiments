@@ -554,6 +554,31 @@ function kernelHandle(handle, record = null) {
   return guard
 }
 
+/**
+ * What `repo.findWithProgress` hands back — the observable a view waits on
+ * (`useDocHandle`, the `file` tool's own loading) — as the guarded repo gives
+ * it out: read-only, and every handle in it a kernel handle. Only the
+ * observing methods and the deprecated getters are passed on; the query's
+ * source methods (`fail`, `sourceReady`, …) are not a view's to call.
+ */
+const OBSERVES = new Set(["documentId", "peek", "subscribe", "whenReady", "state", "progress", "error", "handle"])
+
+function kernelProgress(progress, record) {
+  if (!progress || typeof progress !== "object") return progress
+  const state = (s) => (s?.handle ? { ...s, handle: kernelHandle(s.handle, record) } : s)
+  return new Proxy(progress, {
+    get(target, key) {
+      if (!OBSERVES.has(key)) return undefined
+      if (key === "peek") return () => state(target.peek())
+      if (key === "subscribe") return (callback) => target.subscribe((s) => callback(state(s)))
+      if (key === "whenReady") return (options) => target.whenReady(options).then((h) => kernelHandle(h, record))
+      if (key === "handle") return kernelHandle(target.handle, record)
+      const value = Reflect.get(target, key)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+}
+
 const wrapped = (result, record) =>
   result && typeof result.then === "function" ? result.then((h) => kernelHandle(h, record)) : kernelHandle(result, record)
 
@@ -562,8 +587,10 @@ const wrapped = (result, record) =>
  * handle it gives out can change a session or a plan, however its id was
  * spelled, or make a document into one; and it makes none itself — not from
  * an initial value, a copy of one, or bytes. The repo's own ways around a
- * handle — its table of live handles, deleting by id, importing over an
- * existing id — are closed too.
+ * handle — deleting by id, importing over an
+ * existing id — are closed too. Its table of live handles and
+ * `findWithProgress`, which a view loads its document with, stay, but hand
+ * out only guarded handles.
  */
 export function kernelRepo(repo, { known = null, record = null } = {}) {
   if (!repo || typeof repo !== "object") return repo
@@ -572,9 +599,16 @@ export function kernelRepo(repo, { known = null, record = null } = {}) {
   const mend = (args) => (args.length ? [repairDocUrl(args[0], known ?? []).url, ...args.slice(1)] : args)
   return new Proxy(repo, {
     get(target, key) {
-      if (key === "handles" || key === "findWithProgress") return undefined
+      // The table of live handles, as a snapshot of guarded ones: a view reads
+      // `repo.handles[id]` for a document it already has (the solid hooks do).
+      if (key === "handles") return Object.fromEntries(Object.entries(Reflect.get(target, key) ?? {}).map(([id, h]) => [id, kernelHandle(h, record)]))
       const value = Reflect.get(target, key)
       if (typeof value !== "function") return value
+      // The observable a view waits on: the same document `find` gives, behind
+      // the same guard. (Hidden outright, it broke every view that loads its
+      // document this way — the `file` tool threw "findWithProgress is not a
+      // function" in a view the agent mounted or a person opened.)
+      if (key === "findWithProgress") return (...args) => kernelProgress(value.apply(target, mend(args)), record)
       if (key === "find" || key === "findClassic") return (...args) => wrapped(value.apply(target, mend(args)), record)
       if (key === "create" || key === "create2") {
         return (initial) => {

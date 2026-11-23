@@ -217,6 +217,104 @@ export function canvasWithin(element) {
   return canvases.length === 1 ? canvases[0] : null
 }
 
+/** Where a mount waits when no view of it is on screen: off-screen, but laid out. */
+export const HOLDER_STYLE = "position:fixed;left:-10000px;top:0;width:600px;height:400px;overflow:auto"
+
+const frames = (doc) =>
+  new Promise((resolve) => {
+    const view = doc.defaultView ?? globalThis
+    // A hidden tab never runs animation frames, so the wait is capped.
+    const timer = setTimeout(resolve, 100)
+    view.requestAnimationFrame?.(() => view.requestAnimationFrame?.(() => (clearTimeout(timer), resolve())))
+    if (!view.requestAnimationFrame) clearTimeout(timer), resolve()
+  })
+
+/**
+ * Lay a mount's container out so it has a size, until the returned function
+ * puts it back.
+ *
+ * The transcript adopts a mount's container into the view beside the call
+ * that opened it (ui/views.js), and that view is `display: none` whenever the
+ * person has it collapsed — or has the panel closed, or has scrolled it out of
+ * a virtual list. A container in there measures 0×0, which is the "0×0" a
+ * screenshot of a mount often failed with, while view_mount's own screenshot,
+ * taken before the container was adopted, worked. So an unsized container is
+ * moved to the off-screen holder (600×400, laid out), captured there, and
+ * returned to where it was. Moving it is what adopting it did, and the tool in
+ * it keeps running.
+ */
+export async function layOut(container, doc) {
+  if (container.clientWidth && container.clientHeight) return () => {}
+  const parent = container.parentNode
+  const next = container.nextSibling
+  let holder = doc.querySelector(".agent-mount-holder")
+  const made = !holder
+  if (made) {
+    holder = doc.createElement("div")
+    holder.className = "agent-mount-holder"
+    holder.style.cssText = HOLDER_STYLE
+    doc.body.append(holder)
+  }
+  holder.append(container)
+  await frames(doc)
+  return () => {
+    // Back where it was; if that is gone, it stays parked in the holder.
+    if (parent?.isConnected) parent.insertBefore(container, next?.parentNode === parent ? next : null)
+    if (made && !holder.childElementCount) holder.remove()
+  }
+}
+
+/** Photograph a laid-out element (or the part of it `input.selector` names). */
+async function capture(input, root, ownerDocument) {
+  const target = input.selector ? root.querySelector(input.selector) : root
+  if (!target) throw new Error(`Nothing matches '${input.selector}' in the target.`)
+
+  const width = target.clientWidth || target.offsetWidth || 0
+  const height = target.clientHeight || target.offsetHeight || 0
+  if (!width || !height) {
+    throw new Error(
+      `That element has no size (${width}×${height}), so there is nothing to capture. It may not be laid out yet.`
+    )
+  }
+
+  let raw
+  let method
+  const canvas = canvasWithin(target)
+
+  if (canvas) {
+    method = "canvas"
+    try {
+      raw = canvas.toDataURL("image/png")
+    } catch (err) {
+      throw new Error(`Could not read the canvas: ${err?.message ?? err}. A cross-origin texture taints it.`)
+    }
+    // A WebGL context clears its drawing buffer after compositing unless it
+    // was created with preserveDrawingBuffer, so this legitimately comes back
+    // blank sometimes. Say so rather than returning an empty picture.
+    if (!raw || raw.length < 200) {
+      throw new Error(
+        "The canvas read back empty. A WebGL canvas only keeps its pixels when created with { preserveDrawingBuffer: true }; capture right after a draw, or screenshot the surrounding element instead."
+      )
+    }
+  } else {
+    method = "dom"
+    raw = await rasterize(target, { width, height, doc: ownerDocument })
+  }
+
+  const image = await shrink(raw, { maxWidth: input.maxWidth ?? DEFAULT_MAX_WIDTH, doc: ownerDocument })
+
+  return {
+    image,
+    text: [
+      `Captured ${width}×${height} via ${method}${input.selector ? ` (${input.selector})` : ""}.`,
+      `Image attached, ${bytes(image.length)} as sent.`,
+      method === "dom"
+        ? "Rasterized from the DOM: cross-origin images will be missing."
+        : "Read straight off the canvas, so this is exactly what was drawn.",
+    ].join("\n"),
+  }
+}
+
 export const viewScreenshot = {
   id: "view_screenshot",
   name: "Look at what it renders",
@@ -244,62 +342,22 @@ export const viewScreenshot = {
 
     // Resolve what to photograph: a mounted view, or the live one.
     let root
+    let putBack = () => {}
     if (input.mountId) {
       const mount = ctx.getMount?.(input.mountId)
       if (!mount) {
         throw new Error(`No mount '${input.mountId}'. Open one with view_mount, or omit mountId to capture the page.`)
       }
       root = mount.container
+      // In a collapsed transcript view it has no size; see layOut.
+      putBack = await layOut(root, ownerDocument)
     } else {
       root = ownerDocument.querySelector("patchwork-view") ?? ownerDocument.body
     }
-
-    const target = input.selector ? root.querySelector(input.selector) : root
-    if (!target) throw new Error(`Nothing matches '${input.selector}' in the target.`)
-
-    const width = target.clientWidth || target.offsetWidth || 0
-    const height = target.clientHeight || target.offsetHeight || 0
-    if (!width || !height) {
-      throw new Error(
-        `That element has no size (${width}×${height}), so there is nothing to capture. It may not be laid out yet.`
-      )
-    }
-
-    let raw
-    let method
-    const canvas = canvasWithin(target)
-
-    if (canvas) {
-      method = "canvas"
-      try {
-        raw = canvas.toDataURL("image/png")
-      } catch (err) {
-        throw new Error(`Could not read the canvas: ${err?.message ?? err}. A cross-origin texture taints it.`)
-      }
-      // A WebGL context clears its drawing buffer after compositing unless it
-      // was created with preserveDrawingBuffer, so this legitimately comes back
-      // blank sometimes. Say so rather than returning an empty picture.
-      if (!raw || raw.length < 200) {
-        throw new Error(
-          "The canvas read back empty. A WebGL canvas only keeps its pixels when created with { preserveDrawingBuffer: true }; capture right after a draw, or screenshot the surrounding element instead."
-        )
-      }
-    } else {
-      method = "dom"
-      raw = await rasterize(target, { width, height, doc: ownerDocument })
-    }
-
-    const image = await shrink(raw, { maxWidth: input.maxWidth ?? DEFAULT_MAX_WIDTH, doc: ownerDocument })
-
-    return {
-      image,
-      text: [
-        `Captured ${width}×${height} via ${method}${input.selector ? ` (${input.selector})` : ""}.`,
-        `Image attached, ${bytes(image.length)} as sent.`,
-        method === "dom"
-          ? "Rasterized from the DOM: cross-origin images will be missing."
-          : "Read straight off the canvas, so this is exactly what was drawn.",
-      ].join("\n"),
+    try {
+      return await capture(input, root, ownerDocument)
+    } finally {
+      putBack()
     }
   },
 

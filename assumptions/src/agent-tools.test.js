@@ -124,6 +124,56 @@ describe("set", () => {
     expect(Object.keys(doc.entries.boat_drag_N.model.ran)).toEqual([cfd.url])
   })
 
+  describe("two things the agent once worked around", () => {
+    const est = (n) => ({ estimate: { value: { nominal: n, min: n - 1, max: n + 1 }, reasoning: "r" } })
+    const modelled = async () => {
+      const register = await newRegister()
+      const cfd = makeDoc({ "@patchwork": { type: "file" }, name: "case", content: "x" })
+      await set.execute({ register, entries: [{ id: "boat_mass_kg", ...est(1500) }, { id: "boat_speed_kn", ...est(6) }] }, ctx)
+      await set.execute({ register, entries: [{ id: "boat_drag_N", model: { url: cfd.url, name: "CFD", inputs: ["boat_mass_kg"] }, value: 40 }] }, ctx)
+      return { register, cfd, entries: async () => (await repo.find(register)).doc().entries }
+    }
+
+    it("an input written later in the same call does not make an earlier result stale: the run records the inputs as that call leaves them", async () => {
+      const { register, entries } = await modelled()
+      // The result first, its input after it, in one call: both orders end the same.
+      const out = await set.execute({ register, entries: [{ id: "boat_drag_N", value: 41 }, { id: "boat_mass_kg", ...est(1600) }] }, ctx)
+      expect(out).toMatch(/Wrote 2 entries/)
+      const after = await entries()
+      expect(after.boat_drag_N.stale ?? null).toBeNull()
+      expect(after.boat_drag_N.model.inputs.boat_mass_kg.nominal).toBe(1600)
+
+      // A new result naming an input that the same call adds, listed after it.
+      await set.execute({ register, entries: [{ id: "prop_P_kW", model: { name: "M", inputs: ["boat_new_m"] }, value: 3 }, { id: "boat_new_m", ...est(2) }] }, ctx)
+      const later = await entries()
+      expect(later.prop_P_kW.stale ?? null).toBeNull()
+      expect(later.prop_P_kW.model.inputs.boat_new_m.nominal).toBe(2)
+    })
+
+    it("an input moved in a call that does not re-run the result does make it stale, as it should", async () => {
+      const { register, entries } = await modelled()
+      await set.execute({ register, entries: [{ id: "boat_mass_kg", ...est(1700) }] }, ctx)
+      expect((await entries()).boat_drag_N.stale).toEqual([{ input: "boat_mass_kg", reason: "moved" }])
+    })
+
+    it("an existing result is re-set with its inputs and no `by`, as often as it is: the run is recorded as the agent's", async () => {
+      const { register, cfd, entries } = await modelled()
+      for (const entry of [
+        { id: "boat_drag_N", model: { url: cfd.url, name: "CFD", inputs: ["boat_mass_kg", "boat_speed_kn"] }, value: 42 },
+        { id: "boat_drag_N", model: { name: "CFD 2", inputs: { boat_mass_kg: null } }, value: 43 },
+        { id: "boat_drag_N", value: 44 },
+      ]) {
+        const out = await set.execute({ register, entries: [entry] }, ctx)
+        expect(out).toMatch(/^Wrote 1 entry/)
+        expect(out).not.toMatch(/Cannot create a reference/)
+      }
+      const after = (await entries()).boat_drag_N
+      expect(after.model.by).toEqual({ kind: "agent", session: "automerge:session" })
+      expect(Object.keys(after.model.inputs)).toEqual(["boat_mass_kg"])
+      expect(after.model.name).toBe("CFD 2")
+    })
+  })
+
   it("marks a run stale when the code of a document it read changes, outputs and prose cells aside", async () => {
     const register = await newRegister()
     const notebook = file("thermal.ipynb", {
