@@ -1,10 +1,10 @@
-import { createEffect, For, Show } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import './index.css';
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
 import type { OpenDocumentEventDetail } from '@inkandswitch/patchwork-elements';
 import type { TaskQueueDoc } from './datatype';
-import { WorkerPoolProxy } from './worker-pool-proxy';
+import { ensureWorkers, needsReload, NEEDS_RELOAD_EVENT } from './worker-handover';
 import { getAccountDocUrl, getTaskQueues } from './helpers';
 import { QUEUE_TOOL_ID } from './ids';
 import { useDoc, WithTasksRepo } from './use-doc';
@@ -32,25 +32,6 @@ function mountTaskStatus(element: HTMLElement, hostRepo: Repo) {
   return render(() => <TaskStatus element={element} hostRepo={hostRepo} />, element);
 }
 
-/**
- * This tab's connection to the task workers. One a tab, kept for as long as the
- * tab lives: the badge comes and goes (a title bar tool is mounted afresh for
- * every document) and may be on screen twice, and neither should start the
- * workers twice or let go of them in between. It's kept on `window` so that a
- * newer copy of this package, loaded without a reload, finds it too.
- */
-function ensureWorkerPool(contactUrl: AutomergeUrl) {
-  const tab = window as any;
-  const existing: WorkerPoolProxy | undefined = tab.__patchworkTaskWorkerPool;
-  if (existing?.contactUrl === contactUrl) {
-    return;
-  }
-  existing?.dispose();
-  const proxy = new WorkerPoolProxy(contactUrl, getImportMap(), document.baseURI);
-  console.log('tasks: created worker pool proxy', proxy);
-  tab.__patchworkTaskWorkerPool = proxy;
-}
-
 const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo }) => {
   // The account is the site's document, so it comes from the site's Repo. The
   // queues come from this tab's tasks Repo, like everything else of the
@@ -66,13 +47,20 @@ const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo }) => {
       return;
     }
     if (SAME_ORIGIN) {
-      ensureWorkerPool(mine);
+      ensureWorkers(mine);
     } else {
       console.error(
         `tasks: loaded from ${new URL(import.meta.url).origin}, so its shared workers can't start on ${location.origin}. Install it by its automerge: url instead.`,
       );
     }
   });
+
+  // A newer build of this package is running in another tab, and this one is
+  // too old to join it (see worker-handover.ts).
+  const [stale, setStale] = createSignal(needsReload());
+  const onStale = () => setStale(true);
+  window.addEventListener(NEEDS_RELOAD_EVENT, onStale);
+  onCleanup(() => window.removeEventListener(NEEDS_RELOAD_EVENT, onStale));
 
   return (
     <Show
@@ -87,6 +75,15 @@ const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo }) => {
       }
     >
       <div class="task-titlebar-list">
+        <Show when={stale()}>
+          <button
+            class="task-titlebar task-titlebar--broken"
+            title="A newer version of the task workers is running in another tab. Reload this one to join it."
+            onClick={() => location.reload()}
+          >
+            Tasks: reload to update
+          </button>
+        </Show>
         <WithTasksRepo>
           <For each={queueUrls()}>
             {(taskQueueUrl) => <QueueBadge element={props.element} taskQueueUrl={taskQueueUrl} />}
@@ -138,18 +135,4 @@ function createOpenEvent(detail: OpenDocumentEventDetail) {
     composed: true,
   });
   return openEvent;
-}
-
-function getImportMap() {
-  const importMapElement = document.querySelector('script[type="importmap"]');
-  if (!importMapElement) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(importMapElement.textContent || '{}');
-  } catch (e) {
-    console.warn('Failed to parse import map:', e);
-    return {};
-  }
 }

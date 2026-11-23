@@ -11,6 +11,13 @@ const external = [...patchworkExternals];
 
 export default defineConfig({
   base: './',
+
+  // Stamps every build with when it was made, which is how two copies of this
+  // package tell which of them is the newer (see src/version.ts).
+  define: {
+    __TASKS_BUILD__: JSON.stringify(Date.now()),
+  },
+
   plugins: [
     topLevelAwait(),
     wasm(),

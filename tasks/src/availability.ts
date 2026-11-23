@@ -83,6 +83,12 @@ export interface Availability {
 /** What the pool tells this origin's tabs on {@link AVAILABILITY_CHANNEL}. */
 export interface AvailabilityStatus extends Availability {
   mode: AvailabilityMode;
+  /**
+   * Which build the pool saying this is (see version.ts). Older workers that
+   * hear a newer build's pool step down for it. Missing from pools that
+   * predate the idea.
+   */
+  build?: number;
 }
 
 export function decideAvailability(

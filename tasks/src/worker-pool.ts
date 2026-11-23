@@ -8,6 +8,8 @@ import { getRepo, setUpImportMap } from './webworker-lib';
 import { seconds } from './helpers';
 import { Sequencer } from './delivery-stats';
 import { send } from './messages';
+import { retireForNewerBuild } from './retire';
+import { BUILD } from './version';
 import {
   AVAILABILITY_CHANNEL,
   decideAvailability,
@@ -48,7 +50,12 @@ let pressure: PressureState | null = null;
 let availability: AvailabilityStatus = {
   mode: DEFAULT_AVAILABILITY_MODE,
   ...decideAvailability(DEFAULT_AVAILABILITY_MODE, { tabs: [], pressure }),
+  build: BUILD,
 };
+
+// Set once a newer build's pool has been heard (see version.ts): this one is
+// on its way out, and says so by reporting its workers unavailable.
+let retiring = false;
 const availabilityChannel = new BroadcastChannel(AVAILABILITY_CHANNEL);
 
 console.log('hi there, I am the worker pool!');
@@ -254,8 +261,13 @@ function updateAvailability() {
   ) {
     console.log(decision.available ? 'taking tasks:' : 'not taking tasks:', decision.reason);
   }
-  availability = { mode, ...decision };
-  availabilityChannel.postMessage(availability);
+  availability = { mode, ...decision, build: BUILD };
+  if (status === 'ready' && !retiring) {
+    // Only once it's really running, and not on the way out: older workers
+    // step down for a pool they hear this from, and newer ones mustn't hear
+    // an old one still talking.
+    availabilityChannel.postMessage(availability);
+  }
 }
 
 /** Keeps `pressure` current where the browser reports it (Chrome and Edge). */
@@ -277,38 +289,56 @@ function watchPressure() {
   }
 }
 
+/**
+ * Steps down for a newer build's pool: one last heartbeat that marks this
+ * pool's workers unavailable, so the router stops sending them work at once
+ * rather than when it notices they've gone quiet, and then closes.
+ */
+function retire() {
+  retiring = true;
+  sendWorkerHeartbeats();
+  setTimeout(() => self.close(), 500);
+}
+retireForNewerBuild(retire);
+
 async function pSendWorkerStatuses() {
-  while (true) {
+  while (!retiring) {
     await seconds(1);
+    if (retiring) {
+      break;
+    }
 
     // time passing changes the answer too: "quiet for 30 seconds" comes true
     updateAvailability();
     findWhatIsMissing();
+    sendWorkerHeartbeats();
+  }
+}
 
-    const taskQueues: TaskQueueSet = {};
-    for (const taskQueueUrl of taskQueueUrls) {
-      taskQueues[taskQueueUrl] = true;
+/** Tells each joined queue's active router what this pool's workers are up to. */
+function sendWorkerHeartbeats() {
+  const taskQueues: TaskQueueSet = {};
+  for (const taskQueueUrl of taskQueueUrls) {
+    taskQueues[taskQueueUrl] = true;
+  }
+
+  for (const [taskQueueUrl, { activeRouterHandle }] of taskQueueState.entries()) {
+    if (!activeRouterHandle) {
+      continue;
     }
 
-    for (const [taskQueueUrl, { activeRouterHandle }] of taskQueueState.entries()) {
-      if (!activeRouterHandle) {
-        continue;
-      }
-
-      for (const [workerUrl, { currentTask }] of workerByUrl.entries()) {
-        if (currentTask && currentTask.taskQueueUrl !== taskQueueUrl) {
-          // don't bother sending the heartbeats of workers that are busy with tasks from other queues
-        } else {
-          console.log('sending worker heartbeat to', activeRouterHandle.url, { workerUrl, currentTask });
-          send(activeRouterHandle, {
-            type: 'worker heartbeat',
-            ...sequencer.stamp(activeRouterHandle.url),
-            workerUrl,
-            currentTask,
-            taskQueues,
-            available: availability.available,
-          } satisfies MessageToRouterChannel);
-        }
+    for (const [workerUrl, { currentTask }] of workerByUrl.entries()) {
+      if (currentTask && currentTask.taskQueueUrl !== taskQueueUrl) {
+        // don't bother sending the heartbeats of workers that are busy with tasks from other queues
+      } else {
+        send(activeRouterHandle, {
+          type: 'worker heartbeat',
+          ...sequencer.stamp(activeRouterHandle.url),
+          workerUrl,
+          currentTask,
+          taskQueues,
+          available: availability.available && !retiring,
+        } satisfies MessageToRouterChannel);
       }
     }
   }

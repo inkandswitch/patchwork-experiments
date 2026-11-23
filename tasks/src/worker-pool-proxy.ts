@@ -11,9 +11,7 @@ import { watchHostActivity } from './host-activity';
 import { getRepoConfig } from './repo-config';
 import { ROUTER_NAME, WORKER_POOL_NAME, workerName } from './ids';
 
-import WorkerPool from './worker-pool.ts?sharedworker';
-import TaskWorker from './worker.ts?sharedworker';
-import TaskRouter from './router.ts?sharedworker';
+import type { WorkerScripts } from './version';
 
 const NUM_WORKERS = 2;
 
@@ -24,9 +22,17 @@ export class WorkerPoolProxy {
 
   private readonly repoConfig: RepoConfig;
   private readonly stopWatchingHost: () => void;
+  private stopWatchingAccount: (() => void) | undefined;
+  private disposed = false;
 
+  /**
+   * `scripts` are the shared workers to start, or to join if they're already
+   * running. They needn't be this copy of the package's own: a tab that hears
+   * of a newer build starts that build's (see worker-handover.ts).
+   */
   constructor(
     readonly contactUrl: AutomergeUrl,
+    private readonly scripts: WorkerScripts,
     importMap: any,
     baseURI: string,
   ) {
@@ -50,12 +56,17 @@ export class WorkerPoolProxy {
    * long as any tab has them open; this only stops this tab reporting to them.
    */
   dispose() {
+    this.disposed = true;
     this.stopWatchingHost();
+    this.stopWatchingAccount?.();
   }
 
   private createAndInitializeWorkerPool(importMap: any, baseURI: string) {
     // create the shared worker
-    const workerPool = new WorkerPool({ name: WORKER_POOL_NAME });
+    const workerPool = new SharedWorker(this.scripts.pool, {
+      type: 'module',
+      name: WORKER_POOL_NAME,
+    });
     workerPool.onerror = (error) => log(error);
 
     log('sending init to worker pool');
@@ -74,7 +85,7 @@ export class WorkerPoolProxy {
     // create the shared worker
     const name = workerName(id);
     log('creating and initializing worker', name);
-    const worker = new TaskWorker({ name });
+    const worker = new SharedWorker(this.scripts.worker, { type: 'module', name });
     worker.onerror = (error) => log(`worker ${id} error:`, error);
 
     // forward messages from the worker (type 'add worker') to the worker pool
@@ -103,7 +114,7 @@ export class WorkerPoolProxy {
 
   private createAndInitializeRouter(importMap: any, baseURI: string) {
     // create the shared worker
-    const router = new TaskRouter({ name: ROUTER_NAME });
+    const router = new SharedWorker(this.scripts.router, { type: 'module', name: ROUTER_NAME });
     router.onerror = (error) => log(error);
 
     log('sending init message to router');
@@ -135,7 +146,13 @@ export class WorkerPoolProxy {
     };
 
     const accountHandle = await getAccountHandle(repo);
-    accountHandle.on('change', (payload) => updateTaskQueues(payload.handle.doc()));
+    if (this.disposed) {
+      return;
+    }
+    const onChange = (payload: { handle: { doc(): any } }) =>
+      updateTaskQueues(payload.handle.doc());
+    accountHandle.on('change', onChange);
+    this.stopWatchingAccount = () => accountHandle.off('change', onChange);
     updateTaskQueues(accountHandle.doc());
   }
 

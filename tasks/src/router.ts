@@ -21,6 +21,7 @@ import { DeliveryStats, reportDeliveryStats, Sequencer } from './delivery-stats'
 import { RouterWatch } from './takeover';
 import { assignmentId, claimIsSettled, type Claim } from './claims';
 import { listen, send } from './messages';
+import { retireForNewerBuild } from './retire';
 
 let repo: Repo;
 let contactUrl: AutomergeUrl;
@@ -28,6 +29,10 @@ let thisRouterHandle: DocHandle<RouterDoc>;
 
 let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 let sequencer: Sequencer;
+
+// Set once a newer build's workers are up (see version.ts): this router is on
+// its way out, and mustn't take a queue back in its last moments.
+let retiring = false;
 const deliveryStats = new DeliveryStats();
 
 const taskQueueHandles = new Map<AutomergeUrl, DocHandle<TaskQueueDoc>>();
@@ -266,7 +271,34 @@ async function pTakeOverFromInactiveRouters() {
   }
 }
 
+/**
+ * Steps down for a newer build's router. Any queue this router is in charge of
+ * is left with no active router rather than with this one's name on it: a
+ * queue without one is taken at once, where a router that had only gone quiet
+ * would be waited on for ten seconds first.
+ */
+async function retire() {
+  retiring = true;
+  for (const taskQueueHandle of taskQueueHandles.values()) {
+    if (taskQueueHandle.doc().activeRouter === thisRouterHandle?.url) {
+      taskQueueHandle.change((doc) => {
+        doc.activeRouter = null;
+      });
+    }
+  }
+  try {
+    await repo?.flush();
+  } catch (error) {
+    console.error('could not save before stepping down', error);
+  }
+  self.close();
+}
+retireForNewerBuild(retire);
+
 function attemptToTakeOver(taskQueueHandle: DocHandle<TaskQueueDoc>) {
+  if (retiring) {
+    return;
+  }
   console.log('attempting takeover of', taskQueueHandle.url);
   attemptingToTakeOverTaskQueueUrls.add(taskQueueHandle.url);
   taskQueueHandle.change((doc) => {

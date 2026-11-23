@@ -16,6 +16,7 @@ import { getRepo, setUpImportMap } from './webworker-lib';
 import { DeliveryStats, reportDeliveryStats } from './delivery-stats';
 import { assignmentId } from './claims';
 import { listen } from './messages';
+import { retireForNewerBuild } from './retire';
 
 let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 
@@ -28,6 +29,27 @@ declare global {
 let workerHandle: DocHandle<WorkerDoc>;
 
 const deliveryStats = new DeliveryStats();
+
+// Set once a newer build's workers are up (see version.ts). A worker in the
+// middle of a task finishes it first; one with nothing to do goes at once.
+let retiring = false;
+
+function retire() {
+  retiring = true;
+  if (!workerHandle?.doc().currentTask) {
+    closeDown();
+  }
+}
+retireForNewerBuild(retire);
+
+async function closeDown() {
+  try {
+    await globalThis.repo?.flush();
+  } catch (error) {
+    console.error('could not save before stepping down', error);
+  }
+  self.close();
+}
 
 function handleConnect(e: any) {
   console.log('got a connection!');
@@ -108,6 +130,10 @@ async function init(
     switch (msg.type) {
       case 'work on':
         deliveryStats.record(workerHandle.url, msg);
+        if (retiring) {
+          // on its way out; the router's claim lapses and the task goes elsewhere
+          break;
+        }
         if (workerHandle.doc().currentTask) {
           // One task at a time. The router only sends work to a worker it
           // believes is idle, so this is a repeat or a stale view; its claim
@@ -213,6 +239,9 @@ async function processTask(
     });
   }
   logTally();
+  if (retiring) {
+    closeDown();
+  }
 }
 
 function failedTooManyTimes(taskHandle: DocHandle<TaskDoc<any, any>>) {

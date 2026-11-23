@@ -326,6 +326,12 @@ const HostManners = () => {
         <span class="tq-dot" />
         <span>{describeAvailability(status())}</span>
       </div>
+      <Show when={status()?.build}>
+        {(build) => (
+          // which build this browser's workers are, to see an update arrive
+          <p class="tq-choice-note">Workers built {new Date(build()).toLocaleString()}.</p>
+        )}
+      </Show>
     </section>
   );
 };
@@ -346,7 +352,10 @@ function describeAvailability(status: AvailabilityStatus | undefined) {
 function useAvailabilityStatus() {
   const [status, setStatus] = createSignal<AvailabilityStatus | undefined>(undefined, {
     equals: (a, b) =>
-      a?.available === b?.available && a?.reason === b?.reason && a?.mode === b?.mode,
+      a?.available === b?.available &&
+      a?.reason === b?.reason &&
+      a?.mode === b?.mode &&
+      a?.build === b?.build,
   });
   const channel = new BroadcastChannel(AVAILABILITY_CHANNEL);
   channel.onmessage = ({ data }: MessageEvent<AvailabilityStatus>) => setStatus(data);
