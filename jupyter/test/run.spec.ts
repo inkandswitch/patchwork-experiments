@@ -369,6 +369,21 @@ describe("a failed run does not read as up to date", () => {
     const { handle, runner } = setup([code("a", "raise bad")])
     await runner.run(["a"])
     expect(staleLine(runOf(handle.doc()), none)).toMatch(/^Its last run failed: /)
+    const recorded = runOf(handle.doc()) as any
+    expect(recorded.error).toMatchObject({ cell: "a", number: 1 })
+    expect(typeof recorded.error.ename).toBe("string")
+    expect(staleLine(recorded, none)).toContain("cell 1 raised ")
+  })
+  test("the failed line quotes the cell and its exception", () => {
+    expect(staleLine(run("error", { error: { cell: "c3", number: 3, ename: "KeyError", evalue: "'pack_series'" } }), none)).toBe("Its last run failed: cell 3 raised KeyError: 'pack_series'; rerun it.")
+    expect(staleLine(run("error", { error: { cell: "c3", number: 0, ename: "ValueError", evalue: "" } }), none)).toBe("Its last run failed: cell c3 raised ValueError; rerun it.")
+    // A run that couldn't start says why, ahead of any cell.
+    expect(staleLine(run("error", { problem: "p", error: { cell: "c", number: 1, ename: "E", evalue: "v" } }), none)).toBe("Its last run failed: p; rerun it.")
+  })
+  test("an ok run records no error", async () => {
+    const { handle, runner } = setup([code("a", "x = 1")])
+    await runner.run(["a"])
+    expect((runOf(handle.doc()) as any).error).toBeUndefined()
   })
 })
 

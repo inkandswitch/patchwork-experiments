@@ -115,6 +115,8 @@ reads         [{ docUrl, title, heads, as: "raw" | "json",
               keys or a list's length; path [] is the whole document. hash
               is of what was there (docToJson, keys sorted)
 problem       why it didn't start, when it couldn't (status "error", cells [])
+error         the first cell that raised: { cell, number, ename, evalue }
+              (number 1-based, evalue cut to 300 characters); absent on ok
 ```
 
 A reader should trust only `status: "ok"` records with `finished` set, and

@@ -302,7 +302,16 @@ export function runHooks(context: RunContext): Pick<RunnerHooks, "prepare" | "fi
       }
       const ran = outcome.results.filter(r => r.status === "ok" || r.status === "error")
       const status = outcome.results.some(r => r.status === "error") ? "error" : outcome.results.some(r => r.status === "stopped") ? "stopped" : "ok"
-      current.record = { ...current.record, finished: now(), status, cells: ran.map(r => r.id), outputs, finishHeads, reads }
+      const raised = outcome.results.find(r => r.status === "error")
+      const error = raised
+        ? {
+            cell: raised.id,
+            number: (writer.current()?.cells ?? []).findIndex((c: any) => String(c?.id ?? "") === raised.id) + 1,
+            ename: String(raised.ename ?? "Error"),
+            evalue: String(raised.evalue ?? "").slice(0, 300),
+          }
+        : undefined
+      current.record = { ...current.record, finished: now(), status, cells: ran.map(r => r.id), outputs, finishHeads, reads, ...(error ? { error } : {}) }
       writer.setPatchworkMetadata({ run: current.record })
     },
   }

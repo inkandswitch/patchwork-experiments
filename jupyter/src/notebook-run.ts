@@ -16,7 +16,8 @@ export function staleLine(run: RunRecord | null, staleness: Staleness): string {
   // may have recorded no reads at all (it failed early): that is no evidence of being current.
   // Only the last run is kept, so a failed run is reported as failed, not judged.
   if (run.status === "error" || run.status === "stopped") {
-    const what = run.status === "stopped" ? "was stopped" : `failed: ${run.problem ?? "a cell raised an error"}`
+    const raised = run.error ? `cell ${run.error.number || run.error.cell} raised ${run.error.ename}${run.error.evalue ? `: ${run.error.evalue}` : ""}` : null
+    const what = run.status === "stopped" ? "was stopped" : `failed: ${run.problem ?? raised ?? "a cell raised an error"}`
     const moved = staleness.stale ? ` What it read has also changed: ${staleText(staleness, 6)}.` : ""
     return `Its last run ${what}; rerun it.${moved}`
   }

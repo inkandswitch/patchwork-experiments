@@ -79,6 +79,8 @@ export type RunRecord = {
   reads: ReadRecord[]
   /** Why the run didn't start, when it couldn't. */
   problem?: string
+  /** The first cell that raised, when one did: its id, its 1-based position, and the exception (evalue cut to 300 characters). */
+  error?: { cell: string; number: number; ename: string; evalue: string }
 }
 
 /**
