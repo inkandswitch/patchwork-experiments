@@ -16,7 +16,7 @@
 // differently has one geometry digest; a change to the model, or to which of
 // its parts make the hull, gives another. That is what "a variation" is.
 
-import { KNOT, MODE_LABELS, waterProperties } from "./setup.js";
+import { MODE_LABELS, waterProperties, isSpeed, formatSpeedBoth } from "./setup.js";
 
 /** SHA-256 of a hull's triangles, as float32, in hex. */
 export async function geometryDigest(triangles) {
@@ -91,7 +91,7 @@ export function inputRows(run) {
   }
 
   add("Flow", "setup.mode", "Analysis", s.mode ?? null, MODE_LABELS[s.mode] ?? s.mode ?? "–");
-  add("Flow", "setup.speed", "Speed", num(s.speed, 5), Number.isFinite(s.speed) ? `${(s.speed / KNOT).toFixed(2)} kn (${s.speed.toFixed(3)} m/s)` : "–");
+  add("Flow", "setup.speed", "Speed", isSpeed(s.speed) ? { value: s.speed.value, unit: s.speed.unit } : null, formatSpeedBoth(s.speed));
   add("Flow", "setup.water", "Water", s.water ? `${s.water} ${s.temperature}` : null, s.water ? `${s.water === "fresh" ? "fresh" : "sea"}water at ${s.temperature} °C` : "–");
 
   add("Solver", "setup.mesh", "Mesh", s.mesh ?? null);

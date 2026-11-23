@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { glbTriangles } from "../src/hull/mesh-read.js";
 import { prepareHull } from "../src/hull/prepare.js";
-import { defaultSetup, normalizeSetup, KNOT, DEFAULT_ITERATIONS } from "../src/setup.js";
+import { defaultSetup, normalizeSetup, DEFAULT_ITERATIONS } from "../src/setup.js";
 import { newRun, enqueue, requestStop, unpackChunks, decodeLayer, isTerminal, daemonOnline } from "../src/protocol.js";
 import { internalize } from "../src/segments.js";
 import { findWhenThere } from "../src/find.js";
@@ -28,7 +28,7 @@ const mode = args.mode ?? "double-body";
 const setup = normalizeSetup({
   ...defaultSetup(),
   mode,
-  speed: Number(args.knots ?? 6) * KNOT,
+  speed: { value: Number(args.knots ?? 6), unit: "kn" },
   iterations: Number(args.iterations ?? DEFAULT_ITERATIONS[mode].coarse),
   attitude: { sinkage: Number(args.sinkage ?? 0), trim: Number(args.trim ?? 0), heel: Number(args.heel ?? 0) },
   stop: args.stop ?? "settled",

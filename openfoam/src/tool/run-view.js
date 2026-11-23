@@ -10,6 +10,7 @@
 
 import { unpackChunks, decodeLayer, requestStop, isTerminal, FIELD_INFO } from "../protocol.js";
 import { formatSpeed, formatDuration, MODE_LABELS } from "../setup.js";
+import { weightOf } from "../results.js";
 import { lineChart, seriesColors } from "./charts.js";
 import { runningAttitude } from "../attitude.js";
 import { findWhenThere } from "../find.js";
@@ -132,7 +133,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
     $(".finish").hidden = st !== "solving" || !!run.control?.finish;
     $(".cancel").hidden = isTerminal(st) || !!run.control?.cancel;
     $(".head-info").innerHTML = `
-      <div class="hint">${esc(MODE_LABELS[run.setup?.mode] ?? "")} · ${formatSpeed(run.setup?.speed ?? 0, run.setup?.speedUnit)} · ${esc(run.setup?.mesh)} mesh${run.daemon ? ` · ${esc(run.daemon.host)}, ${run.daemon.cores} core${run.daemon.cores === 1 ? "" : "s"}, OpenFOAM ${esc(run.daemon.openfoam ?? "")}` : ""}${started && st !== "queued" ? ` · ${formatDuration((ended - started) / 1000)}` : ""}</div>
+      <div class="hint">${esc(MODE_LABELS[run.setup?.mode] ?? "")} · ${formatSpeed(run.setup?.speed)} · ${esc(run.setup?.mesh)} mesh${run.daemon ? ` · ${esc(run.daemon.host)}, ${run.daemon.cores} core${run.daemon.cores === 1 ? "" : "s"}, OpenFOAM ${esc(run.daemon.openfoam ?? "")}` : ""}${started && st !== "queued" ? ` · ${formatDuration((ended - started) / 1000)}` : ""}</div>
       ${st === "solving" ? `<progress max="100" value="${pct.toFixed(1)}"></progress><div class="hint">iteration ${p.iteration ?? 0} of ${p.of}${run.setup?.mode === "double-body" ? " (it stops early once the residuals settle)" : ""}</div>` : ""}
       ${st === "queued" ? `<div class="hint">Waiting for the daemon; it takes runs oldest first.</div>` : ""}
     `;
@@ -201,6 +202,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
     const free = s.mode === "free-surface";
     const pct = (a) => (Number.isFinite(a) && s.Rt ? `${((100 * a) / s.Rt).toFixed(0)}%` : "");
     const att = runningAttitude(s, run.hull?.info, run.setup);
+    const w = weightOf(run);
     const attRow = att
       ? `<tr><td>Running attitude (estimate)</td><td>${(att.sinkage * 1000).toFixed(0)} mm, ${Math.abs(att.trimDeg).toFixed(2)}° ${att.trimDeg >= 0 ? "bow down" : "bow up"}</td><td></td><td class="method">${esc(att.why)}${onUseAttitude ? ` <button class="use-attitude">Use for a free-surface run</button>` : ""}</td></tr>`
       : "";
@@ -214,7 +216,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
         <tr><td>C<sub>T</sub></td><td>${fmtC(s.Ct)}</td><td></td><td class="method">R<sub>T</sub> / ½ρV²S, S = ${s.S.toFixed(2)} m² wetted at rest</td></tr>
         <tr><td>C<sub>V</sub> (viscous)</td><td>${fmtC(s.Cv)}</td><td></td><td class="method"></td></tr>
         <tr><td>C<sub>F0</sub> (ITTC-57)</td><td>${fmtC(s.Cf0)}</td><td></td><td class="method">0.075 / (log₁₀Re − 2)², Re = ${s.Re.toExponential(2)} on L = ${s.L.toFixed(2)} m</td></tr>
-        <tr><td>Vertical force F<sub>z</sub></td><td>${fmtN(s.Fz)}</td><td></td><td class="method">${free ? "pressure and buoyancy on the hull held fixed; minus the weight, what would sink or lift it" : "suction of the double body: the hull would squat (sink) by this"}</td></tr>
+        <tr><td>Vertical force F<sub>z</sub></td><td>${fmtN(s.Fz)}</td><td></td><td class="method">${free ? `pressure and buoyancy on the hull held fixed; minus the weight, what would sink or lift it${w ? `. Against a weight of ${fmtN(w.W)} (${(w.mass / 1000).toFixed(2)} t displaced at rest): F<sub>z</sub>/W = ${(s.Fz / w.W).toFixed(3)}` : ""}` : "suction of the double body: the hull would squat (sink) by this"}</td></tr>
         ${attRow}
         ${!s.half && Number.isFinite(s.Fy) ? `<tr><td>Side force F<sub>y</sub></td><td>${fmtN(s.Fy)}</td><td></td><td class="method">to port positive${Math.abs(s.heel ?? 0) > 1e-9 ? `; heeled ${Math.abs(s.heel)}° to ${s.heel > 0 ? "starboard" : "port"}, no leeway` : ""}</td></tr>` : ""}
         ${!s.half && Number.isFinite(s.Mx) ? `<tr><td>Heeling moment M<sub>x</sub></td><td>${(s.Mx / 1000).toFixed(2)} kN·m</td><td></td><td class="method">about the waterline at mid-length; starboard down positive, as heel</td></tr>` : ""}

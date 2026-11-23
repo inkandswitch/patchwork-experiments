@@ -37,7 +37,7 @@ describe("a hull's geometry digest", () => {
 describe("hull variations", () => {
   it("are told apart by geometry, not by speed or attitude", () => {
     const a1 = run();
-    const a2 = run({ setup: { speed: 3, attitude: { sinkage: 0.1, trim: 1, heel: 20 } } });
+    const a2 = run({ setup: { speed: { value: 3, unit: "m/s" }, attitude: { sinkage: 0.1, trim: 1, heel: 20 } } });
     const b = run({ digest: "e2".repeat(32) });
     expect(variantKey(a1)).toBe(variantKey(a2));
     expect(variantKey(b)).not.toBe(variantKey(a1));
@@ -72,7 +72,7 @@ describe("a run's inputs", () => {
   it("say which differ between two runs: one changed input is one difference", () => {
     const a = run();
     expect(diffInputs(a, run()).size).toBe(0);
-    expect([...diffInputs(a, run({ setup: { speed: 3 } }))]).toEqual(["setup.speed"]);
+    expect([...diffInputs(a, run({ setup: { speed: { value: 3, unit: "m/s" } } }))]).toEqual(["setup.speed"]);
     const b = run({ digest: "e2".repeat(32) });
     expect([...diffInputs(a, b)]).toEqual(["hull.geometry"]);
   });
@@ -88,7 +88,7 @@ describe("a run's inputs", () => {
 
 describe("setting the case up from a run", () => {
   it("gives back its setup and the hull it was read from", () => {
-    const r = run({ setup: { speed: 3, attitude: { sinkage: 0.1, trim: 0, heel: 10 } } });
+    const r = run({ setup: { speed: { value: 3, unit: "m/s" }, attitude: { sinkage: 0.1, trim: 0, heel: 10 } } });
     r.hull.source.stash = "automerge:stash";
     const { setup, hull } = setupFromRun(r);
     expect(setup).toEqual(r.setup);

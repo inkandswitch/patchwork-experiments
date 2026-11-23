@@ -19,7 +19,7 @@
 // at y = 0 (half model, y ≤ 0) unless the setup asks for the full domain.
 
 import { createHash } from "node:crypto";
-import { normalizeSetup, waterProperties, domainForHull, hullExtent, isHalfModel, AIR, G } from "../src/setup.js";
+import { normalizeSetup, waterProperties, domainForHull, hullExtent, isHalfModel, metresPerSecond, AIR, G } from "../src/setup.js";
 
 const HEADER = (cls, object, location) => `/*--------------------------------*- C++ -*----------------------------------*\\
   Written by patchwork openfoam (daemon/case.mjs)
@@ -59,7 +59,7 @@ export function caseGeometry(setupIn, info) {
   const { half, dom } = domainForHull(setup, info);
   const hull = hullExtent(info);
   const water = waterProperties(setup.water, setup.temperature);
-  const V = setup.speed;
+  const V = metresPerSecond(setup.speed);
   const draft = Math.max(info.draft || 0, 0.01 * dom.L);
   const halfBeam = Math.max(info.halfBeamWl || hull.yMax, 0.01 * dom.L);
   const bowX = Number.isFinite(info.wlXMax) ? info.wlXMax : hull.xMax;
