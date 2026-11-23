@@ -6,6 +6,9 @@
 // cursor lights parts; Escape clears. Screenshots go to <shots>.
 //
 //   node probes/source-map.mjs [shots dir]
+//
+// Every check passing is the contract; a view that changes size when a part is
+// picked redraws shifted, which reads as a flicker.
 
 import {mkdirSync} from "node:fs"
 import {fileURLToPath} from "node:url"
@@ -46,9 +49,13 @@ const detail = cellAt ? await js(`document.querySelector(".openscad-hover span")
 check("the hover says the shape and line", detail === "cube, line 2", detail)
 await b.shot(`${shots}/hover.png`)
 
-// click it: its code is selected, the chain shows
+// click it: its code is selected, the chain shows, and the view doesn't move
+const canvasBox = `(() => { const r = document.querySelector(".openscad-viewer-canvas canvas").getBoundingClientRect(); return [r.left, r.top, r.width, r.height].join(" ") })()`
+const before = await js(canvasBox)
 await b.click(...cellAt)
 await sleep(150)
+const after = await js(canvasBox)
+check("picking doesn't resize the view (the trail floats over it)", before === after, {before, after})
 const sel = await js(`window.__harness.selection()`)
 check("clicking a cell selects the cube that made it", sel?.text === "cube([10, 20, 30])" && sel?.line === 2, sel)
 const trail = await js(`[...document.querySelectorAll(".openscad-trail-step")].map(b => b.textContent)`)
