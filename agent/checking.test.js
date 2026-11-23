@@ -272,6 +272,13 @@ describe("driving a view with the granular tools", () => {
     expect(inspected).toContain("count: 2")
   })
 
+  it("refuses a long settleMs, and points to doc_watch with the document to watch", async () => {
+    const { mountId } = await mount()
+    await expect(viewInteract.execute({ mountId, action: "click", settleMs: 900000 }, {})).rejects.toThrow(/doc_watch \{ url: "automerge:[^"]*", path: \["status"\]/)
+    // Up to the limit is still a wait.
+    await expect(viewInteract.execute({ mountId, action: "click", settleMs: 5 }, {})).resolves.toBeTruthy()
+  })
+
   it("types into a specific field and reports the document change", async () => {
     const { mountId } = await mount()
     const out = await viewInteract.execute(

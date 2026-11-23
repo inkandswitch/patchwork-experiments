@@ -29,14 +29,20 @@ export function budgetWaiting(plan, planUrl, planHandle) {
     spent: plan.paused.spent,
     limit: plan.paused.limit,
     notStarted: notStarted(plan).length,
+    // Steps stopped part-way for their own budgets, held until there is room.
+    stopped: plan.paused.stopped?.length ?? 0,
+    ask: plan.paused.ask ?? null,
   }
 }
 
 export function waitingIn(doc) {
   if (!doc) return []
   // Stopped for its budget: waiting for someone to give it more (liftBudget),
-  // shown wherever a permission would be.
-  if (doc.stopped?.reason === "budget") {
+  // shown wherever a permission would be. A workflow step is not shown to the
+  // person: its orchestrator set the budget and decides whether to extend it
+  // out of the plan's remainder; the person is asked only when the plan's own
+  // cap is reached (budgetWaiting).
+  if (doc.stopped?.reason === "budget" && !doc.workflow?.orchestratorUrl) {
     return [{ kind: "budget", scope: "session", callId: `budget:${doc.stopped.at}`, spent: doc.stopped.spent, limit: doc.stopped.limit }]
   }
   const approvals = callsAwaitingApproval(doc).map((call) => ({

@@ -718,6 +718,9 @@ export const viewInspect = {
   },
 }
 
+/** The longest view_interact waits for a tool to react; slower work is waited on with doc_watch. */
+export const MAX_SETTLE_MS = 30000
+
 export const viewInteract = {
   id: "view_interact",
   // Acts on a mount, which view_mount was approved for. No document of its own.
@@ -727,6 +730,7 @@ export const viewInteract = {
     "Click, type into, or submit part of an open document, and report what changed — both in the document and on screen.",
     "Actions: 'click' (a button or any element), 'type' (set an input's value and fire both input and change events), 'submit' (fire a submit event on a form).",
     "Without a selector, 'click' uses the first button and 'type' the first input.",
+    `To wait for something slow (a run, a render), click with a short settleMs (at most ${MAX_SETTLE_MS} ms) and then doc_watch the document field that changes: it wakes you when it does. A longer settleMs is refused.`,
   ].join("\n"),
   where: "host",
   risk: "write",
@@ -738,12 +742,18 @@ export const viewInteract = {
       action: { type: "string", description: "click | type | submit. Default 'click'." },
       selector: { type: "string", description: "CSS selector of the element to act on." },
       value: { type: "string", description: "Text to type, for action 'type'." },
-      settleMs: { type: "number", description: "How long to wait for the tool to react. Default 200." },
+      settleMs: { type: "number", description: `How long to wait for the tool to react. Default 200, at most ${MAX_SETTLE_MS}; for anything slower, use doc_watch.` },
     },
   },
 
   async execute(input) {
     const mount = requireMount(input.mountId)
+    if (Number(input.settleMs) > MAX_SETTLE_MS) {
+      const url = mount.handle?.url ?? "the document's url"
+      throw new Error(
+        `Not clicked: settleMs ${input.settleMs} is more than ${MAX_SETTLE_MS} ms. Waiting that long inside a call holds the session open and pays for nothing. Click with a short settleMs, then watch the field that changes: doc_watch { url: "${url}", path: ["status"], match: "done|failed" } (use the path that changes in this document — read it with doc_read — and a match for the value you are waiting for), and end your turn: you are woken when it does.`
+      )
+    }
     const action = input.action ?? "click"
     const container = mount.container
 

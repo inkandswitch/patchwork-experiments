@@ -21,10 +21,10 @@
  * So steps spread over the browsers that have a key, and none runs twice.
  */
 
-import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch, liftBudget, CALL } from "../session.js"
+import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch, liftBudget, CALL, unansweredCalls } from "../session.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../runner.js"
 import { stringifyAutomergeUrl } from "@automerge/automerge-repo"
-import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, shouldPause, budgetOf, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
+import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
 import { scopeOf, webScope, sameScope, KERNEL_TYPES } from "../scope.js"
 import { documentIdOf } from "../session.js"
 import { releaseNowPermitted } from "../loop.js"
@@ -45,9 +45,20 @@ export const RESULT_KEPT = 8000
  *   { state: "running" | "done" | "failed", result?, waiting? }
  *
  * Done means the agent has stopped with nothing left to do and said something
- * last; that last message is the result.
+ * last; that last message is the result. "Stopped" is read off the document,
+ * all of it, so no gap between writes can pass for it:
+ *   - no call anywhere is unanswered: a status that dropped to idle while a
+ *     call was still running (or waiting) used to read as done, and the step
+ *     was filed while its session went on editing;
+ *   - no reply is still streaming;
+ *   - no live runner holds the session (`live`, the driver's own judgement of a
+ *     lease; a runner drops its lease when it finishes, so a held one is work).
+ *
+ * An empty last message is not an empty result: the result is then the last
+ * thing the session said in words. That costs nothing and cannot come back
+ * empty a second time, which asking it to report again could.
  */
-export function sessionOutcome(doc) {
+export function sessionOutcome(doc, { live = null } = {}) {
   if (!doc) return { state: "running" }
   if (doc.status === STATUS.error) return { state: "failed" }
   // Out of budget is not done: it stopped part-way, and the orchestrator
@@ -59,15 +70,28 @@ export function sessionOutcome(doc) {
   if (waitingIn(doc).length) return { state: "running", waiting: true }
   const waiting = doc.status === STATUS.awaitingApproval || doc.status === STATUS.awaitingAnswer
   if (doc.status !== STATUS.idle || needsWork(doc)) return { state: "running", waiting }
+  if (unansweredCalls(doc).length || (doc.turns ?? []).some((t) => t.streaming)) return { state: "running" }
+  if (doc.lease && live?.(doc.lease)) return { state: "running" }
   const last = lastTurn(doc)
   if (!last || last.role !== "assistant") return { state: "running" }
-  const text = (last.blocks ?? [])
-    .filter((b) => b.type === "text")
-    .map((b) => String(b.text ?? ""))
-    .join("\n")
-    .trim()
-  return { state: "done", result: text || "(the step finished without saying anything)" }
+  const textOf = (turn) =>
+    (turn.blocks ?? [])
+      .filter((b) => b.type === "text")
+      .map((b) => String(b.text ?? ""))
+      .join("\n")
+      .trim()
+  const text = textOf(last)
+  if (text) return { state: "done", result: text }
+  for (let i = doc.turns.length - 1; i >= 0; i--) {
+    const turn = doc.turns[i]
+    const earlier = turn.role === "assistant" ? textOf(turn) : ""
+    if (earlier) return { state: "done", result: `(the step's last message was empty; the last thing it said was:)\n${earlier}` }
+  }
+  return { state: "done", result: EMPTY_RESULT }
 }
+
+/** A step that never said anything in words. */
+export const EMPTY_RESULT = "(the step finished without saying anything)"
 
 /** What a plan's step sessions cost, summed. */
 function sumUsage(usages) {
@@ -280,7 +304,7 @@ export class WorkflowDriver {
       for (const call of requestCalls(doc)) if (!known.has(call.id)) asked.push(newRequest(step.id, call, this.now()))
       if (step.status !== STEP.running) continue
 
-      const outcome = sessionOutcome(doc)
+      const outcome = sessionOutcome(doc, { live: this.live })
       if (outcome.state === "running") {
         if (outcome.waiting) for (const item of waitingIn(doc)) waiting.push({ stepId: step.id, ...item })
         if (outcome.outOfBudget) outOfBudget.push({ stepId: step.id, ...outcome.outOfBudget })
@@ -309,10 +333,20 @@ export class WorkflowDriver {
     }
     this.waiting = waiting
     this.outOfBudget = outOfBudget
+    // The orchestrator's own spend since the workflow began counts toward the
+    // cap: it is the workflow's money too. Read, not watched: its every
+    // streamed token would wake a tick.
     const usage = sumUsage(usages)
     plan = this.handle.doc()
+    const orchestrator = plan.sessionUrl ? await this.repo.find(plan.sessionUrl).then((h) => h.doc(), () => null) : null
+    const orchestratorCost = orchestrator?.usage?.cost
+    if (typeof orchestratorCost === "number") {
+      if (plan.orchestratorFrom == null) this.write((d) => { d.orchestratorFrom = orchestratorCost })
+      usage.orchestrator = orchestratorSpend(this.handle.doc(), orchestratorCost)
+    }
+    plan = this.handle.doc()
     const was = plan.usage ?? {}
-    if (usage.in !== was.in || usage.out !== was.out || usage.cost !== was.cost || !!usage.costEstimated !== !!was.costEstimated) {
+    if (usage.in !== was.in || usage.out !== was.out || usage.cost !== was.cost || usage.orchestrator !== was.orchestrator || !!usage.costEstimated !== !!was.costEstimated) {
       this.write((d) => { d.usage = usage })
     }
 
@@ -337,10 +371,10 @@ export class WorkflowDriver {
     // 4b. Out of budget, with work ready to start: pause and say so, rather
     // than sit "running" with nothing happening.
     plan = this.handle.doc()
-    if (shouldPause(plan, sessions)) {
+    if (shouldPause(plan, sessions, outOfBudget.map((b) => b.stepId))) {
       const { spent, limit } = budgetOf(plan)
       this.write((d) => {
-        d.paused = { reason: "budget", at: this.now(), spent, limit, reported: false }
+        d.paused = { reason: "budget", at: this.now(), spent, limit, reported: false, stopped: outOfBudget.map((b) => b.stepId) }
       })
     }
 
@@ -811,8 +845,8 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = [], { s
     lines.push(
       "",
       "## Paused: the budget is spent",
-      `The steps have spent $${plan.paused.spent.toFixed(2)} of the $${plan.paused.limit.toFixed(2)} budget, so ${waitingSteps.length} step${waitingSteps.length === 1 ? "" : "s"} will not start: ${waitingSteps.map((s) => `${s.title} (${s.id})`).join(", ")}.`,
-      "Only the person can give it more: the workflow view and your session both offer them Resume. Tell them briefly where things stand — what is done, what is waiting — and do not start the waiting work yourself."
+      `The workflow has spent $${plan.paused.spent.toFixed(2)} of its $${plan.paused.limit.toFixed(2)} cap (steps and your own turns together), so ${waitingSteps.length} step${waitingSteps.length === 1 ? "" : "s"} will not start: ${waitingSteps.map((s) => `${s.title} (${s.id})`).join(", ") || "none"}${plan.paused.stopped?.length ? `; stopped part-way for their own budgets: ${plan.paused.stopped.join(", ")}` : ""}.`,
+      "Only the person can raise the cap: the workflow view and your session both offer them Resume. Tell them briefly where things stand — what is done, what is waiting — and do not start the waiting work yourself. When they resume, you are told about any step stopped part-way and decide it then."
     )
   }
   for (const step of news) {
@@ -825,11 +859,15 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = [], { s
     if (step.access === "web") lines.push(`It ${keptLine(plan, step.id)}`)
   }
   const title = (id) => plan.steps.find((s) => s.id === id)?.title ?? id
+  const money = budgetOf(plan)
   for (const b of outOfBudget) {
     lines.push(
       "",
       `## Out of budget: ${title(b.stepId)} (${b.stepId})`,
-      `It has spent $${Number(b.spent).toFixed(2)} of its $${Number(b.limit).toFixed(2)} and stopped part-way; what it kept and wrote so far is still there. Decide: workflow_budget to let it carry on with more, if it was making progress; workflow_stop to stop it (what depends on it will not run); or workflow_add_steps to do the rest differently. Its session shows what it was doing.`
+      `It has spent $${Number(b.spent).toFixed(2)} of its $${Number(b.limit).toFixed(2)} and stopped part-way; what it kept and wrote so far is still there. The person has not been asked: you set this budget, so the decision is yours. Look at its session: did it make progress, and what is left?`,
+      money.remaining > 0
+        ? `The workflow has $${money.remaining.toFixed(2)} left under its $${money.limit.toFixed(2)} cap ($${money.spent.toFixed(2)} spent, your own turns included). Extend it out of that with workflow_budget { step, add, why } — you need no one's leave while it fits — or stop it (workflow_stop; what depends on it will not run), or do the rest differently (workflow_add_steps). Always give a reason.`
+        : `The workflow's cap is reached ($${money.spent.toFixed(2)} of $${money.limit.toFixed(2)}, your own turns included), so the person is being asked to raise it; you are told once they do. Until then do not start work, and tell them briefly what is blocked.`
     )
   }
   for (const q of waiting.filter((w) => w.kind === "question")) {

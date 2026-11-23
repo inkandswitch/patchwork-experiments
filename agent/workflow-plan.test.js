@@ -131,7 +131,7 @@ describe("the budget, over every small plan", () => {
   it("counts dollars, not tokens: billions of tokens under budget still start work", () => {
     const p = plan([step("a")], { usage: { in: 9e9, out: 9e9, cost: 0.24 } })
     expect([overBudget(p), toStart(p)]).toEqual([false, ["a"]])
-    expect(budgetOf(p)).toEqual({ spent: 0.24, limit: DEFAULT_LIMITS.cost })
+    expect(budgetOf(p)).toMatchObject({ spent: 0.24, limit: DEFAULT_LIMITS.cost })
   })
 
   it("starts nothing paused or spent; pauses exactly when more budget would start something with nothing running; is never stuck without pausing", () => {

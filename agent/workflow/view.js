@@ -231,6 +231,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       }
     }
 
+    for (const g of step.budgetLog ?? []) card.append(el("p", "agent-wf-why", `Budget raised by $${Number(g.add).toFixed(2)} to $${Number(g.limit).toFixed(2)}: ${g.why}`))
+
     if (step.reopen) card.append(el("p", "agent-wf-why", `Reopened: ${step.reopen.note}`))
     if (state === STATE.stale) {
       card.append(el("p", "agent-wf-stale", `Out of date: built on ${staleInputs(handle.doc(), step).join(", ")} as it was before. Steps waiting on it are held until the orchestrator reopens or keeps it.`))
@@ -383,7 +385,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       count(STATE.needsInput) ? `${count(STATE.needsInput)} need you` : null,
       count(STATE.failed) ? `${count(STATE.failed)} failed` : null,
       count(STATE.blocked) ? `${count(STATE.blocked)} blocked` : null,
-      `$${budget.spent.toFixed(2)} of $${budget.limit.toFixed(2)} budget${plan.usage?.costEstimated ? " (partly estimated)" : ""}`,
+      `$${budget.spent.toFixed(2)} of $${budget.limit.toFixed(2)} budget${budget.orchestrator > 0 ? ` (steps $${budget.steps.toFixed(2)} + orchestrator $${budget.orchestrator.toFixed(2)})` : ""}${plan.usage?.costEstimated ? " (partly estimated)" : ""}`,
       `up to ${plan.limits?.parallel ?? DEFAULT_LIMITS.parallel} at once`,
     ]
       .filter(Boolean)

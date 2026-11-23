@@ -136,7 +136,7 @@ describe("the workflow's budget", () => {
     expect(w.plan.doc().status).toBe("running")
     const told = w.news.join("\n")
     expect(told.match(/## Paused: the budget is spent/g)).toHaveLength(1)
-    expect(told).toMatch(/\$1\.00 of the \$0\.50 budget, so 1 step will not start: Step b \(b\)/)
+    expect(told).toMatch(/\$1\.00 of its \$0\.50 cap \(steps and your own turns together\), so 1 step will not start: Step b \(b\)/)
 
     w.plan.change((d) => resumePlan(d, 5))
     await w.settle()
@@ -170,13 +170,13 @@ describe("a step's budget", () => {
     expect(w.plan.doc().steps.map((s) => s.status)).toEqual([STEP.running, STEP.pending])
     const told = w.news.join("\n")
     expect(told.match(/## Out of budget: Step a \(a\)/g)).toHaveLength(1)
-    expect(told).toMatch(/workflow_budget .* workflow_stop .* workflow_add_steps/)
+    expect(told).toMatch(/workflow_budget[^]*workflow_stop[^]*workflow_add_steps/)
   })
 
   it("given more, it carries on from where it stopped", async () => {
     const w = await workflow([step("a")], { behaviour: { a: { outOfBudget: true } } })
     await w.settle()
-    const out = await workflowBudget.execute({ plan: w.plan.url, step: "a", add: 2 }, { workflows: { repo: w.repo } })
+    const out = await workflowBudget.execute({ plan: w.plan.url, step: "a", add: 2, why: "half done" }, { workflows: { repo: w.repo } })
     expect(out).toMatch(/may now spend \$2\.50; it carries on from where it stopped/)
     const doc = (await w.repo.find(w.plan.doc().steps[0].sessionUrl)).doc()
     expect([doc.config.budget, doc.stopped, doc.turns.at(-1).role]).toEqual([2.5, null, "user"])
@@ -186,11 +186,11 @@ describe("a step's budget", () => {
 
   it("can be raised before a step starts, and not after it has finished", async () => {
     const w = await workflow([step("a"), step("b", { after: ["a"] })], { limits: { parallel: 1 } })
-    await workflowBudget.execute({ plan: w.plan.url, step: "b", add: 1 }, { workflows: { repo: w.repo } })
+    await workflowBudget.execute({ plan: w.plan.url, step: "b", add: 1, why: "big" }, { workflows: { repo: w.repo } })
     expect(w.plan.doc().steps[1].budget).toBe(DEFAULT_STEP_BUDGETS.fast + 1)
     await w.settle()
-    await expect(workflowBudget.execute({ plan: w.plan.url, step: "a", add: 1 }, { workflows: { repo: w.repo } })).rejects.toThrow(/is done/)
-    await expect(workflowBudget.execute({ plan: w.plan.url, step: "a", add: 0 }, { workflows: { repo: w.repo } })).rejects.toThrow(/positive/)
+    await expect(workflowBudget.execute({ plan: w.plan.url, step: "a", add: 1, why: "more" }, { workflows: { repo: w.repo } })).rejects.toThrow(/is done/)
+    await expect(workflowBudget.execute({ plan: w.plan.url, step: "a", add: 0, why: "more" }, { workflows: { repo: w.repo } })).rejects.toThrow(/positive/)
   })
 })
 
@@ -201,7 +201,7 @@ describe("Resume, where the person sees it", () => {
     const item = budgetWaiting(doc, "automerge:plan", handle)
     expect(item).toMatchObject({ kind: "budget", callId: "budget:automerge:plan:9", notStarted: 1 })
     const node = renderBudgetItem(item)
-    expect(node.textContent).toMatch(/Budget spent: \$1\.00 of \$0\.50\. 1 step waiting to start\./)
+    expect(node.textContent).toMatch(/spent its whole budget \(\$1\.00 of \$0\.50, orchestrator included\), so 1 step waiting to start/)
     const buttons = [...node.querySelectorAll("button")].map((b) => b.textContent)
     expect(buttons).toEqual(["Resume with $5 more", "Resume with $20 more"])
     node.querySelector("button").click()

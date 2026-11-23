@@ -13,7 +13,9 @@
  *     status: "running" | "done" | "stopped",
  *     tiers:  { deep, standard, fast },       model per tier
  *     limits: { parallel, hostParallel, steps, tokens },
- *     usage:  { in, out },                    summed over steps
+ *     usage:  { in, out, cost, orchestrator }, summed over steps; `orchestrator` is the
+ *                                             orchestrating session's own spend since the plan began
+ *     orchestratorFrom,                       what that session had spent when the plan began
  *     sources: { [documentId]: { url, kind: "source" | "finding", what,
  *                source, name, engine, chars, by, at, heads } },
  *                                             the research steps' ledger (scope.js)
@@ -581,7 +583,7 @@ export function requestErrors(input) {
   const reopen = input?.reopen ?? []
   if (!Array.isArray(add)) errors.push("`add_steps` must be a list of steps.")
   if (!Array.isArray(reopen) || reopen.some((id) => typeof id !== "string")) errors.push("`reopen` must be a list of step ids.")
-  if (!errors.length && !add.length && !reopen.length) errors.push("Ask for something: `add_steps`, `reopen`, or both.")
+  if (!errors.length && !add.length && !reopen.length) errors.push("workflow_request asks for work, so pass `add_steps` (a list of steps to add, each with id, title, prompt, where, tier, why), `reopen` (a list of ids of earlier steps whose result is wrong), or both, along with `why`. `why` alone asks for nothing. If you have nothing to ask, don't call it: finish your step and say what you found in your result.")
   if (Array.isArray(add)) add.forEach((step, i) => errors.push(...stepFieldErrors(step, `step ${i + 1}${step?.id ? ` ('${step.id}')` : ""}`)))
   return errors
 }
@@ -608,9 +610,41 @@ export function newRequest(stepId, call, now = Date.now()) {
   }
 }
 
-/** What the steps have spent, in dollars, and the budget for it. */
+/**
+ * What the workflow has spent, in dollars, and its cap. Everything counts: the
+ * steps' sessions and the orchestrator's own turns, which are paid for out of
+ * the same money.
+ */
 export function budgetOf(plan) {
-  return { spent: plan?.usage?.cost ?? 0, limit: plan?.limits?.cost ?? DEFAULT_LIMITS.cost }
+  const steps = plan?.usage?.cost ?? 0
+  const orchestrator = plan?.usage?.orchestrator ?? 0
+  const spent = steps + orchestrator
+  const limit = plan?.limits?.cost ?? DEFAULT_LIMITS.cost
+  return { spent, steps, orchestrator, limit, remaining: Math.max(0, limit - spent) }
+}
+
+/** What the orchestrator has spent for this plan: its session's total less what it had spent at the start. */
+export function orchestratorSpend(plan, sessionCost) {
+  return Math.max(0, (Number(sessionCost) || 0) - (plan?.orchestratorFrom ?? 0))
+}
+
+/**
+ * May the orchestrator give a step `add` more dollars on its own? Yes while
+ * the plan's remaining budget covers it; past the cap only a person can.
+ */
+export function canExtend(plan, add) {
+  return Number(add) <= budgetOf(plan).remaining + 1e-9
+}
+
+/**
+ * The plan has run into its cap with a step waiting on more money: ask the
+ * person, inside a change. The one place a step's budget becomes a person's
+ * request. `need` is what the step asked for.
+ */
+export function askForBudget(doc, step, need, why, now = Date.now()) {
+  const { spent, limit } = budgetOf(doc)
+  const stopped = [...new Set([...(doc.paused?.stopped ?? []), step.id])]
+  doc.paused = { reason: "budget", at: now, spent, limit, reported: doc.paused?.reported ?? true, stopped, ask: { stepId: step.id, stepTitle: step.title, need: Math.round(need * 100) / 100, why: String(why ?? "") } }
 }
 
 /** Has the budget been spent? */
@@ -629,9 +663,12 @@ export function overBudget(plan) {
  * ready to start, since a plan with nothing left to start is finishing, not
  * stuck.
  */
-export function shouldPause(plan, sessions = {}) {
+export function shouldPause(plan, sessions = {}, stopped = []) {
   if (plan?.status !== PLAN.running || plan.paused || !overBudget(plan)) return false
-  if ((plan.steps ?? []).some((s) => s.status === STEP.running)) return false
+  // A step stopped for its own budget is not working: with the cap reached too,
+  // nothing the orchestrator may do can carry it on, so the person is asked.
+  if ((plan.steps ?? []).some((s) => s.status === STEP.running && !stopped.includes(s.id))) return false
+  if (stopped.length) return true
   const derived = states(plan, sessions)
   return [...derived.values()].some((state) => state === STATE.ready)
 }
@@ -652,6 +689,9 @@ export function resumePlan(doc, add) {
   if (!doc.limits) doc.limits = { ...DEFAULT_LIMITS }
   doc.limits.cost = Math.round((spent + amount) * 100) / 100
   doc.paused = null
+  // Steps that stopped for their own budgets are the orchestrator's to decide
+  // now there is room: it is told of them again.
+  for (const step of doc.steps ?? []) delete step.budgetNoticed
 }
 
 /** How much of a dependency's result a step is handed. The rest is in its session. */
@@ -711,12 +751,17 @@ export function stepPrompt(plan, step) {
       : `Your last message is your result, and it is all the orchestrator sees. Make it concrete: what you found or did, with the URLs of anything you changed. If you could not do the step, say so and why.`,
     `There is usually no one watching this session. Ask the user something only if you truly cannot continue without it.`,
     ``,
+    ...(web ? [] : [`## Waiting`, ``, WAIT_GUIDANCE, ``]),
     `## When the work calls for more`,
     ``,
     REQUEST_GUIDANCE
   )
   return lines.join("\n")
 }
+
+/** How a step waits for something that takes a while: a watch, not a long click or a poll. */
+export const WAIT_GUIDANCE =
+  "When you must wait for something that takes a while — a run, a render, a kernel — do not hold a view_interact open with a long settleMs and do not poll doc_read in a loop. Start it, then doc_watch the field that changes (path ['status'], say, with match 'done|failed') and end your turn: you are woken when it does."
 
 const REQUEST_GUIDANCE =
   "If what you find means the workflow needs more steps, or that an earlier step's result is wrong and it should be reopened, ask with workflow_request — the orchestrator decides. Then carry on with your own step: do not wait for an answer, and do not do the other work yourself."
@@ -760,7 +805,7 @@ export function reopenPrompt(plan, step) {
     ``,
     `## When you finish`,
     ``,
-    `Your last message is your result again, and it replaces the one before: make it whole, not a list of changes. ${REQUEST_GUIDANCE}`,
+    `Your last message is your result again, and it replaces the one before: make it whole, not a list of changes. ${step.access === "web" ? "" : `${WAIT_GUIDANCE} `}${REQUEST_GUIDANCE}`,
   ].join("\n")
 }
 
