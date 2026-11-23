@@ -25,8 +25,11 @@ declare global {
 const I = (s: string) => new A.ImmutableString(s)
 const code = (id: string, source: string) => ({ id: I(id), cell_type: I("code"), source, metadata: {}, outputs: [], execution_count: null })
 
+/** The options each asSource call got: the notebook asks on its own behalf. */
+const asked: Array<{ ext: string; for?: string }> = []
 const registerType = {
-  asSource(doc: any, ext: string) {
+  asSource(doc: any, ext: string, options?: { for?: string }) {
+    asked.push({ ext, for: options?.for })
     const pairs = Object.entries(doc.entries ?? {}).map(([id, e]: any) => [id, e.value?.nominal] as const)
     if (ext === "py") return pairs.map(([id, v]) => `${id} = ${JSON.stringify(v)}`).join("\n") + "\n"
     if (ext === "json") return JSON.stringify(Object.fromEntries(pairs))
@@ -46,7 +49,7 @@ window.probe = (async () => {
   const register = make({
     "@patchwork": { type: I("assumptions") },
     title: I("Nootka assumptions"),
-    entries: { boat_mass_kg: { unit: I("kg"), value: { nominal: 8330 } }, boat_speed_kn: { unit: I("kn"), value: { nominal: 8 } } },
+    entries: { boat_mass_kg: { unit: I("kg"), value: { nominal: 8330 } }, boat_speed_kn: { unit: I("kn"), value: { nominal: 8 } }, boat_drag_N: { unit: I("N"), value: { nominal: 0 } } },
   })
   const model1 = make({
     "@patchwork": { type: I("jupyter-notebook") },
@@ -83,5 +86,5 @@ window.probe = (async () => {
   register.change((d: any) => (d.entries.boat_mass_kg.value.nominal = 8900))
   const afterChange = await notebookRun.execute({ url: model2.url, check: true }, ctx as any)
   const rerun = await notebookRun.execute({ url: model2.url, cells: [3] }, ctx as any)
-  return { report, elapsed, run, outputs, counts, afterRename, afterChange, rerun, outputsAfter: model2.doc().cells.map((c: any) => (c.outputs ?? []).map((o: any) => String(o.text ?? "")).join("")) }
+  return { asked, notebook: model2.url, report, elapsed, run, outputs, counts, afterRename, afterChange, rerun, outputsAfter: model2.doc().cells.map((c: any) => (c.outputs ?? []).map((o: any) => String(o.text ?? "")).join("")) }
 })().catch(error => ({ error: String(error?.stack ?? error) }))

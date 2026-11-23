@@ -5,9 +5,10 @@ import { CellRunner } from "../shared/cells"
 import { outputsFingerprint, readHash, runOf } from "../shared/imports"
 import { notebookDoc } from "../shared/notebook-doc"
 import { NotebookWriter } from "../shared/notebook-writer"
-import { runHooks } from "../shared/run"
+import { forDocument, runHooks } from "../shared/run"
+import { syncedWithServer, syncNote } from "../shared/sync"
 import type { KernelClient } from "../native/src/kernel/types"
-import { linkImports, pickCells, report } from "../src/notebook-run"
+import { linkImports, pickCells, registerIds, report, staleLine } from "../src/notebook-run"
 
 /** A DocHandle over an Automerge document, as far as the writer needs one. */
 function handleOf(doc: any) {
@@ -279,10 +280,12 @@ describe("notebook_run's input", () => {
 
 describe("notebook_run's report", () => {
   test("is compact: a line per cell, the traceback's tail, result lines and a stdout tail", async () => {
-    const { handle, runner, hooks } = setup(
-      [{ id: "m", cell_type: "markdown", source: "# M", metadata: {} }, code("a", "print boat_drag_N 1020.4\nprint prop_P_kW = 46.1 kW"), code("b", "raise bad input"), code("c", "print never")],
+    const { handle, runner, hooks, docs } = setup(
+      [{ id: "m", cell_type: "markdown", source: "# M", metadata: {} }, code("a", "print boat_drag_N 1020.4\nprint prop_P_kW = 46.1 kW\nprint frac_fwd 0.0: not a result"), code("b", "raise bad input"), code("c", "print never")],
       { patchwork: { imports } },
     )
+    const reg = docs["automerge:reg"].doc() as any
+    docs["automerge:reg"].doc = () => ({ ...reg, entries: { ...reg.entries, boat_drag_N: { value: { nominal: 1 } }, prop_P_kW: { value: { nominal: 1 } } } })
     const outcome = await runner.run(["a", "b", "c"])
     const text = report({ title: "Model 2", doc: handle.doc(), outcome, last: hooks.last(), elapsedMs: 1234 })
     expect(text).toBe(
@@ -295,11 +298,11 @@ describe("notebook_run's report", () => {
         '      File "<cell>", line 1',
         "    ValueError: bad input",
         "cell 4 skipped (cell 3 failed first)",
-        "Result lines (id value), 2:",
+        "Result lines (register entry id and value), 2:",
         "  boat_drag_N 1020.4  (cell 2)",
         "  prop_P_kW = 46.1 kW  (cell 2)",
-        "Printed output, last 2 of 2 lines:",
-        "  boat_drag_N 1020.4\n  prop_P_kW = 46.1 kW",
+        "Printed output, last 3 of 3 lines:",
+        "  boat_drag_N 1020.4\n  prop_P_kW = 46.1 kW\n  frac_fwd 0.0: not a result",
         "Outputs and execution counts are in the notebook, and the run is recorded in its metadata (metadata.patchwork.run).",
       ].join("\n"),
     )
@@ -313,5 +316,150 @@ describe("notebook_run's report", () => {
     expect(text).toMatch(/the kernel was fresh, so the 1 code cell before cell 2 didn't run in it/)
     expect(text).toMatch(/Printed output, last 20 of 60 lines:/)
     expect(text.length).toBeLessThan(2400)
+  })
+})
+
+describe("result lines belong to a linked register", () => {
+  const LOADED = "automerge:4NMNnkMhL8jXrdJ9jamS7Z"
+  const cells = [code("a", "print boat_mass_kg 8330\nprint frac_fwd 0.0: not a result")]
+  const textOf = async (metadata: any, loaded: unknown[] = []) => {
+    const { handle, kernel, runner, hooks, docs } = setup(loaded.length ? [code("a", `# ${LOADED}\n${cells[0].source}`)] : cells, metadata)
+    // the document the code reads by URL is a register
+    docs[LOADED].doc = docs["automerge:reg"].doc
+    kernel.loaded = loaded
+    const outcome = await runner.run(["a"])
+    return { text: report({ title: "M", doc: handle.doc(), outcome, last: hooks.last(), elapsedMs: 1 }), last: hooks.last() }
+  }
+  test("an imported register's entries are listed, other id-value lines are only printed output", async () => {
+    const { text, last } = await textOf({ patchwork: { imports: [{ name: "reg", docUrl: "automerge:reg" }] } })
+    expect([...registerIds(last)]).toEqual(["boat_mass_kg", "boat_speed_kn"])
+    expect(text).toContain("Result lines (register entry id and value), 1:\n  boat_mass_kg 8330  (cell 1)")
+    expect(text).not.toMatch(/Result lines[^]*frac_fwd[^]*Printed output/)
+    expect(text).toContain("frac_fwd 0.0: not a result")
+  })
+  test("a register read with patchwork.load counts too", async () => {
+    const { text } = await textOf({}, [{ docUrl: LOADED, as: "raw", paths: [{ path: ["entries", "boat_mass_kg"] }] }])
+    expect(text).toContain("Result lines (register entry id and value), 1:")
+  })
+  test("with no register linked none are listed", async () => {
+    const { text, last } = await textOf({ patchwork: { imports: [{ name: "model_1", docUrl: "automerge:m1" }] } })
+    expect(registerIds(last).size).toBe(0)
+    expect(text).not.toContain("Result lines")
+    expect(registerIds(null).size).toBe(0)
+  })
+})
+
+describe("a failed run does not read as up to date", () => {
+  const none = { stale: false, reasons: [] }
+  const run = (status: string, extra: object = {}) => ({ status, imports: [], reads: [], ...extra }) as any
+  test("an error run with no reads is reported as failed, with its problem", () => {
+    expect(staleLine(run("error", { problem: "the imports couldn't be set up: ImportError: x" }), none)).toBe("Its last run failed: the imports couldn't be set up: ImportError: x; rerun it.")
+    expect(staleLine(run("error"), none)).toBe("Its last run failed: a cell raised an error; rerun it.")
+    expect(staleLine(run("stopped"), none)).toBe("Its last run was stopped; rerun it.")
+  })
+  test("and says so when what it read has changed too", () => {
+    const stale = { stale: true, reasons: [{ docUrl: "automerge:reg", title: "Reg", why: "changed", paths: [], name: "reg" }] } as any
+    expect(staleLine(run("error"), stale)).toContain('What it read has also changed: "Reg" changed')
+  })
+  test("a run that completed ok is judged as before", () => {
+    expect(staleLine(run("ok"), none)).toBe("It was up to date: its last run read no documents.")
+    expect(staleLine(run("ok", { reads: [{ docUrl: "automerge:reg" }] }), none)).toContain("It was up to date: nothing its last run read (1 document)")
+  })
+  test("a run whose cell failed is recorded as error and reads as failed", async () => {
+    const { handle, runner } = setup([code("a", "raise bad")])
+    await runner.run(["a"])
+    expect(staleLine(runOf(handle.doc()), none)).toMatch(/^Its last run failed: /)
+    const recorded = runOf(handle.doc()) as any
+    expect(recorded.error).toMatchObject({ cell: "a", number: 1 })
+    expect(typeof recorded.error.ename).toBe("string")
+    expect(staleLine(recorded, none)).toContain("cell 1 raised ")
+  })
+  test("the failed line quotes the cell and its exception", () => {
+    expect(staleLine(run("error", { error: { cell: "c3", number: 3, ename: "KeyError", evalue: "'pack_series'" } }), none)).toBe("Its last run failed: cell 3 raised KeyError: 'pack_series'; rerun it.")
+    expect(staleLine(run("error", { error: { cell: "c3", number: 0, ename: "ValueError", evalue: "" } }), none)).toBe("Its last run failed: cell c3 raised ValueError; rerun it.")
+    // A run that couldn't start says why, ahead of any cell.
+    expect(staleLine(run("error", { problem: "p", error: { cell: "c", number: 1, ename: "E", evalue: "v" } }), none)).toBe("Its last run failed: p; rerun it.")
+  })
+  test("an ok run records no error", async () => {
+    const { handle, runner } = setup([code("a", "x = 1")])
+    await runner.run(["a"])
+    expect((runOf(handle.doc()) as any).error).toBeUndefined()
+  })
+})
+
+describe("the notebook asks on its own behalf", () => {
+  test("imports and patchwork.load documents get { for: the notebook's url } from asSource", async () => {
+    const calls: unknown[][] = []
+    const writer = new NotebookWriter(handleOf({ ...notebookDoc({ nbformat: 4, nbformat_minor: 5, metadata: { patchwork: { imports: [{ name: "reg", docUrl: "automerge:reg" }] } }, cells: [code("a", "print 1")] } as any, "M") }) as any)
+    const reg = { "@patchwork": { type: "assumptions" }, title: "R", entries: {} }
+    const lookup = async () => ({ asSource: (_d: unknown, ext: string, options?: { for?: string }) => (calls.push([ext, options]), ext === "py" ? "x = 1\n" : "{}") })
+    const hooks = runHooks({ writer, kernel: fakeKernel(), find: async () => ({ doc: () => reg, heads: () => ["h"] }), datatype: forDocument(lookup, "automerge:notebook"), by: "agent" })
+    await new CellRunner(writer, fakeKernel(), hooks).run(["a"])
+    expect(calls).toContainEqual(["py", { for: "automerge:notebook" }])
+    expect(calls).toContainEqual(["json", { for: "automerge:notebook" }])
+    expect(calls.every(c => (c[1] as any)?.for === "automerge:notebook")).toBe(true)
+  })
+  test("a datatype without asSource, null and undefined pass through; an older asSource ignores the option", async () => {
+    expect(await forDocument(async () => null, "u")("t")).toBeNull()
+    expect(await forDocument(async () => undefined, "u")("t")).toBeUndefined()
+    const plain = { title: "x" }
+    expect(await forDocument(async () => plain as any, "u")("t")).toBe(plain)
+    const old = await forDocument(async () => ({ asSource: (_d: unknown, ext: string) => `old ${ext}` }), "u")("t")
+    expect(old!.asSource!({}, "py")).toBe("old py")
+  })
+})
+
+describe("syncing with the server before a run", () => {
+  /** A handle that is caught up with each peer once `caught` has it; `advertise` fires the server's heads. */
+  function fake(peers: string[], caught: Record<string, boolean | undefined> = {}) {
+    const listeners = new Map<string, Set<() => void>>()
+    const handle = {
+      documentId: "doc1",
+      isCaughtUpWith: (p: string) => caught[p],
+      on: (e: string, fn: () => void) => (listeners.get(e) ?? listeners.set(e, new Set()).get(e)!).add(fn),
+      off: (e: string, fn: () => void) => listeners.get(e)?.delete(fn),
+    }
+    const resyncs: string[] = []
+    const repo = { isSubductionConnected: () => true, connectedSubductionPeerIds: async () => peers, resyncSubduction: (d: string) => void resyncs.push(d) }
+    const fire = (e: string) => [...(listeners.get(e) ?? [])].forEach(fn => fn())
+    return { handle, repo, caught, resyncs, fire, listeners }
+  }
+  test("is synced at once when the server's heads are already held", async () => {
+    const f = fake(["srv"], { srv: true })
+    expect(await syncedWithServer(f.repo, f.handle)).toEqual({ status: "synced" })
+    expect(f.resyncs).toEqual([])
+  })
+  test("waits for the server's heads to arrive, asking for a sync round", async () => {
+    const f = fake(["srv"], { srv: undefined })
+    const pending = syncedWithServer(f.repo, f.handle, { timeoutMs: 5000 })
+    await new Promise(r => setTimeout(r, 5))
+    expect(f.resyncs).toEqual(["doc1"])
+    f.fire("remote-heads") // advertised, but we lack its commits
+    f.caught.srv = false
+    f.fire("remote-heads")
+    f.caught.srv = true
+    f.fire("heads-changed") // the commits arrived
+    expect(await pending).toEqual({ status: "synced" })
+    expect([...f.listeners.values()].every(set => set.size === 0)).toBe(true)
+  })
+  test("gives up after the timeout and says so; never throws", async () => {
+    const f = fake(["srv"], { srv: false })
+    const outcome = await syncedWithServer(f.repo, f.handle, { timeoutMs: 20 })
+    expect(outcome).toEqual({ status: "timeout" })
+    expect(syncNote(outcome)).toMatch(/hadn't finished syncing/)
+    expect([...f.listeners.values()].every(set => set.size === 0)).toBe(true)
+  })
+  test("without a server connection, or an API for one, the run goes on with what is here", async () => {
+    const f = fake([])
+    expect(await syncedWithServer(f.repo, f.handle)).toEqual({ status: "unconnected" })
+    expect(await syncedWithServer({ ...f.repo, isSubductionConnected: () => false }, f.handle)).toEqual({ status: "unconnected" })
+    expect(await syncedWithServer({}, {})).toEqual({ status: "unconnected" })
+    expect(await syncedWithServer({ connectedSubductionPeerIds: async () => { throw new Error("x") }, isSubductionConnected: () => true }, f.handle)).toEqual({ status: "unconnected" })
+    expect(syncNote({ status: "synced" })).toBeNull()
+    expect(syncNote({ status: "unconnected" })).toMatch(/isn't connected to the sync server/)
+  })
+  test("every connected server must have caught us up", async () => {
+    const f = fake(["a", "b"], { a: true, b: false })
+    expect(await syncedWithServer(f.repo, f.handle, { timeoutMs: 20 })).toEqual({ status: "timeout" })
   })
 })
