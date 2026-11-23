@@ -170,7 +170,14 @@ patchwork-view {
   pointer-events: none;
 }
 
-/* contact-avatar draws itself at 2rem unless it's told to fill its view */
+/* TODO delete this rule. It works around contact-avatar drawing itself at a
+   fixed 2rem, which inkandswitch/patchwork-pkg-base#109 fixes upstream. It
+   does nothing today either: account's avatar rules are unlayered, so they
+   beat this layered one.
+   Safe to delete once the installed account package has the fix, i.e. its
+   stylesheet has a `.contact-avatar-view` rule and `.contact-avatar` no
+   longer sets `min-width: 2rem`. Check: with this rule gone, the avatar in
+   the top bar is a centred 22px circle, not an off-centre clipped one. */
 .tile-topbar__avatar-btn patchwork-view .contact-avatar {
   display: flex;
   box-sizing: border-box;
