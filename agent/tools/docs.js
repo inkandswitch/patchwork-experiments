@@ -17,14 +17,14 @@ import { previewJson, preview, shape, bytes } from "./format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
 import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
 import { imageForModel } from "../images.js"
-import { findAll, around, MAX_MATCHES } from "./read-source.js"
+import { findAll, MAX_MATCHES } from "./read-source.js"
 import { fileKind, officeText, describeFile, MAX_FILE_BYTES } from "../files.js"
 
 /** Resolve a url argument against the session's subject. */
 function targetUrl(input, ctx) {
   const url = input?.url ?? ctx.subject
   if (!url) {
-    throw new Error("No document specified and this session is not attached to one. Pass `url`.")
+    throw new Error("This session is not attached to a document, so say which one: pass `url` (its automerge: URL) on every call.")
   }
   return url
 }
@@ -49,13 +49,28 @@ function valueAtPath(doc, path = []) {
 export const RANGE_LIMIT = 8000
 
 /**
- * A slice of a long string, framed so the model knows where it is.
- *
- * The header matters as much as the text: without it a model that reads
- * characters 8000–16000 has no way to tell whether it has reached the end, and
- * either stops early or keeps asking.
+ * Text at a path, when it should be shown as itself: a string, an
+ * ImmutableString, or a list of lines (every item but the last ending in a
+ * newline, as notebooks keep source). `what` says which, for the header.
  */
-export function readRange(value, input, url, path) {
+export function textAt(value) {
+  if (typeof value === "string") return { text: value, what: "" }
+  if (isImmutableString(value)) return { text: String(value), what: "an ImmutableString, " }
+  const lines =
+    Array.isArray(value) &&
+    value.length > 1 &&
+    value.every((item, i) => (typeof item === "string" || isImmutableString(item)) && (i === value.length - 1 || String(item).endsWith("\n")))
+  if (lines) return { text: value.map(String).join(""), what: `a list of ${value.length} lines, joined: ` }
+  return null
+}
+
+/**
+ * A slice of text, shown as itself — not JSON-escaped, so what the model
+ * quotes from it is exactly what is there — and framed so the model knows
+ * where it is. The header matters as much as the text: without it a model that
+ * reads characters 8000–16000 cannot tell whether it has reached the end.
+ */
+export function readRange(value, input, url, path, what = "") {
   const total = value.length
   const offset = Math.max(0, Math.min(Math.floor(input.offset ?? 0), total))
   const limit = Math.max(1, Math.floor(input.limit ?? RANGE_LIMIT))
@@ -63,7 +78,7 @@ export function readRange(value, input, url, path) {
   const remaining = total - end
 
   const header =
-    `${url} /${path.join("/")} — characters ${offset}–${end} of ${total}` +
+    `${url} /${path.join("/")} — ${what}characters ${offset}–${end} of ${total}` +
     (remaining ? `, ${remaining} remaining (read on with offset: ${end})` : ", to the end")
 
   return `${header}\n\n${value.slice(offset, end)}`
@@ -97,15 +112,39 @@ export function findInValue(value, path, find, max = MAX_MATCHES) {
   return { count, strings, hits }
 }
 
-/** What a doc_read with `find` says: each match with its path, offset and context, and how to read around one. */
+const LINE_SHOWN = 300
+
+/** The line a match is on, whole when it is short, and its 1-based number. */
+export function matchLine(text, at, length) {
+  const start = text.lastIndexOf("\n", at - 1) + 1
+  let end = text.indexOf("\n", at)
+  if (end === -1) end = text.length
+  let line = text.slice(start, end)
+  if (line.length > LINE_SHOWN) {
+    const from = Math.max(0, Math.min(at - start - 120, line.length - LINE_SHOWN))
+    line = `${from > 0 ? "…" : ""}${line.slice(from, from + LINE_SHOWN)}${from + LINE_SHOWN < line.length ? "…" : ""}`
+  }
+  let number = 1
+  for (let i = 0; i < start; i++) if (text.charCodeAt(i) === 10) number++
+  return { number, line }
+}
+
+/**
+ * What a doc_read with `find` says: each match as the path of its string, its
+ * line there and the line itself, exactly as written — the path and anchor a
+ * doc_edit takes — and how to read around one.
+ */
 function foundIn(url, path, find, { count, strings, hits }) {
   const where = `${url} /${path.join("/")}`
   if (!count) return `${where} — no match for "${find}".`
   const first = hits[0]
   const read = `doc_read {url:"${url}", path:${JSON.stringify(first.path)}, offset:${Math.max(0, first.at - 200)}}`
   return [
-    `${where} — ${count} match${count === 1 ? "" : "es"} for "${find}" in ${strings} string${strings === 1 ? "" : "s"}${count > hits.length ? `, first ${hits.length} shown` : ""}. Read around one with ${read}.`,
-    ...hits.map((hit) => `${JSON.stringify(hit.path)} @${hit.at} · ${around(hit.text, hit.at, find.length)}`),
+    `${where} — ${count} match${count === 1 ? "" : "es"} for "${find}" in ${strings} string${strings === 1 ? "" : "s"}${count > hits.length ? `, first ${hits.length} shown` : ""}. Each is its string's path, line and @offset, then the line as written. Read around one with ${read}.`,
+    ...hits.map((hit) => {
+      const { number, line } = matchLine(hit.text, hit.at, find.length)
+      return `${JSON.stringify(hit.path)} line ${number} @${hit.at}: ${line}`
+    }),
   ].join("\n")
 }
 
@@ -116,9 +155,9 @@ export const docRead = {
   description: [
     "Read an automerge document, or one path inside it. Defaults to the document this session is attached to. A file is read in the form you can use: an image is shown to you, a PDF is handed to you whole, a Word, Excel or PowerPoint file gives its text, and text stored as bytes is decoded — read it, rather than opening it in a view to screenshot.",
     "",
-    "Large strings and byte arrays are summarized rather than dumped. To read a long one in full — a file's content, say — point `path` at the string and page through it with `offset` and `limit`. The result says how much is left. For a page, PDF or response a fetch kept, source_read is better: it searches, and knows the headings.",
+    "Point `path` at text — a string, an ImmutableString, or a notebook cell's list of lines — and it is shown as itself, not JSON-escaped, so you can quote it exactly as a doc_edit anchor. Up to 8000 characters come at once; page on with `offset` and `limit`, and the result says how much is left. Inside a bigger value, long strings and byte arrays are summarized. For a page, PDF or response a fetch kept, source_read is better: it searches, and knows the headings.",
     "",
-    "To find something without reading everything, pass `find`: it lists each string under `path` that contains it, with the string's path, the match's offset and the text around it. Then read just there with `path` and `offset`.",
+    "To find something without reading everything, pass `find`: it lists each match as its string's path and line, then the line exactly as written — the `path` and the anchor text doc_edit takes. Read around one with `path` and `offset`.",
   ].join("\n"),
   where: "worker",
   risk: "read",
@@ -133,7 +172,7 @@ export const docRead = {
       },
       find: {
         type: "string",
-        description: "Search instead of reading: every string under `path` (the whole document if none) containing this text, case-insensitive and literal, with its path, offset and the text around it.",
+        description: "Search instead of reading: every string under `path` (the whole document if none) containing this text, case-insensitive and literal, with its path, line number and the line as written.",
       },
       shapeOnly: {
         type: "boolean",
@@ -141,11 +180,11 @@ export const docRead = {
       },
       offset: {
         type: "number",
-        description: "For a string value: start here. Use with limit to page through a long one.",
+        description: "For text: start here. Use with limit to page through a long one.",
       },
       limit: {
         type: "number",
-        description: "For a string value: how many characters to return. Default 8000 when offset is given.",
+        description: "For text: how many characters to return. Default 8000.",
       },
     },
   },
@@ -214,10 +253,8 @@ export const docRead = {
     // only ever as its first 2000 characters. Text written once (a kept
     // source's content, a tool result) is an ImmutableString, which pages the
     // same way once it is a string.
-    const text = typeof value === "string" ? value : isImmutableString(value) ? String(value) : null
-    if (text != null && (input.offset != null || input.limit != null)) {
-      return readRange(text, input, url, path)
-    }
+    const text = textAt(value)
+    if (text) return readRange(text.text, input, url, path, text.what)
 
     return previewJson(value, {
       path,

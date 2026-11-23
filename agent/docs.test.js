@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { ImmutableString } from "@automerge/automerge"
-import { docRead } from "./tools/docs.js"
+import { docRead, matchLine } from "./tools/docs.js"
 
 describe("reading a long string in ranges", () => {
   const body = Array.from({ length: 30000 }, (_, i) => String.fromCharCode(97 + (i % 26))).join("")
@@ -11,10 +11,25 @@ describe("reading a long string in ranges", () => {
   }
   const ctx = () => ({ repo: pageRepo(), subject: "automerge:page" })
 
-  it("summarizes the string when no range is asked for, and says how to read on", async () => {
+  it("shows the text itself when no range is asked for, up to 8000 characters, and says how to read on", async () => {
     const out = await docRead.execute({ url: "automerge:page", path: ["content"] }, ctx())
-    expect(out).toMatch(/… \[\+28000 more chars: read on with doc_read \{url:\\"automerge:page\\", path:\[\\"content\\"\], offset:2000\}\]"$/)
-    expect(out.length).toBeLessThan(3000)
+    expect(out).toBe(`automerge:page /content — characters 0–8000 of 30000, 22000 remaining (read on with offset: 8000)\n\n${body.slice(0, 8000)}`)
+  })
+
+  it("does not escape text, so what is quoted from it is what is there", async () => {
+    const doc = { note: 'say "hi"\n\tthen go' }
+    const out = await docRead.execute({ url: "automerge:n", path: ["note"] }, { repo: { find: async () => ({ doc: () => doc }) } })
+    expect(out).toBe('automerge:n /note — characters 0–17 of 17, to the end\n\nsay "hi"\n\tthen go')
+  })
+
+  it("shows a notebook cell's list of lines as the text it joins into", async () => {
+    const doc = { cells: [{ source: ["a = 1\n", "b = 2\n", "print(a)"] }], tags: ["x", "y"] }
+    const repo = { find: async () => ({ doc: () => doc }) }
+    expect(await docRead.execute({ url: "automerge:nb", path: ["cells", 0, "source"] }, { repo })).toBe(
+      "automerge:nb /cells/0/source — a list of 3 lines, joined: characters 0–20 of 20, to the end\n\na = 1\nb = 2\nprint(a)"
+    )
+    // A list of words is not text: it stays a list.
+    expect(JSON.parse(await docRead.execute({ url: "automerge:nb", path: ["tags"] }, { repo }))).toEqual(["x", "y"])
   })
 
   it("returns the slice asked for, and says where it is", async () => {
@@ -72,7 +87,7 @@ describe("reading text written once", () => {
 
   it("pages an ImmutableString like a string", async () => {
     const out = await docRead.execute({ url: "automerge:kept", path: ["content"], offset: 10, limit: 5 }, { repo })
-    expect(out).toBe("automerge:kept /content — characters 10–15 of 1000, 985 remaining (read on with offset: 15)\n\n01234")
+    expect(out).toBe("automerge:kept /content — an ImmutableString, characters 10–15 of 1000, 985 remaining (read on with offset: 15)\n\n01234")
   })
 })
 
@@ -93,19 +108,19 @@ describe("doc_read with find", () => {
   }
   const ctx = () => ({ repo: { find: async () => ({ doc: () => notebook }) }, subject: "automerge:nb" })
 
-  it("lists each string that mentions it — ImmutableStrings too, bytes never — with its path, offset and context", async () => {
+  it("lists each string that mentions it — ImmutableStrings too, bytes never — with its path, line and the line as written", async () => {
     const out = await docRead.execute({ url: "automerge:nb", find: "6.0" }, ctx())
     expect(out.split("\n")).toEqual([
-      'automerge:nb / — 2 matches for "6.0" in 2 strings. Read around one with doc_read {url:"automerge:nb", path:["cells",0,"source"], offset:0}.',
-      '["cells",0,"source"] @28 · import numpy as np R = drag(6.0)',
-      '["cells",1,"outputs",0,"text"] @23 · kn R N 5.0 93.1 6.0 161.0 7.0 218.0',
+      'automerge:nb / — 2 matches for "6.0" in 2 strings. Each is its string\'s path, line and @offset, then the line as written. Read around one with doc_read {url:"automerge:nb", path:["cells",0,"source"], offset:0}.',
+      '["cells",0,"source"] line 2 @28: R = drag(6.0)',
+      '["cells",1,"outputs",0,"text"] line 3 @23:  6.0  161.0',
     ])
   })
 
   it("searches only under the path given, case-insensitively", async () => {
     const out = await docRead.execute({ url: "automerge:nb", path: ["cells", 2], find: "VALUEERROR" }, ctx())
     expect(out).toMatch(/^automerge:nb \/cells\/2 — 1 match for "VALUEERROR" in 1 string\./)
-    expect(out).toContain('["cells",2,"outputs",0,"ename"] @0 · ValueError')
+    expect(out).toContain('["cells",2,"outputs",0,"ename"] line 1 @0: ValueError')
   })
 
   it("says when nothing matches", async () => {
@@ -134,5 +149,21 @@ describe("showing a document", () => {
     const out = await docRead.execute({ url: "automerge:nb", path: ["cells"] }, { repo: { find: async () => ({ doc: () => doc }) } })
     // The preview is JSON, so the hint's quotes arrive escaped.
     expect(out).toContain(String.raw`… [+500 more chars: read on with doc_read {url:\"automerge:nb\", path:[\"cells\",0,\"outputs\",0,\"text\"], offset:2000}]`)
+  })
+})
+
+describe("the line a match is on", () => {
+  it("is the whole line, numbered, when it is short", () => {
+    const text = "one\ntwo three\nfour"
+    expect(matchLine(text, text.indexOf("three"), 5)).toEqual({ number: 2, line: "two three" })
+    expect(matchLine(text, 0, 3)).toEqual({ number: 1, line: "one" })
+    expect(matchLine(text, text.indexOf("four"), 4)).toEqual({ number: 3, line: "four" })
+  })
+
+  it("is a window around the match when the line is long", () => {
+    const text = `${"a".repeat(500)}NEEDLE${"b".repeat(500)}`
+    const { number, line } = matchLine(text, 500, 6)
+    expect(number).toBe(1)
+    expect(line).toBe(`…${"a".repeat(120)}NEEDLE${"b".repeat(174)}…`)
   })
 })
