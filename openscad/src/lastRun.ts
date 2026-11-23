@@ -6,15 +6,19 @@
  *   at             when it ran (ISO)
  *   heads          the document's heads it rendered: its source and imports then
  *   ok             whether it rendered
- *   logs           OpenSCAD's console: ECHO, WARNING and ERROR lines, the
- *                  engine's start-up noise left out, at most MAX_LINES
+ *   logs           OpenSCAD's console: what the model printed (ECHO, WARNING,
+ *                  ERROR…) and the shape of what it made, without the engine's
+ *                  start-up noise or anything that changes from run to run by
+ *                  itself (timings, cache sizes); at most MAX_LINES
  *   elapsedMillis  how long OpenSCAD took
- *   input          a fingerprint of what it rendered: the source and the
- *                  linked documents' data as they were
+ *   input          a fingerprint of the source it rendered
  *
- * Written only when something a reader cares about changed: what it rendered,
- * whether it worked, or what it printed. Every open editor renders the same
- * thing, and only the first to finish writes.
+ * Written only when the source, whether it worked, or what it printed
+ * changed. Not when only a linked document changed and the model printed the
+ * same: a model that imports a document it also feeds (an assumptions
+ * register, say) would otherwise write on every change to it, and the two
+ * would answer each other forever. Every open editor renders the same thing,
+ * and only the first to finish writes.
  */
 
 export type LastRun = {
@@ -29,8 +33,8 @@ export type LastRun = {
 export const MAX_LINES = 2000
 const MAX_LINE = 500
 
-/** openscad-wasm prints this on every run; it is nobody's output. */
-const NOISE = /^Could not initialize localization/
+/** Lines that are nobody's output: start-up noise, and what differs from one run of the same thing to the next. */
+const NOISE = /^\s*(Could not initialize localization|Geometries in cache|Geometry cache size|CGAL Polyhedrons in cache|CGAL cache size|Total rendering time|Compiling design|Rendering Polygon Mesh|Rendering finished|Normalized tree|Rendering cancelled)/
 
 /** A short, stable hash (FNV-1a, 32-bit), as hex. */
 export function fingerprint(text: string): string {
@@ -58,7 +62,7 @@ export function lastRunFrom(args: {heads: readonly string[]; source: string; imp
 		ok: args.ok,
 		logs: keptLogs(args.logs),
 		elapsedMillis: args.elapsedMillis ?? null,
-		input: fingerprint(JSON.stringify([args.source, args.imports ?? null])),
+		input: fingerprint(args.source),
 	}
 }
 
