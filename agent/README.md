@@ -1332,16 +1332,22 @@ result calls for it.
   gets the workflow tools (no nesting), and a `worker` step gets every tool
   that runs without the page, the tools of installed packages included
   (`placement.js`). A research step is confined instead (see *Research steps
-  keep things*).
+  keep things*). A step's optional `subject` is its main document: its
+  session is attached to it, so tools that take a url default to it; without
+  one, a step calling them with no url is told to pass one.
 - **A step that cannot work as written is told so at start, not left to find
-  out.** Before a step begins, the driver checks its prompt for the names of
-  tools this page knows that the step would not get. A worker step naming
+  out.** Before a step begins, the driver checks the tools it lists in its
+  optional `tools` against everything installed — one no package provides
+  fails it at once, "Not installed: …" — and then those and its prompt for
+  the names of tools this page knows that the step would not get. A worker step naming
   one that needs the page — `view_mount`, a package's `host` tool — is moved
   to the page and starts when the page is free, its card and
   `workflow_status` saying why. A research step naming a tool it cannot have,
   or any step naming the orchestrator's tools, fails at once with the reason.
   Only names of tools this page knows count: `cell_capacity` in a prompt is
-  not a tool because it looks like one.
+  not a tool because it looks like one. A step that finds a tool missing
+  anyway is told to say so in its result and stop that part, not search for
+  it.
 - **The plan decides; the driver acts.** `workflow/plan.js` is pure: five
   stored step states, the rest (ready, waiting, blocked, needs-you, out of date) derived, and
   `toStart` choosing what may run. Its rules — only ready steps start, never more

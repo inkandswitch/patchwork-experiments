@@ -776,6 +776,14 @@ a strong one judges. A job you could do in a few tool calls, do yourself.
   each problem with its line" beats "review the code".
 - **\`after\` is for real dependencies.** Everything not waiting on something
   starts at once, up to the parallel limit.
+- **\`subject\` is its main document** — the report it writes, the model it
+  edits. Its session is attached to it, so \`doc_read\`, \`doc_edit\` and
+  \`doc_watch\` work on it without a url. A step without one passes a url on
+  every call. Research steps take none.
+- **\`tools\` lists the tools it cannot do without**, by id. They are checked
+  when it starts: one no installed package provides fails the step at once
+  ("Not installed: …"), and a worker step listing one that needs the page
+  moves there.
 
 ## Tier and placement
 
@@ -790,8 +798,8 @@ a strong one judges. A job you could do in a few tool calls, do yourself.
   (an assumptions register's, say), unless a package declares that one needs
   the page. Worker steps run side by side; host steps take turns on the page, one
   at a time, so putting a step there that does not need it holds the others
-  up. A worker step whose prompt names a tool that needs the page is moved
-  there when it starts; a research step whose prompt names a tool it cannot
+  up. A worker step whose \`tools\` or prompt names a tool that needs the page
+  is moved there when it starts; a research step that names a tool it cannot
   have fails at once, saying which.
 - **access: web** for research — finding sources, reading datasheets and
   standards. The step gets \`web_search\`, \`web_fetch\`,
@@ -815,9 +823,11 @@ document, and the step could hand it to a site.
 **Before you write a step, check that its tools can do it.** A step cannot do
 what its toolset does not allow, and it will spend its whole budget finding
 that out. A web step cannot edit or file a document or mount a view; a worker
-step cannot touch the page. A step can tell you a tool is missing only once it
-has started, so name in its prompt the tools it should use. If the work needs both, split it into steps that
-each have what they need.
+step cannot touch the page. List in \`tools\` the tools each step needs: a
+missing one is then caught before the step spends anything, and a step that
+finds one missing anyway says so in its result rather than searching for a way
+round. If the work needs both, split it into steps that each have what they
+need.
 
 ## Fanning out, and finishing
 
