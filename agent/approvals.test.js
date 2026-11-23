@@ -26,7 +26,7 @@ describe("edits to documents run without asking", () => {
     ["doc_create", { datatype: "folder", title: "Notes" }],
     ["fs_write", { path: "notes/today.md", content: "hi" }],
     ["fs_write", { files: { "a.md": "a", "data/b.csv": "1,2" } }],
-    ["fs_edit", { path: "notes/today.md", old: "hi", new: "hello" }],
+    ["fs_edit", { path: "notes/today.md", edits: [{ op: "replace", find: "hi", text: "hello" }] }],
     ["fs_delete", { path: "notes/old.md" }],
   ])("%s %j", (id, input) => {
     expect(asks(id, input)).toBe(false)
@@ -38,8 +38,8 @@ describe("writing source code still needs a grant", () => {
     ["fs_write", { path: "tally/index.js", content: "" }],
     ["fs_write", { files: { "README.md": "", "tally/package.json": "{}" } }], // one code file is enough
     ["fs_write", { url: "automerge:someFile", content: "" }], // by url alone: could be anything
-    ["fs_edit", { path: "tally/tool.tsx", old: "a", new: "b" }],
-    ["fs_edit", { url: "automerge:someFile", old: "a", new: "b" }],
+    ["fs_edit", { path: "tally/tool.tsx", edits: [{ op: "replace", find: "a", text: "b" }] }],
+    ["fs_edit", { url: "automerge:someFile", edits: [{ op: "replace", find: "a", text: "b" }] }],
     ["fs_delete", { path: "tally/styles.css" }],
     ["fs_delete", { path: "tally" }], // no extension: may be a whole package
   ])("%s %j", (id, input) => {

@@ -10,7 +10,7 @@
  */
 
 import { previewJson, truncate, bytes } from "./format.js"
-import { locate, lineOf, minimalSplice, spliceString } from "./ops.js"
+import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, OpError, TEXT_OPS } from "./ops.js"
 
 /** File content arrives as a string, an ImmutableString, or raw bytes. */
 export function contentToText(content) {
@@ -575,6 +575,18 @@ function bumpedLine(bumped) {
 const BY_URL_NOTE =
   "Written by URL, so the package this file belongs to (if any) was not marked as changed, and Patchwork keeps running its old version. To change an installed package's code, write by `path` instead."
 
+/**
+ * Why a document given by URL is not a file, and what edits it instead: a
+ * datatype's text (an OpenSCAD model's source, say) is a field, which doc_edit
+ * changes by path.
+ */
+function notAFile(url, doc) {
+  const type = doc?.["@patchwork"]?.type
+  const texts = doc && typeof doc === "object" ? Object.keys(doc).filter((key) => typeof doc[key] === "string" && !["title", "name"].includes(key)) : []
+  const field = texts.length ? ` Its text is in ${texts.map((key) => `['${key}']`).join(", ")}.` : ""
+  return `${url} is not a file document${type ? ` (it is a '${type}' document)` : ""}. Edit it with doc_edit, by path.${field}`
+}
+
 export const fsWrite = {
   id: "fs_write",
   name: "Write files",
@@ -593,6 +605,8 @@ export const fsWrite = {
     "The folder you write into is shown to the user with an Install button beside it, so you never need to give them a URL to paste.",
     "",
     "Writing over an existing file changes only the characters that differ, so it is safe to use for a rewrite. To change one part of a file, fs_edit is quicker: give it the old text and the new.",
+    "",
+    "A long file goes in pieces of at most about 6 kB: write the first here, then append the rest with fs_edit, one call each. A call cut off by your output limit is never run.",
   ].join("\n"),
   where: "worker",
   risk: "edit",
@@ -617,7 +631,7 @@ export const fsWrite = {
     // Direct overwrite by URL: no path resolution, no creation.
     if (input.url) {
       const handle = await ctx.repo.find(input.url)
-      if (!isFile(handle.doc())) throw new Error(`${input.url} is not a file document.`)
+      if (!isFile(handle.doc())) throw new Error(notAFile(input.url, handle.doc()))
       const content = String(input.content ?? "")
       const before = contentToText(handle.doc()?.content)
       const changed = overwrite(handle, before, content, ctx.splice)
@@ -718,19 +732,19 @@ export const fsWrite = {
  * when there is no splice (tests) or the content is not spliceable text (an
  * ImmutableString written by something else, say).
  *
- * `splices` is [{ from, to, inserted }] in ascending order of `from`.
+ * `steps` is a list of edits, each a list of splices [{ from, to, inserted }]
+ * in ascending order of `from`, relative to the text the edits before it left.
  */
-function spliceContent(handle, before, splices, splice) {
-  let after = before
-  for (const { from, to, inserted } of [...splices].reverse()) {
-    after = after.slice(0, from) + inserted + after.slice(to)
-  }
+function spliceContent(handle, before, steps, splice) {
+  const after = steps.reduce(applySplices, before)
   handle.change((draft) => {
     try {
       if (!splice || typeof draft.content !== "string") throw new Error("not spliceable")
-      // Later positions first, so the earlier offsets stay valid.
-      for (const { from, to, inserted } of [...splices].reverse()) {
-        spliceString(draft, ["content"], from, to, inserted, splice)
+      for (const splices of steps) {
+        // Later positions first, so the earlier offsets stay valid.
+        for (const { from, to, inserted } of [...splices].reverse()) {
+          spliceString(draft, ["content"], from, to, inserted, splice)
+        }
       }
     } catch {
       draft.content = after
@@ -743,7 +757,7 @@ function spliceContent(handle, before, splices, splice) {
 function overwrite(handle, before, content, splice) {
   const { from, to, inserted } = minimalSplice(before, content)
   if (from === to && !inserted.length) return "unchanged"
-  spliceContent(handle, before, [{ from, to, inserted }], splice)
+  spliceContent(handle, before, [[{ from, to, inserted }]], splice)
   return `${to - from} chars removed, ${inserted.length} added`
 }
 
@@ -751,7 +765,7 @@ function overwrite(handle, before, content, splice) {
 async function fileFor(input, ctx) {
   if (input.url) {
     const handle = await ctx.repo.find(input.url)
-    if (!isFile(handle.doc())) throw new Error(`${input.url} is not a file document.`)
+    if (!isFile(handle.doc())) throw new Error(notAFile(input.url, handle.doc()))
     return { handle, label: handle.doc()?.name ?? input.url, url: input.url, root: null, folder: null }
   }
   if (input.path == null || input.path === "") throw new Error("Pass `path` (from the root folder) or `url` to say which file.")
@@ -766,77 +780,87 @@ export const fsEdit = {
   name: "Edit a file",
   target: { fields: ["url", "root"] },
   description: [
-    "Change part of an existing file: give the exact text to replace (`old`) and what to put there (`new`).",
+    "Change part of an existing file with one or more `edits`, applied in order as one change: all of them or none. They are doc_edit's text ops, without a path:",
+    "• {op:'replace', find, text, all?} — replace the exact text `find` (it must occur once, unless all: true). text '' deletes it.",
+    "• {op:'insert', after | before, text} — insert next to an exact anchor that occurs once.",
+    "• {op:'append' | 'prepend', text} — add text at the end or start.",
     "",
-    "Copy `old` from what fs_read or fs_grep showed you, character for character, whitespace included. It must occur exactly once — if it does not, include a line or two around it, or pass `replaceAll: true` to change every occurrence. You never need character offsets: the tool finds the text and changes only the characters that differ, so the edit merges with concurrent edits elsewhere in the file and the history stays readable.",
+    "Copy `find` and anchors from what fs_read or fs_grep showed you, character for character, whitespace included, without the line numbers. If one occurs more than once, include a line around it. You never need character offsets: only the characters that differ are changed, so the edit merges with concurrent edits elsewhere in the file and the history stays readable.",
     "",
-    "The result shows the edited lines with a little context, so you can see the change landed without reading the file again. To replace a whole file, use fs_write; to rename or remove one, fs_delete plus fs_write.",
+    "The result shows each change as a short diff with line numbers, so you can see it landed without reading the file again. To write a whole file, use fs_write; a long one goes in pieces — fs_write the first few kB, then append the rest here, one call each. To rename or remove a file, fs_delete plus fs_write.",
   ].join("\n"),
   where: "worker",
   risk: "edit",
   askWhen: writesCodeFiles,
   input_schema: {
     type: "object",
-    required: ["old"],
+    required: ["edits"],
     properties: {
       root: { type: "string", description: ROOT_DESCRIPTION },
       path: { type: "string", description: "Path to the file, e.g. 'my-tool/tool.js'. Pass this or `url`." },
       url: { type: "string", description: "The file document's URL, if you have it. Pass this or `path`." },
-      old: { type: "string", description: "The exact text to replace, copied from the file." },
-      new: { type: "string", description: "What to put in its place. Omit it, or pass an empty string, to delete `old`." },
-      replaceAll: {
-        type: "boolean",
-        description: "Change every occurrence of `old` instead of requiring exactly one. Default false.",
+      edits: {
+        type: "array",
+        description: "Text edits, applied in order in one change.",
+        items: {
+          type: "object",
+          required: ["op"],
+          properties: {
+            op: { type: "string", enum: TEXT_OPS },
+            find: { type: "string", description: "replace: the exact text to replace, copied from the file." },
+            text: { type: "string", description: "The text to put in. replace with '' deletes `find`." },
+            all: { type: "boolean", description: "replace: every occurrence instead of exactly one." },
+            before: { type: "string", description: "insert: the exact text to insert before (occurs once)." },
+            after: { type: "string", description: "insert: the exact text to insert after (occurs once)." },
+          },
+        },
       },
     },
   },
 
   async execute(input, ctx) {
-    const old = input.old
-    const replacement = input.new ?? ""
-    if (typeof old !== "string" || !old.length) throw new Error("Pass `old`: the exact text to replace, copied from the file.")
-    if (old === replacement) throw new Error("`old` and `new` are identical, so there is nothing to change.")
+    const edits = input.edits
+    if (!Array.isArray(edits) || !edits.length) {
+      throw new Error("Pass `edits`: a list of text edits, like [{ op: \"replace\", find: \"old text\", text: \"new text\" }].")
+    }
 
     const { handle, label, url, root, folder } = await fileFor(input, ctx)
     const before = contentToText(handle.doc()?.content)
 
-    let positions
-    if (input.replaceAll) {
-      positions = []
-      for (let at = before.indexOf(old); at !== -1; at = before.indexOf(old, at + old.length)) positions.push(at)
-      if (!positions.length) locate(before, old) // throws, saying why it was not found
-    } else {
-      positions = [locate(before, old)]
-    }
+    // Work every edit out on the text first; the file is touched only when all
+    // of them hold, in one change.
+    let text = before
+    const steps = []
+    edits.forEach((edit, i) => {
+      try {
+        checkEdit(edit)
+        const { after, splices } = editText(text, edit)
+        steps.push({ edit, before: text, after, splices })
+        text = after
+      } catch (err) {
+        throw new Error(`edit ${i + 1} (${typeof edit?.op === "string" ? edit.op : "?"}): ${err.message}${/\.$/.test(err.message) ? "" : "."} Nothing was changed.`)
+      }
+    })
+    const after = text
+    if (after === before) throw new Error("These edits leave the file as it was, so there is nothing to change.")
 
-    const { from, to, inserted } = minimalSplice(old, replacement)
-    const after = spliceContent(
-      handle,
-      before,
-      positions.map((at) => ({ from: at + from, to: at + to, inserted })),
-      ctx.splice
-    )
+    spliceContent(handle, before, steps.map((step) => step.splices), ctx.splice)
 
-    // Show the change in place: a few lines either side, numbered the way
-    // fs_read numbers them, so the next edit can anchor on what is there now.
-    const lines = after.split("\n")
-    const line = lineOf(after, positions[0])
-    const start = Math.max(1, line - 2)
-    const end = Math.min(lines.length, line + replacement.split("\n").length + 1)
-    const context = lines.slice(start - 1, end).map((text, i) => `${start + i}\t${text}`).join("\n")
-
-    const n = positions.length
     if (folder) {
       const { node } = await resolvePath(ctx.repo, root, folder.join("/"))
       const entry = node && treeEntries(node).find((e) => e.url === url)
       if (entry) treeRepin(node, entry, handle)
     }
     const bumped = folder ? bumpedLine(await bumpPackages(ctx.repo, root, [folder])) : BY_URL_NOTE
+    const report = steps.map(({ edit, before: was, after: now, splices }) => {
+      const places = splices.length === 1 ? `line ${lineOf(was, splices[0].from)}` : `${splices.length} places`
+      return [`${edit.op} · ${places}`, ...textDiff(was, now, splices)].join("\n")
+    })
     return {
       text: [
-        `Edited ${label}: replaced ${n === 1 ? "1 occurrence" : `${n} occurrences`} of ${old.length} chars${n === 1 ? ` at line ${line}` : ""}. Now ${lines.length} lines, ${bytes(after.length)}.`,
+        `Edited ${label}: ${steps.length} edit${steps.length === 1 ? "" : "s"}. Now ${after.split("\n").length} lines, ${bytes(after.length)}.`,
         ``,
-        truncate(context, 4000),
+        truncate(report.join("\n"), 4000),
         ...(bumped ? [``, bumped] : []),
       ].join("\n"),
       doc: { url, name: handle.doc()?.name ?? label, kind: "file", bytes: after.length },
@@ -845,10 +869,30 @@ export const fsEdit = {
 
   summarize(input, output) {
     const what = input?.path ? String(input.path).split("/").filter(Boolean).pop() : "file"
-    const line = String(output ?? "").match(/at line (\d+)/)?.[1]
-    const count = String(output ?? "").match(/replaced (\d+) occurrences/)?.[1]
-    return `edited ${what}${line ? ` · line ${line}` : count ? ` · ${count} places` : ""}`
+    const line = String(output ?? "").match(/· line (\d+)/)?.[1]
+    const n = Array.isArray(input?.edits) ? input.edits.length : 0
+    return `edited ${what}${n > 1 ? ` · ${n} edits` : line ? ` · line ${line}` : ""}`
   },
+}
+
+/** An fs_edit edit is a doc_edit text op without a path: the same fields, checked the same way. */
+function checkEdit(edit) {
+  if (!edit || typeof edit !== "object" || !TEXT_OPS.includes(edit.op)) {
+    throw new OpError(`each edit is { op, … } with op one of ${TEXT_OPS.join(", ")}`)
+  }
+  const allowed = { replace: ["find", "text", "all"], insert: ["before", "after", "text"], append: ["text"], prepend: ["text"] }[edit.op]
+  for (const field of Object.keys(edit)) {
+    if (field === "op" || edit[field] == null) continue
+    if (field === "old" || field === "new") throw new OpError("use `find` for the text to replace and `text` for what goes there")
+    if (!allowed.includes(field)) throw new OpError(`${edit.op} takes no \`${field}\``)
+  }
+  if (edit.text != null && typeof edit.text !== "string") throw new OpError("`text` must be a string")
+  if (edit.op === "replace" && (typeof edit.find !== "string" || !edit.find.length)) throw new OpError("replace takes `find`: the exact text to replace, copied from the file")
+  if (edit.op === "insert") {
+    const anchors = ["before", "after"].filter((field) => edit[field] != null)
+    if (anchors.length !== 1) throw new OpError("insert takes `before` or `after` (one of them): the exact text to insert next to. For the start or end, prepend or append")
+  }
+  if (edit.op !== "replace" && !edit.text) throw new OpError(`${edit.op} takes \`text\`: what to add`)
 }
 
 /**

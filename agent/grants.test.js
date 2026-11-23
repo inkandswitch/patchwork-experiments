@@ -128,7 +128,7 @@ describe("file tools share one grant", () => {
   it("an fs_write grant on a folder covers an fs_edit under it, and the old key still works", () => {
     const doc = fresh()
     doc.grants["files@automerge:pkg"] = "always"
-    expect(needsApproval(doc, tools.get("fs_edit"), { input: { root: "automerge:pkg", path: "a.js", old: "a", new: "b" } })).toBe(false)
+    expect(needsApproval(doc, tools.get("fs_edit"), { input: { root: "automerge:pkg", path: "a.js", edits: [{ op: "replace", find: "a", text: "b" }] } })).toBe(false)
     expect(needsApproval(doc, tools.get("fs_delete"), { input: { root: "automerge:other", path: "a.js" } })).toBe(true)
 
     const legacy = fresh()

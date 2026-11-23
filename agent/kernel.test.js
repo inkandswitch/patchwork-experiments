@@ -80,13 +80,13 @@ describe("from a full session, no tool changes a session or a plan", () => {
   // [tool, how, takes a field?, input for (spelling, field, a folder linking it)]
   // — each the way that tool names a document and a place in it.
   const CALLS = [
-    ["doc_edit", "setting the field", true, (s, field) => ({ url: s, ops: [{ path: [], range: field, value: { kind: "full" } }] })],
-    ["doc_edit", "inside the field", true, (s, field) => ({ url: s, ops: [{ path: [field], range: "x", value: 1 }] })],
+    ["doc_edit", "setting the field", true, (s, field) => ({ url: s, ops: [{ op: "set", path: [field], value: { kind: "full" } }] })],
+    ["doc_edit", "inside the field", true, (s, field) => ({ url: s, ops: [{ op: "set", path: [field, "x"], value: 1 }] })],
     ["fs_write", "by url", false, (s) => ({ url: s, content: "written" })],
     ["fs_write", "by path, over it", false, (_s, _f, dir) => ({ root: dir, path: "target", content: "written" })],
     ["fs_write", "by path, into it", false, (_s, _f, dir) => ({ root: dir, path: "target/new.md", content: "written" })],
-    ["fs_edit", "by url", false, (s) => ({ url: s, old: "web", new: "full" })],
-    ["fs_edit", "by path", false, (_s, _f, dir) => ({ root: dir, path: "target", old: "web", new: "full" })],
+    ["fs_edit", "by url", false, (s) => ({ url: s, edits: [{ op: "replace", find: "web", text: "full" }] })],
+    ["fs_edit", "by path", false, (_s, _f, dir) => ({ root: dir, path: "target", edits: [{ op: "replace", find: "web", text: "full" }] })],
     ["fs_delete", "by path, inside it", false, (_s, _f, dir) => ({ root: dir, path: "target/x" })],
   ]
 
@@ -125,7 +125,7 @@ describe("from a full session, no tool changes a session or a plan", () => {
   it("an ordinary document is edited as before", async () => {
     const w = world()
     const ctx = fullContext({ repo: w.repo }, memoryStore({}))
-    const ok = await runTool(tool("doc_edit"), { url: w.plain.url, ops: [{ path: [], range: "title", value: "renamed" }] }, ctx)
+    const ok = await runTool(tool("doc_edit"), { url: w.plain.url, ops: [{ op: "set", path: ["title"], value: "renamed" }] }, ctx)
     expect(ok.isError).toBe(false)
     expect(w.plain.doc().title).toBe("renamed")
   })
@@ -136,8 +136,8 @@ describe("from a full session, nothing becomes a session or a plan", () => {
   // research steps against a ledger the tool wrote. So the rule is judged on
   // what a document is after a write as well as before it.
   const EDITS = {
-    "@patchwork set whole": (type) => ({ url: null, ops: [{ path: [], range: "@patchwork", value: { type } }] }),
-    "its type set": (type) => ({ url: null, ops: [{ path: ["@patchwork"], range: "type", value: type }] }),
+    "@patchwork set whole": (type) => ({ url: null, ops: [{ op: "set", path: ["@patchwork"], value: { type } }] }),
+    "its type set": (type) => ({ url: null, ops: [{ op: "set", path: ["@patchwork", "type"], value: type }] }),
   }
 
   for (const type of KERNEL_TYPES) {

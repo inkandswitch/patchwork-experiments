@@ -62,15 +62,12 @@ export function describeOps(ops) {
   if (!Array.isArray(ops) || !ops.length) return "no changes"
   const names = []
   for (const op of ops.slice(0, 3)) {
-    const range = op?.range
-    if (typeof op?.find === "string") {
-      const snippet = op.find.replace(/\s+/g, " ").trim()
-      names.push(`${pathLabel(op?.path) ?? "text"} “${snippet.length > 18 ? `${snippet.slice(0, 17)}…` : snippet}”`)
-    } else if (typeof range === "string") names.push(range)
-    else if (Array.isArray(range)) {
-      const target = pathLabel(op?.path)
-      names.push(target ? `${target}[${range[0]}…${range[1]}]` : `[${range[0]}…${range[1]}]`)
-    } else names.push(pathLabel(op?.path) ?? "root")
+    const where = pathLabel(op?.path) ?? "document"
+    const anchor = [op?.find, op?.after, op?.before].find((text) => typeof text === "string")
+    if (anchor !== undefined) {
+      const snippet = anchor.replace(/\s+/g, " ").trim()
+      names.push(`${where} “${snippet.length > 18 ? `${snippet.slice(0, 17)}…` : snippet}”`)
+    } else names.push(where)
   }
   const more = ops.length - names.length
   return names.join(", ") + (more > 0 ? ` +${more} more` : "")
