@@ -71,6 +71,12 @@ function FormulaBar() {
           if (editingHere()) s.commitEdit();
         }}
       />
+      <button class="tool" disabled={!s.canUndo()} title="Undo (Cmd/Ctrl+Z)" onClick={s.undo}>
+        Undo
+      </button>
+      <button class="tool" disabled={!s.canRedo()} title="Redo (Cmd/Ctrl+Shift+Z)" onClick={s.redo}>
+        Redo
+      </button>
       <button
         class="help"
         data-on={s.panel() === 'reference' ? '' : undefined}

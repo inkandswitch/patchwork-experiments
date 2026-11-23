@@ -119,6 +119,10 @@ succeeded.
   (in the right-click menu), and to dragging the small square at the corner of the
   selection. A copy doesn't keep the original's name. See `moveRefs` in
   `src/lang/rewrite.ts`. (The original pasted formula text unchanged.)
+- Undo and redo (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z or Ctrl+Y, and buttons in the formula bar)
+  cover cell changes and inserting/deleting rows and columns. The history is local: your
+  own changes in this session (`src/model/history.ts`). Undoing a change to a cell leaves
+  it alone if someone else has changed it since.
 - The line chart viewer draws one line per combination of the choices a range-valued cell
   depends on; with continuous inputs it draws a sample of 150 lines.
 

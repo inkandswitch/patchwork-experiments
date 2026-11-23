@@ -42,29 +42,90 @@ export function checkEdit(data: Data, edit: StructuralEdit): string | null {
   return null;
 }
 
+/** True for the cells that a deletion removes. */
+function isDoomed(edit: StructuralEdit, row: number, col: number): boolean {
+  const i = edit.axis === 'row' ? row : col;
+  return edit.kind === 'delete' && edit.index <= i && i < edit.index + edit.count;
+}
+
+export interface CellText {
+  row: number;
+  col: number;
+  text: string;
+}
+
+/** What it takes (with unapplyEdit) to undo an edit. */
+export interface EditUndo {
+  /**
+   * What the edit destroys or rewrites: the non-empty cells it deletes, and the formulas
+   * whose references it changes, with the text they had.
+   */
+  cells: CellText[];
+  /** How wide the sheet was. */
+  width: number;
+}
+
+/** Notes what an edit is about to do to the sheet, so that it can be undone. */
+export function beforeEdit(data: Data, edit: StructuralEdit): EditUndo {
+  const cells: CellText[] = [];
+  for (let row = 0; row < data.length; row++) {
+    const texts = data[row];
+    for (let col = 0; col < (texts?.length ?? 0); col++) {
+      const text = texts[col];
+      if (typeof text !== 'string' || text === '') continue;
+      if (isDoomed(edit, row, col) || shiftRefs(text, edit) !== text) cells.push({ row, col, text });
+    }
+  }
+  return { cells, width: widthOf(data) };
+}
+
 /**
  * Makes the edit, in place: fixes up the formulas that refer to cells that are about to
  * move, then moves the cells. `data` can be a plain array of arrays or the one inside an
  * Automerge change. (Check the edit with checkEdit first.)
  */
 export function applyEdit(data: Data, edit: StructuralEdit): void {
-  const width = widthOf(data);
-  const { index, count } = edit;
-  const doomed = (row: number, col: number) => {
-    const i = edit.axis === 'row' ? row : col;
-    return edit.kind === 'delete' && index <= i && i < index + count;
-  };
-
   for (let row = 0; row < data.length; row++) {
     const cells = data[row];
     for (let col = 0; col < (cells?.length ?? 0); col++) {
       const text = cells[col];
-      if (typeof text !== 'string' || text === '' || doomed(row, col)) continue;
+      if (typeof text !== 'string' || text === '' || isDoomed(edit, row, col)) continue;
       const shifted = shiftRefs(text, edit);
       if (shifted !== text) cells[col] = shifted;
     }
   }
+  moveCells(data, edit);
+}
 
+/**
+ * Undoes an edit, given what beforeEdit noted about it: moves the cells back, then puts
+ * back the text that was deleted or rewritten.
+ */
+export function unapplyEdit(data: Data, edit: StructuralEdit, undo: EditUndo): void {
+  moveCells(data, { ...edit, kind: edit.kind === 'insert' ? 'delete' : 'insert' });
+  if (edit.axis === 'col') {
+    // (moving columns back can leave blank ones at the end that weren't there before)
+    for (const cells of data) {
+      if (cells.length > undo.width) cells.splice(undo.width, cells.length - undo.width);
+    }
+  }
+  writeCells(data, undo.cells);
+}
+
+/** Sets the text of cells, growing the sheet if it has to. */
+export function writeCells(data: Data, cells: CellText[]): void {
+  const width = widthOf(data) || MAX_COLS;
+  for (const { row, col, text } of cells) {
+    while (data.length <= row) data.push(new Array<string | null>(width).fill(null));
+    while (data[row].length <= col) data[row].push(null);
+    data[row][col] = text === '' ? null : text;
+  }
+}
+
+/** The moving-cells-around part of an edit: inserts blank rows or columns, or removes some. */
+function moveCells(data: Data, edit: StructuralEdit): void {
+  const width = widthOf(data);
+  const { index, count } = edit;
   const blanks = (n: number) => new Array<string | null>(n).fill(null);
 
   if (edit.axis === 'row') {

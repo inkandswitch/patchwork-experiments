@@ -195,6 +195,13 @@ export function Grid() {
       e.preventDefault();
       return;
     }
+    if (command && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+      // Cmd/Ctrl+Z undoes; with Shift (or as Ctrl+Y) it redoes
+      if (e.key.toLowerCase() === 'y' || e.shiftKey) s.redo();
+      else s.undo();
+      e.preventDefault();
+      return;
+    }
     switch (e.key) {
       case 'ArrowUp':
         move(-1, 0, e.shiftKey);

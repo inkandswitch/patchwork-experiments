@@ -609,6 +609,7 @@
   margin: 0;
 }
 
+.ambsheet .formula-bar .tool,
 .ambsheet .formula-bar .help {
   align-self: stretch;
   padding: 0 12px;
@@ -620,6 +621,12 @@
   cursor: pointer;
 }
 
+.ambsheet .formula-bar .tool:disabled {
+  color: var(--ambsheet-faint);
+  cursor: default;
+}
+
+.ambsheet .formula-bar .tool:hover:not(:disabled),
 .ambsheet .formula-bar .help:hover,
 .ambsheet .formula-bar .help[data-on] {
   background: var(--ambsheet-accent-soft);

@@ -2,7 +2,6 @@
 
 import { createContext, createEffect, createMemo, createSignal, onCleanup, untrack, useContext } from 'solid-js';
 import type { AmbsheetDoc, AmbsheetHandle } from '../datatype';
-import { DEFAULT_COLS } from '../datatype';
 import { moveRefs, shiftAddr, type StructuralEdit } from '../lang/rewrite';
 import { MAX_COLS, addrOf, valueKey, type Pos, type RawValue } from '../lang/values';
 import { cellText, compileSheet, type CellInfo } from '../model/compile';
@@ -17,7 +16,8 @@ import {
 } from '../model/analysis';
 import { Focuser, type Focus } from '../model/focus';
 import { createAssist } from './assistState';
-import { applyEdit, checkEdit } from '../model/structure';
+import { History, type Change } from '../model/history';
+import { checkEdit } from '../model/structure';
 import {
   DEFAULT_SETTINGS,
   Evaluation,
@@ -88,20 +88,24 @@ export function createSheetState(handle: AmbsheetHandle) {
   });
   const text = (pos: Pos) => cellText(data(), pos.row, pos.col);
 
-  /** Writes cell texts, in one change. */
+  // Every change to the cells goes through the history, which is what makes undo work.
+  const history = new History({
+    data: () => handle.doc()?.data ?? [],
+    change: (fn) =>
+      handle.change((d) => {
+        if (!Array.isArray(d.data)) d.data = [];
+        fn(d.data);
+      }),
+  });
+  /** (bumped whenever the history changes, since the history itself isn't reactive) */
+  const [historyVersion, setHistoryVersion] = createSignal(0);
+  const canUndo = () => (historyVersion(), history.canUndo);
+  const canRedo = () => (historyVersion(), history.canRedo);
+
+  /** Writes cell texts, in one change (and one step of undo). */
   function setCells(updates: { row: number; col: number; text: string }[]) {
-    const changed = updates.filter(
-      (u) => u.col < MAX_COLS && u.row >= 0 && u.col >= 0 && cellText(data(), u.row, u.col) !== u.text,
-    );
-    if (changed.length === 0) return;
-    handle.change((d) => {
-      if (!Array.isArray(d.data)) d.data = [];
-      for (const { row, col, text } of changed) {
-        while (d.data.length <= row) d.data.push(new Array(numCols() || DEFAULT_COLS).fill(null));
-        while (d.data[row].length <= col) d.data[row].push(null);
-        d.data[row][col] = text === '' ? null : text;
-      }
-    });
+    history.setCells(updates);
+    setHistoryVersion((v) => v + 1);
   }
 
   // --- evaluation ---
@@ -337,12 +341,8 @@ export function createSheetState(handle: AmbsheetHandle) {
   /** Why a structural edit can't be made right now (null if it can). */
   const whyNot = (edit: StructuralEdit) => checkEdit(data() ?? [], edit);
 
-  function structuralEdit(edit: StructuralEdit) {
-    if (whyNot(edit) !== null) return;
-    setEdit(null);
-    handle.change((d) => applyEdit(d.data, edit));
-
-    // The filters follow their cells.
+  /** After rows or columns have moved: the filters follow their cells... */
+  function afterStructuralEdit(edit: StructuralEdit) {
     const moved = new Map<string, Filter>();
     for (const [addr, filter] of filters()) {
       const to = shiftAddr(addr, edit);
@@ -351,12 +351,43 @@ export function createSheetState(handle: AmbsheetHandle) {
     setFilters(moved);
     setHover(null);
 
-    // And the selection stays where it was on screen, within the sheet.
+    // ...and the selection stays where it was on screen, within the sheet.
     const sel = selection();
     const row = Math.max(0, Math.min(numRows() - 1, Math.min(sel.row, sel.row2)));
     const col = Math.max(0, Math.min(numCols() - 1, Math.min(sel.col, sel.col2)));
     setSelection({ row, col, row2: row, col2: col, quiet: true });
   }
+
+  function structuralEdit(edit: StructuralEdit) {
+    setEdit(null);
+    if (history.structuralEdit(edit)) afterStructuralEdit(edit);
+    setHistoryVersion((v) => v + 1);
+  }
+
+  // --- undo and redo ---
+
+  /** After a change has been undone or redone: show where it was. */
+  function afterTimeTravel(change: Change | null, undone: boolean) {
+    setHistoryVersion((v) => v + 1);
+    if (!change) return;
+    setEdit(null);
+    if (change.kind === 'structure') {
+      const { edit } = change;
+      afterStructuralEdit(undone ? { ...edit, kind: edit.kind === 'insert' ? 'delete' : 'insert' } : edit);
+      return;
+    }
+    const rows = change.cells.map((c) => c.row);
+    const cols = change.cells.map((c) => c.col);
+    setSelection({
+      row: Math.min(...rows),
+      col: Math.min(...cols),
+      row2: Math.min(Math.max(...rows), Math.max(0, numRows() - 1)),
+      col2: Math.max(...cols),
+    });
+  }
+
+  const undo = () => afterTimeTravel(history.undo(), true);
+  const redo = () => afterTimeTravel(history.redo(), false);
 
   return {
     handle,
@@ -410,6 +441,10 @@ export function createSheetState(handle: AmbsheetHandle) {
     setMenu,
     whyNot,
     structuralEdit,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
     edit,
     setEdit,
     beginEdit,
