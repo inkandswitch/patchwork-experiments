@@ -38,7 +38,7 @@ function setup() {
   // A clock that always moves: every call is a new millisecond.
   let t = 1_000_000
   const now = () => (t += 3)
-  const driver = new WorkflowDriver({ repo, handle: plan, startSession, now, heartbeatMs: 1e9, confirmMs: 0, toolIds: { worker: [] } })
+  const driver = new WorkflowDriver({ repo, handle: plan, startSession, now, heartbeatMs: 1e9, confirmMs: 0 })
   drivers.push(driver)
   return { repo, plan, driver, sessions, writes: () => writes }
 }

@@ -1,10 +1,12 @@
 /**
  * Main-thread half of the SharedWorker runner.
  *
- * Its whole job is to hand the worker the three things it cannot get for
- * itself: the importmap resolved to absolute URLs, a network port into this
- * page's repo, and the API key (which lives in this page's localStorage and
- * must never go into the session document).
+ * Its whole job is to hand the worker what it cannot get for itself: the
+ * importmap resolved to absolute URLs, the wasm automerge needs initialising
+ * with, a network port into this page's repo, the API key (which lives in
+ * this page's localStorage and must never go into the session document), and
+ * what this page's plugin registry holds — every `agent:tool` entry's
+ * metadata, sent again whenever the registry changes (worker-plugins.js).
  *
  * Everything here degrades: if the worker cannot be started — no SharedWorker,
  * a CSP that forbids it, a module that fails to load — `connectWorkerRunner`
@@ -12,7 +14,7 @@
  * optimization, not a requirement.
  */
 
-import { hostImport } from "./tools/host.js"
+import { hostImport, tryHostImport, workerPreparation } from "./tools/host.js"
 
 const WORKER_NAME = "patchwork-agent-runner"
 
@@ -103,10 +105,39 @@ export async function connectWorkerRunner({
     setTimeout(() => resolve(null), timeoutMs)
   })
 
+  // This page's agent:tool plugins, for the worker to list and load. Sent
+  // again when the registry changes, so a package installed, removed or
+  // edited reaches the worker's next run as it reaches this page's.
+  // Loaded late: the tool registry imports package_test, which imports this.
+  const { pluginDescriptions } = await import("./tools/index.js")
+  const registry = (await tryHostImport("plugins"))?.getRegistry?.("agent:tool") ?? null
+  const plugins = await pluginDescriptions({ registry }).catch(() => [])
+  let unwatch = null
+  if (typeof registry?.on === "function") {
+    let queued = false
+    const resend = () => {
+      if (queued) return
+      queued = true
+      // One message for a package's worth of registrations.
+      queueMicrotask(async () => {
+        queued = false
+        try {
+          port.postMessage({ type: "plugins", plugins: await pluginDescriptions({ registry }) })
+        } catch {
+          /* the worker is gone */
+        }
+      })
+    }
+    const off = registry.on("changed", resend)
+    unwatch = typeof off === "function" ? off : () => registry.off?.("changed", resend)
+  }
+
   port.postMessage(
     {
       type: "init",
       urls,
+      prepare: workerPreparation(urls),
+      plugins,
       repoPort: channel.port2,
       sessionUrl,
       subject: subject ?? null,
@@ -119,7 +150,10 @@ export async function connectWorkerRunner({
   )
 
   const answer = await ready
-  if (!answer) return null
+  if (!answer) {
+    unwatch?.()
+    return null
+  }
 
   return {
     runnerUrl: answer.runnerUrl,
@@ -128,6 +162,7 @@ export async function connectWorkerRunner({
     interrupt: () => port.postMessage({ type: "interrupt", sessionUrl }),
     setKey: (value) => port.postMessage({ type: "key", sessionUrl, key: value }),
     close: () => {
+      unwatch?.()
       try {
         port.postMessage({ type: "detach", sessionUrl })
         port.close()

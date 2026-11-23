@@ -55,7 +55,7 @@ async function setup(steps, { behaviour = {}, limits = {}, grants = {} } = {}) {
   const runner = fakeRunner(behaviour)
   const news = []
   const notify = () => ({ notify: (render) => news.push(render()), close: () => {} })
-  const make = () => new WorkflowDriver({ repo, handle: plan, startSession: runner.startSession, notify, heartbeatMs: 1e9, confirmMs: 0, toolIds: { worker: ["doc_read", "doc_edit"] } })
+  const make = () => new WorkflowDriver({ repo, handle: plan, startSession: runner.startSession, notify, heartbeatMs: 1e9, confirmMs: 0 })
   return { repo, plan, orchestrator, runner, news, make }
 }
 
@@ -92,7 +92,7 @@ describe("running a plan", () => {
     expect(w.config.model).toBe(DEFAULT_TIER_MODELS.deep)
     expect(h.config.model).toBe(DEFAULT_TIER_MODELS.standard)
     expect(w.config.params.maxTokens).toBe(4000)
-    expect(w.tools).toEqual({ enabled: ["doc_read", "doc_edit"] })
+    expect(w.tools).toEqual({ where: "worker", disabled: WORKFLOW_TOOL_IDS })
     expect(h.tools).toEqual({ disabled: WORKFLOW_TOOL_IDS })
     expect(w.grants).toEqual({ "files@*": "session" })
     expect(w.subject).toBe("automerge:subj")
@@ -214,8 +214,7 @@ describe("which tools a session gets", () => {
   })
 
   it("a worker step gets only tools that run without the page", async () => {
-    const worker = BUILTIN_TOOLS.filter((t) => t.where === "worker" && !WORKFLOW_TOOL_IDS.includes(t.id)).map((t) => t.id)
-    const got = await ids({ config: {}, tools: { enabled: worker } })
+    const got = await ids({ config: {}, tools: { where: "worker", disabled: WORKFLOW_TOOL_IDS } })
     expect(got.every((id) => BUILTIN_TOOLS.find((t) => t.id === id).where === "worker")).toBe(true)
     expect(got).toContain("doc_edit")
     expect(got).not.toContain("view_mount")

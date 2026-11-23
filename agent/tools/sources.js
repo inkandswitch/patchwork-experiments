@@ -41,7 +41,9 @@
  * engine "reader-dom" or "raw", so source_read reads one like any kept source.
  */
 
-import { ImmutableString, isImmutableString } from "@automerge/automerge"
+import { Automerge } from "../host-modules.js"
+
+const { ImmutableString, isImmutableString } = Automerge
 
 const MIME_EXTENSIONS = {
   "text/markdown": "md",

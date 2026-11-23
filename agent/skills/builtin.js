@@ -764,15 +764,22 @@ a strong one judges. A job you could do in a few tool calls, do yourself.
   checking another step's work. **standard**: most writing and editing.
   **fast**: searching, reading, extracting, mechanical changes. Say why in
   \`why\` — the person sees it beside the step.
-- **where: worker** unless the step needs the page: mounting or driving a view,
-  screenshots, \`package_test\`, \`doc_create\`, the plugin registry. Worker
-  steps run side by side; host steps take turns on the page.
+- **where: worker** unless the step needs the page: mounting or driving a view
+  (\`view_mount\`, \`view_interact\`, \`view_inspect\`), screenshots,
+  \`package_test\`, \`doc_create\`, \`registry_list\` or \`plugin_source\`. A
+  worker step has every other tool, the tools of installed packages included
+  (an assumptions register's, say), unless a package declares that one needs
+  the page. Worker steps run side by side; host steps take turns on the page, one
+  at a time, so putting a step there that does not need it holds the others
+  up. A worker step whose prompt names a tool that needs the page is moved
+  there when it starts; a research step whose prompt names a tool it cannot
+  have fails at once, saying which.
 - **access: web** for research — finding sources, reading datasheets and
   standards. The step gets \`web_search\`, \`web_fetch\`,
   \`http_request\` (GET and HEAD), \`source_read\`, \`source_list\`, \`finding_write\` and
-  \`session_recall\` — and \`web_capture\` when the Web snapshot package is
-  installed and the step runs in a tab (a worker has no plugins) — and nothing
-  else, so it can fetch without asking anyone (it can reach none of the
+  \`session_recall\` — and installed packages' tools that declare they work
+  within those limits, such as \`web_capture\` from the Web snapshot package —
+  and nothing else, so it can fetch without asking anyone (it can reach none of the
   person's documents to leak). Everything it fetches, every page it captures
   and every finding it writes is kept, shared with the other research steps
   of the workflow, and filed in the workflow's Sources folder, which the news
@@ -789,7 +796,8 @@ document, and the step could hand it to a site.
 **Before you write a step, check that its tools can do it.** A step cannot do
 what its toolset does not allow, and it will spend its whole budget finding
 that out. A web step cannot edit or file a document or mount a view; a worker
-step cannot touch the page. If the work needs both, split it into steps that
+step cannot touch the page. A step can tell you a tool is missing only once it
+has started, so name in its prompt the tools it should use. If the work needs both, split it into steps that
 each have what they need.
 
 ## Fanning out, and finishing

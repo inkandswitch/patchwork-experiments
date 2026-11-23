@@ -87,7 +87,7 @@ describe("the driver tells the orchestrator", () => {
     const { plan } = planWaiting(repo, kind)
     const news = []
     const driver = new WorkflowDriver({
-      repo, handle: plan, heartbeatMs: 1e9, confirmMs: 0, toolIds: { worker: [] },
+      repo, handle: plan, heartbeatMs: 1e9, confirmMs: 0,
       startSession: async () => ({ runner: {}, listen: () => {} }),
       notify: () => ({ notify: (render) => { const text = render(); if (text) news.push(text) }, close: () => {} }),
     })

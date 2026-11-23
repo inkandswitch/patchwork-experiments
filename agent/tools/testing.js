@@ -23,6 +23,9 @@
 import { materialize, loadEsbuild, packagePlugin, isExternal, loaderFor } from "./build.js"
 import { createRuntime, captureConsole } from "./vitest-runtime.js"
 import { resolveImportMap } from "../worker-client.js"
+import { workerPreparation } from "./host.js"
+
+export { workerPreparation }
 
 export { captureConsole }
 
@@ -241,43 +244,6 @@ async function runInPage(file, code, options, { engine, runBundle = defaultRunBu
     consoled.stop()
     if (previous === undefined) delete globalThis.__patchworkVitest
     else globalThis.__patchworkVitest = previous
-  }
-}
-
-const AUTOMERGE_SLIM = "@automerge/automerge/slim"
-const AUTOMERGE_WASM = /\/automerge[^/]*\.wasm(\?|$)/
-
-/**
- * What a fresh worker needs before a test's imports work as they do in the
- * page. Patchwork's importmap serves automerge's slim build, which the page's
- * boot initialises with its wasm (initializeWasm); a worker gets the module
- * uninitialised, and the first Repo dies with "Automerge.use() not called".
- * So the worker initialises it the same way, from the wasm this page loaded
- * (its resource timings name the build's own hashed copy).
- *
- * @returns {{ automerge: string, wasm: string } | null}
- */
-export function workerPreparation(importMap, { resources = pageResources(), origin = pageOrigin() } = {}) {
-  const automerge = importMap?.[AUTOMERGE_SLIM]
-  if (!automerge) return null
-  const loaded = resources.find((name) => AUTOMERGE_WASM.test(new URL(name, "http://x").pathname))
-  const wasm = loaded ?? (origin ? new URL("/automerge.wasm", origin).href : null)
-  return wasm ? { automerge, wasm } : null
-}
-
-function pageResources() {
-  try {
-    return globalThis.performance?.getEntriesByType?.("resource").map((e) => e.name) ?? []
-  } catch {
-    return []
-  }
-}
-
-function pageOrigin() {
-  try {
-    return new URL(globalThis.document.baseURI).origin
-  } catch {
-    return null
   }
 }
 

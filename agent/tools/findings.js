@@ -19,10 +19,12 @@
  * would lead from there to everything the plan names.
  */
 
-import { splice, updateText } from "@automerge/automerge"
-import { stringifyAutomergeUrl } from "@automerge/automerge-repo"
+import { Automerge, AutomergeRepo } from "../host-modules.js"
 import { documentIdOf, cleanTitle } from "../session.js"
 import { citationsIn, checkCitation } from "../citations.js"
+
+const { splice, updateText } = Automerge
+const { stringifyAutomergeUrl } = AutomergeRepo
 
 const MODES = ["append", "replace"]
 

@@ -34,10 +34,12 @@
  */
 
 import { addedHeads } from "./own-changes.js"
-import * as A from "@automerge/automerge"
-import { interpretAsDocumentId, isValidAutomergeUrl, stringifyAutomergeUrl, decodeHeads, encodeHeads } from "@automerge/automerge-repo"
+import { Automerge as A, AutomergeRepo } from "./host-modules.js"
 import { repairDocUrl } from "./doc-urls.js"
 import { readable } from "./tools/sources.js"
+import { declaredWhere } from "./placement.js"
+
+const { interpretAsDocumentId, isValidAutomergeUrl, stringifyAutomergeUrl, decodeHeads, encodeHeads } = AutomergeRepo
 
 /** The documents only the runtime writes: sessions and workflow plans. */
 export const KERNEL_TYPES = ["agent-session", "agent-workflow"]
@@ -320,8 +322,8 @@ export function scopedRepo(repo, ledger, { stepId }) {
   })
 }
 
-/** Does this plugin metadata declare a tool a research step may have? Scoped as exactly true, and a worker tool. */
-const declaresScoped = (meta) => meta?.scoped === true && (meta.where ?? "worker") === "worker"
+/** Does this plugin metadata declare a tool a research step may have? Scoped as exactly true, and declared a worker tool. */
+const declaresScoped = (meta) => meta?.scoped === true && declaredWhere(meta) === "worker"
 
 export const UNDECLARED_MID_RUN = "This plugin was registered again during the run without declaring `scoped: true`; a research step cannot run it."
 
@@ -348,7 +350,9 @@ export async function admitScoped(plugins = []) {
   const taken = new Set(BUILTIN_TOOLS.map((t) => t.id))
   const admitted = []
   for (const tool of plugins ?? []) {
-    if (!declaresScoped(tool) || tool.where !== "worker" || typeof tool.current !== "function") continue
+    // By what it declared: a runner that cannot load it here still lists it,
+    // and hands its calls to a tab, which admits it again (placement.js).
+    if (!declaresScoped(tool) || typeof tool.current !== "function") continue
     if (typeof tool.id !== "string" || taken.has(tool.id)) continue
     taken.add(tool.id)
     admitted.push(

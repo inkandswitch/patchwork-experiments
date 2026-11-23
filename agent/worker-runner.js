@@ -12,23 +12,29 @@
  * lease, which is why the lease exists and why this file shares `SessionRunner`
  * with every other environment.
  *
- * Two environment problems are solved at init, both measured in
- * probes/worker-repo.mjs:
+ * Four environment problems are solved at init. The first two are measured in
+ * probes/worker-repo.mjs, all four in probes/worker-plugin-tool.mjs:
  *
  *   1. No importmap. The page resolves its importmap to absolute URLs and sends
  *      the table; `setHostUrls` teaches `hostImport` to use it. No CDN shim.
+ *      Nothing of this package is imported until the table is set: its
+ *      modules take automerge from host-modules.js, which imports through the
+ *      table, so this file imports only the table statically and the rest
+ *      once `init` has arrived.
  *   2. The subduction wasm loader reaches for DOM APIs that a worker does not
  *      have. A six-property `document` shim gets it through; the shim is only
  *      installed if there is genuinely no document.
+ *   3. Automerge's slim build is uninitialised here. The page names the wasm
+ *      its own boot loaded (tools/host.js workerPreparation) and the worker
+ *      initialises it before the first Repo, which otherwise dies with
+ *      "Automerge.use() not called".
+ *   4. No plugin registry. The page sends every `agent:tool` entry's metadata,
+ *      and again when the registry changes; the worker loads and runs those
+ *      it can, and lists the rest as host-tier, so their calls go to a tab
+ *      (worker-plugins.js). Its sessions get the tools a tab's would.
  */
 
-import { handleStore } from "./store.js"
-import { SessionRunner } from "./runner.js"
-import { createEvents } from "./events.js"
-import { buildToolset } from "./tools/index.js"
-import { setHostUrls } from "./tools/host.js"
-import { getProvider, modelInfo } from "./providers/index.js"
-import { guardedFetch, SYNC_SERVERS } from "./tools/guard.js"
+import { setHostUrls } from "./host-urls.js"
 
 /** The wasm loader wants a DOM. Give it the smallest one that works. */
 function shimDocument() {
@@ -48,14 +54,39 @@ function shimDocument() {
 }
 
 let repo = null
+let booting = null
 let automerge = null
+let lib = null // this package's modules, imported once the table is set
+let catalogue = null // the page registry's agent:tool plugins (worker-plugins.js)
 const runners = new Map() // sessionUrl -> { runner, store, ports:Set }
 const clients = new Set()
 
-async function ensureRepo(urls, repoPort) {
-  if (repo) return repo
+/** Boot once, however many tabs say `init` at once. */
+function ensureRepo(urls, repoPort, prepare) {
+  booting ??= boot(urls, repoPort, prepare).catch((err) => {
+    booting = null
+    throw err
+  })
+  return booting
+}
+
+async function boot(urls, repoPort, prepare) {
   setHostUrls(urls)
   shimDocument()
+
+  const { initAutomergeHere } = await import("./tools/host.js")
+  await initAutomergeHere(prepare)
+  const [store, runner, events, tools, providers, guard, plugins] = await Promise.all([
+    import("./store.js"),
+    import("./runner.js"),
+    import("./events.js"),
+    import("./tools/index.js"),
+    import("./providers/index.js"),
+    import("./tools/guard.js"),
+    import("./worker-plugins.js"),
+  ])
+  lib = { ...store, ...runner, ...events, ...tools, ...providers, ...guard }
+  catalogue = plugins.createPluginCatalogue()
 
   const repoModule = await import(/* @vite-ignore */ urls["@automerge/automerge-repo"])
   automerge = await import(/* @vite-ignore */ urls["@automerge/automerge/slim"])
@@ -82,6 +113,7 @@ function broadcast(sessionUrl, message) {
 }
 
 async function startSession({ sessionUrl, subject, key, providerId, system, account }, port) {
+  const { handleStore, SessionRunner, createEvents, buildToolset, getProvider, modelInfo, guardedFetch, SYNC_SERVERS } = lib
   const existing = runners.get(sessionUrl)
   if (existing) {
     existing.ports.add(port)
@@ -113,16 +145,19 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
       // The worker shares the page's origin, so it refuses the same places.
       fetchImpl: guardedFetch({ fetch: (url, init) => fetch(url, init), deny: [self.location.origin, ...SYNC_SERVERS] }),
     },
-    buildToolset: (doc) => buildToolset(doc),
-    // No pluginTools: a worker has no plugin registry, so its research steps
-    // get the built-ins alone, never a package's tool (scope.js admitScoped).
+    // The page registry's plugins, as the page last described them: the
+    // same tools a tab's session gets, loaded here where they can be.
+    buildToolset: (doc) => buildToolset(doc, { plugins: () => catalogue.tools() }),
+    // And for research steps, those of them that declare `scoped: true`
+    // (scope.js admitScoped), with the step's confined context.
+    pluginTools: () => catalogue.tools(),
     getProvider: async () => getProvider(providerId ?? "openrouter"),
     // The key is passed in per session rather than read from storage: a worker
     // has no access to the page's localStorage.
     getKey: () => entry.key,
     getModelInfo: (model, providerId) => modelInfo(providerId ?? "openrouter", model, { key: entry.key }),
-    // A worker has no DOM and no plugin registry. Host-tier calls park here and
-    // are picked up by a tab.
+    // A worker has no DOM. Host-tier calls park here and are picked up by a
+    // tab — the page's own tools, and plugins that cannot load here.
     canRun: (where) => where === "worker",
     system,
     onEvent: (event) => broadcast(sessionUrl, { type: "event", sessionUrl, event }),
@@ -149,8 +184,14 @@ self.onconnect = (event) => {
     const data = message.data ?? {}
     try {
       if (data.type === "init") {
-        await ensureRepo(data.urls, data.repoPort)
+        await ensureRepo(data.urls, data.repoPort, data.prepare)
+        if (data.plugins) catalogue.set(data.plugins)
         port.postMessage(await startSession(data, port))
+        return
+      }
+      // The page's registry changed: a package installed, removed, or edited.
+      if (data.type === "plugins") {
+        catalogue?.set(data.plugins)
         return
       }
 

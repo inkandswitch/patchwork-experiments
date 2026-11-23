@@ -24,7 +24,9 @@
  * holds.
  */
 
-import { isValidAutomergeUrl, interpretAsDocumentId } from "@automerge/automerge-repo"
+import { AutomergeRepo } from "./host-modules.js"
+
+const { isValidAutomergeUrl, interpretAsDocumentId } = AutomergeRepo
 
 /** Does automerge itself take this as naming a document — a URL, a bare id, a legacy UUID? */
 function accepted(input) {
