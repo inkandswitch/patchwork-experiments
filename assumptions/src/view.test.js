@@ -421,6 +421,22 @@ describe("checking from the view", () => {
     expect(register.doc().entries.pack_heat_W.stale ?? null).toBeNull()
   })
 
+  it("doesn't answer a model that re-renders on every change to the register: no write for a document whose version alone moved", async () => {
+    open()
+    await until(() => register.doc().scan, "the scan")
+    await new Promise((r) => setTimeout(r, 50))
+    // A model importing the register re-renders on each change to it and touches its own document, saying nothing new.
+    let writes = 0
+    register.on("change", () => writes++)
+    for (let i = 0; i < 3; i++) {
+      notebook.change((d) => (d.touched = i))
+      dispose()
+      open()
+      await new Promise((r) => setTimeout(r, 60))
+    }
+    expect(writes).toBe(0)
+  })
+
   it("shows its progress while it checks, and Stop leaves the last check standing", async () => {
     const slow = { find: async (url) => (await new Promise((r) => setTimeout(r, 30)), repo.find(url)) }
     dispose = AssumptionsView(register, element, { repo: slow })

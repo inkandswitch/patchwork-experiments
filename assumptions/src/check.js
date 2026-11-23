@@ -39,6 +39,11 @@ const CONCURRENCY = 8
 
 export const headsOf = (handle) => (typeof handle?.heads === "function" ? [...(handle.heads() ?? [])] : [])
 export const plain = (value) => (value == null ? value : JSON.parse(JSON.stringify(value)))
+
+/** JSON with keys in order, so a record read back from Automerge (keys sorted) equals the one it was written from. */
+export function canonical(value) {
+  return JSON.stringify(value, (_, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v))
+}
 const strip = (url) => String(url).split("#")[0]
 
 /** Save a scan, rewriting only the documents whose record changed. Inside a change. */
@@ -48,14 +53,14 @@ export function writeScan(d, scan) {
     return
   }
   for (const key of ["at", "time", "idsKey", "unopened", "read", "reused", "truncated", "folder"]) {
-    if (JSON.stringify(d.scan[key] ?? null) !== JSON.stringify(scan[key] ?? null)) d.scan[key] = plain(scan[key] ?? null)
+    if (canonical(d.scan[key] ?? null) !== canonical(scan[key] ?? null)) d.scan[key] = plain(scan[key] ?? null)
   }
   for (const part of ["docs", "sources"]) {
     const want = scan[part] ?? {}
     if (!d.scan[part]) d.scan[part] = {}
     for (const url of Object.keys(d.scan[part])) if (!(url in want)) delete d.scan[part][url]
     for (const [url, record] of Object.entries(want)) {
-      if (JSON.stringify(d.scan[part][url] ?? null) !== JSON.stringify(record)) d.scan[part][url] = plain(record)
+      if (canonical(d.scan[part][url] ?? null) !== canonical(record)) d.scan[part][url] = plain(record)
     }
   }
 }
@@ -212,10 +217,15 @@ export function runsToRead(doc, scan, evaluation = evaluate(doc)) {
 function worthSaving(previous, scan, entries) {
   if (!previous) return true
   if (Boolean(previous.truncated) !== Boolean(scan.truncated)) return true
-  if (JSON.stringify(previous.unopened ?? []) !== JSON.stringify(scan.unopened ?? [])) return true
+  if (canonical(previous.unopened ?? []) !== canonical(scan.unopened ?? [])) return true
   const before = Object.keys(previous.docs ?? {})
   if (before.length !== Object.keys(scan.docs).length) return true
-  for (const [url, record] of Object.entries(scan.docs)) if (JSON.stringify(previous.docs?.[url] ?? null) !== JSON.stringify(record)) return true
+  // A document whose heads moved but whose uses, code, outputs and run are the
+  // same says nothing new: saving it anyway would make a model that imports
+  // this register (and re-renders on every change to it) and the register
+  // answer each other forever.
+  const said = (record) => (record ? canonical({ ...record, heads: undefined }) : "null")
+  for (const [url, record] of Object.entries(scan.docs)) if (said(previous.docs?.[url]) !== said(record)) return true
   return Object.values(entries ?? {}).some((e) => e?.basis === "model" && e.model?.ranAt && !(previous.time >= e.model.ranAt))
 }
 
@@ -241,7 +251,7 @@ export async function checkFolder(handle, repo, { folderUrl = null, message = "c
   }
   if (signal?.aborted) return { scan: null, saved: false, stopped: true, runs: [] }
   scan.sources = sources
-  const sourcesMoved = JSON.stringify(sources) !== JSON.stringify(doc.scan?.sources ?? {})
+  const sourcesMoved = canonical(sources) !== canonical(doc.scan?.sources ?? {})
   const runs = runsToRead(doc, scan)
   if (quiet && !runs.length && !rechecks.length && !sourcesMoved && !worthSaving(doc.scan, scan, doc.entries)) return { scan, saved: false, stopped: false, runs }
   handle.change(
