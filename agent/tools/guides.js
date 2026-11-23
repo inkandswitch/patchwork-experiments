@@ -33,10 +33,12 @@
  * guides never appear among them.
  */
 
-import { parseAutomergeUrl } from "@automerge/automerge-repo"
+import { AutomergeRepo } from "../host-modules.js"
 import { fsWrite, createFolder, contentToText, isFolder, treeNode, treeEntries, treeEnter } from "./folders.js"
 import { notesFolder, noteFileName, looksLikeCredential } from "./notes.js"
 import { truncate } from "./format.js"
+
+const { parseAutomergeUrl } = AutomergeRepo
 
 export const GUIDES_FOLDER_NAME = "Tool guides"
 const PINS_FILE = "pins.json"

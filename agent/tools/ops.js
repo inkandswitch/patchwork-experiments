@@ -50,7 +50,9 @@
  * objects in tests) a text edit reassigns the string.
  */
 
-import { ImmutableString, Counter } from "@automerge/automerge"
+import { Automerge } from "../host-modules.js"
+
+const { ImmutableString, Counter } = Automerge
 
 export class OpError extends Error {}
 
