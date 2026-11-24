@@ -715,6 +715,9 @@ try {
       } else check("13: the card's X arrow is on A's screen", false, { h0, h1, halo: await P("halo('a')"), why: await P("haloWhy('a')") });
       check("13: B is untouched: its focus the boat's, nothing selected, in the body it was in", J(await P("focusPath('b')")) === "[]" && (await P("selectionPath('b')")) === null && (await P("bodyLabel('b')")) === bBody, { focus: await P("focusPath('b')"), selected: await P("selectionPath('b')"), body: await P("bodyLabel('b')"), was: bBody });
       await P("focus('a')");
+      // (the ladder: the Move tool she picked up with V goes down first, then the selection, then the link)
+      await b.key("Escape");
+      await b.rest(300);
       await b.key("Escape");
       await b.rest(300);
       const deselected = (await P("selectionPath('a')")) === null && J(await P("focusPath('a')")) === J([ids.link]);
