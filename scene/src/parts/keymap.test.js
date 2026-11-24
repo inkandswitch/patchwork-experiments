@@ -230,6 +230,17 @@ describe("the key resolver (H3), exhaustively", () => {
     expect(mapInvocation(anyTarget, "k", ctx, { selected: null, hit: { id: "gone" } })).toEqual({ ext: "z", command: "poke", target: null });
   });
 
+  // (sailing's editclick probe: the bar's Come aboard read while the pointer rested on a linked game)
+  it("a world command's key is shown only while nothing looked at takes it: looking at what an Open takes Enter for, the bar's Enter verb shows no key", () => {
+    const collected = [
+      { id: "t.links", value: [{ id: "enter", name: "Open", open: true, key: "Enter", state: on("table"), run() {} }] },
+      { id: "t.boat", value: [{ id: "aboard", name: "Come aboard", key: "Enter", show: ["world"], run() {} }] },
+    ];
+    const verb = { ext: "t.boat", command: collected[1].value[0], target: null };
+    const hint = (hit) => hintFor(verb, { collected, ctx: { scene, local: {} }, attention: { selected: null, hit } });
+    expect([hint(null), hint({ id: "crate" }), hint({ id: "table" }), hint({ id: "card" })]).toEqual(["Enter", "Enter", "", ""]);
+  });
+
   it("Escape is no command's", () => {
     expect(resolveKey({ key: "Escape", code: "Escape" }, { collected: COLLECTED, ctx: { scene, local: {} }, attention: {} })).toBe(null);
   });
