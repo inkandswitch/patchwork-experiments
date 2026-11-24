@@ -160,7 +160,7 @@ for (const p of placed) {
   }
   const render = await create({
     "@patchwork": { type: "scene-render" }, title: p.entry.name, parent: p.entry.url, providerId: "ink-scene", params: { cells: 48 },
-    glbUrl: null, builtFrom: null, builtAt: null, bounds: null, status: "idle", error: null, pinned: false,
+    pinned: false, result: null, failure: null,
   });
   const id = newId();
   objects[id] = {
