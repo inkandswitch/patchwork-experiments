@@ -79,8 +79,8 @@ describe("shortcuts on the stage", () => {
     const copied = press("c");
     expect(copied.defaultPrevented).toBe(false);
     // the menu's rows say each one's shortcut
-    const f = s.facet("scene.inspector");
-    const { forObject } = menuEntries(s.api("scene.inspector").collect("commands"), "a", f.context(null));
+    const reader = s.api("scene.inspector").path({ focus: true })[0];
+    const { forObject } = menuEntries(s.api("scene.inspector").collect("commands"), "a", reader.context(null));
     const shown = Object.fromEntries(forObject.filter((e) => e.command.shortcut).map((e) => [e.command.id, shortcutLabel(shortcutsOf(e.command)[0], false)]));
     expect(shown).toMatchObject({ group: "Ctrl+G", extract: "Ctrl+E", copy: "Ctrl+C" });
   });

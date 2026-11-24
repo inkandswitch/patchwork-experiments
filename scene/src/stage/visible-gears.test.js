@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The kernel's reads for visible gears (STAGE.md, "`api`" owners, "View
-// plugins" routes and tap, "`api`" change's provenance; PLANS.md section 4):
+// The kernel's reads for visible gears (STAGE.md, "View plugins" trace,
+// "`api`" change's provenance; PLANS.md section 4):
 // who draws what, each event's route through the input chain, a read-only
 // tap on the channel, and who wrote what.
 
@@ -55,7 +55,7 @@ async function mount() {
   return log;
 }
 
-describe("owners: who draws what in a stage", () => {
+describe("trace.draws(): who draws what in the focus stage", () => {
   it("layers with their meshes, labels with their objects, and display overrides by author in layering order, each released as its owner stops", async () => {
     const log = await mount();
     const { a, b } = log;
@@ -67,7 +67,7 @@ describe("owners: who draws what in a stage", () => {
     expect(s.debug.local.get().running.map((r) => r.id).filter((id) => id.startsWith("t."))).toEqual(["t.svc", "t.b", "t.a"]);
     a.display("x", { hidden: true, name: "A's" });
     b.display("x", { transform: T, hidden: undefined });
-    const o = a.owners();
+    const o = log.view.trace.draws();
     expect(o.layers).toEqual([
       { ext: "t.b", onTop: false, meshes: 0 },
       { ext: "t.a", onTop: true, meshes: 2 },
@@ -78,14 +78,12 @@ describe("owners: who draws what in a stage", () => {
     ]);
     expect(o.display).toEqual({ x: [{ ext: "t.b", fields: ["transform"] }, { ext: "t.a", fields: ["hidden", "name"] }] });
     expect(Object.isFrozen(o) && Object.isFrozen(o.layers[0]) && Object.isFrozen(o.display.x)).toBe(true);
-    // the view plugin reads the focus stage's
-    expect(log.view.focus().owners()).toEqual(o);
     await s.uninstall("t.a");
-    expect(b.owners()).toEqual({ layers: [{ ext: "t.b", onTop: false, meshes: 0 }], labels: [], display: { x: [{ ext: "t.b", fields: ["transform"] }] } });
+    expect(log.view.trace.draws()).toEqual({ layers: [{ ext: "t.b", onTop: false, meshes: 0 }], labels: [], display: { x: [{ ext: "t.b", fields: ["transform"] }] } });
   });
 });
 
-describe("routes: each dispatched event's way through the input chain", () => {
+describe("trace.routes(): each dispatched event's way through the input chain", () => {
   it("the hands, then the widget, the holders nearest first, the view plugins, the body; who took it; the last ROUTES kept", async () => {
     const log = await mount();
     const { view } = s.debug;
@@ -93,7 +91,7 @@ describe("routes: each dispatched event's way through the input chain", () => {
     view.viewport.pick = at("x");
     s.pointer("pointerdown", 20, 20);
     s.pointer("pointerup", 20, 20);
-    let r = log.view.routes().filter((x) => x.type === "press").at(-1);
+    let r = log.view.trace.routes().filter((x) => x.type === "press").at(-1);
     // t.a holds x (its own trait) and takes the press; nothing after it is offered
     expect(r.path).toEqual(["x"]);
     expect(r.steps.map((st) => [st.step, st.ext, st.holder ?? null])).toEqual([
@@ -105,7 +103,7 @@ describe("routes: each dispatched event's way through the input chain", () => {
     view.viewport.pick = at("y");
     s.pointer("pointerdown", 20, 20);
     s.pointer("pointerup", 20, 20);
-    r = log.view.routes().filter((x) => x.type === "press").at(-1);
+    r = log.view.trace.routes().filter((x) => x.type === "press").at(-1);
     expect(r.path).toEqual(["y"]);
     expect(r.took).toBe(-1);
     const kinds = r.steps.map((st) => st.step);
@@ -121,15 +119,15 @@ describe("routes: each dispatched event's way through the input chain", () => {
     log.hand();
     s.pointer("pointerdown", 20, 20);
     s.pointer("pointerup", 20, 20);
-    r = log.view.routes().filter((x) => x.type === "press").at(-1);
+    r = log.view.trace.routes().filter((x) => x.type === "press").at(-1);
     expect(r.steps[0]).toMatchObject({ step: "hand", view: true, ext: "t.view", kind: "edit" });
     // a key nothing reserves goes down the chain (no hit: the scene's holders), and nobody takes it here
     s.key("q");
-    r = log.view.routes().at(-1);
+    r = log.view.trace.routes().at(-1);
     expect([r.type, r.path, r.took, r.steps.every((st) => st.step === "holder" ? st.holder === null : st.step === "plugin")]).toEqual(["key", null, -1, true]);
     // at most ROUTES kept, oldest first
     for (let i = 0; i < ROUTES; i++) s.pointer("pointerdown", 20, 20), s.pointer("pointerup", 20, 20);
-    const all = log.view.routes();
+    const all = log.view.trace.routes();
     expect(all.length).toBe(ROUTES);
     expect(all.every((x, i) => i === 0 || x.at >= all[i - 1].at)).toBe(true);
     expect(Object.isFrozen(all) && Object.isFrozen(all[0].steps)).toBe(true);
@@ -147,7 +145,7 @@ describe("the channel tap", () => {
     log.a.channel.set("k", 1);
     await settle();
     expect(tapSay).not.toHaveBeenCalled();
-    const off = log.view.tap((e) => said.push(e));
+    const off = log.view.trace.tap((e) => said.push(e));
     log.a.channel.send("ping", { n: 2 });
     await settle();
     expect(said.find((e) => e.kind === "send")).toMatchObject({ stage: 0, url: s.handle.url, dir: "out", ext: "t.a", type: "ping", data: { n: 2 }, session: log.a.channel.session });

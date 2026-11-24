@@ -3,7 +3,7 @@
 // value. Pure: a function of the registry's metadata, the stage's scene
 // snapshot, its running list, what its instances contribute (commands,
 // inputs, `inspect` snapshots: CONVENTIONS.md, "Inspect") and the kernel's
-// reads (`owners()`, `settled()`, provenance). Built on the kernel's own pure
+// reads (`trace.draws()`, `settled()`, provenance). Built on the kernel's own pure
 // helpers (stage/public.js) for who holds what (the chain's order) and whether a
 // command applies (stage/commands.js), so it can't disagree with them.
 //
@@ -49,8 +49,8 @@ const verbState = (s) =>
  *   commands?: { id: string, value: any }[],   // collect("commands"), the stage's and (at the focus) its view plugins'
  *   inputs?: { id: string, value: any }[],     // collect("input")
  *   inspect?: { id: string, value: any }[],    // each instance's inspect() snapshot
- *   context?: object,                      // api.context(): what a command's state() is asked in
- *   owners?: { layers, labels, display },  // api.owners()
+ *   context?: object,                      // a reader's context(): what a command's state() is asked in
+ *   owners?: { layers, labels, display },  // a view plugin's trace.draws()
  *   provenance?: { path: (string|number)[], by: { ext?, kernel? } | null }[],
  *   targets?: (string | null)[],           // whose verbs to work out (default: the scene and every object)
  * }} o
@@ -142,7 +142,7 @@ export function buildGears({ metas = [], scene, running = [], views = [], settle
     for (const [ext, n] of Object.entries(value?.processes && typeof value.processes === "object" ? value.processes : {})) processes.push({ ext, count: n, from: by });
   }
 
-  // ── what is drawn, by whom (api.owners())
+  // ── what is drawn, by whom (trace.draws())
   const overrides = Object.entries(owners?.display ?? {}).flatMap(([object, by]) => by.map((o, layer) => ({ object, ext: o.ext, fields: [...o.fields], layer })));
   const layers = (owners?.layers ?? []).map((l) => ({ ...l }));
   const labels = (owners?.labels ?? []).map((l) => ({ ...l }));

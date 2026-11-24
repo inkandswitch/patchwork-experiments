@@ -310,7 +310,8 @@ function create(api) {
 
   /** The gears of the focus stage, from the public reads; verbs for the objects the card and the details are of. */
   function gather(f, ids) {
-    const n = api.path({ focus: true })[0]?.stage;
+    const reader = api.path({ focus: true })[0];
+    const n = reader?.stage;
     const mine = (name) => api.collect(name).filter((x) => x.stage === n);
     const reg = (t) => {
       try {
@@ -337,8 +338,8 @@ function create(api) {
       commands: mine("commands"),
       inputs: mine("input"),
       inspect,
-      context: f.context(),
-      owners: f.owners(),
+      context: reader?.context(null),
+      owners: api.trace.draws(),
       provenance: provenanceOf(f, scene, pinned && scene.objects[pinned] ? [pinned] : []),
       targets: [null, ...these],
     });
@@ -396,7 +397,7 @@ function create(api) {
     at()?.set(looksOf, items);
     renderPanel(legend(g, colour, { isolated }), pinned ? details(seen, pinned, colour, ctx) : null, [...new Set([...glyphsOf].flatMap(([id, l]) => (id == null ? [] : l.filter((x) => x.kind !== "eye" || id === hovered)).map((x) => x.kind)))].filter((k) => k !== "link" && k !== "eye"), glyphsOf.get(null) ?? [], [...glyphsOf].filter(([id, l]) => id != null && l.some((x) => x.kind === "eye")).length);
     renderCard(f, c);
-    renderStrip(api.routes(), colour);
+    renderStrip(api.trace.routes(), colour);
   }
 
   function renderPanel(lg, det, keys, onScene, eyes) {
@@ -510,7 +511,7 @@ function create(api) {
   function start() {
     holding = true;
     close = api.use("drawer")?.dock(panel, { title: "X-ray", embed: false, pointer: false, onClose: () => ((close = null), holding && putDown()) }) ?? null;
-    offTap = api.tap(schedule);
+    offTap = api.trace.tap(schedule);
     refresh();
     return input;
   }

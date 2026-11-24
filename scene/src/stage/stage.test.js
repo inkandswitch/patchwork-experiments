@@ -772,7 +772,7 @@ describe("the stage, mounted", () => {
     expect(api.body.enter("walk", "here")).toBe(true);
     expect(m.local.get().body).toMatchObject({ id: "walk", label: "Walk", ext: "t.edit", depth: 1, reach: 2, keys: [{ code: "KeyW", label: "Forward" }] });
     expect(api.body.eye()).toEqual({ position: [1, 2, 3], direction: [0, 0, -1] });
-    expect(api.context()).toMatchObject({ from: [1, 2, 3], reach: 2 });
+    expect(m.debug.view.stage(0).reader.context(null)).toMatchObject({ from: [1, 2, 3], reach: 2 });
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "w", code: "KeyW", bubbles: true }));
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "b", code: "KeyB", bubbles: true }));
     // the body's extension stops (uninstalled): its body goes with it
@@ -901,7 +901,7 @@ describe("the stage, mounted", () => {
     expect(api.run({ ext: "t.always", command: "open", target: "a", hit: { id: "a", distance: 1.5 } })).toBe(true);
     expect(api.run({ ext: "t.always", command: "open", target: "a", hit: { id: "a", distance: 2.5 } })).toBe(false);
     expect(api.run({ ext: "t.always", command: "open", target: "a" })).toBe(false);
-    expect(api.context().distance("a")).toBeCloseTo(5);
+    expect(m.debug.view.stage(0).reader.context(null).distance("a")).toBeCloseTo(5);
     // run gets the context its state was asked in
     expect(ran).toEqual([
       ["a", null, Infinity],

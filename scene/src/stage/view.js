@@ -1234,10 +1234,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
       /** a service (NATIVE.md, "Native services"): a view plugin's, else the focus stage's provider's */
       use: (name) => (live() ? (plugins.use(name, { id, signal }) ?? api.focus()?.use(name)) : null),
-      /** the last events' routes through the input chain, oldest first (STAGE.md, "The input chain") */
-      routes: () => routes(),
-      /** hear every message every stage's channel sends or receives (presence.js tap), read-only → off */
-      tap: (fn) => (live() && typeof fn === "function" ? acquire(own.offs, () => (taps.add(fn), () => taps.delete(fn))) : noop),
+      /** how the view works right now: who draws what in the focus stage, the last events' routes (oldest first), every channel message → off */
+      trace: Object.freeze({
+        draws: () => focusStage()?.owners() ?? null,
+        routes: () => routes(),
+        tap: (fn) => (live() && typeof fn === "function" ? acquire(own.offs, () => (taps.add(fn), () => taps.delete(fn))) : noop),
+      }),
     };
 
     function release() {

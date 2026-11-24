@@ -48,12 +48,12 @@ and shows exactly then (H13). Putting it down puts down the selection.
   open?: true,                // the target's Open (below)
   group?: string, icon?: string, order?: number,  // where it sits on the bar (below)
   state(target, ctx) → null | { title?, label?, checked?, value?, choices?, options?, disabled? },
-  run(target, value?, ctx) → void | session | input }   // ctx: api.context(hit)
+  run(target, value?, ctx) → void | session | input }   // ctx: a reader's context(hit)
 ```
 
 An instance's `commands`. What applies and running it (`hand`, `reach`, `tool`,
 `state`, `run`) are the kernel's (STAGE.md, "Commands"); every surface asks its
-`commandState` in the context it passes, `api.context(hit)`. **Open** (`open:
+`commandState` in the context it passes, a stage reader's `context(hit)`. **Open** (`open:
 true`, `src/parts/open.js`) goes into a thing to edit what's inside, in place:
 a link's (scene.links'), a package's editor for its content; a target's Open is
 the first that applies, and the inspector, the menu (after Select), the outline
