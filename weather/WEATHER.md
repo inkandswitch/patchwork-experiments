@@ -750,9 +750,10 @@ undo stack; only the editor records its writes (EDITOR.md, "Undo"; Question
     The local probe found exactly this in the built tool: the toolbar shows
     the picker and the button, and the scene inspector shows the Weather
     behaviour's 15 fields and no weather commands. If the lead wants them
-    beside the sliders, the scene change is one rule: the scene inspector
-    shows the null target's commands that name "inspector" in `show`
-    (Question 11). *Decided unattended (2026-11-16, lane/weather), for the
+    beside the sliders, the inspector would need a surface for commands,
+    which it doesn't have: a command's surfaces are the toolbar, the world
+    bar, the menu and the use prompt (scene EDITOR.md, "A command";
+    Question 11). *Decided unattended (2026-11-16, lane/weather), for the
     lead.*
 29. **The provenance record is the fetched fields, as a map, and covers the
     place and moment.** W3 first wrote `source.sum`, the JSON of the summed
@@ -1367,10 +1368,10 @@ undo stack; only the editor records its writes (EDITOR.md, "Undo"; Question
     sliders (Decision 28), and the weather's controls sit on two surfaces:
     in Edit, every boating scene carries its weather commands on the
     toolbar next to the view toggles even when nobody is touching the
-    weather. Should the scene inspector show the scene's commands that name
-    "inspector" in `show`? That is a one-rule scene change, and the
-    weather's commands would then sit in its Weather section, all of the
-    weather in one place. This should be settled together with your new
+    weather. Should the scene inspector get a surface for a trait's
+    commands? That is a scene change (no command names the inspector), and
+    the weather's commands would then sit in its Weather section, all of
+    the weather in one place. This should be settled together with your new
     request to integrate the sidebar's objects list and the inspector,
     which rewrites this surface: the merged panel is where scene commands
     would land. The same work could hide a linked world's Weather
