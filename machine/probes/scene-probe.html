@@ -318,7 +318,7 @@ try {
     commandState(w, command, target) {
       const rec = dbg[w].host.record("machine");
       const c = rec?.instance?.commands?.find((x) => x.id === command);
-      return c ? c.state(target, machineApi(w).context()) : "no command";
+      return c ? c.state(target, dbg[w].view.stage(0).reader.context(null)) : "no command";
     },
     setObject: (id, transform) => scene.a.change((d) => { d.objects[id].transform = transform; }),
     errors, machines: { doom: machines.doom.url, snes: machines.snes.url },
