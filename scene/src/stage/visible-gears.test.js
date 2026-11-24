@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as A from "@automerge/automerge";
 import { mountStage, object, settle } from "../test/stage-harness.js";
+import { manualTime } from "./time.js";
 import { ROUTES } from "./router.js";
 import { lastWriter, stamp, writerOf, writers } from "./provenance.js";
 
@@ -46,11 +47,11 @@ function plugins(log) {
   return [A_, B, V, SVC];
 }
 
-async function mount() {
+async function mount({ time = null } = {}) {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   const log = { heard: [] };
   const objects = { x: object({ name: "X", traits: { "t.a": {} } }), y: object({ name: "Y" }) };
-  s = await mountStage({ extensions: plugins(log), doc: { objects, order: ["x", "y"] } });
+  s = await mountStage({ extensions: plugins(log), doc: { objects, order: ["x", "y"] }, time });
   await settle();
   return log;
 }
@@ -136,7 +137,9 @@ describe("trace.routes(): each dispatched event's way through the input chain", 
 
 describe("the channel tap", () => {
   it("off with nobody listening; then every message out and in, with its namespace, session, type and where it went or why it was dropped", async () => {
-    const log = await mount();
+    // one manual time for both views: presence's sends go at its rate, stepped, not waited for
+    const time = manualTime();
+    const log = await mount({ time });
     const { view } = s.debug;
     const said = [];
     const tapSay = vi.spyOn(view, "tapSay");
@@ -155,6 +158,7 @@ describe("the channel tap", () => {
     el.repo = s.repo;
     el.viewerId = "viewer:ben";
     el.packageSettleMs = 0;
+    el.time = time;
     document.body.append(el);
     const unmount = Stage(s.handle, el);
     extra.push(() => (unmount(), el.remove()));
@@ -182,7 +186,7 @@ describe("the channel tap", () => {
     said.length = 0;
     ben.channel.set("hello", true);
     await settle();
-    await new Promise((r) => setTimeout(r, 300));
+    await time.step(20);
     await settle();
     const p = said.find((e) => e.dir === "in" && e.kind === "presence" && e.keys?.["t.a"]);
     expect(p).toMatchObject({ to: "stage", changed: true, viewer: "viewer:ben" });

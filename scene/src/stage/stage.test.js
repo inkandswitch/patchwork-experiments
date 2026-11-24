@@ -5,9 +5,10 @@
 // kept per scene; where the doc starts people; and the editor's templates,
 // parts and drops (../parts/making.js) run on an api.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { FakeRepo, flush } from "../test/fake-repo.js";
+import { FakeRepo } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
-import { wallAt } from "../test/stage-harness.js";
+import { settle, until, wallAt } from "../test/stage-harness.js";
+import { FRAME_MS, manualTime } from "./time.js";
 import { bestWidget, initialCamera, startOf, widgetWins } from "./stage.js";
 import { wholeStart } from "./view.js";
 import { hitChain } from "./chain.js";
@@ -135,16 +136,6 @@ getRegistry("scene:part").register({ type: "scene:part", id: "t.part", name: "Te
 
 const card = (extra = {}) => ({ name: "Card", sourceUrl: null, providerId: "file-glb", renderUrl: null, parent: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, ...extra });
 
-const settle = async (n = 5) => {
-  for (let i = 0; i < n; i++) await flush();
-};
-async function until(fn, ms = 1000) {
-  const t0 = Date.now();
-  while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 5));
-  }
-}
 
 let repo;
 const mounted = [];
@@ -272,9 +263,10 @@ describe("the stage, mounted", () => {
       throw new Error("broken");
     });
     const h = newScene({ traits: { "t.scene": {} }, view: { start: { body: "late" } } });
-    const b = mount(h);
+    const time = manualTime();
+    const b = mount(h, undefined, { time });
     await settle();
-    await new Promise((r) => setTimeout(r, 300)); // the wait looks again every 250 ms while something starts
+    await time.step(Math.ceil(300 / FRAME_MS)); // the wait looks again every 250 ms (the stage's) while something starts
     await settle();
     bodies.push(LATE);
     h.change((d) => (d.title = "Renamed")); // a flush, with the body now on offer

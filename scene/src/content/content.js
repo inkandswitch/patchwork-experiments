@@ -8,23 +8,18 @@
 
 import { createRenderManager } from "./render-manager.js";
 import { createGLBQueue } from "./glb-queue.js";
-import { contentState, statusOf } from "./state.js";
+import { contentState } from "./state.js";
+// what the stage says to people of an object's state (local.status)
+export { statusOf } from "./state.js";
 import { contentOf, describeForHumans, describeSource, matchProviders, routeOf, showsContent } from "./providers.js";
 import { newRenderDoc, seededRenderDoc } from "../datatype.js";
 import { defaultParams } from "../params.js";
 import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
-import { isGroup, resolveGroups } from "../groups.js";
 import { fileBytes } from "../file-content.js";
-import { normalizeTransform } from "../transform.js";
-import * as ops from "../ops.js";
-import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, CONTROLS_CLASS, REBUILD_EVENT } from "../embed.js";
+import { CONTEXT_EVENT, REBUILD_EVENT } from "../embed.js";
 
 /** Load priority of the selected object: before anything else. */
 const SELECTED_PRIORITY = 1e12;
-/** What addObject settles itself, which its `fields` never override. */
-const ADD_OWNS = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims", "saved"]);
-const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
-const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
 
 /** An infoUrl / sourceUrl that is really an automerge URL, else null. */
 function docUrl(v) {
@@ -96,6 +91,7 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
       console.warn(`[scene] source “${p.id}” declares no content kind ("file" or "built"), so it isn't used`);
     }
   }
+  warnUnusable();
   const offSources = sources.on?.("changed", () => {
     manager.providersChanged();
     if (dead) return;
@@ -146,7 +142,7 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
         const o = placed.get(id);
         if (o && !o.hint?.bounds) applyHint(id, s.bounds);
       }
-      tellControls();
+      tellAll();
       onStatus();
     },
     // (a GLB that can't be parsed is the manager's to say: it rejects)
@@ -181,18 +177,20 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
   // what is shown loads biggest first, the selection first of all
   const priorityOf = (id, o) => (id === selected() ? SELECTED_PRIORITY : hintVolume(o));
 
-  // The embedded build controls (../embed.js) show a built object's state
-  // and whether it's fixed, which they ask for with CONTEXT_EVENT (below):
-  // when either changes, they're told to ask again.
-  let contextQueued = false;
-  function tellControls() {
-    if (contextQueued) return;
-    contextQueued = true;
-    queueMicrotask(() => {
-      contextQueued = false;
-      if (dead) return;
-      for (const c of root.querySelectorAll(`.${CONTROLS_CLASS}`)) c.dispatchEvent(new CustomEvent(CONTEXT_CHANGED_EVENT));
-    });
+  // Whoever asked after a render's object with CONTEXT_EVENT (below), the
+  // embedded build controls, passing `tell`: told its state and fixed version
+  // again whenever either changes, until it stops.
+  const told = new Map(); // render url → Set of tell(state, at)
+  const toldSeen = new Map(); // render url → what they were last told, as a string
+  function tellAll() {
+    for (const [url, fns] of told) {
+      const id = [...placed].find(([, o]) => o?.renderUrl === url)?.[0];
+      const now = id == null ? [null, null] : [stateOf(id), placed.get(id).at ?? null];
+      const key = JSON.stringify(now);
+      if (toldSeen.get(url) === key) continue;
+      toldSeen.set(url, key);
+      for (const fn of [...fns]) fn(...now);
+    }
   }
 
   /** What the manager tracks an object with: its docs, whether this scene made the render, and its fixed version. */
@@ -238,6 +236,7 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
       queue.remove(id);
       applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
       if (o.sourceUrl && (shown || manager.has(id))) manager.track(id, trackSpec(o));
+      if (told.has(o.renderUrl)) tellAll();
       return moved;
     }
     if (route === "file") {
@@ -283,17 +282,6 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
   /** The ids content holds anything for. */
   const ids = () => new Set([...manager.ids(), ...queue.ids(), ...routes.keys()]);
 
-  /** Every object's state for people, as local.status: { [id]: { state, reason?, text, title } }. */
-  function status() {
-    const objects = doc().objects ?? {};
-    const out = {};
-    for (const id of objState.keys()) {
-      const st = objects[id] && !isGroup(objects[id]) ? statusOf(stateOf(id), { writable: writable() }) : null;
-      if (st) out[id] = Object.freeze(st);
-    }
-    return out;
-  }
-
   /** Has the content shown loaded (or failed)? Without WebGL nothing loads: yes. */
   function allIn() {
     if (!scope.ok) return true;
@@ -324,26 +312,16 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
   }
 
   /**
-   * Add a document to the scene as an object: through `providerId` (else the
-   * best match), with a render doc of its own when the provider's content is
-   * "built", and none when it is "file".
+   * What adding a document to the scene as an object needs of content: its
+   * provider (`providerId`, else the best match) and, when the provider's
+   * content is "built", a render doc of its own (none when it is "file").
+   * Writing the object is the caller's (ops.js placeObject).
    * @param {string} input  an automerge URL (or anything parseAutomergeLink reads)
-   * @param {{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }} [opts]
-   *   id: the new object's id, made with newId beforehand (a copy maps every
-   *   id before it writes anything, so its references are written once);
-   *   refused when the scene has it;
-   *   parent: attach to that object (and join its group, unless `group` says);
-   *   group: file in that group; before: its place in the order; heads (or
-   *   heads in the URL itself): add it fixed at that version of its source (`at`);
-   *   fields: more of the object, written in the same change (a copy's traits,
-   *   tags, colour…; never the fields above, nor `claims` or `saved`); render: a render
-   *   doc to start the new one from (a copy's: its params, and its build when
-   *   it was of this source by this provider; transfer.js renderSeed)
-   * @returns {Promise<Function>} the write, a change function with the new
-   *   object's `id`, for the caller to make (api.change); rejects with a
-   *   sentence to show
+   * @param {{ providerId?, name?, heads?, render? }} [opts]  heads (or heads in the URL): fixed at that
+   *   version; render: a render doc to start the new one from (a copy's: transfer.js renderSeed)
+   * @returns {Promise<{ name, sourceUrl, providerId, renderUrl, at }>} rejects with a sentence to show
    */
-  async function addObject(input, opts = {}) {
+  async function make(input, opts = {}) {
     if (!writable()) throw new Error("This scene is read-only here.");
     const link = parseAutomergeLink(input);
     if (!link) throw new Error("That doesn't look like an automerge URL.");
@@ -369,31 +347,11 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     const renderHandle = contentOf(provider) !== "built" ? null : await repo.create2(seededRenderDoc(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }), opts.render));
     if (renderHandle) createdHere.add(renderHandle.url);
     if (dead) throw new Error("The scene was closed.");
-    const id = typeof opts.id === "string" && opts.id ? opts.id : newId("o");
-    if (doc().objects?.[id]) throw new Error(`This scene already has an object “${id}”.`);
-    const transform = opts.transform ? normalizeTransform(opts.transform) : IDENTITY();
-    const hint = opts.hint && typeof opts.hint === "object" ? JSON.parse(JSON.stringify(opts.hint)) : null;
-    // fresh copies: automerge won't take a value that is already in a document
-    const fields = opts.fields && typeof opts.fields === "object" ? JSON.parse(JSON.stringify(opts.fields)) : null;
-    const add = (d) => {
-      // only what is still there can be a place (someone may have removed it meanwhile)
-      const parent = opts.parent && d.objects[opts.parent] && !isGroup(d.objects[opts.parent]) ? opts.parent : null;
-      const groupWanted = opts.group !== undefined ? opts.group : parent ? (resolveGroups(d.objects).get(parent) ?? null) : null;
-      const group = groupWanted && isGroup(d.objects[groupWanted]) ? groupWanted : null;
-      d.objects[id] = ops.newObjectRecord({ name, sourceUrl: url, providerId: provider.id, renderUrl: renderHandle?.url ?? null, parent, group, transform });
-      // the rest of a copied object: its traits, tags, colour… (never what's settled above)
-      if (fields) for (const [k, v] of Object.entries(fields)) if (!ADD_OWNS.has(k) && v !== undefined) d.objects[id][k] = v;
-      // what the file's maker said about it (ctx.file's hint): a placeholder box until it loads
-      if (hint) d.objects[id].hint = hint;
-      // A URL with heads names a version: show that one. (A file object is
-      // shown straight from its file, so it has nothing to fix.)
-      // A link with heads is a pinned value of that scene (links.js).
-      if (heads?.length && (renderHandle || contentOf(provider) === "scene")) d.objects[id].at = { heads: [...heads] };
-      const at = opts.before ? d.order.indexOf(opts.before) : -1;
-      if (at >= 0) d.order.splice(at, 0, id);
-      else d.order.push(id);
-    };
-    return ops.planned(add, { id });
+    // A URL with heads names a version: show that one. (A file object is
+    // shown straight from its file, so it has nothing to fix.) A link with
+    // heads is a pinned value of that scene (native/links.js).
+    const at = heads?.length && (renderHandle || contentOf(provider) === "scene") ? { heads: [...heads] } : null;
+    return { name, sourceUrl: url, providerId: provider.id, renderUrl: renderHandle?.url ?? null, at };
   }
 
   /** Build an object's render doc now (loading it first if it's hidden). @returns {boolean} whether there was one */
@@ -471,7 +429,7 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     e.preventDefault();
     rebuild(entry[0]);
   };
-  // embedded controls asking for their render's object's state, and whether it's fixed at a version
+  // embedded controls asking after their render's object: its state and fixed version now, and later through `tell`
   const onContext = (e) => {
     const url = e.detail?.renderUrl;
     if (!url) return;
@@ -479,6 +437,11 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     if (!entry) return;
     e.detail.at = entry[1].at ?? null;
     e.detail.state = stateOf(entry[0]);
+    const tell = e.detail.tell;
+    if (typeof tell !== "function") return;
+    if (!told.has(url)) told.set(url, new Set());
+    told.get(url).add(tell);
+    e.detail.stop = () => told.get(url)?.delete(tell);
   };
   root.addEventListener(REBUILD_EVENT, onRebuild);
   root.addEventListener(CONTEXT_EVENT, onContext);
@@ -487,11 +450,8 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     place,
     forget,
     ids,
-    status,
     allIn,
     of,
-    /** where an object's content was routed ("built", "file", "scene": a stage), or null */
-    route: (id) => routes.get(id) ?? null,
     /** the providers named by the render docs it has heard from */
     providerIds: () => [...objState.values()].map((s) => s?.providerId),
     /** has every shown built object with a source said which provider its render doc names? */
@@ -500,10 +460,9 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
       for (const [id, route] of routes) if (route === "built" && objects[id]?.sourceUrl && !said(objState.get(id))) return false;
       return true;
     },
-    addObject,
+    make,
     rebuild,
-    /** say once of each registered source that declares no content kind */
-    warnUnusable,
+    /** for probes and tests (the stage's __sceneDebug): its render manager and GLB queue */
     debug: Object.freeze({ manager, queue }),
     dispose() {
       dead = true;

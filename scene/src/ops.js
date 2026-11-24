@@ -227,6 +227,40 @@ export function newObjectRecord({ name, sourceUrl = null, providerId = null, ren
   };
 }
 
+/** What placeObject settles itself, which its `fields` never override. */
+const PLACED = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims", "saved"]);
+
+/**
+ * Writing a new object (api.addObject: what content made of a document, and
+ * where it goes) as a change function with its `id`. Only what is still
+ * there as it is written can be its place (someone may have removed it
+ * meanwhile).
+ * @param {{ id, name, sourceUrl, providerId, renderUrl, at?, parent?, group?, before?, transform?, hint?, fields? }} o
+ *   parent: attach to that object (and join its group, unless `group` says); group: file in that group;
+ *   before: its place in the order; hint: what the file's maker said of it (a box until it loads);
+ *   fields: more of the object (a copy's traits, tags, colour…; never the fields settled here)
+ */
+export function placeObject({ id, name, sourceUrl, providerId, renderUrl, at = null, parent: wantParent = null, group: wantGroup, before = null, transform = null, hint = null, fields = null }) {
+  // fresh copies: automerge won't take a value that is already in a document
+  const copy = (v) => (v && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : null);
+  const [h, f, a] = [copy(hint), copy(fields), copy(at)];
+  return planned(
+    (d) => {
+      const parent = wantParent && d.objects[wantParent] && !isGroup(d.objects[wantParent]) ? wantParent : null;
+      const groupWanted = wantGroup !== undefined ? wantGroup : parent ? (resolveGroups(d.objects).get(parent) ?? null) : null;
+      const group = groupWanted && isGroup(d.objects[groupWanted]) ? groupWanted : null;
+      d.objects[id] = newObjectRecord({ name, sourceUrl, providerId, renderUrl, parent, group, transform });
+      if (f) for (const [k, v] of Object.entries(f)) if (!PLACED.has(k) && v !== undefined) d.objects[id][k] = v;
+      if (h) d.objects[id].hint = h;
+      if (a) d.objects[id].at = a;
+      const i = before ? d.order.indexOf(before) : -1;
+      if (i >= 0) d.order.splice(i, 0, id);
+      else d.order.push(id);
+    },
+    { id },
+  );
+}
+
 /** A fresh group id, the way the tool makes ids. */
 export const newGroupId = () => `g${Math.random().toString(36).slice(2, 10)}`;
 

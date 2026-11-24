@@ -8,13 +8,8 @@
 
 /** Asks the stage to rebuild a render now (`detail: { renderUrl }`; the stage cancels it when it is that render's). */
 export const REBUILD_EVENT = "scene:rebuild";
-/** Asks whether a render's object is fixed at a version (`detail: { renderUrl }`; the stage sets `detail.at`). */
+/** Asks after a render's object (`detail: { renderUrl, tell? }`): the stage sets `detail.state`, its content state, and `detail.at`, its fixed version, and calls `tell(state, at)` whenever either changes until `detail.stop()`. */
 export const CONTEXT_EVENT = "scene:render-context";
-/** Told to every element of CONTROLS_CLASS (not bubbling) when an object is fixed, refixed or let go: ask again. */
-export const CONTEXT_CHANGED_EVENT = "scene:render-context-changed";
-/** The class of an embedded render's build controls' root: what CONTEXT_CHANGED_EVENT is told to. */
-export const CONTROLS_CLASS = "scene-render-controls";
-
 /** The attribute that marks an embedded document's container. */
 export const EMBED_ATTR = "data-stage-embed";
 

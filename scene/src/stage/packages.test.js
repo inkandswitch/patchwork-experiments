@@ -96,7 +96,7 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(urls(s)).toEqual([]);
   });
 
-  it("takes off what nothing calls for, every entry naming it, in one change: one this viewer has, and one missing here once every need is answered here; the scene package stays", async () => {
+  it("takes off what nothing calls for and this viewer has, every entry naming it, in one change; one missing here it can't judge, and the scene package, stay", async () => {
     const PKG_C = fakeUrl();
     const PKG_D = fakeUrl();
     const MISSING = fakeUrl();
@@ -111,11 +111,11 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     h.on("change", () => changes++);
     const s = await mount({ handle: h, repo });
     await settle();
-    // (MISSING, too: whatever it was listed for, extA answers here now)
-    expect(urls(s)).toEqual([PKG_A, SCENE]);
+    // (MISSING stays: another viewer may run something from it)
+    expect(urls(s)).toEqual([PKG_A, MISSING, SCENE]);
     expect(changes).toBe(1); // the entries off and the suggested import on, together
     expect(s.doc()["@patchwork"].suggestedImportUrl).toBe(SCENE);
-    expect(state(s).ask).toEqual([]);
+    expect(state(s).ask).toEqual([MISSING]);
   });
 
   it("not before the registry has gone quiet: the viewer's own packages may still be on their way", async () => {

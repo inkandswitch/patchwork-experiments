@@ -10,7 +10,7 @@
 // frame, from each object's own geometry, never by boxing a world box.
 //
 // "Not mine" is one value: a hit on anything that isn't one of the stage's
-// objects (the host's deck, a sibling link, the ground) is
+// objects (the host's, a sibling link's, the ground) is
 // `{ id: null, point, normal, distance }` in the stage's frame. A hit on
 // something inside a link of this stage's is that link: the stage's element
 // of the hit's path.
@@ -179,6 +179,7 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
     // picking, in this stage's frame; "not mine" is id null
     pick: (x, y, opts) => worldHit(vp.pick(x, y, opts)),
     centerRay: () => rayIn(f(), vp.centerRay()),
+    ray: (x, y) => rayIn(f(), vp.ray(x, y)),
     raycast: (origin, dir, { skip = null, far = Infinity, ...rest } = {}) => {
       const fr = f();
       const s = typeof skip === "function" ? (k) => { const id = mine(k); return id != null && skip(id); } : null;

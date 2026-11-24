@@ -17,12 +17,12 @@
 //     again, it asks again;
 //   - Load: the served package is imported at its heads and registered under
 //     its bare URL, its extension starts, its provider builds the object;
-//     the other's failure stopped nothing; only the one that loaded is
-//     remembered; every need answered now, what no running plugin comes from
-//     (the one nothing calls for, and the one that failed) is taken off the
-//     list, so nothing is left to report or ask;
-//   - opened again: the remembered one loads without a click, and nothing is
-//     asked about;
+//     the other's failure stopped nothing and is shown; only the one that
+//     loaded is remembered; every need answered now, the one registered here
+//     that nothing calls for is taken off the list, and the one that failed
+//     stays (not registered here, this viewer can't judge it: H15);
+//   - opened again: the remembered one loads without a click, and only the
+//     one that failed is asked about;
 //   - the trait the third package answers taken off the scene: its entry
 //     goes.
 // Prints a JSON report and exits non-zero if any check fails.
@@ -136,14 +136,14 @@ try {
     const card = await P("card()");
     const packages = await P("packages()");
     await shot("loaded");
-    // (nothing runs from the one that failed and every need is answered: it is taken off the list at once, so no failure is left to show)
-    check("theOtherFailureLeavesNothingToAskOrShow", packages.failed.length === 0 && packages.ask.length === 0 && card.hidden === true, { packages, card });
+    // (the one that failed isn't registered here: this viewer can't judge it, so it stays listed and its failure is shown)
+    check("theOtherFailureIsShown", JSON.stringify(packages.failed.map((e) => e.url)) === JSON.stringify([BROKEN]) && packages.ask.length === 0 && card.hidden === false && card.title === "A package this scene uses couldn't be loaded.", { packages, card });
     const accepted = await P("accepted()");
     check("onlyWhatLoadedIsRemembered", JSON.stringify(accepted) === JSON.stringify([PKG]), accepted);
-    // every need answered now: the one nothing calls for goes, the one that failed (not here) stays, and nothing is added
+    // every need answered now: the one registered here that nothing calls for goes, the one that failed (not here) stays, and nothing is added
     const gone = await b.waitFor(`!window.__p.listed().includes(window.__p.STALE)`, 5_000);
     const listed = await P("listed()");
-    check("takesOffWhatNothingCallsForOnceEveryNeedIsAnswered", !!gone && JSON.stringify(listed) === JSON.stringify([PKG, LOCAL]) && (await P("registered()")).some((p) => p.id === "probe.stale"), listed);
+    check("takesOffWhatNothingCallsForAndKeepsWhatItCantJudge", !!gone && JSON.stringify(listed) === JSON.stringify([PKG, BROKEN, LOCAL]) && (await P("registered()")).some((p) => p.id === "probe.stale"), listed);
   }
 
   // ── remembered ────────────────────────────────────────────────────────────
@@ -154,7 +154,7 @@ try {
     const card = await P("card()");
     await shot("remembered");
     check("rememberedLoadsWithoutAsking", !!started && (await P("imported()")).length === 1 && (await P("imported()"))[0].startsWith(`${PKG}#`), { imported: await P("imported()"), packages });
-    check("nothingIsAskedAbout", packages.ask.length === 0 && card.hidden === true, { packages, card });
+    check("onlyTheOneThatFailedIsAskedAbout", JSON.stringify(packages.ask.map((e) => e.url)) === JSON.stringify([BROKEN]) && card.hidden === false, { packages, card });
     check("builtAgainUnasked", !!(await b.waitFor(`window.__p.loaded("box")`, 20_000)), await P('status("box")'));
   }
 
@@ -163,7 +163,7 @@ try {
     await P('untrait("probe.local")');
     const gone = await b.waitFor(`!window.__p.listed().includes(window.__p.LOCAL)`, 5_000);
     const listed = await P("listed()");
-    check("takesOffWhatIsNoLongerCalledFor", !!gone && JSON.stringify(listed) === JSON.stringify([PKG]), listed);
+    check("takesOffWhatIsNoLongerCalledFor", !!gone && JSON.stringify(listed) === JSON.stringify([PKG, BROKEN]), listed);
   }
 
   // SwiftShader's WebGL says it lacks an extension; the package that isn't served is meant to fail

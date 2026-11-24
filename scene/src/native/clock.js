@@ -17,9 +17,10 @@
 //   from the same t step it alike. Kept processes start at t (`start(t)`); it
 //   lets go when hidden, paused or ineligible, or when the claim is lost.
 // - **Checkpoints** (pause, letting go, every CHECKPOINT_MS): one change
-//   writes `clock.t` and every `save(d)` (a process saves only what it holds),
-//   stamping objects a save moved `saved: t`, so a process tells an editor's
-//   move (transform changed, stamp not) from a late checkpoint (both changed).
+//   writes `clock.t` and every `save(d)`, stamping objects a save moved
+//   `saved: t`, so a process tells an editor's move (transform changed, stamp
+//   not) from a late checkpoint (both changed). A save gets the draft whole:
+//   keeping to what it still holds is the process's own rule.
 // - **Followers**: the computer puts `{ t, at }` on the channel at CLOCK_HZ; a
 //   follower runs toward it at the moment whose holds it draws (shownAt), so a
 //   hull sits on the waves drawn under it; it slews, jumps only forward and

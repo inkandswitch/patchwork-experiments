@@ -4,8 +4,8 @@
 // the outermost stage in, then the thing itself ([] is nothing). The focus
 // is the path of the links entered ([] is the scene itself). The selection
 // is null, or a path one longer than the focus that starts with it: an
-// element of the focus stage. So with the focus on the boat, selecting a
-// card aboard selects the link it's in; outside the focus a Select does
+// element of the focus stage. So with the focus outside a link, selecting
+// something inside it selects the link; outside the focus a Select does
 // nothing (verbs and carries still reach there: they don't go through here).
 //
 // The view (stage/view.js) keeps both and changes them only through

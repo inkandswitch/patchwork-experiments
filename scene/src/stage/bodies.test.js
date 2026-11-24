@@ -1,17 +1,20 @@
 // @vitest-environment happy-dom
 // Look and the hands (./bodies.js, STAGE.md, "Bodies", "Hands"): the body
-// stack and whether a hand of a kind is held, as a model and as the stage
-// keeps them, over every sequence of entering, leaving, picking up and
-// putting down. Finite and exhaustive: no randomness.
+// stack and whether a hand of a kind is held, as the stage keeps them, against
+// a model, over every sequence of entering, leaving, picking up and putting
+// down. Finite and exhaustive: no randomness.
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { enterStep, holding, leaveStep, pointing } from "./bodies.js";
+import { holding, pointing } from "./bodies.js";
 import { mountStage } from "../test/stage-harness.js";
 
-// What can happen: entering each body (the stage's Look; walk, seat and
-// station, a package's), Leave, and picking up or putting down a hand.
+// What can happen: entering each body (the stage's Look; three of a plugin's),
+// Leave, and picking up or putting down a hand.
 const EVENTS = ["look", "walk", "seat", "station", "leave", "pick", "put"];
-// the model: [bodies, holding]
+// the model, STAGE.md's rule: entering Look leaves every body, any other goes on top; Leave pops the top, never Look
+const enterStep = (stack, id) => (id === "look" ? ["look"] : [...stack, id]);
+const leaveStep = (stack) => (stack.length > 1 ? stack.slice(0, -1) : stack);
+// [bodies, holding]
 const apply = ([stack, h], ev) => (ev === "leave" ? [leaveStep(stack), h] : ev === "pick" ? [stack, true] : ev === "put" ? [stack, false] : [enterStep(stack, ev), h]);
 
 /** Every sequence of up to `n` events. */
@@ -26,7 +29,7 @@ const all = (n) => {
   return out;
 };
 
-describe("bodies: the model", () => {
+describe("what reads the hands", () => {
   it("what reads them", () => {
     const views = [{ hands: [{ kind: "tool" }, { kind: "k" }] }, { hands: [{ kind: "tool" }] }, { hands: [] }, { body: { id: "k" } }, {}, null];
     expect(views.map((v) => holding(v, "k"))).toEqual([true, false, false, false, false, false]);
@@ -34,32 +37,10 @@ describe("bodies: the model", () => {
     const held = { held: [{ ext: "a", pointer: true }, { ext: "b", pointer: false }] };
     expect([pointing(held), pointing(held, "a"), pointing(held, "b"), pointing({ held: [] }), pointing(null)]).toEqual([true, false, true, false, false]);
   });
-
-  // Every sequence of up to 5 events (7^5 + … + 1 = 19,608).
-  // (whether the hand is held is the stage's to keep, below: here it would only restate `apply`)
-  it("over every sequence of ≤5 events: Look at the bottom and nowhere else; Leave pops the top and never Look; picking up or putting down a hand leaves the bodies be", () => {
-    let n = 0;
-    for (const seq of all(5)) {
-      let m = [["look"], false];
-      for (const ev of seq) {
-        const [before] = m;
-        m = apply(m, ev);
-        const [stack] = m;
-        expect(stack[0]).toBe("look");
-        expect(stack.slice(1).includes("look")).toBe(false);
-        if (ev === "leave") expect(stack).toEqual(before.length > 1 ? before.slice(0, -1) : before);
-        else if (ev === "look") expect(stack).toEqual(["look"]);
-        else if (ev === "pick" || ev === "put") expect(stack).toBe(before);
-        else expect(stack.at(-1)).toBe(ev);
-      }
-      n++;
-    }
-    expect(n).toBe(1 + 7 + 49 + 343 + 2401 + 16807);
-  });
 });
 
-// The same, on the stage itself: every sequence of up to 4 events, without a
-// hand and holding one. After each, the stage's body, depth and hands are
+// On the stage itself: every sequence of up to 4 events, without a hand and
+// holding one. After each, the stage's body, depth and hands are
 // the model's. Entering, leaving and the hands are synchronous, so no
 // waiting between events.
 describe("bodies: the stage keeps the model", () => {
