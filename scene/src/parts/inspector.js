@@ -65,13 +65,12 @@ import { fromUnits, roundForDisplay, toUnits } from "../units.js";
 import { normalizeTransform } from "../transform.js";
 import { documentBox, documentView } from "../embed.js";
 import { DND_MIME, SECTION_MIME, URLS_MIME, docKey } from "../dnd.js";
-import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
 import { REBUILD_EVENT } from "../embed.js";
 import { providerOf } from "./handles.js";
 import { openFor, runOpen } from "./open.js";
 import { drawerTab } from "./tab.js";
-import { LOOK } from "../stage/public.js";
+import { LOOK, atKey, normalizeAt } from "../stage/public.js";
 import { editing } from "./editing.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, attachOptions, buildSummary, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
@@ -924,7 +923,7 @@ function create(api) {
       const builtThere = s.builtAt != null && (s.builtHeads ?? []).join(",") === at.heads.join(",");
       text = `Fixed at ${shortHeads(at.heads)}`;
       if (builtThere) text += ` · built ${new Date(s.builtAt).toLocaleString()}`;
-      if (s.versionMissing) text += " · waiting for that version to sync";
+      if (s.state?.version) text += " · waiting for that version to sync";
       const deps = Object.keys(at.deps).length;
       title = `Source heads ${at.heads.join(", ")}${deps ? `; ${deps} linked document${deps > 1 ? "s" : ""} fixed too` : ""}`;
     }

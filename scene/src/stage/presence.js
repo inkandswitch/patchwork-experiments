@@ -133,9 +133,9 @@ function newSession() {
  *   handle: { broadcast?(msg: object): void, on?(ev: string, fn: Function): void, off?(ev: string, fn: Function): void },
  *   viewer: string | null,
  *   session?: string,                       // normally made here; tests pass one
- *   now?: () => number,
- *   setTimer?: (fn: () => void, ms: number) => any,
- *   clearTimer?: (t: any) => void,
+ *   now: () => number,                      // the stage's time (./time.js)
+ *   setTimer: (fn: () => void, ms: number) => any,
+ *   clearTimer: (t: any) => void,
  *   listen?: boolean,                       // hear the channel, say nothing on it
  *   tap?: { on(): boolean, say(e: object): void },  // a read-only tap: every message sent or heard, said while on()
  * }} o
@@ -144,9 +144,9 @@ export function createPresence({
   handle,
   viewer = null,
   session: firstSession = newSession(),
-  now = () => Date.now(),
-  setTimer = (fn, ms) => setTimeout(fn, ms),
-  clearTimer = (t) => clearTimeout(t),
+  now,
+  setTimer,
+  clearTimer,
   listen = false,
   tap = null,
 }) {

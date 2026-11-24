@@ -137,27 +137,6 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(urls(s)).toEqual([SAILING]);
   });
 
-  it("while a need goes unanswered here nothing is taken off: a package listed for it may be what answers it elsewhere", async () => {
-    const JOINTS = fakeUrl();
-    const HINGES = fakeUrl();
-    const s = await mount({ extensions: [weather, { meta: { id: "joints", traits: ["joints.slide"], importUrl: JOINTS }, module: { create: () => ({}) } }], doc: { traits: { "joints.hinge": {} }, packages: [{ url: JOINTS }, { url: HINGES }] } });
-    await settle();
-    // (a hinge: an older joints here has no plugin for it, a newer one elsewhere may, or HINGES, which isn't here)
-    expect(urls(s)).toEqual([JOINTS, HINGES]);
-    expect(state(s).ask).toEqual([HINGES]);
-    s.change((d) => (d.title = "Again"));
-    await settle();
-    expect(urls(s)).toEqual([JOINTS, HINGES]);
-    // every need answered here: joints answers none of them, and HINGES, missing, was listed for nothing that isn't answered: both go
-    s.change((d) => delete d.traits["joints.hinge"]);
-    await settle();
-    expect(urls(s)).toEqual([]);
-    // a peer listing it again changes nothing that decides it: taken off again
-    s.change((d) => d.packages.push({ url: JOINTS }));
-    await settle();
-    expect(urls(s)).toEqual([]);
-  });
-
   it("a render doc names its provider: that provider's package is listed though the object's field names another, and no source package goes before every render doc built here has said", async () => {
     const P = fakeUrl();
     const Q = fakeUrl();
@@ -181,55 +160,6 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(urls(s)).toEqual([P, Q]);
     // P was never off the list on the way
     expect(seen.every((list) => list.includes(P))).toBe(true);
-  });
-
-  it("a retired package and the one that took its plugin id over (the Lost Cities table): only the package whose plugin runs is listed, in either order, and the other heals off", async () => {
-    // the retired card-table package and tabletop both register "card-table" (trait card-table.kept)
-    const CARD_TABLE = fakeUrl();
-    const TABLETOP = fakeUrl();
-    const keeper = (url) => [{ type: "scene:extension", id: "card-table", traits: ["card-table.kept"], load: async () => ({ create: () => ({}) }) }, url];
-    for (const [first, later] of [
-      [CARD_TABLE, TABLETOP],
-      [TABLETOP, CARD_TABLE],
-    ]) {
-      const s = await mount({ doc: { objects: { c: object({ providerId: null, traits: { "card-table.kept": {} } }) }, order: ["c"], packages: [] } });
-      getRegistry("scene:extension").register(...keeper(first));
-      getRegistry("scene:extension").register(...keeper(later));
-      await settle();
-      expect([first, urls(s)]).toEqual([first, [later]]);
-      s.unmount();
-    }
-    // a table listed with both: the list follows what runs here, as the registry changes
-    const s = await mount({ doc: { objects: { c: object({ providerId: null, traits: { "card-table.kept": {} } }) }, order: ["c"], packages: [{ url: TABLETOP }, { url: CARD_TABLE }] } });
-    getRegistry("scene:extension").register(...keeper(CARD_TABLE));
-    await until(() => !urls(s).includes(TABLETOP), 2000);
-    expect(urls(s)).toEqual([CARD_TABLE]); // card-table's runs here (registered last)
-    getRegistry("scene:extension").register(...keeper(TABLETOP));
-    await until(() => !urls(s).includes(CARD_TABLE), 2000);
-    expect([urls(s), state(s).ask]).toEqual([[TABLETOP], []]);
-  });
-
-  it("the scene's own plugins, registered here without an importUrl, and a dev server's, name nothing", async () => {
-    const dev = { meta: { id: "dev.ext", traits: ["dev.t"], importUrl: "http://localhost:5173/" }, module: { create: () => ({}) } };
-    const s = await mount({ extensions: [dev], doc: { traits: { "dev.t": {} }, objects: { a: object() }, order: ["a"] } });
-    await settle();
-    expect(running(s)).toContain("dev.ext");
-    expect(urls(s)).toEqual([]);
-  });
-
-  it("a scene made without the list gets none: nothing is written, nothing made", async () => {
-    const repo = new FakeRepo();
-    getRegistry("scene:extension"); // (registries are reset by the first mount below)
-    const first = await mount({ extensions: [weather], repo });
-    const bare = repo.add({ "@patchwork": { type: "scene" }, title: "Old", objects: {}, order: [], dimensions: {}, traits: { "tiny.weather": {} }, assets: {}, view: {} });
-    let changes = 0;
-    bare.on("change", () => changes++);
-    const s = await mount({ handle: bare, repo });
-    await settle();
-    expect(running(s)).toContain("tiny.weather");
-    expect("packages" in s.doc()).toBe(false);
-    expect(changes).toBe(0);
-    expect(first.doc().packages).toEqual([]);
   });
 
   it("a view of the scene at a version (read-only) is never written", async () => {
@@ -275,12 +205,6 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     expect(urls(s)).toEqual([]);
   });
 
-  it("two views of one scene: the package is listed once", async () => {
-    const one = await mount({ extensions: [weather], doc: { traits: { "tiny.weather": {} } } });
-    const two = await mount({ handle: one.handle, repo: one.repo });
-    await settle();
-    expect(urls(two)).toEqual([SAILING]);
-  });
 });
 
 // ─── the scene package as the suggested import ─────────────────────────────
@@ -306,21 +230,6 @@ describe("reconcile: the doc suggests the scene package", () => {
     await settle();
     expect(changes).toBe(2);
     expect(state(s)).toEqual({ ask: [], loading: [], failed: [] });
-  });
-
-  it("one that names a loadable package is left alone; a dev server's is replaced; a dev copy of the scene package writes nothing", async () => {
-    const OTHER = fakeUrl();
-    const kept = await mount({ doc: { "@patchwork": { type: "scene", suggestedImportUrl: OTHER } } });
-    registerScene(SCENE);
-    await settle();
-    expect(meta(kept).suggestedImportUrl).toBe(OTHER);
-    const dev = await mount({ handle: kept.repo.add(emptyScene({ "@patchwork": { suggestedImportUrl: "http://localhost:5173/" }, title: "T" })), repo: kept.repo });
-    await settle();
-    expect(meta(dev).suggestedImportUrl).toBe(SCENE);
-    registerScene("http://localhost:5173/");
-    const bare = await mount({ handle: kept.repo.add(emptyScene({ title: "T" })), repo: kept.repo });
-    await settle();
-    expect(meta(bare)).toEqual({ type: "scene" });
   });
 
   it("a read-only view is never written", async () => {

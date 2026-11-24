@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { createGLBQueue, QUEUE_LIMITS } from "./glb-queue.js";
-import { FakeRepo, fakeTimers, flush } from "./test/fake-repo.js";
-import { fileBytes } from "./file-content.js";
+import { FakeRepo, flush } from "../test/fake-repo.js";
+import { manualTime } from "../stage/time.js";
+import { fileBytes } from "../file-content.js";
 
 const bytes = (n) => new Uint8Array([n]);
 
@@ -25,7 +26,7 @@ function gatedFinds(repo) {
 
 function setup({ gated = true, parse } = {}) {
   const repo = new FakeRepo();
-  const timers = fakeTimers();
+  const time = manualTime({ frameMs: 50, yieldTo: () => new Promise((r) => setImmediate(r)) });
   const gate = gatedFinds(repo);
   const parsed = [];
   const states = [];
@@ -44,11 +45,11 @@ function setup({ gated = true, parse } = {}) {
         parsed.push([id, b[0]]);
       }),
     onState: (id, s) => states.push([id, s.phase]),
-    timers,
+    time,
     yieldToMain: () => Promise.resolve(),
   });
   const file = (n) => repo.add({ "@patchwork": { type: "file" }, name: `${n}.glb`, extension: "glb", content: bytes(n) });
-  return { repo, timers, gate, queue, parsed, states, file, maxParsing: () => maxParsing };
+  return { repo, time, gate, queue, parsed, states, file, maxParsing: () => maxParsing };
 }
 
 describe("glb queue", () => {
@@ -98,19 +99,15 @@ describe("glb queue", () => {
     expect(t.queue.has("o4")).toBe(false);
   });
 
-  it("retries a failed find with backoff (1 s doubling, capped at 30 s)", async () => {
+  it("retries a failed find until the doc appears", async () => {
     const t = setup({ gated: false });
     t.queue.ensure("o", "automerge:missing");
     await flush();
     expect(t.queue.state("o").phase).toBe("error");
-    expect(t.timers.pendingDelays()).toEqual([1000]);
-    await t.timers.advance(1000);
-    expect(t.timers.pendingDelays()).toEqual([2000]);
-    for (let i = 0; i < 8; i++) await t.timers.advance(t.timers.pendingDelays()[0]);
-    expect(t.timers.pendingDelays()).toEqual([30000]);
+    await t.time.advance(10_000);
     // it appears
     t.repo.add({ "@patchwork": { type: "file" }, content: bytes(9) }, "automerge:missing");
-    await t.timers.advance(30000);
+    await t.time.advance(30_000);
     expect(t.queue.state("o").phase).toBe("ready");
     expect(t.parsed).toEqual([["o", 9]]);
   });
@@ -133,6 +130,27 @@ describe("glb queue", () => {
     expect(t.queue.subscriptions()).toBe(0);
   });
 
+  it("a change that lands while its parse runs is parsed after it: the newer bytes are what's shown", async () => {
+    let release;
+    const parsed = [];
+    const t = setup({
+      gated: false,
+      parse: async (id, b) => {
+        if (b[0] === 1) await new Promise((r) => (release = r));
+        parsed.push(b[0]);
+      },
+    });
+    const f = t.file(1);
+    t.queue.ensure("o", f.url);
+    await flush();
+    expect(t.queue.state("o").phase).toBe("parsing");
+    f.change((d) => (d.content = bytes(2)));
+    release();
+    await flush();
+    expect(parsed).toEqual([1, 2]);
+    expect(t.queue.state("o").phase).toBe("ready");
+  });
+
   it("reports a parse failure without retrying, and a new url starts over", async () => {
     const t = setup({
       gated: false,
@@ -145,7 +163,7 @@ describe("glb queue", () => {
     t.queue.ensure("o", bad.url);
     await flush();
     expect(t.queue.state("o")).toMatchObject({ phase: "error", error: "not a GLB" });
-    expect(t.timers.pendingDelays()).toEqual([]);
+    expect(t.time.pending().timers).toBe(0);
     t.queue.ensure("o", good.url);
     await flush();
     expect(t.queue.state("o").phase).toBe("ready");

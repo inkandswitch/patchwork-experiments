@@ -13,7 +13,7 @@
 // Fixing a link at a version holds the heads of every doc reached through it
 // (`fixPoint`), so a pin is whole.
 
-import { pinnedRepo } from "../build.js";
+import { pinnedRepo } from "../versions.js";
 
 /** What a read-only handle refuses: every write and every send automerge-repo's DocHandle has. */
 export const REFUSED = Object.freeze(["change", "changeAt", "update", "merge", "begin", "delete", "remove", "broadcast"]);
@@ -62,7 +62,7 @@ export const handleReadOnly = (h) => isReadOnlyHandle(h) || (typeof h?.isReadOnl
  * `handles`, no `findWithProgress`: a door around `find` would hand out
  * writable handles and miss `reached`). `find` notes each doc found in
  * `reached` (url → handle; null while its find is on its way); with `deps` ({ url: heads }, a pin's) a listed
- * doc is found at those heads (build.js pinnedRepo: an unlisted one is found
+ * doc is found at those heads (../versions.js pinnedRepo: an unlisted one is found
  * as it is now); read-only, every handle it gives out refuses writes and it
  * makes no docs.
  * @param {object} repo

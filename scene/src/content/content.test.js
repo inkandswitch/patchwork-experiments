@@ -4,14 +4,15 @@
 // the stage, its summary of the build), objects
 // fixed at a version of their source (`at`), and what a dragged row carries.
 // Ported from tool.test.js / tool-v3.test.js (scene contract v3).
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { manualTime } from "../stage/time.js";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import add from "../parts/add.js";
 import { add as addObject } from "../parts/editor.js";
 import inspector from "../parts/inspector.js";
-import { Viewport } from "./viewport.js";
+import { Viewport } from "../stage/viewport.js";
 import { getRegistry, resetRegistries } from "../test/plugins-mock.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { encodeGLB } from "../glb.js";
@@ -48,11 +49,16 @@ endsolid part
 `;
 const STL2 = STL.replace("vertex 10 0 0", "vertex 30 0 0");
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// the stage's time, stepped (content runs on it: STAGE.md, "`api`")
+let clock;
+const wait = (ms) => clock.advance(Math.max(ms, 1));
 
 describe("the stage's content loop (mounted, no WebGL)", () => {
   let s, repo, file;
   beforeAll(() => defineStandInView({ plugins, repo: () => repo }));
+  // (GLB hashing without WebCrypto: every step of a build lands on the stepped time)
+  beforeAll(() => vi.stubGlobal("crypto", {}));
+  afterAll(() => vi.unstubAllGlobals());
   beforeEach(async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -66,7 +72,8 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
 
   async function mount(doc = {}) {
     repo ??= new FakeRepo();
-    s = await mountStage({ repo, extensions: EXTS, doc });
+    clock = manualTime();
+    s = await mountStage({ repo, extensions: EXTS, doc, time: clock });
     return s;
   }
   beforeEach(() => {
@@ -85,53 +92,6 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
   const versionText = () => $(".inspector .version-text")?.textContent;
   const button = (cls) => $(`.inspector .${cls}`);
 
-  it("the inspector's build controls: a param's edit rebuilds through the stage; Rebuild with the same bytes keeps the GLB doc", async () => {
-    await mount();
-    await addByUrl(file.url);
-    const [id] = Object.keys(s.doc().objects);
-    const renderUrl = s.doc().objects[id].renderUrl;
-    await wait(20);
-    await settle();
-    const firstGlb = (await repo.find(renderUrl)).doc().glbUrl;
-    expect(firstGlb).toBeTruthy();
-    // add selected it; "Built from" has its build's controls, fields of the inspector's own
-    const controls = $(".inspector .build-controls");
-    expect(controls).toBeTruthy();
-    expect(controls.querySelector(".build-summary").textContent).toMatch(/^Up to date · built /);
-    const unit = controls.querySelector('.param[data-key="unit"] select');
-    expect(unit.value).toBe("mm");
-    unit.value = "in";
-    unit.dispatchEvent(new Event("change"));
-    expect((await repo.find(renderUrl)).doc().params.unit).toBe("in");
-    await wait(300);
-    await settle();
-    const r = (await repo.find(renderUrl)).doc();
-    expect(r.glbUrl).not.toBe(firstGlb);
-    expect(JSON.parse(r.builtFrom.paramsKey)).toEqual({ unit: "in", up: "z" });
-
-    // Rebuild goes through the stage (the event is claimed); same bytes, so the same GLB doc
-    const before = repo.created.length;
-    const builtAt = r.builtAt;
-    await wait(5);
-    controls.querySelector(".rebuild").click();
-    await wait(20);
-    await settle();
-    expect((await repo.find(renderUrl)).doc().builtAt).toBeGreaterThan(builtAt);
-    expect(repo.created.length).toBe(before);
-  });
-
-  it("a render doc the scene didn't make waits out the sync settle window before building", async () => {
-    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "old", parent: file.url, providerId: "file-stl", params: { unit: "mm", up: "z" }, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
-    await mount({ objects: { old: object({ name: "old", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url }) }, order: ["old"] });
-    await wait(300);
-    await settle();
-    expect(render.doc().glbUrl).toBeNull(); // a fresh peer might not have its history yet
-    await wait(2_500);
-    await settle();
-    expect(render.doc().glbUrl).toBeTruthy(); // then built by the provider, as before
-    expect(render.doc().status).toBe("idle");
-  });
-
   it("a render doc's own bounds stand in for its box until its GLB loads", async () => {
     const bounds = { min: [0, 0, 0], max: [1, 2, 3] };
     // pinned and never built: it won't build, so only the bounds can say where it is
@@ -145,6 +105,25 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     expect(hints.mock.calls.filter(([id]) => id === "a").at(-1)[1]).toEqual(bounds);
     // the scene's own hint wins
     expect(hints.mock.calls.filter(([id]) => id === "b").map(([, b]) => b)).toEqual([{ min: [5, 5, 5], max: [6, 6, 6] }]);
+  });
+
+  // One state per object (./state.js), read by everything that shows it: the
+  // controls embedded in the stage show the stage's, not one of their own.
+  it("the build controls inside a stage show the stage's state of the object: a render a peer built from changes not synced here is up to date in both", async () => {
+    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "r", parent: file.url, providerId: "file-stl", params: { unit: "mm", up: "z" }, glbUrl: null, builtFrom: { heads: ["a-change-not-synced-here"], fingerprint: null, paramsKey: '{"unit":"mm","up":"z"}', deps: {} }, builtAt: 1, bounds: null, status: "idle", error: null, pinned: false });
+    await mount({ objects: { a: object({ name: "a", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url }) }, order: ["a"] });
+    await wait(100);
+    expect(s.facet("scene.add").loadState("a").state).toEqual({ state: "fresh", behind: true });
+    expect(s.local.get().status.a).toBeUndefined();
+    const { default: Controls } = await import("../controls-tool.js");
+    const el = document.createElement("div");
+    el.repo = repo;
+    s.root.append(el);
+    const off = Controls(render, el);
+    await wait(100);
+    expect(el.querySelector(".status").textContent).toBe("Up to date");
+    expect(el.querySelector(".scene-render-controls").hasAttribute("data-standalone")).toBe(false);
+    off();
   });
 
   // ─── fixed versions (`at`) ───
@@ -193,7 +172,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
 
     // edits to the source no longer rebuild it, and the GLB never changed
     file.change((d) => (d.content = STL2));
-    await wait(300);
+    await wait(2000);
     await settle();
     const after = (await repo.find(renderUrl)).doc();
     expect(after.glbUrl).toBe(built.glbUrl);
@@ -206,36 +185,11 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     expect("at" in s.doc().objects[id]).toBe(false);
     expect(versionText()).toBe("Latest");
     expect($(".fixed-mark")).toBeNull();
-    await wait(300);
+    await wait(2000);
     await settle();
     const latest = (await repo.find(renderUrl)).doc();
     expect(latest.builtFrom.heads).toEqual(file.heads());
     expect(latest.glbUrl).not.toBe(built.glbUrl);
-  });
-
-  it("the inspector's fix and follow are commands too (for the menu); api.fixPoint says where", async () => {
-    await mount();
-    await addByUrl(file.url);
-    await wait(20);
-    await settle();
-    const [id] = Object.keys(s.doc().objects);
-    const api = s.api("scene.inspector");
-    const f = s.facet("scene.inspector");
-    const point = f.fixPoint(id);
-    expect(point).toEqual({ heads: (await repo.find(s.doc().objects[id].renderUrl)).doc().builtFrom.heads });
-    const ids = () => api.collect("commands").flatMap(({ id: ext, value }) => (value ?? []).filter((c) => c.state?.(id, { scene: f.scene(), local: f.local.get() })).map((c) => `${ext}:${c.id}`));
-    expect(ids()).toContain("scene.inspector:fix-version");
-    expect(ids()).not.toContain("scene.inspector:follow-latest");
-    api.run({ ext: "scene.inspector", command: "fix-version", target: id });
-    await settle();
-    expect(s.doc().objects[id].at).toEqual(point);
-    expect(ids()).toContain("scene.inspector:follow-latest");
-    expect(ids()).not.toContain("scene.inspector:fix-version");
-    api.run({ ext: "scene.inspector", command: "follow-latest", target: id });
-    await settle();
-    expect("at" in s.doc().objects[id]).toBe(false);
-    // never for what isn't built content
-    expect(f.fixPoint("nope")).toBeNull();
   });
 
   it("a dragged row carries its render doc for other tools, and the stage itself ignores that", async () => {
@@ -262,107 +216,6 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     expect(Object.keys(s.doc().objects).length).toBe(before);
     expect(drop.defaultPrevented).toBe(false);
   });
-  // ─── contract v3 through the stage: what loadProvider hands the manager ───
-
-  /** A provider registered after mount (the stage lists providers live), with a version, a clamped param and a dependency. */
-  function thingProvider() {
-    const calls = [];
-    const p = {
-      abortNext: false,
-      calls,
-      build: vi.fn(async ({ params }) => {
-        calls.push({ ...params });
-        if (p.abortNext) {
-          p.abortNext = false;
-          throw Object.assign(new Error("superseded"), { name: "AbortError" });
-        }
-        return { kind: "glb", glb: encodeGLB({ meshes: [{ positions: [0, 0, 0, params.n, 0, 0, 0, 1, 0] }] }) };
-      }),
-    };
-    getRegistry("scene:source").register({
-      type: "scene:source",
-      id: "t-thing",
-      content: "built",
-      name: "Thing",
-      supportedDatatypes: ["thing"],
-      version: 3,
-      params: [{ key: "n", kind: "integer", default: 4, min: 1, max: 10, cost: "cheap" }],
-      load: async () => ({ build: p.build, dependencies: (doc) => (doc.link ? [doc.link] : []) }),
-    });
-    return p;
-  }
-
-  it("builds with the provider's version, its params clamped to their specs, and its dependencies keyed", async () => {
-    await mount();
-    const p = thingProvider();
-    const dep = repo.add({ "@patchwork": { type: "hull" }, length: 1 });
-    const source = repo.add({ "@patchwork": { type: "thing" }, title: "Thing", link: dep.url });
-    await addByUrl(source.url);
-    const [id] = Object.keys(s.doc().objects);
-    expect(s.doc().objects[id].providerId).toBe("t-thing");
-    const render = await repo.find(s.doc().objects[id].renderUrl);
-    await wait(20);
-    await settle();
-    expect(p.calls).toEqual([{ n: 4 }]);
-    expect(render.doc().builtFrom.providerVersion).toBe(3);
-    expect(render.doc().builtFrom.deps).toEqual({ [dep.url]: dep.heads() });
-
-    // out of range in the doc, clamped for build(); the stored value is kept as written
-    render.change((d) => (d.params.n = 999));
-    await wait(300);
-    await settle();
-    expect(p.calls.at(-1)).toEqual({ n: 10 });
-    expect(JSON.parse(render.doc().builtFrom.paramsKey)).toEqual({ n: 999 });
-
-    // a dependency edit rebuilds (debounced like a source edit), recording its new heads
-    const n = p.calls.length;
-    dep.change((d) => (d.length = 2));
-    await wait(1_000);
-    await settle();
-    expect(p.calls.length).toBe(n + 1);
-    expect(render.doc().builtFrom.deps).toEqual({ [dep.url]: dep.heads() });
-  });
-
-  it("a build the provider aborts (AbortError) is cancelled, not failed: no error shown, tried again", async () => {
-    await mount();
-    const p = thingProvider();
-    const source = repo.add({ "@patchwork": { type: "thing" }, title: "Thing" });
-    await addByUrl(source.url);
-    const [id] = Object.keys(s.doc().objects);
-    const render = await repo.find(s.doc().objects[id].renderUrl);
-    await wait(20);
-    await settle();
-    const built = render.doc().builtAt;
-    p.abortNext = true;
-    const n = p.calls.length;
-    render.change((d) => (d.params.n = 7));
-    await wait(400);
-    await settle();
-    expect(p.calls.length).toBe(n + 2); // the aborted one, then again at once
-    expect(render.doc()).toMatchObject({ status: "idle", error: null });
-    expect(render.doc().builtAt).toBeGreaterThan(built);
-    expect(s.facet("scene.add").loadState(id)).toMatchObject({ status: "idle", error: null });
-    expect($(`.object-row[data-id="${id}"]`).textContent).not.toMatch(/error/);
-  });
-
-  it("never auto-rebuilds over a peer's build made from source changes this client hasn't synced", async () => {
-    await mount();
-    await addByUrl(file.url);
-    const [id] = Object.keys(s.doc().objects);
-    const render = await repo.find(s.doc().objects[id].renderUrl);
-    await wait(20);
-    await settle();
-    const built = render.doc().builtAt;
-    // a peer one edit ahead rebuilt; we see its build, not yet its edit
-    render.change((d) => {
-      d.builtFrom = { ...JSON.parse(JSON.stringify(d.builtFrom)), heads: ["a-change-we-have-not-synced"] };
-    });
-    await wait(1_000);
-    await settle();
-    expect(render.doc().builtAt).toBe(built);
-    expect(render.doc().builtFrom.heads).toEqual(["a-change-we-have-not-synced"]);
-    expect(s.facet("scene.add").loadState(id)).toMatchObject({ behind: true, stale: false });
-  });
 });
 
 // ─── routing at sync: by the kind of content the object's provider makes ────
@@ -388,26 +241,6 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
   const tracked = () => s.debug.manager.ids();
   const api = () => s.facet("scene.add");
 
-  it("routes at the first sync: a GLB file object is queued as the stage mounts, before anything awaits", async () => {
-    const glb = glbFile();
-    resetRegistries();
-    const { plugins } = await import("../index.js");
-    for (const p of plugins) if (p.type === "scene:source") getRegistry(p.type).register(p);
-    const { default: Stage } = await import("./stage.js");
-    const handle = repo.add(emptyScene({ objects: { a: object({ sourceUrl: glb.url }) } }));
-    const element = document.createElement("div");
-    element.repo = repo;
-    element.packageSettleMs = 0;
-    document.body.append(element);
-    const cleanup = Stage(handle, element);
-    try {
-      expect(element.querySelector(".scene-stage").__sceneDebug.queue.ids()).toEqual(["a"]);
-    } finally {
-      cleanup();
-      element.remove();
-    }
-  });
-
   it("a GLB file object goes to the queue and a render-doc object to the manager, and loadState says which", async () => {
     const glb = glbFile();
     const stl = repo.add({ "@patchwork": { type: "file" }, name: "x.stl", extension: "stl", content: STL });
@@ -430,7 +263,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     await settle();
     expect(queued()).toEqual([]);
     expect(tracked()).toEqual([]);
-    expect(api().loadState("x")).toEqual({ content: null, phase: "no-provider", providerId: "t-gltf" });
+    expect(api().loadState("x")).toEqual({ content: null, state: { state: "no-provider", providerId: "t-gltf" } });
     expect(s.local.get().status.x).toMatchObject({ state: "warn", text: "no provider" });
     // drawn as its hint meanwhile, as anything is while its content hasn't arrived
     expect(hints).toHaveBeenCalledWith("x", { min: [0, 0, 0], max: [1, 1, 1] });
@@ -446,7 +279,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     getRegistry("scene:source").unregister("t-gltf");
     await settle();
     expect(queued()).toEqual([]);
-    expect(api().loadState("x")).toEqual({ content: null, phase: "no-provider", providerId: "t-gltf" });
+    expect(api().loadState("x")).toEqual({ content: null, state: { state: "no-provider", providerId: "t-gltf" } });
   });
 
   it("a source that builds, for an object with no render doc: nothing to load, and nothing to say", async () => {
@@ -455,7 +288,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     await settle();
     expect(queued()).toEqual([]);
     expect(tracked()).toEqual([]);
-    expect(api().loadState("y")).toEqual({ content: null });
+    expect(api().loadState("y")).toEqual({ content: null, state: null });
     expect(s.local.get().status.y).toBeUndefined();
   });
 

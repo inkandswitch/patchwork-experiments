@@ -86,43 +86,43 @@ function rememberAccepted(url) {
   }
 }
 
-/** Resolves once `handle` has gone `ms` without a change, or after `max` whatever it does. */
-function quiet(handle, ms, max) {
+/** Resolves once `handle` has gone `ms` without a change, or after `max` whatever it does, on `time` (./time.js). */
+function quiet(handle, ms, max, time) {
   return new Promise((resolve) => {
     let timer = null;
     const done = () => {
-      clearTimeout(timer);
-      clearTimeout(cap);
+      timer?.();
+      cap();
       handle.off?.("change", changed);
       resolve();
     };
     const changed = () => {
-      clearTimeout(timer);
-      timer = setTimeout(done, ms);
+      timer?.();
+      timer = time.after(ms, done);
     };
-    const cap = setTimeout(done, max);
+    const cap = time.after(max, done);
     handle.on?.("change", changed);
     changed();
   });
 }
 
-const within = (promise, ms, what) =>
+const within = (promise, ms, what, time) =>
   new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(what)), ms);
+    const cancel = time.after(ms, () => reject(new Error(what)));
     Promise.resolve(promise).then(
       (v) => {
-        clearTimeout(t);
+        cancel();
         resolve(v);
       },
       (err) => {
-        clearTimeout(t);
+        cancel();
         reject(err);
       },
     );
   });
 
 /** Load one package and register its plugins, once per page however many scenes ask. */
-function loadPackage(url, { repo, plugins }) {
+function loadPackage(url, { repo, plugins, time }) {
   let p = loading.get(url);
   if (p) return p;
   p = (async () => {
@@ -130,8 +130,8 @@ function loadPackage(url, { repo, plugins }) {
     let at = url;
     if (url.startsWith("automerge:")) {
       // at its heads now, as the module watcher loads it: the entry and every chunk from one version
-      const folder = await within(repo.find(url), PACKAGE_FIND_MS, "its folder couldn't be found");
-      await quiet(folder, FOLDER_QUIET_MS, PACKAGE_FIND_MS);
+      const folder = await within(repo.find(url), PACKAGE_FIND_MS, "its folder couldn't be found", time);
+      await quiet(folder, FOLDER_QUIET_MS, PACKAGE_FIND_MS, time);
       at = folder.view(folder.heads()).url;
     }
     const pkg = await fs.importPackage(at);
@@ -147,7 +147,7 @@ function loadPackage(url, { repo, plugins }) {
 }
 
 /** A package's own name (its package.json's), read from its folder doc. Null for an https package: asking would tell its host who is looking. */
-function nameOf(url, repo) {
+function nameOf(url, repo, time) {
   if (names.has(url)) {
     const n = names.get(url);
     return typeof n === "string" ? n : null;
@@ -157,10 +157,10 @@ function nameOf(url, repo) {
     return null;
   }
   const reading = (async () => {
-    const folder = await within(repo.find(url), PACKAGE_FIND_MS, "not found");
+    const folder = await within(repo.find(url), PACKAGE_FIND_MS, "not found", time);
     const link = (folder.doc()?.docs ?? []).find((d) => d?.name === "package.json" && typeof d.url === "string");
     if (!link) return null;
-    const file = await within(repo.find(link.url), PACKAGE_FIND_MS, "not found");
+    const file = await within(repo.find(link.url), PACKAGE_FIND_MS, "not found", time);
     const c = file.doc()?.content;
     return packageTitle(c instanceof Uint8Array ? new TextDecoder().decode(c) : String(c ?? ""));
   })()
@@ -184,6 +184,7 @@ export function resetPackages() {
 /**
  * @param {{
  *   repo: object,
+ *   time: object,                                // the stage's time (./time.js)
  *   handle: object,                              // the scene doc's
  *   plugins: object | Promise<object | null>,    // the host's @inkandswitch/patchwork-plugins (or a promise of it)
  *   local: { get(): object, swap(fn): object },  // the stage's local atom (local.packages out)
@@ -193,7 +194,7 @@ export function resetPackages() {
  *   settleMs?: number,
  * }} o
  */
-export function createPackages({ repo, handle, plugins, local, providerIds = () => [], rendersKnown = () => true, declined = new Set(), settleMs = PACKAGE_SETTLE_MS }) {
+export function createPackages({ repo, time, handle, plugins, local, providerIds = () => [], rendersKnown = () => true, declined = new Set(), settleMs = PACKAGE_SETTLE_MS }) {
   let dead = false;
   let mod = null; // the plugins module, once it's here
   let settled = !(settleMs > 0);
@@ -219,11 +220,11 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
 
   function settle() {
     if (settled || dead) return;
-    clearTimeout(settleTimer);
-    settleTimer = setTimeout(() => {
+    settleTimer?.();
+    settleTimer = time.after(settleMs, () => {
       settled = true;
       check();
-    }, settleMs);
+    });
   }
 
   /** Look again, once, after whatever is happening now. */
@@ -268,7 +269,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     const missing = missingPackages(handle.doc() ?? {}, here);
     for (const url of [...failed.keys()]) if (!missing.includes(url)) failed.delete(url);
     const t = triage(missing, { loading: new Set(loading.keys()), failed, accepted, declined });
-    const named = (url) => ({ url, name: nameOf(url, repo) });
+    const named = (url) => ({ url, name: nameOf(url, repo, time) });
     const next = {
       // nothing is offered until the registry has settled: the viewer's own packages may still be on their way
       ask: settled ? t.ask.map(named) : [],
@@ -289,7 +290,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     const jobs = urls.map(async (url) => {
       failed.delete(url);
       try {
-        await loadPackage(url, { repo, plugins: mod });
+        await loadPackage(url, { repo, plugins: mod, time });
         if (remember) {
           accepted.add(url);
           rememberAccepted(url);
@@ -411,7 +412,7 @@ export function createPackages({ repo, handle, plugins, local, providerIds = () 
     },
     dispose() {
       dead = true;
-      clearTimeout(settleTimer);
+      settleTimer?.();
       watchers.delete(recheck);
       for (const off of offs) off();
       offs.length = 0;

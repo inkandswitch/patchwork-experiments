@@ -40,7 +40,7 @@ import { providersFirst } from "./activation.js";
 import { focusSteps, selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath, viewKey } from "./paths.js";
-import { viewAt } from "../build.js";
+import { viewAt } from "../versions.js";
 import { unionPackages } from "../packages.js";
 import { multiplyMatrices } from "../transform.js";
 

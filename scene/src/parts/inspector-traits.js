@@ -13,7 +13,7 @@
 // - "json": any value, as JSON text. A kind nobody knows is treated as this,
 //   so a field never writes a string over a structured value.
 
-import { stableStringify } from "../staleness.js";
+import { stableStringify } from "../params.js";
 import { outlineTree } from "./inspector-model.js";
 
 const PARAM_KINDS = new Set(["number", "integer", "string", "boolean", "enum", "color"]);

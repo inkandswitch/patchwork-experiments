@@ -1,7 +1,7 @@
 // A form built from ParamSpec metadata. Vanilla DOM; builds once per spec list
 // and then only updates values, so typing into a field is never clobbered.
 
-import { coerceParam, stableStringify } from "./staleness.js";
+import { coerceParam, stableStringify } from "./params.js";
 
 export { coerceParam };
 
