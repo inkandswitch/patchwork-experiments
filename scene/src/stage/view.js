@@ -42,6 +42,7 @@ import { focusSteps, selectionStep } from "./selection.js";
 import { realTime } from "./time.js";
 import { elementOf, keyOf, parseKey, pathOf, samePath, startsWith, viewKey } from "./paths.js";
 import { createTree } from "./tree.js";
+import { lazyCopy, mapEvents } from "./events.js";
 import { viewAt } from "../shared/versions.js";
 import { unionPackages } from "./packages-rule.js";
 import { multiplyMatrices } from "../shared/transform.js";
@@ -936,25 +937,12 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // An event of the router's as a view plugin's hand hears it: in the world,
   // its hit also naming the path it is at (null: nothing, or something its
   // doc no longer has).
-  const isEvent = (a) => !!a && typeof a === "object" && typeof a.type === "string" && "locked" in a;
   function hitPath(h) {
     const p = h?.id != null ? parseKey(h.id) : null;
     return p && tree.get(p.n)?.doc().objects?.[p.id] ? pathOfKey(h.id) : null;
   }
-  function viewEvent(ev) {
-    let hit;
-    return Object.defineProperties({}, {
-      ...Object.getOwnPropertyDescriptors(ev),
-      hit: { enumerable: true, configurable: true, get: () => (hit !== undefined ? hit : (hit = ev.hit ? Object.freeze({ ...ev.hit, path: hitPath(ev.hit) }) : null)) },
-    });
-  }
-  const viewInput = (input) =>
-    new Proxy(input, {
-      get(target, k) {
-        const v = Reflect.get(target, k, target);
-        return typeof v === "function" ? (...args) => v.apply(target, args.map((a) => (isEvent(a) ? viewEvent(a) : a))) : v;
-      },
-    });
+  const viewEvent = (ev) => lazyCopy(ev, { hit: () => (ev.hit ? Object.freeze({ ...ev.hit, path: hitPath(ev.hit) }) : null) });
+  const viewInput = (input) => mapEvents(input, viewEvent);
   /**
    * What the view lends an extension or a view plugin (`id`, its router key
    * `key`): overlays (over the canvas or beside it), styles, listeners,
