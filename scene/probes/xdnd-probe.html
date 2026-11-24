@@ -135,7 +135,7 @@ try {
     openTab: (w, id) => {
       const pane = hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.closest(".stage-drawer-pane");
       if (pane) { if (pane.hidden) hosts[w].querySelector(`#${pane.id}-tab`)?.click(); return !pane.hidden; }
-      const e = hosts[w].querySelector(`.toolbar [data-command="${id}"]`); e?.click(); return !!e;
+      const e = hosts[w].querySelector(`.stage-panel-rail [data-command="${id}"], .toolbar [data-command="${id}"]`); e?.click(); return !!e;
     },
     tab: (w, id) => !!hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.isConnected,
     ring: (w) => dbg[w].view.plugins.instanceOf("scene.transfer")?.debug?.ring() ?? null,

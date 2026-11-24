@@ -164,7 +164,7 @@ try {
   };
   await click(await P(`rect('.body-edit', 'a')`));
   check("A picks up the editor and chooses Look on the body chip: no longer seated, the seat still A's", (await until("editing('a')", 3000)) && (await chooseBody("a", "Look")) && (await P("seats()")).p1.player === viewers.a, { body: await P("body('a')"), editing: await P("editing('a')"), seats: await P("seats()") });
-  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  await click(await P(`rect('.stage-panel-rail [data-command="parts"]')`));
   check("A opens Parts from the toolbar", await until("tab('a', 'parts') && __p.body('a') === 'Look' && __p.editing('a')", 6000), { body: await P("body('a')"), running: await P("running('a')") });
   await settled();
   const bin = await P("binParts('a')");
@@ -193,7 +193,7 @@ try {
   await until(`loaded(${J(pawnId)})`, 15_000);
   await shot("3-parts");
   // ── the bin put away: the pawn won't take a card slot ──
-  const partsButton = await P(`rect('.toolbar [data-command="parts"]')`);
+  const partsButton = await P(`rect('.stage-panel-rail [data-command="parts"]')`);
   await click(partsButton);
   check("A shuts Parts again", await until("tab('a', 'parts') === false", 6000), { at: partsButton, tab: await P("tab('a', 'parts')") });
   // the editor put down to play again (Edit, beside the chip)

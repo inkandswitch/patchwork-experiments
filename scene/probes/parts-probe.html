@@ -99,7 +99,7 @@ try {
     /** the drawer's tabs by name, and the one shown */
     drawer: () => { const d = host.querySelector(".stage-drawer"); return d && { tabs: [...d.querySelectorAll(".stage-drawer-tab-name")].map((e) => e.textContent.trim()), parts: !!d.querySelector('[data-panel="parts"]')?.isConnected }; },
     /** a toolbar command's button (the toolbar is Edit's) */
-    tool: (id) => { const e = host.querySelector(`.toolbar [data-command="${id}"]`); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
+    tool: (id) => { const e = host.querySelector(`.stage-panel-rail [data-command="${id}"], .toolbar [data-command="${id}"]`); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
     body: () => dbg.local.get().body?.id ?? null,
     editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
     ring: () => dbg.view.plugins.instanceOf("scene.parts")?.debug?.ring() ?? null,

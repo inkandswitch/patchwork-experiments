@@ -279,14 +279,14 @@ try {
   check("A picks up the editor (Edit, beside the body chip): the axes are drawn (the editor's aids)", toEdit && (await P("body('a')")) === "look" && (await until("window.__p.layers('a').some((l) => /scene\\.(grid|axes)/.test(l))", 3000)), { body: await P("body('a')"), layers: await P("layers('a')") });
   const editBar = await bar();
   check("in Edit the bar holds the editor's tools, and Play at its right end, where it was in Look", editBar.tools.includes("parts") && !editBar.tools.includes("play") && J(editBar.world) === J(["play"]) && !!playInLook && Math.abs((await P(`rect('${PLAY}')`)).x - playInLook.x) < 1, { ...editBar, playInLook, playInEdit: await P(`rect('${PLAY}')`) });
-  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  await click(await P(`rect('.stage-panel-rail [data-command="parts"]')`));
   check("Parts, from the toolbar: a drawer tab", await until("window.__p.tab('a', 'parts')", 4000), await P("running('a')"));
   const binParts = await js(`[...window.__p.hostA.querySelectorAll('.scene-parts .parts-group[data-category="Arena"] .part')].map((b) => b.dataset.part)`);
   check("the bin offers the arena's parts, under Arena", JSON.stringify(binParts) === JSON.stringify(["arena.target", "arena.crate", "arena.spawn"]), binParts);
   check("only for A: B is still walking, and runs what A runs", (await P("body('b')")) === "walk" && JSON.stringify(await sorted("b")) === JSON.stringify(await sorted("a")), { b: await P("body('b')"), running: await P("running('b')") });
   check("the doc still starts people walking", (await P("doc()")).view?.start?.body === "walk");
   await shot("edit");
-  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  await click(await P(`rect('.stage-panel-rail [data-command="parts"]')`));
   check("Parts shut again", await until("window.__p.tab('a', 'parts') === false", 4000));
 
   // the level's look: the arena's atmosphere, in both views (a sky, haze, a sun casting shadows on every block)
@@ -525,10 +525,10 @@ try {
   await loads("window.__ready === true", 20_000);
   await loads("(() => { const a = window.__p.loaded('a'); return a.loaded === a.total; })()", 20_000);
   check("hybrid: the arena isn't running before any arena trait", !(await P("running('a')")).includes("arena"), await P("running('a')"));
-  check("hybrid: a scene made new starts A holding the editor, where the toolbar is", (await P("editing('a')")) && (await loads("!!window.__p.hostA.querySelector('.toolbar [data-command=\"inspector\"]')", 5000)), { body: await P("body('a')"), toolbar: await js(`[...window.__p.hostA.querySelectorAll('.toolbar [data-command]')].map((e) => e.dataset.command)`), start: (await P("doc()")).view?.start });
+  check("hybrid: a scene made new starts A holding the editor, where the toolbar is", (await P("editing('a')")) && (await loads("!!window.__p.hostA.querySelector('.stage-panel-rail [data-command=\"inspector\"]')", 5000)), { body: await P("body('a')"), toolbar: await js(`[...window.__p.hostA.querySelectorAll('.toolbar [data-command]')].map((e) => e.dataset.command)`), start: (await P("doc()")).view?.start });
   // nothing selected: the inspector (opened from the toolbar) on the Scene,
   // whose "Add behaviour…" offers what the arena describes for a scene (the level)
-  await click(await P(`rect('.toolbar [data-command="inspector"]')`));
+  await click(await P(`rect('.stage-panel-rail [data-command="inspector"]')`));
   await until("!!window.__p.hostA.querySelector('.behaviour-add')");
   check("hybrid: the inspector's Add behaviour… offers the arena level", (await P("behaviours()")).includes("arena.level"), await P("behaviours()"));
   // the bin's Target, clicked while looking at a spot on the deck: it goes
@@ -537,7 +537,7 @@ try {
   await js(`window.__p.A.viewport.setCamera({ position: [8, 9, 12], target: ${JSON.stringify(deckTop)} })`);
   await rest(200);
   const binTarget = `.scene-parts .part[data-part="arena.target"]`;
-  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  await click(await P(`rect('.stage-panel-rail [data-command="parts"]')`));
   await until("window.__p.tab('a', 'parts')", 4000);
   await js(`window.__p.hostA.querySelector('${binTarget}')?.scrollIntoView({ block: "center" })`);
   check("hybrid: the parts bin offers the arena's target in a scene that isn't a level", await shown(binTarget), await P("text('.scene-parts')"));
@@ -548,8 +548,8 @@ try {
   check("hybrid: the level's trait starts the arena (its Play, its gun)", (await loads("window.__p.running('a').includes('arena')")) && !!(await until(`!!window.__p.hostA.querySelector('${PLAY}')`, 4000)), { running: await P("running('a')") });
   check("hybrid: the new target is selected", !!htid && (await P("A.local.get().selected")) === htid, await P("A.local.get().selected"));
   // the inspector and the bin put away: an open drawer wants the pointer (no lock while it's open)
-  await click(await P(`rect('.toolbar [data-command="inspector"]')`));
-  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  await click(await P(`rect('.stage-panel-rail [data-command="inspector"]')`));
+  await click(await P(`rect('.stage-panel-rail [data-command="parts"]')`));
   await loads("(() => { const a = window.__p.loaded('a'); return a.total === 3 && a.loaded === a.total; })()", 10_000);
   const ht = await P(`world('${htid}')`);
   const htUp = await js(`(() => { const m = window.__p.A.viewport.worldOf('${htid}'); return m && [m[4], m[5], m[6]].map((v) => v / Math.hypot(m[4], m[5], m[6])); })()`);
