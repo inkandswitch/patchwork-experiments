@@ -5,8 +5,8 @@
 // Copy, Paste).
 //
 // What a copy is:
-//   - the objects named, everything attached under them (a mast's boom and
-//     sail) and, for a group, everything filed in it, with new ids. Their
+//   - the objects named, everything attached under them (and under those)
+//     and, for a group, everything filed in it, with new ids. Their
 //     attachments and group membership among themselves are kept, and so is
 //     every transform below the top (the top-level ones are placed);
 //   - everything about them but runtime state: name, colour, tags, traits,
@@ -29,7 +29,7 @@
 //   - where it lands, it rests on its base unless it snaps to a connector
 //     (the payload's `lift`).
 // A copied object whose trait has an `entry` field naming a scene trait this
-// scene lacks (a private zone's seat, and no seats) is copied all the same,
+// scene lacks (an entry naming the scene's list of something it doesn't keep) is copied all the same,
 // with a notice naming what to add. Nothing adds scene traits behind anyone's
 // back.
 
@@ -353,14 +353,14 @@ export function copyRefs(traits, refs, { map = new Map(), outside = () => undefi
 
 const lower = (s) => String(s).toLowerCase();
 const article = (s) => (/^[aeiou]/i.test(String(s)) ? "an" : "a");
-/** "a sea", "an anchor", "seats" (a plural takes none). */
+/** A name with its article ("a box", "an orb"); a plural takes none ("boxes"). */
 const some = (s) => (/[^s]s$/i.test(String(s)) ? lower(s) : `${article(s)} ${lower(s)}`);
 
-/** "This private zone needs seats: add Seats to the scene." */
+/** "This <thing> needs <a need>: add <Need> to the scene." */
 export const needsText = ({ name, needName }) => `This ${lower(name)} needs ${some(needName)}: add ${needName} to the scene.`;
-/** "This private zone's seat isn't one of this scene's seats: choose one in the inspector." */
+/** "This <thing>'s <field> isn't one of this scene's <entries>: choose one in the inspector." */
 export const entryText = ({ name, label, ofName }) => `This ${lower(name)}'s ${lower(label)} isn't one of this scene's ${lower(ofName)}: choose one in the inspector.`;
-/** "This lever's target was left behind: choose one in the inspector." */
+/** "This <thing>'s <field> was left behind: choose one in the inspector." */
 export const lostText = ({ name, label }) => `This ${lower(name)}'s ${lower(label)} was left behind: choose one in the inspector.`;
 
 /** The scene's `assets` entries naming these files, that `have` hasn't got under the same key: { key: entry }. Pure. */

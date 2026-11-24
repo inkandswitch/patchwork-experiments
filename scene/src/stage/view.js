@@ -71,8 +71,8 @@ export function cleanCamera(c) {
 /**
  * Where the doc starts people (STAGE.md, "Arriving"): the kernel's keys of
  * `view.start`, read on arrival. `body` is a body's id (none, or "look", is
- * Look), `place` what its enter is given (a spawn point's object id, a
- * seat's id), `home` the camera. Pure.
+ * Look), `place` what its enter is given (an object's id, or an id its
+ * body's package knows), `home` the camera. Pure.
  * @returns {{ body: string | null, place: string | null, home: object | null }}
  */
 export function startOf(doc) {
@@ -349,8 +349,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // Who's here (STAGE.md, "Views, stages and links"): the viewer's body and hands are the
   // view's, so the view says them on every channel it acts on, not a part on
   // the focus doc's: whoever has a doc open sees what a person at any
-  // placement of it is doing (a viewer of the game alone sees the boat's
-  // sailor seated at it). A drawn stage's channel only listens. An open menu
+  // placement of it is doing (a viewer of a linked doc alone sees who is in
+  // it from the scene it is linked into). A drawn stage's channel only listens. An open menu
   // is nobody else's business: the hands under it are said, every one, top last.
   const announced = () => {
     const v = atom.get();
@@ -735,8 +735,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const ahead = only ? [] : order.slice(0, order.indexOf(offer.stage));
       const waiting = time.now() - a.offered < ARRIVE_WAIT_MS;
       if (((!only && pending()) || ahead.some(unsettled) || !all.every((s) => s.contentIn())) && waiting) return requestFlushSoon();
-      // a body may refuse at the moment it's offered (its doc not yet in, a seat not yet
-      // laid): the start stays pending and is offered again until ARRIVE_WAIT_MS after the offer
+      // a body may refuse at the moment it's offered (its doc not yet in, its place not
+      // yet laid out): the start stays pending and is offered again until ARRIVE_WAIT_MS after the offer
       if (enterBody(at.body, at.place, caller, only) || !waiting) arrival = null;
       else requestFlushSoon();
       return;
@@ -747,7 +747,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       else if (at.stage.packages.complete()) arrival = null;
       return;
     }
-    // (a linked doc still on its way may bring it: a boat arrives in its linked game's seat body)
+    // (a linked doc still on its way may bring it: a start whose place is a link arrives in a body the linked doc offers)
     const waits = pending();
     if (!waits && all.every((s) => s.packages.complete() && !s.starting())) arrival = null;
     else if (waits || all.some(unsettled)) requestFlushSoon();

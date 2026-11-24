@@ -87,8 +87,8 @@ export function cleanHeld(v) {
 
 // ─── the page bus ────────────────────────────────────────────────────────────
 // automerge-repo doesn't echo an ephemeral broadcast within a page: two
-// views of one doc in one page (split panes, a game open alone beside the
-// boat it is linked into) share one handle and never hear each other. The
+// views of one doc in one page (split panes, a doc open alone beside a
+// scene it is linked into) share one handle and never hear each other. The
 // page bus delivers each broadcast to every other presence on the same
 // handle in the page, as the network delivers it to other pages: a copy, a
 // task later. Presences on different handles (different repos, connected by
