@@ -67,7 +67,7 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
   const placed = new Map(); // id → the object as last placed
   const hintKeys = new Map(); // id → hint bounds last given to the viewport
   const drawn = new Map(); // id → the stand-in bytes drawn for it
-  const createdHere = new Set(); // render docs made here, this session: nothing to wait to sync before building
+  const createdHere = new Set(); // render docs made here and not yet tracked: nobody else knows of them, so the first build needn't wait
   // has the manager said which provider this object's render doc names? (not before the doc has loaded)
   const said = (st) => st?.content === "built" && st.loaded;
   /** An object's state (./state.js), from what is known of it. */
@@ -175,7 +175,7 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
       }
       if (!dead) onDrawn();
     },
-    onState: (id, st) => setState(id, { content: "file", file: { phase: st.phase, error: st.error } }),
+    onState: (id, st) => setState(id, { content: "file", file: { phase: st.phase, error: st.error, retrying: st.retrying } }),
   });
 
   // what is shown loads biggest first, the selection first of all
@@ -196,7 +196,8 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
   }
 
   /** What the manager tracks an object with: its docs, whether this scene made the render, and its fixed version. */
-  const trackSpec = (o) => ({ sourceUrl: o.sourceUrl, renderUrl: o.renderUrl, createdHere: createdHere.has(o.renderUrl), at: o.at ?? null });
+  // (made here counts once: tracked again later, an undo or a stand-in let go, others may know of it by then)
+  const trackSpec = (o) => ({ sourceUrl: o.sourceUrl, renderUrl: o.renderUrl, createdHere: createdHere.delete(o.renderUrl), at: o.at ?? null });
 
   /** Stop loading an object's own content (it shows something else, or nothing). */
   function unload(id) {
@@ -287,7 +288,7 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     const objects = doc().objects ?? {};
     const out = {};
     for (const id of objState.keys()) {
-      const st = objects[id] && !isGroup(objects[id]) ? statusOf(stateOf(id)) : null;
+      const st = objects[id] && !isGroup(objects[id]) ? statusOf(stateOf(id), { writable: writable() }) : null;
       if (st) out[id] = Object.freeze(st);
     }
     return out;

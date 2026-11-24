@@ -1,13 +1,16 @@
 // One build of one scene-render doc: call the provider, store the GLB as a new
 // immutable file doc, repoint the render doc at it. The source doc is only read.
+// The write fence: the result is written only over the build the render had
+// as this one began (a build someone committed meanwhile is never replaced),
+// and only if `mayCommit` still says so as it is written.
 // A build whose bytes are identical to the current GLB's keeps the current file
 // doc (builtFrom.glbHash), so a rebuild that changes nothing makes no new doc.
 
 import { parseGLB } from "../glb.js";
 import { isRenderDoc, renderKey } from "../render-read.js";
 import { effectiveParams, stableStringify } from "../params.js";
-import { normalizeDeps, sameHeads, sortedHeads } from "../versions.js";
-import { paramsKey, providerVersionOf, sameDeps } from "./staleness.js";
+import { normalizeDeps, sortedHeads } from "../versions.js";
+import { paramsKey, providerVersionOf } from "./staleness.js";
 
 export function errorMessage(err) {
   if (!err) return "Unknown error";
@@ -118,11 +121,13 @@ export function glbFileDoc(title, glb) {
  *        dependency that finished loading during the build (build() read it)
  * @param {AbortSignal} o.signal  aborts when the result is no longer wanted; build() is handed it
  * @param {() => number} o.now  when it was built (builtAt), on the stage's time
- * @returns {Promise<{ ok: true, glbUrl, builtFrom, meta, reused?: boolean, superseded?: boolean } | { ok: false, error: string, aborted?: true }>}
+ * @param {() => Promise<boolean>} [o.mayCommit]  asked just before the write: false, it isn't written
+ * @returns {Promise<{ ok: true, glbUrl, builtFrom, meta, reused?: boolean } | { ok: false, error: string, aborted?: true, fenced?: true }>}
  *        aborted: cancelled (the signal aborted, or build() rejected with an
- *        AbortError); nothing is written but the status put back, and it isn't an error
+ *        AbortError); nothing is written but the status put back, and it isn't an error.
+ *        fenced: built, but the fence kept it from being written; not an error either
  */
-export async function runBuild({ repo, renderHandle, sourceHandle, provider, deps = {}, depsAfter, signal, now }) {
+export async function runBuild({ repo, renderHandle, sourceHandle, provider, deps = {}, depsAfter, signal, now, mayCommit = async () => true }) {
   const render = renderHandle.doc();
   const source = sourceHandle.doc();
   const impl = provider?.module;
@@ -140,7 +145,9 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     const key = paramsKey(storedParams);
     const params = effectiveParams(provider.params, storedParams);
     const providerVersion = providerVersionOf(provider.version);
-    const builtFromBefore = stableStringify(render.builtFrom ?? null);
+    const buildOf = (r) => stableStringify([r?.glbUrl ?? null, r?.builtFrom ?? null]);
+    const before = buildOf(render);
+    const fenced = () => buildOf(renderHandle.doc()) !== before;
     const depsBefore = normalizeDeps(deps);
 
     renderHandle.change((d) => {
@@ -159,37 +166,18 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     const bounds = validBounds(result.meta?.bounds);
     const depHeads = normalizeDeps(typeof depsAfter === "function" ? depsAfter(depsBefore) ?? depsBefore : depsBefore);
 
-    // Two open scenes can start the same build within one relay round trip, before
-    // either hears the other's "building" broadcast. If a peer committed a build of
-    // exactly these inputs while ours ran, keep theirs: no second GLB doc, no second
-    // repoint. (builtFrom must have *changed* during the build, so a forced rebuild
-    // of an already-fresh render still goes ahead.)
+    // the fence: nothing is written over a build committed while this one ran, nor once the caller says no
+    if (fenced() || !(await mayCommit()) || fenced()) return { ok: false, fenced: true, error: "fenced" };
+    signal.throwIfAborted();
     const current = renderHandle.doc();
-    const theirs = current?.builtFrom;
-    if (
-      current?.glbUrl &&
-      theirs &&
-      stableStringify(theirs) !== builtFromBefore &&
-      theirs.paramsKey === key &&
-      providerVersionOf(theirs.providerVersion) === providerVersion &&
-      (theirs.fingerprint ?? null) === (fingerprint ?? null) &&
-      sameHeads(theirs.heads, heads) &&
-      sameDeps(theirs.deps, depHeads)
-    ) {
-      if (current.status === "building") {
-        renderHandle.change((d) => {
-          d.status = "idle";
-          d.error = null;
-        });
-      }
-      return { ok: true, glbUrl: current.glbUrl, builtFrom: { heads, fingerprint, paramsKey: key, deps: depHeads }, meta: result.meta ?? null, superseded: true };
-    }
 
     // Same bytes as the GLB already shown (a rename, a provider bump that changed
     // nothing, a param that doesn't affect this doc): keep that file doc.
     const reused = !!current?.glbUrl && current?.builtFrom?.glbHash === glbHash;
-    signal.throwIfAborted();
     const glbUrl = reused ? current.glbUrl : (await repo.create2(glbFileDoc(render.title, glb))).url;
+    // (making the file doc took a while: look again)
+    signal.throwIfAborted();
+    if (fenced()) return { ok: false, fenced: true, error: "fenced" };
     const builtFrom = { heads, fingerprint, paramsKey: key, deps: depHeads, glbHash };
     if (providerVersion != null) builtFrom.providerVersion = providerVersion;
     renderHandle.change((d) => {

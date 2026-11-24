@@ -35,7 +35,7 @@ describe("contentState: every state, and which wins", () => {
     ["source moved, pinned", known({ source: source({ heads: ["h2"] }), render: render({ pinned: true }) }), { state: "stale", reason: "heads", hold: "pinned" }],
     ["building here", known({ source: source({ heads: ["h2"] }), building: { by: "here" } }), { state: "building", by: "here" }],
     ["building wins over a failure", known({ source: source({ heads: ["h2"] }), building: { by: "b" }, failure: { error: "x" } }), { state: "building", by: "b" }],
-    ["a build of these inputs failed", known({ source: source({ heads: ["h2"] }), failure: { error: "x", retryAt: 9 } }), { state: "failed", in: "build", error: "x", retryAt: 9 }],
+    ["a build of these inputs failed", known({ source: source({ heads: ["h2"] }), failure: { error: "x", retrying: true } }), { state: "failed", in: "build", error: "x", retrying: true }],
     ["what was built can't be shown", known({ shownError: "bad GLB" }), { state: "failed", in: "load", error: "bad GLB" }],
     ["a dependency still on its first load", known({ source: source({ heads: ["h2"], deps: { [D]: [] } }), deps: { notReady: [D], loading: [D] } }), { state: "waiting", on: [D] }],
     ["built from a dependency not loaded here yet", known({ render: render({ builtFrom: builtFrom({ deps: { [D]: ["d1"] } }) }), source: source({ deps: { [D]: [] } }), deps: { notReady: [D] } }), { state: "waiting", on: [D] }],
@@ -60,8 +60,8 @@ describe("statusOf: what local.status says of each state", () => {
     [{ state: "loading" }, { state: "loading" }],
     [{ state: "no-provider", providerId: "p" }, { state: "warn", title: "Provider “p” is not installed" }],
     [{ state: "building", by: "here" }, { state: "building" }],
-    [{ state: "failed", in: "build", error: "boom", retryAt: 5 }, { state: "error", title: "boom · retrying automatically" }],
-    [{ state: "failed", in: "build", error: "boom", retryAt: null }, { state: "error", title: "boom" }],
+    [{ state: "failed", in: "build", error: "boom", retrying: true }, { state: "error", title: "boom · retrying automatically" }],
+    [{ state: "failed", in: "build", error: "boom", retrying: false }, { state: "error", title: "boom" }],
     [{ state: "stale", reason: "heads", hold: null }, { state: "stale", reason: "out-of-date" }],
     [{ state: "stale", reason: "heads", hold: "pinned" }, { state: "stale", reason: "pinned" }],
     [{ state: "stale", reason: "fingerprint", hold: "contested" }, { state: "stale", reason: "contested" }],
@@ -72,5 +72,12 @@ describe("statusOf: what local.status says of each state", () => {
   ])("%j", (st, want) => {
     if (want === null) return expect(statusOf(st)).toBeNull();
     expect(statusOf(st)).toMatchObject(want);
+  });
+
+  it("offers a reader nothing it can't do: no Rebuild, no rebuilding soon", () => {
+    for (const hold of [null, "contested", "unavailable"]) {
+      const said = statusOf({ state: "stale", reason: "heads", hold }, { writable: false }).title;
+      expect([hold, /Rebuild|rebuilding/.test(said)]).toEqual([hold, false]);
+    }
   });
 });
