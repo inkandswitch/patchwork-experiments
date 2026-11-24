@@ -29,7 +29,8 @@ describe("haloTarget: what the handles are on", () => {
     lg: group("Locked"),
     lm: object({ group: "lg", locked: true }),
   });
-  it("every body × the editor held or not × selection × the tools held (none, Move, a pointing one, one that only looks, and their stacks) × writable: only holding the editor and Move, and no other pointing tool", () => {
+  // (Move and Measure are the editor's tools: held only while the editor is, H14, so no stack holds them without it)
+  it("every body × the editor held or not × selection × the tools held (none, Move, a pointing one, one that only looks, and their stacks) × writable: only holding Move, and no other pointing tool", () => {
     const want = { a: { kind: "object", id: "a" }, g: { kind: "group", id: "g" }, m: { kind: "object", id: "m" } };
     const MOVING = { ...MOVE, pointer: false };
     const MEASURE = { ext: "scene.measure", command: "measure", pointer: true };
@@ -38,11 +39,11 @@ describe("haloTarget: what the handles are on", () => {
     for (const body of ["look", "walk", "seat", "station", undefined])
       for (const edit of [false, true])
         for (const selected of [null, "a", "l", "g", "m", "e", "lg", "lm", "gone", "dimension:x"])
-          for (const held of stacks)
+          for (const held of stacks.filter((h) => edit || !h.some((t) => t === MOVING || t === MEASURE)))
             for (const writable of [true, false]) {
               const hands = [...(edit ? [{ kind: "edit" }] : []), ...held.map(() => ({ kind: "tool" }))];
               const got = haloTarget(sc, { body: body ? { id: body } : undefined, hands, selected, held }, writable);
-              const shows = edit && writable && held.includes(MOVING) && !held.includes(MEASURE);
+              const shows = writable && held.includes(MOVING) && !held.includes(MEASURE);
               expect([body, edit, selected, held, writable, got]).toEqual([body, edit, selected, held, writable, shows ? (want[selected] ?? null) : null]);
             }
   });

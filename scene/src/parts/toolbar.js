@@ -44,8 +44,9 @@
 // the keyboard (Tab, then Space) a button is focused as any button is.
 
 import css from "./toolbar.css?inline";
-import { barEntries, cleanChoices, controlKey, controlKind, localChanged, tooltip } from "./toolbar-commands.js";
-import { hintFor } from "../keymap.js";
+import { barEntries, cleanChoices, controlKey, controlKind, tooltip } from "./toolbar-commands.js";
+import { localChanged } from "../shallow.js";
+import { hintFor } from "./keymap.js";
 import { resolverState } from "./resolver.js";
 import { ICONS } from "../icons.js";
 

@@ -35,17 +35,17 @@
 //     inspector, none ticked; the menu takes none.
 // Keys, pastes and drops inside an embedded document are that document's.
 // Copying, pasting, extracting and bundling are the editor's
-// (../stage/bodies.js): the commands, ⌘C / ⌘V and a dropped row are taken
+// (./editing.js): the commands, ⌘C / ⌘V and a dropped row are taken
 // only while editing.
 
 import { isGroup } from "../groups.js";
-import { editing } from "../stage/bodies.js";
+import { editing } from "./editing.js";
 import { fromEmbed } from "../embed.js";
-import { isTyping } from "../keymap.js";
+import { isTyping } from "../key-order.js";
 import { landings } from "./landing.js";
 import { parseAutomergeUrl } from "../dnd.js";
 import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
-import { atFocus, perFocus } from "./per-focus.js";
+import { atFocus, perFocus } from "../per-focus.js";
 import { isLink, atOf } from "../native/link-graph.js";
 import { bundleLink, extractObjects, extractable, traitRules } from "../extract.js";
 
@@ -351,7 +351,7 @@ function create(api) {
   const commands = [
     {
       id: "extract",
-      edit: true,
+      hand: "edit",
       name: "Extract",
       shortcut: "Mod+E",
       show: ["menu"],
@@ -367,7 +367,7 @@ function create(api) {
     },
     {
       id: "bundle",
-      edit: true,
+      hand: "edit",
       name: "Bundle",
       shortcut: "Shift+Mod+E",
       show: ["menu"],
@@ -383,7 +383,7 @@ function create(api) {
     },
     {
       id: "copy",
-      edit: true,
+      hand: "edit",
       name: "Copy",
       // (⌘C is the browser's copy event, which this part hears: shown, not run by scene.keys)
       shortcut: "Mod+C",
@@ -405,7 +405,7 @@ function create(api) {
     },
     {
       id: "paste",
-      edit: true,
+      hand: "edit",
       name: "Paste",
       shortcut: "Mod+V",
       shortcutBy: "clipboard",

@@ -8,7 +8,7 @@
 // object (cached by the params in force), so
 // the stage's per-flush merge does nothing. No trait, no offer.
 //
-// The commands are the editor's (`edit: true`: only while editing) and the
+// The commands are the editor's (`hand: "edit"`: only while editing) and the
 // scene's (the null target), and only the world's: a linked world's weather
 // is not in force (the outermost rule), so its commands don't apply there
 // (Decision 31). The scene inspector shows no scene commands (scene's
@@ -230,7 +230,7 @@ export default {
         {
           id: "place",
           name: "Place",
-          edit: true,
+          hand: "edit",
           show: SHOW,
           state: (target) => (target == null && isWorlds(api) ? placeState(trait()) : null),
           run(target, value) {
@@ -240,7 +240,7 @@ export default {
         {
           id: "now",
           name: "Now",
-          edit: true,
+          hand: "edit",
           show: SHOW,
           state: (target) => {
             const t = trait();
@@ -253,7 +253,7 @@ export default {
         {
           id: "fetch",
           name: "Fetch for this time",
-          edit: true,
+          hand: "edit",
           show: SHOW,
           state: (target) => {
             const t = trait();

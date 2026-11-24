@@ -9,7 +9,7 @@ import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "../native/link-graph.js";
 import linksPlugin from "../native/links.js";
-import { editing } from "./bodies.js";
+import { editing } from "../parts/editing.js";
 import { keyOf } from "./paths.js";
 
 const T = { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 };

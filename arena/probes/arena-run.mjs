@@ -290,7 +290,7 @@ try {
   check("Parts shut again", await until("window.__p.tab('a', 'parts') === false", 4000));
 
   // the level's look: the arena's atmosphere, in both views (a sky, haze, a sun casting shadows on every block)
-  const look = (w) => js(`(() => { const v = window.__p.${w}.viewport; let meshes = 0, cast = 0; v.content.traverse((o) => { if (o.isMesh) { meshes++; if (o.castShadow && o.receiveShadow) cast++; } }); return { atmosphere: v.atmosphere, sky: !!v.sky?.visible, fog: !!v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, sunCasts: v.keyLight.castShadow, meshes, cast }; })()`);
+  const look = (w) => js(`(() => { const v = window.__p.${w}.viewport; let meshes = 0, cast = 0; v.content.traverse((o) => { if (o.isMesh) { meshes++; if (o.castShadow && o.receiveShadow) cast++; } }); return { atmosphere: v.atmosphere, sky: !!v.sky?.visible, fog: !!v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, sunCasts: v.lights.key.castShadow, meshes, cast }; })()`);
   await until("!!window.__p.A.viewport.atmosphere && !!window.__p.B.viewport.atmosphere", 3000);
   const looks = { a: await look("A"), b: await look("B") };
   check("a laid-out level has the arena's look in both views: sky, haze, and a sun whose shadows every block casts and takes", ["a", "b"].every((w) => looks[w].sky && looks[w].fog && looks[w].shadowMap && looks[w].sunCasts && looks[w].meshes > 0 && looks[w].cast === looks[w].meshes), looks);
@@ -554,7 +554,7 @@ try {
   const ht = await P(`world('${htid}')`);
   const htUp = await js(`(() => { const m = window.__p.A.viewport.worldOf('${htid}'); return m && [m[4], m[5], m[6]].map((v) => v / Math.hypot(m[4], m[5], m[6])); })()`);
   check("hybrid: it goes under the deck, on it where you're looking, upright", (await P("doc()")).objects[htid]?.parent === "deck" && !!ht && Math.hypot(ht[0] - deckTop[0], ht[1] - deckTop[1], ht[2] - deckTop[2]) < 0.05 && htUp?.[1] > 0.999, { ht, deckTop, up: htUp });
-  const hv = await js("(() => { const v = window.__p.A.viewport; return { atmosphere: v.atmosphere, sky: !!v.sky, fog: v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, key: [v.keyLight.intensity, v.keyLight.position.toArray()] }; })()");
+  const hv = await js("(() => { const v = window.__p.A.viewport; return { atmosphere: v.atmosphere, sky: !!v.sky, fog: v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, key: [v.lights.key.intensity, v.lights.key.position.toArray()] }; })()");
   check("hybrid: a deck with a target keeps the stage's own look (no arena sky, haze or sun)", hv.atmosphere === null && !hv.sky && hv.fog === null && !hv.shadowMap && hv.key[0] === 1.5, hv);
   // Escape lets the new target go (in Edit, holding nothing: the ladder's selection rung), so nothing wants the pointer
   await P("focusA()");

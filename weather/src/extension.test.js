@@ -155,10 +155,10 @@ describe("the commands", () => {
   // Three, not four: Now then Fetch for this time is the present
   // conditions, so a "Fetch now" would be the same snapshot (Decision 42).
   it("are Place, Now and Fetch for this time, each the editor's, on the toolbar and the menu", () => {
-    expect(commands.map((c) => [c.id, c.name, c.edit, c.show])).toEqual([
-      ["place", "Place", true, SHOW],
-      ["now", "Now", true, SHOW],
-      ["fetch", "Fetch for this time", true, SHOW],
+    expect(commands.map((c) => [c.id, c.name, c.hand, c.show])).toEqual([
+      ["place", "Place", "edit", SHOW],
+      ["now", "Now", "edit", SHOW],
+      ["fetch", "Fetch for this time", "edit", SHOW],
     ]);
     expect(SHOW).toEqual(["toolbar", "menu"]);
   });

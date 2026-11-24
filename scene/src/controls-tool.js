@@ -18,10 +18,8 @@ import { createParamForm } from "./param-form.js";
 import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, runBuild, viewAt } from "./build.js";
 import { createDependencyWatcher } from "./deps.js";
 import { normalizeAt, staleReason } from "./staleness.js";
+import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, CONTROLS_CLASS, REBUILD_EVENT } from "./embed.js";
 
-export const REBUILD_EVENT = "scene:rebuild";
-export const CONTEXT_EVENT = "scene:render-context";
-export const CONTEXT_CHANGED_EVENT = "scene:render-context-changed";
 
 function relativeTime(ts, now = Date.now()) {
   if (!ts) return "never";
@@ -40,7 +38,7 @@ export default function SceneRenderControls(handle, element) {
   const style = document.createElement("style");
   style.textContent = css;
   const root = document.createElement("div");
-  root.className = "scene-render-controls";
+  root.className = CONTROLS_CLASS;
   root.innerHTML = `
     <div class="head">
       <span class="provider"></span>

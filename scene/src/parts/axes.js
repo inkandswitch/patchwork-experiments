@@ -4,8 +4,8 @@
 // scene, drawn after the main pass in a scissored corner (api.afterRender),
 // turned with the camera; its X/Y/Z labels go on screen through api.labels.
 
-import { editing } from "../stage/bodies.js";
-import { perFocus } from "./per-focus.js";
+import { editing } from "./editing.js";
+import { perFocus } from "../per-focus.js";
 import css from "./axes.css?inline";
 import { gridFor } from "../units.js";
 
@@ -78,7 +78,7 @@ export default {
 
     const pref = (key, fallback) => api.use("prefs")?.get(key, fallback) ?? fallback;
     const shown = () => pref("axes", true) !== false;
-    // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
+    // what's drawn: shown, and only while editing (the aids are the editor's: ./editing.js)
     const drawn = () => shown() && editing(api.view.get());
     let theme = null;
 
@@ -201,7 +201,7 @@ export default {
       commands: [
         {
           id: "axes",
-          edit: true,
+          hand: "edit",
           name: "Axes",
           group: "view",
           icon: "axes",

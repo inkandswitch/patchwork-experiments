@@ -382,19 +382,6 @@ export function packageTitle(json) {
   return null;
 }
 
-/** A URL short enough to read: `automerge:2zt6Lbn…R85F`, `https://host/…/last`. The full one goes in a title. */
-export function shortUrl(url) {
-  const s = String(url ?? "");
-  const m = /^automerge:(.+)$/.exec(s);
-  if (m) return m[1].length > 14 ? `automerge:${m[1].slice(0, 7)}…${m[1].slice(-4)}` : s;
-  return s.length > 48 ? `${s.slice(0, 30)}…${s.slice(-14)}` : s;
-}
-
-/** The prompt's sentence. */
-export function promptText(n) {
-  return n === 1 ? "This scene uses a package you don't have." : `This scene uses ${n} packages you don't have.`;
-}
-
 /**
  * Every open doc's packages as one prompt (STAGE.md, "Packages"): the union
  * of the stages' `local.packages`, each URL once, in the order the lists

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { buildEvent, createRouter, isMac, releaseKind, retype, withHolder } from "./router.js";
-import { isTyping } from "../keymap.js";
+import { isTyping } from "../key-order.js";
 
 // A port with a canvas in it, a key root around both, and a router whose
 // chain is whatever the test puts in `inputs` (in insertion order).
@@ -672,8 +672,8 @@ describe("the body stack", () => {
     t.router.hold("x", { command: "xray", name: "X-ray", input: {} });
     st = t.onState.mock.calls.at(-1)[0];
     expect(st.held).toEqual([
-      { ext: "m", command: "measure", name: "Measure", keys: [{ code: "KeyR" }], pointer: true, serial: 3 },
-      { ext: "x", command: "xray", name: "X-ray", keys: [], pointer: false, serial: 5 },
+      { ext: "m", command: "measure", name: "Measure", hand: null, keys: [{ code: "KeyR" }], pointer: true, serial: 3 },
+      { ext: "x", command: "xray", name: "X-ray", hand: null, keys: [], pointer: false, serial: 5 },
     ]);
     expect(st.hands).toEqual([
       { ext: "m", kind: "tool", name: "Measure", keys: [{ code: "KeyR" }], pointer: true, serial: 3 },

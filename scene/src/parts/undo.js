@@ -6,15 +6,15 @@
 // unless a field has the keys (its own text undo) or they come from a docked
 // pane; the toolbar has both, named for the step they'd take. A package's
 // own writes go on it through the "edits" service (EDITOR.md, "Undo"). Both are the
-// editor's (../stage/bodies.js): only while editing. A step recorded
+// editor's (./editing.js): only while editing. A step recorded
 // there stays on the stack while the viewer looks, walks or sits, and is
 // there to take back on coming back to Edit (if the doc still holds what it
 // wrote: undo's compare-and-set).
 
 import { fromEmbed } from "../embed.js";
-import { isTyping } from "../keymap.js";
+import { isTyping } from "../key-order.js";
 import { editor } from "./editor.js";
-import { editing } from "../stage/bodies.js";
+import { editing } from "./editing.js";
 
 /** Which of undo and redo a keydown asks for, or null. Pure. */
 export function undoKey(e) {
@@ -34,7 +34,7 @@ function create(api) {
 
   api.listen(root, "keydown", (e) => {
     const which = undoKey(e);
-    // undo is the editor's (../stage/bodies.js): only while editing
+    // undo is the editor's (./editing.js): only while editing
     if (!which || e.defaultPrevented || fromEmbed(e, root) || !editing(api.view.get())) return;
     if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
     e.preventDefault();
@@ -46,7 +46,7 @@ function create(api) {
     name,
     group: "history",
     icon: which,
-    edit: true,
+    hand: "edit",
     show: ["toolbar"],
     state: (target) => {
       if (target != null) return null;

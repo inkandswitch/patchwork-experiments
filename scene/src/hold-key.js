@@ -1,6 +1,6 @@
 // A key held by a finger (STAGE.md, "Keys"): the touch pad's controls and the
 // use prompt's held verbs. It presses what a keyboard presses for a code
-// (keydown, then keyup, with the US layout's key: keymap.js keyOfCode) at the
+// (keydown, then keyup, with the US layout's key: key-order.js keyOfCode) at the
 // view's root, where the router hears keys, so it goes the one key order.
 //
 // Fingers on an element hold its key: down with the first, up with the last
@@ -21,7 +21,7 @@
 // counted, so the element's click is what it does. holds(pointerId) says
 // whether a press is the key's (its pointer is one holding it).
 
-import { keyOfCode } from "./keymap.js";
+import { keyOfCode } from "./key-order.js";
 
 /**
  * Press `code` at `root`: its keydown now.

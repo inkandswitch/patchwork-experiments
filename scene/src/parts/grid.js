@@ -4,8 +4,8 @@
 // scene in the current units (units.js gridFor), and its plane is given to
 // the stage as an extent so the near plane never cuts it.
 
-import { editing } from "../stage/bodies.js";
-import { perFocus } from "./per-focus.js";
+import { editing } from "./editing.js";
+import { perFocus } from "../per-focus.js";
 import css from "./grid.css?inline";
 import { gridFor, roundForDisplay, toUnits } from "../units.js";
 
@@ -56,7 +56,7 @@ export default {
 
     const pref = (key, fallback) => api.use("prefs")?.get(key, fallback) ?? fallback;
     const shown = () => pref("grid", true) !== false;
-    // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
+    // what's drawn: shown, and only while editing (the aids are the editor's: ./editing.js)
     const drawn = () => shown() && editing(api.view.get());
     const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
 
@@ -105,7 +105,7 @@ export default {
       commands: [
         {
           id: "grid",
-          edit: true,
+          hand: "edit",
           name: "Grid",
           group: "view",
           icon: "grid",

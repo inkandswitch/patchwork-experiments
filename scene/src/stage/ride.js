@@ -3,21 +3,19 @@
 // the loops have moved what's drawn and before the orbit updates, the camera
 // and its orbit target move by how the object moved since the last frame:
 // the shift of a point of it (`at`, in its frame: its origin unless said;
-// a seat rides the spot on the table it looks at, so that spot holds still
-// on screen however she rolls), its turn about the vertical through that
-// point (`turn`), and its rise and fall (`rise`). Roll and pitch are
-// followed only by a ride that says `tilt`: then the camera moves with the
-// object whole, as a passenger does, and its up is the object's (a seat at a
-// table rolls with the table: the boat is how the boat is). Otherwise the
-// orbit keeps world up.
+// a body that looks at one spot of what it rides rides that spot, so it
+// holds still on screen however the object rolls), its turn about the
+// vertical through that point (`turn`), and its rise and fall (`rise`).
+// Roll and pitch are followed only by a ride that says `tilt`: then the
+// camera moves with the object whole, as a passenger does, and its up is the
+// object's. Otherwise the orbit keeps world up.
 //
 // Only one ride applies at a time (STAGE.md, "Bodies"): the current body's, when
-// it has one (a seat rides its table), else the latest base ride (orbit
-// rides it: a ship keeping herself in view). So a seat at a table aboard a
-// ship wins over the ship's follow with no flag: it is the body's. A ride
-// starting to apply, or the camera held (first person), re-baselines it: it
-// never moves the camera for a frame it didn't see. Pure: plain arrays, no
-// three.js.
+// it has one, else the latest base ride (orbit rides it: something keeping
+// itself in view). So a body riding something that itself moves under a
+// base ride wins with no flag: it is the body's. A ride starting to apply,
+// or the camera held (first person), re-baselines it: it never moves the
+// camera for a frame it didn't see. Pure: plain arrays, no three.js.
 
 /** Where a point of an object (`at`, in its frame; its origin) is and which way it heads, from its world matrix (column-major): what a ride follows. */
 export function rideFrame(m, at = null) {

@@ -176,7 +176,7 @@ existing conventions and adds no new ambient:
     | night | -12° and down | 0.008 × (0.7, 0.85, 1.35) | 0.01 × (0.85, 0.9, 1.15) | 0.006 × (0.85, 0.9, 1.1) | (1, 0.5, 0.22) | 0 | 0 | 0.15 | 0 |
 
     The light the sun actually delivers is the stage's key light,
-    `sun.color × intensity × exposure` (viewport.js `lighting()`), so all
+    `sun.color × intensity × exposure` (atmosphere.js `lighting()`), so all
     three factors multiply: the last column, `disc · light · exposure`, is
     that light as a fraction of the day's (before the tint and the look's
     own colour and intensity). At 6° it is 0.61 of the day's, at 0° 0.115,
@@ -292,7 +292,7 @@ Both ways are in Edit, in view, with no menu diving.
 - **Dial it in**: on the scene inspector, which stays on the scene when
   nothing is selected, the Weather behaviour shows every field. Every number
   is a bounded slider; visibility and cloud base use log sliders.
-- **Commands** (null target, `edit: true`, `show: ["toolbar", "menu"]`): on
+- **Commands** (null target, `hand: "edit"`, `show: ["toolbar", "menu"]`): on
   the toolbar, which is Edit's and always in view there, and in the scene's
   right-click menu. Not on the inspector: the scene inspector shows no scene
   commands (Decision 28). They are the world's weather's only: in a linked

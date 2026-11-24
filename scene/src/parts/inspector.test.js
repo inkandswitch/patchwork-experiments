@@ -7,7 +7,7 @@ import { manualTime } from "../stage/time.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
 import inspector, { startBodies } from "./inspector.js";
-import { editing } from "../stage/bodies.js";
+import { editing } from "./editing.js";
 import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
 import { aboutFor, attachOptions, commandsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";

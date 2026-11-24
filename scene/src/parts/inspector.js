@@ -67,16 +67,17 @@ import { documentBox, documentView } from "../embed.js";
 import { DND_MIME, SECTION_MIME, URLS_MIME, docKey } from "../dnd.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
-import { REBUILD_EVENT } from "../controls-tool.js";
+import { REBUILD_EVENT } from "../embed.js";
 import { providerOf } from "./handles.js";
 import { openFor, runOpen } from "./open.js";
 import { drawerTab } from "./tab.js";
-import { LOOK, editing } from "../stage/bodies.js";
+import { LOOK } from "../stage/bodies.js";
+import { editing } from "./editing.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, attachOptions, buildSummary, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { editor } from "./editor.js";
 import { createOutline } from "./outline.js";
-import { atFocus } from "./per-focus.js";
+import { atFocus } from "../per-focus.js";
 import { layerChoices, layerStates } from "../layers.js";
 
 const ID = "scene.inspector";
@@ -993,7 +994,7 @@ function create(api) {
   const commands = [
     {
       id: "fix-version",
-      edit: true,
+      hand: "edit",
       name: "Fix at this version",
       show: ["menu"],
       state: (target, { scene }) => {
@@ -1006,7 +1007,7 @@ function create(api) {
     },
     {
       id: "follow-latest",
-      edit: true,
+      hand: "edit",
       name: "Follow latest",
       show: ["menu"],
       state: (target, { scene }) => {
@@ -1028,7 +1029,7 @@ function create(api) {
     },
     {
       id: "group",
-      edit: true,
+      hand: "edit",
       name: "Group",
       shortcut: "Mod+G",
       show: ["menu"],
@@ -1043,7 +1044,7 @@ function create(api) {
     },
     {
       id: "ungroup",
-      edit: true,
+      hand: "edit",
       name: "Ungroup",
       shortcut: "Shift+Mod+G",
       show: ["menu"],
@@ -1104,7 +1105,7 @@ function create(api) {
       lastSel = sel;
       dismissed = false;
     }
-    // the inspector is the editor's (../stage/bodies.js): only while editing, where
+    // the inspector is the editor's (./editing.js): only while editing, where
     // a selection opens it and it stays open (on the scene when nothing is
     // selected) until its × or the toolbar shuts it, or the editor is put down
     if (!editing(local)) asked = false;
@@ -1120,7 +1121,7 @@ function create(api) {
     name: "Inspector",
     group: "panels",
     icon: "inspector",
-    edit: true,
+    hand: "edit",
     show: ["toolbar"],
     state: (target) => (target == null ? { checked: tab.isOpen(), title: "Everything in the scene as a tree, and the selection's fields and behaviours (the scene's, with nothing selected)" } : null),
     run(_target, value) {

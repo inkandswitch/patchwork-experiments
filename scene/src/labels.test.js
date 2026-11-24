@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { LabelLayer, declutter, placeDimensionLabel } from "./stage/viewport.js";
+import { LabelLayer, declutter } from "./stage/labels.js";
+import { placeDimensionLabel } from "./parts/dimensions.js";
 
 // the ranks the parts give their labels: dimensions 3, axes 2, bounds 1, grid 0
 const RANK = { "dimension-label": 3, "axis-label": 2, "bounds-label": 1, "grid-label": 0 };

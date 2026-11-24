@@ -256,7 +256,7 @@ function create(api) {
         name: "Open",
         open: true,
         key: "Enter",
-        edit: true,
+        hand: "edit",
         show: ["menu", "inspector"],
         state(target) {
           if (!entries.has(target)) return null;
@@ -275,7 +275,7 @@ function create(api) {
         id: "water",
         name: "Add this world's water",
         show: ["menu", "inspector"],
-        edit: true,
+        hand: "edit",
         state(target) {
           const e = entries.get(target);
           if (!e?.world?.water?.media?.length) return null;
