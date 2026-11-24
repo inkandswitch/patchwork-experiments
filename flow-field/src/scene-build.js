@@ -12,13 +12,13 @@ import { runSuperseding, takeTicket } from "./build-runner.js";
 /** @param {"slice"|"streamlines"} kind */
 export function sceneSource(kind) {
   return {
-    async build({ doc, params, repo, url }) {
+    async build({ doc, params, repo, url, signal }) {
       const ticket = takeTicket(); // before the body is read: orders builds by the doc they got
       const ctx = await bodySectionFor(doc, normalizeBodySpec(doc?.body), { repo, url });
       const job = makeJob(kind, doc, params, ctx);
       // what this build read: a build of the same url that read something else is superseded
       const identity = `${flowFingerprint(job.doc)}|${job.section?.key ?? "-"}`;
-      const { glb, meta } = await runSuperseding(job, { url, identity, ticket });
+      const { glb, meta } = await runSuperseding(job, { url, identity, ticket, signal });
       return { kind: "glb", glb, meta };
     },
     fingerprint: flowFingerprint,
