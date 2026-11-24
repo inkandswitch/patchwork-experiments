@@ -207,6 +207,10 @@ try {
   const r4 = await T(`row("${l4}")`);
   await b.click(r4[0], r4[1]);
   await b.rest(150);
+  // the handles are Move's (V), a tool: the selection alone shows none
+  check("selecting alone shows no halo", (await T("halo()")) == null, await T("halo()"));
+  await b.key("v");
+  await b.rest(150);
   const h = await haloArrow(1);
   check("the halo is on the selection, with its Y arrow on screen", !!h && (await T("halo()"))?.id === l4, { halo: await T("halo()"), h });
   if (h) {
