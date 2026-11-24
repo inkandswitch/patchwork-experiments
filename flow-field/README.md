@@ -490,7 +490,7 @@ flow and a peak speed just over U (tested).
 | `src/upstream.js` | module memory for source-doc bodies: the LRU of upstream builds, and the upstream provider's last `dependencies` |
 | `src/registry.js` | the host's plugin registry, late-bound |
 | `src/body-notes.js` | the build notes' line about the body |
-| `src/dnd.js` | copy of `scene/src/dnd.js`: dropped docs and pasted URLs |
+| `src/dnd.js` | copy of `scene/src/shared/dnd.js`: dropped docs and pasted URLs |
 | `src/integrate.js` | RK4 streamlines, the seed rake, the inside-a-body test (pure) |
 | `src/geometry.js` | polyline thinning, tubes, lines, slice grid (pure) |
 | `src/colormap.js` | viridis / cool–warm / turbo, robust ranges, baking (pure) |

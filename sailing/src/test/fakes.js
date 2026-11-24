@@ -26,7 +26,7 @@ import { windOffer } from "./weather.js";
 
 /**
  * An empty scene doc, as the scene datatype's init writes one: every map a
- * scene has, made with the doc. The source of truth is scene/src/datatype.js
+ * scene has, made with the doc. The source of truth is scene/src/shared/datatype.js
  * (SceneDatatype.init and DEFAULT_VIEW); packages don't import each other,
  * so this is a copy of its shape. Every test that needs a scene doc starts
  * from this one.
@@ -75,7 +75,7 @@ export function brokenClocks(clock) {
   ];
 }
 
-/** T · R(XYZ) · S as a column-major 4×4 (scene/src/transform.js). */
+/** T · R(XYZ) · S as a column-major 4×4 (scene/src/shared/transform.js). */
 export function composeMatrix(t) {
   const p = t?.position ?? [0, 0, 0];
   const r = t?.rotation ?? [0, 0, 0];

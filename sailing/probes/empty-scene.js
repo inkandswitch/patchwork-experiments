@@ -1,6 +1,6 @@
 // An empty scene doc, as the scene datatype's init writes one, for the probe
 // pages and publish scripts that make a scene doc whole (no datatype runs
-// there). The source of truth is scene/src/datatype.js (SceneDatatype.init
+// there). The source of truth is scene/src/shared/datatype.js (SceneDatatype.init
 // and DEFAULT_VIEW): packages don't import each other, so this is a copy of
 // its shape. Keep it the same, and make every probe's scene here.
 //
