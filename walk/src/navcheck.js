@@ -68,16 +68,23 @@ function slab(T, o, y0, y1) {
   return poly;
 }
 
-/** Plan distance from q to a polygon's plan projection (0 inside it). */
+/**
+ * Plan distance from q to a polygon's plan projection (0 inside it). A
+ * projection with no area (a vertical triangle's: a segment) has no inside,
+ * only its edges: the sign test alone would take a point on its line, a
+ * rounding off it, for inside however far along the line it is.
+ */
 function planDistance(q, poly) {
   const n = poly.length;
   if (n === 1) return Math.hypot(q[0] - poly[0][0], q[1] - poly[0][2]);
   let best = Infinity;
   let inside = n >= 3;
   let sign = 0;
+  let area = 0; // twice the projection's signed area
   for (let a = 0; a < n; a++) {
     const P = poly[a];
     const Q = poly[(a + 1) % n];
+    area += P[0] * Q[2] - Q[0] * P[2];
     const ex = Q[0] - P[0];
     const ez = Q[2] - P[2];
     const l2 = ex * ex + ez * ez;
@@ -90,7 +97,7 @@ function planDistance(q, poly) {
       else if (sg !== sign) inside = false;
     }
   }
-  return inside && sign !== 0 ? 0 : best;
+  return inside && sign !== 0 && Math.abs(area) > 1e-12 ? 0 : best;
 }
 
 /**

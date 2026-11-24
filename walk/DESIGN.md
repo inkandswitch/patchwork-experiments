@@ -489,7 +489,7 @@ their labels.
 
 **sailing loses** (step 5):
 - `navmesh.js`, `walker.js`, `navcheck.js`, `walk.js` and their tests;
-- `sloop-navmesh.test.js`, whose checks move to walk over a fixture (below);
+- `sloop-navmesh.test.js`, whose checks move to walk, on an arena of its own (below);
 - in `crew.js`: the `aboard` body, `WALK_KEYS` and `walkWanted`, the
   avatars (`ease`, `placeOf`, `hueOf`, `NAME_CSS` and the drawing), the
   input adapter (`bakedObjects`, `trianglesOf`, `navKey`, `navInput`,
@@ -515,31 +515,23 @@ their labels.
   entering at it (walk offers none on a support);
 - reading who is aboard, for the HUD, from walk's `avatar` (`on` is her
   hull) and `view.body` (`id` "walk", or her station);
-- the deck geometry that the fixture is exported from.
 
-**The sloop's static checks without a build-time link.** walk can't import
-sailing's `ship.js`. walk keeps a copy of the stock sloop's bake input (her
-triangles and seeds) as its own test arena,
-`walk/src/test/fixtures/deck-12m.json`, a copy as CLAUDE.md allows, and
-walk's tests run C1–C9, the bow check and C8 on it, and whatever the
-boat claims of a right bake of her: the export's `claims`, in walk's words
-(a floor at a height, the kind of a rise going one way, a stand spot that
-stays put beside added boxes), so the boat's own facts (her cockpit is a
-STEP, the traveller isn't a WALL) are hers to state and walk's to check,
-and nothing in walk names a part of hers. Neither package's test
-reads the other's files, so each still passes copied out on its own. The
-copy is refreshed by a sailing script (`probes/export-deck.mjs <out>`), and
-drift is caught at the repo root, as kit copies are (`scripts/check-kit.mjs`):
-`scripts/check-fixtures.mjs` runs sailing's export and compares it with
-walk's copy; the integrator runs it. A stale copy is still a valid arena;
-it only stops being the sloop. The camber hull stays checked in the
+**A whole support's static checks without a build-time link.** walk can't
+import sailing's `ship.js`, and copies no other package's bake input. Its
+whole-support arena is its own: a hut on a railed porch, a dozen boxes laid
+out as a scene doc lays them out (`walk/src/test/porch.js`), read through
+walk's adapter in `structure.test.js`, which runs C1–C9 (C8 included) on it,
+and what the boxes say of a right bake, in walk's words (a floor at a
+height, the kind of a rise going one way, a stand spot that stays put beside
+an added box), every expected number read off the same boxes the triangles
+are made from, so nothing can drift. The camber hull stays checked in the
 browser (`probes/camber-run.mjs`), through walk at run time.
 
 **Other packages** (each in the step that needs it, none in scene):
 - **water** (step 4): `at`'s `not` takes a list of ids (Words, Water);
 - **doom** (step 4): its layout writes `walk.moves { blocks: true }` on each
   door (The bake, Input);
-- **sailing** (step 5): as above, plus `probes/export-deck.mjs`.
+- **sailing** (step 5): as above.
 
 ## Verification (what steps 3–5 build)
 
@@ -582,8 +574,9 @@ All finite and named, no random input. Each step of every case runs I.
   joined by the drop); a floor reached only from a lift (a second support)
   and dropping into a joined pit (kept); a sealed room with no seed
   (dropped) and with a stand in it (kept); a post top under π r² (dropped,
-  F5 above covers landing on it); and the sloop's fixture, whose kept cells
-  must be exactly today's 8,086 (the bilge stays dropped). Each with the
+  F5 above covers landing on it); and the hut on a railed porch
+  (`structure.test.js`), whose kept cells must be exactly its seed-pruned
+  bake's (the floor inside the closed crate stays dropped). Each with the
   old seed-only rule as the failing twin.
 
 **As built, step 3** (2026-11-17, lane/n10). In walk/src: `navmesh.js`,
@@ -791,12 +784,11 @@ crew keeps only the `station` body. What it took of walk:
 - `globalThis.__WALK_LIVE__` (a probe page's Map) is told each live walker,
   which can now `place(p, yaw, pitch)` (P1 at a point: a respawn, the
   probes);
-- the stock sloop's fixture (`src/test/fixtures/deck-12m.json`, exported by
-  `sailing/probes/export-deck.mjs`, drift caught by
-  `scripts/check-fixtures.mjs`) read through walk's adapter:
-  `deck-12m.test.js`, C1–C9 on her seed-pruned bake, walk's own bake
-  holding every cell of it (Decision 37), the bake budget, the bow, and
-  every stand spot's link within 1 mm of the height it was written at.
+- a whole support read through walk's adapter: `structure.test.js`, a hut
+  on a railed porch built from boxes (`src/test/porch.js`; it has since
+  replaced the stock sloop's exported fixture), C1–C9 on its seed-pruned
+  bake, walk's own bake holding every cell of it (Decision 37), and every
+  stand spot's link within 1 mm of the height it was written at.
 
 Tables: resume on a deck {still, turned, heeled 20°, heeled 30° the other
 way} → feet = P1 of the eye less BODY.eye along the deck's up, to 1e-9 (4
@@ -872,10 +864,9 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
 11. **Presence** is `{ on, feet local, yaw, pitch, swimming }`. walk.people
     eases in on's frame and snaps on a change. No old records are honoured
     (the lead's no-back-compat rule).
-12. **The sloop's static checks run in walk on a copied fixture**, which is
-    walk's own arena. Drift is a repo-root check (`scripts/check-fixtures.mjs`,
-    beside check-kit), never a package test, so both packages stay
-    standalone.
+12. **A whole support's static checks run in walk on an arena of its own**
+    (`structure.test.js`, a hut on a railed porch built from boxes), copied
+    from no other package: walk stays standalone, with nothing to drift.
 13. **Budget 500 ms a bake or a tile.** Every support wider than a tile
     (every level and terrain ground) bakes in tiles around walkers, with
     tile-local pruning; only the triangle index spans the support. Measured
@@ -1020,8 +1011,9 @@ All decided unattended (2026-11-17, lane/n10), for the lead.
 37. **The sloop's static checks run on her seed-pruned bake** (decided
     unattended (2026-11-17, lane/n10), for the lead): walk bakes with
     `prune: false` (Decision 29), which keeps the bilge inside her hull,
-    unreachable from every seed, so C2 and C6 fail on walk's own mesh. The
-    fixture test and sailing's in-page check run C1–C9 on the same input
+    unreachable from every seed, so C2 and C6 fail on walk's own mesh. walk's
+    `structure.test.js` (where the closed crate's floor plays the bilge) and
+    sailing's in-page check run C1–C9 on the same input
     pruned by its seeds and check walk's mesh holds every cell of it. When
     the pruning by passable sides lands they run on walk's own.
 
@@ -1555,8 +1547,8 @@ plain), and a wall on a line leaning 1e-8 or 1e-6 into the column outside
 (its floor at the sliver's top, B1). `walker.supports.test.js` walks off
 supports onto supports, the ground and the water ("Verification", above).
 
-**Static checks** (`navcheck.js`) on each bake: on the stock sloop's
-fixture in `deck-12m.test.js`, and on the camber hull in sailing's
+**Static checks** (`navcheck.js`) on each bake: on the hut on a railed
+porch in `structure.test.js`, and on the camber hull in sailing's
 `probes/camber-run.mjs`.
 - **C1**: spawn, each stand spot and each ladder's top project onto a kept
   cell, within 0.35 m in plan and `step` in height of where they were
@@ -1588,7 +1580,8 @@ fixture in `deck-12m.test.js`, and on the camber hull in sailing's
 - **C9**: two bakes of the same input are byte-identical; a shuffled
   triangle order too.
 
-C8 and the bow check are the sloop's (sailing's DESIGN, "Walking").
+C8 is the sloop's (sailing's DESIGN, "Walking"); walk runs it on the railed
+porch in `structure.test.js`.
 
 ### Decisions (the foundations')
 

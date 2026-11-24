@@ -34,7 +34,7 @@ import { baked, box, floor, world } from "./test/arena.js";
 
 // The arenas bake at 10 cm, not the body's 5 cm: a quarter of the columns, so every case fits the
 // budget. Nothing in the bake, the walker or the oracle depends on the cell size but through the
-// mesh's own params; the unit cases and the sloop's static checks run at 5 cm.
+// mesh's own params; the unit cases and the whole support's static checks (structure.test.js) run at 5 cm.
 const PARAMS = { ...BODY, cell: 0.1 };
 const cm = (v) => v / 100;
 

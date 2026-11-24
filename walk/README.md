@@ -19,8 +19,9 @@ How it stands: [DESIGN.md](DESIGN.md), "Standing on supports", and under it
 "Foundations" (the mesh, B1–B7, the transitions and the cases, moved from
 sailing's DESIGN). One walker, the navmesh walker, on any support, the
 ground included; sailing walks her deck in it (N10). `pnpm test` runs
-everything, the walker's enumerated cases and the stock sloop's static
-checks (`deck-12m.test.js`, over a copy of her bake input) included.
+everything, the walker's enumerated cases and the static checks of a whole
+support (`structure.test.js`, a hut on a railed porch built from boxes)
+included.
 
 ## The body
 

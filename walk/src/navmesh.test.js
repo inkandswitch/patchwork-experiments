@@ -3,7 +3,7 @@
 // (DESIGN.md, "Verification"); the walker's cases are in walker.test.js.
 import { describe, it, expect } from "vitest";
 import { NONE, OPEN, OFF, STEP, WALL, bake, boxTriangles, cellRange, columnAt, pointOf } from "./navmesh.js";
-import { checkAgainst, checkMesh, indexTriangles, sameMesh, shuffleTriangles } from "./navcheck.js";
+import { checkAgainst, checkMesh, indexTriangles, meets, sameMesh, shuffleTriangles } from "./navcheck.js";
 import { BODY } from "./walk.js";
 import { baked, box, floor, post, ramp } from "./test/arena.js";
 
@@ -327,5 +327,16 @@ describe("a side on a column line makes no floor outside it", { timeout: 60_000 
       const p = pointOf(mesh, a, 0.5, 0.5);
       if (p[1] !== 0) expect(p[0] > 0.3 && p[1] < top + 1e-7).toBe(true);
     }
+  });
+});
+
+describe("the oracle (navcheck.js)", () => {
+  // a vertical face projects to a segment, which has no inside: a point on its line (or a rounding
+  // off it, either side) is as far from it as along the line, here 0.4 m, so a 0.25 m body there
+  // meets nothing (the hut test's crate, by a rail, is where this was found)
+  it.each([0, 1e-15, -1e-15])("a body on a vertical face's line, %s off it and 0.4 m short of it, meets nothing; one 0.2 m short does", (off) => {
+    const index = indexTriangles(box([-2.8, 0.3, 1.4], [-1.4, 2.3, 2.8]));
+    expect(meets(index, [-2.8 + off, 1.0], 1.0, 2.75, 0.25)).toBe(null);
+    expect(meets(index, [-2.8 + off, 1.2], 1.0, 2.75, 0.25)).not.toBe(null);
   });
 });
