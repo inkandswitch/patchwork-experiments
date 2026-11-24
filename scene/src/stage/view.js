@@ -939,8 +939,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       atom.swap((m) => (samePath(m.hovered, path) ? m : { ...m, hovered: path }));
     },
     onCursor: (name) => {
-      routerCursor = name;
-      applyCursor();
+      const c = name ?? "";
+      if (canvas.style.cursor !== c) canvas.style.cursor = c;
     },
     onState: (st) => {
       if (dead) return;
@@ -971,21 +971,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       pointer: same(m.pointer, pointer) ? m.pointer : pointer,
       escape: same(m.escape, escape) ? m.escape : escape,
     };
-  }
-
-  // ─── the cursor ───────────────────────────────────────────────────────────
-
-  const extCursors = new Map(); // owner key → cursor (latest set last)
-  let routerCursor = null;
-  function applyCursor() {
-    const mine = [...extCursors.values()].at(-1) ?? null;
-    const c = mine ?? routerCursor ?? "";
-    if (canvas.style.cursor !== c) canvas.style.cursor = c;
-  }
-  function cursor(owner, name) {
-    extCursors.delete(owner);
-    if (name) extCursors.set(owner, String(name));
-    applyCursor();
   }
 
   // ─── the atom → storage, the stages ───────────────────────────────────────
@@ -1110,8 +1095,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   };
   /**
    * What the view lends an extension or a view plugin (`id`, its router key
-   * `key`): overlays, edge parts, styles, listeners, its
-   * cursor, popovers, frame hooks and timers. What it acquires goes in
+   * `key`): overlays, edge parts, styles, listeners,
+   * popovers, frame hooks and timers. What it acquires goes in
    * `own` (`els`, `offs`, `frame`), given back as it stops; `stage` marks its
    * elements with the stage it is of.
    */
@@ -1149,9 +1134,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
           target.addEventListener(type, fn, opts);
           return () => target.removeEventListener(type, fn, opts);
         }),
-      cursor: (name) => {
-        if (live()) cursor(key, name);
-      },
       /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). → release, for when it closes itself */
       popover: (close) => (live() && typeof close === "function" ? acquire(own.offs, () => router.popover(key, close)) : noop),
       invalidate: () => viewport.invalidate(),
@@ -1224,7 +1206,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         set: (cam) => viewport.setCamera(cam),
         frame: (box) => viewport.frame(box ?? null),
         hold: () => acquire(own.cameraHolds, () => viewport.hold()),
-        watch: (fn) => acquire(own.offs, () => viewport.watchCamera(fn)),
         onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
         /** has the camera been placed for this viewer: moved by them or restored as they opened the view? */
         touched: () => viewport.touched() || cameraPlaced,
@@ -1233,7 +1214,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         const h = viewport.pick(x, y, opts);
         return h ? Object.freeze({ ...h, path: hitPath(h) }) : null;
       },
-      ray: (x, y) => viewport.ray(x, y),
       project: (p) => viewport.project(p),
       // bodies and hands (STAGE.md, "Bodies", "Hands")
       body: Object.freeze({
@@ -1244,7 +1224,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
         leave: () => (live() ? leaveBody() : false),
         /** the eye, in the world: { position, direction }, or null */
         eye: () => bodyEye(),
-        reach: () => bodyReach(),
       }),
       /**
        * Put a hand on the stack ({ kind?, name, input, keys?, pointer?,
@@ -1299,7 +1278,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       own.els.clear();
       for (const give of [...own.offs]) give();
       own.offs.clear();
-      cursor(key, null);
       for (const s of stages.values()) s.dropFacets(id);
       router.refresh();
     }
@@ -1437,7 +1415,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     leaveBody,
     leaveBodiesOf,
     holdTool,
-    cursor,
     arrive,
     tryArrive,
     stageUnder,

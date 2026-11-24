@@ -113,7 +113,7 @@ A doc added by drop or paste goes to each extension whose metadata `drops`
 takes its datatype (`"*"`: any): its module's `drop(ctx, info)` → boolean (or a
 promise of one), until one says true; the
 traits it writes start its extension. A drop-only extension declares the marker
-trait its layout writes. **The drop context** `ctx` is `{ id, repo, handle,
+trait its layout writes. **The drop context** `ctx` is `{ id, repo,
 url, viewer, doc, scene, change, newId, addObject, file, content, worldOf,
 registry, local, select, notify }`, made from the focus, its writes one undo
 step. `info` is `{ url, doc, handle, group, at }`. Drops, templates, parts and

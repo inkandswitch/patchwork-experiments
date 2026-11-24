@@ -57,7 +57,7 @@ const { emptyScene } = await import("../test/empty-scene.js");
 const { default: Stage } = await import("./stage.js");
 const { add, drop, editor, part, template: runTemplate } = await import("../parts/editor.js");
 // the drop context (EDITOR.md, "Drops"), whole: what a drop, a part and a template get
-const CTX = ["addObject", "change", "content", "doc", "file", "handle", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
+const CTX = ["addObject", "change", "content", "doc", "file", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
 // (and the editor's hand, a view plugin: the start's `edit` picks it up; and the view's native services)
 const VIEWS = ["scene.edit", "scene.notices", "scene.prefs", "scene.drawer", "scene.poses"];
 for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || VIEWS.includes(p.id)) getRegistry(p.type).register(p);
@@ -774,8 +774,7 @@ describe("the stage, mounted", () => {
     expect(api.body.enter("walk", "here")).toBe(true);
     expect(m.local.get().body).toMatchObject({ id: "walk", label: "Walk", ext: "t.edit", depth: 1, reach: 2, keys: [{ code: "KeyW", label: "Forward" }] });
     expect(api.body.eye()).toEqual({ position: [1, 2, 3], direction: [0, 0, -1] });
-    expect(api.body.reach()).toBe(2);
-    expect(api.context().from).toEqual([1, 2, 3]);
+    expect(api.context()).toMatchObject({ from: [1, 2, 3], reach: 2 });
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "w", code: "KeyW", bubbles: true }));
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "b", code: "KeyB", bubbles: true }));
     // the body's extension stops (uninstalled): its body goes with it

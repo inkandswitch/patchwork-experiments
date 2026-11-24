@@ -349,20 +349,17 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
           return true;
         },
         eye: () => (view.camera?.position ? { position: [...view.camera.position], direction: null } : null),
-        reach: () => (localState.body ?? LOOK).reach,
       },
       local: {
         get: () => localState,
         swap(fn) {
           localState = Object.freeze(fn(localState));
         },
-        watch: () => () => {},
       },
       // (the view's keys and the stage's in one value here: a fake world has one stage)
       look: () => null,
       view: {
         get: () => localState,
-        watch: () => () => {},
         select: () => {},
       },
       // the stage's time (scene/src/stage/time.js), here the wall vitest's fake timers move
@@ -406,7 +403,6 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       labels: () => ({ set: (items) => (view.labels = items) }),
       overlay: () => (view.overlay = document.createElement("div")),
       style() {},
-      cursor() {},
       box: () => null,
       camera: {
         set: (c) => (view.camera = c),

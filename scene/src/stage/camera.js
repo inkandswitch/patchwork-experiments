@@ -63,7 +63,6 @@ export function createCamera({ camera, dom, rides, worldOf, invalidate, ended })
   /** a holder's own { near, far }, given through set while held */
   let heldDepth = null;
   let touched = false;
-  const watchers = new Set();
 
   const forward = () => camera.getWorldDirection(new Vector3());
 
@@ -93,11 +92,9 @@ export function createCamera({ camera, dom, rides, worldOf, invalidate, ended })
     if (!cam) return;
     if (cam.position) camera.position.copy(v3(cam.position));
     const fov = Number(cam.fov);
-    let fovChanged = false;
     if (cam.fov != null && Number.isFinite(fov) && fov !== camera.fov) {
       camera.fov = Math.min(179, Math.max(1, fov));
       camera.updateProjectionMatrix();
-      fovChanged = true;
     }
     const q = cam.quaternion ? (Array.isArray(cam.quaternion) ? cam.quaternion.map(Number) : [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w]) : null;
     const quat = q && q.length === 4 && q.every(Number.isFinite) ? q : null;
@@ -122,7 +119,6 @@ export function createCamera({ camera, dom, rides, worldOf, invalidate, ended })
       controls.update();
     }
     invalidate();
-    if (fovChanged) for (const fn of [...watchers]) fn(get());
   }
 
   /** Look at a box ({ min, max } or Box3; a 1 m cube on the ground if it's empty) from the current direction. */
@@ -245,16 +241,10 @@ export function createCamera({ camera, dom, rides, worldOf, invalidate, ended })
       // while held, the orbit neither moves the camera nor re-aims it
       return holds > 0 ? false : controls.update();
     },
-    /** Call fn(camera) when set changes the projection (its fov). @returns {() => void} off */
-    watch(fn) {
-      watchers.add(fn);
-      return () => watchers.delete(fn);
-    },
     /** Has the person orbited, panned or zoomed since this rig was made? */
     touched: () => touched,
     dispose() {
       controls.dispose();
-      watchers.clear();
     },
   };
 }

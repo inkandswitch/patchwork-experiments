@@ -193,9 +193,7 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("template refuses", (await template(api, "t.template")) === false);
       ok("drop refuses", (await drop(api, { url: g.url, datatype: "scene" })) === false);
       ok("addObject refuses", await api.addObject(g.url).then(() => false, (e) => /read-only/.test(e.message)));
-      // the handle and the repo it was handed refuse (the only refusals it reaches are these, asked for directly)
-      for (const what of REFUSED) ok(`api.handle.${what} refuses`, (() => { try { api.handle[what]?.(() => {}); return typeof api.handle[what] !== "function"; } catch (e) { return /read-only/.test(e.message); } })());
-      // (those were asked for directly: from here, anything tried on its handle is the stage's own)
+      // the repo it was handed refuses (from here, anything tried on its handle is the stage's own)
       tried.length = 0;
       const found = await api.repo.find(s.handle.url);
       ok("a handle the repo gives out refuses", (() => { try { found.change((d) => (d.title = "through the repo")); return false; } catch (e) { return /read-only/.test(e.message); } })());
@@ -255,8 +253,7 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("overlay and edge stay out of the DOM", !el.isConnected && !edge.isConnected);
       ok("no notices, drawer or prefs", ["notices", "drawer", "prefs"].every((n) => api.use(n) === null));
       api.view.select("card");
-      api.cursor("grab");
-      ok("the selection and cursor stay the viewer's", view.atom.get().selected === before.selected && s.canvas.style.cursor !== "grab");
+      ok("the selection stays the viewer's", view.atom.get().selected === before.selected);
       const ride = api.camera.ride("card");
       api.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
       ok("the camera is not its to move", typeof ride === "function" && view.viewport.held === false);

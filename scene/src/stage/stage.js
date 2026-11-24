@@ -1328,13 +1328,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     // its elements marked with this stage (several docs' extensions share one view's DOM)
     const lent = view.viewParts({ id, key: ownerKey(id), own, live, stage: n });
     const viewNow = () => viewValue();
-    let watched = viewNow(); // what api.view.watch last told of
 
     const api = {
       // doc and identity
       id,
       repo,
-      handle,
       url: handle.url,
       signal,
       doc,
@@ -1360,16 +1358,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       local: Object.freeze({
         get: local.get,
         swap: (fn) => local.swap(fn),
-        watch: (fn, select) =>
-          acquire(own.offs, () =>
-            local.watch(
-              typeof select === "function"
-                ? (next, prev) => {
-                    if (select(next) !== select(prev)) fn(next, prev);
-                  }
-                : fn,
-            ),
-          ),
       }),
       /**
        * The viewer's (STAGE.md, "Views, stages and links"), as this stage sees it: the body,
@@ -1379,16 +1367,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        */
       view: Object.freeze({
         get: viewNow,
-        watch: (fn, select) =>
-          acquire(own.offs, () =>
-            view.atom.watch(() => {
-              const next = viewNow();
-              const prev = watched;
-              watched = next;
-              if (next === prev) return;
-              if (typeof select === "function" ? select(next) !== select(prev) : true) fn(next, prev);
-            }),
-          ),
         select: (target) => {
           if (live()) view.select(target == null ? null : [...path, target]);
         },
@@ -1452,7 +1430,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
       // picking and camera
       pick: (x, y, opts) => scope.pick(x, y, opts),
-      ray: (x, y) => scope.ray(x, y),
       raycast: (origin, dir, opts) => scope.raycast(origin, dir, opts),
       project: (p) => scope.project(p),
       camera: Object.freeze({
@@ -1465,7 +1442,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
         /** has the camera been placed for this viewer: moved by them or restored as they opened the view (nothing frames it on its own then)? */
         touched: () => viewport.touched() || view.cameraPlaced,
-        watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
         /** someone finished moving the camera (an orbit, a zoom, a Frame); never while it's held */
         onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
       }),
@@ -1526,8 +1502,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         leave: () => (live() ? view.leaveBody() : false),
         /** the eye: { position, direction } in this stage's frame, or null */
         eye: () => bodyEye(),
-        /** the top body's reach (m; Look's is Infinity) */
-        reach: () => bodyReach(),
       }),
       /**
        * Hold a tool not picked up through a command (bag's drawn piece in
@@ -1541,8 +1515,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       },
       /** the context every surface passes to commands (scene, local, from, reach, hit, distance) */
       context: (hit) => context(hit),
-      /** attention: { selected, hit } (the selection, else the look) */
-      attention: () => attention(),
       /** the look: under lock the eye ray's hit, else the pointer's; { id, point, distance } or null */
       look: () => look(),
 
@@ -1570,14 +1542,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       scheduled = scheduled.filter((s) => s.rec !== rec);
       // 6: its world groups
       scope.removeLayers(id);
-      // 7: labels, overlays, edges, styles, listeners and watchers, cursor, extent, focus
+      // 7: labels, overlays, edges, styles, listeners and watchers, extent, focus
       for (const key of own.labelKeys ?? []) scope.labels.clear(key);
       router.refresh();
       for (const el of own.els) el.remove();
       own.els.clear();
       for (const give of [...own.offs]) give();
       own.offs.clear();
-      view.cursor(ownerKey(id), null);
       scope.setExtent(id, null);
       if (focusBy.delete(id) && !dead) applyDoc(derive());
       owned.delete(id);
@@ -1628,7 +1599,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       overlay: () => loose("stage-overlay"),
       edge: () => loose("stage-edge-part"),
       popover: () => noop,
-      cursor: noop,
       camera: facet(api.camera, { set: noop, frame: noop, hold: () => noop, ride: () => noop }),
       body: facet(api.body, { enter: () => false, leave: () => false }),
       hold: () => noop,

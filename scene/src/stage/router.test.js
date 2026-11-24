@@ -124,7 +124,7 @@ describe("pure helpers", () => {
     div.setAttribute("contenteditable", "true");
     expect(isTyping(div)).toBe(true);
   });
-  it("builds events with port-local x, y, ndc from the canvas and lazy, memoised picks", () => {
+  it("builds events with port-local x, y and lazy, memoised picks", () => {
     const pick = vi.fn(() => ({ id: "a" }));
     const ray = vi.fn(() => "r");
     const ev = buildEvent("press", { clientX: 60, clientY: 30, button: 0, buttons: 1, pointerId: 3, pointerType: "pen", shiftKey: true }, {
@@ -134,9 +134,7 @@ describe("pure helpers", () => {
       ray,
     });
     expect([ev.x, ev.y]).toEqual([50, 20]);
-    expect(ev.ndc).toEqual([0, -0]);
     expect(ev.shift).toBe(true);
-    expect(ev.pointerType).toBe("pen");
     expect(pick).not.toHaveBeenCalled();
     const a = withHolder(ev, "h1");
     const b = retype(ev, "click");
@@ -157,7 +155,7 @@ describe("pure helpers", () => {
       ray: () => "wrong",
       centerRay: () => "forward",
     });
-    expect([ev.x, ev.y, ev.ndc, ev.dx, ev.dy, ev.locked]).toEqual([100, 50, [0, 0], 5, -2, true]);
+    expect([ev.x, ev.y, ev.dx, ev.dy, ev.locked]).toEqual([100, 50, 5, -2, true]);
     expect(ev.ray).toBe("forward");
     ev.hit;
     expect(pick).toHaveBeenCalledWith(100, 50, { snapPx: 0 });

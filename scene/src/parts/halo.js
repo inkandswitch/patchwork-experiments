@@ -245,7 +245,7 @@ function haloAt(api, view) {
 
   // ─── the drag ─────────────────────────────────────────────────────────────
 
-  const rayOf = (ev) => ev?.ray ?? (ev?.x != null && ev?.y != null ? api.ray(ev.x, ev.y) : null);
+  const rayOf = (ev) => ev?.ray ?? null;
   const project = (p) => api.project(frame.pointOut(p));
 
   /** The handle under the pointer, if any. */
