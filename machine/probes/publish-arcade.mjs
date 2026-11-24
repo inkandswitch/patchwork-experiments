@@ -90,7 +90,7 @@ console.error(`doom: ${doom.title} (${MAP}, args ${J(a)}); snes: ${snes.title}`)
 const base = (doom.title ?? "Doom").split(" · ")[0];
 const render = (title, parent, providerId, params) => ({
   "@patchwork": { type: "scene-render" }, title, parent, providerId, params,
-  glbUrl: null, builtFrom: null, builtAt: null, bounds: null, status: "idle", error: null, pinned: false,
+  pinned: false, result: null, failure: null,
 });
 const record = (name, sourceUrl, providerId, renderUrl, transform, traits) => ({
   name, sourceUrl, providerId, renderUrl, parent: null, group: null,

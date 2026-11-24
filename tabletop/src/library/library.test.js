@@ -393,7 +393,7 @@ describe("the launcher's actions", () => {
     table.traits[SEATS][sid].player = "viewer:a";
     // a built object (its render doc tuned), and a stray: an item listed in a bag while its object is in the scene
     const [built, strayId] = Object.keys(table.objects);
-    const render = await repo.create2({ "@patchwork": { type: "scene-render" }, params: { sides: 8 }, glbUrl: "automerge:glb", status: "building", error: null });
+    const render = await repo.create2({ "@patchwork": { type: "scene-render" }, params: { sides: 8 }, pinned: false, result: { glbUrl: "automerge:glb", builtFrom: { heads: ["h"] }, bounds: null, builtAt: 1 }, failure: null });
     table.objects[built].renderUrl = render.url;
     const src = repo.create(table);
     const bagOf = (d, id) => d.objects[id].traits[BAG_TRAIT].doc;
@@ -412,7 +412,7 @@ describe("the launcher's actions", () => {
     expect(fork.forkedFrom).toEqual({ url: src.url, heads: null });
     // the built object's render doc is its own copy, with its params and build
     expect(fork.objects[built].renderUrl).not.toBe(render.url);
-    expect(repo.docs.get(fork.objects[built].renderUrl)).toMatchObject({ params: { sides: 8 }, glbUrl: "automerge:glb", status: "idle" });
+    expect(repo.docs.get(fork.objects[built].renderUrl)).toMatchObject({ params: { sides: 8 }, result: { glbUrl: "automerge:glb" } });
     expect(Object.keys(fork.objects)).toEqual(Object.keys(before.objects));
     expect(Object.values(fork.objects).filter((o) => keptIn(o))).toEqual([]);
     expect(Object.values(fork.traits[SEATS]).map((s) => s.player)).toEqual(Object.values(before.traits[SEATS]).map(() => null));
