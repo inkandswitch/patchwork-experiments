@@ -31,7 +31,7 @@ describe("the exit's verb, on the stage", () => {
     const [go] = cmds;
     expect(go.key).toBe("f");
     expect(go.reach).toBe(true);
-    expect(go.show).toEqual(["use", "menu", "inspector"]);
+    expect(go.show).toEqual(["use", "menu"]);
     expect(go.state("hatch", {})).toEqual({ label: "Go below" });
     expect(go.state("hatch", look(50))).toEqual({ label: "Go below" });
   });

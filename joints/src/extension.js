@@ -104,7 +104,7 @@ function create(api) {
         name: "Open",
         key: "f",
         reach: true,
-        show: ["use", "menu", "inspector"],
+        show: ["use", "menu"],
         state: (target) => verbOf(target),
         run: start,
       },

@@ -624,7 +624,7 @@ function create(api) {
         name: "Roll",
         // R rolls on every surface, editing too: the halo has no keys
         key: "r",
-        show: ["use", "menu", "inspector"],
+        show: ["use", "menu"],
         state: (target, ctx) => rollState(target, ctx?.scene ?? scene),
         run(target) {
           const snap = api.scene();
@@ -648,7 +648,7 @@ function create(api) {
         id: "turn",
         name: "Turn",
         key: "t",
-        show: ["use", "menu", "inspector"],
+        show: ["use", "menu"],
         state: (id, ctx) => turnState(id, ctx?.scene ?? scene),
         run: turn,
       },

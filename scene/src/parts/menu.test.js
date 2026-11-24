@@ -26,11 +26,11 @@ function commandsExt(log) {
             run: (t, v) => log.push(["lock", t, v]),
           },
           {
-            id: "inspect-only",
-            name: "Inspect",
-            show: ["inspector"],
+            id: "prompt-only",
+            name: "Prompt",
+            show: ["use"],
             state: (t) => (t != null ? {} : null),
-            run: () => log.push(["inspect-only"]),
+            run: () => log.push(["prompt-only"]),
           },
           {
             id: "frame",

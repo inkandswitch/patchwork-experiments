@@ -258,7 +258,7 @@ function create(api) {
         open: true,
         key: "Enter",
         hand: "edit",
-        show: ["menu", "inspector"],
+        show: ["menu"],
         state(target) {
           if (!entries.has(target)) return null;
           const on = editing?.id === target;
@@ -275,7 +275,7 @@ function create(api) {
         // ink's own water is off in the scene (vendor/PATCHES.md); this gives it to the water package
         id: "water",
         name: "Add this world's water",
-        show: ["menu", "inspector"],
+        show: ["menu"],
         hand: "edit",
         state(target) {
           const e = entries.get(target);

@@ -389,7 +389,7 @@ describe("drawing", () => {
 
   it("Empty out: everything set down round the bag, by the menu (no key), whoever does it", async () => {
     const t = await filled();
-    expect(t.cmd("empty").show).toEqual(["menu", "inspector"]);
+    expect(t.cmd("empty").show).toEqual(["menu"]);
     expect(t.cmd("empty").key).toBeUndefined();
     expect(t.state("empty", "bag1")).toMatchObject({ title: "Set all 3 down round the bag" });
     t.run("empty", "bag1");

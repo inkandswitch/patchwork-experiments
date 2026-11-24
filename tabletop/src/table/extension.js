@@ -522,7 +522,7 @@ export default {
           name: "Shuffle pile",
           key: "s",
           // on the use prompt, so hovering a pile says it can be shuffled
-          show: ["use", "menu", "inspector"],
+          show: ["use", "menu"],
           // (walking, S is the body's: the verb shows without its key, and is in the menu)
           // (only where there's a pile: a card lying alone has nothing to shuffle with)
           state: (id) => (id && isCard(scene?.objects?.[id]) && keptBy(api, id) && stackOf(id).length > 1 ? { title: "Shuffle the pile this card is in" } : null),
@@ -546,7 +546,7 @@ export default {
           id: "wash",
           name: "Wash",
           key: "w",
-          show: ["use", "menu", "inspector"],
+          show: ["use", "menu"],
           state(id, ctx) {
             // (walking, W is the body's: the verb shows without its key, and is in the menu)
             if (id == null) return null;
@@ -559,7 +559,7 @@ export default {
           id: "stand",
           name: "Stand on edge",
           key: "u",
-          show: ["use", "menu", "inspector"],
+          show: ["use", "menu"],
           state(id, ctx) {
             if (id == null) return null;
             const plan = standPlan(id, ctx?.scene ?? scene);
@@ -572,7 +572,7 @@ export default {
           id: "reveal",
           name: "Lay my hand face up",
           // no key: a slip of the finger shouldn't show your hand
-          show: ["menu", "inspector"],
+          show: ["menu"],
           state(id, ctx) {
             const plan = revealPlan(id, ctx?.scene ?? scene);
             return plan ? { label: `Lay my hand face up (${plan.ids.length})`, title: "Put everything in your hand out in front of it, face up, for everyone to see" } : null;
