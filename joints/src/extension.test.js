@@ -79,7 +79,7 @@ describe("the slide's verb and motion, on the stage", () => {
     expect(x.commands.map((c) => c.id)).toEqual(["slide"]);
     expect(cmd.key).toBe("f");
     expect(cmd.reach).toBe(true);
-    expect(cmd.show).toEqual(["use", "menu", "inspector"]);
+    expect(cmd.show).toEqual(["use", "menu"]);
     // reach is the stage's: the state is the joint's alone, wherever the eye is
     expect(cmd.state("door", {})).toEqual({ label: "Open" });
     expect(cmd.state("door", { from: [0, 1.6, 0], hit: { id: "door", distance: 50 } })).toEqual({ label: "Open" });

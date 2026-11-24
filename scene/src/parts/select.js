@@ -99,7 +99,7 @@ export function create(api) {
       hand: "edit",
       name: "Remove",
       key: ["Delete", "Backspace"],
-      show: ["menu", "inspector"],
+      show: ["menu"],
       state: (target, { scene }) => {
         const o = target != null ? scene?.objects?.[target] : null;
         if (!o) return null;

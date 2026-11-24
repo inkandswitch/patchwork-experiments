@@ -47,7 +47,7 @@ describe("the Edit hand Opens", () => {
   const runs = [];
   const OPENER = {
     meta: { id: "t.opener", type: "scene:view" },
-    module: { create: () => ({ commands: [cmd("open-it", { name: "Open", open: true, key: "Enter", hand: "edit", show: ["menu", "inspector"], state: (t) => (t === "a" || t === "b" ? {} : null), run: (t) => runs.push(t) })] }) },
+    module: { create: () => ({ commands: [cmd("open-it", { name: "Open", open: true, key: "Enter", hand: "edit", show: ["menu"], state: (t) => (t === "a" || t === "b" ? {} : null), run: (t) => runs.push(t) })] }) },
   };
   afterEach(() => {
     s?.unmount();

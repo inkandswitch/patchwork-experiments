@@ -230,7 +230,7 @@ function create(api) {
         name: "Open",
         open: true,
         key: "Enter",
-        show: ["menu", "inspector"],
+        show: ["menu"],
         state: (target) => (target == null ? null : enterState(role(at(null, target)))),
         run: (target) => api.view.enter([...api.view.get().focus, target]),
       },

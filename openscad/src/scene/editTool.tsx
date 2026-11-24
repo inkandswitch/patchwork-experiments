@@ -270,7 +270,7 @@ export function create(api: ViewApi) {
 				open: true,
 				key: "Enter",
 				hand: "edit",
-				show: ["menu", "inspector"],
+				show: ["menu"],
 				state: (target: unknown) => (isModel(target) ? {label: session?.id === target ? "Close" : "Open", title: session?.id === target ? "Close the model's editor" : "Edit the model's code here, its render in place", checked: session?.id === target} : null),
 				run(target: unknown) {
 					const stage = api.focus()

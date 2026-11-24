@@ -19,7 +19,7 @@ function create(api) {
         name: "Go",
         key: "f",
         reach: true,
-        show: ["use", "menu", "inspector"],
+        show: ["use", "menu"],
         state: (target) => {
           const v = exitVerb(api.scene(), target, { here: here() });
           return v && { label: v.label };

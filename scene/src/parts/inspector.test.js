@@ -512,7 +512,7 @@ describe("scene.inspector: an object's parts and its documents, a row each (PLAN
 
   it("the header's Open is the selection's (./open.js): labelled as it says, run on a click", async () => {
     const runs = [];
-    const opener = { meta: { id: "t.opener", type: "scene:view" }, module: { create: () => ({ commands: [{ id: "edit-it", name: "Open", open: true, show: ["inspector", "menu"], state: (t) => (t === "built" ? { label: "Open" } : null), run: (t) => runs.push(t) }] }) } };
+    const opener = { meta: { id: "t.opener", type: "scene:view" }, module: { create: () => ({ commands: [{ id: "edit-it", name: "Open", open: true, show: ["menu"], state: (t) => (t === "built" ? { label: "Open" } : null), run: (t) => runs.push(t) }] }) } };
     await mountKinds([opener]);
     await select("built");
     await settle();
