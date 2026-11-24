@@ -13,7 +13,7 @@ import {
   worldMatrix,
   worldTransform,
 } from "./hierarchy.js";
-import { makeAnchor, resolveAnchor } from "./anchors.js";
+import { makeAnchor, resolveAnchor } from "../parts/anchors.js";
 
 const T1 = { position: [1, 2, 3], rotation: [0.3, -1.1, 2.0], scale: 2.5 };
 const T2 = { position: [-4, 0.5, 7], rotation: [-0.7, 0.4, 0.2], scale: 0.4 };
@@ -178,7 +178,7 @@ describe("merged cycles", () => {
   });
 
   it("re-parenting roots-first gives the viewport the resolved tree when an edge inverts", async () => {
-    const { createObjectTree } = await import("./stage/object-tree.js");
+    const { createObjectTree } = await import("../stage/object-tree.js");
     const { Group } = await import("three");
     // the viewport's object tree, under a root of its own
     const fake = () => {

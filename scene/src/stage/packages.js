@@ -29,7 +29,7 @@
 // Nothing is written to the viewer's module settings: what a scene brings
 // lasts until the page is reloaded.
 
-import { answeringPlugins, changeList, listedPackages, missingPackages, packageTitle, packageUrl, reconcileList, registeredPackages, suggestedImportToSet, triage } from "../packages.js";
+import { answeringPlugins, changeList, listedPackages, missingPackages, packageTitle, packageUrl, reconcileList, registeredPackages, suggestedImportToSet, triage } from "./packages-rule.js";
 import { stamp as stampOf } from "./provenance.js";
 
 /** How long the registry must be quiet, after the scene opens, before anything is offered or loaded. */

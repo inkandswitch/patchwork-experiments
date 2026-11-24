@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { codeOfKey, keyHolder, keyLayers, labelOf, lookChain, reservedBy } from "../key-order.js";
+import { codeOfKey, keyHolder, keyLayers, labelOf, lookChain, reservedBy } from "../stage/key-order.js";
 import { TOO_FAR, commandState, flatCommands } from "../stage/commands.js";
 import { attentionPath, hintFor, mapInvocation, resolveKey, resolveShortcut, shortcutHintFor } from "./keymap.js";
 import { shortcutEvent } from "./shortcuts.js";

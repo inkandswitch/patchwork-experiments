@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { encodeGLB, computeNormals, parseGLB, MODE } from "./glb.js";
+import { encodeGLB, computeNormals, parseGLB, MODE } from "../glb.js";
 import { authoredMaterials, collapseInstances, dequantizePositions, loadGLTF, localParts, prepareGLB, prepareMaterials } from "./gltf-content.js";
 import { Box3, Matrix4, Group } from "three";
-import { nearestScreenVertex } from "./stage/picking.js";
-import { composeMatrix } from "./transform.js";
-import { yawOfEuler } from "./connectors.js";
-import { AT, FORMS, NODES, axesOf, connectorCases, sameYaw } from "./test/connector-cases.js";
+import { nearestScreenVertex } from "./picking.js";
+import { composeMatrix } from "../shared/transform.js";
+import { yawOfEuler } from "../shared/connectors.js";
+import { AT, FORMS, NODES, axesOf, connectorCases, sameYaw } from "../test/connector-cases.js";
 
 // Two unmodified files from solander38.com (CC BY 4.0, Rising Tide Research
 // Foundation; see test/fixtures/README.md): EXT_meshopt_compression +

@@ -3,8 +3,8 @@
 // tinted when the object's colour override tints it. Names are what this viewer sees (api.nameOf).
 
 import css from "./legends.css?inline";
-import { legendModel } from "../legend.js";
-import { inheritedDisplay, isGroup, outlineParents } from "../groups.js";
+import { legendModel } from "./legend.js";
+import { inheritedDisplay, isGroup, outlineParents } from "../shared/groups.js";
 
 /** A provider's legend, checked; null when it isn't usable. Pure. */
 export function sanitizeLegend(l) {

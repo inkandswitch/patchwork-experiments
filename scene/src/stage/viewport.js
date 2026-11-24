@@ -13,8 +13,8 @@
 
 import { Color, DirectionalLight, Group, HemisphereLight, PerspectiveCamera, PMREMGenerator, Raycaster, Scene, SRGBColorSpace, Vector3, WebGLRenderer } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { installLazyBVH } from "../pick-accel.js";
-import { colorSchemeOf, onThemeChange, readTheme } from "../theme.js";
+import { installLazyBVH } from "./pick-accel.js";
+import { colorSchemeOf, onThemeChange, readTheme } from "./theme.js";
 import { cleanAtmosphere, clearColourOf, LIGHTS } from "./atmosphere.js";
 import { createLights, drawAtmosphere } from "./draw-atmosphere.js";
 import { aimShadow, castShadows, fitShadow, SHADOW_MAP } from "./shadows.js";

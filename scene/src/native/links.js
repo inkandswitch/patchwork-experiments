@@ -17,7 +17,7 @@
 
 import css from "./links.css?inline";
 import { expand, identityOf } from "./link-graph.js";
-import { viewAt } from "../versions.js";
+import { viewAt } from "../shared/versions.js";
 import { snapshot } from "./inspect.js";
 
 /** How many stages a view opens for links at most, nearest first. */

@@ -40,13 +40,13 @@
 // say `hand: "edit"`, and a paste and a dropped row reach it through
 // scene.drops (./drops.js), while the Edit hand is held, before scene.add.
 
-import { isGroup } from "../groups.js";
+import { isGroup } from "../shared/groups.js";
 import { landings } from "./landing.js";
-import { parseAutomergeUrl } from "../dnd.js";
-import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, objectCopyIn, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
-import { atFocus, perFocus } from "../per-focus.js";
+import { parseAutomergeUrl } from "../shared/dnd.js";
+import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, objectCopyIn, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "./copy-rule.js";
+import { atFocus, perFocus } from "../shared/per-focus.js";
 import { isLink, atOf } from "../native/link-graph.js";
-import { bundleLink, extractObjects, extractable, traitRules } from "../extract.js";
+import { bundleLink, extractObjects, extractable, traitRules } from "./extract.js";
 
 const RING_SEGMENTS = 48;
 /** A ring of unknown size: this fraction of its distance from the eye (the parts bin's). */

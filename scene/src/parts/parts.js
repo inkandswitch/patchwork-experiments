@@ -28,11 +28,11 @@
 // takes it (it isn't a document).
 
 import css from "./parts.css?inline";
-import { isGroup } from "../groups.js";
+import { isGroup } from "../shared/groups.js";
 import { partLanding } from "./parts-place.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { part } from "./making.js";
-import { atFocus, perFocus } from "../per-focus.js";
+import { atFocus, perFocus } from "../shared/per-focus.js";
 import { whileEditing } from "./editing.js";
 
 /** What a part's drag carries: JSON { part: id }. Only `types` is readable during dragover. */

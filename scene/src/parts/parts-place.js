@@ -23,8 +23,8 @@
 // spacing, ../gltf-content.js findSnapPoints). An object with no radius (one
 // connector and none stated) isn't snapped to.
 
-import { nearestSnap } from "../carry-rules.js";
-import { composeMatrix } from "../transform.js";
+import { nearestSnap } from "../shared/carry-rules.js";
+import { composeMatrix } from "../shared/transform.js";
 import { localTransform, snapCandidates, yawOfMatrix } from "../native/carry-math.js";
 
 /** The yaw that turns a part's +Z toward the eye, seen from above (0 when the eye is straight overhead). */

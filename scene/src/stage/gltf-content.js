@@ -15,9 +15,9 @@
 import { Box3, BufferAttribute, DoubleSide, InstancedMesh, Matrix4 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import { toArrayBuffer } from "./file-content.js";
-import { defaultSnapRadius, placeConnector, sanitizeConnectors } from "./connectors.js";
-import { nodeLayer, sanitizeLayers } from "./layers.js";
+import { toArrayBuffer } from "../shared/file-content.js";
+import { defaultSnapRadius, placeConnector, sanitizeConnectors } from "../shared/connectors.js";
+import { nodeLayer, sanitizeLayers } from "../layers.js";
 
 let loader = null;
 

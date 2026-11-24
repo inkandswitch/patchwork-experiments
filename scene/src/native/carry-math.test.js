@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createCarry, downOnto, flipAt, flipInPlace, flipMatrix, landingFor, localTransform, snapCandidates, tablePoint, translate, turnRadius, worldBox, yawOfMatrix } from "./carry-math.js";
-import { composeMatrix } from "../transform.js";
+import { composeMatrix } from "../shared/transform.js";
 
 const I = composeMatrix({});
 const close = (a, b, eps = 1e-9) => a.every((v, i) => Math.abs(v - b[i]) < eps);

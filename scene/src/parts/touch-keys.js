@@ -27,7 +27,7 @@
 // them. Labels are one per reserver, not across them: a pad shows each
 // control under its reserver (`from`; for a hand, which one is keyHolder's).
 
-import { declaredKeys, keyHolder, keyLayers, keyOfCode, nameOfCode } from "./stage/public.js";
+import { declaredKeys, keyHolder, keyLayers, keyOfCode, nameOfCode } from "../stage/public.js";
 
 /** The pad's places, by the arrow code that names each. */
 const SLOTS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };

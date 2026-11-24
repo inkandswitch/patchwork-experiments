@@ -4,7 +4,7 @@
 // down (a carry, a part, a paste) reads through "prefs" (NATIVE.md,
 // "Prefs"). This only offers the choice.
 
-import { UNIT_OPTIONS } from "../units.js";
+import { UNIT_OPTIONS } from "../shared/units.js";
 
 export default {
   create(api) {

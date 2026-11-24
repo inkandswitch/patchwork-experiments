@@ -17,7 +17,7 @@
 // don't call onChange. It is still loaded (the view comes from the live
 // handle), and counts as not ready until this replica has those heads.
 
-import { sortedHeads, viewAt } from "../versions.js";
+import { sortedHeads, viewAt } from "../shared/versions.js";
 
 /** How long to wait before loading a doc again after its `n`th failure (from 0): a second, doubling, at most 30 s. */
 export const retryWait = (n) => Math.min(30_000, 1_000 * 2 ** n);

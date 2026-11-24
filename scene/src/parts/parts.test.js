@@ -7,7 +7,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import parts, { OTHER, PART_MIME, SEARCH_FROM, byCategory, matches, partsOf } from "./parts.js";
-import { composeMatrix } from "../transform.js";
+import { composeMatrix } from "../shared/transform.js";
 
 /** A part that puts one object (named after it) where it's told, and records what it was told. */
 function partModule(name, calls) {

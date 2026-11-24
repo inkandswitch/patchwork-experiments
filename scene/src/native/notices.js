@@ -11,7 +11,7 @@
 //     learned later, as a keeper's deck step, changes nothing the stage sees).
 
 import css from "./notices.css?inline";
-import { localChanged } from "../shallow.js";
+import { localChanged } from "../shared/shallow.js";
 
 const FADE_MS = 250;
 /** How long a notice shows. */

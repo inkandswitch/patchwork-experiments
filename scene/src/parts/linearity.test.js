@@ -16,11 +16,11 @@
 // value is read-only), at most one holds runtime state, and it is B.
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
-import { emptyScene } from "./test/empty-scene.js";
+import { emptyScene } from "../test/empty-scene.js";
 import { bundlePlan, extractHost, extractPlan } from "./extract.js";
-import { describesOf, planCopy, refsOf, runtimeOf, RUNTIME_FIELDS } from "./transfer.js";
-import { LINK, atOf, isLink } from "./native/link-graph.js";
-import { orderedIds } from "./ops.js";
+import { describesOf, planCopy, refsOf, runtimeOf, RUNTIME_FIELDS } from "./copy-rule.js";
+import { LINK, atOf, isLink } from "../native/link-graph.js";
+import { orderedIds } from "../shared/ops.js";
 
 const DESCRIBES = describesOf([{ id: "t", describes: { "t.keep": { name: "Keeper", runtime: ["bound"] } } }]);
 const RUNTIME = runtimeOf(DESCRIBES);

@@ -4,7 +4,7 @@
 // meshes they're given; depthRange and sceneDepth are pure.
 
 import { Box3, Matrix4, Sphere, Triangle, Vector3 } from "three";
-import { ensureBVH, triangleCount } from "../pick-accel.js";
+import { ensureBVH, triangleCount } from "./pick-accel.js";
 
 /**
  * The near and far planes. Depth precision goes with near / distance (a

@@ -56,14 +56,14 @@ import { createView, projectView } from "./view.js";
 import { EMPTY as NO_AMBIENTS, mergeAmbients } from "./ambients.js";
 import { scopeViewport, hitIn, rayIn } from "./scope.js";
 import { elementOf, keyOf, parseKey } from "./paths.js";
-import { lookChain } from "../key-order.js";
+import { lookChain } from "./key-order.js";
 import { commandState } from "./commands.js";
-import * as ops from "../ops.js";
+import * as ops from "../shared/ops.js";
 import { layersKey } from "../layers.js";
 import { createContent, statusOf } from "../content/content.js";
-import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
-import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
-import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
+import { resolveParents, treeOrder, worldMatrix } from "../shared/hierarchy.js";
+import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../shared/groups.js";
+import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../shared/transform.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";

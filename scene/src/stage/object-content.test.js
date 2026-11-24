@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Color, Matrix4, Raycaster, Vector3 } from "three";
 import { encodeGLB } from "../glb.js";
-import { prepareGLB } from "../gltf-content.js";
+import { prepareGLB } from "./gltf-content.js";
 import { nearestHit } from "./picking.js";
 import { bodyBox, contentExtras, contentOf, display, newEntry, placeholderLook, setHint, swapGLB } from "./object-content.js";
 

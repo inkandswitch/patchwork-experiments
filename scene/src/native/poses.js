@@ -6,7 +6,7 @@
 // (createHolds, ranksAhead: H6). What anything here shows is api.display's
 // transform; this view's hold wins over a peer's. Only the public api.
 
-import { normalizeTransform } from "../transform.js";
+import { normalizeTransform } from "../shared/transform.js";
 import { tie } from "./claims.js";
 import { snapshot } from "./inspect.js";
 import { createHolds, createWire, poseInterval } from "./holds.js";

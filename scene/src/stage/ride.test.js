@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createRides, rideFrame, rideMove, upOf, wholeMove } from "./ride.js";
-import { composeMatrix } from "../transform.js";
+import { composeMatrix } from "../shared/transform.js";
 
 const r6 = (a) => a.map((v) => Math.round(v * 1e6) / 1e6 + 0);
 const at = (position, yaw = 0, extra = {}) => composeMatrix({ position, rotation: [extra.roll ?? 0, yaw, extra.pitch ?? 0] });

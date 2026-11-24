@@ -6,10 +6,10 @@
 // the stage as an extent so the near plane never cuts it.
 
 import { whileEditing } from "./editing.js";
-import { perFocus } from "../per-focus.js";
+import { perFocus } from "../shared/per-focus.js";
 import css from "./grid.css?inline";
 import { resolveCssColor } from "../stage/public.js";
-import { gridFor, roundForDisplay, toUnits } from "../units.js";
+import { gridFor, roundForDisplay, toUnits } from "../shared/units.js";
 
 /** How far the scene reaches from the origin, horizontally (or half its height): what the grid must cover. */
 export function sceneExtent(box) {

@@ -15,7 +15,7 @@ import { Box3, BufferGeometry, Color, Float32BufferAttribute, Group, LineBasicMa
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { prepareGLB } from "../gltf-content.js";
+import { prepareGLB } from "./gltf-content.js";
 import { layerShown, layerStates } from "../layers.js";
 
 /** Dispose everything under root: geometry, materials and their textures (not shared placeholders). */

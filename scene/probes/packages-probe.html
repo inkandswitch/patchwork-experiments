@@ -28,7 +28,7 @@ import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { imported, servePackage } from "@inkandswitch/patchwork-filesystem";
 import { FakeRepo } from "../src/test/fake-repo.js";
 import { emptyScene } from "../src/test/empty-scene.js";
-import { newRenderDoc } from "../src/datatype.js";
+import { newRenderDoc } from "../src/shared/datatype.js";
 
 const errors = [];
 window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));

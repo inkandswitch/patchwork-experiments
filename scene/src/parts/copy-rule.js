@@ -33,12 +33,12 @@
 // with a notice naming what to add. Nothing adds scene traits behind anyone's
 // back.
 
-import { ROW_MIME, parseAutomergeUrl } from "./dnd.js";
-import { isGroup, resolveGroups } from "./groups.js";
-import { resolveParents, worldMatrix } from "./hierarchy.js";
-import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "./transform.js";
-import { CARRY, intoSnap } from "./carry-rules.js";
-import { editor } from "./parts/editor.js";
+import { ROW_MIME, parseAutomergeUrl } from "../shared/dnd.js";
+import { isGroup, resolveGroups } from "../shared/groups.js";
+import { resolveParents, worldMatrix } from "../shared/hierarchy.js";
+import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "../shared/transform.js";
+import { CARRY, intoSnap } from "../shared/carry-rules.js";
+import { editor } from "./editor.js";
 
 export { ROW_MIME };
 

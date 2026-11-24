@@ -35,7 +35,7 @@ vi.mock("three", async (importOriginal) => {
 import { mountStage, object } from "../test/stage-harness.js";
 import { manualTime } from "./time.js";
 import { LINGER_MS, BUSY_RECHECK_MS } from "./host.js";
-import { EMBED_ATTR } from "../embed.js";
+import { EMBED_ATTR } from "../shared/embed.js";
 
 const mounted = [];
 afterEach(() => {

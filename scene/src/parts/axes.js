@@ -6,10 +6,10 @@
 // Both are the editor's: made as the Edit hand is picked up, gone as it goes.
 
 import { whileEditing } from "./editing.js";
-import { perFocus } from "../per-focus.js";
+import { perFocus } from "../shared/per-focus.js";
 import css from "./axes.css?inline";
 import { resolveCssColor } from "../stage/public.js";
-import { gridFor } from "../units.js";
+import { gridFor } from "../shared/units.js";
 
 const TRIAD_PX = 96;
 const TRIAD_PAD = 8;

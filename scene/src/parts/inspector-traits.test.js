@@ -7,8 +7,8 @@ import { holding } from "../stage/bodies.js";
 const editing = (view) => holding(view, "edit");
 import { openTabs } from "../test/tabs.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, newValue, shownValues, traitRows } from "./inspector-traits.js";
-import { resolveParents } from "../hierarchy.js";
-import { resolveGroups } from "../groups.js";
+import { resolveParents } from "../shared/hierarchy.js";
+import { resolveGroups } from "../shared/groups.js";
 import { editor } from "./editor.js";
 
 const INSPECTOR = { meta: { id: "scene.inspector" }, module: inspector };

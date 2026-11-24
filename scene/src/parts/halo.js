@@ -33,10 +33,10 @@
 // holds the pose).
 
 import { HANDLE_SIZE, MOVE, dragDelta, haloHandles, haloTarget, handleAt, handlePoints, localFrom, moved, moving, groupRoots, usable } from "./halo-math.js";
-import { frameConversions } from "../transform.js";
+import { frameConversions } from "../shared/transform.js";
 import { worldBox } from "../native/carry-math.js";
 import { editor } from "./editor.js";
-import { perFocus } from "../per-focus.js";
+import { perFocus } from "../shared/per-focus.js";
 import { resolveCssColor } from "../stage/public.js";
 
 /** How many frames the halo keeps drawing every frame after what it's on last moved. */

@@ -12,9 +12,9 @@
 // corners, the rings round the sphere that holds the box, the arrows beyond
 // the rings. So a press on the thing itself is never a press on its halo.
 
-import { IDENTITY_MATRIX, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
-import { groupChain, isGroup } from "../groups.js";
-import { closestOnLine } from "../handles.js";
+import { IDENTITY_MATRIX, decomposeMatrix, invertMatrix, multiplyMatrices } from "../shared/transform.js";
+import { groupChain, isGroup } from "../shared/groups.js";
+import { closestOnLine } from "./param-handles.js";
 import { pointing } from "../stage/public.js";
 
 /** How big a handle is, as a fraction of its distance from the eye: the same size on screen at any zoom. */

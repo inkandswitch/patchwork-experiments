@@ -51,8 +51,8 @@ import { keysOf, shownOn } from "./toolbar-commands.js";
 import { applicable, codeOfKey, looksFromEye, samePath } from "../stage/public.js";
 import { attentionPath, hintFor, keyFor, segmentsOf } from "./keymap.js";
 import { resolverState } from "./resolver.js";
-import { perFocus } from "../per-focus.js";
-import { arrange, holdKey } from "../hold-key.js";
+import { perFocus } from "../shared/per-focus.js";
+import { arrange, holdKey } from "./hold-key.js";
 
 /** How many verbs the prompt shows before its "more". */
 export const MAX_VERBS = 3;

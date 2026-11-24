@@ -18,7 +18,7 @@ import { LINK } from "../test/links.js";
 import { holding } from "./bodies.js";
 import { elementOf, keyOf } from "./paths.js";
 import { spy } from "../test/spy.js";
-import { atFocus, focusSteps, selectionAtFocus, selectionStep } from "../selection.js";
+import { atFocus, focusSteps, selectionAtFocus, selectionStep } from "./selection.js";
 
 const link = (url, extra = {}) => object({ name: "Link", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 const J = JSON.stringify;

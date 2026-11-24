@@ -8,7 +8,7 @@
 // of what it's attached to, and both before the scene's. Running order breaks
 // ties only between extensions holding the same link.
 
-import { groupChain } from "../groups.js";
+import { groupChain } from "../shared/groups.js";
 
 /**
  * @param {{

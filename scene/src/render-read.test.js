@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { FakeRepo } from "./test/fake-repo.js";
 import { readRender, renderKey, isRenderDoc } from "./render-read.js";
-import { newRenderDoc } from "./datatype.js";
+import { newRenderDoc } from "./shared/datatype.js";
 import { glbFileDoc } from "./content/build.js";
 import { encodeGLB } from "./glb.js";
 

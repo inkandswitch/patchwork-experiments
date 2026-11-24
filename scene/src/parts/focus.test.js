@@ -12,7 +12,7 @@ import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "../native/link-graph.js";
 import { editing } from "./editing.js";
 import { keyOf } from "../stage/paths.js";
-import { atFocus, selectionStep } from "../selection.js";
+import { atFocus, selectionStep } from "../stage/selection.js";
 import inspector from "./inspector.js";
 import toolbar from "./toolbar.js";
 

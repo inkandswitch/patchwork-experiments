@@ -20,14 +20,14 @@
 // the focus's facet, and made again there wherever the focus goes.
 
 import css from "./handles.css?inline";
-import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.js";
-import { applyMatrix } from "../transform.js";
-import { roundForDisplay } from "../units.js";
+import { handleSpecs, handleBase, closestOnLine, clampValue } from "./param-handles.js";
+import { applyMatrix } from "../shared/transform.js";
+import { roundForDisplay } from "../shared/units.js";
 import { editor } from "./editor.js";
 import { pointing } from "../stage/public.js";
 import { whileEditing } from "./editing.js";
 import { MOVE, moving } from "./halo-math.js";
-import { perFocus } from "../per-focus.js";
+import { perFocus } from "../shared/per-focus.js";
 
 /** How close (port px) the pointer must be to a knob to grab it. */
 export const GRAB_PX = 12;

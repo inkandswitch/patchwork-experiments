@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { fakeUrl } from "../test/fake-repo.js";
-import { resolveParents } from "../hierarchy.js";
-import { resolveGroups } from "../groups.js";
+import { resolveParents } from "../shared/hierarchy.js";
+import { resolveGroups } from "../shared/groups.js";
 import { CONTROLS_TOOL, documentsFor, inspectorDocuments, ago, buildSummary } from "./inspector-model.js";
 
 // The inspector's documents (EDITOR.md, "The interface"): every related

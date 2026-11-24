@@ -4,7 +4,7 @@
 // camera, raycaster and meshes they're handed; nearestScreenVertex is pure.
 
 import { Matrix3, Matrix4, Plane, Vector2, Vector3 } from "three";
-import { buildBVH, wantsBVH } from "../pick-accel.js";
+import { buildBVH, wantsBVH } from "./pick-accel.js";
 
 const v3 = (a) => (Array.isArray(a) ? new Vector3(Number(a[0]) || 0, Number(a[1]) || 0, Number(a[2]) || 0) : new Vector3().copy(a));
 

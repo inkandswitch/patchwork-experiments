@@ -26,8 +26,8 @@
 // target isn't the canvas (labels, overlays, edges) is left to the DOM.
 
 import { offer } from "./chain.js";
-import { fromEmbed } from "../embed.js";
-import { isTyping, keyHolder, keyOfCode } from "../key-order.js";
+import { fromEmbed } from "../shared/embed.js";
+import { isTyping, keyHolder, keyOfCode } from "./key-order.js";
 import { KERNEL_KINDS } from "./bodies.js";
 import { escapeLayer } from "./ladder.js";
 import { lockedNow, pointerStep } from "./pointer.js";

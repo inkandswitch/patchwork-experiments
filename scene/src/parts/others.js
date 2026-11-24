@@ -10,7 +10,7 @@
 // This view's own selection is scene.select's box, drawn over any of these
 // on the same object.
 
-import { peerColor, peerSelections } from "../peers.js";
+import { peerColor, peerSelections } from "./peers.js";
 import { boxes } from "./boxes.js";
 
 const REMOTE = [0.6, 0.4, 0.9];

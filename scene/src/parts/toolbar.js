@@ -44,11 +44,11 @@
 
 import css from "./toolbar.css?inline";
 import { barEntries, cleanChoices, controlKey, controlKind, tooltip } from "./toolbar-commands.js";
-import { localChanged } from "../shallow.js";
+import { localChanged } from "../shared/shallow.js";
 import { hintFor, shortcutHintFor } from "./keymap.js";
 import { onMac } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
-import { ICONS } from "../icons.js";
+import { ICONS } from "../shared/icons.js";
 import { whileEditing } from "./editing.js";
 
 /** The editor's groups, in the order they sit (a command without a group is "other"). */

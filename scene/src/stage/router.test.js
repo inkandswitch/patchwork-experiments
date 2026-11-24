@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { buildEvent, createRouter, isMac, releaseKind, retype, withHolder } from "./router.js";
-import { isTyping } from "../key-order.js";
+import { isTyping } from "./key-order.js";
 
 // A port with a canvas in it, a key root around both, and a router whose
 // chain is whatever the test puts in `inputs` (in insertion order).

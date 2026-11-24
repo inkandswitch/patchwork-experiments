@@ -30,7 +30,7 @@
 
 import { editor } from "./editor.js";
 import { boxes } from "./boxes.js";
-import { perFocus } from "../per-focus.js";
+import { perFocus } from "../shared/per-focus.js";
 
 const ACCENT = [0.2, 0.9, 0.75];
 

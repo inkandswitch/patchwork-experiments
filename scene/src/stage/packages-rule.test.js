@@ -5,8 +5,8 @@
 // (real automerge merges).
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
-import { SceneDatatype } from "./datatype.js";
-import { answeringPlugins, changeList, unansweredNeeds, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, packagesToPrune, reconcileList, registeredPackages, scenePackage, suggestedImportToSet, triage, unionPackages } from "./packages.js";
+import { SceneDatatype } from "../shared/datatype.js";
+import { answeringPlugins, changeList, unansweredNeeds, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, packagesToPrune, reconcileList, registeredPackages, scenePackage, suggestedImportToSet, triage, unionPackages } from "./packages-rule.js";
 
 const A = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const B = "automerge:3aB6LbnDAzvNj9WDNDA4ew21R85G";

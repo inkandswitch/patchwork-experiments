@@ -6,8 +6,8 @@
 
 import { describe, it, expect } from "vitest";
 import { createCarry, flipMatrix, landedPose, layFlat, rotateAbout, yawOfMatrix } from "./carry-math.js";
-import { faceOf, intoFrame, intoSnap } from "../carry-rules.js";
-import { composeMatrix, decomposeMatrix } from "../transform.js";
+import { faceOf, intoFrame, intoSnap } from "../shared/carry-rules.js";
+import { composeMatrix, decomposeMatrix } from "../shared/transform.js";
 
 const H = Math.PI / 2;
 /** A rotation from its three body axes in world (columns). */

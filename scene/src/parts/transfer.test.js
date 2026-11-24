@@ -9,7 +9,7 @@ import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import transfer from "./transfer.js";
 import menuPart from "./menu.js";
-import { ROW_MIME, endDrag, hold, rowPayload, startDrag, summaryTypes } from "../transfer.js";
+import { ROW_MIME, endDrag, hold, rowPayload, startDrag, summaryTypes } from "./copy-rule.js";
 import { editor } from "./editor.js";
 
 // what a ship's extension says about its traits: a ship's motion is runtime. (`needs` is

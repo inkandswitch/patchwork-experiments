@@ -65,17 +65,17 @@
 // the pin held that doc (`at: { heads: deps[url], deps }`, as a link's own
 // `at` says), and each render doc copied is read as the pin holds it.
 
-import { SceneDatatype, newRenderDoc, seededRenderDoc } from "./datatype.js";
-import { isGroup, resolveGroups } from "./groups.js";
-import { resolveParents, worldMatrix } from "./hierarchy.js";
-import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "./transform.js";
+import { SceneDatatype, newRenderDoc, seededRenderDoc } from "../shared/datatype.js";
+import { isGroup, resolveGroups } from "../shared/groups.js";
+import { resolveParents, worldMatrix } from "../shared/hierarchy.js";
+import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../shared/transform.js";
 import { detachAnchor, resolveAnchor } from "./anchors.js";
-import { newObjectRecord, orderedIds } from "./ops.js";
-import { listedPackages, packagesToList, packageUrl } from "./stage/public.js";
-import { pinnedRepo } from "./versions.js";
-import { LINK, atOf, isLink } from "./native/link-graph.js";
-import { editor } from "./parts/editor.js";
-import { applyRefEdits, assetsFor, cleanObject, cleanTraits, copyRefs, describesOf, entryIn, entryText, lostText, refEdits, refsOf, renderSeed, runtimeOf, subtreeOf } from "./transfer.js";
+import { newObjectRecord, orderedIds } from "../shared/ops.js";
+import { listedPackages, packagesToList, packageUrl } from "../stage/public.js";
+import { pinnedRepo } from "../shared/versions.js";
+import { LINK, atOf, isLink } from "../native/link-graph.js";
+import { editor } from "./editor.js";
+import { applyRefEdits, assetsFor, cleanObject, cleanTraits, copyRefs, describesOf, entryIn, entryText, lostText, refEdits, refsOf, renderSeed, runtimeOf, subtreeOf } from "./copy-rule.js";
 
 const plain = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const isMap = (v) => !!v && typeof v === "object" && !Array.isArray(v);

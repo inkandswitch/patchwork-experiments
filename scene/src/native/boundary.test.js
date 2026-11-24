@@ -1,8 +1,8 @@
 // The scene package's layers and the kernel's boundary (STAGE.md, "Words":
 // Layer). Checks on the source and the docs, not on behaviour:
-//   - every module sits in exactly one layer (LAYERS: a folder's, or a root
-//     module's by name: the one layer that uses it, or shared when several
-//     do) and imports only from its own layer or one below;
+//   - every module sits in exactly one layer, its directory's (LAYERS; at
+//     src/'s root, only the entry and the kit files), and imports only from
+//     its own layer or one below;
 //   - every relative import resolves to a file, and every import() names one;
 //   - the native services and the editor import from the kernel only its face
 //     (stage/public.js), which only re-exports kernel helpers, each used above
@@ -24,24 +24,20 @@ const ROOT = resolve(SRC, "..");
 const ORDER = ["shared", "kernel", "native", "editor", "entry"];
 
 /**
- * Every module's layer: its folder's, else (a module at src/'s root) by name.
- * A root module is in the one layer that uses it, or shared when several
- * layers (or a shared module) use it: checked below.
- *   shared  formats, math and plain data; they know no layer
- *   kernel  src/stage/, src/content/ and the modules they are built from: its
- *           rules and machinery, and how an object's content is drawn
+ * Every module's layer: its directory's. At src/'s root are only the entry
+ * and the kit files (copied whole into other packages, which find their
+ * canonical copy there: scripts/check-kit.mjs), each named.
+ *   shared  src/shared/: formats, math and plain data; they know no layer
+ *   kernel  src/stage/, src/content/: its rules and machinery, and how an
+ *           object's content is drawn
  *   native  the package's own plugins below the editor: the native services
- *           (NATIVE.md) and the sources (src/sources/)
+ *           (NATIVE.md) and the sources
  *   editor  the editor's parts (EDITOR.md) and what only they use
  *   entry   what registers the plugins (index.js), and the package's other tool
  */
 const LAYERS = {
-  folders: { stage: "kernel", content: "kernel", native: "native", sources: "native", parts: "editor" },
-  shared: ["carry-rules", "connectors", "datatype", "dnd", "embed", "file-content", "glb", "groups", "hierarchy", "icons", "layers", "ops", "param-form", "params", "per-focus", "shallow", "transform", "tree-drop", "units", "versions"],
-  kernel: ["gltf-content", "key-order", "packages", "pick-accel", "render-read", "selection", "theme"],
-  native: ["stl"],
-  editor: ["anchors", "extract", "handles", "hold-key", "legend", "peers", "surface", "touch-keys", "transfer", "undo"],
-  entry: ["controls-tool", "index"],
+  directories: { shared: "shared", stage: "kernel", content: "kernel", native: "native", sources: "native", parts: "editor" },
+  root: { "glb.js": "shared", "layers.js": "shared", "render-read.js": "shared", "index.js": "entry", "controls-tool.js": "entry" },
 };
 
 /** The kernel's face: the one kernel module the layers above it may import. */
@@ -136,9 +132,7 @@ const modules = walk(SRC)
 /** A module's layer (undefined: none). */
 function layerOf(m) {
   const [top, ...rest] = m.split("/");
-  if (rest.length) return LAYERS.folders[top];
-  const name = top.replace(/\.js$/, "");
-  return ORDER.find((l) => LAYERS[l]?.includes(name));
+  return rest.length ? LAYERS.directories[top] : LAYERS.root[top];
 }
 const rank = (m) => ORDER.indexOf(layerOf(m));
 /** Every relative import of every module: `{ from, spec, to, names, expr? }`, `to` a path under src/, or null: no file (or `expr`, no literal). */
@@ -153,23 +147,10 @@ const edges = imports.filter(({ to }) => to?.endsWith(".js"));
 const aboveKernel = (m) => rank(m) > ORDER.indexOf("kernel") && layerOf(m) !== "entry";
 
 describe("the layers and the kernel's boundary", () => {
-  it("every module is in exactly one layer, and every root module the table names exists", () => {
+  it("every module is in its directory's layer; at the root, only the named entry and kit files, and each is there", () => {
     expect(modules.length).toBeGreaterThan(100);
     expect(modules.filter((m) => !layerOf(m))).toEqual([]);
-    const named = ORDER.flatMap((l) => LAYERS[l] ?? []);
-    expect(named.length).toBe(new Set(named).size);
-    const roots = new Set(modules.filter((m) => !m.includes("/")).map((m) => m.replace(/\.js$/, "")));
-    expect(named.filter((n) => !roots.has(n))).toEqual([]);
-  });
-
-  it("a root module is in the one layer that uses it, or shared when several layers (or a shared module) use it", () => {
-    const wrong = [];
-    for (const m of modules.filter((x) => !x.includes("/") && layerOf(x) !== "entry")) {
-      const users = new Set(edges.filter(({ to }) => to === m).map(({ from }) => layerOf(from)));
-      const ok = layerOf(m) === "shared" ? users.size > 1 || users.has("shared") : [...users].every((l) => l === layerOf(m));
-      if (!ok) wrong.push(`${m} (${layerOf(m)}) is used by ${[...users].join(", ") || "nothing"}`);
-    }
-    expect(wrong).toEqual([]);
+    expect(Object.keys(LAYERS.root).filter((m) => !modules.includes(m))).toEqual([]);
   });
 
   it("every relative import resolves to a file, and every import() names its module by a string literal", () => {

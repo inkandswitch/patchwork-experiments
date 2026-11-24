@@ -19,10 +19,10 @@
 
 import css from "./measure.css?inline";
 import { resolveCssColor } from "../stage/public.js";
-import { distance, makeAnchor } from "../anchors.js";
-import { applyMatrix } from "../transform.js";
-import { formatLength } from "../units.js";
-import { perFocus } from "../per-focus.js";
+import { distance, makeAnchor } from "./anchors.js";
+import { applyMatrix } from "../shared/transform.js";
+import { formatLength } from "../shared/units.js";
+import { perFocus } from "../shared/per-focus.js";
 import { placeBetween } from "./segment-label.js";
 
 /** The extension that owns doc.dimensions (and saves what's measured). */

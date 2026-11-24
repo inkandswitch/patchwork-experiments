@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { isBinarySTL, parseSTL, toYUpMeters } from "./stl.js";
-import { stlToGLB } from "./sources/file-stl.js";
-import fileStl from "./sources/file-stl.js";
+import { stlToGLB } from "../sources/file-stl.js";
+import fileStl from "../sources/file-stl.js";
 
 const ascii = `solid cube-ish
   facet normal 0 0 0

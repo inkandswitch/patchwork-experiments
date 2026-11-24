@@ -8,7 +8,7 @@
 // package's module makes (a dropped doc laid out, a part, a template) is one
 // step too: ./making.js.
 
-import { EMPTY, createEdits } from "../undo.js";
+import { EMPTY, createEdits } from "./undo-log.js";
 
 /** An object's render doc as the recorder writes one: change(fn) → its patches. */
 const writer = (h) => ({

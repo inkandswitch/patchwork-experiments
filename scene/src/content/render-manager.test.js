@@ -6,10 +6,10 @@ import { FakeRepo, flush } from "../test/fake-repo.js";
 import { CLAIM_MSG, createRenderManager as create, RETRY_BACKOFF_MS } from "./render-manager.js";
 import { LAPSE_MS, LISTEN_MS } from "./lock.js";
 import { manualTime } from "../stage/time.js";
-import { newRenderDoc } from "../datatype.js";
+import { newRenderDoc } from "../shared/datatype.js";
 import { encodeGLB } from "../glb.js";
 import { runBuild } from "./build.js";
-import { pinnedRepo } from "../versions.js";
+import { pinnedRepo } from "../shared/versions.js";
 
 /** The stage's time, stepped by the test: advance(ms) moves it at least a frame. */
 function fakeTimers() {

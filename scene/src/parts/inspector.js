@@ -60,24 +60,24 @@
 // with no row marked), and a selection of one opens nothing.
 
 import css from "./inspector.css?inline";
-import { isGroup } from "../groups.js";
-import { fromUnits, roundForDisplay, toUnits } from "../units.js";
-import { normalizeTransform } from "../transform.js";
-import { documentBox, documentView } from "../embed.js";
-import { DND_MIME, SECTION_MIME, URLS_MIME, docKey } from "../dnd.js";
-import { createParamForm } from "../param-form.js";
-import { REBUILD_EVENT } from "../embed.js";
+import { isGroup } from "../shared/groups.js";
+import { fromUnits, roundForDisplay, toUnits } from "../shared/units.js";
+import { normalizeTransform } from "../shared/transform.js";
+import { documentBox, documentView } from "../shared/embed.js";
+import { DND_MIME, SECTION_MIME, URLS_MIME, docKey } from "../shared/dnd.js";
+import { createParamForm } from "../shared/param-form.js";
+import { REBUILD_EVENT } from "../shared/embed.js";
 import { providerOf } from "./handles.js";
 import { openFor, runOpen } from "./open.js";
 import { drawerTab } from "./tab.js";
 import { LOOK } from "../stage/public.js";
-import { atKey, normalizeAt } from "../versions.js";
+import { atKey, normalizeAt } from "../shared/versions.js";
 import { whileEditing } from "./editing.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, attachOptions, buildSummary, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { editor } from "./editor.js";
 import { createOutline } from "./outline.js";
-import { atFocus, focusReader } from "../per-focus.js";
+import { atFocus, focusReader } from "../shared/per-focus.js";
 import { layerChoices, layerStates } from "../layers.js";
 
 const ID = "scene.inspector";

@@ -5,8 +5,8 @@
 // frame facing straight up (no yaw), a yaw, and a bare point.
 import { describe, it, expect } from "vitest";
 import { landings } from "./landing.js";
-import { sanitizeConnectors } from "../connectors.js";
-import { composeMatrix } from "../transform.js";
+import { sanitizeConnectors } from "../shared/connectors.js";
+import { composeMatrix } from "../shared/transform.js";
 
 const H = Math.PI / 2;
 const RACK = composeMatrix({ position: [1, 0, 2], rotation: [0, 0.5, 0] });

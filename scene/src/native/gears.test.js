@@ -15,8 +15,8 @@
 
 import { describe, expect, it } from "vitest";
 import { activeSet } from "../stage/activation.js";
-import { resolveParents } from "../hierarchy.js";
-import { groupChain, resolveGroups } from "../groups.js";
+import { resolveParents } from "../shared/hierarchy.js";
+import { groupChain, resolveGroups } from "../shared/groups.js";
 import { commandState } from "../stage/commands.js";
 import { buildGears, gearsOfExtension, gearsOfObject } from "./gears.js";
 
