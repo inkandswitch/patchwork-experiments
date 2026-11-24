@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi } from "vitest";
 import { Box3, Matrix4, PerspectiveCamera, Vector3 } from "three";
 import { createCamera, reseatTarget } from "./camera.js";

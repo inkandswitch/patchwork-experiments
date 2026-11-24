@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Look and the hands (./bodies.js, STAGE.md, "Bodies", "Hands"): the body
 // stack and whether a hand of a kind is held, as a model and as the stage
 // keeps them, over every sequence of entering, leaving, picking up and

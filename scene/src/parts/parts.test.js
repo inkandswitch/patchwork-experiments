@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // scene.parts, the parts bin: lists the registered scene:parts by category
 // (no panel without any), searches them, and puts one in by a click (where
 // the view is looking) or a drop (where it lands: on an object, under it;

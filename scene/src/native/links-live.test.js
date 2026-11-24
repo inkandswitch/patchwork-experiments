@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Links, open and live (STAGE.md build step 12): a live link's doc
 // gets a stage of its own in the view, which runs that doc's extensions in
 // its own frame, on its own channel. Checked here without WebGL: the frame

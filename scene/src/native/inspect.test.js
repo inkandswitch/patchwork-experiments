@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The natives' `inspect()` (CONVENTIONS.md, "Inspect"): each a frozen
 // plain-JSON snapshot of what it holds, read with collect("inspect"). On one
 // stage: a claim, a pose hold, a process, an audience policy and a link.

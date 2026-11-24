@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Edit in context (STAGE.md build step 14): Enter moves the focus into
 // a link whose doc acts, Leave moves it out, and H10 holds across docs: a
 // selection is always an element of the focus stage. Checked in a real view

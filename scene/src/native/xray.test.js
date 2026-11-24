@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // scene.xray (xray.js): the X-ray as a held tool on a stage. X picks it up
 // (in any body, editing or not) and docks its legend; it is an ordinary tool
 // on the hand stack that passes every event, so the chain and the hands

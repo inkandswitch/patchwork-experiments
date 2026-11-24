@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Claims (scene.claims; NATIVE.md, "Native services"): doc fields naming who holds what, counted only
 // while their holder's session is in presence, settled by Automerge when two
 // views take one at once. Mounted with the stage harness, two views at a time:

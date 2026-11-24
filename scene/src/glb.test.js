@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { encodeGLB, parseGLB, computeNormals, computeBounds, hexToLinear, MODE } from "./glb.js";

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The stage and a scene's packages (STAGE.md, "Packages"), mounted with the
 // fakes: the list kept true to what the doc calls for (reconcile), and the
 // listed packages this viewer doesn't have offered once, loaded on a yes or

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Documents docked in the drawer are the view's (EDITOR.md, "The interface", "Documents in
 // the drawer"; the drawer's dockDocument): a finite table of what happens around
 // one, each with the pane still docked and its view never remounted, but the

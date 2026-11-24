@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The stage, mounted (no WebGL): extensions registered as plugins, started by
 // trait (`"*"`: every doc), in running order, as the doc calls
 // for them; the api they get; presence between two mounted stages; prefs

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Pins, and a live doc linked twice (STAGE.md, "Views, stages and links", build step 13):
 // every occurrence of a linked doc that isn't closed is opened. A live doc
 // acts at one occurrence (the first in path order); every other live

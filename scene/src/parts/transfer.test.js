@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // scene.transfer: a row from another scene dropped in the view is copied in
 // where it lands (with what's under it, its files shared, its render docs its
 // own, its runtime state left behind, no scene trait added for it);

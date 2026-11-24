@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The drawer's grip in a mounted stage (native/drawer.js, EDITOR.md, "The interface"): its widths
 // are this viewer's prefs, kept per scene, and its presses and keys are the
 // drawer's own (I5): in each base body, with something selected, a drag, a

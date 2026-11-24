@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { CLOUDS, LIGHTS, cleanAtmosphere, clearColourOf, cloudAt, lighting } from "./atmosphere.js";
 

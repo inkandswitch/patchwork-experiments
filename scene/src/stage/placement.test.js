@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // I4, placement independence (STAGE.md, "Views, stages and links", Invariants): a stage's
 // snapshot, running set, audience, shown and display are functions of its doc
 // and the registry, never of its host, the focus, the viewer's body or held

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // I8, the chain across links (STAGE.md, "The input chain", Invariants): for a hit
 // anywhere in a composition three docs deep, the chain is each acting stage
 // on the hit's path, innermost first, out to the outermost, each its own

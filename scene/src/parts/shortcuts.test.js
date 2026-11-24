@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Shortcuts (./shortcuts.js; PLANS.md §5): a command's ⌘ key, matched on a Mac
 // and off one, labelled for each, and run by scene.keys on attention's target;
 // one another part does (the clipboard's) is only shown.
