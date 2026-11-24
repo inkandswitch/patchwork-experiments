@@ -1,15 +1,10 @@
 /**
- * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.  [kit: glb.js v3]
+ * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.  [kit: glb.js v4]
  *
  * COPY THIS FILE into your package; do not import it across packages. It has no
  * imports and no DOM use, so it runs anywhere (main thread, worker, node).
  * The canonical copy is patchwork-experiments/scene/src/glb.js; copy it whole,
  * never edit a copy (`node scripts/check-kit.mjs` fails on a copy that differs).
- *
- * v2 (from flow-field's fork): per-vertex `colors` (COLOR_0), `unlit`
- * (KHR_materials_unlit), `blend` (alphaMode BLEND), and `asset.extras.units`,
- * so a consumer reading the GLB outside a scene knows it is in metres.
- * v3 (from terrain's fork): `copyright` (asset.copyright), written only when given.
  *
  * ─── API ──────────────────────────────────────────────────────────────────────
  *
