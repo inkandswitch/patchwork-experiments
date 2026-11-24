@@ -14,7 +14,8 @@
 //   ground becomes a die too; a percentile pair lands as two dice in a group;
 //   R over a die rolls it (the halo has no keys: STAGE.md, "The input chain");
 // - the die's own panel: selecting the d20 (its inspector tab comes in
-//   behind the bin), the context menu's "Edit die" docks its 2D tool in the
+//   behind the bin), its Open, "Edit die" (the menu's after Select, and the
+//   inspector header's, which the probe presses), docks its 2D tool in the
 //   stage's drawer; naming a face there rebuilds the die, and both views'
 //   built content says the new name;
 // - rolling, in the same view (there is no Play to switch to): R over the
@@ -149,8 +150,11 @@ try {
   await settled();
 
   // ── the parts bin: a drawer tab, opened from the toolbar ──
+  const full = (await P("canvas('a')")).w;
   await click(await P(`rect('.stage-panel-rail [data-command="parts"]')`));
   check("A opens Parts from the toolbar", await until("count('.stage-drawer [data-panel=\"parts\"]') === 1", 4000), await P("count('.stage-drawer')"));
+  // (the canvas narrows for the drawer as the browser lays it out: a spot on the table is aimed at once it has)
+  await until(`canvas('a').w < ${full - 150}`, 4000);
   await settled();
   const bin = await P("binParts('a')");
   check("the bin offers the Dice parts, then a cup and a pool", J(bin) === J(["dice.die", "dice.d4", "dice.d8", "dice.d10", "dice.percentile", "dice.d12", "dice.d20", "dice.coin", "dice.plus-minus", "dice.doubling", "dice.cup", "dice.pool"]), bin);
@@ -234,14 +238,17 @@ try {
     const at = await P(`aimAt(${J(d20)}, 'a')`);
     await b.click(at.x, at.y);
     check("clicking the d20 selects it, and its inspector tab opens", await until(`selected('a') === ${J(d20)} && __p.count('.stage-drawer [data-panel="inspector"]') === 1`, 3000), await P("selected('a')"));
-    // the die's verbs are the context menu's (the inspector holds fields, and its header Open is for a command that is `open`)
+    // Edit die is the die's Open (scene EDITOR.md, "A command"): the menu's, after Select, and the inspector header's
     const at2 = await P(`aimAt(${J(d20)}, 'a')`); // (the drawer opened, so the canvas is narrower)
     await b.click(at2.x, at2.y, { button: "right" });
     await b.rest(250);
-    const items = await js(`[...document.querySelectorAll(".context-menu .menu-item")].map((e) => { const r = e.getBoundingClientRect(); return { text: (e.querySelector(".menu-label") ?? e).textContent.trim(), x: r.x + r.width / 2, y: r.y + r.height / 2 }; })`);
-    const editDie = items.find((i) => i.text === "Edit die");
-    check("the die's menu offers Edit die", !!editDie, items.map((i) => i.text));
-    if (editDie) await b.click(editDie.x, editDie.y);
+    const items = await js(`[...document.querySelectorAll(".context-menu .menu-item")].map((e) => (e.querySelector(".menu-label") ?? e).textContent.trim())`);
+    check("the die's menu offers Edit die, its Open, right after Select", items[0] === "Select" && items[1] === "Edit die", items);
+    await b.key("Escape");
+    check("Escape shuts the menu, and the d20 stays selected", await until(`count('.context-menu') === 0 && __p.selected('a') === ${J(d20)}`, 2000), { menu: await P("count('.context-menu')"), selected: await P("selected('a')") });
+    const open = '.stage-drawer [data-panel="inspector"] button.open-thing[data-command="open"]:not([hidden])';
+    check("the inspector's header offers it as the d20's Open", await until(`text(${J(open)}) === "Edit die"`, 3000), await P(`text(${J(open)})`));
+    await click(await P(`rect(${J(open)})`));
     const shownTab = ".stage-drawer-tab[aria-selected=\"true\"] .stage-drawer-tab-name";
     check("it docks the die's 2D tool in the drawer under the die's name, shown: twenty faces, in A's view only", await until("count('.stage-drawer .dice-panel .die-tool .die-face') === 20", 6000) && (await P(`text(${J(shownTab)})`)) === "d20" && (await P("count('.stage-drawer', 'b')")) === 0, { a: await P("count('.stage-drawer .dice-panel .die-tool .die-face')"), tab: await P(`text(${J(shownTab)})`), b: await P("count('.stage-drawer', 'b')"), panels: await P("count('.dice-panel')"), tabs: await js(`[...document.querySelectorAll("#a .stage-drawer-tab-name")].map((e) => e.textContent)`), notices: await P("notices('a')"), menu: await js(`!!document.querySelector(".context-menu")`) });
     await b.rest(300);
