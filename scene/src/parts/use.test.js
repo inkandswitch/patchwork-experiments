@@ -240,7 +240,7 @@ describe("scene.use", () => {
     sessions = [];
     walker = { key: vi.fn((ev) => ev.key === "w") };
     eye = [0, 1.6, 4];
-    s = await mountStage({ extensions: [GAME(), USE, KEYS], doc: DOC });
+    s = await mountStage({ editor: true, natives: true,  extensions: [GAME(), USE, KEYS], doc: DOC });
     await settle();
   }
   const hover = async (id) => {
@@ -610,7 +610,7 @@ describe("scene.use: a button with a key is that key", () => {
     log = [];
     sessions = [];
     walker = { key: vi.fn(() => true), keyup: vi.fn(() => true) };
-    s = await mountStage({ extensions: [VERBS, USE, KEYS], doc: DOC5 });
+    s = await mountStage({ editor: true, natives: true,  extensions: [VERBS, USE, KEYS], doc: DOC5 });
     await settle();
     if (input === "mouse") s.local.swap((m) => ({ ...m, hovered: target }));
     else {
@@ -735,7 +735,7 @@ describe("scene.use: a button with a key is that key", () => {
   it("in Look, a finger's tap on a thing shows its verbs where it tapped; they stay when the finger lifts, and a tap on one is its key", async () => {
     log = [];
     sessions = [];
-    s = await mountStage({ extensions: [VERBS, USE, KEYS], doc: DOC5 });
+    s = await mountStage({ editor: true, natives: true,  extensions: [VERBS, USE, KEYS], doc: DOC5 });
     await settle();
     s.api("t.verbs").body.enter("look");
     await settle();
@@ -879,7 +879,7 @@ describe("held verbs across links", () => {
     sessions = [];
     repo = new FakeRepo();
     gameDoc = repo.add(emptyScene({ ...DOC, title: "G" }));
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       repo,
       extensions: [{ meta: { id: "t.game", traits: ["t.level"] }, module: game(log, sessions) }, USE, KEYS],
       doc: { objects: { deck: object({ name: "Deck" }), L: object({ name: "Ship", sourceUrl: gameDoc.url, providerId: LINK, renderUrl: null, parent: "deck" }) }, order: ["deck", "L"] },

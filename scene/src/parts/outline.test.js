@@ -43,7 +43,7 @@ let s = null;
 async function mount(doc, { extra = [], repo } = {}) {
   // the tree is the top of the inspector's pane: these tests have it open, as the toolbar's Inspector does
   const exts = [{ meta: { id: "scene.inspector" }, module: inspector }, openTabs(["scene.inspector:inspector"]), ...extra];
-  s = await mountStage({
+  s = await mountStage({ editor: true, natives: true, 
     repo,
     extensions: exts,
     doc,
@@ -85,7 +85,7 @@ describe("the inspector's tree", () => {
     // a second mount (same viewer, same scene) remembers
     const { repo, handle } = s;
     s.unmount();
-    s = await mountStage({ repo, handle });
+    s = await mountStage({ editor: true, natives: true,  repo, handle });
     // (handle given: the registry is the same as before)
     await pass();
     expect(rows()).toEqual(["vessel", "battery"]);

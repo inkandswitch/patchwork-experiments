@@ -54,7 +54,7 @@ beforeAll(() => {
 });
 
 async function mount({ objects, extensions = [], doc = {}, repo } = {}) {
-  s = await mountStage({
+  s = await mountStage({ editor: true, natives: true, 
     repo,
     extensions: [INSPECTOR, OPENED, ...extensions],
     doc: { objects, order: Object.keys(objects), ...doc },
@@ -601,7 +601,7 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
     const select = (await import("./select.js")).default;
     const flushes = []; // [selected, row marked, fields shown], read after the inspector's update in each flush
     const check = { create: () => ({ update: (_scene, _local, _prev, view) => void (s && tab().isOpen() && flushes.push([view.selected ?? null, marked(), shown()])) }) };
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [INSPECTOR, { meta: { id: "scene.select" }, module: select }, { meta: { id: "t.check", type: "scene:view" }, module: check }],
       doc: { objects: { g: group("G"), a: object({ name: "A", group: "g" }), b: object({ name: "B" }) }, order: ["g", "a", "b"] },
     });
@@ -634,7 +634,7 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
   });
 
   it("the tree comes with the pane: mounted on its first open, the same tree after a × and a reopen, none before", async () => {
-    s = await mountStage({ extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+    s = await mountStage({ editor: true, natives: true,  extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     await settle();
     expect(tab().isOpen()).toBe(false);
     expect(s.root.querySelectorAll(".scene-outline").length).toBe(0);
@@ -683,7 +683,7 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
       calls.push([this.dataset?.id ?? null, this.isConnected]);
     };
     try {
-      s = await mountStage({ extensions: [INSPECTOR], doc: { objects: { g: group("G"), a: object({ name: "A" }), x: object({ name: "X", group: "g" }) }, order: ["a", "g", "x"] } });
+      s = await mountStage({ editor: true, natives: true,  extensions: [INSPECTOR], doc: { objects: { g: group("G"), a: object({ name: "A" }), x: object({ name: "X", group: "g" }) }, order: ["a", "g", "x"] } });
       await settle();
       toolbarOn();
       await settle();
@@ -715,7 +715,7 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
     ["×", () => s.root.querySelector(".stage-drawer-tab-close").click(), toolbarOn],
     ["putting the editor down", () => s.edit(false), () => (s.edit(true), toolbarOn())],
   ])("shut by %s, the tree isn't drawn; opened again, it shows the scene as it is", async (_name, shut, reopen) => {
-    s = await mountStage({ extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+    s = await mountStage({ editor: true, natives: true,  extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     await settle();
     toolbarOn();
     await settle();
@@ -750,7 +750,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
   };
   async function bare(objects, extensions = []) {
     time = manualTime();
-    s = await mountStage({ time, extensions: [INSPECTOR, ...extensions], doc: { objects, order: Object.keys(objects) } });
+    s = await mountStage({ editor: true, natives: true,  time, extensions: [INSPECTOR, ...extensions], doc: { objects, order: Object.keys(objects) } });
     await still();
   }
   /** Select, and let the stage flush: no stage time passes. */
@@ -796,7 +796,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     const repo = new FakeRepo();
     const inner = repo.add(emptyScene({ title: "B", objects: { a: object({ name: "A in B" }), b: object({ name: "B in B" }) }, order: ["a", "b"] }));
     const L = object({ name: "B", sourceUrl: inner.url, providerId: LINK, renderUrl: null });
-    s = await mountStage({ repo, time, extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }), L }, order: ["a", "b", "L"] } });
+    s = await mountStage({ editor: true, natives: true,  repo, time, extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }), L }, order: ["a", "b", "L"] } });
     const view = s.debug.view;
     await time.until(() => view.stageAt(["L"]), { what: "L to open" });
     // open: the inspector's pane is docked in the view's drawer, whichever stage the focus (and so the inspector) is in

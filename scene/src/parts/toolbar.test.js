@@ -69,7 +69,7 @@ describe("scene.toolbar", () => {
   beforeEach(async () => {
     localStorage.clear();
     log = [];
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [
         { meta: { id: "scene.toolbar" }, module: toolbar },
         { meta: { id: "t.tools" }, module: fakeTools(log) },
@@ -236,7 +236,7 @@ describe("the bar of tools in every body", () => {
   beforeEach(async () => {
     localStorage.clear();
     log = [];
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [
         { meta: { id: "scene.toolbar" }, module: toolbar },
         { meta: { id: "t.game" }, module: fakeGame(log) },
@@ -290,7 +290,7 @@ describe("scene.toolbar: groups, icons, settings", () => {
   const runs = () => [...s.root.querySelectorAll(".toolbar .bar-group:not([hidden])")].map((g) => [g.dataset.group, ...[...g.querySelectorAll("[data-command]")].map((e) => e.dataset.command)]);
 
   it("each command in its group, the groups in order (panels on the drawer's rail); icons named by their label; settings in the gear's popover", async () => {
-    s = await mountStage({ extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, GROUPED], doc: { objects: {}, order: [] } });
+    s = await mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, GROUPED], doc: { objects: {}, order: [] } });
     await s.settle();
     // (within a group: running order, then the order commands are declared in)
     expect(runs()).toEqual([["history", "redo", "undo"], ["tools", "select-tool"], ["other", "wave"], ["view", "bounds"], ["settings", "units"]]);
@@ -313,7 +313,7 @@ describe("scene.toolbar: groups, icons, settings", () => {
 
   it("Select is checked exactly while no editor's tool is held, and picking it puts Move down", async () => {
     const halo = (await import("./halo.js")).default;
-    s = await mountStage({ extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, { meta: { id: "scene.halo" }, module: halo }, posesBy({ hold: () => true, release: () => {}, heldBy: () => null })], doc: { objects: {}, order: [] } });
+    s = await mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, { meta: { id: "scene.halo" }, module: halo }, posesBy({ hold: () => true, release: () => {}, heldBy: () => null })], doc: { objects: {}, order: [] } });
     await s.settle();
     const pressed = (id) => s.root.querySelector(`.toolbar [data-command="${id}"]`).getAttribute("aria-pressed");
     expect([pressed("select-tool"), pressed("move")]).toEqual(["true", "false"]);

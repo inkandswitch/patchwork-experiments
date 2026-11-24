@@ -40,7 +40,7 @@ afterEach(() => {
 const toggle = () => s.instance("scene.parts").commands.find((c) => c.id === "parts").state(null, {});
 
 async function mount(list, doc = {}) {
-  s = await mountStage({ extensions: EXTS, parts: list, doc });
+  s = await mountStage({ editor: true, natives: true,  extensions: EXTS, parts: list, doc });
   await settle();
   // the viewer opens the Parts tab, when there are any
   if (toggle()) s.api("scene.parts").run({ ext: "scene.parts", command: "parts", value: true });

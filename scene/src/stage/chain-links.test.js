@@ -15,10 +15,10 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { NATIVES, mountStage, object, until } from "../test/stage-harness.js";
+import { mountStage, object, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
+import { LINK, linkOpener } from "../test/links.js";
 import { keyOf, parseKey } from "./paths.js";
 
 const holder = (id, traits) => ({ meta: { id, traits }, module: { create: () => ({ input: { press: () => null } }) } });
@@ -34,6 +34,7 @@ const EXTENSIONS = [
   // view plugins: the view's, seated at the focus stage
   { meta: { id: "t.view-1", type: "scene:view" }, module: { create: () => ({ input: { press: () => null } }) } },
   { meta: { id: "t.view-2", type: "scene:view" }, module: { create: () => ({ input: { press: () => null } }) } },
+  linkOpener(),
 ];
 const link = (url, extra = {}) => object({ name: "Link", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 const thing = (trait, extra = {}) => object({ name: trait, ...(trait ? { traits: { [trait]: {} } } : {}), ...extra });
@@ -70,10 +71,10 @@ describe("the chain across links (I8)", () => {
     let checked = 0;
     for (const focus of foci) {
       expect(view.focusOn(focus)).toBe(true);
-      // (the view plugins, in the focus stage's keys; the editor's hand, scene.edit, is one)
+      // (the view plugins, in the focus stage's keys)
       const f = view.focusStage();
       const generals = view.plugins.running().map((p) => keyOf(f.n, p.id));
-      expect(generals.filter((k) => !NATIVES.includes(parseKey(k).id))).toEqual(["t.view-1", "t.view-2", "scene.edit"].map((ext) => keyOf(f.n, ext)));
+      expect(generals).toEqual(["t.view-1", "t.view-2", "t.links"].map((ext) => keyOf(f.n, ext)));
       for (const hitKey of hits)
         for (const widget of [null, WIDGET]) {
           const { order } = view.chainFor({ hit: hitKey == null ? null : { id: hitKey, point: [0, 0, 0], distance: 1 }, widget });
@@ -103,7 +104,7 @@ describe("the chain across links (I8)", () => {
           // within a stage: its holders nearest first, then its root's
           if (!widget && hitStage === stageAtPath(["A", "B"]) && parseKey(hitKey).id === "card") {
             const n = hitStage.n;
-            const own = segs.filter((k) => parseKey(k).n === n).map((k) => parseKey(k).id).filter((id) => !NATIVES.includes(id));
+            const own = segs.filter((k) => parseKey(k).n === n).map((k) => parseKey(k).id);
             expect(own, where).toEqual(["t.card", "t.box", "t.root-g"]);
           }
           checked++;
@@ -131,7 +132,7 @@ describe("the camera across links (I8)", () => {
     const X = repo.add(emptyScene({ title: "X", objects: { table: thing("t.table"), B: link(G.url, { parent: "table" }) }, order: ["table", "B"] }));
     s = await mountStage({
       repo,
-      extensions: [rider("t.deck", ["t.deck"], "b-y", "deck"), rider("t.table", ["t.table"], "b-x", "table"), rider("t.card", ["t.card"], "b-g", "card")],
+      extensions: [rider("t.deck", ["t.deck"], "b-y", "deck"), rider("t.table", ["t.table"], "b-x", "table"), rider("t.card", ["t.card"], "b-g", "card"), linkOpener()],
       doc: { objects: { deck: thing("t.deck"), A: link(X.url, { parent: "deck" }), S: link(H.url) }, order: ["deck", "A", "S"] },
     });
     const view = s.debug.view;

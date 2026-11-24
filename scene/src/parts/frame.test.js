@@ -13,7 +13,7 @@ const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kin
  * own need WebGL). `world.box` is the scene's box; `world.loaded` the ids whose content is in.
  */
 async function mount(doc = {}) {
-  const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }], doc });
+  const s = await mountStage({ editor: true,  extensions: [{ meta: { id: "scene.frame" }, module: frame }], doc });
   const api = s.facet("scene.frame");
   const world = { box: null, loaded: new Set(), boxes: {} };
   const camera = fakeCamera();
@@ -47,7 +47,7 @@ describe("scene.frame: commands", () => {
   });
 
   it("Set home view writes this camera to doc.view.start.home, as an edit; disabled without a camera", async () => {
-    const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }] });
+    const s = await mountStage({ editor: true,  extensions: [{ meta: { id: "scene.frame" }, module: frame }] });
     const c = s.instance("scene.frame").commands.find((k) => k.id === "set-home");
     // no WebGL, so no camera yet
     expect(c.state(null, {}).disabled).toBe(true);

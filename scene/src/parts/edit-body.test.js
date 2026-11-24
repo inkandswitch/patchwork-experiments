@@ -86,7 +86,7 @@ async function mount({ writable }) {
   const repo = new FakeRepo();
   const render = repo.add({ params: { height: 0.2 } });
   time = manualTime();
-  s = await mountStage({
+  s = await mountStage({ editor: true, natives: true, 
     repo,
     time,
     extensions: [...PARTS, BODIES],
@@ -246,7 +246,7 @@ describe("the editor is the Edit hand", () => {
 
   it("arriving, the outermost doc's view.start.edit (exactly true) picks the editor up, and nothing else does: no body is named \"edit\"", async () => {
     for (const [start, want] of [[{ edit: true }, true], [{}, false], [{ body: "edit" }, false], [{ edit: "yes" }, false]]) {
-      s = await mountStage({ doc: { view: { start } }, natives: false });
+      s = await mountStage({ editor: true, natives: true,  doc: { view: { start } }, natives: false });
       expect([start, editing(s.local.get()), s.local.get().body.id]).toEqual([start, want, "look"]);
       s.unmount();
       s = null;

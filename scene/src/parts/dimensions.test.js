@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 async function mount({ objects = { a: object({ name: "A", transform: T([1, 0, 0]) }) }, dims = {}, before = [], extensions = [], doc = {} } = {}) {
-  s = await mountStage({ extensions: [...before, DIMS, ...extensions], doc: { objects, order: Object.keys(objects), dimensions: dims, ...doc } });
+  s = await mountStage({ editor: true, natives: true,  extensions: [...before, DIMS, ...extensions], doc: { objects, order: Object.keys(objects), dimensions: dims, ...doc } });
   return s;
 }
 

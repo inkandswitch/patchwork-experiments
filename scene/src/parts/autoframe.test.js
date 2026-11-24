@@ -12,7 +12,7 @@ const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kin
  * own need WebGL). `world.box` is the scene's box; `world.loaded` the ids whose content is in.
  */
 async function mount(doc = {}) {
-  const s = await mountStage({ extensions: [{ meta: { id: "scene.autoframe" }, module: autoframe }], doc });
+  const s = await mountStage({ natives: true,  extensions: [{ meta: { id: "scene.autoframe" }, module: autoframe }], doc });
   const api = s.facet("scene.autoframe");
   const world = { box: null, loaded: new Set(), boxes: {} };
   const camera = fakeCamera();

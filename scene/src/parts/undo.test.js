@@ -57,7 +57,7 @@ describe("scene.undo", () => {
         return out.filter((p) => p.path[0] !== "cad");
       },
     };
-    s = await mountStage({ repo, extensions: [{ meta: { id: "scene.undo" }, module: undo }, { meta: { id: "t.pkg" }, module: { create: () => ({}) } }], doc: { objects: {} } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: [{ meta: { id: "scene.undo" }, module: undo }, { meta: { id: "t.pkg" }, module: { create: () => ({}) } }], doc: { objects: {} } });
     await settle();
     const edits = s.api("t.pkg").use("edits");
     expect(edits.edit(doc, (d) => { d.content = "b"; d.cad.locks.x = ["h"]; }, { label: "Edit model" })).toBe(true);
@@ -84,7 +84,7 @@ describe("scene.undo", () => {
 
   it("Delete is an edit: ⌘Z puts it back, ⇧⌘Z takes it out again; a roll is no step, and a rolled die isn't deleted again by redo", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [
         { meta: { id: "scene.select" }, module: select },
         { meta: { id: "scene.undo" }, module: undo },
@@ -113,7 +113,7 @@ describe("scene.undo", () => {
   });
 
   it("a field being typed in keeps ⌘Z (its own text undo)", async () => {
-    s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: undo }], doc: { objects: { a: object() }, order: ["a"] } });
+    s = await mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.undo" }, module: undo }], doc: { objects: { a: object() }, order: ["a"] } });
     await settle();
     editor(s.facet("scene.undo")).edit((d) => (d.objects.a.name = "B"), { label: "Rename" });
     const input = document.createElement("input");
@@ -134,7 +134,7 @@ describe("the keeper rule", () => {
   it("deleting something a keeper holds the contents of: undo puts the doc's part back and says the kept part is as its keeper has it now", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const KEEPER = { meta: { id: "t.keeper", keeper: "plain", traits: ["t.kept"] }, module: { create: () => ({}) } };
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [{ meta: { id: "scene.select" }, module: select }, { meta: { id: "scene.undo" }, module: undo }, KEEPER],
       doc: { objects: { c1: object({ name: "Card", traits: { "t.kept": { by: "automerge:box", slot: 3 } } }), d: object({ name: "Die" }) }, order: ["c1", "d"] },
     });

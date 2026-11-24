@@ -8,12 +8,14 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
-import linksPlugin from "../native/links.js";
-import { editing } from "../parts/editing.js";
+import { LINK, linkOpener } from "../test/links.js";
 import { keyOf } from "./paths.js";
 
-const T = { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 };
+// a stage's service whose holds are its caller's: a caller whose signal has gone holds nothing
+const HOLDS = {
+  meta: { id: "t.holds", provides: ["holds"] },
+  module: { create: () => ({ provides: { holds: (caller) => ({ hold: () => !caller.signal.aborted, release() {} }) } }) },
+};
 
 let s = null;
 afterEach(() => {
@@ -34,7 +36,7 @@ async function mountHost({ time = null, create = () => ({}) } = {}) {
     },
   };
   const objects = { table: object({ name: "Table" }), L: object({ name: "B", sourceUrl: b.url, providerId: LINK, renderUrl: null }) };
-  s = await mountStage({ repo, time, extensions: [plugin], doc: { title: "A", objects, order: Object.keys(objects) } });
+  s = await mountStage({ repo, time, extensions: [plugin, HOLDS, linkOpener()], doc: { title: "A", objects, order: Object.keys(objects) } });
   const view = s.debug.view;
   await until(() => view.stageAt(["L"]) && s.instance("t.view"), 2000);
   return { view, counts, api: s.api("t.view") };
@@ -42,7 +44,7 @@ async function mountHost({ time = null, create = () => ({}) } = {}) {
 
 describe("view plugins", () => {
   // Over every sequence of up to four events (the focus in at A, out to B, a
-  // pose held through A's facet, let go): 341 sequences, on one view. After
+  // hold taken through A's facet, let go): 341 sequences, on one view. After
   // every event: the plugin started once and never stopped; A's facet lives
   // until the focus leaves A, held or not, and coming back makes a new one;
   // the view offers the plugin's command once, from the focus, and A's
@@ -58,7 +60,7 @@ describe("view plugins", () => {
     for (const seq of seqs) {
       view.focusOn([]);
       let fa = api.focus();
-      fa.use("poses")?.release("table");
+      fa.use("holds")?.release("table");
       let alive = true;
       const where = seq.join(",") || "(none)";
       for (const e of seq) {
@@ -73,8 +75,8 @@ describe("view plugins", () => {
           alive = false;
         } else if (e === "busy") {
           // (a facet given back holds nothing)
-          expect([where, e, fa.use("poses")?.hold("table", T) ?? false]).toEqual([where, e, alive]);
-        } else fa.use("poses")?.release("table");
+          expect([where, e, fa.use("holds")?.hold("table") ?? false]).toEqual([where, e, alive]);
+        } else fa.use("holds")?.release("table");
         expect([where, e, counts.creates, counts.disposes]).toEqual([where, e, 1, 0]);
         expect([where, e, !fa.signal.aborted, A.debug.facets()]).toEqual([where, e, alive, alive ? ["t.view"] : []]);
         expect([where, e, A.reader.collect("commands").some((x) => x.id === "t.view")]).toEqual([where, e, false]);
@@ -83,18 +85,17 @@ describe("view plugins", () => {
     }
   }, 120_000);
 
-  it("what it acquired through a facet goes with the focus; its own chrome, its tab and the editor in hand stay; uninstalled, everything goes", async () => {
+  it("what it acquired through a facet goes with the focus; its own chrome and its hand stay; uninstalled, everything goes", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const panel = document.createElement("div");
     const { view, counts, api } = await mountHost({
       create: (a) => {
         a.overlay().className += " t-overlay";
-        a.use("drawer").dock(panel, { title: "T" });
+        a.hand({ kind: "edit", name: "Mine", input: {} });
         return {};
       },
     });
     const layersAt = (st) => view.viewport.layers.get(keyOf(st.n, "t.view"))?.size ?? 0;
-    s.edit(true);
+    const holding = () => view.atom.get().hands.some((h) => h.name === "Mine");
     const A = view.stage(0);
     api.focus().world();
     expect(layersAt(A)).toBe(1);
@@ -103,17 +104,16 @@ describe("view plugins", () => {
     api.focus().world();
     // A's layer went with the focus; B's is B's
     expect([layersAt(A), layersAt(B)]).toEqual([0, 1]);
-    // the view's: its overlay, its tab, the editor in hand
+    // the view's: its overlay, its hand
     expect(view.root.querySelectorAll(".t-overlay").length).toBe(1);
-    expect(view.plugins.instanceOf("scene.drawer").panes().order.length).toBe(1);
-    expect(editing(view.atom.get())).toBe(true);
+    expect(holding()).toBe(true);
     expect(view.leave()).toBe(true);
-    expect([layersAt(A), layersAt(B), editing(view.atom.get())]).toEqual([0, 0, true]);
+    expect([layersAt(A), layersAt(B), holding()]).toEqual([0, 0, true]);
     expect(counts).toEqual({ creates: 1, disposes: 0 });
     await s.uninstall("t.view");
     expect(counts).toEqual({ creates: 1, disposes: 1 });
     expect(view.root.querySelectorAll(".t-overlay").length).toBe(0);
-    expect(view.plugins.instanceOf("scene.drawer").panes().order.length).toBe(0);
+    expect(holding()).toBe(false);
     expect(A.debug.facets()).toEqual([]);
   });
 
@@ -141,8 +141,8 @@ describe("view plugins", () => {
           const ext = { meta: { id: "t.ext", traits: ["*"] }, module: g.E.p };
           const repo = new FakeRepo();
           const b = repo.add(emptyScene({ title: "B" }));
-          const links = { meta: { id: "scene.links" }, module: linksPlugin }; // (it opens L's stage)
-          s = await mountStage({ repo, natives: false, editor: false, extensions: listed === "PE" ? [links, prov, ext] : [links, ext, prov] });
+          const links = linkOpener("t.links", { provides: true }); // (it opens L's stage; a provider, as the links native is, so it starts with the view's providers)
+          s = await mountStage({ repo, extensions: listed === "PE" ? [links, prov, ext] : [links, ext, prov] });
           for (const e of seq) {
             if (e === "P") g.P.open({ create: () => (fails ? boom() : { provides: { "t.svc": (c) => ({ for: c.id }) } }) });
             else if (e === "E") g.E.open({ create: (api) => (found.push(api.use("t.svc")), {}) });
@@ -168,7 +168,7 @@ describe("view plugins", () => {
     const b = repo.add(emptyScene({ title: "B" }));
     const plugin = { meta: { id: "t.view", type: "scene:view" }, module: { create: () => ({}) } };
     const objects = Object.fromEntries(["L1", "L2", "L3"].map((id) => [id, object({ name: id })]));
-    s = await mountStage({ repo, natives: false, editor: false, extensions: [plugin], doc: { title: "A", objects, order: Object.keys(objects) } });
+    s = await mountStage({ repo, extensions: [plugin], doc: { title: "A", objects, order: Object.keys(objects) } });
     await until(() => s.instance("t.view"), 2000);
     const api = s.api("t.view");
     const view = s.debug.view;
@@ -178,20 +178,5 @@ describe("view plugins", () => {
     expect([view.stageAt(["L1"])?.url, view.stageAt(["L2"]), view.stageUnder(["L2", "x"])?.acts]).toEqual([b.url, null, false]);
     close();
     expect(at([[], "L3"])).toBe(true);
-  });
-
-  // A pref this viewer hasn't set is the asking extension's doc's suggestion
-  // (`doc.view`), a linked game's own; a view plugin's is the focus doc's.
-  it("a pref falls back on the asking extension's doc, a view plugin's on the focus doc", async () => {
-    const repo = new FakeRepo();
-    const b = repo.add(emptyScene({ title: "B", view: { snap: false } }));
-    const got = [];
-    const ext = { meta: { id: "t.ext", traits: ["*"] }, module: { create: (api) => (got.push([api.doc().title, api.use("prefs").get("snap", null)]), {}) } };
-    const objects = { L: object({ name: "B", sourceUrl: b.url, providerId: LINK, renderUrl: null }) };
-    s = await mountStage({ repo, extensions: [ext], doc: { title: "A", view: { snap: true }, objects, order: ["L"] } });
-    await until(() => got.length === 2, 2000);
-    const view = s.debug.view;
-    const asView = () => view.plugins.use("prefs", { id: "t.view", signal: new AbortController().signal }).get("snap", null);
-    expect([got.sort(), asView(), view.focusOn(["L"]) && asView()]).toEqual([[["A", true], ["B", false]], true, false]);
   });
 });

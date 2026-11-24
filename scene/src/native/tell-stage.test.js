@@ -55,7 +55,7 @@ async function setup({ repo = new FakeRepo(), viewerId = "viewer:bob" } = {}) {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   const time = manualTime();
   const { ext, seen } = teller();
-  const s = await mountStage({ repo, viewerId, time, extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+  const s = await mountStage({ natives: true,  repo, viewerId, time, extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
   cleanups.push(() => s.unmount());
   await time.until(() => seen.api, { what: "the extension running" });
   await time.step(2);
@@ -196,7 +196,7 @@ describe("one's own tell, and what is still receive's", () => {
     const B = teller();
     let which = A;
     const ext = { meta: { id: "t.teller" }, module: { create: (api) => which.ext.module.create(api) } };
-    const a = await mountStage({ repo, viewerId: "viewer:ana", time, extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+    const a = await mountStage({ natives: true,  repo, viewerId: "viewer:ana", time, extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     cleanups.push(() => a.unmount());
     await time.until(() => A.seen.api, { what: "A's extension" });
     which = B;

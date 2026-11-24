@@ -56,7 +56,7 @@ describe("the Edit hand Opens", () => {
   });
   async function mount() {
     clock = 1000;
-    s = await mountStage({ time: wallAt(() => clock), extensions: [{ meta: { id: "scene.select" }, module: select }, { meta: { id: "scene.keys" }, module: keys }, OPENER], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, order: ["a", "b"] } });
+    s = await mountStage({ editor: true,  time: wallAt(() => clock), extensions: [{ meta: { id: "scene.select" }, module: select }, { meta: { id: "scene.keys" }, module: keys }, OPENER], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, order: ["a", "b"] } });
     s.edit(true);
     await settle();
   }

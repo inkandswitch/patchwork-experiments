@@ -4,7 +4,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object } from "../test/stage-harness.js";
 import grid, { sceneExtent } from "./grid.js";
 
-const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.grid" }, module: grid }], doc });
+const mount = (doc = {}) => mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.grid" }, module: grid }], doc });
 const run = (s, command, value) => s.api("scene.grid").run({ ext: "scene.grid", command, target: null, value });
 const state = (s, target = null) => s.instance("scene.grid").commands.find((c) => c.id === "grid").state(target, { scene: s.facet("scene.grid").scene(), local: s.local.get() });
 const caption = (s) => s.root.querySelector(".grid-caption");

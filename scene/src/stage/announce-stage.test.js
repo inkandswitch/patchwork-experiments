@@ -11,7 +11,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
+import { LINK, linkOpener } from "../test/links.js";
 import { TOOL_ID } from "./announce.js";
 
 const ME = "automerge:ana";
@@ -61,7 +61,7 @@ describe("a view announces the linked docs it shows live", () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       const repo = new FakeRepo();
       // (registers the scene's plugins)
-      const s = await mountStage({ repo, viewerId: ME, doc: { objects: {}, order: [] } });
+      const s = await mountStage({ repo, viewerId: ME, extensions: [linkOpener()], doc: { objects: {}, order: [] } });
       cleanups.push(() => s.unmount());
       const G = repo.add(emptyScene({ title: "G" }));
       const X = repo.add(emptyScene({ title: "X", objects: { L: link(G.url) }, order: ["L"] }));

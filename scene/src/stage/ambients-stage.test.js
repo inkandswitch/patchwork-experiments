@@ -12,7 +12,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
+import { LINK, linkOpener } from "../test/links.js";
 
 const ME = "automerge:ana";
 
@@ -29,7 +29,7 @@ const offering = (id) => ({
     }),
   },
 });
-const EXTENSIONS = [offering("t.a"), offering("t.b")];
+const EXTENSIONS = [offering("t.a"), offering("t.b"), linkOpener()];
 
 /** What a doc offers: nothing, one extension, or both (in whatever running order the stage starts them; a and b are alike). */
 const OFFERS = { none: {}, a: { "t.a": {} }, both: { "t.a": {}, "t.b": {} } };

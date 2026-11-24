@@ -22,7 +22,7 @@ afterEach(() => {
 
 const T = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 };
 
-/** t.a holds `a` (draws, labels, displays, takes presses on what it holds, hears sends); t.b holds the scene (`*`) and takes nothing; t.view is a view plugin that taps. */
+/** t.a holds `a` (draws, labels, displays, takes presses on what it holds, hears sends); t.b holds the scene (`*`) and takes nothing; t.view is a view plugin that taps and holds a hand; t.svc provides a service. */
 function plugins(log) {
   const A_ = {
     meta: { id: "t.a", traits: ["t.a"] },
@@ -39,9 +39,11 @@ function plugins(log) {
   const B = { meta: { id: "t.b" }, module: { create: (api) => ((log.b = api), {}) } };
   const V = {
     meta: { id: "t.view", type: "scene:view" },
-    module: { create: (api) => ((log.view = api), { input: { press: () => null } }) },
+    module: { create: (api) => ((log.view = api), (log.hand = () => api.hand({ kind: "edit", name: "Hand", input: {} })), { input: { press: () => null } }) },
   };
-  return [A_, B, V];
+  // a service: what a peer's facet sends reaches it as a service's
+  const SVC = { meta: { id: "t.svc", provides: ["svc"] }, module: { create: (api) => ({ provides: { svc: () => ({ ping: (data) => api.channel.send("ping", data) }) }, receive() {} }) } };
+  return [A_, B, V, SVC];
 }
 
 async function mount() {
@@ -61,8 +63,8 @@ describe("owners: who draws what in a stage", () => {
     g.add(new a.THREE.Mesh(new a.THREE.BoxGeometry(), new a.THREE.MeshBasicMaterial()), new a.THREE.Mesh());
     b.world();
     a.labels().set([{ key: "k", text: "Hello", on: "x" }, { key: "free", text: 2 }]);
-    // t.b runs before t.a (a scene extension, then an objects one: STAGE.md, "Activation"), so t.b's override is under t.a's
-    expect(s.debug.local.get().running.map((r) => r.id).filter((id) => id.startsWith("t."))).toEqual(["t.b", "t.a"]);
+    // the provider first, then t.b before t.a (a scene extension, then an objects one: STAGE.md, "Activation"), so t.b's override is under t.a's
+    expect(s.debug.local.get().running.map((r) => r.id).filter((id) => id.startsWith("t."))).toEqual(["t.svc", "t.b", "t.a"]);
     a.display("x", { hidden: true, name: "A's" });
     b.display("x", { transform: T, hidden: undefined });
     const o = a.owners();
@@ -89,7 +91,6 @@ describe("routes: each dispatched event's way through the input chain", () => {
     const { view } = s.debug;
     const at = (id) => () => ({ id, point: [0, 0, 0], normal: [0, 1, 0], distance: 2 });
     view.viewport.pick = at("x");
-    s.edit(false);
     s.pointer("pointerdown", 20, 20);
     s.pointer("pointerup", 20, 20);
     let r = log.view.routes().filter((x) => x.type === "press").at(-1);
@@ -100,7 +101,7 @@ describe("routes: each dispatched event's way through the input chain", () => {
     ]);
     expect(r.took).toBe(0);
     expect(r.steps[0].stage).toBe(0);
-    // on y nobody's holder takes it: t.a is not y's, t.b and the natives hold the scene, then the view plugins, then Look (the default)
+    // on y nobody's holder takes it: t.a is not y's, t.b holds the scene, then the view plugins, then Look (the default)
     view.viewport.pick = at("y");
     s.pointer("pointerdown", 20, 20);
     s.pointer("pointerup", 20, 20);
@@ -116,12 +117,12 @@ describe("routes: each dispatched event's way through the input chain", () => {
     // holders, then plugins, then the default: in that order
     const rank = { hand: 0, widget: 1, holder: 2, plugin: 3, body: 4, default: 4 };
     expect(kinds.map((k) => rank[k])).toEqual([...kinds.map((k) => rank[k])].sort((p, q) => p - q));
-    // the Edit hand held: it is offered first, a hand of the view plugin's
-    s.edit(true);
+    // a view plugin's hand held: it is offered first
+    log.hand();
     s.pointer("pointerdown", 20, 20);
     s.pointer("pointerup", 20, 20);
     r = log.view.routes().filter((x) => x.type === "press").at(-1);
-    expect(r.steps[0]).toMatchObject({ step: "hand", view: true, ext: "scene.edit", kind: "edit" });
+    expect(r.steps[0]).toMatchObject({ step: "hand", view: true, ext: "t.view", kind: "edit" });
     // a key nothing reserves goes down the chain (no hit: the scene's holders), and nobody takes it here
     s.key("q");
     r = log.view.routes().at(-1);
@@ -174,11 +175,11 @@ describe("the channel tap", () => {
       ["t.gone", "x", null, "not running here", true, "viewer:ben"],
     ]);
     expect(log.heard).toEqual([["ping", { n: 3 }], ["nobody", {}]]);
-    // a pose's sample is a service's (scene.poses provides "poses")
+    // what a service sends is heard by the service (t.svc provides "svc")
     said.length = 0;
-    ben.use("poses").hold("x", T);
+    ben.use("svc").ping({ id: "x" });
     await settle();
-    expect(said.find((e) => e.dir === "in" && e.ext === "scene.poses")).toMatchObject({ type: "pose", to: "service", data: { id: "x" } });
+    expect(said.find((e) => e.dir === "in" && e.ext === "t.svc")).toMatchObject({ type: "ping", to: "service", data: { id: "x" } });
     // presence: heard and routed to the stage, with its namespaces; one repeated is stale
     said.length = 0;
     ben.channel.set("hello", true);

@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 async function mount({ objects = { a: object({ name: "A" }), b: object({ name: "B" }) }, extensions = [], doc = {} } = {}) {
-  s = await mountStage({ extensions: [SELECT, ...extensions], doc: { objects, order: Object.keys(objects), ...doc } });
+  s = await mountStage({ editor: true, natives: true,  extensions: [SELECT, ...extensions], doc: { objects, order: Object.keys(objects), ...doc } });
   return s;
 }
 
@@ -384,7 +384,7 @@ describe("scene.others: wherever its doc is", () => {
     const repo = new FakeRepo();
     const g = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card" }), die: object({ name: "Die" }) }, order: ["card", "die"] }));
     const link = (name, extra = {}) => object({ name, sourceUrl: g.url, providerId: LINK, renderUrl: null, ...extra });
-    s = await mountStage({ repo, extensions: [SELECT, OTHERS], doc: { objects: { table: object({ name: "Table" }), L: link("G"), P: link("G fixed", { at: { heads: g.heads() } }) }, order: ["table", "L", "P"] } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: [SELECT, OTHERS], doc: { objects: { table: object({ name: "Table" }), L: link("G"), P: link("G fixed", { at: { heads: g.heads() } }) }, order: ["table", "L", "P"] } });
     const view = s.debug.view;
     const stageAt = (p) => view.stages().find((x) => x.path.join("/") === p);
     await until(() => stageAt("L") && stageAt("P"), 2000);

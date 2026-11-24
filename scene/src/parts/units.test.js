@@ -4,7 +4,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage } from "../test/stage-harness.js";
 import units from "./units.js";
 
-const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.units" }, module: units }], doc });
+const mount = (doc = {}) => mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.units" }, module: units }], doc });
 
 describe("scene.units", () => {
   it("sets this viewer's units pref, never the doc's; ignores what isn't a unit", async () => {

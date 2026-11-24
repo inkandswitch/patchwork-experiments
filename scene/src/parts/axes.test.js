@@ -4,7 +4,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage } from "../test/stage-harness.js";
 import axes, { axisLength } from "./axes.js";
 
-const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.axes" }, module: axes }], doc });
+const mount = (doc = {}) => mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.axes" }, module: axes }], doc });
 const run = (s) => s.api("scene.axes").run({ ext: "scene.axes", command: "axes", target: null });
 const layer = (s) => s.debug.viewport.layers.get("scene.axes").values().next().value;
 const labelEls = (s, cls) => [...s.root.querySelectorAll(`.labels .${cls}`)];

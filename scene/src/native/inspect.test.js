@@ -33,7 +33,7 @@ describe("the natives' inspect snapshots", () => {
       },
     };
     const objects = { x: object({ name: "X" }), y: object({ name: "Y" }), L: object({ name: "B", sourceUrl: b.url, providerId: LINK, renderUrl: null }) };
-    s = await mountStage({ repo, extensions: [t], doc: { objects, order: Object.keys(objects) }, viewerId: "viewer:ana" });
+    s = await mountStage({ natives: true,  repo, extensions: [t], doc: { objects, order: Object.keys(objects) }, viewerId: "viewer:ana" });
     await until(() => s.debug.view.stageAt(["L"]), 2000);
     // (t.x runs in every doc: the outermost's)
     const api = s.api("t.x");

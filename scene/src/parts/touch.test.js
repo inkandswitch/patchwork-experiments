@@ -43,7 +43,7 @@ const GAME = () => ({
 
 async function mount(extra = []) {
   walker = { key: vi.fn(() => true), keyup: vi.fn(() => true) };
-  s = await mountStage({ extensions: [GAME(), TOUCH, ...extra], doc: { objects: { a: object() } } });
+  s = await mountStage({ editor: true,  extensions: [GAME(), TOUCH, ...extra], doc: { objects: { a: object() } } });
   await settle();
 }
 const api = () => s.api("t.game");

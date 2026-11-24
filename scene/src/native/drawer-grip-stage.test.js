@@ -46,7 +46,7 @@ function recorder(seen) {
 }
 
 async function mount(seen = []) {
-  s = await mountStage({
+  s = await mountStage({ editor: true, natives: true, 
     extensions: [SELECT, INSPECTOR, OPENED, recorder(seen)],
     doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, order: ["a", "b"] },
   });
