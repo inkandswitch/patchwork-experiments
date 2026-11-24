@@ -232,7 +232,7 @@ describe("createEdits on real Automerge", () => {
   // objects). No step on either stack ever holds a leaf only a verb, a save
   // or a pause writes. And an undo straight after an edit restores the doc as
   // it was before it; a redo straight after that undo, as it was after.
-  it("over every sequence of edits, verbs, saves, pauses, undos and redos: undo reverts only edits, whole (as undo.js's same judges, pinned by \"plain and same\")", () => {
+  it("over every sequence of edits, verbs, saves, pauses, undos and redos: undo reverts only edits, whole (as undo-log.js's same judges, pinned by \"plain and same\")", () => {
     const depth = Number(globalThis.process?.env?.UNDO_DEPTH ?? 4);
     const LEAVES = [
       ["objects", "die"],
@@ -370,7 +370,7 @@ describe("createEdits on real Automerge", () => {
   // an undo or a redo), and B's likewise; neither stack holds a leaf only a
   // verb or a save writes; and on both replicas the order lists exactly the
   // objects.
-  it("two people on two replicas, merged at once, later or concurrently: undo reverts only my own edits, whole (as undo.js's same judges, pinned by \"plain and same\")", () => {
+  it("two people on two replicas, merged at once, later or concurrently: undo reverts only my own edits, whole (as undo-log.js's same judges, pinned by \"plain and same\")", () => {
     const depth = Number(globalThis.process?.env?.UNDO_PAIR_DEPTH ?? 4);
     const LEAVES = [
       ["objects", "die"],

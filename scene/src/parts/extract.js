@@ -12,7 +12,7 @@
 // T's root to the host's (refused for a key the host already has). Nothing
 // infers K: the inspector shows them as checkboxes, none ticked.
 //
-// What a copy is, here as for paste (transfer.js): everything about an
+// What a copy is, here as for paste (./copy-rule.js): everything about an
 // object but runtime state. The stage's runtime fields (`claims`, `saved`),
 // every trait or trait field an extension's `describes` marks runtime, and
 // every `copy: "drop"` field are left behind, so no runtime state ever has
@@ -23,7 +23,7 @@
 // References (I2: none crosses docs). Ids are kept: T is a fresh doc, so
 // nothing collides; in bundle an id the host already has is made new, and
 // every reference to it follows. A copied object's described references go
-// through paste's own rule (transfer.js copyRefs: the ids mapped first, a
+// through paste's own rule (./copy-rule.js copyRefs: the ids mapped first, a
 // reference to a copied object follows it, any other is cleared, an entry is
 // kept where the doc it lands in has it, a dropped field left behind); what
 // stays in the host goes through the same rewriter (refEdits). The doc's own
@@ -50,7 +50,7 @@
 // bundle puts T's top objects under L's parent at L · local, filed in L's
 // group, in L's place in the order. So bundle(extract(S, K), K) is the
 // original on every field but runtime state and render doc identity when S
-// has no edge outside it (I9: src/extract.test.js says exactly which edges).
+// has no edge outside it (I9: src/parts/extract.test.js says exactly which edges).
 //
 // Both are edits (parts/editor.js: undo takes them back as one step), and each
 // writes the host once, in one change, computed from the host as it is at
@@ -214,7 +214,7 @@ export function extractPlan(doc, roots, { traits = [], runtime = new Map(), refs
   const gs = [...new Set(outer.map((id) => groups.get(id) ?? null))];
   const group = gs.length === 1 ? gs[0] : null;
 
-  // the copy rule (transfer.js copyRefs): ids kept, a reference to p is T's root, an entry kept where K brings it
+  // the copy rule (./copy-rule.js copyRefs): ids kept, a reference to p is T's root, an entry kept where K brings it
   const map = new Map(ids.map((id) => [id, id]));
   if (p != null) map.set(p, null);
   const kTraits = pick(rootTraits, K);

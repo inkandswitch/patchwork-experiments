@@ -1,7 +1,7 @@
 // scene.handles: a provider's build params, dragged in place.
 //
 // A `scene:source` plugin can declare handles beside its params
-// (`handles: [{ param, axis, label? }]`, see ../handles.js). For the selected
+// (`handles: [{ param, axis, label? }]`, see ./param-handles.js). For the selected
 // object, when its provider declares some, this part draws each as a knob on
 // a track along its axis through the middle of the object, with a
 // "label: value" tag. Dragging a knob moves it along the track (the pointer

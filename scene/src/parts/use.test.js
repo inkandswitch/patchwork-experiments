@@ -658,7 +658,7 @@ describe("scene.use: a button with a key is that key", () => {
     expect(log).toEqual(["ring", "ring"]);
   });
 
-  // (the button's handling is ../hold-key.js for a finger and a mouse alike; a finger's rows are the ones kept, and
+  // (the button's handling is ./hold-key.js for a finger and a mouse alike; a finger's rows are the ones kept, and
   // "a plain verb with a key" shows the mouse's way to the prompt)
   for (const input of ["touch"])
     for (const [how, lift, want] of [
@@ -797,7 +797,7 @@ describe("scene.use: a button with a key is that key", () => {
     expect(log).toEqual([]);
   });
 
-  // Only a primary press is a key or a click: a keyed button's is ../hold-key.js's (only a primary press holds);
+  // Only a primary press is a key or a click: a keyed button's is ./hold-key.js's (only a primary press holds);
   // a right button on a verb that is a click does nothing either, even with a click after it.
   for (const button of [2])
     for (const [target, command, input] of [["flag", "wave", "touch"]])

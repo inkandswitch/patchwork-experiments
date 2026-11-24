@@ -354,7 +354,7 @@ describe("repeats", () => {
 });
 
 // Extract and bundle through the stage (EDITOR.md, "Extract and bundle"; the exhaustive
-// harness is ../extract.test.js): the commands in Edit, the link the view
+// harness is ./extract.test.js): the commands in Edit, the link the view
 // opens, one undo step each, and the inspector's checkboxes for K.
 describe("Extract and Bundle", () => {
   const META = { id: "t.parts", traits: ["t.sea", "t.lever"], describes: { "t.sea": { name: "Sea", on: "scene" }, "t.lever": { name: "Lever", fields: [{ key: "target", kind: "object", label: "Target" }] } } };

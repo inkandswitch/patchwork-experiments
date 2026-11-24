@@ -5,7 +5,7 @@
 // sits in a pane of the drawer, under a tab with its title and a ×, until
 // its caller closes it, the × does, or its extension stops. The × is a
 // person closing it, so only the × calls onClose: the caller hears of the
-// closes it didn't make itself. A pane is an embedded document (src/embed.js),
+// closes it didn't make itself. A pane is an embedded document (src/shared/embed.js),
 // so the keys typed in it are its own, never the scene's; unless it's docked
 // with `embed: false` (the stage's own chrome: the inspector, the parts bin),
 // whose keys are the stage's like any of its parts'.

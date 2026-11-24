@@ -1,5 +1,5 @@
 // The key map's resolver (EDITOR.md, "The use prompt and key map"): where a
-// key goes once the key order (../key-order.js) leaves it to the key map, and the
+// key goes once the key order (../stage/key-order.js) leaves it to the key map, and the
 // key a surface shows for a verb. Pure: no api, no DOM.
 //
 // A shown key works by construction: every surface that shows a command's

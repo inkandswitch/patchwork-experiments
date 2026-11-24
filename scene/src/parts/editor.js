@@ -3,7 +3,7 @@
 // Frame's Set home view, Delete, Undo) write the focus doc through here, each
 // write recorded from what the stage's change(fn) returns (its patches) onto
 // this viewer's stacks for that doc, kept in the focus stage's `local.edits`
-// (src/undo.js). Nothing else is ever on them: a package's verb, a clock act
+// (src/parts/undo-log.js). Nothing else is ever on them: a package's verb, a clock act
 // or a process's save writes through its own api.change, unrecorded. What a
 // package's module makes (a dropped doc laid out, a part, a template) is one
 // step too: ./making.js.
@@ -22,7 +22,7 @@ const writer = (h) => ({
 });
 
 /**
- * What a step did to a doc (undo.js `judge`): the names of the objects it
+ * What a step did to a doc (./undo-log.js `judge`): the names of the objects it
  * removed whose contents a keeper holds, bound by the trait of an extension
  * whose plugin says `keeper` (CONVENTIONS.md, "Keepers"), read from `reg` (the
  * focus's registry("scene:extension"), at once).

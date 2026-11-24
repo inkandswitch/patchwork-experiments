@@ -128,7 +128,7 @@ SourceImpl = {
   `file-glb` is this package's: a package adding a GLB file doc to a scene
   writes `providerId: "file-glb"`.
 - A render doc records `glbUrl` and what it was `builtFrom`; new bytes make a
-  new immutable GLB file doc (`newRenderDoc` in `src/datatype.js`, staleness
+  new immutable GLB file doc (`newRenderDoc` in `src/shared/datatype.js`, staleness
   in `src/content/staleness.js`). Its `status` is written as a build starts
   and ends, and read only to learn that a build failed.
 
@@ -216,7 +216,7 @@ Group = { kind: "group", name, group?, visible, opacity, infoUrl?, infoToolId?, 
 Anchor = { objectId, local, world }  // a point in its object's frame: follows its transform
 ```
 
-- `transform` is relative to `parent` (`src/hierarchy.js`). Loops from
+- `transform` is relative to `parent` (`src/shared/hierarchy.js`). Loops from
   concurrent edits break the same way on every peer.
 - `renderUrl` is written once; null for `"file"` content and links.
   `hint.bounds` is drawn until content loads.
@@ -264,7 +264,7 @@ CONVENTIONS.md.
   the connector's frame. A tagged connector takes only objects sharing a
   tag. `extras.snapRadius` (metres) sets the reach; without it the reach is
   0.71 × the connectors' closest spacing in plan (x, z), so a lone connector
-  reaches nothing. The scene reads it once (`src/connectors.js`), and every
+  reaches nothing. The scene reads it once (`src/shared/connectors.js`), and every
   reader takes it from `content(id).extras.snapRadius`.
 - **Legend:** `extras.legend = { title, unit, min, max, stops }` on a mesh,
   2–32 `#rrggbb` stops, draws a colour bar.
@@ -287,8 +287,11 @@ meet it by, [CONVENTIONS.md](CONVENTIONS.md) what packages agree among
 themselves; [DESIGN.md](DESIGN.md) the idea, [HISTORY.md](HISTORY.md) how and
 why, [PLANS.md](PLANS.md) deferred work.
 `src/index.js` is plugin metadata only (worker-safe); `src/stage/` the stage
-and view; `src/content/` content; `src/parts/` the editor's extensions;
-`src/test/` the harness.
+and view; `src/content/` content; `src/native/` the native services;
+`src/sources/` the package's sources; `src/parts/` the editor's extensions;
+`src/shared/` the formats and math every layer may use; `src/test/` the
+harness. The directory is the layer (STAGE.md, "Words"); at `src/`'s root are
+only the entry, the controls tool and the kit files.
 
 ## Probes
 

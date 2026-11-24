@@ -14,7 +14,7 @@
 // panels (the drawer's tabs), view (frame, grid, axes, bounds) and settings,
 // which sit behind one gear, in a popover (units, snap); within a group, a
 // command's `order` (default 0) comes first, then running order. A command with an
-// `icon` (../icons.js) is drawn as it, its name its label and tooltip. The
+// `icon` (../shared/icons.js) is drawn as it, its name its label and tooltip. The
 // panels group (the drawer's tabs) isn't the bar's: the drawer's rail shows
 // it (../native/drawer.js).
 //

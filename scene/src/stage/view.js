@@ -13,7 +13,7 @@
 //
 // The focus (STAGE.md, "The input chain") is the path of the links
 // entered: [] the outermost, until Enter moves it into a link whose doc acts.
-// It scopes the selection (../selection.js, H10: a selection is an element
+// It scopes the selection (./selection.js, H10: a selection is an element
 // of the focus stage) and is where the view's plugins sit (STAGE.md, "View
 // plugins": the editor edits the focus's doc); it cuts no segment, so verbs
 // and carries outside it still work. Focus and selection change only through
@@ -443,7 +443,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // ─── selection ────────────────────────────────────────────────────────────
 
   // The focus and the selection change here only, a selectionStep at a time
-  // (../selection.js), so the selection is always an element of the focus
+  // (./selection.js), so the selection is always an element of the focus
   // stage (H10), whoever asks: an extension of any stage, the Edit hand, the
   // ladder, a link going.
 
@@ -462,7 +462,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
   /** Apply one selection event. */
   const selectStep = (ev) => selectSteps([ev]);
-  /** Select a path (null: none): the element of the focus stage it goes through; outside the focus, nothing (../selection.js). */
+  /** Select a path (null: none): the element of the focus stage it goes through; outside the focus, nothing (./selection.js). */
   const select = (path) => selectStep(path == null ? { type: "clear" } : { type: "select", path: [...path] });
 
   /** Move the focus to path `p`: out to where it and `p` part, then in a link at a time (as far as each acts), as one change. @returns did it get there */
@@ -1170,7 +1170,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       root,
       /** the view's url: the outermost doc's */
       url,
-      /** the viewer's value, whole (the selection, hover and focus as paths, and each view plugin's own at its id); step(ev): a selection step (../selection.js) but enter; enter(path), arrive(); set(value): this plugin's own, view[id] */
+      /** the viewer's value, whole (the selection, hover and focus as paths, and each view plugin's own at its id); step(ev): a selection step (./selection.js) but enter; enter(path), arrive(); set(value): this plugin's own, view[id] */
       view: Object.freeze({
         get: () => atom.get(),
         // (each watch keeps its own last value, so one plugin's watches never hide each other's changes)

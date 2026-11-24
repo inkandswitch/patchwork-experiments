@@ -10,7 +10,7 @@
 //   viewer holds; what a selection shows beyond its box (the halo's handles,
 //   the inspector) is the editor's. Remove (Delete) is an edit, so the
 //   editor's too.
-// - Where a selection may be is ../selection.js (H10): an element of the
+// - Where a selection may be is ../stage/selection.js (H10): an element of the
 //   focus stage, which is where all this works (api.focus()). With one stage
 //   that's any object.
 // - local.selected is this view's selection: a target (STAGE.md, "Targets

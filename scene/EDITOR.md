@@ -106,12 +106,12 @@ surface asks `hintFor` and `shortcutHintFor`, which resolve a key as it is
 dispatched. **The use prompt** (`scene.use`) shows
 attention's keyed verbs (`show` including `"use"`, or none), up to three, under
 the crosshair under lock, else at the pointer; it shows, the key map does. **On
-touch** declared keys become pad controls (`src/touch-keys.js`); codes labelled
+touch** declared keys become pad controls (`src/parts/touch-keys.js`); codes labelled
 alike are one control, so distinct actions need distinct labels.
 
 ## Undo
 
-`src/parts/editor.js`, `src/undo.js`: the editor records its own writes from
+`src/parts/editor.js`, `src/parts/undo-log.js`: the editor records its own writes from
 what `change` returns, per person and per focus doc, in the focus stage's
 `local.edits`; a package's verb, a clock act or a process save is never one. A
 step restores only if the doc still holds all it wrote, else it is dropped and
@@ -161,7 +161,7 @@ paste write the focus doc: to add to a linked doc, enter it.
 `{ type: "scene:template", id, name, icon?, description?, params?: ParamSpec[],
 load() → { create(ctx, params) → Promise } }`. The empty scene's start screen
 lists every template from metadata, with a form for its `params`
-(`src/param-form.js`); `create` gets exactly those (`paramsBySpec`). It writes
+(`src/shared/param-form.js`); `create` gets exactly those (`paramsBySpec`). It writes
 objects, traits and `view.start`; written to the outermost doc, its maker
 then arrives as the doc says (the view plugin's `view.arrive()`).
 
@@ -179,7 +179,7 @@ dropped part goes under the object hit, snapped to a connector that takes its
 
 ## Copying objects
 
-One copy rule (`src/transfer.js`; `scene.transfer`) serves paste, drops from
+One copy rule (`src/parts/copy-rule.js`; `scene.transfer`) serves paste, drops from
 another scene, extract and bundle. The payload is `application/x-scene-object`
 = `{ scene, id, ids, lift?, copy? }`. In its own scene paste duplicates; in
 another it copies the objects and everything under them with new ids, landing
@@ -190,7 +190,7 @@ cleared in another, with a notice (`copyRefs`, `refEdits`).
 
 ## Extract and bundle
 
-The copy rule in two directions (`src/extract.js`), each one host change and
+The copy rule in two directions (`src/parts/extract.js`), each one host change and
 one undo step. **Extract** takes S (tops sharing one parent p), writes doc T
 whole (ids and transforms kept), then replaces S with a link to T at p,
 clearing references into S; if S changed meanwhile, nothing is written.

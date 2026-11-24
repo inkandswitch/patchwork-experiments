@@ -19,7 +19,7 @@
 //   and after the browser has released the pointer, that a click takes it
 //   back. With no keyboard (the input is touch) it is the Escape key: it
 //   says what it does ("Put it back") and a finger on it presses Escape
-//   (../hold-key.js), so a shown rung is one a finger can pop.
+//   (./hold-key.js), so a shown rung is one a finger can pop.
 // It writes nothing to the doc.
 
 import css from "./body.css?inline";

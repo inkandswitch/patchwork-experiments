@@ -688,7 +688,7 @@ export function createRouter(o) {
     const ev = keyEvent("key", e);
     const code = e.code || e.key;
     let claimer = null;
-    // what reserves keys first: the gesture's, the topmost hand's that declares it, the body's (../key-order.js keyHolder);
+    // what reserves keys first: the gesture's, the topmost hand's that declares it, the body's (./key-order.js keyHolder);
     // a key with ctrl or meta held (⌘Z, not Z; a modifier itself still can be) is no reserver's: it goes to the chain
     const g = gesture && !gesture.dead && gesture.session ? gesture : null;
     const b = top();
