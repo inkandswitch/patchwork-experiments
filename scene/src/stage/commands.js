@@ -21,7 +21,7 @@ export function flatCommands(collected) {
     } catch {
       continue;
     }
-    // (a view plugin's collection tags each with the stage it is from: STAGE.md, "View plugins")
+    // (a view plugin's collection tags each with the stage it is from: API.md, "View plugins")
     for (const command of list) if (command && command.id != null && typeof command.run === "function") out.push(stage === undefined ? { ext, command } : { ext, command, stage });
   }
   return out;

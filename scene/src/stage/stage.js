@@ -491,7 +491,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   };
   const priorityOf = (id, o) => (focused(id) ? FOCUS_PRIORITY : hintVolume(o));
 
-  // ─── display (STAGE.md, "Display") ──────────────────────────────────────────
+  // ─── display (API.md, "Display") ──────────────────────────────────────────
   // How this viewer sees an object instead of as the doc says, never written:
   // each extension's override { transform?, content?, hidden?, name?, tint?,
   // opacity?, outline? }, layered in running order, later winning per field. A
@@ -753,7 +753,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }),
   );
 
-  // ─── the page (STAGE.md, "`api`") ──────────────────────────────────────
+  // ─── the page (API.md, "`api`") ──────────────────────────────────────
   // The view's pagehide or the stage closing ("hide": last-first, as extensions stop) and pageshow ("show"), as api.page's events.
   const pageFns = { hide: new Set(), show: new Set() };
   const pageSay = (type) => [...pageFns[type]][type === "hide" ? "reverse" : "slice"]().forEach((fn) => fn());
@@ -1370,7 +1370,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         // (entering, leaving and arriving are the view plugins': no stage learns where the focus goes)
       }),
       /**
-       * The doc's ephemeral side (STAGE.md, "`api`"): this view's
+       * The doc's ephemeral side (API.md, "`api`"): this view's
        * session (null in a pin: it has none), every peer, and this
        * extension's own keys and sends; cleared when it stops.
        */
@@ -1455,13 +1455,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         });
       },
       ...lent,
-      /** draw an object otherwise for this viewer (STAGE.md, "Display"): again from this extension replaces its override → release */
+      /** draw an object otherwise for this viewer (API.md, "Display"): again from this extension replaces its override → release */
       display: (oid, o) => (live() ? display(id, oid, o ?? {}) : noop),
       extent: (box) => {
         if (live()) scope.setExtent(id, box ?? null);
       },
       /**
-       * One of the world's ambients (STAGE.md, "Ambients"): the outermost
+       * One of the world's ambients (API.md, "Ambients"): the outermost
        * doc's value under `name` (frozen plain JSON, the same object until it
        * changes), with `mine` (this is the outermost stage), this stage's
        * frame (scope.js: the world is the outermost's root) and `use`: the
@@ -1541,7 +1541,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   /**
-   * Who draws what in this stage (STAGE.md, "`api`", `owners`), in running
+   * Who draws what in this stage (API.md, "View plugins", `trace.draws`), in running
    * order: each extension's (and view plugin's facet's) world layers with
    * their mesh counts, its labels (key, text, the object `on`), and each
    * object's display overrides by author, in layering order. Plain, frozen;
@@ -1614,7 +1614,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     first: () => view.plugins?.providersStarted(),
   });
 
-  // ─── the view's plugins' facets (STAGE.md, "View plugins") ─────────────────
+  // ─── the view's plugins' facets (API.md, "View plugins") ─────────────────
   // A view plugin's api.focus(), while this stage is the focus: this stage's
   // api, made for it on asking. What it acquires through one is given back
   // when the focus leaves (the view drops it), the plugin stops or this

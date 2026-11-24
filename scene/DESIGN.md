@@ -1,6 +1,6 @@
 # scene: the idea
 
-An overview for someone new. [STAGE.md](STAGE.md) is the exact contract;
+An overview for someone new. [STAGE.md](STAGE.md) and [API.md](API.md) are the exact contract;
 [README.md](README.md) is the tool for a person using it.
 
 ## A stage, a view, and extensions

@@ -1,5 +1,5 @@
 // Presence: what this view tells the others while it's open, and what they
-// tell it (STAGE.md, "Three places for state", "`api`"). Two
+// tell it (STAGE.md, "Three places for state"; API.md, "`api`"). Two
 // kinds of ephemeral message go over handle.broadcast:
 //
 //   scene:presence  this view's whole state, keys namespaced by extension,
@@ -151,7 +151,7 @@ export function createPresence({
   tap = null,
 }) {
   let dead = false;
-  // the tap (STAGE.md, "View plugins"): what goes out and what comes in, and where it went or why it was dropped; made only while on
+  // the tap (API.md, "View plugins"): what goes out and what comes in, and where it went or why it was dropped; made only while on
   const said = (make) => {
     if (tap?.on()) tap.say(make());
   };

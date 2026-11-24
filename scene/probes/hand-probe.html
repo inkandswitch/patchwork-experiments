@@ -115,7 +115,7 @@ try {
     type: "scene:extension", id: "probe", name: "Probe", traits: ["probe.secret"],
     load: async () => ({
       create(api) {
-        let looks = new Map(); // id → { sourceUrl, name, off }: shown through api.display (STAGE.md, "Display")
+        let looks = new Map(); // id → { sourceUrl, name, off }: shown through api.display (API.md, "Display")
         const scene = () => api.scene();
         const inTray = (p) => { const l = scene().toLocal("tray", p); return !!l && l.every((v, k) => v >= TRAY.min[k] - 1e-9 && v <= TRAY.max[k] + 1e-9); };
         const seated = () => scene()?.traits?.["probe.seat"] === api.channel.viewer;

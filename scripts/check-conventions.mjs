@@ -9,7 +9,7 @@
  * vendored and generated code left out, comments stripped) for those names,
  * works out which cross a package boundary, and fails when one isn't listed
  * in CONVENTIONS.md's "Names" table (or, for a name with no other owner,
- * stated in scene's STAGE.md, NATIVE.md or EDITOR.md: the kernel's members,
+ * stated in scene's STAGE.md, API.md, NATIVE.md or EDITOR.md: the kernel's members,
  * the native services, the editor's).
  *
  * Who owns a name:
@@ -64,7 +64,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONVENTIONS = join(ROOT, "scene", "CONVENTIONS.md");
-const CONTRACTS = ["STAGE.md", "NATIVE.md", "EDITOR.md"].map((p) => join(ROOT, "scene", p));
+const CONTRACTS = ["STAGE.md", "API.md", "NATIVE.md", "EDITOR.md"].map((p) => join(ROOT, "scene", p));
 const SKIP = new Set(["node_modules", "dist", ".git", ".pushwork", ".claude", "static-dist", ".pnpm-store", "test", "tests", "probes", "scripts", "fixtures", "bench", "vendor", "public", "contract", "generated"]);
 const SOURCE = /\.(m?js|ts|tsx|jsx)$/;
 const NOT_SOURCE = /(\.test\.|\.spec\.|^vite\.config|^vitest)/;

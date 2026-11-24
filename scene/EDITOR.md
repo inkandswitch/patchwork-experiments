@@ -1,7 +1,7 @@
 # The editor
 
 The editor is view plugins the scene package ships (`src/parts/`), on the
-kernel's public api ([STAGE.md](STAGE.md)); the boundary test
+kernel's public api ([API.md](API.md)); the boundary test
 (`src/native/boundary.test.js`) keeps them off its internals. This page is what
 they do and the conventions packages meet them by: commands, traits described,
 drops, templates and parts. An **edit** is the editor's write

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The kernel's reads for visible gears (STAGE.md, "View plugins" trace,
+// The kernel's reads for visible gears (API.md, "View plugins" trace,
 // "`api`" change's provenance; PLANS.md section 4):
 // who draws what, each event's route through the input chain, a read-only
 // tap on the channel, and who wrote what.

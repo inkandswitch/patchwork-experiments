@@ -65,7 +65,7 @@ function keeper(id, meta = {}, instance = () => ({})) {
   return { ext, seen };
 }
 
-describe("api.loop (STAGE.md, “`api`”)", () => {
+describe("api.loop (API.md, “`api`”)", () => {
   it("while a loop runs the stage renders every frame; a quiet stage renders none; after its cancel, frames stop rendering", async () => {
     gl.on = true;
     const time = manualTime({ yieldTo: () => Promise.resolve() });
@@ -112,7 +112,7 @@ describe("api.loop (STAGE.md, “`api`”)", () => {
   });
 });
 
-describe("api.box (STAGE.md, “`api`”)", () => {
+describe("api.box (API.md, “`api`”)", () => {
   it("one box for an object, a group (its members') and the scene (null), in the stage's frame; nothing for an id it lacks", async () => {
     gl.on = true;
     // (no provider: each is drawn as its hint)
@@ -255,7 +255,7 @@ describe("keys in an embedded document (STAGE.md, “Keys”)", () => {
   });
 });
 
-describe("api.page (STAGE.md, “`api`”)", () => {
+describe("api.page (API.md, “`api`”)", () => {
   it("the view's pagehide (“hide”) and pageshow (“show”); an off works; what it registered goes as it stops", async () => {
     const log = [];
     const listen = (name) => (api) => {

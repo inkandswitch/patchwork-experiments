@@ -1,4 +1,4 @@
-// What a view plugin keeps per focus (STAGE.md, "View plugins").
+// What a view plugin keeps per focus (API.md, "View plugins").
 //
 // api.focus() is the focus stage's api for a view plugin, a new one each time
 // the focus moves; what was acquired through one (world layers, labels,
@@ -27,7 +27,7 @@ export function perFocus(api, make) {
   };
 }
 
-/** The focus stage's reader (STAGE.md, "View plugins": `path`), for a view plugin's `api`; null before there is one. */
+/** The focus stage's reader (API.md, "View plugins": `path`), for a view plugin's `api`; null before there is one. */
 export const focusReader = (api) => api.path({ focus: true })[0] ?? null;
 
 /**

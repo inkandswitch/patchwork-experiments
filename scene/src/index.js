@@ -122,7 +122,7 @@ export const plugins = [
     ["drawer", "Drawer", { provides: ["drawer"], uses: ["prefs"] }, () => import("./native/drawer.js"), "scene:view"],
     ["links", "Links", { provides: ["links"] }, () => import("./native/links.js"), "scene:view"],
   ].map(([n, name, services, load, type = "scene:extension"]) => ({ type, id: `scene.${n}`, name, ...(type === "scene:view" ? {} : { traits: ["*"] }), ...services, load: async () => (await load()).default })),
-  // All but carry and others are view plugins (STAGE.md, "View plugins"):
+  // All but carry and others are view plugins (API.md, "View plugins"):
   // each runs once per view, for its whole life, and works on the focus
   // stage through api.focus() (the outermost doc until Enter moves the focus
   // into a link); in this order, which is the order input is offered to

@@ -1241,3 +1241,11 @@ its stage's reader's; `trace` (`draws()`, `routes()`, `tap()`) replaces
 `owners`, `routes`, `tap`; `overlay(side?)` replaces `edge`; Measure picks in
 `move` and `frame(fn)` went. The kernel's theme holds only its own colours;
 the grid, axes and dimensions declare and read theirs.
+
+### 2026-11-24 — The contract on two pages
+
+STAGE.md holds the words, views and stages, state, activation, commands, the
+input chain, bodies and hands, packages, arriving and the invariants; API.md
+holds what a plugin is handed and what the kernel reads of it (the view
+plugins' api, the extension `api`, `instance`), in short rows. Each page is
+capped at 200 lines; citations of the moved sections point at API.md.
