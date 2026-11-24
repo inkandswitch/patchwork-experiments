@@ -23,7 +23,7 @@ function mover() {
         seen.api = api;
         api.use("clock").process({ step: (dt, t) => seen.steps.push(+t.toFixed(9)) });
         api.after(500, () => (seen.timer = api.now()));
-        api.frame((now) => (seen.frame = now));
+        const once = api.loop((_dt, now) => ((seen.frame ??= now), once()));
         api.channel.set("here", true);
         return {};
       },

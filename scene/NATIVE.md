@@ -61,7 +61,7 @@ written field by field.
   moment whose poses they draw (`shownAt`), never past it; `t()` never goes
   back. Paused, every view's t is the larger of its own and `clock.t`.
 - **Pausing**. Anyone who may write pauses or resumes. World time pauses; act
-  time (`now`, `after`, `frame`, `loop`: a die's tumble) finishes; liveness
+  time (`now`, `after`, `loop`: a die's tumble) finishes; liveness
   (TTLs, grace) never stops (H8).
 
 ## Telling
