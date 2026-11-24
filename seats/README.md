@@ -15,8 +15,8 @@ people lists this package in its `packages`, like any other.
 - **The trait**, `seats`,
   `{ [seatId]: { name, player: <viewer> | null, lasting?: false, camera?: { position, target, in? } } }`.
   A seat's camera is in its doc's root frame; `in` names an object of the
-  doc it is given in instead. Nothing outside this package reads or writes
-  it. The plugin describes it (*Seats*, a map of entries), so the inspector
+  doc it is given in instead. Nothing outside this package reads it; others
+  write it only through `lay` ("Conventions"). The plugin describes it (*Seats*, a map of entries), so the inspector
   can add, name and remove seats.
 - **Whose seats.** On the scene, the trait is the doc's own seats: its
   table's. A game is a doc of its own (scene's STAGE.md): linked onto
@@ -74,11 +74,14 @@ people lists this package in its `packages`, like any other.
 
 | | |
 |---|---|
+| trait `seats` | `{ [seatId]: { name, player: <viewer> \| null, lasting?: false, camera?: { position, target, in? } } }` on the scene (the doc's own seats) or an object (its own), as "What it is" says. Written by this package, the inspector (through its description) and `lay` alone |
+| plugin id `seats` | this plugin's id. Tabletop names it, with this package's published URL, to list and load the seats package for a table it lays out where the registry can't say where it came from (tabletop `src/scene-package.js`, `src/table/session.js`) |
+| body `seat` | the seat body (`src/body.js`): `api.body.enter("seat", place)`, `place` a seat id (the doc's own) or `{ of, seat }`; `here: false`, `lock: false`, `reach: 2`, no keys. `view.start = { body: "seat" }` with no place arrives in your own lasting seat, else watching from the first seat with a camera (`arrivalSeat`) |
 | `roster` (contributed here) | `{ seats(scene) → [{ id, name, viewer \| null }], viewers(scene) → viewer[], open(scene) → string[], nameOf(scene, viewer) → string \| null, who(viewer) → string, sitting() → { of, seat } \| null, stateOf({ of, seat }) → state \| null, sit({ of, seat }) → boolean }`. `seats`, `viewers`, `open` and `nameOf` are the doc's own seats (its table's), never an object's. All but `who`, `sitting`, `stateOf` and `sit` are pure in the snapshot (the doc alone: never presence or claims), so an `audience` policy may be built on them. `who` is what to call a viewer now: their contact's name once known, else their seat's, else "Someone". `sitting` is the seat this view is sitting in now, anywhere in the doc (`of` null: the doc's own): the seat body on top (standing up, walking off from it or watching is not sitting); a machine's port follows it (machine/HOST.md, Phase 2b). `stateOf` is any seat, the doc's own or an object's (`of`), as this view sees it now: `free`, `mine`, `mine-elsewhere` (your other tab's), `taken` or `away` (`seatState`), or null where there's no such seat. `sit` sits this view there for another package, as the picker does (the claim, the notice, the seat body), and says whether it now sits there; a seat that's taken or away (or none) is refused, saying nothing, so the caller says why in its own words, and a package never takes over someone's seat: a machine's Play sits you at its first free port's seat this way |
 | `seatPlaces` (collected: whoever gives a seat somewhere to be) | `(scene) → [{ seat, of?, id, min, max }]`: a box in object `id`'s own frame (a hand tray) for seat `seat` of object `of`'s (absent: the doc's own). A name tag goes on each, and a look at one is a look at its seat. Several places may share one object (a machine's ports along its front): a look at that object is at the place it lands in, else at your own among them if you sit at one, else at the nearest (`placeOn`) |
 | `lay(d, seats, of?)` (this plugin's module, found by `roster: true`) | writes `{ [seatId]: { name, lasting?, camera? } }` into a scene doc being set up, empty: the doc's own seats, or object `of`'s, on it (nothing if it isn't there). A seat already there keeps its player and takes the new name, view and lasting. A game is a doc of its own, so its seats are its doc's: a second game is a second doc, with its own `p1` and `p2`. A machine lays its ports on itself, not lasting |
 
-These are also listed in scene/CONVENTIONS.md, "Conventions", with the keepers'.
+scene/CONVENTIONS.md, "Names", lists them.
 Where this package isn't loaded there is no roster: a hand is nobody's and
 a deck waits for players; the stage offers the package from the scene's
 `packages`.

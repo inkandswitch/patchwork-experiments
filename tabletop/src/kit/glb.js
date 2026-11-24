@@ -1,15 +1,10 @@
 /**
- * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.  [kit: glb.js v3]
+ * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.  [kit: glb.js v4]
  *
  * COPY THIS FILE into your package; do not import it across packages. It has no
  * imports and no DOM use, so it runs anywhere (main thread, worker, node).
  * The canonical copy is patchwork-experiments/scene/src/glb.js; copy it whole,
  * never edit a copy (`node scripts/check-kit.mjs` fails on a copy that differs).
- *
- * v2 (from flow-field's fork): per-vertex `colors` (COLOR_0), `unlit`
- * (KHR_materials_unlit), `blend` (alphaMode BLEND), and `asset.extras.units`,
- * so a consumer reading the GLB outside a scene knows it is in metres.
- * v3 (from terrain's fork): `copyright` (asset.copyright), written only when given.
  *
  * ─── API ──────────────────────────────────────────────────────────────────────
  *
@@ -26,6 +21,9 @@
  *
  *   Mesh = {
  *     name?: string,
+ *     sameAs?: number,              // an earlier mesh's index: its primitives again, through
+ *                                   // accessors of their own on the same buffer views (no bytes;
+ *                                   // three's GLTFLoader then makes it a geometry of its own)
  *     primitives: Primitive[],      // or put Primitive fields directly on the mesh
  *                                   // for the one-primitive shorthand
  *     extras?: object,
@@ -273,7 +271,24 @@ export function encodeGLB(scene) {
     return materialKeys.get(key);
   };
 
+  const outPrims = new Map(); // input mesh index → its primitives as written
   scene.meshes.forEach((rawMesh, mi) => {
+    // the same geometry as an earlier mesh, through accessors of its own on the same bytes: a loader that
+    // caches geometry by accessor (three's GLTFLoader) makes it a geometry of its own, so a renderer that
+    // instances by geometry draws its nodes apart (a tile of a forest is culled as a tile), at no bytes
+    if (rawMesh && Number.isInteger(rawMesh.sameAs)) {
+      const src = outPrims.get(rawMesh.sameAs);
+      if (rawMesh.sameAs >= mi || !src) throw new Error(`glb: mesh ${mi} is the same as mesh ${rawMesh.sameAs}, which isn't an earlier mesh with geometry`);
+      const copy = (a) => (accessors.push({ ...accessors[a] }), accessors.length - 1);
+      const prims = src.map((pr) => ({ ...pr, attributes: Object.fromEntries(Object.entries(pr.attributes).map(([k, a]) => [k, copy(a)])), ...(pr.indices != null ? { indices: copy(pr.indices) } : {}) }));
+      outPrims.set(mi, prims);
+      const m = { primitives: prims };
+      if (rawMesh.name) m.name = String(rawMesh.name);
+      if (rawMesh.extras) m.extras = rawMesh.extras;
+      meshRemap.set(mi, gltfMeshes.length);
+      gltfMeshes.push(m);
+      return;
+    }
     const mesh = normalizeMesh(rawMesh, mi);
     const label = `mesh ${mi}${mesh.name ? ` (${mesh.name})` : ""}`;
     const prims = [];
@@ -372,6 +387,7 @@ export function encodeGLB(scene) {
       prims.push(out);
     });
     if (prims.length === 0) return; // empty mesh: dropped
+    outPrims.set(mi, prims);
     const m = { primitives: prims };
     if (mesh.name) m.name = String(mesh.name);
     if (mesh.extras) m.extras = mesh.extras;
