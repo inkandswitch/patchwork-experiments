@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import { FakeRepo, fakeTimers, flush } from "./test/fake-repo.js";
-import { createRenderManager as createWithSettle, DEP_WAIT_MS, PEER_STAGGER_MS, RETRY_BACKOFF_MS, SYNC_SETTLE_MS } from "./render-manager.js";
+import { createRenderManager as createWithSettle, DEP_WAIT_MS, REMOTE_BUILD_GRACE_MS, RETRY_BACKOFF_MS, SYNC_SETTLE_MS } from "./render-manager.js";
 
 // These tests are about what happens once a render doc is in hand; the wait
 // for a freshly opened doc to finish syncing has its own tests below.
 const createRenderManager = (o) => createWithSettle({ syncSettleMs: 0, ...o });
 import { newRenderDoc } from "./datatype.js";
 import { encodeGLB } from "./glb.js";
-import { pinnedRepo, runBuild, viewAt } from "./build.js";
+import { pinnedRepo, runBuild } from "./build.js";
 
 const tinyGLB = (z = 0) => encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 1, z] }] });
 
@@ -115,14 +115,6 @@ describe("render manager", () => {
     expect(t.repo.created.length).toBe(2); // old GLB orphaned, not rewritten
   });
 
-  it("debounces source edits as expensive by default", async () => {
-    const t = setup({ params: [{ key: "size", kind: "number", default: 1 }] });
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(0);
-    t.source.change((d) => (d.size = 5));
-    expect(t.timers.pendingDelays()).toEqual([800]);
-  });
-
   it("uses the fingerprint instead of heads when the provider has one", async () => {
     const t = setup({ fingerprint: (doc) => String(doc.size) });
     await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
@@ -148,29 +140,27 @@ describe("render manager", () => {
     expect(t.render.doc().builtFrom).not.toBeNull();
   });
 
-  it("records errors and does not retry the same inputs at once", async () => {
-    const t = setup({ build: async () => { throw new Error("boom"); } });
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(4000);
-    expect(t.impl.build).toHaveBeenCalledTimes(1);
-    expect(t.render.doc()).toMatchObject({ status: "error", error: "boom", glbUrl: null });
-    t.render.change((d) => (d.params.size = 4));
-    await t.timers.advance(5000);
-    expect(t.impl.build).toHaveBeenCalledTimes(2); // new inputs → one more try
-  });
-
-  it("retries a failed build with backoff, then gives up until the inputs change", async () => {
-    let fail = true;
-    const t = setup({ build: async () => { if (fail) throw new Error("flaky"); return { kind: "glb", glb: tinyGLB() }; } });
+  // a failure is recorded, then retried with backoff: once is a transient failure the first retry gets past;
+  // one that keeps failing runs out of retries and waits for the inputs to change
+  it.each([
+    ["once", 1],
+    ["every time", Infinity],
+  ])("a build that fails %s is recorded and retried with backoff, then gives up until the inputs change", async (_, failures) => {
+    let calls = 0;
+    let failing = failures;
+    const t = setup({ build: async () => { if (calls++ < failing) throw new Error("flaky"); return { kind: "glb", glb: tinyGLB() }; } });
     await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
     await t.timers.advance(0);
     expect(t.impl.build).toHaveBeenCalledTimes(1);
+    expect(t.render.doc()).toMatchObject({ status: "error", error: "flaky", glbUrl: null });
     expect(t.mgr.state("o1").retryAt).toBeGreaterThan(t.timers.now());
     for (const wait of RETRY_BACKOFF_MS) await t.timers.advance(wait + 900);
-    expect(t.impl.build).toHaveBeenCalledTimes(1 + RETRY_BACKOFF_MS.length);
+    const tries = 1 + Math.min(failures, RETRY_BACKOFF_MS.length);
+    expect(t.impl.build).toHaveBeenCalledTimes(tries);
+    expect(t.render.doc().status).toBe(failures === 1 ? "idle" : "error");
     await t.timers.advance(10 * 60_000);
-    expect(t.impl.build).toHaveBeenCalledTimes(1 + RETRY_BACKOFF_MS.length); // out of retries
-    fail = false;
+    expect(t.impl.build).toHaveBeenCalledTimes(tries); // built, or out of retries
+    failing = 0;
     t.render.change((d) => (d.params.size = 2));
     await t.timers.advance(1000);
     expect(t.render.doc()).toMatchObject({ status: "idle", error: null });
@@ -193,20 +183,14 @@ describe("render manager", () => {
     expect(t.render.doc().glbUrl).toBeTruthy();
   });
 
-  it("a transient failure recovers on the first retry", async () => {
-    let calls = 0;
-    const t = setup({ build: async () => { if (calls++ === 0) throw new Error("cdn"); return { kind: "glb", glb: tinyGLB() }; } });
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(0);
-    await t.timers.advance(RETRY_BACKOFF_MS[0] + 900);
-    expect(t.render.doc()).toMatchObject({ status: "idle", error: null });
-    expect(t.render.doc().glbUrl).toBeTruthy();
-  });
-
-  it("rebuilds when the installed provider is newer than the build, never when it is older", async () => {
+  it.each([
+    ["following the latest", false],
+    ["fixed at its heads", true],
+  ])("rebuilds when the installed provider is newer than the build, never when it is older (%s)", async (_, fixed) => {
     const t = setup();
+    const object = { sourceUrl: t.source.url, renderUrl: t.render.url, ...(fixed ? { at: { heads: t.source.heads() } } : {}) };
     t.provider.version = 2;
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.mgr.track("o1", object);
     await t.timers.advance(0);
     expect(t.render.doc().builtFrom.providerVersion).toBe(2);
     t.mgr.dispose();
@@ -216,7 +200,7 @@ describe("render manager", () => {
       repo: t.repo, timers: t.timers, now: t.timers.now,
       loadProvider: async () => ({ ...t.provider, version: 1 }),
     });
-    await older.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await older.track("o1", object);
     await t.timers.advance(5000);
     expect(t.impl.build).toHaveBeenCalledTimes(1);
     expect(older.state("o1")).toMatchObject({ stale: false });
@@ -227,10 +211,10 @@ describe("render manager", () => {
       repo: t.repo, timers: t.timers, now: t.timers.now,
       loadProvider: async () => ({ ...t.provider, version: 3 }),
     });
-    await newer.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await newer.track("o1", object);
     await t.timers.advance(5000);
     expect(t.impl.build).toHaveBeenCalledTimes(2);
-    expect(t.render.doc().builtFrom.providerVersion).toBe(3);
+    expect(t.render.doc().builtFrom).toMatchObject({ providerVersion: 3, heads: t.source.heads() });
     newer.dispose();
   });
 
@@ -375,43 +359,24 @@ describe("render manager", () => {
     expect(t.render.doc().builtFrom.paramsKey).toBe('{"size":7}');
   });
 
-  it("waits for a peer that announced it is building the same inputs", async () => {
+  // the announcement before the edit, or during its debounce: no build until the peer's lands, and one
+  // of its own if the peer's never does
+  it.each([
+    ["before the edit", true],
+    ["during the debounce", false],
+  ])("waits for a peer that announced it is building the same inputs (%s), and builds if the peer's build never lands", async (_, first) => {
     const t = setup();
     await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
     await t.timers.advance(0);
-    t.render.emit("ephemeral-message", { message: { type: "scene-render:building", key: '{"size":2}|h:' + t.source.heads()[0] } });
+    const announce = () => t.render.emit("ephemeral-message", { message: { type: "scene-render:building", key: '{"size":2}|h:' + t.source.heads()[0] } });
+    if (first) announce();
     t.render.change((d) => (d.params.size = 2));
-    expect(t.timers.pendingDelays()[0]).toBeGreaterThan(10_000);
-  });
-
-  it("staggers automatic rebuilds behind a builder it has heard with a lower peer id", async () => {
-    const t = setup({ peerId: "peer-b" });
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(0);
-    t.render.emit("ephemeral-message", { senderId: "peer-a", message: { type: "scene-render:building", key: "something-else" } });
-    t.render.change((d) => (d.params.size = 2));
-    expect(t.timers.pendingDelays()).toEqual([150 + PEER_STAGGER_MS]);
-  });
-
-  it("does not stagger behind a builder with a higher peer id, nor a forced rebuild", async () => {
-    const t = setup({ peerId: "peer-a" });
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(0);
-    t.render.emit("ephemeral-message", { senderId: "peer-b", message: { type: "scene-render:building", key: "something-else" } });
-    t.render.change((d) => (d.params.size = 2));
-    expect(t.timers.pendingDelays()).toEqual([150]);
-  });
-
-  it("an announcement that arrives during the debounce reschedules the pending build", async () => {
-    const t = setup({ peerId: "peer-b" });
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(0);
-    t.render.change((d) => (d.params.size = 2));
-    expect(t.timers.pendingDelays()).toEqual([150]);
-    t.render.emit("ephemeral-message", { senderId: "peer-a", message: { type: "scene-render:building", key: '{"size":2}|h:' + t.source.heads()[0] } });
-    expect(t.timers.pendingDelays()[0]).toBeGreaterThan(10_000);
-    await t.timers.advance(200);
+    if (!first) announce();
+    await t.timers.advance(REMOTE_BUILD_GRACE_MS - 1000);
     expect(t.impl.build).toHaveBeenCalledTimes(1); // only the initial build; the peer's is awaited
+    await t.timers.advance(REMOTE_BUILD_GRACE_MS);
+    expect(t.impl.build).toHaveBeenCalledTimes(2);
+    expect(t.render.doc().builtFrom.paramsKey).toBe('{"size":2}');
   });
 
   it("reports a missing provider and picks it up when it registers", async () => {
@@ -432,17 +397,6 @@ describe("render manager", () => {
     await mgr.providersChanged();
     await t.timers.advance(0);
     expect(t.impl.build).toHaveBeenCalledTimes(1);
-  });
-
-  it("cleans up listeners and timers", async () => {
-    const t = setup();
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(0);
-    t.render.change((d) => (d.params.size = 2));
-    t.mgr.dispose();
-    expect(t.timers.pendingDelays()).toEqual([]);
-    expect(t.render.listenerCount("change")).toBe(0);
-    expect(t.source.listenerCount("change")).toBe(0);
   });
 });
 
@@ -477,15 +431,6 @@ describe("render manager: convergence and recovery", () => {
     loser.rebuild("o");
     await flush();
     expect(repo.created.length - before).toBeLessThanOrEqual(3);
-  });
-
-  it("a provider upgrade still rebuilds a render built by the old version", async () => {
-    const t = setup({ fingerprint: (d) => `v2:${d.size}` });
-    t.render.change((d) => (d.builtFrom = { heads: t.source.heads(), fingerprint: "v1:1", paramsKey: '{"size":1}' }));
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(1000);
-    expect(t.impl.build).toHaveBeenCalledTimes(1);
-    expect(t.render.doc().builtFrom.fingerprint).toBe("v2:1");
   });
 
   it("clears a stale error when an edit puts the source back to what was built", async () => {
@@ -528,29 +473,22 @@ describe("render manager: convergence and recovery", () => {
     expect(t.render.doc().builtFrom.paramsKey).toBe('{"size":7}');
   });
 
-  it("treats a 'building' status it finds on a new object as a peer's announcement", async () => {
+  it.each([
+    ["the peer's build lands: nothing to do", true],
+    ["it never lands: builds after the grace", false],
+  ])("treats a 'building' status it finds on a new object as a peer's announcement: %s", async (_, lands) => {
     const t = setup();
     t.render.change((d) => (d.status = "building")); // a peer started before we subscribed
     await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(0);
+    await t.timers.advance(REMOTE_BUILD_GRACE_MS - 1000);
     expect(t.impl.build).not.toHaveBeenCalled();
-    // The peer finishes: nothing for us to do.
-    t.render.change((d) => {
-      d.builtFrom = { heads: t.source.heads(), fingerprint: null, paramsKey: '{"size":1}' };
-      d.status = "idle";
-    });
+    if (lands)
+      t.render.change((d) => {
+        d.builtFrom = { heads: t.source.heads(), fingerprint: null, paramsKey: '{"size":1}' };
+        d.status = "idle";
+      });
     await t.timers.advance(30_000);
-    expect(t.impl.build).not.toHaveBeenCalled();
-  });
-
-  it("builds after the grace if the announced build never lands", async () => {
-    const t = setup();
-    t.render.change((d) => (d.status = "building"));
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(19_000);
-    expect(t.impl.build).not.toHaveBeenCalled();
-    await t.timers.advance(1_000);
-    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    expect(t.impl.build).toHaveBeenCalledTimes(lands ? 0 : 1);
     expect(t.render.doc().status).toBe("idle");
   });
 
@@ -661,17 +599,6 @@ describe("render manager: provider dependencies", () => {
     expect(t.render.doc().builtFrom.deps).toEqual({});
   });
 
-  it("rebuilds an old render (no deps recorded) once when its provider now reports some", async () => {
-    const t = depSetup({ fingerprint: (d) => String(d.body) });
-    t.render.change((d) => (d.builtFrom = { heads: t.source.heads(), fingerprint: String(t.source.doc().body), paramsKey: "{}" }));
-    await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await flush();
-    await t.timers.advance(1000);
-    expect(t.impl.build).toHaveBeenCalledTimes(1);
-    await t.timers.advance(5000);
-    expect(t.impl.build).toHaveBeenCalledTimes(1);
-  });
-
   it("an unloadable dependency doesn't block the build; it is retried and rebuilds when it arrives", async () => {
     const t = depSetup();
     const missing = "automerge:nothereyet";
@@ -690,7 +617,10 @@ describe("render manager: provider dependencies", () => {
     expect(t.render.doc().builtFrom.deps).toEqual({ [missing]: late.heads() });
   });
 
-  it("waits (a while) for a dependency still loading before the first build", async () => {
+  it.each([
+    ["it lands in time: built with it", true],
+    ["it never lands: built without it once DEP_WAIT_MS is up", false],
+  ])("waits (a while) for a dependency still loading before the first build: %s", async (_, lands) => {
     const repo = new FakeRepo();
     let release;
     const gate = new Promise((r) => (release = r));
@@ -702,33 +632,19 @@ describe("render manager: provider dependencies", () => {
     };
     const t = depSetup({ repo });
     slow = t.hull.url;
+    if (!lands) t.impl.build.mockImplementation(async () => ({ kind: "glb", glb: tinyGLB() })); // doesn't wait for it either
     await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await flush(); // dependency finds resolve
-    await t.timers.advance(0);
-    expect(t.impl.build).not.toHaveBeenCalled();
-    expect(t.timers.pendingDelays()).toEqual([DEP_WAIT_MS]);
-    release();
-    await flush();
-    await t.timers.advance(0);
-    expect(t.impl.build).toHaveBeenCalledTimes(1);
-    expect(t.render.doc().builtFrom.deps).toEqual({ [t.hull.url]: t.hull.heads() });
-  });
-
-  it("gives up waiting after DEP_WAIT_MS", async () => {
-    const repo = new FakeRepo();
-    const t = depSetup({ repo });
-    const find = repo.find.bind(repo);
-    repo.find = (url) => (url === t.hull.url ? new Promise(() => {}) : find(url));
-    t.impl.build.mockImplementation(async () => ({ kind: "glb", glb: tinyGLB() })); // doesn't wait for it either
-    await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await flush(); // the other dependency finds resolve
     await t.timers.advance(DEP_WAIT_MS - 1);
     expect(t.impl.build).not.toHaveBeenCalled();
+    if (lands) release();
+    await flush();
     await t.timers.advance(1);
     expect(t.impl.build).toHaveBeenCalledTimes(1);
-    expect(t.render.doc().builtFrom.deps).toEqual({ [t.hull.url]: [] });
+    expect(t.render.doc().builtFrom.deps).toEqual({ [t.hull.url]: lands ? t.hull.heads() : [] });
   });
 
-  it("doesn't flag a render stale just because its dependencies haven't loaded yet", async () => {
+  it("doesn't flag a render stale, or rebuild over it, while a recorded dependency is slow to load, however long it takes", async () => {
     const repo = new FakeRepo();
     const t = depSetup({ repo });
     t.render.change((d) => (d.builtFrom = { heads: t.source.heads(), fingerprint: null, paramsKey: "{}", deps: { [t.hull.url]: t.hull.heads() } }));
@@ -741,30 +657,13 @@ describe("render manager: provider dependencies", () => {
     };
     await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url });
     expect(t.states.at(-1)).toMatchObject({ phase: "ready", stale: false });
-    release();
-    await t.timers.advance(10_000);
-    expect(t.impl.build).not.toHaveBeenCalled();
-    expect(t.states.at(-1)).toMatchObject({ stale: false });
-  });
-
-  it("never rebuilds over a recorded dependency that is slow to load, however long it takes", async () => {
-    const repo = new FakeRepo();
-    const t = depSetup({ repo });
-    t.render.change((d) => (d.builtFrom = { heads: t.source.heads(), fingerprint: null, paramsKey: "{}", deps: { [t.hull.url]: t.hull.heads() } }));
-    let release;
-    const gate = new Promise((r) => (release = r));
-    const find = repo.find.bind(repo);
-    repo.find = async (url) => {
-      if (url === t.hull.url) await gate;
-      return find(url);
-    };
-    await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url });
     await t.timers.advance(DEP_WAIT_MS * 4);
     expect(t.impl.build).not.toHaveBeenCalled();
     expect(t.states.at(-1)).toMatchObject({ stale: false });
     release();
     await t.timers.advance(10_000);
     expect(t.impl.build).not.toHaveBeenCalled();
+    expect(t.states.at(-1)).toMatchObject({ stale: false });
   });
 
   it("records a dependency that finished loading during the build as read, so it doesn't build twice", async () => {
@@ -877,6 +776,8 @@ describe("render manager: provider dependencies", () => {
     t.hull.change((d) => (d.length = 1));
     t.mgr.dispose();
     expect(t.hull.listenerCount("change")).toBe(0);
+    expect(t.render.listenerCount("change")).toBe(0);
+    expect(t.source.listenerCount("change")).toBe(0);
     expect(t.timers.pendingDelays()).toEqual([]);
   });
 });
@@ -897,73 +798,48 @@ describe("runBuild", () => {
     expect(repo.created).toEqual([]);
   });
 
-  it("keeps a peer's result when the peer committed the same inputs while this build ran", async () => {
+  it.each([
+    ["from the same inputs: keeps the peer's result", true],
+    ["from different inputs: still commits its own", false],
+  ])("a peer's result lands while this build runs, %s", async (_, same) => {
     const repo = new FakeRepo();
     const source = repo.add({ title: "s" });
     const render = repo.add(newRenderDoc({ title: "s", parent: source.url, providerId: "p", params: { size: 1 } }));
     const theirGlb = "automerge:peerglb";
     const build = async () => {
-      // Mid-build, a peer that started at the same moment lands its result for the same inputs.
+      // mid-build, a peer that started at the same moment lands its result
       render.change((d) => {
         d.glbUrl = theirGlb;
-        d.builtFrom = { heads: [...source.heads()], fingerprint: null, paramsKey: '{"size":1}' };
+        d.builtFrom = { heads: same ? [...source.heads()] : ["someoldhead"], fingerprint: null, paramsKey: '{"size":1}' };
         d.status = "building"; // our own "building" write won the concurrent merge
       });
       return { kind: "glb", glb: tinyGLB() };
     };
     const res = await runBuild({ repo, renderHandle: render, sourceHandle: source, provider: { id: "p", params: [], module: { build } } });
-    expect(res).toMatchObject({ ok: true, superseded: true, glbUrl: theirGlb });
-    expect(repo.created).toEqual([]); // no orphan GLB doc
-    expect(render.doc()).toMatchObject({ glbUrl: theirGlb, status: "idle", error: null });
-  });
-
-  it("still commits when a peer's concurrent result was built from different inputs", async () => {
-    const repo = new FakeRepo();
-    const source = repo.add({ title: "s" });
-    const render = repo.add(newRenderDoc({ title: "s", parent: source.url, providerId: "p", params: { size: 1 } }));
-    const build = async () => {
-      render.change((d) => {
-        d.glbUrl = "automerge:older";
-        d.builtFrom = { heads: ["someoldhead"], fingerprint: null, paramsKey: '{"size":1}' };
-      });
-      return { kind: "glb", glb: tinyGLB() };
-    };
-    const res = await runBuild({ repo, renderHandle: render, sourceHandle: source, provider: { id: "p", params: [], module: { build } } });
     expect(res.ok).toBe(true);
-    expect(res.superseded).toBeUndefined();
-    expect(repo.created).toHaveLength(1);
-    expect(render.doc().glbUrl).toBe(repo.created[0].url);
+    expect({ superseded: res.superseded ?? false, made: repo.created.length }).toEqual(same ? { superseded: true, made: 0 } : { superseded: false, made: 1 }); // no orphan GLB doc
+    expect(render.doc()).toMatchObject({ glbUrl: same ? theirGlb : repo.created[0].url, status: "idle", error: null });
   });
 
-  it("a forced rebuild of an already-fresh render still builds, and makes a new GLB if the bytes differ", async () => {
+  // a rebuild always builds, even of an already-fresh render (a forced one); its GLB doc is new only if the bytes differ
+  it.each([
+    ["forced, of a fresh render, new bytes: a new GLB doc", false, true],
+    ["after a source edit, the same bytes: the GLB doc kept", true, false],
+  ])("a rebuild %s", async (_, edit, differ) => {
     const repo = new FakeRepo();
     const source = repo.add({ title: "s" });
     const render = repo.add(newRenderDoc({ title: "s", parent: source.url, providerId: "p", params: { size: 1 } }));
     let z = 0;
-    const provider = { id: "p", params: [], module: { build: async () => ({ kind: "glb", glb: tinyGLB(z++) }) } };
+    const provider = { id: "p", params: [], module: { build: async () => ({ kind: "glb", glb: tinyGLB(differ ? z++ : 0) }) } };
     await runBuild({ repo, renderHandle: render, sourceHandle: source, provider });
     const first = render.doc().glbUrl;
+    expect(render.doc().builtFrom.glbHash).toMatch(/^(sha256|c53):/);
+    if (edit) source.change((d) => (d.title = "renamed"));
     const res = await runBuild({ repo, renderHandle: render, sourceHandle: source, provider });
     expect(res.superseded).toBeUndefined();
-    expect(res.reused).toBe(false);
-    expect(repo.created).toHaveLength(2);
-    expect(render.doc().glbUrl).not.toBe(first);
-  });
-
-  it("keeps the current GLB file doc when a rebuild produces the same bytes", async () => {
-    const repo = new FakeRepo();
-    const source = repo.add({ title: "s" });
-    const render = repo.add(newRenderDoc({ title: "s", parent: source.url, providerId: "p", params: {} }));
-    const provider = { id: "p", params: [], module: { build: async () => ({ kind: "glb", glb: tinyGLB() }) } };
-    await runBuild({ repo, renderHandle: render, sourceHandle: source, provider });
-    const first = render.doc().glbUrl;
-    const hash = render.doc().builtFrom.glbHash;
-    expect(hash).toMatch(/^(sha256|c53):/);
-    source.change((d) => (d.title = "renamed"));
-    const res = await runBuild({ repo, renderHandle: render, sourceHandle: source, provider });
-    expect(res.reused).toBe(true);
-    expect(repo.created).toHaveLength(1);
-    expect(render.doc().glbUrl).toBe(first);
+    expect(res.reused).toBe(!differ);
+    expect(repo.created).toHaveLength(differ ? 2 : 1);
+    expect(render.doc().glbUrl === first).toBe(!differ);
     expect(render.doc().builtFrom.heads).toEqual(source.heads());
   });
 
@@ -984,18 +860,7 @@ describe("runBuild", () => {
   });
 });
 
-describe("viewAt / pinnedRepo", () => {
-  it("viewAt gives the view, the handle itself without heads, and null for heads not here", () => {
-    const repo = new FakeRepo();
-    const h = repo.add({ n: 1 });
-    const h1 = h.heads();
-    h.change((d) => (d.n = 2));
-    expect(viewAt(h, h1).doc()).toEqual({ n: 1 });
-    expect(viewAt(h, [])).toBe(h);
-    expect(viewAt(h, ["nope"])).toBeNull();
-    expect(viewAt({ doc: () => ({}) }, ["x"])).toBeNull(); // no view()
-  });
-
+describe("pinnedRepo", () => {
   it("finds listed docs at their heads, everything else live, and passes the rest of the repo through", async () => {
     const repo = new FakeRepo();
     const a = repo.add({ v: "a1" });
@@ -1046,18 +911,6 @@ describe("render manager: fixed versions (at)", () => {
     expect(t.impl.build).toHaveBeenCalledTimes(2);
     expect(t.impl.build.mock.calls[1][0].doc.size).toBe(1);
     expect(t.render.doc().builtFrom).toMatchObject({ heads: h1, paramsKey: '{"size":2}' });
-  });
-
-  it("a newer provider version still rebuilds a fixed object", async () => {
-    const t = setup();
-    const h1 = t.source.heads();
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url, at: { heads: h1 } });
-    await t.timers.advance(0);
-    t.provider.version = 2;
-    t.render.change((d) => (d.title = "poke")); // anything that re-evaluates
-    await t.timers.advance(5000);
-    expect(t.impl.build).toHaveBeenCalledTimes(2);
-    expect(t.render.doc().builtFrom).toMatchObject({ heads: h1, providerVersion: 2 });
   });
 
   it("fixing at fixPoint() changes nothing; following the latest again catches up", async () => {

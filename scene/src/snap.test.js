@@ -13,14 +13,12 @@ describe("nearestScreenVertex (measure snapping)", () => {
     0.52, 0.02, -3, // screen (152, 49), but 8 m from the eye
   ]);
 
-  it("finds the vertex nearest the cursor within the radius", () => {
+  it("finds the vertex nearest the cursor within the radius, or null when none is", () => {
     const r = nearestScreenVertex(pts, { count: 2 }, I, I, { ...view, x: 147, y: 52, maxPx: 10 });
     expect(r.index).toBe(1);
     expect(r.d).toBeCloseTo(Math.hypot(3, 2));
     expect(r.world).toEqual([0.5, 0, 0]);
-  });
-
-  it("returns null when nothing is within the radius", () => {
+    // nothing within the radius: null
     expect(nearestScreenVertex(pts, { count: 2 }, I, I, { ...view, x: 100, y: 50, maxPx: 10 })).toBeNull();
   });
 

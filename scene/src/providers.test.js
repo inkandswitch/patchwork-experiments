@@ -1,37 +1,28 @@
 import { describe, it, expect } from "vitest";
-import { CONTENT_KINDS, contentOf, describeSource, extensionOf, matchProviders, normalizeExtension, providerMatches, routeOf, showsContent } from "./providers.js";
+import { CONTENT_KINDS, contentOf, describeSource, matchProviders, routeOf, showsContent } from "./providers.js";
 
 const stl = { id: "file-stl", supportedDatatypes: ["file"], extensions: ["stl"], content: "built" };
 const glb = { id: "file-glb", supportedDatatypes: ["file"], extensions: ["glb"], content: "file" };
 const anyFile = { id: "any-file", supportedDatatypes: ["file"], content: "built" };
-const hull = { id: "camber-hull-surface", supportedDatatypes: ["camber-hull"], content: "built" };
+const hull = { id: "shape-surface", supportedDatatypes: ["shape"], content: "built" };
 const wild = { id: "bbox", supportedDatatypes: "*", content: "built" };
 
 describe("describeSource", () => {
   it("reads datatype and extension", () => {
-    expect(describeSource({ "@patchwork": { type: "file" }, extension: ".STL", name: "x.stl" })).toEqual({ datatype: "file", extension: "stl" });
-    expect(describeSource({ "@patchwork": { type: "file" }, extension: "", name: "boat.GLB" })).toEqual({ datatype: "file", extension: "glb" });
-    expect(describeSource({ "@patchwork": { type: "camber-hull" } })).toEqual({ datatype: "camber-hull", extension: null });
+    expect(describeSource({ "@patchwork": { type: "file" }, extension: "..Stl ", name: "x.stl" })).toEqual({ datatype: "file", extension: "stl" });
+    expect(describeSource({ "@patchwork": { type: "file" }, extension: "", name: "boat.b.GLB" })).toEqual({ datatype: "file", extension: "glb" });
+    expect(describeSource({ "@patchwork": { type: "file" }, name: "noext" })).toEqual({ datatype: "file", extension: null });
+    expect(describeSource({ "@patchwork": { type: "shape" } })).toEqual({ datatype: "shape", extension: null });
     expect(describeSource({})).toEqual({ datatype: null, extension: null });
-  });
-  it("normalises extensions", () => {
-    expect(normalizeExtension("..Stl ")).toBe("stl");
-    expect(extensionOf("a.b.c")).toBe("c");
-    expect(extensionOf("noext")).toBe("");
   });
 });
 
 describe("matchProviders", () => {
   const all = [wild, anyFile, glb, stl, hull];
-  it("filters by datatype and extension", () => {
-    expect(providerMatches(stl, { datatype: "file", extension: "stl" })).toBe(true);
-    expect(providerMatches(stl, { datatype: "file", extension: "glb" })).toBe(false);
-    expect(providerMatches(stl, { datatype: "file", extension: null })).toBe(false);
-    expect(providerMatches(hull, { datatype: "file", extension: "stl" })).toBe(false);
-  });
   it("sorts specific before generic", () => {
     expect(matchProviders(all, { datatype: "file", extension: "stl" }).map((p) => p.id)).toEqual(["file-stl", "any-file", "bbox"]);
-    expect(matchProviders(all, { datatype: "camber-hull", extension: null }).map((p) => p.id)).toEqual(["camber-hull-surface", "bbox"]);
+    expect(matchProviders(all, { datatype: "shape", extension: null }).map((p) => p.id)).toEqual(["shape-surface", "bbox"]);
+    expect(matchProviders(all, { datatype: "file", extension: null }).map((p) => p.id)).toEqual(["any-file", "bbox"]);
     expect(matchProviders([hull], { datatype: "todo", extension: null })).toEqual([]);
   });
 });
@@ -60,9 +51,9 @@ describe("content kinds (STAGE.md, “Views, stages and links”)", () => {
   });
 
   // The registry, as kindOf sees it: one provider of each kind, one that declares none.
-  const registry = { f: "file", b: "built", bad: null };
+  const registry = { f: "file", b: "built", s: "scene", bad: null };
   const kindOf = (id) => registry[id] ?? null;
-  const PROVIDER_IDS = [undefined, null, "", "f", "b", "bad", "absent"];
+  const PROVIDER_IDS = [undefined, null, "", "f", "b", "s", "bad", "absent"];
   const RENDER_URLS = [undefined, null, "", "automerge:render"];
   const SOURCE_URLS = [null, "automerge:source"];
 
@@ -73,7 +64,7 @@ describe("content kinds (STAGE.md, “Views, stages and links”)", () => {
         for (const sourceUrl of SOURCE_URLS) {
           const o = { name: "o", providerId, renderUrl, sourceUrl };
           const route = routeOf(o, kindOf);
-          const expected = renderUrl ? "built" : providerId === "f" ? "file" : null;
+          const expected = renderUrl ? "built" : providerId === "f" ? "file" : providerId === "s" ? "scene" : null;
           expect([providerId, renderUrl, sourceUrl, route]).toEqual([providerId, renderUrl, sourceUrl, expected]);
           expect([...CONTENT_KINDS, null]).toContain(route);
           // a group never routes, whatever else it carries
@@ -83,16 +74,6 @@ describe("content kinds (STAGE.md, “Views, stages and links”)", () => {
     expect(n).toBe(PROVIDER_IDS.length * RENDER_URLS.length * SOURCE_URLS.length);
     expect(routeOf(null, kindOf)).toBeNull();
     expect(routeOf(undefined, kindOf)).toBeNull();
-  });
-
-  it("an object as addObject makes it, through a provider of any kind, routes to that kind", () => {
-    // addObject makes a render doc exactly when the provider's kind is "built"
-    for (const kind of CONTENT_KINDS) {
-      const made = { providerId: "p", sourceUrl: "automerge:source", renderUrl: kind === "built" ? "automerge:render" : null };
-      expect(routeOf(made, (id) => (id === "p" ? kind : null))).toBe(kind);
-      // and a built one still routes when its provider isn't here: the manager shows what was built
-      if (kind === "built") expect(routeOf(made, () => null)).toBe("built");
-    }
   });
 });
 
