@@ -6,8 +6,8 @@
 // otherwise every shown object gets a faint box and its sizes. Boxes are of
 // loaded geometry only (no hints), from api.box.
 
-import { editing } from "../stage/bodies.js";
-import { perFocus } from "./per-focus.js";
+import { editing } from "./editing.js";
+import { perFocus } from "../per-focus.js";
 import css from "./bounds.css?inline";
 import { formatLength } from "../units.js";
 import { isGroup } from "../groups.js";
@@ -44,7 +44,7 @@ export default {
     });
     const pref = (key, fallback) => api.use("prefs")?.get(key, fallback) ?? fallback;
     const shown = () => pref("bounds", false) === true;
-    // what's drawn: shown, and only while editing (the aids are the editor's: ../stage/bodies.js)
+    // what's drawn: shown, and only while editing (the aids are the editor's: ./editing.js)
     const drawn = () => shown() && editing(api.view.get());
 
     function clear(layer) {
@@ -96,7 +96,7 @@ export default {
       commands: [
         {
           id: "bounds",
-          edit: true,
+          hand: "edit",
           name: "Bounds",
           group: "view",
           icon: "bounds",

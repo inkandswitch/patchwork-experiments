@@ -32,7 +32,7 @@ export default {
         },
         {
           id: "set-home",
-          edit: true,
+          hand: "edit",
           name: "Set home view",
           show: ["menu"],
           state: (target) => (target == null ? { title: "Open this scene here for anyone without a saved view", disabled: !api.focus()?.camera.get() } : null),

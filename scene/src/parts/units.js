@@ -11,7 +11,7 @@ export default {
       commands: [
         {
           id: "units",
-          edit: true,
+          hand: "edit",
           name: "Units",
           group: "settings",
           show: ["toolbar"],

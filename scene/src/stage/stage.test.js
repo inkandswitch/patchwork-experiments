@@ -8,6 +8,7 @@ import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
 import { wallAt } from "../test/stage-harness.js";
 import { bestWidget, initialCamera, startOf, statusOf, widgetWins } from "./stage.js";
+import { wholeStart } from "./view.js";
 import { hitChain } from "./chain.js";
 import { sameTransform } from "../native/poses.js";
 import { SEND } from "./presence.js";
@@ -57,7 +58,7 @@ const { default: Stage } = await import("./stage.js");
 const { add, drop, editor, part, template: runTemplate } = await import("../parts/editor.js");
 // the drop context (EDITOR.md, "Drops"), whole: what a drop, a part and a template get
 const CTX = ["addObject", "change", "content", "doc", "file", "handle", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
-// (and the editor's hand, a view plugin: view.start.edit picks it up; and the view's native services)
+// (and the editor's hand, a view plugin: the start's `edit` picks it up; and the view's native services)
 const VIEWS = ["scene.edit", "scene.notices", "scene.prefs", "scene.drawer", "scene.poses"];
 for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype" || VIEWS.includes(p.id)) getRegistry(p.type).register(p);
 /** what scene.notices shows */
@@ -221,14 +222,21 @@ describe("the stage's pure helpers", () => {
     expect(initialCamera({ doc: { view: { home } } })).toBeNull();
     expect(initialCamera({ doc: {} })).toBeNull();
   });
-  it("view.start: a body (look too: the stage's), a place, a home, whether editing (exactly true); anything else is nothing", () => {
+  it("view.start: the kernel reads a body (look too: the stage's), a place, a home; anything else is nothing to it", () => {
     const home = { position: [1, 1, 1], target: [0, 0, 0] };
-    expect(startOf({ view: { start: { body: "walk", place: "spawn1", home } } })).toEqual({ body: "walk", place: "spawn1", home, edit: false });
-    expect(startOf({ view: { start: { body: "walk", place: "x", edit: true } } })).toEqual({ body: "walk", place: "x", home: null, edit: true });
-    expect(startOf({ view: { start: { body: "look", edit: 1 } } })).toEqual({ body: "look", place: null, home: null, edit: false });
-    expect(startOf({ view: { start: { body: 3, place: "" } } })).toEqual({ body: null, place: null, home: null, edit: false });
-    expect(startOf({ view: { activity: "play" } })).toEqual({ body: null, place: null, home: null, edit: false });
-    expect(startOf(null)).toEqual({ body: null, place: null, home: null, edit: false });
+    expect(startOf({ view: { start: { body: "walk", place: "spawn1", home } } })).toEqual({ body: "walk", place: "spawn1", home });
+    expect(startOf({ view: { start: { body: "walk", place: "x", edit: true } } })).toEqual({ body: "walk", place: "x", home: null });
+    expect(startOf({ view: { start: { body: 3, place: "" } } })).toEqual({ body: null, place: null, home: null });
+    expect(startOf({ view: { activity: "play" } })).toEqual({ body: null, place: null, home: null });
+    expect(startOf(null)).toEqual({ body: null, place: null, home: null });
+  });
+  it("view.start whole, as view.arrived says it: a frozen plain copy, every key kept (the plugins'), {} for none", () => {
+    const start = { body: "walk", "t.mine": { on: true, n: [1, 2] } };
+    const whole = wholeStart({ view: { start } });
+    expect(whole).toEqual(start);
+    expect(whole).not.toBe(start);
+    expect([Object.isFrozen(whole), Object.isFrozen(whole["t.mine"]), Object.isFrozen(whole["t.mine"].n)]).toEqual([true, true, true]);
+    for (const doc of [{ view: {} }, { view: { start: "walk" } }, { view: { start: [1] } }, null]) expect(wholeStart(doc)).toEqual({});
   });
   it("status: what's loading, building or broken", () => {
     expect(statusOf(card(), null)).toBeNull();
@@ -912,7 +920,7 @@ describe("the stage, mounted", () => {
     // (not editing: the Edit hand wants the pointer too)
     m.debug.view.plugins.record("scene.edit").api.run({ ext: "scene.edit", command: "edit", value: false });
     expect(api.run({ ext: "t.always", command: "gun" })).toBe(true);
-    expect(m.local.get().held).toEqual([{ ext: "t.always", command: "gun", name: "Gun", keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) }]);
+    expect(m.local.get().held).toEqual([{ ext: "t.always", command: "gun", name: "Gun", hand: null, keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) }]);
     const serials = [m.local.get().held[0].serial];
     expect(m.local.get().pointer.wanted).toBe(false);
     // another tool goes on top: the gun stays held
@@ -940,7 +948,7 @@ describe("the stage, mounted", () => {
     expect([put, names()]).toEqual([["gun", "brush", "brush"], ["gun"]]);
     // a tool held directly, not through a command: its declaration, and no command; on top of the gun
     const putDown = api.hold({ name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true }, { put: () => put.push("piece") });
-    expect(m.local.get().held[1]).toEqual({ ext: "t.always", command: null, name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true, serial: expect.any(Number) });
+    expect(m.local.get().held[1]).toEqual({ ext: "t.always", command: null, name: "Drawn piece", hand: null, keys: [{ code: "KeyQ", label: "Turn" }], pointer: true, serial: expect.any(Number) });
     serials.push(m.local.get().held[1].serial);
     // each tool held is its own (the gun held again is a new one)
     expect(new Set(serials).size).toBe(4);

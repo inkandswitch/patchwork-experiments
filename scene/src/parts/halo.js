@@ -6,7 +6,7 @@
 // own way (a CAD model's editor) has no handles in its way. Its input passes
 // everything: the handles are widgets, so a press on one is still the halo's
 // (the chain's widget step), and a press elsewhere goes on as before.
-// Round what's selected, while editing (../stage/bodies.js: the halo is
+// Round what's selected, while editing (./editing.js: the halo is
 // the editor's) with Move held, where its doc may be written and no other
 // pointing tool is held:
 // a move arrow along each axis, a rotate ring about each, and a scale handle
@@ -36,7 +36,7 @@ import { HANDLE_SIZE, MOVE, dragDelta, haloHandles, haloTarget, handleAt, handle
 import { frameConversions } from "../transform.js";
 import { worldBox } from "./carry-math.js";
 import { editor } from "./editor.js";
-import { perFocus } from "./per-focus.js";
+import { perFocus } from "../per-focus.js";
 
 const AXIS_FALLBACK = [
   [0.9, 0.25, 0.25],
@@ -377,7 +377,7 @@ function create(api) {
         key: "v",
         group: "tools",
         icon: "move",
-        edit: true,
+        hand: "edit",
         show: ["toolbar"],
         // a tool: on top of the hands while held; V again (or Escape at the top) puts it down
         tool: {},

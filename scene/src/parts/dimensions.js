@@ -9,7 +9,7 @@
 //
 // Saved dimensions are the doc's, drawn in every body (an author's
 // annotation, like a label); measuring them, their panel, selecting one by
-// its label and deleting it are the editor's (../stage/bodies.js): only in
+// its label and deleting it are the editor's (./editing.js): only in
 // Edit.
 //
 // A dimension is selectable though it isn't a scene object: selecting one
@@ -31,8 +31,8 @@ import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { editor } from "./editor.js";
-import { editing } from "../stage/bodies.js";
-import { perFocus } from "./per-focus.js";
+import { editing } from "./editing.js";
+import { perFocus } from "../per-focus.js";
 
 /** The measuring tool this panel offers (./measure.js). */
 const MEASURE = "scene.measure";
@@ -364,7 +364,7 @@ export function create(api) {
         className: "dimension-label",
         rank: 3,
         data: { id: d.id, selected: d.selected, detached: d.detached, offsurface: d.offSurface },
-        // selecting one is the editor's (../stage/bodies.js): only while editing
+        // selecting one is the editor's (./editing.js): only while editing
         onPointerDown: () => editing(api.view.get()) && select(d.id),
       })),
     );
@@ -484,7 +484,7 @@ export function create(api) {
     {
       // a measuring tool's way to save what it measured: run(null, { a, b, id?, label? })
       id: "add",
-      edit: true,
+      hand: "edit",
       name: "Add dimension",
       show: [],
       state: (target) => (target == null ? { title: "Save a dimension between two anchors" } : null),
@@ -492,7 +492,7 @@ export function create(api) {
     },
     {
       id: "delete",
-      edit: true,
+      hand: "edit",
       name: "Delete dimension",
       key: ["Delete", "Backspace"],
       show: [],

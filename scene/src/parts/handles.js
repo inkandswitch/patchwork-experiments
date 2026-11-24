@@ -23,9 +23,10 @@ import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.j
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
 import { editor } from "./editor.js";
-import { editing, pointing } from "../stage/bodies.js";
+import { pointing } from "../stage/bodies.js";
+import { editing } from "./editing.js";
 import { MOVE, moving } from "./halo-math.js";
-import { perFocus } from "./per-focus.js";
+import { perFocus } from "../per-focus.js";
 
 /** How close (port px) the pointer must be to a knob to grab it. */
 export const GRAB_PX = 12;
@@ -33,14 +34,15 @@ export const GRAB_PX = 12;
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
 
 /**
- * May the selection's knobs show? Only while editing with Move held (they are
- * Move's, as the halo's handles are: ./halo.js), where the scene may be
+ * May the selection's knobs show? Only with Move held (they are Move's, as the
+ * halo's handles are: ./halo.js; an editor's tool, so only while editing:
+ * STAGE.md, "Commands", H14), where the scene may be
  * written, and while no other extension holds a pointing tool (bodies.js
  * pointing). Pure.
  * @param {object} view  api.view.get()  @param {boolean} writable  @param {string} self  this part's id
  */
 export function knobsShown(view, writable, self) {
-  return editing(view) && moving(view) && !!writable && !pointing(view, self) && !pointing(view, MOVE.ext);
+  return moving(view) && !!writable && !pointing(view, self) && !pointing(view, MOVE.ext);
 }
 
 /** The provider (scene:source metadata) an object was built by, or null. */
