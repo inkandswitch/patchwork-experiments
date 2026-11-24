@@ -73,8 +73,8 @@ export class FakeHandle {
   doc() {
     return this._doc;
   }
-  /** As Automerge.hasHeads on the doc: does this handle know every one of these changes? */
-  hasHeads(heads) {
+  /** As DocHandle.containsHeads: does this handle know every one of these changes? */
+  containsHeads(heads) {
     return [...heads].every((h) => this._history.has(String(h)));
   }
   heads() {
