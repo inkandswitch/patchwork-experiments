@@ -7,11 +7,11 @@
 //     `{ url }` for each package that a plugin running for the doc comes
 //     from (of two registering one id, the one the registry hands out) and
 //     the list doesn't name (packagesToList), and, once the registry has
-//     gone quiet, take off each listed package no running plugin comes from:
-//     one this viewer has, or one it lacks while every need is answered here
-//     by a package that can be named (packagesToPrune: never while a need
-//     goes unanswered here, nor a source package while a render doc hasn't
-//     said which provider it names, nor the suggested import), in one change.
+//     gone quiet, take off each listed package this viewer can judge: one
+//     registered here none of whose plugins answers a need (packagesToPrune:
+//     never one it hasn't registered, never while a need goes unanswered
+//     here, nor a source package while a render doc hasn't said which
+//     provider it names, nor the suggested import), in one change.
 //     Never rewrites an entry, never makes the list. The same pass writes
 //     the scene package's own URL as `@patchwork.suggestedImportUrl` on a
 //     doc that names nothing loadable there.
