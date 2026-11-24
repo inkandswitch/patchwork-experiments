@@ -61,7 +61,17 @@ const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "di
 const b = await browser({ root: ROOT, port: 4791, cdp: 9791, page: "/tabletop/probes/dice-probe.html", width: 1816, height: 630, show: process.argv.includes("--show"), timeout: 240_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
-const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
+/** Poll on the wall for up to ms, a few frames of the page's clock at each look (a docked tool and a rebuilt die load by the clock's frames). */
+const until = async (expr, ms = 10_000) => {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await b.js(`window.__p.${expr}`).catch(() => false);
+    if (v) return v;
+    if (Date.now() - t0 > ms) return false;
+    await b.step(20);
+    await sleep(40);
+  }
+};
 const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, shots: [], timeline: [], timings: {} };
@@ -243,7 +253,7 @@ try {
     check("the die's menu offers Edit die", !!editDie, items.map((i) => i.text));
     if (editDie) await b.click(editDie.x, editDie.y);
     const shownTab = ".stage-drawer-tab[aria-selected=\"true\"] .stage-drawer-tab-name";
-    check("it docks the die's 2D tool in the drawer under the die's name, shown: twenty faces, in A's view only", await until("count('.stage-drawer .dice-panel .die-tool .die-face') === 20", 6000) && (await P(`text(${J(shownTab)})`)) === "d20" && (await P("count('.stage-drawer', 'b')")) === 0, { a: await P("count('.stage-drawer .dice-panel .die-tool .die-face')"), tab: await P(`text(${J(shownTab)})`), b: await P("count('.stage-drawer', 'b')") });
+    check("it docks the die's 2D tool in the drawer under the die's name, shown: twenty faces, in A's view only", await until("count('.stage-drawer .dice-panel .die-tool .die-face') === 20", 6000) && (await P(`text(${J(shownTab)})`)) === "d20" && (await P("count('.stage-drawer', 'b')")) === 0, { a: await P("count('.stage-drawer .dice-panel .die-tool .die-face')"), tab: await P(`text(${J(shownTab)})`), b: await P("count('.stage-drawer', 'b')"), panels: await P("count('.dice-panel')"), tabs: await js(`[...document.querySelectorAll("#a .stage-drawer-tab-name")].map((e) => e.textContent)`), notices: await P("notices('a')"), menu: await js(`!!document.querySelector(".context-menu")`) });
     await b.rest(300);
     const canvas1 = await P("canvas('a')");
     check("the canvas gives the drawer room", canvas1.w < canvas0.w - 200, { before: canvas0.w, after: canvas1.w });
