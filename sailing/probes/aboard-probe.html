@@ -321,10 +321,10 @@ try {
     notices: (w) => told[w].map((n) => n.text ?? String(n)),
     // a face is a look with a source (what the card really is); a veil (the stage's stand-in) and a back (no look) aren't
     faces(w) {
-      const looks = new Map([...(gStage(w)?.debug?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }]));
+      const looks = new Map([...(gStage(w)?.debug?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array && !o.name ? { veil: true } : { name: o.name, sourceUrl: o.content }]));
       return hidden().filter((id) => { const l = looks?.get?.(id); return l && l.veil !== true && l.sourceUrl; });
     },
-    veils(w) { const looks = new Map([...(gStage(w)?.debug?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])); return hidden().filter((id) => looks?.get?.(id)?.veil === true); },
+    veils(w) { const looks = new Map([...(gStage(w)?.debug?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array && !o.name ? { veil: true } : { name: o.name, sourceUrl: o.content }])); return hidden().filter((id) => looks?.get?.(id)?.veil === true); },
     // the claims a view holds, in the boat (the clock) and in G (the seats)
     // (the claims service's, scene.claims: scene/NATIVE.md, "Claims")
     claims: (w) => [...(dbg[w].host.instanceOf("scene.claims")?.held() ?? []), ...(gStage(w)?.debug.host.instanceOf("scene.claims")?.held() ?? [])].map((c) => c.kind),
