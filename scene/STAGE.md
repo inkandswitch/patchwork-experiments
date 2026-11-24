@@ -71,8 +71,9 @@ What is a stage's (its doc, content, space, camera, bodies, presence, flush) it 
 | `hand(spec)`, `putDown(tool?)`, `offerWidget(type, ev)`, `wantPointer()` | "Hands"; events in the world, each hit with its `path`; `putDown` one of `held`, else the topmost |
 | `open(handle, o)`, `opening()` | "Views, stages and links"; `close.reached`: docs its repo found; arriving waits on `opening` |
 | `focus()` | the focus stage's `api` for it; what it acquires there goes as the focus leaves |
-| `path(o?)` | the input path's stages, innermost first (`{ pointer: true }`, `{ focus: true }`, `{ at: path }`), each a reader: `{ stage, path, scene(), runs(ext), collect(name), context(hit), attention(), look(), pointed(), nameOf(id), writable(), use(name) }` in its frame |
-| `collect(name)`, `run(inv)`, `routes()`, `tap(fn)` → off | acting stages' offers, the input path's first, tagged `stage`; run ("Commands") in the stage named, else the focus; the last 50 events' routes (`{ type, at, path, steps: [{ step, stage?, ext, holder? }], took }`); every channel message sent or heard (`{ stage, url, dir, kind, session, viewer, ext?, type?, data?, keys?, to? \| dropped? }`), made only while tapped |
+| `path(o?)` | the input path's stages, innermost first (`{ pointer: true }`, `{ focus: true }`, `{ at: path }`), each a reader: `{ stage, path, scene(), runs(ext), collect(name), context(hit), attention(), look(), pointed(), nameOf(id), writable(), use(name) }` in its frame; `context(hit)` is what its commands are asked in, `{ scene, local, view, from, reach, hit, distance(target) }` |
+| `collect(name)`, `run(inv)` | acting stages' offers, the input path's first, tagged `stage`; run ("Commands") in the stage named, else the focus |
+| `trace` | `draws()`: who draws in the focus stage, frozen, in running (layering) order, `{ layers: [{ ext, onTop, meshes }], labels: [{ ext, key, text, on }], display: { [id]: [{ ext, fields }] } }`; `routes()`: the last 50 events' routes (`{ type, at, path, steps: [{ step, stage?, ext, holder? }], took }`); `tap(fn)` → off: every channel message sent or heard (`{ stage, url, dir, kind, session, viewer, ext?, type?, data?, keys?, to? \| dropped? }`), made only while tapped |
 
 ## `api`
 
@@ -95,9 +96,9 @@ Each extension's own; what it acquires through it goes when it stops.
 | `ambient(name)`, `extent(box)` | **Ambients**: `instance.ambient()` offers `{ [name]: value \| null }`, stacked in running order, copied to frozen JSON; this is the outermost doc's, `null \| { value, mine, frame, use }` (I13). The viewport draws `atmosphere`, every field, default and range as CONVENTIONS.md, "Atmosphere" states; the depth range and the shadows fit `extent` too |
 | `pick`, `raycast`, `project` | **Picking and camera**: `pick(x, y, { ground?, snapPx? })`, `raycast(origin, dir, { far?, skip(id)? })` → `{ id, point, normal, distance }`; `project(p)` → `{ x, y, visible }` (port px) |
 | `camera` | `{ get, set, frame(box), hold, ride, touched, onEnd }`; `set({ position?, target?, quaternion?, fov?, near?, far? })`, `near`, `far` only while held. **Hold**: orbit off. **Riding**: `ride(id, { turn, rise, tilt, at })`, the top body's, else the latest base ride (I8). **Saving**: the viewer's, else `view.start.home` |
-| `body`, `hold`, `popover(close)`, `context(hit?)`, `look()` | "Bodies", "Hands"; `context` is `{ scene, local, view, from, reach, hit, distance(target) }` |
+| `body`, `hold`, `popover(close)`, `look()` | "Bodies", "Hands"; the pointer's hit, the eye ray's under lock, `{ id, point, distance }` |
 | `collect(name)`, `run(inv)` | this stage's offers, tagged `stage`; run in the stage `inv.stage` names ("Commands") |
-| `THREE`, `world({ onTop? })`, `labels()`, `owners()` | a `Group` whose meshes are its widgets (one under a `userData.noPick` node never is); `{ set([{ key, text, place?, screen?, on? (+ offset), at?, position?, rank?, className?, data?, onPointerDown? }]) }`, placed by the first of these given: `place({ project, w, h })` → `{ x, y, leader?: { x, y } }` (port px), `screen` (port px), an object's drawn frame, `at()` → a point, `position`; each asked every frame (`stage/labels.js`); rank 2 and up never give way; who draws in this stage, frozen, in running (layering) order: `{ layers: [{ ext, onTop, meshes }], labels: [{ ext, key, text, on }], display: { [id]: [{ ext, fields }] } }` |
+| `THREE`, `world({ onTop? })`, `labels()` | a `Group` whose meshes are its widgets (one under a `userData.noPick` node never is); `{ set([{ key, text, place?, screen?, on? (+ offset), at?, position?, rank?, className?, data?, onPointerDown? }]) }`, placed by the first of these given: `place({ project, w, h })` → `{ x, y, leader?: { x, y } }` (port px), `screen` (port px), an object's drawn frame, `at()` → a point, `position`; each asked every frame (`stage/labels.js`); rank 2 and up never give way |
 | `overlay()`, `edge(side)`, `style`, `listen`, `invalidate`, `schedule`, `port`, `root` | DOM over or beside the canvas; draw once more; after the next update flush; the canvas's element, the stage's root |
 
 ## `instance`
@@ -113,7 +114,7 @@ Each extension's own; what it acquires through it goes when it stops.
 
 | An instance's `commands` | the kernel runs them, surfaces show them (their other fields: EDITOR.md, "A command"), both by `commandState` (`stage/commands.js`) |
 |---|---|
-| `id`, `run(target, value?, ctx)` | `api.run({ stage?, ext, command, target, value?, hit? })` runs it, `ctx` being `api.context(hit)`, only where it applies and isn't disabled |
+| `id`, `run(target, value?, ctx)` | `api.run({ stage?, ext, command, target, value?, hit? })` runs it, `ctx` being its stage's reader's `context(hit)`, only where it applies and isn't disabled |
 | `state(target, ctx)` | null: not for this target (no `state`: the scene only; a throw: null), else `{ disabled?, title?, … }` |
 | `hand: kind`, `reach: true` | it applies only while a hand of that kind (a plugin's own; one naming the kernel's `tool` or `popover` never applies) is held (H14); beyond the body's reach it is disabled, "too far" (H9) |
 | `tool: { keys?, pointer? }` | `run` returns an input, held on top for the command's `hand`, going with the last such hand; run again, it is put down (`value` true only picks up, false only puts down) |

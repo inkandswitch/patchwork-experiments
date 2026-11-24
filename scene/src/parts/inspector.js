@@ -77,7 +77,7 @@ import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layou
 import { DEG, attachOptions, buildSummary, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { editor } from "./editor.js";
 import { createOutline } from "./outline.js";
-import { atFocus } from "../per-focus.js";
+import { atFocus, focusReader } from "../per-focus.js";
 import { layerChoices, layerStates } from "../layers.js";
 
 const ID = "scene.inspector";
@@ -525,7 +525,7 @@ function create(api) {
     return {
       section,
       update(target) {
-        const list = documentsFor(documents, target, here.context(null), ID).filter(pick);
+        const list = documentsFor(documents, target, focusReader(api)?.context(null), ID).filter(pick);
         const docked = new Set(api.use("drawer")?.state().docs ?? []);
         // a drawer pane is titled after the object as well as the row (the scene's: the label alone)
         const of = target == null ? null : here.nameOf(target) || "Untitled";
@@ -892,7 +892,7 @@ function create(api) {
 
   /** The header's Open: the selection's (./open.js), labelled as it says; none, no button. */
   function fillOpen() {
-    const o = openFor(api.collect("commands"), view.id, here.context(null));
+    const o = openFor(api.collect("commands"), view.id, focusReader(api)?.context(null));
     const b = view.openBtn;
     b.hidden = !o;
     if (!o) return;

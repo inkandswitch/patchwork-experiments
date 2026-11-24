@@ -27,6 +27,9 @@ export function perFocus(api, make) {
   };
 }
 
+/** The focus stage's reader (STAGE.md, "View plugins": `path`), for a view plugin's `api`; null before there is one. */
+export const focusReader = (api) => api.path({ focus: true })[0] ?? null;
+
 /**
  * The focus stage's api as one object, for code written for a stage's api
  * (the inspector's fields, the tree): each member read from api.focus() as it

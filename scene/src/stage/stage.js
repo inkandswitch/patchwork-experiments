@@ -1454,7 +1454,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
           },
         });
       },
-      owners,
       ...lent,
       /** draw an object otherwise for this viewer (STAGE.md, "Display"): again from this extension replaces its override → release */
       display: (oid, o) => (live() ? display(id, oid, o ?? {}) : noop),
@@ -1499,8 +1498,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (!live() || !input || !tool || typeof tool.name !== "string") return noop;
         return holdTool(id, { command: null, name: tool.name, keys: tool.keys, pointer: tool.pointer }, input);
       },
-      /** the context every surface passes to commands (scene, local, from, reach, hit, distance) */
-      context: (hit) => context(hit),
       /** the look: under lock the eye ray's hit, else the pointer's; { id, point, distance } or null */
       look: () => look(),
 
@@ -1831,6 +1828,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     doc,
     scene,
     scope,
+    /** who draws what in it (the view plugins' trace.draws()) */
+    owners,
     frame: () => scope.frame(),
     packages,
     debug,

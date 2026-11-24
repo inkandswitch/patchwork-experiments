@@ -334,7 +334,7 @@ describe("scene.select: by body", () => {
             expect(run("select", pick)).toBe(true);
             expect(sel()).toBe(pick);
             const remove = s.instance("scene.select").commands.find((c) => c.id === "remove");
-            expect(commandState(remove, "a", s.facet("scene.select").context()) != null).toBe(edit);
+            expect(commandState(remove, "a", s.api("scene.select").path({ focus: true })[0].context(null)) != null).toBe(edit);
             // back to Look, nothing standing (the next case starts clean)
             expect(api.body.enter("look")).toBe(true);
             s.local.swap((m) => ({ ...m, selected: null }));

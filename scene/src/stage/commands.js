@@ -41,7 +41,7 @@ export function flatCommands(collected) {
  *     permission: Look's is Infinity.
  * @param {object} command
  * @param {string | null} target
- * @param {{ view?: object, reach?: number, distance?: (target: string) => number }} ctx  api.context(hit)
+ * @param {{ view?: object, reach?: number, distance?: (target: string) => number }} ctx  its stage reader's context(hit)
  * @returns {object | null}
  */
 export function commandState(command, target, ctx) {

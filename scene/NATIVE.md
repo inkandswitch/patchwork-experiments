@@ -183,7 +183,7 @@ shown, veiled }] }` for objects a policy answers for: who, never what.
 
 **The gears graph** (`gears.js`, pure): `buildGears` makes one value of the
 registry's metadata, a stage's scene, its running list, its instances'
-commands, inputs and `inspect`s, and the kernel's `owners()`, `settled()` and
+commands, inputs and `inspect`s, and the kernel's `trace.draws()`, `settled()` and
 provenance (STAGE.md, "`api`"); `gearsOfObject` (its holders in input order,
 then the view plugins: verbs, events, drawing, services) and
 `gearsOfExtension` (objects by trait, the objects × verbs grid, what it holds
@@ -245,10 +245,10 @@ look, as the use prompt's), looked at again every 200 ms.
   nobody took); the older routes only if something took them, on hover.
 
 All of it is `buildGears` of the public reads (registry, `scene()`,
-`local.running`, `collect`, `context()`, `owners()`, `settled()`, `routes()`,
+`local.running`, `collect`, the focus reader's `context()`, `settled()`, `trace`,
 `writers` of the focus doc) through pure models (`xray-model.js`: colours,
 looks, glyphs, legend, card, details, route boxes), rebuilt at most every
-200 ms on a flush, an event its hand hears or a channel message (`tap`), for
+200 ms on a flush, an event its hand hears or a channel message (`trace.tap`), for
 the objects the card and the details show; nothing while it isn't held.
 
 ## Invariants

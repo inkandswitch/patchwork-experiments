@@ -36,7 +36,7 @@
 
 import { openFor, runOpen } from "./open.js";
 import css from "./outline.css?inline";
-import { atFocus, perFocus } from "../per-focus.js";
+import { atFocus, focusReader, perFocus } from "../per-focus.js";
 import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../groups.js";
 import { treeOrder } from "../hierarchy.js";
 import { dropIntent, placementFor } from "../tree-drop.js";
@@ -253,7 +253,7 @@ export function createOutline(api, { shown = () => true } = {}) {
 
   const selectedId = () => here.view.get().selected ?? null;
   /** Can this row be opened (./open.js: a link to go inside, a model to edit in place)? */
-  const openable = (id) => !!openFor(api.collect("commands"), id, here.context(null));
+  const openable = (id) => !!openFor(api.collect("commands"), id, focusReader(api)?.context(null));
   /** What each link is here, as one value: a link's role changing (it opens, closes, is fixed) draws the rows again. */
   const linksKey = (snap) => JSON.stringify(snap.ids.map((id) => linkOf(id)).filter(Boolean));
   function select(id) {
