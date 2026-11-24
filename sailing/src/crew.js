@@ -140,10 +140,10 @@ export function createCrew(api, ctx) {
     // without the lock a drag looks round, and a tap goes on as a click
     press(ev) {
       if (ev.button !== 0 || ev.locked) return null;
-      let last = [ev.clientX ?? 0, ev.clientY ?? 0];
+      let last = [ev.x ?? 0, ev.y ?? 0];
       return {
         move(e) {
-          const at = [e.clientX ?? last[0], e.clientY ?? last[1]];
+          const at = [e.x ?? last[0], e.y ?? last[1]];
           turn(s, at[0] - last[0], at[1] - last[1]);
           last = at;
         },
