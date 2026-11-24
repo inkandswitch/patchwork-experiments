@@ -79,6 +79,49 @@ function importsOf(text) {
   return out;
 }
 
+/**
+ * A module's code with its comments and the text of its strings blanked (a
+ * template's `${…}` kept as code), so a word in a comment or a URL in a
+ * string isn't read as code. A regex literal is read as code.
+ */
+function codeOf(text) {
+  let out = "";
+  const depth = []; // per open template: the brace depth its current ${ … } began at
+  let braces = 0;
+  for (let i = 0; i < text.length; ) {
+    const c = text[i];
+    const n = text[i + 1];
+    if (c === "/" && n === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+    } else if (c === "/" && n === "*") {
+      const end = text.indexOf("*/", i + 2);
+      i = end < 0 ? text.length : end + 2;
+    } else if (c === '"' || c === "'") {
+      i++;
+      while (i < text.length && text[i] !== c && text[i] !== "\n") i += text[i] === "\\" ? 2 : 1;
+      i++;
+      out += '""';
+    } else if (c === "`" || (c === "}" && depth.length && braces === depth.at(-1))) {
+      // into a template's text (a backtick, or the } closing a ${ … }), to its end or its next ${
+      if (c === "}") depth.pop();
+      i++;
+      while (i < text.length && text[i] !== "`" && !(text[i] === "$" && text[i + 1] === "{")) i += text[i] === "\\" ? 2 : 1;
+      if (text[i] === "$") {
+        depth.push(braces);
+        braces++;
+        i += 2;
+      } else i++;
+      out += '""';
+    } else {
+      if (c === "{") braces++;
+      if (c === "}") braces--;
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
 /** A relative spec of module `from` as a path under src/ (".js" added when it names no file), or null when it names none. */
 function resolveSpec(from, spec) {
   const p = resolve(dirname(join(SRC, from)), spec.split("?")[0]);
@@ -156,11 +199,27 @@ describe("the layers and the kernel's boundary", () => {
     expect(offered.filter((n) => !used.has(n))).toEqual([]);
   });
 
-  it("the kernel runs on the stage's one time: no page clock or timer in a kernel module but stage/time.js (API.md, `api`: now, after)", () => {
-    const PAGE = /\b(Date\.now|setTimeout|setInterval|requestAnimationFrame)\b/;
-    const code = (m) => readFileSync(join(SRC, m), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    const wrong = modules.filter((m) => layerOf(m) === "kernel" && m !== "stage/time.js" && PAGE.test(code(m)));
+  // The one clock (API.md, `api`: now, after): what the kernel runs on, and the shared modules it imports,
+  // read no page clock and set no page timer; stage/time.js is where the page's are. What this can't see: a
+  // name built at run time ("set" + "Timeout"), a regex literal holding a quote or `//` (the code reader below
+  // takes those for strings or comments), and what a module it doesn't import (the native services', the
+  // editor's) does on the kernel's behalf.
+  it("the kernel runs on the stage's one time: no page clock or timer in it, nor in a shared module it imports, but stage/time.js and the stated exceptions", () => {
+    const PAGE = /\b(Date\s*\.\s*now|new\s+Date\b|Date\s*\(|performance\s*\.\s*now|setTimeout|setInterval|setImmediate|requestAnimationFrame|requestIdleCallback|AbortSignal\s*\.\s*timeout)\b|\b(globalThis|window|self)\s*\[/g;
+    // CPU, not time: the stage and the viewport measure what their work costs, and pick structures are built while the page is idle
+    const EXCEPT = { "stage/stage.js": ["performance.now"], "stage/viewport.js": ["performance.now"], "stage/picking.js": ["requestIdleCallback"] };
+    const kernel = new Set(modules.filter((m) => layerOf(m) === "kernel"));
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const { from, to } of edges) if (kernel.has(from) && layerOf(to) === "shared" && !kernel.has(to)) grew = !!kernel.add(to);
+    }
+    const wrong = [];
+    for (const m of kernel) {
+      if (m === "stage/time.js") continue;
+      for (const hit of codeOf(readFileSync(join(SRC, m), "utf8")).match(PAGE) ?? []) if (!(EXCEPT[m] ?? []).includes(hit.replace(/\s+/g, ""))) wrong.push(`${m}: ${hit}`);
+    }
     expect(wrong).toEqual([]);
+    expect([...kernel].filter((m) => layerOf(m) === "shared").length).toBeGreaterThan(5); // (it does reach into the shared layer)
   });
 
   it("each contract page fits: STAGE.md ≤ 200 lines, API.md ≤ 200, NATIVE.md ≤ 400, EDITOR.md ≤ 300, CONVENTIONS.md ≤ 200", () => {
