@@ -1263,3 +1263,10 @@ checked on a finite model (C1–C4), replacing a 20 s grace, a 60 s stuck
 reset, a 1 s peer-id stagger and a 2.5 s settle. The manager, the GLB
 queue and package loading went onto the stage's time; `build()` got a
 `signal`; the test fakes answer `containsHeads` as a DocHandle does.
+
+**Content's api members (2026-11-24).** `content(id)` became one value (what is
+drawn, its route, its state, its render, `fix`), replacing `loadState` and the
+api's `fixPoint`; `use("links").fixPoint` answers for every object. The
+selection loads first by the kernel's own rule, so `focus(ids)` went; the add
+dialog matches providers itself (`providersFor` went); the extension api's
+`packages` went. No `api.rebuild`: only the build controls rebuild today.
