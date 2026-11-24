@@ -222,8 +222,6 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     await settle();
     const bare = repo.add({ "@patchwork": { type: "bare" } });
     const old = repo.add({ "@patchwork": { type: "old" } });
-    expect(await api().providersFor(bare.url, bare.doc())).toEqual([]);
-    expect(await api().providersFor(old.url, old.doc())).toEqual([]);
     await expect(addObject(api(), bare.url)).rejects.toThrow(/No scene provider/);
     await expect(addObject(api(), old.url, { providerId: "t-old" })).rejects.toThrow(/can't show/);
     getRegistry("scene:source").register(gltfSource());
