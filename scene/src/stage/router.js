@@ -30,7 +30,7 @@ import { offer } from "./chain.js";
 import { fromEmbed } from "../shared/embed.js";
 import { isTyping, keyHolder, keyOfCode } from "./key-order.js";
 import { baseOnly, ownedBody, settleTop, topBody, withBody, withoutBody } from "./body-stack.js";
-import { handOf, popoverSpec, refuses, toolSpec, tools, wantsPointer, whichTool, withHand, withoutHand } from "./hands.js";
+import { MODAL, handOf, popoverSpec, refuses, toolSpec, tools, wantsPointer, whichTool, withHand, withoutHand } from "./hands.js";
 import { escapeLayer } from "./ladder.js";
 import { lockedNow, pointerStep } from "./pointer.js";
 import { realTime } from "./time.js";
@@ -254,7 +254,7 @@ export function createRouter(o) {
     for (const h of [...hands].reverse()) {
       pre.push({ step: "hand", owner: h.owner, kind: h.kind, name: h.name });
       const r = offerTo(h.owner ?? "scene", h.input, type, ev);
-      if (r) return routed(type, pre, null, null, { at: "pre", i: pre.length - 1 }, r);
+      if (r) return routed(type, pre, null, null, { at: "pre", i: pre.length - 1 }, { ...r, hand: h });
     }
     const chain = chainFor(ev) ?? {};
     const { order = [], holderOf } = chain;
@@ -440,6 +440,7 @@ export function createRouter(o) {
       moved: false,
       session: null,
       owner: null,
+      kernels: false,
       dead: false,
       holdTimer: null,
       serial: ++made,
@@ -457,6 +458,8 @@ export function createRouter(o) {
     if (r) {
       g.session = r.result && typeof r.result === "object" ? r.result : {};
       g.owner = r.id;
+      // (a popover's press is the kernel's own input taking it, MODAL: no session of its owner's)
+      g.kernels = r.hand?.input === MODAL;
       claim(e);
       try {
         canvas.setPointerCapture?.(e.pointerId);
@@ -966,6 +969,18 @@ export function createRouter(o) {
 
   // ─── stopping ─────────────────────────────────────────────────────────────
 
+  /**
+   * Does `owner` hold anything that keeps it (STAGE.md, "Stopping"; H2): a body on the stack, on top or
+   * not; a held tool; or the open session, from the press that returned it until it ends, is cancelled
+   * or a tap takes it (a session of its input, its body's or its tool's: each is its). A popover it
+   * opened, or a press on one, doesn't.
+   */
+  function holds(owner) {
+    if (ownedBody(bodies, owner)) return true;
+    if (tools(hands).some((h) => h.owner === owner)) return true;
+    return !!openSession() && gesture.owner === owner && !gesture.kernels;
+  }
+
   /** An extension stopped: its open session, keys, bodies and hands go (a popover unclosed: the extension is gone). */
   function stopOwner(id) {
     if (gesture?.owner === id) killGesture();
@@ -1025,6 +1040,7 @@ export function createRouter(o) {
     escape,
     refresh,
     state: snapshot,
+    holds,
     stopOwner,
     dispose() {
       if (disposed) return;

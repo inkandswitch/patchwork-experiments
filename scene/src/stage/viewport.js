@@ -456,6 +456,12 @@ export class Viewport {
     return !this.objects.has(key) || this.isShown(key);
   }
 
+  /** What each owner draws: its world groups ({ owner, group, onTop }, in the order made) and its label sets ({ owner, items }). */
+  draws() {
+    const layers = [...this.layers].flatMap(([owner, set]) => [...set].map((group) => ({ owner, group, onTop: !!group.userData.onTop })));
+    return { layers, labels: this.labels.items() };
+  }
+
   /** Remove and dispose every world group this owner made. */
   removeLayers(owner) {
     if (removeLayers(this.layers, owner)) this.invalidate();

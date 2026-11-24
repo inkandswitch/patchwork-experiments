@@ -337,7 +337,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // ─── ownership and the api ────────────────────────────────────────────────
 
-  const owned = new Map(); // extension id → what it holds (see makeApi)
   const router = view.router;
 
   // An event of the router's (world, keys) in this stage's frame (./scope.js):
@@ -382,60 +381,24 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return f;
   }
 
-  // A session an extension's press returned, counted while it's open (a
-  // stopping extension lingers while it has one), hearing events in this stage's frame.
-  function trackSession(own, raw) {
-    if (!raw || typeof raw !== "object") return raw;
-    const s = framed(raw);
-    own.sessions++;
-    let open = true;
-    const done = () => {
-      if (!open) return;
-      open = false;
-      own.sessions--;
-    };
-    const props = {
-      end: { value: (ev) => (done(), s.end?.(ev)) },
-      cancel: { value: () => (done(), s.cancel?.()) },
-    };
-    if (typeof raw.tap === "function")
-      props.tap = {
-        value: (ev) => {
-          const r = s.tap(ev);
-          if (r) done();
-          return r;
-        },
-      };
-    return Object.create(s, props);
-  }
-
-  // Input (an extension's, a body's or a held tool's) whose press sessions are counted, in this stage's frame.
-  function withSessions(own, input, extra = {}) {
-    const f = framed(input);
-    return Object.create(f, {
-      press: {
-        get: () => (typeof input.press === "function" ? (ev) => trackSession(own, f.press(ev)) : undefined),
-      },
-      ...extra,
-    });
-  }
-  const inputWrappers = new WeakMap(); // input → its wrapper
-  function inputOf(id) {
-    const own = owned.get(id);
-    return own ? framedInput(host.inputOf(id), own) : undefined;
-  }
-  function framedInput(input, own = { sessions: 0 }) {
+  // An input (an extension's, a body's, a held tool's; at the focus a view plugin's) whose every method, and
+  // every session its press returns, hears the router's events in this stage's frame.
+  const framedInputs = new WeakMap(); // input → its framing
+  function framedInput(input) {
     if (!input || typeof input !== "object") return undefined;
-    let w = inputWrappers.get(input);
-    if (!w) inputWrappers.set(input, (w = withSessions(own, input)));
+    let w = framedInputs.get(input);
+    if (!w) {
+      const f = framed(input);
+      w = Object.create(f, { press: { get: () => (typeof input.press === "function" ? (ev) => framed(f.press(ev)) : undefined) } });
+      framedInputs.set(input, w);
+    }
     return w;
   }
+  const inputOf = (id) => framedInput(host.inputOf(id));
 
-  // (a body it put on the stack, a held tool, an open session, or a service busy on its behalf (a pose it holds): a doc-caused stop waits)
-  const busy = (id) => {
-    const own = owned.get(id);
-    return !!own && (router.bodies().some((b) => b.owner === ownerKey(id)) || own.tools.size > 0 || own.sessions > 0 || host.instances().some((r) => r.instance.busy?.(id) === true));
-  };
+  // What keeps a stopping extension (STAGE.md, "Stopping"; H2): a body, a held tool or an open session the
+  // router says is its (router.js holds), or a service busy on its behalf (a pose it holds).
+  const busy = (id) => router.holds(ownerKey(id)) || host.instances().some((r) => r.instance.busy?.(id) === true);
 
   /** Write fn for extension `ext`, stamped with its id (./provenance.js), and say what it wrote: its patches ([] for nothing: null, a refusal (ops.js), or a stage that may not write). */
   function change(fn, ext) {
@@ -516,11 +479,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   function bodyDefs() {
     return offeredBodies(host.collect("bodies"), (id, kept, other) => console.warn(`[scene] body “${id}” is offered by both ${kept} and ${other}; ${kept}'s is used`));
   }
-  /** A body of this stage's going on the stack: its input, the extension's (null if it has stopped). */
-  function bodyInput(ext, input) {
-    const own = owned.get(ext);
-    return own ? withSessions(own, input) : null;
-  }
+  /** A body of this stage's going on the stack: its input, framed here, while its extension runs (lingering too); else null. */
+  const bodyInput = (ext, input) => (host.instanceOf(ext) ? framedInput(input) : null);
   /** The eye, in this stage's frame: { position, direction } or null. */
   function bodyEye() {
     const e = view.bodyEye();
@@ -538,21 +498,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    * command names) and the given input.
    */
   function holdTool(ext, t, input) {
-    const own = owned.get(ext);
-    if (!own) return noop;
-    let put = null;
-    const wrapped = withSessions(own, input, {
-      put: {
-        value: () => {
-          own.tools.delete(put);
-          return input.put?.call(input);
-        },
-      },
-    });
-    put = view.holdTool(ownerKey(ext), t, wrapped);
-    if (!put) return noop; // (a toggle: the one held went down)
-    own.tools.add(put);
-    return put;
+    return view.holdTool(ownerKey(ext), t, framedInput(input)) ?? noop; // (null: refused, a kind of hand not held)
   }
 
   /** Where the look is, in this stage's frame, when it is on something of this stage's (or in one of its links): { id, point, distance }, else null. */
@@ -615,14 +561,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const signal = rec.signal;
     // What it holds. Each bag holds the "give it back" functions.
     const own = {
-      tools: new Set(), // put()s: the held tools that are its
-      sessions: 0, // open press sessions
       cameraHolds: new Set(),
       frame: new Set(), // loops and afterRender hooks
       offs: new Set(), // listeners, watchers, rides
       els: new Set(), // overlays, styles
     };
-    owned.set(id, own);
     const live = () => !signal.aborted && !dead;
     // Acquire something, unless stopped; the returned off gives it back once.
     const acquire = view.acquirer(live);
@@ -721,9 +664,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       THREE,
       world: ({ onTop = false } = {}) => {
         if (!live()) return new THREE.Group();
-        const group = scope.worldLayer(id, { onTop });
-        (own.layers ??= []).push({ onTop: !!onTop, group });
-        return group;
+        return scope.worldLayer(id, { onTop });
       },
       // each call is its own set (an extension may keep several)
       labels: () => {
@@ -732,7 +673,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         return Object.freeze({
           set: (items) => {
             if (!live()) return;
-            (own.labelItems ??= new Map()).set(key, items ?? []);
             scope.labels.sync(key, items ?? []);
           },
         });
@@ -815,8 +755,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // 1–2: its open session, its bodies and its held tools (the router
       // cancels, pops, puts down and unlocks), then its camera holds
       router.stopOwner(ownerKey(id));
-      own.tools.clear();
-      own.sessions = 0;
       for (const give of [...own.cameraHolds]) give();
       own.cameraHolds.clear();
       // 3: its display overrides, its presence keys (and its rate); what services gave it went as its signal aborted
@@ -836,7 +774,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       for (const give of [...own.offs]) give();
       own.offs.clear();
       scope.setExtent(id, null);
-      owned.delete(id);
     }
 
     return { api: apiOf(drawn, acting, acts), release };
@@ -851,14 +788,15 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
    */
   function owners() {
     const rank = new Map(host.running().map((r, i) => [r.id, i]));
-    const exts = [...owned.keys()].sort((a, b) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
+    const ranked = (list) => [...list].sort((a, b) => (rank.get(a.owner) ?? 1e9) - (rank.get(b.owner) ?? 1e9));
     const meshes = (g) => {
       let n = 0;
       g.traverse?.((o) => void (o.isMesh && n++));
       return n;
     };
-    const layers = exts.flatMap((ext) => (owned.get(ext).layers ?? []).map((l) => Object.freeze({ ext, onTop: l.onTop, meshes: meshes(l.group) })));
-    const labels = exts.flatMap((ext) => [...(owned.get(ext).labelItems?.values() ?? [])].flat().filter((i) => i?.key != null).map((i) => Object.freeze({ ext, key: String(i.key), text: i.text == null ? "" : String(i.text), on: typeof i.on === "string" ? i.on : null })));
+    const drawn = scope.draws();
+    const layers = ranked(drawn.layers).map((l) => Object.freeze({ ext: l.owner, onTop: l.onTop, meshes: meshes(l.group) }));
+    const labels = ranked(drawn.labels).flatMap(({ owner, items }) => items.map((i) => Object.freeze({ ext: owner, key: String(i.key), text: i.text == null ? "" : String(i.text), on: typeof i.on === "string" ? i.on : null })));
     return Object.freeze({ layers: Object.freeze(layers), labels: Object.freeze(labels), display: Object.freeze(display.authors()) });
   }
 
