@@ -1,4 +1,4 @@
-// What the key resolver (../keymap.js) needs, read from a view plugin's api:
+// What the key resolver (./keymap.js) needs, read from a view plugin's api:
 // the layers that reserve keys (the open gesture's, the hands' and the
 // body's declared keys, from local), every command, the command context and
 // attention. Every surface that shows a key asks hintFor with this, and the

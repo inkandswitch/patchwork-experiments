@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import { activeSet } from "../stage/activation.js";
 import { resolveParents } from "../hierarchy.js";
 import { groupChain, resolveGroups } from "../groups.js";
-import { commandState } from "../parts/toolbar-commands.js";
+import { commandState } from "../stage/commands.js";
 import { buildGears, gearsOfExtension, gearsOfObject } from "./gears.js";
 
 const has = (o, t) => !!o?.traits?.[t];

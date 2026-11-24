@@ -14,7 +14,7 @@ import { NATIVES, mountStage, object, settle, until } from "../test/stage-harnes
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "../native/link-graph.js";
-import { editing } from "./bodies.js";
+import { editing } from "../parts/editing.js";
 import { elementOf, keyOf } from "./paths.js";
 import { spy } from "../test/spy.js";
 import { atFocus, focusSteps, selectionAtFocus, selectionStep } from "../selection.js";

@@ -23,7 +23,7 @@
 //     choice away, for this view; the drop hint stays.
 // Pastes, drops and keys inside an embedded document (marked with the
 // stage's EMBED_ATTR, src/embed.js) are that document's, never ours.
-// Adding is the editor's (../stage/bodies.js): drops, pastes and the start
+// Adding is the editor's (./editing.js): drops, pastes and the start
 // screen are only taken or shown while editing. (A scene made new starts
 // people holding the editor, so its maker sees the start screen.)
 
@@ -31,10 +31,10 @@ import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
-import { isTyping } from "../keymap.js";
+import { isTyping } from "../key-order.js";
 import { add as addObject, drop, template } from "./editor.js";
-import { atFocus } from "./per-focus.js";
-import { editing } from "../stage/bodies.js";
+import { atFocus } from "../per-focus.js";
+import { editing } from "./editing.js";
 import { createParamForm } from "../param-form.js";
 import { paramsBySpec } from "../staleness.js";
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { touchControls } from "./touch-keys.js";
-import { keyHolder, keyOfCode, nameOfCode, reservedBy } from "./keymap.js";
+import { keyHolder, keyOfCode, nameOfCode, reservedBy } from "./key-order.js";
 import { CARRY_KEYS } from "./parts/carry.js";
 import { LOOK } from "./stage/bodies.js";
 

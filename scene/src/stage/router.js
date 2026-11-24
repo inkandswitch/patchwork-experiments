@@ -27,7 +27,7 @@
 
 import { offer } from "./chain.js";
 import { fromEmbed } from "../embed.js";
-import { isTyping, keyHolder, keyOfCode } from "../keymap.js";
+import { isTyping, keyHolder, keyOfCode } from "../key-order.js";
 import { escapeLayer } from "./ladder.js";
 import { lockedNow, pointerStep } from "./pointer.js";
 import { realTime } from "./time.js";
@@ -174,15 +174,17 @@ function call(owner, obj, name, ...args) {
 
 /**
  * A hand on the stack, as its holder gives it: its kind (what it is, for
- * whoever shows it; routing never asks: "tool", a held tool; "popover";
- * "edit": the editor), the name the hint and peers show, its input (offered
+ * whoever shows it and for the commands that name it; routing never asks:
+ * "tool", a held tool; "popover"; a plugin's own), the name the hint and
+ * peers show, the kind of hand a tool was held for (`hand`: it goes down
+ * with the last hand of that kind), its input (offered
  * every event first, top hand first: true or a session consumes it, false
  * or null passes it on), the keys it declares (the topmost declaring a key
  * has it), whether it wants the pointer free, its escape() (true: Escape did
  * something, the hand stays; else it is put down) and escaping() (what
  * escape() would do now, as a ladder layer, or null), and put() (told once,
  * whenever it leaves the stack, from wherever it is in it).
- * @typedef {{ kind: "tool" | "popover" | "edit", name?: string, command?: string | null, input?: object, keys?: { code: string, label?: string }[], pointer?: boolean, escape?: () => boolean, escaping?: () => string | null, put?: () => void }} RouterHand
+ * @typedef {{ kind: string, name?: string, command?: string | null, hand?: string | null, input?: object, keys?: { code: string, label?: string }[], pointer?: boolean, escape?: () => boolean, escaping?: () => string | null, put?: () => void }} RouterHand
  */
 
 /**
@@ -244,7 +246,7 @@ export function createRouter(o) {
   let made = 0;
   const stack = [{ owner: null, id: o.base?.id ?? "base", input: o.base?.input ?? {}, lock: !!o.base?.lock, keys: o.base?.keys ?? [], suspended: false, serial: ++made }]; // [{ owner, id, input, lock, keys, suspended, serial }], top last
   const top = () => stack.at(-1);
-  const hands = []; // [{ owner, kind, name, command, input, keys, pointer, escape, escaping, put, serial }], top last
+  const hands = []; // [{ owner, kind, name, command, hand, input, keys, pointer, escape, escaping, put, serial }], top last
   /** The held tools: the hands of kind "tool", bottom first. */
   const tools = () => hands.filter((h) => h.kind === "tool");
 
@@ -698,7 +700,7 @@ export function createRouter(o) {
     const ev = keyEvent("key", e);
     const code = e.code || e.key;
     let claimer = null;
-    // what reserves keys first: the gesture's, the topmost hand's that declares it, the body's (keymap.js keyHolder)
+    // what reserves keys first: the gesture's, the topmost hand's that declares it, the body's (../key-order.js keyHolder)
     const g = gesture && !gesture.dead && gesture.session ? gesture : null;
     const b = top();
     const holder = keyHolder(code, { gesture: g?.session ?? null, hands, body: b });
@@ -869,7 +871,7 @@ export function createRouter(o) {
       body: { id: b.id, owner: b.owner, depth: stack.length - 1, lock: !!b.lock, keys: [...(b.keys ?? [])], serial: b.serial },
       bodies: stack.map((x) => ({ id: x.id, owner: x.owner })),
       hands: hands.map((h) => ({ ext: h.owner, kind: h.kind, name: h.name, keys: [...h.keys], pointer: h.pointer, serial: h.serial })),
-      held: tools().map((t) => ({ ext: t.owner, command: t.command, name: t.name, keys: [...t.keys], pointer: t.pointer, serial: t.serial })),
+      held: tools().map((t) => ({ ext: t.owner, command: t.command, name: t.name, hand: t.hand, keys: [...t.keys], pointer: t.pointer, serial: t.serial })),
       gesture: s ? { owner: gesture.owner, keys: [...(Array.isArray(s.keys) ? s.keys : [])], serial: gesture.serial } : null,
       pointer: { locked: isLocked(), lock: ptr.lock, wanted: ptr.wanted, released: ptr.released, refused: ptr.refused, touch: ptr.touch },
       escape: escapeLayer(ladderState()),
@@ -941,6 +943,7 @@ export function createRouter(o) {
       kind: spec.kind,
       name: String(spec.name ?? spec.command ?? spec.kind),
       command: spec.command ?? null,
+      hand: typeof spec.hand === "string" ? spec.hand : null,
       input: spec.input ?? {},
       keys: Array.isArray(spec.keys) ? spec.keys : [],
       pointer: !!spec.pointer,
@@ -953,12 +956,17 @@ export function createRouter(o) {
     handsChanged();
     return () => drop(h);
   }
-  /** A hand leaves the stack: its keys are let go and its put() told. @returns whether it was held */
+  /**
+   * A hand leaves the stack: its keys are let go, every tool held for a
+   * kind of hand no longer held goes too (STAGE.md, "Commands"), and its
+   * put() is told. @returns whether it was held
+   */
   function drop(h) {
     const i = h ? hands.indexOf(h) : -1;
     if (i < 0) return false;
     hands.splice(i, 1);
     releaseKeys(undefined, null, h);
+    for (const t of hands.filter((x) => x.hand != null && !hands.some((y) => y.kind === x.hand))) drop(t);
     call(h.owner, h, "put");
     handsChanged();
     return true;
@@ -976,13 +984,13 @@ export function createRouter(o) {
    * Pick up a tool (a hand of kind "tool"): it goes on top, over whatever is
    * held. A tool picked up through a command that is held already is put
    * down instead (a toggle).
-   * @param {string} owner  @param {{ command: string | null (a tool held directly, not through a command), name?: string, input: object, keys?: object[], pointer?: boolean }} t
+   * @param {string} owner  @param {{ command: string | null (a tool held directly, not through a command), name?: string, hand?: string | null, input: object, keys?: object[], pointer?: boolean }} t
    * @returns {(() => void) | null} put it down (if it's still held); null for a toggle that put one down
    */
   function hold(owner, t) {
     const was = toolOf(owner, t.command);
     if (was) return (drop(was), null);
-    return pushHand(owner, { kind: "tool", command: t.command, name: t.name, input: t.input, keys: t.keys, pointer: t.pointer, put: () => call(owner, t.input, "put") });
+    return pushHand(owner, { kind: "tool", command: t.command, name: t.name, hand: t.hand, input: t.input, keys: t.keys, pointer: t.pointer, put: () => call(owner, t.input, "put") });
   }
   /**
    * Put a held tool down, from wherever it is in the stack: the one whose

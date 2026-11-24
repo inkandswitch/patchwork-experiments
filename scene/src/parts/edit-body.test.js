@@ -22,7 +22,7 @@ import axes from "./axes.js";
 import bounds from "./bounds.js";
 import toolbar from "./toolbar.js";
 import select from "./select.js";
-import { editing } from "../stage/bodies.js";
+import { editing } from "./editing.js";
 
 const SLICE = {
   type: "scene:source",
@@ -242,4 +242,13 @@ describe("the editor is the Edit hand", () => {
       PARTS.pop();
     }
   }, 30_000);
+
+  it("arriving, the outermost doc's view.start.edit (exactly true) picks the editor up, and nothing else does: no body is named \"edit\"", async () => {
+    for (const [start, want] of [[{ edit: true }, true], [{}, false], [{ body: "edit" }, false], [{ edit: "yes" }, false]]) {
+      s = await mountStage({ doc: { view: { start } }, natives: false });
+      expect([start, editing(s.local.get()), s.local.get().body.id]).toEqual([start, want, "look"]);
+      s.unmount();
+      s = null;
+    }
+  });
 });

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { NATIVES, mountStage, object, settle } from "../test/stage-harness.js";
 import inspector from "./inspector.js";
-import { editing } from "../stage/bodies.js";
+import { editing } from "./editing.js";
 import { openTabs } from "../test/tabs.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { resolveParents } from "../hierarchy.js";

@@ -7,7 +7,7 @@
 // (arrays); `raycast(origin, dir)` → { id, point } | null is the stage's,
 // already told to skip the carried object and what's attached to it.
 
-import { accepts, faceOf, footprintSamples, intoSnap, liftFor, nearestSnap, placeConnector, sideOf } from "../carry-rules.js";
+import { accepts, defaultSnapRadius, faceOf, footprintSamples, intoSnap, liftFor, nearestSnap, placeConnector, sideOf } from "../carry-rules.js";
 import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
 
 const Y = [0, 1, 0];
@@ -139,11 +139,23 @@ export function localTransform(parentWorld, world) {
   return decomposeMatrix(inv ? multiplyMatrices(inv, world) : world);
 }
 
+/** Each connectors list's defaultSnapRadius (0: none), worked out once per list. */
+const defaultRadii = new WeakMap();
+
+/** How far an object's connectors reach: its content's `snapRadius`, else defaultSnapRadius of them. */
+function snapRadiusOf(o) {
+  const given = Number(o.snapRadius);
+  if (given) return given;
+  if (!defaultRadii.has(o.connectors)) defaultRadii.set(o.connectors, defaultSnapRadius(o.connectors) || 0);
+  return defaultRadii.get(o.connectors);
+}
+
 /**
  * Where a carried object with these tags may snap: each other object's
  * connectors (body space) in world (placeConnector: a whole frame turned by
  * the object's rotation, yaw derived from it; a yaw-only one turned by the
- * object's yaw), and the radius scaled by its plan scale. A tagged connector
+ * object's yaw), and the radius (the content's `snapRadius`, else
+ * defaultSnapRadius of its connectors) scaled by its plan scale. A tagged connector
  * takes only objects with one of its tags. `rotation` is the connector's
  * whole frame in world (Euler XYZ), or null where it gives only a yaw.
  * @param {{ id: string, matrix: number[], connectors: { position: number[], rotation?: number[] | null, yaw?: number | null, tags?: string[] }[], snapRadius?: number | null }[]} others
@@ -156,7 +168,7 @@ export function snapCandidates(others, tags) {
     const m = o?.matrix;
     if (!m || !Array.isArray(o.connectors) || !o.connectors.length) continue;
     const scale = Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[8], m[9], m[10]));
-    const radius = (Number(o.snapRadius) || 0) * scale;
+    const radius = snapRadiusOf(o) * scale;
     if (!(radius > 0)) continue;
     for (const p of o.connectors) {
       if (!Array.isArray(p?.position) || !accepts(p.tags, tags)) continue;

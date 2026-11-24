@@ -21,7 +21,7 @@ import css from "./measure.css?inline";
 import { distance, makeAnchor } from "../anchors.js";
 import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
-import { perFocus } from "./per-focus.js";
+import { perFocus } from "../per-focus.js";
 
 /** The extension that owns doc.dimensions (and saves what's measured). */
 export const DIMENSIONS = "scene.dimensions";
@@ -246,7 +246,7 @@ function measureAt(api, view, hint) {
   const commands = [
     {
       id: "measure",
-      edit: true,
+      hand: "edit",
       name: "Measure",
       key: "m",
       // (the Dimensions panel's, not the bar's: PLANS.md §5)

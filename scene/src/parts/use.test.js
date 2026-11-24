@@ -7,7 +7,7 @@ import { LINK } from "../native/link-graph.js";
 import { plugins } from "../index.js";
 import keys, { heldSessions } from "./keys.js";
 import use, { heldEntries, promptEntries } from "./use.js";
-import { lookChain } from "../keymap.js";
+import { lookChain } from "../key-order.js";
 
 // the real metadata, so these run the way a game would bring them in
 const meta = (id) => {

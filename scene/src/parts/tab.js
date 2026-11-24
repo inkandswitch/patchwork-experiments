@@ -9,13 +9,13 @@
 // tab docks, just before the update it gets as it opens; update runs while
 // the tab is open; dispose when the part stops.
 //
-// The drawer's tabs are the editor's (../stage/bodies.js): a tab opens only
+// The drawer's tabs are the editor's (./editing.js): a tab opens only
 // while the Edit hand is held, and shuts when it is put down (not the viewer
 // closing it: onClosed isn't told). The parts that own tabs are view
 // plugins, which don't move with the focus: a tab open stays open across
 // Enter and Leave, showing the focus doc wherever it is now.
 
-import { editing } from "../stage/bodies.js";
+import { editing } from "./editing.js";
 
 /**
  * @param {object} api  a view plugin's
@@ -109,8 +109,8 @@ export function tabToggle(tab, { id, name, title, icon, available = () => true }
     // the drawer's rail shows the "panels" group (../native/drawer.js), not the bar
     group: "panels",
     ...(icon ? { icon } : {}),
-    // the drawer's tabs are the editor's (../stage/bodies.js): only while editing
-    edit: true,
+    // the drawer's tabs are the editor's (./editing.js): only while editing
+    hand: "edit",
     show: ["toolbar"],
     state: (target) => (target == null && available() ? { checked: tab.isOpen(), title } : null),
     // (the toolbar says which way; a key or the menu toggles)

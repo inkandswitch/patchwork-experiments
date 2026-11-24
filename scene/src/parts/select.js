@@ -30,7 +30,7 @@
 
 import { editor } from "./editor.js";
 import { boxes } from "./boxes.js";
-import { perFocus } from "./per-focus.js";
+import { perFocus } from "../per-focus.js";
 
 const ACCENT = [0.2, 0.9, 0.75];
 
@@ -96,7 +96,7 @@ export function create(api) {
     },
     {
       id: "remove",
-      edit: true,
+      hand: "edit",
       name: "Remove",
       key: ["Delete", "Backspace"],
       show: ["menu", "inspector"],

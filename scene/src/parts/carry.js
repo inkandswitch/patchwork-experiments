@@ -215,7 +215,7 @@ export default {
         if (!extras?.connectors?.length) continue;
         if (!api.box(oid, { hints: false })) continue; // hidden: nothing to put it on
         const matrix = api.worldOf(oid);
-        if (matrix) others.push({ id: oid, matrix: matrixIn(matrix), connectors: extras.connectors, snapRadius: extras.snapRadius });
+        if (matrix) others.push({ id: oid, matrix: matrixIn(matrix), connectors: extras.connectors, snapRadius: extras.snapRadius ?? null });
       }
       return snapCandidates(others, tags);
     }
@@ -374,7 +374,7 @@ export default {
         // a press that didn't move: not a carry, so the click goes on (to selection)
         tap: () => false,
         cancel: () => giveBack("back"),
-        // the gesture's keys, declared, so the key order knows them before they're pressed (keymap.js)
+        // the gesture's keys, declared, so the key order knows them before they're pressed (../key-order.js)
         keys: CARRY_KEYS,
         key(ev) {
           if (done || !c) return false;
@@ -459,7 +459,7 @@ export default {
       },
       {
         id: "snap",
-        edit: true,
+        hand: "edit",
         name: "Snap",
         group: "settings",
         show: ["toolbar"],
