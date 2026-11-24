@@ -61,9 +61,9 @@ import { commandState } from "./commands.js";
 import * as ops from "../shared/ops.js";
 import { layersKey } from "../layers.js";
 import { createContent, statusOf } from "../content/content.js";
-import { resolveParents, treeOrder, worldMatrix } from "../shared/hierarchy.js";
-import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../shared/groups.js";
-import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../shared/transform.js";
+import { modelOf, snapshotOf } from "./model.js";
+import { isGroup } from "../shared/groups.js";
+import { composeMatrix, multiplyMatrices, normalizeTransform } from "../shared/transform.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";
@@ -219,63 +219,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     if (model && model.d === d) return model;
     return (model = modelOf(d));
   }
-  /** The derived structure of any snapshot of the doc (derive's, for the doc as it is now). */
-  function modelOf(d) {
-    const objects = d.objects ?? {};
-    const ids = ops.orderedIds(d);
-    // Merged cycles are broken here, for reading (resolveParents and
-    // resolveGroups pick the same edge on every peer); the ops repair them in
-    // the doc on the next structural write.
-    const parents = resolveParents(objects);
-    const groups = resolveGroups(objects);
-    const outline = outlineParents(objects, parents, groups);
-    // who is in each group (at any depth): the viewport boxes and frames them
-    const members = new Map();
-    for (const id of Object.keys(objects)) {
-      if (isGroup(objects[id])) {
-        if (!members.has(id)) members.set(id, []);
-        continue;
-      }
-      for (const g of groupChain(groups, id)) {
-        if (!members.has(g)) members.set(g, []);
-        members.get(g).push(id);
-      }
-    }
-    return {
-      d,
-      objects,
-      ids,
-      parents,
-      groups,
-      inherited: inheritedDisplay(objects, outline),
-      attachOrder: treeOrder(objects, ids, parents),
-      members,
-      snapshot: null,
-    };
-  }
-
   /** The snapshot extensions read (STAGE.md, `scene()`), one per doc. */
   function scene() {
     return snapshotOf(derive());
-  }
-  /** The snapshot of a model: its doc, structure, world(id) and toLocal(id, point). */
-  function snapshotOf(m) {
-    if (!m.snapshot) {
-      const worlds = new Map();
-      const world = (id) => {
-        let w = worlds.get(id);
-        if (!w) worlds.set(id, (w = worldMatrix(m.objects, id, m.parents)));
-        return w;
-      };
-      const inverses = new Map();
-      const toLocal = (id, p) => {
-        let inv = inverses.get(id);
-        if (inv === undefined) inverses.set(id, (inv = invertMatrix(world(id))));
-        return inv ? applyMatrix(inv, p) : null;
-      };
-      m.snapshot = Object.freeze({ d: m.d, objects: m.objects, ids: m.ids, parents: m.parents, groups: m.groups, members: m.members, traits: m.d.traits ?? {}, world, toLocal });
-    }
-    return m.snapshot;
   }
 
   // ─── content (../content/content.js) ──────────────────────────────────────
