@@ -39,6 +39,29 @@ export function resolveCssColor(el, varName, fallback = [0.5, 0.5, 0.5]) {
   return [d[0] / 255, d[1] / 255, d[2] / 255];
 }
 
+/** The colour tokens (sRGB 0..1) and the CSS custom property each is read from, with its value where none is set. */
+const TOKENS = {
+  bg: ["--scene-viewport-bg", [0.96, 0.96, 0.96]],
+  fg: ["--scene-fg", [0.1, 0.1, 0.1]],
+  gridMajor: ["--scene-grid-major", [0.6, 0.6, 0.6]],
+  gridMinor: ["--scene-grid-minor", [0.82, 0.82, 0.82]],
+  accent: ["--scene-accent", [0.2, 0.9, 0.75]],
+  remote: ["--scene-remote", [0.6, 0.4, 0.9]],
+  muted: ["--scene-muted", [0.5, 0.5, 0.5]],
+  object: ["--scene-object", [0.7, 0.72, 0.78]],
+  axisX: ["--scene-axis-x", [0.85, 0.2, 0.2]],
+  axisY: ["--scene-axis-y", [0.2, 0.7, 0.25]],
+  axisZ: ["--scene-axis-z", [0.2, 0.4, 0.9]],
+  dim: ["--scene-dimension", [0.9, 0.5, 0.1]],
+};
+
+/** The theme as `el`'s CSS has it (without `el`: every token's default): a new frozen object per read, so whoever keeps one can tell it changed. */
+export function readTheme(el = null) {
+  const out = {};
+  for (const [k, [v, fallback]] of Object.entries(TOKENS)) out[k] = el ? resolveCssColor(el, v, fallback) : fallback;
+  return Object.freeze(out);
+}
+
 /**
  * The CSS colour scheme a background asks for (sRGB 0..1): "dark" when it is
  * darker than mid-grey by luma, else "light". Set on the stage's root, native

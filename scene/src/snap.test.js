@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nearestScreenVertex } from "./stage/viewport.js";
+import { nearestScreenVertex, nearestVertex } from "./stage/picking.js";
 
 // Column-major identity: clip = model = world, w = 1, so a vertex at (x, y)
 // lands on screen at ((x + 1) / 2 · W, (1 − y) / 2 · H).
@@ -51,11 +51,10 @@ describe("nearestScreenVertex (measure snapping)", () => {
   });
 });
 
-describe("Viewport.nearestVertex culling and BVH", () => {
+describe("nearestVertex culling and BVH", () => {
   it("finds the same vertex as a brute-force scan over every vertex", async () => {
     const { Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Matrix4, InstancedMesh, TorusKnotGeometry } = await import("three");
     const { MeshBVH } = await import("three-mesh-bvh");
-    const { Viewport } = await import("./stage/viewport.js");
     const cam = new PerspectiveCamera(45, 1.6, 0.01, 1000);
     cam.position.set(3, 2, 6);
     cam.lookAt(0, 0, 0);
@@ -75,8 +74,6 @@ describe("Viewport.nearestVertex culling and BVH", () => {
     root.add(knot, ball, far, behind, inst);
     root.updateMatrixWorld(true);
     knot.geometry.boundsTree = new MeshBVH(knot.geometry, { indirect: true });
-    const vp = Object.create(Viewport.prototype);
-    vp.camera = cam;
     const viewProj = new Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     const brute = (sx, sy, maxPx, maxDepth) => {
       let best = null;
@@ -99,7 +96,7 @@ describe("Viewport.nearestVertex culling and BVH", () => {
       const sx = (i % 20) * 40 + 7, sy = Math.floor(i / 20) * 25 + 3;
       for (const maxDepth of [Infinity, 6.5]) {
         const want = brute(sx, sy, 10, maxDepth);
-        const got = vp.nearestVertex([root], sx, sy, 10, rect, maxDepth);
+        const got = nearestVertex(cam, [root], sx, sy, 10, rect, maxDepth);
         expect(!!got).toBe(!!want);
         if (want) {
           expect(got.d).toBeCloseTo(want.d, 6);
