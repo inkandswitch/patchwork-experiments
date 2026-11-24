@@ -69,7 +69,7 @@ try {
   window.__p = {
     dbg, host, errors, ran,
     body: () => dbg.local.get().body?.id ?? null,
-    enter: (id) => dbg.view.plugins.record("scene.body")?.api.body.enter(id, null) ?? false,
+    enter: (id) => dbg.view.plugins.record("scene.body")?.api.focus()?.body.enter(id, null) ?? false,
     /** pick up the editor or put it down, as the body chip's Edit does (api.view.edit) */
     /** → whether the viewer now is as asked */
     edit: (on) => {

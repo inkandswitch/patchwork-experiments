@@ -200,8 +200,8 @@ try {
     worldB: (id) => dbgB.viewport.worldOf(id)?.slice(12, 15) ?? null,
     carrying: () => dbgA.host.instanceOf("scene.carry") && dbgA.local.get().gesture != null,
     camera: () => vp.getCamera(),
-    /** enter a body in a view, as the body chip does (api.body.enter): "look" */
-    enter: (who, id) => (who === "a" ? dbgA : dbgB).view.plugins.record("scene.body")?.api.body.enter(id, null) ?? false,
+    /** enter a body in a view, as the body chip does (through its focus): "look" */
+    enter: (who, id) => (who === "a" ? dbgA : dbgB).view.plugins.record("scene.body")?.api.focus()?.body.enter(id, null) ?? false,
     bodyOf: (who) => (who === "a" ? dbgA : dbgB).local.get().body?.id ?? null,
     /** pick up the editor or put it down in a view, as the body chip's Edit does (api.view.edit) */
     edit: (who, on) => {
