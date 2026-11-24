@@ -246,6 +246,7 @@ function network(time, peers, choose, rank, hooks = {}) {
  *   freeze             the first builder may freeze past LAPSE_MS (a choice: not, until another has taken over, or until
  *                      another's claim to take over is out), then wake and finish
  *   throttle           the first builder's timers fire on whole minutes from its first build on (a background tab)
+ *   block              every build that succeeds blocks its page's main thread for its whole length (its peer frozen meanwhile)
  *   force              a person asks writers[0] for a rebuild: "start", once it has opened; "build", as the first build starts
  *   fail               builds may fail (a choice each), at most this many
  *   versions, failsV   each writer's provider version; the builds of version failsV fail, the others' succeed
@@ -257,12 +258,12 @@ function network(time, peers, choose, rank, hooks = {}) {
  *   ties               which writer's actor id wins a tie between concurrent writes (a choice)
  */
 async function run(sc, pick) {
-  const { writers, readers = [], atBound = false, built = false, stale = false, edit = null, join = null, freeze = false, throttle = false, force = null, fail = 0, versions = {}, failsV = null, lengths = [SHORT, LONG], pinned = false, lose = 0, partition = false, lostGLB = false, ties = false } = sc;
+  const { writers, readers = [], atBound = false, built = false, stale = false, edit = null, join = null, freeze = false, throttle = false, block = false, force = null, fail = 0, versions = {}, failsV = null, lengths = [SHORT, LONG], pinned = false, lose = 0, partition = false, lostGLB = false, ties = false } = sc;
   const time = manualTime({ frameMs: FRAME, yieldTo: () => new Promise((r) => setImmediate(r)) });
   const peers = [...writers, ...readers];
   const order = ties && pick(2) === 1 ? [...peers].reverse() : peers;
   const rank = (actor) => order.indexOf(actor); // (SEED: -1)
-  const log = { builds: [], ends: [], writes: [], replaced: [], shown: [], vanished: null, lost: false, readerWrote: false };
+  const log = { builds: [], ends: [], writes: [], replaced: [], shown: [], vanished: null, blocked: [], lost: false, readerWrote: false };
   let claims = 0;
   let lost = 0;
   const choose = (kind, info) => {
@@ -341,6 +342,11 @@ async function run(sc, pick) {
             const failing = failsV != null ? versions[peer] === failsV : fails < fail && pick(2) === 1;
             if (failing) fails++;
             const length = failing ? SHORT : lengths[pick(lengths.length)];
+            if (block && !failing) {
+              net.freeze(peer);
+              log.blocked.push({ peer, at: time.now(), word: lastWord.get(peer) ?? time.now() });
+              time.after(length, () => net.wake(peer));
+            }
             const end = () => {
               if (building.get(peer) !== v) return;
               building.delete(peer);
@@ -391,7 +397,8 @@ async function run(sc, pick) {
     // while nothing is on its way, frames pass without waiting on the event loop, until something is
     if (quietSince != null) for (let k = 0; k < 100 && settled(); k++) time.tick({ draw: false });
     await time.step(1);
-    for (const [peer, st] of said) if (st?.state === "building" && !net.frozen(peer)) log.shown.push({ peer, at: time.now(), live: [...building.keys()].some((p) => !net.frozen(p)) });
+    // (a peer's own build, "here", is one in progress until it is written or dropped: the fence's wait included)
+    for (const [peer, st] of said) if (st?.state === "building" && st.by !== "here" && !net.frozen(peer)) log.shown.push({ peer, at: time.now(), live: [...building.keys()].some((p) => !net.frozen(p)) });
     if (!forced && i === 2) (forced = true), managers.get(writers[0]).rebuild("o");
     if (!edited && (edit === "claim" ? claims > 0 : edit === "build" ? log.builds.length > 0 : edit === "later" ? time.now() - t0 > LAPSE_MS + FRAME : false)) doEdit();
     quietSince = settled() ? (quietSince ?? time.now()) : null;
@@ -460,7 +467,8 @@ function check(sc, log) {
   const timely = !log.lost && !sc.throttle;
   // C1: at most one peer builds a render at a time (a frozen one's build counted until it froze)
   if (timely) {
-    const s = spans(log).map((b) => (log.vanished && b.peer === log.vanished.peer && b.at <= log.vanished.at && b.end > log.vanished.at ? { ...b, end: log.vanished.at } : b));
+    const frozeAt = (b) => [log.vanished, ...log.blocked].filter((f) => f && f.peer === b.peer && b.at <= f.at && b.end > f.at).map((f) => f.at)[0];
+    const s = spans(log).map((b) => (frozeAt(b) != null ? { ...b, end: frozeAt(b) } : b));
     for (const a of s) for (const b of s) if (a.peer < b.peer && a.at < b.end && b.at < a.end) out.push(`C1: ${a.peer} and ${b.peer} built at once (${a.at}, ${b.at})`);
   }
   // C2: a builder that vanishes is replaced within REACH_MS + LAPSE_MS + CLAIM_MS of its last word
@@ -475,8 +483,9 @@ function check(sc, log) {
   if (log.readerWrote) out.push(`C3: a reader wrote the render doc`);
   for (const s of log.shown) {
     if (s.live) continue;
-    const last = Math.max(-Infinity, ...log.ends.filter((e) => e.at <= s.at).map((e) => e.at), log.vanished?.word ?? -Infinity);
-    const grace = log.lost || log.vanished || sc.throttle ? R + LAPSE_MS + 2 * FRAME : R + 2 * FRAME;
+    const words = [log.vanished, ...log.blocked].filter((f) => f && f.at <= s.at).map((f) => f.word);
+    const last = Math.max(-Infinity, ...log.ends.filter((e) => e.at <= s.at).map((e) => e.at), ...words);
+    const grace = log.lost || log.vanished || log.blocked.length || sc.throttle ? R + LAPSE_MS + 2 * FRAME : R + 2 * FRAME;
     if (s.at - last > grace) out.push(`C3: ${s.peer} said building at ${s.at} with nobody building`);
   }
   // C4: a write replaces only the result its writer had as its build began (so never a newer one it had received);
@@ -529,6 +538,7 @@ describe("who builds: the lock, on a finite model (C1–C5)", () => {
     ["a writer joins as the first build starts, or between its builder's heartbeats", { writers: ["a", "b"], join: "b" }, 11],
     ["the first builder of a stale render may freeze past LAPSE_MS, then wake and write; the other edits", { writers: ["a", "b"], stale: true, freeze: true, edit: "build", ties: true }, 9],
     ["the first builder of a stale render goes to a background tab (its timers on whole minutes), its builds 8 s", { writers: ["a", "b"], stale: true, throttle: true, lengths: [8_000], ties: true }, 9],
+    ["every build blocks its page for 10 s (longer than LAPSE_MS)", { writers: ["a", "b"], stale: true, block: true, lengths: [10_000], ties: true }, 8],
     ["a person asks a writer for a rebuild of a built render, and either edits while it builds", { writers: ["a", "b"], built: true, force: "start", edit: "build" }, 12],
     ["builds fail and are retried until given up; a reader watches", { writers: ["a", "b"], readers: ["r"], atBound: true, fail: 5 }, 13],
     ["two writers on provider versions 1 and 2; version 1's builds fail", { writers: ["a", "b"], stale: true, versions: { a: 1, b: 2 }, failsV: 1 }, 8],
