@@ -8,8 +8,8 @@
 // A dependency can be keyed by something narrower than its heads: `keyOf(url,
 // handle)` may return a string, recorded as ["fp:<string>"] in place of the
 // heads, so edits to the doc that don't change that string don't rebuild
-// anything (a scene-render dependency is keyed by its glbUrl, so its status
-// writes are invisible downstream).
+// anything (a scene-render dependency is keyed by its GLB, so its params and
+// failures are invisible downstream).
 //
 // A dependency can also be fixed at a version (`fixedHeadsOf(url)` gives
 // heads, from the scene object's `at.deps`): it is then recorded from a

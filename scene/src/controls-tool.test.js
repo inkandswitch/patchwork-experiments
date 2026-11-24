@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from "vitest";
 import { FakeRepo, flush } from "./test/fake-repo.js";
 import { manualTime } from "./stage/time.js";
-import { CLAIM_MS, LISTEN_MS } from "./content/lock.js";
+import { CLAIM_MS } from "./content/lock.js";
 import { RETRY_BACKOFF_MS } from "./content/render-manager.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
@@ -99,17 +99,17 @@ describe("scene-render-controls, alone", () => {
     let seen = null;
     element.addEventListener(REBUILD_EVENT, (e) => (seen = e.detail));
     element.querySelector(".rebuild").click();
-    await time.advance(LISTEN_MS + CLAIM_MS + 500); // (it waits for the lock as a scene's build does)
+    await time.advance(CLAIM_MS + 500); // (it waits for the lock as a scene's build does)
     expect(seen).toEqual({ renderUrl: render.url });
     expect(build).toHaveBeenCalledTimes(1);
-    expect(render.doc().glbUrl).toBe(repo.created.at(-1).url);
+    expect(render.doc().result.glbUrl).toBe(repo.created.at(-1).url);
     expect(element.querySelector(".status").textContent).toBe("Up to date");
   });
 
   it("builds only when asked, never by itself, and says a failure of what it has now", async () => {
     const { render, element, time } = await mount();
     build.mockClear();
-    await time.advance(LISTEN_MS + CLAIM_MS + 1000);
+    await time.advance(CLAIM_MS + 1000);
     expect(build).not.toHaveBeenCalled();
     expect(element.querySelector(".status").textContent).toBe("Not built yet");
     build.mockImplementationOnce(async () => {
@@ -122,7 +122,7 @@ describe("scene-render-controls, alone", () => {
     expect(build).toHaveBeenCalledTimes(1); // (no retry of its own either)
     expect(element.querySelector(".status").textContent).toBe("Error");
     expect(element.querySelector(".error").textContent).toBe("syntax error");
-    expect(render.doc().error).toBe("syntax error");
+    expect(render.doc().failure.error).toBe("syntax error");
   });
 
   it("leaves the build to a scene that claims it", async () => {
@@ -132,7 +132,7 @@ describe("scene-render-controls, alone", () => {
     element.querySelector(".rebuild").click();
     await time.advance(100);
     expect(build).not.toHaveBeenCalled();
-    expect(render.doc().glbUrl).toBeNull();
+    expect(render.doc().result).toBeNull();
   });
 
   it("cleans up", async () => {
@@ -169,8 +169,8 @@ describe("scene-render-controls, dependencies", () => {
     const cleanup = Controls(render, element);
     await element.time.advance(100);
     element.querySelector(".rebuild").click();
-    await element.time.advance(LISTEN_MS + CLAIM_MS + 500);
-    expect(render.doc().builtFrom.deps).toEqual({ [dep.url]: dep.heads() });
+    await element.time.advance(CLAIM_MS + 500);
+    expect(render.doc().result.builtFrom.deps).toEqual({ [dep.url]: dep.heads() });
     expect(element.querySelector(".status").textContent).toBe("Up to date");
     dep.change((d) => (d.n = 2));
     expect(element.querySelector(".status").textContent).toBe("Stale");

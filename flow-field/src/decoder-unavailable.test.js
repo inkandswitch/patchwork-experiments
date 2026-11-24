@@ -50,7 +50,7 @@ describe("a decoder this peer can't run", () => {
     const { section } = await withDecoder(() => {
       throw new Error("Failed to fetch dynamically imported module");
     });
-    const render = { "@patchwork": { type: "scene-render" }, title: "Freezer", providerId: "file-glb", source: GLB_DOC, glbUrl: GLB_DOC, status: "ready" };
+    const render = { "@patchwork": { type: "scene-render" }, title: "Freezer", providerId: "file-glb", source: GLB_DOC, result: { glbUrl: GLB_DOC, builtFrom: { heads: ["a"] }, bounds: null, builtAt: 1 }, failure: null };
     const repo = fakeRepo({ [RENDER]: render, [GLB_DOC]: fileDoc(meshopt()) });
     const r = await section.acquireSection({ url: RENDER, plane: { kind: "z", z: 1.7 }, repo });
     expect(r).toMatchObject({ ok: false, transient: true });

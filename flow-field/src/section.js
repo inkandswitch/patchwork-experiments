@@ -351,7 +351,7 @@ async function renderSection({ url, doc, handle, plane, repo, selfUrl, fail }) {
   }
   extra.renderKey = renderKey(r.render);
   if (!r.glb) {
-    const why = r.status === "error" && r.error ? `its last build failed: ${r.error}` : `“${title}” has no GLB yet`;
+    const why = r.failure?.error ? `its last build failed: ${r.failure.error}` : `“${title}” has no GLB yet`;
     // the same on every peer, and the host rebuilds the flow when the render's
     // glbUrl changes: no body, and no throw
     return { ...fail(`linked body not built yet (${why})`, false), pending: true, ...extra };

@@ -377,12 +377,7 @@ export function assetsFor(assets, urls, have = {}) {
 export function renderSeed(r) {
   if (!r || typeof r !== "object") return null;
   const out = { providerId: r.providerId ?? null, parent: r.parent ?? null, params: plain(r.params ?? {}) };
-  if (typeof r.glbUrl === "string" && r.builtFrom && typeof r.builtFrom === "object") {
-    out.glbUrl = r.glbUrl;
-    out.builtFrom = plain(r.builtFrom);
-    out.builtAt = Number.isFinite(r.builtAt) ? r.builtAt : null;
-    out.bounds = plain(r.bounds ?? null);
-  }
+  if (typeof r.result?.glbUrl === "string" && r.result.builtFrom && typeof r.result.builtFrom === "object") out.result = plain(r.result);
   if (r.pinned === true) out.pinned = true;
   return out;
 }

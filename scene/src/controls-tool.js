@@ -11,9 +11,10 @@
 // `detail.tell` they pass whenever either changes, until `detail.stop()`);
 // "Rebuild now" asks it with a cancelable `scene:rebuild`. Alone, with no stage answering, the
 // tool has a render manager of its own (content/render-manager.js) that
-// builds only when asked, and its state is that one's. `element.time` (a
-// stage time, stage/time.js) is the clock that manager runs on; the page's
-// by default.
+// builds only when asked, and its state is that one's. It follows the
+// source's latest version: a scene object's fixed version (`at`) lives in
+// the scene, which it doesn't know. `element.time` (a stage time,
+// stage/time.js) is the clock that manager runs on; the page's by default.
 
 import css from "./styles.css?inline";
 import { createParamForm } from "./param-form.js";
@@ -148,7 +149,7 @@ export default function SceneRenderControls(handle, element) {
     const pill = $(".status");
     pill.dataset.state = pillState;
     pill.textContent = label;
-    $(".built").textContent = `built ${relativeTime(doc.builtAt)}${fixed ? " · fixed version" : ""}`;
+    $(".built").textContent = `built ${relativeTime(doc.result?.builtAt)}${fixed ? " · fixed version" : ""}`;
 
     const err = $(".error");
     err.hidden = state?.state !== "failed" || !state.error;

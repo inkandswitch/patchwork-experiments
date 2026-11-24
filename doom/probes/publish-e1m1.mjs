@@ -176,7 +176,7 @@ async function publish(snap) {
   const renderUrls = Object.values(docs[snap.scene].objects).map((o) => o.renderUrl).filter(Boolean);
   for (const u of renderUrls) {
     const r = docs[u];
-    docs[u] = { "@patchwork": r["@patchwork"], title: r.title, parent: r.parent, providerId: r.providerId, params: r.params, glbUrl: null, builtFrom: null, builtAt: null, bounds: r.bounds ?? null, status: "idle", error: null, pinned: false };
+    docs[u] = { "@patchwork": r["@patchwork"], title: r.title, parent: r.parent, providerId: r.providerId, params: r.params, pinned: false, result: null, failure: null };
   }
   const count = Object.keys(docs).length;
   console.log(`the exit switch leads ${EXIT_TO ? `to ${EXIT_TO}` : "nowhere"}`);

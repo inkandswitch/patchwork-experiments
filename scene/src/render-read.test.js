@@ -10,7 +10,7 @@ describe("render-read", () => {
     const repo = new FakeRepo();
     const r = repo.add(newRenderDoc({ title: "x", parent: "automerge:src", providerId: "p", params: {} }));
     const out = await readRender(repo, r.url);
-    expect(out).toMatchObject({ glb: null, glbUrl: null, status: "idle", source: "automerge:src" });
+    expect(out).toMatchObject({ glb: null, glbUrl: null, builtFrom: null, failure: null, source: "automerge:src" });
     expect(renderKey(out.render)).toBe("render:");
   });
 
@@ -18,10 +18,11 @@ describe("render-read", () => {
     const repo = new FakeRepo();
     const bytes = encodeGLB({ meshes: [] });
     const file = await repo.create2(glbFileDoc("x", bytes));
-    const r = repo.add({ ...newRenderDoc({ title: "x", parent: "automerge:src", providerId: "p", params: {} }), glbUrl: file.url });
+    const r = repo.add({ ...newRenderDoc({ title: "x", parent: "automerge:src", providerId: "p", params: {} }), result: { glbUrl: file.url, builtFrom: { heads: ["h"], fingerprint: null, paramsKey: "{}", deps: {} }, bounds: null, builtAt: 1 } });
     const out = await readRender(repo, r.url);
     expect(out.glb).toEqual(bytes);
     expect(renderKey(out.render)).toBe(`render:${file.url}`);
+    expect(out).toMatchObject({ glbUrl: file.url, builtFrom: { heads: ["h"] }, builtAt: 1, failure: null });
   });
 
   it("refuses a doc that isn't a render", async () => {
