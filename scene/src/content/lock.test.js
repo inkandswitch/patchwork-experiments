@@ -16,8 +16,8 @@
 //
 // What is not varied, and why that is safe:
 //   - delays strictly between 0 and REACH_MS: the protocol compares arrival
-//     times only with its own windows (CLAIM_MS, LAPSE_MS, LEASE_MS,
-//     RECHECK_MS), and the derivation (lock.js) meets each with a margin at
+//     times only with its own windows (CLAIM_MS, LAPSE_MS), and the
+//     derivation (lock.js) meets each with a margin at
 //     both ends, so the extremes are the hard cases, an exact tie at
 //     REACH_MS among them;
 //   - heartbeats at other than REACH_MS: a heartbeat only keeps a claim live,
@@ -33,6 +33,7 @@
 //     result writes are concurrent there (asserted), so no tie is broken.
 // Choice points past `bound` in a run take their first option.
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { appendFileSync } from "node:fs";
 import { createRenderManager, RETRY_BACKOFF_MS } from "./render-manager.js";
 import { CLAIM_MS, HEARTBEAT_MS, LAPSE_MS, REACH_MS } from "./lock.js";
 import { inputsKey } from "./staleness.js";
@@ -256,9 +257,11 @@ function network(time, peers, choose, rank, hooks = {}) {
  *   partition          every message between the writers is lost (their changes still sync)
  *   lostGLB            the render names a GLB file that never arrives, and is stale
  *   ties               which writer's actor id wins a tie between concurrent writes (a choice)
+ *   fingerprint        the provider fingerprints its source (by `size`), so a build is judged by that, not by heads
+ *   leaves             this writer closes the scene once it has written a result
  */
 async function run(sc, pick) {
-  const { writers, readers = [], atBound = false, built = false, stale = false, edit = null, join = null, freeze = false, throttle = false, block = false, force = null, fail = 0, versions = {}, failsV = null, lengths = [SHORT, LONG], pinned = false, lose = 0, partition = false, lostGLB = false, ties = false } = sc;
+  const { writers, readers = [], atBound = false, built = false, stale = false, edit = null, join = null, freeze = false, throttle = false, block = false, force = null, fail = 0, versions = {}, failsV = null, lengths = [SHORT, LONG], pinned = false, lose = 0, partition = false, lostGLB = false, ties = false, fingerprint = false, leaves = null } = sc;
   const time = manualTime({ frameMs: FRAME, yieldTo: () => new Promise((r) => setImmediate(r)) });
   const peers = [...writers, ...readers];
   const order = ties && pick(2) === 1 ? [...peers].reverse() : peers;
@@ -279,6 +282,22 @@ async function run(sc, pick) {
     return [R, 0][pick(2)];
   };
   const lastWord = new Map(); // peer → when it last spoke
+  // the price: a replica drawing a result older than one it drew before (a regression), and for how long
+  const drawn = new Map(); // peer → { max: [v, pv], since: when its regression began, or null }
+  const ageOf = (result) => [versionOfResult(result), result?.builtFrom?.providerVersion ?? -1];
+  const older = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+  log.regressions = 0;
+  log.longestRegression = 0;
+  function shown(peer, result) {
+    const d = drawn.get(peer) ?? drawn.set(peer, { max: [-1, -1], since: null }).get(peer);
+    const age = ageOf(result);
+    if (older(age, d.max)) {
+      if (d.since == null) (d.since = time.now()), log.regressions++;
+      return;
+    }
+    if (d.since != null) (log.longestRegression = Math.max(log.longestRegression, time.now() - d.since)), (d.since = null);
+    d.max = age;
+  }
   const seenWrites = new Map(); // peer → the result writes its replica has
   let sourceUrl = null;
   let renderUrl = null;
@@ -290,7 +309,9 @@ async function run(sc, pick) {
     },
     // a result put that wins at a replica, by its own write or a merge: never an older build over a newer one (in time)
     put: (peer, url, op, cur) => {
-      if (url !== renderUrl || op.key !== "result" || !cur) return;
+      if (url !== renderUrl || op.key !== "result") return;
+      shown(peer, op.value);
+      if (!cur) return;
       const vOld = versionOfResult(cur.value);
       const vNew = versionOfResult(op.value);
       if (vOld > vNew) log.replaced.push({ at: peer, by: op.id[1], vOld, vNew });
@@ -308,6 +329,7 @@ async function run(sc, pick) {
   const building = new Map(); // peer → the source version its build reads
   let fails = 0;
   const managers = new Map();
+  const gone = new Set(); // writers that closed the scene
   const said = new Map(); // peer → the state it says now
   const startSnap = new Map(); // peer → the render's result as its replica had it when its build began
   const resultOf = (doc) => JSON.stringify(doc.result ?? null);
@@ -321,7 +343,7 @@ async function run(sc, pick) {
     const frozenFor = freeze ? [0, FROZEN, WAKES_MID_CLAIM][pick(3)] : 0;
     if (frozenFor) {
       net.freeze(peer);
-      log.vanished = { peer, at: time.now(), word: lastWord.get(peer) ?? time.now() };
+      log.vanished = { peer, at: time.now(), word: lastWord.get(peer) ?? time.now(), until: time.now() + frozenFor };
       time.after(frozenFor, () => net.wake(peer));
     }
   }
@@ -332,15 +354,17 @@ async function run(sc, pick) {
       params: [],
       version: versions[peer],
       module: {
+        ...(fingerprint ? { fingerprint: (doc) => `size:${doc.size}` } : {}),
         build: ({ signal }) =>
           new Promise((resolve, reject) => {
             const v = net.versionOf(sourceUrl, net.handle(peer, sourceUrl).heads());
-            log.builds.push({ peer, v, pv: versions[peer], at: time.now() });
+            const b = { peer, v, pv: versions[peer], at: time.now() };
+            log.builds.push(b);
             building.set(peer, v);
             startSnap.set(peer, resultOf(net.handle(peer, renderUrl).doc()));
             if (log.builds.length === 1) onFirstBuild(peer);
             const failing = failsV != null ? versions[peer] === failsV : fails < fail && pick(2) === 1;
-            if (failing) fails++;
+            if (failing) (fails++, (b.failing = true));
             const length = failing ? SHORT : lengths[pick(lengths.length)];
             if (block && !failing) {
               net.freeze(peer);
@@ -366,7 +390,8 @@ async function run(sc, pick) {
       change(fn);
       const ch = net.last(renderUrl);
       if (ch?.by !== peer || !ch.ops.some((op) => op.key === "result")) return;
-      log.writes.push({ peer, hash: ch.hash, before, start: startSnap.get(peer), seen, value: resultOf(handle.doc()) });
+      log.writes.push({ peer, hash: ch.hash, before, start: startSnap.get(peer), seen, value: resultOf(handle.doc()), beforeAge: ageOf(JSON.parse(before)), age: ageOf(handle.doc().result) });
+      if (peer === leaves && !gone.has(peer)) gone.add(peer), queueMicrotask(() => (managers.get(peer).dispose(), said.delete(peer)));
     };
     const m = createRenderManager({
       repo: net.repo(peer),
@@ -415,6 +440,12 @@ async function run(sc, pick) {
   log.failedNow = r.failure != null && writers.some((w) => r.failure.inputs === inputsKey(r, { heads, fingerprint: null, deps: {}, providerVersion: versions[w] }));
   log.crossed = log.writes.filter((a, i) => log.writes.some((b, j) => j > i && a.peer !== b.peer && !a.seen.has(b.hash) && !b.seen.has(a.hash))).length;
   log.end = time.now();
+  for (const d of drawn.values()) if (d.since != null) log.longestRegression = Math.max(log.longestRegression, log.end - d.since);
+  // waste: builds (that didn't fail) beyond one per distinct inputs
+  const ok = log.builds.filter((b) => !b.failing);
+  log.waste = ok.length - new Set(ok.map((b) => `${b.v}|${b.pv}`)).size;
+  log.fault = !!(log.lost || log.vanished || log.blocked.length || throttle || partition);
+  log.gone = [...gone];
   log.states = Object.fromEntries([...said].map(([p, st]) => [p, st]));
   for (const m of managers.values()) m.dispose();
   return log;
@@ -444,6 +475,12 @@ async function everyRun(scenario, bound) {
   return runs;
 }
 
+/** The price of a scenario's runs, ordinary (no fault) and faulty apart: runs with a regression, the longest, builds wasted. */
+function priceOf(name, runs) {
+  const part = (rs) => ({ runs: rs.length, regressed: rs.filter(({ log }) => log.regressions).length, longest: Math.max(0, ...rs.map(({ log }) => log.longestRegression)), waste: rs.reduce((n, { log }) => n + log.waste, 0) });
+  return { name, ordinary: part(runs.filter(({ log }) => !log.fault)), fault: part(runs.filter(({ log }) => log.fault)) };
+}
+
 /** Each build's span [at, end), its end the same peer's next end at or after it. */
 function spans(log) {
   const used = new Set();
@@ -456,11 +493,12 @@ function spans(log) {
 
 /**
  * The invariants on one run (README.md, "Content", "Who builds"). Always:
- * C3, C4's first half, C5. With the timing assumption (every message within
- * REACH_MS, so not in a run with a lost one nor a throttled tab; a frozen
- * peer doesn't break it, its clock merely stops): C4's second half, C2,
- * failing inputs tried at most 1 + RETRY_BACKOFF_MS.length times in all, no
- * two result writes concurrent; and C1, among the peers that aren't frozen.
+ * C3, C4, C5. With the timing assumption (every message within REACH_MS, so
+ * not in a run with a lost one nor a throttled tab; a frozen peer doesn't
+ * break it, its clock merely stops): C2, failing inputs tried at most 1 +
+ * RETRY_BACKOFF_MS.length times in all; and C1, among the peers that aren't
+ * frozen. What the lock no longer promises (an older result never drawn
+ * after a newer one) is counted instead: priceOf.
  */
 function check(sc, log) {
   const out = [];
@@ -471,11 +509,13 @@ function check(sc, log) {
     const s = spans(log).map((b) => (frozeAt(b) != null ? { ...b, end: frozeAt(b) } : b));
     for (const a of s) for (const b of s) if (a.peer < b.peer && a.at < b.end && b.at < a.end) out.push(`C1: ${a.peer} and ${b.peer} built at once (${a.at}, ${b.at})`);
   }
-  // C2: a builder that vanishes is replaced within REACH_MS + LAPSE_MS + CLAIM_MS of its last word
-  const left = sc.writers.filter((w) => w !== log.vanished?.peer).length > 0;
-  if (log.vanished && left && timely) {
+  // C2: a builder silent for longer than REACH_MS + LAPSE_MS + CLAIM_MS is replaced within that long of its last word
+  // (one that speaks again sooner may keep the render: a claim to take over yields to it)
+  const left = sc.writers.filter((w) => w !== log.vanished?.peer && !log.gone.includes(w)).length > 0;
+  const C2_MS = R + LAPSE_MS + CLAIM_MS + 2 * FRAME;
+  if (log.vanished && left && timely && log.vanished.until - log.vanished.word > C2_MS) {
     const next = log.builds.find((b) => b.at > log.vanished.at && b.peer !== log.vanished.peer);
-    if (!next || next.at - log.vanished.word > R + LAPSE_MS + CLAIM_MS + 2 * FRAME) out.push(`C2: replaced ${next ? next.at - log.vanished.word : "never"} ms after its last word`);
+    if (!next || next.at - log.vanished.word > C2_MS) out.push(`C2: replaced ${next ? next.at - log.vanished.word : "never"} ms after its last word`);
   }
   // C3: a peer that can't write never builds nor writes; a build is shown in progress only while one is,
   // until its release arrives, or LAPSE_MS after its builder's last word
@@ -488,14 +528,10 @@ function check(sc, log) {
     const grace = log.lost || log.vanished || log.blocked.length || sc.throttle ? R + LAPSE_MS + 2 * FRAME : R + 2 * FRAME;
     if (s.at - last > grace) out.push(`C3: ${s.peer} said building at ${s.at} with nobody building`);
   }
-  // C4: a write replaces only the result its writer had as its build began (so never a newer one it had received);
-  // and, messages arriving in time, no two result writes are concurrent and an older build never replaces a newer one
-  // at any replica, by a write or a merge, even from a peer that froze mid-build
+  // C4: a result in the doc is one writer's, whole; a write replaces only the result its writer had as its build began,
+  // and never one fresh for, or ahead of, the inputs its build read, as its writer saw the doc (unless a person asked)
   for (const w of log.writes) if (w.start !== undefined && w.before !== w.start) out.push(`C4: ${w.peer} wrote over a result that arrived during its build`);
-  if (timely) {
-    for (const x of log.replaced) out.push(`C4: at ${x.at}, ${x.by}'s version ${x.vNew} replaced version ${x.vOld}`);
-    if (log.crossed) out.push(`C4: ${log.crossed} result writes crossed`);
-  }
+  for (const w of log.writes) if (!sc.force && !(w.beforeAge[0] < w.age[0] || (w.beforeAge[0] === w.age[0] && w.beforeAge[1] < w.age[1]))) out.push(`C4: ${w.peer} wrote [${w.age}] over [${w.beforeAge}]`);
   // C5: it ends merged alike everywhere, built from the current inputs (or failed for them, or pinned), nobody saying a build is in progress
   if (!log.converged) out.push(`C5: the replicas didn't converge`);
   if (!log.whole) out.push(`C4: the result is no one writer's whole`);
@@ -549,10 +585,12 @@ describe("who builds: the lock, on a finite model (C1–C5)", () => {
     ["two messages may be lost, every other at the bound", { writers: ["a", "b"], atBound: true, lose: 2, edit: "build", ties: true }, 13],
     ["the writers can't hear each other, their changes still syncing; either edits", { writers: ["a", "b"], partition: true, edit: "build", ties: true }, 10, { crosses: true }],
     ["three writers", { writers: ["a", "b", "c"] }, 10],
+    ["a fingerprinting provider; the writers can't hear each other and either edits; a closes the scene once it has written", { writers: ["a", "b"], partition: true, fingerprint: true, edit: "build", leaves: "a", lengths: [200, 100], ties: true }, 10],
   ];
   for (const [name, scenario, bound, { crosses = false } = {}] of scenarios) {
     it(`${name}: every run keeps the invariants`, async () => {
       const runs = await everyRun(scenario, bound);
+      if (process.env.LOCK_PRICE) appendFileSync(process.env.LOCK_PRICE, `${JSON.stringify(priceOf(name, runs))}\n`);
       const bad = runs.flatMap(({ prefix, log }) => check(scenario, log).map((e) => `[${prefix.join("")}] ${e}`));
       expect(bad.slice(0, 5)).toEqual([]);
       expect(runs.length).toBeGreaterThan(crosses ? 8 : 4);

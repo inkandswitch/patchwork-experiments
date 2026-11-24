@@ -164,33 +164,30 @@ move (cancelling the build in flight through its `signal`), retries a
 failure, says it still holds it every `HEARTBEAT_MS`, and lets it go once it
 has wanted nothing for `HEARTBEAT_MS`. Nobody claims while another's claim
 is live. Of two claims at once the lower id holds; a holder beats a claimer;
-of two holders (after a lost message) the higher id lets go once it isn't
-building. Whoever beats a claim answers it at once (a holder says it holds,
+of two holders (a lost message, a frozen holder waking) the higher id lets
+go once it isn't building, and neither starts a build while the other's
+runs. Whoever beats a claim answers it at once (a holder says it holds,
 a lower-id claimer claims again), so a peer that opens the render late hears
 them within its window. The scene that made a render builds it the first
 time without claiming: nobody else knows of it. A peer not holding the
 render that reads a failure of exactly its own inputs leaves those inputs
 alone until they change or someone asks; a failure of other inputs (another
 provider version's) is nothing to it. A peer's "building" is a builder it
-hears, or its own build, the wait on the fence included.
+hears, or its own build.
 
-**The write fence.** A result is written by compare-and-set, only over the
-result the render had as its build began, and only if its writer has heard
-no other peer hold or build the render since. A holder silent past
-`LEASE_MS` (a frozen tab, a blocked thread, a background tab's slowed
-timers) says nothing until it has listened `RECHECK_MS`. If it heard
-anyone, it drops a build still running and lets the render go; a build that
-has finished it announces (`build`), listens `RECHECK_MS` more, and writes
-by compare-and-set alone before letting go, unless a lower id said it holds
-or builds meanwhile. (Without the fence's second condition a woken holder's
-older build and its successor's newer one can be written concurrently, and
-the merge may keep the older: the model finds it.)
+**The write.** The lock is advisory: it decides who builds, and gates
+nothing written. A finished build is written by compare-and-set, only over
+the result the render had as its build began; a result that arrived
+meanwhile, for any inputs, keeps it from being written. Two writes made
+without seeing each other merge to one writer's whole result; whichever
+survives, every replica judges it fresh or stale by what it records, so an
+older one is rebuilt by the ordinary path, at the price of old geometry for
+the length of one build.
 
 **Timing.** One assumption, `REACH_MS` (D = 250 ms): every message and change
 reaches every peer within it. With the heartbeat H = 2 s: `CLAIM_MS` = 4D
 (needs > 2D: a claim and its answer, an exact tie included); `LAPSE_MS` = 3H
-(needs > 2H + D: one heartbeat may be lost); `LEASE_MS` = `LAPSE_MS` − H − D;
-`RECHECK_MS` = 2D (needs > D and < `CLAIM_MS` − D). The derivation is in
+(needs > 2H + D: one heartbeat may be lost). The derivation is in
 `lock.js`.
 
 **What a person waits for**, the debounce being `DEBOUNCE` (150 ms for a
@@ -210,9 +207,9 @@ cheap change, 800 ms otherwise, `staleness.js`):
 | | Among the peers with the render open |
 |---|---|
 | C1 | (needs the assumption) At most one peer builds it at a time, a frozen peer aside. |
-| C2 | (needs it) A builder that vanishes is replaced within `REACH_MS` + `LAPSE_MS` + `CLAIM_MS` of its last word. |
+| C2 | (needs it) A builder silent for longer than `REACH_MS` + `LAPSE_MS` + `CLAIM_MS` is replaced within that long of its last word; one that speaks sooner may keep the render. |
 | C3 | (always) A peer that can't write never builds nor writes; a build is shown in progress only while one is, until its release arrives, or `LAPSE_MS` after its holder's last word. |
-| C4 | (always) A write replaces only the result its writer had as its build began, so never a newer one it had received; a merge keeps one writer's result whole. (Needs the assumption) No two results are written concurrently, and no older build replaces a newer one at any replica, a peer that froze mid-build included. |
+| C4 | (always) A result in the doc is one writer's, whole. A write replaces only the result its writer had as its build began, and never one fresh for, or ahead of, the inputs its build read, as its writer saw the doc (unless a person asked). An older result can win a merge of concurrent writes; it is then stale everywhere (C5). |
 | C5 | (always, while one writer stays) Once nothing moves, every replica holds the same render doc, built from the current inputs (or failed for them, or pinned), and nobody holds it, lost messages, slowed timers and builds that block their page past `LAPSE_MS` included; failing inputs are tried at most 1 + `RETRY_BACKOFF_MS.length` times in all (with the assumption). |
 
 `src/content/lock.test.js` checks them on a finite model: two or three real
@@ -225,7 +222,10 @@ freezing past `LAPSE_MS` (or only into another's claim) and waking to write,
 a builder whose timers fire on whole minutes, builds that block their
 page for 10 s, a forced rebuild, a peer
 joining mid-build or between heartbeats, provider versions one of which
-fails, lost messages, and writers that can't hear each other.
+fails, lost messages, writers that can't hear each other, and a
+fingerprinting provider whose older build wins a merge after its writer has
+left. It counts the price too: runs where a replica draws a result older
+than one it drew, for how long, and builds beyond one per inputs.
 `src/content/result-merge.test.js` merges two results on real Automerge
 docs.
 
