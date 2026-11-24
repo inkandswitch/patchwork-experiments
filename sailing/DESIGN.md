@@ -27,7 +27,7 @@ modules share.
 - **Densities:** water 1025 kg/m³, air 1.225 kg/m³.
 - **The `wind` ambient** is the weather package's: it offers it from the
   outermost doc's `weather` trait, and documents its value
-  (weather/WEATHER.md, "What it offers"; scene/CONVENTIONS.md, "Conventions",
+  (weather/README.md, "Conventions"; scene/CONVENTIONS.md, "Names",
   points there). Sailing offers no ambient. It reads the wind twice: its
   physics makes it a wind in each stage's frame (`sea-view.js`, by
   `wind.js`: `seed` and `gustiness` make its gusts), and every sea builds
