@@ -65,7 +65,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
   }
   // the editor put down, the tab goes
   api.view.watch?.(
-    () => api.schedule(() => {
+    () => api.focus()?.schedule(() => {
       if (close && !editing(api.view.get())) shut();
     }),
     (v) => v.hands,

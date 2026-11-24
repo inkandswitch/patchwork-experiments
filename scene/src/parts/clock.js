@@ -46,7 +46,7 @@ function create(api) {
   const chips = new Map(); // stage → { el, doc, text, button }
   const names = new Map(); // viewer → their contact's name; null while asking, or if it has none
   function name(viewer) {
-    if (viewer && viewer === api.viewer) return "you";
+    if (viewer && viewer === api.focus()?.channel.viewer) return "you";
     if (typeof viewer !== "string" || !viewer) return "someone";
     if (!names.has(viewer)) {
       names.set(viewer, null);

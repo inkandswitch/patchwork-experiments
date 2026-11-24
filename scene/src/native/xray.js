@@ -243,7 +243,7 @@ function create(api) {
 
   const names = new Map(); // viewer → name (contact docs, looked up once)
   function who(viewer, mine) {
-    if (mine || (viewer && viewer === api.viewer)) return "you";
+    if (mine || (viewer && viewer === api.focus()?.channel.viewer)) return "you";
     if (!viewer) return "someone";
     if (!names.has(viewer)) {
       names.set(viewer, null);

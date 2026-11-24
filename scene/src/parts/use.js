@@ -51,6 +51,7 @@ import { applicable, keysOf } from "./toolbar-commands.js";
 import { codeOfKey, commandState, flatCommands, looksFromEye, samePath } from "../stage/public.js";
 import { attentionPath, hintFor, keyFor, segmentsOf } from "./keymap.js";
 import { resolverState } from "./resolver.js";
+import { perFocus } from "../per-focus.js";
 import { arrange, holdKey } from "../hold-key.js";
 
 /** How many verbs the prompt shows before its "more". */
@@ -374,10 +375,12 @@ function create(api) {
   // an orbit, a zoom or a Frame moves the eye, and so what's in reach; a lock
   // taken or lost moves the look between the pointer and the crosshair (and,
   // locked, the eye with the mouse)
-  api.camera.onEnd(() => {
-    letGo();
-    refresh();
-  });
+  const cameraEnds = perFocus(api, (f) =>
+    f.camera.onEnd(() => {
+      letGo();
+      refresh();
+    }),
+  );
   api.listen(document, "pointerlockchange", () => {
     letGo();
     refresh();
@@ -385,6 +388,7 @@ function create(api) {
 
   return {
     update() {
+      cameraEnds();
       // a body entered or left (a seat, Look from a walk) puts the eye somewhere else
       if (held && held.body !== bodyId()) letGo();
       wantLoop();

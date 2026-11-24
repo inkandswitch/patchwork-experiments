@@ -732,7 +732,7 @@ export function createOutline(api, { shown = () => true } = {}) {
   const presence = perFocus(api, (f) => {
     f.channel.watch(() => {
       presenceSeq++;
-      api.schedule(renderAll);
+      f.schedule(renderAll);
     });
     return f.channel;
   });
