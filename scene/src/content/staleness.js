@@ -109,25 +109,32 @@ export function currentInputsKey(render, source) {
 }
 
 /**
- * True when a render is stale only by its fingerprint or its dependencies, and
- * what this client would build right now (params, source heads, dependency
- * heads) is exactly what it already built (`lastBuilt`, a builtInputsKey).
- * That means another peer rebuilt over us from a different view of the same
- * inputs: a different provider version or fingerprint scheme, a provider that
- * lists different dependencies, or dependency heads we don't have (yet).
- * Auto-rebuilding then would ping-pong between the two peers forever (or put
- * an older build over a newer one); the caller should leave it to a manual
- * rebuild. It stops being contested as soon as anything we read moves. A
- * build whose own record names other source heads or params than we read
- * is an older (or other) build, never a rival of ours, however it got there
- * (a merge of two writes keeps either): it is rebuilt.
+ * True when the render's build is a rival of what this client would build.
+ * A rival is a build of the same inputs by its own record: the same params,
+ * source heads and dependency heads (a dependency keyed by `fp:` counting as
+ * read alike), judged otherwise only because it was made from another view
+ * of them (another provider version or fingerprint scheme, another list of
+ * dependencies, another key for a keyed dependency), while this client last
+ * built exactly what it would build now (`lastBuilt`, a builtInputsKey).
+ * Rebuilding a rival would ping-pong between the two peers, so the caller
+ * leaves it to a person. Anything this replica can see to be older is
+ * rebuilt: a record naming other source heads or params, or recording a
+ * dependency at heads this replica already contains (`contains(url, heads)`)
+ * but doesn't read. A rival stays contested until anything this client reads
+ * moves.
  */
-export function isContested(render, source, lastBuilt) {
+export function isContested(render, source, lastBuilt, contains = () => false) {
   const built = render?.result?.builtFrom;
   if (!built || lastBuilt == null) return false;
   const reason = staleReason(render, source);
   if (reason !== "fingerprint" && reason !== "deps") return false;
   if (built.paramsKey !== paramsKey(render.params) || !sameHeads(built.heads, source?.heads)) return false;
+  const was = normalizeDeps(built.deps);
+  const now = normalizeDeps(source?.deps);
+  for (const url of Object.keys(was)) {
+    const heads = was[url];
+    if (url in now && !sameHeads(heads, now[url]) && heads.length && !isFpKey(heads) && !isFpKey(now[url]) && contains(url, heads)) return false;
+  }
   return currentInputsKey(render, source) === lastBuilt;
 }
 

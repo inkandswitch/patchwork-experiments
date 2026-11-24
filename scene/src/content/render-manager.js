@@ -219,6 +219,10 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       shownError: entry.shownError,
       behind: !!reason && ["fingerprint", "heads", "deps"].includes(reason) && isBehind(entry, render),
       lastBuilt: entry.lastBuilt,
+      contains: (url, heads) => {
+        const h = entry.deps.handle(url);
+        return !!h && knowsHeads(h, heads);
+      },
       deps: {
         notReady: urls.filter((u) => !entry.deps.ready(u)),
         failed: urls.filter((u) => entry.deps.failed(u)),

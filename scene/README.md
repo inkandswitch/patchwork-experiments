@@ -149,7 +149,14 @@ states are a closed set: `loading` (`version`: a fixed version not synced
 yet), `no-provider`, `building` (`by`), `failed` (`in: "build"` with
 `retrying`, or `"load"`), `waiting` (`on`: linked documents loading),
 `stale` (`reason`; `hold`: `"pinned"`, `"contested"`, `"unavailable"` or
-null, the one it will rebuild on its own) and `fresh` (`behind`: built
+null, the one it will rebuild on its own). A rival is a build of the same
+inputs by its own record; anything this replica can see to be older is
+rebuilt. `"contested"` is a rival judged otherwise only by another view of
+those inputs (another fingerprint for the same heads, another list of
+dependencies, another key for a dependency keyed by `fp:`), which this
+replica last built itself: it waits for a person, or for anything it reads
+to move. A rival's writer that has left, over a keyed dependency, strands
+it there until another writer arrives or the inputs move and `fresh` (`behind`: built
 from changes this replica hasn't synced). `api.content(id).state` is it;
 `local.status` says it to people; the render manager builds on it; the
 build controls show it (a stage answers their `scene:render-context`).
@@ -181,8 +188,7 @@ the result the render had as its build began; a result that arrived
 meanwhile, for any inputs, keeps it from being written. Two writes made
 without seeing each other merge to one writer's whole result; whichever
 survives, every replica judges it fresh or stale by what it records, so an
-older one is rebuilt by the ordinary path, at the price of old geometry for
-the length of one build.
+older one is rebuilt by the ordinary path.
 
 **Timing.** One assumption, `REACH_MS` (D = 250 ms): every message and change
 reaches every peer within it. With the heartbeat H = 2 s: `CLAIM_MS` = 4D
@@ -210,7 +216,14 @@ cheap change, 800 ms otherwise, `staleness.js`):
 | C2 | (needs it) A builder silent for longer than `REACH_MS` + `LAPSE_MS` + `CLAIM_MS` is replaced within that long of its last word; one that speaks sooner may keep the render. |
 | C3 | (always) A peer that can't write never builds nor writes; a build is shown in progress only while one is, until its release arrives, or `LAPSE_MS` after its holder's last word. |
 | C4 | (always) A result in the doc is one writer's, whole. A write replaces only the result its writer had as its build began, and never one fresh for, or ahead of, the inputs its build read, as its writer saw the doc (unless a person asked). An older result can win a merge of concurrent writes; it is then stale everywhere (C5). |
-| C5 | (always, while one writer stays) Once nothing moves, every replica holds the same render doc, built from the current inputs (or failed for them, or pinned), and nobody holds it, lost messages, slowed timers and builds that block their page past `LAPSE_MS` included; failing inputs are tried at most 1 + `RETRY_BACKOFF_MS.length` times in all (with the assumption). |
+| C5 | (always, while one writer stays; a pinned render, and a contest that can't be ordered, wait for a person or for the inputs to move) Once nothing moves, every replica holds the same render doc, built from the current inputs (or failed for them, or pinned), and nobody holds it, lost messages, slowed timers and builds that block their page past `LAPSE_MS` included; failing inputs are tried at most 1 + `RETRY_BACKOFF_MS.length` times in all (with the assumption). |
+
+**The price.** After two writes cross (a tab that froze and woke, a
+partition healing, messages later than `REACH_MS`), a replica may draw the
+older result for at most `REACH_MS` + the debounce + `CLAIM_MS` + one
+build's time, and one build more if a holder is already building; each
+crossing costs at most one extra build per writer. In ordinary runs neither
+happens (the model's count: zero).
 
 `src/content/lock.test.js` checks them on a finite model: two or three real
 managers, each with its own replica of the docs, merging as Automerge does
@@ -223,8 +236,8 @@ a builder whose timers fire on whole minutes, builds that block their
 page for 10 s, a forced rebuild, a peer
 joining mid-build or between heartbeats, provider versions one of which
 fails, lost messages, writers that can't hear each other, and a
-fingerprinting provider whose older build wins a merge after its writer has
-left. It counts the price too: runs where a replica draws a result older
+fingerprinting provider, or a dependency read at two versions, whose older
+build wins a merge after its writer has left. It counts the price too: runs where a replica draws a result older
 than one it drew, for how long, and builds beyond one per inputs.
 `src/content/result-merge.test.js` merges two results on real Automerge
 docs.
