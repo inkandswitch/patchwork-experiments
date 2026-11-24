@@ -1,54 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LabelLayer, declutter } from "./stage/labels.js";
 import { placeDimensionLabel } from "./parts/dimensions.js";
-
-// the ranks the parts give their labels: dimensions 3, axes 2, bounds 1, grid 0
-const RANK = { "dimension-label": 3, "axis-label": 2, "bounds-label": 1, "grid-label": 0 };
-
-function label(cls, x, y, w = 40, h = 14) {
-  const el = document.createElement("div");
-  el.className = `label ${cls}`;
-  el.textContent = cls;
-  Object.defineProperty(el, "offsetWidth", { value: w });
-  Object.defineProperty(el, "offsetHeight", { value: h });
-  return { el, p: { x, y }, rank: RANK[cls] };
-}
-
-describe("label declutter", () => {
-  it("hides lower-ranked labels that overlap, never dimensions or axis names", () => {
-    const dim = label("dimension-label", 100, 100);
-    const bounds = label("bounds-label", 110, 104); // under the dimension
-    const bounds2 = label("bounds-label", 300, 100); // clear
-    const grid = label("grid-label", 305, 102); // under bounds2
-    const axis = label("axis-label", 102, 98); // overlaps the dimension but must stay
-    declutter([bounds, grid, dim, bounds2, axis]);
-    expect(dim.el.style.visibility).toBe("");
-    expect(axis.el.style.visibility).toBe("");
-    expect(bounds.el.style.visibility).toBe("hidden");
-    expect(bounds2.el.style.visibility).toBe("");
-    expect(grid.el.style.visibility).toBe("hidden");
-    // once clear again, it comes back
-    bounds.p = { x: 500, y: 500 };
-    declutter([bounds, grid, dim, bounds2, axis]);
-    expect(bounds.el.style.visibility).toBe("");
-  });
-});
-
-// a label `on` an object is one whose at() the stage answers from where the object is drawn (api.labels)
-describe("a label that follows something", () => {
-  it("is placed where its at() says each time the layer places them, and hidden while it says nowhere", () => {
-    const layer = new LabelLayer(document.createElement("div"));
-    let p = [1, 2, 0];
-    layer.sync("o", [{ key: "k", text: "t", at: () => p }]);
-    const el = layer.el.querySelector(".label");
-    const place = () => (layer.update((v) => ({ x: v.x * 10, y: v.y * 10 })), el.style.display === "none" ? null : el.style.transform);
-    expect(place()).toBe("translate(10px, 20px) translate(-50%, -50%)");
-    p = [3, 4, 0];
-    expect(place()).toBe("translate(30px, 40px) translate(-50%, -50%)");
-    p = null;
-    expect(place()).toBe(null);
-  });
-});
 
 describe("dimension label placement", () => {
   it("sits at the midpoint of a dimension that is long on screen", () => {

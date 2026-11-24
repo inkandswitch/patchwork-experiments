@@ -142,6 +142,8 @@ export class Viewport {
     this.atmosphereKey = "null";
     /** the sky's mesh, made the first time a sky is asked for */
     this.sky = null;
+    /** the faint box every loading object's placeholder shares (object-content.js placeholderLook), made at the first */
+    this.placeholder = null;
     /** does the sun cast shadows (objects cast and receive them)? */
     this.shadows = false;
     /** the sun's shadow frame now and its key (shadows.js fitShadow); key null: fit again */
@@ -181,7 +183,6 @@ export class Viewport {
     const topKey = new DirectionalLight(0xffffff, 1.2);
     topKey.position.set(...LIGHTS.keyFrom);
     this.topScene.add(topKey);
-    this.placeholder = placeholderLook(color(this.theme.muted));
     installLazyBVH();
     this.raycaster = new Raycaster();
     // with a BVH, each mesh reports only its nearest hit; picking wants just that
@@ -223,7 +224,7 @@ export class Viewport {
   applyTheme() {
     if (!this.ok) return;
     this.readTheme();
-    this.placeholder.material.color.copy(color(this.theme.muted));
+    this.placeholder?.material.color.copy(color(this.theme.muted));
     for (const [id, entry] of this.objects) if (entry.display) this.applyDisplay(id, entry.display, entry.parentId, entry.inherited);
     this.invalidate();
     for (const fn of [...this.themeListeners]) fn(this.theme);
@@ -539,6 +540,8 @@ export class Viewport {
   /** Where an object will be before its GLB arrives (object-content.js setHint); null clears. */
   setHint(id, bounds) {
     if (!this.ok) return;
+    // the placeholders' look, made the first time one is shown, in the theme as it is then
+    this.placeholder ??= placeholderLook(color(this.theme.muted));
     if (setHint(this.ensureObject(id), bounds, this.placeholder)) this.contentChanged();
   }
 
@@ -789,8 +792,8 @@ export class Viewport {
     // empty scene, not every object's geometry.
     this.scene.clear();
     this.topScene.clear();
-    this.placeholder.geometry.dispose();
-    this.placeholder.material.dispose();
+    this.placeholder?.geometry.dispose();
+    this.placeholder?.material.dispose();
     this.envTexture?.dispose();
     this.pmrem?.dispose();
     this.renderer.dispose();

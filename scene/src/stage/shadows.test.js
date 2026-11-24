@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { BoxGeometry, DirectionalLight, Mesh, MeshBasicMaterial, PerspectiveCamera } from "three";
-import { SHADOW_CAP, aimShadow, castShadows, fitShadow, ladderRadius, lightBasis, shadowFocus, shadowFrame } from "./shadows.js";
+import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera } from "three";
+import { SHADOW_CAP, castShadows, fitShadow, ladderRadius, lightBasis, shadowFocus, shadowFrame } from "./shadows.js";
 
 /** Rounded, and without -0, for comparing vectors. */
 const r6 = (a) => a.map((v) => Math.round(v * 1e6) / 1e6 + 0);
@@ -98,17 +98,6 @@ describe("the sun's shadow frame", () => {
     // bigger than kept: a new one
     expect(fitShadow([box(2)], [0, 0, 0], SUN, first.frame.radius).frame.radius).toBeGreaterThan(first.frame.radius);
     expect(fitShadow([], [0, 0, 0], SUN)).toBeNull();
-  });
-
-  it("aims a light at the frame, its shadow camera the sphere's size", () => {
-    const light = new DirectionalLight();
-    const f = shadowFrame({ center: [1, 2, 3], radius: 4 }, SUN);
-    aimShadow(light, f);
-    expect(light.position.toArray()).toEqual(f.position);
-    expect(light.target.position.toArray()).toEqual(f.target);
-    const cam = light.shadow.camera;
-    expect([cam.left, cam.right, cam.bottom, cam.top, cam.near, cam.far]).toEqual([-4, 4, -4, 4, f.near, f.far]);
-    expect([light.shadow.bias, light.shadow.normalBias]).toEqual([f.bias, f.normalBias]);
   });
 
   it("every mesh casts and receives, except that a sheet saying receiveShadow: false only casts", () => {

@@ -7,17 +7,17 @@
 export const SHADOW_MAP = 2048;
 
 /**
- * The frame's largest radius (m), a step of ladderRadius. Its texel is then
- * 2 · 16 / 2048 = 1.6 cm, finer than a pixel (3.5 cm on a 1000 px, 45° view)
- * from the 42 m at which that sphere is seen whole: a capped frame's
- * shadows are no coarser than the picture of what it covers.
+ * The frame's largest radius (m), a step of ladderRadius: one map then
+ * spans 32 m at 1.6 cm a texel (across the light; along the ground a low
+ * sun stretches it), which caps how coarse shadows get as what's covered
+ * grows, and leaves the rest of a large scene unshadowed.
  */
 export const SHADOW_CAP = 16;
 
 /**
- * How far from the focus (m) an object may be and still size the frame:
- * past the 42 m from which a capped frame is seen whole, so what shares the
- * picture with the focus counts, and what lies beyond it never widens it.
+ * How far from the focus (m) an object may be and still size the frame: a
+ * tuning value, about three caps, so what stands around the focus can count
+ * and what's far off never widens the frame.
  */
 export const SHADOW_REACH = 50;
 

@@ -8,11 +8,12 @@ import { ensureBVH, triangleCount } from "../pick-accel.js";
 
 /**
  * The near and far planes. Depth precision goes with near / distance (a
- * 24-bit buffer resolves about z² / (near · 2²⁴)), and surfaces a fraction
- * of a millimetre apart must still sort, so near sits halfway to the
- * nearest geometry (`clear`: a lower bound on the camera's distance to any
- * object, nearestClear's). When that couldn't be told (the camera inside
- * something it can't measure) near is dist / 200. Far reaches well past the
+ * 24-bit buffer resolves about z² / (near · 2²⁴)), so near goes as far out
+ * as it can without cutting anything: half of `clear` (nearestClear's lower
+ * bound on the distance to any geometry). The half is a safety factor: the
+ * near plane's corners lie further out than its centre, and what moves
+ * before the next fit may come closer. When that couldn't be told (the
+ * camera inside something it can't measure) near is dist / 200. Far reaches well past the
  * scene. A camera holder's own planes, where it gave them, win.
  * @param {{ dist: number, radius: number, clear: number, known?: boolean, held?: { near?: number, far?: number } | null }} o
  */
@@ -26,8 +27,8 @@ export function depthRange({ dist, radius, clear, known = true, held = null }) {
  * What the depth range is fitted from, given each shown object's content
  * (null while it's a hint) and world box, and the boxes extensions said
  * the near plane must not cut (extents): each object's box with a margin
- * of 5% (at least 5 cm), so what moves between fits (a held pose, a loop's
- * dressing) stays clear of the near plane; the boxes as { min, max }; and
+ * of 5% (at least 5 cm), so what moves without a refit (a loop's dressing
+ * of an object's nodes) stays clear of the near plane; the boxes as { min, max }; and
  * the radius of everything together (1 when there's nothing).
  * @param {{ content: object | null, box: Box3 }[]} shown  @param {Box3[]} extents
  * @returns {{ near: [object | null, Box3][], boxes: { min: number[], max: number[] }[], radius: number }}

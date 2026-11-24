@@ -68,8 +68,9 @@ The names packages share:
 
 The viewport draws it (`src/stage/atmosphere.js`). One atmosphere wins whole;
 none is the stage's own look. A colour is `"#rgb"`, `"#rrggbb"` or an integer
-up to `0xffffff`, sRGB; what can't be used is left out, and no usable field
-at all is no atmosphere.
+up to `0xffffff`, sRGB. A field that can't be used is its default; a part
+(sky, fog, clouds) without what the table says it needs is left out; none
+left is no atmosphere.
 
 | Field | Default | Range, and what it does |
 |---|---|---|
@@ -81,8 +82,8 @@ at all is no atmosphere.
 | `sun.shadows` | off | only `true` casts |
 | `exposure` | 1 | > 0, scales every light |
 | `clouds.cover` | none | over a sky only, > 0; above 1 is 1 (overcast) |
-| `clouds.contrast` | 0.1 | > 0; above 0.5 is 0.5 |
-| `clouds.scale`, `clouds.base` | 600, 800 | metres, > 0: the cells' size, the deck's height |
+| `clouds.contrast` | 0.1 | > 0 (else the default); above 0.5 is 0.5 |
+| `clouds.scale`, `clouds.base` | 600, 800 | metres, > 0 (else the default): the cells' size, the deck's height |
 
 A sun replaces the stage's key light and dims its headlight to a third; a sky
 tints the sky/ground light with its top and bottom; with fog and no sky the

@@ -32,7 +32,8 @@ const finite = (v) => (v == null || v === "" ? null : Number.isFinite(Number(v))
  * nothing usable at all is null. A sky missing a colour takes a
  * neighbour's; fog without a colour takes the sky's horizon; a sun without
  * a direction stands where the key light does. Clouds (over a sky only)
- * need a cover over 0; their contrast, scale and base default to CLOUDS'.
+ * need a cover over 0; a contrast, scale or base that isn't a positive
+ * number is CLOUDS'.
  * @returns {{ sky?: { top, horizon, bottom }, fog?: { color, near, far }, sun?: { direction, color, intensity, shadows }, exposure?: number, clouds?: { cover, contrast, scale, base } } | null}
  */
 export function cleanAtmosphere(a) {
@@ -64,10 +65,11 @@ export function cleanAtmosphere(a) {
   }
   const exposure = finite(a.exposure);
   if (exposure != null && exposure > 0) out.exposure = exposure;
-  // clouds over a sky: cover in (0, 1], contrast in (0, 0.5], scale and base positive metres
+  // clouds over a sky, with a cover over 0 (above 1 is 1); a contrast, scale or base that isn't positive is its default
   if (out.sky && a.clouds && typeof a.clouds === "object") {
-    const cover = finite(a.clouds.cover), contrast = finite(a.clouds.contrast) ?? CLOUDS.contrast, scale = finite(a.clouds.scale) ?? CLOUDS.scale, base = finite(a.clouds.base) ?? CLOUDS.base;
-    if (cover != null && cover > 0 && contrast > 0 && scale > 0 && base > 0) out.clouds = { cover: Math.min(1, cover), contrast: Math.min(0.5, contrast), scale, base };
+    const cover = finite(a.clouds.cover);
+    const positive = (v, d) => (finite(v) > 0 ? finite(v) : d);
+    if (cover != null && cover > 0) out.clouds = { cover: Math.min(1, cover), contrast: Math.min(0.5, positive(a.clouds.contrast, CLOUDS.contrast)), scale: positive(a.clouds.scale, CLOUDS.scale), base: positive(a.clouds.base, CLOUDS.base) };
   }
   return Object.keys(out).length ? out : null;
 }
