@@ -188,7 +188,7 @@ try {
   check("the map's About carries the notice, says it isn't Freedoom, and lists what doesn't work here", /All rights reserved/.test(about?.content ?? "") && /not Freedoom/.test(about?.content ?? "") && /Lift: sectors 98, 103/.test(about?.content ?? "") && /Locked door: sectors 51, 71/.test(about?.content ?? ""), about?.content?.split("\n").slice(0, 24));
   const staticRender = renders[parts.indexOf(staticObj)];
   details.status = await P(`status("a")`);
-  details.staticRender = { builtFrom: staticRender.builtFrom, status: staticRender.status };
+  details.staticRender = { builtFrom: staticRender.result?.builtFrom ?? null, failure: staticRender.failure ?? null };
 
   // ─── 1. both walk it in first person ─────────────────────────────────────
   await play("a");
@@ -384,7 +384,7 @@ try {
 
   details.statusAtEnd = { a: await P(`status("a")`), b: await P(`status("b")`) };
   details.builds = await P("builds");
-  details.renderStatusAtEnd = await Promise.all(maps.map(([, o]) => P(`find(${JSON.stringify(o.renderUrl)})`).then((r) => ({ params: r.params, status: r.status, error: r.error, builtAt: r.builtAt }))));
+  details.renderStatusAtEnd = await Promise.all(maps.map(([, o]) => P(`find(${JSON.stringify(o.renderUrl)})`).then((r) => ({ params: r.params, failure: r.failure ?? null, builtAt: r.result?.builtAt ?? null }))));
   check("no errors in the page", (await P("errors")).filter((e) => !/KHR_parallel_shader_compile|pointer ?lock/i.test(e)).length === 0, await P("errors"));
 } catch (err) {
   check("ran to the end", false, String(err?.stack ?? err));
