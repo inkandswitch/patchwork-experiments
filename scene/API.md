@@ -76,7 +76,7 @@ Each extension's own; what it acquires through it goes when it stops. Everything
 | `extent(box)` | the depth range and the shadows fit it too (what its world groups draw beyond any object) |
 | `ambient(name)` | **Ambients** (below) |
 | `port`, `root`, `overlay(side?)` | the canvas's element, the stage's root; a `div` over the canvas, or beside it (`top`…`left`) |
-| `style(css)`, `listen(target, type, fn, o?)` | a stylesheet in the view; a listener |
+| `style(css)`, `listen(target, type, fn, o?)` | a stylesheet in the view; a listener (a drawn stage's hears nothing) |
 | `now()`, `after(ms, fn)`, `loop(fn(dt, now), { first? })` | the stage's one time (`stage/time.js`), → cancel; a loop renders every frame, `dt` ≤ 0.1 s |
 | `afterRender(fn)`, `schedule(fn)`, `invalidate()` | after each frame drawn; after the next update flush; draw once more |
 | `collect(name)`, `run(inv)` | this stage's offers, tagged `stage`; run in the stage `inv.stage` names (STAGE.md, "Commands") |
