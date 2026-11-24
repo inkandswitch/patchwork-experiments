@@ -142,11 +142,11 @@ function create(api) {
       box.append(
         item(b.label, () => {
           if (on) return;
-          if (!api.body.enter(b.id, null)) api.use("notices")?.notify(`Couldn't ${b.label.toLowerCase()} here.`);
+          if (!api.focus()?.body.enter(b.id, null)) api.use("notices")?.notify(`Couldn't ${b.label.toLowerCase()} here.`);
         }, { checked: on }),
       );
     }
-    if ((local.body?.depth ?? 0) > 0) box.append(item(`Leave (${local.body.label})`, () => api.body.leave()));
+    if ((local.body?.depth ?? 0) > 0) box.append(item(`Leave (${local.body.label})`, () => api.focus()?.body.leave()));
     if (!box.childElementCount) return;
     bar.append(box);
     const onOutside = (e) => {
@@ -160,13 +160,13 @@ function create(api) {
 
   // who's here is the focus doc's presence: heard again wherever the focus goes
   const presence = perFocus(api, (f) => {
-    f.channel.watch(() => api.schedule(render));
+    f.channel.watch(() => f.schedule(render));
     return f.channel;
   });
   let shown = "";
   function render() {
     const local = api.view.get();
-    const list = whoIsHere(presence()?.peers() ?? {}, api.session ?? null, local);
+    const list = whoIsHere(presence()?.peers() ?? {}, presence()?.session ?? null, local);
     const touch = !!local.pointer?.touch;
     const rung = local.escape?.hint ?? "";
     const esc = local.pointer?.released ? "Click the view to take the pointer back" : !rung ? "" : touch ? rung[0].toUpperCase() + rung.slice(1) : `Esc: ${rung}`;

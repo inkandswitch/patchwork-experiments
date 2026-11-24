@@ -1157,18 +1157,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   function makeApi(rec) {
     const { id, signal } = rec;
     const key = viewKey(id);
-    const own = { offs: new Set(), frame: new Set(), cameraHolds: new Set(), hands: new Set(), els: new Set() };
+    const own = { offs: new Set(), frame: new Set(), hands: new Set(), els: new Set() };
     const live = () => !signal.aborted && !dead;
     const acquire = acquirer(live);
     let watched = atom.get();
     const api = {
       id,
-      viewer,
       signal,
-      /** this view's presence session (it changes on coming back from the back-forward cache) */
-      get session() {
-        return session;
-      },
       repo,
       THREE,
       registry: getRegistry,
@@ -1198,31 +1193,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       ...viewParts({ id, key, own, live }),
       /** the pointer wanted free (no lock) until release(): an open drawer. → release */
       wantPointer: () => acquire(own.offs, (t = {}) => (pointerWants.add(t), router.refresh(), () => (pointerWants.delete(t), router.refresh()))),
-      /** run fn after the focus stage's next update flush (through its facet) */
-      schedule: (fn) => api.focus()?.schedule(fn),
-      // the camera and picking, in the world (the outermost's frame); a hit's `path` is where it is
-      camera: Object.freeze({
-        get: () => viewport.getCamera(),
-        set: (cam) => viewport.setCamera(cam),
-        frame: (box) => viewport.frame(box ?? null),
-        hold: () => acquire(own.cameraHolds, () => viewport.hold()),
-        onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
-        /** has the camera been placed for this viewer: moved by them or restored as they opened the view? */
-        touched: () => viewport.touched() || cameraPlaced,
-      }),
-      pick: (x, y, opts) => {
-        const h = viewport.pick(x, y, opts);
-        return h ? Object.freeze({ ...h, path: hitPath(h) }) : null;
-      },
-      project: (p) => viewport.project(p),
-      // bodies and hands (STAGE.md, "Bodies", "Hands")
-      body: Object.freeze({
-        /** enter body `id` (the focus stage's own first) at `place`: false if none offers it or it can't */
-        enter: (bid, place) => (live() ? enterBody(bid, place, focusStage()) : false),
-        leave: () => (live() ? leaveBody() : false),
-        /** the eye, in the world: { position, direction }, or null */
-        eye: () => bodyEye(),
-      }),
+      // the hands (STAGE.md, "Hands")
       /**
        * Put a hand on the stack ({ kind?, name, input, keys?, pointer?,
        * escape?() → boolean, escaping?() → layer | null, put?() }), hearing
@@ -1267,7 +1238,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
     function release() {
       router.stopOwner(key);
-      for (const bag of [own.hands, own.cameraHolds, own.frame]) {
+      for (const bag of [own.hands, own.frame]) {
         for (const give of [...bag]) give();
         bag.clear();
       }

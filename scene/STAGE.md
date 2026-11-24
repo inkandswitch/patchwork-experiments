@@ -60,11 +60,12 @@ plain data for plugins (`drops`, `describes`: EDITOR.md).
 
 One per view, for its whole life (`stage/host.js`). Its `input` is the chain's step 4; its `beforeRemove`, `commands`
 and contributions come after the focus stage's extensions', in that stage's frame and context; `update` on its flush.
+What is a stage's (its doc, content, space, camera, bodies, presence, flush) it reaches through `focus()`.
 
 | Member | |
 |---|---|
-| as the extension `api`'s | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `overlay`, `edge`, `style`, `listen`, `popover`, `loop`, `afterRender`, `schedule`, `invalidate`, `body`, `now`, `after`, `frame`; `camera`, `pick`, `project` in the world |
-| `url`, `viewer`, `session`, `use(name)` | the outermost's url; a view plugin's service, else the focus stage's |
+| as the extension `api`'s, for its whole life | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `overlay`, `edge`, `style`, `listen`, `popover`, `loop`, `afterRender`, `invalidate`, `now`, `after`, `frame` |
+| `url`, `use(name)` | the outermost's url; a view plugin's service, else the focus stage's |
 | `view` | `get()`, `watch(fn, select?)`: the value whole (`selected`, `hovered`, `focus` as paths; `packages`; `arrived`: "Arriving"); `step(ev)`, `set(value)` (its own) |
 | `packages` | `{ load(urls?), dismiss(urls?) }`: the prompt's answer for every open doc's (`view.packages`) |
 | `hand(spec)`, `putDown(tool?)`, `offerWidget(type, ev)`, `wantPointer()` | "Hands"; events in the world, each hit with its `path`; `putDown` one of `held`, else the topmost |
