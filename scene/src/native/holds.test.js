@@ -171,30 +171,33 @@ const allSequences = (n) => {
   return out;
 };
 
-/** The invariants of H6 in a settled world. */
+/** The invariants of H6 in a settled world: what breaks one, said (none: []). */
 function check(w, label) {
   const { views, actors } = w;
+  const bad = [];
+  const want = (ok, what) => ok || bad.push(`${label}: ${what}`);
   const holders = views.filter((v) => v.holds.has(OBJ)).map((v) => [v, v.holds.holderOf(OBJ)]);
   // one holder per object, across views (and so in each)
-  expect(holders.length, label).toBeLessThanOrEqual(1);
+  want(holders.length <= 1, `${holders.length} holders`);
   const persons = [actors.A, actors.B].filter((a) => a.wants);
   const process = actors.P;
   if (holders.length) {
     const [v, ext] = holders[0];
     // every other view sees that view's hold as the one that counts
-    for (const o of views) if (o !== v) expect(o.presence.remoteHolds().get(OBJ)?.session, label).toBe(`s${v.i}`);
+    for (const o of views) if (o !== v) want(o.presence.remoteHolds().get(OBJ)?.session === `s${v.i}`, `view ${o.i} sees another hold`);
     // a yielding hold stands only while no person who wants it is refused for it
-    if (ext === "proc" && process.yields) for (const p of persons) expect(p.got, label).toBe(false);
+    if (ext === "proc" && process.yields) for (const p of persons) want(p.got === false, "a yielding hold stands over a person");
   }
   // a person who wants it and was refused is refused by a hold ahead of theirs: another person's (begun first), or the driven process's
   for (const p of persons) {
     if (p.got) continue;
-    expect(holders.length, label).toBe(1);
-    const [, ext] = holders[0];
-    if (ext === "proc") expect(process.yields, label).toBe(false);
+    want(holders.length === 1, "refused with no holder");
+    const [, ext] = holders[0] ?? [];
+    if (ext === "proc") want(process.yields === false, "refused for a yielding process");
   }
   // a yielding process wanting it while nobody holds a person's gets it
-  if (process.wants && process.yields && !persons.some((p) => p.got)) expect(process.got, label).toBe(true);
+  if (process.wants && process.yields && !persons.some((p) => p.got)) want(process.got === true, "a yielding process wanting it, unheld, doesn't get it");
+  return bad;
 }
 
 describe("H6: one holder per object, by (a person's before a yielding one, then since)", () => {
@@ -203,6 +206,7 @@ describe("H6: one holder per object, by (a person's before a yielding one, then 
       for (const heard of [true, false])
         it(`the process in ${pView === 0 ? "A's view (one view)" : "B's view (across)"}, ${driven ? "driven" : "not driven"}, ${heard ? "each event heard before the next" : "events in pairs, each pair concurrent"}: every sequence of up to 4 events`, () => {
           let runs = 0;
+          const bad = [];
           for (const seq of allSequences(4)) {
             const w = world({ pView, driven });
             const label = seq.join(", ") || "(nothing)";
@@ -212,11 +216,12 @@ describe("H6: one holder per object, by (a person's before a yielding one, then 
               if (heard || i % 2 === 1) w.settle();
             });
             w.settle();
-            check(w, label);
+            bad.push(...check(w, label));
             // a process saves only what it holds: with every hold heard, none of its writes came while a person held it
-            if (heard) for (const x of w.writes) if (x.by === w.actors.P) expect(x.personHeld, label).toBe(false);
+            if (heard) for (const x of w.writes) if (x.by === w.actors.P && x.personHeld !== false) bad.push(`${label}: the process wrote while a person held it`);
             runs++;
           }
+          expect(bad.slice(0, 5)).toEqual([]);
           expect(runs).toBe(11111);
         });
 });
