@@ -85,17 +85,20 @@ function create(api) {
   }
   const poses = (caller) => {
     const ext = caller.id;
+    // a caller that may not write here (a pin's or a read-only stage's extension, through ambient().use) only reads: it holds
+    // nothing, so nothing is released in its name, when it asks or when it stops
+    if (caller.readOnly) return Object.freeze({ hold: () => false, release: () => {}, heldBy: (id, o) => wire.heldBy(id, o), rate: () => false, shownAt: (session) => wire.shownAt(session) });
     tie(caller.signal, () => {
       for (const id of [...here.keys()]) if (holds.holderOf(id) === ext) release(ext, id, false);
       rates.delete(ext);
     });
     return Object.freeze({
       /** true when the hold stands: false while another's ranks ahead (a person's before a yielding one, then the first) */
-      hold: (id, transform, { yields = false } = {}) => !caller.signal.aborted && !caller.readOnly && api.writable() && holds.hold(ext, id, normalizeTransform(transform), { yields }),
+      hold: (id, transform, { yields = false } = {}) => !caller.signal.aborted && api.writable() && holds.hold(ext, id, normalizeTransform(transform), { yields }),
       release: (id, { landed = false } = {}) => release(ext, id, landed),
       heldBy: (id, o) => wire.heldBy(id, o),
       /** stream this caller's holds faster than 20 Hz (up to 60), or null for the default */
-      rate: (hz) => (caller.readOnly ? false : Number.isFinite(hz) && hz > 0 ? rates.set(ext, hz) : rates.delete(ext)),
+      rate: (hz) => (Number.isFinite(hz) && hz > 0 ? rates.set(ext, hz) : rates.delete(ext)),
       /** the moment (a peer's now()) whose poses of that peer this view draws, or null */
       shownAt: (session) => wire.shownAt(session),
     });
