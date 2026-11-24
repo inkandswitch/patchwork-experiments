@@ -1,0 +1,8 @@
+{
+  "type": "desaturation",
+  "color": "#2fa38c",
+  "neutralLightness": 0.89,
+  "shade": [0.85, 0],
+  "shadow": "#4b324c",
+  "steps": [14, 11]
+}

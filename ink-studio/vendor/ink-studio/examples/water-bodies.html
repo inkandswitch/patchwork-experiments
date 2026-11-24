@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sunken gate · Ink Studio</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0b171f; color: #edf3ef; }
+  body { margin: 0; }
+  main { max-width: 840px; margin: auto; padding: 32px 16px; }
+  h1 { margin: 0 0 16px; font-size: 1.4rem; }
+  canvas { display: block; width: 100%; aspect-ratio: 3 / 2; image-rendering: pixelated; background: #102633; }
+  .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+  button { padding: 6px 12px; }
+  label { display: inline-flex; gap: 8px; align-items: center; }
+  output { display: block; margin-top: 12px; color: #b8d5d2; font-variant-numeric: tabular-nums; }
+</style>
+<main>
+  <h1>Sunken gate</h1>
+  <canvas width="240" height="160" aria-label="Gaussian splat cove and sunken stone gate"></canvas>
+  <div class="controls">
+    <label>Camera height <input id="height" type="range" min="-1.55" max="3.4" value="0" step="0.01"></label>
+    <button type="button" data-height="3.2">Above</button>
+    <button type="button" data-height="0">Waterline</button>
+    <button type="button" data-height="-1.35">Dive</button>
+    <label><input id="optics" type="checkbox" checked> Water optics</label>
+  </div>
+  <output id="medium">Loading scene…</output>
+  <p>Use the arrow keys to swim while submerged.</p>
+</main>
+<script src="../dist/ink-studio.browser.js"></script>
+<script type="module">
+  import { createRenderer } from '../webgl.mjs';
+
+  const canvas = document.querySelector('canvas');
+  const height = document.querySelector('#height');
+  const optics = document.querySelector('#optics');
+  const status = document.querySelector('#medium');
+
+  function build() {
+    const { waterBodies, motion, biomes } = KIT.procedural;
+    const B = makeBuilder(21, [
+      0x102633, 0x2e3538, 0x514e46, 0x766858, 0xa89271, 0xccb28a,
+      0x163d37, 0x2b694f, 0x538c64, 0x86aa71,
+      0x205c70, 0x3d91a5, 0x83c0be, 0xe7d79a, 0xe5a76a
+    ]);
+    const bed = (x, z) => -2.25 + 0.16 * x * x + 0.038 * (z + 0.6) ** 2 +
+      0.15 * Math.sin(x * 1.6 + z * 0.9) + 0.065 * Math.cos(z * 4 - x);
+    const solver = motion.shallowWater({
+      width: 28, height: 28, cell: [0.35, 0.4], origin: [-4.9, -6.4], terrain: bed,
+      initial: (x, z, y) => ({ depth: Math.max(0, -y), velocity: [0.12, -0.38] })
+    });
+    const cove = waterBodies.fromShallowWater(solver.snapshot(), {
+      id: 'cove',
+      optics: { tint: [0.035, 0.22, 0.30], extinction: [0.32, 0.13, 0.08],
+        surfaceColor: [0.6, 0.82, 0.82], surface: 0.20, caustics: 0.48 }
+    });
+    const water = waterBodies.scene([cove]);
+    const environment = biomes.create({ fallback: 'cove', media: water.media, solid: (x, y, z) => y - bed(x, z) });
+    const S = KIT.sculpt(makeSculpt(B));
+    const stone = { r: [1, 2, 3, 4, 5] }, kelp = { r: [6, 7, 8, 9] };
+    S.ground({
+      r: [2, 3, 4, 5],
+      rf: (x, y, z) => cove.columnAt(x, z) ? [1, 2, 3, 4] : [2, 3, 4, 5]
+    }, { h: bed, rad: 6.1, zs: 1, edge: 0.11, res: 0.15 });
+    const gateZ = -3.25, gateY = -1.9;
+    for (const side of [-1, 1]) {
+      const x = side * 0.88;
+      S.box([x, gateY + 0.09, gateZ], [0.58, 0.24, 0.48], stone, { rd: 0.09, res: 0.10 });
+      for (let row = 0; row < 4; row++)
+        S.box([x + side * (row % 2) * 0.035, gateY + 0.46 + row * 0.37, gateZ],
+          [0.33, 0.188, 0.35], stone, { rd: 0.055, res: 0.083 });
+      S.ball([x, gateY + 1.78, gateZ + 0.36], [0.09, 0.12, 0.08],
+        { r: [12, 13, 14], em: true }, { res: 0.047 });
+    }
+    S.box([0, gateY + 2.02, gateZ], [1.42, 0.245, 0.45], stone, { rd: 0.11, res: 0.093 });
+    S.box([0, gateY + 2.29, gateZ], [1.14, 0.12, 0.36], stone, { rd: 0.06, res: 0.086 });
+    for (let i = 0; i < 95; i++) {
+      const x = B.rr(-4.5, 4.5), z = B.rr(-5.5, 4.4), y = bed(x, z);
+      if (Math.abs(x) < 1.5 && Math.abs(z - gateZ) < 0.75) continue;
+      if (B.R() < 0.37) {
+        const size = B.rr(0.09, 0.35);
+        S.ball([x, y + size * 0.2, z], [size, size * 0.65, size * 0.85], stone, { res: 0.085 });
+        continue;
+      }
+      const column = cove.columnAt(x, z);
+      if (!column || column.depth < 0.25 || Math.abs(x) < 0.8) continue;
+      const h = Math.min(column.depth * 0.8, B.rr(0.23, 1.1));
+      const stem = [[x, y, z], [x + 0.055, y + h * 0.5, z], [x + 0.17, y + h, z - 0.075]];
+      S.tube(stem, 0.024, 0.014, kelp, { res: 0.060 });
+      for (const side of [-1, 1])
+        S.ball([x + 0.07 + side * 0.065, y + h * (0.63 + side * 0.1), z],
+          [0.13, 0.043, 0.066], kelp, { res: 0.064 });
+    }
+    S.bake();
+    for (const { position } of cove.particles({ count: 180, seed: 52 }))
+      B.iso(...position, B.rr(0.013, 0.033), B.P[12], B.rr(0.18, 0.48),
+        { k: 7, ph: B.rr(0, 6.28), sp: B.rr(1, 2.6) });
+    return { world: B.finish({ water, radius: 10 }), environment };
+  }
+
+  try {
+    const { world, environment } = build();
+    const renderer = createRenderer(canvas, { toolkit: { KIT, PixelLook } });
+    const keys = new Set();
+    const arrows = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+    window.addEventListener('keydown', event => {
+      if (event.target instanceof HTMLInputElement || !arrows.includes(event.key)) return;
+      keys.add(event.key);
+      event.preventDefault();
+    });
+    window.addEventListener('keyup', event => keys.delete(event.key));
+    window.addEventListener('blur', () => keys.clear());
+    let x = 0, z = 2.65;
+    let previous = -Infinity;
+    function draw(timestamp) {
+      if (timestamp - previous >= 66) {
+        const y = Number(height.value);
+        let medium = environment.mediumAt(x, y, z);
+        if (keys.size && medium.kind === 'water') {
+          const dt = Math.min(0.1, (timestamp - previous) / 1000);
+          const across = Number(keys.has('ArrowRight')) - Number(keys.has('ArrowLeft'));
+          const along = Number(keys.has('ArrowDown')) - Number(keys.has('ArrowUp'));
+          const nx = clamp(x + dt * (across * 1.25 + medium.current[0]), -2.2, 2.2);
+          const nz = clamp(z + dt * (along * 1.25 + medium.current[2]), -1.6, 4.2);
+          const next = environment.mediumAt(nx, y, nz);
+          if (next.kind === 'water') {
+            x = nx;
+            z = nz;
+            medium = next;
+          }
+        }
+        const at = [x, -0.74, z - 4.8];
+        const rise = y - at[1], run = z - at[2];
+        const camera = { target: at, dist: Math.hypot(run, rise), pitch: Math.atan2(rise, run) };
+        renderer.render(world, { width: 240, height: 160, camera, raw: true,
+          changedRows: [], water: optics.checked, time: timestamp / 1000 });
+        status.value = medium.kind === 'water'
+          ? 'Water · depth ' + medium.depth.toFixed(2) + ' · current ' + Math.hypot(...medium.current).toFixed(2)
+          : 'Air · camera height ' + y.toFixed(2);
+        previous = timestamp;
+      }
+      requestAnimationFrame(draw);
+    }
+    draw(0);
+  } catch (error) {
+    status.value = String(error) + '. Build the browser bundle before opening this example.';
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+</script>
+</html>

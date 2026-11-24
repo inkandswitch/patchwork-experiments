@@ -1,0 +1,131 @@
+{
+  "format": "ink-studio/asset-pack",
+  "version": 1,
+  "id": "copperwind",
+  "revision": 1,
+  "title": "Copperwind complete looks",
+  "environments": [
+    {
+      "id": "copperwind/painterly",
+      "label": "Painterly pixel art",
+      "settings": {
+        "skyEnvironment": {"defaults": {"zenith": "#477d9a", "horizon": "#e9d7a3", "ground": "#3a646b", "sunColor": "#fff1ca", "sunStrength": 0.26, "daylight": 0.88}},
+        "liveSun": {
+          "direction": [-0.58, 0.55, 0.54],
+          "ambient": 0.34,
+          "intensity": 0.82,
+          "mapSize": 224,
+          "filter": 1,
+          "skyBounce": {"color": "#75b3d8", "intensity": 0.12},
+          "groundBounce": {"color": "#d9a564", "intensity": 0.1}
+        },
+        "aerialPerspective": {"start": 16, "density": 0.032, "contrast": 0.22},
+        "atmosphere": [
+          {"id": "sea-haze", "type": "fog", "color": "#aac7b9", "density": 0.025, "bottom": -1.5, "top": 1.05, "near": 16, "far": 37}
+        ],
+        "look": {
+          "surfaceLightRamps": {
+            "stone": {"daylight": {"interpolation": "step", "stops": [[0, "#2b3838"], [0.26, "#5a6450"], [0.48, "#9d9563"], [0.7, "#dfc88c"], [0.89, "#fbe4b1"]]}},
+            "copper": {"daylight": {"interpolation": "step", "stops": [[0, "#342330"], [0.26, "#7c3c43"], [0.48, "#b96142"], [0.7, "#e49855"], [0.89, "#f7b36d"]]}},
+            "sail": {"daylight": {"interpolation": "step", "stops": [[0, "#4b3437"], [0.26, "#aa6a4b"], [0.48, "#d49a55"], [0.7, "#f4c477"], [0.89, "#f9dfa0"]]}},
+            "sea": {"daylight": {"interpolation": "step", "stops": [[0, "#234852"], [0.26, "#306273"], [0.48, "#437c86"], [0.7, "#6ba19d"], [0.89, "#aec4a4"]]}}
+          },
+          "colorCurves": {
+            "channels": {
+              "red": {"stops": [[0, 0.015], [0.27, 0.26], [0.64, 0.71], [1, 1]]},
+              "green": {"stops": [[0, 0.02], [0.27, 0.29], [0.64, 0.655], [1, 0.98]]},
+              "blue": {"stops": [[0, 0.025], [0.27, 0.28], [0.64, 0.61], [1, 0.95]]}
+            }
+          },
+          "shadowArt": {"ramp": [0.08, 0.25, 0.54, 0.8, 1], "small": {"belowPixels": 10, "strength": 0.8, "ramp": [0.16, 0.46, 1]}},
+          "ink": {"silhouette": {"shadow": "#35464b", "highlight": "#718575"}, "crease": false, "boundary": false},
+          "artDirection": {"atmosphereBands": 18, "foreground": {"contrast": 1.1, "pivot": 0.42, "near": 16, "far": 31}, "cadence": {"scene": 12, "environment": 8}}
+        }
+      }
+    },
+    {
+      "id": "copperwind/storybook",
+      "label": "Hard-edged storybook",
+      "settings": {
+        "skyEnvironment": {"defaults": {"zenith": "#455687", "horizon": "#f3bb92", "ground": "#745a76", "sunColor": "#ffd2a3", "sunStrength": 0.26, "daylight": 0.68}},
+        "liveSun": {
+          "direction": [-0.58, 0.55, 0.54],
+          "ambient": 0.27,
+          "intensity": 0.82,
+          "mapSize": 256,
+          "filter": 0,
+          "skyBounce": {"color": "#7483ae", "intensity": 0.12},
+          "groundBounce": {"color": "#bf704e", "intensity": 0.1}
+        },
+        "aerialPerspective": {"start": 19, "density": 0.017, "contrast": 0.43},
+        "atmosphere": [
+          {"id": "sea-haze", "type": "fog", "color": "#c6a6b0", "density": 0.016, "bottom": -1.51, "top": 0.7, "near": 20, "far": 37}
+        ],
+        "look": {
+          "surfaceLightRamps": {
+            "stone": {"daylight": {"interpolation": "step", "stops": [[0, "#262439"], [0.32, "#534154"], [0.57, "#96736b"], [0.82, "#d0a880"]]}},
+            "copper": {"daylight": {"interpolation": "step", "stops": [[0, "#331d32"], [0.32, "#83374b"], [0.57, "#c96156"], [0.82, "#f0976d"]]}},
+            "sail": {"daylight": {"interpolation": "step", "stops": [[0, "#543547"], [0.32, "#a7604b"], [0.57, "#e29a64"], [0.82, "#fbd392"]]}},
+            "sea": {"daylight": {"interpolation": "step", "stops": [[0, "#3d365b"], [0.32, "#675575"], [0.57, "#9b7088"], [0.82, "#d0959b"]]}}
+          },
+          "colorCurves": {
+            "channels": {
+              "red": {"stops": [[0, 0.01], [0.27, 0.25], [0.64, 0.73], [1, 1]]},
+              "green": {"stops": [[0, 0.005], [0.27, 0.225], [0.64, 0.65], [1, 0.96]]},
+              "blue": {"stops": [[0, 0.02], [0.27, 0.29], [0.64, 0.655], [1, 0.91]]}
+            }
+          },
+          "shadowArt": {"ramp": [0, 0.04, 0.94, 1]},
+          "ink": {
+            "depthGap": 0.1,
+            "creaseCosine": 0.44,
+            "silhouette": {"color": "#261d33"},
+            "crease": false,
+            "boundary": {"color": "#392940"},
+            "materials": {"sea": {"boundary": false, "silhouette": false}}
+          },
+          "artDirection": {"atmosphereBands": 8, "foreground": {"contrast": 1.13, "pivot": 0.42, "near": 16, "far": 31}, "cadence": {"scene": 8, "environment": 6}}
+        }
+      }
+    },
+    {
+      "id": "copperwind/atmospheric",
+      "label": "Soft atmospheric",
+      "settings": {
+        "skyEnvironment": {"defaults": {"zenith": "#677d9e", "horizon": "#d8c7cc", "ground": "#8596aa", "sunColor": "#fff3da", "sunStrength": 0.26, "daylight": 0.79}},
+        "liveSun": {
+          "direction": [-0.58, 0.55, 0.54],
+          "ambient": 0.58,
+          "intensity": 0.82,
+          "mapSize": 96,
+          "filter": 2,
+          "skyBounce": {"color": "#a4bdda", "intensity": 0.12},
+          "groundBounce": {"color": "#d0afb4", "intensity": 0.1}
+        },
+        "aerialPerspective": {"start": 14.2, "density": 0.075, "contrast": 0.15},
+        "atmosphere": [
+          {"id": "sea-haze", "type": "fog", "color": "#b9bfcf", "density": 0.069, "bottom": -1.5, "top": 1.85, "near": 15.5, "far": 41}
+        ],
+        "look": {
+          "surfaceLightRamps": {
+            "stone": {"daylight": {"interpolation": "smooth", "stops": [[0, "#4a5268"], [0.28, "#7b7880"], [0.6, "#b3a399"], [1, "#ddd2bd"]]}},
+            "copper": {"daylight": {"interpolation": "smooth", "stops": [[0, "#55445f"], [0.28, "#8f6678"], [0.6, "#ba8d92"], [1, "#e0ac9c"]]}},
+            "sail": {"daylight": {"interpolation": "smooth", "stops": [[0, "#726171"], [0.28, "#a98889"], [0.6, "#d5ad93"], [1, "#f2d9b5"]]}},
+            "sea": {"daylight": {"interpolation": "smooth", "stops": [[0, "#506f87"], [0.28, "#6b90a2"], [0.6, "#94aeb9"], [1, "#c2c5c7"]]}}
+          },
+          "colorCurves": {
+            "channels": {
+              "red": {"stops": [[0, 0.075], [0.27, 0.3], [0.64, 0.64], [1, 0.98]]},
+              "green": {"stops": [[0, 0.09], [0.27, 0.33], [0.64, 0.655], [1, 0.96]]},
+              "blue": {"stops": [[0, 0.13], [0.27, 0.385], [0.64, 0.695], [1, 0.965]]}
+            }
+          },
+          "shadowArt": {"small": {"belowPixels": 12, "strength": 0.44}},
+          "ink": false,
+          "edgeFilter": {"strength": 0.59},
+          "artDirection": {"atmosphereBands": 0, "foreground": {"contrast": 0.9, "pivot": 0.42, "near": 16, "far": 31}, "cadence": {"scene": 0, "environment": 0}}
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "clay-yard",
+  "dt": 0.04,
+  "entities": {
+    "wet-block": { "position": [-1.8, 0.25, 0.4], "materialAsset": "earthworks/clay", "materialWetness": 1 },
+    "dry-block": { "position": [1.8, 0.25, 0.4], "materialAsset": "earthworks/clay", "materialWetness": 0 }
+  },
+  "systems": {
+    "soil": {
+      "kind": "materials",
+      "config": {
+        "grid": { "width": 16, "height": 12, "cell": 0.5, "origin": [-4, -3] },
+        "material": "earthworks/clay",
+        "wetness": 0.06,
+        "temperature": 12,
+        "airTemperature": 35,
+        "water": "runoff/water",
+        "regions": [
+          { "bounds": { "min": [-4, -3], "max": [0, 3] }, "material": "earthworks/clay", "wetness": 1 },
+          { "bounds": { "min": [-4, 2.45], "max": [4, 3] }, "material": "earthworks/gravel", "wetness": 0.3 }
+        ]
+      }
+    },
+    "runoff": {
+      "kind": "water",
+      "config": {
+        "width": 16,
+        "height": 12,
+        "cell": 0.5,
+        "origin": [-4, -3],
+        "surface": "soil/surface",
+        "bed": [{ "bounds": { "min": [-3.99, 1.84], "max": [-2.6, 2.44] }, "value": 0.19 }],
+        "initial": [{ "bounds": { "min": [-3.99, 1.84], "max": [-2.6, 2.44] }, "value": 0.45 }]
+      }
+    },
+    "rig": {
+      "kind": "mechanics",
+      "config": {
+        "terrain": "runoff/bed",
+        "surface": "soil/surface",
+        "contactEvents": true,
+        "bodies": {
+          "wet-cart": { "position": [-1.15, 0.18, -2.0], "half": [0.22, 0.18, 0.3], "look": [13, 14, 15, 16, 18] },
+          "dry-cart": { "position": [1.15, 0.18, -2.0], "half": [0.22, 0.18, 0.3], "look": [13, 14, 15, 16, 18] },
+          "wet-block": { "position": [-1.8, 0.23, 0.4], "half": [0.55, 0.23, 0.3], "fixed": true },
+          "dry-block": { "position": [1.8, 0.23, 0.4], "half": [0.55, 0.23, 0.3], "fixed": true }
+        },
+        "forces": {
+          "wet-axle": { "kind": "wheel", "body": "wet-cart", "axis": [0, 0, 1], "radius": 0.18, "magnitude": 4, "input": 1 },
+          "dry-axle": { "kind": "wheel", "body": "dry-cart", "axis": [0, 0, 1], "radius": 0.18, "magnitude": 4, "input": 1 }
+        }
+      }
+    }
+  },
+  "commands": [
+    { "tick": 7, "action": "rig/fracture", "args": { "body": "wet-block", "energy": 5 } },
+    { "tick": 7, "action": "rig/fracture", "args": { "body": "dry-block", "energy": 5, "omit": [1] } }
+  ],
+  "visual": {
+    "bounds": { "min": [-3.95, -0.26, -2.95], "max": [3.95, 1.7, 2.95] },
+    "resolution": 0.085,
+    "camera": { "target": [0, 0.02, 0], "dist": 11.6, "yaw": 0.34, "pitch": 0.71 },
+    "palette": [
+      1317672, 2302265, 3945808, 5591403, 7828875, 10262954, 13156020, 2438450,
+      4544593, 6648423, 9016968, 12171934, 12893066, 1257543, 1853275, 2255480,
+      3314579, 6535338, 11067090, 5189416, 7882545, 11036995, 13539168, 15580545, 16379344,
+      3417651, 5454916, 7625308, 9994875, 12232603, 4139566, 6438973, 9003090, 11373168, 13611152
+    ],
+    "fields": { "surface": "soil/surface", "bed": "runoff/bed", "water": "runoff/water", "bodies": "rig/bodies" }
+  }
+}

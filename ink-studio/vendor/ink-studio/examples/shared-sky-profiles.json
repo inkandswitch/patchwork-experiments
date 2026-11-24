@@ -1,0 +1,25 @@
+{
+  "profiles": {
+    "day": {
+      "zenith": "#3b77b3", "horizon": "#afd4df", "ground": "#35526a",
+      "sunColor": "#fff1c9", "sunAzimuth": 2.84, "sunAltitude": 0.72, "sunSize": 0.022, "sunStrength": 0.86
+    },
+    "sunset": {
+      "zenith": "#584876", "horizon": "#ff996c", "ground": "#353a55",
+      "sunColor": "#ffe2a2", "sunAzimuth": 3.08, "sunAltitude": 0.084, "sunSize": 0.027, "sunStrength": 1.13
+    },
+    "blue-hour": {
+      "zenith": "#182d54", "horizon": "#8d79a6", "ground": "#1c2945",
+      "sunColor": "#ced7f7", "sunAzimuth": 3.34, "sunAltitude": -0.28, "sunSize": 0.027, "sunStrength": 0
+    }
+  },
+  "sequences": {
+    "evening": {
+      "duration": 15, "keys": [
+        {"at": 0, "profile": "day"}, {"at": 3, "profile": "day"},
+        {"at": 7, "profile": "sunset"}, {"at": 11, "profile": "blue-hour"}
+      ]
+    }
+  },
+  "tracks": [{"id": "light", "sequence": "evening"}]
+}

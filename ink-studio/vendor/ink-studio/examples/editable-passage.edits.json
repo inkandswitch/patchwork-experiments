@@ -1,0 +1,17 @@
+{
+  "operations": [
+    {
+      "op": "update",
+      "id": "@/wall/parts/doorway",
+      "patch": {
+        "parameters": { "width": 0.94 },
+        "anchor": { "uv": [0.58, 0] }
+      }
+    },
+    {
+      "op": "update",
+      "id": "@/wall/parts/landing",
+      "patch": { "parameters": { "height": 0.48 } }
+    }
+  ]
+}

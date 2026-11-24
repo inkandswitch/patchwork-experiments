@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>
+    The Strange Garden · Ink Studio
+  </title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #090d19;
+      color: #ded9e8;
+      font:
+        14px/1.6 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 1540px;
+      margin: auto;
+      padding: 30px 42px 24px;
+    }
+    .eyebrow {
+      display: flex;
+      justify-content: space-between;
+      font: 10px monospace;
+      letter-spacing: 2px;
+      color: #8b85a7;
+      border-bottom: 1px solid #313347;
+      padding-bottom: 17px;
+    }
+    h1 {
+      font:
+        normal 58px/1 Georgia,
+        serif;
+      letter-spacing: -2.1px;
+      margin: 25px 0 12px;
+    }
+    h1 em {
+      font-weight: normal;
+      color: #d4bc88;
+    }
+    p.intro {
+      color: #9394ac;
+      max-width: 850px;
+      margin: 0 0 25px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 290px;
+      gap: 24px;
+    }
+    .viewer {
+      border: 1px solid #393950;
+      background: #080c19;
+      position: relative;
+    }
+    .viewer canvas {
+      width: 100%;
+      display: block;
+      aspect-ratio: 1.447;
+      image-rendering: pixelated;
+      touch-action: none;
+      cursor: grab;
+    }
+    .tag {
+      position: absolute;
+      top: 16px;
+      left: 18px;
+      pointer-events: none;
+      font: 10px/1.9 monospace;
+      letter-spacing: 1px;
+      color: #a29cba;
+    }
+    .tag b {
+      font-weight: 400;
+      color: #d7c290;
+    }
+    .bar {
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #31334b;
+      font: 9px monospace;
+      color: #a09bb5;
+      letter-spacing: 0.6px;
+    }
+    aside {
+      border-top: 1px solid #45445e;
+      padding-top: 17px;
+    }
+    .tiny {
+      font: 10px monospace;
+      letter-spacing: 1px;
+      color: #a79ac5;
+    }
+    h2 {
+      font:
+        normal 25px Georgia,
+        serif;
+      margin: 10px 0 18px;
+    }
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin: 0;
+      padding: 12px 0;
+      border-bottom: 1px solid #2a2e43;
+      cursor: pointer;
+    }
+    .toggle input {
+      accent-color: #c0a8db;
+      flex: 0 0 auto;
+    }
+    .toggle strong {
+      display: block;
+      font: 12px monospace;
+      font-weight: 400;
+      color: #d6cce1;
+    }
+    .toggle small {
+      display: block;
+      font: 10px/1.6 monospace;
+      color: #9691a8;
+      margin-top: 4px;
+    }
+    .toggle span {
+      flex: 1;
+    }
+    .num {
+      font: 10px monospace !important;
+      color: #6e6584 !important;
+      flex: 0 !important;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin: 18px 0 15px;
+    }
+    button {
+      cursor: pointer;
+      border: 1px solid #504962;
+      background: #1a1c30;
+      color: #ded2df;
+      padding: 11px;
+      font: 11px monospace;
+    }
+    .actions button {
+      flex: 1;
+    }
+    select {
+      margin: 8px 0 16px;
+      width: 100%;
+      font: 12px monospace;
+      padding: 11px;
+      background: #191c30;
+      color: #ded2df;
+      border: 1px solid #4e4864;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px 12px;
+      border-top: 1px solid #3b394d;
+      padding-top: 19px;
+      margin-top: 19px;
+    }
+    .metrics label {
+      font: 9px monospace;
+      letter-spacing: 0.5px;
+      color: #9891a9;
+    }
+    .metrics output {
+      display: block;
+      font: 17px monospace;
+      color: #d9bf8a;
+      margin-top: 5px;
+    }
+    .caption {
+      font: 10px/1.85 monospace;
+      color: #9694a7;
+      margin-top: 18px;
+    }
+    .bottom {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 30px;
+    }
+    .bottom strong {
+      font: 10px monospace;
+      letter-spacing: 1px;
+      color: #bdb0d1;
+    }
+    .bottom p {
+      font-size: 12px;
+      color: #8f8ca3;
+      line-height: 1.7;
+      margin: 9px 0;
+    }
+    #note {
+      min-height: 33px;
+      color: #a9a0ba;
+      font: 10px/1.7 monospace;
+    }
+    footer {
+      margin-top: 15px;
+      border-top: 1px solid #303348;
+      padding-top: 15px;
+      color: #77728c;
+      font: 9px monospace;
+      letter-spacing: 1px;
+    }
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      text-align: center;
+      color: #b5a4cd;
+      background: #080c19;
+      font: 12px monospace;
+      z-index: 2;
+    }
+    #loading small {
+      font: 10px monospace;
+      color: #817b96;
+      margin-top: 12px;
+    }
+    @media (max-width: 1050px) {
+      main {
+        padding: 24px;
+      }
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .bottom {
+        gap: 16px;
+      }
+      h1 {
+        font-size: 44px;
+      }
+    }
+  </style>
+  <main>
+    <div class="eyebrow">
+      <span>INK STUDIO / MATHEMATICAL SPECIMENS</span><span>013 · FINITE FIELDS / INFINITE VARIATION</span>
+    </div>
+    <h1>The strange <em>garden.</em></h1>
+    <p class="intro">
+      Iris violet and warm ivory. Complex charts become woven ink, a living orbit, a bending flower and a moving veil.
+    </p>
+    <div class="layout">
+      <div>
+        <div class="viewer">
+          <div id="loading">GROWING THE CABINET<small>Baking material cels and bounded trajectories</small></div>
+          <div class="tag">
+            <b>FOUR USES / ONE FIELD CONTRACT</b><br />DRAG TO ORBIT · SHIFT DRAG TO PAN · SCROLL TO DOLLY
+          </div>
+          <canvas id="view"></canvas>
+          <div class="bar">
+            <span>ORIGINAL SDF SCULPTURE / CRISP PIXEL PRINT</span><output id="status">BAKING FIELDS</output>
+          </div>
+        </div>
+        <div class="bottom">
+          <div>
+            <strong>01 / COMPLEX COORDINATES</strong>
+            <p>A Möbius transform and logarithmic twist bend a checker into the tapestry’s material coordinates.</p>
+          </div>
+          <div>
+            <strong>02 / BOUNDED DYNAMICS</strong>
+            <p>Live particles integrate the same equations as the captured orbit. Fixed steps retain their clock.</p>
+          </div>
+          <div>
+            <strong>03 / A FORM, A VEIL</strong>
+            <p>
+              Analytic derivatives carry the flower’s skin. A scalar field fully removes and restores the foreground
+              lattice.
+            </p>
+          </div>
+        </div>
+      </div>
+      <aside>
+        <div class="tiny">CHART / FLOW / DEFORMATION / MASK</div>
+        <h2>Study the transformation</h2>
+        <label class="tiny" for="family">CONTINUOUS ATTRACTOR</label
+        ><select id="family">
+          <option value="lorenz">01 · Lorenz / butterfly</option>
+          <option value="rossler">02 · Rössler / folded ribbon</option>
+          <option value="thomas">03 · Thomas / cyclic symmetry</option>
+          <option value="aizawa">04 · Aizawa / toroidal vessel</option>
+        </select>
+        <div id="controls"></div>
+        <div class="actions"><button id="pause">Pause fields</button><button id="return">Return camera</button></div>
+        <div id="note">
+          Finite coordinates. Explicit work budgets.<br />Native splats and a 49-cell deformation skin.
+        </div>
+        <div class="metrics">
+          <div><label>CHART WORK</label><output id="cost"></output></div>
+          <div><label>LIVE INTEGRATORS</label><output id="particles"></output></div>
+          <div><label>REVEAL COVERAGE</label><output id="coverage"></output></div>
+          <div><label>FIXED SIMULATION STEP</label><output id="step"></output></div>
+        </div>
+        <p class="caption">
+          No external fonts, assets or runtime libraries.<br /><br />Material cels are baked once. The flower uses a
+          small skin; only live particles and the reveal lattice update their original rows.
+        </p>
+      </aside>
+    </div>
+    <footer>COMPLEX PLANE / POLAR + LOGARITHMIC CHARTS / RK4 FLOWS / EXPLICIT SINGULARITIES</footer>
+  </main>
+  <script src="../dist/ink-studio.browser.js"></script>
+  <script src="./math-fields.js"></script>
+  <script type="module">
+    import { createRenderer } from '../webgl.mjs';
+    await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+    const kit = { KIT, MathFields, makeBuilder, makeSculpt, SpriteSurface, PixelLook, RenderStages },
+      demo = mathFieldsScene(kit),
+      canvas = document.getElementById('view'),
+      renderer = createRenderer(canvas, { toolkit: kit }),
+      $ = id => document.getElementById(id);
+    const controls = {
+      material: ['Animate material', 'Baked chart animation · original atlas pixels'],
+      flow: ['Live particle flow', 'Bounded RK4 · same equations as the orbit'],
+      deform: ['Deform the flower', 'Analytic Jacobian · original skinned splats'],
+      reveal: ['Reveal / hide field', 'Warped rings · zero coverage fully hides']
+    };
+    for (const [id, [name, description]] of Object.entries(controls)) {
+      $('controls').insertAdjacentHTML(
+        'beforeend',
+        `<label class="toggle"><input id="${id}" type="checkbox" checked><span><strong>${name}</strong><small>${description}</small></span><span class="num">${String(Object.keys(controls).indexOf(id) + 1).padStart(2, '0')}</span></label>`
+      );
+      $(id).onchange = e => (demo.state[id] = e.target.checked);
+    }
+    $('family').onchange = e => {
+      demo.setFamily(e.target.value);
+      metrics();
+      $('note').textContent = 'Same integration kernel / new initial orbit.\nThe camera remains yours.';
+    };
+    $('pause').onclick = () => {
+      demo.state.paused = !demo.state.paused;
+      $('pause').textContent = demo.state.paused ? 'Resume fields' : 'Pause fields';
+    };
+    $('return').onclick = () => demo.control.release();
+    function metrics() {
+      const s = demo.inspect();
+      $('cost').value = s.chartCost + ' UNITS';
+      $('particles').value = s.particles + ' × RK4';
+      $('coverage').value = Math.round((s.visible / s.totalReveal) * 100) + '%';
+      $('step').value = s.integration.dt.toFixed(3) + ' S';
+    }
+    let drag,
+      last,
+      stamp,
+      frames = 0,
+      fps = 60;
+    canvas.onpointerdown = e => {
+      drag = [e.clientX, e.clientY];
+      canvas.setPointerCapture(e.pointerId);
+      demo.control.take();
+    };
+    canvas.onpointermove = e => {
+      if (!drag) return;
+      const x = e.clientX - drag[0],
+        y = e.clientY - drag[1];
+      drag = [e.clientX, e.clientY];
+      demo.control.input(e.shiftKey ? { pan: [-x * 0.01, y * 0.01] } : { yaw: -x * 0.004, pitch: y * 0.004 });
+    };
+    canvas.onpointerup = canvas.onpointercancel = () => (drag = null);
+    canvas.addEventListener(
+      'wheel',
+      e => {
+        e.preventDefault();
+        demo.control.input({ dolly: e.deltaY * 0.001 });
+      },
+      { passive: false }
+    );
+    window.mathQA = { demo, renderer };
+    $('loading').remove();
+    function tick(now) {
+      const dt = last === undefined ? 0 : Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const changedRows = demo.update(dt);
+      renderer.render(demo.world, {
+        width: 1100,
+        height: 760,
+        camera: demo.control.read().camera,
+        time: demo.state.time,
+        changedRows,
+        damp: false
+      });
+      stamp ??= now;
+      frames++;
+      if (now - stamp > 900) {
+        fps = Math.round((frames * 1000) / (now - stamp));
+        stamp = now;
+        frames = 0;
+        metrics();
+      }
+      $('status').value =
+        fps + ' FPS · ' + (demo.state.paused ? 'FIELDS HELD' : demo.state.family.toUpperCase() + ' / LIVE');
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  </script>
+</html>

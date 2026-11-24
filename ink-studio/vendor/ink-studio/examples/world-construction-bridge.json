@@ -1,0 +1,75 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "canal-bridge-refit",
+  "dt": 0.1,
+  "systems": {
+    "bridge": {
+      "kind": "construction",
+      "config": {
+        "points": {
+          "west": { "position": [-3.4, 1.43, 0], "sockets": { "seat": [0, 0, 0], "underside": [0, -0.23, 0] } },
+          "east": { "position": [3.4, 1.43, 0], "sockets": { "seat": [0, 0, 0] } },
+          "left-joint": { "position": [-0.45, 1.43, 0], "sockets": { "seat": [0, 0, 0] } },
+          "right-joint": { "position": [-0.3, 1.43, 0], "sockets": { "seat": [-0.15, 0, 0] } },
+          "channel-in": { "position": [0.2, 0, -2.15] },
+          "channel-out": { "position": [0.2, 0, 2.15] },
+          "yard": { "position": [0.6, -0.1, 0] },
+          "bollard": { "position": [2.15, 0.21, 1.45] }
+        },
+        "constraints": [
+          { "id": "west-anchor", "type": "pin", "point": "west/seat", "position": [-3.4, 1.43, 0] },
+          { "id": "east-anchor", "type": "pin", "point": "east/seat", "position": [3.4, 1.43, 0] },
+          { "id": "yard-anchor", "type": "pin", "point": "yard", "position": [0.6, -0.1, 0] },
+          { "id": "bollard-anchor", "type": "pin", "point": "bollard", "position": [2.15, 0.21, 1.45] },
+          { "id": "canal-entrance", "type": "pin", "point": "channel-in", "position": [0.2, 0, -2.15] },
+          { "id": "canal-exit", "type": "pin", "point": "channel-out", "position": [0.2, 0, 2.15] },
+          { "id": "deck-level", "type": "level", "points": ["west/seat", "left-joint/seat", "east/seat"] },
+          { "id": "seat-alignment", "type": "align", "a": "left-joint/seat", "b": "right-joint/seat" },
+          { "id": "deck-centerline", "type": "range", "axis": "z", "a": "west/seat", "b": "left-joint/seat", "min": 0, "max": 0 },
+          { "id": "west-span-limit", "type": "range", "axis": "x", "a": "west/seat", "b": "left-joint/seat", "min": 2.4, "max": 4.4 },
+          { "id": "east-span-limit", "type": "range", "axis": "x", "a": "right-joint/seat", "b": "east/seat", "min": 2.4, "max": 4.4 },
+          { "id": "boat-clearance", "type": "opening",
+            "width": { "a": "west/seat", "b": "east/seat", "axis": "x", "min": 1.6 },
+            "height": { "a": "channel-in", "b": "west/underside", "min": 1.15 },
+            "passage": { "a": "channel-in", "b": "channel-out" }
+          }
+        ],
+        "blocks": [
+          { "id": "channel-bed", "at": "yard", "offset": [0, -0.16, 0], "half": [5.85, 0.16, 2.23], "look": [7, 8, 9, 10, 11] },
+          { "id": "canal", "at": "yard", "half": [5.8, 0.1, 2.18], "look": [13, 14, 15, 16, 17], "material": "water-blue" },
+          { "id": "west-bank", "at": "west", "offset": [-0.62, -1.15, 0], "half": [0.92, 0.36, 2.18], "look": [7, 8, 9, 10, 11] },
+          { "id": "east-bank", "at": "east", "offset": [0.62, -1.15, 0], "half": [0.92, 0.36, 2.18], "look": [7, 8, 9, 10, 11] },
+          { "id": "west-abutment", "at": "west", "offset": [-0.4, -0.68, 0], "half": [0.4, 0.65, 0.87], "look": [1, 2, 3, 4, 5, 6] },
+          { "id": "east-abutment", "at": "east", "offset": [0.4, -0.68, 0], "half": [0.4, 0.65, 0.87], "look": [1, 2, 3, 4, 5, 6] },
+          { "id": "west-post-n", "at": "west", "offset": [0, 0.28, -0.59], "half": [0.06, 0.32, 0.065], "look": [14, 15, 16, 17, 18] },
+          { "id": "west-post-s", "at": "west", "offset": [0, 0.28, 0.59], "half": [0.06, 0.32, 0.065], "look": [14, 15, 16, 17, 18] },
+          { "id": "east-post-n", "at": "east", "offset": [0, 0.28, -0.59], "half": [0.06, 0.32, 0.065], "look": [14, 15, 16, 17, 18] },
+          { "id": "east-post-s", "at": "east", "offset": [0, 0.28, 0.59], "half": [0.06, 0.32, 0.065], "look": [14, 15, 16, 17, 18] },
+          { "id": "joint-post-n", "at": "left-joint/seat", "offset": [0, 0.26, -0.59], "half": [0.06, 0.29, 0.065], "look": [14, 15, 16, 17, 18] },
+          { "id": "joint-post-s", "at": "left-joint/seat", "offset": [0, 0.26, 0.59], "half": [0.06, 0.29, 0.065], "look": [14, 15, 16, 17, 18] },
+          { "id": "canal-bollard", "at": "bollard", "half": [0.16, 0.21, 0.16], "look": [19, 20, 21, 22, 23] }
+        ],
+        "spans": [
+          { "id": "west-deck", "a": "west/seat", "b": "left-joint/seat", "width": 1.4, "depth": 0.22, "rise": -0.11, "look": [19, 20, 21, 22, 23] },
+          { "id": "east-deck", "a": "right-joint/seat", "b": "east/seat", "width": 1.4, "depth": 0.22, "rise": -0.11, "look": [20, 21, 22, 23, 24] },
+          { "id": "north-rail", "a": "west/seat", "b": "east/seat", "width": 0.1, "depth": 0.11, "rise": 0.53, "lateral": -0.59, "look": [14, 15, 16, 17, 18] },
+          { "id": "south-rail", "a": "west/seat", "b": "east/seat", "width": 0.1, "depth": 0.11, "rise": 0.53, "lateral": 0.59, "look": [14, 15, 16, 17, 18] }
+        ]
+      }
+    }
+  },
+  "commands": [
+    { "id": "extend-east", "tick": 2, "action": "bridge/refit", "args": { "pins": { "east-anchor": [5.1, 1.43, 0] } } },
+    { "id": "raise-east", "tick": 4, "action": "bridge/refit", "args": { "pins": { "east-anchor": [5.1, 1.8, 0] } } },
+    { "id": "extend-too-far", "tick": 6, "action": "bridge/refit", "args": { "pins": { "east-anchor": [6, 1.43, 0] } } },
+    { "id": "obstruct-channel", "tick": 8, "action": "bridge/refit", "args": { "pins": { "bollard-anchor": [0.2, 0.21, 0.8] } } }
+  ],
+  "visual": {
+    "bounds": { "min": [-5.3, -0.66, -2.43], "max": [6.9, 2.8, 2.43] },
+    "ground": -0.42,
+    "resolution": 0.08,
+    "camera": { "target": [0.76, 0.55, 0], "dist": 15.7, "yaw": 0.36, "pitch": 0.43 },
+    "fields": { "bodies": "bridge/bodies" }
+  }
+}

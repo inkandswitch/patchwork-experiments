@@ -1,0 +1,37 @@
+{
+  "format": "ink-studio/graph-project",
+  "version": 1,
+  "inputs": {
+    "values": { "type": "array<number>", "default": [4, 1, 3] },
+    "gain": { "type": "number", "default": 2 },
+    "threshold": { "type": "number", "default": 3 }
+  },
+  "groups": {
+    "ScaleItem": {
+      "inputs": { "item": "number", "gain": "number" },
+      "nodes": { "scaled": { "op": "multiply", "inputs": { "a": { "input": "item" }, "b": { "input": "gain" } } } },
+      "outputs": { "value": { "node": "scaled" } }
+    },
+    "KeepItem": {
+      "inputs": { "item": "number", "threshold": "number" },
+      "nodes": { "keep": { "op": "lessThan", "inputs": { "a": { "input": "threshold" }, "b": { "input": "item" } } } },
+      "outputs": { "value": { "node": "keep" } }
+    },
+    "SumItem": {
+      "inputs": { "item": "number", "accumulator": "number" },
+      "nodes": { "sum": { "op": "add", "inputs": { "a": { "input": "accumulator" }, "b": { "input": "item" } } } },
+      "outputs": { "value": { "node": "sum" } }
+    }
+  },
+  "nodes": {
+    "scaled": { "op": "array.map", "group": "ScaleItem",
+      "inputs": { "items": { "input": "values" }, "gain": { "input": "gain" } } },
+    "kept": { "op": "array.filter", "group": "KeepItem",
+      "inputs": { "items": { "node": "scaled" }, "threshold": { "input": "threshold" } } },
+    "ordered": { "op": "array.sort", "inputs": { "items": { "node": "kept" }, "direction": "asc" } },
+    "total": { "op": "array.reduce", "group": "SumItem", "inputs": { "items": { "node": "ordered" }, "initial": 0 } }
+  },
+  "outputs": { "values": { "node": "ordered" }, "total": { "node": "total" } },
+  "exports": { "values": { "output": "values", "format": "json" } },
+  "assertions": [{ "id": "keptValues", "output": "total", "op": "min", "value": 1 }]
+}

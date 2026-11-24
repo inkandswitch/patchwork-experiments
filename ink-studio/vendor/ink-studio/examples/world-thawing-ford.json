@@ -1,0 +1,76 @@
+{
+  "format": "ink-studio/world", "version": 1, "id": "thawing-ford", "dt": 0.05,
+  "assetPacks": [{
+    "format": "ink-studio/asset-pack", "version": 1, "id": "winter-ford", "title": "Winter ford", "revision": 1,
+    "materials": [{ "id": "winter-ford/cold-stone", "label": "Exposed cold stone",
+      "thermal": { "heatCapacity": 5, "conductance": 14 }, "dryingRate": 0.7 }]
+  }],
+  "systems": {
+    "river": { "kind": "water", "config": {
+      "width": 20, "height": 8, "origin": [-4, -1.6], "cell": 0.4, "base": 0.66,
+      "bed": [{ "bounds": { "min": [-3.6, -0.8], "max": [3.6, 0.8] }, "value": 0.10 }],
+      "initial": [{ "bounds": { "min": [-3.6, -0.8], "max": [0, 0.8] }, "value": 0.48 }],
+      "gates": { "sluice": { "bounds": { "min": [-0.01, -0.81], "max": [0.01, 0.81] },
+        "axis": 0, "opening": 0, "iceClearance": 0.08 } },
+      "thermal": {
+        "ambientTemperature": -4, "heatCapacity": 5, "conductance": 1.0, "conductivity": 0.006,
+        "waterHeatCapacity": 12, "latentFusion": 18, "latentVaporization": 90, "saturation": 0.004,
+        "evaporation": 0.45, "condensation": 1.4, "vaporDiffusivity": 0.04,
+        "initialTemperature": [
+          { "bounds": { "min": [-4, -1.6], "max": [4, 1.6] }, "value": 9 },
+          { "bounds": { "min": [-0.4, -0.8], "max": [0.4, 0.8] }, "value": 0 }
+        ],
+        "initialVapor": [
+          { "bounds": { "min": [-0.8, -0.8], "max": [0.8, 0.8] }, "value": 0.011 }
+        ],
+        "materials": [
+          { "bounds": { "min": [-0.4, -0.8], "max": [0.4, 0.8] }, "material": "winter-ford/cold-stone" }
+        ]
+      }
+    } },
+    "banks": { "kind": "volume", "config": {
+      "bounds": { "min": [-4.1, -0.5, -1.7], "max": [4.1, 1, 1.7] }, "cell": 0.1,
+      "materials": {
+        "frozen-earth": [2441010, 3801847, 5529205, 7766417],
+        "grass": [2635844, 3696464, 5658984, 7831695],
+        "gravel": [3618626, 5066071, 6908020, 9344177]
+      },
+      "initial": [
+        { "op": "fill", "material": "frozen-earth", "shape": { "kind": "box", "at": [0, 0.21, 0], "half": [4, 0.45, 1.6] } },
+        { "op": "layer", "material": "grass", "shape": { "kind": "box", "at": [0, 0.62, 0], "half": [4.01, 0.08, 1.61] } },
+        { "op": "layer", "material": "gravel", "shape": { "kind": "box", "at": [1.7, 0.43, 0], "half": [0.46, 0.41, 1.61] } },
+        { "op": "cut", "shape": { "kind": "box", "at": [0, 0.52, 0], "half": [3.6, 0.42, 0.8] } }
+      ]
+    } },
+    "hardware": { "kind": "mechanics", "config": {
+      "bodies": {
+        "left-post": { "fixed": true, "position": [0, 0.75, -0.82], "half": [0.09, 0.46, 0.09], "look": [2, 3, 4, 5] },
+        "right-post": { "fixed": true, "position": [0, 0.75, 0.82], "half": [0.09, 0.46, 0.09], "look": [2, 3, 4, 5] },
+        "beam": { "fixed": true, "position": [0, 1.17, 0], "half": [0.10, 0.075, 0.9], "look": [19, 20, 21, 22] },
+        "door": { "half": [0.06, 0.26, 0.78], "look": [2, 3, 4, 5, 6] },
+        "north-marker": { "fixed": true, "position": [1.7, 0.76, -1.13], "half": [0.045, 0.15, 0.045], "look": [20, 21, 22, 23] },
+        "south-marker": { "fixed": true, "position": [1.7, 0.76, 1.13], "half": [0.045, 0.15, 0.045], "look": [20, 21, 22, 23] }
+      },
+      "joints": { "gate": { "kind": "slider", "child": "door", "anchor": [0, 0.38, 0],
+        "axis": [0, 1, 0], "mode": "position", "speed": 3, "range": [0, 0.9] } }
+    } },
+    "nav": { "kind": "navigation", "config": {
+      "bounds": { "min": [1.31, 0, -1.49], "max": [2.09, 1, 1.49] },
+      "cell": 0.20, "bed": "river/bed", "water": "river/water"
+    } }
+  },
+  "connections": [{ "from": "river/effective-opening.sluice", "to": "hardware/drive.gate" }],
+  "commands": [
+    { "id": "try-frozen-gate", "tick": 22, "action": "world/input", "args": { "port": "river/gate.sluice", "value": 0.88 } },
+    { "id": "warm-front", "tick": 48, "action": "world/input", "args": { "port": "river/ambient", "value": 10 } }
+  ],
+  "visual": {
+    "volume": "banks", "bounds": { "min": [-4, -0.25, -1.6], "max": [4, 1.7, 1.6] }, "resolution": 0.062,
+    "camera": { "target": [0, 0.41, 0], "dist": 9.5, "yaw": -0.37, "pitch": 0.57 },
+    "waterOptics": {
+      "tint": [0.05, 0.33, 0.4], "extinction": [1.5, 0.6, 0.3], "surfaceColor": [0.3, 0.8, 0.86],
+      "surface": 0.57, "foam": 0.15, "refraction": 0.23, "caustics": 0.13
+    },
+    "fields": { "bed": "river/bed", "water": "river/water", "ice": "river/ice", "bodies": "hardware/bodies" }
+  }
+}

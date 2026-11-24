@@ -1,0 +1,42 @@
+{
+  "format": "ink-studio/world",
+  "id": "canal-reaches",
+  "dt": 0.05,
+  "entities": {
+    "cart": { "position": [6, 0, 2] },
+    "western-marker": { "position": [2, 0, 2] },
+    "eastern-marker": { "position": [11, 0, 2], "metadata": { "label": "original" } },
+    "annex-marker": { "position": [2, 0, 2], "place": "annex" },
+    "distant-marker": { "position": [81, 0, 2] }
+  },
+  "systems": {
+    "west-signal": { "kind": "control", "config": { "op": "pass" } },
+    "east-signal": { "kind": "control", "config": { "op": "pass" } },
+    "west-tank": { "kind": "store", "config": { "accounts": { "water": { "resource": "water", "units": "L", "initial": 6, "max": 10 } } } },
+    "east-tank": { "kind": "store", "config": { "accounts": { "water": { "resource": "water", "units": "L", "initial": 0, "max": 4 } } } },
+    "annex-signal": { "kind": "control", "config": { "op": "pass" } },
+    "global-signal": { "kind": "control", "config": { "op": "pass" } }
+  },
+  "simulationChunks": {
+    "grid": { "size": 8 },
+    "levels": [{ "id": "near", "within": 12 }, { "id": "sleep", "sleep": true }],
+    "focus": { "observer": { "at": [2, 0, 2] } },
+    "chunks": {
+      "west": { "index": [0, 0], "systems": ["west-tank", "west-signal"] },
+      "east": { "index": [1, 0], "systems": ["east-tank", "east-signal"] },
+      "annex": { "index": [0, 0], "place": "annex", "systems": ["annex-signal"] }
+    }
+  },
+  "commands": [
+    { "tick": 1, "action": "world/input", "args": { "port": "west-signal/value", "value": 2 } },
+    { "tick": 1, "action": "world/input", "args": { "port": "east-signal/value", "value": 7 } },
+    { "tick": 2, "action": "world/patch", "args": { "edits": [
+      { "op": "set", "path": "/entities/cart/position", "value": [9, 0, 2] },
+      { "op": "set", "path": "/entities/eastern-marker/metadata/label", "value": "moved cart" }
+    ] } },
+    { "tick": 3, "action": "world/transfer", "args": { "from": "west-tank/water", "to": "east-tank/water", "amount": 2 } },
+    { "tick": 4, "action": "world/patch", "args": { "edits": [
+      { "op": "remove", "path": "/entities/western-marker" }
+    ] } }
+  ]
+}

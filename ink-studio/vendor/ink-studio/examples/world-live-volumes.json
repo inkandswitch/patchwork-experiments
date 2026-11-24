@@ -1,0 +1,64 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "spillway-quarry",
+  "dt": 0.1,
+  "systems": {
+    "quarry": {
+      "kind": "volume",
+      "config": {
+        "bounds": { "min": [-8, -2, -5], "max": [8, 4, 5] },
+        "cell": 0.2,
+        "chunkCells": 12,
+        "materials": {
+          "basalt": [2632499, 4276543, 6512731, 8421518],
+          "copper-seam": [6638657, 10052164, 13462617, 15635299],
+          "sandstone": [6111277, 10180674, 13336921, 15316612],
+          "limestone": [4671292, 8082523, 11243906, 13555105],
+          "meadow": [2570033, 4885310, 7250000, 9943139],
+          "bulkhead": [1716284, 2771830, 4488887, 7327721]
+        },
+        "initial": [
+          { "op": "fill", "material": "basalt", "shape": { "kind": "box", "at": [0, 0.7, 0], "half": [6.35, 1.72, 3.45], "round": 0.16 } },
+          { "op": "layer", "material": "copper-seam", "shape": { "kind": "box", "at": [0, 0.49, 0], "half": [7, 0.23, 4] } },
+          { "op": "layer", "material": "sandstone", "shape": { "kind": "box", "at": [0, 1.05, 0], "half": [7, 0.33, 4] } },
+          { "op": "layer", "material": "limestone", "shape": { "kind": "box", "at": [0, 1.75, 0], "half": [7, 0.37, 4] } },
+          { "op": "layer", "material": "meadow", "shape": { "kind": "box", "at": [0, 2.32, 0], "half": [7, 0.19, 4] } },
+          { "op": "cut", "shape": { "kind": "box", "at": [-3.25, 1.85, 0.15], "half": [2.2, 1.59, 2.45], "round": 0.19 } },
+          { "op": "cut", "shape": { "kind": "box", "at": [3.25, 1.85, 0.15], "half": [2.2, 1.59, 2.45], "round": 0.19 } }
+        ],
+        "sources": [{ "id": "upper-pool", "point": [-3.1, 0.9, 0.1], "level": 1.42, "current": [0.15, 0, 0] }],
+        "optics": {
+          "tint": [0.035, 0.32, 0.39],
+          "surfaceColor": [0.25, 0.77, 0.83],
+          "extinction": [0.78, 0.37, 0.14],
+          "surface": 0.32,
+          "foam": 0.22,
+          "refraction": 0.32
+        }
+      }
+    },
+    "nav": {
+      "kind": "navigation",
+      "config": {
+        "bounds": { "min": [-5.25, 0.5, -2.25], "max": [5.25, 1.25, 2.45] },
+        "clearance": "quarry/clearance"
+      }
+    }
+  },
+  "commands": [
+    { "id": "open-spillway", "tick": 2, "action": "quarry/cut", "args": {
+      "shape": { "kind": "box", "at": [0, 1.9, 0], "half": [1.5, 1.48, 0.68], "round": 0.09 }
+    } },
+    { "id": "line-spillway", "tick": 4, "action": "quarry/layer", "args": {
+      "shape": { "kind": "box", "at": [0, 0.42, 0], "half": [1.2, 0.09, 0.53] }, "material": "limestone"
+    } },
+    { "id": "close-spillway", "tick": 6, "action": "quarry/fill", "args": {
+      "shape": { "kind": "box", "at": [0, 1.17, 0], "half": [0.26, 0.86, 0.83] }, "material": "bulkhead"
+    } }
+  ],
+  "visual": {
+    "volume": "quarry",
+    "camera": { "target": [0, 0.75, 0], "dist": 22.4, "yaw": 0.25, "pitch": 0.82 }
+  }
+}

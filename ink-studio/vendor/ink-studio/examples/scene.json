@@ -1,0 +1,17 @@
+{
+  "id": "json-example",
+  "name": "Floating gem",
+  "seed": 2,
+  "style": "moss",
+  "camera": { "target": [0, 1.5, 0], "dist": 12, "pitch": 0.2, "yaw": 0.4 },
+  "solids": [
+    { "kind": "ground", "mat": "earth", "rad": 4, "res": 0.2 },
+    { "kind": "ball", "at": [0, 1.8, 0], "r": 0.7, "mat": "accent", "part": "gem", "res": 0.12 }
+  ],
+  "parts": { "gem": { "joint": [0, 1.8, 0] } },
+  "motion": [
+    { "do": "spin", "part": "gem", "axis": [0, 1, 0], "speed": 0.8 },
+    { "do": "bob", "part": "gem", "amount": 0.2, "period": 3 }
+  ],
+  "tap": { "do": "sparks", "colours": "glow", "n": 12 }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "Lantern dusk",
+  "steps": [
+    { "id": "dusk-exposure", "type": "exposure", "stops": -0.22 },
+    { "id": "shadow-contrast", "type": "contrast", "factor": 1.12, "pivot": 0.32 },
+    { "id": "mute-daylight", "type": "saturation", "factor": 0.78 },
+    { "id": "turn-foliage", "type": "hue", "degrees": 32, "amount": 0.62 },
+    {
+      "id": "cool-stone",
+      "type": "channelMix",
+      "matrix": [[0.79, 0.11, 0.03], [0.04, 0.88, 0.11], [0.10, 0.17, 1.07]],
+      "offset": [0.009, 0.028, 0.075]
+    },
+    {
+      "id": "blue-shoulder",
+      "type": "curves",
+      "curves": {
+        "channels": {
+          "blue": { "interpolation": "smooth", "stops": [[0, 0.01], [0.32, 0.43], [0.73, 0.88], [1, 1]] }
+        }
+      }
+    },
+    {
+      "id": "violet-cast",
+      "type": "lut",
+      "amount": 0.42,
+      "lut": {
+        "size": 2,
+        "data": [
+          0.01, 0, 0.03, 0.96, 0.03, 0.06, 0.03, 0.92, 0.15, 0.96, 0.95, 0.15,
+          0.29, 0.07, 0.97, 1, 0.07, 0.99, 0.29, 0.98, 1, 1, 1, 1
+        ]
+      }
+    },
+    {
+      "id": "lantern-inlay",
+      "type": "paletteRemap",
+      "remap": {
+        "rules": [
+          { "from": "stone.shadow", "to": "#17263d" },
+          { "from": "accent.highlight", "to": "#f4a773" }
+        ],
+        "protect": [0, "glow"]
+      }
+    }
+  ]
+}

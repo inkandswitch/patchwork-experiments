@@ -1,0 +1,10 @@
+{
+  "type": "complementary",
+  "color": "#f39a57",
+  "opposite": "#3998a6",
+  "route": "neutral",
+  "neutralLightness": 0.70,
+  "shade": [0.77, 0],
+  "shadow": "#362839",
+  "steps": [15, 9]
+}

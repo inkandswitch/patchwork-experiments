@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion FX · Ink Studio</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #131b26; color: #eff8df; }
+  body { margin: 0; }
+  main { max-width: 920px; margin: auto; padding: 24px 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 16px; }
+  .workbench { display: grid; grid-template-columns: minmax(260px, 3fr) minmax(300px, 2fr); gap: 18px; }
+  canvas { display: block; width: 100%; aspect-ratio: 3/2; background: #111923; image-rendering: pixelated; }
+  .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  fieldset { border: 1px solid #465864; padding: 10px; margin: 0 0 12px; min-width: 0; }
+  label { display: inline-flex; align-items: center; gap: 5px; }
+  button, select, input[type=number] { padding: 5px 7px; }
+  input[type=number] { width: 67px; }
+  output { display: block; margin: 7px 0; color: #b1cdc9; font-variant-numeric: tabular-nums; }
+  #lanes { display: grid; gap: 5px; margin-top: 16px; }
+  .row { display: grid; grid-template-columns: minmax(120px, 190px) 1fr; gap: 8px; align-items: center; }
+  .row button { text-align: left; }
+  .row button[aria-current=true] { border-color: #83ded0; }
+  .strip { position: relative; height: 25px; background: #111923; border-radius: 3px; }
+  .range { position: absolute; inset-block: 3px; border-radius: 2px; background: var(--hue); }
+  .range.disabled { opacity: .35; }
+  .stamp, .head { position: absolute; inset-block: 0; width: 1px; background: #ecf8ec; pointer-events: none; }
+  .stamp { inset-block: 3px; opacity: .58; }
+  #scrub { width: 100%; accent-color: #83ded0; margin-top: 8px; }
+  @media (max-width: 700px) { .workbench { grid-template-columns: 1fr; } }
+</style>
+<main>
+  <h1>Motion FX</h1>
+  <div class="workbench">
+    <section aria-label="Motion effects preview">
+      <canvas width="144" height="96" aria-label="Courier with animated stretch, smear, trail and sweep"></canvas>
+      <output id="clock">Loading turn…</output>
+      <div class="controls">
+        <button id="play" type="button">Play turn</button>
+        <button id="beat" type="button">Loop selected beat</button>
+        <label><input id="before" type="checkbox"> Compare source</label>
+      </div>
+    </section>
+    <form id="editor">
+      <fieldset>
+        <legend id="effect-name">Effect</legend>
+        <div class="controls">
+          <label><input id="enabled" type="checkbox"> Enabled</label>
+          <label>Part <select id="part"></select></label>
+        </div>
+        <output id="output"></output>
+      </fieldset>
+      <fieldset>
+        <legend>Beat timing</legend>
+        <div class="controls">
+          <label>From <input id="from" type="number" min="0" max="2.5" step="any" required></label>
+          <label>To <input id="to" type="number" min="0" max="2.5" step="any" required></label>
+          <label>Intensity <input id="peak" type="number" min="0" max="1" step="any" required></label>
+          <button type="submit">Apply beat</button>
+        </div>
+        <output id="notice" aria-live="polite"></output>
+      </fieldset>
+    </form>
+  </div>
+  <nav id="lanes" aria-label="Motion FX timeline"></nav>
+  <input type="range" id="scrub" min="0" max="2.5" value="0" step="0.001" aria-label="Clip time">
+</main>
+<script src="../dist/ink-studio.browser.js"></script>
+<script src="./pose-blocking.js"></script>
+<script src="./motion-fx.js"></script>
+<script type="module">
+  import { createRenderer } from '../webgl.mjs';
+
+  const $ = id => document.getElementById(id), clock = $('clock');
+  try {
+    const scene = motionFxScene({ makeBuilder, makeSculpt, KIT }), world = scene.build(scene.seed);
+    const demo = world.motionFxDemo, fx = world.motionFx;
+    const renderer = createRenderer(document.querySelector('canvas'), { toolkit: { KIT, PixelLook } });
+    const titles = { stretch: 'Stretch', smear: 'Smear', trail: 'Trail', sweep: 'Solid sweep' };
+    const hues = { stretch: '#407d7a', smear: '#694b81', trail: '#965883', sweep: '#a16a3c' };
+    const partName = name => name.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+    const title = effect => titles[effect.kind] + ' · ' + (effect.parts?.map(partName).join(', ') ?? 'all parts');
+    let id = fx.effects()[0].id, time = 0, elapsed = 0, heads = [], playing = false, loop = false, lastFrame;
+    $('part').replaceChildren(new Option('All parts', ''), ...demo.names.map(name => new Option(partName(name), name)));
+    function effect() { return fx.effects().find(layer => layer.id === id); }
+    function draw() {
+      const before = $('before').checked;
+      const frame = demo.update(time, { source: before });
+      renderer.render(world, { width: 144, height: 96, time, camera: { ortho: true, yaw: world.cam.yaw+0.12 }, damp: false });
+      const selected = frame.layers.find(layer => layer.id === id);
+      const active = frame.layers.filter(layer => layer.amount > 0).length;
+      clock.value = time.toFixed(2) + ' s · ' + (before ? 'Source pose' : active + ' active FX');
+      $('output').value = Math.round(selected.amount*100) + '% at playhead' +
+        (selected.deformed ? ' · ' + selected.deformed + ' deformed parts' : '') +
+        (selected.splats ? ' · ' + selected.splats + ' splats' : '') +
+        (selected.budgetSkipped ? ' · splat budget reached' : '');
+      $('scrub').value = time;
+      for (const head of heads) head.style.left = Math.min(99.9, 100*time/fx.duration) + '%';
+    }
+    function stop() {
+      playing = false;
+      lastFrame = undefined;
+      $('play').textContent = 'Play turn';
+      $('beat').textContent = 'Loop selected beat';
+    }
+    function seek(next) {
+      stop();
+      time = next;
+      draw();
+    }
+    function showLayer() {
+      const selected = effect();
+      $('effect-name').textContent = title(selected);
+      $('enabled').checked = selected.enabled;
+      $('part').value = selected.parts?.[0] ?? '';
+      $('from').value = selected.keys[0][0];
+      $('to').value = selected.keys.at(-1)[0];
+      $('peak').value = selected.intensity;
+    }
+    function lanes() {
+      heads = [];
+      $('lanes').replaceChildren(...fx.effects().map(layer => {
+        const row = document.createElement('div'), button = document.createElement('button');
+        const strip = document.createElement('div'), fill = document.createElement('span');
+        row.className = 'row';
+        strip.className = 'strip';
+        button.type = 'button';
+        button.textContent = title(layer);
+        button.setAttribute('aria-current', layer.id === id);
+        button.onclick = () => {
+          id = layer.id;
+          $('notice').value = '';
+          showLayer();
+          lanes();
+          const peak = layer.keys.reduce((a, b) => b[1] > a[1] ? b : a);
+          seek(peak[0]);
+        };
+        fill.className = 'range' + (layer.enabled ? '' : ' disabled');
+        fill.style.left = 100*layer.keys[0][0]/fx.duration + '%';
+        fill.style.width = Math.max(0.25, 100*(layer.keys.at(-1)[0]-layer.keys[0][0])/fx.duration) + '%';
+        fill.style.setProperty('--hue', hues[layer.kind]);
+        strip.append(fill);
+        for (const key of layer.keys) {
+          const stamp = document.createElement('i');
+          stamp.className = 'stamp';
+          stamp.style.left = 100*key[0]/fx.duration + '%';
+          strip.append(stamp);
+        }
+        const head = document.createElement('i');
+        head.className = 'head';
+        heads.push(strip.appendChild(head));
+        row.append(button, strip);
+        return row;
+      }));
+    }
+    function edit(patch) {
+      fx.edit(id, patch);
+      stop();
+      showLayer();
+      lanes();
+      draw();
+    }
+    $('enabled').onchange = () => edit({ enabled: $('enabled').checked });
+    $('part').onchange = () => edit({ parts: $('part').value ? [$('part').value] : undefined, base: undefined, tip: undefined });
+    $('editor').onsubmit = event => {
+      event.preventDefault();
+      const layer = effect(), from = Number($('from').value), to = Number($('to').value), peak = Number($('peak').value);
+      if (from >= to) { $('notice').value = 'End must come after start'; return; }
+      const start = layer.keys[0][0], end = layer.keys.at(-1)[0];
+      try {
+        const keys = layer.keys.map(([t, amount, ease]) => [
+          t === start ? from : t === end ? to : KIT.mix(from, to, (t-start)/(end-start)),
+          amount, ease
+        ]);
+        edit({ keys, intensity: peak });
+        $('notice').value = 'Beat updated';
+      } catch (error) { $('notice').value = error.message; }
+    };
+    $('before').onchange = draw;
+    $('scrub').oninput = () => seek(Number($('scrub').value));
+    $('play').onclick = () => {
+      if (playing && !loop) return stop();
+      if (loop || time >= fx.duration) time = 0;
+      stop();
+      loop = false;
+      playing = true;
+      $('play').textContent = 'Pause turn';
+    };
+    $('beat').onclick = () => {
+      if (playing && loop) return stop();
+      stop();
+      loop = playing = true;
+      elapsed = 0;
+      $('beat').textContent = 'Pause selected beat';
+    };
+    function animate(now) {
+      if (playing && (lastFrame === undefined || now-lastFrame >= 1000/24)) {
+        const dt = lastFrame === undefined ? 0 : (now-lastFrame)/1000;
+        lastFrame = now;
+        if (loop) {
+          const layer = effect(), start = Math.max(0,layer.keys[0][0]-0.12), end = Math.min(fx.duration,layer.keys.at(-1)[0]+0.12);
+          elapsed += dt * 0.55;
+          time = start+elapsed%(end-start);
+        } else {
+          time = Math.min(fx.duration,time+dt);
+          if (time === fx.duration) stop();
+        }
+        draw();
+      }
+      requestAnimationFrame(animate);
+    }
+    showLayer();
+    lanes();
+    draw();
+    requestAnimationFrame(animate);
+  } catch (error) { clock.value = error.message; }
+</script>

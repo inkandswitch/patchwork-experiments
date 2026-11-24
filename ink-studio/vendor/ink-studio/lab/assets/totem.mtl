@@ -1,0 +1,10 @@
+newmtl stone
+Kd 0.55 0.56 0.6
+newmtl wood
+Kd 0.5 0.3 0.16
+newmtl paint
+Kd 0.75 0.16 0.14
+newmtl gold
+Kd 0.95 0.75 0.2
+newmtl cloth
+Kd 0.15 0.45 0.6

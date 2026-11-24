@@ -1,0 +1,36 @@
+{
+  "format": "ink-studio/world", "version": 1, "id": "rotating-dock", "dt": 0.04,
+  "systems": {
+    "spin": { "kind": "gravity", "config": {
+      "frame": { "kind": "rotation", "center": [0, 0, 0], "axis": [0, 0, 1], "omega": 1.15, "coriolis": false }
+    } },
+    "tank": { "kind": "fields", "config": { "fields": {
+      "depth": { "type": "number", "units": "world", "bounds": { "min": [2, -0.65, -0.62], "max": [4.22, 0.65, 0.62] },
+        "grid": { "counts": [2, 2, 2], "values": [-1, 1.22, -1, 1.22, -1, 1.22, -1, 1.22] } }
+    } } },
+    "rig": { "kind": "mechanics", "config": {
+      "gravityField": "spin/frame", "drag": 3.2,
+      "bodies": {
+        "hull": { "position": [2.30, 0, 0.04], "half": [0.23, 0.14, 0.29], "mass": 1.4,
+          "gravityAlign": 30, "look": [19, 20, 21, 22, 23] },
+        "roof": { "half": [0.122, 0.056, 0.20], "mass": 0.08, "look": [21, 22, 23, 24] },
+        "back": { "fixed": true, "position": [3.49, 0, -0.68], "half": [1.14, 0.8, 0.065], "look": [2, 3, 4, 5] },
+        "floor": { "fixed": true, "position": [4.30, 0, 0], "half": [0.083, 0.80, 0.65], "look": [1, 2, 3, 4] },
+        "north-bank": { "fixed": true, "position": [3.67, 0.73, 0], "half": [0.64, 0.062, 0.65], "look": [13, 14, 15, 16] },
+        "south-bank": { "fixed": true, "position": [3.67, -0.73, 0], "half": [0.64, 0.062, 0.65], "look": [13, 14, 15, 16] },
+        "upper-lip": { "fixed": true, "position": [2.42, 0.73, -0.32], "half": [0.30, 0.063, 0.31], "look": [19, 20, 21] },
+        "lower-lip": { "fixed": true, "position": [2.42, -0.73, -0.32], "half": [0.30, 0.063, 0.31], "look": [19, 20, 21] }
+      },
+      "joints": { "roof": { "kind": "fixed", "parent": "hull", "child": "roof", "anchor": [0, 0.17, 0] } },
+      "forces": { "float": { "kind": "buoyancy", "body": "hull", "field": "tank/depth", "radius": 0.42,
+        "displacement": 2.1, "density": 1 } }
+    } }
+  },
+  "visual": {
+    "bounds": { "min": [1.7, -1.24, -0.9], "max": [4.55, 1.24, 0.9] }, "resolution": 0.037, "ground": -8,
+    "camera": { "target": [3.25, 0, 0], "dist": 5.4, "yaw": -0.22, "pitch": 0.28 },
+    "fields": { "bodies": "rig/bodies" },
+    "atmosphere": [{ "type": "box", "min": [3, -0.65, -0.62], "max": [4.22, 0.65, 0.62],
+      "density": 0.65, "color": "#3489ad" }]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "spatial-yard",
+  "dt": 0.25,
+  "entities": {
+    "bench": {"kind": "workbench", "tags": ["repair"], "sockets": {"left": [-1, 0, 0], "right": [1, 0, 0]}}
+  },
+  "systems": {
+    "crew": {
+      "kind": "agents",
+      "config": {
+        "bounds": {"min": [-10, -1, -10], "max": [10, 6, 10]},
+        "species": {"worker": {"mode": "walk", "radius": 0.24, "height": 1.5}},
+        "agents": {
+          "foreman": {"species": "worker", "position": [-3, 0, 0], "name": "Robin"},
+          "porter": {"species": "worker", "position": [-2, 0, 1]}
+        }
+      }
+    },
+    "shop": {
+      "kind": "mechanics",
+      "config": {
+        "bodies": {
+          "bench": {"fixed": true, "position": [0, 1, 0], "half": [0.8, 0.3, 0.6]},
+          "crate": {"fixed": true, "position": [1, 0.9, 0], "half": [0.35, 0.8, 0.5]}
+        }
+      }
+    }
+  }
+}

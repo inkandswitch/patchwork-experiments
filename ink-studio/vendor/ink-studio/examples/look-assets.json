@@ -1,0 +1,57 @@
+{
+  "id": "relay-works",
+  "name": "Relay works",
+  "seed": 31,
+  "style": "slate",
+  "camera": { "target": [0, 0.55, 0], "dist": 8.9, "pitch": 0.6, "yaw": 0.36, "sway": 0 },
+  "light": { "sun": [-0.59, 0.82, 0.41], "amb": 0.20, "sky": 0.22 },
+  "finish": {
+    "detail": 19,
+    "radius": 6.8,
+    "outline": { "c": 0, "edge": 0.11 },
+    "look": {
+      "pixelSize": 3,
+      "asset": { "asset": "relay/blue-hour", "revision": 1, "strength": 0.78 },
+      "paletteRemap": { "rules": [], "protect": ["glow"] }
+    }
+  },
+  "solids": [
+    { "kind": "box", "at": [0,-0.21,0], "half": [2.69,0.27,1.56], "round": 0.20, "mat": "stone", "res": 0.076 },
+    { "kind": "box", "at": [0,0.04,0], "half": [2.53,0.08,1.42], "round": 0.13, "mat": { "role": "pale", "noise": 0.22 }, "res": 0.067 },
+    { "kind": "box", "at": [-1.03,0.21,0], "half": [0.76,0.11,0.83], "round": 0.075, "mat": "dark", "res": 0.049 },
+    { "kind": "box", "at": [1.03,0.21,0], "half": [0.76,0.11,0.83], "round": 0.075, "mat": "dark", "res": 0.049 },
+    {
+      "kind": "box", "id": "sea-glaze", "at": [-1.03,0.92,-0.06], "half": [0.66,0.63,0.65], "round": 0.20, "res": 0.042,
+      "mat": { "role": "bone", "lookAsset": { "asset": "relay/glazed-enamel", "revision": 1 } }
+    },
+    {
+      "kind": "box", "id": "clay-glaze", "at": [1.03,0.92,-0.06], "half": [0.66,0.63,0.65], "round": 0.20, "res": 0.042,
+      "mat": {
+        "role": "bone",
+        "lookAsset": {
+          "asset": "relay/glazed-enamel",
+          "revision": 1,
+          "strength": 0.88,
+          "params": { "shadow": "#4d2435", "mid": "#ae5653", "highlight": "#f4bc86" },
+          "palette": ["#4d2435", "#783747", "#ae5653", "#d48562", "#f4bc86"]
+        }
+      }
+    },
+    { "kind": "box", "at": [-1.03,1.59,-0.05], "half": [0.42,0.08,0.38], "round": 0.065, "mat": "stone", "res": 0.042 },
+    { "kind": "box", "at": [1.03,1.59,-0.05], "half": [0.42,0.08,0.38], "round": 0.065, "mat": "stone", "res": 0.042 },
+    { "kind": "box", "at": [-1.03,1.15,0.53], "half": [0.39,0.16,0.076], "round": 0.07, "mat": "dark", "res": 0.032 },
+    { "kind": "box", "at": [1.03,1.15,0.53], "half": [0.39,0.16,0.076], "round": 0.07, "mat": "dark", "res": 0.032 },
+    { "kind": "box", "at": [-1.13,1.15,0.628], "half": [0.17,0.039,0.035], "round": 0.034, "mat": { "role": "glow", "glow": true }, "res": 0.03 },
+    { "kind": "box", "at": [0.93,1.15,0.628], "half": [0.17,0.039,0.035], "round": 0.034, "mat": { "role": "glow", "glow": true }, "res": 0.03 },
+    { "kind": "ball", "at": [-0.77,1.15,0.623], "r": [0.045,0.045,0.027], "mat": "metal", "res": 0.03 },
+    { "kind": "ball", "at": [1.29,1.15,0.623], "r": [0.045,0.045,0.027], "mat": "metal", "res": 0.03 },
+    { "kind": "tube", "pts": [[-1.03,1.59,-0.06],[-1.03,1.88,-0.06],[1.03,1.88,-0.06],[1.03,1.59,-0.06]], "r": 0.073, "mat": "metal", "res": 0.032 },
+    { "kind": "tube", "pts": [[-1.27,0.63,0.61],[-1.27,0.48,0.89],[-1.02,0.39,0.97],[-0.78,0.48,0.89],[-0.78,0.63,0.61]], "r": 0.041, "mat": "metal", "res": 0.03 },
+    { "kind": "tube", "pts": [[0.79,0.63,0.61],[0.79,0.48,0.89],[1.04,0.39,0.97],[1.28,0.48,0.89],[1.28,0.63,0.61]], "r": 0.041, "mat": "metal", "res": 0.03 },
+    { "kind": "box", "at": [0,0.14,0.94], "half": [0.29,0.08,0.28], "round": 0.07, "mat": "stone", "res": 0.039 },
+    { "kind": "rock", "at": [-2.04,0.12,0.74], "r": [0.34,0.24,0.30], "mat": "moss", "res": 0.052 },
+    { "kind": "rock", "at": [1.99,0.12,0.72], "r": [0.31,0.26,0.28], "mat": "moss", "res": 0.052 },
+    { "kind": "rock", "at": [-1.96,0.16,-0.83], "r": [0.36,0.30,0.30], "mat": "moss", "res": 0.052 },
+    { "kind": "rock", "at": [1.98,0.11,-0.84], "r": [0.31,0.24,0.30], "mat": "moss", "res": 0.052 }
+  ]
+}

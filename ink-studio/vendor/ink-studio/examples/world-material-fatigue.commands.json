@@ -1,0 +1,16 @@
+[
+  { "tick": 7, "action": "world/input", "args": { "port": "rig/drive.hinge", "value": -1.5 } },
+  { "tick": 9, "action": "world/input", "args": { "port": "rig/force.cycle-load", "value": -1 } },
+  { "tick": 13, "action": "world/input", "args": { "port": "rig/drive.hinge", "value": 1.5 } },
+  { "tick": 17, "action": "world/input", "args": { "port": "rig/force.cycle-load", "value": 1 } },
+  { "tick": 19, "action": "world/input", "args": { "port": "rig/drive.hinge", "value": -1.5 } },
+  { "tick": 25, "action": "world/input", "args": { "port": "rig/force.cycle-load", "value": -1 } },
+  { "tick": 25, "action": "world/input", "args": { "port": "rig/drive.hinge", "value": 1.5 } },
+  { "tick": 31, "action": "world/input", "args": { "port": "rig/drive.hinge", "value": -1.5 } },
+  { "tick": 33, "action": "world/input", "args": { "port": "rig/force.cycle-load", "value": 1 } },
+  { "tick": 37, "action": "world/input", "args": { "port": "rig/drive.hinge", "value": 1.5 } },
+  { "tick": 41, "action": "world/input", "args": { "port": "rig/force.cycle-load", "value": 0 } },
+  { "tick": 43, "action": "world/input", "args": { "port": "rig/drive.hinge", "value": -1.5 } },
+  { "tick": 45, "action": "rig/impulse", "args": { "body": "load", "linear": [0, 8, 8] } },
+  { "tick": 49, "action": "world/input", "args": { "port": "rig/drive.hinge", "value": 0 } }
+]

@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloth Review · Ink Studio</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #131b26; color: #eff8df; }
+  body { margin: 0; }
+  main { max-width: 1020px; margin: auto; padding: 24px 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 16px; }
+  .workbench { display: grid; grid-template-columns: minmax(0, 1fr) 228px; gap: 16px; align-items: start; }
+  .pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  figure { margin: 0 0 8px; }
+  figcaption { margin-top: 6px; font-size: .9rem; color: #b1cdc9; }
+  .view { position: relative; }
+  .view canvas { display: block; width: 100%; aspect-ratio: 3/2; background: #111923; image-rendering: pixelated; }
+  .view .overlay { position: absolute; inset: 0; background: transparent; pointer-events: none; }
+  fieldset { border: 1px solid #465864; padding: 10px; margin: 0; min-width: 0; }
+  canvas#mask { display: block; width: min(100%, 170px); height: auto; image-rendering: pixelated; touch-action: none; cursor: crosshair; margin: 8px 0; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+  button, select { padding: 5px 7px; }
+  label { display: inline-flex; align-items: center; gap: 4px; }
+  input[type=range] { accent-color: #83ded0; }
+  #scrub { width: 100%; margin: 10px 0 0; }
+  output { display: block; margin-top: 6px; color: #b1cdc9; font-variant-numeric: tabular-nums; }
+  .pin { color: #ffbf73; } .free { color: #80dfd0; } .protected { color: #f28a9a; }
+  @media (max-width: 720px) { .workbench { grid-template-columns: 1fr; } }
+</style>
+<main>
+  <h1>Cloth Review</h1>
+  <div class="workbench">
+    <section aria-label="Cloth comparison">
+      <div class="pair">
+        <figure><div class="view">
+          <canvas id="before" width="144" height="96" aria-label="Current authored cape pose"></canvas>
+          <canvas id="before-guide" class="overlay" width="144" height="96" aria-hidden="true"></canvas>
+        </div><figcaption>Before · captured pose</figcaption></figure>
+        <figure><div class="view">
+          <canvas id="after" width="144" height="96" aria-label="Cloth simulation result"></canvas>
+          <canvas id="after-guide" class="overlay" width="144" height="96" aria-hidden="true"></canvas>
+        </div><figcaption id="after-label">After · preview</figcaption></figure>
+      </div>
+      <div class="controls">
+        <label>Source pose <input id="pose" type="range" min="0" max="1.8" step="0.01" value="0.9"></label>
+        <output id="pose-time"></output>
+        <label><input id="guides" type="checkbox" checked> Show regions</label>
+      </div>
+      <div class="controls">
+        <button id="start" type="button">Preview from current pose</button>
+        <button id="bake" type="button" disabled>Bake settled take</button>
+        <button id="replay" type="button" disabled>Replay bake</button>
+        <button id="download" type="button" disabled>Download bake</button>
+      </div>
+      <input id="scrub" type="range" min="0" max="0" step="0.001" value="0" aria-label="Preview or baked time" disabled>
+      <output id="status" aria-live="polite">Loading cape…</output>
+    </section>
+    <fieldset>
+      <legend>Cloth regions</legend>
+      <label>Brush <select id="brush">
+        <option value="pin">Pin</option><option value="free">Free</option><option value="protected">Protected</option>
+      </select></label>
+      <canvas id="mask" width="150" height="170" aria-label="Paint cloth region grid"></canvas>
+      <div class="controls">
+        <span id="pin-count" class="pin"></span>
+        <span id="free-count" class="free"></span>
+        <span id="protected-count" class="protected"></span>
+      </div>
+      <div class="controls"><button id="reset" type="button">Restore example regions</button></div>
+    </fieldset>
+  </div>
+</main>
+<script src="../dist/ink-studio.browser.js"></script>
+<script src="./pose-blocking.js"></script>
+<script src="./cloth-review.js"></script>
+<script type="module">
+  import { createRenderer } from '../webgl.mjs';
+  import { makeCamera } from '../src/webgl/view.mjs';
+
+  const $ = id => document.getElementById(id), status = $('status');
+  try {
+    const scene = clothReviewScene({ makeBuilder, makeSculpt, KIT }), world = scene.build(scene.seed);
+    const demo = world.clothDemo, review = world.clothReview, { nu, nv } = review;
+    const toolkit = { KIT, PixelLook };
+    const before = createRenderer($('before'), { toolkit }), after = createRenderer($('after'), { toolkit });
+    const size = { width: 144, height: 96 }, camera = { ortho: true };
+    const colors = { pin: '#ffbf73', free: '#80dfd0', protected: '#f28a9a' };
+    const mask = $('mask'), brush = mask.getContext('2d');
+    mask.width = nu * 10; mask.height = nv * 10;
+    let elapsed = 0, begin, action, take, pointer, lastFrame = -Infinity;
+    const seconds = n => n.toFixed(2) + ' s';
+    function guide(id, points, regions) {
+      const ctx = $(id).getContext('2d');
+      ctx.clearRect(0, 0, size.width, size.height);
+      if (!$('guides').checked) return;
+      const { view: m, projection: p } = makeCamera(world, { camera }, size.width, size.height);
+      for (const [i, role] of regions.entries()) {
+        const x = points[i*3], y = points[i*3+1], z = points[i*3+2];
+        const px = Math.round((1+(m[0]*x+m[4]*y+m[8]*z+m[12])*p[0])*size.width/2);
+        const py = Math.round((1-(m[1]*x+m[5]*y+m[9]*z+m[13])*p[5])*size.height/2);
+        ctx.globalAlpha = role === 'free' ? 0.7 : 0.94;
+        ctx.fillStyle = colors[role];
+        ctx.fillRect(px, py, role === 'free' ? 1 : 2, role === 'free' ? 1 : 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+    function draw() {
+      const state = review.state(), regions = review.regions();
+      const points = demo.draw('before');
+      before.render(world, { ...size, camera, damp: false });
+      guide('before-guide', points, regions);
+      const current = demo.draw('preview', elapsed, take);
+      after.render(world, { ...size, camera, damp: false });
+      guide('after-guide', current, regions);
+      $('pose-time').value = seconds(demo.selected());
+      $('scrub').disabled = state.phase === 'idle';
+      $('scrub').max = take?.duration ?? state.time;
+      $('scrub').value = elapsed;
+      $('bake').disabled = state.phase !== 'settled';
+      $('replay').disabled = $('download').disabled = !take;
+      $('after-label').textContent = take ? 'After · baked playback' : 'After · preview';
+      if (take) status.value = 'Baked ' + state.frames + ' frames · ' + seconds(elapsed) + ' / ' + seconds(take.duration);
+      else if (state.phase === 'idle') status.value = 'Choose a source pose and preview';
+      else if (state.phase === 'settled') status.value = 'Settled at ' + seconds(state.time) + ' · ready to bake';
+      else if (state.phase === 'unsettled') status.value = 'Preview limit reached · cloth still moving';
+      else status.value = 'Simulating · ' + seconds(state.time) + ' · peak speed ' + state.maxSpeed.toFixed(3);
+    }
+    function drawMask() {
+      const count = { pin: 0, free: 0, protected: 0 };
+      brush.fillStyle = '#21303d';
+      brush.fillRect(0, 0, mask.width, mask.height);
+      review.regions().forEach((role, i) => {
+        brush.fillStyle = colors[role];
+        brush.fillRect(i%nu*10+1, Math.floor(i/nu)*10+1, 8, 8);
+        count[role]++;
+      });
+      for (const role of Object.keys(count)) $(role+'-count').textContent = role[0].toUpperCase()+role.slice(1)+' '+count[role];
+    }
+    function resetPreview() {
+      review.discard();
+      elapsed = 0; take = action = undefined;
+      drawMask();
+      draw();
+    }
+    function paint(event) {
+      const rect = mask.getBoundingClientRect();
+      const x = Math.floor((event.clientX-rect.left)/rect.width*nu);
+      const y = Math.floor((event.clientY-rect.top)/rect.height*nv);
+      if (x < 0 || x >= nu || y < 0 || y >= nv) return;
+      const i = y*nu+x, next = review.regions().slice(), role = $('brush').value;
+      if (next[i] === role) return;
+      next[i] = role;
+      review.setRegions(next);
+      resetPreview();
+    }
+    mask.onpointerdown = event => {
+      pointer = event.pointerId;
+      mask.setPointerCapture(pointer);
+      paint(event);
+    };
+    mask.onpointermove = event => { if (pointer === event.pointerId) paint(event); };
+    mask.onlostpointercapture = () => { pointer = undefined; };
+    $('reset').onclick = () => { review.setRegions(demo.defaultRegions); resetPreview(); };
+    $('pose').oninput = () => { demo.select(Number($('pose').value)); resetPreview(); };
+    $('guides').onchange = draw;
+    $('start').onclick = () => {
+      demo.start();
+      take = undefined; begin = undefined; elapsed = 0; action = 'preview';
+      draw();
+    };
+    $('bake').onclick = () => {
+      take = review.bake();
+      elapsed = take.duration;
+      action = undefined;
+      draw();
+    };
+    $('replay').onclick = () => {
+      begin = undefined; elapsed = 0; action = 'replay';
+      draw();
+    };
+    $('download').onclick = () => {
+      const blob = new Blob([JSON.stringify(take)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'courier-cape-bake.json';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    };
+    $('scrub').oninput = () => {
+      action = undefined;
+      elapsed = Number($('scrub').value);
+      draw();
+    };
+    function animate(now) {
+      if (action && now-lastFrame >= 1000/24) {
+        begin ??= now;
+        lastFrame = now;
+        const time = (now-begin)/1000;
+        if (action === 'preview') {
+          const state = review.advance(time);
+          elapsed = state.time;
+          if (state.phase !== 'running') action = undefined;
+        } else {
+          elapsed = Math.min(time, take.duration);
+          if (elapsed === take.duration) action = undefined;
+        }
+        draw();
+      }
+      requestAnimationFrame(animate);
+    }
+    drawMask();
+    draw();
+    requestAnimationFrame(animate);
+  } catch (error) { status.value = error.message; }
+</script>
