@@ -19,8 +19,8 @@ import { normalizeTransform } from "../transform.js";
 import * as ops from "../ops.js";
 import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, CONTROLS_CLASS, REBUILD_EVENT } from "../embed.js";
 
-/** Load priority for anything an extension asked to see first (api.focus). */
-const FOCUS_PRIORITY = 1e12;
+/** Load priority of the selected object: before anything else. */
+const SELECTED_PRIORITY = 1e12;
 /** What addObject settles itself, which its `fields` never override. */
 const ADD_OWNS = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims", "saved"]);
 const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
@@ -50,6 +50,7 @@ function hintVolume(o) {
  *   sources: object,                   // the scene:source registry
  *   registry: (type: string) => object | null,
  *   doc: () => object,
+ *   selected: () => string | null,     // this stage's element of the viewer's selection: it loads first
  *   writable: () => boolean,
  *   onStatus: () => void,              // an object's state changed
  *   onDrawn: () => void,               // something new is drawn (a GLB arrived)
@@ -57,7 +58,7 @@ function hintVolume(o) {
  *   onProviders: () => void,           // which provider a render doc names is known, or changed
  * }} o
  */
-export function createContent({ repo, time, readOnly, announce, root, scope, sources, registry, doc, writable, onStatus, onDrawn, onSources, onProviders }) {
+export function createContent({ repo, time, readOnly, announce, root, scope, sources, registry, doc, selected, writable, onStatus, onDrawn, onSources, onProviders }) {
   let dead = false;
   const routes = new Map(); // id → where its content was routed at the last place: "built", "file", "scene" or null
   // id → what is known of its content, by route: { content: "built", ...what the manager said },
@@ -67,7 +68,6 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
   const hintKeys = new Map(); // id → hint bounds last given to the viewport
   const drawn = new Map(); // id → the stand-in bytes drawn for it
   const createdHere = new Set(); // render docs made here, this session: nothing to wait to sync before building
-  const focusBy = new Map(); // extension id → Set of object ids it wants first
   // has the manager said which provider this object's render doc names? (not before the doc has loaded)
   const said = (st) => st?.content === "built" && st.loaded;
   /** An object's state (./state.js), from what is known of it. */
@@ -178,11 +178,8 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     onState: (id, st) => setState(id, { content: "file", file: { phase: st.phase, error: st.error } }),
   });
 
-  const focused = (id) => {
-    for (const s of focusBy.values()) if (s.has(id)) return true;
-    return false;
-  };
-  const priorityOf = (id, o) => (focused(id) ? FOCUS_PRIORITY : hintVolume(o));
+  // what is shown loads biggest first, the selection first of all
+  const priorityOf = (id, o) => (id === selected() ? SELECTED_PRIORITY : hintVolume(o));
 
   // The embedded build controls (../embed.js) show a built object's state
   // and whether it's fixed, which they ask for with CONTEXT_EVENT (below):
@@ -497,11 +494,6 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     of,
     /** where an object's content was routed ("built", "file", "scene": a stage), or null */
     route: (id) => routes.get(id) ?? null,
-    /** extension `ext` wants these objects loaded first (none: it no longer does) */
-    focus(ext, list) {
-      if (list?.length) focusBy.set(ext, new Set(list));
-      else focusBy.delete(ext);
-    },
     /** the providers named by the render docs it has heard from */
     providerIds: () => [...objState.values()].map((s) => s?.providerId),
     /** has every shown built object with a source said which provider its render doc names? */

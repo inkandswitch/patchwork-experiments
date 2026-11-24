@@ -328,6 +328,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     sources: patchworkPlugins.getRegistry("scene:source"),
     registry: getRegistry,
     doc,
+    selected: () => viewValue().selected ?? null,
     writable,
     onStatus: statusChanged,
     onDrawn: displayChanged,
@@ -961,11 +962,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       /** the box of an object, a group (its members') or, for null, the scene; `in`: an object's frame instead of the stage's */
       box: (target, { hints = true, in: frameId = null } = {}) => (target == null ? scope.sceneBox({ hints }) : scope.objectBox(target, { hints, in: frameId })),
       worldOf: displayedWorld,
-      focus: (ids) => {
-        if (!live()) return;
-        content.focus(id, ids == null ? [] : typeof ids === "string" ? [ids] : [...ids]);
-        applyDoc(derive());
-      },
       providersFor: content.providersFor,
       addObject: content.addObject,
 
@@ -1078,7 +1074,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       scheduled = scheduled.filter((s) => s.rec !== rec);
       // 6: its world groups
       scope.removeLayers(id);
-      // 7: labels, overlays, styles, listeners and watchers, extent, focus
+      // 7: labels, overlays, styles, listeners and watchers, extent
       for (const key of own.labelKeys ?? []) scope.labels.clear(key);
       router.refresh();
       for (const el of own.els) el.remove();
@@ -1086,7 +1082,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       for (const give of [...own.offs]) give();
       own.offs.clear();
       scope.setExtent(id, null);
-      content.focus(id, null);
       owned.delete(id);
     }
 
@@ -1241,6 +1236,16 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // ─── the stage's atom, the flush ──────────────────────────────────────────
 
   cleanups.push(local.watch(() => requestFlush()));
+  // the selection loads first (../content/content.js): a newly selected object is placed again, at the front of the queue
+  let selectedSeen = null;
+  cleanups.push(
+    view.atom.watch(() => {
+      const sel = viewValue().selected ?? null;
+      if (sel === selectedSeen) return;
+      selectedSeen = sel;
+      if (sel != null && !dead) applyDoc(derive());
+    }),
+  );
 
   // ─── leaving the page (the view's pagehide and pageshow) ──────────────────
   // It says bye at once (api.page's "hide" first, so services let go of what they hold);

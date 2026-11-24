@@ -209,7 +209,8 @@ Anchor = { objectId, local, world }  // a point in its object's frame: follows i
 render manager, which shows what was built even without its provider. One
 without goes where its provider's `content` says (`"file"`: the GLB queue;
 `"scene"`: a link). Anything else is drawn as its `hint`.
-`api.content(id).route` says which. All of it is `src/content/`, the
+`api.content(id).route` says which. Only what is shown loads, biggest
+first, the viewer's selection first of all. All of it is `src/content/`, the
 stage's one door to it `createContent` (`src/content/content.js`).
 
 ### Fixed versions (`at`)
