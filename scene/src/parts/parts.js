@@ -6,7 +6,8 @@
 // one), grouped by category, with a search once there are enough of them.
 // With no parts registered there is no tab, nor its toggle: what isn't
 // contributed doesn't exist. The tab and taking a dropped part are the
-// editor's: made as the Edit hand is picked up, gone as it is put down.
+// editor's: the tab made as the Edit hand is picked up and gone as it is put
+// down, a drop heard through scene.drops (./drops.js) while it is held.
 //
 // Putting one in:
 //   - drag it into the view: it lands where the pointer hits. On an object it
@@ -28,7 +29,6 @@
 
 import css from "./parts.css?inline";
 import { isGroup } from "../groups.js";
-import { fromEmbed } from "../embed.js";
 import { partLanding } from "./parts-place.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { part } from "./editor.js";
@@ -123,7 +123,6 @@ function create(api) {
   api.style(css);
   const live = () => !api.signal.aborted;
   const port = api.port;
-  const root = api.root ?? port;
 
   // ── what there is ────────────────────────────────────────────────────────
   let parts = [];
@@ -272,37 +271,24 @@ function create(api) {
   // ── dragging into the view ───────────────────────────────────────────────
   const inPort = (e) => e.target instanceof Node && port.contains(e.target);
 
-  /** The drop listeners, while editing (below). → off */
-  function listenForDrops() {
-    const offs = [
-      api.listen(root, "dragover", (e) => {
-        if (e.defaultPrevented || fromEmbed(e, root) || !isPartDrag(e.dataTransfer)) return;
-        if (!inPort(e)) return hideRing();
-        e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-        const land = landAt(...local(e), tagsOf(dragging), e.altKey);
-        if (land) showRing(land, dragging);
-        else hideRing();
-      }),
-      api.listen(root, "dragleave", (e) => {
-        if (!isPartDrag(e.dataTransfer)) return;
-        if (!(e.relatedTarget instanceof Node) || !port.contains(e.relatedTarget)) hideRing();
-      }),
-      api.listen(root, "drop", (e) => {
-        if (e.defaultPrevented || fromEmbed(e, root) || !isPartDrag(e.dataTransfer)) return;
-        hideRing();
-        if (!inPort(e)) return;
-        e.preventDefault();
-        const id = readPartDrag(e.dataTransfer);
-        if (!id) return;
-        void place(id, landAt(...local(e), tagsOf(id), e.altKey));
-      }),
-    ];
-    return () => {
-      for (const off of offs) off();
-      hideRing();
-    };
-  }
+  // what scene.drops offers (./drops.js): a part dragged over the port and dropped
+  const dropping = {
+    over(e) {
+      if (!isPartDrag(e.dataTransfer)) return false;
+      if (!inPort(e)) return hideRing(), false;
+      const land = landAt(...local(e), tagsOf(dragging), e.altKey);
+      if (land) showRing(land, dragging);
+      else hideRing();
+      return true;
+    },
+    leave: () => hideRing(),
+    drop(e) {
+      if (!isPartDrag(e.dataTransfer) || !inPort(e)) return false;
+      const id = readPartDrag(e.dataTransfer);
+      if (id) void place(id, landAt(...local(e), tagsOf(id), e.altKey));
+      return true;
+    },
+  };
 
   // ── the panel ────────────────────────────────────────────────────────────
   function mountView(body) {
@@ -387,29 +373,21 @@ function create(api) {
     return view;
   }
 
-  // the editor's chrome, while the Edit hand is held: a drawer tab the viewer
-  // opens (Parts in the toolbar, while some package offers one), and drops
-  const chrome = whileHolding(api, EDIT, () => {
-    const tab = drawerTab(api, {
+  // the editor's chrome, made while the Edit hand is held: a drawer tab the
+  // viewer opens (Parts in the toolbar, while some package offers one)
+  const tab = whileHolding(api, EDIT, () =>
+    drawerTab(api, {
       id: "parts",
       title: "Parts",
       mount(body) {
         const v = mountView(body);
         return { update: () => v.draw(), dispose: () => v.dispose() };
       },
-    });
-    const offDrops = listenForDrops();
-    return {
-      tab,
-      dispose() {
-        offDrops();
-        tab.dispose();
-      },
-    };
-  });
-  const tab = () => chrome()?.tab ?? null;
+    }),
+  );
 
   return {
+    dropping,
     commands: [tabToggle(tab, { id: "parts", name: "Parts", icon: "parts", title: "Parts to put into the scene: drag one in, or click to put it where you're looking", available: () => parts.length > 0 })],
     update: (scene, local) => tab()?.update(scene, local),
     /** the tab, while editing (for tests and probes) */

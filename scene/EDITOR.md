@@ -16,7 +16,7 @@ drops, templates and parts. An **edit** is the editor's write
 | `scene.inspector` | the one pane: the outline (`outline.js`) and the selection's fields |
 | `scene.halo`, `scene.handles`, `scene.dimensions`, `scene.measure` | Move (`V`), a tool, and while it's held the selection's move, rotate and scale handles (in the parent's drawn frame, one write on release) and knobs; dimensions and their panel; Measure (`M`, the Dimensions panel's button) |
 | `scene.frame`, `scene.autoframe`, `scene.grid`, `scene.axes`, `scene.bounds`, `scene.units`, `scene.legends` | the view's aids |
-| `scene.add`, `scene.transfer`, `scene.parts`, `scene.undo` | drops; copy and paste; the parts bin; Undo and Redo |
+| `scene.drops`, `scene.add`, `scene.transfer`, `scene.parts`, `scene.undo` | what is dropped or pasted into the view, heard once; documents added; copy and paste; the parts bin; Undo and Redo |
 
 **Colours**: a part that draws declares its CSS colour tokens, each with its
 one default, in its own stylesheet, and reads them (`resolveCssColor`,
@@ -40,7 +40,8 @@ selection. **Editing** is holding a hand of kind `edit` (`src/parts/editing.js`)
 The editor's commands say `hand: "edit"`, so they apply exactly then and a tool
 picked up through one (Move, Measure) goes down with it (STAGE.md, "Commands");
 its chrome (the inspector, the toolbar's editor cluster, the grid, axes and
-bounds, the knobs, the drawer's tabs, drops and paste) is made with
+bounds, the knobs, the drawer's tabs, the start screen, the listener for drops
+and pastes) is made with
 `whileHolding(api, "edit", make)` (STAGE.md, "Hands") as it is picked up and
 disposed as it is put down (H13), and no part asks whether it is editing.
 Putting it down puts down the selection.
@@ -120,6 +121,17 @@ be written here.
 ## Drops, templates and parts
 
 ### Drops
+
+**Into the view** (`scene.drops`, `src/parts/drops.js`): while the Edit hand
+is held, one listener each for drags, drops and pastes on the view's root
+offers each, in running order, to every instance's contribution until one
+says true: `dropping: { over(e) → boolean, leave?(), drop(e) → boolean }`
+(`over`: it would take a drop here, and shows where; `leave`: the drag left,
+ended, or another took it) and `pasting: (e) → boolean` (a paste outside a
+field). What an embedded document or something under the pointer took first
+never reaches them; what nobody takes is the browser's. The editor's:
+`scene.transfer` (a row from another scene, a copied object), `scene.add` (a
+document or file, a pasted document link), `scene.parts` (a part).
 
 A doc added by drop or paste goes to each extension whose metadata `drops`
 takes its datatype (`"*"`: any): its module's `drop(ctx, info)` → boolean (or a

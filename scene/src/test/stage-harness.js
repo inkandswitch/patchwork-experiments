@@ -13,8 +13,10 @@
 // `type: "scene:view"`. They are registered in that order, which is the
 // order the view plugins run in.
 // Nothing else runs unless the test asks: `editor: true` registers the
-// editor's hand (scene.edit) after them (s.edit(on) picks it up or puts it
-// down), and `natives: true` the native services last (or a list of their
+// editor's hand (scene.edit) and its one listener for drops and pastes
+// (scene.drops, which offers them to the parts' `dropping` and `pasting`)
+// after them (s.edit(on) picks the hand up or puts it down), and
+// `natives: true` the native services last (or a list of their
 // ids, NATIVES). A kernel test brings small plugins of its own instead
 // (src/test/links.js opens linked docs). The scene's own datatypes and
 // sources are registered too, `templates` are
@@ -26,6 +28,7 @@ import { emptyScene } from "./empty-scene.js";
 import { realTime } from "../stage/time.js";
 import { getRegistry, resetRegistries } from "./plugins-mock.js";
 import { holding } from "../stage/bodies.js";
+
 const editing = (view) => holding(view, "edit");
 
 export { flush };
@@ -112,7 +115,8 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
     resetRegistries();
     const { plugins } = await import("../index.js");
     for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype") getRegistry(p.type).register(p);
-    const all = editor && !extensions.some((x) => x.meta.id === "scene.edit") ? [...extensions, { meta: { id: "scene.edit" }, module: (await import("../parts/edit.js")).default }] : extensions;
+    const editorParts = editor ? [["scene.edit", (await import("../parts/edit.js")).default], ["scene.drops", (await import("../parts/drops.js")).default]] : [];
+    const all = [...extensions, ...editorParts.filter(([id]) => !extensions.some((x) => x.meta.id === id)).map(([id, module]) => ({ meta: { id }, module }))];
     for (const { meta: m, module } of all) {
       const [type, meta] = await asRegistered(m);
       getRegistry(type).register({ type, name: meta.id, ...meta, load: async () => module });

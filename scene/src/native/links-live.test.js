@@ -143,7 +143,7 @@ describe("a live link opens a stage for its doc", () => {
     expect(ids(m.g)).toEqual(["t.card", "t.game"]);
     expect(ids(s.debug.view.stage(0))).toEqual(["t.host"]);
     const at = (st) => s.debug.view.pluginsAt(st).map((p) => p.id).filter((id) => !NATIVES.includes(id));
-    expect([at(s.debug.view.stage(0)), at(m.g)]).toEqual([["t.view", "scene.keys", "scene.edit"], []]);
+    expect([at(s.debug.view.stage(0)), at(m.g)]).toEqual([["t.view", "scene.keys", "scene.edit", "scene.drops"], []]);
     expect(m.g.path).toEqual(["L"]);
     expect(m.g.url).toBe(m.game.url);
     expect(s.api("t.host").use("links").role("L")).toEqual({ role: "acting", open: true });

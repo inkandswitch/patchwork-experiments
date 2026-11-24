@@ -103,7 +103,7 @@ describe("scene.add", () => {
     // its maker lands in the game, in the body it starts people in; nothing stops
     expect(s.local.get().body.id).toBe("t.sit");
     expect(s.local.get().running.map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["t.game"]);
-    expect(s.debug.view.plugins.running().map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["scene.add", "scene.edit"]);
+    expect(s.debug.view.plugins.running().map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["scene.add", "scene.edit", "scene.drops"]);
   });
 
   // templates {no params, with params} × {click it as offered, choose in its form then click} → what create gets
@@ -274,30 +274,30 @@ describe("scene.add", () => {
     await mount();
     const hint = s.port.querySelector(".add-drop-hint");
     expect(hint.hidden).toBe(true);
-    s.canvas.dispatchEvent(dragEvent("dragenter", { "text/plain": stl.url }));
-    expect(hint.hidden).toBe(false);
-    // crossing into a child and out of the canvas: still over the port
-    s.port.querySelector(".add-layer").dispatchEvent(dragEvent("dragenter", { "text/plain": stl.url }));
-    s.canvas.dispatchEvent(dragEvent("dragleave", { "text/plain": stl.url }));
-    expect(hint.hidden).toBe(false);
     const over = dragEvent("dragover", { "text/plain": stl.url });
     s.canvas.dispatchEvent(over);
-    expect(over.defaultPrevented).toBe(true);
-    expect(over.dataTransfer.dropEffect).toBe("copy");
-    s.port.querySelector(".add-layer").dispatchEvent(dragEvent("dragleave", { "text/plain": stl.url }));
+    expect([hint.hidden, over.defaultPrevented, over.dataTransfer.dropEffect]).toEqual([false, true, "copy"]);
+    // a child of the port: still over it
+    s.port.querySelector(".add-layer").dispatchEvent(dragEvent("dragover", { "text/plain": stl.url }));
+    expect(hint.hidden).toBe(false);
+    // the stage outside the port (a side panel) takes the drop too, with no hint
+    const beside = dragEvent("dragover", { "text/plain": stl.url });
+    s.root.dispatchEvent(beside);
+    expect([hint.hidden, beside.defaultPrevented]).toEqual([true, true]);
+    s.canvas.dispatchEvent(dragEvent("dragover", { "text/plain": stl.url }));
+    // out of the stage: gone
+    s.canvas.dispatchEvent(dragEvent("dragleave", { "text/plain": stl.url }));
     expect(hint.hidden).toBe(true);
     // a row being moved in the outline isn't a document being added
     const row = { [ROW_MIME]: JSON.stringify({ scene: s.handle.url, id: "a", ids: ["a"] }) };
-    s.canvas.dispatchEvent(dragEvent("dragenter", row));
-    expect(hint.hidden).toBe(true);
     const rowOver = dragEvent("dragover", row);
     s.canvas.dispatchEvent(rowOver);
-    expect(rowOver.defaultPrevented).toBe(false);
+    expect([hint.hidden, rowOver.defaultPrevented]).toEqual([true, false]);
     const rowDrop = await drop(row);
     expect(rowDrop.defaultPrevented).toBe(false);
     expect(objectsOf(s)).toEqual([]);
     // a drop hides the hint
-    s.canvas.dispatchEvent(dragEvent("dragenter", { "text/plain": stl.url }));
+    s.canvas.dispatchEvent(dragEvent("dragover", { "text/plain": stl.url }));
     expect(hint.hidden).toBe(false);
     await drop({ "text/plain": stl.url });
     expect(hint.hidden).toBe(true);
