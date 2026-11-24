@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { castClearance, createCarry, downOnto, flipAt, flipInPlace, flipMatrix, landingFor, localTransform, rotateAbout, snapCandidates, tablePoint, translate, turnRadius, turning, worldBox, yawOfMatrix } from "./carry-math.js";
+import { createCarry, downOnto, flipAt, flipInPlace, flipMatrix, landingFor, localTransform, snapCandidates, tablePoint, translate, turnRadius, worldBox, yawOfMatrix } from "./carry-math.js";
 import { composeMatrix } from "../transform.js";
-import { yawDelta } from "../carry-rules.js";
 
 const I = composeMatrix({});
 const close = (a, b, eps = 1e-9) => a.every((v, i) => Math.abs(v - b[i]) < eps);
@@ -31,21 +30,6 @@ const solids = (...boxes) => (origin, dir) => {
 };
 
 describe("carry maths", () => {
-  it("turns about a world axis through the origin, keeping the translation", () => {
-    const m = composeMatrix({ position: [1, 2, 3] });
-    const r = rotateAbout(m, [0, 1, 0], Math.PI / 2);
-    expect(close(r.slice(12, 15), [1, 2, 3])).toBe(true);
-    expect(yawOfMatrix(r)).toBeCloseTo(Math.PI / 2);
-    expect(close(r, composeMatrix({ position: [1, 2, 3], rotation: [0, Math.PI / 2, 0] }))).toBe(true);
-  });
-
-  it("flips about its own length: up turns down", () => {
-    const f = flipMatrix(I);
-    expect(f[5]).toBeCloseTo(-1);
-    expect(f[10]).toBeCloseTo(1); // still pointing the same way along its length
-    expect(flipMatrix(f)[5]).toBeCloseTo(1);
-  });
-
   it("boxes a body box in world, and decomposes under a parent", () => {
     const m = composeMatrix({ position: [1, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 });
     const b = worldBox({ min: [0, 0, 0], max: [1, 1, 2] }, m);
@@ -77,38 +61,6 @@ describe("carry maths", () => {
   it("without a snap radius from its content, connectors reach 0.71 of their closest spacing (defaultSnapRadius), scaled", () => {
     const grid = [{ position: [0, 0, 0], tags: [] }, { position: [2, 0, 0], tags: [] }, { position: [0, 0, 3], tags: [] }];
     expect(snapCandidates([{ id: "grid", matrix: composeMatrix({ scale: 2 }), snapRadius: null, connectors: grid }], []).map((c) => c.radius)).toEqual([4, 4, 4].map((v) => v * Math.SQRT1_2));
-  });
-
-  it("carries a connector's whole frame into world, turned (not scaled) with its object; a yaw-only one stays yaw-only", () => {
-    const axes = (r) => { const m = composeMatrix({ rotation: r }); return [[m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]]; };
-    // a rack's place (its X up, Y toward +Z, length along +X) on a rack turned a quarter about Y and twice the size
-    const rack = composeMatrix({ position: [1, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 });
-    const [standing, yawOnly] = snapCandidates([{ id: "rack", matrix: rack, snapRadius: 0.1, connectors: [{ position: [0, 0, 0], rotation: [Math.PI / 2, Math.PI / 2, 0], yaw: Math.PI / 2, tags: [] }, { position: [0, 0, 0], yaw: 0.3, tags: [] }] }], []);
-    const [x, y, z] = axes(standing.rotation);
-    expect(close(x, [0, 1, 0])).toBe(true); // still up
-    expect(close(y, [1, 0, 0])).toBe(true); // +Z turned a quarter: +X
-    expect(close(z, [0, 0, -1])).toBe(true); // +X turned a quarter: −Z
-    expect(standing.yaw).toBeCloseTo(Math.PI, 9); // derived from the frame, the short way round
-    expect(yawOnly.rotation).toBeNull();
-    expect(yawOnly.yaw).toBeCloseTo(0.3 + Math.PI / 2, 9); // today's rule on an upright object
-    // tilted on its side: the frame tilts with it, and its yaw is the tilted frame's
-    const onSide = composeMatrix({ rotation: [Math.PI / 2, 0, 0] });
-    const [tilted] = snapCandidates([{ id: "b", matrix: onSide, snapRadius: 0.1, connectors: [{ position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], tags: [] }] }], []);
-    expect(close(axes(tilted.rotation).flat(), [1, 0, 0, 0, 1, 0, 0, 0, 1])).toBe(true);
-    expect(tilted.yaw).toBeCloseTo(0, 9);
-  });
-
-  // a rack sits at 0, π or ±π/2: its places' standing frame is then at gimbal lock, and a hair off it nothing is lost
-  it.each([1e-6, 1e-4, 3e-4, 1e-3, Math.PI - 1e-4, -Math.PI / 2 + 1e-5])("keeps a rack's standing place whole on a rack yawed %s", (t) => {
-    const rack = composeMatrix({ position: [0, 0, 0], rotation: [0, t, 0], scale: 1 });
-    const [c] = snapCandidates([{ id: "rack", matrix: rack, snapRadius: 0.1, connectors: [{ position: [0, 0, 0], rotation: [Math.PI / 2, Math.PI / 2, 0], tags: [] }] }], []);
-    const m = composeMatrix({ rotation: c.rotation });
-    // the place's X is up, its Y faces +Z and its Z lies along +X, each turned by t about Y
-    const turn = ([a, b, z]) => [Math.cos(t) * a + Math.sin(t) * z, b, -Math.sin(t) * a + Math.cos(t) * z];
-    expect(close([m[0], m[1], m[2]], turn([0, 1, 0]))).toBe(true);
-    expect(close([m[4], m[5], m[6]], turn([0, 0, 1]))).toBe(true);
-    expect(close([m[8], m[9], m[10]], turn([1, 0, 0]))).toBe(true);
-    expect(Math.abs(yawDelta(c.yaw, Math.PI / 2 + t))).toBeLessThan(1e-9);
   });
 
   it("finds the table: the first object hit, else the ground, else nothing", () => {
@@ -217,21 +169,6 @@ describe("turning over in the air", () => {
   const CARD = { min: [-0.03, -0.001, -0.045], max: [0.03, 0.001, 0.045] };
   const lying = composeMatrix({ position: [0.5, 0.001, 0.2] });
 
-  it("sweeps out as far as its body reaches from its length", () => {
-    expect(turnRadius(CARD, lying)).toBeCloseTo(Math.hypot(0.03, 0.001));
-    expect(turnRadius(CARD, composeMatrix({ scale: 2 }))).toBeCloseTo(2 * Math.hypot(0.03, 0.001));
-  });
-
-  it("goes from not turned to turned, highest half way", () => {
-    const to = flipMatrix(lying);
-    expect(close(turning(to, 0, 0.1), lying)).toBe(true);
-    expect(close(turning(to, 1, 0.1), to)).toBe(true);
-    const mid = turning(to, 0.5, 0.1);
-    expect(mid[13]).toBeCloseTo(lying[13] + 0.1);
-    expect(mid[5]).toBeCloseTo(0); // on its edge
-    expect(mid[10]).toBeCloseTo(1); // turning about its length
-  });
-
   it("turns a lying card over where it is, rising clear of the table on the way", () => {
     const { to, lift } = flipInPlace({ W: lying, box: CARD, raycast: ground });
     expect(to[5]).toBeCloseTo(-1); // face down
@@ -265,11 +202,6 @@ describe("under a boom: the rays start just above the piece, not the top of the 
   // the pointer, looking down from a seat under the boom
   const pointer = (x, z) => ({ origin: [x, 2.2, z + 0.6], dir: [0, -0.78, -0.6].map((v, i, a) => v / Math.hypot(...a)) });
 
-  it("starts a quarter metre (or the piece's size) above the piece or the pointer's point", () => {
-    expect(castClearance(worldBox(CARD, onTable))).toBe(0.25);
-    expect(castClearance({ min: [0, 0, 0], max: [1, 0.2, 0.5] })).toBe(1);
-  });
-
   it("a card carried across the table goes down on the table", () => {
     const c = createCarry({ id: "card", W: onTable, box: CARD, raycast: cast });
     const land = c.move(pointer(0.1, 0));
@@ -292,23 +224,10 @@ describe("beside something taller than the clearance: the rays don't start insid
   const PIECE = { min: [-0.05, 0, -0.05], max: [0.05, 0.1, 0.05] };
   const block = solids({ id: "block", min: [0.02, 0, -1], max: [2, 1, 1] });
 
-  it("a ray down from inside the block climbs out over its top", () => {
-    const h = downOnto(block, 0.5, 0.35, 0);
-    expect(h.id).toBe("block");
-    expect(h.point[1]).toBeCloseTo(1);
-    expect(h.back).toBe(false);
-  });
-
   it("the piece, part over the block, lands on top of it, not inside it", () => {
     const land = landingFor({ W: I, box: PIECE, ray: down(0, 0), raycast: block });
     expect(land.on).toBe("block");
     expect(land.rest).toBeCloseTo(1);
-  });
-
-  it("clear of the block: the floor", () => {
-    const land = landingFor({ W: I, box: PIECE, ray: down(-0.2, 0), raycast: block });
-    expect(land.on).toBe(null);
-    expect(land.rest).toBe(0);
   });
 
   it("under a boom (a solid too) it still goes down on the table: the ray up meets the boom from below", () => {

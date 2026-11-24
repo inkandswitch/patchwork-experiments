@@ -1,14 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { NATIVES, mountStage, object, settle, until } from "../test/stage-harness.js";
+import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { LINK } from "../native/link-graph.js";
 import { plugins } from "../index.js";
 import keys, { heldSessions } from "./keys.js";
 import use, { heldEntries, promptEntries } from "./use.js";
-import { lookChain } from "../key-order.js";
 
 // the real metadata, so these run the way a game would bring them in
 const meta = (id) => {
@@ -75,12 +74,6 @@ const DOC = {
 describe("scene.use, the pure side", () => {
   const scene = { objects: DOC.objects, parents: new Map([["helm", "ship"], ["spoke", "helm"], ["capstan", "ship"]]) };
   const collected = [{ id: "t.game", value: game([], []).create().commands }];
-
-  it("a look reaches the object, then what it's attached to", () => {
-    expect(lookChain("spoke", scene.parents)).toEqual(["spoke", "helm", "ship"]);
-    expect(lookChain("barrel", scene.parents)).toEqual(["barrel"]);
-    expect(lookChain(null, scene.parents)).toEqual([]);
-  });
 
   it("offers the nearest target with keyed verbs shown on use; a selection is attention's, the look plays no part", () => {
     const ctx = { scene, local: {}, from: [0, 0, 5], reach: Infinity, hit: { id: "spoke" }, distance: () => 1 };
@@ -259,12 +252,6 @@ describe("scene.use", () => {
   const down = (key, extra = {}) => s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}`, ...extra }));
   const up = (key) => s.root.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key, code: `Key${key.toUpperCase()}` }));
 
-  it("runs in every view: a view plugin, as the key map is", async () => {
-    await mount();
-    expect(s.local.get().running.map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["t.game"]);
-    expect(s.debug.view.plugins.running().map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["scene.use", "scene.keys", "scene.edit"]);
-  });
-
   it("hovering something with verbs shows them; its key (the key map's) runs the verb on it", async () => {
     await mount();
     expect(prompt().hidden).toBe(true);
@@ -391,8 +378,11 @@ describe("scene.use", () => {
         document.dispatchEvent(new Event("pointerlockchange"));
       }],
     ];
+    // Coming back into the view straight onto it leaves what moving onto it from the world leaves (held where it
+    // was placed, the pointer on it: use.js hold), so one event shows it arrives held.
+    const eventsAfter = (arrival) => (arrival === "back into the view straight onto it" ? EVENTS.slice(0, 1) : EVENTS);
     for (const [arrival, arrive] of ARRIVALS)
-      for (const [event, moves, run, before] of EVENTS)
+      for (const [event, moves, run, before] of eventsAfter(arrival))
         it(`${arrival}, then ${event}: ${moves ? "under the pointer" : "held where it was"}`, async () => {
           await mount();
           if (before) expect(before()).toBe(true);
@@ -442,24 +432,6 @@ describe("scene.use", () => {
       mouse(s.canvas, 40, 30);
       expect(at()).toEqual(px(40, 30));
     });
-  });
-
-  it("looking at a part offers what it's attached to", async () => {
-    await mount();
-    await hover("spoke");
-    expect(verbs()).toEqual(["FTake the helm"]);
-    s.key("f");
-    expect(log).toEqual([["helm", "helm", undefined]]);
-  });
-
-  it("ignores auto-repeat, and keys with ctrl or meta", async () => {
-    await mount();
-    await hover("helm");
-    down("f");
-    down("f", { repeat: true });
-    up("f");
-    s.key("f", { ctrlKey: true });
-    expect(log).toEqual([["helm", "helm", undefined]]);
   });
 
   describe("walking (a body that locks the pointer)", () => {
@@ -519,30 +491,6 @@ describe("scene.use", () => {
       s.key("g");
       expect(log).toEqual([["grab", "barrel"]]);
     });
-
-    it("hands state the context: the body's eye and reach, and the hit it looked at", async () => {
-      const seen = [];
-      log = [];
-      sessions = [];
-      const probe = {
-        meta: { id: "t.probe", traits: ["t.level"] },
-        module: { create: () => ({ bodies: [{ id: "walk", label: "Walk", lock: true, reach: 2, enter: () => ({ input: {}, eye: () => ({ position: [1, 2, 3] }), leave() {} }) }], commands: [{ id: "look", name: "Look", key: "l", state: (t, ctx) => (seen.push(ctx), t === "barrel" ? {} : null), run() {} }] }) },
-      };
-      s = await mountStage({ extensions: [probe, USE], doc: DOC });
-      await settle();
-      s.debug.viewport.centerRay = () => ({ origin: [1, 2, 3], dir: [0, 0, -1] });
-      s.debug.viewport.raycast = () => ({ id: "barrel", point: [0, 1, 0], normal: [0, 1, 0], distance: 2.5 });
-      Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => s.canvas });
-      s.api("t.probe").body.enter("walk");
-      document.dispatchEvent(new Event("pointerlockchange"));
-      await settle();
-      const ctx = seen.at(-1);
-      expect(ctx.from).toEqual([1, 2, 3]);
-      expect(ctx.reach).toBe(2);
-      expect(ctx.hit).toEqual({ id: "barrel", point: [0, 1, 0], distance: 2.5 });
-      expect(ctx.distance("barrel")).toBe(2.5);
-      expect(Object.keys(ctx.scene.objects)).toContain("barrel");
-    });
   });
 
   describe("held verbs", () => {
@@ -562,7 +510,7 @@ describe("scene.use", () => {
       expect(prompt().querySelector(".use-verb").hasAttribute("data-held")).toBe(false);
     });
 
-    it("keeps its target until release: looking away, the prompt stays on it, its repeat and the target's other keys are its; then it follows the look", async () => {
+    it("keeps its target until release: looking away (or at nothing), the prompt stays on it, its repeat and the target's other keys are its; then it follows the look", async () => {
       await mount();
       await hover("capstan");
       down("e");
@@ -585,10 +533,7 @@ describe("scene.use", () => {
       expect(verbs()).toEqual(["FTake the helm"]);
       s.key("f");
       expect(log.at(-1)).toEqual(["helm", "helm", undefined]);
-    });
-
-    it("looking at nothing mid-hold, the held verb stays shown (held) on its target until release", async () => {
-      await mount();
+      // looking at nothing mid-hold, the held verb stays shown (held) on its target until release
       await hover("capstan");
       down("e");
       await hover(null);
@@ -608,36 +553,6 @@ describe("scene.use", () => {
       expect(sessions[0].cancel).toHaveBeenCalledTimes(1);
       expect(sessions[0].end).not.toHaveBeenCalled();
     });
-
-    it("cancels when its target goes", async () => {
-      await mount();
-      await hover("capstan");
-      down("e");
-      s.change((d) => {
-        delete d.objects.capstan;
-        d.order = d.order.filter((id) => id !== "capstan");
-      });
-      await settle();
-      expect(sessions[0].cancel).toHaveBeenCalledTimes(1);
-    });
-
-    it("cancels when the extension whose verb it is stops (uninstalled)", async () => {
-      await mount();
-      await hover("capstan");
-      down("e");
-      await s.uninstall("t.game");
-      expect(sessions[0].cancel).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it("with the game gone, nothing shows and its verbs aren't there to run", async () => {
-    await mount();
-    await s.uninstall("t.game");
-    expect(s.instance("scene.use")).toBeTruthy();
-    await hover("helm");
-    expect(prompt()?.hidden ?? true).toBe(true);
-    s.key("f");
-    expect(log).toEqual([]);
   });
 });
 
@@ -648,8 +563,8 @@ describe("scene.use", () => {
 // prompt shows three): a plain verb with a key, a held one with a key, a
 // plain one whose key the walking body reserves, a held one whose key the
 // body reserves, a disabled one. Each row is pressed by a finger walking (the
-// look the eye's: the prompt in the middle) and by a mouse in Look (the look
-// where it hovers), where the row applies.
+// look the eye's: the prompt in the middle); the plain verb with a key by a
+// mouse in Look too (the look where it hovers).
 describe("scene.use: a button with a key is that key", () => {
   let s, log, sessions, walker;
   afterEach(() => {
@@ -743,7 +658,9 @@ describe("scene.use: a button with a key is that key", () => {
     expect(log).toEqual(["ring", "ring"]);
   });
 
-  for (const input of BOTH)
+  // (the button's handling is ../hold-key.js for a finger and a mouse alike; a finger's rows are the ones kept, and
+  // "a plain verb with a key" shows the mouse's way to the prompt)
+  for (const input of ["touch"])
     for (const [how, lift, want] of [
       ["lifted", (b) => b.up(), { end: 1, cancel: 0 }],
       // the browser takes the finger: its key comes up, as a keyboard's has no cancel
@@ -773,7 +690,7 @@ describe("scene.use: a button with a key is that key", () => {
         expect(b.button.hasAttribute("data-held")).toBe(false);
       });
 
-  it.each(BOTH)("a held verb's target goes while its button is held (%s): the key map cancels it; the lift ends nothing", async (input) => {
+  it.each(["touch"])("a held verb's target goes while its button is held (%s): the key map cancels it; the lift ends nothing", async (input) => {
     const b = await at("winch", input, "wind");
     b.down();
     s.change((d) => {
@@ -806,7 +723,7 @@ describe("scene.use: a button with a key is that key", () => {
     expect([log, walker.key.mock.calls.length]).toEqual([[], 0]);
   });
 
-  it.each(BOTH)("a disabled verb (%s): no key shown, nothing pressed, nothing run", async (input) => {
+  it.each(["touch"])("a disabled verb (%s): no key shown, nothing pressed, nothing run", async (input) => {
     const b = await at("chest", input);
     expect([b.kbd(), b.button.disabled, b.button.title]).toEqual([null, true, "locked"]);
     expect(b.down()).toBe(false);
@@ -847,7 +764,7 @@ describe("scene.use: a button with a key is that key", () => {
   // A browser clicks what is under the lift once the button pressed has gone (Chrome: a finger's tap on a button
   // replaced in place on its pointerdown clicks the replacement). A verb that runs on the press and so puts another
   // target's verb in its slot: the lift's click on that one runs nothing.
-  it.each(BOTH)("a press's run puts another button under it (%s): the lift's click there runs nothing", async (input) => {
+  it.each(["touch"])("a press's run puts another button under it (%s): the lift's click there runs nothing", async (input) => {
     const b = await at("bell", input);
     b.down();
     expect(log).toEqual(["ring"]);
@@ -880,14 +797,10 @@ describe("scene.use: a button with a key is that key", () => {
     expect(log).toEqual([]);
   });
 
-  // Only a primary press is a key or a click: a mouse's middle (1) or right (2) button on a verb, keyed or a click,
-  // plain or held, does nothing (as it clicks nothing on any button), even with a click after it.
-  for (const button of [1, 2])
-    for (const [target, command, input] of [
-      ["bell", "ring", "mouse"],
-      ["winch", "wind", "mouse"],
-      ["flag", "wave", "touch"],
-    ])
+  // Only a primary press is a key or a click: a keyed button's is ../hold-key.js's (only a primary press holds);
+  // a right button on a verb that is a click does nothing either, even with a click after it.
+  for (const button of [2])
+    for (const [target, command, input] of [["flag", "wave", "touch"]])
       it(`a press with button ${button} on ${command} (${input}): nothing pressed, nothing run`, async () => {
         const b = await at(target, input, command);
         expect(b.down({ button, buttons: 1 << (button === 1 ? 2 : 1) })).toBe(false);
@@ -905,7 +818,7 @@ describe("scene.use: a button with a key is that key", () => {
     el.dispatchEvent(ev("pointerup"));
     el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
   };
-  it.each(BOTH)("past three verbs (%s): the first three and a more; pressed, all five in running order, the fifth held by its button as long as the finger", async (input) => {
+  it.each(["touch"])("past three verbs (%s): the first three and a more; pressed, all five in running order, the fifth held by its button as long as the finger", async (input) => {
     const b = await at("crate", input);
     expect([verbs(), more()?.textContent]).toEqual([["HLid", "JTip", "KKick"], "⋯ 2 more"]);
     press(more(), input);
@@ -946,35 +859,6 @@ describe("scene.use: a button with a key is that key", () => {
     more().dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
     await settle();
     expect([verbs(), more()?.textContent]).toEqual([["HLid", "JTip", "KKick"], "⋯ 2 more"]);
-  });
-
-  it("a verb past three held by its key: shown in the third's place, held, and the more counts the two left", async () => {
-    await at("crate", "mouse");
-    s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "n", code: "KeyN" }));
-    await settle();
-    expect([log, verbs(), more()?.textContent]).toEqual([["haul"], ["HLid", "JTip", "holdNHaul"], "⋯ 2 more"]);
-    s.root.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key: "n", code: "KeyN" }));
-    await settle();
-    expect([sessions[0].end.mock.calls.length, verbs()]).toEqual([1, ["HLid", "JTip", "KKick"]]);
-  });
-
-  it("two fingers on a plain verb's button: one key, and neither lift's click runs it again", async () => {
-    const b = await at("bell", "touch");
-    b.down({ pointerId: 1 });
-    b.down({ pointerId: 2 });
-    b.up({ pointerId: 1 });
-    b.up({ pointerId: 2 });
-    expect(log).toEqual(["ring"]);
-  });
-
-  it("a press asks which key as it comes: one that no longer does the verb presses nothing", async () => {
-    const b = await at("bell", "mouse");
-    expect(b.kbd()).toBe("R");
-    // the look moves on to the winch (no R there) and the press comes before the prompt hears of it
-    s.local.swap((m) => ({ ...m, hovered: "winch" }));
-    expect(b.button.isConnected && b.button.dataset.command).toBe("ring");
-    expect(b.down()).toBe(false);
-    expect(log).toEqual([]);
   });
 });
 

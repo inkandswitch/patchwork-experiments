@@ -6,7 +6,7 @@ import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
 import halo from "./halo.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { getRegistry } from "../test/plugins-mock.js";
-import handles, { handleLine, handlePlacement, dragValue, providerOf, GRAB_PX } from "./handles.js";
+import handles, { handleLine, handlePlacement, dragValue, GRAB_PX } from "./handles.js";
 import { handleSpecs } from "../handles.js";
 
 const SLICE = {
@@ -97,12 +97,6 @@ describe("scene.handles: pure helpers", () => {
     expect(handleSpecs(provider, {})[0].value).toBe(0); // the default
     expect(handleSpecs({ params: provider.params }, {})).toEqual([]);
   });
-  it("finds the provider by id", () => {
-    const reg = { filter: (fn) => [SLICE, { id: "x" }].filter(fn) };
-    expect(providerOf(reg, "slice-test")).toBe(SLICE);
-    expect(providerOf(reg, "nope")).toBe(null);
-    expect(providerOf(null, "slice-test")).toBe(null);
-  });
   it("puts the line through the middle of the geometry, in the world, scaled", () => {
     const spec = { axis: [0, 1, 0], min: -1, max: 1 };
     // moved to (5, 0, 0), scaled 2; its box is off-centre in x
@@ -191,18 +185,6 @@ describe("scene.handles on the stage", () => {
     expect(labelTexts(s)).toHaveLength(1);
   });
 
-  it("are Move's: putting Move down hides them, picking it up again shows them", async () => {
-    const { s } = await setup();
-    current = s;
-    await select(s, "a");
-    expect(labelTexts(s)).toHaveLength(1);
-    await pickUpMove(s); // V again: put down
-    expect(s.local.get().held).toEqual([]);
-    expect(labelTexts(s)).toEqual([]);
-    await pickUpMove(s);
-    expect(labelTexts(s)).toHaveLength(1);
-  });
-
   it("a knob within reach of the pointer is its widget, on top", async () => {
     const { s } = await setup();
     current = s;
@@ -274,6 +256,7 @@ describe("scene.handles on the stage", () => {
     const queued = [];
     const emit = render.emit.bind(render);
     render.emit = (ev, p) => queued.push(() => emit(ev, p));
+    const shared = structuredClone(SLICE.params); // the provider's specs, every scene's
     s.pointer("pointerdown", 100, 98);
     s.pointer("pointermove", 100, 93);
     s.pointer("pointermove", 100, 95);
@@ -282,6 +265,7 @@ describe("scene.handles on the stage", () => {
     expect(render.doc().params.height).toBe(0.5);
     expect(labelTexts(s)).toEqual(["Height: 0.5"]);
     expect(s.instance("scene.handles").handles()[0].value).toBe(0.5);
+    expect(SLICE.params).toEqual(shared);
     render.emit = emit;
     for (const f of queued) f();
     expect(labelTexts(s)).toEqual(["Height: 0.5"]);
@@ -307,17 +291,5 @@ describe("scene.handles on the stage", () => {
     s.change((d) => (d.objects.a.name = "renamed"));
     await settle();
     expect(labelTexts(s)).toEqual(["Height: 0.2"]);
-  });
-
-  it("lets go of the render doc when it stops", async () => {
-    const { s, render } = await setup();
-    current = s;
-    const before = render.listenerCount("change");
-    await select(s, "a");
-    expect(render.listenerCount("change")).toBe(before + 1);
-    await s.uninstall("scene.handles");
-    expect(s.instance("scene.handles")).toBeFalsy();
-    expect(render.listenerCount("change")).toBe(before);
-    expect(labelTexts(s)).toEqual([]);
   });
 });

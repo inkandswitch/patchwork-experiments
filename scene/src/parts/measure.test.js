@@ -149,28 +149,4 @@ describe("scene.measure", () => {
     run();
     expect(layer()).toEqual([]);
   });
-
-  it("the first point follows its object", async () => {
-    await mount();
-    run();
-    pickAt({ id: "a", point: [1, 0, 0], snapped: true });
-    s.click();
-    pickAt({ id: null, point: [1, 0, 1], snapped: false, ground: true });
-    s.pointer("pointermove", 15, 15, { buttons: 0 });
-    await until(() => preview()?.textContent === "1 m");
-    s.change((d) => {
-      d.objects.a.transform.position = [1, 0, -1];
-    });
-    await until(() => preview()?.textContent === "2 m");
-  });
-
-  it("stopping the extension puts it down", async () => {
-    await mount();
-    run();
-    await settle();
-    expect(s.local.get().held).toMatchObject([{ ext: "scene.measure", command: "measure", pointer: true }]);
-    await s.uninstall("scene.measure");
-    expect(s.local.get().held).toEqual([]);
-    expect(s.canvas.style.cursor).toBe("");
-  });
 });

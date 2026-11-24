@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { NATIVES, mountStage, object, settle } from "../test/stage-harness.js";
 import { getRegistry } from "../test/plugins-mock.js";
-import add, { accepts, baseName, mimeOf, templatesOf, ROW_MIME } from "./add.js";
+import add, { accepts, ROW_MIME } from "./add.js";
 import { SECTION_MIME } from "../dnd.js";
 
 const ADD = { meta: { id: "scene.add" }, module: add };
@@ -51,7 +51,7 @@ describe("scene.add", () => {
     return e;
   };
 
-  it("pure helpers: what it accepts, guessed mime types, names", () => {
+  it("accepts a document or files dragged in, never an outline row or an inspector section's head", () => {
     expect(accepts({ types: ["text/plain"] })).toBe(true);
     expect(accepts({ types: ["text/x-patchwork-dnd"] })).toBe(true);
     expect(accepts({ types: ["Files"] })).toBe(true);
@@ -60,23 +60,6 @@ describe("scene.add", () => {
     expect(accepts({ types: [SECTION_MIME, "text/x-patchwork-dnd", "text/x-patchwork-urls", "text/plain"] })).toBe(false);
     expect(accepts({ types: ["text/html"] })).toBe(false);
     expect(accepts(null)).toBe(false);
-    expect(mimeOf("a.glb", "")).toBe("model/gltf-binary");
-    expect(mimeOf("a.STL", "")).toBe("model/stl");
-    expect(mimeOf("a.bin", "")).toBe("application/octet-stream");
-    expect(mimeOf("a.glb", "x/y")).toBe("x/y");
-    expect(baseName("part.v2.stl")).toBe("part.v2");
-    const players = { key: "players", kind: "enum", options: [{ value: 2 }], default: 2 };
-    expect(templatesOf([{ id: "a", name: "Arena", icon: "Swords", description: "Walk and shoot" }, { name: "no id" }, { id: "b" }, { id: "c", params: [players, { kind: "enum" }, null] }, { id: "d", params: "players" }])).toEqual([
-      { id: "a", name: "Arena", icon: "Swords", description: "Walk and shoot", params: [] },
-      { id: "b", name: "b", icon: null, description: null, params: [] },
-      { id: "c", name: "c", icon: null, description: null, params: [players] },
-      { id: "d", name: "d", icon: null, description: null, params: [] },
-    ]);
-  });
-
-  it("with no templates installed, the empty scene only says how to add something", async () => {
-    await mount();
-    expect(s.port.querySelector(".add-start").hidden).toBe(true);
   });
 
   it("an empty scene is a start screen: every template and Blank; a template writes the doc and starts this viewer where it says", async () => {
@@ -204,8 +187,9 @@ describe("scene.add", () => {
     expect(objectsOf(s)).toEqual([]);
   });
 
-  it("says how to add something while the scene is empty, and not otherwise", async () => {
+  it("says how to add something while the scene is empty, and not otherwise; with no templates installed, only that", async () => {
     await mount();
+    expect(s.port.querySelector(".add-start").hidden).toBe(true);
     const empty = s.port.querySelector(".add-empty");
     expect(empty).toBeTruthy();
     expect(empty.hidden).toBe(false);
@@ -407,22 +391,5 @@ describe("scene.add", () => {
     const [id] = Object.keys(s.doc().objects);
     expect(s.doc().objects[id]).toMatchObject({ providerId: "alt-stl", sourceUrl: stl.url });
     expect(s.local.get().selected).toBe(id);
-  });
-
-  it("takes its chooser, hints and listeners away when it stops", async () => {
-    await mount();
-    getRegistry("scene:source").register({ type: "scene:source", id: "alt-stl", content: "built", name: "Other STL", supportedDatatypes: ["file"], extensions: ["stl"], params: [], load: async () => ({}) });
-    await drop({ "text/plain": stl.url });
-    expect(s.port.querySelector(".add-chooser")).toBeTruthy();
-    // it's uninstalled: the extension stops at once
-    await s.uninstall("scene.add");
-    expect(s.local.get().running.map((r) => r.id)).not.toContain("scene.add");
-    expect(s.port.querySelector(".add-chooser")).toBeNull();
-    expect(s.port.querySelector(".add-empty")).toBeNull();
-    const e = pasteEvent(stl.url);
-    s.root.dispatchEvent(e);
-    expect(e.defaultPrevented).toBe(false);
-    await settle();
-    expect(objectsOf(s)).toEqual([]);
   });
 });

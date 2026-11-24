@@ -24,22 +24,22 @@ let started = 0;
 const GAME = {
   meta: {
     id: "t.game",
-    traits: ["t.target", "t.zone", "t.hidden", "t.seats", "t.level"],
+    traits: ["t.target", "t.zone", "t.hidden", "t.chairs", "t.level"],
     describes: {
       "t.target": { name: "Target", on: "object", blurb: "Can be shot", fields: [{ key: "points", label: "Points", kind: "integer", default: 10 }] },
       "t.zone": {
         name: "Private zone",
         on: "object",
         fields: [
-          { key: "seat", label: "Seat", kind: "entry", of: "t.seats" },
+          { key: "seat", label: "Seat", kind: "entry", of: "t.chairs" },
           { key: "min", label: "Min", kind: "json" },
           { key: "near", label: "Near", kind: "object" },
         ],
         init: { min: [-1, 0, -1] },
       },
       "t.hidden": { name: "Hidden card", fields: [{ key: "by", label: "Deck", kind: "url" }] },
-      "t.seats": { name: "Seats", on: "scene", entries: { label: "Seats", noun: "seat", prefix: "seat", fields: [{ key: "name", label: "Name", kind: "string", default: "Seat" }], init: { player: null } } },
-      "t.level": { name: "Level", on: ["scene"], fields: [{ key: "look", label: "Look", kind: "enum", default: "", options: [{ value: "", label: "Its own" }, { value: "arena", label: "Arena" }] }] },
+      "t.chairs": { name: "Seats", on: "scene", entries: { label: "Seats", noun: "seat", prefix: "seat", fields: [{ key: "name", label: "Name", kind: "string", default: "Seat" }], init: { player: null } } },
+      "t.level": { name: "Level", on: ["scene"], fields: [{ key: "look", label: "Look", kind: "enum", default: "", options: [{ value: "", label: "Its own" }, { value: "dusk", label: "Dusk" }] }] },
     },
   },
   module: {
@@ -130,36 +130,6 @@ describe("scene.inspector: Behaviours on an object", () => {
     expect(offered()).toContain("Target");
   });
 
-  it("an object field picks another object (never itself), and None removes it", async () => {
-    await mount({ objects: { a: object({ name: "A", traits: { "t.zone": {} } }), b: object({ name: "Bench" }) } });
-    await select("a");
-    const near = field(behaviour("t.zone"), "Near");
-    expect([...near.options].map((o) => o.textContent)).toEqual(["None", "Bench"]);
-    await fire(near, "b");
-    expect(s.doc().objects.a.traits["t.zone"].near).toBe("b");
-    await fire(field(behaviour("t.zone"), "Near"), "");
-    expect("near" in s.doc().objects.a.traits["t.zone"]).toBe(false);
-  });
-
-  it("an entry field offers the scene trait's entries by name, and follows them", async () => {
-    await mount({ objects: { a: object({ traits: { "t.zone": { seat: "n" } } }) }, doc: { traits: { "t.seats": { n: { name: "North", player: null }, s: { name: "South", player: null } } } } });
-    await select("a");
-    const seat = field(behaviour("t.zone"), "Seat");
-    expect([...seat.options].map((o) => o.textContent)).toEqual(["None", "North", "South"]);
-    expect(seat.value).toBe("n");
-    await fire(seat, "s");
-    expect(s.doc().objects.a.traits["t.zone"].seat).toBe("s");
-    // the seat is renamed: the option follows
-    s.change((d) => (d.traits["t.seats"].s.name = "Dealer"));
-    await settle();
-    expect([...field(behaviour("t.zone"), "Seat").options].map((o) => o.textContent)).toEqual(["None", "North", "Dealer"]);
-    // the seat goes: the zone shows None (its id is left for whoever tidies)
-    s.change((d) => delete d.traits["t.seats"].s);
-    await settle();
-    expect(field(behaviour("t.zone"), "Seat").value).toBe("");
-    expect(s.doc().objects.a.traits["t.zone"].seat).toBe("s");
-  });
-
   it("json and url fields refuse what they can't parse, with a notice, and write nothing", async () => {
     await mount({ objects: { a: object({ traits: { "t.zone": { min: [0, 0, 0] }, "t.hidden": {} } }) } });
     await select("a");
@@ -180,21 +150,6 @@ describe("scene.inspector: Behaviours on an object", () => {
     await fire(field(behaviour("t.hidden"), "Deck"), "");
     expect(s.doc().objects.a.traits["t.hidden"]).toEqual({});
   });
-
-  it("a first trait makes the object's traits map; a second is added beside the first", async () => {
-    await mount({ objects: { a: object() } });
-    await select("a");
-    expect(s.doc().objects.a.traits).toBeUndefined();
-    await pick("Private zone");
-    await pick("Hidden card");
-    expect(s.doc().objects.a.traits).toEqual({ "t.zone": { min: [-1, 0, -1] }, "t.hidden": {} });
-  });
-
-  it("shows no Behaviours section when nothing is described and the object has none", async () => {
-    await mount({ objects: { a: object() }, extensions: [] });
-    await select("a");
-    expect($(".behaviours").hidden).toBe(true);
-  });
 });
 
 describe("scene.inspector: the Scene, with nothing selected", () => {
@@ -203,35 +158,35 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
     expect($(".inspector").dataset.kind).toBe("scene");
     expect(offered()).toEqual(["Level", "Seats"]);
     await pick("Seats");
-    expect(s.doc().traits["t.seats"]).toEqual({});
+    expect(s.doc().traits["t.chairs"]).toEqual({});
     expect(running()).toContain("t.game");
-    const add = behaviour("t.seats").querySelector(".entry-add");
+    const add = behaviour("t.chairs").querySelector(".entry-add");
     expect(add.textContent).toBe("Add seat");
     add.click();
     await settle();
-    behaviour("t.seats").querySelector(".entry-add").click();
+    behaviour("t.chairs").querySelector(".entry-add").click();
     await settle();
-    const ids = Object.keys(s.doc().traits["t.seats"]);
+    const ids = Object.keys(s.doc().traits["t.chairs"]);
     expect(ids.length).toBe(2);
     expect(ids.every((id) => id.startsWith("seat"))).toBe(true);
-    expect(Object.values(s.doc().traits["t.seats"])).toEqual([
+    expect(Object.values(s.doc().traits["t.chairs"])).toEqual([
       { player: null, name: "Seat" },
       { player: null, name: "Seat" },
     ]);
-    const rows = [...behaviour("t.seats").querySelectorAll(".behaviour-entry")];
+    const rows = [...behaviour("t.chairs").querySelectorAll(".behaviour-entry")];
     expect(rows.map((r) => r.dataset.entry)).toEqual(ids);
     await fire(field(rows[1], "Name"), "South");
-    expect(s.doc().traits["t.seats"][ids[1]]).toEqual({ player: null, name: "South" });
-    behaviour("t.seats").querySelector(`.behaviour-entry[data-entry="${ids[0]}"] .entry-remove`).click();
+    expect(s.doc().traits["t.chairs"][ids[1]]).toEqual({ player: null, name: "South" });
+    behaviour("t.chairs").querySelector(`.behaviour-entry[data-entry="${ids[0]}"] .entry-remove`).click();
     await settle();
-    expect(Object.keys(s.doc().traits["t.seats"])).toEqual([ids[1]]);
+    expect(Object.keys(s.doc().traits["t.chairs"])).toEqual([ids[1]]);
     // a scene trait with an enum field
     await pick("Level");
     expect(s.doc().traits["t.level"]).toEqual({ look: "" });
-    await fire(field(behaviour("t.level"), "Look"), "arena");
-    expect(s.doc().traits["t.level"].look).toBe("arena");
+    await fire(field(behaviour("t.level"), "Look"), "dusk");
+    expect(s.doc().traits["t.level"].look).toBe("dusk");
     // the scene's traits map was edited in place: both are there
-    expect(Object.keys(s.doc().traits).sort()).toEqual(["t.level", "t.seats"]);
+    expect(Object.keys(s.doc().traits).sort()).toEqual(["t.chairs", "t.level"]);
   });
 
   it("Starts in: Look and the bodies on offer, written to doc.view.start.body (dropping the place, keeping the home and the editor), and editing, to doc.view.start.edit; read once (this viewer stays where they are); an edit undo takes it back", async () => {

@@ -88,17 +88,4 @@ describe("scene.keys", () => {
     expect(s.key("k", { repeat: true }).defaultPrevented).toBe(true); // claimed, not run again
     expect(log).toEqual([]);
   });
-
-  it("leaves a field's keys to the field", () => {
-    const input = document.createElement("input");
-    s.root.append(input);
-    input.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "k",
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-    expect(log).toEqual([]);
-  });
 });

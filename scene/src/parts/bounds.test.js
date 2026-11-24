@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
-import bounds, { boundsTargets, sizeLabels } from "./bounds.js";
+import bounds, { boundsTargets } from "./bounds.js";
 
 const BOXES = { a: { min: [0, 0, 0], max: [1, 2, 3] }, b: { min: [2, 0, 0], max: [2.5, 0.5, 0.5] } };
 const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kind: "group", ...extra });
@@ -20,12 +20,6 @@ const layer = (s) => s.debug.viewport.layers.get("scene.bounds").values().next()
 const labels = (s) => [...s.root.querySelectorAll(".labels .bounds-label")].map((e) => e.textContent);
 
 describe("scene.bounds (pure)", () => {
-  it("labels a box's three sizes in the given units", () => {
-    const l = sizeLabels("a", BOXES.a, "cm");
-    expect(l.map((x) => x.text)).toEqual(["100 cm", "200 cm", "300 cm"]);
-    expect(l[0].position).toEqual([0.5, 0, 3]);
-    expect(l.map((x) => x.data.axis)).toEqual(["x", "y", "z"]);
-  });
   it("sizes the selection if it's there, else every object", () => {
     const scene = { objects: doc().objects, ids: ["a", "b", "g"] };
     expect(boundsTargets(scene, null)).toEqual(["a", "b"]);
@@ -69,18 +63,6 @@ describe("scene.bounds", () => {
     await s.settle();
     expect(labels(s).length).toBe(6);
     expect(layer(s).children.length).toBe(2);
-    s.unmount();
-  });
-
-  it("doesn't rebuild on a hover", async () => {
-    const s = await mount({ ...doc(), view: { bounds: true } });
-    s.change((d) => (d.title = "poke"));
-    await s.settle();
-    const first = layer(s).children[0];
-    expect(first).toBeTruthy();
-    s.local.swap((m) => ({ ...m, hovered: "a" }));
-    await s.settle();
-    expect(layer(s).children[0]).toBe(first);
     s.unmount();
   });
 

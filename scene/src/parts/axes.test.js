@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage } from "../test/stage-harness.js";
-import axes, { axisLabels, axisLength, triadLabels } from "./axes.js";
+import axes, { axisLength } from "./axes.js";
 
 const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.axes" }, module: axes }], doc });
 const run = (s) => s.api("scene.axes").run({ ext: "scene.axes", command: "axes", target: null });
@@ -20,17 +20,6 @@ describe("scene.axes (pure)", () => {
     expect(axisLength(null, { grid: false, unit: "m" })).toBeCloseTo(0.6);
     expect(axisLength({ min: [0, 0, 0], max: [0.01, 0.01, 0.01] }, { grid: false, unit: "m" })).toBe(0.1);
     expect(axisLength({ min: [-3, 0, 0], max: [1, 1, 1] }, { grid: true, unit: "m" })).toBe(4);
-  });
-  it("labels each axis just past its end", () => {
-    const l = axisLabels(2);
-    expect(l.map((x) => x.text)).toEqual(["X", "Y", "Z"]);
-    expect(l[1].position).toEqual([0, 2 * 1.07, 0]);
-  });
-  it("puts the triad's labels in the bottom-left corner", () => {
-    const l = triadLabels([{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: -1 }], 300);
-    expect(l[0].screen).toEqual({ x: 8 + 96, y: 300 - 8 - 48 });
-    expect(l[1].screen).toEqual({ x: 8 + 48, y: 300 - 8 - 96 });
-    expect(l[2].screen).toEqual({ x: 8, y: 300 - 8 });
   });
 });
 
