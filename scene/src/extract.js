@@ -72,7 +72,7 @@ import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatr
 import { detachAnchor, resolveAnchor } from "./anchors.js";
 import { newObjectRecord, orderedIds } from "./ops.js";
 import { listedPackages, packagesToList, packageUrl } from "./stage/public.js";
-import { pinnedRepo } from "./build.js";
+import { pinnedRepo } from "./versions.js";
 import { LINK, atOf, isLink } from "./native/link-graph.js";
 import { editor } from "./parts/editor.js";
 import { applyRefEdits, assetsFor, cleanObject, cleanTraits, copyRefs, describesOf, entryIn, entryText, lostText, refEdits, refsOf, renderSeed, runtimeOf, subtreeOf } from "./transfer.js";

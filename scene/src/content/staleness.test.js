@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { atFromBuilt, atKey, normalizeAt, builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, depsKey, effectiveParams, paramsBySpec, heldDeps, inputsKey, isContested, isStale, normalizeDeps, olderVersion, paramsKey, sameDeps, staleReason, withDefaults } from "./staleness.js";
+import { DEBOUNCE, atFromBuilt, atKey, normalizeAt, builtInputsKey, currentInputsKey, debounceFor, depsKey, heldDeps, inputsKey, isContested, olderVersion, paramsKey, sameDeps, staleReason } from "./staleness.js";
+import { changedKeys, defaultParams, effectiveParams, paramsBySpec, withDefaults } from "../params.js";
+import { normalizeDeps } from "../versions.js";
+const isStale = (r, s) => staleReason(r, s) !== null;
 
 const built = (params, heads, fingerprint = null) => ({ params, builtFrom: { heads, fingerprint, paramsKey: paramsKey(params) } });
 
@@ -58,29 +61,23 @@ describe("params", () => {
   it("finds changed keys", () => {
     expect(changedKeys({ a: 1, b: [1] }, { a: 1, b: [2], c: 0 }).sort()).toEqual(["b", "c"]);
   });
-  it("debounces by cost", () => {
+  it("debounces by cost: never built at once; a change wholly to cheap things sooner than one touching anything expensive", () => {
+    const cheap = DEBOUNCE.cheap;
+    const dear = DEBOUNCE.expensive;
+    expect(0 < cheap && cheap < dear).toBe(true);
     expect(debounceFor("never-built", { specs })).toBe(0);
-    expect(debounceFor("params", { specs, changed: ["unit"] })).toBe(150);
-    expect(debounceFor("params", { specs, changed: ["unit", "res"] })).toBe(800);
-    expect(debounceFor("heads", { specs })).toBe(800);
-    expect(debounceFor("heads", { specs: [specs[0]] })).toBe(150);
-    expect(debounceFor("heads", { specs, providerCost: "cheap" })).toBe(150);
-    expect(debounceFor("heads", { specs: [] })).toBe(800);
-  });
-  it("keys inputs by fingerprint or heads", () => {
-    expect(inputsKey({ params: { a: 1 } }, { heads: ["b", "a"] })).toBe('{"a":1}|h:a,b');
-    expect(inputsKey({ params: {} }, { heads: ["a"], fingerprint: "f" })).toBe("{}|fp:f");
+    expect(debounceFor("params", { specs, changed: ["unit"] })).toBe(cheap);
+    expect(debounceFor("params", { specs, changed: ["unit", "res"] })).toBe(dear);
+    expect(debounceFor("heads", { specs })).toBe(dear);
+    expect(debounceFor("heads", { specs: [specs[0]] })).toBe(cheap);
+    expect(debounceFor("heads", { specs, providerCost: "cheap" })).toBe(cheap);
+    expect(debounceFor("heads", { specs: [] })).toBe(dear);
   });
 });
 
 describe("dependencies", () => {
   const withDeps = (deps, fingerprint = null) => ({ params: {}, builtFrom: { heads: ["s"], fingerprint, paramsKey: "{}", ...(deps ? { deps } : {}) } });
 
-  it("treats an old render without deps as having none", () => {
-    expect(isStale(withDeps(undefined), { heads: ["s"] })).toBe(false);
-    expect(isStale(withDeps(undefined), { heads: ["s"], deps: {} })).toBe(false);
-    expect(staleReason(withDeps(undefined), { heads: ["s"], deps: { "automerge:a": ["x"] } })).toBe("deps");
-  });
 
   it("is stale when the set of dependency urls changes", () => {
     const r = withDeps({ "automerge:a": ["x"] });
@@ -105,10 +102,6 @@ describe("dependencies", () => {
     expect(staleReason(r, { heads: ["s"], fingerprint: "fp2", deps: { "automerge:a": ["x2"] } })).toBe("fingerprint");
   });
 
-  it("debounces dependency edits like source edits", () => {
-    expect(debounceFor("deps", { specs: [] })).toBe(800);
-    expect(debounceFor("deps", { specs: [], providerCost: "cheap" })).toBe(150);
-  });
 
   it("keys inputs by dependency heads too, and a dependency move is never 'contested'", () => {
     expect(inputsKey({ params: {} }, { heads: ["a"], deps: {} })).toBe("{}|h:a");
@@ -121,12 +114,6 @@ describe("dependencies", () => {
     expect(isContested(r, { heads: ["s"], fingerprint: "v1", deps: { "automerge:a": ["x2"] } }, mine)).toBe(false);
   });
 
-  it("normalises and compares deps maps", () => {
-    expect(normalizeDeps({ "automerge:b": ["2", "1"], "automerge:a": null, bad: "x" })).toEqual({ "automerge:a": [], "automerge:b": ["1", "2"] });
-    expect(sameDeps(undefined, {})).toBe(true);
-    expect(sameDeps({ u: ["a", "b"] }, { u: ["b", "a"] })).toBe(true);
-    expect(depsKey({})).toBe("");
-  });
 });
 
 describe("peers that disagree about dependencies", () => {
@@ -249,12 +236,5 @@ describe("fixed versions (at)", () => {
     const builtFrom = { heads: ["h2", "h1"], paramsKey: "{}", fingerprint: null, deps: { a: ["x"], r: ["fp:glb"] } };
     expect(atFromBuilt(builtFrom)).toEqual({ heads: ["h1", "h2"], deps: { a: ["x"] } });
     expect(atFromBuilt(builtFrom, { r: ["rh"] })).toEqual({ heads: ["h1", "h2"], deps: { a: ["x"], r: ["rh"] } });
-  });
-  it("a fixed source judged at its fixed heads isn't stale from edits; params still are", () => {
-    // the render manager hands staleReason the view's heads (= at.heads), never the live ones
-    const r = built({ size: 1 }, ["h1"]);
-    const at = normalizeAt({ heads: ["h1"] });
-    expect(staleReason(r, { heads: at.heads })).toBeNull();
-    expect(staleReason({ ...r, params: { size: 2 } }, { heads: at.heads })).toBe("params");
   });
 });

@@ -317,13 +317,13 @@ export function castRay(raycaster, targets, origin, dir, far = Infinity) {
  * Pick BVHs built in idle time for the big meshes of what's added (a pick
  * builds any it still lacks). @returns {{ add(root), dispose() }}
  */
-export function bvhQueue() {
+export function bvhQueue(time) {
   const queue = new Set();
   let timer = null;
   let live = true;
   const idle = globalThis.requestIdleCallback
     ? (f) => ({ cancel: globalThis.cancelIdleCallback.bind(globalThis), id: globalThis.requestIdleCallback(f, { timeout: 3000 }) })
-    : (f) => ({ cancel: clearTimeout, id: setTimeout(() => f({ timeRemaining: () => 10 }), 100) });
+    : (f) => ({ cancel: (stop) => stop(), id: time.after(100, () => f({ timeRemaining: () => 10 })) });
   const schedule = () => {
     if (timer != null || !queue.size || !live) return;
     timer = idle((deadline) => {

@@ -1,7 +1,7 @@
 // Matching source docs to scene:source providers, and routing an object's
 // content by the kind its provider makes. Pure.
 
-import { isGroup } from "./groups.js";
+import { isGroup } from "../groups.js";
 
 /**
  * The kinds of content a `scene:source` makes, which it declares as its

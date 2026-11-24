@@ -1220,3 +1220,17 @@ used; a root module is filed in the one layer that uses it, or shared; the
 sources are native; the boundary test resolves extensionless specs and
 refuses a non-literal `import()`. STAGE.md states the build controls' DOM
 events, and that only view plugins are told `view.arrived`.
+
+**Content, one boundary (2026-11-24).** Content moved out of `stage.js`
+(1,923 lines then) into `src/content/`, a kernel folder: `createContent`
+is the stage's one door to it. An object's state became one pure function
+(`content/state.js`) that the manager, `api.loadState`, `local.status`, the
+inspector and the build controls all read; before, the controls judged
+staleness themselves and said "Stale" where the manager said fresh (a build
+from changes not synced, a contested one, one held on a loading dependency),
+and a reader showed "Building…" for as long as a peer's leftover status
+said so. Who builds became a claim-and-heartbeat lock with two parameters,
+checked on a finite model (C1–C4), replacing a 20 s grace, a 60 s stuck
+reset, a 1 s peer-id stagger and a 2.5 s settle. The manager, the GLB
+queue and package loading went onto the stage's time; `build()` got a
+`signal`; the test fakes answer `containsHeads` as a DocHandle does.

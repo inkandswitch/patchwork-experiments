@@ -11,7 +11,7 @@
 
 import { EMPTY, createEdits } from "../undo.js";
 import { isGroup } from "../groups.js";
-import { paramsBySpec } from "../staleness.js";
+import { paramsBySpec } from "../params.js";
 import { composeMatrix, decomposeMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
 
 const copy = (v) => JSON.parse(JSON.stringify(v));

@@ -100,13 +100,13 @@ export function formatCount(n) {
  * For a file (a GLB shown as it is, `load.content` "file"): triangles, draw
  * calls, KB, loading / not loaded (hidden), and its load error. Otherwise
  * (built, or a provider this viewer doesn't have): build notes, a missing
- * provider, a contested build, and the scene's own GLB errors (the build's
- * own errors are the embedded controls' to show).
+ * provider, a contested build, and what was built that can't be shown (the
+ * build's own errors are its controls' to show).
  *
  * @param {object} o  the object
  * @param {{ status?: { state, text, title } | null, load?: object | null, content?: object | null, shown?: boolean }} at
- *   status: local.status[id]; load: the raw load state, when the stage gives
- *   it (content, notes, phase, contested, …); content: api.content(id)
+ *   load: api.loadState(id) (its `state`: README.md, "Content"); status:
+ *   local.status[id], what that state says to people; content: api.content(id)
  */
 /** A missing provider, said for what it costs: a built object keeps what was built, anything else isn't shown. */
 const noProviderText = (providerId, content) =>
@@ -115,6 +115,7 @@ const noProviderText = (providerId, content) =>
 export function statusParts(o, { status = null, load = null, content = null, shown = true } = {}) {
   const out = [];
   if (!o || isGroup(o)) return out;
+  const st = load?.state ?? null;
   if (contentKind(load) === "file") {
     const cs = content?.stats ?? null;
     const tris = cs?.triangles ?? o.hint?.triangles;
@@ -122,25 +123,16 @@ export function statusParts(o, { status = null, load = null, content = null, sho
     if (Number.isFinite(tris)) bits.push(`${formatCount(tris)} triangle${tris === 1 ? "" : "s"}`);
     if (cs && Number.isFinite(cs.drawCalls)) bits.push(`${cs.drawCalls} draw call${cs.drawCalls === 1 ? "" : "s"}${cs.instanced ? ` (${cs.nodes} parts)` : ""}`);
     if (Number.isFinite(o.hint?.bytes)) bits.push(`${(o.hint.bytes / 1024).toFixed(o.hint.bytes < 10240 ? 1 : 0)} KB`);
-    if (status?.state === "loading") bits.push("loading…");
-    else if (!status && !content?.loaded && !shown) bits.push("not loaded (hidden)");
+    if (st?.state === "loading") bits.push("loading…");
+    else if (!st && !content?.loaded && !shown) bits.push("not loaded (hidden)");
     if (bits.length) out.push({ kind: "notes", text: bits.join(" · ") });
-    if (status?.state === "error" && status.title) out.push({ kind: "error", text: String(status.title) });
+    if (st?.state === "failed" && st.error) out.push({ kind: "error", text: String(st.error) });
     return out;
   }
-  if (load) {
-    // the stage's raw state
-    if (load.notes) out.push({ kind: "notes", text: String(load.notes) });
-    if (load.phase === "no-provider") out.push({ kind: "error", text: noProviderText(load.providerId ?? o.providerId, load.content) });
-    if (load.stale && load.contested && !load.building && status?.title) out.push({ kind: "warn", text: String(status.title) });
-    const err = load.glbError || load.parseError || (load.phase === "error" ? load.error : null);
-    if (err) out.push({ kind: "error", text: String(err) });
-    return out;
-  }
-  // only local.status: { state, text, title }
-  if (status?.state === "warn") out.push({ kind: "error", text: noProviderText(o.providerId, o.renderUrl ? "built" : null) });
-  else if (status?.state === "stale" && status.reason === "contested") out.push({ kind: "warn", text: String(status.title) });
-  else if (status?.state === "error" && status.title) out.push({ kind: "error", text: String(status.title) });
+  if (load?.notes) out.push({ kind: "notes", text: String(load.notes) });
+  if (st?.state === "no-provider") out.push({ kind: "error", text: noProviderText(st.providerId ?? o.providerId, load.content) });
+  if (st?.state === "stale" && st.hold === "contested" && status?.title) out.push({ kind: "warn", text: String(status.title) });
+  if (st?.state === "failed" && st.in === "load" && st.error) out.push({ kind: "error", text: String(st.error) });
   return out;
 }
 
@@ -156,18 +148,20 @@ export function ago(at, now) {
 }
 
 /**
- * A built object's build in a line, from the stage's load state (the render
- * manager's): building, never built, up to date, out of date (pinned or
- * not), or fixed at a version; null for content that isn't built (a file, a
- * link) or a missing provider (statusParts says that). Pure.
+ * A built object's build in a line, from its load state (api.loadState):
+ * building, never built, up to date, out of date (pinned or not), waiting
+ * for a linked document, or fixed at a version; null for content that isn't
+ * built (a file, a link) or a missing provider (statusParts says that). Pure.
  */
 export function buildSummary(load, now) {
-  if (!load || contentKind(load) !== "built" || load.phase === "no-provider") return null;
-  if (load.building) return "Building…";
+  const st = load?.state;
+  if (contentKind(load) !== "built" || !st || st.state === "no-provider") return null;
+  if (st.state === "building") return "Building…";
   if (!load.builtAt) return load.pinned ? "Not built (pinned)" : "Not built yet";
   const when = ago(load.builtAt, now);
-  if (load.fixed) return `Built ${when} · fixed version`;
-  if (load.stale) return `Built ${when} · out of date${load.pinned ? " (pinned)" : ""}`;
+  if (load.at) return `Built ${when} · fixed version`;
+  if (st.state === "stale" || st.state === "failed") return `Built ${when} · out of date${load.pinned ? " (pinned)" : ""}`;
+  if (st.state === "waiting") return `Built ${when} · waiting for a linked document`;
   return `Up to date · built ${when}`;
 }
 

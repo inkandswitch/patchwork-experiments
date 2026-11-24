@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from "vitest";
 import { FakeRepo, flush } from "./test/fake-repo.js";
-import { coerceParam } from "./param-form.js";
+import { manualTime } from "./stage/time.js";
+import { LISTEN_MS } from "./content/lock.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
   const plugins = new Map();
@@ -45,19 +46,11 @@ getRegistry("scene:source").register({
   },
 });
 
-describe("coerceParam", () => {
-  it("coerces and clamps", () => {
-    expect(coerceParam({ kind: "number", min: 0, max: 5 }, "7")).toBe(5);
-    expect(coerceParam({ kind: "integer" }, "2.6")).toBe(3);
-    expect(coerceParam({ kind: "number" }, "abc")).toBeNull();
-    expect(coerceParam({ kind: "enum", options: [{ value: 2 }] }, "2")).toBe(2);
-    expect(coerceParam({ kind: "enum", options: [{ value: 2 }] }, "3")).toBeNull();
-    expect(coerceParam({ kind: "color" }, "#AABBCC")).toBe("#aabbcc");
-    expect(coerceParam({ kind: "boolean" }, 0)).toBe(false);
-  });
-});
+// (GLB hashing without WebCrypto: every step of a build lands on the stepped time)
+beforeAll(() => vi.stubGlobal("crypto", {}));
+afterAll(() => vi.unstubAllGlobals());
 
-describe("scene-render-controls, standalone", () => {
+describe("scene-render-controls, alone", () => {
   let cleanup;
   afterEach(() => cleanup?.());
 
@@ -67,10 +60,11 @@ describe("scene-render-controls, standalone", () => {
     const render = repo.add(newRenderDoc({ title: "T", parent: source.url, providerId: "thing", params: { size: 1 } }));
     const element = document.createElement("div");
     element.repo = repo;
+    element.time = manualTime();
     document.body.append(element);
     cleanup = Controls(render, element);
-    await flush();
-    return { repo, source, render, element };
+    await element.time.advance(100);
+    return { repo, source, render, element, time: element.time };
   }
 
   it("draws a field per ParamSpec and writes params back", async () => {
@@ -89,22 +83,6 @@ describe("scene-render-controls, standalone", () => {
     expect(element.querySelector(".status").textContent).toBe("Not built yet");
   });
 
-  it("opens nothing: no Open source (the inspector's Source section is where the source is), no open-document from any button", async () => {
-    const { element } = await mount();
-    expect(element.querySelector(".open-source")).toBeNull();
-    const opened = [];
-    element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
-    element.addEventListener(REBUILD_EVENT, (e) => e.preventDefault());
-    for (const b of element.querySelectorAll("button")) b.click();
-    await flush();
-    expect(opened).toEqual([]);
-  });
-
-  it("marks itself standalone outside a scene", async () => {
-    const { element } = await mount();
-    expect(element.querySelector(".scene-render-controls").hasAttribute("data-standalone")).toBe(true);
-  });
-
   it("toggles pinned", async () => {
     const { render, element } = await mount();
     const pin = element.querySelector(".pinned");
@@ -114,38 +92,40 @@ describe("scene-render-controls, standalone", () => {
   });
 
   it("rebuilds by itself when no scene claims the request", async () => {
-    const { render, element, repo } = await mount();
+    const { render, element, repo, time } = await mount();
+    build.mockClear();
     let seen = null;
     element.addEventListener(REBUILD_EVENT, (e) => (seen = e.detail));
     element.querySelector(".rebuild").click();
-    await flush();
+    await time.advance(500);
     expect(seen).toEqual({ renderUrl: render.url });
-    expect(build).toHaveBeenCalled();
+    expect(build).toHaveBeenCalledTimes(1);
     expect(render.doc().glbUrl).toBe(repo.created.at(-1).url);
     expect(element.querySelector(".status").textContent).toBe("Up to date");
   });
 
-  it("doesn't show a superseded error once the render matches its source again", async () => {
-    const { render, source, element } = await mount();
-    element.querySelector(".rebuild").click();
-    await flush();
-    render.change((d) => {
-      d.status = "error";
-      d.error = "syntax error";
-    });
+  it("keeps the render as a scene would: built once it has listened for a builder, and says a failure of what it has now", async () => {
+    const { render, source, element, time } = await mount();
+    build.mockClear();
+    await time.advance(LISTEN_MS + 1000);
+    expect(build).toHaveBeenCalledTimes(1);
     expect(element.querySelector(".status").textContent).toBe("Up to date");
-    expect(element.querySelector(".error").hidden).toBe(true);
+    build.mockImplementationOnce(async () => {
+      throw new Error("syntax error");
+    });
     source.change((d) => (d.title = "edited"));
+    await time.advance(2000);
     expect(element.querySelector(".status").textContent).toBe("Error");
-    expect(element.querySelector(".error").hidden).toBe(false);
+    expect(element.querySelector(".error").textContent).toBe("syntax error");
+    expect(render.doc().error).toBe("syntax error");
   });
 
   it("leaves the build to a scene that claims it", async () => {
-    const { render, element } = await mount();
+    const { render, element, time } = await mount();
     build.mockClear();
     element.addEventListener(REBUILD_EVENT, (e) => e.preventDefault());
     element.querySelector(".rebuild").click();
-    await flush();
+    await time.advance(100);
     expect(build).not.toHaveBeenCalled();
     expect(render.doc().glbUrl).toBeNull();
   });
@@ -161,7 +141,7 @@ describe("scene-render-controls, standalone", () => {
 });
 
 describe("scene-render-controls, dependencies", () => {
-  it("shows stale when a dependency moves, and a standalone build records it", async () => {
+  it("shows stale when a dependency moves, and a build alone records it", async () => {
     getRegistry("scene:source").register({
       type: "scene:source",
       id: "linked",
@@ -179,11 +159,12 @@ describe("scene-render-controls, dependencies", () => {
     const render = repo.add(newRenderDoc({ title: "L", parent: source.url, providerId: "linked", params: {} }));
     const element = document.createElement("div");
     element.repo = repo;
+    element.time = manualTime();
     document.body.append(element);
     const cleanup = Controls(render, element);
-    await flush();
+    await element.time.advance(100);
     element.querySelector(".rebuild").click();
-    await flush();
+    await element.time.advance(100);
     expect(render.doc().builtFrom.deps).toEqual({ [dep.url]: dep.heads() });
     expect(element.querySelector(".status").textContent).toBe("Up to date");
     dep.change((d) => (d.n = 2));

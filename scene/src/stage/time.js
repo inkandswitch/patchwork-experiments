@@ -27,11 +27,12 @@
 //   moves everything, it only skips the picture). It never reads the wall,
 //   sets a real timer or asks for a real frame.
 //
-// What stays on the wall, and why: loading and the network (a package's load
-// timeout and the registry settling, content builds and their retries, a
-// fetch's timeout): those wait on the outside world, which a manual source
-// can't step. The cost of a frame (`perf`) is measured on performance.now:
-// it is CPU time, not time in the scene.
+// Everything in the kernel waits on this source, the outside world
+// included: a package's load timeout and the registry settling, content's
+// builds, retries and who builds (../content/lock.js). A manual source moves
+// them only when stepped, so a probe or a test steps it to see a build. The
+// cost of a frame (`perf`) is measured on performance.now: it is CPU time,
+// not time in the scene.
 
 /** From this deep in timer callbacks, a timer waits at least 4 ms (HTML's timer nesting clamp). */
 const NESTING_CLAMP = 5;

@@ -1,19 +1,22 @@
 import { describe, it, expect, vi } from "vitest";
-import { FakeRepo, fakeTimers, flush } from "./test/fake-repo.js";
+import { FakeRepo, flush } from "../test/fake-repo.js";
 import { createDependencyWatcher } from "./deps.js";
 import { dependenciesOf } from "./build.js";
+import { manualTime } from "../stage/time.js";
+
+const stepped = () => manualTime({ frameMs: 50, yieldTo: () => new Promise((r) => setImmediate(r)) });
 
 describe("dependency watcher", () => {
   it("subscribes to exactly the listed docs and reports their heads", async () => {
     const repo = new FakeRepo();
-    const timers = fakeTimers();
+    const time = stepped();
     const a = repo.add({ n: 1 });
     const b = repo.add({ n: 2 });
     const onChange = vi.fn();
-    const w = createDependencyWatcher({ repo, onChange, timers, now: timers.now });
+    const w = createDependencyWatcher({ repo, time, onChange });
     expect(w.set([a.url, b.url])).toBe(true);
     expect(w.snapshot()).toEqual({ [a.url]: [], [b.url]: [] }); // not loaded yet
-    expect(w.pendingSince()).toBe(0);
+    expect(w.pendingSince()).toBe(time.now());
     await flush();
     expect(w.pendingSince()).toBeNull();
     expect(w.snapshot()).toEqual({ [a.url]: a.heads(), [b.url]: b.heads() });
@@ -28,34 +31,26 @@ describe("dependency watcher", () => {
     expect(b.listenerCount("change")).toBe(0);
   });
 
-  it("retries a doc it can't load, with backoff, without counting it as pending", async () => {
+  it("retries a doc it can't load, not counting it as pending, and picks it up when it appears; dropped, it stops", async () => {
     const repo = new FakeRepo();
-    const timers = fakeTimers();
+    const time = stepped();
     const onChange = vi.fn();
-    const w = createDependencyWatcher({ repo, onChange, timers, now: timers.now });
+    const w = createDependencyWatcher({ repo, time, onChange });
     w.set(["automerge:later"]);
     await flush();
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(w.pendingSince()).toBeNull();
-    expect(timers.pendingDelays()).toEqual([1000]);
-    await timers.advance(1000);
-    expect(timers.pendingDelays()).toEqual([2000]);
+    expect(w.failed("automerge:later")).toBe(true);
+    await time.advance(3000);
     const h = repo.add({ n: 1 }, "automerge:later");
-    await timers.advance(2000);
+    await time.advance(30_000);
     expect(w.snapshot()).toEqual({ "automerge:later": h.heads() });
-    expect(timers.pendingDelays()).toEqual([]);
     w.set([]);
     expect(h.listenerCount("change")).toBe(0);
-  });
-
-  it("dropping a doc mid-retry cancels the retry", async () => {
-    const repo = new FakeRepo();
-    const timers = fakeTimers();
-    const w = createDependencyWatcher({ repo, onChange: () => {}, timers, now: timers.now });
     w.set(["automerge:gone"]);
     await flush();
     w.set([]);
-    expect(timers.pendingDelays()).toEqual([]);
+    expect(time.pending().timers).toBe(0);
   });
 });
 

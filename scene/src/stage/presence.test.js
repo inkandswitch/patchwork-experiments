@@ -8,6 +8,9 @@ import {
   PEER_TTL_MS,
 } from "./presence.js";
 
+// the stage's time is presence's (now, setTimer, clearTimer): here, the page's
+const pageTime = { now: () => Date.now(), setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (t) => clearTimeout(t) };
+
 // A clock whose timers run in due order when advanced.
 function fakeClock() {
   let t = 1_000;
@@ -285,7 +288,7 @@ describe("sends", () => {
 
 describe("without a usable handle", () => {
   it("works locally when the handle has no broadcast or on", () => {
-    const p = createPresence({ handle: {}, viewer: null });
+    const p = createPresence({ handle: {}, viewer: null, ...pageTime });
     p.set("x", "y", 1);
     expect(p.get()).toEqual({});
     p.dispose();
@@ -293,6 +296,7 @@ describe("without a usable handle", () => {
   });
   it("survives a broadcast that throws", () => {
     const p = createPresence({
+      ...pageTime,
       handle: {
         broadcast() {
           throw new Error("offline");

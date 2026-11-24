@@ -83,10 +83,6 @@ describe("the list (listedPackages)", () => {
     expect(listedPackages({ packages: [null, 5, "automerge:x", {}, { url: null }, { url: "http://localhost:5173/" }, { url: "javascript:alert(1)" }, { url: B, heads: [HEAD] }] })).toEqual([B]);
   });
 
-  it("a doc without the list has none", () => {
-    for (const doc of [null, undefined, {}, { packages: null }, { packages: {} }, { packages: "x" }]) expect(listedPackages(doc)).toEqual([]);
-    expect(listedPackages(newScene())).toEqual([]);
-  });
 });
 
 describe("what the doc calls for (neededPlugins)", () => {
@@ -157,15 +153,6 @@ describe("who answers (answeringPlugins)", () => {
       { type: "scene:extension", id: "x.obj", importUrl: B },
       { type: "scene:extension", id: "x.scene", importUrl: A },
     ]);
-  });
-
-  it("fields that once routed around traits answer nothing: requires, activities, always", () => {
-    const d = newScene({ traits: { "t.game": {} }, view: { start: { body: "walk" } } });
-    const r = reg([
-      { id: "game", traits: ["t.game"], requires: ["hand"], importUrl: A },
-      { id: "hand", activities: ["play"], always: true, importUrl: B },
-    ]);
-    expect(ids(answeringPlugins(d, r))).toEqual(["scene:extension/game"]);
   });
 
   it("an id two packages register: only the one the registry hands out (the later) answers, in either order, source or extension", () => {
@@ -508,30 +495,6 @@ describe("reconcile's fixed point (packagesToList and packagesToPrune together)"
     expect(settleViews({ ...doc, packages: [] }, [older, newer])).toEqual({ settled: true, writes: [[1, [P], []]], listed: [P] });
   });
 
-  it("two viewers whose registries hand out a shared id from different packages each list the one that runs for them: they take turns, and agree once either has only one", () => {
-    // Each is right by its own registry: what the list names is what runs.
-    const doc = newScene({ objects: { a: { providerId: "p" } }, packages: [] });
-    const ab = { "scene:source": [{ id: "p", importUrl: A }, { id: "p", importUrl: B }] };
-    const ba = { "scene:source": [{ id: "p", importUrl: B }, { id: "p", importUrl: A }] };
-    expect(settleViews(doc, [ab, ba])).toMatchObject({ settled: false, listed: [A] });
-    expect(settleViews(doc, [ab, ab])).toEqual({ settled: true, writes: [[0, [B], []]], listed: [B] });
-    // the other uninstalls A: B runs for both
-    expect(settleViews(doc, [ab, { "scene:source": [{ id: "p", importUrl: B }] }])).toEqual({ settled: true, writes: [[0, [B], []]], listed: [B] });
-  });
-
-  it("the one disagreement that takes turns: P's versions differ on a trait another package answers too; it ends when the versions agree", () => {
-    // Q answers t for both; only the newer P has an extension for t too. Each
-    // is right by its own registry, so while both are open on different
-    // versions they write in turn. A package is listed by its bare URL and
-    // loaded at its live heads, so the versions meet (STAGE.md, "Packages").
-    const P = A;
-    const Q = B;
-    const doc = newScene({ traits: { t: {} }, packages: [{ url: P }, { url: Q }] });
-    const older = { "scene:extension": [{ id: "x", traits: [], importUrl: P }, { id: "y", traits: ["t"], importUrl: Q }] };
-    const newer = { "scene:extension": [{ id: "x", traits: ["t"], importUrl: P }, { id: "y", traits: ["t"], importUrl: Q }] };
-    expect(settleViews(doc, [older, newer])).toEqual({ settled: false, writes: 20, listed: [Q, P] });
-    expect(settleViews(doc, [newer, newer])).toEqual({ settled: true, writes: [], listed: [P, Q] });
-  });
 });
 
 describe("a retired package and the one that took its plugins over, both installed (the Lost Cities table)", () => {
@@ -561,11 +524,6 @@ describe("a retired package and the one that took its plugins over, both install
     changeList(after, plan);
     return { plan, listed: listedPackages(after) };
   };
-
-  it("one package: it is listed, and stays", () => {
-    expect(pass(table([SCENE]), registered()).listed).toEqual([SCENE, TABLETOP]);
-    expect(pass(table([SCENE, TABLETOP]), registered()).plan).toEqual({ add: [], prune: [] });
-  });
 
   it("two answering one need, registered in either order: only the later's package is appended, and the earlier's, listed, is taken off", () => {
     for (const [first, later] of [

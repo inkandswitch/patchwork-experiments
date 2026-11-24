@@ -8,11 +8,12 @@
 // Checked over every sequence of up to four steps on one object.
 
 import { describe, expect, it, vi } from "vitest";
-import { FakeRepo, fakeTimers } from "./test/fake-repo.js";
+import { FakeRepo } from "../test/fake-repo.js";
+import { manualTime } from "../stage/time.js";
 import { createRenderManager } from "./render-manager.js";
 import { createDependencyWatcher } from "./deps.js";
-import { newRenderDoc } from "./datatype.js";
-import { encodeGLB } from "./glb.js";
+import { newRenderDoc } from "../datatype.js";
+import { encodeGLB } from "../glb.js";
 
 /** An announcer that keeps counts, as ./stage/announce.js does, and checks it is never released below zero. */
 function counter() {
@@ -34,7 +35,8 @@ function counter() {
 
 function setup({ announce = counter() } = {}) {
   const repo = new FakeRepo();
-  const timers = fakeTimers();
+  const time = manualTime({ frameMs: 50, yieldTo: () => new Promise((r) => setImmediate(r)) });
+  const timers = { advance: (ms) => time.advance(Math.max(1, ms)) };
   const source = repo.add({ "@patchwork": { type: "thing" }, title: "Thing", size: 1 });
   const render = repo.add(newRenderDoc({ title: "Thing", parent: source.url, providerId: "thing", params: { size: 1 } }));
   const impl = { build: vi.fn(async () => ({ kind: "glb", glb: encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0] }] }), meta: {} })) };
@@ -44,9 +46,7 @@ function setup({ announce = counter() } = {}) {
     loadProvider: async (id) => (id === "thing" ? provider : null),
     onState: () => {},
     onGLB: () => {},
-    timers,
-    now: timers.now,
-    syncSettleMs: 0,
+    time,
     announce,
   });
   return { repo, timers, source, render, impl, mgr, announce };
@@ -94,7 +94,7 @@ describe("render manager announcing", () => {
     let pinned = true;
     t.render.isReadOnly = () => pinned;
     const before = JSON.stringify(t.render.doc());
-    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url, createdHere: true });
     await t.timers.advance(0);
     t.source.change((d) => (d.size = 2));
     await t.timers.advance(10_000);
@@ -115,7 +115,7 @@ describe("dependency watcher announcing", () => {
     const b = repo.add({ x: 2 });
     const fixedUrls = new Set();
     const announce = counter();
-    const w = createDependencyWatcher({ repo, onChange: () => {}, fixedHeadsOf: (url) => (fixedUrls.has(url) ? repo.handles[url]?.heads?.() ?? ["h"] : null), announce });
+    const w = createDependencyWatcher({ repo, time: manualTime(), onChange: () => {}, fixedHeadsOf: (url) => (fixedUrls.has(url) ? repo.handles[url]?.heads?.() ?? ["h"] : null), announce });
     w.set([a.url, b.url]);
     expect(announce.held()).toEqual([a.url, b.url].sort());
     // b fixed at a version: it keeps its own, so is no longer announced
@@ -132,7 +132,7 @@ describe("dependency watcher announcing", () => {
     w.dispose();
     expect(announce.held()).toEqual([]);
     // a fixed dependency added later is never announced
-    const w2 = createDependencyWatcher({ repo, onChange: () => {}, fixedHeadsOf: () => ["h"], announce });
+    const w2 = createDependencyWatcher({ repo, time: manualTime(), onChange: () => {}, fixedHeadsOf: () => ["h"], announce });
     w2.set([a.url]);
     expect(announce.held()).toEqual([]);
     w2.dispose();

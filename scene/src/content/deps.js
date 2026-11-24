@@ -17,11 +17,10 @@
 // don't call onChange. It is still loaded (the view comes from the live
 // handle), and counts as not ready until this replica has those heads.
 
-import { viewAt } from "./build.js";
-import { sortedHeads } from "./staleness.js";
+import { sortedHeads, viewAt } from "../versions.js";
 
-const RETRY_MS = 1_000;
-const RETRY_MAX_MS = 30_000;
+/** How long to wait before loading a doc again after its `n`th failure (from 0): a second, doubling, at most 30 s. */
+export const retryWait = (n) => Math.min(30_000, 1_000 * 2 ** n);
 
 /**
  * @param {object} o
@@ -31,13 +30,12 @@ const RETRY_MAX_MS = 30_000;
  *        a narrower key for a loaded dependency; null = use its heads
  * @param {(url: string) => string[] | null} [o.fixedHeadsOf]
  *        heads to read a dependency at instead of its latest; null = latest
- * @param {{ setTimeout, clearTimeout }} [o.timers]
- * @param {() => number} [o.now]
+ * @param {object} o.time  the stage's time (../stage/time.js)
  * @param {{ hold(url: string): void, release(url: string): void } | null} [o.announce]
  *        told which dependencies it watches live (./stage/announce.js); a
  *        fixed one keeps its own version, so isn't
  */
-export function createDependencyWatcher({ repo, onChange, keyOf, fixedHeadsOf, timers = globalThis, now = Date.now, announce = null }) {
+export function createDependencyWatcher({ repo, time, onChange, keyOf, fixedHeadsOf, announce = null }) {
   /** What a loaded dependency records: ["fp:<key>"] when keyOf gives one, else its sorted heads. */
   function recorded(url, handle, heads) {
     if (typeof keyOf === "function") {
@@ -83,14 +81,14 @@ export function createDependencyWatcher({ repo, onChange, keyOf, fixedHeadsOf, t
     if (!rec) return;
     rec.dead = true;
     announceRec(url, rec);
-    if (rec.retry != null) timers.clearTimeout(rec.retry);
+    rec.retry?.();
     rec.off?.();
     deps.delete(url);
   }
 
   function load(url, rec) {
     rec.pending = true;
-    rec.since = now();
+    rec.since = time.now();
     Promise.resolve()
       .then(() => repo.find(url))
       .then(
@@ -118,11 +116,10 @@ export function createDependencyWatcher({ repo, onChange, keyOf, fixedHeadsOf, t
         () => {
           if (rec.dead || disposed) return;
           rec.pending = false;
-          const wait = Math.min(RETRY_MAX_MS, RETRY_MS * 2 ** rec.failures++);
-          rec.retry = timers.setTimeout(() => {
+          rec.retry = time.after(retryWait(rec.failures++), () => {
             rec.retry = null;
             if (!rec.dead && !disposed) load(url, rec);
-          }, wait);
+          });
           onChange?.(); // anything waiting on it can go ahead without it
         },
       );
@@ -167,6 +164,11 @@ export function createDependencyWatcher({ repo, onChange, keyOf, fixedHeadsOf, t
     ready: (url) => {
       const h = deps.get(url)?.handle;
       return !!h && current(url, h) != null;
+    },
+    /** Is this doc on its first load (not a retry)? */
+    loading: (url) => {
+      const rec = deps.get(url);
+      return !!rec && rec.pending && rec.failures === 0 && !rec.handle;
     },
     /** When the oldest still-in-flight FIRST load started, or null if none is (retries don't count). */
     pendingSince() {

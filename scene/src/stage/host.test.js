@@ -5,6 +5,9 @@ import { fakeTimers, flush } from "../test/fake-repo.js";
 import { PACKAGE_FIND_MS } from "./packages.js";
 import { PluginRegistry } from "@inkandswitch/patchwork-plugins";
 
+// the stage's time is the host's (createHost's setTimer, clearTimer): here, the page's
+const pageTimers = { setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (t) => clearTimeout(t) };
+
 // A registry of plugin metadata whose modules come from `mods` (id → module),
 // with a per-id load delay so start order can differ from running order.
 function registry(metas, mods, delays = {}) {
@@ -225,7 +228,7 @@ describe("the host", () => {
       const mods = Object.fromEntries(
         ms.map((m) => [m.id, { create: (api) => ((found[m.id] = needs[m.id] ? api.use(needs[m.id]) : "-"), { provides: { [m.provides?.[0] ?? "z"]: (c) => ({ by: m.id, for: c.id }) } }) }]),
       );
-      host = createHost({ registry: async () => registry(order, mods), makeApi: (rec) => ({ api: { use: (k) => host.use(k, rec) }, release: () => {} }) });
+      host = createHost({ ...pageTimers, registry: async () => registry(order, mods), makeApi: (rec) => ({ api: { use: (k) => host.use(k, rec) }, release: () => {} }) });
       host.sync(doc());
       await flush();
       const ran = host.running().map((r) => r.id);
@@ -335,7 +338,7 @@ describe("a package loaded at an old version first (the module watcher registers
     const metas = [{ id: "seats", traits: ["seats"], importUrl: OLD }];
     const mods = { seats: oldSeats };
     const reg = registry(metas, mods);
-    const host = createHost({ registry: async () => reg, makeApi: () => ({ api: { channel: Object.freeze({ watch: () => () => {} }) }, release() {} }) });
+    const host = createHost({ ...pageTimers, registry: async () => reg, makeApi: () => ({ api: { channel: Object.freeze({ watch: () => () => {} }) }, release() {} }) });
     const reregister = (importUrl, module) => {
       metas[0] = { ...metas[0], importUrl };
       mods.seats = module;
@@ -389,7 +392,7 @@ describe("a plugin registered again from another package while it loads (Patchwo
       imports.set(importUrl, [...(imports.get(importUrl) ?? []), () => resolve(module)]);
       reg.register({ type: "scene:extension", id: "card-table", name: "Card table", traits: ["card-table"], load: () => loaded }, importUrl);
     };
-    const host = createHost({ registry: async () => reg, makeApi: () => ({ api: {}, release() {} }) });
+    const host = createHost({ ...pageTimers, registry: async () => reg, makeApi: () => ({ api: {}, release() {} }) });
     const arrive = async (importUrl) => (imports.get(importUrl).forEach((settle) => settle()), flush());
     return { host, log, register, arrive };
   }

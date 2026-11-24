@@ -1,25 +1,24 @@
 // patchwork:tool "scene-render-controls" — the generic control surface for a
 // scene-render doc. It finds the provider by id, draws a form from its
-// ParamSpecs, and writes params / pinned back to the render doc. It also shows
-// build status and can rebuild on demand. It opens nothing: the source is
-// the inspector's Source section beside it (EDITOR.md, "The interface").
+// ParamSpecs, and writes params / pinned back to the render doc. It shows the
+// object's content state (content/state.js) and can rebuild on demand. It
+// opens nothing: the source is the inspector's Source section beside it
+// (EDITOR.md, "The interface").
 //
-// "Rebuild now" first asks an enclosing scene (a cancelable, bubbling
-// `scene:rebuild` DOM event) so the scene's own build loop does it; standalone,
-// it runs the build itself.
-//
-// Whether the object is fixed at a version lives on the scene object, not the
-// render doc, so the controls ask the scene around them: a bubbling
-// `scene:render-context` event whose `detail.at` the scene fills in. The scene
-// fires `scene:render-context-changed` at the controls when that changes.
+// Inside a scene the state is the scene's: the controls ask the stage around
+// them with a bubbling `scene:render-context` event (the stage fills in
+// `detail.state` and the object's fixed version, `detail.at`), and are told
+// `scene:render-context-changed` when either changes; "Rebuild now" asks it
+// with a cancelable `scene:rebuild`. Alone, with no stage answering, the
+// tool keeps the render the way a scene would, with a render manager of its
+// own (content/render-manager.js), and its state is that one's.
 
 import css from "./styles.css?inline";
 import { createParamForm } from "./param-form.js";
-import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, runBuild, viewAt } from "./build.js";
-import { createDependencyWatcher } from "./deps.js";
-import { normalizeAt, staleReason } from "./staleness.js";
+import { createRenderManager } from "./content/render-manager.js";
+import { realTime } from "./stage/time.js";
+import { handleReadOnly } from "./stage/readonly.js";
 import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, CONTROLS_CLASS, REBUILD_EVENT } from "./embed.js";
-
 
 function relativeTime(ts, now = Date.now()) {
   if (!ts) return "never";
@@ -31,6 +30,26 @@ function relativeTime(ts, now = Date.now()) {
   const h = Math.round(m / 60);
   if (h < 48) return `${h} h ago`;
   return new Date(ts).toLocaleDateString();
+}
+
+/** The pill for a content state: [its data-state, its label]. */
+function pillOf(st) {
+  switch (st?.state) {
+    case "building":
+      return ["building", "Building…"];
+    case "failed":
+      return ["error", "Error"];
+    case "fresh":
+      return ["idle", "Up to date"];
+    case "stale":
+      return ["stale", st.reason === "never-built" ? "Not built yet" : st.hold === "pinned" ? "Stale (pinned)" : "Stale"];
+    case "waiting":
+      return ["idle", "Waiting for a linked document"];
+    case "no-provider":
+      return ["idle", "No provider"];
+    default:
+      return ["idle", "Loading…"];
+  }
 }
 
 export default function SceneRenderControls(handle, element) {
@@ -59,116 +78,77 @@ export default function SceneRenderControls(handle, element) {
 
   let registry = null;
   let providerMeta = null;
-  let provider = null; // loaded: { id, name, params, module }
-  let sourceHandle = null;
   let form = null;
-  let localBuilding = false;
   let dead = false;
-  let at = null; // the scene object's fixed version, if a scene says so
+  let state = null; // the object's content state: the stage's, else its own manager's
+  let fixed = false; // the scene object is fixed at a version
+  let own = null; // alone: { manager, parent } keeping this render
   const offs = [];
-  // the other docs the provider says it reads, so staleness (and a standalone build) sees them
-  const deps = createDependencyWatcher({
-    repo,
-    onChange: () => render(),
-    keyOf: (url, h) => dependencyKeyOf(provider?.module, url, h.doc?.()),
-    fixedHeadsOf: (url) => at?.deps?.[url] ?? null,
-  });
 
-  /** Ask an enclosing scene whether this render's object is fixed at a version. */
-  function askContext() {
-    const detail = { renderUrl: handle.url, at: null };
+  /** Ask an enclosing stage for the object's state; alone, keep the render here. */
+  function refresh() {
+    if (dead) return;
+    const detail = { renderUrl: handle.url, at: null, state: undefined };
     root.dispatchEvent(new CustomEvent(CONTEXT_EVENT, { detail, bubbles: true, composed: true }));
-    at = normalizeAt(detail.at);
-  }
-
-  function specs() {
-    return providerMeta?.params ?? [];
-  }
-
-  async function resolveProvider() {
-    const doc = handle.doc();
-    const id = doc?.providerId;
-    providerMeta = id && registry?.has(id) ? registry.get(id) : null;
-    render();
-    if (!providerMeta) return;
-    try {
-      const loaded = await registry.load(id);
-      if (dead) return;
-      provider = loaded?.module ? { id, name: loaded.name, params: loaded.params ?? [], cost: loaded.cost, version: loaded.version, module: loaded.module } : null;
-    } catch (err) {
-      console.warn("[scene-render-controls] provider failed to load", err);
-      provider = null;
-    }
+    root.toggleAttribute("data-standalone", detail.state === undefined);
+    if (detail.state !== undefined) {
+      own?.manager.dispose();
+      own = null;
+      state = detail.state;
+      fixed = !!detail.at;
+    } else if (root.isConnected) keepHere();
     render();
   }
 
-  async function resolveSource() {
-    const parent = handle.doc()?.parent;
-    if (!parent || sourceHandle?.url === parent) return;
-    try {
-      const h = await repo.find(parent);
-      if (dead) return;
-      sourceHandle?.off("change", render);
-      sourceHandle = h;
-      h.on("change", render);
-      render();
-    } catch {
-      // source unavailable; status shows what we know
-    }
+  /** Alone: a render manager of its own for this render, following the render doc's source. */
+  function keepHere() {
+    const parent = handle.doc()?.parent ?? null;
+    if (!registry || !parent || own?.parent === parent) return;
+    own?.manager.dispose();
+    const manager = createRenderManager({
+      repo,
+      time: element.time ?? realTime(),
+      readOnly: handleReadOnly(handle),
+      loadProvider: async (id) => {
+        if (!registry.has(id)) return null;
+        const p = await registry.load(id);
+        return p?.module ? { id, name: p.name ?? id, params: p.params ?? [], cost: p.cost, version: p.version, module: p.module } : null;
+      },
+      onState: (_id, said) => {
+        state = said.state;
+        render();
+      },
+      onGLB: () => {},
+    });
+    own = { manager, parent };
+    manager.track("render", { sourceUrl: parent, renderUrl: handle.url });
   }
 
   function render() {
     if (dead) return;
     const doc = handle.doc();
     if (!doc) return;
-    root.toggleAttribute("data-standalone", !root.closest(".scene-tool"));
-
     $(".provider").textContent = providerMeta?.name ?? doc.providerId ?? "No provider";
-
-    askContext();
-    // a fixed object is judged at its fixed heads (null until they're here)
-    const src = at ? viewAt(sourceHandle, at.heads) : sourceHandle;
-    if (provider && src) deps.set(dependenciesOf(provider.module, src.doc(), handle.doc()?.parent ?? null));
-    // undefined = can't tell yet (provider, source or a dependency not loaded)
-    let reason =
-      doc.builtFrom && provider && src
-        ? staleReason(doc, {
-            heads: src.heads?.() ?? [],
-            fingerprint: fingerprintOf(provider.module, src.doc()),
-            deps: deps.snapshot(),
-            providerVersion: provider.version,
-          })
-        : undefined;
-    if (reason === "deps" && deps.pendingSince() != null) reason = undefined;
-    let state = doc.status || "idle";
-    // A failed build whose inputs have since gone back to what the current GLB
-    // was built from: what's shown matches the source, so it isn't an error.
-    if (state === "error" && reason === null) state = "idle";
-    let label = state === "building" ? "Building…" : state === "error" ? "Error" : "Up to date";
-    if (localBuilding) (state = "building"), (label = "Building…");
-    if (state === "idle") {
-      if (!doc.builtFrom) (state = "stale"), (label = "Not built yet");
-      else if (reason) (state = "stale"), (label = doc.pinned ? "Stale (pinned)" : "Stale");
-    }
+    const [pillState, label] = pillOf(state);
     const pill = $(".status");
-    pill.dataset.state = state;
+    pill.dataset.state = pillState;
     pill.textContent = label;
-    $(".built").textContent = `built ${relativeTime(doc.builtAt)}${at ? " · fixed version" : ""}`;
+    $(".built").textContent = `built ${relativeTime(doc.builtAt)}${fixed ? " · fixed version" : ""}`;
 
     const err = $(".error");
-    err.hidden = !(state === "error" && doc.error);
-    err.textContent = doc.error ?? "";
+    err.hidden = state?.state !== "failed" || !state.error;
+    err.textContent = state?.state === "failed" ? (state.error ?? "") : "";
 
     const notice = $(".notice");
     const missing = doc.providerId && registry && !providerMeta;
     notice.hidden = !missing;
     notice.textContent = missing ? `The “${doc.providerId}” provider isn't installed, so these params can't be edited here.` : "";
 
-    const nextSpecs = specs();
-    const key = JSON.stringify(nextSpecs);
+    const specs = providerMeta?.params ?? [];
+    const key = JSON.stringify(specs);
     if (!form || form.key !== key) {
       form?.dispose();
-      form = createParamForm($(".params"), nextSpecs, (k, v) =>
+      form = createParamForm($(".params"), specs, (k, v) =>
         handle.change((d) => {
           if (!d.params) d.params = {};
           d.params[k] = v;
@@ -177,15 +157,11 @@ export default function SceneRenderControls(handle, element) {
       form.key = key;
     }
     form.update(doc.params ?? {});
-    if (!nextSpecs.length && !missing) {
-      $(".params").dataset.empty = "";
-    } else {
-      delete $(".params").dataset.empty;
-    }
+    if (!specs.length && !missing) $(".params").dataset.empty = "";
+    else delete $(".params").dataset.empty;
 
     $(".pinned").checked = !!doc.pinned;
-    const btn = $(".rebuild");
-    btn.disabled = localBuilding || !doc.providerId;
+    $(".rebuild").disabled = state?.state === "building" || !doc.providerId;
   }
 
   $(".pinned").addEventListener("change", (e) =>
@@ -194,63 +170,43 @@ export default function SceneRenderControls(handle, element) {
     }),
   );
 
-  $(".rebuild").addEventListener("click", async () => {
-    const ev = new CustomEvent(REBUILD_EVENT, {
-      detail: { renderUrl: handle.url },
-      bubbles: true,
-      composed: true,
-      cancelable: true,
-    });
+  $(".rebuild").addEventListener("click", () => {
+    const ev = new CustomEvent(REBUILD_EVENT, { detail: { renderUrl: handle.url }, bubbles: true, composed: true, cancelable: true });
     root.dispatchEvent(ev);
-    if (ev.defaultPrevented) return; // a scene took it
-    if (!provider || !sourceHandle) {
-      handle.change((d) => {
-        d.status = "error";
-        d.error = !provider ? "Provider is not installed" : "Source document is not available";
-      });
-      return;
-    }
-    localBuilding = true;
-    render();
-    try {
-      deps.set(dependenciesOf(provider.module, sourceHandle.doc(), sourceHandle.url));
-      await runBuild({ repo, renderHandle: handle, sourceHandle, provider, deps: deps.snapshot() });
-    } catch (err) {
-      console.warn(errorMessage(err));
-    } finally {
-      localBuilding = false;
-      render();
-    }
+    if (!ev.defaultPrevented) own?.manager.rebuild("render"); // (else a stage took it)
   });
 
   const onChange = () => {
-    const doc = handle.doc();
-    if (doc?.providerId !== (providerMeta?.id ?? provider?.id)) resolveProvider();
-    if (doc?.parent !== sourceHandle?.url) resolveSource();
-    render();
+    const id = handle.doc()?.providerId;
+    providerMeta = id && registry?.has(id) ? registry.get(id) : null;
+    refresh();
   };
   handle.on("change", onChange);
-  root.addEventListener(CONTEXT_CHANGED_EVENT, render);
+  root.addEventListener(CONTEXT_CHANGED_EVENT, refresh);
   const tick = setInterval(render, 30_000);
+  // (mounted before it's in the document, it asks again once it is)
+  const later = setTimeout(refresh, 0);
 
   import("@inkandswitch/patchwork-plugins")
     .then(({ getRegistry }) => {
       if (dead) return;
       registry = getRegistry("scene:source");
-      const off = registry.on?.("changed", () => resolveProvider());
+      const off = registry.on?.("changed", () => {
+        onChange();
+        own?.manager.providersChanged();
+      });
       if (typeof off === "function") offs.push(off);
-      resolveProvider();
+      onChange();
     })
     .catch((err) => console.warn("[scene-render-controls] no plugin registry", err));
-  resolveSource();
   render();
 
   return () => {
     dead = true;
     handle.off("change", onChange);
-    sourceHandle?.off("change", render);
     clearInterval(tick);
-    deps.dispose();
+    clearTimeout(later);
+    own?.manager.dispose();
     for (const off of offs) off();
     form?.dispose();
     root.remove();
