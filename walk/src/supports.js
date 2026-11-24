@@ -248,7 +248,7 @@ const named = (v) => typeof v === "string" && v !== "";
 function coming(api, id, o) {
   const c = api.content?.(id);
   if (!c || c.loaded || !(named(o.sourceUrl) || named(o.renderUrl))) return false;
-  if (api.loadState?.(id)?.content === "scene") return false;
+  if (c.route === "scene") return false;
   const state = api.local?.get?.()?.status?.[id]?.state;
   return state !== "error" && state !== "warn";
 }

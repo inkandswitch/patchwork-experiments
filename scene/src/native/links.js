@@ -9,7 +9,9 @@
 // the focus leaves it) and opens again. While a doc is on its way it holds
 // api.opening(): arriving waits.
 //   - `use("links")`: `role(id)` → `{ role, open, reason? }` of the caller's
-//     stage's link `id` (a view plugin's: the focus stage's), `fixPoint(id)`.
+//     stage's link `id` (a view plugin's: the focus stage's), `fixPoint(id)`:
+//     where fixing any object at what it shows would fix it (a link's here,
+//     a built object's its content's `fix`).
 //   - Enter, a command on a link; the trail, where the focus is.
 //   - view["scene.links"]: `{}`, afresh whenever a link's state or name changes.
 
@@ -217,10 +219,17 @@ function create(api) {
   relink();
 
   const role = (p) => states.get(pathKey(p)) ?? null;
+  /** Where fixing the object at path `p` would fix it: a link's (fixPointAt), else what its stage's content says (`content(id).fix`), or null. */
+  function fixPoint(p) {
+    if (opened.has(pathKey(p))) return fixPointAt(p);
+    const host = p.slice(0, -1);
+    const reader = api.path({ focus: true }).find((r) => r.path.length === host.length && host.every((x, i) => x === r.path[i]));
+    return reader?.content(p.at(-1))?.fix ?? null;
+  }
   // (a view plugin's caller has no path: its stage is the focus)
   const at = (caller, id) => [...(Array.isArray(caller?.path) ? caller.path : focus()), id];
   return {
-    provides: { links: (caller) => Object.freeze({ role: (id) => role(at(caller, id)), fixPoint: (id) => fixPointAt(at(caller, id)) }) },
+    provides: { links: (caller) => Object.freeze({ role: (id) => role(at(caller, id)), fixPoint: (id) => fixPoint(at(caller, id)) }) },
     /** CONVENTIONS.md, "Inspect": the stage tree, each link occurrence by its path with its role, whether a stage is open for it, why not, and its doc */
     inspect: () => snapshot({ stages: [...states].map(([k, st]) => ({ path: k.split("\u001f"), ...st, url: opened.get(k)?.url ?? null })) }),
     commands: [

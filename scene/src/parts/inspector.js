@@ -180,7 +180,7 @@ function create(api) {
   const now = () => seen(here.local.get(), here.view.get());
   const units = () => api.use("prefs")?.get("units", "m") ?? "m";
   // the sections that go with a selection (or the scene): its Source, File or Linked scene, Build, About
-  const documents = inspectorDocuments((id) => contentKind(here.loadState?.(id)));
+  const documents = inspectorDocuments((id) => contentKind(here.content(id)));
 
   // ─── doc writes, through the planners ──────────────────────────────────────
 
@@ -203,16 +203,16 @@ function create(api) {
   const setPart = (id, kind, i, v) => apply(here.ops.setTransformPart(here.scene(), id, kind, i, v), kind === "rotation" ? "Rotate" : kind === "scale" ? "Scale" : "Move");
   // ─── fixed versions (`at`) ───────────────────────────────────────────────
 
-  /** Where it would be fixed: a link's by use("links"), else here.fixPoint (null: not built or open here yet). */
-  const fixPointOf = (id) => api.use("links")?.fixPoint(id) ?? here.fixPoint?.(id) ?? null;
+  /** Where it would be fixed: what use("links") says, for a link or a built object (null: not built or open here yet). */
+  const fixPointOf = (id) => api.use("links")?.fixPoint(id) ?? null;
   const linkOf = (id) => api.use("links")?.role(id) ?? null;
 
   /**
    * Can it be fixed at a version: content that follows a doc as it changes
    * (a render doc's build, or a link's scene doc), not a file.
    */
-  const versioned = (id, o) => !!o && !isGroup(o) && (!!o.renderUrl || here.loadState?.(id)?.content === "scene");
-  const notYet = (id) => (here.loadState?.(id)?.content === "scene" ? "Not open here yet: nothing to fix" : "Not built here yet: nothing to fix");
+  const versioned = (id, o) => !!o && !isGroup(o) && (!!o.renderUrl || here.content(id)?.route === "scene");
+  const notYet = (id) => (here.content(id)?.route === "scene" ? "Not open here yet: nothing to fix" : "Not built here yet: nothing to fix");
 
   /** Fix an object at exactly what it shows now: its render's build, or a link's doc and every doc reached through it. */
   function fixVersion(id) {
@@ -694,7 +694,7 @@ function create(api) {
 
     const behaviours = behavioursView(id, "object");
     const layers = group ? null : layersView(id);
-    const content = contentKind(here.loadState?.(id));
+    const content = contentKind(here.content(id));
     const builtFrom = docRowsView((d) => BUILT_FROM.has(d.id));
     const notes = docRowsView((d) => !BUILT_FROM.has(d.id) && d.id !== BUILD_DOC);
     const build = !group && o.renderUrl ? buildControlsView(id, o) : null;
@@ -884,7 +884,7 @@ function create(api) {
     fillVersion(o);
     fillLink();
     fillOpen();
-    view.build?.summarize(here.loadState?.(id));
+    view.build?.summarize(here.content(id));
     view.builtFrom.update(id);
     view.notes.update(id);
   }
@@ -914,7 +914,7 @@ function create(api) {
   function fillVersion(o) {
     const v = view.version;
     if (!v) return;
-    const s = here.loadState(view.id) ?? {};
+    const s = here.content(view.id)?.render ?? {};
     const at = normalizeAt(o.at);
     const key = atKey(at);
     let text = "Latest";
@@ -923,7 +923,7 @@ function create(api) {
       const builtThere = s.builtAt != null && (s.builtHeads ?? []).join(",") === at.heads.join(",");
       text = `Fixed at ${shortHeads(at.heads)}`;
       if (builtThere) text += ` · built ${new Date(s.builtAt).toLocaleString()}`;
-      if (s.state?.version) text += " · waiting for that version to sync";
+      if (here.content(view.id)?.state?.version) text += " · waiting for that version to sync";
       const deps = Object.keys(at.deps).length;
       title = `Source heads ${at.heads.join(", ")}${deps ? `; ${deps} linked document${deps > 1 ? "s" : ""} fixed too` : ""}`;
     }
@@ -938,9 +938,8 @@ function create(api) {
   function fillStatus(scene, local, o) {
     const id = view.id;
     const status = local.status?.[id] ?? null;
-    const load = here.loadState?.(id) ?? null;
     const content = here.content(id);
-    const parts = statusParts(o, { status, load, content, shown: contentKind(load) === "file" ? shownIn(scene, id) : true });
+    const parts = statusParts(o, { status, content, shown: contentKind(content) === "file" ? shownIn(scene, id) : true });
     const key = JSON.stringify(parts);
     if (key === view.statusKey) return;
     view.statusKey = key;
@@ -975,7 +974,7 @@ function create(api) {
     if (body.hidden) body.hidden = false;
     // (what a link is here is the view's, and changes with no change to the doc)
     const lk = linkOf(id);
-    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(here.loadState?.(id)) || !!view.linkRow !== (!!lk && !isGroup(o));
+    const fresh = !view || view.id !== id || view.group !== isGroup(o) || view.renderUrl !== (o.renderUrl ?? null) || view.content !== contentKind(here.content(id)) || !!view.linkRow !== (!!lk && !isGroup(o));
     const name = here.nameOf(id);
     const ck = `${contentKey(id)}|${JSON.stringify(lk)}`;
     if (!fresh && !force && last && last.scene === scene && !localChanged(last.local, local) && last.name === name && last.content === ck) return;

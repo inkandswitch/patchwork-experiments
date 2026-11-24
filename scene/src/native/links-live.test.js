@@ -125,7 +125,7 @@ describe("a live link opens a stage for its doc", () => {
     const o = s.doc().objects[id];
     expect(o).toMatchObject({ name: "Lost Cities", sourceUrl: game.url, providerId: LINK, renderUrl: null });
     expect(o.at).toBeUndefined();
-    expect(api.loadState(id)).toMatchObject({ content: "scene" });
+    expect(api.content(id)).toMatchObject({ route: "scene" });
     expect(s.local.get().status[id]).toBeUndefined();
     const head = fakeHead();
     const pinned = await add(api, `${game.url}#${head}`);

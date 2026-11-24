@@ -905,8 +905,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       /** the element the canvas fills, and the stage's root (for DOM listeners: drops, paste) */
       port,
       root,
-      /** where an object's content was routed (`content`) and its state (../content/content.js) */
-      loadState: (oid) => content.loadState(oid),
 
       // local, the channel
       local: Object.freeze({
@@ -958,7 +956,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
       // content
       nameOf,
-      content: (oid) => scope.contentOf(oid),
+      /** what it shows and how it got there (../content/content.js `of`) */
+      content: (oid) => content.of(oid),
       /** the box of an object, a group (its members') or, for null, the scene; `in`: an object's frame instead of the stage's */
       box: (target, { hints = true, in: frameId = null } = {}) => (target == null ? scope.sceneBox({ hints }) : scope.objectBox(target, { hints, in: frameId })),
       worldOf: displayedWorld,
@@ -969,7 +968,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       },
       providersFor: content.providersFor,
       addObject: content.addObject,
-      fixPoint: content.fixPoint,
 
       // picking and camera
       pick: (x, y, opts) => scope.pick(x, y, opts),
@@ -1356,6 +1354,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     pointed: () => viewHitIn(view.pointed()),
     run: (inv) => run(inv),
     nameOf: (oid) => nameOf(oid),
+    /** what an object shows and how it got there (api.content) */
+    content: (oid) => content.of(oid),
     /** its doc's packages this viewer doesn't have (local.packages; the view asks every open doc's together) */
     packages: () => local.get().packages,
     /** may this view write its doc? */
