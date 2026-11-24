@@ -65,8 +65,6 @@ function fakeApi(presence, id, on = null) {
       channel: { session: "me", peers: () => presence, watch: (fn) => watchers.push(fn), set() {}, rate() {} },
       repo: null,
       invalidate() {},
-      // (what the body reads; never entered here)
-      body: { current: () => null },
       camera: {},
       now: () => 0,
       scene: on ? on.scene : () => ({ objects: {} }),

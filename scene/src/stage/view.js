@@ -1217,8 +1217,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       project: (p) => viewport.project(p),
       // bodies and hands (STAGE.md, "Bodies", "Hands")
       body: Object.freeze({
-        /** the top body: { id, label, ext, depth, lock, reach, keys } */
-        current: () => atom.get().body,
         /** enter body `id` (the focus stage's own first) at `place`: false if none offers it or it can't */
         enter: (bid, place) => (live() ? enterBody(bid, place, focusStage()) : false),
         leave: () => (live() ? leaveBody() : false),

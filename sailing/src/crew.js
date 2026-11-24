@@ -13,7 +13,7 @@
 //   high the eye is are walk's alone; who stands there is the station's
 //   own claim, which its verb holds (stations.js) and the spot names;
 // - what the viewer is doing is read, never kept here: the top body
-//   (api.body.current(): its declared keys too), walk's avatar in this
+//   (api.view.get().body: its declared keys too), walk's avatar in this
 //   stage (its `avatar` contribution: on, feet, yaw, pitch, swimming) and
 //   the station this crew's body is at.
 //
@@ -54,7 +54,7 @@ export function aimOf(eye, at, heading) {
  * are the seat's.
  */
 export const seatedView = (api) => {
-  const b = api?.body?.current?.();
+  const b = api?.view?.get?.()?.body;
   return (b?.depth ?? 0) > 0 && b.ext !== api.id && b.id !== "walk";
 };
 
@@ -111,7 +111,7 @@ export function createCrew(api, ctx) {
     }
     return null;
   };
-  const top = () => api.body?.current?.() ?? null;
+  const top = () => api.view?.get?.()?.body ?? null;
   const walkingHere = () => top()?.id === "walk" && !!walker();
 
   // ─── the station body ───────────────────────────────────────────────────

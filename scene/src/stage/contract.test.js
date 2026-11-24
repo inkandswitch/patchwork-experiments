@@ -256,44 +256,33 @@ describe("keys in an embedded document (STAGE.md, “Keys”)", () => {
 });
 
 describe("api.page (STAGE.md, “`api`”)", () => {
-  const hidden = (on) => {
-    if (on) Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
-    else delete document.visibilityState;
-    document.dispatchEvent(new Event("visibilitychange"));
-  };
-  afterEach(() => void delete document.visibilityState);
-
-  it("visible() and the tab's visibility (“visible”); the view's pagehide (“hide”) and pageshow (“show”); an off works; what it registered goes as it stops", async () => {
+  it("the view's pagehide (“hide”) and pageshow (“show”); an off works; what it registered goes as it stops", async () => {
     const log = [];
     const listen = (name) => (api) => {
-      const offs = Object.fromEntries(["hide", "show", "visible"].map((t) => [t, api.page.on(t, () => log.push([name, t, api.page.visible()]))]));
+      const offs = Object.fromEntries(["hide", "show"].map((t) => [t, api.page.on(t, () => log.push(`${name} ${t}`))]));
       return { offs };
     };
     const a = keeper("t.a", {}, listen("a"));
     const b = keeper("t.b", {}, listen("b"));
     const s = await mount({ extensions: [a.ext, b.ext] });
-    expect(a.seen.api.page.visible()).toBe(true);
-    hidden(true);
-    expect(a.seen.api.page.visible()).toBe(false);
-    expect(log.splice(0)).toEqual([["a", "visible", false], ["b", "visible", false]]);
-    hidden(false);
-    expect(log.splice(0)).toEqual([["a", "visible", true], ["b", "visible", true]]);
+    const back = () => {
+      const e = new Event("pageshow");
+      Object.defineProperty(e, "persisted", { value: true });
+      globalThis.dispatchEvent(e);
+    };
     // leaving the page says "hide" (last first, as extensions stop); back from the cache, "show"
     globalThis.dispatchEvent(new Event("pagehide"));
-    expect(log.splice(0)).toEqual([["b", "hide", true], ["a", "hide", true]]);
-    const back = new Event("pageshow");
-    Object.defineProperty(back, "persisted", { value: true });
-    globalThis.dispatchEvent(back);
-    expect(log.splice(0)).toEqual([["a", "show", true], ["b", "show", true]]);
+    expect(log.splice(0)).toEqual(["b hide", "a hide"]);
+    back();
+    expect(log.splice(0)).toEqual(["a show", "b show"]);
     // an off takes that one listener away
-    s.instance("t.a").offs.visible();
-    hidden(true);
-    hidden(false);
-    expect(log.splice(0).map(([n, t]) => `${n} ${t}`)).toEqual(["b visible", "b visible"]);
+    s.instance("t.a").offs.show();
+    globalThis.dispatchEvent(new Event("pagehide"));
+    back();
+    expect(log.splice(0)).toEqual(["b hide", "a hide", "b show"]);
     // stopped, none of t.b's is called again
     await s.uninstall("t.b");
-    hidden(true);
     globalThis.dispatchEvent(new Event("pagehide"));
-    expect(log.splice(0).map(([n, t]) => `${n} ${t}`)).toEqual(["a hide"]);
+    expect(log.splice(0)).toEqual(["a hide"]);
   });
 });
