@@ -25,26 +25,24 @@ export function depthRange({ dist, radius, clear, known = true, held = null }) {
 
 /**
  * What the depth range is fitted from, given each shown object's content
- * (null while it's a hint) and world box, and the boxes extensions said
- * the near plane must not cut (extents): each object's box with a margin
- * of 5% (at least 5 cm), so what moves without a refit (a loop's dressing
- * of an object's nodes) stays clear of the near plane; the boxes as { min, max }; and
- * the radius of everything together (1 when there's nothing).
- * @param {{ content: object | null, box: Box3 }[]} shown  @param {Box3[]} extents
- * @returns {{ near: [object | null, Box3][], boxes: { min: number[], max: number[] }[], radius: number }}
+ * (null while it's a hint) and world box, and the boxes extensions said the
+ * near plane must not cut (extents): each object's box with a margin of 5%
+ * (at least 5 cm), so what moves without a refit (a loop's dressing of an
+ * object's nodes) stays clear of the near plane, and the radius of
+ * everything together (1 when there's nothing).
+ * @param {Iterable<{ content: object | null, box: Box3 }>} shown  @param {Iterable<Box3>} extents
+ * @returns {{ near: [object | null, Box3][], radius: number }}
  */
 export function sceneDepth(shown, extents) {
   const all = new Box3();
   const near = [];
-  const boxes = [];
   for (const { content, box } of shown) {
     all.union(box);
-    boxes.push({ min: box.min.toArray(), max: box.max.toArray() });
     const r = box.getBoundingSphere(new Sphere()).radius;
     near.push([content, box.clone().expandByScalar(Math.max(0.05, r * 0.05))]);
   }
   for (const b of extents) all.union(b);
-  return { near, boxes, radius: all.isEmpty() ? 1 : Math.max(all.getBoundingSphere(new Sphere()).radius, 1e-4) };
+  return { near, radius: all.isEmpty() ? 1 : Math.max(all.getBoundingSphere(new Sphere()).radius, 1e-4) };
 }
 
 /**

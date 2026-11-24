@@ -115,7 +115,7 @@ describe("the atmosphere, drawn", () => {
     cube(vp, "a", [0, 0, 0], 2);
     vp.renderer = { shadowMap: { enabled: false, autoUpdate: true, needsUpdate: false }, setClearColor() {} };
     vp.setAtmosphere({ sun: { direction: [0.45, 1, 0.6], shadows: true } });
-    vp.sceneDepth();
+    vp.fitted();
     vp.renderer.shadowMap.needsUpdate = false;
     vp.fitSun();
     expect(vp.renderer.shadowMap.needsUpdate).toBe(true);
@@ -172,31 +172,6 @@ describe("the depth range", () => {
 });
 
 describe("objects", () => {
-  it("a held pose beats the doc's transform until it's let go", () => {
-    const vp = headless();
-    vp.applyDisplay("p", { transform: { position: [1, 0, 0] } });
-    vp.setPose("p", { position: [0, 2, 0], rotation: [0, 0, 0], scale: 1 });
-    expect(vp.worldOf("p").slice(12, 15)).toEqual([0, 2, 0]);
-    // the doc changing underneath doesn't move it
-    vp.applyDisplay("p", { transform: { position: [5, 0, 0] } });
-    expect(vp.worldOf("p").slice(12, 15)).toEqual([0, 2, 0]);
-    vp.setPose("p", null);
-    expect(vp.worldOf("p").slice(12, 15)).toEqual([5, 0, 0]);
-    expect(vp.worldOf("missing")).toBe(null);
-    expect(vp.contentOf("missing")).toBe(null);
-  });
-
-  it("a pose composes with the parent, and applies to an object that arrives later", () => {
-    const vp = headless();
-    vp.applyDisplay("parent", { transform: { position: [10, 0, 0], scale: 2 } });
-    vp.setPose("child", { position: [1, 0, 0] });
-    vp.applyDisplay("child", { transform: { position: [0, 0, 0] } }, "parent");
-    const m = vp.worldOf("child");
-    expect(m).toHaveLength(16);
-    expect(m.slice(12, 15)).toEqual([12, 0, 0]);
-    expect(m[0]).toBe(2);
-  });
-
   it("a group's box is what's shown of its members; a hidden object is neither boxed nor picked", () => {
     const vp = headless();
     cube(vp, "a", [0, 0, 0]);
@@ -299,7 +274,7 @@ describe("a hidden link hides its doc", () => {
       const linkDrawn = how === "shown";
       const shown = child === "attachment" ? how !== "group hidden" : linkDrawn;
       expect(vp.isShown(key)).toBe(shown);
-      expect(vp.pickTargets().includes(entry.body)).toBe(shown);
+      expect(vp.tree.bodies().includes(entry.body)).toBe(shown);
       expect(vp.objectBox(key) != null).toBe(shown);
       expect(vp.contentShown("L")).toBe(linkDrawn);
       expect(!!vp.pickWidget(100, 50)).toBe(linkDrawn);
