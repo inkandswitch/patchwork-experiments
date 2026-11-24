@@ -223,7 +223,6 @@ function measureAt(api, view, hint) {
       holding = false;
       cancelFrame();
       reset();
-      view.cursor(null);
       draw();
     },
   };
@@ -232,7 +231,6 @@ function measureAt(api, view, hint) {
   function start() {
     reset();
     holding = true;
-    view.cursor("crosshair");
     draw();
     return handlers;
   }

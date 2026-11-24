@@ -78,7 +78,5 @@ describe("picking", () => {
     expect(castRay(rc, [b], [-5, 0, 0], [1, 0, 0]).id).toBe("b");
     expect(castRay(rc, [a, b], [-5, 0, 0], [1, 0, 0], 4)).toBe(null);
     expect(castRay(rc, [a, b], [-5, 0, 0], [0, 0, 0])).toBe(null);
-    // from inside a solid: the face met from behind
-    expect(castRay(rc, [a], [0, 0, 0], [1, 0, 0])).toMatchObject({ id: "a", back: true });
   });
 });

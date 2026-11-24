@@ -599,10 +599,6 @@ export class Viewport {
     if (this.ok) this.rig.bodyRide(spec);
     else this.rides.body(spec ?? null, null);
   }
-  /** @returns {() => void} off */
-  watchCamera(fn) {
-    return this.ok ? this.rig.watch(fn) : () => {};
-  }
   /** Call fn(camera, how) when someone stops orbiting or zooming ("orbit") or frames something ("frame"); never while the camera is held. @returns {() => void} off */
   onCameraEnd(fn) {
     this.cameraEndListeners.add(fn);

@@ -51,12 +51,10 @@ export function projectPoint(camera, size, p) {
 /**
  * A raycaster hit as the stage hands it out. The normal is the hit face's,
  * in world, turned toward where the ray came from (meshes are double
- * sided); null for lines and points. `back`: the ray met the face from
- * behind (from inside a closed solid), as its own normal has it.
+ * sided); null for lines and points.
  */
 export function hitOf(h, ray) {
   let normal = null;
-  let back = false;
   if (h.face?.normal) {
     const m = h.object.matrixWorld.clone();
     if (h.object.isInstancedMesh && h.instanceId != null) {
@@ -65,13 +63,10 @@ export function hitOf(h, ray) {
       m.multiply(inst);
     }
     const n = h.face.normal.clone().applyMatrix3(new Matrix3().getNormalMatrix(m)).normalize();
-    if (n.dot(ray.direction) > 0) {
-      n.negate();
-      back = true;
-    }
+    if (n.dot(ray.direction) > 0) n.negate();
     normal = n.toArray();
   }
-  return { id: objectIdOf(h.object), point: h.point.toArray(), normal, distance: h.distance, back };
+  return { id: objectIdOf(h.object), point: h.point.toArray(), normal, distance: h.distance };
 }
 
 /** The nearest drawn hit among `targets` for the raycaster as it's aimed (that `accept` takes, if given). */
@@ -296,7 +291,7 @@ export function pickAt({ raycaster, camera, size, targets, focusDistance }, x, y
 /**
  * The nearest of `targets` along a world ray, up to `far`. Lines and points
  * are never hit. @param {number[]} origin  @param {number[]} dir  (need not be unit)
- * @returns {{ id: string, point: number[], normal: number[] | null, distance: number, back: boolean } | null}
+ * @returns {{ id: string, point: number[], normal: number[] | null, distance: number } | null}
  */
 export function castRay(raycaster, targets, origin, dir, far = Infinity) {
   const d = v3(dir);

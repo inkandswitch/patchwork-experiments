@@ -51,6 +51,7 @@ describe("scene.measure", () => {
     expect(state()).toMatchObject({ checked: false });
     expect(state("measure", "a")).toBeNull(); // the scene's, not an object's
     expect(hint().hidden).toBe(true);
+    s.pointer("pointermove", 20, 20); // the pointer over the canvas: its cursor is the top hand's
     expect(run()).toBe(true);
     await settle();
     expect(state()).toMatchObject({ checked: true });

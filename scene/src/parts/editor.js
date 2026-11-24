@@ -136,7 +136,6 @@ async function inStep(f, id, label, create) {
       Object.freeze({
         id,
         repo: f.repo,
-        handle: f.handle,
         url: f.url,
         viewer: f.channel.viewer,
         doc: f.doc,

@@ -55,7 +55,6 @@ async function mount({ doc = {}, before = [], extensions = [], content = {} } = 
     }
     return best;
   };
-  api.ray = () => null;
   api.sceneBox = () => ({ min: [-1, 0, -1], max: [1, 1, 1] });
   api.content = (id) => ({ loaded: true, box: BOX, extras: content[id] ?? { connectors: [], snapRadius: null }, stats: null, root: null });
   api.box = (id) => ({ min: [-1, 0, -1], max: [1, 1, 1] });
@@ -330,7 +329,7 @@ describe("scene.carry carrying", () => {
       },
     };
     const { api, stub } = await mount({ before: [grabber] });
-    api.ray = (x, y) => down(x / 10, y / 10); // port px → a spot on the table
+    s.debug.viewport.ray = (x, y) => down(x / 10, y / 10); // port px → a spot on the table
     s.pointer("pointerdown", 10, 10);
     s.pointer("pointermove", 30, 10);
     s.pointer("pointermove", 40, 20);
@@ -351,7 +350,7 @@ describe("scene.carry carrying", () => {
       module: { create: (api) => ({ input: { press: (ev) => api.collect("carry")[0]?.value("a", ev) ?? null } }) },
     };
     const { api, stub } = await mount({ before: [grabber] });
-    api.ray = (x, y) => down(x / 10, y / 10);
+    s.debug.viewport.ray = (x, y) => down(x / 10, y / 10);
     s.pointer("pointerdown", 10, 10);
     s.pointer("pointermove", 30, 10);
     s.key("Escape", { code: "Escape" });
@@ -380,7 +379,7 @@ describe("scene.carry by the touch pad (scene.touch: the pad is a keyboard)", ()
   for (const [when, free] of [["never", false], ["before the lift", true], ["after the lift", true]]) {
     it(`a finger carries it; Place freely on the pad (${when}) places it freely`, async () => {
       const { api } = await mount({ before: [grabber], extensions: [TOUCH], doc: { objects: { board: piece({ name: "Board" }) } }, content });
-      api.ray = (x, y) => down(x / 100, y / 100);
+      s.debug.viewport.ray = (x, y) => down(x / 100, y / 100);
       finger("pointerdown", 10, 10);
       await settle();
       // the carry's keys show while it's open: under the gesture, in its declared order
