@@ -20,7 +20,10 @@
 //  - a new browser tab clones the layout and its focus, so a link pasted into
 //    it lands in the panel you were last in;
 //  - Quick Open (⌘P) lists open tabs then the folder tree, and opens a choice
-//    where the folder would, or beside with Alt.
+//    where the folder would, or beside with Alt;
+//  - the tab keys step through, pick and close the focused panel's tabs (or
+//    the selected document's panel's, from the folder), and close a panel
+//    with its last tab.
 //
 // The host's hash router runs throughout, copied from the bootloader
 // (`installHashRouting`): every open that bubbles out is written to
@@ -598,5 +601,176 @@ describe("opening documents in the tiling frame", () => {
     });
     await settle();
     expect(palette()).toBeNull();
+  });
+
+  // The tab keys (see `tabKeys.ts`), pressed wherever focus is.
+
+  const tabKey = async (init: KeyboardEventInit, target: EventTarget = document.body) => {
+    let event!: KeyboardEvent;
+    await act(async () => {
+      event = new KeyboardEvent("keydown", { bubbles: true, composed: true, cancelable: true, ...init });
+      target.dispatchEvent(event);
+    });
+    await settle();
+    return event;
+  };
+  const nextTab = { code: "BracketRight", key: "}", ctrlKey: true, shiftKey: true };
+  const prevTab = { code: "BracketLeft", key: "{", ctrlKey: true, shiftKey: true };
+  const tabNumber = (n: number) => ({ code: `Digit${n}`, key: `${n}`, ...(mac ? { ctrlKey: true } : { altKey: true }) });
+  const closeTabKey = { code: "KeyW", key: mac ? "∑" : "w", altKey: true };
+  const urlDoc = () => new URLSearchParams(window.location.hash.slice(1)).get("doc");
+  const docId = (name: string) => parseAutomergeUrl(docs.get(name)!).documentId;
+
+  it("Ctrl+Shift+] and [ step through the focused panel's tabs, adding no history", async () => {
+    const before = hashHistory.depth;
+    expect(panels()[0]).toBe("C [E] J* F");
+    expect((await tabKey(nextTab)).defaultPrevented).toBe(true);
+    expect(panels()[0]).toBe("C E [J*] F");
+    expect(urlDoc()).toBe(docId("J"));
+    await tabKey(prevTab);
+    await tabKey(prevTab);
+    expect(panels()[0]).toBe("[C] E J* F");
+    await tabKey(prevTab);
+    expect(panels()[0]).toBe("C E J* [F]"); // round to the last
+    expect(hashHistory.depth).toBe(before);
+  });
+
+  it("tab N by number, 9 the last", async () => {
+    await tabKey(tabNumber(2));
+    expect(panels()[0]).toBe("C [E] J* F");
+    await tabKey(tabNumber(9));
+    expect(panels()[0]).toBe("C E J* [F]");
+    await tabKey(tabNumber(5)); // there's no fifth
+    expect(panels()[0]).toBe("C E J* [F]");
+  });
+
+  it("Alt+W closes the tab showing", async () => {
+    const event = await tabKey(closeTabKey);
+    expect(event.defaultPrevented).toBe(true); // no ∑ typed
+    expect(panels()).toEqual(["C E [J*]", "A [D*]", "[G*]"]);
+    expect(urlDoc()).toBe(docId("J"));
+  });
+
+  it("a key a tool takes for itself stays the tool's", async () => {
+    const target = docEl("J");
+    const takeIt = (event: Event) => event.preventDefault();
+    target.addEventListener("keydown", takeIt);
+    await tabKey(prevTab, target);
+    target.removeEventListener("keydown", takeIt);
+    expect(panels()).toEqual(["C E [J*]", "A [D*]", "[G*]"]);
+  });
+
+  it("with focus in the folder, they act on the selected document's panel", async () => {
+    await focus(folderEl());
+    await tabKey(prevTab);
+    expect(panels()).toEqual(["C [E] J*", "A [D*]", "[G*]"]);
+  });
+
+  it("pressed in a preview they don't keep it; typing in it does", async () => {
+    await tabKey(nextTab, docEl("E"));
+    expect(panels()).toEqual(["C E [J*]", "A [D*]", "[G*]"]);
+    await tabKey({ code: "ShiftLeft", key: "Shift", shiftKey: true }, docEl("J"));
+    expect(panels()).toEqual(["C E [J*]", "A [D*]", "[G*]"]);
+    await tabKey({ code: "KeyX", key: "x" }, docEl("J"));
+    expect(panels()).toEqual(["C E [J]", "A [D*]", "[G*]"]);
+    await tabKey(prevTab);
+  });
+
+  it("a panel's last tab closes the panel", async () => {
+    await focus(docEl("G"));
+    await tabKey(closeTabKey);
+    expect(panels()).toEqual(["C [E] J", "A [D*]"]);
+  });
+
+  it("none of them while Quick Open is up", async () => {
+    await pressQuickOpen();
+    await tabKey(closeTabKey, paletteInput());
+    await tabKey(nextTab, paletteInput());
+    expect(panels()).toEqual(["C [E] J", "A [D*]"]);
+    await press("Escape");
+  });
+
+  // The shortcuts sheet and the keys named in tooltips.
+
+  const sheet = () => element.querySelector<HTMLElement>(".tile-shortcuts");
+  const questionMark = async (target: EventTarget) => {
+    let event!: KeyboardEvent;
+    await act(async () => {
+      event = new KeyboardEvent("keydown", {
+        key: "?",
+        code: "Slash",
+        shiftKey: true,
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+      });
+      target.dispatchEvent(event);
+    });
+    await settle();
+    return event;
+  };
+  const leafEl = (name: string) => {
+    const leaf = leaves(layout.doc()!.layout).find((l) => leafTabs(l).tabs.some((t) => t.url === docs.get(name)))!;
+    return element.querySelector<HTMLElement>(`[data-leaf-id="${leaf.id}"]`)!;
+  };
+
+  it("? opens the shortcuts sheet; Escape closes it and gives focus back", async () => {
+    const button = document.createElement("button");
+    document.body.append(button);
+    button.focus();
+    expect((await questionMark(button)).defaultPrevented).toBe(true);
+    expect(sheet()).not.toBeNull();
+    expect(document.activeElement).toBe(sheet());
+    const closeRow = sheet()!.querySelector('[data-shortcut="close-tab"] kbd')!.textContent;
+    expect(closeRow).toBe(mac ? "⌥W" : "Alt+W");
+    await act(async () => {
+      sheet()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    });
+    await settle();
+    expect(sheet()).toBeNull();
+    expect(document.activeElement).toBe(button);
+    button.remove();
+  });
+
+  it("? typed in a text field is only typed", async () => {
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.focus();
+    expect((await questionMark(input)).defaultPrevented).toBe(false);
+    expect(sheet()).toBeNull();
+    input.remove();
+  });
+
+  it("the top bar's keyboard button opens it; a click elsewhere closes it", async () => {
+    const button = element.querySelector<HTMLElement>('.tile-topbar [aria-label="Keyboard shortcuts"]')!;
+    expect(button.title).toBe("Keyboard shortcuts (?)");
+    await act(async () => button.click());
+    await settle();
+    expect(sheet()).not.toBeNull();
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    });
+    await settle();
+    expect(sheet()).toBeNull();
+  });
+
+  it("the tooltips name the keys that do the same", async () => {
+    expect(panels()).toEqual(["C [E] J", "A [D*]"]);
+    const stack = leafEl("E");
+    const tabs = [...stack.querySelectorAll<HTMLElement>(".tile-panel__tab")];
+    const n = (i: number) => (mac ? `⌃${i}` : `Alt+${i}`);
+    // (Titles here are ids: these documents have no datatype to name them.)
+    expect(tabs.map((t) => / \((.+)\)$/.exec(t.title)?.[1])).toEqual([n(1), n(2), n(3)]);
+    const closes = tabs.map((t) => t.querySelector<HTMLElement>(".tile-panel__tab-close")!.title);
+    expect(closes).toEqual(["Close tab", `Close tab (${mac ? "⌥W" : "Alt+W"})`, "Close tab"]);
+    // A stack's × closes the panel, which ⌥W doesn't; a lone document's does.
+    expect(stack.querySelector<HTMLElement>(".tile-panel__icon-btn--close")!.title).toBe("Close panel");
+    await open(folderEl(), "H", { altKey: true });
+    expect(panels()).toEqual(["C [E] J", "[H*]", "A [D*]"]); // beside the focused panel
+    expect(leafEl("H").querySelector<HTMLElement>(".tile-panel__icon-btn--close")!.title).toBe(
+      `Close panel (${mac ? "⌥W" : "Alt+W"})`,
+    );
+    const folderPanel = folderEl().closest<HTMLElement>("[data-leaf-id]")!;
+    expect(folderPanel.querySelector<HTMLElement>(".tile-panel__icon-btn--close")!.title).toBe("Close panel");
   });
 });

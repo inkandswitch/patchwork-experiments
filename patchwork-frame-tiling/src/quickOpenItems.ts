@@ -28,7 +28,7 @@ export type QuickPlacement = "stack" | "horizontal" | "vertical" | undefined;
 export const placementFor = (mods: { shiftKey: boolean; altKey: boolean }): QuickPlacement =>
   mods.altKey ? (mods.shiftKey ? "vertical" : "horizontal") : mods.shiftKey ? "stack" : undefined;
 
-const isMac = (): boolean =>
+export const isMac = (): boolean =>
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /** ⌘P on a Mac (where Ctrl-P is a line up in text), Ctrl-P elsewhere. */
