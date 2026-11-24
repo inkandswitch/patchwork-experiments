@@ -1102,7 +1102,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    */
   function viewParts({ id, key, own, live, stage = null }) {
     const acquire = acquirer(live);
-    /** A one-shot callback set through `set` (time.after or time.frame), cancelled if it stops first. */
+    /** A one-shot callback set through `set` (time.after), cancelled if it stops first. */
     const timed = (set, fn) => {
       if (!live() || typeof fn !== "function") return noop;
       let cancel = null;
@@ -1140,10 +1140,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       /** fn(dt, now) every frame; `first`: before the others (what moves what they read) */
       loop: (fn, { first = false } = {}) => acquire(own.frame, () => viewport.addLoop(fn, { first })),
       afterRender: (fn) => acquire(own.frame, () => viewport.afterRender(fn)),
-      /** the view's one time (./time.js): now() (ms), after(ms, fn) → cancel, frame(fn) → cancel */
+      /** the view's one time (./time.js): now() (ms), after(ms, fn) → cancel */
       now: () => time.now(),
       after: (ms, fn) => timed((cb) => time.after(ms, cb), fn),
-      frame: (fn) => timed((cb) => time.frame(cb), fn),
     };
   }
 

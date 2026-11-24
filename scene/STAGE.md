@@ -64,7 +64,7 @@ What is a stage's (its doc, content, space, camera, bodies, presence, flush) it 
 
 | Member | |
 |---|---|
-| as the extension `api`'s, for its whole life | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `overlay`, `style`, `listen`, `popover`, `loop`, `afterRender`, `invalidate`, `now`, `after`, `frame` |
+| as the extension `api`'s, for its whole life | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `overlay`, `style`, `listen`, `popover`, `loop`, `afterRender`, `invalidate`, `now`, `after` |
 | `url`, `use(name)` | the outermost's url; a view plugin's service, else the focus stage's |
 | `view` | `get()`, `watch(fn, select?)`: the value whole (`selected`, `hovered`, `focus` as paths; `packages`; `arrived`: "Arriving"); `step(ev)`, `enter(path)`, `arrive()`, `set(value)` (its own) |
 | `packages` | `{ load(urls?), dismiss(urls?) }`: the prompt's answer for every open doc's (`view.packages`) |
@@ -85,7 +85,7 @@ Each extension's own; what it acquires through it goes when it stops.
 | `doc()`, `scene()`, `change(fn)`, `newId(prefix)`, `writable()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }`; `change` → its patches (`[]`: none), its message `{"ext":id}` (the stage's own `{"kernel":…}`; `lastWriter(doc, path)`: `stage/provenance.js`) |
 | `ops`, `remove(ids)` | `src/ops.js`: pure planners (`setTransform`, `setTransformPart`, `setField`, `removeObjects`, `attachTo`, `fileIn`, `newGroup`, `ungroup`, `moveRow`, `setLayerShown`, `clearLayers`) → a change function or null; `remove` runs every `beforeRemove` first |
 | `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed, errors }` (`ready`: nothing the doc calls for is still on its way, a failed one included; the clock and the audience also need `failed` empty; `errors[id]`: why) |
-| `now()`, `after(ms, fn)`, `frame(fn)`, `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame`; rendering every frame while a loop runs, `dt` ≤ 0.1 s |
+| `now()`, `after(ms, fn)`, `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame`; rendering every frame while a loop runs, `dt` ≤ 0.1 s |
 | `local` | `get`, `swap(fn)`: the stage's frozen value; the kernel's `running` (`[{ id, scope }]`), `status` (`{ [id]: { state, reason?, text, title } }`), `packages` (`{ ask, loading, failed, missing }`); plugins' keys `<id>.`-prefixed |
 | `view` | `get`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, keys, pointer, serial }]`, top last), `held` (its tools, `[{ ext, command, name, handKind, keys, pointer, serial }]`), `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)` |
 | `channel` | the doc's ephemeral side (`stage/presence.js`; I5): `{ viewer, session, peers(), set(key, value), watch(fn), send(type, data), rate(hz) }`; `peers()` → `{ [session]: { viewer, body, held: [{ name }] (top last), at, keys } }`; `send` reaches `receive` on every peer; `session` null in a pin |
