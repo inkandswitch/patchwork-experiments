@@ -15,8 +15,6 @@
     --scene-surface: var(--editor-fill-offset-10, #f4f4f4);
     --scene-hover: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 6%);
     --scene-viewport-bg: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 4%);
-    --scene-grid-major: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 40%);
-    --scene-grid-minor: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 20%);
     /* labels and field names: readable, but quieter than values */
     --scene-label: color-mix(in oklch, var(--editor-line, black) 72%, var(--editor-fill, white));
     --scene-object: color-mix(in oklch, color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 45%), var(--studio-link, steelblue) 25%);
@@ -28,10 +26,6 @@
     --scene-danger: var(--studio-danger, crimson);
     --scene-danger-text: var(--editor-danger-text, var(--studio-danger, crimson));
     --scene-warning: var(--studio-warning, orange);
-    --scene-dimension: color-mix(in oklch, var(--studio-warning, orange) 80%, var(--editor-line, black));
-    --scene-axis-x: color-mix(in oklch, red 75%, var(--editor-line, black));
-    --scene-axis-y: color-mix(in oklch, limegreen 75%, var(--editor-line, black));
-    --scene-axis-z: color-mix(in oklch, dodgerblue 80%, var(--editor-line, black));
     --scene-label-bg: color-mix(in oklch, var(--editor-fill, white) 82%, transparent);
     --scene-shadow: var(--studio-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.12));
     --scene-family: var(--editor-family-sans, system-ui, sans-serif);
@@ -255,7 +249,7 @@
   left: 0;
   top: 0;
   height: 0;
-  border-top: 1px solid var(--scene-dimension);
+  border-top: 1px solid var(--scene-muted);
   transform-origin: 0 0;
   pointer-events: none;
 }

@@ -22,5 +22,7 @@ export { writers } from "./provenance.js";
 export { chainOrder, hitChain, holdersFor } from "./chain.js";
 // the key order: who reserves a key, and how a key is named
 export { codeOfKey, declaredKeys, isTyping, keyHolder, keyLayers, keyOfCode, labelOf, lookChain, nameOfCode, reservedBy } from "../key-order.js";
+// a CSS colour token as sRGB 0..1, as the view's CSS resolves it (each part reads its own)
+export { resolveCssColor } from "../theme.js";
 // the packages rule: what an extracted doc lists
 export { listedPackages, packageUrl, packagesToList } from "../packages.js";

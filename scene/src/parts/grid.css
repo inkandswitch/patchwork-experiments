@@ -1,5 +1,15 @@
 /* scene.grid: the ruler labels and the caption. */
 
+/* its colour tokens, each with its one default (a theme may set them) */
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --scene-grid-major: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 40%);
+    --scene-grid-minor: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 20%);
+  }
+}
+
 .scene-stage .grid-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
   color: var(--scene-label);
   font-size: 11px;
