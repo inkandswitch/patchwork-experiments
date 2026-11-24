@@ -46,8 +46,8 @@
     const handles = {
       [RENDER]: handle(RENDER, {
         "@patchwork": { type: "scene-render" }, title: "Hull", parent: "automerge:hu11111111111111111111111",
-        providerId: "test-hull-surface", params: {}, glbUrl: GLB,
-        builtFrom: { heads: ["a"], fingerprint: null, paramsKey: "{}" }, status: "idle", error: null,
+        providerId: "test-hull-surface", params: {}, pinned: false,
+        result: { glbUrl: GLB, builtFrom: { heads: ["a"], fingerprint: null, paramsKey: "{}" }, bounds: null, builtAt: 1 }, failure: null,
       }),
       [GLB]: handle(GLB, { "@patchwork": { type: "file" }, name: "Hull.glb", extension: "glb", content: prismGLB(transomWaterline()) }),
     };

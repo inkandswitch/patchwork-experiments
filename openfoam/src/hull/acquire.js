@@ -80,7 +80,7 @@ export async function acquireHull(repo, url, { getRegistry } = {}) {
     } catch (err) {
       return { ok: false, error: `couldn't read the render (${err?.message ?? err})` };
     }
-    if (!r.glb) return { ok: false, pending: true, error: r.status === "error" && r.error ? `the render failed: ${r.error}` : `“${title}” isn't built yet` };
+    if (!r.glb) return { ok: false, pending: true, error: r.failure?.error ? `the render failed: ${r.failure.error}` : `“${title}” isn't built yet` };
     const t = await cut(r.glb);
     return { ok: true, triangles: t.triangles, ranges: t.ranges, heads, path: "render", title, providerId: doc.providerId ?? null, renderKey: renderKey(doc) };
   }
