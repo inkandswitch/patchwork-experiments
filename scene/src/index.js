@@ -358,22 +358,33 @@ export const plugins = [
       return (await import("./parts/legends.js")).default;
     },
   },
+  // what is dropped or pasted into the view, heard once and offered to each
+  // part's `dropping` and `pasting` in running order (EDITOR.md, "Drops")
   {
     type: "scene:view",
-    id: "scene.add",
-    name: "Add documents",
+    id: "scene.drops",
+    name: "Drops and pastes",
     async load() {
-      return (await import("./parts/add.js")).default;
+      return (await import("./parts/drops.js")).default;
     },
   },
   // objects from another scene, or from this one: an outline row dragged
-  // into this view, Copy and Paste (EDITOR.md, "Copying objects")
+  // into this view, Copy and Paste (EDITOR.md, "Copying objects"); before
+  // scene.add, so a pasted copy is a copy and not its document link
   {
     type: "scene:view",
     id: "scene.transfer",
     name: "Copy and paste",
     async load() {
       return (await import("./parts/transfer.js")).default;
+    },
+  },
+  {
+    type: "scene:view",
+    id: "scene.add",
+    name: "Add documents",
+    async load() {
+      return (await import("./parts/add.js")).default;
     },
   },
   // the parts bin: every scene:part, to drag into the view or click to put

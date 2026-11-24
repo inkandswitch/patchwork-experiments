@@ -251,7 +251,7 @@ describe("scene.dimensions", () => {
       dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } },
       before: [SELECT],
     });
-    expect(s.debug.view.plugins.running().map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["scene.select", "scene.dimensions", "scene.edit"]);
+    expect(s.debug.view.plugins.running().map((r) => r.id).filter((id) => !NATIVES.includes(id))).toEqual(["scene.select", "scene.dimensions", "scene.edit", "scene.drops"]);
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
     const l = label("d1");

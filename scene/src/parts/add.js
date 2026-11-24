@@ -23,15 +23,16 @@
 //     choice away, for this view; the drop hint stays.
 // Pastes, drops and keys inside an embedded document (marked with the
 // stage's EMBED_ATTR, src/embed.js) are that document's, never ours.
-// Adding is the editor's: drops, pastes and the start screen are made as
-// the Edit hand is picked up and gone as it goes. (A scene made new starts
+// Adding is the editor's: drops and pastes reach it through scene.drops
+// (./drops.js), which hears them while the Edit hand is held, and the start
+// screen is made as it is picked up and gone as it goes. (A scene made new starts
 // people holding the editor, so its maker sees the start screen.)
 
 import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
-import { isTyping, whileHolding } from "../stage/public.js";
+import { whileHolding } from "../stage/public.js";
 import { add as addObject, drop, template } from "./editor.js";
 import { atFocus } from "../per-focus.js";
 import { EDIT } from "./editing.js";
@@ -309,8 +310,7 @@ function create(api) {
     }
   }
 
-  // ── drag and drop on the port ────────────────────────────────────────────
-  let depth = 0; // dragenter/dragleave fire per element crossed: count them
+  // ── drag and drop on the port, and paste: scene.drops hears them (./drops.js) ──
   const showHint = (on) => {
     if (dropHint.hidden === !on) return;
     dropHint.hidden = !on;
@@ -332,79 +332,56 @@ function create(api) {
   // Anywhere in the stage takes a drop (the side panels too), unless something under it already did (an outline row, which stops
   // it). The hint shows only while the drag is over the port.
   const inPort = (e) => e.target instanceof Node && port.contains(e.target);
-  /** The drop and paste listeners, while editing (below). → their offs */
-  const listenForAdds = () => [
-    api.listen(root, "dragenter", (e) => {
-      if (!inPort(e) || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
-      depth++;
-      showHint(true);
-    }),
-    api.listen(root, "dragover", (e) => {
-      if (e.defaultPrevented || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    }),
-    api.listen(root, "dragleave", (e) => {
-      if (!inPort(e) || fromEmbed(e, root)) return;
-      depth = Math.max(0, depth - 1);
-      if (!depth) showHint(false);
-    }),
-    // any drop ends the drag, whoever takes it (heard first, so a row's drop can't skip it)
-    api.listen(
-      root,
-      "drop",
-      () => {
-        depth = 0;
-        showHint(false);
-      },
-      { capture: true },
-    ),
-    api.listen(root, "drop", (e) => {
-      if (e.defaultPrevented || fromEmbed(e, root)) return;
+  const dropping = {
+    over(e) {
+      if (!accepts(e.dataTransfer)) return showHint(false), false;
+      showHint(inPort(e));
+      return true;
+    },
+    leave: () => showHint(false),
+    drop(e) {
       const dt = e.dataTransfer;
-      if (!accepts(dt)) return;
-      e.preventDefault();
+      if (!accepts(dt)) return false;
       const at = dropAt(e);
       const files = [...(dt.files ?? [])];
-      if (files.length) return void addFiles(files, at);
-      const items = parsePatchworkDrop(dt);
-      if (!items.length) return void fail("Nothing droppable there.");
-      void addAll(items, at);
-    }),
-    // ── paste, anywhere in the stage outside a field ───────────────────────
-    api.listen(root, "paste", (e) => {
-      if (e.defaultPrevented || fromEmbed(e, root)) return;
-      if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
-      const text = e.clipboardData?.getData?.("text/plain");
-      if (!parseAutomergeUrl(text)) return;
-      e.preventDefault();
-      void add(text);
-    }),
-  ];
+      if (files.length) void addFiles(files, at);
+      else {
+        const items = parsePatchworkDrop(dt);
+        if (items.length) void addAll(items, at);
+        else fail("Nothing droppable there.");
+      }
+      return true;
+    },
+  };
+  /** A pasted automerge URL is a document to add. */
+  const pasting = (e) => {
+    const text = e.clipboardData?.getData?.("text/plain");
+    if (!parseAutomergeUrl(text)) return false;
+    void add(text);
+    return true;
+  };
 
-  // Adding is the editor's: drops, pastes and the start screen, made as the Edit hand is picked up, gone as it goes
+  // the start screen is the editor's: made as the Edit hand is picked up, gone as it goes
   const startScreen = (scene) => {
     const none = !scene.ids.length;
     if (empty.hidden !== !none) empty.hidden = !none;
   };
-  const adding = whileHolding(api, EDIT, () => {
-    const offs = listenForAdds();
+  const startShown = whileHolding(api, EDIT, () => {
     const scene = api.focus()?.scene();
     if (scene) startScreen(scene);
     return {
       startScreen,
       dispose() {
-        for (const off of offs) off();
-        depth = 0;
-        showHint(false);
         empty.hidden = true;
       },
     };
   });
 
   return {
+    dropping,
+    pasting,
     update(scene, local, prev) {
-      if (scene !== prev.scene) adding()?.startScreen(scene);
+      if (scene !== prev.scene) startShown()?.startScreen(scene);
     },
     dispose() {
       choosing?.done(null);
