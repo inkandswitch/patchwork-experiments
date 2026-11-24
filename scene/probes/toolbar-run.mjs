@@ -69,7 +69,7 @@ try {
 
   for (const [width, label] of [
     [1100, "wide"],
-    [420, "narrow"],
+    [260, "narrow"],
   ]) {
     await P(`width(${width})`);
     await P("unplay()");
