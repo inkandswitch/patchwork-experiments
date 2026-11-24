@@ -241,7 +241,9 @@ function options(w) {
   const out = [];
   for (const v of w.views) {
     if (v.state === "gone") {
-      if (!v.crashed) out.push(["join", v]); // (a crashed view's browser is gone; a new one joins as another)
+      // (a crashed view's browser is gone; a new one joins as another). A view whose capability isn't
+      // chosen yet chooses it as it first joins: each one is a join of its own
+      if (!v.crashed) for (const cap of v.cap == null ? CAPS : [null]) out.push(["join", v, cap]);
       continue;
     }
     out.push(["leave", v], ["crash", v]);
@@ -266,7 +268,8 @@ export function run(caps, picks) {
       w.free();
       return null;
     }
-    const [kind, v] = opts[p];
+    const [kind, v, cap] = opts[p];
+    if (cap) v.cap = cap;
     if (kind === "crash") crashed = true;
     w.events[kind](v);
     for (let i = 0; i < FRAMES; i++) w.frame();
@@ -326,8 +329,9 @@ function describe_(caps, picks) {
   w.frame();
   const out = [];
   for (const p of picks) {
-    const [kind, v] = options(w)[p];
-    out.push(v ? `${kind} ${v.i}` : kind);
+    const [kind, v, cap] = options(w)[p];
+    if (cap) v.cap = cap;
+    out.push(v ? `${kind} ${v.i}${cap ? ` (${cap})` : ""}` : kind);
     w.events[kind](v);
     for (let i = 0; i < FRAMES; i++) w.frame();
   }
@@ -337,8 +341,8 @@ function describe_(caps, picks) {
 
 const CAPS = ["writable", "read-only", "missing"];
 const DEPTH = Number(process.env.H7_DEPTH ?? 3);
-/** How many sequences each depth is, all 27 configs (measured): the default run and the deeper ones. */
-const PINNED = { 3: 17673, 4: 131568, 5: 961400 };
+/** How many sequences each depth is, all 9 configs (measured): the default run and a deeper one. */
+const PINNED = { 3: 11021, 4: 96830 };
 // frames after each event, each merged: enough for every claim to have arrived and every loser to have heard
 const FRAMES = 2;
 
@@ -394,16 +398,20 @@ describe("H7: the clock across views, on Automerge", () => {
   });
 
   // (H7_CONFIG=i runs config i alone: a deep run is split across processes, each with a fresh Automerge)
+  // Views 0 and 1 are here from the start, view 2 joins later. A view's capability is read only once
+  // it has joined, so until view 2 first joins the world is the same whatever its capability: it is
+  // chosen at that join (three joins on offer), and the tree is walked once per capability of views
+  // 0 and 1, covering every one of the 27 configurations.
   const configs = [];
-  for (const a of CAPS) for (const b of CAPS) for (const c of CAPS) configs.push([a, b, c]);
+  for (const a of CAPS) for (const b of CAPS) configs.push([a, b, null]);
   if (process.env.H7_CONFIG != null) configs.splice(0, configs.length, configs[Number(process.env.H7_CONFIG)]);
-  it(`every sequence of up to ${DEPTH} events, three views of every capability (${configs.length} configs)`, async () => {
+  it(`every sequence of up to ${DEPTH} events, three views of every capability (the third chosen as it joins; ${configs.length} configs)`, async () => {
     let runs = 0;
     const t0 = Date.now();
     for (const caps of configs) runs += await explore(caps, DEPTH);
     console.log(`H7: ${runs} sequences in ${Date.now() - t0} ms`);
     // the whole space at each depth measured, so a change that quietly prunes it fails here
-    if (configs.length === 27 && PINNED[DEPTH] != null) expect(runs).toBe(PINNED[DEPTH]);
+    if (configs.length === 9 && PINNED[DEPTH] != null) expect(runs).toBe(PINNED[DEPTH]);
     else expect(runs).toBeGreaterThan(0);
   }, DEPTH > 3 ? 7_200_000 : 600_000);
 });
