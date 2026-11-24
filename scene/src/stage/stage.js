@@ -964,6 +964,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
       // picking and camera
       pick: (x, y, opts) => scope.pick(x, y, opts),
+      /** the ray through port point x, y, as an event there carries it: for a point no event carries (a carry started from a key) */
+      ray: (x, y) => scope.ray(x, y),
       raycast: (origin, dir, opts) => scope.raycast(origin, dir, opts),
       project: (p) => scope.project(p),
       camera: Object.freeze({

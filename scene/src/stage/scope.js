@@ -179,6 +179,7 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
     // picking, in this stage's frame; "not mine" is id null
     pick: (x, y, opts) => worldHit(vp.pick(x, y, opts)),
     centerRay: () => rayIn(f(), vp.centerRay()),
+    ray: (x, y) => rayIn(f(), vp.ray(x, y)),
     raycast: (origin, dir, { skip = null, far = Infinity, ...rest } = {}) => {
       const fr = f();
       const s = typeof skip === "function" ? (k) => { const id = mine(k); return id != null && skip(id); } : null;
