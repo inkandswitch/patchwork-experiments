@@ -37,7 +37,7 @@ theirs (NATIVE.md, "Inspect").
 
 ## Seats
 
-From `seats` ([seats/README.md](../seats/README.md)). Trait `seats`: `{
+From the `seats` package (its README). Trait `seats`: `{
 [seatId]: { name, player, lasting?, camera? } }` on the scene or an object.
 Contributions: `roster` (`seats`, `viewers`, `open`, `nameOf`, pure in the
 snapshot; `who`, `sitting`, `stateOf`, `sit`) and `seatPlaces` (`(scene) → [{
