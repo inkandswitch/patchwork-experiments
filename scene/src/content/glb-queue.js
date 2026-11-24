@@ -50,7 +50,7 @@ export function createGLBQueue({
 
   function emit(e, patch = {}) {
     Object.assign(e, patch);
-    if (!disposed && entries.get(e.id) === e) onState?.(e.id, { phase: e.phase, error: e.error, url: e.url });
+    if (!disposed && entries.get(e.id) === e) onState?.(e.id, { phase: e.phase, error: e.error, url: e.url, retrying: e.retryTimer != null });
   }
 
   // ensure() calls made together (one scene sync) are all queued before any
@@ -92,13 +92,13 @@ export function createGLBQueue({
 
   function retry(e, err) {
     stats.errors++;
-    emit(e, { phase: "error", error: message(err) });
     e.retryTimer = time.after(retryWait(e.retries++), () => {
       e.retryTimer = null;
       if (e.dead) return;
       emit(e, { phase: "queued" });
       pump();
     });
+    emit(e, { phase: "error", error: message(err) });
   }
 
   async function startFind(e) {

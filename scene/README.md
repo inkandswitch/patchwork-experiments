@@ -18,7 +18,7 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:datatype` | `scene` | the composition |
 | `patchwork:datatype` | `scene-render` | one per built object (unlisted) |
 | `patchwork:tool` | `scene` | the stage (`src/stage/stage.js`) |
-| `patchwork:tool` | `scene-render-controls` | the build-param form for a render doc |
+| `patchwork:tool` | `scene-render-controls` | the build-param form for a render doc; alone (no scene around it) it builds when asked, on `element.time` if given (a stage time), else the page's |
 | `scene:source` | `file-glb` | `.glb` file docs, `content: "file"` |
 | `scene:source` | `file-stl` | `.stl` file docs, `content: "built"` (params `unit`, `up`) |
 | `scene:source` | `scene.link` | a scene doc placed in a scene, `content: "scene"` |
@@ -108,7 +108,8 @@ SourceImpl = {
   `params` arrive with defaults filled in and clamped to their spec.
 - **Where `build()` runs.** On the page's main thread, called by the render
   manager (`src/content/render-manager.js`) of the open scene the lock
-  chooses ("Who builds"): at most one build per render doc at a time, builds
+  chooses ("Who builds"), or of a render's build controls opened alone,
+  which build only when asked: at most one build per render doc at a time, builds
   of different objects side by side; a provider that needs a thread starts
   its own worker. It is given exactly `{ doc, handle, url, params, repo,
   signal }`: the source doc and its handle (a read-only view at `at.heads`
@@ -149,29 +150,48 @@ build controls show it (a stage answers their `scene:render-context`).
 ### Who builds
 
 Every writable open scene with a stale render could build it; the lock
-(`src/content/lock.js`) chooses one. A peer that wants inputs built claims
-them on the render doc's channel, waits `CLAIM_MS` for a rival, then builds,
-saying so every `HEARTBEAT_MS` and once more when done. It never claims
-inputs a live claim of another names, nor before it has listened
-`LISTEN_MS` to a render it didn't make; of two claims at once the lower id
-wins, and a builder beats a claimer. Two parameters set the timing:
-`HEARTBEAT_MS` (2 s) and `REACH_MS` (250 ms), the longest a message or
-change takes to reach every peer; `CLAIM_MS` = 2 × `REACH_MS`, and
-`LAPSE_MS` = `LISTEN_MS` = 3 × `HEARTBEAT_MS`. While messages arrive within
-`REACH_MS`:
+(`src/content/lock.js`) chooses one, with **one claim per render doc**. A
+peer that wants it built claims it on the render doc's channel, waits
+`CLAIM_MS` for a rival, and then holds it: it builds, rebuilds as the inputs
+move (cancelling the build in flight through its `signal`), retries a
+failure, says it still holds it every `HEARTBEAT_MS`, and lets it go once it
+has wanted nothing for `HEARTBEAT_MS`. Nobody claims while another's claim
+is live, nor before listening `LISTEN_MS` to a render it didn't make; of two
+claims at once the lower id holds, and a holder beats a claimer. A peer that
+learns of a failure it isn't holding leaves those inputs alone until they
+change or someone asks.
 
-| | Among live writable peers on one provider version |
+**The write fence.** A result is written only over the build the render had
+as it began (nothing committed meanwhile is replaced), only if no other peer
+claimed the render meanwhile, and, if its holder was silent past `LEASE_MS`
+(a frozen tab, a blocked thread), only after it has listened `RECHECK_MS`
+more; a holder silent that long lets the render go if it hears another
+holding it.
+
+**Timing.** One assumption, `REACH_MS` (D = 250 ms): every message and change
+reaches every peer within it. With the heartbeat H = 2 s: `CLAIM_MS` = 4D
+(needs > 2D, an exact tie included); `LAPSE_MS` = `LISTEN_MS` = 3H (needs >
+2H + D: one heartbeat may be lost); `LEASE_MS` = `LAPSE_MS` − H − D;
+`RECHECK_MS` = 2D (needs > D and < `CLAIM_MS` − D). The derivation is in
+`lock.js`.
+
+| | Among the peers with the render open |
 |---|---|
-| C1 | A render's inputs are built by one peer; twice only when its first builder vanished. |
-| C2 | A builder that vanishes is replaced within `REACH_MS` + `LAPSE_MS` + `CLAIM_MS` of its last word. |
-| C3 | A peer that can't write never builds; a build is shown in progress only while one is, until its "done" arrives, or for `LAPSE_MS` after its builder vanished. |
-| C4 | A build's result is written once. |
+| C1 | (needs the assumption) At most one peer builds it at a time, a frozen peer aside. |
+| C2 | (needs it) A builder that vanishes is replaced within `REACH_MS` + `LAPSE_MS` + `CLAIM_MS` of its last word. |
+| C3 | (always) A peer that can't write never builds; a build is shown in progress only while one is, until its release arrives, or `LAPSE_MS` after its holder's last word. |
+| C4 | (always) A write replaces only the build its writer saw as its own began, so never a newer one it had received. (Needs the assumption) No older build replaces a newer one, a peer that froze mid-build and woke included. |
+| C5 | (always) Once nothing moves, it is built from the current inputs (or failed for them, or pinned), and nobody holds it; failing inputs are tried at most 1 + `RETRY_BACKOFF_MS.length` times in all (with the assumption). |
 
-`src/content/lock.test.js` checks them on a finite model: two or three
-real managers with replicas of the docs on one manual clock, over a network
-that delivers each message and change at once or `REACH_MS` late, every
-such run enumerated (with builds short or past `LAPSE_MS`, a builder
-vanishing or not).
+`src/content/lock.test.js` checks them on a finite model: two or three real
+managers, each with its own replica of the docs and its own view of one
+manual clock, over a network delivering each message and change at once or
+at exactly `REACH_MS`, every run enumerated over who edits, when, builds
+short or past `LAPSE_MS`, failing, a builder freezing past `LAPSE_MS` and
+waking to write, a forced rebuild, a peer joining mid-build, one or two
+messages lost. The protocol before this one (`scene-render:building`
+messages) and this one ignore each other: scenes on the two can build the
+same render twice, and the later write wins; they converge.
 
 ### Consuming a render
 

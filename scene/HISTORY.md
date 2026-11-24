@@ -1270,3 +1270,16 @@ api's `fixPoint`; `use("links").fixPoint` answers for every object. The
 selection loads first by the kernel's own rule, so `focus(ids)` went; the add
 dialog matches providers itself (`providersFor` went); the extension api's
 `packages` went. No `api.rebuild`: only the build controls rebuild today.
+
+**One claim per render (2026-11-24).** A review found the per-inputs lock
+let two builds of one render run at once and an older result replace a newer
+(a forced rebuild, a tab that froze), and a claim window with no margin over
+two message trips; a model extended to editors, joins, freezes, forced
+rebuilds, failures and lost messages found each, and one more (a holder
+waking from a freeze kept building beside its successor). The lock is one
+claim per render doc held until released, with a write fence (no write over
+a build committed meanwhile, nor after another peer's claim, nor past a
+lapsed lease without listening again); the windows are derived with margins
+(`CLAIM_MS` 4D); failures are retried by their holder alone; a pinned,
+contested or unavailable render, or one whose GLB can't be shown, decides
+by its state without them; the controls alone build only when asked.

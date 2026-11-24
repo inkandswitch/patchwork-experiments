@@ -10,8 +10,10 @@
 // `detail.state` and the object's fixed version, `detail.at`), and are told
 // `scene:render-context-changed` when either changes; "Rebuild now" asks it
 // with a cancelable `scene:rebuild`. Alone, with no stage answering, the
-// tool keeps the render the way a scene would, with a render manager of its
-// own (content/render-manager.js), and its state is that one's.
+// tool has a render manager of its own (content/render-manager.js) that
+// builds only when asked, and its state is that one's. `element.time` (a
+// stage time, stage/time.js) is the clock that manager runs on; the page's
+// by default.
 
 import css from "./styles.css?inline";
 import { createParamForm } from "./param-form.js";
@@ -109,6 +111,7 @@ export default function SceneRenderControls(handle, element) {
       repo,
       time: element.time ?? realTime(),
       readOnly: handleReadOnly(handle),
+      auto: false, // (it doesn't know the object's fixed version, nor keeps the render: a scene does)
       loadProvider: async (id) => {
         if (!registry.has(id)) return null;
         const p = await registry.load(id);

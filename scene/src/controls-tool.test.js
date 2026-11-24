@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from "vitest";
 import { FakeRepo, flush } from "./test/fake-repo.js";
 import { manualTime } from "./stage/time.js";
-import { LISTEN_MS } from "./content/lock.js";
+import { CLAIM_MS, LISTEN_MS } from "./content/lock.js";
+import { RETRY_BACKOFF_MS } from "./content/render-manager.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
   const plugins = new Map();
@@ -98,24 +99,27 @@ describe("scene-render-controls, alone", () => {
     let seen = null;
     element.addEventListener(REBUILD_EVENT, (e) => (seen = e.detail));
     element.querySelector(".rebuild").click();
-    await time.advance(500);
+    await time.advance(LISTEN_MS + CLAIM_MS + 500); // (it waits for the lock as a scene's build does)
     expect(seen).toEqual({ renderUrl: render.url });
     expect(build).toHaveBeenCalledTimes(1);
     expect(render.doc().glbUrl).toBe(repo.created.at(-1).url);
     expect(element.querySelector(".status").textContent).toBe("Up to date");
   });
 
-  it("keeps the render as a scene would: built once it has listened for a builder, and says a failure of what it has now", async () => {
-    const { render, source, element, time } = await mount();
+  it("builds only when asked, never by itself, and says a failure of what it has now", async () => {
+    const { render, element, time } = await mount();
     build.mockClear();
-    await time.advance(LISTEN_MS + 1000);
-    expect(build).toHaveBeenCalledTimes(1);
-    expect(element.querySelector(".status").textContent).toBe("Up to date");
+    await time.advance(LISTEN_MS + CLAIM_MS + 1000);
+    expect(build).not.toHaveBeenCalled();
+    expect(element.querySelector(".status").textContent).toBe("Not built yet");
     build.mockImplementationOnce(async () => {
       throw new Error("syntax error");
     });
-    source.change((d) => (d.title = "edited"));
-    await time.advance(2000);
+    element.querySelector(".rebuild").click();
+    await time.advance(CLAIM_MS + 500);
+    expect(build).toHaveBeenCalledTimes(1);
+    await time.advance(RETRY_BACKOFF_MS.at(-1) * 2);
+    expect(build).toHaveBeenCalledTimes(1); // (no retry of its own either)
     expect(element.querySelector(".status").textContent).toBe("Error");
     expect(element.querySelector(".error").textContent).toBe("syntax error");
     expect(render.doc().error).toBe("syntax error");
@@ -165,7 +169,7 @@ describe("scene-render-controls, dependencies", () => {
     const cleanup = Controls(render, element);
     await element.time.advance(100);
     element.querySelector(".rebuild").click();
-    await element.time.advance(100);
+    await element.time.advance(LISTEN_MS + CLAIM_MS + 500);
     expect(render.doc().builtFrom.deps).toEqual({ [dep.url]: dep.heads() });
     expect(element.querySelector(".status").textContent).toBe("Up to date");
     dep.change((d) => (d.n = 2));

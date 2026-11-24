@@ -12,8 +12,8 @@ import { heldDeps, isContested, staleReason } from "./staleness.js";
  *   no-provider  the provider it names (`providerId`) isn't installed here
  *   building     a build is in progress (`by`: "here", or the builder's id); only a
  *                builder heard on the render's channel counts, never a status in the doc
- *   failed       it couldn't be built (`in: "build"`; `retryAt`: when it's tried again, or
- *                null) or what was built couldn't be shown (`in: "load"`), with the `error`
+ *   failed       it couldn't be built (`in: "build"`) or what it has couldn't be loaded or
+ *                shown (`in: "load"`), with the `error`; `retrying`: it will be tried again
  *   waiting      it can't be judged or built until a linked document loads (`on`: their urls)
  *   stale        built from inputs other than the current ones (`reason`: "never-built",
  *                "params", "provider", "fingerprint", "heads" or "deps"); `hold` says why it
@@ -45,26 +45,27 @@ const freeze = (o) => Object.freeze(o);
  *   lastBuilt    what this replica last built it from (staleness.js builtInputsKey), or null
  *   deps         { notReady: urls not loaded (or not at their fixed heads), failed: urls that
  *                failed to load, loading: urls on their first load within the wait }
- *   failure      null, or { error, retryAt }: a build of the current inputs failed
+ *   failure      null, or { error, retrying }: a build of the current inputs failed
+ *   file.retrying  a file that couldn't be found is looked for again
  * @returns {object | null} the state, frozen; null: nothing to say (nothing to load, or not asked for)
  */
 export function contentState(k) {
   if (k.route === "file") {
-    if (k.file?.phase === "error") return freeze({ state: "failed", in: "load", error: k.file.error ?? null, retryAt: null });
-    if (k.shownError) return freeze({ state: "failed", in: "load", error: k.shownError, retryAt: null });
+    if (k.file?.phase === "error") return freeze({ state: "failed", in: "load", error: k.file.error ?? null, retrying: !!k.file.retrying });
+    if (k.shownError) return freeze({ state: "failed", in: "load", error: k.shownError, retrying: false });
     if (!k.file) return null;
     return k.file.phase === "ready" ? FRESH : LOADING;
   }
   if (k.route !== "built") return k.route == null && k.missing ? freeze({ state: "no-provider", providerId: k.missing }) : null;
   if (k.render && k.providerMissing) return freeze({ state: "no-provider", providerId: k.render.providerId ?? null });
-  if (!k.render && k.shownError) return freeze({ state: "failed", in: "load", error: k.shownError, retryAt: null });
+  if (!k.render && k.shownError) return freeze({ state: "failed", in: "load", error: k.shownError, retrying: false });
   if (!k.render || !k.source) return k.version ? freeze({ state: "loading", version: true }) : LOADING;
   if (k.building) return freeze({ state: "building", by: k.building.by });
-  if (k.shownError) return freeze({ state: "failed", in: "load", error: k.shownError, retryAt: null });
+  if (k.shownError) return freeze({ state: "failed", in: "load", error: k.shownError, retrying: false });
   const reason = staleReason(k.render, k.source);
   if (!reason) return FRESH;
   if (k.behind) return freeze({ state: "fresh", behind: true });
-  if (k.failure) return freeze({ state: "failed", in: "build", error: k.failure.error ?? null, retryAt: k.failure.retryAt ?? null });
+  if (k.failure) return freeze({ state: "failed", in: "build", error: k.failure.error ?? null, retrying: !!k.failure.retrying });
   const deps = k.deps ?? {};
   const notReady = new Set(deps.notReady ?? []);
   const failed = new Set(deps.failed ?? []);
@@ -82,15 +83,16 @@ export function contentState(k) {
 /** Does this state want a build of its own accord (stale, with nothing holding it back)? */
 export const wantsBuild = (st) => st?.state === "stale" && st.hold == null;
 
-const CONTESTED_TEXT = "A collaborator built it differently (another provider version, or linked documents at other versions); Rebuild to use yours";
+const CONTESTED_TEXT = "A collaborator built it differently (another provider version, or linked documents at other versions)";
 
 /**
  * A state as local.status says it to people: { state, reason?, text, title },
  * or null when there's nothing to say. `state` is "loading", "building",
  * "error", "warn" or "stale"; a stale one's `reason` ("deps", "contested",
- * "pinned", "out-of-date") is what code branches on.
+ * "pinned", "out-of-date") is what code branches on. `writable`: may this
+ * viewer rebuild it (else nothing is offered or promised).
  */
-export function statusOf(st) {
+export function statusOf(st, { writable = true } = {}) {
   switch (st?.state) {
     case "loading":
       return { state: "loading", text: "loading", title: "Loading…" };
@@ -99,12 +101,12 @@ export function statusOf(st) {
     case "building":
       return { state: "building", text: "building", title: "Rebuilding…" };
     case "failed":
-      return { state: "error", text: "error", title: st.retryAt != null ? `${st.error} · retrying automatically` : st.error };
+      return { state: "error", text: "error", title: st.retrying ? `${st.error} · retrying automatically` : st.error };
     case "stale":
-      if (st.hold === "unavailable") return { state: "stale", reason: "deps", text: "stale", title: "Built from a linked document that can't be loaded here; Rebuild to build without it" };
-      if (st.hold === "contested") return { state: "stale", reason: "contested", text: "stale", title: CONTESTED_TEXT };
+      if (st.hold === "unavailable") return { state: "stale", reason: "deps", text: "stale", title: `Built from a linked document that can't be loaded here${writable ? "; Rebuild to build without it" : ""}` };
+      if (st.hold === "contested") return { state: "stale", reason: "contested", text: "stale", title: `${CONTESTED_TEXT}${writable ? "; Rebuild to use yours" : ""}` };
       if (st.hold === "pinned") return { state: "stale", reason: "pinned", text: "pinned", title: "Out of date; pinned, so it won't rebuild on its own" };
-      return { state: "stale", reason: "out-of-date", text: "stale", title: "Out of date; rebuilding soon" };
+      return { state: "stale", reason: "out-of-date", text: "stale", title: writable ? "Out of date; rebuilding soon" : "Out of date" };
     default:
       return null;
   }

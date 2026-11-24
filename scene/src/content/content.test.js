@@ -7,6 +7,7 @@
 // Ported from tool.test.js / tool-v3.test.js (scene contract v3).
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { manualTime } from "../stage/time.js";
+import { CLAIM_MS, LISTEN_MS } from "./lock.js";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
@@ -125,6 +126,25 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     expect(el.querySelector(".status").textContent).toBe("Up to date");
     expect(el.querySelector(".scene-render-controls").hasAttribute("data-standalone")).toBe(false);
     off();
+  });
+
+  it("a render made here builds at once only the first time it is tracked: tracked again (an undo), it listens for a builder first", async () => {
+    await mount();
+    const { add: addIt } = await import("../parts/editor.js");
+    const id = await addIt(s.facet("scene.add"), file.url);
+    await wait(500);
+    const renderUrl = s.doc().objects[id].renderUrl;
+    expect((await repo.find(renderUrl)).doc().builtFrom).toBeTruthy(); // at once: nobody else knew of it
+    const o = JSON.parse(JSON.stringify(s.doc().objects[id]));
+    s.change((d) => delete d.objects[id]);
+    await wait(100);
+    const builds = repo.created.length;
+    file.change((d) => (d.content = STL2)); // (stale now)
+    s.change((d) => (d.objects[id] = o));
+    await wait(2000);
+    expect(repo.created.length).toBe(builds); // listening
+    await wait(LISTEN_MS + CLAIM_MS);
+    expect(repo.created.length).toBe(builds + 1);
   });
 
   // ─── fixed versions (`at`) ───
