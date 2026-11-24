@@ -9,6 +9,19 @@
 // ties only between extensions holding the same link.
 
 import { groupChain } from "../shared/groups.js";
+import { traitKeys } from "./activation.js";
+
+/**
+ * A stage's segment of the chain for its element of the hit's path
+ * (`element`: one of its objects, or null for none): its holders, nearest
+ * first, then its root's, over `model` (./model.js) and its running
+ * extensions. → { order: extension ids, holderOf(ext): the id of the link it holds (null: the scene) }
+ */
+export function segmentOf(running, model, element) {
+  const chain = element != null && model.objects[element] ? hitChain(element, model.parents, model.groups, model.objects) : [];
+  const holders = holdersFor(running, chain, (oid) => traitKeys(oid == null ? model.d : model.objects[oid]));
+  return { order: chainOrder({ running, holders }), holderOf: (ext) => holders.get(ext)?.id ?? null };
+}
 
 /**
  * @param {{
