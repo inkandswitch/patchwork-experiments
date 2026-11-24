@@ -12,7 +12,7 @@ import { getRegistry } from "../test/plugins-mock.js";
 import { imported, resetPackagesServed, servePackage } from "../test/filesystem-mock.js";
 import { ACCEPTED_KEY, resetPackages } from "./packages.js";
 import { writerOf } from "./provenance.js";
-import { ARRIVE_WAIT_MS } from "./stage.js";
+import { ARRIVE_WAIT_MS } from "./arriving.js";
 import packagesPart from "../parts/packages.js";
 import * as making from "../parts/making.js";
 import { LINK } from "../native/link-graph.js";
