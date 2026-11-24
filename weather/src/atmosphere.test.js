@@ -25,7 +25,7 @@ import { BANDS, KINDS, LOOKS, SCATTERED_MAX, atmosphereAt, atmosphereOf, bandAt,
 import { sunDirection } from "./solar.js";
 import { weatherParams } from "./weather.js";
 
-// ─── the stage's check, copied (scene/src/stage/viewport.js, cleanAtmosphere, at e74b9ef7) ───
+// ─── the stage's check, copied (scene/src/stage/atmosphere.js, cleanAtmosphere, as at e74b9ef7) ───
 const LIGHTS = Object.freeze({ key: 1.5, keyFrom: [0.45, 1, 0.6] });
 const CLOUDS = Object.freeze({ contrast: 0.1, scale: 600, base: 800 });
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -475,7 +475,7 @@ describe("haze, rain and the fog", () => {
   });
 });
 
-// ─── the stage's deck, copied: cloudAt (scene/src/stage/viewport.js at e74b9ef7) and the sky shader's noise ───
+// ─── the stage's deck, copied: cloudAt (scene/src/stage/atmosphere.js, as at e74b9ef7) and the sky shader's noise ───
 // (cloudHash, cloudNoise, in double precision rather than the GPU's float: the same field, statistically).
 const fract = (x) => x - Math.floor(x);
 const mod289 = (x) => x - 289 * Math.floor(x / 289);

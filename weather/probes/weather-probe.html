@@ -114,7 +114,7 @@ try {
     body: () => dbg.local.get().body?.id ?? null,
     editing: () => (dbg.local.get().hands ?? []).some((h) => h.kind === "edit"),
     /** the viewport's key light: its position and target (the direction it shines from is position - target) */
-    key: () => ({ position: vp.keyLight.position.toArray(), target: vp.keyLight.target.position.toArray(), intensity: vp.keyLight.intensity, color: `#${vp.keyLight.color.getHexString()}`, shadows: vp.keyLight.castShadow }),
+    key: () => ({ position: vp.lights.key.position.toArray(), target: vp.lights.key.target.position.toArray(), intensity: vp.lights.key.intensity, color: `#${vp.lights.key.color.getHexString()}`, shadows: vp.lights.key.castShadow }),
     /** the toolbar's controls as shown: [{ ext, command, tag, text, title, options, rect }] */
     toolbar: () => [...host.querySelectorAll(".toolbar [data-command]")].filter((e) => !e.closest("[hidden]")).map((e) => ({ ext: e.dataset.ext, command: e.dataset.command, tag: e.tagName.toLowerCase(), text: e.tagName === "SELECT" ? e.options[e.selectedIndex]?.textContent ?? null : e.textContent, title: e.title, options: e.tagName === "SELECT" ? [...e.options].map((o) => o.textContent) : null, rect: rectOf(e) })),
     /** pick an option on a toolbar picker by its text, as a person does (the select's value, then its change event) */

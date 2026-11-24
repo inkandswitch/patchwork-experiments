@@ -143,7 +143,7 @@ try {
     /** the displayed world matrix of an object, as a view draws it */
     worldOf: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m ? [...m] : null; },
     cam: (w) => dbg[w].viewport.getCamera(),
-    held: (w) => !dbg[w].viewport.controls.enabled,
+    held: (w) => dbg[w].viewport.held,
     me: (w) => P.ctx(w)?.crew.me() ?? null,
     read: (id, w) => P.ctx(w)?.sim.read(id) ?? null,
     clock: (w) => { const api = P.api(w); return api ? api.use("clock").t() : null; },

@@ -200,7 +200,7 @@ try {
     /** the viewport as drawn: its atmosphere's sky and fog, the key light (from = position - target), the scene's fog */
     viewport() {
       const vp = dbg.viewport;
-      const k = vp.keyLight;
+      const k = vp.lights.key;
       const from = k.position.toArray().map((x, i) => x - k.target.position.toArray()[i]);
       return { sky: vp.atmosphere?.sky ?? null, fog: vp.atmosphere?.fog ?? null, sceneFog: vp.scene.fog ? `#${vp.scene.fog.color.getHexString()}` : null, key: { from, intensity: k.intensity, color: `#${k.color.getHexString()}`, shadows: k.castShadow } };
     },

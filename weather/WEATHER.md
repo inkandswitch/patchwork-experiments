@@ -176,7 +176,7 @@ existing conventions and adds no new ambient:
     | night | -12° and down | 0.008 × (0.7, 0.85, 1.35) | 0.01 × (0.85, 0.9, 1.15) | 0.006 × (0.85, 0.9, 1.1) | (1, 0.5, 0.22) | 0 | 0 | 0.15 | 0 |
 
     The light the sun actually delivers is the stage's key light,
-    `sun.color × intensity × exposure` (viewport.js `lighting()`), so all
+    `sun.color × intensity × exposure` (atmosphere.js `lighting()`), so all
     three factors multiply: the last column, `disc · light · exposure`, is
     that light as a fraction of the day's (before the tint and the look's
     own colour and intensity). At 6° it is 0.61 of the day's, at 0° 0.115,
