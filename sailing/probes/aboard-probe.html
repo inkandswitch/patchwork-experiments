@@ -428,7 +428,7 @@ try {
     /** a point in an object's frame, as drawn, on a view's page */
     pageOf(id, local, w) { const m = dbg[w].viewport.worldOf(keyIn(w, id)); return m ? page(w, apply(m, local)) : null; },
     cam: (w) => dbg[w].viewport.getCamera(),
-    held: (w) => dbg[w].viewport.holds > 0,
+    held: (w) => dbg[w].viewport.held,
     /** where the seat's view puts the camera now: its camera through the drawn table */
     seatView(sid, w) {
       // a seat's camera is in G's root frame, which is the link's, as drawn

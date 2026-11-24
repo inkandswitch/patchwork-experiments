@@ -14,7 +14,7 @@ const hex = ([r, g, b]) =>
   `#${[r, g, b].map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("")}`;
 const paletteHex = (n) => `#${(n >>> 0 & 0xffffff).toString(16).padStart(6, "0")}`;
 
-/** The scene's key light is 1.5 (scene viewport LIGHTS.key); ink's sun strength runs about 0..1. */
+/** The scene's key light is 1.5 (scene atmosphere.js LIGHTS.key); ink's sun strength runs about 0..1. */
 export const SUN_SCALE = 2.5;
 
 /** A unit direction turned by the rotation part of a column-major 4×4 (its scale taken out). */
