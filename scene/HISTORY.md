@@ -1220,3 +1220,24 @@ used; a root module is filed in the one layer that uses it, or shared; the
 sources are native; the boundary test resolves extensionless specs and
 refuses a non-literal `import()`. STAGE.md states the build controls' DOM
 events, and that only view plugins are told `view.arrived`.
+
+### 2026-11-24 — The kernel's api, smaller and complete
+
+STAGE.md states what plugins relied on unstated (a body's `suspended()` and
+`resumed()`, every hand hearing `move`, a tool's `put()`, `escaping()`, a
+session's `keyup`, `keys` and `cursor`, the widget, a reader, the repo, the
+registry, ops' planners, `camera.set`'s fields, `noPick`, `receiveShadow`).
+Gone because nothing used them: `handle`, `local.watch`, the extension api's
+`view.watch`, `camera.watch`, `body.reach`, `attention`, `ray`, `cursor`,
+`input.leave`, an event's `clientX`, `clientY`, `ndc`, `pointerId`,
+`pointerType`, a hit's `back`. One `box(target)` for an object, a group or
+the scene (`groupBox`, `sceneBox` went). One fact in one place: the top body
+is `view.get().body`, a peer's keys are `channel.peers()`, the tab's
+visibility the document's (`body.current`, `channel.get`, `page.visible`
+went). A view plugin reaches a stage only through `focus()` (its `viewer`,
+`session`, `schedule`, `camera`, `pick`, `project`, `body` went); entering and
+arriving are its `view.enter(path)`, `view.arrive()`; a command's context is
+its stage's reader's; `trace` (`draws()`, `routes()`, `tap()`) replaces
+`owners`, `routes`, `tap`; `overlay(side?)` replaces `edge`; Measure picks in
+`move` and `frame(fn)` went. The kernel's theme holds only its own colours;
+the grid, axes and dimensions declare and read theirs.
