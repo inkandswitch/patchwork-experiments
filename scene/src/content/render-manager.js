@@ -16,12 +16,12 @@
 
 import { fileBytes } from "../file-content.js";
 import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, runBuild, validBounds } from "./build.js";
-import { knowsHeads, pinnedRepo, sortedHeads, viewAt } from "../versions.js";
 import { changedKeys } from "../params.js";
 import { createDependencyWatcher, retryWait } from "./deps.js";
 import { handleReadOnly } from "../stage/readonly.js";
 import { pageBus } from "../stage/presence.js";
-import { atFromBuilt, atKey, builtInputsKey, debounceFor, inputsKey, normalizeAt, staleReason } from "./staleness.js";
+import { atFromBuilt, builtInputsKey, debounceFor, inputsKey, staleReason } from "./staleness.js";
+import { atKey, knowsHeads, normalizeAt, pinnedRepo, sortedHeads, viewAt } from "../versions.js";
 import { contentState, wantsBuild } from "./state.js";
 import { HEARTBEAT_MS, LAPSE_MS, LEASE_MS, LISTEN_MS, RECHECK_MS, live, lockStep } from "./lock.js";
 

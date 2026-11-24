@@ -26,6 +26,5 @@ export { codeOfKey, declaredKeys, isTyping, keyHolder, keyLayers, keyOfCode, lab
 export { resolveCssColor } from "../theme.js";
 // the packages rule: what an extracted doc lists
 export { listedPackages, packageUrl, packagesToList } from "../packages.js";
-// what a source document is, said for people; an object's fixed version (README.md, "Content")
+// what a source document is, said for people, and which sources take it (README.md, "Content")
 export { describeForHumans, describeSource, extensionOf, matchProviders } from "../content/providers.js";
-export { atKey, normalizeAt } from "../content/staleness.js";

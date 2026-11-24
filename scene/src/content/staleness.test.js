@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { DEBOUNCE, atFromBuilt, atKey, normalizeAt, builtInputsKey, currentInputsKey, debounceFor, depsKey, heldDeps, inputsKey, isContested, olderVersion, paramsKey, sameDeps, staleReason } from "./staleness.js";
+import { DEBOUNCE, atFromBuilt, builtInputsKey, currentInputsKey, debounceFor, heldDeps, inputsKey, isContested, olderVersion, paramsKey, sameDeps, staleReason } from "./staleness.js";
+import { atKey, depsKey, normalizeAt, normalizeDeps } from "../versions.js";
 import { changedKeys, defaultParams, effectiveParams, paramsBySpec, withDefaults } from "../params.js";
-import { normalizeDeps } from "../versions.js";
 const isStale = (r, s) => staleReason(r, s) !== null;
 
 const built = (params, heads, fingerprint = null) => ({ params, builtFrom: { heads, fingerprint, paramsKey: paramsKey(params) } });

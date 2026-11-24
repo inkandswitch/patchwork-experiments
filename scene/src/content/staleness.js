@@ -2,7 +2,7 @@
 // "Content"). Pure; no automerge.
 
 import { stableStringify } from "../params.js";
-import { normalizeDeps, sameHeads, sortedHeads } from "../versions.js";
+import { depsKey, isFpKey, normalizeDeps, sameHeads, sortedHeads } from "../versions.js";
 
 /** paramsKey = stable JSON of params with sorted keys. */
 export function paramsKey(params) {
@@ -22,14 +22,6 @@ export function sameDeps(a, b) {
   const kx = Object.keys(x);
   const ky = Object.keys(y);
   return kx.length === ky.length && kx.every((u, i) => u === ky[i] && sameHeads(x[u], y[u]));
-}
-
-/** A stable string for a deps map; "" when there are none. */
-export function depsKey(deps) {
-  const d = normalizeDeps(deps);
-  return Object.keys(d)
-    .map((u) => `${u}=${d[u].join(",")}`)
-    .join(";");
 }
 
 /**
@@ -57,35 +49,7 @@ export function staleReason(render, source) {
   return sameDeps(source?.deps, built.deps) ? null : "deps";
 }
 
-// ─── fixed versions (`at`) ───────────────────────────────────────────────────
-// A scene object may carry `at: { heads, deps? }`: build from the source AT
-// those heads (and from each dependency listed in `deps` at its heads) instead
-// of the latest. Absent/null follows the latest. A dependency recorded by key
-// (["fp:<key>"]) has no heads to view, so it can't be listed.
-
-const isFpKey = (heads) => heads.length === 1 && String(heads[0]).startsWith("fp:");
-
-/**
- * A scene object's `at`, cleaned: { heads: sorted, deps: { url: sorted heads } },
- * or null when it follows the latest (absent, null, or no usable heads).
- */
-export function normalizeAt(at) {
-  if (!at || typeof at !== "object") return null;
-  const heads = sortedHeads(Array.isArray(at.heads) ? at.heads.filter((h) => typeof h === "string" && h) : []);
-  if (!heads.length) return null;
-  const deps = {};
-  const nd = normalizeDeps(at.deps);
-  for (const url of Object.keys(nd)) if (nd[url].length && !isFpKey(nd[url])) deps[url] = nd[url];
-  return { heads, deps };
-}
-
-/** A stable string for an `at`; "" when it follows the latest. */
-export function atKey(at) {
-  const a = normalizeAt(at);
-  if (!a) return "";
-  const deps = depsKey(a.deps);
-  return `${a.heads.join(",")}${deps ? `|d:${deps}` : ""}`;
-}
+// ─── fixed versions (`at`): ../versions.js ───────────────────────────────────
 
 /**
  * The `at` that freezes exactly what a build was made from: its source heads,
