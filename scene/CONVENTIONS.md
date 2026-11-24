@@ -34,6 +34,7 @@ another's that isn't listed here or on those pages.
 | `arena.spawn` | part id | arena | the spawn pad part, looked up by id | arena/README.md |
 | `doom-map` | source id | doom | a part of a WAD's map, by params | doom/README.md |
 | `doom` | GLB extras | doom | where a map part's frame is | doom/README.md |
+| `door`, `line` | GLB node extras | doom | which door or exit switch a whole map's node is | doom/README.md |
 | `water` | trait, ambient, contribution, plugin id | water | an object that is water; the world's open water; which water a point is in | water/README.md |
 | `water.waves` | contribution (collected) | water | the waves on each water body | water/README.md |
 | `water.shore` | contribution (collected) | water | the shore's shape round an eye, and shelter | water/README.md |
