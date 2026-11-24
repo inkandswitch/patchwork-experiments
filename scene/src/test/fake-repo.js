@@ -246,11 +246,16 @@ export function fakeTimers() {
 
 /**
  * Let pending work land: ten event-loop turns (every microtask, promise chain
- * and doc event drains in each), then one timer turn, so a timer set at 0 by
- * then has run. Time-dependent work is stepped on the stage's manualTime(),
- * never waited for here: a timer turn costs Node a whole millisecond.
+ * and doc event drains in each), then whatever off-thread work is in flight
+ * (setup.js), then one timer turn, so a timer set at 0 by then has run.
+ * Time-dependent work is stepped on the stage's manualTime(), never waited
+ * for here: a timer turn costs Node a whole millisecond.
  */
 export async function flush() {
   for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  while (globalThis.__offThread?.size) {
+    await Promise.allSettled([...globalThis.__offThread]);
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  }
   await new Promise((r) => setTimeout(r, 0));
 }

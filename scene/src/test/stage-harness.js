@@ -84,8 +84,21 @@ export const NATIVES = ["scene.claims", "scene.poses", "scene.audience", "scene.
 /** A scene.poses in place of the native one, its facet `stub`'s hold, release and heldBy as they are when called (a test may swap them). */
 export const posesBy = (stub) => ({ meta: { id: "scene.poses" }, module: { create: () => ({ provides: { poses: () => ({ hold: (...a) => stub.hold(...a), release: (...a) => stub.release(...a), heldBy: (...a) => stub.heldBy(...a) }) } }) } });
 
+/**
+ * Import the plugins every mount registers (the natives, the scene's sources
+ * and datatypes) once per test file, before the first: a dynamic import is a
+ * round trip to vitest's module server, real time a flush doesn't wait for.
+ * Loaded, a plugin's load() is microtasks.
+ */
+let preloaded = null;
+const preload = () =>
+  (preloaded ??= import("../index.js").then(({ plugins }) =>
+    Promise.all(plugins.filter((p) => NATIVES.includes(p.id) || p.type === "scene:source" || p.type === "patchwork:datatype").map((p) => Promise.resolve(p.load?.()).catch(() => null))),
+  ));
+
 export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null, editor = true, natives = true } = {}) {
   repo ??= new FakeRepo();
+  await preload();
   if (!handle) {
     resetRegistries();
     const { plugins } = await import("../index.js");
