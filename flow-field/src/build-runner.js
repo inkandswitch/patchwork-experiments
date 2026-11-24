@@ -16,7 +16,8 @@
 // supersedes an older one still running: the older one's worker is terminated
 // and its promise rejects with an AbortError, which the scene host treats as
 // cancelled, not failed. Builds of the same inputs never supersede each other
-// (two renders of one flow with different params run side by side).
+// (two renders of one flow with different params run side by side). A build
+// whose `signal` aborts (the host no longer wants it) is cancelled the same way.
 
 import workerUrl from "./build-worker.js?worker&url";
 import { runJob } from "./build-job.js";
@@ -248,16 +249,24 @@ export function takeTicket() {
  * are cancelled; if one with a newer ticket is already running, this build
  * read an older doc and is cancelled itself.
  * @param {object} job
- * @param {{ url?: string, identity?: string, ticket?: number, useWorker?: boolean }} [o]
+ * @param {{ url?: string, identity?: string, ticket?: number, useWorker?: boolean, signal?: AbortSignal }} [o]
+ *   signal: the host's (scene README, "Writing a provider"); aborted, the job is cancelled
  */
-export function runSuperseding(job, { url, identity, ticket = takeTicket(), useWorker } = {}) {
-  if (!url) return startJob(job, { useWorker }).promise;
+export function runSuperseding(job, { url, identity, ticket = takeTicket(), useWorker, signal } = {}) {
+  if (signal?.aborted) return Promise.reject(abortError("cancelled: its result is no longer wanted"));
+  const started = url ? superseding(job, { url, identity, ticket, useWorker }) : startJob(job, { useWorker });
+  if (!started.cancel) return started.promise;
+  signal?.addEventListener("abort", () => started.cancel(abortError("cancelled: its result is no longer wanted")), { once: true });
+  return started.promise;
+}
+
+function superseding(job, { url, identity, ticket, useWorker }) {
   let set = running.get(url);
   if (!set) running.set(url, (set = new Set()));
   const older = [];
   for (const other of set) {
     if (other.identity === identity) continue;
-    if (other.ticket > ticket) return Promise.reject(abortError("superseded: a newer build of this flow is already running"));
+    if (other.ticket > ticket) return { promise: Promise.reject(abortError("superseded: a newer build of this flow is already running")) };
     older.push(other);
   }
   for (const other of older) {
@@ -271,7 +280,7 @@ export function runSuperseding(job, { url, identity, ticket = takeTicket(), useW
     if (set.size === 0 && running.get(url) === set) running.delete(url);
   };
   entry.job.promise.then(forget, forget);
-  return entry.job.promise;
+  return entry.job;
 }
 
 /** For tests: drop the idle workers and forget a start failure. */
