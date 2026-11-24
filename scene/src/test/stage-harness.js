@@ -38,11 +38,12 @@ export const settle = async (n = 6) => {
   for (let i = 0; i < n; i++) await flush({ timer: i === n - 1 });
 };
 
+/** Flush until fn() holds, failing after `ms` of the wall (performance.now: a test may fake Date and timers). */
 export async function until(fn, ms = 1000) {
-  const t0 = Date.now();
+  const t0 = performance.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 5));
+    if (performance.now() - t0 > ms) throw new Error("timed out");
+    await flush();
   }
 }
 
