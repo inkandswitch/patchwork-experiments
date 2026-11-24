@@ -73,7 +73,7 @@ try {
   files.barrel = repo.add(fileDoc("barrel.glb", { meshes: [box(0.4, 0.6, 0.4, "#5a8a6a", [0, -0.3, 0])] }));
   files.deck = repo.add(fileDoc("deck.glb", { meshes: [box(1.2, 0.3, 3, "#7a6a50")], extras: { connectors: [{ position: MAST_STEP, tags: ["mast"] }], snapRadius: 1.5 } }));
   files.stl = repo.add({ "@patchwork": { type: "file" }, name: "bracket.stl", extension: "stl", mimeType: "model/stl", content: stlBox(40, 20, 30) });
-  const stlRender = repo.add({ "@patchwork": { type: "scene-render" }, title: "Bracket", parent: files.stl.url, providerId: "file-stl", params: { unit: "cm", up: "z" }, glbUrl: null, builtFrom: null, builtAt: null, bounds: null, status: "idle", error: null, pinned: false });
+  const stlRender = repo.add({ "@patchwork": { type: "scene-render" }, title: "Bracket", parent: files.stl.url, providerId: "file-stl", params: { unit: "cm", up: "z" }, pinned: false, result: null, failure: null });
   files.stlRender = stlRender;
   A = repo.add(sceneDoc("Scene A", {
     crate: obj("Crate", files.crate, {

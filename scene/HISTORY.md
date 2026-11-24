@@ -1316,3 +1316,23 @@ holding an object copy is the copy whatever runs first (`isObjectCopy`).
 be written, a drop a part wants is refused with a notice. Drawer panels keep
 their state across holds; the Snap toggle is the editor's (`scene.units`);
 gears takes the one walk.
+
+**One result, one key (2026-11-24).** A second review of the lock found that
+a background tab holding a render (its timers firing once a minute) kept the
+others from ever writing: a claim it heard fenced its own write, and its late
+heartbeat fenced theirs. A peer whose provider worked gave up because
+another provider version's build had failed, the doc saying only `status:
+"error"`. A result written as separate keys (`glbUrl`, `builtFrom`,
+`bounds`, `builtAt`, beside `status` and `error`) could merge from two
+writers into a render matching neither. And a frozen holder that woke said
+it held before it had listened. A render doc came to hold its `result` as
+one value and its `failure` with the inputs it was of; `status` went, and
+with it the settle that put a stale one back. Only a hold or a build fences
+a write; a holder past its lease listens before it speaks and lets go if it
+heard anyone; a claim is answered at once by whoever beats it, which
+replaced `LISTEN_MS` (6 s of listening before a first claim). The model came
+to merge replicas as Automerge does, with writes that cross, and found the
+answer, the failure's inputs and the listening first each needed. Scenes on
+the protocol before the one-claim lock (`scene-render:building` messages)
+and on the lock ignore each other: they can build the same render twice,
+the later write winning, and converge.

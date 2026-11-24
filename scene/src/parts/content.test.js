@@ -100,8 +100,8 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await wait(20);
     await settle();
     const render = (await repo.find(o.renderUrl)).doc();
-    expect(render.builtFrom.heads).toEqual(h1);
-    expect(render.bounds.max[0]).toBeCloseTo(0.01); // 10 mm: the old triangle, not the 30 mm one
+    expect(render.result.builtFrom.heads).toEqual(h1);
+    expect(render.result.bounds.max[0]).toBeCloseTo(0.01); // 10 mm: the old triangle, not the 30 mm one
     expect($(`.object-row[data-id="${id}"] .fixed-mark`)).toBeTruthy();
     expect(versionText()).toMatch(/^Fixed at /);
     // the build's summary is the stage's: fixed, so not out of date
@@ -124,7 +124,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     const created = repo.created.length;
     button("fix-version").click();
     await settle();
-    expect(s.doc().objects[id].at).toEqual({ heads: built.builtFrom.heads });
+    expect(s.doc().objects[id].at).toEqual({ heads: built.result.builtFrom.heads });
     expect(versionText()).toMatch(/^Fixed at .* · built /);
     expect(button("fix-version").disabled).toBe(true);
     expect(button("follow-latest").disabled).toBe(false);
@@ -135,8 +135,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await wait(2000);
     await settle();
     const after = (await repo.find(renderUrl)).doc();
-    expect(after.glbUrl).toBe(built.glbUrl);
-    expect(after.builtAt).toBe(built.builtAt);
+    expect(after.result).toEqual(built.result);
     expect(repo.created.length).toBe(created);
     expect($(".inspector .build-summary").textContent).toMatch(/· fixed version$/);
 
@@ -149,8 +148,8 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await wait(2000);
     await settle();
     const latest = (await repo.find(renderUrl)).doc();
-    expect(latest.builtFrom.heads).toEqual(file.heads());
-    expect(latest.glbUrl).not.toBe(built.glbUrl);
+    expect(latest.result.builtFrom.heads).toEqual(file.heads());
+    expect(latest.result.glbUrl).not.toBe(built.result.glbUrl);
   });
 
   it("a row's drag (its render doc, for other tools) let go over the view adds nothing", async () => {

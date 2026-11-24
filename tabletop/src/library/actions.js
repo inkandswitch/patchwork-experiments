@@ -112,7 +112,7 @@ export async function forkSession({ repo, registry, library, session }) {
   const renders = new Map();
   for (const u of new Set(Object.values(src.objects ?? {}).map((o) => o?.renderUrl).filter((u) => typeof u === "string"))) {
     const r = await docAt(repo, u);
-    if (r) renders.set(u, (await repo.create2({ ...plain(r), status: "idle", error: null })).url);
+    if (r) renders.set(u, (await repo.create2(plain(r))).url);
   }
   const plan = forkScene(src, { rules, url: session.url, heads, title: name, renders });
   // every bag gets a doc of its own; only a plain bag's contents are data anyone may read, and so copied

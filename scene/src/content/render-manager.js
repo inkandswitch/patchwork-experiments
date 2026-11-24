@@ -23,12 +23,14 @@ import { pageBus } from "../stage/presence.js";
 import { atFromBuilt, builtInputsKey, debounceFor, inputsKey, staleReason } from "./staleness.js";
 import { atKey, knowsHeads, normalizeAt, pinnedRepo, sortedHeads, viewAt } from "../shared/versions.js";
 import { contentState, wantsBuild } from "./state.js";
-import { HEARTBEAT_MS, LAPSE_MS, LEASE_MS, LISTEN_MS, RECHECK_MS, live, lockStep } from "./lock.js";
+import { HEARTBEAT_MS, LAPSE_MS, LEASE_MS, RECHECK_MS, live, lockStep } from "./lock.js";
 
 /** The lock's message on a render doc's channel: { type, from, n, phase: "claim" | "build" | "hold" | "done" } (`n` counts up from each sender). */
 export const CLAIM_MSG = "scene-render:claim";
 /** A failed build is tried again after each of these, its inputs unchanged; then left until they change or someone asks. */
 export const RETRY_BACKOFF_MS = Object.freeze([5_000, 30_000, 120_000]);
+/** A dependency on its first load is waited for this long; then the render is built without it. */
+export const DEPENDENCY_WAIT_MS = 6_000;
 
 /** A manager's id to the lock: its own, never its repo's (two tabs, two managers in one page, share one). */
 const newId = () => globalThis.crypto?.randomUUID?.() ?? String(Math.random()).slice(2);
@@ -83,11 +85,14 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
     for (const url of [entry.sourceUrl, entry.renderUrl]) want ? announce.hold(url) : announce.release(url);
   }
 
-  /** Say a lock message on the render's channel (and to this page's other managers). */
-  function say(entry, phase) {
+  /**
+   * Say a lock message on the render's channel (and to this page's other
+   * managers). A holder silent past its lease (a frozen tab, a blocked
+   * thread) says nothing but "done" until it has `listened` (startRecheck).
+   */
+  function say(entry, phase, listened = false) {
     if (!mayWrite(entry)) return;
-    // a holder silent past its lease (a frozen tab, a blocked thread) may have let its claim lapse for the others
-    if (entry.run && time.now() - entry.lastSaid > LEASE_MS) entry.run.lapsed = true;
+    if (entry.holding && phase !== "done" && !listened && (entry.recheck || time.now() - entry.lastSaid > LEASE_MS)) return void startRecheck(entry);
     entry.lastSaid = time.now();
     const msg = { type: CLAIM_MSG, from: self, n: ++spoken, phase };
     try {
@@ -96,6 +101,18 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       // the channel is best effort; a lost message is a peer that seems to vanish
     }
     entry.bus?.deliver(msg);
+  }
+
+  /**
+   * A holder silent past its lease: the others may have let its claim lapse,
+   * and another may claim or hold the render now. It listens RECHECK_MS
+   * before it speaks or writes; evaluate() then lets the render go if it
+   * heard anyone (recheck.waiters: a write waiting on it).
+   */
+  function startRecheck(entry) {
+    if (entry.recheck) return;
+    entry.recheck = { at: time.now() + RECHECK_MS, waiters: [] };
+    wakeAt(entry, entry.recheck.at);
   }
 
   /** Evaluate again at `at` (the earliest asked for wins until it fires). */
@@ -148,7 +165,7 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
    */
   function isBehind(entry, render) {
     if (entry.at) return false;
-    const built = render.builtFrom;
+    const built = render.result?.builtFrom;
     if (!knowsHeads(entry.sourceHandle, built?.heads)) return true;
     for (const [url, heads] of Object.entries(built?.deps ?? {})) {
       const h = entry.deps.handle(url);
@@ -181,16 +198,15 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
   }
 
   /**
-   * A failure the render doc says happened (its status turned to "error")
-   * while this peer wasn't holding the render: the holder's to retry, so here
-   * the inputs it has now are given up on (no retry of its own) until they
-   * change or someone asks.
+   * A failure the render doc records for exactly the inputs this peer has
+   * now (`key`: its params, source, dependencies and provider version), while
+   * it doesn't hold the render: the holder's to retry, so here those inputs
+   * are given up on until they change or someone asks. A failure of other
+   * inputs (another provider version's, say) is left alone.
    */
   function noteFailure(entry, render, key) {
-    const status = render.status ?? "idle";
-    const turned = status === "error" && entry.seenStatus !== "error";
-    entry.seenStatus = status;
-    if (turned && !entry.holding && entry.failure?.key !== key) entry.failure = { key, n: Infinity, error: render.error ?? null, retryAt: null };
+    const doc = render.failure;
+    if (doc?.inputs === key && !entry.holding && entry.failure?.key !== key) entry.failure = { key, n: Infinity, error: doc.error ?? null, retryAt: null };
   }
 
   /**
@@ -223,16 +239,16 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       deps: {
         notReady: urls.filter((u) => !entry.deps.ready(u)),
         failed: urls.filter((u) => entry.deps.failed(u)),
-        loading: pendingSince != null && now < pendingSince + LISTEN_MS ? urls.filter((u) => entry.deps.loading(u)) : [],
+        loading: pendingSince != null && now < pendingSince + DEPENDENCY_WAIT_MS ? urls.filter((u) => entry.deps.loading(u)) : [],
       },
       failure: null,
     };
-    if (pendingSince != null) wakeAt(entry, pendingSince + LISTEN_MS);
+    if (pendingSince != null) wakeAt(entry, pendingSince + DEPENDENCY_WAIT_MS);
     // what deciding to build reads: the state with no build in progress, no failure and nothing it can't show
     const want = contentState({ ...known, building: null, shownError: null });
     // (retrying: this peer will try again, or another holds the render to)
     const f = entry.failure;
-    if (f) known.failure = { error: render.error ?? f.error, retrying: (auto && f.retryAt != null && wantsBuild(want)) || held };
+    if (f) known.failure = { error: f.error, retrying: (auto && f.retryAt != null && wantsBuild(want)) || held };
     return { state: contentState(known), want, key, reason, source };
   }
 
@@ -243,9 +259,9 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       providerId: render?.providerId ?? null,
       providerName: entry.provider?.name ?? render?.providerId ?? null,
       pinned: !!render?.pinned,
-      builtAt: render?.builtAt ?? null,
-      builtHeads: sortedHeads(render?.builtFrom?.heads),
-      bounds: validBounds(render?.bounds),
+      builtAt: render?.result?.builtAt ?? null,
+      builtHeads: sortedHeads(render?.result?.builtFrom?.heads),
+      bounds: validBounds(render?.result?.bounds),
       at: entry.at,
       notes: entry.notes ?? null,
     });
@@ -261,9 +277,10 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
     const render = entry.renderHandle?.doc();
     const now = time.now();
     if (!render || !entry.sourceHandle) return emit(entry, render, contentState({ route: "built", render: null, shownError: entry.shownError }));
-    if (render.glbUrl && render.glbUrl !== entry.glbUrl && !(entry.glbRetryAt > now)) {
-      entry.glbUrl = render.glbUrl;
-      loadGLB(entry, render.glbUrl);
+    const glbUrl = render.result?.glbUrl;
+    if (glbUrl && glbUrl !== entry.glbUrl && !(entry.glbRetryAt > now)) {
+      entry.glbUrl = glbUrl;
+      loadGLB(entry, glbUrl);
     }
     if (entry.glbRetryAt != null) wakeAt(entry, entry.glbRetryAt);
     const { state, want, key, reason, source } = judge(entry, render, now);
@@ -272,7 +289,6 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
     for (const [, c] of entry.heard) wakeAt(entry, c.at + LAPSE_MS);
     if (!mayWrite(entry) || !key) return;
     if (key !== entry.wantKey) noteWant(entry, render, key, reason, now);
-    settle(entry, render, want, now);
     const f = entry.failure;
     const wanted = auto && wantsBuild(want) && (!f || f.retryAt != null);
     const debounced = now >= entry.wantedAt + entry.wantDelay;
@@ -282,19 +298,22 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       if (wanted && f?.retryAt != null) wakeAt(entry, f.retryAt);
     };
     if (entry.holding) {
-      // silent past its lease (a frozen tab, a blocked thread): the others may have let its claim lapse and
-      // another may hold the render now. It says it holds, hears for RECHECK_MS, and lets go if another does.
-      if (now - entry.lastSaid > LEASE_MS && !entry.recheck) entry.recheck = now + RECHECK_MS;
+      // silent past its lease: it listens first (startRecheck), then lets the render go if it heard anyone at all
+      if (!entry.recheck && now - entry.lastSaid > LEASE_MS) startRecheck(entry);
+      if (entry.recheck) {
+        if (now < entry.recheck.at) return void wakeAt(entry, entry.recheck.at);
+        const { waiters } = entry.recheck;
+        entry.recheck = null;
+        if ([...entry.heard].some(([, c]) => live(c, now))) entry.run?.controller.abort(), release(entry);
+        else say(entry, entry.run ? "build" : "hold", true);
+        for (const w of waiters) w();
+        if (!entry.holding) return;
+      }
       // two holders after a split (a lost message): the higher id lets go once it isn't building
       const others = [...entry.heard].filter(([, c]) => c.phase !== "claim" && live(c, now));
       if (others.some(([peer]) => peer < self) && !entry.run) return release(entry);
       if (now >= entry.lastSaid + HEARTBEAT_MS) say(entry, entry.run ? "build" : "hold");
       wakeAt(entry, entry.lastSaid + HEARTBEAT_MS);
-      if (entry.recheck != null) {
-        if (now < entry.recheck) return void wakeAt(entry, entry.recheck);
-        entry.recheck = null;
-        if (others.length) return void (entry.run?.controller.abort(), release(entry));
-      }
       if (entry.run) {
         // newer inputs this build won't be wanted for: it is cancelled (build() is told by its signal) and the next starts once it has stopped
         // (a dependency still loading when it started, loaded since, isn't newer: build() reads it as it loads)
@@ -312,7 +331,7 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       if (entry.mine) (entry.mine = null), say(entry, "done");
       return waits();
     }
-    const step = lockStep({ now, self, mine: entry.mine, heard: entry.heard, listenedFrom: entry.listenedFrom, alone: entry.alone });
+    const step = lockStep({ now, self, mine: entry.mine, heard: entry.heard, alone: entry.alone });
     if (step.act === "claim") {
       entry.mine = { at: now };
       say(entry, "claim");
@@ -322,7 +341,7 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       entry.mine = null;
       entry.holding = true;
       entry.idleSince = null;
-      say(entry, "hold");
+      say(entry, "hold", true); // (it has just heard all there is: its claim stood, or nobody else knows of the render)
       return void build(entry, key, entry.forceNext);
     }
     if (step.yielded) (entry.mine = null), say(entry, "done");
@@ -336,27 +355,11 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
     say(entry, "done");
   }
 
-  /**
-   * A "building" or "error" status left in a fresh render doc by a build that
-   * has no one behind it: put back to idle, so what reads the doc alone
-   * (render-read.js) isn't told otherwise. Only by a peer that has listened
-   * and hears no claim; several doing it at once write the same.
-   */
-  function settle(entry, render, want, now) {
-    const status = render.status ?? "idle";
-    if (want?.state !== "fresh" || (status !== "building" && status !== "error") || entry.holding || entry.mine || entry.run) return;
-    if (now < entry.listenedFrom + LISTEN_MS || [...entry.heard].some(([, c]) => live(c, now))) return;
-    entry.renderHandle.change((d) => {
-      d.status = "idle";
-      d.error = null;
-    });
-  }
-
   /** The inputs moved to `key`: a build of them waits out its debounce from now (staleness.js debounceFor). */
   function noteWant(entry, render, key, reason, now) {
     entry.wantKey = key;
     entry.wantedAt = now;
-    entry.wantDelay = debounceFor(reason, { specs: entry.provider.params ?? [], providerCost: entry.provider.cost, changed: reason === "params" ? changedKeys(parseKey(render.builtFrom?.paramsKey), render.params ?? {}) : [] });
+    entry.wantDelay = debounceFor(reason, { specs: entry.provider.params ?? [], providerCost: entry.provider.cost, changed: reason === "params" ? changedKeys(parseKey(render.result?.builtFrom?.paramsKey), render.params ?? {}) : [] });
     if (entry.wantDelay > 0) wakeAt(entry, now + entry.wantDelay);
   }
 
@@ -394,10 +397,13 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       },
       signal: controller.signal,
       now: time.now,
-      // the write fence's other half (runBuild checks the build it replaces): still this peer's to write
+      inputs: key, // (a failure is recorded against them: noteFailure)
+      // the write fence's second condition (runBuild's compare-and-set is the first): it still holds the render, having
+      // listened first if silent past its lease, and has heard no other peer hold or build it since this build began
       mayCommit: async () => {
-        // its claim may have lapsed for the others: first hear any claim that was on its way
-        if (run.lapsed || time.now() - entry.lastSaid > LEASE_MS) await new Promise((r) => time.after(RECHECK_MS, r));
+        if (!entry.holding) return false;
+        if (!entry.recheck && time.now() - entry.lastSaid > LEASE_MS) startRecheck(entry);
+        if (entry.recheck) await new Promise((r) => entry.recheck.waiters.push(r));
         return !entry.dead && !disposed && entry.holding && !controller.signal.aborted && !(entry.foreignAt > run.startedAt);
       },
     });
@@ -412,7 +418,6 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       const n = entry.failure?.key === key ? entry.failure.n + 1 : 1;
       entry.failure = { key, n, error: result.error, retryAt: n <= RETRY_BACKOFF_MS.length ? time.now() + RETRY_BACKOFF_MS[n - 1] : null };
     }
-    entry.seenStatus = entry.renderHandle.doc()?.status ?? "idle";
     evaluate(entry);
   }
 
@@ -452,18 +457,17 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       at: fixed,
       atKey: fixedKey,
       viewCache: null,
-      listenedFrom: Infinity, // (since the render doc was opened)
       alone: createdHere, // made here and not built yet: nobody else knows of it
       deps: null,
       depsAsked: null,
       heard: new Map(), // peer → its latest claim { phase, at }
       heardN: new Map(), // peer → the latest of its messages heard (its `n`)
-      foreignAt: -Infinity, // when another peer's claim was last heard
+      foreignAt: -Infinity, // when another peer was last heard holding or building the render
       mine: null, // this peer's claim { at }, while it waits for a rival
       holding: false, // this peer holds the render
       idleSince: null, // holding, it has wanted nothing since
       lastSaid: -Infinity, // when it last spoke on the render's channel
-      recheck: null, // holding, silent past its lease: when it will have heard whether another holds it
+      recheck: null, // holding, silent past its lease: { at, waiters }, when it will have listened long enough
       run: null, // the build in flight: { key, controller, startedAt, pending, loose }
       wake: null,
       wantKey: null,
@@ -471,7 +475,6 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       wantDelay: 0,
       forceNext: false,
       failure: null, // { key, n, error, retryAt }
-      seenStatus: null,
       lastBuilt: null,
       notes: null,
       glbUrl: null,
@@ -507,7 +510,6 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       if (entry.dead) return;
       entry.renderHandle = renderHandle;
       entry.sourceHandle = sourceHandle;
-      entry.listenedFrom = createdHere ? -Infinity : time.now(); // (its maker has heard all there is)
       const hear = (payload) => {
         const m = payload?.message;
         if (m?.type !== CLAIM_MSG || typeof m.from !== "string" || m.from === self || !(m.n > (entry.heardN.get(m.from) ?? 0))) return;
@@ -515,7 +517,10 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
         if (m.phase === "done") entry.heard.delete(m.from);
         else if (m.phase === "claim" || m.phase === "build" || m.phase === "hold") {
           entry.heard.set(m.from, { phase: m.phase, at: time.now() });
-          entry.foreignAt = time.now();
+          if (m.phase !== "claim") entry.foreignAt = time.now();
+          // a claim this peer beats is answered at once, so the claimer hears it within its window
+          else if (entry.holding) say(entry, entry.run ? "build" : "hold");
+          else if (entry.mine && self < m.from) say(entry, "claim");
         }
         evaluate(entry);
       };
@@ -560,6 +565,7 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
     if (!entry) return;
     if (entry.holding || entry.mine) say(entry, "done");
     entry.dead = true;
+    for (const w of entry.recheck?.waiters ?? []) w();
     announceEntry(entry);
     entry.wake?.cancel();
     entry.run?.controller.abort();
@@ -584,7 +590,7 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
      */
     fixPoint(objectId) {
       const entry = entries.get(objectId);
-      const built = entry?.renderHandle?.doc()?.builtFrom;
+      const built = entry?.renderHandle?.doc()?.result?.builtFrom;
       if (!built) return null;
       const snap = entry.deps.snapshot();
       const keyed = {};

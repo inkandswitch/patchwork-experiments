@@ -83,7 +83,7 @@ async function setup({ sea = false } = {}) {
   const glb = repo.add({ "@patchwork": { type: "file" }, name: "mast.glb", extension: "glb", mimeType: "model/gltf-binary", content: new Uint8Array(4) });
   const stl = repo.add({ "@patchwork": { type: "file" }, name: "boom.stl", extension: "stl", mimeType: "model/stl", content: new Uint8Array(84) });
   const glbOut = repo.add({ "@patchwork": { type: "file" }, name: "boom.glb", extension: "glb", mimeType: "model/gltf-binary", content: new Uint8Array(4) });
-  const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "Boom", parent: stl.url, providerId: "file-stl", params: { unit: "cm", up: "y" }, glbUrl: glbOut.url, builtFrom: { heads: stl.heads(), fingerprint: null, paramsKey: '{"unit":"cm","up":"y"}' }, builtAt: 7, bounds: null, status: "idle", error: null, pinned: false });
+  const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "Boom", parent: stl.url, providerId: "file-stl", params: { unit: "cm", up: "y" }, pinned: false, result: { glbUrl: glbOut.url, builtFrom: { heads: stl.heads(), fingerprint: null, paramsKey: '{"unit":"cm","up":"y"}' }, bounds: null, builtAt: 7 }, failure: null });
   const other = repo.add(emptyScene({
     title: "Other",
     objects: {
@@ -133,7 +133,7 @@ describe("a row from another scene, dropped in the view", () => {
     // a render doc of its own, with the params and the build it had
     expect(boom.renderUrl).not.toBe(render.url);
     const mine = (await s.repo.find(boom.renderUrl)).doc();
-    expect(mine).toMatchObject({ parent: stl.url, providerId: "file-stl", params: { unit: "cm", up: "y" }, glbUrl: render.doc().glbUrl, builtAt: 7 });
+    expect(mine).toMatchObject({ parent: stl.url, providerId: "file-stl", params: { unit: "cm", up: "y" }, result: { glbUrl: render.doc().result.glbUrl, builtAt: 7 } });
     s.change((d) => (d.objects[boom.id].name = "Boom here"));
     expect(render.doc().params).toEqual({ unit: "cm", up: "y" });
     // the mast's file's asset entry came with it, under the same key; nothing else did

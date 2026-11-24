@@ -53,9 +53,7 @@ function fixture(repo) {
   const lampSource = fakeUrl();
   const render = repo.add(newRenderDoc({ title: "Lamp", parent: lampSource, providerId: "t.lampgen", params: { glow: 2 } }));
   render.change((d) => {
-    d.glbUrl = fakeUrl();
-    d.builtFrom = { heads: ["h1"] };
-    d.builtAt = 5;
+    d.result = { glbUrl: fakeUrl(), builtFrom: { heads: ["h1"] }, bounds: null, builtAt: 5 };
   });
   const objects = {
     table: obj("Table", { sourceUrl: file, hint: box, transform: T([1, 0, 2], [0, 0.5, 0]) }),
@@ -170,7 +168,7 @@ function comparable(doc, copied, K, renderOf) {
 }
 const seedOf = (repo) => (url) => {
   const r = repo.handles.get(url)?.doc();
-  return r ? JSON.stringify({ providerId: r.providerId, params: r.params, glbUrl: r.glbUrl, builtFrom: r.builtFrom, builtAt: r.builtAt }) : null;
+  return r ? JSON.stringify({ providerId: r.providerId, params: r.params, result: r.result }) : null;
 };
 
 /** A doc with its object and dimension ids renamed (`objs`, `dims`: Maps), every reference to them following. */
@@ -510,9 +508,7 @@ describe("extract: the pieces", () => {
     const source = repo.add({ title: "Lamp source", glow: 1 });
     const render = repo.add(newRenderDoc({ title: "Lamp", parent: source.url, providerId: "t.lampgen", params: { glow: 2 } }));
     render.change((d) => {
-      d.glbUrl = "automerge:glb-then";
-      d.builtFrom = { heads: source.heads() };
-      d.builtAt = 5;
+      d.result = { glbUrl: "automerge:glb-then", builtFrom: { heads: source.heads() }, bounds: null, builtAt: 5 };
     });
     const file = fakeUrl();
     const linked = repo.add(
@@ -528,8 +524,7 @@ describe("extract: the pieces", () => {
     source.change((d) => (d.glow = 9));
     render.change((d) => {
       d.params.glow = 7;
-      d.glbUrl = "automerge:glb-now";
-      d.builtFrom = { heads: source.heads() };
+      d.result = { glbUrl: "automerge:glb-now", builtFrom: { heads: source.heads() }, bounds: null, builtAt: 6 };
     });
     const { api } = fakeApi(repo, host);
     const tops = await bundleLink(api, "L", []);
@@ -539,7 +534,7 @@ describe("extract: the pieces", () => {
     const copy = repo.handles.get(lamp.renderUrl).doc();
     expect(lamp.renderUrl).not.toBe(render.url);
     expect(copy.params).toEqual({ glow: 2 });
-    expect(copy.glbUrl).toBe("automerge:glb-then");
+    expect(copy.result.glbUrl).toBe("automerge:glb-then");
     expect(host.doc().objects.crate.at).toBeUndefined();
   });
 });

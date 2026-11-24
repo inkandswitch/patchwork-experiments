@@ -7,7 +7,8 @@
 // Ported from tool.test.js / tool-v3.test.js (scene contract v3).
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { manualTime } from "../stage/time.js";
-import { CLAIM_MS, LISTEN_MS } from "./lock.js";
+import { CLAIM_MS } from "./lock.js";
+import { DEBOUNCE } from "./staleness.js";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
@@ -97,7 +98,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
   it("a render doc's own bounds stand in for its box until its GLB loads", async () => {
     const bounds = { min: [0, 0, 0], max: [1, 2, 3] };
     // pinned and never built: it won't build, so only the bounds can say where it is
-    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "r", parent: file.url, providerId: "file-stl", params: { unit: "mm", up: "z" }, glbUrl: null, builtFrom: null, builtAt: null, bounds, status: "idle", error: null, pinned: true });
+    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "r", parent: file.url, providerId: "file-stl", params: { unit: "mm", up: "z" }, pinned: true, result: { glbUrl: null, builtFrom: null, bounds, builtAt: null }, failure: null });
     // (no WebGL here, so the viewport keeps no boxes: watch what it is told)
     const hints = vi.spyOn(Viewport.prototype, "setHint");
     await mount({ objects: { a: object({ name: "a", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url }), b: object({ name: "b", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url, hint: { bounds: { min: [5, 5, 5], max: [6, 6, 6] } } }) }, order: ["a", "b"] });
@@ -112,7 +113,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
   // One state per object (./state.js), read by everything that shows it: the
   // controls embedded in the stage show the stage's, not one of their own.
   it("the build controls inside a stage show the stage's state of the object, told as it changes: a render a peer built from changes not synced here is up to date in both", async () => {
-    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "r", parent: file.url, providerId: "file-stl", params: { unit: "mm", up: "z" }, glbUrl: null, builtFrom: { heads: ["a-change-not-synced-here"], fingerprint: null, paramsKey: '{"unit":"mm","up":"z"}', deps: {} }, builtAt: 1, bounds: null, status: "idle", error: null, pinned: false });
+    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "r", parent: file.url, providerId: "file-stl", params: { unit: "mm", up: "z" }, pinned: false, result: { glbUrl: null, builtFrom: { heads: ["a-change-not-synced-here"], fingerprint: null, paramsKey: '{"unit":"mm","up":"z"}', deps: {} }, bounds: null, builtAt: 1 }, failure: null });
     await mount({ objects: { a: object({ name: "a", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url }) }, order: ["a"] });
     await wait(100);
     expect(s.facet("scene.add").content("a").state).toEqual({ state: "fresh", behind: true });
@@ -133,22 +134,22 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     off();
   });
 
-  it("a render made here builds at once only the first time it is tracked: tracked again (an undo), it listens for a builder first", async () => {
+  it("a render made here builds at once only the first time it is tracked: tracked again (an undo), it claims it first", async () => {
     await mount();
     const { add: addIt } = await import("../parts/editor.js");
     const id = await addIt(s.facet("scene.add"), file.url);
     await wait(500);
     const renderUrl = s.doc().objects[id].renderUrl;
-    expect((await repo.find(renderUrl)).doc().builtFrom).toBeTruthy(); // at once: nobody else knew of it
+    expect((await repo.find(renderUrl)).doc().result?.builtFrom).toBeTruthy(); // at once: nobody else knew of it
     const o = JSON.parse(JSON.stringify(s.doc().objects[id]));
     s.change((d) => delete d.objects[id]);
     await wait(100);
     const builds = repo.created.length;
     file.change((d) => (d.content = STL2)); // (stale now)
     s.change((d) => (d.objects[id] = o));
-    await wait(2000);
-    expect(repo.created.length).toBe(builds); // listening
-    await wait(LISTEN_MS + CLAIM_MS);
+    await wait(CLAIM_MS / 2);
+    expect(repo.created.length).toBe(builds); // claiming
+    await wait(DEBOUNCE.expensive + CLAIM_MS + 500);
     expect(repo.created.length).toBe(builds + 1);
   });
 
@@ -183,7 +184,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     const glb = glbFile();
     const gltf = glbFile("part.gltf", "gltf");
     const stl = repo.add({ "@patchwork": { type: "file" }, name: "x.stl", extension: "stl", content: STL });
-    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: stl.url, providerId: "file-stl", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
+    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: stl.url, providerId: "file-stl", params: {}, pinned: false, result: null, failure: null });
     const objects = {
       a: object({ sourceUrl: glb.url }),
       c: object({ sourceUrl: gltf.url, providerId: "t-gltf" }), // another package's file source

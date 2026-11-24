@@ -141,7 +141,7 @@ try {
   check("the OSM features file says it is ODbL, with the notice", s.featuresFile?.licence === "ODbL-1.0" && /OpenStreetMap contributors/.test(s.featuresFile.attribution), s.featuresFile);
   check("the terrain's About is its Terrain doc; it is the place, with its credit, and no sky of its own (exactly terrain.credit and terrain.place)", s.terrain.infoUrl === s.terrain.sourceUrl && s.terrain.credit && J(sorted(s.terrain.traits)) === J({ "terrain.credit": {}, "terrain.place": {} }), s.terrain);
   check("the world's weather is the template's: Cadboro Bay, 15:00 on 15 July on UTC−7, 4 m/s from 235°, a fair afternoon (and the scene's only trait)", J(sorted(s.weather)) === J(sorted(WEATHER(s.weather?.seed))) && Number.isSafeInteger(s.weather.seed) && J(s.traits) === J(["weather"]), { weather: s.weather, traits: s.traits });
-  check("its render is built, fingerprinted, its data files keyed by content", s.render?.status === "idle" && s.render.glbUrl && s.render.builtFrom?.fingerprint && Object.values(s.render.builtFrom.deps ?? {}).length === 3 && Object.values(s.render.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.builtFrom.providerVersion === 2, s.render);
+  check("its render is built, fingerprinted, its data files keyed by content", !s.render?.failure && s.render?.glbUrl && s.render.result?.builtFrom?.fingerprint && Object.values(s.render.result.builtFrom.deps ?? {}).length === 3 && Object.values(s.render.result.builtFrom.deps).every((v) => String(v[0]).startsWith("fp:")) && s.render.result.builtFrom.providerVersion === 2, s.render);
   check("a summer afternoon's sea: 4 m/s from 235°, small waves, on the bay's one open water at the chart's y = 0", s.weather?.wind === 4 && s.weather.from === 235 && s.sea?.scale === 0.5 && s.sea.waters === 1 && s.sea.open && s.sea.level === 0, s.sea);
   // the terrain's grid (cadboro.js GRID: 1025 nodes 8 m apart from (-1600, -2400)), down to the hint's deepest seabed (150 m)
   check("the bay's Sea keeps the terrain's footprint where its world has no open water (its clip: the grid, 150 m deep, centred on it)", J(s.sea?.clip) === J([8192, 150, 8192]) && J(s.sea?.at) === J([2496, 0, 1696]), { clip: s.sea?.clip, at: s.sea?.at });
@@ -229,7 +229,7 @@ async function sameGlb(snap) {
   const render = docs[obj.renderUrl];
   const out = await source.build({ doc: docs[obj.sourceUrl], repo, params: render.params ?? {} });
   const sha = (b) => createHash("sha256").update(b).digest("hex");
-  const page = docs[render.glbUrl].content;
+  const page = docs[render.result.glbUrl].content;
   const { parseGLB } = await import("../src/glb.js");
   return { ok: sha(out.glb) === sha(page), node: sha(out.glb), page: sha(page), bytes: page.length, notes: out.meta.notes, copyright: parseGLB(page).json.asset.copyright ?? null };
 }
@@ -248,7 +248,7 @@ async function fingerprintAfterRewrite(snap) {
   const terrain = docs[to[obj.sourceUrl]], render = docs[to[obj.renderUrl]];
   const fp = source.fingerprint(terrain);
   const deps = source.dependencies(terrain);
-  return { ok: fp === render.builtFrom.fingerprint && deps.every((u) => render.builtFrom.deps?.[u]?.[0]?.startsWith("fp:")), built: render.builtFrom.fingerprint, rewritten: fp, depsRecorded: deps.every((u) => !!render.builtFrom.deps?.[u]) };
+  return { ok: fp === render.result.builtFrom.fingerprint && deps.every((u) => render.result.builtFrom.deps?.[u]?.[0]?.startsWith("fp:")), built: render.result.builtFrom.fingerprint, rewritten: fp, depsRecorded: deps.every((u) => !!render.result.builtFrom.deps?.[u]) };
 }
 
 function revive(doc) {
@@ -290,7 +290,7 @@ async function publish(snap) {
     for (const u of ready) {
       const doc = rewrite(docs[u]);
       // a render was built from its source at the probe repo's heads: as published, the source's are these
-      if (doc["@patchwork"]?.type === "scene-render" && doc.builtFrom && docs[u].parent && made.has(docs[u].parent)) doc.builtFrom.heads = [...made.get(docs[u].parent).heads()];
+      if (doc["@patchwork"]?.type === "scene-render" && doc.result?.builtFrom && docs[u].parent && made.has(docs[u].parent)) doc.result.builtFrom.heads = [...made.get(docs[u].parent).heads()];
       const h = await repo.create2(doc);
       made.set(u, h);
       renamed.set(u, h.url);
@@ -330,10 +330,10 @@ async function publish(snap) {
     const rh = await within(60000, checker.find(renamed.get(terrainObj0.renderUrl)));
     const t = th.doc(), r = rh.doc();
     const fp = source.fingerprint(t);
-    const heads = [...th.heads()].sort().join(","), built = [...(r.builtFrom?.heads ?? [])].sort().join(",");
-    const depsOk = source.dependencies(t).every((u) => String(r.builtFrom?.deps?.[u]?.[0] ?? "").startsWith("fp:"));
-    console.log(`terrain render, fresh: fingerprint ${fp === r.builtFrom?.fingerprint ? "matches" : `DIFFERS (${fp} vs ${r.builtFrom?.fingerprint})`}; built from heads ${heads === built ? "= the source's" : `${built} (source ${heads})`}; deps by content ${depsOk ? "ok" : "MISSING"}`);
-    if (fp !== r.builtFrom?.fingerprint || heads !== built || !depsOk) missing.push(`${renamed.get(terrainObj0.renderUrl)} (stale as published)`);
+    const heads = [...th.heads()].sort().join(","), built = [...(r.result?.builtFrom?.heads ?? [])].sort().join(",");
+    const depsOk = source.dependencies(t).every((u) => String(r.result?.builtFrom?.deps?.[u]?.[0] ?? "").startsWith("fp:"));
+    console.log(`terrain render, fresh: fingerprint ${fp === r.result?.builtFrom?.fingerprint ? "matches" : `DIFFERS (${fp} vs ${r.result?.builtFrom?.fingerprint})`}; built from heads ${heads === built ? "= the source's" : `${built} (source ${heads})`}; deps by content ${depsOk ? "ok" : "MISSING"}`);
+    if (fp !== r.result?.builtFrom?.fingerprint || heads !== built || !depsOk) missing.push(`${renamed.get(terrainObj0.renderUrl)} (stale as published)`);
   } catch (err) {
     missing.push(`terrain render check (${err?.message ?? err})`);
   }

@@ -142,7 +142,7 @@ describe("acquireHull: the hull itself (source or file), never a scene render", 
   const urls = { render: "automerge:rend111111111111111111111", file: "automerge:g1b1111111111111111111111", hull: "automerge:hu11111111111111111111111", rig: "automerge:r1g1111111111111111111111" };
   const handle = (url, doc) => ({ url, doc: () => doc, heads: () => ["a"], on() {}, off() {} });
   const docs = {
-    [urls.render]: { "@patchwork": { type: "scene-render" }, title: "Narrow transom", parent: urls.hull, providerId: "camber-hull-surface", params: { size: "length", lengthMeters: 12 }, glbUrl: urls.file, status: "idle" },
+    [urls.render]: { "@patchwork": { type: "scene-render" }, title: "Narrow transom", parent: urls.hull, providerId: "camber-hull-surface", params: { size: "length", lengthMeters: 12 }, pinned: false, result: { glbUrl: urls.file, builtFrom: { heads: ["a"] }, bounds: null, builtAt: 1 }, failure: null },
     [urls.file]: { "@patchwork": { type: "file" }, name: "Hull.glb", extension: "glb", content: GLB },
     [urls.hull]: { "@patchwork": { type: "camber-hull" }, title: "Narrow transom" },
     [urls.rig]: { "@patchwork": { type: "rig-design" } },

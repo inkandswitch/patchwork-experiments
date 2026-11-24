@@ -36,7 +36,7 @@ export function sameDeps(a, b) {
  * @returns {null | "never-built" | "params" | "provider" | "fingerprint" | "heads" | "deps"}
  */
 export function staleReason(render, source) {
-  const built = render?.builtFrom;
+  const built = render?.result?.builtFrom;
   if (!built) return "never-built";
   if (built.paramsKey !== paramsKey(render.params)) return "params";
   if (olderVersion(built.providerVersion, source?.providerVersion)) return "provider";
@@ -120,7 +120,7 @@ export function currentInputsKey(render, source) {
  * rebuild. It stops being contested as soon as anything we read moves.
  */
 export function isContested(render, source, lastBuilt) {
-  const built = render?.builtFrom;
+  const built = render?.result?.builtFrom;
   if (!built || lastBuilt == null) return false;
   const reason = staleReason(render, source);
   if (reason !== "fingerprint" && reason !== "deps") return false;
@@ -133,7 +133,7 @@ export function isContested(render, source, lastBuilt) {
  * load. Rebuilding over those would replace a build that had the dependency
  * with one that doesn't (and the peer that can read it would rebuild straight
  * back), so a "deps" staleness involving any of them is not auto-rebuilt.
- * @param {object} builtDeps          render.builtFrom.deps
+ * @param {object} builtDeps          render.result.builtFrom.deps
  * @param {object} currentDeps        source.deps (this client's snapshot)
  * @param {(url: string) => boolean} isLoaded
  * @returns {string[]}

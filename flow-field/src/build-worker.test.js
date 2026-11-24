@@ -29,10 +29,9 @@ const repoWithRender = () => {
       parent: "automerge:hu11111111111111111111111",
       providerId: "test-hull-surface",
       params: {},
-      glbUrl: GLB,
-      builtFrom: { heads: ["a"], fingerprint: null, paramsKey: "{}" },
-      status: "idle",
-      error: null,
+      pinned: false,
+      result: { glbUrl: GLB, builtFrom: { heads: ["a"], fingerprint: null, paramsKey: "{}" }, bounds: null, builtAt: 1 },
+      failure: null,
     }),
     [GLB]: handle(GLB, { "@patchwork": { type: "file" }, name: "Hull.glb", extension: "glb", content: prismGLB(transomWaterline()) }),
   };
