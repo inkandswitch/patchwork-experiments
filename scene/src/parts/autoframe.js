@@ -63,7 +63,7 @@ export default {
       // From hints (the doc's, or a render doc's own bounds) the view is
       // already where things will be; otherwise keep following the content
       // until all of it has loaded (or failed).
-      const hinted = shown.some((id) => scene.objects[id]?.hint?.bounds || f.loadState?.(id)?.bounds);
+      const hinted = shown.some((id) => scene.objects[id]?.hint?.bounds || f.content(id)?.render?.bounds);
       const settled = shown.every((id) => f.content(id)?.loaded || ["error", "warn"].includes(local.status?.[id]?.state));
       if (hinted || settled) auto = false;
     }

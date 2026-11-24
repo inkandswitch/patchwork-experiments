@@ -27,6 +27,10 @@ export class FakeHandle {
   heads() {
     return [...this._heads];
   }
+  /** As DocHandle.containsHeads: this fake keeps one history, so it knows every head. */
+  containsHeads() {
+    return true;
+  }
   change(fn) {
     const draft = structuredClone(this._doc);
     fn(draft);

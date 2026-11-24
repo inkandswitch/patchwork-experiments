@@ -1250,6 +1250,40 @@ holds what a plugin is handed and what the kernel reads of it (the view
 plugins' api, the extension `api`, `instance`), in short rows. Each page is
 capped at 200 lines; citations of the moved sections point at API.md.
 
+**Content, one boundary (2026-11-24).** Content moved out of `stage.js`
+(1,923 lines then) into `src/content/`, a kernel folder: `createContent`
+is the stage's one door to it. An object's state became one pure function
+(`content/state.js`) that the manager, `api.loadState`, `local.status`, the
+inspector and the build controls all read; before, the controls judged
+staleness themselves and said "Stale" where the manager said fresh (a build
+from changes not synced, a contested one, one held on a loading dependency),
+and a reader showed "Building…" for as long as a peer's leftover status
+said so. Who builds became a claim-and-heartbeat lock with two parameters,
+checked on a finite model (C1–C4), replacing a 20 s grace, a 60 s stuck
+reset, a 1 s peer-id stagger and a 2.5 s settle. The manager, the GLB
+queue and package loading went onto the stage's time; `build()` got a
+`signal`; the test fakes answer `containsHeads` as a DocHandle does.
+
+**Content's api members (2026-11-24).** `content(id)` became one value (what is
+drawn, its route, its state, its render, `fix`), replacing `loadState` and the
+api's `fixPoint`; `use("links").fixPoint` answers for every object. The
+selection loads first by the kernel's own rule, so `focus(ids)` went; the add
+dialog matches providers itself (`providersFor` went); the extension api's
+`packages` went. No `api.rebuild`: only the build controls rebuild today.
+
+**One claim per render (2026-11-24).** A review found the per-inputs lock
+let two builds of one render run at once and an older result replace a newer
+(a forced rebuild, a tab that froze), and a claim window with no margin over
+two message trips; a model extended to editors, joins, freezes, forced
+rebuilds, failures and lost messages found each, and one more (a holder
+waking from a freeze kept building beside its successor). The lock is one
+claim per render doc held until released, with a write fence (no write over
+a build committed meanwhile, nor after another peer's claim, nor past a
+lapsed lease without listening again); the windows are derived with margins
+(`CLAIM_MS` 4D); failures are retried by their holder alone; a pinned,
+contested or unavailable render, or one whose GLB can't be shown, decides
+by its state without them; the controls alone build only when asked.
+
 ### 2026-11-24 — The editor without its special cases
 
 The editor's chrome is made as the Edit hand is picked up and disposed as it

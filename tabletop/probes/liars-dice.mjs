@@ -83,7 +83,18 @@ const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "li
 const b = await browser({ root: ROOT, port: 4893, cdp: 9893, page: "/tabletop/probes/liars-dice-probe.html", width: 1816, height: 610, show: process.argv.includes("--show"), timeout: 300_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
-const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
+/** Poll `expr` on the wall for up to ms, a few frames of the page's clock at each look: the secure deck's crypto is the wall's, and what it delivers moves with the clock. */
+const settleBy = async (expr, ms, every = 40) => {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await b.js(expr).catch(() => false);
+    if (v) return v;
+    if (Date.now() - t0 > ms) return false;
+    await b.step(20);
+    await sleep(every);
+  }
+};
+const until = (expr, ms = 10_000) => settleBy(`window.__p.${expr}`, ms, 40);
 const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, shots: [], timeline: [] };
@@ -193,6 +204,9 @@ try {
   const wantB = await P(`expected(${Q(st.bb.seed)})`);
   const seenByA = [];
   const seenByB = [];
+  // (a holder's own dice are veiled until its client knows the seed; then each comes back as itself, loaded again
+  // on the wall's time, and is dressed as it really lies once it is shown: wait for that, as for the blind cup below)
+  await until(`${Q(dice.a)}.every((d, i) => __p.drawnFace('a', d)?.face === ${Q(wantA)}[i]) && ${Q(dice.b)}.every((d, i) => __p.drawnFace('b', d)?.face === ${Q(wantB)}[i])`, 10_000);
   for (const d of dice.a) seenByA.push(await P(`drawnFace('a', ${Q(d)})`));
   for (const d of dice.b) seenByB.push(await P(`drawnFace('b', ${Q(d)})`));
   check("A's view draws her five dice showing what her seed says", seenByA.every((f, i) => f?.face === wantA[i]), { want: wantA, drawn: seenByA, why: await P(`whyNotDrawn('a', ${Q(dice.a[0])})`) });
@@ -276,7 +290,7 @@ try {
   check("blind: every seated part sealed (A's and B's), so while it's down nobody knows it, B included", drawnBlind && !sf.a.seed && !sf.b.seed && Q(sf.b.sealers) === Q([V.a, V.b].sort()) && Q(blindDice) === Q(four), { ...structuredClone(sf), four, blindDice });
   const roundBlind = await P(`round('b', ${Q(cup.a)})`);
   check("…in the doc, neither part is in the clear nor sealed to anyone yet", Object.keys(roundBlind.opens).length === 0 && Object.keys(roundBlind.sealed).length === 0, { opens: roundBlind.opens, sealed: roundBlind.sealed });
-  check("…and the four dice still under the cup: nobody may see them", Q(await P(`audience('a', ${Q(four[0])})`)) === "[]", await P(`audience('a', ${Q(four[0])})`));
+  check("…and the four dice still under the cup: nobody may see them, and neither view draws them", Q(await P(`audience('a', ${Q(four[0])})`)) === "[]" && !(await P(`drawn('a', ${Q(four[0])})`)) && !(await P(`drawn('b', ${Q(four[0])})`)), { audience: await P(`audience('a', ${Q(four[0])})`), a: await P(`drawn('a', ${Q(four[0])})`), b: await P(`drawn('b', ${Q(four[0])})`) });
   await b.rest(900);
   await hover("a", cup.a);
   await b.key("l");

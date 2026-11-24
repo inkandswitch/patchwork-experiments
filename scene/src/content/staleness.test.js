@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { atFromBuilt, atKey, normalizeAt, builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, effectiveParams, paramsBySpec, heldDeps, inputsKey, isContested, isStale, olderVersion, paramsKey, staleReason, withDefaults } from "./staleness.js";
+import { DEBOUNCE, atFromBuilt, builtInputsKey, currentInputsKey, debounceFor, heldDeps, inputsKey, isContested, olderVersion, paramsKey, sameDeps, staleReason } from "./staleness.js";
+import { atKey, depsKey, normalizeAt, normalizeDeps } from "../versions.js";
+import { changedKeys, defaultParams, effectiveParams, paramsBySpec, withDefaults } from "../params.js";
+const isStale = (r, s) => staleReason(r, s) !== null;
 
 const built = (params, heads, fingerprint = null) => ({ params, builtFrom: { heads, fingerprint, paramsKey: paramsKey(params) } });
 
@@ -58,22 +61,23 @@ describe("params", () => {
   it("finds changed keys", () => {
     expect(changedKeys({ a: 1, b: [1] }, { a: 1, b: [2], c: 0 }).sort()).toEqual(["b", "c"]);
   });
-  it("debounces by cost: never-built at once, a cheap edit sooner than an expensive one", () => {
-    const cheap = debounceFor("params", { specs, changed: ["unit"] });
-    const expensive = debounceFor("params", { specs, changed: ["unit", "res"] });
+  it("debounces by cost: never built at once; a change wholly to cheap things sooner than one touching anything expensive", () => {
+    const cheap = DEBOUNCE.cheap;
+    const dear = DEBOUNCE.expensive;
+    expect(0 < cheap && cheap < dear).toBe(true);
     expect(debounceFor("never-built", { specs })).toBe(0);
-    expect(cheap).toBeGreaterThan(0);
-    expect(cheap).toBeLessThan(expensive);
-    // a source edit is as dear as the provider says, else as its params are
-    expect(debounceFor("heads", { specs })).toBe(expensive);
+    expect(debounceFor("params", { specs, changed: ["unit"] })).toBe(cheap);
+    expect(debounceFor("params", { specs, changed: ["unit", "res"] })).toBe(dear);
+    expect(debounceFor("heads", { specs })).toBe(dear);
     expect(debounceFor("heads", { specs: [specs[0]] })).toBe(cheap);
     expect(debounceFor("heads", { specs, providerCost: "cheap" })).toBe(cheap);
-    expect(debounceFor("heads", { specs: [] })).toBe(expensive);
+    expect(debounceFor("heads", { specs: [] })).toBe(dear);
   });
 });
 
 describe("dependencies", () => {
-  const withDeps = (deps, fingerprint = null) => ({ params: {}, builtFrom: { heads: ["s"], fingerprint, paramsKey: "{}", deps } });
+  const withDeps = (deps, fingerprint = null) => ({ params: {}, builtFrom: { heads: ["s"], fingerprint, paramsKey: "{}", ...(deps ? { deps } : {}) } });
+
 
   it("is stale when the set of dependency urls changes", () => {
     const r = withDeps({ "automerge:a": ["x"] });
@@ -98,6 +102,7 @@ describe("dependencies", () => {
     expect(staleReason(r, { heads: ["s"], fingerprint: "fp2", deps: { "automerge:a": ["x2"] } })).toBe("fingerprint");
   });
 
+
   it("keys inputs by dependency heads too, and a dependency move is never 'contested'", () => {
     expect(inputsKey({ params: {} }, { heads: ["a"], deps: {} })).toBe("{}|h:a");
     expect(inputsKey({ params: {} }, { heads: ["a"], deps: { "automerge:b": ["y", "x"] } })).toBe("{}|h:a|d:automerge:b=x,y");
@@ -108,6 +113,7 @@ describe("dependencies", () => {
     expect(isContested(r, { heads: ["s"], fingerprint: "v1", deps: { "automerge:a": ["x"] } }, mine)).toBe(true);
     expect(isContested(r, { heads: ["s"], fingerprint: "v1", deps: { "automerge:a": ["x2"] } }, mine)).toBe(false);
   });
+
 });
 
 describe("peers that disagree about dependencies", () => {

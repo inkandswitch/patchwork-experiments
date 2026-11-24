@@ -124,8 +124,8 @@ const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.eve
  *   first?: () => any,                          // awaited before each create (a stage: the view's providers started)
  *   lingerMs?: number,
  *   loadMs?: number,                            // how long a provider may take to start before it counts as failed
- *   setTimer?: (fn: () => void, ms: number) => any,
- *   clearTimer?: (t: any) => void,
+ *   setTimer: (fn: () => void, ms: number) => any,  // the stage's time (./time.js)
+ *   clearTimer: (t: any) => void,
  * }} o
  */
 export function createHost({
@@ -136,8 +136,8 @@ export function createHost({
   onChange = () => {},
   lingerMs = LINGER_MS,
   loadMs = PACKAGE_FIND_MS,
-  setTimer = (fn, ms) => setTimeout(fn, ms),
-  clearTimer = (t) => clearTimeout(t),
+  setTimer,
+  clearTimer,
   wanted = (metas, d) => activeSet({ metas, doc: d }),
   first = () => null,
 }) {

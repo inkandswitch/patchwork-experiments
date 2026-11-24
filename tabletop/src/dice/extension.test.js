@@ -120,13 +120,13 @@ afterEach(() => {
 });
 
 describe("the dice's verbs", () => {
-  it("are Roll (R), Roll all (G), Turn (T) and Edit die, on the use prompt, the menu and the inspector as each needs", () => {
+  it("are Roll (R), Roll all (G), Turn (T) and Edit die, on the use prompt and the menu as each needs", () => {
     const t = world();
     expect(t.xa.commands.map((c) => [c.id, c.name, c.key ?? null, c.show])).toEqual([
       ["roll", "Roll", "r", ["use", "menu"]],
       ["roll-all", "Roll all", "g", ["use", "menu"]],
       ["turn", "Turn", "t", ["use", "menu"]],
-      ["open", "Edit die", null, ["menu", "inspector"]],
+      ["open", "Edit die", "Enter", ["menu"]],
     ]);
     t.w.done();
   });
@@ -968,7 +968,7 @@ describe("a die's own panel, docked", () => {
     for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
   };
 
-  it("Edit die is offered on a die built from a die doc, in the menu and the inspector, playing or editing", () => {
+  it("Edit die is offered on a die built from a die doc, in the menu, playing or editing", () => {
     const t = withDoc();
     expect(t.state("open", "d1")).toEqual({ title: "Open this die's own panel beside the scene: its shape, faces and colours" });
     expect(t.cmd(t.xa, "open").state("d1", { scene: t.a.scene(), local: elsewhere })).toBeTruthy();
@@ -978,6 +978,21 @@ describe("a die's own panel, docked", () => {
     t.a.change((d) => (d.objects.d1.providerId = "file-glb"));
     expect(t.state("open", "d1")).toBeNull();
     t.w.done();
+  });
+
+  it("Edit die is a die's Open (scene EDITOR.md, \"A command\"), so the inspector's header, the menu after Select, a double-click in Edit and Enter all dock its panel", async () => {
+    const t = withDoc();
+    // a target's Open as the editor finds it (scene src/parts/open.js openFor): the first command marked `open` whose state applies
+    const ctx = { scene: t.a.scene(), local: t.a.local.get() };
+    const openOf = (target) => t.xa.commands.find((c) => c.open === true && c.state(target, ctx) != null) ?? null;
+    expect(openOf("d1")).toMatchObject({ name: "Edit die", key: "Enter" });
+    expect(openOf("pawn")).toBeNull();
+    expect(openOf(null)).toBeNull();
+    openOf("d1").run("d1");
+    await settled();
+    expect(t.w.view("A").docked.map((d) => d.title)).toEqual(["d1"]);
+    // its label then says what running it again does
+    expect(openOf("d1").state("d1", ctx)).toMatchObject({ label: "Close die panel" });
   });
 
   it("docks the die's 2D tool in the stage's drawer on the die's own doc, under its name; again, or its ×, undocks it", async () => {

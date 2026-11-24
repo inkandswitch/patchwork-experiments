@@ -163,9 +163,11 @@ changes closes and opens again; while a doc is on its way it holds
 
 `use("links")`: `role(id)` → `{ role, open, reason? }` of the caller's stage's
 link (a view plugin's: the focus's), `role` `"acting"`, `"pinned"` or
-`"closed"`; `fixPoint(id)` → `{ heads, deps }`: the doc's heads and those of
-every doc the pin's docs name by URL (a doc nothing names, a player's secret,
-is never recorded). Follow latest removes `at`. Both depend on placement
+`"closed"`; `fixPoint(id)` → `{ heads, deps? }` where fixing any object at what
+it shows would fix it: for a link, the doc's heads and those of every doc the
+pin's docs name by URL (a doc nothing names, a player's secret, is never
+recorded); else its content's `fix` (API.md, `content(id)`). Follow latest
+removes `at`. Both depend on placement
 (STAGE.md, I4); `view["scene.links"]` is a fresh `{}` on any change, a wake
 that tells no stage where it is. Its **Enter** command enters a link that
 acts; the **trail** shows the focus path, each a way out, and Leave.

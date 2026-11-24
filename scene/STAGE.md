@@ -17,7 +17,7 @@ what the kernel reads of an instance, is [API.md](API.md).
 | **Contribution** | A named field of an instance, read with `collect(name)`; the kernel reads only those under "`instance`" (API.md). |
 | **Event** | A value the view makes of DOM input on the canvas ("The input chain"). |
 | **Service** | What an instance `provides` by name, for others to `use`. |
-| **Layer** | Of the scene package's modules, lowest first: shared (formats, math), the kernel (`src/stage/` and the modules it is built from), native (`src/native/`, `src/sources/`), the editor (`src/parts/`), entry. Imports go only down; above the kernel, only to its api and its face, `stage/public.js` (helpers on the api's values and the api, re-exported). The table and its check: `src/native/boundary.test.js`. |
+| **Layer** | Of the scene package's modules, lowest first: shared (formats, math), the kernel (`src/stage/`, `src/content/` and what they are built from), native (`src/native/`, `src/sources/`), the editor (`src/parts/`), entry. Imports go only down; above the kernel, only to its api and its face, `stage/public.js` (helpers on the api's values and the api, re-exported). The table and its check: `src/native/boundary.test.js`. |
 
 ## Views, stages and links
 
@@ -28,7 +28,7 @@ content, in its frame.
 |---|---|
 | **Opening** | `api.open(handle, { under: [stagePath, id], acting?, heads?, deps? })` → close, or null: a doc acts at one stage per view, only under one that acts (NATIVE.md, I3). `acting: false` is drawn; `heads` a pin (its repo finding docs at `deps`' heads). Closing one closes what is under it and takes the focus out. A `content: "scene"` source is drawn as its hint until a stage is open under it. |
 | **Its doc** | An api touches only its stage's doc: `null` is its root, every id its own (I1, I2). |
-| **Embedded documents** | A document the stage shows inside it, marked `data-stage-embed` (`embed.js`), keeps its own keys, pastes and drops. A render's build controls ask the stage with DOM events bubbling to its root: `scene:rebuild` (`detail: { renderUrl }`; the stage rebuilds it and cancels the event) and `scene:render-context` (the stage sets `detail.at`, the object's fixed version); it tells every `.scene-render-controls` element `scene:render-context-changed` when an object is fixed, refixed or let go. |
+| **Embedded documents** | A document the stage shows inside it, marked `data-stage-embed` (`embed.js`), keeps its own keys, pastes and drops. A render's build controls ask the stage with DOM events bubbling to its root: `scene:rebuild` (`detail: { renderUrl }`; the stage rebuilds it and cancels the event) and `scene:render-context` (the stage sets `detail.state`, the object's content state, and `detail.at`, its fixed version); it tells every `.scene-render-controls` element `scene:render-context-changed` when either changes. |
 | **Drawn** | Extensions run and draw, nothing more: no segment, body, tool, command, widget, chrome, camera, selection or view service (`drawnApi`). |
 | **Read-only** | A stage that doesn't act, or whose handle refuses, gets a doc and repo refusing every write (`stage/readonly.js`; I6). |
 | **The focus** | Goes in with a view plugin's `view.enter(path)`, out on Escape's last rung; it scopes the selection (H10), changes only through `selectionStep` (`src/selection.js`), and no stage sees it. |

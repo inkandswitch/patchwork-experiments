@@ -55,8 +55,13 @@ function stop() {
   ready = null;
 }
 
-/** convert3dm's result, made in a worker if this page can run one. */
-export async function convertOffThread(bytes, params = {}, name = "3DM") {
+/**
+ * convert3dm's result, made in a worker if this page can run one. `signal`
+ * (the scene host's) aborting stops waiting for it: an AbortError, the
+ * worker left to finish the job it has.
+ */
+export async function convertOffThread(bytes, params = {}, name = "3DM", signal = null) {
+  signal?.throwIfAborted();
   const ok = await start();
   if (!ok) {
     if (worker) {
@@ -72,6 +77,7 @@ export async function convertOffThread(bytes, params = {}, name = "3DM") {
   try {
     return await new Promise((resolve, reject) => {
       waiting.set(id, { resolve, reject });
+      signal?.addEventListener("abort", () => waiting.delete(id) && reject(signal.reason), { once: true });
       worker.postMessage({ id, bytes: copy, params, name }, [copy]);
     });
   } finally {

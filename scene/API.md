@@ -17,7 +17,7 @@ What is a stage's (its doc, content, space, camera, bodies, presence, flush) it 
 | `url` | the outermost doc's |
 | `focus()` | the focus stage's `api`, made for it; what it acquires there goes as the focus leaves |
 | `path(o?)` | the input path's stages as readers, innermost first; `{ pointer: true }`, `{ focus: true }`, `{ at: path }` |
-| a reader | `{ stage, path, scene(), runs(ext), collect(name), context(hit), attention(), look(), pointed(), nameOf(id), writable(), use(name) }` |
+| a reader | `{ stage, path, scene(), runs(ext), collect(name), context(hit), attention(), look(), pointed(), nameOf(id), content(id), writable(), use(name) }` |
 | | `context(hit)`: what its commands are asked in, `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `collect(name)`, `run(inv)` | every acting stage's offers, the input path's first, tagged `stage`; run in `inv.stage`, else the focus |
 | `use(name)` | a view plugin's service, else the focus stage's |
@@ -55,12 +55,12 @@ Each extension's own; what it acquires through it goes when it stops. Everything
 | `page.on(type, fn)` | `"hide"`: the page goes into the back-forward cache, or the stage closes; `"show"`: it is back |
 | `use(name)` | the stage's first provider's facet, else (acting) a view plugin's, or null |
 | `settled()` | `{ ready, missing, failed, errors }`: `ready`, nothing the doc calls for still on its way; `errors[id]`: why |
-| `packages` | the prompt's answer for its doc: `{ load(urls?), dismiss(urls?) }` |
-| `content(id)`, `loadState(id)` | `{ loaded, box, extras, stats, root }` or null; where its content went, what its loader said |
+| `content(id)` | what it shows and how it got there, or null: `loaded`, `box` (its frame's), `extras`, `stats`, `root` (drawn); |
+| | `route` (`"built"`, `"file"`, `"scene"`, null), `state` (README.md, "An object's state"), `render` (built: `providerId`, |
+| | `providerName`, `pinned`, `builtAt`, `builtHeads`, `bounds`, `at`, `notes`), `fix` (the `at` fixing it as it is, or null) |
 | `box(target, o?)` | `{ min, max }` or null: an object's, a group's (its members'), the scene's (`null`); `{ hints?, in? }` |
 | `worldOf(id)`, `nameOf(id)` | its drawn matrix; its displayed name |
-| `focus(ids)`, `providersFor` | what loads first; the sources that take a doc |
-| `addObject(url, o)`, `fixPoint(id)` | → a change function with its `id`; `at` for what a built object shows |
+| `addObject(url, o)` | → a change function with its new object's `id` |
 | `display(id, o)` → release | **Display** (below) |
 | `pick(x, y, o?)`, `raycast(origin, dir, o?)` | → `{ id, point, normal, distance }` or null; `{ ground?, snapPx? }`; `{ far?, skip(id)? }` |
 | `project(p)`, `look()` | → `{ x, y, visible }` (port px); the pointer's hit, the eye ray's under lock |
