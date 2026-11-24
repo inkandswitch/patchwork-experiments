@@ -3,7 +3,7 @@
 // One worker is kept while it's used and closed after 30 s idle. A worker
 // that can't be made (no Worker, a page whose modules come from another
 // origin) or doesn't say it's ready within 15 s means the main thread does
-// the work, as before, and workers aren't tried again in this page. The
+// the work, and workers aren't tried again in this page. The
 // bytes are copied once and the copy transferred: posting a view clones its
 // whole underlying buffer, which for a doc's content can be far bigger than
 // the file.

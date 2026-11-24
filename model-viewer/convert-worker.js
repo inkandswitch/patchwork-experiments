@@ -1,6 +1,6 @@
 // Converts a .3dm to GLB off the main thread (see offthread.js). Reading a
 // big Rhino file is seconds of wasm and JS: 2 s for a 92 MB, 6,000-object
-// boat on an M4, all of it blocking the page when done on the main thread.
+// model on an M4, all of it blocking the page when done on the main thread.
 import { convert3dm } from "./source.js";
 
 self.onmessage = async (e) => {

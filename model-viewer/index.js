@@ -21,8 +21,7 @@ export const plugins = [
     extensions: ["3dm"],
     content: "built",
     cost: "expensive",
-    // 2: corrected unit table (yards, mega/gigametres); block parts keep their own layer and colour
-    // 3: every layer built and declared (GLB layers convention), hidden ones too
+    // bumped whenever build() would make a different GLB from the same file and params
     version: 3,
     params: [
       {
