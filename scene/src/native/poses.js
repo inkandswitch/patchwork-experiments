@@ -85,6 +85,9 @@ function create(api) {
   }
   const poses = (caller) => {
     const ext = caller.id;
+    // a caller that may not write here (a pin's or a read-only stage's extension, through ambient().use) only reads: it holds
+    // nothing, so nothing is released in its name, when it asks or when it stops
+    if (caller.readOnly) return Object.freeze({ hold: () => false, release: () => {}, heldBy: (id, o) => wire.heldBy(id, o), rate: () => false, shownAt: (session) => wire.shownAt(session) });
     tie(caller.signal, () => {
       for (const id of [...here.keys()]) if (holds.holderOf(id) === ext) release(ext, id, false);
       rates.delete(ext);

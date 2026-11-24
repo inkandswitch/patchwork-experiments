@@ -93,6 +93,28 @@ export const inHand = (command, view) => typeof command?.hand !== "string" || (!
 /** What a verb beyond reach says. */
 export const TOO_FAR = "too far";
 
+/**
+ * How far `target` is from the eye at `from` (a command context's `distance`): to the hit when it is on the
+ * target or on something hanging on it (`chain(id)`: the hit object, then what it hangs on, nearest first), else
+ * to the nearest point of the target's box (`box(target)`: { min, max } or null), else to its origin
+ * (`worldOf(target)`: a column-major matrix or null); Infinity with no eye or none of those. Each is asked only
+ * when the one before it doesn't say.
+ */
+export function distanceTo(from, hit, target, { chain, box, worldOf }) {
+  if (!Array.isArray(from) || target == null) return Infinity;
+  if (hit?.id != null && chain(hit.id).includes(target)) {
+    if (Number.isFinite(hit.distance)) return hit.distance;
+    if (Array.isArray(hit.point)) return Math.hypot(hit.point[0] - from[0], hit.point[1] - from[1], hit.point[2] - from[2]);
+  }
+  const b = box(target);
+  if (b) {
+    const q = [0, 1, 2].map((i) => Math.max(b.min[i], Math.min(from[i], b.max[i])));
+    return Math.hypot(q[0] - from[0], q[1] - from[1], q[2] - from[2]);
+  }
+  const m = worldOf(target);
+  return m ? Math.hypot(m[12] - from[0], m[13] - from[1], m[14] - from[2]) : Infinity;
+}
+
 /** Is a target within the context's reach? (No measure, or no reach given: yes.) */
 export function inReach(target, ctx) {
   const reach = typeof ctx?.reach === "number" && !Number.isNaN(ctx.reach) ? ctx.reach : Infinity;

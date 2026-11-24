@@ -8,9 +8,8 @@
 
 import { createRenderManager } from "./render-manager.js";
 import { createGLBQueue } from "./glb-queue.js";
-import { contentState } from "./state.js";
-// what the stage says to people of an object's state (local.status)
-export { statusOf } from "./state.js";
+import { contentState, statusOf } from "./state.js";
+import { isGroup } from "../shared/groups.js";
 import { contentOf, describeForHumans, describeSource, matchProviders, routeOf, showsContent } from "./providers.js";
 import { newRenderDoc, seededRenderDoc } from "../shared/datatype.js";
 import { defaultParams } from "../shared/params.js";
@@ -459,6 +458,15 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
       const objects = doc().objects ?? {};
       for (const [id, route] of routes) if (route === "built" && objects[id]?.sourceUrl && !said(objState.get(id))) return false;
       return true;
+    },
+    /** What each object's state says to people (local.status), of `objects` (the doc's; a group says nothing): { [id]: frozen status }. */
+    statuses({ objects, writable }) {
+      const out = {};
+      for (const id of ids()) {
+        const st = objects[id] && !isGroup(objects[id]) ? statusOf(of(id)?.state, { writable }) : null;
+        if (st) out[id] = Object.freeze(st);
+      }
+      return out;
     },
     make,
     rebuild,

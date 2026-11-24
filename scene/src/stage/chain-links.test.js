@@ -61,7 +61,7 @@ describe("the chain across links (I8)", () => {
     const view = s.debug.view;
     const stageAtPath = (p) => view.stages().find((st) => JSON.stringify(st.path) === JSON.stringify(p)) ?? null;
     await until(() => [["A"], ["A", "B"], ["S"], ["S", "PG"]].every((p) => stageAtPath(p)?.debug.host.running().length) && stageAtPath(["A", "B"]).debug.host.instanceOf("t.card"), 3000);
-    expect(stageAtPath(["S", "PG"]).role).toBe("pinned");
+    expect(stageAtPath(["S", "PG"]).acts).toBe(false);
 
     // every object of every stage, as the viewport keys it, and nothing
     const hits = [null];
@@ -138,7 +138,7 @@ describe("the camera across links (I8)", () => {
     const view = s.debug.view;
     const at = (p) => view.stages().find((st) => JSON.stringify(st.path) === JSON.stringify(p)) ?? null;
     await until(() => at(["A", "B"])?.debug.host.instanceOf("t.card") && at(["S", "PG"])?.debug.host.instanceOf("t.card"), 3000);
-    expect(at(["S", "PG"]).role).toBe("pinned");
+    expect(at(["S", "PG"]).acts).toBe(false);
     const rideKey = { "b-y": keyOf(0, "deck"), "b-x": keyOf(at(["A"]).n, "table"), "b-g": keyOf(at(["A", "B"]).n, "card") };
     const current = () => view.viewport.rides.current()?.id ?? null;
     // the pin's extension asks to ride its card: a drawn stage moves no camera

@@ -13,6 +13,26 @@
 export const LOOK = Object.freeze({ id: "look", label: "Look", keys: Object.freeze([]), lock: false, reach: Infinity });
 
 /**
+ * The bodies a stage's running extensions offer (their collected `bodies`, in
+ * running order), by id: the first to offer an id has it, and
+ * `warn(id, kept, other)` hears of each later offer. Look, and anything that
+ * isn't a body (no string id, no enter), is skipped.
+ * @param {{ id: string, value: any }[]} collected
+ * @returns {Map<string, { ext: string, def: object }>}
+ */
+export function offeredBodies(collected, warn = () => {}) {
+  const out = new Map();
+  for (const { id: ext, value } of collected) {
+    for (const def of Array.isArray(value) ? value : []) {
+      if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || def.id === LOOK.id) continue;
+      if (out.has(def.id)) warn(def.id, out.get(def.id).ext, ext);
+      else out.set(def.id, { ext, def });
+    }
+  }
+  return out;
+}
+
+/**
  * The kinds of hand the kernel makes itself: a held tool and an open
  * popover. A plugin's hand has a kind of its own, and only such a kind can
  * hold a tool alive (a command's `hand`: ./commands.js).

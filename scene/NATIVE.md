@@ -6,7 +6,8 @@ reached only through the services they `provide` by name, for others to `use`
 ([STAGE.md](STAGE.md), "Activation"), or the traits and conventions they
 answer to (CONVENTIONS.md); the kernel knows none of them by name, and they reach it only
 through the public api (`src/native/boundary.test.js` checks the imports). What
-a facet hands a caller goes as the caller's signal aborts.
+a facet hands a caller goes as the caller's signal aborts; a facet made for a `readOnly` caller
+(API.md, `provides`) reads and does nothing else: no claim, pose, rate, veil, tell, pause, resume or process.
 
 | Plugin | Kind | Provides | Uses | Module |
 |---|---|---|---|---|

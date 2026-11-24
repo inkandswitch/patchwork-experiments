@@ -5,7 +5,7 @@
 // the last hand of that kind. Small inline plugins, no editor.
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { TOO_FAR, commandState, flatCommands, inHand } from "./commands.js";
+import { TOO_FAR, commandState, distanceTo, flatCommands, inHand } from "./commands.js";
 import { mountStage } from "../test/stage-harness.js";
 
 const view = (...kinds) => ({ hands: kinds.map((kind) => ({ kind })) });
@@ -161,5 +161,25 @@ describe("commands: on the stage", () => {
     // K1's view plugin stops: K1 goes, and T with it
     await s.uninstall("t.hands");
     expect([s.local.get().hands, held(), log]).toEqual([[], [], ["put t", "put t"]]);
+  });
+});
+
+describe("distanceTo: how far a target is from the eye", () => {
+  // the hit on the target, on what hangs on it, or elsewhere (with a distance or only a point) × a box or not × a world or not
+  it("over every hit × box × world: the hit's when it is on the target or under it, else the box's nearest point, else the origin, else Infinity", () => {
+    const from = [0, 0, 0];
+    const chain = (id) => ({ t: ["t"], c: ["c", "t"], o: ["o"] })[id];
+    const box = { min: [3, -1, -1], max: [5, 1, 1] };
+    const world = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 7, 0, 1];
+    let cases = 0;
+    for (const hit of [null, { id: "t", distance: 2 }, { id: "c", point: [0, 0, 6] }, { id: "o", distance: 1 }])
+      for (const b of [null, box])
+        for (const w of [null, world]) {
+          const want = hit?.id === "t" ? 2 : hit?.id === "c" ? 6 : b ? 3 : w ? 7 : Infinity;
+          expect([hit?.id, !!b, !!w, distanceTo(from, hit, "t", { chain, box: () => b, worldOf: () => w })]).toEqual([hit?.id, !!b, !!w, want]);
+          cases++;
+        }
+    expect(cases).toBe(16);
+    expect(distanceTo(null, null, "t", { chain, box: () => box, worldOf: () => world })).toBe(Infinity);
   });
 });

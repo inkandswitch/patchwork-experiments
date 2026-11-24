@@ -170,7 +170,7 @@ try {
       mount("h", docs.R);
       const up = () => ["LM", "LA"].every((id) => inst(stageOf("h", id), "sailing") && inst(stageOf("h", id), "water"));
       const ok = await loaded(up, 60_000);
-      return ok ? { stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], role: s.role, running: s.debug.host.running().map((r) => r.id) })) } : { error: "the room's stages never all ran sailing and water", stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], running: s.debug.host.running().map((r) => r.id) })) };
+      return ok ? { stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], role: s.acts ? "acting" : "pinned", running: s.debug.host.running().map((r) => r.id) })) } : { error: "the room's stages never all ran sailing and water", stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], running: s.debug.host.running().map((r) => r.id) })) };
     }),
     oceans: (w) => meshes(w, "ocean"),
     patches: (w) => meshes(w, "water-patch"),

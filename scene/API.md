@@ -76,7 +76,7 @@ Each extension's own; what it acquires through it goes when it stops. Everything
 | `extent(box)` | the depth range and the shadows fit it too (what its world groups draw beyond any object) |
 | `ambient(name)` | **Ambients** (below) |
 | `port`, `root`, `overlay(side?)` | the canvas's element, the stage's root; a `div` over the canvas, or beside it (`top`…`left`) |
-| `style(css)`, `listen(target, type, fn, o?)` | a stylesheet in the view; a listener |
+| `style(css)`, `listen(target, type, fn, o?)` | a stylesheet in the view; a listener (a drawn stage's hears nothing) |
 | `now()`, `after(ms, fn)`, `loop(fn(dt, now), { first? })` | the stage's one time (`stage/time.js`), → cancel; a loop renders every frame, `dt` ≤ 0.1 s |
 | `afterRender(fn)`, `schedule(fn)`, `invalidate()` | after each frame drawn; after the next update flush; draw once more |
 | `collect(name)`, `run(inv)` | this stage's offers, tagged `stage`; run in the stage `inv.stage` names (STAGE.md, "Commands") |
@@ -95,7 +95,7 @@ viewer, unwritten (`worldOf`, boxes, picks, labels follow), layered in running o
 its own, `opacity` × its own, `outline` the colours its box is drawn in (several: alternating dashes). **Dressing**
 (moving `content(id).root` nodes) is only a look. **Ambients**: `instance.ambient()` offers `{ [name]: value | null }`,
 stacked in running order, copied to frozen JSON; `ambient(name)` is the outermost doc's, `null | { value, mine, frame,
-use }` (I13); the viewport draws `atmosphere` as CONVENTIONS.md, "Atmosphere" states. **The camera** is saved per
+use }` (I13), `use` the outermost's services, made for a `readOnly` caller where this stage may not write (I6); the viewport draws `atmosphere` as CONVENTIONS.md, "Atmosphere" states. **The camera** is saved per
 viewer, else `view.start.home`; held, the orbit is off. **Time** is never `Date.now`, `setTimeout` or
 `requestAnimationFrame` (`manualTime()` moves when stepped); yielding the thread is scheduling, not time (the kernel's
 `yieldThread`, the same under either).
@@ -107,7 +107,7 @@ viewer, else `view.start.home`; held, the orbit is off. **Time** is never `Date.
 | `update(scene, local, prev, view)` | once per flush when the doc, local, view or what's shown changed |
 | `input` | STAGE.md, "The input chain" |
 | `bodies`, `commands`, `ambient()` | STAGE.md, "Bodies", "Commands"; **Ambients** (above) |
-| `provides` | `{ [name]: (caller) → facet }`; `caller` `{ id, signal }`, a view plugin's also `runs(id)`, `doc()`, `path` |
+| `provides` | `{ [name]: (caller) → facet }`; `caller` `{ id, signal }`, a view plugin's also `runs(id)`, `doc()`, `path`; `readOnly` true: a caller that may not write (**Ambients**), whose facet only reads |
 | `receive(type, data, from)` | what a peer's `channel.send` sent |
 | `beforeRemove(draft, ids)` | inside `remove`'s write, before the objects go |
 | `busy(id)` | a service is working for extension `id` (a pose held): STAGE.md, "Stopping" |

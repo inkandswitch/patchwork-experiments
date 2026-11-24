@@ -164,15 +164,23 @@ describe("H2: the one stop rule (STAGE.md, “Stopping”)", () => {
   const unwant = (s) => s.change((d) => void delete d.objects.a.traits[T]);
   const state = (s) => s.host.record(T)?.state ?? "stopped";
 
-  /** t.ling (a trait on `a`) with a seat it offers; t.keep, which says t.ling is busy while `keep` holds it. */
-  async function lingering() {
+  // A session its press returned: `tap` answers `taps` (null: it has none).
+  const session = (taps = null) => ({ move() {}, end() {}, cancel() {}, ...(taps == null ? {} : { tap: () => taps }) });
+  const seat = (input = {}) => ({ id: "t.seat", label: "Seat", enter: () => ({ input, leave() {} }) });
+
+  /**
+   * t.ling (a trait on `a`), with a seat it offers and whatever else `more(api)` adds; t.keep, which says t.ling is
+   * busy while `keep` holds it, and offers a stool. Presses hit `a`, so t.ling's input hears them.
+   */
+  async function lingering(more = () => ({})) {
     const keep = new Set();
-    const ling = keeper(T, { traits: [T] }, () => ({ bodies: [{ id: "t.seat", label: "Seat", enter: () => ({ input: {}, leave() {} }) }] }));
-    const other = keeper("t.keep", {}, () => ({ busy: (id) => keep.has(id) }));
+    const ling = keeper(T, { traits: [T] }, (api) => ({ bodies: [seat()], ...more(api) }));
+    const other = keeper("t.keep", {}, () => ({ busy: (id) => keep.has(id), bodies: [{ id: "t.stool", label: "Stool", enter: () => ({ input: {}, leave() {} }) }] }));
     const time = manualTime({ yieldTo: () => Promise.resolve() });
     const s = await mount({ extensions: [ling.ext, other.ext], doc, time });
+    s.debug.viewport.pick = () => ({ id: "a", point: [0, 0, 0], normal: [0, 1, 0], distance: 1 });
     expect(state(s)).toBe("running");
-    return { s, time, seen: ling.seen, keep };
+    return { s, time, seen: ling.seen, keep, other: other.seen };
   }
 
   it("leaving the running set, an extension lingers LINGER_MS, then stops: its signal aborts, then dispose", async () => {
@@ -185,16 +193,37 @@ describe("H2: the one stop rule (STAGE.md, “Stopping”)", () => {
     expect([state(s), seen.api.signal.aborted, seen.disposes]).toEqual(["stopped", true, 1]);
   });
 
-  // a finite case list: each way of being busy holds it past the linger, and it stops once that ends
+  // A finite case list of what it holds, as H2 and STAGE.md, "Stopping" say: a body on the stack (on top or under
+  // another's), a held tool (held directly or through a command), an open session (from the moment a press returns
+  // it until it ends, is cancelled, or a tap takes it; a tap that doesn't take it is cancelled with it), whoever's
+  // input returned it (its own, its body's, its tool's: each is the extension's), or a service saying busy(id). Each
+  // holds it past the linger, and it stops once that ends. Each case: [what it adds to t.ling, take → end].
+  const drag = (s) => (s.pointer("pointermove", 40, 40), s.pointer("pointerup", 40, 40));
   const CASES = {
-    "a body it put on the stack": (api) => (api.body.enter("t.seat"), () => api.body.leave()),
-    "a held tool": (api) => api.hold({ name: "Piece" }, { press: () => null }),
-    "an instance's busy(id)": (api, keep) => (keep.add(T), () => keep.delete(T)),
+    "a body it put on the stack": [null, ({ api }) => (api.body.enter("t.seat"), () => api.body.leave())],
+    "a body it put on the stack, under another's": [null, ({ api, other }) => (api.body.enter("t.seat"), other.api.body.enter("t.stool"), () => (other.api.body.leave(), api.body.leave()))],
+    "a held tool": [null, ({ api }) => api.hold({ name: "Piece" }, { press: () => null })],
+    "a tool held through its command": [() => ({ commands: [{ id: "t.pick", name: "Pick", tool: {}, run: () => ({ press: () => null }) }] }), ({ api }) => (api.run({ ext: T, command: "t.pick" }), () => api.run({ ext: T, command: "t.pick" }))],
+    "an open session of its input, until it ends": [() => ({ input: { press: () => session() } }), ({ s }) => (s.pointer("pointerdown", 20, 20), () => drag(s))],
+    "an open session of its input, until a tap takes it": [() => ({ input: { press: () => session(true) } }), ({ s }) => (s.pointer("pointerdown", 20, 20), () => s.pointer("pointerup", 20, 20))],
+    "an open session of its input, through a tap that doesn't take it, until its cancel": [() => ({ input: { press: () => session(false) } }), ({ s }) => (s.pointer("pointerdown", 20, 20), () => s.pointer("pointerup", 20, 20))],
+    "an open session of its input, until Escape cancels it": [() => ({ input: { press: () => session() } }), ({ s }) => (s.pointer("pointerdown", 20, 20), () => s.key("Escape", { code: "Escape" }))],
+    "an open session of its body's input, the body gone": [() => ({ bodies: [seat({ press: () => session() })] }), ({ api, s }) => (api.body.enter("t.seat"), s.pointer("pointerdown", 20, 20), api.body.leave(), () => drag(s))],
+    "an open session of its held tool's input, the tool put down": [
+      null,
+      ({ api, s }) => {
+        const put = api.hold({ name: "Piece" }, { press: () => session() });
+        s.pointer("pointerdown", 20, 20);
+        put();
+        return () => drag(s);
+      },
+    ],
+    "an instance's busy(id)": [null, ({ keep }) => (keep.add(T), () => keep.delete(T))],
   };
-  for (const [what, take] of Object.entries(CASES))
+  for (const [what, [more, take]] of Object.entries(CASES))
     it(`it stays past the linger while it holds ${what}, and stops once that ends`, async () => {
-      const { s, time, seen, keep } = await lingering();
-      const end = take(seen.api, keep);
+      const { s, time, seen, keep, other } = await lingering(more ?? undefined);
+      const end = take({ api: seen.api, keep, other, s });
       expect(s.debug.busy(T)).toBe(true);
       unwant(s);
       await s.settle();
@@ -205,6 +234,13 @@ describe("H2: the one stop rule (STAGE.md, “Stopping”)", () => {
       await time.advance(BUSY_RECHECK_MS + 50);
       expect([state(s), seen.disposes]).toEqual(["stopped", 1]);
     });
+
+  it("what it holds that isn't a body, a tool or a session doesn't keep it: an open popover, a press it passed", async () => {
+    const { s, seen } = await lingering(() => ({ input: { press: () => null } }));
+    seen.api.popover(() => {});
+    s.pointer("pointerdown", 20, 20);
+    expect(s.debug.busy(T)).toBe(false);
+  });
 
   it("one still loading (its module a pending promise) when it leaves stops at once, and is never created", async () => {
     let open;

@@ -9,6 +9,19 @@
 // ties only between extensions holding the same link.
 
 import { groupChain } from "../shared/groups.js";
+import { traitKeys } from "./activation.js";
+
+/**
+ * A stage's segment of the chain for its element of the hit's path
+ * (`element`: one of its objects, or null for none): its holders, nearest
+ * first, then its root's, over `model` (./model.js) and its running
+ * extensions. → { order: extension ids, holderOf(ext): the id of the link it holds (null: the scene) }
+ */
+export function segmentOf(running, model, element) {
+  const chain = element != null && model.objects[element] ? hitChain(element, model.parents, model.groups, model.objects) : [];
+  const holders = holdersFor(running, chain, (oid) => traitKeys(oid == null ? model.d : model.objects[oid]));
+  return { order: chainOrder({ running, holders }), holderOf: (ext) => holders.get(ext)?.id ?? null };
+}
 
 /**
  * @param {{
@@ -99,4 +112,30 @@ export function offer(order, inputOf, type, ev) {
     if (result) return { id, result };
   }
   return null;
+}
+
+/**
+ * The widget under the pointer from several candidates: an onTop one beats
+ * any other, else the nearest (a widget that gives no distance counts as
+ * nearest of all: it says "I have something here").
+ * @param {{ owner: string, onTop?: boolean, distance?: number }[]} candidates
+ */
+export function bestWidget(candidates) {
+  let best = null;
+  const dist = (w) => (Number.isFinite(w?.distance) ? w.distance : 0);
+  for (const w of candidates) {
+    if (!w || w.owner == null) continue;
+    if (!best) best = w;
+    else if (!!w.onTop !== !!best.onTop) best = w.onTop ? w : best;
+    else if (dist(w) < dist(best)) best = w;
+  }
+  return best;
+}
+
+/** Does this widget come before the object hit (onTop, or no further away)? */
+export function widgetWins(widget, hit) {
+  if (!widget || widget.owner == null) return false;
+  if (widget.onTop || !hit) return true;
+  const d = Number.isFinite(widget.distance) ? widget.distance : 0;
+  return d <= (hit.distance ?? Infinity);
 }
