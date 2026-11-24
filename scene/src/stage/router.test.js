@@ -875,7 +875,10 @@ describe("H4, H5, H12: one stack of hands, exhaustively", () => {
     E: { owner: "e", name: "Edit", tool: null, pointer: true, keys: [], takes: { click: true } },
     P: { owner: "p", name: "menu", tool: null, pointer: true, keys: [], takes: { press: true, click: true, wheel: true } },
   };
-  const STEPS = [...Object.keys(E).flatMap((k) => [`+${k}`, `-${k}`]), "esc"];
+  // (No -E or -P: the driver below runs exactly the same calls for one as
+  // for +E or +P when it's held, and none at all when it isn't, so every
+  // sequence with one is run as another sequence here, the same or shorter.)
+  const STEPS = [...Object.keys(E).flatMap((k) => (E[k].tool ? [`+${k}`, `-${k}`] : [`+${k}`])), "esc"];
   const BODY_KEYS = ["KeyW", "KeyQ"];
   const CODES = ["KeyQ", "KeyR", "KeyW", "KeyZ"];
 
@@ -996,7 +999,7 @@ describe("H4, H5, H12: one stack of hands, exhaustively", () => {
           delete document.pointerLockElement;
           n++;
         }
-    expect(n).toBe(2 * (11 + 11 ** 2 + 11 ** 3 + 11 ** 4));
+    expect(n).toBe(2 * (9 + 9 ** 2 + 9 ** 3 + 9 ** 4));
   }, 600_000);
 });
 
