@@ -278,8 +278,8 @@ function supersede(url, fingerprint) {
   }
 }
 
-/** The surface for `key`: joins a running job for it, or starts one. Resolves to { surface, result, finishKey }. */
-function surfaceFor(key, fingerprint, url, job) {
+/** The surface for `key`: joins a running job for it, or starts one. Resolves to { surface, result, finishKey }; `signal` aborting leaves it (and stops the job if nobody else waits). */
+function surfaceFor(key, fingerprint, url, job, signal) {
   let entry = inflight.get(key);
   if (!entry) {
     const started = startJob(job);
@@ -300,6 +300,18 @@ function surfaceFor(key, fingerprint, url, job) {
   return new Promise((resolve, reject) => {
     const waiter = { url, reject };
     joined.waiters.add(waiter);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        if (!joined.waiters.delete(waiter)) return;
+        reject(supersededError());
+        if (joined.waiters.size === 0 && inflight.get(key) === joined) {
+          inflight.delete(key);
+          joined.job.cancel(supersededError());
+        }
+      },
+      { once: true },
+    );
     joined.job.promise.then(
       (out) => {
         joined.waiters.delete(waiter);
@@ -317,7 +329,8 @@ export default {
   fingerprint(doc) {
     return fingerprintDoc(doc);
   },
-  async build({ doc, params, url }) {
+  async build({ doc, params, url, signal }) {
+    signal?.throwIfAborted();
     const job = jobFor(doc, params ?? {});
     const fingerprint = fingerprintDoc(doc);
     const key = `${fingerprint}|r${job.resolution}`;
@@ -327,7 +340,7 @@ export default {
     if (cached) {
       result = await drainYielding(finishMesh(cached, { ...job, cached: true }));
     } else {
-      const out = await surfaceFor(key, fingerprint, url ?? null, job);
+      const out = await surfaceFor(key, fingerprint, url ?? null, job, signal);
       result = out.finishKey === finishKey(job) ? out.result : await drainYielding(finishMesh(out.surface, { ...job, cached: true }));
     }
     return { kind: "glb", glb: result.glb, meta: { bounds: result.bounds, notes: result.notes } };

@@ -34,6 +34,8 @@ export type BuildArgs = {
 	repo?: RepoLike
 	handle?: unknown
 	url?: string
+	/** The host's (scene README, "Writing a provider"): aborted, the result isn't wanted. */
+	signal?: AbortSignal
 }
 
 /** 53-bit string hash (cyrb53), as 14 hex digits. Not cryptographic; just a change detector. */
@@ -214,8 +216,9 @@ export function createOpenscadSource(render: () => Promise<Render>, loadDatatype
 		fingerprint,
 		dependencies,
 
-		async build({doc, params, repo, url, handle}: BuildArgs): Promise<BuildResult> {
+		async build({doc, params, repo, url, handle, signal}: BuildArgs): Promise<BuildResult> {
 			if (!doc) throw new Error("OpenSCAD document is not available")
+			signal?.throwIfAborted()
 			const unit: Unit = params?.unit && params.unit in UNIT_METERS ? params.unit : "mm"
 			const source = String(doc.source ?? "")
 			const {imports, missing} = await resolveImports(doc, repo, loadDatatype, url ?? (handle as {url?: string} | undefined)?.url)
@@ -226,6 +229,8 @@ export function createOpenscadSource(render: () => Promise<Render>, loadDatatype
 			} catch (err) {
 				throw cleanError(err)
 			}
+			// (the render ran out in the shared engine, whose cache keeps it; what is no longer wanted isn't encoded)
+			signal?.throwIfAborted()
 
 			// A fixed mesh name: the title is not in the fingerprint, so a name
 			// taken from it would go stale on rename. The scene outline shows
