@@ -45,7 +45,8 @@ import { DND_MIME, ROW_MIME, URLS_MIME, hasPatchworkDrop, ownDrag, parsePatchwor
 import { peerCss } from "../peers.js";
 import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "../transfer.js";
 import { landings } from "./landing.js";
-import { add, drop, editor } from "./editor.js";
+import { add, editor } from "./editor.js";
+import { drop } from "./making.js";
 
 /** What a link's row says it is, by its role here (use("links").role), and why. Pure. */
 export function linkMark(link) {
