@@ -144,7 +144,7 @@ function harness(doc = stockSloop()) {
     scene: () => sc,
     worldOf,
     camera: { get: () => ({ ...cam }), set: (c) => Object.assign(cam, c), hold: () => () => {}, ride: () => () => {}, touched: () => true },
-    view: { get: () => ({ pointer: { locked: true } }) },
+    view: { get: () => ({ pointer: { locked: true }, body: stack.length ? { id: stack.at(-1).id, ext: stack.at(-1).ext, depth: stack.length, keys: stack.at(-1).keys } : { id: "look", depth: 0 } }) },
     collect: (name) =>
       name === "avatar"
         ? [{ id: "walk", value: () => (walkHere() ? { on: k.hull, feet: [0, 0.72, 4.85], yaw: 0, pitch: 0, swimming: false } : null) }]
@@ -152,7 +152,6 @@ function harness(doc = stockSloop()) {
           ? [{ id: "walk", value: (id) => (walkHere() && sc.objects[id]?.traits?.["walk.stand"] ? (walk.stood.push(id), { eye: () => walk.eyeOf(id), yaw: 0.3 }) : null) }]
           : [],
     body: {
-      current: () => (stack.length ? { id: stack.at(-1).id, ext: stack.at(-1).ext, depth: stack.length, keys: stack.at(-1).keys } : { id: "look", depth: 0 }),
       enter(id, place) {
         if (id === "walk") return stack.push({ id, ext: "walk", sitting: {}, place, keys: [{ code: "KeyW", label: "Forward" }] }), true;
         if (id !== "station") return false;
@@ -252,7 +251,7 @@ describe("viewerOf: top body × walk's avatar here", () => {
     expect(viewerOf({ body: { id: "station", depth: 2 }, avatar: AVATARS["on her deck"], station: "w", ship: "hull", hint: "A / D steer" })).toMatchObject({ playing: true, on: "hull", station: "w", swimming: false, hint: "A / D steer" });
   });
   it("seatedView: a seat over the stage is seated; walk and her own station are not", () => {
-    const api = (b) => ({ id: "sailing", body: { current: () => b } });
+    const api = (b) => ({ id: "sailing", view: { get: () => ({ body: b }) } });
     expect([BODIES.look, BODIES.walk, BODIES.seat, { id: "station", ext: "sailing", depth: 2 }].map((b) => seatedView(api(b)))).toEqual([false, false, true, false]);
   });
 });

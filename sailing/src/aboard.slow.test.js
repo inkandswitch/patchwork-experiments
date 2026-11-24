@@ -118,7 +118,7 @@ function join(w, session, hull) {
     raycast: rays(base.worldOf, hull),
     // the stage's body stack, as far as the crew meets it (scene/STAGE.md, "Bodies")
     local: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
-    view: { get: () => ({ body: { id: s.bodies.at(-1).id, depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
+    view: { get: () => ({ body: { id: s.bodies.at(-1).id, ext: s.bodies.at(-1).ext ?? "sailing", depth: s.bodies.length - 1 }, pointer: { locked: true, released: false } }) },
     // walk's avatar here, while its stand-in is on the stack (on her deck, at her helm's stand spot)
     collect: (name) =>
       name === "avatar"
@@ -127,7 +127,6 @@ function join(w, session, hull) {
           ? [{ id: "walk", value: (id) => (s.bodies.some((b) => b.id === "walk") ? ((s.stood = id), { eye: () => s.standEye(base.worldOf(hull)), yaw: 0 }) : null) }]
           : collect(name),
     body: {
-      current: () => ({ id: s.bodies.at(-1).id, ext: s.bodies.at(-1).ext ?? "sailing", depth: s.bodies.length - 1 }),
       enter(id, place = null) {
         // walk (another package's): resumed from where the eye was left
         const walk = { id: "walk", enter: () => ({ input: { resumed: () => (s.resumed = [...s.cam.position]) }, leave() {} }) };
