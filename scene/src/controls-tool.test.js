@@ -20,7 +20,8 @@ vi.mock("@inkandswitch/patchwork-plugins", () => {
 });
 
 const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
-const { default: Controls, REBUILD_EVENT } = await import("./controls-tool.js");
+const { default: Controls } = await import("./controls-tool.js");
+const { REBUILD_EVENT } = await import("./embed.js");
 const { newRenderDoc } = await import("./datatype.js");
 const { encodeGLB } = await import("./glb.js");
 
