@@ -232,6 +232,8 @@ describe("drawing", () => {
     expect(outside(t.bag(BAG1).doc()).map((x) => [x.entry.id, x.entry.out.by])).toEqual([["meeple", "s-me"]]);
     // carried: the hand's session, started at once, fed by the bag's held tool
     expect(t.carries.map((c) => [c.id, c.opts.now])).toEqual([["meeple", true]]);
+    // started from a key, not a press: at the pointer as an event there would be, its ray the stage's
+    expect(t.carries[0].ev).toEqual({ x: 0, y: 0, alt: false, ray: { origin: [0, 10, 0], dir: [0, -1, 0] } });
     const arm = t.rec.arms.at(-1);
     expect(arm.on).toBe(true);
     expect(arm.tool).toMatchObject({ name: "Drawn piece", pointer: true });
