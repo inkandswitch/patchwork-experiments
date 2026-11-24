@@ -61,17 +61,7 @@ const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "di
 const b = await browser({ root: ROOT, port: 4791, cdp: 9791, page: "/tabletop/probes/dice-probe.html", width: 1816, height: 630, show: process.argv.includes("--show"), timeout: 240_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
-/** Poll on the wall for up to ms, a few frames of the page's clock at each look (a docked tool and a rebuilt die load by the clock's frames). */
-const until = async (expr, ms = 10_000) => {
-  const t0 = Date.now();
-  for (;;) {
-    const v = await b.js(`window.__p.${expr}`).catch(() => false);
-    if (v) return v;
-    if (Date.now() - t0 > ms) return false;
-    await b.step(20);
-    await sleep(40);
-  }
-};
+const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
 const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, shots: [], timeline: [], timings: {} };

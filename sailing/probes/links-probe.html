@@ -86,7 +86,9 @@ const TABLE_TOP = [0, 0.7006, 0];
 try {
   for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js", "../../walk/dist/index.js", "../../water/dist/index.js", "../../weather/dist/index.js", "../../tabletop/dist/index.js", "../../joints/dist/index.js", "../../traversal/dist/index.js", "../../walk/dist/index.js"]) {
     const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
+    // (as a viewer who has the three packages the table's docs name has them: from the URLs they're published at)
+    const from = url.includes("scene/dist") ? "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F" : url.includes("seats/dist") ? "automerge:2rZNSyrVf5YKPTGLAHuqso4BxoXJ" : url.includes("tabletop/dist") ? "automerge:3uPxcveQxJkJ6D2GKPnrS7uTh2h2" : undefined;
+    for (const p of plugins) getRegistry(p.type).register(p, from);
   }
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const repo = new FakeRepo();
