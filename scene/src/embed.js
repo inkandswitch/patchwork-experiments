@@ -3,7 +3,17 @@
 // Whatever starts inside one (keys, pastes, drops) is that tool's, never the
 // stage's or an extension's. The stage defines the marker; whoever embeds
 // sets it. And the one way a document is shown: documentView inside a
-// documentBox, inline or docked alike.
+// documentBox, inline or docked alike. And what an embedded render's build
+// controls ask of the stage that builds it, as DOM events up to its root.
+
+/** Asks the stage to rebuild a render now (`detail: { renderUrl }`; the stage cancels it when it is that render's). */
+export const REBUILD_EVENT = "scene:rebuild";
+/** Asks whether a render's object is fixed at a version (`detail: { renderUrl }`; the stage sets `detail.at`). */
+export const CONTEXT_EVENT = "scene:render-context";
+/** Told to every element of CONTROLS_CLASS (not bubbling) when an object is fixed, refixed or let go: ask again. */
+export const CONTEXT_CHANGED_EVENT = "scene:render-context-changed";
+/** The class of an embedded render's build controls' root: what CONTEXT_CHANGED_EVENT is told to. */
+export const CONTROLS_CLASS = "scene-render-controls";
 
 /** The attribute that marks an embedded document's container. */
 export const EMBED_ATTR = "data-stage-embed";

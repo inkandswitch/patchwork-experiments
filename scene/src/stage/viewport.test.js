@@ -6,7 +6,6 @@ import { keyOf } from "./paths.js";
 import { scopeViewport } from "./scope.js";
 import { applyMatrix } from "../transform.js";
 import { prepareGLB } from "../gltf-content.js";
-import { defaultSnapRadius } from "../carry-rules.js";
 import {
   LIGHTS,
   LabelLayer,
@@ -275,8 +274,7 @@ describe("content extras", () => {
     const x = contentExtras(prepared);
     expect(x.seats).toBe(4);
     expect(x.connectors.map((p) => p.position)).toEqual([[0, 0, 0], [2, 0, 0]]);
-    expect(x.snapRadius).toBe(defaultSnapRadius(x.connectors)); // none given: from the connectors' spacing
-    expect(x.snapRadius).toBeGreaterThan(0);
+    expect(x.snapRadius).toBe(null); // none given: none (a reader's rule makes one: carry-rules.js snapRadiusOf)
     expect(Object.isFrozen(x)).toBe(true);
   });
   it("are empty-handed without connectors", () => {

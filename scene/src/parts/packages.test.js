@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { cardOf } from "./packages.js";
+import { cardOf, promptText, shortUrl } from "./packages.js";
 
 const A = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const B = "automerge:3aB6LbnDAzvNj9WDNDA4ew21R85G";
 const e = (url, extra = {}) => ({ url, name: null, ...extra });
+const HTTPS = "https://tools.example.com/scene/index.js";
 
 describe("the packages card (cardOf, pure)", () => {
   // what's asked about (0, 1, 2), what failed (0, 1, 2), what's loading (0, 1, 2): all 27
@@ -41,5 +42,16 @@ describe("the packages card (cardOf, pure)", () => {
       { url: B, name: null, short: "automerge:3aB6Lbn…R85G", state: "failed", error: "boom" },
     ]);
     for (const none of [null, undefined, {}, { ask: [], loading: [], failed: [] }]) expect(cardOf(none)).toBeNull();
+  });
+});
+
+describe("the card's words", () => {
+  it("shortUrl and the prompt's sentence", () => {
+    expect(shortUrl(A)).toBe("automerge:2zt6Lbn…R85F");
+    expect(shortUrl("automerge:short")).toBe("automerge:short");
+    expect(shortUrl(HTTPS)).toBe(HTTPS);
+    expect(shortUrl(`https://tools.example.com/${"a".repeat(60)}/index.js`)).toHaveLength(45);
+    expect(promptText(1)).toBe("This scene uses a package you don't have.");
+    expect(promptText(3)).toBe("This scene uses 3 packages you don't have.");
   });
 });

@@ -69,7 +69,7 @@ import { contentOf, describeForHumans, describeSource, matchProviders, routeOf, 
 import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
 import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
 import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
-import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls-tool.js";
+import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, CONTROLS_CLASS, REBUILD_EVENT } from "../embed.js";
 import { fileBytes } from "../file-content.js";
 import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
 
@@ -553,7 +553,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return !!hk;
   }
 
-  // The embedded build controls (controls-tool.js) judge staleness themselves,
+  // The embedded build controls (../embed.js) judge staleness themselves,
   // against the object's `at`, which they ask for with CONTEXT_EVENT (below).
   // When an object is fixed, refixed or let go, tell them to ask again.
   let contextQueued = false;
@@ -566,7 +566,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     queueMicrotask(() => {
       contextQueued = false;
       if (dead) return;
-      for (const c of root.querySelectorAll(".scene-render-controls")) c.dispatchEvent(new CustomEvent(CONTEXT_CHANGED_EVENT));
+      for (const c of root.querySelectorAll(`.${CONTROLS_CLASS}`)) c.dispatchEvent(new CustomEvent(CONTEXT_CHANGED_EVENT));
     });
   }
 
@@ -1264,7 +1264,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return true;
   }
 
-  // rebuild requests from embedded controls (controls-tool.js)
+  // rebuild requests from embedded controls (../embed.js)
   const onRebuild = (e) => {
     const url = e.detail?.renderUrl;
     const entry = Object.entries(doc().objects ?? {}).find(([, o]) => o?.renderUrl === url);

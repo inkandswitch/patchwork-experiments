@@ -43,7 +43,6 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { prepareGLB } from "../gltf-content.js";
 import { layerShown, layerStates } from "../layers.js";
 import { buildBVH, ensureBVH, installLazyBVH, triangleCount, wantsBVH } from "../pick-accel.js";
-import { defaultSnapRadius } from "../carry-rules.js";
 import { onThemeChange, resolveCssColor, colorSchemeOf } from "../theme.js";
 import { createRides } from "./ride.js";
 import { realTime } from "./time.js";
@@ -440,14 +439,13 @@ void main() {
 /**
  * What a GLB says about itself, for contentOf(id).extras: the scene's own
  * extras, plus its connectors (findSnapPoints, in body space), their snap
- * radius (the GLB's, or the spacing of its connectors when it gives none) and
- * its raw legend. The stage's fields win over same-named scene extras.
+ * radius as the GLB gives it (null: none; what a reader makes of none is its
+ * own: carry-rules.js snapRadiusOf) and its raw legend. The stage's fields
+ * win over same-named scene extras.
  * @param {{ extras?: object, snap?: { points: object[], radius: number | null }, legend?: object | null }} prepared  prepareGLB's result
  */
 export function contentExtras(prepared) {
-  const points = prepared?.snap?.points ?? [];
-  const radius = prepared?.snap?.radius ?? (points.length ? defaultSnapRadius(points) : null);
-  return Object.freeze({ ...(prepared?.extras ?? {}), connectors: points, snapRadius: radius ?? null, legend: prepared?.legend ?? null, layers: prepared?.layers ?? [] });
+  return Object.freeze({ ...(prepared?.extras ?? {}), connectors: prepared?.snap?.points ?? [], snapRadius: prepared?.snap?.radius ?? null, legend: prepared?.legend ?? null, layers: prepared?.layers ?? [] });
 }
 
 /**

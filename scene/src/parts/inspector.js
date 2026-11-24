@@ -67,7 +67,7 @@ import { documentBox, documentView } from "../embed.js";
 import { DND_MIME, SECTION_MIME, URLS_MIME, docKey } from "../dnd.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
-import { REBUILD_EVENT } from "../controls-tool.js";
+import { REBUILD_EVENT } from "../embed.js";
 import { providerOf } from "./handles.js";
 import { openFor, runOpen } from "./open.js";
 import { drawerTab } from "./tab.js";

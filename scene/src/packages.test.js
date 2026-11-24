@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
 import { SceneDatatype } from "./datatype.js";
-import { answeringPlugins, changeList, unansweredNeeds, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, packagesToPrune, promptText, reconcileList, registeredPackages, scenePackage, shortUrl, suggestedImportToSet, triage, unionPackages } from "./packages.js";
+import { answeringPlugins, changeList, unansweredNeeds, isLocalHost, listedPackages, missingPackages, neededPlugins, packageTitle, packageUrl, packagesOf, packagesToList, packagesToPrune, reconcileList, registeredPackages, scenePackage, suggestedImportToSet, triage, unionPackages } from "./packages.js";
 
 const A = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const B = "automerge:3aB6LbnDAzvNj9WDNDA4ew21R85G";
@@ -740,15 +740,6 @@ describe("naming a package for a person", () => {
     expect(packageTitle({ name: "  " })).toBeNull();
     expect(packageTitle({ name: "x".repeat(200) })).toHaveLength(80);
     for (const bad of ["not json", "", null, undefined, 5, { name: 5 }]) expect(packageTitle(bad)).toBeNull();
-  });
-
-  it("shortUrl and the prompt's sentence", () => {
-    expect(shortUrl(A)).toBe("automerge:2zt6Lbn…R85F");
-    expect(shortUrl("automerge:short")).toBe("automerge:short");
-    expect(shortUrl(HTTPS)).toBe(HTTPS);
-    expect(shortUrl(`https://tools.example.com/${"a".repeat(60)}/index.js`)).toHaveLength(45);
-    expect(promptText(1)).toBe("This scene uses a package you don't have.");
-    expect(promptText(3)).toBe("This scene uses 3 packages you don't have.");
   });
 });
 
