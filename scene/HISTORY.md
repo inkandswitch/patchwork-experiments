@@ -1152,3 +1152,16 @@ styled from `--studio-surface`/`--studio-ink`, which Patchwork's dark theme
 doesn't move: it uses the scene's tokens now. Checked in Chrome with a dark
 theme's tokens: the root's scheme turns dark, the pill and selects with it.
 
+
+### 2026-11-24 — The viewport, composed of small modules
+
+`stage/viewport.js` was 2,564 lines with a dozen ideas in it. It is the
+renderer, the frame loop, the object registry and the glue now, over
+`atmosphere.js` and `sky.js`, `shadows.js`, `object-content.js`,
+`clearance.js`, `camera.js`, `picking.js`, `widget-layers.js` and
+`labels.js`. Two things that were not the kernel's left it: placing a
+dimension's label off a short line is the dimensions part's (a label item's
+`place`), and the default snap radius from a GLB's connectors is the carry's
+(tabletop's slots copy it). Comments and constants that named one example
+scene are said in general terms. The atmosphere's every field, default and
+range are written down in CONVENTIONS.md.

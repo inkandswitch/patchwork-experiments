@@ -2,8 +2,8 @@
 
 Contributions, traits and module exports by which packages that don't know each
 other meet. The kernel ([STAGE.md](STAGE.md)) and the editor
-([EDITOR.md](EDITOR.md)) never read them. Depend on the convention, never its
-provider. Traits are keyed `<extension>.<name>`.
+([EDITOR.md](EDITOR.md)) never read them, but for the atmosphere, which the
+kernel draws. Depend on the convention, never its provider. Traits are keyed `<extension>.<name>`.
 
 ## Docs
 
@@ -62,12 +62,31 @@ The names packages share:
 ### Atmosphere
 
 ```js
-{ sky?: { top, horizon, bottom }, fog?: { color?, near, far },
-  sun?: { direction, color?, intensity?, shadows? }, exposure?, clouds?: { cover, contrast?, scale?, base? } }
+{ sky?: { top?, horizon?, bottom? }, fog?: { color?, near?, far },
+  sun?: { direction?, color?, intensity?, shadows? }, exposure?, clouds?: { cover, contrast?, scale?, base? } }
 ```
 
-The viewport draws it. One atmosphere wins whole; none is the stage's own look.
-Ask a flush with `api.schedule` when it changes on its own.
+The viewport draws it (`src/stage/atmosphere.js`). One atmosphere wins whole;
+none is the stage's own look. A colour is `"#rgb"`, `"#rrggbb"` or an integer
+up to `0xffffff`, sRGB; what can't be used is left out, and no usable field
+at all is no atmosphere.
+
+| Field | Default | Range, and what it does |
+|---|---|---|
+| `sky.top`, `.horizon`, `.bottom` | horizon: top, else bottom; top and bottom: the horizon | none of them: no sky |
+| `fog.color` | `sky.horizon` | no colour and no sky: no fog |
+| `fog.near`, `fog.far` | near 0 | metres, 0 ≤ near < far; no far: no fog |
+| `sun.direction` | the stage's key light, `[0.45, 1, 0.6]` | toward the sun, made unit |
+| `sun.color`, `sun.intensity` | `#ffffff`, 1.5 | intensity ≥ 0 |
+| `sun.shadows` | off | only `true` casts |
+| `exposure` | 1 | > 0, scales every light |
+| `clouds.cover` | none | over a sky only, > 0; above 1 is 1 (overcast) |
+| `clouds.contrast` | 0.1 | > 0; above 0.5 is 0.5 |
+| `clouds.scale`, `clouds.base` | 600, 800 | metres, > 0: the cells' size, the deck's height |
+
+A sun replaces the stage's key light and dims its headlight to a third; a sky
+tints the sky/ground light with its top and bottom; with fog and no sky the
+background is the fog's colour. Ask a flush with `api.schedule` when it changes on its own.
 
 ### Water and wind
 
