@@ -3,10 +3,10 @@
 // views take one at once. Mounted with the stage harness, two views at a time:
 // on one shared handle (one doc, broadcasts delivered to both), or on two real
 // Automerge docs that merge when the test says (for concurrent writes).
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as Automerge from "@automerge/automerge";
-import { mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
+import { mountStage, object, settle, wallAt } from "../test/stage-harness.js";
 import { CLAIM_GRACE_MS } from "./claims.js";
 
 const CREW = { meta: { id: "t.crew" }, module: { create: () => ({}) } };
@@ -17,11 +17,21 @@ const EXTENSIONS = [CREW, OTHER];
 const claimsOf = (api) => Object.create(api.use("claims"), { session: { get: () => api.channel.session } });
 const held = (S) => S.instance("scene.claims").held();
 
+// Presence sends on the page's timers (a send slot, a hello's answer): faked, and moved on while a test waits
+beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] }));
 const mounted = [];
 afterEach(() => {
   while (mounted.length) mounted.pop().unmount();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
+/** Until fn() holds, the fake clock moving on 25 ms a step. */
+const until = async (fn, ms = 1000) => {
+  for (let waited = 0; !fn(); waited += 25) {
+    if (waited > ms) throw new Error("timed out");
+    await vi.advanceTimersByTimeAsync(25);
+  }
+};
 
 const objects = () => ({ ship: object({ name: "Ship" }), helm: object({ name: "Helm", parent: "ship" }) });
 
