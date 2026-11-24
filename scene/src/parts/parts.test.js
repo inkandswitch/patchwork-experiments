@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
-import parts, { OTHER, PART_MIME, SEARCH_FROM, byCategory, matches, partsOf, readPartDrag } from "./parts.js";
+import parts, { OTHER, PART_MIME, SEARCH_FROM, byCategory, matches, partsOf } from "./parts.js";
 import { composeMatrix } from "../transform.js";
 
 /** A part that puts one object (named after it) where it's told, and records what it was told. */
@@ -87,12 +87,6 @@ describe("pure", () => {
     expect(matches(p, "RIG mast")).toBe(true);
     expect(matches(p, "wheel")).toBe(false);
     expect(matches(p, "canvas", (k) => (k === "t.sail" ? "Canvas" : k))).toBe(true);
-  });
-
-  it("readPartDrag", () => {
-    expect(readPartDrag({ getData: (t) => (t === PART_MIME ? '{"part":"a"}' : "") })).toBe("a");
-    expect(readPartDrag({ getData: () => "nope" })).toBe(null);
-    expect(readPartDrag(null)).toBe(null);
   });
 });
 

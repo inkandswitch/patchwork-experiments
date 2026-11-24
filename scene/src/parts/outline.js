@@ -23,8 +23,7 @@
 // on its row does too), and the pane stays open, showing the doc inside
 // (./focus.js). It reads the doc through scene(), writes it through ops
 // planners, and selects by writing local.selected. Everything else is someone else's:
-//   - Remove runs scene.select's "remove" command when it's running (it owns
-//     the confirm), else remove();
+//   - Remove runs scene.select's "remove" command (it owns the confirm);
 //   - load and build state comes from local.status (the stage's);
 //   - names come from nameOf (as displayed);
 //   - peers' selections and hovers come from presence, under "scene.select".
@@ -279,24 +278,9 @@ export function createOutline(api, { shown = () => true } = {}) {
     write(here.ops.setField(here.scene(), id, key, value), key === "name" ? "Rename" : key === "visible" ? "Visible" : key);
   }
 
-  /** Remove: scene.select's command when it's running (it confirms), else straight through the stage. */
+  /** Remove: scene.select's command (it confirms). */
   function removeRow(id) {
-    const sel = api.collect("commands").find((c) => c.id === SELECT_EXT);
-    if (Array.isArray(sel?.value) && sel.value.some((c) => c?.id === "remove")) {
-      api.run({ ext: SELECT_EXT, command: "remove", target: id });
-      return;
-    }
-    const snap = here.scene();
-    const o = snap.objects[id];
-    if (!o) return;
-    const plan = here.ops.removeObjects(snap, [id]);
-    if (!plan || plan.ok === false) return;
-    const n = plan.within?.length ?? 0;
-    if (n > 0 && typeof globalThis.confirm === "function") {
-      if (!globalThis.confirm(`Remove “${o.name || "Group"}” and the ${n} object${n === 1 ? "" : "s"} in it?`)) return;
-    }
-    editor(here).edit(here.remove([id]), { label: "Delete" });
-    if (new Set(plan.ids).has(selectedId())) select(null);
+    api.run({ ext: SELECT_EXT, command: "remove", target: id });
   }
 
   /** New group: inside the selected group, if one is; opened and selected. */

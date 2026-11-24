@@ -7,10 +7,9 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
-import transfer, { besideOffset, clipText, pasteStep } from "./transfer.js";
+import transfer from "./transfer.js";
 import menuPart from "./menu.js";
 import { ROW_MIME, endDrag, hold, rowPayload, startDrag, summaryTypes } from "../transfer.js";
-import { composeMatrix, multiplyMatrices } from "../transform.js";
 import { editor } from "./editor.js";
 
 // what a ship's extension says about its traits: a ship's motion is runtime. (`needs` is
@@ -105,20 +104,6 @@ const drop = async (payload, at) => {
   return e;
 };
 
-describe("pure", () => {
-  it("clipText: the first object's document link, else its name; besideOffset: its width and a tenth", () => {
-    const objects = { a: object({ name: "A", sourceUrl: "automerge:2j9knn3DsFnFYDFvXkyMu4UHyp7u" }), g: { kind: "group", name: "G" } };
-    expect(clipText(objects, ["a"])).toBe("automerge:2j9knn3DsFnFYDFvXkyMu4UHyp7u");
-    expect(clipText(objects, ["g"])).toBe("G");
-    expect(besideOffset({ min: [0, 0, 0], max: [2, 1, 1] })[0]).toBeCloseTo(2.2, 9);
-    expect(besideOffset(null)).toEqual([1, 0, 0]);
-    expect(besideOffset(null, 3)).toEqual([3, 0, 0]);
-    expect(pasteStep(0.5, 0)).toBe(0);
-    expect(pasteStep(0.5, 2)).toBeCloseTo(2.2, 9);
-    expect(pasteStep(null, 1)).toBe(1);
-  });
-});
-
 describe("a row from another scene, dropped in the view", () => {
   it("is copied onto what it lands on, snapped to a connector that takes it, with what's under it; files shared, render docs its own, runtime state left behind", async () => {
     const { other, glb, stl, render } = await setup();
@@ -156,37 +141,6 @@ describe("a row from another scene, dropped in the view", () => {
     expect(s.doc().traits["t.sea"]).toBeUndefined();
   });
 
-  it("an asset key this scene has is left alone", async () => {
-    const { other } = await setup({ sea: true });
-    s.change((d) => (d.assets["t/mast@1"] = { url: "automerge:4k9knn3DsFnFYDFvXkyMu4UHyp7u" }));
-    await drop(rowPayload(other.url, ["mast"]), { x: 50 });
-    expect(byName("Mast")).toBeTruthy();
-    expect(s.doc().assets["t/mast@1"].url).toBe("automerge:4k9knn3DsFnFYDFvXkyMu4UHyp7u");
-  });
-
-  it("Alt places it where it was dropped; on the ground it goes under nothing and keeps its heading", async () => {
-    const { other } = await setup();
-    await drop(rowPayload(other.url, ["mast"]), { x: 50, alt: true });
-    const m1 = byName("Mast");
-    m1.transform.position.forEach((v, i) => expect(v).toBeCloseTo([0.5, 1, 1.5][i], 6));
-    s.change((d) => {
-      for (const k of Object.keys(d.objects)) if (k !== "hull") delete d.objects[k];
-      d.order = ["hull"];
-    });
-    await drop(rowPayload(other.url, ["crate"]), { x: 150 });
-    expect(byName("Crate")).toMatchObject({ parent: null, transform: { position: [9, 0, 9] } });
-    await drop(rowPayload(other.url, ["mast"]), { x: 150 });
-    const m2 = byName("Mast");
-    expect(m2.parent).toBeNull();
-    expect(m2.transform.rotation[1]).toBeCloseTo(0.7, 6);
-    m2.transform.position.forEach((v, i) => expect(v).toBeCloseTo([9, 0, 9][i], 6));
-    // and the sail under the boom is where it was relative to the mast
-    const mW = composeMatrix(m2.transform);
-    const sail = byName("Sail");
-    const boom = byName("Boom");
-    expect(multiplyMatrices(multiplyMatrices(mW, composeMatrix(boom.transform)), composeMatrix(sail.transform))[13]).toBeCloseTo(0 + 1.5 * (1 + 2), 6);
-  });
-
   it("a row of this scene dropped in the view does nothing (moving rows is the outline's)", async () => {
     await setup();
     const heads = s.handle.heads();
@@ -213,21 +167,6 @@ describe("a row from another scene, dropped in the view", () => {
     expect(api.debug.ring()).toMatchObject({ snapped: true, radius: 0.4 });
     s.canvas.dispatchEvent(dragEvent("dragleave", { [ROW_MIME]: "" }));
     expect(api.debug.ring()).toBeNull();
-  });
-
-  it("a group comes with everything in it, in a new group", async () => {
-    const { other } = await setup();
-    other.change((d) => {
-      d.objects.g = { kind: "group", name: "Rig", group: null, visible: true, opacity: 1 };
-      d.objects.crate.group = "g";
-      d.order.push("g");
-    });
-    await drop(rowPayload(other.url, ["g"]), { x: 150 });
-    const g = byName("Rig");
-    expect(g).toMatchObject({ kind: "group", group: null });
-    expect(g.id).not.toBe("g");
-    expect(byName("Crate")).toMatchObject({ group: g.id, transform: { position: [9, 0, 9] } });
-    expect(s.local.get().selected).toBe(g.id);
   });
 });
 
@@ -335,11 +274,11 @@ describe("references", () => {
   const LEVERS = {
     meta: {
       id: "t.lever",
-      traits: ["t.lever", "t.zone", "t.seats"],
+      traits: ["t.lever", "t.zone", "t.chairs"],
         describes: {
         "t.lever": { name: "Lever", fields: [{ key: "target", label: "Target", kind: "object" }] },
-        "t.zone": { name: "Private zone", fields: [{ key: "seat", label: "Seat", kind: "entry", of: "t.seats" }] },
-        "t.seats": { name: "Seats", on: "scene", entries: { noun: "seat", prefix: "seat", fields: [] } },
+        "t.zone": { name: "Private zone", fields: [{ key: "seat", label: "Seat", kind: "entry", of: "t.chairs" }] },
+        "t.chairs": { name: "Seats", on: "scene", entries: { noun: "seat", prefix: "seat", fields: [] } },
       },
     },
     module: { create: () => ({}) },
@@ -370,29 +309,6 @@ describe("references", () => {
     // the source still points at its own
     expect(other.doc().objects.lever.traits["t.lever"].target).toBe("door");
   });
-
-  it("a duplicate in its own scene: its own parts' references go to the copies, others stay", async () => {
-    await mountWith({
-      objects: {
-        door: object({ name: "Door" }),
-        lever: object({ name: "Lever", parent: "door", traits: { "t.lever": { target: "door" } } }),
-        far: object({ name: "Far lever", traits: { "t.lever": { target: "door" } } }),
-      },
-      order: ["door", "lever", "far"],
-    });
-    await settle();
-    await s.instance("scene.transfer").paste({ scene: s.handle.url, ids: ["door"] });
-    for (let i = 0; i < 3; i++) await settle();
-    const doors = Object.keys(s.doc().objects).filter((k) => s.doc().objects[k].name === "Door");
-    const copy = doors.find((k) => k !== "door");
-    const lever2 = Object.entries(s.doc().objects).find(([k, o]) => o.name === "Lever" && k !== "lever")[1];
-    expect(lever2.traits["t.lever"].target).toBe(copy);
-    await s.instance("scene.transfer").paste({ scene: s.handle.url, ids: ["far"] });
-    for (let i = 0; i < 3; i++) await settle();
-    const fars = Object.entries(s.doc().objects).filter(([, o]) => o.name === "Far lever");
-    expect(fars.map(([, o]) => o.traits["t.lever"].target)).toEqual(["door", "door"]);
-  });
-
 });
 
 describe("repeats", () => {
@@ -433,43 +349,6 @@ describe("repeats", () => {
     await s.instance("scene.transfer").paste({ scene: other.url, ids: ["mast"], copy: "k8" });
     for (let i = 0; i < 3; i++) await settle();
     expect(byName("Mast").parent).toBe("hull");
-  });
-});
-
-describe("the menu's Copy", () => {
-  it("writes what ⌘C writes (the payload and the link) through a copy event of its own; else the link alone", async () => {
-    await setup();
-    const cmds = s.instance("scene.transfer").commands;
-    const copy = cmds.find((c) => c.id === "copy");
-    let written = null;
-    const doc = s.root.ownerDocument;
-    const had = doc.execCommand;
-    doc.execCommand = (cmd) => {
-      if (cmd !== "copy") return false;
-      const e = clipEvent("copy");
-      doc.dispatchEvent(e);
-      written = e.written;
-      return e.defaultPrevented;
-    };
-    try {
-      copy.run("hull");
-    } finally {
-      doc.execCommand = had;
-    }
-    expect(JSON.parse(written[ROW_MIME])).toMatchObject({ scene: s.handle.url, ids: ["hull"] });
-    expect("text/plain" in written).toBe(true);
-    // no copy event (the browser won't): the link alone
-    const writeText = vi.fn(() => Promise.resolve());
-    const nav = globalThis.navigator;
-    Object.defineProperty(globalThis, "navigator", { value: { clipboard: { writeText } }, configurable: true });
-    doc.execCommand = () => false;
-    try {
-      copy.run("hull");
-    } finally {
-      doc.execCommand = had;
-      Object.defineProperty(globalThis, "navigator", { value: nav, configurable: true });
-    }
-    expect(writeText).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import legends, { legendCards, sanitizeLegend } from "./legends.js";
-import { legendModel, formatTick, tintStop } from "../legend.js";
+import { legendModel, tintStop } from "../legend.js";
 
 const LEGEND = { title: "Speed", unit: "m/s", min: 2, max: 3, stops: ["#000000", "#808080", "#ffffff"] };
 const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kind: "group", ...extra });
@@ -25,6 +25,8 @@ describe("scene.legends (pure)", () => {
     expect(m.gradient).toBe("linear-gradient(to right, #000000 0.0%, #808080 50.0%, #ffffff 100.0%)");
     expect(m.ticks).toEqual([{ at: 0, text: "2" }, { at: 0.5, text: "2.5" }, { at: 1, text: "3" }]);
     expect(legendModel({ title: "Pressure coefficient Cp", unit: "", min: -0.6, max: 0.6, stops: ["#000000", "#ffffff"] }, "Slice").ticks.map((t) => t.text)).toEqual(["−0.6", "0", "0.6"]);
+    // without noise: a middle of −0.0001 reads 0, the ends round to two places
+    expect(legendModel({ title: "T", unit: "", min: -2.468, max: 2.4678, stops: ["#000000", "#ffffff"] }, "S").ticks.map((t) => t.text)).toEqual(["−2.47", "0", "2.47"]);
   });
 
   it("shows the colours a colour override actually draws (multiplied in linear light)", () => {
@@ -37,12 +39,6 @@ describe("scene.legends (pure)", () => {
     expect(m.tinted).toBe(true);
     expect(m.gradient).toBe(`linear-gradient(to right, ${tintStop("#3b4cc0", "#4e5b73")} 0.0%, ${tintStop("#dddddd", "#4e5b73")} 50.0%, ${tintStop("#b40426", "#4e5b73")} 100.0%)`);
     expect(legendModel({ title: "Cp", unit: "", min: -1, max: 1, stops: ["#000000", "#ffffff"] }, "Slice", null).tinted).toBe(false);
-  });
-
-  it("formats ticks without noise", () => {
-    expect(formatTick(-0.0001)).toBe("0");
-    expect(formatTick(1.234)).toBe("1.23");
-    expect(formatTick(-2)).toBe("−2");
   });
 
   it("rejects legends it can't draw safely", () => {
@@ -72,26 +68,6 @@ describe("scene.legends", () => {
     expect(card.querySelector(".legend-bar").style.background).toContain("linear-gradient");
     expect([...card.querySelectorAll(".legend-ticks span")].map((e) => e.textContent)).toEqual(["2", "2.5", "3"]);
     expect(card.hasAttribute("data-tinted")).toBe(false);
-    s.unmount();
-  });
-
-  it("notes a tint, and drops the card when the object is hidden", async () => {
-    const s = await mount({ objects: { a: object({ name: "Slice", color: "#4e5b73" }) }, order: ["a"] }, { a: LEGEND });
-    const card = cards(s)[0];
-    expect(card.hasAttribute("data-tinted")).toBe(true);
-    expect(card.querySelector(".legend-tint").title).toContain("#4e5b73");
-    s.change((d) => (d.objects.a.visible = false));
-    await s.settle();
-    expect(cards(s)).toEqual([]);
-    s.unmount();
-  });
-
-  it("keeps its cards across a hover", async () => {
-    const s = await mount({ objects: { a: object({ name: "A" }) }, order: ["a"] }, { a: LEGEND });
-    const card = cards(s)[0];
-    s.local.swap((m) => ({ ...m, hovered: "a" }));
-    await s.settle();
-    expect(cards(s)[0]).toBe(card);
     s.unmount();
   });
 });

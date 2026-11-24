@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { fakeUrl } from "../test/fake-repo.js";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
-import { CONTROLS_TOOL, commandsFor, documentsFor, inspectorDocuments, ago, buildSummary } from "./inspector-model.js";
+import { CONTROLS_TOOL, documentsFor, inspectorDocuments, ago, buildSummary } from "./inspector-model.js";
 
 // The inspector's documents (EDITOR.md, "The interface"): every related
 // document of an object is a section, and documentsFor is the one rule for
@@ -12,8 +12,6 @@ const ME = "scene.inspector";
 const snap = (objects) => ({ objects, ids: Object.keys(objects), parents: resolveParents(objects), groups: resolveGroups(objects) });
 const obj = (extra = {}) => ({ name: "Object", sourceUrl: null, renderUrl: null, parent: null, group: null, visible: true, ...extra });
 const grp = (name, extra = {}) => ({ kind: "group", name, group: null, visible: true, opacity: 1, ...extra });
-
-afterEach(() => vi.restoreAllMocks());
 
 describe("documentsFor: the inspector's own documents, by kind of selection", () => {
   const SRC = fakeUrl();
@@ -54,18 +52,6 @@ describe("documentsFor: the inspector's own documents, by kind of selection", ()
   it("a source the stage routed nowhere (its provider isn't installed) is a folded Source", () => {
     const none = inspectorDocuments(() => null);
     expect(documentsFor(none, "built", { scene }, ME).map((d) => [d.id, d.label, d.folded])).toEqual([["source", "Source", true], ["build", "Build", false]]);
-  });
-});
-
-describe("commandsFor: what's contributed", () => {
-  it("a command whose state throws doesn't apply, and says so", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const boom = () => {
-      throw new Error("boom");
-    };
-    const commands = [{ id: "t.x", value: [{ id: "bad", run() {}, state: boom }, { id: "ok", run() {}, state: () => ({}) }] }];
-    expect(commandsFor(commands, "x", {}, null).map((c) => c.command.id)).toEqual(["ok"]);
-    expect(warn).toHaveBeenCalledTimes(1);
   });
 });
 

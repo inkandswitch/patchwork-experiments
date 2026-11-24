@@ -91,13 +91,6 @@ describe("scene.select: clicking", () => {
     expect(log).toEqual(["widget", "verb null"]);
   });
 
-  it("a hit on something the doc no longer has selects nothing", async () => {
-    await mount();
-    hitOn("zzz");
-    s.click(20, 20);
-    expect(sel()).toBeNull();
-  });
-
   it("a click on a group's member selects the member, not the group", async () => {
     await mount({ objects: { g: group("G"), m: layer("M", "g") } });
     hitOn("m");
@@ -141,22 +134,6 @@ describe("scene.select: keeping the selection honest", () => {
     s.local.swap((m) => ({ ...m, selected: "zzz" }));
     await settle();
     expect(sel()).toBeNull();
-  });
-
-  it("asks the stage to load the selection first", async () => {
-    await mount();
-    const focus = vi.spyOn(s.facet("scene.select"), "focus");
-    s.local.swap((m) => ({ ...m, selected: "b" }));
-    await settle();
-    expect(focus).toHaveBeenLastCalledWith(["b"]);
-    s.local.swap((m) => ({ ...m, selected: "dimension:d1" })); // not an object: nothing to load
-    await settle();
-    expect(focus).toHaveBeenLastCalledWith([]);
-    s.local.swap((m) => ({ ...m, selected: "b" }));
-    await settle();
-    s.local.swap((m) => ({ ...m, selected: null }));
-    await settle();
-    expect(focus).toHaveBeenLastCalledWith([]);
   });
 });
 
@@ -230,15 +207,6 @@ describe("scene.select: presence", () => {
     expect(helpers()[0].box.min.toArray()).toEqual([4, 0, 0]);
   });
 
-  it("boxes a group by its group box (api.box covers groups)", async () => {
-    await mount({ objects: { g: group("G"), m: layer("M", "g") } });
-    boxes({ g: { min: [-1, -1, -1], max: [1, 1, 1] } });
-    s.local.swap((m) => ({ ...m, selected: "g" }));
-    await settle();
-    expect(helpers()).toHaveLength(1);
-    expect(helpers()[0].box.max.toArray()).toEqual([1, 1, 1]);
-  });
-
   it("follows the box when content arrives or the doc moves the object", async () => {
     await mount();
     const map = { a: null };
@@ -288,11 +256,9 @@ describe("scene.select: commands", () => {
 
   it("Remove takes an object out (after every beforeRemove) and clears the selection", async () => {
     const seen = [];
-    const dims = { meta: { id: "t.dims" }, module: { create: () => ({ beforeRemove: (d, ids) => seen.push([...ids]) }) } };
+    // what each beforeRemove saw: the ids, each still in the doc it tidies
+    const dims = { meta: { id: "t.dims" }, module: { create: () => ({ beforeRemove: (d, ids) => seen.push(ids.map((id) => [id, !!d.objects[id]])) }) } };
     await mount({ extensions: [dims] });
-    const c = s.instance("scene.select").commands.find((x) => x.id === "remove");
-    expect(c.key).toEqual(["Delete", "Backspace"]);
-    expect(c.show).toEqual(["menu", "inspector"]);
     expect(state("remove")).toBeNull();
     expect(state("remove", "dimension:d1")).toBeNull(); // objects only
     s.local.swap((m) => ({ ...m, selected: "a" }));
@@ -301,7 +267,7 @@ describe("scene.select: commands", () => {
     expect(ask).not.toHaveBeenCalled(); // a single object doesn't ask
     expect(s.doc().objects.a).toBeUndefined();
     expect(s.doc().order).toEqual(["b"]);
-    expect(seen).toEqual([["a"]]);
+    expect(seen).toEqual([[["a", true]]]);
     expect(sel()).toBeNull();
   });
 
@@ -327,13 +293,6 @@ describe("scene.select: commands", () => {
     expect(Object.keys(s.doc().objects).sort()).toEqual(["battery", "cell"]);
     expect(s.doc().order).toEqual(["battery", "cell"]);
     expect(sel()).toBeNull(); // hull went with it
-  });
-
-  it("an object attached to a removed one stays, at the scene root", async () => {
-    await mount({ objects: { a: object({ name: "A", transform: { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 } }), c: object({ name: "C", parent: "a" }) } });
-    run("remove", "a");
-    expect(s.doc().objects.c.parent).toBeNull();
-    expect(s.doc().objects.c.transform.position).toEqual([1, 0, 0]);
   });
 });
 

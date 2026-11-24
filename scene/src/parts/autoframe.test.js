@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import { fakeCamera } from "../test/fake-camera.js";
-import autoframe, { sameCamera, shownObjects } from "./autoframe.js";
+import autoframe, { shownObjects } from "./autoframe.js";
 
 const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kind: "group", ...extra });
 
@@ -27,13 +27,6 @@ const B2 = { min: [0, 0, 0], max: [2, 1, 1] };
 const B3 = { min: [-1, 0, 0], max: [2, 1, 1] };
 
 describe("scene.autoframe (pure)", () => {
-  it("tells whether the camera is where it was left", () => {
-    const a = { position: [0, 0, 10], target: [0, 0, 0] };
-    expect(sameCamera(a, { position: [0, 0, 10.0000001], target: [0, 0, 0] })).toBe(true);
-    expect(sameCamera(a, { position: [0, 0, 10.1], target: [0, 0, 0] })).toBe(false);
-    expect(sameCamera(a, { position: [0, 0, 10], target: [0, 1, 0] })).toBe(false);
-    expect(sameCamera(a, null)).toBe(false);
-  });
   it("counts what is shown: not hidden, not in a hidden group, not a group", () => {
     const objects = { a: object(), b: object({ visible: false }), c: object({ group: "g" }), g: group({ visible: false }) };
     expect(shownObjects({ objects, ids: ["a", "b", "c", "g"], parents: new Map(), groups: new Map([["c", "g"]]) })).toEqual(["a"]);

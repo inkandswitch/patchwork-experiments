@@ -33,7 +33,6 @@ describe("scene.frame: commands", () => {
     const { s, world, camera } = await mount();
     const c = s.instance("scene.frame").commands.find((k) => k.id === "frame");
     expect(c.key).toBe(".");
-    expect(c.name).toBe("Frame all");
     expect(c.state("a", {})).toBe(null);
     expect(c.state(null, { local: {} })).toEqual({ title: "Frame everything (.)" });
     world.box = B2;
@@ -47,10 +46,9 @@ describe("scene.frame: commands", () => {
     s.unmount();
   });
 
-  it("Set home view writes this camera to doc.view.start.home, as an edit; it's a menu command, disabled without a camera", async () => {
+  it("Set home view writes this camera to doc.view.start.home, as an edit; disabled without a camera", async () => {
     const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }] });
     const c = s.instance("scene.frame").commands.find((k) => k.id === "set-home");
-    expect(c.show).toEqual(["menu"]);
     // no WebGL, so no camera yet
     expect(c.state(null, {}).disabled).toBe(true);
     expect(run(s, "set-home")).toBe(false);

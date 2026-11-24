@@ -17,20 +17,20 @@ const parents = new Map([
 const scene = { objects: { table: {}, card: {}, helm: {}, spoke: {}, crate: {} }, parents };
 const on = (...ids) => (t) => (ids.includes(t) ? {} : null);
 const COLLECTED = [
-  { id: "tabletop", value: [
+  { id: "t.deck", value: [
     { id: "draw", name: "Draw", key: "d", reach: true, state: on("card"), run() {} },
     { id: "shuffle", name: "Shuffle", key: "s", state: on("card"), run() {} },
     { id: "reveal", name: "Reveal", state: on("card"), run() {} },
     { id: "wash", name: "Wash", key: "w", state: (t) => (t === "table" ? { disabled: true } : null), run() {} },
   ] },
   { id: "scene.carry", value: [{ id: "flip", name: "Flip", key: "f", state: on("card", "crate"), run() {} }] },
-  { id: "sailing", value: [
+  { id: "t.boat", value: [
     { id: "helm", name: "Take the helm", key: "f", reach: true, state: on("helm"), run() {} },
     { id: "aboard", name: "Come aboard", key: "Enter", show: ["world"], state: (t) => (t == null ? {} : null), run() {} },
     // (keyed, on no surface: a key works with nothing showing it)
     { id: "anchor", name: "Drop anchor", key: "n", show: [], state: (t) => (t == null ? {} : null), run() {} },
   ] },
-  { id: "dice", value: [{ id: "roll", name: "Roll", key: "r", state: on("crate"), run() {} }] },
+  { id: "t.roller", value: [{ id: "roll", name: "Roll", key: "r", state: on("crate"), run() {} }] },
   { id: "scene.measure", value: [{ id: "measure", name: "Measure", key: "m", tool: { pointer: true }, state: (t) => (t == null ? { checked: false } : null), run() {} }] },
   { id: "scene.select", value: [{ id: "remove", name: "Remove", key: ["Delete", "Backspace"], show: ["menu"], state: (t) => (t != null && scene.objects[t] ? {} : null), run() {} }] },
 ];
@@ -171,7 +171,7 @@ describe("the key resolver (H3), exhaustively", () => {
       expect(keyContext(c.api.reader, attention).hit).toBe(c.state.ctx.hit);
     }
     // seated (reach 2), a selected card whose box is 1 m off while the look is on it 2.1 m off: too far, for the hint and the key
-    const draw = { ext: "tabletop", command: COLLECTED[0].value[0], target: "card" };
+    const draw = { ext: "t.deck", command: COLLECTED[0].value[0], target: "card" };
     const seated = (look) => resolved(apiFor({ body: BODIES[2], tool: null, gesture: null, attention: { selected: "card", hit: null }, look, box: 1 }));
     const far = seated({ id: "card", distance: 2.1 });
     expect(far.ctx.distance("card")).toBe(2.1);
@@ -181,7 +181,7 @@ describe("the key resolver (H3), exhaustively", () => {
     // the look elsewhere: the box decides, and D draws
     const near = seated({ id: "crate", distance: 5 });
     expect(hintFor(draw, near)).toBe("D");
-    expect(resolveKey({ key: "d", code: "KeyD" }, near)).toEqual({ layer: "map", invocation: { ext: "tabletop", command: "draw", target: "card", stage: 0 } });
+    expect(resolveKey({ key: "d", code: "KeyD" }, near)).toEqual({ layer: "map", invocation: { ext: "t.deck", command: "draw", target: "card", stage: 0 } });
   });
 
   it("what reserves keys comes first: the gesture's, the topmost hand's that declares it, then the body's", () => {
@@ -204,7 +204,7 @@ describe("the key resolver (H3), exhaustively", () => {
 
   it("walking, Draw shows without D and is in the menu; seated, D draws", () => {
     const at = (body) => ({ gesture: null, hands: [], body, collected: COLLECTED, ctx: { scene, local: {}, from: [0, 0, 0], reach: 2, distance: () => 1 }, attention: { selected: null, hit: { id: "card", distance: 1 } } });
-    const draw = { ext: "tabletop", command: COLLECTED[0].value[0], target: "card" };
+    const draw = { ext: "t.deck", command: COLLECTED[0].value[0], target: "card" };
     expect(hintFor(draw, at(BODIES[1]))).toBe("");
     expect(menuEntries(COLLECTED, "card", at(BODIES[1]).ctx).forObject.some((e) => e.command.id === "draw")).toBe(true);
     expect(hintFor(draw, at(BODIES[2]))).toBe("D");
@@ -214,12 +214,12 @@ describe("the key resolver (H3), exhaustively", () => {
     const ctx = { scene, local: {}, reach: Infinity, distance: () => 0 };
     expect(attentionPath({ selected: null, hit: { id: "spoke" } }, parents)).toEqual(["spoke", "helm"]);
     expect(attentionPath({ selected: "table", hit: { id: "spoke" } }, parents)).toEqual(["table"]);
-    expect(mapInvocation(COLLECTED, "f", ctx, { selected: null, hit: { id: "spoke" } })).toEqual({ ext: "sailing", command: "helm", target: "helm" });
+    expect(mapInvocation(COLLECTED, "f", ctx, { selected: null, hit: { id: "spoke" } })).toEqual({ ext: "t.boat", command: "helm", target: "helm" });
     // Delete removes what is looked at, never what it is attached to
     expect(mapInvocation(COLLECTED, "Delete", ctx, { selected: null, hit: { id: "spoke" } })).toEqual({ ext: "scene.select", command: "remove", target: "spoke" });
     expect(promptEntries(COLLECTED, { selected: null, hit: { id: "spoke" } }, ctx).target).toBe("helm");
     // the path first, then the scene: Enter comes aboard from anywhere
-    expect(mapInvocation(COLLECTED, "Enter", ctx, { selected: "card", hit: null })).toEqual({ ext: "sailing", command: "aboard", target: null });
+    expect(mapInvocation(COLLECTED, "Enter", ctx, { selected: "card", hit: null })).toEqual({ ext: "t.boat", command: "aboard", target: null });
     // a selection that isn't an object (a ref) is offered all the same: its owner's command answers for it, or nobody's
     const removeAny = [{ id: "z", value: [{ id: "remove", name: "Remove", key: "Delete", state: (t) => (t ? {} : null), run() {} }] }];
     expect(mapInvocation(removeAny, "Delete", ctx, { selected: "dimension:d1", hit: null })).toEqual({ ext: "z", command: "remove", target: "dimension:d1" });
@@ -254,7 +254,7 @@ describe("reach (H9), exhaustively", () => {
           expect(!!p.entries.find((e) => e.command.id === "draw").state.disabled).toBe(!inReach);
           expect(!!menuEntries(COLLECTED, "card", ctx).forObject.find((e) => e.command.id === "draw").state.disabled).toBe(!inReach);
           // the key map runs it only in reach (D is the walk body's, so ask the map itself)
-          expect(mapInvocation(COLLECTED, "d", ctx, attention)).toEqual(inReach ? { ext: "tabletop", command: "draw", target: "card" } : null);
+          expect(mapInvocation(COLLECTED, "d", ctx, attention)).toEqual(inReach ? { ext: "t.deck", command: "draw", target: "card" } : null);
         }
       }
     }

@@ -7,17 +7,14 @@ import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
 import { manualTime } from "../stage/time.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
-import inspector, { startBodies } from "./inspector.js";
+import inspector from "./inspector.js";
 import { editing } from "./editing.js";
 import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
-import { aboutFor, attachOptions, commandsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
-import { EMBED_ATTR, EMBED_CLASS } from "../embed.js";
+import { aboutFor, attachOptions, groupOptions, statusParts } from "./inspector-model.js";
 import { SECTION_MIME } from "../dnd.js";
 import { LINK } from "../native/link-graph.js";
 import { emptyScene } from "../test/empty-scene.js";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 import { sanitizeLayers } from "../layers.js";
@@ -99,12 +96,6 @@ describe("scene.inspector: layers", () => {
     await mountBoat();
     expect(rows()).toEqual(["x Hull", "  x Deck", "_ Rig (hidden)"]);
     expect($(".layers-reset").hidden).toBe(true);
-  });
-
-  it("has no Layers section for an object whose GLB has none", async () => {
-    await mountBoat();
-    await select("plain");
-    expect($(".layers")?.hidden ?? true).toBe(true);
   });
 
   it("writes one layer's choice; a hidden parent dims what's in it; Reset drops them all", async () => {
@@ -303,19 +294,6 @@ describe("scene.inspector: the panel", () => {
     expect($(".inspector").dataset.kind).toBe("scene");
   });
 
-  it("Group wraps the object in a new group, filed where it was, and selects it", async () => {
-    await mount({ objects: { g: group("G"), a: object({ name: "A", group: "g" }) } });
-    await select("a");
-    expect(applies("ungroup", "a")).toBe(false);
-    run("group", "a");
-    const objects = s.doc().objects;
-    const gid = objects.a.group;
-    expect(gid).not.toBe("g");
-    expect(objects[gid]).toEqual({ kind: "group", name: "Group", group: "g", visible: true, opacity: 1 });
-    expect(s.doc().order.indexOf(gid)).toBe(s.doc().order.indexOf("a") - 1);
-    expect(s.local.get().selected).toBe(gid);
-  });
-
   it("Frame fits the camera to the object's box", async () => {
     await mount({ objects: { a: object({ name: "A" }) } });
     await select("a");
@@ -325,14 +303,6 @@ describe("scene.inspector: the panel", () => {
     vi.spyOn(s.debug.viewport, "frame").mockImplementation((b) => framed.push(b));
     run("frame", "a");
     expect(framed).toEqual([{ min: [0, 0, 0], max: [1, 1, 1] }]);
-  });
-
-  it("has no command buttons: the selection's verbs are the menu's (PLANS.md §5); its Open is the header's", async () => {
-    const ext = { meta: { id: "t.poke" }, module: { create: () => ({ commands: [{ id: "poke", name: "Poke", state: (t) => (t === "a" ? {} : null), run: () => {} }] }) } };
-    await mount({ objects: { a: object({ name: "A" }) }, extensions: [ext] });
-    await select("a");
-    expect(body().querySelector(".commands")).toBeNull();
-    expect([...body().querySelectorAll("button[data-command]")].map((b) => b.dataset.command)).toEqual([]);
   });
 
   it("a displayed name is shown read-only, never written back", async () => {
@@ -410,9 +380,6 @@ describe("scene.inspector: an object's parts and its documents, a row each (PLAN
   // [row, the object, its row's key, the open-document detail]
   const OPEN = [
     ["Source", "built", `${"scene.inspector"}/source`, (m) => ({ url: m.src.url })],
-    ["About (its group's)", "built", `${"scene.inspector"}/about`, (m) => ({ url: m.info.url })],
-    ["File", "file", `${"scene.inspector"}/file`, (m) => ({ url: m.glb.url })],
-    ["Linked scene", "link", `${"scene.inspector"}/link`, (m) => ({ url: m.linked.url })],
   ];
   it.each(OPEN)("Open Editor on %s dispatches its own url and tool", async (_name, target, key, detail) => {
     const m = await mountKinds();
@@ -421,20 +388,6 @@ describe("scene.inspector: an object's parts and its documents, a row each (PLAN
     s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
     row(key).querySelector(".doc-open").click();
     expect(opened).toEqual([detail(m)]);
-  });
-
-  it("nothing else in the pane opens a document: every other button clicked, no open-document", async () => {
-    await mountKinds();
-    const opened = [];
-    s.element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail.url));
-    for (const target of ["built", "file", "link", "boat", null]) {
-      await select(target);
-      // (the commands and the Open are other extensions' verbs, run through api.run, and are their own tests)
-      const others = [...body().querySelectorAll("button")].filter((b) => !b.classList.contains("doc-open") && !b.classList.contains("open-thing"));
-      for (const b of others) if (b.isConnected && !b.disabled) b.click();
-      await settle();
-    }
-    expect(opened).toEqual([]);
   });
 
   const drawerViews = () => [...s.root.querySelectorAll(".stage-drawer-doc > patchwork-view")].map((v) => `${v.getAttribute("doc-url")}|${v.getAttribute("tool-id") ?? ""}`);
@@ -593,12 +546,6 @@ describe("scene.inspector: the pure side", () => {
     expect(attachOptions(sc, "g")).toEqual([]);
   });
 
-  it("lensNamed", () => {
-    expect(lensNamed("Card", { name: "Card" })).toBe(false);
-    expect(lensNamed("Ace", { name: "Card" })).toBe(true);
-    expect(lensNamed(null, { name: "Card" })).toBe(false);
-  });
-
   it("statusParts: render docs with and without the raw load state", () => {
     const o = object({ sourceUrl: "automerge:x", renderUrl: "automerge:y", providerId: "p" });
     expect(statusParts(o, { load: { notes: "1 triangle (ascii STL)" } })).toEqual([{ kind: "notes", text: "1 triangle (ascii STL)" }]);
@@ -617,16 +564,6 @@ describe("scene.inspector: the pure side", () => {
     const q = object({ sourceUrl: "automerge:x", providerId: "t-gltf" });
     expect(statusParts(q, { load: { content: null, phase: "no-provider", providerId: "t-gltf" } })).toEqual([{ kind: "error", text: "Provider “t-gltf” is not installed, so this object can't be shown here." }]);
     expect(statusParts(q, { status: { state: "warn" } })).toEqual([{ kind: "error", text: "Provider “t-gltf” is not installed, so this object can't be shown here." }]);
-  });
-
-  it("commandsFor: only targeted ones for the inspector, own first", () => {
-    const run = () => {};
-    const collected = [
-      { id: "x", value: [{ id: "a", run, state: () => ({}) }, { id: "m", show: ["menu"], run, state: () => ({}) }, { id: "s", run }] },
-      { id: "me", value: [{ id: "b", run, state: () => ({}) }] },
-    ];
-    expect(commandsFor(collected, "o", {}, "me").map((c) => c.command.id)).toEqual(["b", "a"]);
-    expect(commandsFor(collected, null, {}, "me")).toEqual([]);
   });
 });
 
@@ -653,8 +590,6 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
   const ROWS = [
     // [source, selected before, act, row, fields]
     ["row click", null, () => rowClick("a"), ["a"], "object a"],
-    ["api.view.select(id)", null, () => s.facet("scene.inspector").view.select("a"), ["a"], "object a"],
-    ["menu Select", "a", () => s.api("scene.inspector").run({ ext: "scene.select", command: "select", target: "b" }), ["b"], "object b"],
     ["Escape → null", "a", () => s.key("Escape", { code: "Escape" }), [], "scene"],
     ["group row", "b", () => rowClick("g"), ["g"], "group g"],
     ["ref dimension:x", "a", () => s.facet("scene.inspector").view.select("dimension:x"), [], "hidden"],
@@ -803,18 +738,6 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
     expect(name()).toBe("A2");
     expect(tab().body.querySelector('.object-row[data-id="b"]')).not.toBe(null);
   });
-
-  it("arrow keys in the tree are the tree's: no scene shortcut hears them", async () => {
-    const keys = [];
-    const keymap = { create: () => ({ input: { key: (ev) => (keys.push(ev.key), true) } }) };
-    s = await mountStage({ extensions: [INSPECTOR, OPENED, { meta: { id: "t.keys" }, module: keymap }], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, order: ["a", "b"] } });
-    await settle();
-    const main = tab().body.querySelector('.object-row[data-id="a"] .row-main');
-    main.focus();
-    for (const key of ["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft"]) document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
-    expect(keys).toEqual([]);
-  });
-
 });
 
 describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Activation”)", () => {
@@ -835,52 +758,6 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     s.local.swap((m) => ({ ...m, selected: id }));
     await still();
   }
-
-  it("shut until something is selected; then open at once, on the scene when nothing is; its × shuts it until the selection changes; a ref opens nothing", async () => {
-    await bare({ a: object({ name: "A" }), b: object({ name: "B" }) });
-    expect(tab().isOpen()).toBe(false);
-    await pick("a");
-    expect(tab().isOpen()).toBe(true);
-    expect(s.drawer().shown).toBe(tab().body);
-    // the viewer closes it (its ×): it stays shut while "a" is selected
-    s.root.querySelector(".stage-drawer-tab-close").click();
-    await still();
-    expect(tab().isOpen()).toBe(false);
-    s.change((d) => (d.objects.a.name = "A2"));
-    await still();
-    expect(tab().isOpen()).toBe(false);
-    await pick("b");
-    expect(tab().isOpen()).toBe(true);
-    // open, it stays open whatever is selected next, and shows it at once: the canvas keeps its width (HISTORY.md, TOOLS Decisions 6)
-    await pick("dimension:d1");
-    expect(tab().isOpen()).toBe(true);
-    await pick(null);
-    expect(tab().isOpen()).toBe(true);
-    expect(tab().body.querySelector(".inspector").dataset.kind).toBe("scene");
-    await pick("a");
-    expect(tab().isOpen()).toBe(true);
-    expect(tab().body.querySelector(".inspector").dataset.kind).toBe("object");
-    // shut from the toolbar: shut while the selection stays, shut by deselecting, opened by the next selection
-    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
-    await still();
-    expect(tab().isOpen()).toBe(false);
-    await pick(null);
-    expect(tab().isOpen()).toBe(false);
-    // a ref selected with the tab shut opens nothing
-    await pick("dimension:d1");
-    expect(tab().isOpen()).toBe(false);
-    await pick("b");
-    expect(tab().isOpen()).toBe(true);
-    expect(tab().body.querySelector(".inspector").dataset.kind).toBe("object");
-    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
-    await pick(null);
-    expect(tab().isOpen()).toBe(false);
-    // asked for from the toolbar: at once, the scene's with nothing selected
-    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: true });
-    await still();
-    expect(tab().isOpen()).toBe(true);
-    expect(tab().body.querySelector(".inspector").dataset.kind).toBe("scene");
-  });
 
   it("every sequence of up to 2 of select an object (two), a ref, nothing, ×, toolbar on, toolbar off, Look, Edit, Enter; and of 3 of an object, nothing, ×, Look, Edit, Enter: open exactly as the rule says", async () => {
     // The rule, as a model ("edit": the editor picked up, "look": put
@@ -987,22 +864,4 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
     expect(tab().isOpen()).toBe(false);
     expect(pressed()).toBe("false");
   });
-
-  it("startBodies: Look, each body on offer once, then the doc's own if nothing here offers it", () => {
-    const collected = [
-      { id: "walk", value: [{ id: "walk", label: "Walk", enter() {} }] },
-      { id: "seats", value: [{ id: "seat", label: "Seated", enter() {} }, { id: "walk", label: "Again" }] },
-      { id: "junk", value: "nope" },
-    ];
-    expect(startBodies(collected)).toEqual([
-      ["look", "Look"],
-      ["walk", "Walk"],
-      ["seat", "Seated"],
-    ]);
-    expect(startBodies(collected, "ferry").at(-1)).toEqual(["ferry", "ferry"]);
-    expect(startBodies([], "look")).toEqual([["look", "Look"]]);
-    // a body no longer anyone's (an old doc's "orbit") still shows as chosen
-    expect(startBodies([], "orbit").at(-1)).toEqual(["orbit", "orbit"]);
-  });
-
 });

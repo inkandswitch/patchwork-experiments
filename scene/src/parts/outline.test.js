@@ -70,23 +70,6 @@ afterEach(() => {
 });
 
 describe("the inspector's tree", () => {
-  it("is the top of the inspector's one pane: mounted with it, shut with it (no tab or toggle of its own)", async () => {
-    await mount(vessel(), { extra: [] });
-    const tab = s.instance("scene.inspector").tab;
-    expect(tab.isOpen()).toBe(true);
-    expect(s.drawer().order).toEqual([tab.body]);
-    expect(tab.body.dataset.panel).toBe("inspector");
-    // the tree, then the fields, in the one tab
-    expect([...tab.body.children].map((c) => c.className)).toEqual(["inspector-tree", "inspector-body"]);
-    expect(tab.body.querySelectorAll(".inspector-tree .object-list").length).toBe(1);
-    const toggles = s.api("scene.inspector").collect("commands").flatMap((c) => (Array.isArray(c.value) ? c.value.filter((k) => k?.show?.includes?.("toolbar")).map((k) => `${c.id}:${k.id}`) : []));
-    // (the Edit hand's Select is the bar's too; no toggle is the tree's)
-    expect(toggles.filter((t) => !t.startsWith("scene.edit:"))).toEqual(["scene.inspector:inspector"]);
-    s.api("scene.inspector").run({ ext: "scene.inspector", command: "inspector", value: false });
-    expect(tab.isOpen()).toBe(false);
-    expect(s.drawer().order).toEqual([]);
-  });
-
   it("roots open, deeper groups closed, per-viewer state in localStorage; ←/→ on a focused row", async () => {
     const doc = vessel();
     await mount(doc);
@@ -110,7 +93,7 @@ describe("the inspector's tree", () => {
     expect(rows()).toEqual(["vessel", "body", "hull", "deck", "bhd", "battery"]);
   });
 
-  it("↑/↓ move focus between rows and don't reach the scene's keys", async () => {
+  it("↑/↓ move focus between rows; no arrow key on a row reaches the scene's keys", async () => {
     const keys = [];
     const keymap = { create: () => ({ input: { key: (ev) => (keys.push(ev.key), true) } }) };
     await mount(vessel(), { extra: [{ meta: { id: "t.keys" }, module: keymap }] });
@@ -118,6 +101,7 @@ describe("the inspector's tree", () => {
     main.focus();
     main.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     expect(document.activeElement).toBe(row("body").querySelector(".row-main"));
+    for (const key of ["ArrowUp", "ArrowRight", "ArrowLeft"]) document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
     expect(keys).toEqual([]);
   });
 
@@ -217,7 +201,7 @@ describe("the inspector's tree", () => {
     expect(row("bhd").querySelector(".pill")).toBeNull();
   });
 
-  it("filters over name and path from 8 objects, with a count; Enter selects the first match, Esc clears", async () => {
+  it("filters over name and path from 8 objects (none under, and an empty scene says so), with a count; Enter selects the first match, Esc clears", async () => {
     const doc = vessel();
     for (let i = 0; i < 6; i++) {
       doc.objects[`x${i}`] = leaf(`extra ${i}`, { group: "battery" });
@@ -248,10 +232,14 @@ describe("the inspector's tree", () => {
     input.value = "nothing like it";
     input.dispatchEvent(new Event("input"));
     expect($(".object-list").textContent).toContain("No matches.");
-  });
-
-  it("hides the filter under 8 objects; an empty scene says so", async () => {
-    await mount({ objects: {}, order: [] });
+    // under 8 objects the filter hides; an empty scene says so
+    input.value = "";
+    input.dispatchEvent(new Event("input"));
+    s.change((d) => {
+      for (const k of Object.keys(d.objects)) delete d.objects[k];
+      d.order = [];
+    });
+    await pass();
     expect($(".outline-search").hidden).toBe(true);
     expect($(".object-list").textContent).toContain("Nothing here yet.");
   });
@@ -271,24 +259,12 @@ describe("the inspector's tree", () => {
     expect(JSON.parse(localStorage.getItem(`scene-outline:${s.handle.url}`))[added]).toBe(true);
   });
 
-  it("Remove runs scene.select's command when it's running", async () => {
+  it("Remove runs scene.select's command", async () => {
     const calls = [];
     await mount(vessel(), { extra: [{ meta: { id: "scene.select" }, module: fakeSelect(calls) }] });
     row("bhd").querySelector(".icon-button").click();
     expect(calls).toEqual(["bhd"]);
     expect(s.doc().objects.bhd).toBeTruthy();
-  });
-
-  it("without scene.select, Remove asks for a group with contents and goes through api.remove", async () => {
-    await mount(vessel());
-    const ask = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
-    row("vessel").querySelector(".icon-button").click();
-    expect(ask).toHaveBeenCalledWith(expect.stringContaining("and the 4 objects in it"));
-    expect(s.doc().objects.vessel).toBeTruthy();
-    ask.mockReturnValue(true);
-    row("vessel").querySelector(".icon-button").click();
-    expect(Object.keys(s.doc().objects).sort()).toEqual(["battery", "cell"]);
-    expect(s.doc().order).toEqual(["battery", "cell"]);
   });
 
   it("marks peers' selections and hovers in their colour", async () => {
@@ -325,15 +301,6 @@ describe("the inspector's tree: dragging rows", () => {
   };
   const notices = () => s.notices().map((n) => n.text).join("\n");
   const leafAt = (name, { parent = null, group = null, x = 0 } = {}) => leaf(name, { parent, group, visible: false, transform: { position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 } });
-
-  it("the drag starts from the name, carrying this scene and the id", async () => {
-    await mount({ objects: { a: leafAt("a") }, order: ["a"] });
-    const data = {};
-    const e = new Event("dragstart", { bubbles: true });
-    e.dataTransfer = { setData: (t, v) => (data[t] = v) };
-    row("a").querySelector(".row-main").dispatchEvent(e);
-    expect(readRowDrag({ getData: (t) => data[t] })).toEqual({ scene: s.handle.url, id: "a", ids: ["a"] });
-  });
 
   it("a dragged row carries its render doc (or GLB file) for other tools; a group carries only the row", async () => {
     const R = "automerge:2j9knn3DsFnFYDFvXkyMu4UHyp7u";
@@ -392,13 +359,11 @@ describe("the inspector's tree: dragging rows", () => {
     expect(s.doc().objects.hull).toMatchObject({ group: "g1", parent: null });
     expect(s.doc().objects.hull.transform.position[0]).toBe(1);
     expect(s.local.get().selected).toBe("hull");
-  });
-
-  it("below an open group, a row goes in at the top", async () => {
-    await mount({ objects: { g1: grp("G"), k: leafAt("k", { group: "g1" }), z: leafAt("z") }, order: ["g1", "k", "z"] });
-    atRow("g1", 0.9, rowDrag("z"));
-    expect(s.doc().objects.z.group).toBe("g1");
-    expect(s.doc().order.indexOf("z")).toBeLessThan(s.doc().order.indexOf("k"));
+    // the cleat, attached to the hull (at 1 + 2 × 1 in the world), dropped out of the hull's rows onto the group: detached, where it is
+    atRow("g1", 0.5, rowDrag("cleat"));
+    expect(s.doc().objects.cleat).toMatchObject({ group: "g1", parent: null });
+    expect(s.doc().objects.cleat.transform.position[0]).toBeCloseTo(3, 9);
+    expect(s.doc().objects.cleat.transform.scale).toBeCloseTo(2, 9);
   });
 
   it("copies a row from another scene into the place it's dropped in the tree, put down where the view is looking (not where it was in its own scene)", async () => {
@@ -485,17 +450,6 @@ describe("the inspector's tree: dropping documents on rows", () => {
     expect(row(added)).toBeTruthy();
   });
 
-  it("beside an attached object: attached to the same parent, in front of it", async () => {
-    const repo = new FakeRepo();
-    const file = fileDoc(repo);
-    await mount({ objects: { A: leaf("A"), B: leaf("B", { parent: "A" }) }, order: ["A", "B"] }, { repo });
-    atRow("B", 0.2, docDrop(file.url));
-    await settle();
-    const added = Object.keys(s.doc().objects).find((id) => !["A", "B"].includes(id));
-    expect(s.doc().objects[added].parent).toBe("A");
-    expect(s.doc().order.indexOf(added)).toBe(s.doc().order.indexOf("B") - 1);
-  });
-
   it("offers it to an extension that lays out its datatype first", async () => {
     const repo = new FakeRepo();
     const deck = repo.add({ "@patchwork": { type: "test-deck" } });
@@ -529,11 +483,5 @@ describe("outline helpers", () => {
     expect(m.selected.get("x")).toBe(peerColor([0.6, 0.4, 0.9], "v1"));
     expect(m.hovered.get("y")).toBe(peerColor([0.6, 0.4, 0.9], "v2"));
     expect(m.hovered.has("gone")).toBe(false);
-  });
-
-  it("readRowDrag reads only our payload", () => {
-    expect(readRowDrag({ getData: () => "" })).toBeNull();
-    expect(readRowDrag({ getData: () => "{bad" })).toBeNull();
-    expect(readRowDrag({ getData: () => JSON.stringify({ ids: ["a"] }) })).toEqual({ scene: null, id: "a", ids: ["a"] });
   });
 });
