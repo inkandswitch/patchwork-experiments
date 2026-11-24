@@ -149,7 +149,7 @@ try {
   await settled();
 
   // ── the parts bin: a drawer tab, opened from the toolbar ──
-  await click(await P(`rect('.toolbar [data-command="parts"]')`));
+  await click(await P(`rect('.stage-panel-rail [data-command="parts"]')`));
   check("A opens Parts from the toolbar", await until("count('.stage-drawer [data-panel=\"parts\"]') === 1", 4000), await P("count('.stage-drawer')"));
   await settled();
   const bin = await P("binParts('a')");
@@ -226,8 +226,8 @@ try {
   {
     // the bin put away, and the inspector shut (it stays open once a selection opened it: STAGE.md
     // Decisions 6), so the drawer is empty to start from
-    await click(await P(`rect('.toolbar [data-command="parts"]')`));
-    if ((await P(`rect('.toolbar [data-command="inspector"][aria-pressed="true"]')`)) != null) await click(await P(`rect('.toolbar [data-command="inspector"]')`));
+    await click(await P(`rect('.stage-panel-rail [data-command="parts"]')`));
+    if ((await P(`rect('.stage-panel-rail [data-command="inspector"][aria-pressed="true"]')`)) != null) await click(await P(`rect('.stage-panel-rail [data-command="inspector"]')`));
     check("the drawer is empty to start from (bin put away, inspector shut)", await until("count('.stage-drawer') === 0", 3000), await P("count('.stage-drawer')"));
     await b.rest(300);
     const canvas0 = await P("canvas('a')");
