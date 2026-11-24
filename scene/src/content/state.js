@@ -43,6 +43,7 @@ const freeze = (o) => Object.freeze(o);
  *   building     null, or { by }: who is building it
  *   behind       built from source (or dependency) changes this replica lacks
  *   lastBuilt    what this replica last built it from (staleness.js builtInputsKey), or null
+ *   contains     (url, heads) → this replica has those heads of that dependency (an older record is rebuilt)
  *   deps         { notReady: urls not loaded (or not at their fixed heads), failed: urls that
  *                failed to load, loading: urls on their first load within the wait }
  *   failure      null, or { error, retrying }: a build of the current inputs failed
@@ -74,7 +75,7 @@ export function contentState(k) {
   if (pending.length) return freeze({ state: "waiting", on: Object.freeze(pending) });
   const stale = (hold) => freeze({ state: "stale", reason, hold });
   if (held.length) return stale("unavailable");
-  if (isContested(k.render, k.source, k.lastBuilt)) return stale("contested");
+  if (isContested(k.render, k.source, k.lastBuilt, k.contains)) return stale("contested");
   if (k.render.pinned) return stale("pinned");
   if (deps.loading?.length) return freeze({ state: "waiting", on: Object.freeze([...deps.loading]) });
   return stale(null);

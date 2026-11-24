@@ -259,9 +259,10 @@ function network(time, peers, choose, rank, hooks = {}) {
  *   ties               which writer's actor id wins a tie between concurrent writes (a choice)
  *   fingerprint        the provider fingerprints its source (by `size`), so a build is judged by that, not by heads
  *   leaves             this writer closes the scene once it has written a result
+ *   dep                the source names a dependency its build reads; `edit` edits that instead of the source
  */
 async function run(sc, pick) {
-  const { writers, readers = [], atBound = false, built = false, stale = false, edit = null, join = null, freeze = false, throttle = false, block = false, force = null, fail = 0, versions = {}, failsV = null, lengths = [SHORT, LONG], pinned = false, lose = 0, partition = false, lostGLB = false, ties = false, fingerprint = false, leaves = null } = sc;
+  const { writers, readers = [], atBound = false, built = false, stale = false, edit = null, join = null, freeze = false, throttle = false, block = false, force = null, fail = 0, versions = {}, failsV = null, lengths = [SHORT, LONG], pinned = false, lose = 0, partition = false, lostGLB = false, ties = false, fingerprint = false, leaves = null, dep = false } = sc;
   const time = manualTime({ frameMs: FRAME, yieldTo: () => new Promise((r) => setImmediate(r)) });
   const peers = [...writers, ...readers];
   const order = ties && pick(2) === 1 ? [...peers].reverse() : peers;
@@ -284,12 +285,12 @@ async function run(sc, pick) {
   const lastWord = new Map(); // peer → when it last spoke
   // the price: a replica drawing a result older than one it drew before (a regression), and for how long
   const drawn = new Map(); // peer → { max: [v, pv], since: when its regression began, or null }
-  const ageOf = (result) => [versionOfResult(result), result?.builtFrom?.providerVersion ?? -1];
-  const older = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+  // a result's age: [source version, dependency version, provider version], compared in that order
+  const ageOf = (result) => [versionOfResult(result), depUrl && result?.builtFrom ? net.versionOf(depUrl, result.builtFrom.deps?.[depUrl]) : -1, result?.builtFrom?.providerVersion ?? -1];
   log.regressions = 0;
   log.longestRegression = 0;
   function shown(peer, result) {
-    const d = drawn.get(peer) ?? drawn.set(peer, { max: [-1, -1], since: null }).get(peer);
+    const d = drawn.get(peer) ?? drawn.set(peer, { max: [-1, -1, -1], since: null }).get(peer);
     const age = ageOf(result);
     if (older(age, d.max)) {
       if (d.since == null) (d.since = time.now()), log.regressions++;
@@ -300,6 +301,7 @@ async function run(sc, pick) {
   }
   const seenWrites = new Map(); // peer → the result writes its replica has
   let sourceUrl = null;
+  let depUrl = null;
   let renderUrl = null;
   const versionOfResult = (result) => (result?.builtFrom ? net.versionOf(sourceUrl, result.builtFrom.heads) : -1);
   const net = network(time, peers, choose, rank, {
@@ -317,7 +319,9 @@ async function run(sc, pick) {
       if (vOld > vNew) log.replaced.push({ at: peer, by: op.id[1], vOld, vNew });
     },
   });
-  sourceUrl = net.add({ "@patchwork": { type: "thing" }, size: 1 });
+  // dep: the source names a doc its build reads (a dependency), which `edit` then edits in place of the source
+  depUrl = dep ? net.add({ "@patchwork": { type: "part" }, n: 1 }) : null;
+  sourceUrl = net.add({ "@patchwork": { type: "thing" }, size: 1, ...(dep ? { dep: depUrl } : {}) });
   const glb = encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0] }] });
   const seed = { ...newRenderDoc({ title: "Thing", parent: sourceUrl, providerId: "thing", params: {} }), pinned };
   const result = (glbUrl) => ({ glbUrl, builtFrom: { heads: net.handle(peers[0], sourceUrl).heads(), fingerprint: null, paramsKey: "{}", deps: {} }, bounds: null, builtAt: 0 });
@@ -355,10 +359,11 @@ async function run(sc, pick) {
       version: versions[peer],
       module: {
         ...(fingerprint ? { fingerprint: (doc) => `size:${doc.size}` } : {}),
+        ...(dep ? { dependencies: (doc) => [doc.dep] } : {}),
         build: ({ signal }) =>
           new Promise((resolve, reject) => {
             const v = net.versionOf(sourceUrl, net.handle(peer, sourceUrl).heads());
-            const b = { peer, v, pv: versions[peer], at: time.now() };
+            const b = { peer, v, dv: depUrl ? net.versionOf(depUrl, net.handle(peer, depUrl).heads()) : -1, pv: versions[peer], at: time.now() };
             log.builds.push(b);
             building.set(peer, v);
             startSnap.set(peer, resultOf(net.handle(peer, renderUrl).doc()));
@@ -409,7 +414,7 @@ async function run(sc, pick) {
     edited = true;
     const live = writers.filter((w) => managers.has(w) && !net.frozen(w));
     const by = live[pick(live.length)];
-    if (by) net.handle(by, sourceUrl).change((d) => (d.size = 2));
+    if (by) net.handle(by, dep ? depUrl : sourceUrl).change((d) => (dep ? (d.n = 2) : (d.size = 2)));
   };
   for (const p of peers) if (p !== join) open(p);
   let forced = force !== "start";
@@ -436,20 +441,26 @@ async function run(sc, pick) {
   const r = net.handle(writers[0], renderUrl).doc();
   log.whole = resultOf(r) === resultOf(seed) || log.writes.some((w) => w.value === resultOf(r));
   const heads = net.handle(writers[0], sourceUrl).heads();
-  log.fresh = (r.result?.builtFrom?.heads ?? []).join() === heads.join();
+  log.fresh = (r.result?.builtFrom?.heads ?? []).join() === heads.join() && (!depUrl || (r.result?.builtFrom?.deps?.[depUrl] ?? []).join() === net.handle(writers[0], depUrl).heads().join());
   log.failedNow = r.failure != null && writers.some((w) => r.failure.inputs === inputsKey(r, { heads, fingerprint: null, deps: {}, providerVersion: versions[w] }));
   log.crossed = log.writes.filter((a, i) => log.writes.some((b, j) => j > i && a.peer !== b.peer && !a.seen.has(b.hash) && !b.seen.has(a.hash))).length;
   log.end = time.now();
   for (const d of drawn.values()) if (d.since != null) log.longestRegression = Math.max(log.longestRegression, log.end - d.since);
   // waste: builds (that didn't fail) beyond one per distinct inputs
   const ok = log.builds.filter((b) => !b.failing);
-  log.waste = ok.length - new Set(ok.map((b) => `${b.v}|${b.pv}`)).size;
+  log.waste = ok.length - new Set(ok.map((b) => `${b.v}|${b.dv}|${b.pv}`)).size;
   log.fault = !!(log.lost || log.vanished || log.blocked.length || throttle || partition);
   log.gone = [...gone];
   log.states = Object.fromEntries([...said].map(([p, st]) => [p, st]));
   for (const m of managers.values()) m.dispose();
   return log;
 }
+
+/** Is age a ([source, dependency, provider] versions) older than age b? */
+const older = (a, b) => {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];
+  return false;
+};
 
 /** Every run of `scenario`: depth first over its choices, at most `bound` choice points branching per run. */
 async function everyRun(scenario, bound) {
@@ -531,7 +542,7 @@ function check(sc, log) {
   // C4: a result in the doc is one writer's, whole; a write replaces only the result its writer had as its build began,
   // and never one fresh for, or ahead of, the inputs its build read, as its writer saw the doc (unless a person asked)
   for (const w of log.writes) if (w.start !== undefined && w.before !== w.start) out.push(`C4: ${w.peer} wrote over a result that arrived during its build`);
-  for (const w of log.writes) if (!sc.force && !(w.beforeAge[0] < w.age[0] || (w.beforeAge[0] === w.age[0] && w.beforeAge[1] < w.age[1]))) out.push(`C4: ${w.peer} wrote [${w.age}] over [${w.beforeAge}]`);
+  for (const w of log.writes) if (!sc.force && !older(w.beforeAge, w.age)) out.push(`C4: ${w.peer} wrote [${w.age}] over [${w.beforeAge}]`);
   // C5: it ends merged alike everywhere, built from the current inputs (or failed for them, or pinned), nobody saying a build is in progress
   if (!log.converged) out.push(`C5: the replicas didn't converge`);
   if (!log.whole) out.push(`C4: the result is no one writer's whole`);
@@ -542,7 +553,7 @@ function check(sc, log) {
   // retries: failing inputs are tried at most 1 + RETRY_BACKOFF_MS.length times in all, and once given up nobody says it's retrying
   if (sc.fail || sc.failsV != null) {
     const byInputs = new Map();
-    for (const b of log.builds) byInputs.set(`${b.v}|${b.pv}`, (byInputs.get(`${b.v}|${b.pv}`) ?? 0) + 1);
+    for (const b of log.builds) byInputs.set(`${b.v}|${b.dv}|${b.pv}`, (byInputs.get(`${b.v}|${b.dv}|${b.pv}`) ?? 0) + 1);
     if (timely && !log.vanished) for (const [k, n] of byInputs) if (n > 1 + RETRY_BACKOFF_MS.length) out.push(`retries: inputs ${k} built ${n} times`);
     for (const [p, st] of Object.entries(log.states)) if (st?.state === "failed" && st.retrying) out.push(`retries: ${p} still says retrying after it was given up`);
   }
@@ -585,6 +596,7 @@ describe("who builds: the lock, on a finite model (C1–C5)", () => {
     ["two messages may be lost, every other at the bound", { writers: ["a", "b"], atBound: true, lose: 2, edit: "build", ties: true }, 13],
     ["the writers can't hear each other, their changes still syncing; either edits", { writers: ["a", "b"], partition: true, edit: "build", ties: true }, 10, { crosses: true }],
     ["three writers", { writers: ["a", "b", "c"] }, 10],
+    ["a dependency; the writers can't hear each other and either edits the dependency; a closes the scene once it has written", { writers: ["a", "b"], partition: true, dep: true, edit: "build", leaves: "a", lengths: [200, 100], ties: true }, 10],
     ["a fingerprinting provider; the writers can't hear each other and either edits; a closes the scene once it has written", { writers: ["a", "b"], partition: true, fingerprint: true, edit: "build", leaves: "a", lengths: [200, 100], ties: true }, 10],
   ];
   for (const [name, scenario, bound, { crosses = false } = {}] of scenarios) {

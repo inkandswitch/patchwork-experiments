@@ -134,6 +134,14 @@ describe("peers that disagree about dependencies", () => {
     expect(isContested(r, { heads: ["s"], deps: { "automerge:x": ["x1"] } }, mine)).toBe(true); // we're behind: wait
     expect(isContested(withDeps({ "automerge:x": ["x1"] }), { heads: ["s"], deps: { "automerge:x": ["x3"] } }, mine)).toBe(false);
   });
+  it("is not contested by an older dependency record: one at heads this replica contains is rebuilt; a keyed one can't be ordered", () => {
+    const mine = currentInputsKey({ params: {} }, { heads: ["s"], deps: { "automerge:x": ["x2"] } });
+    const has = (url, heads) => url === "automerge:x" && heads.every((h) => ["x1", "x2"].includes(h));
+    expect(isContested(withDeps({ "automerge:x": ["x1"] }), { heads: ["s"], deps: { "automerge:x": ["x2"] } }, mine, has)).toBe(false);
+    expect(isContested(withDeps({ "automerge:x": ["x3"] }), { heads: ["s"], deps: { "automerge:x": ["x2"] } }, mine, has)).toBe(true); // heads not here: ahead, or a rival
+    const keyed = currentInputsKey({ params: {} }, { heads: ["s"], deps: { "automerge:x": ["fp:b"] } });
+    expect(isContested(withDeps({ "automerge:x": ["fp:a"] }), { heads: ["s"], deps: { "automerge:x": ["fp:b"] } }, keyed, () => true)).toBe(true);
+  });
   it("covers a fingerprint war where the deps differ too", () => {
     const mine = currentInputsKey({ params: {} }, { heads: ["s"], deps: {} });
     const r = withDeps({ "automerge:x": ["x1"] }, "v2");
