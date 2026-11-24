@@ -24,7 +24,7 @@ export const HELP = {
 
 /**
  * The keys each machine's pad reads, by code, for a held tool to declare
- * (scene/STAGE.md, "The held tool": its declared keys are its own).
+ * (scene/STAGE.md, "Hands": its declared keys are its own).
  */
 export const KEYS = {
   doom: [

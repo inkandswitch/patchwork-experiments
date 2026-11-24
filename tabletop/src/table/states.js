@@ -12,7 +12,7 @@
 // once each write `shown`; the merge keeps one, the same on every peer
 // (last writer wins).
 //
-// What it shows is the stage's display (scene/STAGE.md, "Display"): the
+// What it shows is the stage's display (scene/API.md, "Display"): the
 // object's own file is the look it was laid out in, and the look it's
 // turned to is shown over it (keep/rule.js showLooks: a game's look is
 // drawn the first time anyone is shown it, table/faces.js, and kept in the

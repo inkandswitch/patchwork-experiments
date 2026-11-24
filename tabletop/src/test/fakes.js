@@ -357,7 +357,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         const h = setTimeout(fn, ms);
         return () => clearTimeout(h);
       },
-      // the doc's ephemeral side (STAGE.md, "`api`")
+      // the doc's ephemeral side (API.md, "`api`")
       channel: {
         viewer,
         session,
@@ -417,7 +417,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       worldOf,
       ops,
       content: (id) => content[id] ?? null,
-      // the other extensions' fields (STAGE.md api.collect): what a test puts in view.collected, as one extension's
+      // the other extensions' fields (API.md api.collect): what a test puts in view.collected, as one extension's
       collect: (name) => (view.collected?.[name] === undefined ? [] : [{ id: "other", value: view.collected[name] }]),
       loop(fn) {
         view.loops.push(fn);
