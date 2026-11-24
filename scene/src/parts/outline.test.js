@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 describe("the inspector's tree", () => {
-  it("roots open, deeper groups closed, per-viewer state in localStorage; ←/→ on a focused row", async () => {
+  it("roots open, deeper groups closed, per-viewer state in the viewer's prefs; ←/→ on a focused row", async () => {
     const doc = vessel();
     await mount(doc);
     expect(rows()).toEqual(["vessel", "body", "bhd", "battery"]);
@@ -78,7 +78,7 @@ describe("the inspector's tree", () => {
     expect(row("body").dataset.depth).toBe("1");
     row("body").querySelector(".twisty").click();
     expect(rows()).toEqual(["vessel", "body", "hull", "deck", "bhd", "battery"]);
-    expect(JSON.parse(localStorage.getItem(`scene-outline:${s.handle.url}`))).toEqual({ body: true });
+    expect(s.api("scene.prefs").use("prefs").get("outline")).toEqual({ [s.handle.url]: { body: true } });
     expect(s.doc().objects.body).not.toHaveProperty("expanded"); // never in the doc
     row("vessel").querySelector(".row-main").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
     expect(rows()).toEqual(["vessel", "battery"]);
@@ -256,7 +256,7 @@ describe("the inspector's tree", () => {
     expect(s.local.get().selected).toBe(added);
     await pass();
     expect(row(added)).toBeTruthy(); // body opened to show it
-    expect(JSON.parse(localStorage.getItem(`scene-outline:${s.handle.url}`))[added]).toBe(true);
+    expect(s.api("scene.prefs").use("prefs").get("outline")[s.handle.url][added]).toBe(true);
   });
 
   it("Remove runs scene.select's command", async () => {
