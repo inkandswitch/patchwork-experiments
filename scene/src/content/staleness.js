@@ -117,13 +117,17 @@ export function currentInputsKey(render, source) {
  * lists different dependencies, or dependency heads we don't have (yet).
  * Auto-rebuilding then would ping-pong between the two peers forever (or put
  * an older build over a newer one); the caller should leave it to a manual
- * rebuild. It stops being contested as soon as anything we read moves.
+ * rebuild. It stops being contested as soon as anything we read moves. A
+ * build whose own record names other source heads or params than we read
+ * is an older (or other) build, never a rival of ours, however it got there
+ * (a merge of two writes keeps either): it is rebuilt.
  */
 export function isContested(render, source, lastBuilt) {
   const built = render?.result?.builtFrom;
   if (!built || lastBuilt == null) return false;
   const reason = staleReason(render, source);
   if (reason !== "fingerprint" && reason !== "deps") return false;
+  if (built.paramsKey !== paramsKey(render.params) || !sameHeads(built.heads, source?.heads)) return false;
   return currentInputsKey(render, source) === lastBuilt;
 }
 

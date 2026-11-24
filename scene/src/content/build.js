@@ -4,8 +4,8 @@
 // bounds, builtAt }), so a merge of two writes keeps one writer's whole; a
 // failure is likewise `failure: { error, inputs }`. The write fence: the
 // result is written by compare-and-set, only over the result the render had
-// as this build began (one someone committed meanwhile is never replaced),
-// and only if `mayCommit` still says so as it is written. A result that
+// as this build began (one someone committed meanwhile is never replaced);
+// who builds is the lock's word (lock.js), and gates nothing here. A result that
 // arrives after the GLB file doc is made and before the write leaves that
 // file doc orphaned, referenced by nothing.
 // A build whose bytes are identical to the current GLB's keeps the current file
@@ -126,7 +126,6 @@ export function glbFileDoc(title, glb) {
  *        dependency that finished loading during the build (build() read it)
  * @param {AbortSignal} o.signal  aborts when the result is no longer wanted; build() is handed it
  * @param {() => number} o.now  when it was built (builtAt), on the stage's time
- * @param {() => Promise<boolean>} [o.mayCommit]  asked just before the write: false, it isn't written
  * @param {string} [o.inputs]  what a failure is recorded against (failure.inputs): the caller's
  *        key for these exact inputs (staleness.js inputsKey)
  * @returns {Promise<{ ok: true, glbUrl, builtFrom, meta, reused?: boolean } | { ok: false, error: string, aborted?: true, fenced?: true }>}
@@ -134,7 +133,7 @@ export function glbFileDoc(title, glb) {
  *        AbortError); nothing is written, and it isn't an error.
  *        fenced: built, but the fence kept it from being written; not an error either
  */
-export async function runBuild({ repo, renderHandle, sourceHandle, provider, deps = {}, depsAfter, signal, now, mayCommit = async () => true, inputs = null }) {
+export async function runBuild({ repo, renderHandle, sourceHandle, provider, deps = {}, depsAfter, signal, now, inputs = null }) {
   const render = renderHandle.doc();
   const source = sourceHandle.doc();
   const impl = provider?.module;
@@ -168,8 +167,8 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     const bounds = validBounds(result.meta?.bounds);
     const depHeads = normalizeDeps(typeof depsAfter === "function" ? depsAfter(depsBefore) ?? depsBefore : depsBefore);
 
-    // the fence: nothing is written over a build committed while this one ran, nor once the caller says no
-    if (fenced() || !(await mayCommit()) || fenced()) return { ok: false, fenced: true, error: "fenced" };
+    // compare-and-set: nothing is written over a result committed while this one ran
+    if (fenced()) return { ok: false, fenced: true, error: "fenced" };
     signal.throwIfAborted();
     const current = renderHandle.doc()?.result;
 

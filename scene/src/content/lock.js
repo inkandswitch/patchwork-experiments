@@ -16,16 +16,12 @@
 // window. The maker of a render, building it the first time, holds it
 // without claiming: nobody else knows of it.
 //
-// Timing decides only who builds. What is written is decided by the write
-// fence (render-manager.js, build.js): a result is written by compare-and-set
-// (only over the result its writer had as its build began) and only if its
-// writer has heard no other peer hold or build the render since; a holder
-// silent past LEASE_MS (a frozen tab, a blocked thread) listens RECHECK_MS
-// before it speaks or writes. If it heard anyone it lets the render go,
-// dropping a build still running; a finished one it announces ("build"),
-// listens RECHECK_MS more, and writes by compare-and-set alone unless a lower
-// id said it holds or builds meanwhile (so builds that each block their page
-// past LAPSE_MS still get written).
+// The lock is advisory: it decides who builds, and gates nothing written. A
+// finished build is written by compare-and-set (build.js): only over the
+// result its writer had as its build began. Two writes made without seeing
+// each other merge to one writer's whole result, and every replica judges
+// that result fresh or stale by what it records, so an older one that wins
+// is rebuilt by the ordinary path.
 //
 // The one assumption: every message and change reaches every peer within
 // REACH_MS (D). Each window, derived from D and the heartbeat H:
@@ -34,13 +30,6 @@
 //               margin 2D.
 //   LAPSE_MS  = 3H: a live holder's heartbeats arrive at most H + D apart; with
 //               one lost, 2H + D; needs > 2H + D (D < H), margin H − D.
-//   LEASE_MS  = LAPSE_MS − H − D: a holder that has said it holds within this
-//               long speaks and writes at once (the others can't have let its
-//               claim lapse, one heartbeat lost or not); past it, it listens first.
-//   RECHECK_MS = 2D: hears any claim or hold sent before it began listening
-//               (needs > D), and what it then says reaches a peer that claimed
-//               meanwhile before that one's window closes (needs < CLAIM_MS − D
-//               = 3D); margin D each side.
 
 /** How often a holder says it still holds the render (ms). */
 export const HEARTBEAT_MS = 2_000;
@@ -50,10 +39,6 @@ export const REACH_MS = 250;
 export const CLAIM_MS = 4 * REACH_MS;
 /** A claim not heard again for this long has lapsed: its peer vanished. */
 export const LAPSE_MS = 3 * HEARTBEAT_MS;
-/** How recently a holder must have said it holds to speak or write without first listening again. */
-export const LEASE_MS = LAPSE_MS - HEARTBEAT_MS - REACH_MS;
-/** How long a holder whose lease ran out listens before it speaks or writes. */
-export const RECHECK_MS = 2 * REACH_MS;
 
 /** Is a heard claim ({ phase, at }) still live at `now`? */
 export const live = (c, now) => !!c && now - c.at < LAPSE_MS;

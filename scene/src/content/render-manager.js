@@ -23,7 +23,7 @@ import { pageBus } from "../stage/presence.js";
 import { atFromBuilt, builtInputsKey, debounceFor, inputsKey, staleReason } from "./staleness.js";
 import { atKey, knowsHeads, normalizeAt, pinnedRepo, sortedHeads, viewAt } from "../shared/versions.js";
 import { contentState, wantsBuild } from "./state.js";
-import { HEARTBEAT_MS, LAPSE_MS, LEASE_MS, RECHECK_MS, live, lockStep } from "./lock.js";
+import { HEARTBEAT_MS, LAPSE_MS, live, lockStep } from "./lock.js";
 
 /** The lock's message on a render doc's channel: { type, from, n, phase: "claim" | "build" | "hold" | "done" } (`n` counts up from each sender). */
 export const CLAIM_MSG = "scene-render:claim";
@@ -85,14 +85,9 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
     for (const url of [entry.sourceUrl, entry.renderUrl]) want ? announce.hold(url) : announce.release(url);
   }
 
-  /**
-   * Say a lock message on the render's channel (and to this page's other
-   * managers). A holder silent past its lease (a frozen tab, a blocked
-   * thread) says nothing but "done" until it has `listened` (startRecheck).
-   */
-  function say(entry, phase, listened = false) {
+  /** Say a lock message on the render's channel (and to this page's other managers). */
+  function say(entry, phase) {
     if (!mayWrite(entry)) return;
-    if (entry.holding && phase !== "done" && !listened && (entry.recheck || time.now() - entry.lastSaid > LEASE_MS)) return void startRecheck(entry);
     entry.lastSaid = time.now();
     const msg = { type: CLAIM_MSG, from: self, n: ++spoken, phase };
     try {
@@ -101,18 +96,6 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       // the channel is best effort; a lost message is a peer that seems to vanish
     }
     entry.bus?.deliver(msg);
-  }
-
-  /**
-   * A holder silent past its lease: the others may have let its claim lapse,
-   * and another may claim or hold the render now. It listens RECHECK_MS
-   * before it speaks or writes; evaluate() then lets the render go if it
-   * heard anyone (recheck.waiters: a write waiting on it).
-   */
-  function startRecheck(entry) {
-    if (entry.recheck) return;
-    entry.recheck = { at: time.now() + RECHECK_MS, waiters: [] };
-    wakeAt(entry, entry.recheck.at);
   }
 
   /** Evaluate again at `at` (the earliest asked for wins until it fires). */
@@ -298,34 +281,6 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       if (wanted && f?.retryAt != null) wakeAt(entry, f.retryAt);
     };
     if (entry.holding) {
-      // silent past its lease: it listens first (startRecheck), then lets the render go if it heard anyone at all
-      if (!entry.recheck && now - entry.lastSaid > LEASE_MS) startRecheck(entry);
-      if (entry.recheck) {
-        if (now < entry.recheck.at) return void wakeAt(entry, entry.recheck.at);
-        const { waiters, since } = entry.recheck;
-        entry.recheck = null;
-        if (since != null) {
-          // it said it builds and listened again: it writes its finished build (compare-and-set) and lets go, unless a
-          // lower id said it holds or builds meanwhile; then it lets go without writing
-          const lower = [...entry.heard].some(([peer, c]) => c.phase !== "claim" && c.at >= since && live(c, now) && peer < self);
-          release(entry);
-          for (const w of waiters) w(lower ? "no" : "last");
-          return;
-        }
-        const heard = [...entry.heard].some(([, c]) => live(c, now));
-        if (heard && waiters.length) {
-          // it heard someone, and its build has finished: it says it builds (a peer that began a build before hearing it won't
-          // write: the fence's second condition) and listens RECHECK_MS more, its write's own window
-          say(entry, "build", true);
-          entry.recheck = { at: now + RECHECK_MS, waiters, since: now };
-          return void wakeAt(entry, entry.recheck.at);
-        }
-        // it heard someone and its build is still running (or it has none): it is dropped and the render let go
-        if (heard) entry.run?.controller.abort(), release(entry);
-        else say(entry, entry.run ? "build" : "hold", true);
-        for (const w of waiters) w(heard ? "no" : "go");
-        if (!entry.holding) return;
-      }
       // two holders after a split (a lost message): the higher id lets go once it isn't building
       const others = [...entry.heard].filter(([, c]) => c.phase !== "claim" && live(c, now));
       if (others.some(([peer]) => peer < self) && !entry.run) return release(entry);
@@ -337,6 +292,8 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
         if (looseKey(render, source, entry.run.pending) !== entry.run.loose && wantsBuild(want) && debounced) entry.run.controller.abort();
         return;
       }
+      // another holder still building (a frozen holder woke beside its successor): it waits for that build to end
+      if (due && others.some(([, c]) => c.phase === "build")) return void waits();
       if (due) return void build(entry, key, entry.forceNext);
       if (wanted) return void (waits(), (entry.idleSince = null));
       // it has wanted nothing for HEARTBEAT_MS: let the render go
@@ -358,7 +315,7 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       entry.mine = null;
       entry.holding = true;
       entry.idleSince = null;
-      say(entry, "hold", true); // (it has just heard all there is: its claim stood, or nobody else knows of the render)
+      say(entry, "hold");
       return void build(entry, key, entry.forceNext);
     }
     if (step.yielded) (entry.mine = null), say(entry, "done");
@@ -415,17 +372,6 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       signal: controller.signal,
       now: time.now,
       inputs: key, // (a failure is recorded against them: noteFailure)
-      // the write fence's second condition (runBuild's compare-and-set is the first): it still holds the render, having
-      // listened first if silent past its lease, and has heard no other peer hold or build it since this build began
-      mayCommit: async () => {
-        if (!entry.holding) return false;
-        if (!entry.recheck && time.now() - entry.lastSaid > LEASE_MS) startRecheck(entry);
-        // ("last": it heard someone while it listened, announced this finished build and heard no lower id: it writes, and has let go)
-        const verdict = entry.recheck ? await new Promise((r) => entry.recheck.waiters.push(r)) : "go";
-        if (verdict === "last") return !entry.dead && !disposed && !controller.signal.aborted;
-        if (verdict === "no") return false;
-        return !entry.dead && !disposed && entry.holding && !controller.signal.aborted && !(entry.foreignAt > run.startedAt);
-      },
     });
     entry.run = null;
     if (entry.dead || disposed) return;
@@ -482,12 +428,10 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       depsAsked: null,
       heard: new Map(), // peer → its latest claim { phase, at }
       heardN: new Map(), // peer → the latest of its messages heard (its `n`)
-      foreignAt: -Infinity, // when another peer was last heard holding or building the render
       mine: null, // this peer's claim { at }, while it waits for a rival
       holding: false, // this peer holds the render
       idleSince: null, // holding, it has wanted nothing since
       lastSaid: -Infinity, // when it last spoke on the render's channel
-      recheck: null, // holding, silent past its lease: { at, waiters, since? }, when it will have listened long enough (since: it announced a finished build)
       run: null, // the build in flight: { key, controller, startedAt, pending, loose }
       wake: null,
       wantKey: null,
@@ -537,10 +481,9 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
         if (m.phase === "done") entry.heard.delete(m.from);
         else if (m.phase === "claim" || m.phase === "build" || m.phase === "hold") {
           entry.heard.set(m.from, { phase: m.phase, at: time.now() });
-          if (m.phase !== "claim") entry.foreignAt = time.now();
           // a claim this peer beats is answered at once, so the claimer hears it within its window
-          else if (entry.holding) say(entry, entry.run ? "build" : "hold");
-          else if (entry.mine && self < m.from) say(entry, "claim");
+          if (m.phase === "claim" && entry.holding) say(entry, entry.run ? "build" : "hold");
+          else if (m.phase === "claim" && entry.mine && self < m.from) say(entry, "claim");
         }
         evaluate(entry);
       };
@@ -585,7 +528,6 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
     if (!entry) return;
     if (entry.holding || entry.mine) say(entry, "done");
     entry.dead = true;
-    for (const w of entry.recheck?.waiters ?? []) w("go");
     announceEntry(entry);
     entry.wake?.cancel();
     entry.run?.controller.abort();

@@ -817,9 +817,9 @@ describe("runBuild", () => {
     expect(repo.created).toEqual([]);
   });
 
-  // C4: the write fence
-  it("never writes over a build committed while it ran, the same inputs or others; nor when its caller says no", async () => {
-    for (const theirs of [{ heads: "same" }, { heads: ["someoldhead"] }, null]) {
+  // C4: compare-and-set
+  it("never writes over a result committed while it ran, the same inputs or others", async () => {
+    for (const theirs of [{ heads: "same" }, { heads: ["someoldhead"] }]) {
       const repo = new FakeRepo();
       const source = repo.add({ title: "s" });
       const render = repo.add(newRenderDoc({ title: "s", parent: source.url, providerId: "p", params: { size: 1 } }));
@@ -830,10 +830,10 @@ describe("runBuild", () => {
           });
         return { kind: "glb", glb: tinyGLB() };
       };
-      const res = await runBuild({ signal: signal(), now: () => 1, repo, renderHandle: render, sourceHandle: source, provider: { id: "p", params: [], module: { build } }, mayCommit: async () => !!theirs });
+      const res = await runBuild({ signal: signal(), now: () => 1, repo, renderHandle: render, sourceHandle: source, provider: { id: "p", params: [], module: { build } } });
       expect(res).toMatchObject({ ok: false, fenced: true });
       expect(repo.created).toEqual([]); // no orphan GLB doc
-      expect(render.doc().result?.glbUrl ?? null).toBe(theirs ? "automerge:theirs" : null);
+      expect(render.doc().result.glbUrl).toBe("automerge:theirs");
     }
   });
 
