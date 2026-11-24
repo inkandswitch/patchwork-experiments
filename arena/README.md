@@ -22,12 +22,16 @@ It doesn't depend on the scene package: it writes objects and traits in the
 shapes the scene documents (scene/STAGE.md), and the scene finds it in the
 plugin registry by its traits.
 
-## Traits
+## Conventions
+
+What other packages may rely on (scene/CONVENTIONS.md lists them).
 
 | trait | on | |
 |---|---|---|
 | `arena.level` | the scene | `{ look?: "arena" \| "sky" }`: the scene is a level. `look: "arena"` gives it the arena's sky, haze and low sun in play (the stage's atmosphere); `look: "sky"` the sky alone, for a level whose light is its own (an imported map with its light baked in: a sun would light nothing, and haze would only fade it); without either the scene keeps its own |
 | `arena.target` | an object | `{}` standing. Knocked over: `{ down: { by: <viewer>, at: <ms> }, stand: { rotation } }` |
+| `arena.spawn` (a part) | `at` | looked up by id (`registry("scene:part").load("arena.spawn")`, module `default` or itself): its `create(ctx, at)` (scene EDITOR.md, "Parts") makes the scene a level (`arena.level: {}` if it has none) and puts a pad carrying the walk package's `walk.spawn` (`{}`) at `at`, under `at.parent`, in one change; it returns the pad's id, or null when the parent went meanwhile. Doom's layout makes a map's player 1 start with it |
+
 A spawn point is the walk package's trait, `walk.spawn` (where the walk body
 starts); arena's spawn part is a pad that carries it.
 

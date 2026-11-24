@@ -1,6 +1,6 @@
 // Stand-ins, for tests, for what a table meets only through the stage and
 // the registry: whoever owns seats (the seats package), made the way the
-// contract says (scene/CONVENTIONS.md, "Seats"), under a trait of the stand-in's
+// contract says (seats/README.md, "Conventions"), under a trait of the stand-in's
 // own, and a running keeper's `keeper` contribution. If a test passes with
 // these, the table depends on the conventions and not on who provides them.
 
