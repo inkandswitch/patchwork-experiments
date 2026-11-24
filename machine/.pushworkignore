@@ -1,4 +1,0 @@
-# 28 MB IWADs fetched for tests, and probe output: not part of the package.
-engines/doom/test/*.wad
-bench/browser/out
-bench/patchwork/out
