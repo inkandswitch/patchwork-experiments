@@ -163,8 +163,8 @@ try {
       d.objects[wc].name = "Hatch frame";
       delete d.objects[wc].traits[EXIT];
     });
-    await loaded(() => wapi.sceneBox());
-    const wBox = JSON.parse(JSON.stringify(wapi.sceneBox()));
+    await loaded(() => wapi.box(null));
+    const wBox = JSON.parse(JSON.stringify(wapi.box(null)));
     unmount.w();
     hosts.w.style.display = "none";
 
@@ -176,8 +176,8 @@ try {
     ids.fCompanionway = await putPart(fapi, "sailing.companionway", { parent: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } });
     if (!ids.fCompanionway) return { error: "no companionway part in F", errors };
     ids.fHatch = withTrait(docs.f, SLIDE);
-    await loaded(() => fapi.sceneBox());
-    const fBox = JSON.parse(JSON.stringify(fapi.sceneBox()));
+    await loaded(() => fapi.box(null));
+    const fBox = JSON.parse(JSON.stringify(fapi.box(null)));
     dbg.f.view.select(null);
 
     // S: Ship at anchor, through the start screen
