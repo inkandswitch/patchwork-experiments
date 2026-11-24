@@ -8,8 +8,8 @@ import { docKey, parseAutomergeUrl } from "../dnd.js";
 export const DEG = 180 / Math.PI;
 const NBSP = " ";
 
-/** What the stage routed an object's content to, from its load state (api.loadState): "file", "built" or null. */
-export const contentKind = (load) => load?.content ?? null;
+/** What the stage routed an object's content to (api.content(id).route): "file", "built", "scene" or null. */
+export const contentKind = (content) => content?.route ?? null;
 
 /** An infoUrl / sourceUrl that is really an automerge URL, else null. */
 export function docUrl(v) {
@@ -97,26 +97,26 @@ export function formatCount(n) {
 /**
  * The status line under the inspector: [{ kind: "notes" | "error" | "warn", text }].
  *
- * For a file (a GLB shown as it is, `load.content` "file"): triangles, draw
+ * For a file (a GLB shown as it is, routed "file"): triangles, draw
  * calls, KB, loading / not loaded (hidden), and its load error. Otherwise
  * (built, or a provider this viewer doesn't have): build notes, a missing
  * provider, a contested build, and what was built that can't be shown (the
  * build's own errors are its controls' to show).
  *
  * @param {object} o  the object
- * @param {{ status?: { state, text, title } | null, load?: object | null, content?: object | null, shown?: boolean }} at
- *   load: api.loadState(id) (its `state`: README.md, "Content"); status:
- *   local.status[id], what that state says to people; content: api.content(id)
+ * @param {{ status?: { state, text, title } | null, content?: object | null, shown?: boolean }} at
+ *   content: api.content(id) (its `state`: README.md, "An object's state");
+ *   status: local.status[id], what that state says to people
  */
 /** A missing provider, said for what it costs: a built object keeps what was built, anything else isn't shown. */
 const noProviderText = (providerId, content) =>
   content === "built" ? `Provider “${providerId}” is not installed, so this object can't be rebuilt here.` : `Provider “${providerId}” is not installed, so this object can't be shown here.`;
 
-export function statusParts(o, { status = null, load = null, content = null, shown = true } = {}) {
+export function statusParts(o, { status = null, content = null, shown = true } = {}) {
   const out = [];
   if (!o || isGroup(o)) return out;
-  const st = load?.state ?? null;
-  if (contentKind(load) === "file") {
+  const st = content?.state ?? null;
+  if (contentKind(content) === "file") {
     const cs = content?.stats ?? null;
     const tris = cs?.triangles ?? o.hint?.triangles;
     const bits = [];
@@ -129,8 +129,8 @@ export function statusParts(o, { status = null, load = null, content = null, sho
     if (st?.state === "failed" && st.error) out.push({ kind: "error", text: String(st.error) });
     return out;
   }
-  if (load?.notes) out.push({ kind: "notes", text: String(load.notes) });
-  if (st?.state === "no-provider") out.push({ kind: "error", text: noProviderText(st.providerId ?? o.providerId, load.content) });
+  if (content?.render?.notes) out.push({ kind: "notes", text: String(content.render.notes) });
+  if (st?.state === "no-provider") out.push({ kind: "error", text: noProviderText(st.providerId ?? o.providerId, content.route) });
   if (st?.state === "stale" && st.hold === "contested" && status?.title) out.push({ kind: "warn", text: String(status.title) });
   if (st?.state === "failed" && st.in === "load" && st.error) out.push({ kind: "error", text: String(st.error) });
   return out;
@@ -148,19 +148,20 @@ export function ago(at, now) {
 }
 
 /**
- * A built object's build in a line, from its load state (api.loadState):
+ * A built object's build in a line, from what it shows (api.content(id)):
  * building, never built, up to date, out of date (pinned or not), waiting
  * for a linked document, or fixed at a version; null for content that isn't
  * built (a file, a link) or a missing provider (statusParts says that). Pure.
  */
-export function buildSummary(load, now) {
-  const st = load?.state;
-  if (contentKind(load) !== "built" || !st || st.state === "no-provider") return null;
+export function buildSummary(content, now) {
+  const st = content?.state;
+  const r = content?.render ?? {};
+  if (contentKind(content) !== "built" || !st || st.state === "no-provider") return null;
   if (st.state === "building") return "Building…";
-  if (!load.builtAt) return load.pinned ? "Not built (pinned)" : "Not built yet";
-  const when = ago(load.builtAt, now);
-  if (load.at) return `Built ${when} · fixed version`;
-  if (st.state === "stale" || st.state === "failed") return `Built ${when} · out of date${load.pinned ? " (pinned)" : ""}`;
+  if (!r.builtAt) return r.pinned ? "Not built (pinned)" : "Not built yet";
+  const when = ago(r.builtAt, now);
+  if (r.at) return `Built ${when} · fixed version`;
+  if (st.state === "stale" || st.state === "failed") return `Built ${when} · out of date${r.pinned ? " (pinned)" : ""}`;
   if (st.state === "waiting") return `Built ${when} · waiting for a linked document`;
   return `Up to date · built ${when}`;
 }

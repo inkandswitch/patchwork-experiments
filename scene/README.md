@@ -142,7 +142,7 @@ yet), `no-provider`, `building` (`by`), `failed` (`in: "build"` with
 `retryAt`, or `"load"`), `waiting` (`on`: linked documents loading),
 `stale` (`reason`; `hold`: `"pinned"`, `"contested"`, `"unavailable"` or
 null, the one it will rebuild on its own) and `fresh` (`behind`: built
-from changes this replica hasn't synced). `api.loadState(id).state` is it;
+from changes this replica hasn't synced). `api.content(id).state` is it;
 `local.status` says it to people; the render manager builds on it; the
 build controls show it (a stage answers their `scene:render-context`).
 
@@ -209,7 +209,7 @@ Anchor = { objectId, local, world }  // a point in its object's frame: follows i
 render manager, which shows what was built even without its provider. One
 without goes where its provider's `content` says (`"file"`: the GLB queue;
 `"scene"`: a link). Anything else is drawn as its `hint`.
-`api.loadState(id).content` says which. All of it is `src/content/`, the
+`api.content(id).route` says which. All of it is `src/content/`, the
 stage's one door to it `createContent` (`src/content/content.js`).
 
 ### Fixed versions (`at`)

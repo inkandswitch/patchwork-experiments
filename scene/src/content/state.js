@@ -1,7 +1,7 @@
 // An object's content state (README.md, "Content"): the one definition of
 // whether what is drawn for an object is built and current. A pure function
 // of what is known of it; everything that shows freshness or acts on it (the
-// render manager, api.loadState, local.status, the inspector, the build
+// render manager, api.content(id).state, local.status, the inspector, the build
 // controls) reads this value and nothing else.
 
 import { heldDeps, isContested, staleReason } from "./staleness.js";

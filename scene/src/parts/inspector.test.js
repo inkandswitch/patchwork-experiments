@@ -546,23 +546,23 @@ describe("scene.inspector: the pure side", () => {
     expect(attachOptions(sc, "g")).toEqual([]);
   });
 
-  it("statusParts: what a render doc's load state says, and a file's", () => {
+  it("statusParts: what a render doc's content says, and a file's", () => {
     const o = object({ sourceUrl: "automerge:x", renderUrl: "automerge:y", providerId: "p" });
-    const built = (state, more) => ({ content: "built", state, ...more });
-    expect(statusParts(o, { load: built({ state: "fresh" }, { notes: "1 triangle (ascii STL)" }) })).toEqual([{ kind: "notes", text: "1 triangle (ascii STL)" }]);
-    expect(statusParts(o, { load: built({ state: "no-provider", providerId: "p" }) })[0].text).toMatch(/Provider “p” is not installed, so this object can't be rebuilt here/);
-    expect(statusParts(o, { load: built({ state: "stale", reason: "heads", hold: null }), status: { title: "Out of date; rebuilding soon" } })).toEqual([]);
-    expect(statusParts(o, { load: built({ state: "stale", reason: "heads", hold: "contested" }), status: { title: "Built differently" } })).toEqual([{ kind: "warn", text: "Built differently" }]);
+    const built = (state, render = {}) => ({ route: "built", state, render });
+    expect(statusParts(o, { content: built({ state: "fresh" }, { notes: "1 triangle (ascii STL)" }) })).toEqual([{ kind: "notes", text: "1 triangle (ascii STL)" }]);
+    expect(statusParts(o, { content: built({ state: "no-provider", providerId: "p" }) })[0].text).toMatch(/Provider “p” is not installed, so this object can't be rebuilt here/);
+    expect(statusParts(o, { content: built({ state: "stale", reason: "heads", hold: null }), status: { title: "Out of date; rebuilding soon" } })).toEqual([]);
+    expect(statusParts(o, { content: built({ state: "stale", reason: "heads", hold: "contested" }), status: { title: "Built differently" } })).toEqual([{ kind: "warn", text: "Built differently" }]);
     // the build's own failure is its controls' to show; what was built and can't be shown is the status line's
-    expect(statusParts(o, { load: built({ state: "failed", in: "build", error: "boom" }) })).toEqual([]);
-    expect(statusParts(o, { load: built({ state: "failed", in: "load", error: "GLB failed" }) })).toEqual([{ kind: "error", text: "GLB failed" }]);
-    // a file: what the stage routed it to says so (load.content), not the record's shape
+    expect(statusParts(o, { content: built({ state: "failed", in: "build", error: "boom" }) })).toEqual([]);
+    expect(statusParts(o, { content: built({ state: "failed", in: "load", error: "GLB failed" }) })).toEqual([{ kind: "error", text: "GLB failed" }]);
+    // a file: what the stage routed it to says so (content.route), not the record's shape
     const p = object({ sourceUrl: "automerge:x" });
-    expect(statusParts(p, { load: { content: "file", state: { state: "fresh" } }, content: { loaded: true, stats: { triangles: 20000, drawCalls: 1, instanced: 0 } } })).toEqual([{ kind: "notes", text: "20 k triangles · 1 draw call" }]);
-    expect(statusParts(p, { load: { content: "file", state: { state: "failed", in: "load", error: "GLB failed" } } })).toEqual([{ kind: "error", text: "GLB failed" }]);
+    expect(statusParts(p, { content: { route: "file", state: { state: "fresh" }, loaded: true, stats: { triangles: 20000, drawCalls: 1, instanced: 0 } } })).toEqual([{ kind: "notes", text: "20 k triangles · 1 draw call" }]);
+    expect(statusParts(p, { content: { route: "file", state: { state: "failed", in: "load", error: "GLB failed" } } })).toEqual([{ kind: "error", text: "GLB failed" }]);
     // routed nowhere: its provider isn't here, so it isn't shown at all
     const q = object({ sourceUrl: "automerge:x", providerId: "t-gltf" });
-    expect(statusParts(q, { load: { content: null, state: { state: "no-provider", providerId: "t-gltf" } } })).toEqual([{ kind: "error", text: "Provider “t-gltf” is not installed, so this object can't be shown here." }]);
+    expect(statusParts(q, { content: { route: null, state: { state: "no-provider", providerId: "t-gltf" } } })).toEqual([{ kind: "error", text: "Provider “t-gltf” is not installed, so this object can't be shown here." }]);
   });
 });
 

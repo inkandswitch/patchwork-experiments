@@ -116,7 +116,7 @@ function create(api) {
   function draw(id, v) {
     const o = api.scene().objects[id];
     if (!o) return;
-    const b = veilBounds(o.hint?.bounds) ?? veilBounds(api.loadState(id)?.bounds) ?? veilBounds(api.content(id)?.box) ?? DEFAULT_BOUNDS;
+    const b = veilBounds(o.hint?.bounds) ?? veilBounds(api.content(id)?.render?.bounds) ?? veilBounds(api.content(id)?.box) ?? DEFAULT_BOUNDS;
     const k = veilKey(b);
     if (v.key === k) return;
     v.key = k;

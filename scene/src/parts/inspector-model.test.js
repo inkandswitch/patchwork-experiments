@@ -29,7 +29,7 @@ describe("documentsFor: the inspector's own documents, by kind of selection", ()
     inInfo: obj({ name: "Hull", group: "info" }),
     ownInfo: obj({ name: "Cleat", infoUrl: OWNINFO }),
   });
-  // what the stage routed each to (api.loadState(id).content)
+  // what the stage routed each to (api.content(id).route)
   const routed = { built: "built", file: "file", link: "scene" };
   const own = inspectorDocuments((id) => routed[id] ?? null);
   const shown = (target) => documentsFor(own, target, { scene }, ME).map((d) => [d.id, d.label, d.folded, d.url, d.toolId]);
@@ -57,11 +57,11 @@ describe("documentsFor: the inspector's own documents, by kind of selection", ()
 
 describe("buildSummary: a built object's build in a line", () => {
   const NOW = 10_000_000;
-  const built = (o) => ({ content: "built", builtAt: NOW - 120_000, state: { state: "fresh" }, ...o });
+  const built = ({ state = { state: "fresh" }, ...r } = {}) => ({ route: "built", state, render: { builtAt: NOW - 120_000, ...r } });
   const stale = { state: "stale", reason: "heads", hold: null };
   it.each([
-    ["a file isn't built", { content: "file" }, null],
-    ["a link isn't built", { content: "scene" }, null],
+    ["a file isn't built", { route: "file" }, null],
+    ["a link isn't built", { route: "scene" }, null],
     ["no load state", null, null],
     ["a missing provider is the status line's", built({ state: { state: "no-provider", providerId: "p" } }), null],
     ["building", built({ state: { state: "building", by: "here" } }), "Building…"],

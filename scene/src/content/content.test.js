@@ -102,7 +102,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await mount({ objects: { a: object({ name: "a", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url }), b: object({ name: "b", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url, hint: { bounds: { min: [5, 5, 5], max: [6, 6, 6] } } }) }, order: ["a", "b"] });
     await wait(20);
     await settle();
-    expect(s.facet("scene.add").loadState("a").bounds).toEqual(bounds);
+    expect(s.facet("scene.add").content("a").render.bounds).toEqual(bounds);
     expect(hints.mock.calls.filter(([id]) => id === "a").at(-1)[1]).toEqual(bounds);
     // the scene's own hint wins
     expect(hints.mock.calls.filter(([id]) => id === "b").map(([, b]) => b)).toEqual([{ min: [5, 5, 5], max: [6, 6, 6] }]);
@@ -114,7 +114,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "r", parent: file.url, providerId: "file-stl", params: { unit: "mm", up: "z" }, glbUrl: null, builtFrom: { heads: ["a-change-not-synced-here"], fingerprint: null, paramsKey: '{"unit":"mm","up":"z"}', deps: {} }, builtAt: 1, bounds: null, status: "idle", error: null, pinned: false });
     await mount({ objects: { a: object({ name: "a", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url }) }, order: ["a"] });
     await wait(100);
-    expect(s.facet("scene.add").loadState("a").state).toEqual({ state: "fresh", behind: true });
+    expect(s.facet("scene.add").content("a").state).toEqual({ state: "fresh", behind: true });
     expect(s.local.get().status.a).toBeUndefined();
     const { default: Controls } = await import("../controls-tool.js");
     const el = document.createElement("div");
@@ -154,7 +154,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
   const tracked = () => s.debug.manager.ids();
   const api = () => s.facet("scene.add");
 
-  it("each object by the kind its provider makes: a file to the queue, a render doc to the manager, a source that builds with no render doc nowhere (and nothing said); loadState says which", async () => {
+  it("each object by the kind its provider makes: a file to the queue, a render doc to the manager, a source that builds with no render doc nowhere (and nothing said); content(id) says which", async () => {
     const glb = glbFile();
     const gltf = glbFile("part.gltf", "gltf");
     const stl = repo.add({ "@patchwork": { type: "file" }, name: "x.stl", extension: "stl", content: STL });
@@ -169,7 +169,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     s = await mountStage({ repo, extensions: EXTS, doc: { objects } });
     getRegistry("scene:source").register(gltfSource());
     await settle();
-    // [object, queued, tracked by the manager, loadState]
+    // [object, queued, tracked by the manager, where content(id) says it went]
     const ROWS = [
       ["a", true, false, { content: "file" }],
       ["c", true, false, { content: "file" }],
@@ -179,10 +179,10 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
       ["nope", false, false, null],
     ];
     for (const [id, inQueue, inManager, load] of ROWS) {
-      const got = api().loadState(id);
-      expect([id, queued().includes(id), tracked().includes(id), got && { content: got.content }]).toEqual([id, inQueue, inManager, load]);
+      const got = api().content(id);
+      expect([id, queued().includes(id), tracked().includes(id), got && { content: got.route }]).toEqual([id, inQueue, inManager, load]);
     }
-    expect(api().loadState("y")).toEqual({ content: null, state: null });
+    expect(api().content("y")).toMatchObject({ route: null, state: null });
     expect(s.local.get().status.y).toBeUndefined();
   });
 
@@ -195,7 +195,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     await settle();
     expect(queued()).toEqual([]);
     expect(tracked()).toEqual([]);
-    expect(api().loadState("x")).toEqual({ content: null, state: { state: "no-provider", providerId: "t-gltf" } });
+    expect(api().content("x")).toMatchObject({ route: null, state: { state: "no-provider", providerId: "t-gltf" } });
     expect(s.local.get().status.x).toMatchObject({ state: "warn", text: "no provider" });
     // drawn as its hint meanwhile, as anything is while its content hasn't arrived
     expect(hints).toHaveBeenCalledWith("x", { min: [0, 0, 0], max: [1, 1, 1] });
@@ -203,7 +203,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     getRegistry("scene:source").register(gltfSource());
     await settle();
     expect(queued()).toEqual(["x"]);
-    expect(api().loadState("x").content).toBe("file");
+    expect(api().content("x").route).toBe("file");
     expect(s.local.get().status.x?.state).not.toBe("warn");
     expect(warn).not.toHaveBeenCalledWith(expect.stringMatching(/declares no content kind/));
 
@@ -211,7 +211,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     getRegistry("scene:source").unregister("t-gltf");
     await settle();
     expect(queued()).toEqual([]);
-    expect(api().loadState("x")).toEqual({ content: null, state: { state: "no-provider", providerId: "t-gltf" } });
+    expect(api().content("x")).toMatchObject({ route: null, state: { state: "no-provider", providerId: "t-gltf" } });
   });
 
   it("a source that declares no content kind is never offered, and is warned about once", async () => {

@@ -439,6 +439,35 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     return out;
   }
 
+  /**
+   * What object `id` shows and how it got there (API.md, `content(id)`): what
+   * is drawn (`loaded`, `box`, `extras`, `stats`, `root`: the viewport's),
+   * where its content was routed (`route`), its `state` (./state.js), for
+   * built content what is known of its render (`render`: providerId,
+   * providerName, pinned, builtAt, builtHeads, bounds, at, notes) and `fix`,
+   * the `at` that fixes it at what it shows; null when there is none of it.
+   */
+  function of(id) {
+    const drawn = scope.contentOf(id);
+    const s = objState.get(id);
+    if (!drawn && !s && !routes.has(id)) return null;
+    const built = s?.content === "built";
+    const { content: _c, loaded: _l, state: _s, ...render } = built ? s : {};
+    return Object.freeze({
+      loaded: drawn?.loaded ?? false,
+      box: drawn?.box ?? null,
+      extras: drawn?.extras ?? null,
+      stats: drawn?.stats ?? null,
+      root: drawn?.root ?? null,
+      route: routes.get(id) ?? null,
+      state: stateOf(id),
+      render: built ? Object.freeze(render) : null,
+      get fix() {
+        return fixPoint(id);
+      },
+    });
+  }
+
   // rebuild requests from embedded controls (../embed.js)
   const onRebuild = (e) => {
     const url = e.detail?.renderUrl;
@@ -465,18 +494,7 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     ids,
     status,
     allIn,
-    /**
-     * Where an object's content was routed (`content`), its `state`
-     * (./state.js), and for built content what is known of its render
-     * (providerId, providerName, pinned, builtAt, builtHeads, bounds, at,
-     * notes); null when it has neither.
-     */
-    loadState(id) {
-      const s = objState.get(id);
-      if (!s && !routes.has(id)) return null;
-      const { content: _c, loaded: _l, file: _f, missing: _m, ...known } = s ?? {};
-      return Object.freeze({ ...known, content: routes.get(id) ?? null, state: stateOf(id) });
-    },
+    of,
     /** where an object's content was routed ("built", "file", "scene": a stage), or null */
     route: (id) => routes.get(id) ?? null,
     /** extension `ext` wants these objects loaded first (none: it no longer does) */
@@ -495,7 +513,6 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     addObject,
     providersFor,
     rebuild,
-    fixPoint,
     /** say once of each registered source that declares no content kind */
     warnUnusable,
     debug: Object.freeze({ manager, queue }),

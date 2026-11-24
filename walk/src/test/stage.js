@@ -7,7 +7,7 @@
 // the real stage's (viewport.contentOf): every object has one, `loaded`
 // only once its model has (`tris`, unless `loaded: false`), so an object
 // with no model is `{ loaded: false, root: null }` forever; `links` are the
-// ids whose content is a stage (loadState), and `status` is local.status.
+// ids whose content is a stage (content(id).route "scene"), and `status` is local.status.
 
 import { matrixOf, multiply } from "../frames.js";
 import { boxTriangles } from "../navmesh.js";
@@ -61,11 +61,11 @@ export function stage({ objects, camera = { position: [0, 1.6, 5], target: [0, 1
     content(id) {
       const o = objects[id];
       if (!o) return null;
-      if (!o.tris || o.loaded === false) return { loaded: false, root: null, box: o.tris ? boxOf(o.tris) : null };
+      const route = links.includes(id) ? "scene" : null;
+      if (!o.tris || o.loaded === false) return { loaded: false, root: null, box: o.tris ? boxOf(o.tris) : null, route };
       if (!roots.has(id) || roots.get(id).tris !== o.tris) roots.set(id, { tris: o.tris, root: meshRoot(o.tris) });
-      return { loaded: true, root: roots.get(id).root, box: boxOf(o.tris) };
+      return { loaded: true, root: roots.get(id).root, box: boxOf(o.tris), route };
     },
-    loadState: (id) => (links.includes(id) ? { content: "scene" } : null),
     local: { get: () => ({ status }) },
     nameOf: (id) => objects[id]?.name ?? id,
     collect: (name) =>
