@@ -1,6 +1,7 @@
-// A document at a version: its heads, a read-only view of it at heads, and a
-// repo that finds some docs at fixed heads. What a fixed object (README.md,
-// "Fixed versions") and a pinned link (NATIVE.md, "Links") are read through.
+// A document at a version: its heads, a scene object's fixed version (`at`), a
+// read-only view of a doc at heads, and a repo that finds some docs at fixed
+// heads. What a fixed object (README.md, "Fixed versions") and a pinned link
+// (NATIVE.md, "Links") are read through.
 
 export function sortedHeads(heads) {
   return [...(heads ?? [])].map(String).sort();
@@ -21,6 +22,44 @@ export function normalizeDeps(deps) {
     if (typeof url === "string" && url && (Array.isArray(heads) || heads == null)) out[url] = sortedHeads(heads);
   }
   return out;
+}
+
+/** A stable string for a deps map; "" when there are none. */
+export function depsKey(deps) {
+  const d = normalizeDeps(deps);
+  return Object.keys(d)
+    .map((u) => `${u}=${d[u].join(",")}`)
+    .join(";");
+}
+
+// ─── fixed versions (`at`) ───────────────────────────────────────────────────
+// A scene object may carry `at: { heads, deps? }`: build from the source AT
+// those heads (and from each dependency listed in `deps` at its heads) instead
+// of the latest. Absent/null follows the latest. A dependency recorded by key
+// (["fp:<key>"]) has no heads to view, so it can't be listed.
+
+export const isFpKey = (heads) => heads.length === 1 && String(heads[0]).startsWith("fp:");
+
+/**
+ * A scene object's `at`, cleaned: { heads: sorted, deps: { url: sorted heads } },
+ * or null when it follows the latest (absent, null, or no usable heads).
+ */
+export function normalizeAt(at) {
+  if (!at || typeof at !== "object") return null;
+  const heads = sortedHeads(Array.isArray(at.heads) ? at.heads.filter((h) => typeof h === "string" && h) : []);
+  if (!heads.length) return null;
+  const deps = {};
+  const nd = normalizeDeps(at.deps);
+  for (const url of Object.keys(nd)) if (nd[url].length && !isFpKey(nd[url])) deps[url] = nd[url];
+  return { heads, deps };
+}
+
+/** A stable string for an `at`; "" when it follows the latest. */
+export function atKey(at) {
+  const a = normalizeAt(at);
+  if (!a) return "";
+  const deps = depsKey(a.deps);
+  return `${a.heads.join(",")}${deps ? `|d:${deps}` : ""}`;
 }
 
 /**
