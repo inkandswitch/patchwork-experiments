@@ -1,8 +1,8 @@
 # Native services
 
-The plugins the scene package ships that every scene has (`src/native/`). Each
-`provides` one service by name, for others to `use` ([STAGE.md](STAGE.md),
-"Activation"); the kernel knows none of them by name, and they reach it only
+The plugins the scene package ships below the editor (`src/native/`): what
+every scene has, and carrying. Each service is `provide`d by name, for others
+to `use` ([STAGE.md](STAGE.md), "Activation"); the kernel knows none of them by name, and they reach it only
 through the public api (`src/native/boundary.test.js` checks the imports). What
 a facet hands a caller goes as the caller's signal aborts.
 
@@ -18,6 +18,7 @@ a facet hands a caller goes as the caller's signal aborts.
 | `scene.drawer` | view plugin | `"drawer"` | prefs | `drawer.js` |
 | `scene.links` | view plugin | `"links"` | | `links.js` (`link-graph.js`) |
 | `scene.xray` | view plugin | | prefs, drawer | `xray.js` (`xray-model.js`, `gears.js`) |
+| `scene.carry` | extension of what has `scene.carry` | | poses, prefs, notices | `carry.js` (`carry-math.js`): CONVENTIONS.md, "Carry" |
 
 An extension of every doc (`traits: ["*"]`) runs in every stage, as that doc's
 own part; one in a pin runs and draws but has no channel and writes nothing. A

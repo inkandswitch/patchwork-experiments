@@ -34,7 +34,7 @@
 
 import { HANDLE_SIZE, MOVE, dragDelta, haloHandles, haloTarget, handleAt, handlePoints, localFrom, moved, moving, groupRoots, usable } from "./halo-math.js";
 import { frameConversions } from "../transform.js";
-import { worldBox } from "./carry-math.js";
+import { worldBox } from "../native/carry-math.js";
 import { editor } from "./editor.js";
 import { perFocus } from "../per-focus.js";
 import { resolveCssColor } from "../stage/public.js";
