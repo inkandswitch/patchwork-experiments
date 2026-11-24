@@ -73,10 +73,8 @@ named frame); when it exists, `go()` becomes that call.
 
 The same trait, unchanged, with different verbs:
 
-- a boat's **companionway** (sailing's sloop): "Go below", no destination
-  unless a scene gives it one;
-- a map's **exit switch** (the doom package): "Exit", no destination unless a
-  scene gives it one;
+- a boat's **companionway** ("Go below"), a map's **exit switch** ("Exit"):
+  no destination unless a scene gives it one;
 - a **doorway** to another scene (a Croquet-style portal: the doorway is the
   exit; drawing the world beyond it is the stage's, a link's job, not this);
 - an arena level's **exit** to the next level.
@@ -107,14 +105,17 @@ The same trait, unchanged, with different verbs:
   metadata.
 
 **The browser probe** (`probes/round-trip.mjs`) takes a visitor round a trip
-between two scenes in headless Chrome, with real keys and a real mouse, in a
-small shell that opens whatever an open-document event asks for, as
-Patchwork does: the BUILT packages whose tools make the two scenes, and this
-one. In each scene the visitor walks up to an exit made by another package;
-with nowhere to go it offers nothing, and given the other scene it offers its
-verb, and F opens that scene. Nothing either scene shows names the other.
+between two plain scenes in headless Chrome, with real keys and a real mouse,
+in a small shell that opens whatever an open-document event asks for, as
+Patchwork does. It loads only the BUILT `scene`, `walk` and this package; the
+scenes are made in the page, each a floor, a spawn point its `view.start` walks
+people in at, and a door carrying `traversal.exit`. In each the visitor walks up
+to the door; with nowhere to go it offers nothing, and given the other scene it
+offers its verb, and F opens that scene, where its own `view.start` puts the
+visitor. Nothing either scene shows names the other. Time is the page's
+manual clock.
 
 ```
-(in each package it lists) pnpm build
+(in scene/, walk/ and traversal/) pnpm build
 node probes/round-trip.mjs [--shots <dir>] [--show] [--gpu]
 ```

@@ -1,14 +1,13 @@
 // Cross-scene drag-and-drop and Copy/Paste (EDITOR.md, "Copying objects"),
 // in headless Chrome with real HTML5 drags over CDP.
 //
-//   pnpm build            (and sailing's, for --mode sail)
-//   node probes/xdnd-run.mjs [--mode main|sail] [--patch] [--port 4790] [--cdp 9790] [--show] [--shots <dir>]
+//   pnpm build
+//   node probes/xdnd-run.mjs [--port 4790] [--cdp 9790] [--show] [--shots <dir>]
 //
-// Serves the repo root (sailing's BUILT dist is loaded at runtime in sail
-// mode, never its source) and opens probes/xdnd-probe.html: two scene views
+// Serves the repo root and opens probes/xdnd-probe.html: two scene views
 // side by side, A and B, two docs in one in-memory repo.
 //
-// main: A's outline rows are dragged into B's view: a GLB file crate
+// A's outline rows are dragged into B's view: a GLB file crate
 // (its file shared, its assets entry copied, its claims left behind), a
 // group of two, a mast with its boom and sail under it (onto B's deck, where
 // it snaps to the mast step; and with Alt, where it's dropped), and a built
@@ -20,14 +19,6 @@
 // ⌘V twice in B (the second beside the first, under nothing), ⌘V twice in A
 // (duplicates one and two widths along), and the right-click menu's Copy
 // (what ⌘C writes, read back by a ⌘V in B) and Paste.
-//
-// sail: A gets sailing's sloop from its parts bin (she brings a Sea, a water
-// object with the sea on it, and the weather, a scene trait); her row is
-// dragged into an empty B. Everything under her comes, without her `motion`
-// (sailing.ship's describes says runtime ["motion"]; --patch forces that
-// declaration on a sailing build without it). The Sea is no part of her, so
-// it stays in A, B gains no weather, and nothing is said: in B she floats on
-// whatever water B gives her, or rests (water/WATER.md, "Water bodies").
 //
 // Simulated time: the page's stages run on its manual clock (window.__time):
 // a pause is frames of it (b.rest); waits on conditions (b.waitFor) poll the
@@ -44,8 +35,6 @@ const arg = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i < 0 ? fallback : argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : true;
 };
-const MODE = arg("mode", "main");
-const PATCH = !!arg("patch", false);
 const PORT = Number(arg("port", 4790));
 const CDP = Number(arg("cdp", 9790));
 if ([9222, 9333, 9334].includes(CDP)) throw new Error(`--cdp ${CDP} is reserved`);
@@ -53,15 +42,13 @@ const SHOTS = resolve(arg("shots", join(process.env.TMPDIR || tmpdir(), "scene-x
 const pkg = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const ROOT = resolve(pkg, "..");
 if (!existsSync(join(pkg, "dist/index.js"))) throw new Error("no dist/: run pnpm build first");
-if (MODE === "sail" && !existsSync(join(ROOT, "sailing/dist/index.js"))) throw new Error("no sailing/dist: build sailing first");
 
-const b = await browser({ root: ROOT, port: PORT, cdp: CDP, page: `/scene/probes/xdnd-probe.html?mode=${MODE}${PATCH ? "&patch=1" : ""}`, width: 1820, height: 800, show: !!arg("show", false), timeout: 600_000 });
+const b = await browser({ root: ROOT, port: PORT, cdp: CDP, page: "/scene/probes/xdnd-probe.html", width: 1820, height: 800, show: !!arg("show", false), timeout: 600_000 });
 const { check, checks, details } = checklist();
-const report = { mode: MODE, patch: PATCH, checks, details, counts: {}, shots: [] };
+const report = { checks, details, counts: {}, shots: [] };
 const P = (e) => b.js(`window.__p.${e}`);
 const J = JSON.stringify;
-const tag = MODE === "sail" ? `sail${PATCH ? "-patched" : ""}` : "main";
-const shot = async (name, clip) => report.shots.push(await b.shot(join(SHOTS, `${tag}-${name}.png`), clip));
+const shot = async (name, clip) => report.shots.push(await b.shot(join(SHOTS, `main-${name}.png`), clip));
 const near = (a, c, eps = 1e-3) => Array.isArray(a) && Array.isArray(c) && a.length === c.length && a.every((v, i) => Math.abs(v - c[i]) <= eps);
 const round = (v, n = 4) => (Array.isArray(v) ? v.map((x) => round(x, n)) : typeof v === "number" ? Number(v.toFixed(n)) : v);
 const px = (p) => p && { x: Math.round(p.x), y: Math.round(p.y) };
@@ -498,71 +485,10 @@ async function main() {
   report.counts.aObjectsAtEnd = (await ids("a")).length;
 }
 
-async function sail() {
-  const before = await ids("a");
-  // the bin and the inspector (the tree on top) are drawer tabs A opens from Edit's toolbar
-  await b.waitFor(`__p.openTab("a", "parts") && __p.tab("a", "parts")`, 20_000);
-  await b.waitFor(`__p.part("a", "sailing.sloop")`, 20_000);
-  const it = await P(`part("a", "sailing.sloop")`);
-  if (!it) await shot("0-no-bin");
-  check("sloopInBin", !!it, it);
-  await b.click(Math.round(it.x), Math.round(it.y));
-  await b.waitFor(`Object.keys(__p.doc("a").objects).length > 3`, 20_000);
-  await settle("a", before.length + 2, 10_000);
-  const A = await P(`doc("a")`);
-  const ship = Object.keys(A.objects).find((id) => A.objects[id].traits?.["sailing.ship"]);
-  const aSea = Object.keys(A.objects).find((id) => A.objects[id].traits?.water && A.objects[id].traits?.["sailing.sea"]);
-  check("sloopPlacedInA", !!ship && !!aSea && !!A.traits?.weather, { ship, aSea, traits: Object.keys(A.traits ?? {}) });
-  if (!ship) return;
-  for (const w of ["a", "b"]) await P(`openTab(${J(w)}, "inspector")`);
-  check("treesOpen", await b.waitFor(`__p.tab("a", "inspector") && __p.tab("b", "inspector")`, 5000));
-  // runtime state on her, as play would leave it
-  await b.js(`__p.change("a", (d) => { d.objects[${J(ship)}].traits["sailing.ship"].motion = { position: [1, 0, 2], velocity: [0.5, 0, 0], t: 12 }; d.objects[${J(ship)}].claims = { sim: { viewer: "viewer:zz", session: "s-9" } }; })`);
-  await b.waitFor(`__p.allLoaded("a")`, 30_000);
-  await b.rest(800);
-  const A0 = await P(`doc("a")`);
-  // her subtree in A: everything attached under her
-  const under = new Set([ship]);
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const [id, o] of Object.entries(A0.objects)) if (!under.has(id) && under.has(o.parent)) (under.add(id), (grew = true));
-  }
-  report.counts.aShipSubtree = under.size;
-  report.counts.aObjects = Object.keys(A0.objects).length;
-  await shot("0-sloop-in-a");
-  const to = px(await P(`at("b", null, [0, 0, 0])`));
-  const r = await dragRow("a", ship, to);
-  await settle("b", under.size, 15_000);
-  const B = await P(`doc("b")`);
-  const bIds = Object.keys(B.objects);
-  const bShip = bIds.find((id) => B.objects[id].traits?.["sailing.ship"]);
-  const toasts = await P(`toasts("b")`);
-  report.sail = { ship, aSubtree: [...under].map((id) => A0.objects[id].name), bObjects: bIds.map((id) => [B.objects[id].name, B.objects[id].parent]), toasts, bTraits: Object.keys(B.traits ?? {}), shipTrait: B.objects[bShip]?.traits?.["sailing.ship"], ring: r.ring, types: r.types };
-  report.counts.bObjects = bIds.length;
-  check("shipSubtreeCopied", bIds.length === under.size && bIds.every((id) => !(id in A0.objects)), { b: bIds.length, a: under.size });
-  // relationships: each copy's parent is the copy of its original's parent (matched by name and depth)
-  const names = (doc, id) => { const out = []; for (let x = id; x; x = doc.objects[x]?.parent) out.push(doc.objects[x]?.name); return out.join("<"); };
-  const aChains = [...under].map((id) => names(A0, id)).sort();
-  const bChains = bIds.map((id) => names(B, id)).sort();
-  check("shipRelationsKept", sameJSON(aChains, bChains), { aChains, bChains });
-  check("shipTraitsCome", bIds.every((id) => sameJSON(Object.keys(B.objects[id].traits ?? {}).sort(), Object.keys(A0.objects[[...under].find((x) => names(A0, x) === names(B, id))]?.traits ?? {}).sort())));
-  check("shipClaimsStayBehind", !("claims" in (B.objects[bShip] ?? {})));
-  check("seaStaysBehind", !bIds.some((id) => B.objects[id].traits?.water) && !B.traits?.weather, { bTraits: Object.keys(B.traits ?? {}) });
-  const assetKeys = Object.keys(A0.assets ?? {});
-  check("shipAssetsCopied", assetKeys.length > 0 && assetKeys.filter((k) => bIds.some((id) => B.objects[id].sourceUrl === A0.assets[k].url)).every((k) => sameJSON(B.assets?.[k], A0.assets[k])), { a: assetKeys, b: Object.keys(B.assets ?? {}) });
-  // sailing.ship's describes says runtime ["motion"] (sailing/src/index.js), so the copy leaves her motion
-  // behind (--patch only forces the same declaration); and no notice asks for a sea
-  check("motionLeftBehind", B.objects[bShip]?.traits?.["sailing.ship"] && !("motion" in B.objects[bShip].traits["sailing.ship"]), B.objects[bShip]?.traits);
-  check("noNeedsNotice", !toasts.some((t) => /needs/i.test(t)), toasts);
-  check("sourceUnchanged", sameJSON(await P(`doc("a")`), A0));
-  await b.rest(300);
-  await shot("1-ship-in-b");
-}
-
 try {
   if (!(await b.waitFor("window.__ready", 60_000))) throw new Error("page never ready");
   if ((await b.js("window.__ready")) !== true) throw new Error(`setup failed: ${J(await P("errors"))}`);
-  await (MODE === "sail" ? sail() : main());
+  await main();
   const errors = (await P("errors")).filter((e) => !/KHR_parallel_shader_compile/.test(e));
   report.errors = errors;
   check("noErrors", errors.length === 0, errors);

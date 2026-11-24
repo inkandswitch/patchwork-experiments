@@ -1,5 +1,5 @@
-// A table set down on something that moves (a Card table in a ship's
-// cockpit): the layout under a parent, Draw and the free-slot search in the
+// A table set down on something that moves (a Card table on a cart): the
+// layout under a parent, Draw and the free-slot search in the
 // parent's frame, the hand's face-up test against the trays as drawn, and
 // the two parts that set it all up. (The seat's view riding the table, and
 // name tags on the hands as drawn, are the seats' owner's.)
@@ -27,18 +27,18 @@ const near = (got, want, digits = 6) => want.forEach((v, i) => expect(got[i]).to
 const sameMatrix = (a, b) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], 6));
 const lay = (await seatsPlugin().load()).lay;
 
-// a ship turned 0.7, a table across her cockpit, a turned-round hand for p2
-const SHIP = T([10, 0, 5], [0, 0.7, 0]);
+// a cart turned 0.7, a table across its bed, a turned-round hand for p2
+const CART = T([10, 0, 5], [0, 0.7, 0]);
 const TBL = T([0, 0.72, 2.85], [0, Math.PI / 2, 0]);
 const card = (position, rotation = [0, 0.4, Math.PI]) => ({ name: "Card", parent: "tbl", transform: T(position, rotation), traits: hidden(), tags: ["card"] });
 const tray = (n = 4, yaw = 0.25) => ({
   extras: { connectors: Array.from({ length: n }, (_, k) => ({ position: [+(-0.27 + k * 0.06).toFixed(3), 0.002, 0], yaw, tags: ["card"] })), snapRadius: 0.03 },
 });
 
-async function aboard({ local = {}, seated = { p1: { name: "Player 1", player: null }, p2: { name: "Player 2", player: null } } } = {}) {
+async function onCart({ local = {}, seated = { p1: { name: "Player 1", player: null }, p2: { name: "Player 2", player: null } } } = {}) {
   const objects = {
-      ship: { name: "Ship", transform: SHIP },
-      tbl: { name: "Card table", parent: "ship", transform: TBL, locked: true },
+      cart: { name: "Cart", transform: CART },
+      tbl: { name: "Card table", parent: "cart", transform: TBL, locked: true },
       hand1: { name: "Hand 1", parent: "tbl", transform: T([0, 0.7, 0.5]), traits: zone("p1") },
       hand2: { name: "Hand 2", parent: "tbl", transform: T([0, 0.7, -0.5], [0, Math.PI, 0]), traits: zone("p2") },
       kept: card([-0.27, 0.702, 0.5], [0, 0.25, 0]),
@@ -58,20 +58,16 @@ async function aboard({ local = {}, seated = { p1: { name: "Player 1", player: n
   const [b, xb] = at("B", "bob");
   w.flush();
   await vi.advanceTimersByTimeAsync(10);
-  /** The ship drawn somewhere the doc hasn't caught up with yet (a peer simulating her). */
-  const sail = (t) => w.holds.set("ship", { session: "SIM", transform: t, at: Date.now() });
+  /** The cart drawn somewhere the doc hasn't caught up with yet (a peer moving it). */
+  const roll = (t) => w.holds.set("cart", { session: "SIM", transform: t, at: Date.now() });
   const cmd = (x, id) => x.commands.find((c) => c.id === id);
-  return { w, a, b, xa, xb, sail, cmd };
+  return { w, a, b, xa, xb, roll, cmd };
 }
 
-
-
-
-
-describe("drawing at a table aboard", () => {
-  it("glides the top card into your first free slot, in the table's frame, whatever the ship is drawn doing", async () => {
-    const t = await aboard({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: "bob" } } });
-    t.sail(T([13, 0.3, 7], [0.08, 1.1, -0.05])); // sailed on, heeled: the doc hasn't been told yet
+describe("drawing at a table on a cart", () => {
+  it("glides the top card into your first free slot, in the table's frame, whatever the cart is drawn doing", async () => {
+    const t = await onCart({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: "bob" } } });
+    t.roll(T([13, 0.3, 7], [0.08, 1.1, -0.05])); // rolled on, tipped: the doc hasn't been told yet
     expect(t.cmd(t.xa, "draw").state("mid", { scene: t.a.scene(), local: t.a.local.get() })).toEqual({ title: expect.stringMatching(/into your hand$/) });
     t.cmd(t.xa, "draw").run("mid");
     t.w.tick(1 / 60, 40);
@@ -88,7 +84,7 @@ describe("drawing at a table aboard", () => {
   });
 
   it("Shuffle and Draw apply whatever body you're in: walking, their keys are the body's (the stage shows them without), never hidden", async () => {
-    const t = await aboard({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: null } } });
+    const t = await onCart({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: null } } });
     const ctx = (local) => ({ scene: t.a.scene(), local: { ...t.a.local.get(), ...local } });
     for (const [body, hands] of [[{ id: "walk" }, []], [{ id: "seat" }, []], [{ id: "look" }, []], [{ id: "look" }, [{ kind: "edit", name: "Edit" }]], [{ id: "walk" }, [{ kind: "edit", name: "Edit" }]]]) {
       expect(t.cmd(t.xa, "shuffle").state("top", ctx({ body, hands }))).not.toBe(null);
@@ -98,10 +94,10 @@ describe("drawing at a table aboard", () => {
   });
 });
 
-describe("the hand at a table aboard", () => {
-  it("turns a card face up over your tray as it's drawn, not where the doc last had the ship", async () => {
-    const t = await aboard({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: null } } });
-    t.sail(T([12, 0.4, 7.5], [0.1, 0.95, 0]));
+describe("the hand at a table on a cart", () => {
+  it("turns a card face up over your tray as it's drawn, not where the doc last had the cart", async () => {
+    const t = await onCart({ seated: { p1: { name: "Player 1", player: "alice" }, p2: { name: "Player 2", player: null } } });
+    t.roll(T([12, 0.4, 7.5], [0.1, 0.95, 0]));
     const seen = apply(t.a.worldOf("hand1"), [0.1, 0.01, 0]);
     const doc = apply(t.a.scene().world("hand1"), [0.1, 0.01, 0]);
     expect(t.xa.landing("top", seen)).toEqual({ faceUp: true });
@@ -111,22 +107,22 @@ describe("the hand at a table aboard", () => {
 });
 
 describe("the Card table and Lost Cities parts", () => {
-  const emptyShip = () =>
+  const emptyCart = () =>
     emptyScene({
-      title: "Ship at anchor",
-      objects: { ship: { name: "Sloop", transform: SHIP, parent: null } },
-      order: ["ship"],
+      title: "A cart",
+      objects: { cart: { name: "Cart", transform: CART, parent: null } },
+      order: ["cart"],
       view: { units: "m", start: { home: { position: [12, 6.5, 16], target: [0, 2.5, 0] } } },
     });
   // what's installed: whoever owns seats, and the games
   const installed = () => registries(seatsPlugin(), ...gamePlugins());
 
   it("a Card table goes under what it's put on, square to it, locked, with a top that takes a game", async () => {
-    const doc = emptyShip();
+    const doc = emptyCart();
     const { ctx } = fakes.fakeDrop(doc);
-    const id = await cardTable.create(ctx, { parent: "ship", transform: { position: [0, 0.72, 2.85], rotation: [0.06, Math.PI / 2, -0.03], scale: 1 } });
+    const id = await cardTable.create(ctx, { parent: "cart", transform: { position: [0, 0.72, 2.85], rotation: [0.06, Math.PI / 2, -0.03], scale: 1 } });
     const o = doc.objects[id];
-    expect(o).toMatchObject({ name: "Card table", parent: "ship", locked: true });
+    expect(o).toMatchObject({ name: "Card table", parent: "cart", locked: true });
     near(o.transform.position, [0, 0.72, 2.85]);
     expect(o.transform.rotation[0]).toBe(0);
     expect(o.transform.rotation[2]).toBe(0);
@@ -136,13 +132,13 @@ describe("the Card table and Lost Cities parts", () => {
     expect(PIECES.table.snapPoints).toEqual([{ position: [0, TABLE.h + 0.0006, 0], rotation: [0, 0, 0], tags: [GAME_TAG] }]);
   });
 
-  it("Lost Cities on it: a game doc of its own, laid out whole (its pieces, its seats in its root frame, its title and start), linked onto the table, locked; the ship's doc gains only the link", async () => {
-    const doc = emptyShip();
+  it("Lost Cities on it: a game doc of its own, laid out whole (its pieces, its seats in its root frame, its title and start), linked onto the table, locked; the cart's doc gains only the link", async () => {
+    const doc = emptyCart();
     const { ctx, calls } = fakes.fakeDrop(doc, { registries: installed() });
-    const tid = await cardTable.create(ctx, { parent: "ship", transform: TBL });
+    const tid = await cardTable.create(ctx, { parent: "cart", transform: TBL });
     const before = { view: structuredClone(doc.view), title: doc.title, objects: Object.keys(doc.objects).length };
     const link = await lostCities.create(ctx, { parent: tid, transform: { position: [0, TABLE.h + 0.0006, 0], rotation: [0, 0, 0], scale: 1 } });
-    // the ship: one more object, the link, under the table, locked; its view and title as they were, no seats
+    // the cart's doc: one more object, the link, under the table, locked; its view and title as they were, no seats
     expect(Object.keys(doc.objects)).toHaveLength(before.objects + 1);
     expect(doc.objects[link]).toMatchObject({ providerId: "scene.link", parent: tid, locked: true });
     expect(doc.objects[link].hint.bounds.max[1]).toBeGreaterThan(0);
@@ -169,10 +165,10 @@ describe("the Card table and Lost Cities parts", () => {
   });
 
   it("two games: two docs, each with its own p1 and p2 and its hands named by them", async () => {
-    const doc = emptyShip();
+    const doc = emptyCart();
     const { ctx } = fakes.fakeDrop(doc, { registries: installed() });
-    const a = await lostCities.create(ctx, { parent: "ship", transform: T([0, 1, 0]) });
-    const b = await lostCities.create(ctx, { parent: "ship", transform: T([0, 1, 3]) });
+    const a = await lostCities.create(ctx, { parent: "cart", transform: T([0, 1, 0]) });
+    const b = await lostCities.create(ctx, { parent: "cart", transform: T([0, 1, 3]) });
     for (const link of [a, b]) {
       const game = ctx.made(doc.objects[link].sourceUrl);
       expect(Object.keys(game.traits[SEATS])).toEqual(["p1", "p2"]);

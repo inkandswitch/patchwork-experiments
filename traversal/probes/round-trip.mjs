@@ -1,43 +1,31 @@
-// The round trip, in headless Chrome with real keys and a real mouse: from
-// the sloop's companionway down to E1M1, and from E1M1's exit switch back up.
+// The round trip, in headless Chrome with real keys and a real mouse: from a
+// door in scene A to scene B, and from a door in B back to A.
 //
-//   (in scene/, seats/, sailing/, tabletop/, joints/, arena/, walk/, doom/, water/, weather/ and traversal/) pnpm build
+//   (in scene/, walk/ and traversal/) pnpm build
 //   node probes/round-trip.mjs [--shots <dir>] [--show] [--gpu]
 //
-// Mounts the BUILT plugins of every package involved in a small shell
+// Mounts the BUILT plugins of those three packages in a small shell
 // (round-trip-probe.html: one scene shown at a time; an open-document event
 // is recorded and, once `follow` is on, opens that doc, as Patchwork does).
-// The maker makes both scenes with the tools (Ship at anchor with Lost Cities
-// in her cockpit; Freedoom's E1M1 slice pasted into an empty scene, set to
-// start people walking at the player 1 start: view.start). Then a visitor:
-//  1. opens the ship: off her quarter (Look, where a click comes aboard),
-//     sailing running; nothing anywhere mentions the other scene;
-//  2. comes aboard (Enter) and walks her deck (W, steering with the mouse)
-//     to the forward end of the cockpit, past the card table;
-//  3. her companionway, with nowhere to go, offers no verb; her hatch, a
-//     slide, offers Open;
-//  4. given somewhere to go (its `to`, as a publisher writes it), the
-//     companionway offers [F] Go below; F sends one open-document request
-//     for that doc, bubbling and composed out of the stage;
-//  5. the shell opens E1M1: the visitor arrives walking (the walk body) at
-//     the player 1 start, the camera at its eye, the bar offering the gun;
-//     nothing mentions the ship;
-//  6. Pick up the gun (the bar's Play): walking at the start with the gun, the camera where
-//     it was; Esc puts the gun down, the body chip's Leave stops walking;
-//  7. at the exit switch (the spawn moved beside it: the walk there is long,
-//     and doom's tests show it can be walked), walking up to it (W), with
-//     nowhere to go it offers no verb; given the ship, it offers [F] Exit,
-//     and F sends open-document for the ship;
-//  8. the shell opens the ship again: sailing running; nothing mentions E1M1;
-//  9. no errors on the page.
+// Two plain scenes are made in the page: each a floor, a spawn point its
+// view.start walks people in at, and a door carrying traversal.exit with
+// nowhere to go. Then a visitor:
+//  1. opens A: arriving walking at A's spawn point, facing its door; nothing
+//     anywhere mentions B;
+//  2. walks up to the door (W); with nowhere to go it offers no verb;
+//  3. given somewhere to go (its `to`, as a publisher writes it), it offers
+//     [F] Go through; F sends one open-document request for B, bubbling and
+//     composed out of the stage;
+//  4. the shell opens B: the visitor arrives walking at B's spawn point,
+//     where B's view.start says; nothing mentions A;
+//  5. the same from B's door back to A;
+//  6. no errors on the page.
 // Prints a JSON report; exits non-zero if any check fails.
 //
 // Simulated time: the stage runs on the page's manual clock (window.__time),
-// so the ship swings at anchor, the body walks and a prompt answers only as
-// this steps frames, as fast as the CPU allows. A wait on the world is a
-// number of frames (until), never a sleep; the wall is waited on only for
-// loading (loads). A look that doesn't settle on its target throws, saying
-// where it got to.
+// so the body walks and a prompt answers only as this steps frames, as fast as
+// the CPU allows. A wait on the world is a number of frames (until), never a
+// sleep; the wall is waited on only for loading (loads).
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
@@ -46,15 +34,14 @@ import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROOT = resolve(PKG, "..");
-const WAD = join(ROOT, "doom/src/test/e1m1.wad");
-for (const p of ["scene", "seats", "sailing", "tabletop", "joints", "arena", "walk", "doom", "traversal", "water", "weather"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
+for (const p of ["scene", "walk", "traversal"]) if (!existsSync(join(ROOT, p, "dist/index.js"))) throw new Error(`no ${p}/dist/index.js: build it first`);
 const arg = (name, d = null) => {
   const i = process.argv.indexOf(name);
   return i > 0 ? process.argv[i + 1] : d;
 };
 const SHOTS = resolve(arg("--shots", join(process.env.TMPDIR || tmpdir(), "round-trip")));
 
-const b = await browser({ root: ROOT, port: 4942, cdp: 9942, page: "/traversal/probes/round-trip-probe.html", width: 1100, height: 640, show: process.argv.includes("--show"), gpu: process.argv.includes("--gpu"), timeout: 900_000, mounts: { "/wad": WAD } });
+const b = await browser({ root: ROOT, port: 4942, cdp: 9942, page: "/traversal/probes/round-trip-probe.html", width: 1100, height: 640, show: process.argv.includes("--show"), gpu: process.argv.includes("--gpu"), timeout: 300_000 });
 const { check, checks, details } = checklist();
 const report = { checks, details, shots: [], numbers: {} };
 const J = JSON.stringify;
@@ -67,245 +54,108 @@ const until = (expr, ms = 10_000) => b.soon(onP(expr), { frames: Math.ceil(ms / 
 /** Loading: the wall's, up to ms (the page's frames going at its pace). */
 const loads = (expr, ms = 20_000, every = 60) => b.waitFor(onP(expr), ms, every);
 const shot = async (name) => report.shots.push(await b.shot(join(SHOTS, `round-trip-${name}.png`)));
-const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const r3 = (p) => p && p.map((v) => +v.toFixed(3));
 const EXPECTED = /KHR_parallel_shader_compile|GPU stall due to ReadPixels|pointer ?lock/i;
-/** What mentions E1M1 or Doom, and what mentions the ship. */
-const DOOMISH = /doom|e1m1/i;
-const SHIPPY = /sloop|ship|sail|aboard|lost cities|cockpit|anchor|companionway|go below/i;
+/** What mentions the other scene: its title, and its link. */
+const MENTIONS = { a: /meadow/i, b: /cellar/i };
+/** The scenes' places, as the page makes them (round-trip-probe.html): where each starts people, and where its door is. */
+const PLACES = { a: { spawn: [0, 0, 4], door: [0, 0, -4], yaw: 0 }, b: { spawn: [4, 0, 0], door: [-4, 0, 0], yaw: Math.PI / 2 } };
+const flat = (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2]);
 
-/** Drag on the canvas by (mx, my) px: looking, where pointer lock is refused. */
-async function drag(mx, my) {
-  const c = await P("canvasRect()");
-  const x = Math.round(c.x + c.w / 2), y = Math.round(c.y + c.h / 2);
-  await b.mouse("mouseMoved", x, y);
-  await b.mouse("mousePressed", x, y);
-  const n = 8;
-  for (let k = 1; k <= n; k++) await b.mouse("mouseMoved", x + (mx * k) / n, y + (my * k) / n, { buttons: 1 });
-  await b.mouse("mouseReleased", x + mx, y + my);
-  await b.rest(80);
+/** Point at the door and wait for the prompt (`want`, a regexp source, if given); returns what it offers. */
+async function hoverPrompt(local, want = null, ms = 2500) {
+  const id = await P(`withTrait("traversal.exit")`);
+  const at = await P(`aimAt(${J(id)}, ${J(local)})`);
+  if (!at) return { id, at: null, prompt: await P("prompt()") };
+  await b.move(Math.round(at.x) + 1, Math.round(at.y));
+  await b.move(Math.round(at.x), Math.round(at.y));
+  if (want) await until(`p.prompt().some((t) => ${want}.test(t))`, ms);
+  else await b.rest(ms);
+  return { id, at, hovered: await P("hovered()"), prompt: await P("prompt()") };
 }
-/**
- * Turn to (yaw, pitch) as `read` reports them, by dragging; the drag's gain
- * (and sign) learned as it goes. Settled within `tol`, or it throws, saying
- * where it got to: nothing after a look that missed is worth checking.
- */
-async function turn(read, yaw, pitch, { tol = 0.03 } = {}) {
-  let gy = -0.0022, gp = -0.0022; // radians per pixel
-  const tries = [];
-  for (let i = 0; i < 16; i++) {
-    const at = await read();
-    const dy = wrap(yaw - at.yaw), dp = pitch - at.pitch;
-    if (Math.abs(dy) < tol && Math.abs(dp) < tol) return true;
-    tries.push([+at.yaw.toFixed(3), +at.pitch.toFixed(3)]);
-    const mx = Math.max(-500, Math.min(500, Math.round(dy / gy))), my = Math.max(-300, Math.min(300, Math.round(dp / gp)));
-    await drag(mx, my);
-    const now = await read();
-    if (Math.abs(mx) > 8 && Math.abs(wrap(now.yaw - at.yaw)) > 0.005) gy = wrap(now.yaw - at.yaw) / mx;
-    if (Math.abs(my) > 8 && Math.abs(now.pitch - at.pitch) > 0.005) gp = (now.pitch - at.pitch) / my;
-  }
-  throw new Error(`turn didn't settle on yaw ${yaw.toFixed(3)}, pitch ${pitch.toFixed(3)} (within ${tol}) in 16 drags: it went ${J(tries)}`);
-}
-/** Look the way a point is from where the body is, on the ship (her frame: bow −Z), and level. */
-const aimYaw = (from, to) => Math.atan2(-(to[0] - from[0]), -(to[2] - from[2]));
-const meLook = async () => { const m = await P("me()"); return { yaw: m.yaw, pitch: m.pitch }; };
-/** Walk the body on the ship to (x, z) in her frame (W held, steering), within tol, or until ms pass. */
-async function walkAboard(to, { ms = 20_000, tol = 0.2 } = {}) {
-  let me = await P("me()");
-  await turn(meLook, aimYaw(me.position, to), 0);
+/** Walk (W held) until the eye is within `near` m of `to` in plan, or ms of the page's clock pass. */
+async function walkTo(to, { near = 1.7, ms = 20_000 } = {}) {
   await b.keyDown("w");
   try {
-    // looked at every 50 ms of the page's clock
     for (let t = 0; t < ms; t += 50) {
       await b.advance(50);
-      me = await P("me()");
-      if (Math.hypot(to[0] - me.position[0], to[2] - me.position[2]) < tol) break;
-      const want = aimYaw(me.position, to);
-      if (Math.abs(wrap(want - me.yaw)) > 0.2) {
-        await b.keyUp("w");
-        await turn(meLook, want, 0);
-        await b.keyDown("w");
-      }
+      if (flat((await P("cam()")).position, to) < near) break;
     }
   } finally {
     await b.keyUp("w");
   }
   await b.rest(300);
-  return P("me()");
-}
-/** Point at an object (near `local` in its frame) and wait for the prompt; returns what it offers. */
-async function hoverPrompt(id, local, want = null, ms = 2500) {
-  const at = await P(`aimAt(${J(id)}, ${J(local)})`);
-  if (!at) return { at: null, prompt: await P("prompt()") };
-  await b.move(Math.round(at.x) + 1, Math.round(at.y));
-  await b.move(Math.round(at.x), Math.round(at.y));
-  if (want) await until(`p.prompt().some((t) => ${want}.test(t))`, ms);
-  else await b.rest(ms);
-  return { at, hovered: await P("hovered()"), prompt: await P("prompt()") };
+  return (await P("cam()")).position;
 }
 const textOf = async () => (await P("text()")).replace(/\s+/g, " ");
 
-let ids = {};
+/**
+ * One scene's visit: arrive, walk to its door, nothing to go to, then given the
+ * other scene, the verb and F. `from` and `to` are "a" and "b".
+ */
+async function visit(from, to, n, urls) {
+  const there = PLACES[from];
+  const arrived = await until(`p.showing() === ${J(from)} && p.bodyId() === "walk" && p.running().includes("traversal") && p.running().includes("walk")`, 20_000);
+  await loads(`(() => { const l = p.loaded(); return l.total > 0 && l.loaded === l.total; })()`, 60_000, 100);
+  await b.rest(800);
+  const cam = (await P("cam()")).position;
+  const look = await P("yawPitch()");
+  const text1 = await textOf();
+  details[`arrival-${from}`] = { cam: r3(cam), look, running: await P("running()"), body: await P("body()"), text: text1.slice(0, 300), notices: await P("notices()") };
+  check(`${n}a. ${from === "a" ? "the visitor opens A" : "the shell opens B"}: arriving walking (the walk body; walk and traversal running) at its spawn point, the eye there, facing its door (its view.start)`, arrived && flat(cam, there.spawn) < 0.3 && cam[1] > 1 && Math.abs(Math.abs(look.yaw) - Math.abs(there.yaw)) < 0.3, details[`arrival-${from}`]);
+  check(`${n}b. nothing mentions the other scene (the document, what is shown, the notices)`, !JSON.stringify(await P("doc()")).includes(urls[to]) && !MENTIONS[to].test(text1) && !text1.includes(urls[to]) && (await P("notices()")).length === 0, { text: text1.slice(0, 400), notices: await P("notices()") });
+  await shot(`${n}-${from}-arrive`);
+
+  // ─── walk up to the door: no verb ─────────────────────────────────────────
+  await P("focus()");
+  const id = await P(`withTrait("traversal.exit")`);
+  const doorAt = (await P(`worldOf(${J(id)})`)).slice(12, 15);
+  const e0 = (await P("cam()")).position;
+  const e1 = await walkTo(doorAt);
+  details[`walk-${from}`] = { door: r3(doorAt), from: r3(e0), to: r3(e1) };
+  check(`${n}c. walking (W), the visitor gets up to the door`, flat(e1, doorAt) < 1.8 && flat(e1, doorAt) > 0.3 && flat(e0, doorAt) - flat(e1, doorAt) > 3, details[`walk-${from}`]);
+  const none = await hoverPrompt([0, 1.1, 0]);
+  check(`${n}d. looking at the door with nowhere to go, within reach, the prompt offers no verb for it`, !!none.at && none.at.distance <= 2 && none.hovered === id && none.prompt.length === 0 && (await P("doc()")).objects[id].traits["traversal.exit"].to === undefined, none);
+  await shot(`${n}-${from}-no-verb`);
+
+  // ─── somewhere to go: the verb, and F ─────────────────────────────────────
+  await P(`lead(${J(from)}, ${J(urls[to])})`);
+  const go = await hoverPrompt([0, 1.1, 0], "/Go through/");
+  check(`${n}e. given somewhere to go, the door offers [F] Go through, within reach`, go.hovered === id && go.prompt.some((t) => /F/.test(t) && /Go through/.test(t)) && go.at.distance <= 2, go);
+  const text2 = await textOf();
+  check(`${n}f. the prompt is the plain verb: nothing shown names where it goes`, !MENTIONS[to].test(text2) && !text2.includes(urls[to]), text2.slice(0, 400));
+  await shot(`${n}-${from}-go`);
+  await P("shell.follow = true");
+  const before = (await P("opened")).length;
+  await b.key("f");
+  await until(`p.opened.length > ${before}`, 3000);
+  await b.rest(300);
+  const sent = (await P("opened")).slice(before);
+  check(`${n}g. F sends exactly one open-document request, for ${to.toUpperCase()}, bubbling and composed out of ${from.toUpperCase()}'s stage`, sent.length === 1 && sent[0].url === urls[to] && sent[0].from === urls[from] && sent[0].bubbles && sent[0].composed && J(sent[0].detail) === J({ url: urls[to] }), sent);
+}
+
 try {
   check("the page set up", (await b.waitFor("window.__ready", 60_000)) === true, await P("errors").catch(() => null));
   const urls = await P("urls");
-
-  // ─── the maker makes both scenes ──────────────────────────────────────────
-  await P(`show("doom", "maker")`);
-  await loads(`p.running().includes("scene.add")`, 30_000);
-  await P("pasteWad()");
-  const doomBuilt = await loads(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 180_000, 200);
-  ids.exit = await P(`withTrait("traversal.exit")`);
-  ids.spawn = await P(`withTrait("walk.spawn")`);
-  ids.home = await P("startAtSpawn()");
-  check("the maker lays E1M1 out (14 parts, an exit switch with nowhere to go) and starts people walking at the player 1 start", doomBuilt && !!ids.exit && !!ids.spawn && (await P("doc()")).objects[ids.exit].traits["traversal.exit"].to === undefined, { loaded: await P("loaded()"), exit: ids.exit, home: ids.home });
-  await P(`show("aboard", "maker")`);
-  await loads(`p.templates().includes("ship-at-anchor")`, 30_000);
-  Object.assign(ids, await P("makeAboard()", 120_000));
-  const shipBuilt = await loads(`(() => { const l = p.loaded(); return l.total > 15 && l.loaded === l.total; })()`, 180_000, 200);
-  check("the maker sets the ship at anchor with Lost Cities in her cockpit; her companionway has nowhere to go", shipBuilt && !ids.error && !!ids.companionway && !!ids.hatch && (await P("doc()")).objects[ids.companionway].traits["traversal.exit"].to === undefined, { ids, loaded: await P("loaded()") });
-
-  // ─── 1. a visitor opens the ship ──────────────────────────────────────────
+  // ─── 1–3. A: arrive, walk to the door, go ─────────────────────────────────
   await P("forgetCameras()");
-  await P(`show("aboard", "visitor")`);
-  const inPlay = await loads(`p.bodyId() === "look" && p.running().includes("sailing") && p.running().includes("traversal") && p.running().includes("joints")`, 30_000);
-  await loads(`(() => { const l = p.loaded(); return l.total > 15 && l.loaded === l.total; })()`, 120_000, 200);
-  await b.rest(1500);
-  const shipText1 = await textOf();
-  check("1. the visitor opens the ship off her quarter (Look; sailing, joints and traversal running); nothing shown mentions E1M1 or Doom", inPlay && !DOOMISH.test(shipText1) && !shipText1.includes(urls.doom) && !(await P("notices()")).some((n) => DOOMISH.test(n)), { running: await P("running()"), text: shipText1.slice(0, 600), notices: await P("notices()") });
-  await shot("1-ship-arrive");
+  await P(`show("a")`);
+  await visit("a", "b", 1, urls);
 
-  // ─── 2. aboard, and to the companionway ───────────────────────────────────
-  await P("focus()");
-  await b.key("Enter");
-  const boarded = await until(`p.me()?.playing === true && p.me()?.on != null`, 8000);
-  const start = await P("me()");
-  check("2a. Enter: the visitor comes aboard, walking her deck", boarded, start);
-  // Her frame: bow −Z, starboard +X. You come aboard beside the wheel (z 4.25), whose turn sweeps a disc across the
-  // well, so you get past it on the side deck; the companionway's washboards are at the cabin's aft end (z 1.83–1.97),
-  // and the card table stands between the benches (z 2.47–3.23), leaving the well's forward end too narrow to stand in.
-  // So: up onto the side deck on your side, forward past the wheel, down onto the bench, and forward along it beside
-  // the table to its forward end.
-  const sx = Math.sign(start.position[0]) || 1;
-  const route = [[0.6, 0, 4.75], [1.25, 0, 4.6], [1.25, 0, 3.9], [0.6, 0, 3.5], [0.6, 0, 2.25]].map(([x, y, z]) => [sx * x, y, z]);
-  const walked = [];
-  for (const p of route) walked.push(r3((await walkAboard(p)).position));
-  const there = await P("me()");
-  details.walk = { start: r3(start.position), route, walked, there: { position: r3(there.position), on: there.on, yaw: there.yaw } };
-  check("2b. walking (W, steering by dragging), the visitor gets past the wheel and the card table to the bench's forward end, beside the companionway", Math.hypot(there.position[0] - route.at(-1)[0], there.position[2] - route.at(-1)[2]) < 0.3 && there.on === ids.hull, details.walk);
-  // look down at a point (her frame) from the eye, 1.6 m over the feet
-  const lookAt = async (p) => {
-    const me = await P("me()");
-    const e = [me.position[0], me.position[1] + 1.6, me.position[2]];
-    return turn(meLook, aimYaw(e, p), Math.atan2(p[1] - e[1], Math.hypot(p[0] - e[0], p[2] - e[2])));
-  };
+  // ─── 4–5. B: arrive where B's start says, walk to its door, go back ────────
+  await visit("b", "a", 2, urls);
 
-  // ─── 3. its hatch's slide: Open; nowhere to go: no verb ───────────────────
-  await lookAt([0, 1.8, 1.6]);
-  await shot("3-the-hatch");
-  const hatch = await hoverPrompt(ids.hatch, [0, 0.1, -0.2], "/Open/");
-  check("3a. her hatch (joints' slide) offers [F] Open within reach", hatch.prompt.some((t) => /F/.test(t) && /Open/.test(t)), hatch);
-  // the washboards' upper part, on the cabin's aft face (z 1.97): from the bench, the nearest of them (about 1.3 m)
-  await lookAt([0, 1.5, 1.97]);
-  await shot("3-the-companionway");
-  const none = await hoverPrompt(ids.companionway, [0, 0.8, 0.016]);
-  check("3b. looking at her companionway with nowhere to go, within reach, the prompt offers no verb for it", !!none.at && none.at.distance <= 2 && none.hovered === ids.companionway && !none.prompt.some((t) => /Go below|Go\b/.test(t)), none);
-
-  // ─── 4. somewhere to go: Go below ─────────────────────────────────────────
-  await P(`lead("aboard", ${J(urls.doom)})`);
-  const go = await hoverPrompt(ids.companionway, [0, 0.8, 0.016], "/Go below/");
-  check("4a. given somewhere to go, her companionway offers [F] Go below, within reach", go.hovered === ids.companionway && go.prompt.some((t) => /F/.test(t) && /Go below/.test(t)) && go.at.distance <= 2, go);
-  const shipText2 = await textOf();
-  check("4b. the prompt is the plain verb: nothing shown names where it goes", !DOOMISH.test(shipText2) && !shipText2.includes(urls.doom), shipText2.slice(0, 600));
-  await shot("4-go-below");
-  await P("shell.follow = true");
-  const before = (await P("opened")).length;
-  // (the prompt still offering it as the key goes down: she rolls at anchor, and the look with her)
-  await until(`p.prompt().some((t) => /Go below/.test(t))`, 3000);
-  await b.key("f");
-  await until(`p.opened.length > ${before}`, 3000);
-  const sent = (await P("opened")).slice(before);
-  check("4c. F sends exactly one open-document request, for E1M1, bubbling and composed out of the ship's stage", sent.length === 1 && sent[0].url === urls.doom && sent[0].from === urls.aboard && sent[0].bubbles && sent[0].composed && J(sent[0].detail) === J({ url: urls.doom }), sent);
-
-  // ─── 5. arriving in E1M1 ──────────────────────────────────────────────────
-  const play = await (async () => {
-    if (!(await loads(`p.showing() === "doom" && p.running().includes("arena")`, 20_000))) return null;
-    await loads(`(() => { const l = p.loaded(); return l.total >= 14 && l.loaded === l.total; })()`, 120_000, 200);
-    await b.rest(1200);
-    return P(`rect('.toolbar [data-command="play"]')`);
-  })();
-  const arrived = play && await until(`p.showing() === "doom" && p.bodyId() === "walk" && p.running().includes("arena")`, 20_000);
-  const cam = await P("cam()");
-  const doomText1 = await textOf();
-  details.arrival = { cam: { position: r3(cam.position), target: r3(cam.target) }, home: ids.home, lobby: play, text: doomText1.slice(0, 400), notices: await P("notices()"), body: await P("body()") };
-  check("5a. the shell opens E1M1: the visitor arrives walking at the player 1 start (view.start), the eye there, the bar offering the gun", arrived && Math.hypot(cam.position[0] - ids.home.position[0], cam.position[2] - ids.home.position[2]) < 0.3 && Math.abs(cam.position[1] - ids.home.position[1]) < 0.3 && /Pick up the gun/.test(play?.text ?? ""), details.arrival);
-  check("5b. nothing shown mentions the ship, and there are no notices", !SHIPPY.test(doomText1) && !doomText1.includes(urls.aboard) && (await P("notices()")).length === 0, details.arrival);
-  check("5c. no target count in a level without targets", !/target|standing/i.test(doomText1), doomText1.slice(0, 300));
-  await shot("5-doom-arrive");
-
-  if (!play) throw new Error("no Play on E1M1's bar");
-  // ─── 6. Play ──────────────────────────────────────────────────────────────
-  await b.click(Math.round(play.x), Math.round(play.y));
-  await b.rest(1500);
-  const eye = (await P("cam()")).position;
-  const walking = await P("body()");
-  check("6. Pick up the gun (the bar's Play): walking at the start (the walk body over Look, the gun in hand), where the view already was", walking.id === "walk" && J(walking.stack) === J(["look", "walk"]) && walking.tool === "gun" && Math.hypot(eye[0] - ids.home.position[0], eye[2] - ids.home.position[2]) < 0.3 && Math.abs(eye[1] - ids.home.position[1]) < 0.3 && !(await P(`rect('.toolbar [data-command="play"]')`)), { eye: r3(eye), home: ids.home.position, body: walking });
-  await shot("6-doom-play");
-
-  // ─── 7. the exit switch ───────────────────────────────────────────────────
-  // its frame: the middle of its line on its floor; the wall faces +X (Doom's east). Stand 1.6 m off it, facing it.
-  const sw = await P(`worldOf(${J(ids.exit)})`);
-  const standAt = [sw[12] + 1.6, sw[13] + 0.05, sw[14]];
-  // Esc puts the gun down (never the body); the body chip's Leave stops walking, so Play walks in at the moved spawn
-  await b.key("Escape");
-  await b.rest(400);
-  const chip = await P(`rect(".body-chip")`);
-  if (chip) await b.click(Math.round(chip.x), Math.round(chip.y));
-  await until(`!!p.rect(".body-menu .menu-item")`, 3000);
-  const items = await js(`[...document.querySelectorAll(".body-menu .menu-item")].map((e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent.trim() }; })`);
-  const leave = items.find((i) => /^Leave/.test(i.text));
-  if (leave) await b.click(Math.round(leave.x), Math.round(leave.y));
-  await b.rest(400);
-  check("6b. Esc puts the gun down; the body chip's Leave stops walking (Look)", !!leave && (await P("body()")).id === "look", { items, body: await P("body()") });
-  await P(`moveSpawn(${J(standAt)}, ${Math.PI / 2})`);
-  await b.rest(300);
-  const play2 = await P(`rect('.toolbar [data-command="play"]')`);
-  if (play2) await b.click(Math.round(play2.x), Math.round(play2.y));
-  await b.rest(1200);
-  const e0 = (await P("cam()")).position;
-  await turn(() => P("yawPitch()"), Math.PI / 2, -0.1);
-  await b.keyDown("w");
-  await b.advance(250);
-  await b.keyUp("w");
-  await b.rest(500);
-  const e1 = (await P("cam()")).position;
-  details.exitWalk = { switch: r3([sw[12], sw[13], sw[14]]), from: r3(e0), to: r3(e1) };
-  check("7a. at the exit switch's room, the visitor walks up to it (W)", e1[0] < e0[0] - 0.3 && e1[0] - sw[12] > 0.2 && e1[0] - sw[12] < 1.6, details.exitWalk);
-  const noExit = await hoverPrompt(ids.exit, [0, 1.5, 0]);
-  check("7b. with nowhere to go, the exit switch offers no verb", !!noExit.at && noExit.hovered === ids.exit && !noExit.prompt.some((t) => /Exit/.test(t)), noExit);
-  await P(`lead("doom", ${J(urls.aboard)})`);
-  const exit = await hoverPrompt(ids.exit, [0, 1.5, 0], "/Exit/");
-  await until(`p.prompt().some((t) => /Exit/.test(t))`, 3000);
-  check("7c. given the ship, it offers [F] Exit within reach", exit.hovered === ids.exit && exit.prompt.some((t) => /F/.test(t) && /Exit/.test(t)) && exit.at.distance <= 2, exit);
-  const doomText2 = await textOf();
-  check("7d. nothing shown names where it goes", !SHIPPY.test(doomText2) && !doomText2.includes(urls.aboard), doomText2.slice(0, 400));
-  await shot("7-exit");
-  const before2 = (await P("opened")).length;
-  await b.key("f");
-  await until(`p.opened.length > ${before2}`, 3000);
-  const sent2 = (await P("opened")).slice(before2);
-  check("7e. F sends exactly one open-document request, for the ship, out of E1M1's stage", sent2.length === 1 && sent2[0].url === urls.aboard && sent2[0].from === urls.doom && sent2[0].bubbles && sent2[0].composed, sent2);
-
-  // ─── 8. back aboard ───────────────────────────────────────────────────────
-  const back = await loads(`p.showing() === "aboard" && p.bodyId() === "look" && p.running().includes("sailing")`, 20_000);
-  await loads(`(() => { const l = p.loaded(); return l.total > 15 && l.loaded === l.total; })()`, 120_000, 200);
-  await b.rest(1500);
-  const shipText3 = await textOf();
-  check("8. the shell opens the ship again: off her quarter, sailing; nothing shown mentions E1M1 or Doom", back && !DOOMISH.test(shipText3) && !shipText3.includes(urls.doom), shipText3.slice(0, 600));
-  await shot("8-ship-again");
+  // ─── 6. back in A ─────────────────────────────────────────────────────────
+  const back = await until(`p.showing() === "a" && p.bodyId() === "walk"`, 20_000);
+  await loads(`(() => { const l = p.loaded(); return l.total > 0 && l.loaded === l.total; })()`, 60_000, 100);
+  await b.rest(800);
+  const cam = (await P("cam()")).position;
+  const text3 = await textOf();
+  check("3. the shell opens A again: arriving walking at A's spawn point; nothing shown mentions B", back && flat(cam, PLACES.a.spawn) < 0.3 && !MENTIONS.b.test(text3) && !text3.includes(urls.b), { cam: r3(cam), text: text3.slice(0, 300) });
+  await shot("3-a-again");
 
   const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));
-  check("9. no errors on the page", errors.length === 0, errors.slice(0, 12));
+  check("4. no errors on the page", errors.length === 0, errors.slice(0, 12));
 } catch (err) {
   check("ran to the end", false, String(err?.stack ?? err));
 }

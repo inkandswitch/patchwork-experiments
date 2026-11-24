@@ -71,9 +71,9 @@ Ask a flush with `api.schedule` when it changes on its own.
 
 ### Water and wind
 
-**Water**: trait, ambient and contributions `water` and `water.waves`
-([water/WATER.md](../water/WATER.md)). **Wind**: the ambient `wind`, from the
-`weather` trait ([weather/WEATHER.md](../weather/WEATHER.md)).
+**Water**: trait, ambient and contributions `water` and `water.waves` (the
+`water` package's WATER.md). **Wind**: the ambient `wind`, from the `weather`
+trait (the `weather` package's WEATHER.md).
 
 ## Carry
 

@@ -202,6 +202,5 @@ and view; `src/parts/` the editor's extensions; `src/test/` the harness.
 `probes/` holds browser probes: a page that mounts the built tool against an
 in-memory repo, and a `*-run.mjs` runner that drives it in headless Chrome
 over CDP with a real mouse, keyboard or touch. Run `pnpm build`, then `node
-probes/<name>-run.mjs` (`--show` to watch). `solander-run.mjs` measures a
-507-object scene and needs the original GLBs. Each `publish-*.mjs` run
-makes new docs on a real sync server.
+probes/<name>-run.mjs` (`--show` to watch). Each `publish-*.mjs` run makes
+new docs on a real sync server.
