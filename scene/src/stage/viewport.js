@@ -181,7 +181,7 @@ export class Viewport {
     this.raycaster = new Raycaster();
     // with a BVH, each mesh reports only its nearest hit; picking wants just that
     this.raycaster.firstHitOnly = true;
-    this.bvh = bvhQueue();
+    this.bvh = bvhQueue(this.time);
   }
 
   /** The camera rig, its orbit on `dom` (the canvas). */

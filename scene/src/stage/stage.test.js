@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
 import { wallAt } from "../test/stage-harness.js";
-import { bestWidget, initialCamera, startOf, statusOf, widgetWins } from "./stage.js";
+import { bestWidget, initialCamera, startOf, widgetWins } from "./stage.js";
 import { wholeStart } from "./view.js";
 import { hitChain } from "./chain.js";
 import { SEND } from "./presence.js";
@@ -233,16 +233,6 @@ describe("the stage's pure helpers", () => {
     expect(whole).not.toBe(start);
     expect([Object.isFrozen(whole), Object.isFrozen(whole["t.mine"]), Object.isFrozen(whole["t.mine"].n)]).toEqual([true, true, true]);
     for (const doc of [{ view: {} }, { view: { start: "walk" } }, { view: { start: [1] } }, null]) expect(wholeStart(doc)).toEqual({});
-  });
-  it("status: what's loading, building or broken", () => {
-    expect(statusOf(card(), null)).toBeNull();
-    expect(statusOf(card(), { content: "file", phase: "finding" }).state).toBe("loading");
-    expect(statusOf(card(), { content: "file", phase: "ready" })).toBeNull();
-    expect(statusOf(card(), { phase: "no-provider", providerId: "x" }).state).toBe("warn");
-    expect(statusOf({ kind: "group" }, { phase: "error" })).toBeNull();
-    // a failed build that will be retried says so (contract v3 build retries)
-    expect(statusOf(card(), { phase: "ready", status: "error", error: "boom", retryAt: 123 }).title).toBe("boom · retrying automatically");
-    expect(statusOf(card(), { phase: "ready", status: "error", error: "boom", retryAt: null }).title).toBe("boom");
   });
 });
 
@@ -672,7 +662,6 @@ describe("the stage, mounted", () => {
     await settle();
     const api = exts["t.always"].api;
     const file = repo.add({ "@patchwork": { type: "file" }, name: "part.glb", extension: "glb", mimeType: "model/gltf-binary", content: new Uint8Array([1]) });
-    expect((await api.providersFor(file.url, file.doc())).map((p) => p.id)).toEqual(["file-glb"]);
     const id = await add(api, file.url, { name: "Part", group: "g", before: "p", transform: { position: [1, 2, 3] } });
     const o = h.doc().objects[id];
     expect(o).toMatchObject({ name: "Part", sourceUrl: file.url, providerId: "file-glb", renderUrl: null, group: "g", parent: null });

@@ -30,15 +30,14 @@
 
 import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
-import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
-import { whileHolding } from "../stage/public.js";
+import { describeForHumans, describeSource, extensionOf, matchProviders, whileHolding } from "../stage/public.js";
 import { add as addObject } from "./editor.js";
 import { drop, template } from "./making.js";
 import { atFocus } from "../per-focus.js";
 import { EDIT } from "./editing.js";
 import { createParamForm } from "../param-form.js";
-import { paramsBySpec } from "../staleness.js";
+import { paramsBySpec } from "../params.js";
 
 export { fromEmbed };
 
@@ -265,7 +264,7 @@ function create(api) {
     const doc = source?.doc?.();
     // what a drop lays out is one edit, as an added object is: undo takes it out again
     if (!f || (await drop(f, { url, doc, handle: source, group: null, at })) || !live()) return null;
-    const providers = (await f.providersFor(url, doc)) ?? [];
+    const providers = matchProviders(f.registry("scene:source")?.filter?.(() => true) ?? [], describeSource(doc));
     if (!providers.length) return fail(`Nothing can show ${describeForHumans(describeSource(doc))} in a scene.`);
     const what = name || doc?.title || doc?.name || "this document";
     const provider = providers.length === 1 ? providers[0] : await choose(providers, what);

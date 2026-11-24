@@ -29,7 +29,7 @@ describe("documentsFor: the inspector's own documents, by kind of selection", ()
     inInfo: obj({ name: "Hull", group: "info" }),
     ownInfo: obj({ name: "Cleat", infoUrl: OWNINFO }),
   });
-  // what the stage routed each to (api.loadState(id).content)
+  // what the stage routed each to (api.content(id).route)
   const routed = { built: "built", file: "file", link: "scene" };
   const own = inspectorDocuments((id) => routed[id] ?? null);
   const shown = (target) => documentsFor(own, target, { scene }, ME).map((d) => [d.id, d.label, d.folded, d.url, d.toolId]);
@@ -57,20 +57,20 @@ describe("documentsFor: the inspector's own documents, by kind of selection", ()
 
 describe("buildSummary: a built object's build in a line", () => {
   const NOW = 10_000_000;
-  const built = (o) => ({ content: "built", phase: "ready", builtAt: NOW - 120_000, ...o });
+  const built = ({ state = { state: "fresh" }, ...r } = {}) => ({ route: "built", state, render: { builtAt: NOW - 120_000, ...r } });
+  const stale = { state: "stale", reason: "heads", hold: null };
   it.each([
-    ["a file isn't built", { content: "file" }, null],
-    ["a link isn't built", { content: "scene" }, null],
+    ["a file isn't built", { route: "file" }, null],
+    ["a link isn't built", { route: "scene" }, null],
     ["no load state", null, null],
-    ["a missing provider is the status line's", built({ phase: "no-provider" }), null],
-    ["building", built({ building: true }), "Building…"],
-    ["building wins over stale", built({ building: true, stale: true }), "Building…"],
-    ["never built", built({ builtAt: null }), "Not built yet"],
-    ["never built, pinned", built({ builtAt: null, pinned: true }), "Not built (pinned)"],
+    ["a missing provider is the status line's", built({ state: { state: "no-provider", providerId: "p" } }), null],
+    ["building", built({ state: { state: "building", by: "here" } }), "Building…"],
+    ["never built", built({ builtAt: null, state: { ...stale, reason: "never-built" } }), "Not built yet"],
+    ["never built, pinned", built({ builtAt: null, pinned: true, state: { ...stale, reason: "never-built", hold: "pinned" } }), "Not built (pinned)"],
     ["up to date", built({}), "Up to date · built 2 min ago"],
-    ["out of date", built({ stale: true }), "Built 2 min ago · out of date"],
-    ["out of date, pinned", built({ stale: true, pinned: true }), "Built 2 min ago · out of date (pinned)"],
-    ["fixed (never out of date)", built({ fixed: true, stale: true }), "Built 2 min ago · fixed version"],
+    ["out of date", built({ state: stale }), "Built 2 min ago · out of date"],
+    ["out of date, pinned", built({ pinned: true, state: { ...stale, hold: "pinned" } }), "Built 2 min ago · out of date (pinned)"],
+    ["fixed (never out of date)", built({ at: { heads: ["h"], deps: {} }, state: stale }), "Built 2 min ago · fixed version"],
   ])("%s", (_name, load, want) => {
     expect(buildSummary(load, NOW)).toBe(want);
   });

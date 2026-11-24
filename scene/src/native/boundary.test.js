@@ -7,6 +7,7 @@
 //   - the native services and the editor import from the kernel only its face
 //     (stage/public.js), which only re-exports kernel helpers, each used above
 //     it: everything else they get is the api they were created with;
+//   - the kernel takes time only from stage/time.js;
 //   - each contract page stays within its size;
 //   - every invariant label the pages list is named by a test: in its title
 //     or in the comment directly above it.
@@ -27,16 +28,17 @@ const ORDER = ["shared", "kernel", "native", "editor", "entry"];
  * A root module is in the one layer that uses it, or shared when several
  * layers (or a shared module) use it: checked below.
  *   shared  formats, math and plain data; they know no layer
- *   kernel  src/stage/ and the modules it is built from: its rules and machinery
+ *   kernel  src/stage/, src/content/ and the modules they are built from: its
+ *           rules and machinery, and how an object's content is drawn
  *   native  the package's own plugins below the editor: the native services
  *           (NATIVE.md) and the sources (src/sources/)
  *   editor  the editor's parts (EDITOR.md) and what only they use
  *   entry   what registers the plugins (index.js), and the package's other tool
  */
 const LAYERS = {
-  folders: { stage: "kernel", native: "native", sources: "native", parts: "editor" },
-  shared: ["build", "carry-rules", "connectors", "datatype", "deps", "dnd", "embed", "file-content", "glb", "groups", "hierarchy", "icons", "layers", "ops", "param-form", "per-focus", "providers", "render-read", "shallow", "staleness", "transform", "tree-drop", "units"],
-  kernel: ["glb-queue", "gltf-content", "key-order", "packages", "pick-accel", "render-manager", "selection", "theme"],
+  folders: { stage: "kernel", content: "kernel", native: "native", sources: "native", parts: "editor" },
+  shared: ["carry-rules", "connectors", "datatype", "dnd", "embed", "file-content", "glb", "groups", "hierarchy", "icons", "layers", "ops", "param-form", "params", "per-focus", "shallow", "transform", "tree-drop", "units", "versions"],
+  kernel: ["gltf-content", "key-order", "packages", "pick-accel", "render-read", "selection", "theme"],
   native: ["stl"],
   editor: ["anchors", "extract", "handles", "hold-key", "legend", "peers", "surface", "touch-keys", "transfer", "undo"],
   entry: ["controls-tool", "index"],
@@ -47,6 +49,9 @@ const FACE = "stage/public.js";
 
 /** The contract pages and their most lines. */
 const PAGES = { "STAGE.md": 200, "API.md": 200, "NATIVE.md": 400, "EDITOR.md": 300, "CONVENTIONS.md": 200 };
+
+/** Other pages whose invariants (C…: README.md, "Content") are named by tests too. */
+const LABELLED = ["README.md"];
 
 /** Invariants whose tests live in another package (they need its processes), with where. */
 const ELSEWHERE = {
@@ -151,6 +156,13 @@ describe("the layers and the kernel's boundary", () => {
     expect(offered.filter((n) => !used.has(n))).toEqual([]);
   });
 
+  it("the kernel runs on the stage's one time: no page clock or timer in a kernel module but stage/time.js (API.md, `api`: now, after)", () => {
+    const PAGE = /\b(Date\.now|setTimeout|setInterval|requestAnimationFrame)\b/;
+    const code = (m) => readFileSync(join(SRC, m), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const wrong = modules.filter((m) => layerOf(m) === "kernel" && m !== "stage/time.js" && PAGE.test(code(m)));
+    expect(wrong).toEqual([]);
+  });
+
   it("each contract page fits: STAGE.md ≤ 200 lines, API.md ≤ 200, NATIVE.md ≤ 400, EDITOR.md ≤ 300, CONVENTIONS.md ≤ 200", () => {
     for (const [page, most] of Object.entries(PAGES)) {
       const lines = readFileSync(join(ROOT, page), "utf8").replace(/\n$/, "").split("\n").length;
@@ -159,7 +171,7 @@ describe("the layers and the kernel's boundary", () => {
   });
 
   it("every invariant label the pages list is named by a test's title or the comment directly above it", () => {
-    const labels = Object.keys(PAGES).flatMap((page) => [...readFileSync(join(ROOT, page), "utf8").matchAll(/^\| ([HI]\d+) \|/gm)].map((m) => m[1]));
+    const labels = [...Object.keys(PAGES), ...LABELLED].flatMap((page) => [...readFileSync(join(ROOT, page), "utf8").matchAll(/^\| ([HIC]\d+) \|/gm)].map((m) => m[1]));
     expect(new Set(labels).size).toBe(labels.length); // each listed once, on one page
     const named = new Set();
     const TITLE = /^\s*(describe|it|test)(\.\w+)*\s*\(/;
@@ -170,7 +182,7 @@ describe("the layers and the kernel's boundary", () => {
         if (!TITLE.test(line)) return;
         let text = line;
         for (let j = i - 1; j >= 0 && COMMENT.test(lines[j]); j--) text += `\n${lines[j]}`;
-        for (const m of text.matchAll(/\b([HI]\d+)\b/g)) named.add(m[1]);
+        for (const m of text.matchAll(/\b([HIC]\d+)\b/g)) named.add(m[1]);
       });
     }
     expect(labels.filter((l) => !named.has(l) && !(l in ELSEWHERE))).toEqual([]);

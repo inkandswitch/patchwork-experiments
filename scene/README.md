@@ -18,7 +18,7 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:datatype` | `scene` | the composition |
 | `patchwork:datatype` | `scene-render` | one per built object (unlisted) |
 | `patchwork:tool` | `scene` | the stage (`src/stage/stage.js`) |
-| `patchwork:tool` | `scene-render-controls` | the build-param form for a render doc |
+| `patchwork:tool` | `scene-render-controls` | the build-param form for a render doc; alone (no scene around it) it builds when asked, on `element.time` if given (a stage time), else the page's |
 | `scene:source` | `file-glb` | `.glb` file docs, `content: "file"` |
 | `scene:source` | `file-stl` | `.stl` file docs, `content: "built"` (params `unit`, `up`) |
 | `scene:source` | `scene.link` | a scene doc placed in a scene, `content: "scene"` |
@@ -96,7 +96,7 @@ A provider lives in the package that owns the datatype, as metadata in its
 ParamSpec = { key, label?, kind: "number"|"integer"|"boolean"|"enum"|"string"|"color", default,
               min?, max?, step?, log?, options?: [{ value, label }], cost?: "cheap"|"expensive" }
 SourceImpl = {
-  build({ doc, handle, url, params, repo }): Promise<{ kind: "glb", glb: Uint8Array,
+  build({ doc, handle, url, params, repo, signal }): Promise<{ kind: "glb", glb: Uint8Array,
         meta?: { bounds?: { min, max }, notes?: string } }>,   // must not write the source
   fingerprint?(doc): string,              // changes iff something build() reads changes
   dependencies?(doc): AutomergeUrl[],     // other docs build() reads; rebuilt when they change
@@ -107,26 +107,91 @@ SourceImpl = {
   doc and rebuilt when the source, params, dependencies or `version` change.
   `params` arrive with defaults filled in and clamped to their spec.
 - **Where `build()` runs.** On the page's main thread, called by the render
-  manager (`src/build.js`) of whichever open scene finds the render stale:
-  at most one build per render doc at a time, builds of different objects
-  side by side; a provider that needs a thread starts its own worker. It is
-  given exactly `{ doc, handle, url, params, repo }`: the source doc and its
-  handle (a read-only view at `at.heads` for a fixed object, `url` then
-  carrying `#heads`), the params as above, the repo to read dependencies
-  from. It must not write the source, nor assume a stage, a DOM or a scene:
-  other packages call it too, outside any scene, to get a doc's geometry
-  with its params' defaults (naval's, flow-field's and openfoam's hull
-  links). Nothing cancels it: a removed object's build runs out and is
-  dropped. A provider may cancel its own build by rejecting with an error
-  named `"AbortError"` (a newer build of the same doc superseding it): that
-  is not a failure, and the render is looked at again. Any other rejection
-  is the render's `error`, retried with backoff.
+  manager (`src/content/render-manager.js`) of the open scene the lock
+  chooses ("Who builds"), or of a render's build controls opened alone,
+  which build only when asked: at most one build per render doc at a time, builds
+  of different objects side by side; a provider that needs a thread starts
+  its own worker. It is given exactly `{ doc, handle, url, params, repo,
+  signal }`: the source doc and its handle (a read-only view at `at.heads`
+  for a fixed object, `url` then carrying `#heads`), the params as above,
+  the repo to read dependencies from, and an `AbortSignal` that aborts when
+  its result is no longer wanted: newer inputs are about to be built, the
+  object was removed, or the scene closed. It must not write the source,
+  nor assume a stage, a DOM or a scene: other packages call it too, outside
+  any scene, to get a doc's geometry with its params' defaults (naval's,
+  flow-field's and openfoam's hull links; they may pass no `signal`). A
+  build cancelled, by its signal or by rejecting with an error named
+  `"AbortError"`, is not a failure: nothing is written and the render is
+  looked at again. Any other rejection is the render's `error`, retried
+  with backoff.
 - `"file"`: the source doc already is a GLB file. No render doc, no `load()`.
   `file-glb` is this package's: a package adding a GLB file doc to a scene
   writes `providerId: "file-glb"`.
 - A render doc records `glbUrl` and what it was `builtFrom`; new bytes make a
   new immutable GLB file doc (`newRenderDoc` in `src/datatype.js`, staleness
-  in `src/staleness.js`).
+  in `src/content/staleness.js`). Its `status` is written as a build starts
+  and ends, and read only to learn that a build failed.
+
+### An object's state
+
+One value says whether what is drawn for an object is built and current:
+`contentState` (`src/content/state.js`), a pure function of what is known
+(the object, its render doc, the heads of its source and dependencies, the
+provider and its version, the params, who is building, failures). Its
+states are a closed set: `loading` (`version`: a fixed version not synced
+yet), `no-provider`, `building` (`by`), `failed` (`in: "build"` with
+`retryAt`, or `"load"`), `waiting` (`on`: linked documents loading),
+`stale` (`reason`; `hold`: `"pinned"`, `"contested"`, `"unavailable"` or
+null, the one it will rebuild on its own) and `fresh` (`behind`: built
+from changes this replica hasn't synced). `api.content(id).state` is it;
+`local.status` says it to people; the render manager builds on it; the
+build controls show it (a stage answers their `scene:render-context`).
+
+### Who builds
+
+Every writable open scene with a stale render could build it; the lock
+(`src/content/lock.js`) chooses one, with **one claim per render doc**. A
+peer that wants it built claims it on the render doc's channel, waits
+`CLAIM_MS` for a rival, and then holds it: it builds, rebuilds as the inputs
+move (cancelling the build in flight through its `signal`), retries a
+failure, says it still holds it every `HEARTBEAT_MS`, and lets it go once it
+has wanted nothing for `HEARTBEAT_MS`. Nobody claims while another's claim
+is live, nor before listening `LISTEN_MS` to a render it didn't make; of two
+claims at once the lower id holds, and a holder beats a claimer. A peer that
+learns of a failure it isn't holding leaves those inputs alone until they
+change or someone asks.
+
+**The write fence.** A result is written only over the build the render had
+as it began (nothing committed meanwhile is replaced), only if no other peer
+claimed the render meanwhile, and, if its holder was silent past `LEASE_MS`
+(a frozen tab, a blocked thread), only after it has listened `RECHECK_MS`
+more; a holder silent that long lets the render go if it hears another
+holding it.
+
+**Timing.** One assumption, `REACH_MS` (D = 250 ms): every message and change
+reaches every peer within it. With the heartbeat H = 2 s: `CLAIM_MS` = 4D
+(needs > 2D, an exact tie included); `LAPSE_MS` = `LISTEN_MS` = 3H (needs >
+2H + D: one heartbeat may be lost); `LEASE_MS` = `LAPSE_MS` − H − D;
+`RECHECK_MS` = 2D (needs > D and < `CLAIM_MS` − D). The derivation is in
+`lock.js`.
+
+| | Among the peers with the render open |
+|---|---|
+| C1 | (needs the assumption) At most one peer builds it at a time, a frozen peer aside. |
+| C2 | (needs it) A builder that vanishes is replaced within `REACH_MS` + `LAPSE_MS` + `CLAIM_MS` of its last word. |
+| C3 | (always) A peer that can't write never builds; a build is shown in progress only while one is, until its release arrives, or `LAPSE_MS` after its holder's last word. |
+| C4 | (always) A write replaces only the build its writer saw as its own began, so never a newer one it had received. (Needs the assumption) No older build replaces a newer one, a peer that froze mid-build and woke included. |
+| C5 | (always) Once nothing moves, it is built from the current inputs (or failed for them, or pinned), and nobody holds it; failing inputs are tried at most 1 + `RETRY_BACKOFF_MS.length` times in all (with the assumption). |
+
+`src/content/lock.test.js` checks them on a finite model: two or three real
+managers, each with its own replica of the docs and its own view of one
+manual clock, over a network delivering each message and change at once or
+at exactly `REACH_MS`, every run enumerated over who edits, when, builds
+short or past `LAPSE_MS`, failing, a builder freezing past `LAPSE_MS` and
+waking to write, a forced rebuild, a peer joining mid-build, one or two
+messages lost. The protocol before this one (`scene-render:building`
+messages) and this one ignore each other: scenes on the two can build the
+same render twice, and the later write wins; they converge.
 
 ### Consuming a render
 
@@ -160,11 +225,13 @@ Anchor = { objectId, local, world }  // a point in its object's frame: follows i
 
 ### Content is routed at sync
 
-`routeOf` in `src/providers.js`: an object with a render doc goes to the
+`routeOf` in `src/content/providers.js`: an object with a render doc goes to the
 render manager, which shows what was built even without its provider. One
 without goes where its provider's `content` says (`"file"`: the GLB queue;
 `"scene"`: a link). Anything else is drawn as its `hint`.
-`api.loadState(id).content` says which.
+`api.content(id).route` says which. Only what is shown loads, biggest
+first, the viewer's selection first of all. All of it is `src/content/`, the
+stage's one door to it `createContent` (`src/content/content.js`).
 
 ### Fixed versions (`at`)
 
@@ -220,7 +287,8 @@ meet it by, [CONVENTIONS.md](CONVENTIONS.md) what packages agree among
 themselves; [DESIGN.md](DESIGN.md) the idea, [HISTORY.md](HISTORY.md) how and
 why, [PLANS.md](PLANS.md) deferred work.
 `src/index.js` is plugin metadata only (worker-safe); `src/stage/` the stage
-and view; `src/parts/` the editor's extensions; `src/test/` the harness.
+and view; `src/content/` content; `src/parts/` the editor's extensions;
+`src/test/` the harness.
 
 ## Probes
 

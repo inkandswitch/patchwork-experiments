@@ -1,12 +1,16 @@
 // One build of one scene-render doc: call the provider, store the GLB as a new
 // immutable file doc, repoint the render doc at it. The source doc is only read.
+// The write fence: the result is written only over the build the render had
+// as this one began (a build someone committed meanwhile is never replaced),
+// and only if `mayCommit` still says so as it is written.
 // A build whose bytes are identical to the current GLB's keeps the current file
 // doc (builtFrom.glbHash), so a rebuild that changes nothing makes no new doc.
 
-import { hasHeads } from "@automerge/automerge";
-import { parseGLB } from "./glb.js";
-import { isRenderDoc, renderKey } from "./render-read.js";
-import { effectiveParams, normalizeDeps, paramsKey, providerVersionOf, sameDeps, sameHeads, sortedHeads, stableStringify } from "./staleness.js";
+import { parseGLB } from "../glb.js";
+import { isRenderDoc, renderKey } from "../render-read.js";
+import { effectiveParams, stableStringify } from "../params.js";
+import { normalizeDeps, sortedHeads } from "../versions.js";
+import { paramsKey, providerVersionOf } from "./staleness.js";
 
 export function errorMessage(err) {
   if (!err) return "Unknown error";
@@ -66,79 +70,6 @@ export function dependencyKeyOf(impl, url, doc) {
   return null;
 }
 
-/**
- * A read-only handle on `handle`'s doc at `heads` (automerge-repo's
- * DocHandle.view), or null if it can't be had here: no view() on this handle,
- * or heads this replica doesn't have yet (automerge-repo then gives an empty
- * doc rather than throwing, so an empty view of a non-empty doc counts as
- * missing). With no heads, the handle itself.
- */
-/**
- * False when the handle's doc lacks some of these changes: a peer built from a
- * version of it this client hasn't synced yet. (A handle may answer itself with
- * `hasHeads(heads)`, as the test fakes do; anything that can't be asked counts
- * as known.)
- */
-export function knowsHeads(handle, heads) {
-  const list = (heads ?? []).filter((h) => typeof h === "string" && h && !h.startsWith("fp:"));
-  if (!handle || !list.length) return true;
-  if (typeof handle.hasHeads === "function") return !!handle.hasHeads(list);
-  const doc = handle.doc?.();
-  if (!doc) return false;
-  try {
-    return hasHeads(doc, list);
-  } catch {
-    return true;
-  }
-}
-
-export function viewAt(handle, heads) {
-  if (!handle) return null;
-  if (!heads?.length) return handle;
-  if (typeof handle.view !== "function") return null;
-  try {
-    const v = handle.view([...heads]);
-    const d = v?.doc();
-    if (!d) return null;
-    if (Object.keys(d).length === 0 && Object.keys(handle.doc?.() ?? {}).length > 0) return null;
-    return v;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The repo build() is handed for a fixed object: find(url) gives a read-only
- * view at the listed heads for every dependency in `deps` ({ url: heads }),
- * so a fixed OpenSCAD part's imports are fixed too. Unlisted URLs, and
- * everything else on the repo (create2 for the GLB, peerId…), are the repo's
- * own. With nothing listed, the repo itself.
- */
-export function pinnedRepo(repo, deps) {
-  const fixed = {};
-  const nd = normalizeDeps(deps);
-  for (const url of Object.keys(nd)) if (nd[url].length) fixed[url] = nd[url];
-  if (!repo || !Object.keys(fixed).length) return repo;
-  const headsFor = (url) => {
-    const s = String(url ?? "");
-    if (fixed[s]) return fixed[s];
-    if (s.includes("#")) return null; // asks for a version of its own
-    return fixed[s.split("/")[0]] ?? null; // a path inside a fixed doc
-  };
-  async function find(url, ...rest) {
-    const handle = await repo.find(url, ...rest);
-    const heads = headsFor(url);
-    return heads && typeof handle?.view === "function" ? handle.view([...heads]) : handle;
-  }
-  return new Proxy(repo, {
-    get(target, prop) {
-      if (prop === "find") return find;
-      const v = Reflect.get(target, prop, target);
-      return typeof v === "function" ? v.bind(target) : v;
-    },
-  });
-}
-
 /** A bounds box worth keeping: { min: [x,y,z], max: [x,y,z] } of finite numbers, else null. */
 export function validBounds(b) {
   const ok = (v) => Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(Number(n)));
@@ -188,11 +119,15 @@ export function glbFileDoc(title, glb) {
  * @param {(deps: { [url]: string[] }) => { [url]: string[] }} [o.depsAfter]
  *        called once build() resolves, with the snapshot above: may fill in a
  *        dependency that finished loading during the build (build() read it)
- * @param {() => number} [o.now]
- * @returns {Promise<{ ok: true, glbUrl, builtFrom, meta, reused?: boolean, superseded?: boolean } | { ok: false, error: string, aborted?: true }>}
- *        aborted: build() rejected with an AbortError (the provider cancelled it); not recorded as an error
+ * @param {AbortSignal} o.signal  aborts when the result is no longer wanted; build() is handed it
+ * @param {() => number} o.now  when it was built (builtAt), on the stage's time
+ * @param {() => Promise<boolean>} [o.mayCommit]  asked just before the write: false, it isn't written
+ * @returns {Promise<{ ok: true, glbUrl, builtFrom, meta, reused?: boolean } | { ok: false, error: string, aborted?: true, fenced?: true }>}
+ *        aborted: cancelled (the signal aborted, or build() rejected with an
+ *        AbortError); nothing is written but the status put back, and it isn't an error.
+ *        fenced: built, but the fence kept it from being written; not an error either
  */
-export async function runBuild({ repo, renderHandle, sourceHandle, provider, deps = {}, depsAfter, now = Date.now }) {
+export async function runBuild({ repo, renderHandle, sourceHandle, provider, deps = {}, depsAfter, signal, now, mayCommit = async () => true }) {
   const render = renderHandle.doc();
   const source = sourceHandle.doc();
   const impl = provider?.module;
@@ -210,7 +145,9 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     const key = paramsKey(storedParams);
     const params = effectiveParams(provider.params, storedParams);
     const providerVersion = providerVersionOf(provider.version);
-    const builtFromBefore = stableStringify(render.builtFrom ?? null);
+    const buildOf = (r) => stableStringify([r?.glbUrl ?? null, r?.builtFrom ?? null]);
+    const before = buildOf(render);
+    const fenced = () => buildOf(renderHandle.doc()) !== before;
     const depsBefore = normalizeDeps(deps);
 
     renderHandle.change((d) => {
@@ -218,7 +155,8 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
       d.error = null;
     });
 
-    const result = await impl.build({ doc: source, handle: sourceHandle, url: sourceHandle.url, params, repo });
+    const result = await impl.build({ doc: source, handle: sourceHandle, url: sourceHandle.url, params, repo, signal });
+    signal.throwIfAborted();
     if (!result || result.kind !== "glb") throw new Error(`provider returned ${result?.kind ?? "nothing"}, expected kind "glb"`);
     let glb = result.glb;
     if (glb instanceof ArrayBuffer) glb = new Uint8Array(glb);
@@ -228,36 +166,18 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     const bounds = validBounds(result.meta?.bounds);
     const depHeads = normalizeDeps(typeof depsAfter === "function" ? depsAfter(depsBefore) ?? depsBefore : depsBefore);
 
-    // Two open scenes can start the same build within one relay round trip, before
-    // either hears the other's "building" broadcast. If a peer committed a build of
-    // exactly these inputs while ours ran, keep theirs: no second GLB doc, no second
-    // repoint. (builtFrom must have *changed* during the build, so a forced rebuild
-    // of an already-fresh render still goes ahead.)
+    // the fence: nothing is written over a build committed while this one ran, nor once the caller says no
+    if (fenced() || !(await mayCommit()) || fenced()) return { ok: false, fenced: true, error: "fenced" };
+    signal.throwIfAborted();
     const current = renderHandle.doc();
-    const theirs = current?.builtFrom;
-    if (
-      current?.glbUrl &&
-      theirs &&
-      stableStringify(theirs) !== builtFromBefore &&
-      theirs.paramsKey === key &&
-      providerVersionOf(theirs.providerVersion) === providerVersion &&
-      (theirs.fingerprint ?? null) === (fingerprint ?? null) &&
-      sameHeads(theirs.heads, heads) &&
-      sameDeps(theirs.deps, depHeads)
-    ) {
-      if (current.status === "building") {
-        renderHandle.change((d) => {
-          d.status = "idle";
-          d.error = null;
-        });
-      }
-      return { ok: true, glbUrl: current.glbUrl, builtFrom: { heads, fingerprint, paramsKey: key, deps: depHeads }, meta: result.meta ?? null, superseded: true };
-    }
 
     // Same bytes as the GLB already shown (a rename, a provider bump that changed
     // nothing, a param that doesn't affect this doc): keep that file doc.
     const reused = !!current?.glbUrl && current?.builtFrom?.glbHash === glbHash;
     const glbUrl = reused ? current.glbUrl : (await repo.create2(glbFileDoc(render.title, glb))).url;
+    // (making the file doc took a while: look again)
+    signal.throwIfAborted();
+    if (fenced()) return { ok: false, fenced: true, error: "fenced" };
     const builtFrom = { heads, fingerprint, paramsKey: key, deps: depHeads, glbHash };
     if (providerVersion != null) builtFrom.providerVersion = providerVersion;
     renderHandle.change((d) => {
@@ -275,9 +195,9 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     });
     return { ok: true, glbUrl, builtFrom, meta: result.meta ?? null, reused };
   } catch (err) {
-    if (err?.name === "AbortError") {
-      // The provider cancelled it (a newer build of the same doc superseded it):
-      // not a failure. Put the status back; the caller re-evaluates.
+    if (err?.name === "AbortError" || signal.aborted) {
+      // Cancelled (its result isn't wanted, or the provider gave it up): not
+      // a failure. Put the status back; the caller looks at it again.
       if (renderHandle.doc()?.status === "building") {
         renderHandle.change((d) => {
           d.status = "idle";

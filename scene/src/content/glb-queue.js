@@ -6,14 +6,16 @@
 // - At most `maxFinds` repo.find calls in flight, at most `maxParses` parses at
 //   a time, and the main thread is yielded to between parses.
 // - Highest priority first (the caller decides: selected, then big things).
-// - A failed find/read is retried with backoff (1 s doubling, capped at 30 s),
-//   the same policy as the render manager's GLB loads. A parse that throws is
+// - A failed find/read is retried with backoff (./deps.js retryWait), the
+//   same as every load of content. A parse that throws is
 //   not retried until the doc changes (the bytes won't get better).
 // - The source doc is subscribed to only once it has been found (while it is
 //   loaded), and re-parsed when it changes. Nothing is fetched for an object
 //   nobody ensure()d — the caller only ensures what is effectively visible.
 
-export const QUEUE_LIMITS = Object.freeze({ maxFinds: 4, maxParses: 1, retryMs: 1_000, retryMaxMs: 30_000 });
+import { retryWait } from "./deps.js";
+
+export const QUEUE_LIMITS = Object.freeze({ maxFinds: 4, maxParses: 1 });
 
 const LOADING = new Set(["queued", "finding", "parse-queued", "parsing"]);
 export const isLoadingPhase = (phase) => LOADING.has(phase);
@@ -26,20 +28,18 @@ const message = (err) => String(err?.message ?? err ?? "unknown error");
  * @param {(handle: object) => Uint8Array} o.read            the GLB bytes of a found doc (throws if it has none)
  * @param {(id: string, bytes: Uint8Array, url: string) => Promise<void>} o.parse
  * @param {(id: string, state: { phase: string, error: string | null, url: string }) => void} [o.onState]
- * @param {() => Promise<void>} [o.yieldToMain]
- * @param {{ setTimeout, clearTimeout }} [o.timers]
+ * @param {object} o.time  the stage's time (../stage/time.js)
+ * @param {() => Promise<void>} [o.yieldToMain]  between parses (default: the next turn of `time`)
  */
 export function createGLBQueue({
   find,
   read,
   parse,
   onState,
-  yieldToMain = () => new Promise((r) => setTimeout(r, 0)),
-  timers = globalThis,
+  time,
+  yieldToMain = () => new Promise((r) => time.after(0, r)),
   maxFinds = QUEUE_LIMITS.maxFinds,
   maxParses = QUEUE_LIMITS.maxParses,
-  retryMs = QUEUE_LIMITS.retryMs,
-  retryMaxMs = QUEUE_LIMITS.retryMaxMs,
 }) {
   const entries = new Map();
   let finding = 0;
@@ -50,7 +50,7 @@ export function createGLBQueue({
 
   function emit(e, patch = {}) {
     Object.assign(e, patch);
-    if (!disposed && entries.get(e.id) === e) onState?.(e.id, { phase: e.phase, error: e.error, url: e.url });
+    if (!disposed && entries.get(e.id) === e) onState?.(e.id, { phase: e.phase, error: e.error, url: e.url, retrying: e.retryTimer != null });
   }
 
   // ensure() calls made together (one scene sync) are all queued before any
@@ -92,14 +92,13 @@ export function createGLBQueue({
 
   function retry(e, err) {
     stats.errors++;
-    const wait = Math.min(retryMaxMs, retryMs * 2 ** e.retries++);
-    emit(e, { phase: "error", error: message(err) });
-    e.retryTimer = timers.setTimeout(() => {
+    e.retryTimer = time.after(retryWait(e.retries++), () => {
       e.retryTimer = null;
       if (e.dead) return;
       emit(e, { phase: "queued" });
       pump();
-    }, wait);
+    });
+    emit(e, { phase: "error", error: message(err) });
   }
 
   async function startFind(e) {
@@ -193,7 +192,7 @@ export function createGLBQueue({
 
   function drop(e) {
     e.dead = true;
-    if (e.retryTimer != null) timers.clearTimeout(e.retryTimer);
+    e.retryTimer?.();
     e.retryTimer = null;
     e.unsubscribe?.();
     e.unsubscribe = null;

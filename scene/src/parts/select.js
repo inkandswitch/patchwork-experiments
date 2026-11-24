@@ -74,7 +74,6 @@ export function create(api) {
     if (!was || sel !== (was.selected ?? null)) {
       // peers are told any target; their surfaces mark only what they know
       f.channel.set("selected", sel ?? undefined);
-      f.focus(sel != null && scene.objects?.[sel] ? [sel] : []);
     }
     if (!was || view.hovered !== was.hovered) f.channel.set("hovered", view.hovered ?? undefined);
     // only the hover (or something else of no concern here) changed

@@ -1,6 +1,6 @@
 // patchwork:tool "scene": a view (./view.js) and the stages it opens, one per
-// open doc (STAGE.md, "Views, stages and links"). This file is the stage: the doc, loading and
-// building object content, what extensions display instead (api.display),
+// open doc (STAGE.md, "Views, stages and links"). This file is the stage: the doc, its
+// content (../content/content.js), what extensions display instead (api.display),
 // presence on its doc's channel, its extensions and the api each gets. It has no UI of its own and no opinion about what a click means:
 // everything a person sees or does beyond a rendered scene and an orbiting
 // camera comes from a `scene:extension`, which gets an api (makeApi below)
@@ -26,9 +26,8 @@
 // The parts, in the order they're wired:
 //   - local state (atom.js): the stage's own (running, status, packages,
 //     and extensions' keys); the view's is `api.view`.
-//   - content, routed at sync by the kind its provider makes (providers.js
-//     routeOf): the render manager for "built", the GLB queue for "file";
-//     their state → local.status.
+//   - content (../content/content.js): each object placed as the doc and
+//     the display say; its state → local.status.
 //   - presence on its doc's channel (./presence.js), and display: each
 //     extension's override of how an object is drawn, layered in running order.
 //   - the host, and the api each extension gets (everything it acquires is
@@ -61,23 +60,14 @@ import { lookChain } from "../key-order.js";
 import { commandState } from "./commands.js";
 import * as ops from "../ops.js";
 import { layersKey } from "../layers.js";
-import { createRenderManager } from "../render-manager.js";
-import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
-import { newRenderDoc, seededRenderDoc } from "../datatype.js";
-import { atKey, defaultParams } from "../staleness.js";
-import { contentOf, describeForHumans, describeSource, matchProviders, routeOf, showsContent } from "../providers.js";
-import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
+import { createContent } from "../content/content.js";
 import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
 import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
-import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, CONTROLS_CLASS, REBUILD_EVENT } from "../embed.js";
-import { fileBytes } from "../file-content.js";
 import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";
 
-/** Load priority for anything an extension asked to see first (api.focus). */
-const FOCUS_PRIORITY = 1e12;
 // Doc and local changes reach the extensions at once while that has cost
 // little this frame (UI_PASSES passes, UI_BUDGET_MS in all), so a click or a
 // single remote edit answers immediately; past that, the rest of a burst is
@@ -90,15 +80,9 @@ const noop = () => {};
 
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
 /** CPU time (ms), for measuring what work costs (`perf`): never time in the scene, which is `time` (time.js). */
-const cpuNow = () => globalThis.performance?.now?.() ?? Date.now();
-const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
+const cpuNow = () => performance.now();
 
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
-
-/** An infoUrl / sourceUrl that is really an automerge URL, else null. */
-export function docUrl(v) {
-  return typeof v === "string" && v.startsWith("automerge:") ? parseAutomergeUrl(v) : null;
-}
 
 /** The fields an extension may display an object as, merged per field in layering order. */
 const DISPLAY_FIELDS = ["transform", "content", "hidden", "name", "tint", "opacity", "outline"];
@@ -107,46 +91,6 @@ const DISPLAY_FIELDS = ["transform", "content", "hidden", "name", "tint", "opaci
 export function displayKey(o, parent, inh) {
   const t = o.transform ?? {};
   return `${o.kind === "group" ? "g" : "o"}|${o.visible !== false}|${o.color ?? ""}|${o.opacity ?? 1}|${!!o.wireframe}|${!!o.locked}|${o.tags ?? ""}|${t.position}|${t.rotation}|${t.scale}|${parent ?? ""}|${inh?.visible}|${inh?.opacity}|${layersKey(o.layers)}`;
-}
-
-/** How big an object's hint says it is (bigger loads first). */
-export function hintVolume(o) {
-  const b = o?.hint?.bounds;
-  if (!b || !Array.isArray(b.min) || !Array.isArray(b.max)) return 0;
-  const v = (b.max[0] - b.min[0]) * (b.max[1] - b.min[1]) * (b.max[2] - b.min[2]);
-  return Number.isFinite(v) && v > 0 ? v : 0;
-}
-
-const CONTESTED_TEXT = "A collaborator built it differently (another provider version, or linked documents at other versions); Rebuild to use yours";
-
-/**
- * An object's load and build state, for local.status: { state, reason?, text,
- * title }, or null when there's nothing to say (loaded, or not asked for
- * yet). `text` and `title` are for people; a stale state's `reason` ("deps",
- * "contested", "pinned", "out-of-date") is what code branches on.
- * @param {object} o  the object  @param {object} s  what the render manager or GLB queue last said
- */
-/** What addObject settles itself, which its `fields` never override. */
-const ADD_OWNS = new Set(["kind", "name", "sourceUrl", "providerId", "renderUrl", "parent", "group", "transform", "claims", "saved"]);
-
-export function statusOf(o, s) {
-  if (!o || isGroup(o) || !s) return null;
-  if (s.content === "file") {
-    if (s.phase === "error") return { state: "error", text: "error", title: s.error };
-    if (s.parseError) return { state: "error", text: "error", title: s.parseError };
-    if (isLoadingPhase(s.phase)) return { state: "loading", text: "loading", title: "Loading…" };
-    return null;
-  }
-  if (s.phase === "no-provider") return { state: "warn", text: "no provider", title: `Provider “${s.providerId}” is not installed` };
-  if (s.phase === "error") return { state: "error", text: "error", title: s.error };
-  if (s.building || s.status === "building") return { state: "building", text: "building", title: "Rebuilding…" };
-  if (s.status === "error") return { state: "error", text: "error", title: s.retryAt ? `${s.error} · retrying automatically` : s.error };
-  if (s.glbError || s.parseError) return { state: "error", text: "error", title: s.glbError || s.parseError };
-  if (s.stale && s.depsUnavailable?.length) return { state: "stale", reason: "deps", text: "stale", title: "Built from a linked document that can't be loaded here; Rebuild to build without it" };
-  if (s.stale && s.contested) return { state: "stale", reason: "contested", text: "stale", title: CONTESTED_TEXT };
-  if (s.stale) return { state: "stale", reason: s.pinned ? "pinned" : "out-of-date", text: s.pinned ? "pinned" : "stale", title: s.pinned ? "Out of date; pinned, so it won't rebuild on its own" : "Out of date; rebuilding soon" };
-  if (s.phase === "loading" || (!s.hasGLB && s.phase !== "ready")) return { state: "loading", text: "loading", title: "Loading…" };
-  return null;
 }
 
 /** A small ring buffer of durations (ms), for __sceneDebug. */
@@ -248,57 +192,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // ─── the plugin registry ──────────────────────────────────────────────────
 
-  // The host's registry is there from the start, so the first sync already
-  // routes each object's content by the kind its provider makes.
-  const sourceRegistry = patchworkPlugins.getRegistry("scene:source");
-  const offSources = sourceRegistry.on?.("changed", () => {
-    manager.providersChanged();
-    sourcesChanged();
-  });
-  if (typeof offSources === "function") cleanups.push(offSources);
   const getRegistry = (type) => patchworkPlugins.getRegistry(type) ?? null;
-
-  const listProviders = () => {
-    try {
-      return sourceRegistry?.filter?.(() => true) ?? [];
-    } catch {
-      return [];
-    }
-  };
-
-  /** The kind of content a registered provider makes (providers.js contentOf), else null. */
-  const kindOf = (providerId) => contentOf(sourceRegistry.get(providerId));
-  const unusable = new Set(); // sources already warned about: they declare no content kind
-
-  /** Say once of each registered source that declares no content kind: it is never used. */
-  function warnUnusable() {
-    for (const p of listProviders()) {
-      if (!p?.id || contentOf(p) || unusable.has(p.id)) continue;
-      unusable.add(p.id);
-      console.warn(`[scene] source “${p.id}” declares no content kind ("file" or "built"), so it isn't used`);
-    }
-  }
-
-  // The sources changed: what each object's content routes to may have too.
-  function sourcesChanged() {
-    if (dead) return;
-    warnUnusable();
-    applyDoc(derive());
-    statusChanged();
-  }
-
-  async function loadProvider(id) {
-    if (!sourceRegistry.has(id)) return null;
-    const p = await sourceRegistry.load(id);
-    if (!p?.module) return null;
-    return { id, name: p.name ?? id, params: p.params ?? [], cost: p.cost, version: p.version, module: p.module };
-  }
 
   // ─── the scene's packages ─────────────────────────────────────────────────
 
   // The doc lists the packages its contents come from, and the ones this
-  // viewer doesn't have are offered (STAGE.md, "Packages"). The render
-  // manager reports the provider each render doc names (objState), so one a
+  // viewer doesn't have are offered (STAGE.md, "Packages"). Content
+  // reports the provider each render doc names, so one a
   // render doc asks for is listed even when the object's own field differs,
   // and no source package is taken off the list while a render doc built
   // here hasn't said yet (one shown, not standing in, may name any provider).
@@ -306,16 +206,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // never a doc this one reaches, so fixing a link never records one)
   const packages = createPackages({
     repo: view.repo,
+    time,
     handle,
     plugins: patchworkPlugins,
     local,
-    providerIds: () => [...objState.values()].map((s) => s?.providerId),
+    providerIds: () => content.providerIds(),
     // (an object with a source is built through a render doc, which says its provider once it has loaded: hidden or veiled, never)
-    rendersKnown: () => {
-      const objects = doc()?.objects ?? {};
-      for (const [id, route] of routes) if (route === "built" && objects[id]?.sourceUrl && !said(objState.get(id))) return false;
-      return true;
-    },
+    rendersKnown: () => content.rendersKnown(),
     // ("Not now" is the view's: a doc opened after it isn't asked again either)
     declined: view.declinedPackages,
     // (element.packageSettleMs lets a probe or a test not wait for the registry to go quiet)
@@ -400,96 +297,49 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return m.snapshot;
   }
 
-  // ─── content: built (render docs) and files (GLBs shown as they are) ──────
+  // ─── content (../content/content.js) ──────────────────────────────────────
 
-  const routes = new Map(); // id → where its content was routed at the last sync: "built", "file" or null (providers.js routeOf)
-  const objState = new Map(); // id → what the manager or the queue last said (its `content` says which)
-  // has the manager said which provider this object's render doc names? (its first word, before the doc has loaded, hasn't)
-  const said = (st) => st?.content === "built" && "providerId" in st;
   const displayKeys = new Map(); // id → displayKey last applied
   const outlineKeys = new Map(); // id → the outline last drawn, as a string
-  const hintKeys = new Map(); // id → hint bounds last given to the viewport
-  // render docs this scene made itself, this session: nothing to wait to sync before building
-  const createdHere = new Set();
-  const atKeys = new Map(); // render url → atKey of its object's `at`, for the embedded controls
   let statusDirty = false;
   let contentDirty = false;
-  const focusBy = new Map(); // extension id → Set of object ids it wants first
 
   function statusChanged() {
     statusDirty = true;
     requestFlush();
   }
 
-  function afterGLB() {
-    contentDirty = true;
-    requestFlush();
-  }
-
-  // What's shown changed without the doc or local state changing (a
-  // display override): every extension's update runs again, with the
-  // same scene and local, as after a GLB arrives.
+  // Something new is drawn, or what's shown changed without the doc or local
+  // state changing (a display override): every extension's update runs
+  // again, with the same scene and local.
   function displayChanged() {
     contentDirty = true;
     requestFlush();
   }
 
-  const manager = createRenderManager({
+  const content = createContent({
     repo,
+    time,
     readOnly,
     // what it shows live is announced (./announce.js); a pin's docs keep their own version
     announce: role === "pinned" ? null : view.announcer,
-    loadProvider,
-    onState: (id, s) => {
-      const was = objState.get(id);
-      const before = was?.bounds;
-      // the provider its render doc names is one the scene calls for (packages)
-      if (said(was) !== said({ ...s, content: "built" }) || was?.providerId !== s.providerId) packages.check();
-      objState.set(id, { ...s, content: "built" });
-      // a render doc's own bounds stand in until its GLB loads (unless the scene has a hint)
-      if (String(before?.min) + String(before?.max) !== String(s.bounds?.min) + String(s.bounds?.max)) {
-        const o = doc()?.objects?.[id];
-        if (o && !isGroup(o) && !o.hint?.bounds) applyHint(id, s.bounds);
-      }
+    root,
+    scope,
+    sources: patchworkPlugins.getRegistry("scene:source"),
+    registry: getRegistry,
+    doc,
+    selected: () => viewValue().selected ?? null,
+    writable,
+    onStatus: statusChanged,
+    onDrawn: displayChanged,
+    // the sources changed: what each object's content routes to may have too
+    onSources: () => {
+      if (dead) return;
+      applyDoc(derive());
       statusChanged();
     },
-    onGLB: async (id, bytes) => {
-      try {
-        await scope.setGLB(id, bytes);
-        if (dead) return;
-        objState.set(id, { ...(objState.get(id) ?? {}), parseError: null });
-      } catch (err) {
-        console.warn("[scene] GLB failed to parse", err);
-        objState.set(id, { ...(objState.get(id) ?? {}), parseError: `GLB failed to load: ${err?.message ?? err}` });
-      }
-      statusChanged();
-      afterGLB();
-    },
+    onProviders: () => packages.check(),
   });
-
-  const queue = createGLBQueue({
-    find: (url) => repo.find(url),
-    read: (h) => fileBytes(h.doc()),
-    parse: async (id, bytes) => {
-      try {
-        await scope.setGLB(id, bytes);
-      } catch (err) {
-        console.warn("[scene] GLB failed to parse", err);
-        throw new Error(`GLB failed to load: ${err?.message ?? err}`);
-      }
-      if (!dead) afterGLB();
-    },
-    onState: (id, st) => {
-      objState.set(id, { content: "file", phase: st.phase, error: st.error });
-      statusChanged();
-    },
-  });
-
-  const focused = (id) => {
-    for (const s of focusBy.values()) if (s.has(id)) return true;
-    return false;
-  };
-  const priorityOf = (id, o) => (focused(id) ? FOCUS_PRIORITY : hintVolume(o));
 
   // ─── display (API.md, "Display") ──────────────────────────────────────────
   // How this viewer sees an object instead of as the doc says, never written:
@@ -503,7 +353,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   const overrides = new Map(); // object id → Map extension id → its override
   const displayed = new Map(); // object id → the merged override
-  const drawn = new Map(); // object id → the stand-in bytes drawn for it
   let redraw = false; // content, hidden, tint, opacity or an outline changed: applyDoc on the next flush
   let ambients = NO_AMBIENTS; // what its running extensions offer, stacked per name (./ambients.js): the view's when it's the outermost
   const nameOf = (id) => displayed.get(id)?.name ?? derive().objects[id]?.name ?? null;
@@ -541,67 +390,23 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     displayChanged();
   }
 
-  // ─── the doc → the viewport ───────────────────────────────────────────────
-
-  /** Give the viewport a placeholder box (only when it changed); true if there is one. */
-  function applyHint(id, b) {
-    const hk = b ? `${b.min}|${b.max}` : "";
-    if (hintKeys.get(id) !== hk) {
-      hintKeys.set(id, hk);
-      scope.setHint(id, b ?? null);
-    }
-    return !!hk;
-  }
-
-  // The embedded build controls (../embed.js) judge staleness themselves,
-  // against the object's `at`, which they ask for with CONTEXT_EVENT (below).
-  // When an object is fixed, refixed or let go, tell them to ask again.
-  let contextQueued = false;
-  function noteAt(o) {
-    const key = atKey(o.at);
-    const was = atKeys.get(o.renderUrl);
-    atKeys.set(o.renderUrl, key);
-    if (was === undefined || was === key || contextQueued) return;
-    contextQueued = true;
-    queueMicrotask(() => {
-      contextQueued = false;
-      if (dead) return;
-      for (const c of root.querySelectorAll(`.${CONTROLS_CLASS}`)) c.dispatchEvent(new CustomEvent(CONTEXT_CHANGED_EVENT));
-    });
-  }
-
-  /** What the manager tracks an object with: its docs, whether this scene made the render, and its fixed version. */
-  const trackSpec = (o) => ({ sourceUrl: o.sourceUrl, renderUrl: o.renderUrl, createdHere: createdHere.has(o.renderUrl), at: o.at ?? null });
-
-  // Display state, then hydration: only what is shown is loaded, and once
+  // Display state, then content: only what is shown is loaded, and once
   // loaded it stays loaded. Parents before children (attachment order), so
   // each object's new parent is already in place when it's attached to it.
   function applyDoc(m) {
-    const { d, objects, parents, attachOrder, inherited } = m;
+    const { objects, parents, attachOrder, inherited } = m;
     scope.setGroups(m.members);
-    const tracked = new Set(manager.ids());
     let rerouted = false;
     for (const { id } of attachOrder) {
       const o = objects[id];
-      const parent = parents.get(id) ?? null;
-      const inh = inherited.get(id);
       if (isGroup(o)) {
-        if (tracked.has(id)) manager.untrack(id);
-        queue.remove(id);
-        routes.delete(id);
+        content.forget(id);
         continue;
       }
+      const parent = parents.get(id) ?? null;
+      const inh = inherited.get(id);
       // back (an undo): what extensions display for it applies again
       if (overrides.has(id) && !displayed.has(id)) redisplay(id);
-      const route = typeof displayed.get(id)?.content === "string" ? "file" : routeOf(o, kindOf);
-      // a route that moved (its provider arrived or went) is a change to what's shown
-      if (routes.has(id) && routes.get(id) !== route) rerouted = true;
-      routes.set(id, route);
-      // what was said about content of another kind no longer applies
-      if (objState.has(id) && objState.get(id).content !== route) {
-        objState.delete(id);
-        statusDirty = true;
-      }
       // placed even without geometry, so whatever is attached to it sits right
       const over = displayed.get(id);
       const oo = over ? { ...o, ...(over.hidden ? { visible: false } : {}), ...(over.tint ? { color: over.tint } : {}), ...(over.opacity != null ? { opacity: (o.opacity ?? 1) * over.opacity } : {}) } : o;
@@ -616,90 +421,18 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         outlineKeys.set(id, outlineKey);
         scope.setOutline(id, outline);
       }
-      const shown = oo.visible !== false && inh.visible;
-      // a stand-in (the veil) is drawn through the GLB path, so box and picking go by it; nothing of the object's own loads
-      if (over?.content instanceof Uint8Array) {
-        if (tracked.has(id)) manager.untrack(id);
-        queue.remove(id);
-        applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
-        if (drawn.get(id) !== over.content) {
-          drawn.set(id, over.content);
-          if (objState.delete(id)) statusDirty = true;
-          Promise.resolve(scope.setGLB(id, over.content))
-            .catch((err) => console.warn("[scene] a stand-in failed to draw", err))
-            .then(() => dead || afterGLB());
-        }
-        continue;
-      }
-      // (its own content loads again below, and the stand-in stays up until that has)
-      drawn.delete(id);
-      if (route === "built") {
-        queue.remove(id);
-        applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
-        // hydrate only what is shown; once loaded it stays loaded
-        if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, trackSpec(o));
-        noteAt(o);
-        continue;
-      }
-      if (route === "file") {
-        // what this viewer sees: a displayed source, or the object's own
-        const src = docUrl(over?.content ?? o.sourceUrl);
-        if (!src) continue;
-        if (tracked.has(id)) manager.untrack(id);
-        applyHint(id, o.hint?.bounds);
-        if (shown) queue.ensure(id, src, priorityOf(id, o));
-        else if (queue.cancel(id)) {
-          // dropped before it loaded: "not asked for" again, not loading or failing
-          objState.delete(id);
-          statusDirty = true;
-        }
-        continue;
-      }
-      if (route === "scene") {
-        // its content is a stage (a link's doc, opened by a view plugin): with
-        // one open under it, that is what's drawn; else its hint, the room the host gives it
-        if (tracked.has(id)) manager.untrack(id);
-        queue.remove(id);
-        applyHint(id, view.stageUnder([...path, id]) ? null : o.hint?.bounds);
-        if (objState.delete(id)) statusDirty = true;
-        continue;
-      }
-      // Nothing to load (no provider here says what it is): drawn as its
-      // hint, as anything is while its content hasn't arrived.
-      if (tracked.has(id)) manager.untrack(id);
-      queue.remove(id);
-      applyHint(id, o.hint?.bounds);
-      noteMissing(id, o);
+      // a route that moved (its provider arrived or went) is a change to what's shown
+      if (content.place(id, o, { shown: oo.visible !== false && inh.visible, show: over?.content, opened: !!view.stageUnder([...path, id]) })) rerouted = true;
     }
-    for (const id of new Set([...tracked, ...scope.ids(), ...queue.ids(), ...displayKeys.keys()])) {
+    for (const id of new Set([...content.ids(), ...scope.ids(), ...displayKeys.keys()])) {
       if (objects[id]) continue;
-      manager.untrack(id);
-      queue.remove(id);
-      routes.delete(id);
+      content.forget(id);
       scope.removeObject(id);
-      if (objState.delete(id)) statusDirty = true;
       displayKeys.delete(id);
       outlineKeys.delete(id);
-      hintKeys.delete(id);
-      drawn.delete(id);
       displayed.delete(id); // (its overrides stay until released: it may come back)
     }
     if (rerouted) displayChanged();
-  }
-
-  /**
-   * An object routed nowhere: "no provider" while the registry lacks the one
-   * it names (the doc names it, so the packages prompt can offer it), else no
-   * state at all.
-   */
-  function noteMissing(id, o) {
-    const want = typeof o.providerId === "string" && o.providerId && !sourceRegistry.has(o.providerId) ? o.providerId : null;
-    const was = objState.get(id);
-    if (want) {
-      if (was?.phase === "no-provider" && was.providerId === want) return;
-      objState.set(id, { content: null, phase: "no-provider", providerId: want });
-      statusDirty = true;
-    } else if (objState.delete(id)) statusDirty = true;
   }
 
   // ─── presence ─────────────────────────────────────────────────────────────
@@ -798,12 +531,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const t0 = cpuNow();
     if (statusDirty) {
       statusDirty = false;
-      const objects = derive().objects;
-      const next = {};
-      for (const [id, s] of objState) {
-        const st = statusOf(objects[id], s);
-        if (st) next[id] = Object.freeze(st);
-      }
+      const next = content.status();
       if (JSON.stringify(next) !== JSON.stringify(local.get().status)) local.swap(assoc("status", Object.freeze(next)));
     }
     if (redraw) {
@@ -812,13 +540,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }
     const snap = scene();
     const loc = local.get();
-    const content = contentDirty;
+    const drawnAgain = contentDirty;
     contentDirty = false;
     const running = host.instances();
     const now = { scene: snap, local: loc, view: viewValue() };
-    updateAll(running, seen, now, content);
+    updateAll(running, seen, now, drawnAgain);
     // (the view's plugins are told what its focus stage shows: view.js)
-    view.flushed?.(stage, now, content);
+    view.flushed?.(stage, now, drawnAgain);
     view.tryArrive();
     const work = scheduled;
     scheduled = [];
@@ -1064,23 +792,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   const bodyReach = () => scope.frame().lengthIn(view.bodyReach());
   const enterBody = (id, place = null) => view.enterBody(id, place, stage);
 
-  /** Has the content shown loaded (or failed)? Without WebGL nothing loads: yes. */
-  function contentIn() {
-    if (!viewport.ok) return true;
-    const status = local.get().status ?? {};
-    for (const [oid, o] of Object.entries(doc().objects ?? {})) {
-      // (an object with nothing to load, its shape its traits' data, is in)
-      if (!showsContent(o) || o.visible === false) continue;
-      // a link's content is its doc's, whose stage answers for it
-      if (routes.get(oid) === "scene") continue;
-      if (scope.contentOf(oid)?.loaded) continue;
-      const st = status[oid]?.state;
-      if (st === "error" || st === "warn") continue;
-      return false;
-    }
-    return true;
-  }
-
   /**
    * Hold a tool: its declaration ({ command?, name, handKind?, keys, pointer }:
    * the command it was picked up through, if any, and the kind of hand that
@@ -1150,155 +861,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return { scene: scene(), local: local.get(), view: viewValue(), from, reach: bodyReach(), hit: hit ?? null, distance: (target) => distanceFrom(from, hit, target) };
   }
 
-  async function providersFor(url, sourceDoc) {
-    // (a scene in itself is a link whose expansion closes it: a cycle, native/link-graph.js)
-    return matchProviders(listProviders(), describeSource(sourceDoc));
-  }
-
-  async function titleOf(sourceDoc, datatype) {
-    try {
-      const reg = datatype ? await getRegistry("patchwork:datatype") : null;
-      const dt = reg ? await reg.load(datatype) : null;
-      const t = dt?.module?.getTitle?.(sourceDoc);
-      if (t) return String(t);
-    } catch {
-      // fall back below
-    }
-    return String(sourceDoc?.title || sourceDoc?.name || datatype || "Object");
-  }
-
-  /**
-   * Add a document to the scene as an object: through `providerId` (else the
-   * best match), with a render doc of its own when the provider's content is
-   * "built", and none when it is "file".
-   * @param {string} input  an automerge URL (or anything parseAutomergeLink reads)
-   * @param {{ id?, providerId?, name?, group?, parent?, before?, transform?, heads?, hint?, fields?, render? }} [opts]
-   *   id: the new object's id, made with newId beforehand (a copy maps every
-   *   id before it writes anything, so its references are written once);
-   *   refused when the scene has it;
-   *   parent: attach to that object (and join its group, unless `group` says);
-   *   group: file in that group; before: its place in the order; heads (or
-   *   heads in the URL itself): add it fixed at that version of its source (`at`);
-   *   fields: more of the object, written in the same change (a copy's traits,
-   *   tags, colour…; never the fields above, nor `claims` or `saved`); render: a render
-   *   doc to start the new one from (a copy's: its params, and its build when
-   *   it was of this source by this provider; transfer.js renderSeed)
-   * @returns {Promise<Function>} the write, a change function with the new
-   *   object's `id`, for the caller to make (api.change); rejects with a
-   *   sentence to show
-   */
-  async function addObject(input, opts = {}) {
-    if (!writable()) throw new Error("This scene is read-only here.");
-    const link = parseAutomergeLink(input);
-    if (!link) throw new Error("That doesn't look like an automerge URL.");
-    const url = link.url;
-    const heads = opts.heads?.length ? opts.heads : link.heads;
-    let source;
-    try {
-      source = await repo.find(url);
-    } catch (err) {
-      throw new Error(`Couldn't open that document: ${err?.message ?? err}`);
-    }
-    const sourceDoc = source.doc();
-    const info = describeSource(sourceDoc);
-    if (dead) throw new Error("The scene was closed.");
-    const providers = matchProviders(listProviders(), info);
-    const provider = opts.providerId ? (providers.find((p) => p.id === opts.providerId) ?? null) : (providers[0] ?? null);
-    if (!provider) {
-      if (opts.providerId) throw new Error(`The provider “${opts.providerId}” can't show ${describeForHumans(info)}.`);
-      throw new Error(`No scene provider is installed for ${describeForHumans(info)}.`);
-    }
-    const name = opts.name || (await titleOf(sourceDoc, info.datatype));
-    // A "file" provider's source already is a GLB: no render doc, no copy (README.md, "`scene` — the composition").
-    const renderHandle = contentOf(provider) !== "built" ? null : await repo.create2(seededRenderDoc(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }), opts.render));
-    if (renderHandle) createdHere.add(renderHandle.url);
-    if (dead) throw new Error("The scene was closed.");
-    const id = typeof opts.id === "string" && opts.id ? opts.id : newId("o");
-    if (doc().objects?.[id]) throw new Error(`This scene already has an object “${id}”.`);
-    const transform = opts.transform ? normalizeTransform(opts.transform) : IDENTITY();
-    const hint = opts.hint && typeof opts.hint === "object" ? JSON.parse(JSON.stringify(opts.hint)) : null;
-    // fresh copies: automerge won't take a value that is already in a document
-    const fields = opts.fields && typeof opts.fields === "object" ? JSON.parse(JSON.stringify(opts.fields)) : null;
-    const add = (d) => {
-      // only what is still there can be a place (someone may have removed it meanwhile)
-      const parent = opts.parent && d.objects[opts.parent] && !isGroup(d.objects[opts.parent]) ? opts.parent : null;
-      const groupWanted = opts.group !== undefined ? opts.group : parent ? resolveGroups(d.objects).get(parent) ?? null : null;
-      const group = groupWanted && isGroup(d.objects[groupWanted]) ? groupWanted : null;
-      d.objects[id] = ops.newObjectRecord({ name, sourceUrl: url, providerId: provider.id, renderUrl: renderHandle?.url ?? null, parent, group, transform });
-      // the rest of a copied object: its traits, tags, colour… (never what's settled above)
-      if (fields) for (const [k, v] of Object.entries(fields)) if (!ADD_OWNS.has(k) && v !== undefined) d.objects[id][k] = v;
-      // what the file's maker said about it (ctx.file's hint): a placeholder box until it loads
-      if (hint) d.objects[id].hint = hint;
-      // A URL with heads names a version: show that one. (A file object is
-      // shown straight from its file, so it has nothing to fix.)
-      // A link with heads is a pinned value of that scene (links.js).
-      if (heads?.length && (renderHandle || contentOf(provider) === "scene")) d.objects[id].at = { heads: [...heads] };
-      const at = opts.before ? d.order.indexOf(opts.before) : -1;
-      if (at >= 0) d.order.splice(at, 0, id);
-      else d.order.push(id);
-    };
-    return ops.planned(add, { id });
-  }
-
-  /** Build an object's render doc now (loading it first if it's hidden). @returns {boolean} whether there was one */
-  function rebuild(id) {
-    const o = doc().objects?.[id];
-    if (!o?.renderUrl) return false;
-    if (manager.ids().includes(id)) {
-      manager.rebuild(id);
-      return true;
-    }
-    // Hidden, so not loaded yet (README.md, "Using it": only what is shown
-    // loads): an explicit rebuild loads it first.
-    // It then stays tracked, like anything that has loaded.
-    if (!o.sourceUrl) return false;
-    const url = o.renderUrl;
-    Promise.resolve(manager.track(id, trackSpec(o)))
-      .then(() => {
-        if (!dead && doc().objects?.[id]?.renderUrl === url) manager.rebuild(id);
-      })
-      .catch((err) => console.warn("[scene] rebuild failed to start", err));
-    return true;
-  }
-
-  // rebuild requests from embedded controls (../embed.js)
-  const onRebuild = (e) => {
-    const url = e.detail?.renderUrl;
-    const entry = Object.entries(doc().objects ?? {}).find(([, o]) => o?.renderUrl === url);
-    if (!entry) return;
-    e.preventDefault();
-    rebuild(entry[0]);
-  };
-  root.addEventListener(REBUILD_EVENT, onRebuild);
-  cleanups.push(() => root.removeEventListener(REBUILD_EVENT, onRebuild));
-
-  // embedded controls asking whether their render's object is fixed at a version
-  const onContext = (e) => {
-    const url = e.detail?.renderUrl;
-    if (!url) return;
-    const o = Object.values(doc().objects ?? {}).find((x) => x?.renderUrl === url);
-    if (o) e.detail.at = o.at ?? null;
-  };
-  root.addEventListener(CONTEXT_EVENT, onContext);
-  cleanups.push(() => root.removeEventListener(CONTEXT_EVENT, onContext));
-
-  /**
-   * The `at` that would fix an object at exactly what its render was last
-   * built from, or null (not built here yet, not tracked, or not built content).
-   * Writing it is the caller's: `ops.setField(scene, id, "at", point)`.
-   */
-  function fixPoint(id) {
-    const o = doc().objects?.[id];
-    if (!o?.renderUrl || !manager.ids().includes(id)) return null;
-    const point = manager.fixPoint(id);
-    if (!point) return null;
-    // fresh arrays: automerge won't take a value that is already in a document
-    const out = { heads: [...point.heads] };
-    const deps = Object.entries(point.deps ?? {});
-    if (deps.length) out.deps = Object.fromEntries(deps.map(([u, h]) => [u, [...h]]));
-    return out;
-  }
-
   /**
    * The api one extension gets, and release(): give back everything it
    * acquired, in the STAGE.md order (the host aborts its signal first and
@@ -1344,12 +906,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       /** the element the canvas fills, and the stage's root (for DOM listeners: drops, paste) */
       port,
       root,
-      /** where an object's content was routed (`content`: "built", "file" or null) and what the manager or the queue last said about it (notes, contested, providerId…) */
-      loadState: (oid) => {
-        const s = objState.get(oid);
-        if (!s && !routes.has(oid)) return null;
-        return Object.freeze({ ...s, content: routes.get(oid) ?? null });
-      },
 
       // local, the channel
       local: Object.freeze({
@@ -1396,25 +952,15 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         const missing = Object.freeze([...p.ask, ...p.loading, ...p.failed].map((e) => e.url));
         return Object.freeze({ ready: !host.starting() && packages.complete(), missing, failed: Object.freeze(host.failed()), errors: Object.freeze(host.errors()) });
       },
-      /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
-      packages: Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
 
       // content
       nameOf,
-      content: (oid) => scope.contentOf(oid),
+      /** what it shows and how it got there (../content/content.js `of`) */
+      content: (oid) => content.of(oid),
       /** the box of an object, a group (its members') or, for null, the scene; `in`: an object's frame instead of the stage's */
       box: (target, { hints = true, in: frameId = null } = {}) => (target == null ? scope.sceneBox({ hints }) : scope.objectBox(target, { hints, in: frameId })),
       worldOf: displayedWorld,
-      focus: (ids) => {
-        if (!live()) return;
-        const list = ids == null ? [] : typeof ids === "string" ? [ids] : [...ids];
-        if (list.length) focusBy.set(id, new Set(list));
-        else focusBy.delete(id);
-        applyDoc(derive());
-      },
-      providersFor,
-      addObject,
-      fixPoint,
+      addObject: content.addObject,
 
       // picking and camera
       pick: (x, y, opts) => scope.pick(x, y, opts),
@@ -1525,7 +1071,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       scheduled = scheduled.filter((s) => s.rec !== rec);
       // 6: its world groups
       scope.removeLayers(id);
-      // 7: labels, overlays, styles, listeners and watchers, extent, focus
+      // 7: labels, overlays, styles, listeners and watchers, extent
       for (const key of own.labelKeys ?? []) scope.labels.clear(key);
       router.refresh();
       for (const el of own.els) el.remove();
@@ -1533,7 +1079,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       for (const give of [...own.offs]) give();
       own.offs.clear();
       scope.setExtent(id, null);
-      if (focusBy.delete(id) && !dead) applyDoc(derive());
       owned.delete(id);
     }
 
@@ -1688,6 +1233,16 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // ─── the stage's atom, the flush ──────────────────────────────────────────
 
   cleanups.push(local.watch(() => requestFlush()));
+  // the selection loads first (../content/content.js): a newly selected object is placed again, at the front of the queue
+  let selectedSeen = null;
+  cleanups.push(
+    view.atom.watch(() => {
+      const sel = viewValue().selected ?? null;
+      if (sel === selectedSeen) return;
+      selectedSeen = sel;
+      if (sel != null && !dead) applyDoc(derive());
+    }),
+  );
 
   // ─── leaving the page (the view's pagehide and pageshow) ──────────────────
   // It says bye at once (api.page's "hide" first, so services let go of what they hold);
@@ -1736,8 +1291,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     router,
     presence,
     perf,
-    queue,
-    manager,
+    queue: content.debug.queue,
+    manager: content.debug.manager,
     packages,
     root,
     scene,
@@ -1753,9 +1308,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     facets: () => [...facets.keys()],
     stats: () => ({
       render: { ...viewport.stats },
-      queue: queue.stats(),
-      subscriptions: queue.subscriptions(),
-      pending: queue.pending(),
+      queue: content.debug.queue.stats(),
+      subscriptions: content.debug.queue.subscriptions(),
+      pending: content.debug.queue.pending(),
       loaded: [...viewport.objects.values()].filter((e) => e.content).length,
     }),
   };
@@ -1778,8 +1333,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         // keep going
       }
     }
-    queue.dispose();
-    manager.dispose();
+    content.dispose();
     for (const id of scope.ids()) scope.removeObject(id);
     view.removeStage(stage);
     if (root.__sceneDebug === debug) delete root.__sceneDebug;
@@ -1802,6 +1356,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     pointed: () => viewHitIn(view.pointed()),
     run: (inv) => run(inv),
     nameOf: (oid) => nameOf(oid),
+    /** what an object shows and how it got there (api.content) */
+    content: (oid) => content.of(oid),
     /** its doc's packages this viewer doesn't have (local.packages; the view asks every open doc's together) */
     packages: () => local.get().packages,
     /** may this view write its doc? */
@@ -1834,7 +1390,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     debug,
     requestFlush,
     starting: () => host.starting(),
-    contentIn,
+    contentIn: content.allIn,
     bodyDefs,
     bodyInput,
     bodyLeft,
@@ -1853,7 +1409,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     pageHide,
     pageShow,
     /** where an object's content was routed ("built", "file", "scene": a stage) */
-    routeOf: (id) => routes.get(id) ?? null,
+    routeOf: content.route,
     /** a stage opened or closed under one of its objects: draw it again (that stage, or its hint) */
     childrenChanged: () => {
       if (!dead) {
@@ -1867,7 +1423,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         root.__sceneDebug = debug;
         globalThis.__sceneDebug = debug;
       }
-      warnUnusable();
+      content.warnUnusable();
       sync();
       if (n === 0) view.arrive();
     },
