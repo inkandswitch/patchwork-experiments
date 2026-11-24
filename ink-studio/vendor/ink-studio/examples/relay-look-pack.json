@@ -1,0 +1,58 @@
+{
+  "format": "ink-studio/asset-pack",
+  "version": 1,
+  "id": "relay",
+  "revision": 1,
+  "title": "Relay finishes",
+  "looks": [
+    {
+      "id": "relay/glazed-enamel",
+      "label": "Glazed enamel",
+      "params": {
+        "shadow": "#152d3f",
+        "mid": "#36787a",
+        "highlight": "#b4e1ba"
+      },
+      "stack": {
+        "name": "Glazed enamel",
+        "steps": [
+          {
+            "id": "glaze",
+            "type": "curves",
+            "curves": {
+              "ramp": {
+                "interpolation": "smooth",
+                "stops": [
+                  [0.12, { "$param": "shadow" }],
+                  [0.47, { "$param": "mid" }],
+                  [0.83, { "$param": "highlight" }]
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "palette": {
+        "palette": ["#152d3f", "#245269", "#36787a", "#65ab97", "#b4e1ba"],
+        "dither": { "pattern": "bayer", "strength": 0.72 }
+      }
+    },
+    {
+      "id": "relay/blue-hour",
+      "label": "Blue hour",
+      "params": { "exposure": -0.15, "saturation": 0.82 },
+      "stack": {
+        "name": "Blue hour",
+        "steps": [
+          { "id": "exposure", "type": "exposure", "stops": { "$param": "exposure" } },
+          { "id": "chroma", "type": "saturation", "factor": { "$param": "saturation" } },
+          {
+            "id": "cool-light",
+            "type": "channelMix",
+            "matrix": [[0.82, 0.12, 0], [0.01, 0.93, 0.04], [0.03, 0.10, 1.01]]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+[
+  { "tick": 73, "action": "fabric/cut", "args": { "shape": "tarp", "point": [-0.05, 0.99, 0], "radius": 0.24 } },
+  { "tick": 73, "action": "fabric/detach", "args": { "shape": "handline", "attachment": "front" } }
+]

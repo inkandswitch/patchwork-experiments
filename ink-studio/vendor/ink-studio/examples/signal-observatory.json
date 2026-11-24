@@ -1,0 +1,111 @@
+{
+  "id": "signal-observatory",
+  "name": "The signal observatory",
+  "seed": 37,
+  "style": "slate",
+  "camera": { "target": [0, 1.25, 0], "dist": 12.5, "yaw": -0.17, "pitch": 0.26, "projection": "orthographic" },
+  "solids": [
+    { "kind": "box", "at": [0, -0.31, 0], "half": [5.35, 0.24, 2.03], "round": 0.19, "mat": "stone", "res": 0.105 },
+    { "kind": "box", "at": [-2.76, -0.03, 0], "half": [2.5, 0.13, 1.85], "round": 0.13, "mat": { "role": "stone", "noise": 0.26 }, "res": 0.085 },
+    { "kind": "box", "at": [3.02, 0.02, 0], "half": [2.2, 0.18, 1.78], "round": 0.11, "mat": { "role": "stone", "noise": 0.22 }, "res": 0.085 },
+    { "kind": "box", "at": [0.37, -0.15, 0.38], "half": [1.06, 0.075, 1.21], "mat": { "role": "metal", "noise": 0.18 }, "res": 0.07 },
+    { "kind": "tube", "pts": [[-4.7, 0.18, 1.48], [-1.22, 0.18, 1.48], [-0.82, 0.07, 1.1], [1.18, 0.15, 1.1], [4.61, 0.24, 1.15]], "r": 0.05, "mat": "accent", "res": 0.055 },
+    { "kind": "pillar", "at": [-3.35, 0.08, -0.3], "h": 1.82, "r": 0.52, "bay": 0.24, "flutes": 6, "mat": "stone", "res": 0.065 },
+    { "kind": "lathe", "at": [-3.35, 1.77, -0.3], "h": 0.34, "r": [[0, 0.71], [0.34, 0.77], [1, 0.53]], "mat": "metal", "res": 0.049 },
+    { "id": "relay", "kind": "regular", "shape": "d8", "at": [-3.35, 2.28, -0.22], "r": 0.49, "round": 0.055,
+      "mat": { "role": "glow", "glow": true }, "tags": ["phosphor"], "res": 0.034 },
+    { "kind": "torus", "at": [-3.35, 2.19, -0.25], "R": 0.72, "r": 0.074, "turn": [1.35, 0.18, 0], "mat": "accent", "res": 0.047 },
+    { "kind": "torus", "at": [-3.35, 2.19, -0.25], "R": 0.74, "r": 0.054, "turn": [0.19, 0, -0.70], "mat": "metal", "res": 0.043 },
+    { "kind": "tube", "pts": [[-4.07, 0.12, -0.6], [-4.45, 0.45, -0.54], [-4.45, 1.2, -0.54], [-3.88, 1.62, -0.48]], "r": 0.09, "mat": "metal", "res": 0.061 },
+    { "kind": "arch", "at": [2.61, 0.19, -0.24], "span": 2.38, "height": 2.0, "depth": 0.64, "thick": 0.28, "block": 0.36,
+      "mat": { "role": "stone", "noise": 0.26, "over": { "role": "moss", "patch": 0.41 } }, "res": 0.067 },
+    { "kind": "lathe", "at": [2.61, 0.34, 0.04], "h": 0.45, "r": 0.27, "mat": "metal", "res": 0.055 },
+    { "id": "receiver", "kind": "torus", "at": [2.61, 1.29, 0.07], "R": 0.51, "r": 0.095, "turn": [1.57, 0, 0],
+      "mat": "accent", "tags": ["phosphor"], "res": 0.043 },
+    { "id": "receiver-core", "kind": "regular", "shape": "d6", "at": [2.61, 1.29, 0.14], "r": 0.34, "round": 0.042,
+      "turn": [0, 0.68, 0.29], "mat": { "role": "glow", "glow": true }, "tags": ["phosphor"], "res": 0.038 },
+    { "kind": "tube", "pts": [[2.61, 0.40, 0.08], [2.61, 0.75, 0.08]], "r": 0.10, "mat": "metal", "res": 0.05 },
+    { "kind": "rock", "at": [4.17, 0.22, 0.87], "r": [0.51,0.25,0.40], "mat": "moss", "res": 0.066 },
+    { "kind": "rock", "at": [-4.58, 0.15, 0.98], "r": [0.37,0.25,0.32], "mat": "moss", "res": 0.063 },
+    { "kind": "rock", "at": [3.98, 0.17, -0.9], "r": [0.45,0.32,0.39], "mat": "moss", "res": 0.068 },
+    { "kind": "rock", "at": [-1.32, 0.12, -0.91], "r": [0.42,0.21,0.29], "mat": "stone", "res": 0.061 }
+  ],
+  "finish": {
+    "look": {
+      "renderGraph": {
+        "passes": [
+          { "id": "wave", "type": "mask", "volume": { "at": [-5.5, 1.1, 0], "extent": [2.75, 2.8, 2.8], "feather": 0.42 } },
+          { "id": "shade-mask", "type": "mask", "mask": "wave", "invert": true },
+          { "id": "shade", "type": "composite", "mask": "shade-mask", "layer": { "resolution": 2,
+            "draw": [{ "type": "rect", "rect": [0, 0, 4096, 4096], "color": "#0a101fdd" }] } },
+          { "id": "signal-trace", "type": "history", "enabled": false, "mode": "persistence", "halfLife": 1.4,
+            "cameraMotion": "keep", "select": { "tag": "phosphor" }, "mask": "wave" }
+        ]
+      },
+      "inspection": {
+        "style": { "color": "#80e4dc", "corner": 9 },
+        "maxMagnifiers": 1,
+        "targets": [
+          { "id": "relay-callout", "at": { "selector": { "entity": "relay" } }, "halfSize": [0.43, 0.5, 0.36],
+            "label": "QUAY RELAY", "detail": "LISTENING", "active": false, "ripple": false,
+            "magnify": { "enabled": false, "rect": [0.054, 0.058, 0.225, 0.285], "zoom": 2.4 } },
+          { "id": "receiver-callout", "at": { "selector": { "entity": "receiver-core" } }, "halfSize": [0.52, 0.54, 0.27],
+            "label": "EAST RECEIVER", "detail": "CARRIER LOCK", "active": false,
+            "style": { "color": "#eed491" }, "ripple": false,
+            "magnify": { "enabled": false, "rect": [0.715, 0.062, 0.231, 0.29], "zoom": 2.8 } }
+        ]
+      }
+    }
+  },
+  "timeline": {
+    "duration": 9.3,
+    "sequences": {
+      "signal": {
+        "duration": 4.4,
+        "tracks": [
+          { "target": "/renderGraph/wave/volume/at", "keys": [
+            { "time": 0, "value": [-5.5, 1.1, 0], "ease": "linear" },
+            { "time": 0.92, "value": [-3.33, 1.2, 0], "ease": "linear" },
+            { "time": 1.46, "value": [-2.98, 1.39, 0], "ease": "linear" },
+            { "time": 2.2, "value": [-0.05, 1.17, 0], "ease": "linear" },
+            { "time": 3.15, "value": [2.65, 1.2, 0], "ease": "linear" },
+            { "time": 4.4, "value": [5.17, 1.13, 0] }
+          ] },
+          { "target": "/camera/yaw", "keys": [
+            { "time": 0, "value": -0.17 }, { "time": 2.35, "value": -0.17 }, { "time": 4.4, "value": -0.04 }
+          ] },
+          { "target": "/inspection/relay-callout/active", "keys": [
+            { "time": 0, "value": false }, { "time": 0.68, "value": true }, { "time": 2.14, "value": false }
+          ] },
+          { "target": "/inspection/relay-callout/magnify/enabled", "keys": [
+            { "time": 0, "value": false }, { "time": 1.08, "value": true }
+          ] },
+          { "target": "/inspection/relay-callout/detail", "keys": [
+            { "time": 0, "value": "LISTENING" }, { "time": 1.18, "value": "PULSE FOUND" }
+          ] },
+          { "target": "/inspection/receiver-callout/active", "keys": [
+            { "time": 0, "value": false }, { "time": 2.8, "value": true }, { "time": 4.36, "value": false }
+          ] },
+          { "target": "/inspection/receiver-callout/magnify/enabled", "keys": [
+            { "time": 0, "value": false }, { "time": 3.08, "value": true }
+          ] },
+          { "target": "/renderGraph/signal-trace/enabled", "keys": [
+            { "time": 0, "value": true }, { "time": 4.36, "value": false }
+          ] }
+        ],
+        "markers": [
+          { "id": "relay-lock", "time": 1.18, "label": "Quay relay locks" },
+          { "id": "carrier-lock", "time": 3.08, "label": "East receiver locks" }
+        ],
+        "audio": [
+          { "id": "relay-pulse", "time": 1.18, "cue": "signal.relay-pulse" },
+          { "id": "carrier", "time": 3.08, "cue": "signal.carrier", "duration": 0.65, "gain": 0.65 }
+        ]
+      }
+    },
+    "clips": [
+      { "id": "first-sweep", "sequence": "signal", "time": 0 },
+      { "id": "return-sweep", "sequence": "signal", "time": 4.9, "duration": 4.4 }
+    ]
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "resident-shelter",
+  "dt": 0.1,
+  "causality": true,
+  "entities": {
+    "resident": {"kind": "person", "position": [-1.72, 0.13, 0.26]},
+    "workbench": {"kind": "work", "position": [-1.72, 0.13, 0.26]},
+    "locked-shed": {"kind": "shelter", "position": [0.84, 0.13, 0.08]},
+    "open-porch": {"kind": "shelter", "position": [-4.95, 0.13, -0.27]}
+  },
+  "systems": {
+    "weather": {"kind": "fields", "config": {"fields": {"rain": {"default": 0, "units": "mm/h"}}}},
+    "lock": {"kind": "puzzle", "config": {"inputs": {"key": "bool"}, "outputs": {"unlocked": "key"}}},
+    "door-drive": {"kind": "control", "config": {"op": "choose"}},
+    "rig": {"kind": "mechanics", "config": {
+      "bodies": {
+        "yard": {"fixed": true, "position": [-1.64, -0.04, 0], "half": [4.53, 0.16, 1.43], "look": [1, 2, 3, 4]},
+        "shed-north-wall": {"fixed": true, "position": [0, 0.78, -1.08], "half": [0.13, 0.67, 0.53], "look": [2, 4, 5, 6]},
+        "shed-south-wall": {"fixed": true, "position": [0, 0.78, 1.08], "half": [0.13, 0.67, 0.53], "look": [2, 4, 5, 6]},
+        "shed-door": {"half": [0.08, 0.59, 0.56], "look": [12, 13, 14, 15, 16]},
+        "shed-roof": {"fixed": true, "position": [0.74, 1.81, -0.13], "half": [0.95, 0.10, 0.96], "look": [12, 13, 14, 15, 16]},
+        "bench": {"fixed": true, "position": [-1.71, 0.40, -0.52], "half": [0.45, 0.28, 0.22], "look": [17, 18, 19, 20]},
+        "porch-roof": {"fixed": true, "position": [-4.95, 1.4, -0.55], "half": [0.86, 0.10, 0.78], "look": [17, 18, 19, 20]},
+        "porch-post-left": {"fixed": true, "position": [-5.7, 0.72, -0.82], "half": [0.07, 0.6, 0.07], "look": [12, 13, 14, 15, 16]},
+        "porch-post-right": {"fixed": true, "position": [-4.24, 0.72, -0.82], "half": [0.07, 0.6, 0.07], "look": [12, 13, 14, 15, 16]}
+      },
+      "joints": {"door": {"kind": "slider", "child": "shed-door", "mode": "position", "anchor": [0, 0.71, 0],
+        "axis": [0, 1, 0], "range": [0, 1.45], "speed": 2.5}}
+    }},
+    "folk": {"kind": "agents", "config": {
+      "bounds": {"min": [-5.85, 0.10, -1.17], "max": [2.75, 1.4, 1.17]},
+      "clearance": "rig/clearance", "ground": 0.13, "cell": 0.18,
+      "species": {"worker": {"mode": "walk", "radius": 0.22, "height": 0.6, "speed": 1.45, "look": [17, 18, 20, 22]}},
+      "agents": {"resident": {"species": "worker", "position": [-1.72, 0.13, 0.26]}},
+      "decisions": {
+        "interval": 3,
+        "members": {"resident": ["work", "shelter"]},
+        "activities": {
+          "work": {"duration": 6, "when": [
+            {"field": "weather/rain", "when": {"op": "lte", "value": 0.1}, "reason": "Work needs dry weather"}
+          ], "destinations": {"bench": {"at": {"entity": "workbench"}}}},
+          "shelter": {"priority": 100, "duration": 0, "when": [
+            {"field": "weather/rain", "when": {"op": "gt", "value": 0.1}, "reason": "Shelter is needed while it is raining"}
+          ], "destinations": {
+            "shed": {"at": {"entity": "locked-shed"}, "when": [
+              {"field": "world/signal", "args": {"port": "lock/unlocked"}, "when": {"value": true}, "reason": "Door is locked"}
+            ]},
+            "porch": {"at": {"entity": "open-porch"}}
+          }}
+        }
+      }
+    }}
+  },
+  "connections": [
+    {"from": "lock/unlocked", "to": "door-drive/enabled"},
+    {"from": "door-drive/value", "to": "rig/drive.door"}
+  ],
+  "commands": [
+    {"tick": 1, "action": "world/input", "args": {"port": "door-drive/b", "value": 1.45}},
+    {"id": "rain-starts", "tick": 13, "action": "weather/set", "args": {"field": "rain",
+      "region": {"bounds": {"min": [-7, -1, -2], "max": [4, 2, 2]}, "value": 5.2}}},
+    {"id": "rain-clears", "tick": 63, "action": "weather/set", "args": {"field": "rain",
+      "region": {"bounds": {"min": [-7, -1, -2], "max": [4, 2, 2]}, "value": 0}}}
+  ],
+  "visual": {
+    "bounds": {"min": [-6.25, -0.3, -1.7], "max": [3.0, 2.7, 1.7]},
+    "ground": -0.25,
+    "resolution": 0.08,
+    "camera": {"target": [-1.64, 0.56, -0.03], "dist": 12.6, "yaw": 0.22, "pitch": 0.51},
+    "fields": {"bodies": "rig/bodies", "agents": ["folk/agents"]}
+  }
+}

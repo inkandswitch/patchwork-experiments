@@ -1,0 +1,6 @@
+# Patchwork runs dist/. Upstream itself stays in git: vendor/PATCHES.md, vendor/ink-studio.patch
+# and vendor/ink-studio/UPSTREAM-COMMIT say how to rebuild it. Its examples go out as their own
+# docs (probes/publish-examples.mjs).
+src/generated
+vendor/ink-studio/*
+!vendor/ink-studio/UPSTREAM-COMMIT

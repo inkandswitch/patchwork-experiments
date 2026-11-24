@@ -1,0 +1,54 @@
+{
+  "format": "ink-studio/world",
+  "id": "wind-station",
+  "dt": 0.016666666666666666,
+  "entities": {
+    "station": {"position":[0,0,0],"sockets":{"vane":[0,2,0]}},
+    "brazier": {"position":[0.4,0.55,0.35]},
+    "raft": {"position":[-1,0.16,1.85],"sockets":{"sail":[0,0.3,0]}}
+  },
+  "systems": {
+    "weather": {
+      "kind": "fields",
+      "config": {
+        "fields": {
+          "wind": {
+            "type":"vec3",
+            "units":"world/s",
+            "axes":"xz",
+            "bounds":{"min":[-5,-4],"max":[5,4]},
+            "grid":{"counts":[2,2],"values":[[3,0.25,0.35],[4.5,0.45,0.65],[3.4,0.30,0.75],[5,0.5,0.95]]},
+            "regions":[{"id":"lee","bounds":{"min":[-5,-4],"max":[-3,-2]},"value":[0.25,0,0]}]
+          },
+          "temperature": {
+            "type":"number",
+            "units":"degC",
+            "bounds":{"min":[-5,0,-4],"max":[5,4,4]},
+            "grid":{"counts":[1,2,1],"values":[18,10]}
+          },
+          "cover": {
+            "type":"category",
+            "axes":"xz",
+            "categories":["open","sheltered"],
+            "space":{"entity":"station","socket":"vane"},
+            "bounds":{"min":[-5,-4],"max":[5,4]},
+            "regions":[{"id":"station-roof","bounds":{"min":[-0.75,-1],"max":[0.75,0.75]},"value":"sheltered"}]
+          }
+        }
+      }
+    },
+    "harbor": {
+      "kind":"mechanics",
+      "config":{
+        "gravity":[0,0,0],
+        "drag":0.8,
+        "bodies":{"raft":{"half":[0.35,0.14,0.2],"position":[-1,0.16,1.85]}},
+        "forces":{"canvas":{"kind":"sail","body":"raft","field":"weather/wind","axis":[1,0,0],"magnitude":0.32}}
+      }
+    }
+  },
+  "commands":[
+    {"tick":60,"action":"weather/set","args":{"field":"wind","region":{"id":"wind-shift",
+      "bounds":{"min":[-5,-4],"max":[5,4]},"value":[-4.5,0.45,-0.55]}}}
+  ]
+}

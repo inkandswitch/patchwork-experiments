@@ -1,0 +1,62 @@
+{
+  "format": "ink-studio/world",
+  "id": "storm-score",
+  "dt": 0.05,
+  "entities": {
+    "listener": {"position": [0, 0, 0]},
+    "beacon": {"position": [2, 0, 0], "sockets": {"bell": [0, 1, 0]}}
+  },
+  "systems": {
+    "weather": {"kind": "fields", "config": {"fields": {
+      "rain": {"type": "number", "units": "mm/h", "axes": "xz", "default": 0}
+    }}},
+    "score": {"kind": "adaptive-music", "config": {
+      "tempo": 120,
+      "beatsPerBar": 4,
+      "entry": "still",
+      "emotions": {
+        "tension": {"attack": 0.18, "release": 0.7},
+        "wonder": {"default": 0.25}
+      },
+      "parameters": {
+        "rain": {"field": "weather/rain", "at": {"entity": "listener"}, "range": [0, 10],
+          "attack": 0.35, "release": 0.5}
+      },
+      "sections": {
+        "still": {"resource": "harbor/still", "layers": {"bed": 1, "pulse": 0}},
+        "storm": {"resource": "harbor/storm", "tempo": 150, "layers": {"bed": 0.65, "pulse": 1}}
+      },
+      "cues": {
+        "storm-entry": {"resource": "harbor/storm-entry"},
+        "beacon-lit": {"resource": "harbor/beacon", "quantize": "beat"}
+      },
+      "transitions": [
+        {"id": "build", "from": "still", "to": "storm", "quantize": "bar", "cue": "storm-entry",
+          "when": {"path": "/emotions/tension", "op": "gte", "value": 0.65}},
+        {"id": "settle", "from": "storm", "to": "still", "quantize": "bar",
+          "when": {"path": "/emotions/tension", "op": "lte", "value": 0.32}}
+      ]
+    }}
+  },
+  "commands": [
+    {"tick": 4, "action": "weather/set", "args": {"field": "rain",
+      "region": {"id": "harbor", "bounds": {"min": [-4, -4], "max": [4, 4]}, "value": 8}}},
+    {"tick": 13, "action": "world/input", "args": {"port": "score/emotion.tension", "value": 1}},
+    {"tick": 47, "action": "world/input", "args": {"port": "score/emotion.tension", "value": 0}},
+    {"tick": 78, "action": "weather/set", "args": {"field": "rain",
+      "region": {"id": "harbor", "bounds": {"min": [-4, -4], "max": [4, 4]}, "value": 0}}}
+  ],
+  "timeline": {
+    "duration": 5,
+    "events": [
+      {"id": "light-beacon", "time": 2.48, "kind": "beacon-lit",
+        "detail": {"emitter": {"entity": "beacon", "socket": "bell"}}}
+    ]
+  },
+  "eventActions": {
+    "beacon": {"on": {"kind": "beacon-lit", "system": "world"}, "actions": [
+      {"action": "score/cue", "args": {"cue": "beacon-lit", "emitter": {"entity": "beacon"}},
+        "bindings": {"/emitter": "/emitter"}}
+    ]}
+  }
+}

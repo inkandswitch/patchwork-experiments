@@ -1,0 +1,61 @@
+{
+  "format": "ink-studio/world", "version": 1, "id": "pocket-moon", "dt": 0.04,
+  "systems": {
+    "moon": { "kind": "gravity", "config": {
+      "frame": { "kind": "radial", "center": [0, 0, 0], "strength": 8.4, "referenceRadius": 2.1, "falloff": "constant" }
+    } },
+    "rig": { "kind": "mechanics", "config": {
+      "gravityField": "moon/frame", "drag": 0.26,
+      "bodies": {
+        "terrain": { "fixed": true, "position": [0, 0, 0], "material": "moon-stone",
+          "collider": { "kind": "capsule", "a": [0, 0, 0], "b": [0, 0, 0], "radius": 2.1 }, "look": [7, 8, 9, 10, 11] },
+        "basalt-high": { "fixed": true, "position": [-0.84, 0.82, 1.79],
+          "collider": { "kind": "capsule", "a": [-0.29, -0.13, 0], "b": [0.20, 0.18, 0.04], "radius": 0.17 }, "look": [1, 2, 3, 4, 5] },
+        "basalt-low": { "fixed": true, "position": [0.65, -0.93, 1.78],
+          "collider": { "kind": "capsule", "a": [-0.22, 0, 0], "b": [0.28, 0.12, 0.04], "radius": 0.19 }, "look": [2, 3, 4, 5] },
+        "ochre-reef": { "fixed": true, "position": [-1.33, -0.61, 1.5],
+          "collider": { "kind": "capsule", "a": [0, -0.28, -0.13], "b": [0.18, 0.29, 0.10], "radius": 0.24 }, "look": [19, 20, 21, 22] },
+        "ochre-crown": { "fixed": true, "position": [0.65, 1.39, 1.36],
+          "collider": { "kind": "capsule", "a": [0, -0.06, -0.09], "b": [-0.11, 0.20, 0.15], "radius": 0.18 }, "look": [19, 20, 21, 22] },
+        "stone-arc": { "fixed": true, "position": [0.48, 0.31, 2.01],
+          "collider": { "kind": "capsule", "a": [-0.13, -0.19, 0], "b": [0.12, 0.22, 0.03], "radius": 0.078 }, "look": [1, 2, 3, 4] },
+        "landing-pad": { "fixed": true, "position": [-0.29, 1.2, 1.65], "half": [0.33, 0.14, 0.17], "look": [13, 14, 15, 16] },
+        "antenna": { "fixed": true, "position": [-0.29, 1.30, 1.82],
+          "collider": { "kind": "capsule", "a": [0, -0.13, -0.17], "b": [0, 0.24, 0.21], "radius": 0.045 }, "look": [1, 2, 3, 6] },
+        "rover": { "position": [-0.45, 2.34, -0.08], "half": [0.32, 0.10, 0.21], "mass": 2.4, "gravityAlign": 32, "look": [13, 14, 15, 16, 17] },
+        "rover-cab": { "mass": 0.15, "half": [0.125, 0.08, 0.15], "look": [16, 17, 18] },
+        "wheel-al": { "mass": 0.05, "collider": { "kind": "capsule", "a": [0, 0, 0], "b": [0, 0, 0], "radius": 0.105 }, "look": [1, 2, 3, 4] },
+        "wheel-ar": { "mass": 0.05, "collider": { "kind": "capsule", "a": [0, 0, 0], "b": [0, 0, 0], "radius": 0.105 }, "look": [1, 2, 3, 4] },
+        "wheel-bl": { "mass": 0.05, "collider": { "kind": "capsule", "a": [0, 0, 0], "b": [0, 0, 0], "radius": 0.105 }, "look": [1, 2, 3, 4] },
+        "wheel-br": { "mass": 0.05, "collider": { "kind": "capsule", "a": [0, 0, 0], "b": [0, 0, 0], "radius": 0.105 }, "look": [1, 2, 3, 4] }
+      },
+      "joints": {
+        "cab": { "kind": "fixed", "parent": "rover", "child": "rover-cab", "anchor": [-0.10, 0.128, 0] },
+        "al": { "kind": "fixed", "parent": "rover", "child": "wheel-al", "anchor": [-0.225, -0.115, -0.21] },
+        "ar": { "kind": "fixed", "parent": "rover", "child": "wheel-ar", "anchor": [-0.225, -0.115, 0.21] },
+        "bl": { "kind": "fixed", "parent": "rover", "child": "wheel-bl", "anchor": [0.225, -0.115, -0.21] },
+        "br": { "kind": "fixed", "parent": "rover", "child": "wheel-br", "anchor": [0.225, -0.115, 0.21] }
+      },
+      "forces": { "drive": { "kind": "wheel", "body": "rover", "at": [0, -0.04, 0], "axis": [1, 0, 0],
+        "magnitude": 3.1, "radius": 0.28, "input": -0.85 } }
+    } },
+    "crew": { "kind": "characters", "config": {
+      "gravity": "moon/frame", "clearance": "rig/clearance", "support": "rig/ray",
+      "characters": {
+        "surveyor": { "position": [0.08, 2.48948, 0.1], "forward": [1, 0, 0], "look": [19, 21, 22, 23, 24],
+          "tuning": { "radius": 0.17, "height": 0.785, "walkSpeed": 1.65, "stepUp": 0.18, "jumpSpeed": 2.4 } }
+      }
+    } }
+  },
+  "commands": [
+    { "id": "survey", "tick": 2, "action": "world/input", "args": { "port": "crew/move.surveyor", "value": [0, 0, -1] } },
+    { "id": "hop", "tick": 93, "action": "world/input", "args": { "port": "crew/jump.surveyor", "value": true } },
+    { "id": "release", "tick": 94, "action": "world/input", "args": { "port": "crew/jump.surveyor", "value": false } },
+    { "id": "finish-survey", "tick": 171, "action": "world/input", "args": { "port": "crew/move.surveyor", "value": [0, 0, 0] } }
+  ],
+  "visual": {
+    "bounds": { "min": [-3.7, -3.5, -2.6], "max": [3.7, 3.5, 2.7] }, "resolution": 0.065, "ground": -8,
+    "camera": { "target": [0, 0.05, 0], "dist": 8, "yaw": -0.09, "pitch": 0.13 },
+    "fields": { "bodies": "rig/bodies", "characters": "crew/actors" }
+  }
+}

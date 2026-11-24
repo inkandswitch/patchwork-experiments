@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ink Studio Transitions</title>
+  <link rel="stylesheet" href="gallery.css">
+</head>
+<body>
+  <header>
+    <h1>Ink Studio <span>Transitions</span></h1>
+    <div class="header-actions">
+      <a href="../../docs/transitions.md">API guide</a>
+    </div>
+  </header>
+  <main>
+    <nav aria-label="Transition presets" id="presets"></nav>
+    <section class="workspace" aria-labelledby="effect">
+      <div class="preview-heading">
+        <h2 id="effect"></h2>
+        <output id="clock" aria-live="off"></output>
+      </div>
+      <div class="preview"><canvas width="320" height="180" aria-label="Transition preview"></canvas></div>
+      <div class="transport">
+        <button type="button" id="play">Play</button>
+        <label class="timeline"><span class="sr-only">Playback position</span><input type="range" id="time" min="0" max="1000" value="0"></label>
+        <button type="button" id="sound" aria-pressed="false">Sound off</button>
+      </div>
+      <div class="settings">
+        <label>Duration <input id="duration" type="number" min="0.1" max="15" step="0.01"></label>
+        <label>Easing <select id="easing"><option value="">Preset</option></select></label>
+        <label>Cover <input id="color" type="color" value="#000000"></label>
+        <label>Seed <input id="seed" type="number" value="27" min="0" max="16777215"></label>
+        <button type="button" id="reset">Reset settings</button>
+      </div>
+      <p id="status" role="status"></p>
+    </section>
+  </main>
+  <script type="module" src="gallery.mjs"></script>
+</body>
+</html>

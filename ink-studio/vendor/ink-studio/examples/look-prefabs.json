@@ -1,0 +1,19 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "relay-world",
+  "prefabs": {
+    "relay": {
+      "packs": [{ "id": "relay", "revision": 1 }],
+      "lookAsset": { "asset": "relay/glazed-enamel", "revision": 1 },
+      "entities": {
+        "box": { "kind": "prop", "position": [0,0.55,0], "visual": { "half": [0.5,0.5,0.45], "ramp": [1,2,3,4,5,6] } }
+      }
+    }
+  },
+  "visual": {
+    "bounds": { "min": [-3,-0.35,-2], "max": [3,2,2] },
+    "camera": { "target": [0,0.47,0], "dist": 9, "yaw": 0.35, "pitch": 0.55, "sway": 0 },
+    "look": { "asset": "relay/blue-hour", "pixelSize": 3 }
+  }
+}

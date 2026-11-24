@@ -1,0 +1,27 @@
+{
+  "format":"ink-studio/world",
+  "id":"mill-overload",
+  "dt":0.1,
+  "causality":{"limit":256},
+  "entities":{"mill-wheel":{"position":[0,0.7,0],"kind":"wheel"}},
+  "systems":{
+    "pump":{"kind":"control","config":{"op":"pass"}},
+    "breaker":{"kind":"control","config":{"op":"threshold","threshold":8}},
+    "motor":{"kind":"control","config":{"op":"choose"}},
+    "mill":{"kind":"mechanics","config":{
+      "bodies":{"wheel":{"entity":"mill-wheel","position":[0,0.7,0],"half":[0.55,0.55,0.17]}},
+      "joints":{"shaft":{"kind":"shaft","child":"wheel","axis":[0,0,1],"anchor":[0,0.7,0],"capacity":20}}
+    }}
+  },
+  "connections":[
+    {"from":"pump/value","to":"breaker/value","delay":1},
+    {"from":"breaker/value","to":"motor/enabled","delay":1},
+    {"from":"motor/value","to":"mill/drive.shaft","delay":1}
+  ],
+  "commands":[
+    {"tick":1,"action":"world/input","args":{"port":"pump/value","value":4}},
+    {"tick":1,"action":"world/input","args":{"port":"motor/a","value":3}},
+    {"id":"pump-overload","tick":3,"action":"world/input","args":{"port":"pump/value","value":12}}
+  ],
+  "history":{"where":{"path":["kind"],"value":"machine-stop"}}
+}

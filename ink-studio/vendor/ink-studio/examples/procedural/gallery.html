@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ink Studio · Procedural primitives</title>
+  <style>
+    :root {
+      color-scheme: light;
+      background: #e9eae3;
+      color: #192723;
+      font:
+        16px system-ui,
+        sans-serif;
+    }
+    body {
+      max-width: 1200px;
+      margin: auto;
+      padding: 24px;
+    }
+    header {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      align-items: end;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+    h1 {
+      font:
+        clamp(36px, 6vw, 56px) / 1 Georgia,
+        serif;
+      margin: 4px 0;
+    }
+    header p {
+      color: #515e57;
+      margin: 8px 0 0;
+    }
+    label {
+      display: grid;
+      gap: 8px;
+      font-size: 14px;
+    }
+    input {
+      accent-color: #14665a;
+    }
+    main {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    article {
+      border: 1px solid #c9cec0;
+      border-radius: 16px;
+      background: #faf9f5;
+      overflow: hidden;
+    }
+    canvas {
+      width: 100%;
+      display: block;
+      aspect-ratio: 16/8;
+      background: #e3e9df;
+    }
+    article div {
+      padding: 11px 15px 14px;
+    }
+    h2 {
+      font-size: 17px;
+      margin: 0 0 4px;
+    }
+    article p {
+      color: #515e57;
+      font-size: 13px;
+      margin: 0;
+      line-height: 1.35;
+    }
+    @media (max-width: 850px) {
+      main {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 540px) {
+      body {
+        padding: 14px;
+      }
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+    #retained {
+      margin-top: 22px;
+      border: 1px solid #c9cec0;
+      background: #faf9f5;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    #retained header {
+      padding: 15px 17px;
+      margin: 0;
+      align-items: center;
+    }
+    #retained h2 {
+      font:
+        25px Georgia,
+        serif;
+      margin: 0;
+    }
+    #retained p {
+      font-size: 14px;
+      margin: 4px 0 0;
+    }
+    #retained canvas {
+      aspect-ratio: 4/1;
+    }
+    #retained footer {
+      padding: 12px 17px;
+      color: #515e57;
+      font-size: 14px;
+    }
+    #retained button {
+      font: inherit;
+      border: 1px solid #c9cec0;
+      padding: 7px 11px;
+      border-radius: 8px;
+      background: #fff;
+      color: #192723;
+    }
+    #retained button:enabled {
+      cursor: pointer;
+    }
+    #retained button:disabled {
+      opacity: 0.48;
+    }
+  </style>
+  <header>
+    <div>
+      <h1>Procedural primitives</h1>
+      <p>Live geometry from Ink Studio’s core library.</p>
+    </div>
+    <label for="yaw">View angle <input id="yaw" type="range" min="-100" max="170" value="32" /></label>
+  </header>
+  <main id="gallery"></main>
+  <section id="retained" aria-labelledby="retained-title">
+    <header>
+      <div>
+        <h2 id="retained-title">Retained assemblies</h2>
+        <p>Resize one mount to refit its anchored clips and rebuild its geometry.</p>
+      </div>
+      <div>
+        <button id="resize-mount">Resize left mount</button>
+        <button id="undo-mount">Undo</button>
+        <button id="redo-mount">Redo</button>
+      </div>
+    </header>
+    <canvas id="assemblies" width="1200" height="300" aria-label="Two retained mounts with generated clips"></canvas>
+    <footer><output id="assembly-status" aria-live="polite">Building assemblies</output></footer>
+  </section>
+  <script>
+    /* BUNDLE */
+  </script>
+</html>

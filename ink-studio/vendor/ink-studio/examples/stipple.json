@@ -1,0 +1,58 @@
+{
+  "id": "stipple",
+  "name": "Polished seal",
+  "blurb": "A stationary seal with a light that moves across the metal.",
+  "camera": { "target": [0, 0.02, 0], "dist": 4.6, "pitch": 0.27, "yaw": -0.35 },
+  "light": {
+    "amb": 0.08,
+    "sky": 0.1,
+    "surfaceDirection": [
+      [0, -0.52, 0.66, 0.52],
+      [1.5, -0.38, 0.71, 0.54],
+      [3, -0.52, 0.66, 0.52]
+    ]
+  },
+  "finish": { "look": { "tone": "stipple", "pixelSize": 2 } },
+  "solids": [
+    {
+      "kind": "ball",
+      "at": [0, 0, 0],
+      "r": [0.92, 0.82, 0.22],
+      "res": 0.03,
+      "mat": {
+        "role": "dark",
+        "surface": {
+          "layers": {
+            "steel": { "type": "specular", "roughness": [0.11, 0.25], "strength": 1, "shadow": false },
+            "rim": { "type": "sheen", "color": "#888888", "power": 3, "strength": 0.72 }
+          }
+        }
+      }
+    },
+    {
+      "kind": "torus",
+      "at": [0, 0, 0.15],
+      "R": 0.74,
+      "r": 0.048,
+      "turn": [1.57079632679, 0, 0],
+      "res": 0.03,
+      "mat": { "role": "dark", "surface": "brushed-steel" }
+    },
+    {
+      "kind": "regular",
+      "shape": "d8",
+      "at": [0, 0.04, 0.21],
+      "r": 0.44,
+      "turn": [0.12, 0.35, 0.31],
+      "res": 0.03,
+      "mat": { "role": "dark", "surface": "cut-gem" }
+    },
+    {
+      "kind": "ball",
+      "at": [0, -0.48, 0.24],
+      "r": [0.18, 0.08, 0.055],
+      "res": 0.03,
+      "mat": { "role": "dark", "surface": "brushed-steel" }
+    }
+  ]
+}

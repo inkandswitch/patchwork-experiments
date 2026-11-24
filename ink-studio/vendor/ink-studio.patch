@@ -1,0 +1,379 @@
+diff -ru --color=never a/ink-studio/src/webgl/pipeline.mjs b/ink-studio/src/webgl/pipeline.mjs
+--- a/ink-studio/src/webgl/pipeline.mjs	2026-11-21 00:17:17
++++ b/ink-studio/src/webgl/pipeline.mjs	2026-11-21 00:26:59
+@@ -42,7 +42,7 @@
+       programFor(features) {
+         check();
+         if (features?.water || features?.portal || features?.instances || features?.contributions ||
+-            features?.masked || features?.layeredGlass || features?.materialStyles || features?.environment || features?.relighting || features?.optical || features?.cutaway) {
++            features?.masked || features?.layeredGlass || features?.materialStyles || features?.environment || features?.relighting || features?.optical || features?.cutaway || features?.hostDepth) {
+           const water = Boolean(features.water), portal = Boolean(features.portal);
+           const airPockets = Boolean(features.airPockets), layered = Boolean(features.layered), atlas = Boolean(features.atlas);
+           const instances = Boolean(features.instances);
+@@ -52,10 +52,10 @@
+           const relighting = Boolean(features.relighting), optical = Boolean(features.optical);
+           const key = +airPockets + 2 * layered + 4 * atlas + 8 * water + 16 * portal + 32 * instances +
+             64 * contributions + 128 * masked + 256 * textured + 512 * layeredGlass + 1024 * materialStyles +
+-            2048 * environment + 4096 * relighting + 8192 * optical + 16384 * Boolean(features.cutaway)+32768*emitterFog;
++            2048 * environment + 4096 * relighting + 8192 * optical + 16384 * Boolean(features.cutaway)+32768*emitterFog+65536*Boolean(features.hostDepth);
+           if (!variants.has(key)) {
+             const shader = splatShaderSources(ascii, sampleCoverage, { water, airPockets, layered, atlas, portal, instances,
+-              contributions, masked, textured, layeredGlass, coverageRules, materialStyles, environment,emitterFog, relighting, optical, stableDetail, airflow, cutaway:features.cutaway ? cutaway : undefined });
++              contributions, masked, textured, layeredGlass, coverageRules, materialStyles, environment,emitterFog, relighting, optical, stableDetail, airflow, cutaway:features.cutaway ? cutaway : undefined, hostDepth:Boolean(features.hostDepth) });
+             variants.set(key, resources.program(shader.vertex, shader.fragment));
+           }
+           return variants.get(key);
+diff -ru --color=never a/ink-studio/src/webgl/renderer.mjs b/ink-studio/src/webgl/renderer.mjs
+--- a/ink-studio/src/webgl/renderer.mjs	2026-11-21 00:17:17
++++ b/ink-studio/src/webgl/renderer.mjs	2026-11-21 00:26:59
+@@ -678,6 +678,7 @@
+       if (world.shadowLod && frame.shadowArt !== false)
+         world = toolkit.KIT?.shadowArt?.frame(world, camera.shadowFootprint) ?? world;
+       const { raw = false, outline = true, dither = 0.35, scale = 1 } = frame;
++      const transparent = frame.transparent === true;   // Patchwork: host compositing, see presentFrame
+       const look = world.look ?? {};
+       const clock = contract?.clock(world, frame);
+       const t = clock?.time ?? frame.time ?? world.lookSnapshot?.time ?? 0;
+@@ -750,7 +751,7 @@
+       const coverage = !raw && (frame.coverageAware ?? look.coverageAware) === true;
+       const masked = Boolean(constraints?.masked);
+       if (masked && !coverage) maskOwner ??= target(2);
+-      const owner = frame[graphOwner]?.depth ? (graphOwnership ??= target(3)) : masked && !coverage ? maskOwner : plainOwner;
++      const owner = frame[graphOwner]?.depth || transparent ? (graphOwnership ??= target(3)) : masked && !coverage ? maskOwner : plainOwner;
+       const sourceWater = frame.water !== false && world.water?.count ? world.water : null;
+       const drivenOptics = Array.isArray(look.optics) && look.optics.some(rule => rule.driver);
+       const inputTime = drivenOptics ? frame.time ?? world.lookSnapshot?.time ?? 0 : undefined;
+@@ -778,7 +779,7 @@
+         wetContours ??= target(3);
+       }
+       let layeredGlass = false;
+-      if (coverage && (world.refract ?? 6)>0 && plane===zero && !cover &&
++      if (!transparent && coverage && (world.refract ?? 6)>0 && plane===zero && !cover &&
+           maxBuffers >= (waterScene ? 5 : 4)) {
+         if (world!==glassWorld || world.data!==glassData || frame.changedRows?.length!==0) {
+           const indices=[];
+@@ -805,7 +806,7 @@
+       if (splatCoverage < 0) throw new RangeError('Splat coverage must be legacy, continuous or soft');
+       const colored = !raw && !portableStages && !patterned && !coverage && (frame.colored ?? true);
+       const detail = prepareDetail(world, budget);
+-      const scopedCleanup = !!needsDetailFlags && !!detail?.flags;
++      const scopedCleanup = !transparent && !!needsDetailFlags && !!detail?.flags;
+       const cleaning = globalCleanup || scopedCleanup;
+       const damping = !raw && !portableStages && !coverage && !colored && !constraints && !!look.pixel && frame.damp !== false;
+       const samples = colored ? 2 : 1, rw = width * samples, rh = height * samples;
+@@ -821,7 +822,7 @@
+           (waterScene && frame.time !== lastWaterTime)) historyValid = false;
+       geometry.resize(rw, rh);
+       contours.resize(colored ? width : 1, colored ? height : 1);
+-      const ownsPixels = !!frame[graphOwner] || patterned || !!constraints && !coverage || scopedCleanup;
++      const ownsPixels = transparent || !!frame[graphOwner] || patterned || !!constraints && !coverage || scopedCleanup;
+       owner.resize(ownsPixels ? width : 1, ownsPixels ? height : 1);
+       if (scopedCleanup) detailTable ??= table(512, 7, maxSize);
+       if (materialStyles) materialStyleTable ??= table(512, 16, maxSize);
+@@ -914,7 +915,7 @@
+       const hasFine = !raw && !!fineTiles;
+       const pal = palette(world.pal);
+       const palCount = Math.min(world.pal.length, 64);
+-      const fog = world.fog ?? {};
++      const fog = transparent ? {} : world.fog ?? {};
+       // An editor may provide a row diff against the exact bake currently on the GPU.
+       const incremental = frame.previousWorld && frame.previousWorld === lastWorld &&
+         lastWorld.data === lastData && world.count === lastCount && !group && !lastInstances &&
+@@ -972,7 +973,8 @@
+       const shader = pipeline.programFor({
+         water: !!wet, airPockets: wet?.airPockets, layered: wet?.layered, atlas: wet?.atlas, portal: plane !== zero || !!cover,
+         instances: !!plan, contributions:coverage && !!constraints, masked, textured:constraints?.textured, layeredGlass,
+-        materialStyles, environment:env?.media,emitterFog:!!env?.lit, relighting, optical:opticalMaterials, cutaway:!!section
++        materialStyles, environment:env?.media,emitterFog:!!env?.lit, relighting, optical:opticalMaterials, cutaway:!!section,
++        hostDepth:transparent
+       });
+       gl.useProgram(shader.p);
+       const growth = world.grow ?? {};
+@@ -1001,7 +1003,7 @@
+         u_fog: rgb(world.pal[fog.c ?? 0] ?? 0),
+         u_fogp: [fog.start ?? 1, fog.max ?? 0, ...camera.depthRange], ...water, ...env?.uniforms, ...section
+       });
+-      const background = [...rgb(world.pal[0]), 1], tangent = camera.tangent;
++      const background = transparent ? [0, 0, 0, 0] : [...rgb(world.pal[0]), 1], tangent = camera.tangent;
+       const surfaces = frame.spriteSurfaces === false ? null : world.spriteSurfaces;
+       const preview = frame.spriteSurfaces !== false && frame.scalePreviews !== false && world.scalePreviews;
+       const previewAPI = toolkit.KIT?.procedural?.lod?.preview;
+@@ -1027,7 +1029,7 @@
+           tangent, lookGrid: coverage && [width, height] }, water, wet, env);
+       }
+       if (ownsPixels)
+-        drawGeometry(shader, owner, width, height, { u_idx: 1, u_snap: 1, u_hard: 0, tangent,surfaces,scaleSurfaces,surfaceFrame:{...surfaceFrame,index:true,graphDepth:Boolean(frame[graphOwner]?.depth)} });
++        drawGeometry(shader, owner, width, height, { u_idx: 1, u_snap: 1, u_hard: 0, tangent,surfaces,scaleSurfaces,surfaceFrame:{...surfaceFrame,index:true,graphDepth:Boolean(frame[graphOwner]?.depth) || transparent} });
+       frame[graphOwner]?.(world, owner.textures[0], frame[graphOwner].depth ? owner.textures[2] : undefined, camera);
+       if (cover)
+         drawGeometry(shader, cover.buffer, width, height,
+@@ -1078,15 +1080,15 @@
+       let resolve;
+       const styledPattern = patterned && materialStyles;
+       const relitPattern = patterned && relighting;
+-      if (coverage || constraints || styledPattern || relitPattern || env?.media && patterned) {
++      if (transparent || coverage || constraints || styledPattern || relitPattern || env?.media && patterned) {
+         const cache = coverage ? contributionPost : constrainedPosts;
+         const mode = (wet ? 1+Number(wet.airPockets)+2*Number(wet.layered)+4*Number(wet.atlas) : 0) +
+           16*Number(masked) + 32*Number(layeredGlass) + 64*Number(styledPattern) + 128*Number(!!constraints) +
+-          256*Number(!!env?.media) + 512*Number(relitPattern)+1024*Number(!!env?.lit);
++          256*Number(!!env?.media) + 512*Number(relitPattern)+1024*Number(!!env?.lit)+2048*Number(transparent);
+         if (!cache.has(mode)) cache.set(mode,program(pixelSources({
+           water:!!wet,airPockets:wet?.airPockets,layered:wet?.layered,atlas:wet?.atlas,
+           paletteConstraints:!!constraints && !coverage,masked,contributions:coverage,layeredGlass,materialStyles:styledPattern,
+-          environment:!!env?.media,emitterFog:!!env?.lit,relighting:relitPattern
++          environment:!!env?.media,emitterFog:!!env?.lit,relighting:relitPattern,transparent
+         }).POST_FS));
+         resolve = cache.get(mode);
+         if (constraints && !coverage) {
+@@ -1096,6 +1098,7 @@
+         }
+       } else resolve = wet ? (wet.post ??= program(wet.sources.POST_FS)) : resolveProgram(patterned, glass, world.ao, definition, grade);
+       if (water) textureUnit(11, (colored ? contours : geometry).textures[2]);
++      if (transparent) textureUnit(17, owner.textures[2]);   // packed owner depth for the second output
+       if (layeredGlass) {
+         const at = geometry.textures.length - 2;
+         textureUnit(4, geometry.textures[at]);
+@@ -1125,7 +1128,8 @@
+         u_refract: world.refract ?? 6, u_ao: world.ao ? (world.ao.k ?? 0.5) : 0,
+         u_aor: (world.ao?.range ?? 0.4) / (2 * camera.radius),
+         u_gk: glass ? (glass.k || 0.14) : 0, u_bars: Math.min(0.45, world.anim?.bars ?? 0),
+-        u_grade: +!!grade, ...(grade ? { u_out: grade, u_outl: grade } : {})
++        u_grade: +!!grade, ...(grade ? { u_out: grade, u_outl: grade } : {}),
++        ...(transparent && { u_ownerDepth: 17 })
+       });
+       if (cleaning) {
+         if (scopedCleanup) {
+@@ -1278,6 +1282,11 @@
+       if (source !== world) frame = { ...frame, renderHistoryKey: source };
+       const presentation = toolkit.KIT?.presentationTimeline?.sample(world, frame.interfaceTime ?? frame.time ?? world.lookSnapshot?.time ?? 0, frame);
+       if (presentation) frame = { ...frame, ...presentation };
++      // Patchwork: a transparent frame is composited by the host with its own
++      // sky, water and fog, straight into a two-attachment target (colour,
++      // packed depth). Single-pass only: no wrappers, captures or history.
++      if (frame.transparent === true) return render(world, { ...frame, water: false, reflections: false,
++        environment: false, colored: false, damp: false, clean: false }, width, height, output);
+       const definition = frame.inspection ?? world.look?.inspection;
+       if (definition === undefined || definition === false) return presentGraph(world, frame, width, height, output);
+       const api = toolkit.KIT?.inspection;
+@@ -1357,8 +1366,14 @@
+     describeFrame(world, frame = {}) {
+       const contract = toolkit.KIT?.renderContract;
+       if (!contract) throw new Error('Frame descriptions need the Ink Studio KIT');
+-      return contract.describe(world, { ...frame, width: frame.width ?? frame.w ?? frame.target?.width ?? canvas.width,
+-        height: frame.height ?? frame.h ?? frame.target?.height ?? canvas.height }, toolkit.KIT.timeDomains?.frame);
++      const width = frame.width ?? frame.w ?? frame.target?.width ?? canvas.width;
++      const height = frame.height ?? frame.h ?? frame.target?.height ?? canvas.height;
++      const description = contract.describe(world, { ...frame, width, height }, toolkit.KIT.timeDomains?.frame);
++      if (frame.viewMatrix === undefined) return description;
++      // Patchwork: report the host camera that render() will use.
++      const camera = makeCamera(world, frame, width, height);
++      return { ...description, camera: { ...description.camera, pose: cameraPose(camera), ortho: false,
++        tangent: camera.tangent, clipNear: camera.clipNear, clipFar: camera.clipFar, setback: 0 } };
+     },
+     cameraPose(world, frame = {}) {
+       return cameraPose(makeCamera(world, frame, frame.width ?? frame.w ?? frame.target?.width ?? canvas.width,
+diff -ru --color=never a/ink-studio/src/webgl/shaders.mjs b/ink-studio/src/webgl/shaders.mjs
+--- a/ink-studio/src/webgl/shaders.mjs	2026-11-21 00:17:17
++++ b/ink-studio/src/webgl/shaders.mjs	2026-11-21 00:26:59
+@@ -28,7 +28,8 @@
+ export function splatShaderSources(ascii, sampleCoverage, {
+   water = false, airPockets = false, layered = false, atlas = false, portal = false, instances = false,
+   contributions = false, masked = false, textured = false, layeredGlass = false, coverageRules, materialStyles = false,
+-  environment = false, emitterFog=false, relighting = false, optical = false, stableDetail, cutaway, airflow
++  environment = false, emitterFog=false, relighting = false, optical = false, stableDetail, cutaway, airflow,
++  hostDepth = false   // Patchwork: the index pass keeps the frontmost visibly coloured splat of any kind, for host depth
+ } = {}) {
+   const coverageStride = coverageRules?.coverageStride ?? 4;
+   const continuousMode = coverageRules?.continuousCoverage ?? 1, softMode = coverageRules?.softCoverage ?? 2;
+@@ -74,7 +75,7 @@
+ layout(location=0) in vec2 a_corner;
+ layout(location=1) in int a_index;
+ ${instances ? 'layout(location=2) in int a_instance; uniform highp sampler2D u_instances;' : ''}
+-out vec2 v_d; out vec3 v_conic; out vec4 v_color; out float v_depth;
++out vec2 v_d; out vec3 v_conic; out vec4 v_color; out float v_depth;${hostDepth ? ' out float v_hostDepth;' : ''}
+ ${portal ? 'flat out vec3 v_portalDepth;' : 'flat out float v_ownerDepth;'}
+ ${cutaway ? 'flat out vec4 v_sectionSample;' : ''}
+ out float v_gl; out float v_as; out float v_ast; uniform vec4 u_az[4]; uniform int u_azn; uniform float u_asoft, u_azst;
+@@ -287,7 +288,7 @@
+   bool continuous = coverage == ${continuousMode} && alpha >= 1.0 && (kraw & ${nonSurface}) == 0 && v_paint == 0
+     ${optical ? '&& v_optical.w < 0.5' : ''};
+   v_coverage = continuous ? ${continuousMode} : (coverage == ${softMode} ? ${softMode} : 0);
+-  v_depth = coverage == ${softMode} || (flags & 1) != 0 ${optical ? '|| v_optical.w > 0.5' : ''} ? -1.0 : dn;
++  v_depth = coverage == ${softMode} || (flags & 1) != 0 ${optical ? '|| v_optical.w > 0.5' : ''} ? -1.0 : dn;${hostDepth ? ' v_hostDepth = dn;' : ''}
+   float iz = -1.0 / cam.z;
+   vec2 lim = 1.3 * 0.5 * u_viewport / u_focal;
+   float tx = clamp(cam.x * iz, -lim.x, lim.x) / iz, ty = clamp(cam.y * iz, -lim.y, lim.y) / iz;
+@@ -353,7 +354,7 @@
+ }`;
+   const SPLAT_FS = `#version 300 es
+ precision highp float; precision highp int;
+-in vec2 v_d; in vec3 v_conic; in vec4 v_color; in float v_depth; flat in int v_coverage;
++in vec2 v_d; in vec3 v_conic; in vec4 v_color; in float v_depth;${hostDepth ? ' in float v_hostDepth;' : ''} flat in int v_coverage;
+ ${stableDetail ? 'flat in float v_detailGeometry, v_detailTexture;' : ''}
+ ${portal ? 'flat in vec3 v_portalDepth; uniform vec4 u_splatPlane;' : 'flat in float v_ownerDepth;'}
+ ${portal || cutaway ? 'uniform mat4 u_proj; uniform float u_ortho;' : ''}
+@@ -444,7 +445,7 @@
+     return;
+   }
+   `}
+-  if (u_idx > 0.5) {   // the index pass (colour per pixel): which solid dab is in front here, its number in three bytes
++${hostDepth ? '' : `  if (u_idx > 0.5) {   // the index pass (colour per pixel): which solid dab is in front here, its number in three bytes
+     if (v_color.a < 1.0 || (continuous ? surfaceAlpha <= 0.5 : g < 0.5) || v_depth < 0.0) discard;
+     ${cutaway ? 'if (cutInk > 0.0) { o = vec4(0.0); od = vec4(0.0); oa = vec4(0.0); return; }' : ''}
+     float k = v_ix + 1.0;
+@@ -452,7 +453,7 @@
+     od = vec4(0.0); ${masked ? `if (v_policySlot > 0) {${ownerMaskWrite}}` : ''}
+     float graphDepth = round(clamp(${cutaway ? 'sectionDepth' : 'v_depth'}, 0.0, 1.0) * 16777215.0);
+     oa = vec4(mod(graphDepth,256.0), mod(floor(graphDepth/256.0),256.0), floor(graphDepth/65536.0),255.0)/255.0; return; }
+-  bool solid = u_crisp > 0.5 && v_color.a >= 1.0 && v_coverage != ${softMode};
++`}  bool solid = u_crisp > 0.5 && v_color.a >= 1.0 && v_coverage != ${softMode};
+   float a = continuous ? surfaceAlpha :
+     (solid && u_hard > 0.5 ? (g > 0.5 ? 1.0 : 0.0) : contributionAlpha(power,v_color.a,solid));
+   ${materialStyles ? `
+@@ -462,7 +463,14 @@
+   }` : ''}
+   ${stableDetail ? 'a *= v_detailGeometry;' : ''}
+   if (a < 0.004) discard;
+-  vec3 rgb = v_color.rgb;
++${hostDepth ? `  if (u_idx > 0.5) {   // host depth: the frontmost splat of any kind giving this pixel a quarter of its colour or more
++    if (a${optical ? ' * (hasOptical ? v_optical.x : 1.0)' : ''} < 0.25) discard;
++    float k = v_ix + 1.0;
++    o = vec4(mod(k, 256.0), mod(floor(k / 256.0), 256.0), floor(k / 65536.0), 255.0) / 255.0;
++    od = vec4(0.0); ${masked ? `if (v_policySlot > 0) {${ownerMaskWrite}}` : ''}
++    float graphDepth = round(clamp(${cutaway ? 'sectionDepth' : 'v_hostDepth'}, 0.0, 1.0) * 16777215.0);
++    oa = vec4(mod(graphDepth,256.0), mod(floor(graphDepth/256.0),256.0), floor(graphDepth/65536.0),255.0)/255.0; return; }
++` : ''}  vec3 rgb = v_color.rgb;
+ ${materialStyles ? `
+   if ((v_fk < 0.0${stableDetail ? ' || v_detailTexture < 1.0' : ''}) && (int(v_pixelStyle.y) & 2048) != 0) {
+     float rank = pixelStyleThreshold(int(v_pixelStyle.y) & 7, ivec2(gl_FragCoord.xy / u_materialGridScale));
+@@ -686,7 +694,10 @@
+ 
+ export function pixelShaderSources(PixelLook, { water = false, airPockets = false, layered = false, atlas = false,
+   paletteConstraints = false, masked = false, contributions = false, layeredGlass = false, materialStyles = false,
+-  environment = false, emitterFog=false, relighting = false, packedTone = false, cutaway } = {}) {
++  environment = false, emitterFog=false, relighting = false, packedTone = false, cutaway, transparent = false } = {}) {
++  // Patchwork: the transparent resolve reads a scene cleared to alpha 0 (so premultiplied), writes straight colour with
++  // alpha 1 where the pixel is ink's, and a second output with the packed depth of the solid splat in front there.
++  const sceneRGB = at => transparent ? `sceneRGB(${at})` : `texelFetch(u_scene, ${at}, 0).rgb`;
+   const waterPixelGLSL = `
+ uniform highp sampler2D u_waterMask;
+ ivec2 waterPixel(ivec2 p) {
+@@ -720,7 +731,23 @@
+ uniform float u_grade; uniform float u_bars; uniform int u_remapLine;
+ uniform float u_dither, u_luma, u_bypass, u_colored, u_refract, u_ao, u_aor;
+ uniform float u_lines, u_lineGap, u_lineK, u_lineLit;
+-out vec4 o;
++${transparent ? `layout(location=0) out vec4 o;
++layout(location=1) out vec4 o_depth;
++uniform highp sampler2D u_ownerDepth;
++bool g_line = false;
++vec3 sceneRGB(ivec2 q) { vec4 s = texelFetch(u_scene, q, 0); return s.a > 0.0 ? s.rgb / s.a : vec3(0.0); }
++// the packed depth of the solid splat in front here, else of the nearest one among the eight round it
++vec4 hostDepth(ivec2 p) {
++  ivec2 mx = textureSize(u_ownerDepth, 0) - 1; vec4 d = texelFetch(u_ownerDepth, p, 0);
++  if (d.a > 0.5) return vec4(d.rgb, 1.0);
++  float best = 1e9; vec4 found = vec4(0.0);
++  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
++    vec4 q = texelFetch(u_ownerDepth, clamp(p + ivec2(x, y), ivec2(0), mx), 0);
++    float n = dot(round(q.rgb * 255.0), vec3(1.0, 256.0, 65536.0));
++    if (q.a > 0.5 && n < best) { best = n; found = vec4(q.rgb, 1.0); }
++  }
++  return found;
++}` : 'out vec4 o;'}
+ ${water ? waterGLSL(airPockets, layered, atlas) + waterPixelGLSL : ''}
+ const float BAYER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+ const ivec2 AOT[8] = ivec2[8](ivec2(2, 0), ivec2(-2, 0), ivec2(0, 2), ivec2(0, -2), ivec2(1, 1), ivec2(-1, 1), ivec2(1, -1), ivec2(-1, -1));
+@@ -1124,7 +1151,7 @@
+     vec4 clip=u_glassProjection*vec4(0.0,0.0,-axial,1.0);
+     if (clip.z/clip.w*0.5+0.5 < glassDepth(front)) return color;
+   }
+-  vec3 shifted=rear?texelFetch(u_glassBack,source,0).rgb:texelFetch(u_scene,source,0).rgb;
++  vec3 shifted=rear?texelFetch(u_glassBack,source,0).rgb:${transparent ? sceneRGB('source') : 'texelFetch(u_scene,source,0).rgb'};
+   return clamp(color + (shifted-texelFetch(u_glassBack,p,0).rgb)*through,0.0,1.0);
+ }` : ''}
+ ${PixelLook.glsl}
+@@ -1142,7 +1169,7 @@
+ // the finished colour of one pixel of the picture, in whichever look is on
+ vec3 plainAt(ivec2 p) {
+   p = holeFill(p);
+-  vec3 c = texelFetch(u_scene, p, 0).rgb;
++  vec3 c = ${sceneRGB('p')};
+   ${layeredGlass ? 'c = refractContributions(p,c);' : ''}
+   g_pixed = false;
+   if (u_pixOn > 0.5) { if (u_sprOn > 0.5) {
+@@ -1164,7 +1191,7 @@
+   float du = texelFetch(u_depth, clamp(p + ivec2(0, 1), ivec2(0), mx), 0).r, db = texelFetch(u_depth, clamp(p - ivec2(0, 1), ivec2(0), mx), 0).r;
+   // glass bends what is behind it: the picture is looked up a little to one side, by how the thickness of glass changes across this pixel
+   ${contributions ? '' : `{ vec2 gg = vec2(texelFetch(u_depth, clamp(p + ivec2(1, 0), ivec2(0), mx), 0).g - texelFetch(u_depth, clamp(p - ivec2(1, 0), ivec2(0), mx), 0).g, texelFetch(u_depth, clamp(p + ivec2(0, 1), ivec2(0), mx), 0).g - texelFetch(u_depth, clamp(p - ivec2(0, 1), ivec2(0), mx), 0).g);
+-    if (texelFetch(u_depth, p, 0).g + abs(gg.x) + abs(gg.y) > 0.0) c = texelFetch(u_scene, clamp(p + ivec2(round(gg * u_refract)), ivec2(0), mx), 0).rgb; }`}
++    if (texelFetch(u_depth, p, 0).g + abs(gg.x) + abs(gg.y) > 0.0) c = ${sceneRGB('clamp(p + ivec2(round(gg * u_refract)), ivec2(0), mx)')}; }`}
+   // where a diorama asks for it, a pixel with nearer things close round it is shaded: what moves still sits in its own shadow
+   if (u_ao > 0.0) { float occ = 0.0;
+     for (int i = 0; i < 8; i++) { float dd = (dc - texelFetch(u_depth, clamp(p + AOT[i], ivec2(0), mx), 0).r) / u_aor; if (dd > 0.08 && dd < 3.0) occ += min(1.0, dd); } c *= 1.0 - u_ao * min(1.0, occ / 4.0); }
+@@ -1182,7 +1209,7 @@
+     if (max(sx, sy) > u_lineGap) { bool litSide = sx >= sy ? dl > dr : du > db; c *= litSide ? u_lineLit : u_lineK; } }
+   float dm = dc - max(2.0 * dc - min(dl + dr, dl2 + dr2), 2.0 * dc - min(du + db, du2 + db2));   // second difference, so a receding floor is not an edge
+   if (u_edge > 0.0 && dc > -0.5 && dc - dm > u_edge) {
+-    if (u_remapLine > 0) return glassAir(u_out[u_remapLine - 1], p, dc, vec2(textureSize(u_depth, 0)));
++    ${transparent ? 'g_line = true;' : ''}if (u_remapLine > 0) return glassAir(u_out[u_remapLine - 1], p, dc, vec2(textureSize(u_depth, 0)));
+     c = u_line;
+   }
+   ${contributions ? 'return glassAir(c, p, dc, vec2(textureSize(u_depth, 0)));' : ''}
+@@ -1220,11 +1247,15 @@
+ float depthAt(ivec2 p) { return u_colored > 0.5 ? texelFetch(u_crispDepth, p, 0).r : texelFetch(u_depth, p, 0).r; }
+ void main(){
+   ivec2 p = ivec2(gl_FragCoord.xy);
+-  if (u_bars > 0.0 && abs(gl_FragCoord.y / float(textureSize(u_crispScene, 0).y) - 0.5) > 0.5 - u_bars) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }   /* letterbox bars, when a diorama asks for them */
++  if (u_bars > 0.0 && abs(gl_FragCoord.y / float(textureSize(u_crispScene, 0).y) - 0.5) > 0.5 - u_bars) { o = vec4(0.0, 0.0, 0.0, 1.0);${transparent ? ' o_depth = vec4(0.0);' : ''} return; }   /* letterbox bars, when a diorama asks for them */
+ ${water ? '  p = waterPixel(p);' : ''}
+-  if (u_bypass > 0.5) { o = vec4(texelFetch(u_scene, p, 0).rgb, 1.0); return; }
++${transparent ? `  float cover = texelFetch(u_scene, holeFill(p), 0).a;
++  vec3 c0 = u_bypass > 0.5 ? sceneRGB(p) : lookAt(p);
++  bool mine = cover >= 0.5 || g_spr || g_line;
++  o = vec4(c0, mine ? 1.0 : 0.0);
++  o_depth = mine ? hostDepth(p) : vec4(0.0);` : `  if (u_bypass > 0.5) { o = vec4(texelFetch(u_scene, p, 0).rgb, 1.0); return; }
+   vec3 c0 = lookAt(p);
+-  o = vec4(c0, (g_spr${paletteConstraints ? ' || g_constrained' : ''}) && u_markA > 0.5 ? 0.5 : 1.0);
++  o = vec4(c0, (g_spr${paletteConstraints ? ' || g_constrained' : ''}) && u_markA > 0.5 ? 0.5 : 1.0);`}
+ }`;
+   const CLEAN_FS = `#version 300 es
+ precision highp float; precision highp int;
+diff -ru --color=never a/ink-studio/src/webgl/view.mjs b/ink-studio/src/webgl/view.mjs
+--- a/ink-studio/src/webgl/view.mjs	2026-11-21 00:17:17
++++ b/ink-studio/src/webgl/view.mjs	2026-11-21 00:14:01
+@@ -22,7 +22,34 @@
+     near: camera.clipNear, far: camera.clipFar, observer: eye.map((v, i) => v - back[i] * camera.setback) } };
+ }
+ 
++// Patchwork: a host-owned camera. The host's rigid view and perspective
++// projection are used exactly; depthRange [near, far] (axial, world units)
++// sets the normalized depth window and the thresholds calibrated to it.
++function hostCamera(frame, width, height) {
++  const view = Float32Array.from(frame.viewMatrix ?? []), projection = Float32Array.from(frame.projectionMatrix ?? []);
++  const range = frame.depthRange;
++  if (view.length !== 16 || projection.length !== 16 || ![...view, ...projection].every(Number.isFinite) ||
++      projection[11] !== -1 || projection[15] !== 0)
++    throw new TypeError('viewMatrix and a perspective projectionMatrix must be 16 finite column-major values');
++  if (!(Array.isArray(range) || ArrayBuffer.isView(range)) || range.length !== 2 ||
++      !Array.from(range).every(Number.isFinite) || !(range[1] > range[0]) || !(range[1] > 0))
++    throw new RangeError('A host viewMatrix needs depthRange [near, far] with far > near and far > 0');
++  const { eye } = cameraLens.fromView(view);
++  const near = projection[14] / (projection[10] - 1), far = projection[14] / (projection[10] + 1);
++  const tangent = 1 / projection[5], aspect = projection[5] / projection[0];
++  const dist = (range[0] + range[1]) / 2, radius = (range[1] - range[0]) / 2;
++  return {
++    view, projection, eye, aspect, ortho: false, radius, distance: dist, lens: null,
++    composition: [.5, .5], setback: 0, tangent,
++    footprint: dist * 2 * tangent / height,
++    shadowFootprint: dist * 2 * tangent / height,
++    clipNear: near, clipFar: far,
++    depthRange: [range[0], range[1]]
++  };
++}
++
+ export function makeCamera(world, frame, width, height) {
++  if (frame.viewMatrix !== undefined) return hostCamera(frame, width, height);
+   if (frame.cameraSnapshot !== undefined) {
+     const locked = snapshots.get(frame.cameraSnapshot);
+     if (!locked) throw new TypeError('Use a camera snapshot from captureCamera');

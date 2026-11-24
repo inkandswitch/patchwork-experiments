@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>
+    The Seeded Courtyard · Ink Studio
+  </title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #08131a;
+      color: #d6e4d9;
+      font:
+        14px/1.6 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 1540px;
+      margin: auto;
+      padding: 30px 42px 24px;
+    }
+    .eyebrow {
+      display: flex;
+      justify-content: space-between;
+      font: 10px monospace;
+      letter-spacing: 2px;
+      color: #7b9d9f;
+      border-bottom: 1px solid #2c424a;
+      padding-bottom: 17px;
+    }
+    h1 {
+      font:
+        normal 58px/1 Georgia,
+        serif;
+      letter-spacing: -2.1px;
+      margin: 25px 0 12px;
+    }
+    h1 em {
+      font-weight: normal;
+      color: #ddb477;
+    }
+    p.intro {
+      color: #8eabae;
+      max-width: 850px;
+      margin: 0 0 25px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 290px;
+      gap: 24px;
+    }
+    .viewer {
+      border: 1px solid #344e53;
+      background: #07151d;
+      position: relative;
+    }
+    .viewer canvas {
+      width: 100%;
+      display: block;
+      aspect-ratio: 1.447;
+      image-rendering: pixelated;
+      touch-action: none;
+      cursor: grab;
+    }
+    .tag {
+      position: absolute;
+      top: 16px;
+      left: 18px;
+      pointer-events: none;
+      font: 10px/1.9 monospace;
+      letter-spacing: 1px;
+      color: #98b8b3;
+    }
+    .tag b {
+      font-weight: 400;
+      color: #e3c18c;
+    }
+    .bar {
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #29464f;
+      font: 9px monospace;
+      color: #88aaa9;
+      letter-spacing: 0.6px;
+    }
+    aside {
+      border-top: 1px solid #3b5a5b;
+      padding-top: 17px;
+    }
+    .tiny {
+      font: 10px monospace;
+      letter-spacing: 1px;
+      color: #82b2aa;
+    }
+    h2 {
+      font:
+        normal 25px Georgia,
+        serif;
+      margin: 10px 0 18px;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin: 11px 0;
+    }
+    button {
+      cursor: pointer;
+      border: 1px solid #476463;
+      background: #122932;
+      color: #d6e1d6;
+      padding: 11px 8px;
+      font: 11px monospace;
+    }
+    .actions button {
+      flex: 1;
+    }
+    button.primary {
+      background: #d5ae73;
+      color: #132730;
+      border-color: #d5ae73;
+    }
+    select {
+      margin: 8px 0 12px;
+      width: 100%;
+      font: 12px monospace;
+      padding: 11px;
+      background: #112a33;
+      color: #d5e2d7;
+      border: 1px solid #426360;
+    }
+    input[type='range'] {
+      width: 100%;
+      accent-color: #dfb575;
+      margin: 10px 0 6px;
+    }
+    .rangehead {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+    }
+    .plots {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .plots > div {
+      width: 50%;
+    }
+    .plots label {
+      font: 8px monospace;
+      color: #8da9a4;
+      letter-spacing: 0.8px;
+    }
+    .plots canvas {
+      width: 100%;
+      height: 65px;
+      display: block;
+      margin-top: 6px;
+      background: #0b1d25;
+      border: 1px solid #263e46;
+    }
+    .proof {
+      border-top: 1px solid #365154;
+      margin-top: 18px;
+      padding-top: 14px;
+    }
+    .proof .row {
+      display: flex;
+      justify-content: space-between;
+      font: 10px monospace;
+      padding: 8px 0;
+      border-bottom: 1px solid #1f393e;
+    }
+    .proof .row output {
+      color: #95c7ac;
+    }
+    .proof .tiny {
+      font-size: 9px;
+      color: #8daaa4;
+      margin-bottom: 5px;
+    }
+    .caption {
+      font: 10px/1.85 monospace;
+      color: #8fa8a7;
+      margin-top: 17px;
+    }
+    .bottom {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 30px;
+    }
+    .bottom strong {
+      font: 10px monospace;
+      letter-spacing: 1px;
+      color: #acc9bd;
+    }
+    .bottom p {
+      font-size: 12px;
+      color: #829e9f;
+      line-height: 1.7;
+      margin: 9px 0;
+    }
+    #note {
+      min-height: 35px;
+      color: #91bbb0;
+      font: 10px/1.75 monospace;
+      margin-top: 13px;
+    }
+    footer {
+      margin-top: 15px;
+      border-top: 1px solid #2b444b;
+      padding-top: 15px;
+      color: #678c8f;
+      font: 9px monospace;
+      letter-spacing: 1px;
+    }
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      background: #07151d;
+      color: #c5ba96;
+      font: 12px monospace;
+      z-index: 2;
+    }
+    @media (max-width: 1050px) {
+      main {
+        padding: 24px;
+      }
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .bottom {
+        gap: 16px;
+      }
+      h1 {
+        font-size: 44px;
+      }
+    }
+  </style>
+  <main>
+    <div class="eyebrow">
+      <span>INK STUDIO / CHANCE STUDIES</span><span>014 · INDEPENDENT STREAMS / CORRELATED CHARACTER</span>
+    </div>
+    <h1>The seeded <em>courtyard.</em></h1>
+    <p class="intro">
+      Petrol teal and apricot light. Change the flowers, keep the trees. A garden that remembers which choices belong
+      together.
+    </p>
+    <div class="layout">
+      <div>
+        <div class="viewer">
+          <div id="loading">PLANTING THE COURTYARD</div>
+          <div class="tag">
+            <b>NAMED CHANCE / RETAINED GEOMETRY</b><br />DRAG TO ORBIT · SHIFT DRAG TO PAN · SCROLL TO DOLLY
+          </div>
+          <canvas id="view"></canvas>
+          <div class="bar">
+            <span id="mode">FLOWER EDIT 00 / ORIGINAL GARDEN</span><output id="status">BUILDING GARDEN</output>
+          </div>
+        </div>
+        <div class="bottom">
+          <div>
+            <strong>01 / A CHOICE HAS AN ADDRESS</strong>
+            <p>
+              Each flower’s height, width, pigment and position have their own stable keys. Extra flowers preserve
+              existing choices.
+            </p>
+          </div>
+          <div>
+            <strong>02 / KEEP WHAT YOU DIDN’T EDIT</strong>
+            <p>
+              Lanterns, stones and trees use independent named streams. Flower edits write only their original carriers.
+            </p>
+          </div>
+          <div>
+            <strong>03 / VARY WITH INTENTION</strong>
+            <p>
+              A height distribution shapes the flowers. Correlation links tree height and crown width; coherent noise
+              shapes the grass.
+            </p>
+          </div>
+        </div>
+      </div>
+      <aside>
+        <div class="tiny">SEED / COURTYARD-014</div>
+        <h2>Author one system</h2>
+        <label class="tiny" for="distribution">FLOWER HEIGHT DISTRIBUTION</label
+        ><select id="distribution">
+          <option value="normal">Normal / soft concentration</option>
+          <option value="uniform">Uniform / even variation</option>
+          <option value="triangular">Triangular / short blooms</option>
+          <option value="power">Power / a few tall stems</option>
+        </select>
+        <div class="actions">
+          <button class="primary" id="vary">Change flowers only</button><button id="add">Add 8 flowers</button>
+        </div>
+        <div class="actions">
+          <button id="reset">Restore original</button><button id="return">Return camera</button>
+        </div>
+        <div class="rangehead tiny"><span>TREE HEIGHT ↔ CROWN WIDTH</span><output id="rho">+0.75</output></div>
+        <input id="correlation" type="range" min="-.95" max=".95" step=".05" value=".75" />
+        <div class="plots">
+          <div><label>HEIGHT DISTRIBUTION</label><canvas id="histogram" width="250" height="130"></canvas></div>
+          <div><label>CORRELATED CHANNELS</label><canvas id="scatter" width="250" height="130"></canvas></div>
+        </div>
+        <div class="proof">
+          <div class="tiny">COMPARE WITH ORIGINAL CHOICES</div>
+          <div class="row"><span>LANTERNS</span><output id="proof-lanterns">UNCHANGED</output></div>
+          <div class="row"><span>ROCKS</span><output id="proof-rocks">UNCHANGED</output></div>
+          <div class="row"><span>TREES</span><output id="proof-trees">UNCHANGED</output></div>
+        </div>
+        <div id="note">
+          16 of 32 flowers · stable object IDs.<br />Independent names preserve the rest of the garden.
+        </div>
+        <p class="caption">
+          Native SDF trees, flowers and stones. Pixel-art grass and lantern decals. No external assets, fonts or runtime
+          libraries.<br /><br />Distributions and checkpoints are inspectable through the library and CLI.
+        </p>
+      </aside>
+    </div>
+    <footer>NAMED STREAMS / KEYED PROPERTIES / BOUNDED DISTRIBUTIONS / COHERENT VARIATION</footer>
+  </main>
+  <script src="../dist/ink-studio.browser.js"></script>
+  <script src="./randomness.js"></script>
+  <script type="module">
+    import { createRenderer } from '../webgl.mjs';
+    await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+    const kit = { KIT, Randomness, makeBuilder, makeSculpt, SpriteSurface, PixelLook, RenderStages },
+      demo = randomnessScene(kit),
+      canvas = document.getElementById('view'),
+      renderer = createRenderer(canvas, { toolkit: kit }),
+      $ = id => document.getElementById(id);
+    function plots() {
+      const h = $('histogram').getContext('2d'),
+        s = $('scatter').getContext('2d');
+      h.clearRect(0, 0, 250, 130);
+      s.clearRect(0, 0, 250, 130);
+      const bins = Array(24).fill(0);
+      for (const v of demo.histogram()) bins[Math.max(0, Math.min(23, Math.floor(((v - 0.5) / 1.1) * 24)))]++;
+      const peak = Math.max(...bins);
+      h.fillStyle = '#ddae76';
+      for (let i = 0; i < 24; i++) h.fillRect(7 + i * 10, 123 - (bins[i] / peak) * 111, 7, (bins[i] / peak) * 111);
+      s.strokeStyle = '#23414a';
+      s.beginPath();
+      s.moveTo(125, 0);
+      s.lineTo(125, 130);
+      s.moveTo(0, 65);
+      s.lineTo(250, 65);
+      s.stroke();
+      s.fillStyle = '#91d2bc';
+      for (const p of demo.scatter()) s.fillRect(125 + p.x * 30, 65 - p.y * 16, 3, 3);
+    }
+    function sync() {
+      const info = demo.inspect();
+      $('distribution').value = demo.state.distribution;
+      $('correlation').value = demo.state.correlation;
+      $('rho').value = (info.correlation >= 0 ? '+' : '') + info.correlation.toFixed(2);
+      for (const [name, unchanged] of Object.entries(info.unchanged)) {
+        $('proof-' + name).value = unchanged ? 'UNCHANGED' : 'EDITED';
+        $('proof-' + name).style.color = unchanged ? '#95c7ac' : '#e4b77a';
+      }
+      $('mode').textContent =
+        'FLOWER EDIT ' + String(info.revision).padStart(2, '0') + ' / ' + info.visibleFlowers + ' BLOOMS';
+      $('note').innerHTML =
+        info.visibleFlowers +
+        ' of 32 flowers · stable object IDs.<br>Independent names preserve the rest of the garden.';
+      $('add').disabled = info.visibleFlowers >= 32;
+      plots();
+    }
+    $('vary').onclick = () => {
+      demo.changeFlowers();
+      sync();
+    };
+    $('add').onclick = () => {
+      demo.addFlowers();
+      sync();
+    };
+    $('reset').onclick = () => {
+      demo.reset();
+      sync();
+    };
+    $('distribution').onchange = e => {
+      demo.setDistribution(e.target.value);
+      sync();
+    };
+    $('correlation').oninput = e => {
+      demo.setCorrelation(+e.target.value);
+      sync();
+    };
+    $('return').onclick = () => demo.control.release();
+    sync();
+    let drag,
+      last,
+      stamp,
+      frames = 0,
+      fps = 60;
+    canvas.onpointerdown = e => {
+      drag = [e.clientX, e.clientY];
+      canvas.setPointerCapture(e.pointerId);
+      demo.control.take();
+    };
+    canvas.onpointermove = e => {
+      if (!drag) return;
+      const x = e.clientX - drag[0],
+        y = e.clientY - drag[1];
+      drag = [e.clientX, e.clientY];
+      demo.control.input(e.shiftKey ? { pan: [-x * 0.01, y * 0.01] } : { yaw: -x * 0.004, pitch: y * 0.004 });
+    };
+    canvas.onpointerup = canvas.onpointercancel = () => (drag = null);
+    canvas.addEventListener(
+      'wheel',
+      e => {
+        e.preventDefault();
+        demo.control.input({ dolly: e.deltaY * 0.001 });
+      },
+      { passive: false }
+    );
+    window.randomnessQA = { demo, renderer };
+    $('loading').remove();
+    function tick(now) {
+      const dt = last === undefined ? 0 : Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const changedRows = demo.update(dt);
+      renderer.render(demo.world, {
+        width: 1100,
+        height: 760,
+        camera: demo.control.read().camera,
+        time: demo.state.time,
+        changedRows,
+        damp: false
+      });
+      stamp ??= now;
+      frames++;
+      if (now - stamp > 900) {
+        fps = Math.round((frames * 1000) / (now - stamp));
+        stamp = now;
+        frames = 0;
+      }
+      $('status').value = fps + ' FPS · ' + (demo.world.count / 1000).toFixed(1) + 'K SPLATS';
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  </script>
+</html>

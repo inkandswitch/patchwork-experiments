@@ -1,0 +1,217 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "headland-weather-station",
+  "dt": 0.25,
+  "seed": 94,
+  "entities": {
+    "courier": {"position": [-3.2, 0.4, 2.5], "visual": {"half": [0.2, 0.39, 0.17], "ramp": [19, 20, 22, 23]}, "sockets": {"eye": [0, 0.22, 0]}},
+    "station-foot": {"position": [-0.95, 0.2, -0.25], "visual": {"half": [0.95, 0.2, 0.78], "ramp": [1, 2, 3, 4, 5]}},
+    "station-wall": {"position": [-0.95, 1.06, -0.25], "visual": {"half": [0.64, 0.8, 0.58], "ramp": [1, 2, 3, 4, 5]}},
+    "station-deck": {"position": [-0.95, 1.9, -0.25], "visual": {"half": [0.84, 0.11, 0.75], "ramp": [19, 20, 21, 22]}},
+    "beacon": {"position": [-0.95, 2.18, -0.25], "visual": {"half": [0.4, 0.2, 0.37], "ramp": [21, 22, 23, 24]}},
+    "station-roof": {"position": [-0.95, 2.45, -0.25], "visual": {"half": [0.67, 0.1, 0.63], "ramp": [0, 1, 2, 3]}},
+    "station-roof-cap": {"position": [-0.95, 2.6, -0.25], "visual": {"half": [0.41, 0.08, 0.39], "ramp": [0, 1, 2, 3]}},
+    "station-spire": {"position": [-0.95, 2.88, -0.25], "visual": {"half": [0.045, 0.22, 0.045], "ramp": [19, 20, 21, 22]}},
+    "window": {"position": [-0.95, 1.36, 0.34], "visual": {"half": [0.16, 0.14, 0.02], "ramp": [21, 22, 23, 24]}},
+    "door": {"position": [-0.95, 0.67, 0.34], "visual": {"half": [0.19, 0.26, 0.03], "ramp": [19, 20, 21, 22]}},
+    "path-1": {"position": [-0.52, 0.054, 0.7], "visual": {"half": [0.43, 0.054, 0.2], "ramp": [3, 4, 5, 6]}},
+    "path-2": {"position": [-0.12, 0.054, 1.04], "visual": {"half": [0.43, 0.054, 0.2], "ramp": [3, 4, 5, 6]}},
+    "path-3": {"position": [0.28, 0.054, 1.38], "visual": {"half": [0.43, 0.054, 0.2], "ramp": [3, 4, 5, 6]}},
+    "path-4": {"position": [0.6800000000000002, 0.054, 1.72], "visual": {"half": [0.43, 0.054, 0.2], "ramp": [3, 4, 5, 6]}},
+    "path-5": {"position": [1.08, 0.054, 2.06], "visual": {"half": [0.43, 0.054, 0.2], "ramp": [3, 4, 5, 6]}},
+    "path-6": {"position": [1.48, 0.054, 2.4000000000000004], "visual": {"half": [0.43, 0.054, 0.2], "ramp": [3, 4, 5, 6]}},
+    "path-7": {"position": [1.8800000000000003, 0.054, 2.74], "visual": {"half": [0.43, 0.054, 0.2], "ramp": [3, 4, 5, 6]}},
+    "path-8": {"position": [2.2800000000000002, 0.054, 3.08], "visual": {"half": [0.43, 0.054, 0.2], "ramp": [3, 4, 5, 6]}},
+    "lamp-post-1": {"position": [-2.65, 0.43, 1.0], "visual": {"half": [0.063, 0.43, 0.063], "ramp": [19, 20, 21, 22]}},
+    "lamp-1": {"position": [-2.65, 0.92, 1.0], "visual": {"half": [0.12, 0.12, 0.12], "ramp": [21, 22, 23, 24]}},
+    "lamp-post-2": {"position": [1.74, 0.43, 2.6], "visual": {"half": [0.063, 0.43, 0.063], "ramp": [19, 20, 21, 22]}},
+    "lamp-2": {"position": [1.74, 0.92, 2.6], "visual": {"half": [0.12, 0.12, 0.12], "ramp": [21, 22, 23, 24]}},
+    "lamp-post-3": {"position": [3.55, 0.43, 2.17], "visual": {"half": [0.063, 0.43, 0.063], "ramp": [19, 20, 21, 22]}},
+    "lamp-3": {"position": [3.55, 0.92, 2.17], "visual": {"half": [0.12, 0.12, 0.12], "ramp": [21, 22, 23, 24]}}
+  },
+  "systems": {
+    "station": {
+      "kind": "fields",
+      "config": {
+        "fields": {
+          "pressure": {
+            "default": 989
+          }
+        }
+      }
+    }
+  },
+  "commands": [
+    {
+      "tick": 12,
+      "action": "world/patch",
+      "args": {
+        "edits": [
+          {
+            "op": "set",
+            "path": "/entities/courier/position",
+            "value": [
+              2.55,
+              0.4,
+              2.38
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "tick": 18,
+      "action": "station/set",
+      "args": {
+        "field": "pressure",
+        "region": {
+          "bounds": {
+            "min": [
+              -2,
+              -2,
+              -2
+            ],
+            "max": [
+              2,
+              2,
+              2
+            ]
+          },
+          "value": 1016
+        }
+      }
+    }
+  ],
+  "visual": {
+    "camera": {
+      "target": [
+        0.05,
+        1.02,
+        1
+      ],
+      "dist": 14.5,
+      "yaw": -0.18,
+      "pitch": 0.11
+    },
+    "bounds": {
+      "min": [
+        -12,
+        -1,
+        -3
+      ],
+      "max": [
+        12,
+        4,
+        15
+      ]
+    },
+    "resolution": 0.15,
+    "environmentPreset": {
+      "asset": "tideline/coast",
+      "revision": 1,
+      "overrides": {
+        "skyEnvironment": {
+          "profiles": {
+            "bell-squall": {
+              "zenith": "#23314f",
+              "horizon": "#586b8d",
+              "ground": "#536e86",
+              "sunStrength": 0,
+              "daylight": 0.22,
+              "rain": 0.7,
+              "fogDensity": 1.2,
+              "windX": 1.7,
+              "windZ": 0.23,
+              "ridgeTint": "#829db5"
+            },
+            "lifting": {
+              "zenith": "#567288",
+              "horizon": "#ebb390",
+              "ground": "#718590",
+              "sunStrength": 0,
+              "daylight": 0.57,
+              "rain": 0.02,
+              "fogDensity": 0.28,
+              "windX": 0.4,
+              "windZ": 0.23,
+              "ridgeTint": "#ddcbbe"
+            },
+            "sea-pocket": {
+              "fogDensity": 2.1
+            }
+          }
+        },
+        "weatherBinding": {
+          "fronts": []
+        },
+        "weatherTracks": {
+          "cues": [
+            [
+              1.1,
+              "warning-bell"
+            ]
+          ],
+          "rules": [
+            {
+              "id": "warning-bell",
+              "trigger": {
+                "cue": "warning-bell"
+              },
+              "transition": {
+                "profile": "bell-squall",
+                "duration": 2.25
+              }
+            },
+            {
+              "id": "path-entry",
+              "trigger": {
+                "enter": {
+                  "entity": "courier",
+                  "socket": "eye",
+                  "bounds": {
+                    "min": [
+                      1.8,
+                      0,
+                      1.5
+                    ],
+                    "max": [
+                      4.6,
+                      2,
+                      3.5
+                    ]
+                  }
+                }
+              },
+              "transition": {
+                "profile": "sea-pocket",
+                "duration": 1.3
+              }
+            },
+            {
+              "id": "pressure-rises",
+              "trigger": {
+                "condition": {
+                  "field": "station/pressure",
+                  "at": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "when": {
+                    "op": "gte",
+                    "value": 1012
+                  }
+                }
+              },
+              "transition": {
+                "profile": "lifting",
+                "duration": 2.5
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

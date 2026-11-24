@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authored Contacts · Ink Studio</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #131b26; color: #eff8df; }
+  body { margin: 0; }
+  main { max-width: 900px; margin: auto; padding: 24px 16px; }
+  h1 { margin: 0 0 16px; font-size: 1.5rem; }
+  .workbench { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(300px, 1fr); gap: 18px; }
+  .view { position: relative; }
+  canvas { display: block; width: 100%; aspect-ratio: 3/2; background: #111923; image-rendering: pixelated; }
+  #guide { background: transparent; position: absolute; top: 0; left: 0; pointer-events: none; }
+  fieldset { border: 1px solid #465864; padding: 10px; margin: 0 0 12px; min-width: 0; }
+  .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  label { display: inline-flex; gap: 4px; align-items: center; }
+  button, input[type=number] { padding: 5px 7px; }
+  input[type=number] { width: 64px; }
+  output { display: block; margin: 7px 0; color: #b1cdc9; font-variant-numeric: tabular-nums; }
+  #phase { color: #ffdc83; }
+  .lane { position: relative; height: 24px; margin: 7px 0; background: #111923; border-radius: 3px; }
+  .span { position: absolute; inset-block: 4px; background: #2c605e; border-radius: 2px; }
+  .span.reach { background: #876030; }
+  .span.settle { background: #455977; }
+  .lane button { position: absolute; top: 0; font-size: .8rem; padding: 2px 5px; transform: translateX(-50%); }
+  .lane i { position: absolute; inset-block: 0; width: 1px; background: #d8faed; pointer-events: none; }
+  #scrub { width: 100%; accent-color: #83ded0; }
+  @media (max-width: 700px) { .workbench { grid-template-columns: 1fr; } }
+</style>
+<main>
+  <h1>Lantern pickup</h1>
+  <div class="workbench">
+    <section aria-label="Contact preview">
+      <div class="view">
+        <canvas id="sprite" width="144" height="96" aria-label="Courier and lantern preview"></canvas>
+        <canvas id="guide" width="144" height="96" aria-hidden="true"></canvas>
+      </div>
+      <output id="clock">Loading pickup…</output>
+      <div class="controls">
+        <button id="play" type="button">Play full clip</button>
+        <button id="focus" type="button">Loop handoff</button>
+        <label><input id="guides" type="checkbox" checked> Contact guides</label>
+      </div>
+    </section>
+    <div>
+      <form id="author">
+        <fieldset>
+          <legend>Left-foot contact</legend>
+          <div class="controls">
+            <label><input id="pin" type="checkbox" checked> Pin to floor</label>
+            <label>Start <input id="start" type="number" min="0" max="3.39" step="0.01" value="0.38" required></label>
+            <label>End <input id="end" type="number" min="0.01" max="3.4" step="0.01" value="2.56" required></label>
+          </div>
+          <output id="foot"></output>
+        </fieldset>
+        <fieldset>
+          <legend>Lantern transfer</legend>
+          <div class="controls">
+            <label><input id="transfer" type="checkbox" checked> Key stand → right hand</label>
+            <label>Switch <input id="switch" type="number" min="0" max="3.4" step="0.01" value="1.22" required></label>
+            <label>Settle <input id="settle" type="number" min="0.01" max="3.4" step="0.01" value="0.42" required></label>
+            <button type="submit">Apply timing</button>
+          </div>
+          <output id="phase"></output>
+          <output id="notice" aria-live="polite"></output>
+        </fieldset>
+      </form>
+    </div>
+  </div>
+  <div id="lantern-lane" class="lane" aria-label="Reach, switch and settle timing"></div>
+  <div id="foot-lane" class="lane" aria-label="Left-foot contact timing"></div>
+  <input id="scrub" type="range" min="0" max="3.4" step="0.001" value="0" aria-label="Clip time">
+</main>
+<script src="../dist/ink-studio.browser.js"></script>
+<script src="./pose-blocking.js"></script>
+<script src="./authored-contacts.js"></script>
+<script type="module">
+  import { createRenderer } from '../webgl.mjs';
+  import { makeCamera } from '../src/webgl/view.mjs';
+
+  const $ = id => document.getElementById(id), clock = $('clock');
+  try {
+    const scene = authoredContactsScene({ makeBuilder, makeSculpt, KIT }), world = scene.build(scene.seed);
+    const demo = world.contactDemo, camera = { ortho: true };
+    const renderer = createRenderer($('sprite'), { toolkit: { KIT, PixelLook } });
+    const size = { width: 144, height: 96 };
+    const guide = $('guide').getContext('2d');
+    let plan = world.contactTimeline, beat = plan.focus('pickup'), heads = [];
+    let time = 0, elapsed = 0, playing = false, loop = false, lastFrame;
+    const seconds = t => t.toFixed(2) + ' s';
+    const labels = { before: 'Before reach', reach: 'Reach', transfer: 'Switch socket', settle: 'Settle', after: 'Carry' };
+    function mark(point, hue, cross = false) {
+      const { view: m, projection: p } = makeCamera(world, { camera }, size.width, size.height);
+      const [x, y, z] = point;
+      const atX = Math.round((1 + (m[0]*x + m[4]*y + m[8]*z + m[12])*p[0])*size.width/2);
+      const atY = Math.round((1 - (m[1]*x + m[5]*y + m[9]*z + m[13])*p[5])*size.height/2);
+      guide.fillStyle = hue;
+      if (cross) {
+        guide.fillRect(atX-3, atY, 7, 1);
+        guide.fillRect(atX, atY-3, 1, 7);
+      } else guide.fillRect(atX-1, atY-1, 3, 3);
+    }
+    function draw() {
+      const state = demo.update(time);
+      renderer.render(world, { ...size, time, camera, damp: false });
+      const hold = state.contacts[0], reach = state.reaches[0];
+      guide.clearRect(0, 0, size.width, size.height);
+      if ($('guides').checked) {
+        if (hold) mark(hold.target, '#83ded0', true);
+        if (reach) mark(reach.position, '#fff5bc');
+        mark(state.attachment.position, '#ffad56', true);
+      }
+      const owner = state.attachment.owner === 'plinth' ? 'Stand' : 'Right hand';
+      const phase = beat ? labels[beat.phaseAt(time)] : 'On stand';
+      clock.value = seconds(time) + ' · ' + phase + ' · Lantern on ' + owner.toLowerCase();
+      $('foot').value = hold ? 'Pin ' + Math.round(hold.strength*100) + '% · sole error ' + hold.miss.toFixed(3) : 'Pin inactive';
+      $('scrub').value = time;
+      for (const head of heads) head.style.left = Math.min(99.9, 100*time/plan.duration) + '%';
+    }
+    function stop() {
+      playing = false;
+      lastFrame = undefined;
+      $('play').textContent = 'Play full clip';
+      $('focus').textContent = 'Loop handoff';
+    }
+    function seek(value) {
+      stop();
+      time = value;
+      draw();
+    }
+    function lanes() {
+      const hand = $('lantern-lane'), foot = $('foot-lane');
+      hand.replaceChildren();
+      foot.replaceChildren();
+      function span(lane, a, b, style) {
+        const fill = document.createElement('span');
+        fill.className = 'span ' + style;
+        fill.style.left = 100*a/plan.duration + '%';
+        fill.style.width = 100*(b-a)/plan.duration + '%';
+        lane.append(fill);
+      }
+      if (beat) {
+        span(hand, beat.reachStart, beat.time, 'reach');
+        span(hand, beat.time, beat.settleEnd, 'settle');
+        const key = document.createElement('button');
+        key.type = 'button';
+        key.textContent = 'Switch';
+        key.style.left = 100*beat.time/plan.duration + '%';
+        key.onclick = () => seek(beat.time);
+        hand.append(key);
+      }
+      const planted = plan.contacts[0];
+      if (planted.enabled) span(foot, planted.start, planted.end, 'planted');
+      heads = [hand, foot].map(lane => lane.appendChild(document.createElement('i')));
+      $('focus').disabled = !beat;
+      $('phase').value = beat ? 'Reach ' + seconds(beat.reachStart) + ' · switch ' + seconds(beat.time) +
+        ' · settle until ' + seconds(beat.settleEnd) : 'Lantern remains on the stand';
+    }
+    function edit(event) {
+      event?.preventDefault();
+      if (!$('author').reportValidity()) return;
+      try {
+        const authored = demo.edit({ time: Number($('switch').value), settle: Number($('settle').value),
+          pinStart: Number($('start').value), pinEnd: Number($('end').value), pin: $('pin').checked,
+          transfer: $('transfer').checked });
+        plan = authored;
+        beat = plan.handoffs.length ? plan.focus('pickup') : null;
+        $('notice').value = beat?.reachMiss > 0.02 ? 'Grip out of reach by ' + beat.reachMiss.toFixed(2) : 'Timing applied';
+        lanes();
+        seek(time);
+      } catch (error) { $('notice').value = error.message; }
+    }
+    $('author').onsubmit = edit;
+    $('pin').onchange = $('transfer').onchange = edit;
+    $('guides').onchange = draw;
+    $('scrub').oninput = () => seek(Number($('scrub').value));
+    $('play').onclick = () => {
+      if (playing && !loop) return stop();
+      if (loop || time >= plan.duration) time = 0;
+      stop();
+      loop = false;
+      playing = true;
+      $('play').textContent = 'Pause full clip';
+    };
+    $('focus').onclick = () => {
+      if (playing && loop) return stop();
+      stop();
+      loop = playing = true;
+      elapsed = 0;
+      time = beat.start;
+      $('focus').textContent = 'Pause handoff';
+      draw();
+    };
+    function animate(now) {
+      if (playing && (lastFrame === undefined || now-lastFrame >= 1000/24)) {
+        const dt = lastFrame === undefined ? 0 : (now-lastFrame)/1000;
+        lastFrame = now;
+        if (loop) {
+          elapsed += dt * 0.65;
+          time = beat.timeAt(elapsed);
+        } else {
+          time = Math.min(plan.duration, time+dt);
+          if (time === plan.duration) stop();
+        }
+        draw();
+      }
+      requestAnimationFrame(animate);
+    }
+    lanes();
+    draw();
+    requestAnimationFrame(animate);
+  } catch (error) { clock.value = error.message; }
+</script>

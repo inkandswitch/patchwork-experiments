@@ -1,0 +1,33 @@
+{
+  "name": "@tiny-patchwork/ink-studio",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "description": "Ink Studio (shapeshift-labs) in Patchwork: SDF-sculpted, pixel-art Gaussian splat scenes as documents, drawn with upstream's WebGL 2 renderer.",
+  "scripts": {
+    "toolkit": "node scripts/toolkit.mjs",
+    "dev": "node scripts/toolkit.mjs && vite build --watch",
+    "build": "node scripts/toolkit.mjs && vite build",
+    "sync": "pnpm build && pushwork sync",
+    "test": "node scripts/toolkit.mjs && vitest run",
+    "test:watch": "node scripts/toolkit.mjs && vitest"
+  },
+  "dependencies": {
+    "@automerge/automerge-codemirror": "^0.2.0",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2"
+  },
+  "devDependencies": {
+    "@automerge/automerge": "^3.2.1",
+    "@automerge/automerge-repo": "2.6.0-subduction.43",
+    "@codemirror/language": "^6.12.2",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.40.0",
+    "@inkandswitch/patchwork-bootloader": "^0.3.2",
+    "happy-dom": "^15.11.7",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4"
+  }
+}

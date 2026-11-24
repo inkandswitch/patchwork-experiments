@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clip Sequencing · Ink Studio</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #131b26; color: #eff8df; }
+  body { margin: 0; }
+  main { max-width: 960px; margin: auto; padding: 24px 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 16px; }
+  canvas { display: block; width: 100%; aspect-ratio: 3/2; background: #111923; image-rendering: pixelated; }
+  .workbench { display: grid; grid-template-columns: minmax(260px, 2fr) minmax(290px, 3fr); gap: 18px; }
+  fieldset { border: 1px solid #465864; padding: 10px; margin: 0 0 10px; min-width: 0; }
+  .controls { display:flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+  label { display: inline-flex; align-items: center; gap: 4px; }
+  button, select, input[type=number] { padding: 5px 7px; }
+  input[type=number] { width: 66px; }
+  output { display: block; margin-top: 8px; color: #b1cdc9; font-variant-numeric: tabular-nums; }
+  #cut-status { color: #ffdc83; }
+  #strip { display: flex; gap: 2px; margin-top: 12px; }
+  #strip button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; background: #244754; }
+  #strip button[aria-current=true] { border-color: #83ded0; }
+  #timing { position: relative; height: 22px; margin-top: 5px; background: #111923; }
+  #timing span { position: absolute; top: 0; height: 10px; width: 2px; background: #6e9099; pointer-events: none; }
+  #timing .cue { top: 13px; height: 7px; background: #ffdc83; }
+  #timing .playhead { top: 0; height: 22px; width: 2px; background: #e1ffee; }
+  #timing .change { height: 22px; background: #264751; }
+  #scrub { width: 100%; margin: 8px 0 0; accent-color: #83ded0; }
+  #cue-list { display: flex; gap: 6px 14px; flex-wrap: wrap; color: #ffdc83; font-size: .875rem; margin-top: 6px; }
+  @media (max-width: 700px) { .workbench { grid-template-columns: 1fr; } }
+</style>
+<main>
+  <h1>Clip Sequencing</h1>
+  <div class="workbench">
+    <section aria-label="Sequence preview">
+      <canvas width="144" height="96" aria-label="Courier animation preview"></canvas>
+      <output id="clock">Loading sequence…</output>
+      <div class="controls">
+        <label>Preview <select id="preview"><option value="sequence">Sequence</option><option value="stride">Stride cycle</option></select></label>
+        <label>Playback <select id="mode"><option value="once">Once</option><option value="loop">Loop</option><option value="travel-loop">Travel loop</option></select></label>
+        <button id="play" type="button">Play</button>
+        <button id="focus" type="button" hidden>Play changed section</button>
+      </div>
+    </section>
+    <div>
+      <form id="step">
+        <fieldset>
+          <legend id="step-name">Step timing</legend>
+          <div class="controls">
+            <label>In <input id="in" type="number" min="0" step="any" required></label>
+            <label>Out <input id="out" type="number" min="0" step="any" required></label>
+            <label>Duration <input id="duration" type="number" min="0.001" step="any" required></label>
+            <label>Timing <select id="ease">
+              <option value="linear">Even</option><option value="in-sine">Ease in</option>
+              <option value="out-sine">Ease out</option><option value="in-out-sine">Ease both</option>
+            </select></label>
+            <button type="submit">Apply timing</button>
+            <button id="earlier" type="button">Move earlier</button>
+            <button id="later" type="button">Move later</button>
+            <button id="duplicate" type="button">Duplicate</button>
+          </div>
+          <output id="edit-status" aria-live="polite"></output>
+        </fieldset>
+      </form>
+      <fieldset>
+        <legend>Handoff</legend>
+        <div class="controls">
+          <label>Between clips <select id="handoff"></select></label>
+          <label>Alignment <select id="alignment">
+            <option value="source">As recorded</option><option value="root">Root</option><option value="foot">Planted foot</option>
+          </select></label>
+        </div>
+        <output id="metrics"></output>
+        <div class="controls">
+          <button id="check" type="button">Find cleaner cut</button>
+          <button id="cut" type="button" hidden>Use suggested cut</button>
+        </div>
+        <output id="cut-status" aria-live="polite"></output>
+      </fieldset>
+    </div>
+  </div>
+  <nav id="strip" aria-label="Clip instances"></nav>
+  <div id="timing" aria-hidden="true"></div>
+  <input id="scrub" type="range" min="0" max="1" value="0" step="0.001" aria-label="Sequence time">
+  <div id="cue-list" aria-label="Sequence cues"></div>
+</main>
+<script src="../dist/ink-studio.browser.js"></script>
+<script src="./pose-blocking.js"></script>
+<script src="./clip-sequence.js"></script>
+<script type="module">
+  import { createRenderer } from '../webgl.mjs';
+
+  const $ = id => document.getElementById(id), clock = $('clock');
+  try {
+    const scene = clipSequenceScene({ makeBuilder, makeSculpt, KIT }), world = scene.build(scene.seed);
+    const demo = world.sequenceDemo;
+    const renderer = createRenderer(document.querySelector('canvas'), { toolkit: { KIT, PixelLook } });
+    const name = step => demo.clips[step.clip].name;
+    const seconds = t => t.toFixed(2) + ' s';
+    let plan = world.clipSequence, selected = plan.steps[0].id, candidate, playhead, copyCount = 0;
+    let time = 0, clockTime = 0, playing = false, focus = false, lastFrame;
+    const preview = () => $('preview').value === 'stride' ? demo.cycle : plan;
+    const mode = () => focus ? 'once' : $('mode').value;
+    function draw() {
+      const clip = preview(), playback = mode();
+      time = focus ? clip.change.timeAt(clockTime) : clockTime;
+      const frame = clip.at(time, { mode: playback });
+      demo.update(time, { plan: clip, playback });
+      const x = clip.sample(time, {}, { mode: playback }).body.pos[0];
+      const target = [Math.max(world.cam.target[0], x - 1.6), ...world.cam.target.slice(1)];
+      renderer.render(world, { width: 144, height: 96, time: frame.time, camera: { ortho: true, target }, damp: false });
+      clock.value = name(frame.step) + ' · ' + seconds(frame.time) + ' · root X ' + x.toFixed(2) +
+        (focus ? ' · changed section' : frame.finished ? ' · end' : frame.cycle ? ' · cycle ' + (frame.cycle + 1) : '');
+      $('scrub').value = frame.time / clip.duration;
+      playhead.style.left = Math.min(99.9, 100 * frame.time / clip.duration) + '%';
+    }
+    function stop() {
+      playing = false;
+      lastFrame = undefined;
+      $('play').textContent = 'Play';
+      $('focus').textContent = 'Play changed section';
+    }
+    function drawTimeline() {
+      const shown = preview(), strip = $('strip'), timing = $('timing');
+      strip.replaceChildren();
+      timing.replaceChildren();
+      if (shown.change) {
+        const range = document.createElement('span');
+        range.className = 'change';
+        range.style.left = 100 * shown.change.start / shown.duration + '%';
+        range.style.width = 100 * shown.change.duration / shown.duration + '%';
+        timing.append(range);
+      }
+      for (const step of shown.steps) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = name(step) + ' · ' + seconds(step.duration);
+        button.style.flex = String(step.duration);
+        button.setAttribute('aria-current', step.id === selected);
+        button.onclick = () => {
+          stop();
+          focus = false;
+          clockTime = step.start;
+          if (shown === plan) { selected = step.id; showStep(); }
+          drawTimeline();
+          draw();
+        };
+        strip.append(button);
+      }
+      function tick(time, css, text) {
+        const tick = document.createElement('span');
+        tick.className = css;
+        tick.style.left = Math.min(99.9, 100 * time / shown.duration) + '%';
+        if (text) tick.title = text;
+        timing.append(tick);
+        return tick;
+      }
+      for (const time of new Set(shown.keys.map(key => key.time))) tick(time, '');
+      $('cue-list').replaceChildren(...shown.cues.map(cue => {
+        tick(cue.time, 'cue', cue.id);
+        const label = document.createElement('span');
+        label.textContent = cue.id + ' ' + seconds(cue.time);
+        return label;
+      }));
+      playhead = tick(0, 'playhead');
+      $('focus').hidden = !shown.change;
+    }
+    function showStep() {
+      const index = plan.steps.findIndex(step => step.id === selected), step = plan.steps[index];
+      $('step-name').textContent = name(step) + ' timing';
+      for (const key of ['in', 'out', 'duration']) $(key).value = step[key].toFixed(3);
+      $('ease').value = step.ease;
+      $('earlier').disabled = index === 0;
+      $('later').disabled = index === plan.steps.length - 1;
+      $('duplicate').disabled = plan.steps.length >= 64;
+    }
+    function showHandoff() {
+      const select = $('handoff'), index = Math.min(Number(select.value), plan.handoffs.length - 1);
+      select.replaceChildren(...plan.handoffs.map((handoff, i) =>
+        new Option(name(plan.steps[i]) + ' → ' + name(plan.steps[i+1]), i)));
+      select.value = index;
+      const report = plan.handoffs[index];
+      $('metrics').value = report.quality + ' · ' + report.score + '/100 · pose ' + report.poseGap.toFixed(2) +
+        ' · velocity ' + report.velocityGap.toFixed(2) + (report.foot ? ' · ' + report.foot.replace('-', ' ') : '') +
+        ' · root gap ' + report.rootGap.toFixed(2);
+      $('cut').hidden = true;
+      $('cut-status').value = '';
+      candidate = undefined;
+    }
+    function publish(next) {
+      if (next === plan) return;
+      stop();
+      plan = demo.replace(next);
+      $('preview').value = 'sequence';
+      focus = false;
+      clockTime = plan.change?.start ?? 0;
+      showStep();
+      showHandoff();
+      drawTimeline();
+      draw();
+    }
+    $('step').onsubmit = event => {
+      event.preventDefault();
+      const step = plan.steps.find(step => step.id === selected), patch = { ease: $('ease').value };
+      for (const key of ['in', 'out', 'duration']) {
+        const value = Number($(key).value);
+        if (value !== Number(step[key].toFixed(3))) patch[key] = value;
+      }
+      try {
+        const next = plan.edit(selected, patch);
+        const delta = next === plan ? 0 : next.change.delta;
+        publish(next);
+        $('edit-status').value = Math.abs(delta) > .0005
+          ? 'Later keys and cues shifted ' + (delta > 0 ? '+' : '−') + seconds(Math.abs(delta))
+          : next === plan && !delta ? 'Sequence length unchanged' : '';
+      } catch (error) { $('edit-status').value = error.message; }
+    };
+    $('alignment').onchange = () => publish(plan.align($('alignment').value));
+    $('handoff').onchange = showHandoff;
+    function move(offset) {
+      const steps = plan.steps.slice(), index = steps.findIndex(step => step.id === selected);
+      const [step] = steps.splice(index, 1);
+      steps.splice(index + offset, 0, step);
+      publish(plan.arrange(steps));
+    }
+    $('earlier').onclick = () => move(-1);
+    $('later').onclick = () => move(1);
+    $('duplicate').onclick = () => {
+      const steps = plan.steps.slice(), index = steps.findIndex(step => step.id === selected);
+      const id = 'copy-' + ++copyCount;
+      steps.splice(index + 1, 0, { ...steps[index], id });
+      selected = id;
+      publish(plan.arrange(steps));
+    };
+    $('check').onclick = () => {
+      candidate = plan.suggestCut(Number($('handoff').value));
+      $('cut').hidden = !candidate;
+      $('cut-status').value = candidate ? candidate.currentScore + ' → ' + candidate.score + '/100 · out ' +
+        seconds(candidate.out) + ' · in ' + seconds(candidate.in) : 'No nearby cut improves this handoff enough';
+    };
+    $('cut').onclick = () => {
+      if (!candidate) return;
+      const index = candidate.index;
+      publish(plan.applyCut(index));
+      $('cut-status').value = 'Applied cut · ' + plan.handoffs[index].score + '/100';
+    };
+    $('preview').onchange = $('mode').onchange = () => {
+      stop();
+      focus = false;
+      clockTime = 0;
+      drawTimeline();
+      draw();
+    };
+    $('scrub').oninput = () => {
+      stop();
+      focus = false;
+      clockTime = Number($('scrub').value) * preview().duration;
+      draw();
+    };
+    $('play').onclick = () => {
+      if (playing && !focus) return stop();
+      if (focus || (mode() === 'once' && clockTime >= preview().duration)) clockTime = 0;
+      focus = false;
+      playing = true;
+      lastFrame = undefined;
+      $('play').textContent = 'Pause';
+      $('focus').textContent = 'Play changed section';
+    };
+    $('focus').onclick = () => {
+      if (playing && focus) return stop();
+      focus = playing = true;
+      clockTime = 0;
+      lastFrame = undefined;
+      $('play').textContent = 'Play full sequence';
+      $('focus').textContent = 'Pause changed section';
+      draw();
+    };
+    function animate(now) {
+      if (playing && (lastFrame === undefined || now - lastFrame >= 1000/24)) {
+        if (lastFrame !== undefined) clockTime += (now-lastFrame)/1000;
+        lastFrame = now;
+        if (!focus && mode() === 'once' && clockTime >= preview().duration) {
+          clockTime = preview().duration;
+          stop();
+        }
+        draw();
+      }
+      requestAnimationFrame(animate);
+    }
+    showStep();
+    showHandoff();
+    drawTimeline();
+    draw();
+    requestAnimationFrame(animate);
+  } catch (error) { clock.value = error.message; }
+</script>

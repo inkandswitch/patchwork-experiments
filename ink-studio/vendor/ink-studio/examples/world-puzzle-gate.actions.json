@@ -1,0 +1,5 @@
+[
+  {"id": "hold-plate", "tick": 2, "action": "world/input", "args": {"port": "lock/plate", "value": true}},
+  {"id": "prime-switch", "tick": 4, "action": "world/input", "args": {"port": "lock/prime", "value": [true]}},
+  {"id": "throw-switch", "tick": 6, "action": "world/input", "args": {"port": "lock/switch", "value": [true]}}
+]

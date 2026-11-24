@@ -1,0 +1,77 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "quarry-crossing",
+  "seed": 18,
+  "dt": 0.04,
+  "entities": {
+    "sheep": {"kind":"animal", "position":[-3,0.12,0]},
+    "rover": {"kind":"vehicle", "position":[-3.8,0.36,1.84], "sockets":{"deck":[0,0.24,0]}},
+    "lift": {"kind":"machine", "position":[2.5,0.3,-1.8]},
+    "wall": {"kind":"barrier", "position":[0,0.74,0]},
+    "feeding-stone": {"kind":"food", "position":[3.5,0.15,0], "visual":{"half":[0.24,0.12,0.28],"ramp":[19,20,21,22,23]}}
+  },
+  "systems": {
+    "land": {"kind":"fields","config":{"fields":{"bed":{"default":0.12,"units":"world"}}}},
+    "machine": {"kind":"mechanics","config":{
+      "terrain":"land/bed",
+      "bodies":{
+        "wall":{"entity":"wall","position":[0,0.74,0],"half":[0.17,0.62,1.23],"fixed":true,"mass":12,"material":"granite"},
+        "column":{"position":[2.5,0.92,-1.8],"half":[0.13,0.8,0.13],"fixed":true,"look":[19,20,21,22]},
+        "platform":{"entity":"lift","position":[2.5,0.3,-1.43],"half":[0.53,0.12,0.4],"mass":2,"look":[20,21,22,23,24]},
+        "frame":{"entity":"rover","position":[-3.8,0.46,1.84],"half":[0.43,0.14,0.31],"mass":2,"look":[13,14,15,16,17]},
+        "front":{"half":[0.13,0.19,0.35],"mass":0.3,"look":[0,1,2,3]},
+        "rear":{"half":[0.13,0.19,0.35],"mass":0.3,"look":[0,1,2,3]}
+      },
+      "joints":{
+        "winch":{"kind":"slider","parent":"column","child":"platform","anchor":[0,-0.63,0.46],"axis":[0,1,0],"range":[0,1.48],"mode":"position","speed":1.4,"capacity":10,"load":2},
+        "front-axle":{"kind":"fixed","parent":"frame","child":"front","offset":[0.27,-0.15,0]},
+        "rear-axle":{"kind":"fixed","parent":"frame","child":"rear","offset":[-0.27,-0.15,0]}
+      },
+      "forces":{
+        "traction":{"kind":"wheel","body":"rear","axis":[1,0,0],"radius":0.25,"magnitude":6}
+      },
+      "drag":0.8
+    }},
+    "lift-toggle":{"kind":"control","config":{"op":"choose"}},
+    "routes":{"kind":"navigation","config":{"bounds":{"min":[-5,-0.1,-1.68],"max":[5,2.6,1.68]},"bed":"land/bed","clearance":"machine/clearance","wear":"wear/wear","cell":0.2}},
+    "habitat":{"kind":"habitat","config":{"species":{"woolly":{"minimum":0.45,"rules":[
+      {"id":"usable-ground","field":"land/bed","when":{"op":"lte","value":0.4}},
+      {"id":"near-feeder","required":false,"resource":{"radius":2.6,"where":{"path":["kind"],"value":"food"}}}
+    ]}}}},
+    "wildlife":{"kind":"agents","config":{
+      "bounds":{"min":[-5,-0.1,-1.68],"max":[5,2.6,1.68]},
+      "bed":"land/bed","support":"machine/support","clearance":"machine/clearance","wear":"wear/wear","habitat":"habitat/suitability","cell":0.2,
+      "replanTicks":20,
+      "species":{"woolly":{"mode":"walk","radius":0.19,"speed":1.35,"stride":0.22,"limbs":[[0.13,0,0.11],[0.13,0,-0.11],[-0.13,0,0.11],[-0.13,0,-0.11]],"look":[3,4,5,6,24]}},
+      "agents":{"sheep":{"species":"woolly","position":[-3,0.12,0],"goal":[3.2,0.12,0]}}
+    }},
+    "wear":{"kind":"wear","config":{
+      "bounds":{"min":[-5,-0.01,-2.8],"max":[5,1.7,2.8]},"cell":0.23,"bed":"land/bed","sources":["wildlife","machine"],
+      "supports":["ground"],"gain":0.32,"recovery":0.025,"threshold":0.14
+    }}
+  },
+  "connections":[{"from":"lift-toggle/value","to":"machine/drive.winch"}],
+  "commands":[
+    {"tick":1,"action":"world/input","args":{"port":"lift-toggle/b","value":1.45}},
+    {"tick":4,"action":"world/input","args":{"port":"lift-toggle/enabled","value":true}},
+    {"tick":8,"action":"world/input","args":{"port":"machine/force.traction","value":0.8}},
+    {"tick":44,"action":"machine/fracture","args":{"body":"wall","axis":2,"parts":3,"omit":[1],"impulse":[0.65,0.8,0]}},
+    {"tick":49,"action":"world/input","args":{"port":"machine/force.traction","value":0}},
+    {"tick":91,"action":"world/input","args":{"port":"lift-toggle/enabled","value":false}}
+  ],
+  "history":{"where":{"path":["kind"],"op":"in","value":["fracture"]}},
+  "visual":{
+    "bounds":{"min":[-5.4,-0.59,-3.0],"max":[5.4,2.8,3.0]},
+    "resolution":0.1,"fields":{"bed":"land/bed","bodies":"machine/bodies","agents":["wildlife/agents"],"wear":"wear/wear"},
+    "camera":{"target":[0,0.23,0],"dist":13.8,"yaw":0.47,"pitch":0.74}
+  },
+  "scenario":{
+    "until":180,
+    "allow":["world/input","machine/fracture","wildlife/seek"],
+    "rules":[
+      {"id":"crossed","kind":"score","field":"wildlife/agents","when":{"path":["sheep","position",0],"op":"gt","value":0.6},"value":100},
+      {"id":"reached-feeder","kind":"win","field":"wildlife/agents","when":{"path":["sheep","position",0],"op":"gt","value":2.9}}
+    ]
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "format": "ink-studio/world", "version": 1, "id": "windmill-workshop", "dt": 0.1, "causality": { "limit": 320 },
+  "systems": {
+    "weather": { "kind": "fields", "config": { "fields": {
+      "wind": { "type": "vec3", "units": "world/s", "default": [6.5, 0, 0.25] }
+    } } },
+    "power": { "kind": "power-network", "config": {
+      "buses": {
+        "mill": { "position": [-3.31, 0.42, 0.64] },
+        "battery-side": { "position": [-1.4, 0.54, 0.68] },
+        "shop": { "position": [-0.28, 0.55, 1.02] },
+        "lift": { "position": [1.25, 0.37, 0.84] },
+        "tool": { "position": [3.17, 0.42, 0.71] }
+      },
+      "lines": {
+        "generator-lead": { "from": "mill", "to": "battery-side", "guides": [[-3.31, 0.34, 1.08], [-1.64, 0.34, 1.08]],
+          "radius": 0.055 },
+        "workshop-breaker": { "from": "battery-side", "to": "shop", "breaker": { "watts": 112, "delay": 0.2 },
+          "guides": [[-1.38, 0.47, 1.02]], "radius": 0.069, "trippedLook": [19, 20, 21, 23, 24] },
+        "lift-lead": { "from": "shop", "to": "lift", "guides": [[0.03, 0.29, 1.15], [1.2, 0.29, 1.15]], "radius": 0.045 },
+        "tool-lead": { "from": "shop", "to": "tool", "guides": [[0.03, 0.26, 1.31], [2.91, 0.26, 1.31]], "radius": 0.047 }
+      },
+      "generators": { "windmill": { "bus": "mill", "watts": 120,
+        "wind": { "field": "weather/wind", "at": [-3.31, 1.92, 0.2], "cutIn": 2, "rated": 8, "cutOut": 25 } } },
+      "batteries": { "cell": { "bus": "battery-side", "capacity": 220, "chargeWatts": 64, "dischargeWatts": 102,
+        "chargeEfficiency": 0.92, "dischargeEfficiency": 0.93 } },
+      "loads": {
+        "lift": { "bus": "lift", "priority": 10, "efficiency": 0.9 },
+        "grinder": { "bus": "tool", "efficiency": 0.94 }
+      }
+    } },
+    "rotor-rate": { "kind": "control", "config": { "op": "scale", "scale": 0.45 } },
+    "battery-gauge": { "kind": "control", "config": { "op": "scale", "scale": 0.0028 } },
+    "rig": { "kind": "mechanics", "config": {
+      "bodies": {
+        "tower-foot": { "fixed": true, "position": [-3.31, 0.23, 0.02], "half": [0.53, 0.19, 0.51], "look": [1, 2, 3, 4] },
+        "tower": { "fixed": true, "position": [-3.31, 1.09, 0], "half": [0.19, 0.96, 0.2], "look": [19, 20, 21, 22] },
+        "hub": { "half": [0.18, 0.18, 0.13], "look": [1, 2, 3, 4, 5] },
+        "sail-a": { "half": [0.105, 0.89, 0.055], "look": [22, 23, 24] },
+        "sail-b": { "half": [0.89, 0.105, 0.055], "look": [22, 23, 24] },
+        "battery": { "fixed": true, "position": [-1.4, 0.59, 0.01], "half": [0.43, 0.49, 0.33], "look": [2, 3, 4, 5] },
+        "charge-rail": { "fixed": true, "position": [-1.4, 0.59, 0.36], "half": [0.06, 0.42, 0.027], "look": [13, 14, 15] },
+        "charge-marker": { "half": [0.33, 0.042, 0.075], "look": [14, 15, 16, 17, 18] },
+        "breaker-box": { "fixed": true, "position": [-0.28, 0.54, 0.88], "half": [0.18, 0.23, 0.15], "look": [19, 20, 21, 22] },
+        "lift-bed": { "fixed": true, "position": [1.15, 0.19, 0.03], "half": [0.63, 0.14, 0.59], "look": [1, 2, 3, 4] },
+        "lift-post-a": { "fixed": true, "position": [1.66, 1.37, -0.47], "half": [0.075, 1.24, 0.07], "look": [2, 3, 4, 5] },
+        "lift-post-b": { "fixed": true, "position": [1.66, 1.37, 0.56], "half": [0.075, 1.24, 0.07], "look": [2, 3, 4, 5] },
+        "lift-beam": { "fixed": true, "position": [1.66, 2.56, 0.045], "half": [0.09, 0.07, 0.6], "look": [13, 14, 15, 16, 17] },
+        "platform": { "mass": 4, "half": [0.44, 0.069, 0.48], "look": [19, 20, 21, 22, 23] },
+        "crate": { "mass": 5, "half": [0.23, 0.195, 0.24], "look": [20, 21, 22, 23] },
+        "grinder-bench": { "fixed": true, "position": [3.13, 0.40, -0.03], "half": [0.55, 0.29, 0.48], "look": [1, 2, 3, 4] },
+        "grinder-head": { "half": [0.26, 0.10, 0.11], "look": [19, 20, 21, 22, 23] },
+        "tool-casing": { "fixed": true, "position": [3.13, 0.82, -0.03], "half": [0.29, 0.24, 0.16], "look": [2, 3, 4, 5] }
+      },
+      "joints": {
+        "rotor": { "kind": "shaft", "child": "hub", "anchor": [-3.31, 1.92, 0.35], "axis": [0, 0, 1] },
+        "blade-a": { "kind": "fixed", "parent": "hub", "child": "sail-a", "anchor": [0, 0, 0.13] },
+        "blade-b": { "kind": "fixed", "parent": "hub", "child": "sail-b", "anchor": [0, 0, 0.135] },
+        "gauge": { "kind": "slider", "child": "charge-marker", "anchor": [-1.4, 0.25, 0.41], "axis": [0, 1, 0],
+          "mode": "position", "range": [0, 0.64], "speed": 6 },
+        "lift": { "kind": "slider", "child": "platform", "anchor": [1.15, 0.36, 0.025], "axis": [0, 1, 0],
+          "mode": "position", "range": [0, 1.95], "speed": 0.7, "load": 3, "capacity": 130,
+          "powerLimited": true, "gravityLoad": true, "idlePower": 1 },
+        "cargo": { "kind": "fixed", "child": "crate", "parent": "platform", "anchor": [-0.06, 0.265, 0] },
+        "grinder": { "kind": "shaft", "child": "grinder-head", "anchor": [3.13, 0.82, 0.21], "axis": [0, 0, 1],
+          "powerLimited": true, "load": 16.5, "idlePower": 1.2 }
+      }
+    } }
+  },
+  "connections": [
+    { "from": "power/wind-speed.windmill", "to": "rotor-rate/value" },
+    { "from": "rotor-rate/value", "to": "rig/drive.rotor" },
+    { "from": "power/energy.cell", "to": "battery-gauge/value" },
+    { "from": "battery-gauge/value", "to": "rig/drive.gauge" },
+    { "from": "rig/power-demand.lift", "to": "power/demand.lift" },
+    { "from": "rig/power-demand.grinder", "to": "power/demand.grinder" },
+    { "from": "power/allowance.lift", "to": "rig/power.lift" },
+    { "from": "power/allowance.grinder", "to": "rig/power.grinder" }
+  ],
+  "commands": [
+    { "id": "raise-crate", "tick": 31, "action": "world/input", "args": { "port": "rig/drive.lift", "value": 1.95 } },
+    { "id": "start-grinder", "tick": 49, "action": "world/input", "args": { "port": "rig/drive.grinder", "value": 4 } },
+    { "id": "stop-grinder", "tick": 74, "action": "world/input", "args": { "port": "rig/drive.grinder", "value": 0 } },
+    { "id": "reset-workshop", "tick": 78, "action": "power/reset", "args": { "line": "workshop-breaker" } }
+  ],
+  "visual": {
+    "bounds": { "min": [-4.6, -0.32, -1.55], "max": [4.22, 3.02, 1.6] }, "resolution": 0.071, "ground": 0.04,
+    "camera": { "target": [-0.22, 1.05, 0.12], "dist": 10.5, "yaw": -0.19, "pitch": 0.44 },
+    "fields": { "bodies": "rig/bodies", "powerLines": "power/lines" }
+  }
+}

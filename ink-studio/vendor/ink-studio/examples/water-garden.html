@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>The three reflecting gardens · Ink Studio</title>
+<style>:root{color-scheme:dark;font-family:system-ui;background:#101e25;color:#d1d7ac}body{margin:0;padding:28px}main{max-width:1080px;margin:auto}h1{font:500 25px Georgia;margin:0 0 8px}p{font-size:13px;color:#99afaa}canvas{display:block;width:100%;image-rendering:pixelated;touch-action:none;border:1px solid #344c4c;border-radius:6px}nav{display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin:18px 0;font-size:13px}button{border:1px solid #647c71;background:#263e3c;color:#ffe3a8;border-radius:4px;padding:7px 14px;cursor:pointer}input{accent-color:#d7bc7d}output{font-variant-numeric:tabular-nums;color:#829b9b;margin-left:auto}</style>
+<main><h1>The three reflecting gardens</h1><p>Three water levels · moving lantern reflections · pixel terrain · drag to orbit, scroll to zoom</p><canvas id="view"></canvas><nav><button id="pause">Pause</button><label><input type="checkbox" id="reflections" checked> Live reflections</label><label>Ripple distortion <input type="range" id="ripples" min="0" max="8" step=".25" value="2.5"></label><label>Reflection detail <select id="quality"><option value=".5">Balanced</option><option value="1">Full</option></select></label><output id="status"></output></nav></main>
+<script src="../dist/ink-studio.browser.js"></script><script src="./water-garden.js"></script><script type="module">
+import {createRenderer} from '../webgl.mjs';
+const kit={makeBuilder,makeSculpt,KIT,TexturedSurface,SpriteSurface,PixelLook,RenderStages},scene=waterGarden(kit),world=scene.build(scene.seed),demo=world.waterDemo;
+const canvas=document.querySelector('#view'),renderer=createRenderer(canvas,{toolkit:kit}),camera={...world.cam};
+let elapsed=0,last,paused=false,drag,frames=0,stamp;
+document.querySelector('#pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'Resume':'Pause';};document.querySelector('#ripples').oninput=e=>demo.setDistortion(Number(e.target.value));
+canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY,camera.yaw,camera.pitch];canvas.setPointerCapture(e.pointerId);};canvas.onpointermove=e=>{if(drag){camera.yaw=drag[2]-(e.clientX-drag[0])*.006;camera.pitch=Math.max(.16,Math.min(1.3,drag[3]+(e.clientY-drag[1])*.006));}};canvas.onpointerup=canvas.onpointercancel=()=>drag=null;
+canvas.addEventListener('wheel',e=>{e.preventDefault();camera.dist=Math.max(13,Math.min(38,camera.dist*Math.exp(e.deltaY*.001)));},{passive:false});
+window.waterQA={world,demo,camera,renderer,get paused(){return paused;},set paused(value){paused=value;},get time(){return elapsed;},set time(t){elapsed=t;demo.update(t);}};
+function frame(now){const dt=last===undefined?0:Math.min(.05,(now-last)/1000);last=now;if(!paused){elapsed+=dt;demo.update(elapsed);}renderer.render(world,{width:960,height:640,time:elapsed,camera,damp:false,stepAnimation:false,reflections:document.querySelector('#reflections').checked,reflectionScale:Number(document.querySelector('#quality').value)});
+  stamp??=now;frames++;if(now-stamp>750){document.querySelector('#status').value=`${Math.round(frames*1000/(now-stamp))} fps · ${world.count.toLocaleString()} splats`;frames=0;stamp=now;}requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></html>

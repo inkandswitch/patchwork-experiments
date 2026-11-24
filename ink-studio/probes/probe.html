@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ink-studio probe</title>
+<!-- pnpm build && node probes/probe-server.mjs 4790 --keep
+     http://localhost:4790/probes/probe.html?example=sculpt.js
+     Mounts the BUILT tool (dist/) on a real in-memory Automerge doc holding one
+     upstream example and the files it requires, fetched from vendor/. Sets
+     window.__ready once a world is drawn or an error shows; window.__probe. -->
+<script type="importmap">{{IMPORTMAP}}</script>
+<style>html, body { margin: 0; height: 100%; } #host { position: relative; width: 100vw; height: 100vh; }</style>
+<div id="host"></div>
+<script type="module">
+import * as A from "@automerge/automerge";
+import { plugins } from "../dist/index.js";
+
+window.__errors = [];
+addEventListener("error", (e) => window.__errors.push(String(e.message)));
+addEventListener("unhandledrejection", (e) => window.__errors.push(String(e.reason?.stack ?? e.reason)));
+
+const q = new URLSearchParams(location.search);
+const main = q.get("example") ?? "sculpt.js";
+
+// the main file and everything it requires by relative path
+const files = {};
+async function collect(name) {
+  if (name in files) return;
+  const res = await fetch(`/vendor/ink-studio/examples/${name}`);
+  if (!res.ok) return;
+  files[name] = await res.text();
+  for (const [, req] of files[name].matchAll(/require\(\s*['"]\.\/([^'"/]+)['"]\s*\)/g))
+    await collect(/\.(js|json)$/.test(req) ? req : `${req}.js`);
+}
+await collect(main);
+
+let doc = A.from({ title: q.get("title") ?? main, kind: main.endsWith(".json") ? "diorama" : "js", main, files });
+const listeners = new Set();
+const handle = {
+  isReady: () => true,
+  doc: () => doc,
+  change(fn) { doc = A.change(doc, fn); for (const l of listeners) l({ handle, doc }); },
+  on: (type, l) => type === "change" && listeners.add(l),
+  off: (type, l) => listeners.delete(l),
+};
+const tool = await plugins.find((p) => p.type === "patchwork:tool").load();
+const cleanup = tool(handle, document.getElementById("host"));
+window.__probe = { handle, cleanup, files: Object.keys(files), A };
+const t0 = performance.now();
+(function wait() {
+  const stats = document.querySelector(".ink-studio .stats")?.textContent ?? "";
+  const message = document.querySelector(".ink-studio .message")?.textContent ?? "";
+  if (/splats/.test(stats) || /rror/.test(message)) window.__ready = { stats, message: message.slice(0, 400), ms: Math.round(performance.now() - t0) };
+  else setTimeout(wait, 100);
+})();
+</script>

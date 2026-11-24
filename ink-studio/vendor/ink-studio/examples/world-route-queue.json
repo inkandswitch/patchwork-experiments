@@ -1,0 +1,67 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "route-queue-ford",
+  "seed": 28,
+  "dt": 0.05,
+  "systems": {
+    "nav": {
+      "kind": "navigation",
+      "config": {
+        "bounds": {"min": [0, -1, 0.2], "max": [14, 2, 2.8]},
+        "cell": 0.5,
+        "tiles": {"size": 4, "flowFields": {}},
+        "water": "ford/water"
+      }
+    },
+    "ford": {
+      "kind": "water",
+      "config": {
+        "width": 1, "height": 3, "origin": [6, 0],
+        "accounts": {"north": [6.5, 0.5], "middle": [6.5, 1.5], "south": [6.5, 2.5]}
+      }
+    },
+    "tank": {
+      "kind": "water",
+      "config": {
+        "width": 1, "height": 1, "origin": [20, 1], "accounts": {"storage": [20.5, 1.5]},
+        "initial": [{"bounds": {"min": [20, 1], "max": [21, 2]}, "value": 2}]
+      }
+    },
+    "crew": {
+      "kind": "agents",
+      "config": {
+        "navigation": "nav",
+        "routeQueue": {"maxRequestsPerTick": 1},
+        "species": {"walker": {"mode": "walk", "radius": 0.21, "speed": 0.8, "look": [2, 4, 6, 24]}},
+        "agents": {
+          "lead": {"species": "walker", "position": [2.9, 0, 1.1], "goal": [12, 0, 1.1], "routePriority": 5},
+          "scout": {"species": "walker", "position": [5.65, 0, 1.5], "goal": [12, 0, 1.5]},
+          "carrier": {"species": "walker", "position": [1.7, 0, 2.35], "goal": [12, 0, 2.35]},
+          "trail": {"species": "walker", "position": [1, 0, 1.1], "goal": [12, 0, 1.1]},
+          "far-bank": {"species": "walker", "position": [8.7, 0, 1.9], "goal": [12, 0, 1.9]}
+        }
+      }
+    }
+  },
+  "entities": {
+    "west-marker": {"position": [5.5, 0.24, 0.15], "visual": {"half": [0.08, 0.24, 0.08], "look": [19, 20, 22]}},
+    "east-marker": {"position": [7.5, 0.24, 2.85], "visual": {"half": [0.08, 0.24, 0.08], "look": [19, 20, 22]}},
+    "north-bank": {"position": [2.4, 0.08, -0.16], "visual": {"half": [0.42, 0.16, 0.21], "look": [7, 8, 9]}},
+    "south-bank": {"position": [10.9, 0.06, 3.2], "visual": {"half": [0.68, 0.1, 0.13], "look": [8, 9, 10]}}
+  },
+  "commands": [
+    {"tick": 10, "action": "world/transfer", "args": {"from": "tank/storage", "to": "ford/north", "amount": 0.55}},
+    {"tick": 10, "action": "world/transfer", "args": {"from": "tank/storage", "to": "ford/middle", "amount": 0.55}},
+    {"tick": 10, "action": "world/transfer", "args": {"from": "tank/storage", "to": "ford/south", "amount": 0.55}},
+    {"tick": 18, "action": "world/transfer", "args": {"from": "ford/north", "to": "tank/storage", "amount": 0.55}},
+    {"tick": 18, "action": "world/transfer", "args": {"from": "ford/middle", "to": "tank/storage", "amount": 0.55}},
+    {"tick": 18, "action": "world/transfer", "args": {"from": "ford/south", "to": "tank/storage", "amount": 0.55}}
+  ],
+  "visual": {
+    "bounds": {"min": [0, -0.45, -0.35], "max": [14, 1.5, 3.35]},
+    "resolution": 0.14,
+    "fields": {"water": "ford/water", "agents": "crew/agents"},
+    "camera": {"target": [7, 0.08, 1.5], "dist": 15, "yaw": 0.14, "pitch": 0.83}
+  }
+}

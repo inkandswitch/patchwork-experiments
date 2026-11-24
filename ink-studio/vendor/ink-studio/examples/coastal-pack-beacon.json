@@ -1,0 +1,64 @@
+{
+  "id": "tideline-beacon",
+  "name": "Last light at the beacon",
+  "seed": 71,
+  "style": "ember",
+  "camera": {
+    "target": [
+      0.12,
+      1.22,
+      0.15
+    ],
+    "dist": 15.7,
+    "yaw": 0.24,
+    "pitch": 0.12
+  },
+  "environmentPreset": {
+    "asset": "tideline/coast",
+    "revision": 1,
+    "overrides": {
+      "aerialPerspective": {
+        "density": 0.056
+      },
+      "skyEnvironment": {
+        "profiles": {
+          "dusk": {
+            "horizon": "#8aa2b1"
+          }
+        }
+      }
+    }
+  },
+  "solids": [
+    {"kind": "box", "at": [0, -0.58, -3], "half": [21, 0.21, 20], "mat": {"role": "water", "noise": 0.14}, "res": 0.39, "round": 0.15},
+    {"kind": "lathe", "at": [0.1, -0.46, 1.32], "h": 0.74, "r": [3.75, 3.53], "mat": {"role": "earth", "noise": 0.23, "over": {"role": "stone", "patch": 0.37}}, "res": 0.17},
+    {"kind": "rock", "at": [-2.7, -0.05, 1.22], "r": 0.9, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [-1.36, -0.05, 2.86], "r": 0.7, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [2.8, -0.05, 0.75], "r": 0.78, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [2.3, -0.05, 2.57], "r": 0.7, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [3.24, -0.05, 1.34], "r": 0.56, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [-1.55, -0.05, -0.3], "r": 0.82, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [0.15, -0.05, -0.88], "r": 0.51, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [0.57, -0.05, 2.86], "r": 0.55, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "lathe", "at": [0.7, 0.23, -0.2], "h": 0.37, "r": [0.87, 0.73], "mat": "stone", "res": 0.067},
+    {"kind": "lathe", "at": [0.7, 0.6, -0.2], "h": 2.1, "r": [0.63, 0.43], "mat": "stone", "res": 0.067},
+    {"kind": "lathe", "at": [0.7, 2.68, -0.2], "h": 0.21, "r": [0.56, 0.69], "mat": "dark", "res": 0.067},
+    {"kind": "lathe", "at": [0.7, 2.89, -0.2], "h": 0.16, "r": [0.64, 0.57], "mat": "metal", "res": 0.067},
+    {"kind": "lathe", "at": [0.7, 3.04, -0.2], "h": 0.4, "r": [0.41, 0.4], "mat": {"role": "glow", "glow": true}, "res": 0.067},
+    {"kind": "lathe", "at": [0.7, 3.44, -0.2], "h": 0.48, "r": [0.65, 0.08], "mat": "dark", "res": 0.067},
+    {"kind": "lathe", "at": [0.7, 3.92, -0.2], "h": 0.33, "r": [0.043, 0.025], "mat": "metal", "res": 0.067},
+    {"kind": "lathe", "at": [0.7, 3.0, 0.28], "h": 0.46, "r": 0.045, "mat": "metal", "res": 0.041},
+    {"kind": "lathe", "at": [1.1157, 3.0, 0.04], "h": 0.46, "r": 0.045, "mat": "metal", "res": 0.041},
+    {"kind": "lathe", "at": [1.1157, 3.0, -0.44], "h": 0.46, "r": 0.045, "mat": "metal", "res": 0.041},
+    {"kind": "lathe", "at": [0.7, 3.0, -0.68], "h": 0.46, "r": 0.045, "mat": "metal", "res": 0.041},
+    {"kind": "lathe", "at": [0.2843, 3.0, -0.44], "h": 0.46, "r": 0.045, "mat": "metal", "res": 0.041},
+    {"kind": "lathe", "at": [0.2843, 3.0, 0.04], "h": 0.46, "r": 0.045, "mat": "metal", "res": 0.041},
+    {"kind": "box", "at": [0.7, 0.88, 0.36], "half": [0.165, 0.27, 0.04], "mat": "wood", "res": 0.046, "round": 0.038},
+    {"kind": "box", "at": [0.7, 1.92, 0.31], "half": [0.076, 0.11, 0.045], "mat": {"role": "glow", "glow": true}, "res": 0.044, "round": 0.028},
+    {"kind": "box", "at": [0.4, 0.31, 0.72], "half": [0.32, 0.058, 0.137], "mat": "pale", "res": 0.08, "round": 0.052},
+    {"kind": "box", "at": [0.498, 0.31, 1.08], "half": [0.32, 0.058, 0.137], "mat": "pale", "res": 0.08, "round": 0.052},
+    {"kind": "box", "at": [0.596, 0.31, 1.44], "half": [0.32, 0.058, 0.137], "mat": "pale", "res": 0.08, "round": 0.052},
+    {"kind": "box", "at": [0.694, 0.31, 1.8], "half": [0.32, 0.058, 0.137], "mat": "pale", "res": 0.08, "round": 0.052},
+    {"kind": "box", "at": [0.792, 0.31, 2.16], "half": [0.32, 0.058, 0.137], "mat": "pale", "res": 0.08, "round": 0.052}
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "format": "ink-studio/graph-project",
+  "version": 1,
+  "inputs": {
+    "base": { "type": "number", "default": 4 }
+  },
+  "groups": { "scaleSignal": "headless-graph-group.json" },
+  "nodes": {
+    "gain": { "op": "scaleSignal", "inputs": { "value": { "input": "base" } } },
+    "pulse": { "op": "add", "inputs": {
+      "a": { "node": "gain" },
+      "b": { "keys": [
+        { "time": 0, "value": 0, "ease": "linear" },
+        { "time": 1, "value": 2 }
+      ] }
+    } }
+  },
+  "outputs": { "intensity": { "node": "pulse" } },
+  "exports": { "intensity": { "output": "intensity", "format": "json" } },
+  "assertions": [
+    { "id": "visible", "output": "intensity", "op": "min", "value": 6 }
+  ]
+}

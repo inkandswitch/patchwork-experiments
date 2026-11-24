@@ -1,0 +1,45 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "shared-ford",
+  "dt": 0.05,
+  "systems": {
+    "nav": {
+      "kind": "navigation",
+      "config": {
+        "bounds": {"min": [0, -1, 0], "max": [14, 2, 8]},
+        "cell": 0.5,
+        "tiles": {"size": 4, "flowFields": {}},
+        "water": "ford/water"
+      }
+    },
+    "ford": {
+      "kind": "water",
+      "config": {"width": 1, "height": 1, "origin": [6, 1], "accounts": {"crossing": [6.5, 1.5]}}
+    },
+    "tank": {
+      "kind": "water",
+      "config": {
+        "width": 1, "height": 1, "origin": [20, 1], "accounts": {"storage": [20.5, 1.5]},
+        "initial": [{"bounds": {"min": [20, 1], "max": [21, 2]}, "value": 1}]
+      }
+    },
+    "crew": {
+      "kind": "agents",
+      "config": {
+        "navigation": "nav",
+        "species": {"worker": {"mode": "walk", "radius": 0.15, "speed": 0.5}},
+        "agents": {
+          "north": {"species": "worker", "position": [2, 0, 0.5], "goal": [12, 0, 1.5]},
+          "middle": {"species": "worker", "position": [1, 0, 1.5], "goal": [12, 0, 1.5]},
+          "south": {"species": "worker", "position": [2, 0, 2.5], "goal": [12, 0, 1.5]}
+        }
+      }
+    }
+  },
+  "commands": [
+    {"tick": 2, "action": "world/transfer", "args": {
+      "from": "tank/storage", "to": "ford/crossing", "amount": 0.6
+    }}
+  ]
+}

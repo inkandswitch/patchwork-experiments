@@ -1,0 +1,21 @@
+{
+  "queries": [
+    {
+      "id": "crew-near-robin",
+      "op": "nearby",
+      "at": {"agent": {"system": "crew", "id": "foreman"}},
+      "radius": 3,
+      "exclude": ["foreman"]
+    },
+    {"id": "crate-footprint", "op": "occupancy", "at": [1, 1, 0], "radius": 0.2},
+    {"id": "clear-spot", "op": "occupancy", "at": [2.5, 1, 0], "radius": 0.2},
+    {
+      "id": "repair-sockets",
+      "op": "interactions",
+      "at": [0, 1, 0],
+      "radius": 3,
+      "fitRadius": 0.2,
+      "where": {"path": ["tags", 0], "value": "repair"}
+    }
+  ]
+}
