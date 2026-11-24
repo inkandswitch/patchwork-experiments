@@ -723,8 +723,11 @@ describe("Escape", () => {
   });
 });
 
-describe("H4, H5, H12: one stack of hands, exhaustively", () => {
-  // Every sequence of up to four steps, each picking up or putting down one
+describe("H4, H5, H12: one stack of hands, wired", () => {
+  // The stack's, Escape's and the pointer's rules are proved alone (hands, ladder, pointer .test.js); left to show is the
+  // wiring (each handed the stack, its answer done) and key ownership, which every ordered triple shows as any longer.
+  //
+  // Every sequence of up to three steps, each picking up or putting down one
   // of five hands, or pressing Escape, over a body that locks the pointer
   // (walk) or one that doesn't (seat), both declaring W and Q:
   //   M  Measure: a tool that wants the pointer, passes presses, takes clicks; declares Q
@@ -777,10 +780,10 @@ describe("H4, H5, H12: one stack of hands, exhaustively", () => {
     return { heard, took: type === "click" ? "body" : null };
   }
 
-  it("every sequence of ≤4 steps × a lock body or not: the stack, the put-downs, the pointer, Escape's rung, the offering order and its cut, and key ownership are the model's", () => {
+  it("every sequence of ≤3 steps × a lock body or not: the stack, the put-downs, the pointer, Escape's rung, the offering order and its cut, and key ownership are the model's", () => {
     let n = 0;
     for (const lockBody of [true, false])
-      for (let len = 1; len <= 4; len++)
+      for (let len = 1; len <= 3; len++)
         for (const seq of seqs(len)) {
           const t = setup({ touch: false });
           // a lock the browser grants at once, and lets go on its own Escape
@@ -875,8 +878,8 @@ describe("H4, H5, H12: one stack of hands, exhaustively", () => {
           delete document.pointerLockElement;
           n++;
         }
-    expect(n).toBe(2 * (9 + 9 ** 2 + 9 ** 3 + 9 ** 4));
-  }, 600_000);
+    expect(n).toBe(2 * (9 + 9 ** 2 + 9 ** 3));
+  });
 });
 
 describe("the pointer", () => {
