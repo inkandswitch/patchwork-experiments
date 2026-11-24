@@ -90,12 +90,13 @@ label }]`; a reserved key is its reserver's; a keyup, its keydown's.
 ### Bodies
 
 `bodies: [{ id, label, keys, lock, reach, enter(place) → { input, eye?(), ride?, keys?, label?, leave() } | null }]`.
-Look (`stage/bodies.js`, the orbit camera) is at the bottom; the first to offer an id has it. `api.body.enter(id,
-place)` pushes what `enter` answers (`"look"` leaves every body); `leave()`, `eye()` (the top body is
-`view.get().body`). The top body hears every move and its keys; its eye and reach are every command's. A body's input is
-told `suspended()` when another goes over it and `resumed()` when it is on top again.
+Look (`stage/bodies.js`, the orbit camera) is at the bottom of the stack (`stage/body-stack.js`); the first to offer an
+id has it. `api.body.enter(id, place)` pushes what `enter` answers (`"look"` leaves every body); `leave()`, `eye()` (the
+top body is `view.get().body`); a body leaving takes those over it. The top body hears every move and its keys; its eye
+and reach are every command's. A body's input is told `suspended()` when another goes over it and `resumed()` when it is
+on top again.
 
-**Hands**: one stack per view (`stage/router.js`): a view plugin's `hand({ kind, name, input, keys?, pointer?,
+**Hands**: one stack per view (`stage/hands.js`): a view plugin's `hand({ kind, name, input, keys?, pointer?,
 escape?(), escaping?(), put?() })` → release, onto the top, putting none down; each input consumes an event (true, a
 session) or passes it (false, null), acted or not, and hears every `move`; `put()` is told as it leaves the stack,
 `escaping()` says what `escape()` would pop (the hint). **A tool** (kind `"tool"`: a command's `tool`, or an extension's
