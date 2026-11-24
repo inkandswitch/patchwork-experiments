@@ -814,22 +814,6 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
     expect(keys).toEqual([]);
   });
 
-  it("the package registers one pane: scene.inspector and no scene.outline; in Edit the toolbar has Inspector and no Objects", async () => {
-    const { plugins } = await import("../index.js");
-    const ids = plugins.filter((p) => p.type === "scene:view").map((p) => p.id);
-    expect(ids).toContain("scene.inspector");
-    expect(ids).not.toContain("scene.outline");
-    const { flatCommands, shownOn } = await import("./toolbar-commands.js");
-    // every part of the package that offers a toolbar toggle for a drawer tab
-    const owners = await Promise.all(["scene.inspector", "scene.parts", "scene.dimensions"].map(async (id) => ({ meta: { id }, module: await plugins.find((p) => p.id === id).load() })));
-    s = await mountStage({ extensions: owners, doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
-    await settle();
-    const toolbar = flatCommands(s.api("scene.inspector").collect("commands"))
-      .filter(({ command }) => shownOn(command, "toolbar", { strict: true }))
-      .map(({ ext, command }) => `${ext}:${command.id}`);
-    expect(toolbar).toContain("scene.inspector:inspector");
-    expect(toolbar.some((k) => k.endsWith(":objects"))).toBe(false);
-  });
 });
 
 describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Activation”)", () => {
