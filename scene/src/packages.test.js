@@ -339,7 +339,7 @@ describe("the prune rule (packagesToPrune)", () => {
     return out;
   };
 
-  it("takes a listed package off exactly when every need is answered here, it answers none, isn't the scene package, and is here (and isn't a source while a render doc is unheard) or, missing here, every render doc has been heard: all 32 cases, for each kind of need", () => {
+  it("takes a listed package off exactly when it is here, every need is answered here, it answers none, isn't the scene package, and isn't a source while a render doc is unheard; one missing here never: all 32 cases, for each kind of need", () => {
     let cases = 0;
     for (const [kind, need] of Object.entries(NEEDS)) {
       const source = need.plugin[0] === "scene:source";
@@ -355,12 +355,12 @@ describe("the prune rule (packagesToPrune)", () => {
                 const registries = registriesFor(need.plugin, registered, isScene);
                 const providerIds = need.providerIds(answers);
                 const got = packagesToPrune({ doc, registries, providerIds, rendersKnown });
-                const want = !answers && !isScene && allAnswered && (rendersKnown || (registered && !source)) ? [P] : [];
+                const want = registered && !answers && !isScene && allAnswered && (rendersKnown || !source) ? [P] : [];
                 const c = { kind, registered, answers, isScene, allAnswered, rendersKnown };
                 // (B is only ever the scene package or missing here: whether it goes is the cases below's business)
                 expect([c, got.filter((u) => u === P)]).toEqual([c, want]);
-                // the invariants, said directly: never one that answers a need, never with a need unanswered, never the suggested import, and one missing here only once every render doc is heard
-                for (const url of got) expect((registeredPackages(registries).has(url) || rendersKnown) && url !== packageUrl(doc["@patchwork"].suggestedImportUrl) && !packagesOf(answeringPlugins(doc, registries, { providerIds })).includes(url) && unansweredNeeds(doc, registries, { providerIds }).length === 0).toBe(true);
+                // the invariants, said directly: only one registered here, never one that answers a need, never with a need unanswered, never the suggested import
+                for (const url of got) expect(registeredPackages(registries).has(url) && url !== packageUrl(doc["@patchwork"].suggestedImportUrl) && !packagesOf(answeringPlugins(doc, registries, { providerIds })).includes(url) && unansweredNeeds(doc, registries, { providerIds }).length === 0).toBe(true);
                 cases++;
               }
     }
@@ -418,7 +418,7 @@ describe("reconcile's fixed point (packagesToList and packagesToPrune together)"
   const STATES = [];
   for (const listed of [0, 1, 2]) for (const registered of [false, true]) for (const source of [false, true]) for (const needed of [false, true]) STATES.push({ listed, registered, source, needed });
 
-  it("one pass reaches listed = answering ∪ (listed ∩ ({scene} ∪ kept)), and the next writes nothing: all 4608 cases", () => {
+  it("one pass reaches listed = answering ∪ (listed ∩ ({scene} ∪ not here ∪ kept)), and the next writes nothing: all 4608 cases", () => {
     let cases = 0;
     for (const sa of STATES)
       for (const sb of STATES)
@@ -450,8 +450,8 @@ describe("reconcile's fixed point (packagesToList and packagesToPrune together)"
                 const s = states[i];
                 const isScene = sceneIsA && i === 0;
                 const here = s.registered || isScene;
-                // (one missing here stays only while a need goes unanswered or a render doc is unheard: every need here is answered by a package that can be named)
-                return (s.registered && s.needed) || (s.listed > 0 && (unanswered || isScene || (!rendersKnown && (!here || s.source))));
+                // (one missing here can't be judged here: it stays)
+                return (s.registered && s.needed) || (s.listed > 0 && (!here || unanswered || isScene || (!rendersKnown && s.registered && s.source)));
               }).map(([url]) => url);
               const c = { states, sceneIsA, rendersKnown, stray };
               expect([c, [...listedPackages(after)].sort()]).toEqual([c, want.sort()]);
@@ -523,7 +523,7 @@ describe("a retired package and the one that took its plugins over, both install
     return { plan, listed: listedPackages(after) };
   };
 
-  it("two answering one need, registered in either order: only the later's package is appended, and the earlier's, listed, is taken off", () => {
+  it("two answering one need, registered in either order: only the later's package is appended; the earlier's, listed, stays (its plugin, shadowed here, may run elsewhere), and nothing turns", () => {
     for (const [first, later] of [
       [RETIRED, SUCCESSOR],
       [SUCCESSOR, RETIRED],
@@ -534,17 +534,21 @@ describe("a retired package and the one that took its plugins over, both install
       // from a list naming neither: the one that runs, never the other
       const fresh = pass(table([SCENE]), registries);
       expect([first, fresh.listed.includes(first), fresh.listed.includes(later)]).toEqual([first, first === SUCCESSOR, true]); // (the successor answers successor.card too)
-      // the polluted list heals: the retired package is taken off when the successor's runs; when the retired one's runs, it's what runs
+      // both listed: both stay, since each one's plugin answers the need (a viewer with only the retired one runs it)
       const healed = pass(table([SCENE, SUCCESSOR, RETIRED]), registries);
-      expect([first, healed.listed]).toEqual([first, later === SUCCESSOR ? [SCENE, SUCCESSOR] : [SCENE, SUCCESSOR, RETIRED]]);
+      expect([first, healed.listed]).toEqual([first, [SCENE, SUCCESSOR, RETIRED]]);
       // and that is a fixed point
       expect(reconcileList({ doc: table(healed.listed), registries })).toEqual({ add: [], prune: [] });
     }
   });
 
-  it("one uninstalled: the retired package, listed, goes once the successor answers every need; it stays while a need goes unanswered, a render doc is unheard, or a need is answered only from a dev server", () => {
+  it("one uninstalled: a viewer without the retired package can't judge it, so it stays; one with it installed and answering nothing takes it off", () => {
     const polluted = table([SCENE, SUCCESSOR, RETIRED]);
-    expect(pass(polluted, registered(SUCCESSOR)).listed).toEqual([SCENE, SUCCESSOR]);
+    expect(pass(polluted, registered(SUCCESSOR)).listed).toEqual([SCENE, SUCCESSOR, RETIRED]);
+    // the doc no longer calls for the keeper: a viewer who has the retired package takes it off
+    const moved = newScene({ objects: { c: { traits: { "successor.card": {} } } }, packages: [SCENE, SUCCESSOR, RETIRED].map((url) => ({ url })), "@patchwork": { suggestedImportUrl: SCENE } });
+    expect(pass(moved, registered(RETIRED)).listed).toEqual([SCENE, SUCCESSOR]);
+    expect(pass(moved, registered()).listed).toEqual([SCENE, SUCCESSOR, RETIRED]);
     // a need nothing here answers: it may be what answers that elsewhere
     const stray = { ...polluted, traits: { "nobody.has": {} } };
     expect(reconcileList({ doc: stray, registries: registered(SUCCESSOR) }).prune).toEqual([]);
@@ -555,7 +559,7 @@ describe("a retired package and the one that took its plugins over, both install
     expect(reconcileList({ doc: polluted, registries: registered(dev) }).prune).toEqual([]);
     // the scene package, missing here (a viewer on a dev copy of the scene), is the suggested import: it stays
     const devScene = { ...registered(SUCCESSOR), "patchwork:datatype": [{ id: "scene", importUrl: dev }, { id: "locked-box", importUrl: SUCCESSOR }] };
-    expect(reconcileList({ doc: polluted, registries: devScene }).prune).toEqual([RETIRED]);
+    expect(reconcileList({ doc: polluted, registries: devScene }).prune).toEqual([]);
     // nothing installed answers: nothing is taken off
     expect(reconcileList({ doc: polluted, registries: { "patchwork:datatype": [{ id: "scene", importUrl: SCENE }] } }).prune).toEqual([]);
   });
@@ -743,5 +747,109 @@ describe("every open doc's packages as one prompt (unionPackages)", () => {
     expect(u.ask.map((e) => [e.url, e.name])).toEqual([["b", "B"], ["a", null]]);
     expect(unionPackages([{ ask: [], loading: [], failed: [], missing: true }]).missing).toBe(true);
     expect(unionPackages([]).missing).toBe(false);
+  });
+});
+
+// H15: viewers whose registries disagree, any interleaving. A small model:
+// four packages, each with its plugins (a package's URL names the same
+// plugins for everyone): PUB and DEV both register "x" (trait t: one
+// package's published copy and a copy published from a dev checkout), OTHER
+// registers "y" (trait u), IDLE "z" (a trait the doc doesn't have). The doc
+// calls for t and u. A viewer's registry is any ordered choice of packages
+// (order decides which of two registering "x" is handed out). The state is
+// the set of listed packages; a step is one viewer's reconcile pass, or two
+// viewers' passes from one state merged (a concurrent edit: removals, then
+// the union of additions). The whole state graph from every starting list
+// is searched, so "every interleaving" has no bound to pick: it holds for
+// runs of any length.
+describe("viewers who disagree reach one list (H15)", () => {
+  const PKG = {
+    PUB: { url: "automerge:2pUb6LbnDAzvNj9WDNDA4ew21R8", plugins: [{ id: "x", traits: ["t"] }] },
+    DEV: { url: "automerge:3dEv6LbnDAzvNj9WDNDA4ew21R8", plugins: [{ id: "x", traits: ["t"] }] },
+    OTHER: { url: "automerge:4oTh6LbnDAzvNj9WDNDA4ew21R8", plugins: [{ id: "y", traits: ["u"] }] },
+    IDLE: { url: "automerge:5iDl6LbnDAzvNj9WDNDA4ew21R8", plugins: [{ id: "z", traits: ["v"] }] },
+  };
+  const NAMES = Object.keys(PKG);
+  /** Every ordered choice of at most `n` of the packages. */
+  const orders = (n, from = NAMES) => (n === 0 ? [[]] : [[], ...from.flatMap((p) => orders(n - 1, from.filter((q) => q !== p)).map((rest) => [p, ...rest]))]).filter((o, i, all) => all.findIndex((x) => x.join() === o.join()) === i);
+  const registryOf = (order) => ({ "scene:extension": order.flatMap((name) => PKG[name].plugins.map((p) => ({ ...p, importUrl: PKG[name].url }))) });
+  const docOf = (listed) => newScene({ traits: { t: {}, u: {} }, packages: [...listed].map((url) => ({ url })) });
+  const keyOf = (listed) => [...listed].sort().join(" ");
+  const plan = (rule, listed, registries) => rule({ doc: docOf(listed), registries });
+  const apply = (listed, plans) => {
+    const out = new Set(listed);
+    for (const p of plans) for (const url of p.prune) out.delete(url);
+    for (const p of plans) for (const url of p.add) out.add(url);
+    return out;
+  };
+  /** The state graph from `start`: its nodes, whether it has a cycle (other than standing still), and the lists where no step changes anything. */
+  function search(rule, registries, start) {
+    const next = (listed) => {
+      const plans = registries.map((r) => plan(rule, listed, r));
+      const steps = plans.map((p) => apply(listed, [p]));
+      for (let i = 0; i < plans.length; i++) for (let j = i + 1; j < plans.length; j++) steps.push(apply(listed, [plans[i], plans[j]]));
+      return steps.filter((s) => keyOf(s) !== keyOf(listed));
+    };
+    const seen = new Map(); // key → 1 on the path, 2 done
+    const fixed = new Set();
+    let cycle = false;
+    const visit = (listed) => {
+      const k = keyOf(listed);
+      if (seen.get(k) === 1) return void (cycle = true);
+      if (seen.get(k) === 2) return;
+      seen.set(k, 1);
+      const steps = next(listed);
+      if (!steps.length) fixed.add(k);
+      for (const s of steps) visit(s);
+      seen.set(k, 2);
+    };
+    visit(new Set(start));
+    return { cycle, fixed: [...fixed] };
+  }
+  const starts = NAMES.reduce((acc, n) => [...acc, ...acc.map((s) => [...s, PKG[n].url])], [[]]);
+
+  const check = (rule, viewers) => {
+    let cases = 0;
+    const bad = [];
+    for (const regs of viewers)
+      for (const start of starts) {
+        const registries = regs.map(registryOf);
+        const { cycle, fixed } = search(rule, registries, start);
+        cases++;
+        // ends whatever the interleaving, at one list, which names what each viewer runs
+        const runs = registries.flatMap((r) => packagesOf(answeringPlugins(docOf([]), r)));
+        if (cycle || fixed.length !== 1 || !runs.every((u) => fixed[0].split(" ").includes(u))) bad.push({ regs, start, cycle, fixed });
+      }
+    return { cases, bad: bad.slice(0, 3) };
+  };
+
+  it("two viewers, every pair of registries of up to three packages in every order, from every list: no cycle, one fixed point, naming what each runs", () => {
+    const all = orders(3);
+    const pairs = all.flatMap((a) => all.map((b) => [a, b]));
+    expect(check(reconcileList, pairs)).toEqual({ cases: pairs.length * 16, bad: [] });
+  });
+
+  it("three viewers, every triple of registries of up to two packages (PUB and DEV in both orders): the same", () => {
+    const all = orders(2).filter((o) => o.length < 2 || NAMES.indexOf(o[0]) < NAMES.indexOf(o[1]) || o.join() === "DEV,PUB");
+    const triples = all.flatMap((a) => all.flatMap((b) => all.map((c) => [a, b, c])));
+    expect(check(reconcileList, triples)).toEqual({ cases: triples.length * 16, bad: [] });
+  });
+
+  it("the search finds the livelock a viewer pruning what it can't judge makes (PUB here, DEV there: each takes the other's off)", () => {
+    const judgesAll = (o) => ({ add: packagesToList(o), prune: unansweredNeeds(o.doc, o.registries).length ? [] : listedPackages(o.doc).filter((u) => !packagesOf(answeringPlugins(o.doc, o.registries)).includes(u)) });
+    const { bad } = check(judgesAll, [[["PUB", "OTHER"], ["DEV", "OTHER"]]]);
+    expect(bad.length).toBeGreaterThan(0);
+    expect(bad[0].cycle).toBe(true);
+  });
+
+  it("and the one a viewer pruning what only a shadowed plugin answers makes (PUB and DEV here, DEV handed out; PUB alone there)", () => {
+    const runsOnly = (o) => {
+      const regd = registeredPackages(o.registries);
+      const runs = packagesOf(answeringPlugins(o.doc, o.registries));
+      return { add: packagesToList(o), prune: unansweredNeeds(o.doc, o.registries).length ? [] : listedPackages(o.doc).filter((u) => regd.has(u) && !runs.includes(u)) };
+    };
+    const { bad } = check(runsOnly, [[["PUB", "DEV", "OTHER"], ["PUB", "OTHER"]]]);
+    expect(bad.length).toBeGreaterThan(0);
+    expect(bad[0].cycle).toBe(true);
   });
 });

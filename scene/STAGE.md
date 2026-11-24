@@ -106,8 +106,14 @@ hand's `escape()` else putting it down; no hand: the selection, else the focus.
 ## Packages
 
 `doc.packages` (`[{ url }]`, `automerge:` or public `https:`) lists where its contents come from (`src/packages.js`,
-`stage/packages.js`): each running source's and trait's package is added; once quiet, those no running plugin comes from
-are pruned. Nothing loads without a click on Load for its URL.
+`stage/packages.js`). Each viewer adds the package of every plugin answering a need of the doc's (a source or a trait)
+here; once its registry is quiet, it prunes only an entry it can judge: a package registered here none of whose
+plugins, shadowed or not, answers a need, while every need is answered here (never the scene package or the suggested
+import; while a render doc built here is unheard, no source's). An entry it hasn't registered it leaves: another
+viewer may run it. So additions are a union and no prune takes what another viewer adds (H15). The kernel writes the
+person's doc here without a click, on open and on every doc or registry change of an acting, writable stage: these
+entries, and `@patchwork.suggestedImportUrl` (the scene package's URL) where the doc names nothing loadable. Nothing
+loads without a click on Load for its URL (or one remembered for it).
 
 ## Arriving
 
@@ -129,6 +135,7 @@ stage alone, a drawn one nowhere.
 | H10 | The selected path ends at an element of the focus stage. |
 | H12 | An event goes to the hands top first, then the chain, then the top body, cut exactly at the first that consumes it; a tool picked up goes on top (one held: put down) and puts none down; a key is the gesture's, else the topmost hand's declaring it, else the top body's. |
 | H14 | A command naming a kind of hand applies (`run`, every surface) only while a hand of that kind is held; a tool held through it is held only while one is. |
+| H15 | Viewers with any registries, editing one doc in any interleaving (concurrently too), bring its package list to one fixed point, which names every package whose plugin runs for the doc in any of them (a package's URL naming one set of plugins). |
 | I1 | Every api read and write goes to its stage's handle. |
 | I2 | No reference crosses docs; a link (an object whose source is a scene doc) is the only edge between docs. |
 | I4 | A stage's snapshot, running set and display depend only on its doc and the registry; only space and `ambient`'s `mine`, `frame`, `use` depend on placement. |
