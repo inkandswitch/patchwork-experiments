@@ -89,11 +89,6 @@ function check(out, docOf) {
   }
 }
 
-function* perms(list) {
-  if (list.length <= 1) return yield [...list];
-  for (let i = 0; i < list.length; i++) for (const rest of perms([...list.slice(0, i), ...list.slice(i + 1)])) yield [list[i], ...rest];
-}
-
 /** Every graph on `k` docs where each ordered pair (self included) has one of `choices` (lists of link kinds). */
 function* graphs(k, choices) {
   const pairs = [];
@@ -110,22 +105,26 @@ function* graphs(k, choices) {
   }
 }
 
-/** Run every arrival order of a graph's docs: each prefix keeps the invariants, and the end is the one-shot expansion. */
+/**
+ * Every arrival order of a graph's docs: each prefix keeps the invariants,
+ * and the end is the one-shot expansion. expand is a pure function of the
+ * docs that have arrived, so an order is only the sets its prefixes pass
+ * through, and every order ends at all of them: checking each set of
+ * arrived docs once checks every order. (`orders: false`: only the prefixes
+ * of arriving in index order.)
+ */
 function everyArrival(docs, { gone = new Set(), orders = true } = {}) {
   const root = { url: URL(0) };
   const full = expand(root, docOfGraph(docs, { gone }));
   check(full, docOfGraph(docs, { gone }));
-  const order0 = docs.map((_, i) => i);
-  for (const order of orders ? perms(order0) : [order0]) {
-    const arrived = new Set();
-    let last = null;
-    for (const i of order) {
-      arrived.add(i);
-      const docOf = docOfGraph(docs, { gone, arrived });
-      last = expand(root, docOf);
-      check(last, docOf);
-    }
-    expect(last).toEqual(full);
+  const k = docs.length;
+  const sets = orders ? Array.from({ length: (1 << k) - 1 }, (_, m) => m + 1) : Array.from({ length: k }, (_, i) => (1 << (i + 1)) - 1);
+  for (const mask of sets) {
+    const arrived = new Set(docs.map((_, i) => i).filter((i) => mask & (1 << i)));
+    const docOf = docOfGraph(docs, { gone, arrived });
+    const out = expand(root, docOf);
+    check(out, docOf);
+    if (arrived.size === k) expect(out).toEqual(full);
   }
   return full;
 }
