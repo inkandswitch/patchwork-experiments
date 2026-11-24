@@ -1,8 +1,7 @@
 # The kernel: the contract
 
-What the scene's kernel (`src/stage/`: the **stage** and the **view**) promises
-every plugin, and what it asks. Plain data and functions; no plugin imports
-another, and the kernel knows none by name. The rest is plugins':
+What the scene's kernel (`src/stage/`: the **stage** and the **view**) promises every plugin, and what it asks. Plain
+data and functions; no plugin imports another, and the kernel knows none by name. The rest is plugins':
 [NATIVE.md](NATIVE.md), [EDITOR.md](EDITOR.md), [CONVENTIONS.md](CONVENTIONS.md).
 
 ## Words
@@ -21,8 +20,8 @@ another, and the kernel knows none by name. The rest is plugins':
 
 ## Views, stages and links
 
-A view shows a tree of stages: the outermost doc's, and each one a view plugin
-opens under an object of another, as its content, in its frame.
+A view shows a tree of stages: the outermost doc's, and each one a view plugin opens under an object of another, as its
+content, in its frame.
 
 | | |
 |---|---|
@@ -46,9 +45,8 @@ opens under an object of another, as its content, in its frame.
 
 ## Activation
 
-`{ type: "scene:extension" | "scene:view", id, name, traits?, provides?, uses?,
-…, async load() → { create(api) → instance } }`: `traits` for an extension
-(`"*"`: every doc); the services it `provides`, those its create `uses`; other
+`{ type: "scene:extension" | "scene:view", id, name, traits?, provides?, uses?, …, async load() → { create(api) →
+instance } }`: `traits` for an extension (`"*"`: every doc); the services it `provides`, those its create `uses`; other
 plain data for plugins (`drops`, `describes`: EDITOR.md).
 
 | | |
@@ -60,19 +58,20 @@ plain data for plugins (`drops`, `describes`: EDITOR.md).
 
 ## View plugins
 
-One per view, for its whole life (`stage/host.js`). Its `input` is the chain's
-step 4; its `beforeRemove`, `commands` and contributions come after the focus
-stage's extensions', in that stage's frame and context; `update` on its flush.
+One per view, for its whole life (`stage/host.js`). Its `input` is the chain's step 4; its `beforeRemove`, `commands`
+and contributions come after the focus stage's extensions', in that stage's frame and context; `update` on its flush.
 
 | Member | |
 |---|---|
-| as the extension `api`'s | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `packages`, `overlay`, `edge`, `style`, `listen`, `cursor`, `popover`, `loop`, `afterRender`, `schedule`, `invalidate`, `body`, `now`, `after`, `frame`; `camera`, `pick`, `ray`, `project` in the world |
+| as the extension `api`'s | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `overlay`, `edge`, `style`, `listen`, `cursor`, `popover`, `loop`, `afterRender`, `schedule`, `invalidate`, `body`, `now`, `after`, `frame`; `camera`, `pick`, `ray`, `project` in the world |
 | `url`, `viewer`, `session`, `use(name)` | the outermost's url; a view plugin's service, else the focus stage's |
-| `view` | the value whole (`selected`, `hovered`, `focus` as paths; `packages`, `arrived`); `step(ev)`, `set(value)` (its own) |
+| `view` | `get()`, `watch(fn, select?)`: the value whole (`selected`, `hovered`, `focus` as paths; `packages`; `arrived`: "Arriving"); `step(ev)`, `set(value)` (its own) |
+| `packages` | `{ load(urls?), dismiss(urls?) }`: the prompt's answer for every open doc's (`view.packages`) |
 | `hand(spec)`, `putDown(tool?)`, `offerWidget(type, ev)`, `wantPointer()` | "Hands"; events in the world, each hit with its `path`; `putDown` one of `held`, else the topmost |
 | `open(handle, o)`, `opening()` | "Views, stages and links"; `close.reached`: docs its repo found; arriving waits on `opening` |
 | `focus()` | the focus stage's `api` for it; what it acquires there goes as the focus leaves |
-| `collect(name)`, `run(inv)`, `path(o)`, `routes()`, `tap(fn)` → off | acting stages' offers, the input path's first, tagged `stage`; run ("Commands") in the stage named, else the focus; the path's readers; the last 50 events' routes (`{ type, at, path, steps: [{ step, stage?, ext, holder? }], took }`; "The input chain"); every channel message sent or heard (`{ stage, url, dir, kind, session, viewer, ext?, type?, data?, keys?, to? \| dropped? }`), made only while tapped |
+| `path(o?)` | the input path's stages, innermost first (`{ pointer: true }`, `{ focus: true }`, `{ at: path }`), each a reader: `{ stage, path, scene(), runs(ext), collect(name), context(hit), attention(), look(), pointed(), nameOf(id), writable(), use(name) }` in its frame |
+| `collect(name)`, `run(inv)`, `routes()`, `tap(fn)` → off | acting stages' offers, the input path's first, tagged `stage`; run ("Commands") in the stage named, else the focus; the last 50 events' routes (`{ type, at, path, steps: [{ step, stage?, ext, holder? }], took }`); every channel message sent or heard (`{ stage, url, dir, kind, session, viewer, ext?, type?, data?, keys?, to? \| dropped? }`), made only while tapped |
 
 ## `api`
 
@@ -80,25 +79,25 @@ Each extension's own; what it acquires through it goes when it stops.
 
 | Member | |
 |---|---|
-| `id`, `repo`, `handle`, `url`, `signal`, `registry(type)` | the registry at once |
+| `id`, `repo`, `handle`, `url`, `signal`, `registry(type)` | `repo` is `{ find(url), create(doc), create2(doc), peerId }`, what it finds noted (a link's fix holds it); `registry(type)` that type's plugin registry at once, or null: `get(id)`, `has(id)`, `all()`, `filter(fn)`, `load(id)` → Promise, `on("changed", fn)` → off |
 | `doc()`, `scene()`, `change(fn)`, `newId(prefix)`, `writable()` | `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }`; `change` → its patches (`[]`: none), its message `{"ext":id}` (the stage's own `{"kernel":…}`; `lastWriter(doc, path)`: `stage/provenance.js`) |
-| `ops`, `remove(ids)` | pure planners (`src/ops.js`) → a change function or null; `remove` runs every `beforeRemove` first |
+| `ops`, `remove(ids)` | `src/ops.js`: pure planners (`setTransform`, `setTransformPart`, `setField`, `removeObjects`, `attachTo`, `fileIn`, `newGroup`, `ungroup`, `moveRow`, `setLayerShown`, `clearLayers`) → a change function or null; `remove` runs every `beforeRemove` first |
 | `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed, errors }` (`ready`: nothing the doc calls for is still on its way, a failed one included; the clock and the audience also need `failed` empty; `errors[id]`: why) |
 | `now()`, `after(ms, fn)`, `frame(fn)`, `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame`; rendering every frame while a loop runs, `dt` ≤ 0.1 s |
 | `local` | `get`, `swap(fn)`, `watch(fn, select?)`: the stage's frozen value; the kernel's `running` (`[{ id, scope }]`), `status` (`{ [id]: { state, reason?, text, title } }`), `packages` (`{ ask, loading, failed, missing }`); plugins' keys `<id>.`-prefixed |
 | `view` | `get`, `watch`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, keys, pointer, serial }]`, top last), `held` (its tools, `[{ ext, command, name, handKind, keys, pointer, serial }]`), `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)`, `enter(id)`, `arrive()` |
 | `channel` | the doc's ephemeral side (`stage/presence.js`; I5): `{ viewer, session, peers(), get(), set(key, value), watch(fn), send(type, data), rate(hz) }`; `peers()` → `{ [session]: { viewer, body, held: [{ name }] (top last), at, keys } }`; `send` reaches `receive` on every peer; `session` null in a pin |
-| `page`, `packages` | `{ visible(), on("hide" \| "show" \| "visible", fn) }`; the prompt's answer `{ load(urls?), dismiss(urls?) }` |
-| `nameOf(id)`, `content(id)`, `loadState(id)`, `box(id, o)`, `groupBox`, `sceneBox`, `worldOf(id)` | `{ loaded, box, extras, stats, root }`; where content went, what its loader said; `{ min, max }` or null; the drawn matrix |
+| `page`, `packages` | `{ visible(), on("hide" \| "show" \| "visible", fn) }`; the prompt's answer for its doc, `{ load(urls?), dismiss(urls?) }` |
+| `nameOf(id)`, `content(id)`, `loadState(id)`, `box(id, { hints?, in? })`, `groupBox`, `sceneBox`, `worldOf(id)` | `{ loaded, box, extras, stats, root }`; where content went, what its loader said; `{ min, max }` or null; the drawn matrix |
 | `focus(ids)`, `providersFor`, `addObject(url, o)`, `fixPoint(id)` | load first; → a change function with its `id`; `at` for what a built object shows |
-| `display(id, o)` → release | **Display**: `{ transform?, content?, hidden?, name?, tint?, opacity?, outline? }` shows an object otherwise to this viewer, unwritten (`worldOf`, boxes, picks, labels follow); layered in running order per field; `tint` a CSS colour over its own, `opacity` × its own, `outline` colours its box is drawn in (several: alternating dashes). **Dressing** (moving `content(id).root` nodes) is only a look |
-| `ambient(name)` | **Ambients**: `instance.ambient()` offers `{ [name]: value \| null }`, stacked in running order, copied to frozen JSON; this is the outermost doc's, `null \| { value, mine, frame, use }` (I13). The viewport draws `atmosphere`, every field, default and range as CONVENTIONS.md, "Atmosphere" states |
-| `pick`, `ray`, `raycast`, `project` | **Picking and camera**: `pick(x, y, { ground?, snapPx? })`, `raycast(origin, dir, { far?, skip? })` → `{ id, point, normal, distance, back }` |
-| `camera` | `{ get, set, frame(box), hold, ride, touched, watch, onEnd }`. **Hold**: orbit off. **Riding**: `ride(id, { turn, rise, tilt, at })`, the top body's, else the latest base ride (I8). **Saving**: the viewer's, else `view.start.home` |
+| `display(id, o)` → release | **Display**: `{ transform?, content?, hidden?, name?, tint?, opacity?, outline? }` shows an object otherwise to this viewer, unwritten (`worldOf`, boxes, picks, labels follow); layered in running order per field; `tint` a CSS colour over its own, `opacity` × its own, `outline` colours its box is drawn in (several: alternating dashes). **Dressing** (moving `content(id).root` nodes) is only a look; a content mesh whose `userData.receiveShadow` (a glTF node's extras) is `false` casts shadows and receives none |
+| `ambient(name)`, `extent(box)` | **Ambients**: `instance.ambient()` offers `{ [name]: value \| null }`, stacked in running order, copied to frozen JSON; this is the outermost doc's, `null \| { value, mine, frame, use }` (I13). The viewport draws `atmosphere`, every field, default and range as CONVENTIONS.md, "Atmosphere" states; the depth range and the shadows fit `extent` too |
+| `pick`, `ray`, `raycast`, `project` | **Picking and camera**: `pick(x, y, { ground?, snapPx? })`, `raycast(origin, dir, { far?, skip(id)? })` → `{ id, point, normal, distance, back }`; `project(p)` → `{ x, y, visible }` (port px) |
+| `camera` | `{ get, set, frame(box), hold, ride, touched, watch, onEnd }`; `set({ position?, target?, quaternion?, fov?, near?, far? })`, `near`, `far` only while held. **Hold**: orbit off. **Riding**: `ride(id, { turn, rise, tilt, at })`, the top body's, else the latest base ride (I8). **Saving**: the viewer's, else `view.start.home` |
 | `body`, `hold`, `popover(close)`, `context(hit?)`, `attention()`, `look()` | "Bodies", "Hands"; `context` is `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `collect(name)`, `run(inv)` | this stage's offers, tagged `stage`; run in the stage `inv.stage` names ("Commands") |
-| `THREE`, `world({ onTop? })`, `labels()`, `owners()` | a `Group` whose meshes are its widgets; `{ set([{ key, text, place?, screen?, on? (+ offset), at?, position?, rank?, className?, data?, onPointerDown? }]) }`, placed by the first of these given: `place({ project, w, h })` → `{ x, y, leader?: { x, y } }` (port px), `screen` (port px), an object's drawn frame, `at()` → a point, `position`; each asked every frame (`stage/labels.js`); rank 2 and up never give way; who draws in this stage, frozen, in running (layering) order: `{ layers: [{ ext, onTop, meshes }], labels: [{ ext, key, text, on }], display: { [id]: [{ ext, fields }] } }` |
-| `overlay()`, `edge(side)`, `style`, `listen`, `cursor`, `extent`, `invalidate`, `schedule`, `port`, `root` | DOM over or beside the canvas |
+| `THREE`, `world({ onTop? })`, `labels()`, `owners()` | a `Group` whose meshes are its widgets (one under a `userData.noPick` node never is); `{ set([{ key, text, place?, screen?, on? (+ offset), at?, position?, rank?, className?, data?, onPointerDown? }]) }`, placed by the first of these given: `place({ project, w, h })` → `{ x, y, leader?: { x, y } }` (port px), `screen` (port px), an object's drawn frame, `at()` → a point, `position`; each asked every frame (`stage/labels.js`); rank 2 and up never give way; who draws in this stage, frozen, in running (layering) order: `{ layers: [{ ext, onTop, meshes }], labels: [{ ext, key, text, on }], display: { [id]: [{ ext, fields }] } }` |
+| `overlay()`, `edge(side)`, `style`, `listen`, `cursor`, `invalidate`, `schedule`, `port`, `root` | DOM over or beside the canvas; draw once more; after the next update flush; the canvas's element, the stage's root |
 
 ## `instance`
 
@@ -120,60 +119,51 @@ Each extension's own; what it acquires through it goes when it stops.
 
 ## The input chain
 
-Each event goes, until one consumes it (H12): (1) **the hands**, top first; (2)
-**the widget's owner**; (3) **the holders, nearest first**: the hit object, what
-it hangs on, its groups, the scene (`ev.holder`: the extension's nearest member
-with its trait; a segment per stage, innermost first; I8); (4) **the view
-plugins**; (5) **the top body**; (6) **the default** (orbit, pan, zoom toward
-the pointer). Steps 2–4 are `stage/chain.js`; each extension is offered an
-event once. An event is `{ type` (`press`, `click`, `menu`, `key`, `keyup`,
-`wheel`, `move`), `x, y, clientX, clientY, ndc, ray, hit, widget` (both lazy),
-`holder, button, buttons, pointerId, pointerType, shift, alt, ctrl, meta, key,
-code, repeat, dx, dy, deltaY, locked }`. `input = { press(ev) → session | null,
-click, menu, key, keyup, wheel` (→ boolean)`, widgetAt(ev), cursor(ev) }`; a
-session `{ move, end, tap?, cancel, key?, cursor? }`. `menu` is a right-click or
-a 500 ms hold; `move` starts past 4 px, a shorter release is a `tap`. **Widgets**:
-meshes in `world()` groups or `widgetAt`; `onTop` beats any object. No
-double-click. **The look**: the pointer's hit, or the eye ray's under lock
-(`looksFromEye`).
+Each event goes, until one consumes it (H12): (1) **the hands**, top first; (2) **the widget's owner**; (3) **the
+holders, nearest first**: the hit object, what it hangs on, its groups, the scene (`ev.holder`: the extension's nearest
+member with its trait; a segment per stage, innermost first; I8); (4) **the view plugins**; (5) **the top body**; (6)
+**the default** (orbit, pan, zoom toward the pointer). Steps 2–4 are `stage/chain.js`; each extension is offered an
+event once. An event is `{ type` (`press`, `click`, `menu`, `key`, `keyup`, `wheel`, `move`), `x, y, clientX, clientY,
+ndc, ray, hit, widget` (lazy), `holder, button, buttons, pointerId, pointerType, shift, alt, ctrl, meta, key, code,
+repeat, dx, dy, deltaY, locked }`; a widget is `{ owner, onTop, distance, point }` and a mesh's `object` and `userData`
+(nearer nodes' first), or what `widgetAt` gave. `input = { press(ev) → session | null, click, menu, key, keyup, wheel`
+(→ boolean)`, widgetAt(ev), cursor(ev) }`; a session `{ move, end, tap?, cancel, key?, keyup?, keys?, cursor? }`, its
+`cursor` a CSS cursor (not a function), its `keys` declared as a hand's. `menu` is a right-click or a 500 ms hold;
+`move` starts past 4 px, a shorter release is a `tap`. **Widgets**: meshes in `world()` groups or `widgetAt`; `onTop`
+beats any object. No double-click. **The look**: the pointer's hit, or the eye ray's under lock (`looksFromEye`).
 
-**Keys**: one key order (`src/key-order.js`; H12): a focused field, the
-gesture's declared keys, the topmost hand's declaring it, the top body's, then
-`input.key` over attention's path, innermost first (I10). Declared keys are
-`[{ code, label }]`; a reserved key is its reserver's; a keyup, its keydown's.
+**Keys**: one key order (`src/key-order.js`; H12): a focused field, the gesture's declared keys, the topmost hand's
+declaring it, the top body's, then `input.key` over attention's path, innermost first (I10). Declared keys are `[{ code,
+label }]`; a reserved key is its reserver's; a keyup, its keydown's.
 
 ### Bodies
 
-`bodies: [{ id, label, keys, lock, reach, here?, enter(place) → { input, eye?(),
-ride?, keys?, label?, leave() } | null }]` (`here: false` needs a place). Look
-(`stage/bodies.js`, the orbit camera) is at the bottom; the first to offer an id
-has it. `api.body.enter(id, place)` pushes what `enter` answers (`"look"`
-leaves every body); `leave()`, `current()`, `eye()`, `reach()`. The top body
-hears every move and its keys; its eye and reach are every command's.
+`bodies: [{ id, label, keys, lock, reach, enter(place) → { input, eye?(), ride?, keys?, label?, leave() } | null }]`.
+Look (`stage/bodies.js`, the orbit camera) is at the bottom; the first to offer an id has it. `api.body.enter(id,
+place)` pushes what `enter` answers (`"look"` leaves every body); `leave()`, `current()`, `eye()`, `reach()`. The top
+body hears every move and its keys; its eye and reach are every command's. A body's input is told `suspended()` when
+another goes over it and `resumed()` when it is on top again.
 
-**Hands**: one stack per view (`stage/router.js`), `{ kind, name, input, keys?,
-pointer?, escape?(), put?() }`; each input consumes an event (true, a session)
-or passes it (false, null), acted or not. **Tools**: a command's `tool`, or
-`api.hold({ name, keys?, pointer? }, input)`: onto the top (one held: put down),
-out from anywhere. **A popover** (`api.popover(close)`) wants the pointer, takes
-all. **Escape** (`stage/ladder.js`; H4): the lock, a field, the gesture, the top
-hand's `escape()` else putting it down; no hand: the selection, else the focus.
+**Hands**: one stack per view (`stage/router.js`), `{ kind, name, input, keys?, pointer?, escape?(), escaping?(), put?()
+}`; each input consumes an event (true, a session) or passes it (false, null), acted or not, and hears every `move`;
+`put()` is told as it leaves the stack, `escaping()` says what `escape()` would pop now (the hint). **Tools**: a
+command's `tool`, or `api.hold({ name, keys?, pointer? }, input)`: onto the top (one held: put down), out from anywhere.
+**A popover** (`api.popover(close)`) wants the pointer, takes all. **Escape** (`stage/ladder.js`; H4): the lock, a
+field, the gesture, the top hand's `escape()` else putting it down; no hand: the selection, else the focus.
 
 ## Packages
 
-`doc.packages` (`[{ url }]`, `automerge:` or public `https:`) lists where its
-contents come from (`src/packages.js`, `stage/packages.js`): each running
-source's and trait's package is added; once quiet, those no running plugin comes
+`doc.packages` (`[{ url }]`, `automerge:` or public `https:`) lists where its contents come from (`src/packages.js`,
+`stage/packages.js`): each running source's and trait's package is added; once quiet, those no running plugin comes
 from are pruned. Nothing loads without a click on Load for its URL.
 
 ## Arriving
 
-`view.start` is read on open and on `api.view.arrive()`; view plugins are told
-`view.arrived` (`{ start, n }`: the start whole, frozen; keys beyond `body`,
-`place`, `home` are theirs, and an extension reads its own doc's). `home` is the
-camera when none is saved; `body` is entered at `place` once offered and loaded
-(or after `ARRIVE_WAIT_MS`), after anything `opening()`; a place holding an
-acting stage arrives in that stage alone, a drawn one nowhere.
+`view.start` is read on open and on `api.view.arrive()`; view plugins are told `view.arrived` (`{ start, n }`: the start
+whole, frozen, and how many times this viewer arrived; keys beyond `body`, `place`, `home` are theirs, and an extension
+reads its own doc's). `home` is the camera when none is saved; `body` is entered at `place` once offered and loaded (or
+after `ARRIVE_WAIT_MS`), after anything `opening()`; a place holding an acting stage arrives in that stage alone, a
+drawn one nowhere.
 
 ## Invariants
 

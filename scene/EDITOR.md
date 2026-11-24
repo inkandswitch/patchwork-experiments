@@ -192,8 +192,9 @@ field as its default.
   pressed while its tab is open. A command with an `icon` (`src/parts/icons.js`) is
   drawn as it; otherwise a button, toggle (`checked`) or picker (`choices`,
   `value`).
-- **The body chip** (`scene.body`): Look, the bodies with `here` not false,
-  Leave; **Edit** beside it; who's here in the focus doc, with body and top
+- **The body chip** (`scene.body`): Look, the bodies with `here` not false
+  (a body def's `here: false`: it needs a place, a seat's or a station's, and
+  is entered by that thing's verb), Leave; **Edit** beside it; who's here in the focus doc, with body and top
   hand; the Esc hint (the layer the next Escape pops).
 - **The clock chips** (`scene.clock-chip`): one per focus-path doc with a
   process (its `"clock"` service), ▶ or ⏸, pausing or resuming that doc.
