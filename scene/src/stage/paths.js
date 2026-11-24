@@ -19,8 +19,8 @@
 // A path is the list of ids from the outermost stage in: the links it goes
 // through, then the object. Stage S's path is the links that lead to it ([]
 // for the outermost); S's element of a path is the entry just past S's own
-// path, when the path goes through S, else null. Hovering a card aboard
-// (path [L, c]), the boat's stage sees L and the game's sees c.
+// path, when the path goes through S, else null. Hovering object c inside
+// link L (path [L, c]), the outer stage sees L and the linked doc's sees c.
 
 export const SEP = "\u001f";
 

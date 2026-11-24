@@ -2,8 +2,9 @@
 //
 // Look is the stage's one body: the orbit camera (OrbitControls, `frame`,
 // `autoframe`, reach everywhere), always at the bottom of the body stack.
-// Walk, seat and station are packages' bodies, entered over it; the body
-// chip's Look leaves every one of them. A hand's `kind` says what it is
+// Every other body is a plugin's, entered over it (the router keeps the
+// stack: entering pushes, Leave pops the top, entering Look leaves them all).
+// A hand's `kind` says what it is
 // (a tool, a popover, a plugin's own: the editor's Edit hand); a command may
 // name one (./commands.js). Pure: the router keeps the stacks, this says
 // what reads them.
@@ -37,14 +38,3 @@ export const holding = (view, kind) => Array.isArray(view?.hands) && view.hands.
  * @param {string | null} [self]
  */
 export const pointing = (view, self = null) => Array.isArray(view?.held) && view.held.some((t) => !!t?.pointer && t.ext !== self);
-
-/**
- * The body stack after entering body `id` (ids only, bottom first): "look"
- * leaves every body, anything else goes on top. Pure.
- * @param {string[]} stack  bottom first; [0] is "look"
- * @param {string} id
- */
-export const enterStep = (stack, id) => (id === LOOK.id ? [LOOK.id] : [...stack, id]);
-
-/** The body stack after Leave: the top body goes; Look never does. Pure. */
-export const leaveStep = (stack) => (stack.length > 1 ? stack.slice(0, -1) : stack);

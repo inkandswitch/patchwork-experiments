@@ -53,7 +53,8 @@
  * name's spec file mentions it (a word in backticks), not that the spec is
  * right.
  *
- * The scene package names no other package's name at all, listed or not.
+ * The scene package names no other package's name at all, listed or not,
+ * and its comments name no dotted name another package owns.
  *
  * Usage: node scripts/check-conventions.mjs [--list]
  *   --list   print every crossing name found, with who uses it
@@ -101,6 +102,31 @@ function stripComments(t) {
       i = j + 1;
     } else {
       out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/** The text with everything but comments blanked out, line breaks kept (stripComments' complement). */
+function commentsOf(t) {
+  let out = "";
+  const blank = (x) => x.replace(/[^\n]/g, " ");
+  for (let i = 0; i < t.length; ) {
+    const c = t[i];
+    const n = t[i + 1];
+    if (c === "/" && (n === "/" || n === "*")) {
+      const end = n === "/" ? t.indexOf("\n", i) : t.indexOf("*/", i + 2) + 2;
+      const stop = end <= 1 || end < 0 ? t.length : end;
+      out += t.slice(i, stop);
+      i = stop;
+    } else if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < t.length && t[j] !== c && !(c !== "`" && t[j] === "\n")) j += t[j] === "\\" ? 2 : 1;
+      out += blank(t.slice(i, j + 1));
+      i = j + 1;
+    } else {
+      out += c === "\n" ? "\n" : " ";
       i++;
     }
   }
@@ -253,6 +279,16 @@ for (const [name, u] of [...uses].sort(([a], [b]) => a.localeCompare(b))) {
   if ((!owner || owner === "scene") && stated.has(name)) continue;
   const strangers = users.filter((p) => p !== owner);
   bad.push(`UNLISTED \`${name}\` (${kind}${owner ? `, ${owner}'s` : ""}) used by ${strangers.map((p) => `${p} (${where(p)})`).join("; ")}`);
+}
+// scene's comments name no other package's name either: a dotted name (`ns.rest`) whose namespace another
+// package registers (a kernel comment explains its mechanism in its own terms, not by one package's things)
+for (const path of packages.has("scene") ? files(join(ROOT, "scene")) : []) {
+  const comments = commentsOf(readFileSync(path, "utf8"));
+  for (const m of comments.matchAll(/(?<![\w.$-])([a-z][\w-]*)\.([a-z][\w-]*)/g)) {
+    const owner = namespaces.get(m[1]) ?? null;
+    if (!owner || owner === "scene" || FILE_EXT.test(m[0])) continue;
+    bad.push(`LEAK     scene's comment names ${owner}'s \`${m[0]}\` (${relative(ROOT, path)}:${comments.slice(0, m.index).split("\n").length})`);
+  }
 }
 // each listed name is stated where the table says (when that package is here)
 for (const [name, { spec }] of table) {

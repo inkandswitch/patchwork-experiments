@@ -52,7 +52,7 @@ Each extension's own; what it acquires through it goes when it stops. Everything
 | `local` | `get()`, `swap(fn)`: the stage's frozen value (below); plugins' keys `<id>.`-prefixed |
 | `view` | `get()`: the viewer's, as this stage sees it (below); `select(target)` |
 | `channel` | `{ viewer, session, peers(), set(key, value), watch(fn), send(type, data), rate(hz) }` (I5; below) |
-| `page.on(type, fn)` | `"hide"`: the page goes into the back-forward cache, or the stage closes; `"show"`: it is back |
+| `page.on(type, fn)` → off | the page's life, not the tab's: `"hide"` on the window's `pagehide` (the page unloading, or going into the back-forward cache) or the stage closing, once until a `"show"`, last-started first; `"show"` on a `pageshow` back from that cache. Hiding or showing the tab fires neither: visibility is `document.visibilityState`'s |
 | `use(name)` | the stage's first provider's facet, else (acting) a view plugin's, or null |
 | `settled()` | `{ ready, missing, failed, errors }`: `ready`, nothing the doc calls for still on its way; `errors[id]`: why |
 | `content(id)` | what it shows and how it got there, or null: `loaded`, `box` (its frame's), `extras`, `stats`, `root` (drawn); |
@@ -63,6 +63,7 @@ Each extension's own; what it acquires through it goes when it stops. Everything
 | `addObject(url, o)` | → a change function with its new object's `id` |
 | `display(id, o)` → release | **Display** (below) |
 | `pick(x, y, o?)`, `raycast(origin, dir, o?)` | → `{ id, point, normal, distance }` or null; `{ ground?, snapPx? }`; `{ far?, skip(id)? }` |
+| `ray(x, y)` | → `{ origin, dir }` or null: the ray an event at that port point carries, for a point no event carries |
 | `project(p)`, `look()` | → `{ x, y, visible }` (port px); the pointer's hit, the eye ray's under lock |
 | `camera` | `get()` → `{ position, target, fov, up }`; `set(cam)`; `frame(box)`; `hold()` → release; `touched()`; `onEnd(fn)` |
 | | `set({ position?, target?, quaternion?, fov?, near?, far? })`; `near`, `far` hold only while it is held |
@@ -96,7 +97,8 @@ its own, `opacity` × its own, `outline` the colours its box is drawn in (severa
 stacked in running order, copied to frozen JSON; `ambient(name)` is the outermost doc's, `null | { value, mine, frame,
 use }` (I13); the viewport draws `atmosphere` as CONVENTIONS.md, "Atmosphere" states. **The camera** is saved per
 viewer, else `view.start.home`; held, the orbit is off. **Time** is never `Date.now`, `setTimeout` or
-`requestAnimationFrame` (`manualTime()` moves when stepped).
+`requestAnimationFrame` (`manualTime()` moves when stepped); yielding the thread is scheduling, not time (the kernel's
+`yieldThread`, the same under either).
 
 ## `instance`
 

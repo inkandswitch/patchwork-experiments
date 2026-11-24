@@ -112,6 +112,25 @@ describe("api.loop (API.md, “`api`”)", () => {
   });
 });
 
+describe("api.ray (API.md, “`api`”)", () => {
+  it("is the ray an event at that port point carries, in the stage's frame: for a point no event carries", async () => {
+    gl.on = true;
+    const rays = [];
+    const { ext, seen } = keeper("t.ray", { traits: ["*"] }, () => ({ input: { press: (ev) => (rays.push(ev.ray), null) } }));
+    const s = await mount({ extensions: [ext] });
+    // (happy-dom has no pointer capture, which the orbit controls ask for)
+    s.canvas.setPointerCapture ??= () => {};
+    s.canvas.releasePointerCapture ??= () => {};
+    s.canvas.hasPointerCapture ??= () => false;
+    s.pointer("pointerdown", 30, 40);
+    s.pointer("pointerup", 30, 40);
+    expect(rays.length).toBeGreaterThan(0);
+    const r6 = (r) => r && { origin: r.origin.map((v) => +v.toFixed(6)), dir: r.dir.map((v) => +v.toFixed(6)) };
+    expect(r6(seen.api.ray(30, 40))).toEqual(r6(rays[0]));
+    expect(r6(seen.api.ray(30, 40))).not.toEqual(r6(seen.api.ray(80, 10)));
+  });
+});
+
 describe("api.box (API.md, “`api`”)", () => {
   it("one box for an object, a group (its members') and the scene (null), in the stage's frame; nothing for an id it lacks", async () => {
     gl.on = true;
@@ -256,7 +275,7 @@ describe("keys in an embedded document (STAGE.md, “Keys”)", () => {
 });
 
 describe("api.page (API.md, “`api`”)", () => {
-  it("the view's pagehide (“hide”) and pageshow (“show”); an off works; what it registered goes as it stops", async () => {
+  it("the view's pagehide (“hide”, once) and pageshow back from the cache (“show”); not the tab hiding or showing; the stage closing says “hide”; an off works; what it registered goes as it stops", async () => {
     const log = [];
     const listen = (name) => (api) => {
       const offs = Object.fromEntries(["hide", "show"].map((t) => [t, api.page.on(t, () => log.push(`${name} ${t}`))]));
@@ -270,7 +289,11 @@ describe("api.page (API.md, “`api`”)", () => {
       Object.defineProperty(e, "persisted", { value: true });
       globalThis.dispatchEvent(e);
     };
-    // leaving the page says "hide" (last first, as extensions stop); back from the cache, "show"
+    // the tab hidden or shown: neither
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(log).toEqual([]);
+    // leaving the page says "hide" (last first, as extensions stop), once; back from the cache, "show"
+    globalThis.dispatchEvent(new Event("pagehide"));
     globalThis.dispatchEvent(new Event("pagehide"));
     expect(log.splice(0)).toEqual(["b hide", "a hide"]);
     back();
@@ -283,6 +306,12 @@ describe("api.page (API.md, “`api`”)", () => {
     // stopped, none of t.b's is called again
     await s.uninstall("t.b");
     globalThis.dispatchEvent(new Event("pagehide"));
+    expect(log.splice(0)).toEqual(["a hide"]);
+    // back (t.a's "show" is off), then the stage closes: "hide"
+    back();
+    expect(log.splice(0)).toEqual([]);
+    mounted.splice(mounted.indexOf(s), 1);
+    s.unmount();
     expect(log.splice(0)).toEqual(["a hide"]);
   });
 });

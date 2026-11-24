@@ -7,9 +7,9 @@
 //
 // Inside a scene the state is the scene's: the controls ask the stage around
 // them with a bubbling `scene:render-context` event (the stage fills in
-// `detail.state` and the object's fixed version, `detail.at`), and are told
-// `scene:render-context-changed` when either changes; "Rebuild now" asks it
-// with a cancelable `scene:rebuild`. Alone, with no stage answering, the
+// `detail.state` and the object's fixed version, `detail.at`, and calls the
+// `detail.tell` they pass whenever either changes, until `detail.stop()`);
+// "Rebuild now" asks it with a cancelable `scene:rebuild`. Alone, with no stage answering, the
 // tool has a render manager of its own (content/render-manager.js) that
 // builds only when asked, and its state is that one's. `element.time` (a
 // stage time, stage/time.js) is the clock that manager runs on; the page's
@@ -20,7 +20,10 @@ import { createParamForm } from "./param-form.js";
 import { createRenderManager } from "./content/render-manager.js";
 import { realTime } from "./stage/time.js";
 import { handleReadOnly } from "./stage/readonly.js";
-import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, CONTROLS_CLASS, REBUILD_EVENT } from "./embed.js";
+import { CONTEXT_EVENT, REBUILD_EVENT } from "./embed.js";
+
+/** The controls' root's class (their styles in styles.css). */
+const CONTROLS_CLASS = "scene-render-controls";
 
 function relativeTime(ts, now = Date.now()) {
   if (!ts) return "never";
@@ -85,20 +88,29 @@ export default function SceneRenderControls(handle, element) {
   let state = null; // the object's content state: the stage's, else its own manager's
   let fixed = false; // the scene object is fixed at a version
   let own = null; // alone: { manager, parent } keeping this render
+  let stop = null; // in a scene: stop being told
   const offs = [];
+  const tell = (st, at) => {
+    state = st;
+    fixed = !!at;
+    render();
+  };
 
-  /** Ask an enclosing stage for the object's state; alone, keep the render here. */
+  /** Ask an enclosing stage for the object's state (and to be told it as it changes); alone, keep the render here. */
   function refresh() {
     if (dead) return;
-    const detail = { renderUrl: handle.url, at: null, state: undefined };
-    root.dispatchEvent(new CustomEvent(CONTEXT_EVENT, { detail, bubbles: true, composed: true }));
-    root.toggleAttribute("data-standalone", detail.state === undefined);
-    if (detail.state !== undefined) {
-      own?.manager.dispose();
-      own = null;
-      state = detail.state;
-      fixed = !!detail.at;
-    } else if (root.isConnected) keepHere();
+    if (!stop) {
+      const detail = { renderUrl: handle.url, at: null, state: undefined, tell };
+      root.dispatchEvent(new CustomEvent(CONTEXT_EVENT, { detail, bubbles: true, composed: true }));
+      root.toggleAttribute("data-standalone", detail.state === undefined);
+      if (detail.state !== undefined) {
+        own?.manager.dispose();
+        own = null;
+        stop = detail.stop ?? (() => {});
+        state = detail.state;
+        fixed = !!detail.at;
+      } else if (root.isConnected) keepHere();
+    }
     render();
   }
 
@@ -185,7 +197,6 @@ export default function SceneRenderControls(handle, element) {
     refresh();
   };
   handle.on("change", onChange);
-  root.addEventListener(CONTEXT_CHANGED_EVENT, refresh);
   const tick = setInterval(render, 30_000);
   // (mounted before it's in the document, it asks again once it is)
   const later = setTimeout(refresh, 0);
@@ -210,6 +221,7 @@ export default function SceneRenderControls(handle, element) {
     clearInterval(tick);
     clearTimeout(later);
     own?.manager.dispose();
+    stop?.();
     for (const off of offs) off();
     form?.dispose();
     root.remove();

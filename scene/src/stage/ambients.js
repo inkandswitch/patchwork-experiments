@@ -1,6 +1,6 @@
 // A world's ambients (STAGE.md, "Views, stages and links"; API.md, "Ambients"): the named
-// values a world has once, however many things it holds (its atmosphere, its
-// water). Each running extension may offer some (`instance.ambient()`); a
+// values a world has once, however many things it holds (its atmosphere,
+// say). Each running extension may offer some (`instance.ambient()`); a
 // stage stacks its extensions' offers per name in running order; and the
 // view's are its outermost stage's alone, which every stage reads with
 // `api.ambient(name)` and its own code.

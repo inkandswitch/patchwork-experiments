@@ -57,9 +57,11 @@ written field by field.
   frame; processes step on a 1/60 s grid (`STEP_S`), a replicated one in every
   view that runs it, so two views stepping one from the same t step it alike.
 - **Checkpoints** (every 30 s, on pause, on letting go): one change writes
-  `clock.t` and every `save(d)` (a process saves only what it holds), stamping
-  what a save moved `saved: t`, so a process tells an editor's move from a late
-  checkpoint.
+  `clock.t` and every `save(d)`, stamping what a save moved `saved: t`, so a
+  process tells an editor's move from a late checkpoint. A save gets the
+  draft whole: the clock doesn't limit what it writes, so keeping to what the
+  process still holds (a pose a person took from it, say) is the process's
+  own rule.
 - **Followers** chase the computer's t (sent at 10 Hz on the channel) at the
   moment whose poses they draw (`shownAt`), never past it; `t()` never goes
   back. Paused, every view's t is the larger of its own and `clock.t`.
@@ -260,7 +262,7 @@ the objects the card and the details show; nothing while it isn't held.
 
 | | Invariant |
 |---|---|
-| H6 | One holder per object, by (still before landed, person before yielding, `since`, session); a process saves only what it holds. |
+| H6 | One holder per object, by (still before landed, person before yielding, `since`, session). |
 | H7 | At most one clock computer per doc, only eligible views; t monotone per view; no kept process stepped once paused is seen. |
 | H8 | A pause changes no act or liveness outcome. |
 | I3 | Expansion is finite and fixed by the graph: no identity repeats on a path, one acting occurrence per live doc, exact closed reasons. |

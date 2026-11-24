@@ -12,8 +12,8 @@
 //
 // One stop rule (H2): an extension the doc no longer calls for lingers for
 // LINGER_MS, and for as long as it's busy (a body entered, a held tool, an
-// open session, a pose held), so nobody's game is torn down under them by a
-// peer's edit. One still loading stops at once, having acquired nothing, and
+// open session, a pose held), so nothing anyone is using is torn down under
+// them by a peer's edit. One still loading stops at once, having acquired nothing, and
 // so does one whose plugin left the registry (there is no code to keep).
 //
 // Running order (activeSet's order) is the only order anything here reports

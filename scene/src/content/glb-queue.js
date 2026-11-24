@@ -14,6 +14,7 @@
 //   nobody ensure()d — the caller only ensures what is effectively visible.
 
 import { retryWait } from "./deps.js";
+import { yieldThread } from "../stage/time.js";
 
 export const QUEUE_LIMITS = Object.freeze({ maxFinds: 4, maxParses: 1 });
 
@@ -29,7 +30,7 @@ const message = (err) => String(err?.message ?? err ?? "unknown error");
  * @param {(id: string, bytes: Uint8Array, url: string) => Promise<void>} o.parse
  * @param {(id: string, state: { phase: string, error: string | null, url: string }) => void} [o.onState]
  * @param {object} o.time  the stage's time (../stage/time.js)
- * @param {() => Promise<void>} [o.yieldToMain]  between parses (default: the next turn of `time`)
+ * @param {() => Promise<void>} [o.yieldToMain]  between parses (default: one turn of the page's event loop, ../stage/time.js yieldThread: scheduling, not time, so loading goes at the page's pace whether or not `time` is stepped)
  */
 export function createGLBQueue({
   find,
@@ -37,7 +38,7 @@ export function createGLBQueue({
   parse,
   onState,
   time,
-  yieldToMain = () => new Promise((r) => time.after(0, r)),
+  yieldToMain = yieldThread,
   maxFinds = QUEUE_LIMITS.maxFinds,
   maxParses = QUEUE_LIMITS.maxParses,
 }) {

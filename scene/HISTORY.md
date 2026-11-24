@@ -1283,6 +1283,12 @@ lapsed lease without listening again); the windows are derived with margins
 (`CLAIM_MS` 4D); failures are retried by their holder alone; a pinned,
 contested or unavailable render, or one whose GLB can't be shown, decides
 by its state without them; the controls alone build only when asked.
+The same review moved a scene object's fixed version into `versions.js`,
+split adding an object into content's `make` and `ops.placeObject`, had the
+build controls subscribe (`detail.tell`) instead of the stage finding them
+by class, trimmed content's face, and made the one-clock rule read code
+(comments and strings blanked) across the shared modules the kernel imports.
+
 
 ### 2026-11-24 — The editor without its special cases
 
