@@ -1336,3 +1336,12 @@ answer, the failure's inputs and the listening first each needed. Scenes on
 the protocol before the one-claim lock (`scene-render:building` messages)
 and on the lock ignore each other: they can build the same render twice,
 the later write winning, and converge.
+
+**Builds that block (2026-11-24).** A review found that two writers whose
+builds each blocked the page past `LAPSE_MS` never wrote: each took over
+from the other, and each, waking to find the other there, dropped its
+finished build. A holder waking with a finished build came to announce it
+and write it after listening once more. Writing it by compare-and-set alone
+was tried first: the model found a woken holder's older build written
+concurrently with its successor's newer one, the merge keeping the older,
+so the fence kept its second condition.

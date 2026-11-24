@@ -135,7 +135,9 @@ SourceImpl = {
   or null. `failure` is the last failed build, `{ error, inputs }` with the
   inputs it was of (`inputsKey` in `src/content/staleness.js`), or null; a
   result written clears it. Bytes other than the current GLB's make another
-  immutable GLB file doc. Nothing is written as a build starts.
+  immutable GLB file doc; a result arriving between making it and the write
+  leaves it orphaned, referenced by nothing. Nothing is written as a build
+  starts.
 
 ### An object's state
 
@@ -176,8 +178,13 @@ hears, or its own build, the wait on the fence included.
 result the render had as its build began, and only if its writer has heard
 no other peer hold or build the render since. A holder silent past
 `LEASE_MS` (a frozen tab, a blocked thread, a background tab's slowed
-timers) says nothing until it has listened `RECHECK_MS`, then lets the
-render go if it heard anyone at all.
+timers) says nothing until it has listened `RECHECK_MS`. If it heard
+anyone, it drops a build still running and lets the render go; a build that
+has finished it announces (`build`), listens `RECHECK_MS` more, and writes
+by compare-and-set alone before letting go, unless a lower id said it holds
+or builds meanwhile. (Without the fence's second condition a woken holder's
+older build and its successor's newer one can be written concurrently, and
+the merge may keep the older: the model finds it.)
 
 **Timing.** One assumption, `REACH_MS` (D = 250 ms): every message and change
 reaches every peer within it. With the heartbeat H = 2 s: `CLAIM_MS` = 4D
@@ -206,7 +213,7 @@ cheap change, 800 ms otherwise, `staleness.js`):
 | C2 | (needs it) A builder that vanishes is replaced within `REACH_MS` + `LAPSE_MS` + `CLAIM_MS` of its last word. |
 | C3 | (always) A peer that can't write never builds nor writes; a build is shown in progress only while one is, until its release arrives, or `LAPSE_MS` after its holder's last word. |
 | C4 | (always) A write replaces only the result its writer had as its build began, so never a newer one it had received; a merge keeps one writer's result whole. (Needs the assumption) No two results are written concurrently, and no older build replaces a newer one at any replica, a peer that froze mid-build included. |
-| C5 | (always) Once nothing moves, every replica holds the same render doc, built from the current inputs (or failed for them, or pinned), and nobody holds it; failing inputs are tried at most 1 + `RETRY_BACKOFF_MS.length` times in all (with the assumption). |
+| C5 | (always, while one writer stays) Once nothing moves, every replica holds the same render doc, built from the current inputs (or failed for them, or pinned), and nobody holds it, lost messages, slowed timers and builds that block their page past `LAPSE_MS` included; failing inputs are tried at most 1 + `RETRY_BACKOFF_MS.length` times in all (with the assumption). |
 
 `src/content/lock.test.js` checks them on a finite model: two or three real
 managers, each with its own replica of the docs, merging as Automerge does
@@ -215,7 +222,8 @@ and its own view of one manual clock, over a network delivering each message
 and change at once or at exactly `REACH_MS`. Every run is enumerated over
 who edits, when, builds short or past `LAPSE_MS`, failing, a builder
 freezing past `LAPSE_MS` (or only into another's claim) and waking to write,
-a builder whose timers fire on whole minutes, a forced rebuild, a peer
+a builder whose timers fire on whole minutes, builds that block their
+page for 10 s, a forced rebuild, a peer
 joining mid-build or between heartbeats, provider versions one of which
 fails, lost messages, and writers that can't hear each other.
 `src/content/result-merge.test.js` merges two results on real Automerge

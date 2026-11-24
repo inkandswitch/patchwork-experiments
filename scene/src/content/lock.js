@@ -21,7 +21,11 @@
 // (only over the result its writer had as its build began) and only if its
 // writer has heard no other peer hold or build the render since; a holder
 // silent past LEASE_MS (a frozen tab, a blocked thread) listens RECHECK_MS
-// before it speaks or writes, and lets the render go if it heard anyone.
+// before it speaks or writes. If it heard anyone it lets the render go,
+// dropping a build still running; a finished one it announces ("build"),
+// listens RECHECK_MS more, and writes by compare-and-set alone unless a lower
+// id said it holds or builds meanwhile (so builds that each block their page
+// past LAPSE_MS still get written).
 //
 // The one assumption: every message and change reaches every peer within
 // REACH_MS (D). Each window, derived from D and the heartbeat H:
