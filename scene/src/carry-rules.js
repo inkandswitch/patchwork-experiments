@@ -31,9 +31,8 @@ export const carryable = (o) => !!o && o.kind !== "group" && !o.locked && !!o.tr
  * Which way body axis `k` of `m` lies: +1 up or −1 down when it is the most
  * upright of the three (a tie goes to it), else 0: on an edge or an end, as
  * far as that axis goes. It compares the three axes, never one against a
- * tolerance, so a GLB's 32-bit noise never decides it and a frame leaning
- * 10° (a rack tipped back toward its player) stands a piece as an upright
- * one does: the line is at 45°, the same as tabletop's Stand on edge.
+ * tolerance, so a GLB's 32-bit noise never decides it, and a frame leaning
+ * 10° stands a piece as an upright one does: the line is at 45°.
  */
 export function sideOf(m, k) {
   const up = [0, 1, 2].map((c) => m[4 * c + 1] / (Math.hypot(m[4 * c], m[4 * c + 1], m[4 * c + 2]) || 1));

@@ -91,8 +91,8 @@ export function listedPackages(doc) {
  *   - `{ type: "scene:extension", trait }`: a trait key on the scene or on an
  *     object (activation: an extension runs when the doc has one of its
  *     traits). Where the doc starts people (`view.start`) needs nothing of
- *     its own: a start body's place carries the trait its package reads (a
- *     spawn point's `walk.spawn`, a table's `seats`).
+ *     its own: a start body's place is an object carrying the trait its
+ *     body's package reads, found above.
  * Parts and templates leave no mark of their own: what they make is objects
  * and traits, found above.
  * @param {object} doc

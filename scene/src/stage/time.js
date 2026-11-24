@@ -5,8 +5,8 @@
 // looking, a ride, remote poses' playback), world time (the `"clock"` service: it
 // ticks once a frame at this source's now), the timers that wait (a hold's
 // keepalive, an extension's linger, arrival's polling and its content wait,
-// a notice's life, a die's tumble) and the wall reads that stamp or measure
-// (presence samples, a claim's grace, a seat's confirm). An extension gets
+// a notice's life, an extension's own animations) and the wall reads that
+// stamp or measure (presence samples, a claim's grace). An extension gets
 // it as `api.now()` and `api.after(ms, fn)`.
 //
 // - **Real** (`realTime()`, the default): `now()` is `Date.now()`, the epoch

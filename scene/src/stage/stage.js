@@ -1058,8 +1058,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         eye: () => bodyEye(),
       }),
       /**
-       * Hold a tool not picked up through a command (bag's drawn piece in
-       * hand): its declaration { name, keys?: [{ code, label }], pointer? }
+       * Hold a tool not picked up through a command (something taken in hand
+       * by an extension's own input): its declaration { name, keys?: [{ code, label }], pointer? }
        * and its input. It goes on top of the hands; nothing else is put
        * down. @returns put
        */
