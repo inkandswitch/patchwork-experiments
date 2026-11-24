@@ -823,7 +823,7 @@ describe("scene.inspector: a drawer tab that follows attention (STAGE.md, “Act
   let time = null;
   const still = async () => {
     await time.step(1, { still: true });
-    await settle(1);
+    await settle();
   };
   async function bare(objects, extensions = []) {
     time = manualTime();

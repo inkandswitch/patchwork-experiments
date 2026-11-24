@@ -28,15 +28,13 @@ import { editing } from "../parts/editing.js";
 export { flush };
 
 /**
- * Let a stage's work land: n flushes' event-loop turns (each turn a frame, as
- * happy-dom's requestAnimationFrame is an immediate, and every microtask
- * drained), then one timer turn. A stage's flush is a microtask or the next
- * frame, so what a change causes has landed; time is stepped (manualTime),
+ * Let a stage's work land: a flush (fake-repo.js), which returns only once
+ * nothing is due now. A stage's flush is a microtask or its next frame, and
+ * what it sets off is a promise, a frame or a timer set for now, so once none
+ * is pending, what a change causes has landed. Time is stepped (manualTime),
  * not waited for.
  */
-export const settle = async (n = 6) => {
-  for (let i = 0; i < n; i++) await flush({ timer: i === n - 1 });
-};
+export const settle = () => flush();
 
 /** Flush until fn() holds, failing after `ms` of the wall (performance.now: a test may fake Date and timers). */
 export async function until(fn, ms = 1000) {

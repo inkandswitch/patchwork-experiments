@@ -376,7 +376,7 @@ describe("scene.use", () => {
           const cam = { position: [i * 0.01, 2, 5], target: [i * 0.01, 1, 0], fov: 50, up: [0, 1, 0] };
           s.debug.viewport.getCamera = () => cam;
           for (const fn of [...s.debug.viewport.afterHooks]) fn(null, { w: 200, h: 200 });
-          await settle(1);
+          await settle();
         }
       }],
       // (the editor is a hand, not a body: picking it up or putting it down moves no eye)
