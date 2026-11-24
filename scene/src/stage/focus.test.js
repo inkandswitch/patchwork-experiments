@@ -111,7 +111,7 @@ function events(m) {
             if (!to) return st;
             return focusSteps(st.focus, to, act).reduce((x, ev) => selectionStep(x, ev), st);
           },
-          async () => apiIn(m, sp).view.enter(id),
+          async () => view.enter(path),
         ]);
       }
     }
@@ -152,7 +152,7 @@ function check(m, label) {
     const api = x.debug.host.record(x.path.length ? "t.card" : "t.host")?.api;
     expect(api.view.get().selected ?? null, why(`stage ${J(x.path)} sees its element`)).toBe(elementOf(st.selected, x.path));
     expect("focus" in api.view.get(), why("no stage sees the focus")).toBe(false);
-    expect("leave" in api.view, why("a stage's view has no way out")).toBe(false);
+    expect(["enter", "leave", "arrive"].some((k) => k in api.view), why("a stage's view has no way in or out")).toBe(false);
   }
   return st;
 }
@@ -240,13 +240,13 @@ describe("Enter and Leave", () => {
     const plugins = ["scene.links", "t.general"].map((id) => s.instance(id));
     // (what Enter's verb says of each link is links.test.js's)
     for (const id of ["R", "P", "X", "table"]) {
-      expect([id, host.view.enter(id)]).toEqual([id, false]);
+      expect([id, view.enter([id])]).toEqual([id, false]);
       expect([id, view.atom.get().focus]).toEqual([id, []]);
       await placed(view);
     }
     // nobody has placed the camera yet: something may frame it on opening (scene.autoframe)
     expect(host.camera.touched()).toBe(false);
-    expect(host.view.enter("L")).toBe(true);
+    expect(view.enter(["L"])).toBe(true);
     expect(view.atom.get().focus).toEqual(["L"]);
     await placed(view);
     // the camera came along, and nobody learns it was placed: not a stage's part (B's, or the host's, which
@@ -258,7 +258,7 @@ describe("Enter and Leave", () => {
     expect(traitRun("")).toEqual(["t.host"]);
     expect(traitRun("L")).toEqual(["t.card"]);
     // deeper, then the trail's way out, then Leave
-    expect(apiIn(m, "L").view.enter("M")).toBe(true);
+    expect(view.enter(["L", "M"])).toBe(true);
     await placed(view);
     const trail = view.root.querySelector(".stage-trail");
     expect([...trail.querySelectorAll(".trail-crumb, .trail-here")].map((e) => e.textContent)).toEqual(["A", "B", "C"]);
@@ -266,7 +266,7 @@ describe("Enter and Leave", () => {
     expect(view.atom.get().focus).toEqual([]);
     expect(view.root.querySelector(".stage-trail")).toBe(null);
     await placed(view);
-    host.view.enter("L");
+    view.enter(["L"]);
     expect(view.leave()).toBe(true);
     expect(view.leave()).toBe(false);
     await placed(view);
@@ -323,8 +323,8 @@ describe("Enter and Leave", () => {
       const runs = (v) => J(v.stages().map((x) => [x.path, x.role, x.debug.host.running().map((r) => r.id)]));
       const before = { mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, facets: facetsAt(ov) };
       const writes = [spy(s.handle), spy(m.b), spy(m.c)];
-      s.api("t.host").view.enter("L");
-      apiIn(m, "L").view.enter("M");
+      m.view.enter(["L"]);
+      m.view.enter(["L", "M"]);
       apiIn(m, "L/M").view.select("piece");
       await placed(m.view);
       expect(m.view.atom.get().selected).toEqual(["L", "M", "piece"]);

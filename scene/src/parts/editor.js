@@ -228,8 +228,8 @@ export async function part(f, partId, at = null) {
 /**
  * Start the scene from a template (EDITOR.md, "Templates"): its create(ctx,
  * params) with exactly the params its metadata declares (coerced, defaulted,
- * others dropped: paramsBySpec). Then this viewer arrives where the doc now
- * says. True when it ran.
+ * others dropped: paramsBySpec). True when it ran (its maker, the start
+ * screen, then arrives where the doc now says).
  * @returns {Promise<boolean>}
  */
 export async function template(f, templateId, params) {
@@ -241,6 +241,5 @@ export async function template(f, templateId, params) {
   } catch (err) {
     return failed(f, "template", err, false);
   }
-  f.view.arrive();
   return true;
 }

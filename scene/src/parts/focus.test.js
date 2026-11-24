@@ -107,7 +107,7 @@ describe("the bar of tools across docs", () => {
     await until(() => J(labels("world")) === J(["Ring"]), 2000);
     // outside the game, its command isn't on the focus path
     expect([labels("tools"), labels("world")]).toEqual([[], ["Ring"]]);
-    expect(s.api("t.host").view.enter("L")).toBe(true);
+    expect(view.enter(["L"])).toBe(true);
     await until(() => J(labels("world")) === J(["Deal", "Ring"]), 2000);
     expect(s.local.get().body.id).toBe("look");
     expect(labels("tools")).toEqual([]);

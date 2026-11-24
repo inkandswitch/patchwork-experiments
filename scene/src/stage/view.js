@@ -1172,7 +1172,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       root,
       /** the view's url: the outermost doc's */
       url,
-      /** the viewer's value, whole (the selection, hover and focus as paths, and each view plugin's own at its id); step(ev): a selection step (../selection.js) but enter; set(value): this plugin's own, view[id] */
+      /** the viewer's value, whole (the selection, hover and focus as paths, and each view plugin's own at its id); step(ev): a selection step (../selection.js) but enter; enter(path), arrive(); set(value): this plugin's own, view[id] */
       view: Object.freeze({
         get: () => atom.get(),
         watch: (fn, select) =>
@@ -1186,6 +1186,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
             }),
           ),
         step: (ev) => (live() && ev?.type !== "enter" ? selectStep(ev) : false),
+        /** move the focus into the acting stage at `path` (a link's, from the outermost in): false if there is none */
+        enter: (path) => (live() ? enter(path) : false),
+        /** arrive again where the outermost doc's view.start now says (a template's maker) */
+        arrive: () => void (live() && arrive()),
         set: (value) => void (live() && atom.swap((m) => (m[id] === value ? m : { ...m, [id]: value }))),
       }),
       /** every open doc's missing packages (view.packages): load them (a yes), or don't ask again in this view */

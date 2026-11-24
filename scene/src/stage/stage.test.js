@@ -501,7 +501,7 @@ describe("the stage, mounted", () => {
     expect(again.local.get().hands.map((h) => h.kind)).toEqual(["edit"]);
   });
 
-  it("template(id): the template writes the doc through a drop context, and this viewer starts where it now says", async () => {
+  it("template(id): the template writes the doc through a drop context", async () => {
     const seen = [];
     template = (ctx) => {
       seen.push(Object.keys(ctx).sort());
@@ -520,9 +520,7 @@ describe("the stage, mounted", () => {
       expect(await runTemplate(api, "t.template")).toBe(true);
       await settle();
       expect(seen[0]).toEqual(expect.arrayContaining(["addObject", "change", "doc", "local", "newId", "notify", "registry", "repo", "scene"]));
-      expect(m.local.get().body.id).toBe("stroll");
-      // the template's start says nothing of the editor: put down
-      expect(m.local.get().hands).toEqual([]);
+      expect(api.doc().view.start).toEqual({ body: "stroll" });
       expect(running(m)).toEqual(["t.scene:scene", "t.edit:scene", "t.always:scene"]);
       expect(await runTemplate(api, "nope")).toBe(false);
       template = () => {
