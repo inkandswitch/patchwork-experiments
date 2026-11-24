@@ -1,6 +1,6 @@
 // The view (STAGE.md, "Views, stages and links"): one per mounted tool, shared by every stage
 // it opens. It holds what is the viewer's, not any doc's: the DOM and its
-// edges, the viewport, the router, the camera and its saving, labels, the
+// edges, the viewport, the router, the camera and its saving, the
 // body stack and the hands, the view's atom (the body, the hands, the held
 // tool, the pointer, the selection and hover, theme, the focus), the
 // session every stage's channel names, and the stages themselves. A stage (./stage.js) is one per open doc and holds what is
@@ -366,10 +366,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     packagesChanged();
     ambientsChanged();
     if (s.path.length && s.acts) announcer.release(s.url);
-    // (what it was opened under shows that object's hint again)
+    // (what it was opened under shows that object's hint again; its bodies, tools and sessions went as its extensions stopped)
     if (s.path.length) stageUnder(s.path.slice(0, -1))?.childrenChanged();
-    // what it held of the view goes with it: its bodies, its tool, its sessions
-    for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
   }
   // A world's ambients (API.md, "Ambients") are its outermost stage's: the
   // one read path, which every stage's api.ambient and the viewport's
@@ -487,11 +485,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    */
   function focusMoved() {
     if (dead) return;
-    for (const held of router?.held() ?? []) {
-      const p = parseKey(held.owner);
+    for (const tool of router?.held() ?? []) {
+      const p = parseKey(tool.owner);
       const s = p ? stages.get(p.n) : null;
       // (a stage on the focus path is one whose path the focus starts with)
-      if (s && !(s.path.length <= atom.get().focus.length && s.path.every((x, i) => x === atom.get().focus[i]))) router.putDown(held);
+      if (s && !(s.path.length <= atom.get().focus.length && s.path.every((x, i) => x === atom.get().focus[i]))) router.putDown(tool);
     }
     placeFocus();
     told = new WeakMap();
@@ -523,7 +521,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   // ─── bodies and hands (STAGE.md, "Bodies", "Hands") ──────────────────────
 
-  // The bodies entered, bottom first, over Look: { stage, ext, owner, def, sitting, pop, place }.
+  // The bodies entered, bottom first, over Look: { stage, ext, owner, def, sitting }.
   const sittings = [];
   const topSitting = () => sittings.at(-1) ?? null;
   const reachOf = (def) => (typeof def?.reach === "number" && def.reach >= 0 ? def.reach : Infinity);
@@ -576,7 +574,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const l = restNow();
     if (l === "selection") selectStep({ type: "clear" });
     else if (l === "focus") leave();
-    return l != null;
   }
 
   /**
@@ -604,11 +601,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     }
     if (!sitting || typeof sitting !== "object") return false;
     const owner = keyOf(stage.n, ext);
-    const rec = { stage, ext, owner, def, sitting, pop: null, place: place ?? null };
+    const rec = { stage, ext, owner, def, sitting };
     const input = stage.bodyInput(ext, rec, sitting.input ?? {}, () => leftBody(rec));
     if (!input) return false;
     sittings.push(rec);
-    rec.pop = router.pushBody(owner, { id, input, lock: !!def.lock, keys: sitting.keys ?? def.keys ?? [] });
+    router.pushBody(owner, { id, input, lock: !!def.lock, keys: sitting.keys ?? def.keys ?? [] });
     applyBodyRide();
     return true;
   }
@@ -639,7 +636,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     viewport.bodyRide?.(s && r && typeof r === "object" ? s.stage.scope.rideSpec(r) : null);
   }
 
-  /** Hold a tool for an extension of a stage: its declaration ({ command?, name, handKind?, keys, pointer }) and its input (already the stage's). → put, or null (no router, or a toggle that put it down) */
+  /** Hold a tool for an extension of a stage: its declaration ({ command?, name, handKind?, keys, pointer }) and its input (already the stage's). → put, or null (no router, or refused) */
   function holdTool(owner, t, input) {
     if (!router) return null;
     return router.hold(owner, { command: t.command ?? null, name: String(t.name ?? t.command ?? owner), handKind: t.handKind ?? null, input, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
@@ -973,7 +970,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     };
   }
 
-  // ─── the atom → storage, the stages ───────────────────────────────────────
+  // ─── the atom → the channels, the pointer, the stages ─────────────────────
 
   cleanups.push(
     atom.watch((next, prev) => {
