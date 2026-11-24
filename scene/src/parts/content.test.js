@@ -8,10 +8,10 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vite
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
-import add from "../parts/add.js";
-import { add as addObject } from "../parts/editor.js";
-import inspector from "../parts/inspector.js";
-import { Viewport } from "./viewport.js";
+import add from "./add.js";
+import { add as addObject } from "./editor.js";
+import inspector from "./inspector.js";
+import { Viewport } from "../stage/viewport.js";
 import { getRegistry, resetRegistries } from "../test/plugins-mock.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { encodeGLB } from "../glb.js";
@@ -397,7 +397,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     resetRegistries();
     const { plugins } = await import("../index.js");
     for (const p of plugins) if (p.type === "scene:source") getRegistry(p.type).register(p);
-    const { default: Stage } = await import("./stage.js");
+    const { default: Stage } = await import("../stage/stage.js");
     const handle = repo.add(emptyScene({ objects: { a: object({ sourceUrl: glb.url }) } }));
     const element = document.createElement("div");
     element.repo = repo;
