@@ -111,7 +111,7 @@ try {
     editing: (w) => (dbg[w]?.local.get().hands ?? []).some((h) => h.kind === "edit"),
     chipItem: (w, label) => rectOf([...hosts[w].querySelectorAll(".body-menu .menu-item")].find((x) => x.textContent.trim().startsWith(label)) ?? null),
     /** a toolbar command's button (shown in Edit only), and whether a drawer tab is open, in a view */
-    tool: (w, id) => rectOf(hosts[w].querySelector(`.toolbar [data-command="${id}"]`)),
+    tool: (w, id) => rectOf(hosts[w].querySelector(`.stage-panel-rail [data-command="${id}"], .toolbar [data-command="${id}"]`)),
     tab: (w, id) => !!hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`)?.isConnected,
     /** the parts bin's row for a part, in a view (scrolled into sight) */
     part: (w, id) => { const e = hosts[w].querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); return rectOf(e); },
@@ -143,7 +143,7 @@ try {
     /** what this view's hand holds now, as the OTHER view hears it (pose holds; not one already put down and waiting for the doc) */
     carrying: (w) => [...dbg[other(w)].host.instanceOf("scene.poses").remoteHolds()].filter(([, h]) => !h.landed).map(([id]) => id).sort(),
     /** whose tool is held in view w (scene/TOOLS.md §4: the drawn piece in hand is the bag's) */
-    held: (w) => dbg[w].local.get().held?.ext ?? null,
+    held: (w) => dbg[w].local.get().held?.at(-1)?.ext ?? null,
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     selected: (w) => dbg[w].local.get().selected ?? null,
     notices: (w) => [...told[w]],

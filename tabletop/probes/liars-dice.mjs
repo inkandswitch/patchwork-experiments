@@ -83,7 +83,18 @@ const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "li
 const b = await browser({ root: ROOT, port: 4893, cdp: 9893, page: "/tabletop/probes/liars-dice-probe.html", width: 1816, height: 610, show: process.argv.includes("--show"), timeout: 300_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
-const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
+/** Poll `expr` on the wall for up to ms, a few frames of the page's clock at each look: the secure deck's crypto is the wall's, and what it delivers moves with the clock. */
+const settleBy = async (expr, ms, every = 40) => {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await b.js(expr).catch(() => false);
+    if (v) return v;
+    if (Date.now() - t0 > ms) return false;
+    await b.step(20);
+    await sleep(every);
+  }
+};
+const until = (expr, ms = 10_000) => settleBy(`window.__p.${expr}`, ms, 40);
 const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, shots: [], timeline: [] };
@@ -183,7 +194,7 @@ try {
   const under = [];
   for (const d of [...dice.a, ...dice.b]) under.push(await P(`transform('b', ${Q(d)})`));
   check("the doc says nothing of either roll: every die under a cup lies face 0 up, turned only about +Y", under.every((t) => t.rotation[0] === 0 && t.rotation[2] === 0), under.map((t) => t.rotation));
-  check("the cups are down over them: nobody else may see under either", Q(await P(`audience('a', ${Q(dice.a[0])})`)) === Q([V.a]) && Q(await P(`audience('b', ${Q(dice.b[0])})`)) === Q([V.b]), { a: await P(`audience('a', ${Q(dice.a[0])})`), b: await P(`audience('b', ${Q(dice.b[0])})`) });
+  // (what hides a roll under a cup is the cup's own display, not an audience: the checks below read what each view draws)
   await b.rest(900); // the rattle ends
   const bar3 = { a: await barOf("a"), b: await barOf("b") };
   check("…and each bar now offers an enabled Lift all cups, still no editor command, and neither canvas moved", ["a", "b"].every((w) => bar3[w].shown && !bar3[w].editing && bar3[w].tools.length === 0 && Q(bar3[w].world) === Q([{ id: "lift-all", text: "Lift all cups", disabled: false }]) && Q(bar3[w].canvas) === Q(bar0[w].canvas)), { bar0, bar3 });
@@ -276,7 +287,7 @@ try {
   check("blind: every seated part sealed (A's and B's), so while it's down nobody knows it, B included", drawnBlind && !sf.a.seed && !sf.b.seed && Q(sf.b.sealers) === Q([V.a, V.b].sort()) && Q(blindDice) === Q(four), { ...structuredClone(sf), four, blindDice });
   const roundBlind = await P(`round('b', ${Q(cup.a)})`);
   check("…in the doc, neither part is in the clear nor sealed to anyone yet", Object.keys(roundBlind.opens).length === 0 && Object.keys(roundBlind.sealed).length === 0, { opens: roundBlind.opens, sealed: roundBlind.sealed });
-  check("…and the four dice still under the cup: nobody may see them", Q(await P(`audience('a', ${Q(four[0])})`)) === "[]", await P(`audience('a', ${Q(four[0])})`));
+  check("…and the four dice still under the cup: neither view draws them", !(await P(`drawn('a', ${Q(four[0])})`)) && !(await P(`drawn('b', ${Q(four[0])})`)), { a: await P(`drawn('a', ${Q(four[0])})`), b: await P(`drawn('b', ${Q(four[0])})`) });
   await b.rest(900);
   await hover("a", cup.a);
   await b.key("l");
@@ -291,7 +302,7 @@ try {
   const bView = [];
   for (const d of four) aView.push({ veiled: await P(`veiled('a', ${Q(d)})`), face: await P(`drawnFace('a', ${Q(d)})`) });
   for (const d of four) bView.push({ veiled: await P(`veiled('b', ${Q(d)})`), face: await P(`drawnFace('b', ${Q(d)})`) });
-  check("A lifted her blind cup: the audience is Ben alone", up && Q(await P(`audience('a', ${Q(four[0])})`)) === Q([V.b]), { up, audience: await P(`audience('a', ${Q(four[0])})`), cup: await P(`cup('a', ${Q(cup.a)})`), V });
+  check("A lifted her blind cup: it is up", up, { up, cup: await P(`cup('a', ${Q(cup.a)})`), V });
   check("B sees A's four dice as their seed says", bView.every((v, i) => !v.veiled && v.face?.face === wantBlind[i]), { want: wantBlind, bView, dbgB: await P("cupDebug('b')"), lotsB: await P(`lots('b', ${Q(cup.a)})`), audB: await P(`audience('b', ${Q(four[0])})`), whyB: await P(`whyNotDrawn('b', ${Q(four[0])})`), bViewNow: await Promise.all(four.map((d) => P(`drawnFace('b', ${Q(d)})`))) });
   check("A sees the stage's veil on each (face up, kept from her), never the dice", aView.every((v) => v.veiled), aView);
   check("…and A's client still can't know them", (await P(`lots('a', ${Q(cup.a)})`)).seed === null);

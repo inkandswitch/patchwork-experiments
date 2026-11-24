@@ -97,8 +97,19 @@ const FRAME = 1000 / 60;
 const until = (expr, ms = 10_000) => b.soon(`window.__p.${expr}`, { frames: Math.ceil(ms / FRAME) });
 /** Loading and sync: the wall's, up to ms (the page's frames going at its pace). */
 const loads = (expr, ms = 20_000) => b.waitFor(`window.__p.${expr}`, ms, 60);
-/** Crypto (the secure deck's): the wall's, up to ms, the world held still meanwhile (still frames). */
-const holds = (expr, ms = 20_000) => b.hold(`window.__p.${expr}`, ms, 40);
+/** Crypto (the secure deck's): the wall's, up to ms, with a few frames of the clock at each look (the world is paused meanwhile, so no time moves it). */
+/** Poll `expr` on the wall for up to ms, a few frames of the page's clock at each look: the secure deck's crypto is the wall's, and what it delivers moves with the clock. */
+const settleBy = async (expr, ms, every = 40) => {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await b.js(expr).catch(() => false);
+    if (v) return v;
+    if (Date.now() - t0 > ms) return false;
+    await b.step(20);
+    await sleep(every);
+  }
+};
+const holds = (expr, ms = 20_000) => settleBy(`window.__p.${expr}`, ms, 40);
 const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, shots: [], timeline: [], numbers: {} };
@@ -704,6 +715,9 @@ try {
       } else check("13: the card's X arrow is on A's screen", false, { h0, h1, halo: await P("halo('a')"), why: await P("haloWhy('a')") });
       check("13: B is untouched: its focus the boat's, nothing selected, in the body it was in", J(await P("focusPath('b')")) === "[]" && (await P("selectionPath('b')")) === null && (await P("bodyLabel('b')")) === bBody, { focus: await P("focusPath('b')"), selected: await P("selectionPath('b')"), body: await P("bodyLabel('b')"), was: bBody });
       await P("focus('a')");
+      // (the ladder: the Move tool she picked up with V goes down first, then the selection, then the link)
+      await b.key("Escape");
+      await b.rest(300);
       await b.key("Escape");
       await b.rest(300);
       const deselected = (await P("selectionPath('a')")) === null && J(await P("focusPath('a')")) === J([ids.link]);
