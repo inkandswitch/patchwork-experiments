@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import * as Automerge from "@automerge/automerge";
 import { runBuild } from "./build.js";
-import { newRenderDoc } from "../datatype.js";
+import { newRenderDoc } from "../shared/datatype.js";
 import { encodeGLB } from "../glb.js";
 
 /** A handle on a local Automerge doc: what runBuild reads and writes. */
