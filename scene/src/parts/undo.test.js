@@ -7,8 +7,12 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import undo, { undoKey } from "./undo.js";
+import undo from "./undo.js";
 import select from "./select.js";
+import keys from "./keys.js";
+
+// the key map: what runs a command's ⌘ shortcut (the harness's navigator is no Mac: Ctrl is Mod)
+const KEYS = { meta: { id: "scene.keys" }, module: keys };
 import { editor } from "./editor.js";
 
 const DICE = {
@@ -73,21 +77,13 @@ describe("scene.undo", () => {
     expect(model.doc().content).toBe("b");
   });
 
-  it("undoKey: ⌘Z / Ctrl+Z undo, with Shift redo, Ctrl+Y redo; nothing else", () => {
-    expect(undoKey({ key: "z", metaKey: true })).toBe("undo");
-    expect(undoKey({ key: "Z", ctrlKey: true, shiftKey: true })).toBe("redo");
-    expect(undoKey({ key: "y", ctrlKey: true })).toBe("redo");
-    expect(undoKey({ key: "y", metaKey: true })).toBeNull();
-    expect(undoKey({ key: "z" })).toBeNull();
-    expect(undoKey({ key: "z", metaKey: true, altKey: true })).toBeNull();
-  });
-
-  it("Delete is an edit: ⌘Z puts it back, ⇧⌘Z takes it out again; a roll is no step, and a rolled die isn't deleted again by redo", async () => {
+  it("Delete is an edit: ⌘Z puts it back, ⇧⌘Z takes it out again, ⌘Y too; a roll is no step, and a rolled die isn't deleted again by redo", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     s = await mountStage({ editor: true, natives: true, 
       extensions: [
         { meta: { id: "scene.select" }, module: select },
         { meta: { id: "scene.undo" }, module: undo },
+        KEYS,
         DICE,
       ],
       doc: { objects: { die: object({ name: "Die" }) }, order: ["die"] },
@@ -99,31 +95,37 @@ describe("scene.undo", () => {
     run("scene.select", "remove", "die");
     expect(s.doc().objects.die).toBeUndefined();
     expect(state("undo")).toEqual({ title: "Undo “Delete”" });
-    expect(press("z", { metaKey: true }).defaultPrevented).toBe(true);
+    expect(press("z", { ctrlKey: true }).defaultPrevented).toBe(true);
     expect(s.doc().objects.die.name).toBe("Die");
     expect(s.doc().order).toEqual(["die"]);
     expect(state("redo")).toEqual({ title: "Redo “Delete”" });
     // the die is rolled: no step of its own, and redo can't delete what the roll has moved since
     run("t.roller", "roll", "die");
     expect(editor(s.facet("scene.undo")).labels()).toEqual({ undo: null, redo: "Delete" });
-    press("z", { metaKey: true, shiftKey: true });
+    press("Z", { code: "KeyZ", ctrlKey: true, shiftKey: true });
     expect(s.doc().objects.die.transform.position).toEqual([4, 0, 4]);
     expect(s.notices().at(-1).text).toBe("Nothing to redo: “Delete” has been changed since.");
     expect(editor(s.facet("scene.undo")).labels()).toEqual({ undo: null, redo: null });
   });
 
-  it("a field being typed in keeps ⌘Z (its own text undo)", async () => {
-    s = await mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.undo" }, module: undo }], doc: { objects: { a: object() }, order: ["a"] } });
+  it("a field being typed in keeps ⌘Z (its own text undo); outside one ⌘Z undoes and ⌘Y redoes; put down, the editor's ⌘Z is no one's", async () => {
+    s = await mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.undo" }, module: undo }, KEYS], doc: { objects: { a: object() }, order: ["a"] } });
     await settle();
     editor(s.facet("scene.undo")).edit((d) => (d.objects.a.name = "B"), { label: "Rename" });
     const input = document.createElement("input");
     s.root.append(input);
-    const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "z", metaKey: true });
+    const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "z", code: "KeyZ", ctrlKey: true });
     input.dispatchEvent(e);
     expect(e.defaultPrevented).toBe(false);
     expect(s.doc().objects.a.name).toBe("B");
     press("z", { ctrlKey: true });
     expect(s.doc().objects.a.name).toBe("Object");
+    press("y", { ctrlKey: true });
+    expect(s.doc().objects.a.name).toBe("B");
+    s.edit(false);
+    await settle();
+    expect(press("z", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(s.doc().objects.a.name).toBe("B");
   });
 });
 

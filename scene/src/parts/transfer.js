@@ -15,12 +15,14 @@
 //     moving rows is the outline's.
 //     A copy that doesn't snap lands on its base, not its origin (the
 //     payload's `lift`): a crate whose origin is its middle sits on the floor.
-//   - Copy (⌘C / Ctrl+C with something selected and no text selected, or
-//     the menu's Copy) puts the selection on the clipboard: the row payload,
-//     and its document link as text for anything else. (The menu's Copy
-//     writes both through a copy event of its own; where the browser won't
-//     run one, only the link, and the copy reaches scenes on this page.)
-//     Paste (⌘V / Ctrl+V, or the menu's Paste) copies it in where the view is
+//   - Copy (⌘C / Ctrl+C, its shortcut, which the key map runs, with something
+//     selected and no text selected on the page; or the menu's Copy) puts
+//     the selection on the clipboard: the row payload, and its document link
+//     as text for anything else, both through a copy event of its own
+//     (execCommand: where the browser won't run one, only the link, and the
+//     copy reaches scenes on this page).
+//     Paste (⌘V / Ctrl+V: the browser's paste event, the one way to read the
+//     clipboard; or the menu's Paste) copies it in where the view is
 //     looking: under the object there only when it snaps to one of its
 //     connectors, else on the surface there, under nothing; each repeat of
 //     the same Copy goes beside the last. Pasted in its own scene, it's a
@@ -35,8 +37,8 @@
 //     inspector, none ticked; the menu takes none.
 // Keys, pastes and drops inside an embedded document are that document's.
 // Copying, pasting, extracting and bundling are the editor's: the commands
-// say `hand: "edit"`, and ⌘C / ⌘V and a dropped row are heard from the Edit
-// hand's pick-up until it goes.
+// say `hand: "edit"`, and ⌘V and a dropped row are heard from the Edit hand's
+// pick-up until it goes.
 
 import { isGroup } from "../groups.js";
 import { EDIT } from "./editing.js";
@@ -87,8 +89,8 @@ const pasted = new Map();
 let copies = 0;
 
 /**
- * Write to the clipboard through a copy event of our own (what ⌘C writes,
- * custom types and all), from a menu click. False when the browser won't.
+ * Write to the clipboard through a copy event of our own (custom types and
+ * all), from a key press or a menu click. False when the browser won't.
  */
 function writeClipboard(data, doc = globalThis.document) {
   const win = doc?.defaultView ?? globalThis;
@@ -118,10 +120,6 @@ function create(api) {
   const live = () => !api.signal.aborted;
   const port = api.port;
   const root = api.root ?? port;
-  const selectedTarget = () => {
-    const sel = here.view.get().selected ?? null;
-    return sel != null && here.scene().objects[sel] ? sel : null;
-  };
 
   // ── where it lands (the parts bin's rule: ./landing.js) ───────────────
   const land = landings(here, api);
@@ -281,16 +279,8 @@ function create(api) {
     });
   }
 
-  /** The clipboard's events, while editing (below). → their offs */
+  /** The paste event, while editing (below): reading the clipboard takes a real one. → its offs */
   const listenForClipboard = () => [
-    api.listen(root, "copy", (e) => {
-      if (e.defaultPrevented || fromEmbed(e, root)) return;
-      if (isTyping(e.composedPath?.()[0] ?? e.target) || textSelected()) return;
-      const sel = selectedTarget();
-      if (sel == null || !e.clipboardData) return;
-      for (const [t, v] of Object.entries(copy([sel]))) if (v) e.clipboardData.setData(t, v);
-      e.preventDefault();
-    }),
     // heard before scene.add's paste (which takes a pasted URL as a document)
     api.listen(
       root,
@@ -313,7 +303,7 @@ function create(api) {
     ),
   ];
 
-  // a dropped row, ⌘C and ⌘V are the editor's: heard from the Edit hand's pick-up until it goes
+  // a dropped row and ⌘V are the editor's: heard from the Edit hand's pick-up until it goes
   whileHolding(api, EDIT, () => {
     const offs = [...listenForRows(), ...listenForClipboard()];
     return () => {
@@ -398,14 +388,13 @@ function create(api) {
       id: "copy",
       hand: "edit",
       name: "Copy",
-      // (⌘C is the browser's copy event, which this part hears: shown, not run by scene.keys)
       shortcut: "Mod+C",
-      shortcutBy: "clipboard",
       show: ["menu"],
-      state: (target, { scene }) => (target != null && scene?.objects?.[target] ? { title: "Copy this, to paste here or into another scene" } : null),
+      // (with text selected on the page, ⌘C is the browser's: that text)
+      state: (target, { scene }) => (target != null && scene?.objects?.[target] && !textSelected() ? { title: "Copy this, to paste here or into another scene" } : null),
       run(target) {
         const data = copy([target]);
-        // what ⌘C writes, through a copy event of our own (a menu click may)
+        // both types, through a copy event of our own (a key press or a menu click may run one)
         if (writeClipboard(data, port.ownerDocument)) return;
         // else the link alone: Paste on this page still has the whole copy
         try {
@@ -420,6 +409,7 @@ function create(api) {
       id: "paste",
       hand: "edit",
       name: "Paste",
+      // (⌘V is the browser's paste event, the one way to read the clipboard, which this part hears: shown, not run by scene.keys)
       shortcut: "Mod+V",
       shortcutBy: "clipboard",
       show: ["menu"],
