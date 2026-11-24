@@ -5,7 +5,9 @@
 // failure is likewise `failure: { error, inputs }`. The write fence: the
 // result is written by compare-and-set, only over the result the render had
 // as this build began (one someone committed meanwhile is never replaced),
-// and only if `mayCommit` still says so as it is written.
+// and only if `mayCommit` still says so as it is written. A result that
+// arrives after the GLB file doc is made and before the write leaves that
+// file doc orphaned, referenced by nothing.
 // A build whose bytes are identical to the current GLB's keeps the current file
 // doc (builtFrom.glbHash), so a rebuild that changes nothing makes no new doc.
 
