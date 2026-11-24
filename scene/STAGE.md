@@ -87,7 +87,7 @@ Each extension's own; what it acquires through it goes when it stops.
 | `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed, errors }` (`ready`: nothing the doc calls for is still on its way, a failed one included; the clock and the audience also need `failed` empty; `errors[id]`: why) |
 | `now()`, `after(ms, fn)`, `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame`; rendering every frame while a loop runs, `dt` ≤ 0.1 s |
 | `local` | `get`, `swap(fn)`: the stage's frozen value; the kernel's `running` (`[{ id, scope }]`), `status` (`{ [id]: { state, reason?, text, title } }`), `packages` (`{ ask, loading, failed, missing }`); plugins' keys `<id>.`-prefixed |
-| `view` | `get`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, keys, pointer, serial }]`, top last), `held` (its tools, `[{ ext, command, name, handKind, keys, pointer, serial }]`), `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme` (the stage's colours, `{ bg, fg, accent, remote, muted, object }` in sRGB 0..1, a new object as the CSS changes), view plugins' values; `select(target)` |
+| `view` | `get`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, keys, pointer, serial }]`, top last), `held` (its tools, `[{ ext, command, name, handKind, keys, pointer, serial }]`), `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme` (the stage's colours, `{ bg, fg, accent, remote, muted, object }` in sRGB 0..1, another object each time the CSS changes), view plugins' values; `select(target)` |
 | `channel` | the doc's ephemeral side (`stage/presence.js`; I5): `{ viewer, session, peers(), set(key, value), watch(fn), send(type, data), rate(hz) }`; `peers()` → `{ [session]: { viewer, body, held: [{ name }] (top last), at, keys } }`; `send` reaches `receive` on every peer; `session` null in a pin |
 | `page`, `packages` | `{ on("hide" \| "show", fn) }`: the page goes into the back-forward cache (or the stage closes), it is back; the prompt's answer for its doc, `{ load(urls?), dismiss(urls?) }` |
 | `nameOf(id)`, `content(id)`, `loadState(id)`, `box(target, { hints?, in? })`, `worldOf(id)` | `{ loaded, box, extras, stats, root }`; where content went, what its loader said; `{ min, max }` or null, an object's, a group's (its members') or the scene's (`null`); the drawn matrix |
@@ -148,10 +148,10 @@ told `suspended()` when another goes over it and `resumed()` when it is on top a
 
 **Hands**: one stack per view (`stage/router.js`), `{ kind, name, input, keys?, pointer?, escape?(), escaping?(), put?()
 }`; each input consumes an event (true, a session) or passes it (false, null), acted or not, and hears every `move`;
-`put()` is told as it leaves the stack, `escaping()` says what `escape()` would pop now (the hint). **Tools**: a
-command's `tool`, or `api.hold({ name, keys?, pointer? }, input)`: onto the top (one held: put down), out from anywhere.
-**A popover** (`api.popover(close)`) wants the pointer, takes all. **Escape** (`stage/ladder.js`; H4): the lock, a
-field, the gesture, the top hand's `escape()` else putting it down; no hand: the selection, else the focus.
+`put()` is told as it leaves the stack, `escaping()` says what `escape()` would pop (the hint). **Tools**: a command's
+`tool`, or `api.hold({ name, keys?, pointer? }, input)`: onto the top (one held: put down), out from anywhere. **A
+popover** (`api.popover(close)`) wants the pointer, takes all. **Escape** (`stage/ladder.js`; H4): the lock, a field,
+the gesture, the top hand's `escape()` else putting it down; no hand: the selection, else the focus.
 
 ## Packages
 
