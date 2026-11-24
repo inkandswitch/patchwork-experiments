@@ -65,7 +65,18 @@ const P = (e, ms) => js(`window.__p.${e}`, ms);
 const FRAME = 1000 / 60;
 const until = (expr, ms = 10_000) => b.soon(`window.__p.${expr}`, { frames: Math.ceil(ms / FRAME) });
 const loads = (expr, ms = 30_000) => b.waitFor(`window.__p.${expr}`, ms, 60);
-const holds = (expr, ms = 30_000) => b.hold(`window.__p.${expr}`, ms, 40);
+/** Poll `expr` on the wall for up to ms, a few frames of the page's clock at each look: the secure deck's crypto is the wall's, and what it delivers moves with the clock. */
+const settleBy = async (expr, ms, every = 40) => {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await b.js(expr).catch(() => false);
+    if (v) return v;
+    if (Date.now() - t0 > ms) return false;
+    await b.step(20);
+    await sleep(every);
+  }
+};
+const holds = (expr, ms = 30_000) => settleBy(`window.__p.${expr}`, ms, 40);
 const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, shots: [], numbers: {} };
