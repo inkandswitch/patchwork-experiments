@@ -437,7 +437,7 @@ export function railEntries(collected, ctx) {
 
 /** The rail: a part of the right edge of its own, a button per panel on offer. */
 function createRail(api) {
-  const part = api.edge("right");
+  const part = api.overlay("right");
   const rail = make("nav", "stage-panel-rail", { "aria-label": "Panels" });
   let key = "";
   return function update() {
@@ -469,7 +469,7 @@ function create(api) {
   let wanting = null; // while a pane that wants it is docked, the pointer is wanted free (STAGE.md, "Hands")
   api.style(css);
   const drawer = createDrawer({
-    parent: api.edge("right"),
+    parent: api.overlay("right"),
     onChange(d, wants) {
       if (JSON.stringify(d) !== JSON.stringify(now)) api.view.set((now = Object.freeze(d)));
       wanting = wants ? (wanting ?? api.wantPointer()) : (wanting?.(), null);

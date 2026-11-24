@@ -249,7 +249,7 @@ describe("I6: a read-only stage writes nothing", () => {
       const general = view.stage(0).debug.host.record("t.general").api;
       ok("a general part can't run one of its commands either", general.run({ stage: stage.n, ext: "t.probe", command: "poke" }) === false && api.doc().title !== "poked");
       const el = api.overlay();
-      const edge = api.edge("right");
+      const edge = api.overlay("right");
       ok("overlay and edge stay out of the DOM", !el.isConnected && !edge.isConnected);
       ok("no notices, drawer or prefs", ["notices", "drawer", "prefs"].every((n) => api.use(n) === null));
       api.view.select("card");

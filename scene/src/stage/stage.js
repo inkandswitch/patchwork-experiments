@@ -1315,7 +1315,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       cameraHolds: new Set(),
       frame: new Set(), // loops and afterRender hooks
       offs: new Set(), // listeners, watchers, rides
-      els: new Set(), // overlays, edges, styles
+      els: new Set(), // overlays, styles
     };
     owned.set(id, own);
     const live = () => !signal.aborted && !dead;
@@ -1525,7 +1525,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       scheduled = scheduled.filter((s) => s.rec !== rec);
       // 6: its world groups
       scope.removeLayers(id);
-      // 7: labels, overlays, edges, styles, listeners and watchers, extent, focus
+      // 7: labels, overlays, styles, listeners and watchers, extent, focus
       for (const key of own.labelKeys ?? []) scope.labels.clear(key);
       router.refresh();
       for (const el of own.els) el.remove();
@@ -1579,8 +1579,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const loose = (className) => Object.assign(document.createElement("div"), { className });
     return facet(api, {
       view: facet(api.view, { select: noop }),
-      overlay: () => loose("stage-overlay"),
-      edge: () => loose("stage-edge-part"),
+      overlay: (side) => loose(side ? "stage-edge-part" : "stage-overlay"),
       popover: () => noop,
       camera: facet(api.camera, { set: noop, frame: noop, hold: () => noop, ride: () => noop }),
       body: facet(api.body, { enter: () => false, leave: () => false }),

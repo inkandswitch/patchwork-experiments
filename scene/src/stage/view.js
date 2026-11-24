@@ -1095,7 +1095,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   };
   /**
    * What the view lends an extension or a view plugin (`id`, its router key
-   * `key`): overlays, edge parts, styles, listeners,
+   * `key`): overlays (over the canvas or beside it), styles, listeners,
    * popovers, frame hooks and timers. What it acquires goes in
    * `own` (`els`, `offs`, `frame`), given back as it stops; `stage` marks its
    * elements with the stage it is of.
@@ -1126,8 +1126,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     };
     const div = (className) => Object.assign(document.createElement("div"), { className });
     return {
-      overlay: () => add(div("stage-overlay"), port),
-      edge: (side) => add(div("stage-edge-part"), edges[EDGES.includes(side) ? side : "right"]),
+      /** a part of the view's DOM: over the canvas, or beside it at `side` ("top", "right", "bottom", "left") */
+      overlay: (side) => (EDGES.includes(side) ? add(div("stage-edge-part"), edges[side]) : add(div("stage-overlay"), port)),
       style: (text) => add(Object.assign(document.createElement("style"), { textContent: String(text ?? "") }), root),
       listen: (target, type, fn, opts) =>
         acquire(own.offs, () => {
