@@ -20,9 +20,23 @@ describe("commands: what applies", () => {
     expect(got.map(({ ext, command, stage }) => [ext, command.id, stage])).toEqual([["x", "a", undefined], ["y", "c", 2]]);
   });
 
-  // H14, its first half: hand named or not × every stack of hands × what state says
-  it("H14: a command naming a kind of hand applies only while a hand of that kind is held; then, as for any command, its state decides", () => {
-    const STACKS = [view(), view("k"), view("j"), view("j", "k"), view("k", "k"), null];
+  // H14, its first half: the hand a command names × the kinds of hand held, written out; then what state says
+  it("H14: a command naming a kind of hand applies only while a hand of that kind is held (never one of the kernel's own kinds); then, as for any command, its state decides", () => {
+    // [the hand the command names, the kinds held (null: no view), whether it may apply]
+    const HANDS = [
+      [undefined, [], true],
+      [undefined, ["k"], true],
+      [undefined, null, true],
+      ["k", [], false],
+      ["k", ["k"], true],
+      ["k", ["j"], false],
+      ["k", ["j", "k"], true],
+      ["k", ["k", "k"], true],
+      ["k", null, false],
+      ["tool", ["tool"], false],
+      ["popover", ["popover"], false],
+    ];
+    // [state, its state for the scene, for an object]
     const STATES = [
       [undefined, {}, null],
       [() => null, null, null],
@@ -37,24 +51,19 @@ describe("commands: what applies", () => {
         null,
       ],
     ];
-    let n = 0;
-    for (const hand of [undefined, "k"]) {
-      for (const v of STACKS) {
-        const held = hand === undefined || !!v?.hands.some((h) => h.kind === hand);
-        for (const [state, forScene, forObject] of STATES) {
-          const command = { id: "c", run() {}, ...(hand ? { hand } : {}), ...(state ? { state } : {}) };
-          expect(inHand(command, v)).toBe(held);
-          expect(commandState(command, null, { view: v })).toEqual(held ? forScene : null);
-          expect(commandState(command, "a", { view: v })).toEqual(held ? forObject : null);
-          n++;
-        }
+    for (const [hand, kinds, may] of HANDS) {
+      const v = kinds && view(...kinds);
+      for (const [state, forScene, forObject] of STATES) {
+        const command = { id: "c", run() {}, ...(hand ? { hand } : {}), ...(state ? { state } : {}) };
+        expect([hand, kinds, inHand(command, v)]).toEqual([hand, kinds, may]);
+        expect(commandState(command, null, { view: v })).toEqual(may ? forScene : null);
+        expect(commandState(command, "a", { view: v })).toEqual(may ? forObject : null);
       }
     }
-    expect(n).toBe(2 * 6 * 6);
   });
 
   // H9: reach × distance, for a command on a target; the scene has no distance
-  it("H9: a reach command applies to a target within the body's reach; beyond it, disabled and too far; the scene and a command without reach never", () => {
+  it("H9: a reach command is enabled on a target within the body's reach; beyond it, disabled and too far; on the scene, and without reach, always", () => {
     for (const reach of [2, Infinity]) {
       for (const d of [1, 2, 3, Infinity, NaN]) {
         const ctx = { view: view(), reach, distance: () => d };
@@ -96,7 +105,7 @@ describe("commands: on the stage", () => {
     const api = s.api("t.cmds");
     const hands = s.api("t.hands");
     const run = (command, value) => api.run({ ext: "t.cmds", command, target: null, value });
-    const held = () => s.local.get().held.map((t) => [t.name, t.hand]);
+    const held = () => s.local.get().held.map((t) => [t.name, t.handKind]);
 
     // no hand of kind k: neither runs
     expect([run("c"), run("t"), log, held()]).toEqual([false, false, [], []]);
@@ -112,15 +121,44 @@ describe("commands: on the stage", () => {
     put2();
     expect([held(), log]).toEqual([[["U", null]], ["c", "put t"]]);
     expect(run("c")).toBe(false);
-    // a hand of another kind changes nothing for k's commands
-    const put3 = hands.hand({ kind: "j", name: "J" });
+    // a hand of another kind changes nothing for k's commands; and a plain hand is held for no kind, whatever its spec says
+    const put3 = hands.hand({ kind: "j", name: "J", hand: "k", handKind: "k" });
     expect(run("t")).toBe(false);
-    put3();
     // picked up again, running it again puts it down (a toggle), as any tool
     const put4 = hands.hand({ kind: "k", name: "K" });
     expect([run("t"), held()]).toEqual([true, [["U", null], ["T", "k"]]]);
     expect([run("t"), held()]).toEqual([true, [["U", null]]]);
     put4();
+    expect(s.local.get().hands.map((h) => h.name)).toEqual(["U", "J"]);
+    put3();
     expect(log).toEqual(["c", "put t", "put t"]);
+  });
+
+  // H14, its second half, by the other ways a hand goes: Escape, and its plugin stopping
+  it("H14: a hand of the kind going by Escape, or by its view plugin stopping, takes the tools held for it, once the last of its kind goes", async () => {
+    const log = [];
+    s = await mountStage({ extensions: [commands(log), HANDS], editor: false, natives: false });
+    const api = s.api("t.cmds");
+    const hands = s.api("t.hands");
+    const run = (command) => api.run({ ext: "t.cmds", command, target: null });
+    const held = () => s.local.get().held.map((t) => t.name);
+    const escape = () => s.key("Escape", { code: "Escape" });
+    const K = (name) => hands.hand({ kind: "k", name, escape: () => false });
+    // [K, T]: Escape takes the top, T, then K; nothing is left
+    K("K");
+    expect(run("t")).toBe(true);
+    escape();
+    expect([held(), log]).toEqual([[], ["put t"]]);
+    escape();
+    expect(s.local.get().hands).toEqual([]);
+    // [K1, T, K2]: Escape takes K2, and T stays (K1 is of its kind)
+    K("K1");
+    run("t");
+    K("K2");
+    escape();
+    expect([s.local.get().hands.map((h) => h.name), held()]).toEqual([["K1", "T"], ["T"]]);
+    // K1's view plugin stops: K1 goes, and T with it
+    await s.uninstall("t.hands");
+    expect([s.local.get().hands, held(), log]).toEqual([[], [], ["put t", "put t"]]);
   });
 });

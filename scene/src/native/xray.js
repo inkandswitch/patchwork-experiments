@@ -23,9 +23,7 @@
 
 import css from "./xray.css?inline";
 import { perFocus } from "../per-focus.js";
-import { looksFromEye } from "../stage/pointer.js";
-import { parseKey } from "../stage/paths.js";
-import { writers } from "../stage/provenance.js";
+import { looksFromEye, parseKey, writers } from "../stage/public.js";
 import { buildGears } from "./gears.js";
 import { GLYPHS, card, colours, details, glyphs, legend, looks, strip } from "./xray-model.js";
 

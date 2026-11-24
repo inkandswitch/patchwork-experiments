@@ -31,7 +31,7 @@ import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
-import { isTyping } from "../key-order.js";
+import { isTyping } from "../stage/public.js";
 import { add as addObject, drop, template } from "./editor.js";
 import { atFocus } from "../per-focus.js";
 import { editing } from "./editing.js";

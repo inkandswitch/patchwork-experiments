@@ -12,6 +12,13 @@
 export const LOOK = Object.freeze({ id: "look", label: "Look", keys: Object.freeze([]), lock: false, reach: Infinity });
 
 /**
+ * The kinds of hand the kernel makes itself: a held tool and an open
+ * popover. A plugin's hand has a kind of its own, and only such a kind can
+ * hold a tool alive (a command's `hand`: ./commands.js).
+ */
+export const KERNEL_KINDS = Object.freeze(["tool", "popover"]);
+
+/**
  * Is a hand of this kind in the view's stack?
  * @param {{ hands?: { kind?: string }[] } | null | undefined} view  api.view.get()
  * @param {string} kind

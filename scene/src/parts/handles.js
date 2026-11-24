@@ -23,7 +23,7 @@ import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.j
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
 import { editor } from "./editor.js";
-import { pointing } from "../stage/bodies.js";
+import { pointing } from "../stage/public.js";
 import { editing } from "./editing.js";
 import { MOVE, moving } from "./halo-math.js";
 import { perFocus } from "../per-focus.js";

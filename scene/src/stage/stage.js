@@ -1017,7 +1017,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         }
         if (value === false) return true;
         const input = c.run(target, value, ctx);
-        if (input && typeof input === "object") holdTool(ext, { command: c.id, name: c.name ?? c.id, hand: typeof c.hand === "string" ? c.hand : null, ...(typeof c.tool === "object" ? c.tool : {}) }, input);
+        if (input && typeof input === "object") holdTool(ext, { command: c.id, name: c.name ?? c.id, handKind: typeof c.hand === "string" ? c.hand : null, keys: c.tool?.keys, pointer: c.tool?.pointer }, input);
         return true;
       }
       c.run(target, value, ctx);
@@ -1085,7 +1085,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   /**
-   * Hold a tool: its declaration ({ command?, name, hand?, keys, pointer }:
+   * Hold a tool: its declaration ({ command?, name, handKind?, keys, pointer }:
    * the command it was picked up through, if any, and the kind of hand that
    * command names) and the given input.
    */
