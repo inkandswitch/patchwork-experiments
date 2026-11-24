@@ -61,7 +61,7 @@ Each extension's own; what it acquires through it goes when it stops. Everything
 | | `providerName`, `pinned`, `builtAt`, `builtHeads`, `bounds`, `at`, `notes`), `fix` (the `at` fixing it as it is, or null) |
 | `box(target, o?)` | `{ min, max }` or null: an object's, a group's (its members'), the scene's (`null`); `{ hints?, in? }` |
 | `worldOf(id)`, `nameOf(id)` | its drawn matrix; its displayed name |
-| `focus(ids)`, `providersFor` | what loads first; the sources that take a doc |
+| `providersFor` | the sources that take a doc |
 | `addObject(url, o)` | → a change function with its new object's `id` |
 | `display(id, o)` → release | **Display** (below) |
 | `pick(x, y, o?)`, `raycast(origin, dir, o?)` | → `{ id, point, normal, distance }` or null; `{ ground?, snapPx? }`; `{ far?, skip(id)? }` |

@@ -515,7 +515,7 @@ try {
     const o = id && (await obj(id));
     check("stlAddedWithRenderDoc", !!o && o.providerId === "file-stl" && !!o.renderUrl, o);
     const built = id && (await b.waitFor(`!!__p.A.viewport.contentOf(${JSON.stringify(id)})?.loaded`, 20_000));
-    check("stlBuilt", built, id && (await A(`d.loadState(${JSON.stringify(id)}) ?? d.local.get().status?.[${JSON.stringify(id)}] ?? null`).catch(() => null)));
+    check("stlBuilt", built, id && (await A(`d.content(${JSON.stringify(id)}) ?? d.local.get().status?.[${JSON.stringify(id)}] ?? null`).catch(() => null)));
     if (built) {
       // move it off the board so it's easy to see, then size it
       await b.js(`window.sceneHandle.change((d) => { d.objects[${JSON.stringify(id)}].transform.position = [-0.3, 0, -0.1]; })`);
