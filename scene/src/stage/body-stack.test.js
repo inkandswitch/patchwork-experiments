@@ -22,15 +22,19 @@ function* sequences(n) {
 function run(seq) {
   const told = new Map(); // body → what it was told, in order
   const keysOff = [];
+  const bodyOf = new Map(); // input → its body
   let made = 0;
   const body = (id, owner = id.toLowerCase()) => {
     const b = { owner, id, lock: false, keys: [], serial: made++, input: {} };
-    for (const what of ["left", "suspended", "resumed"])
-      b.input[what] = () => {
-        told.get(b).push(what);
-        if (id === "R" && what === "left") apply(withBody(s, body("S")));
-      };
+    const hear = (what) => () => {
+      told.get(b).push(what);
+      if (id === "R" && what === "left") apply(withBody(s, body("S")));
+    };
+    // (left is the holder's, told to the body itself; suspended and resumed its input's)
+    b.left = hear("left");
+    for (const what of ["suspended", "resumed"]) b.input[what] = hear(what);
     told.set(b, []);
+    bodyOf.set(b.input, b);
     return b;
   };
   let s = baseOnly(body("look", null));
@@ -38,8 +42,8 @@ function run(seq) {
   function apply(c) {
     if (!c) return;
     s = c.bodies;
-    const tells = new Set(c.tell.filter((t) => t.what !== "resumed").map((t) => t.to));
-    keysOff.push([new Set(c.off.map((b) => b.input)), tells]);
+    const tells = new Set(c.tell.filter((t) => t.what !== "resumed").map((t) => (t.what === "left" ? t.to : bodyOf.get(t.to))));
+    keysOff.push([new Set(c.off), tells]);
     for (const t of c.tell) t.to[t.what]();
     apply(settleTop(s));
   }

@@ -159,10 +159,12 @@ function call(owner, obj, name, ...args) {
 }
 
 /**
- * A body on the stack, as the router keeps it: its input (press, click,
+ * A body on the stack, as its holder gives it: its input (press, click,
  * menu, move, wheel, key, keyup, cursor, suspended, resumed), whether it
- * asks for pointer lock, and the keys it declares ([{ code, label }]).
- * @typedef {{ id: string, input?: object, lock?: boolean, keys?: { code: string, label?: string }[] }} RouterBody
+ * asks for pointer lock, the keys it declares ([{ code, label }]), and the
+ * holder's own: what it keeps of the body (`data`, read back by topData())
+ * and left(), told once as the body leaves the stack, from wherever it is.
+ * @typedef {{ id: string, input?: object, lock?: boolean, keys?: { code: string, label?: string }[], data?: any, left?: () => void }} RouterBody
  */
 
 /**
@@ -902,7 +904,7 @@ export function createRouter(o) {
    */
   function pushBody(owner, body) {
     if (disposed) return () => {};
-    const entry = { owner, id: body.id, input: body.input ?? {}, lock: !!body.lock, keys: body.keys ?? [], serial: ++made };
+    const entry = { owner, id: body.id, input: body.input ?? {}, lock: !!body.lock, keys: body.keys ?? [], data: body.data ?? null, left: body.left, serial: ++made };
     restack(withBody(bodies, entry));
     return () => popBody(entry);
   }
@@ -1002,6 +1004,8 @@ export function createRouter(o) {
     pushBody,
     /** the top body: { id, owner } */
     body: () => ({ id: top().id, owner: top().owner }),
+    /** what the top body's holder keeps of it (its `data`), or null (Look) */
+    topData: () => top().data,
     /** the stack, bottom first: [{ id, owner }] */
     bodies: () => bodies.stack.map((x) => ({ id: x.id, owner: x.owner })),
     /** pop the top body (never the base). @returns whether one went */
