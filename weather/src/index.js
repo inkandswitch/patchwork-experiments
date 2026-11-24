@@ -1,7 +1,7 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// Weather is a scene extension (WEATHER.md; the scene package's STAGE.md,
+// Weather is a scene extension (WEATHER.md; the scene package's API.md,
 // "Ambients"): a world's weather is one scene trait, `weather`, plain
 // physical data — where and when (lat, lon, date, hour on a clock `offset`
 // hours from UTC), the air

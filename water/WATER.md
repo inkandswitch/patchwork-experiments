@@ -479,7 +479,7 @@ Doc edits with step 1:
   the world's ambients cross as data; no doc's code runs for another".
 - COMPOSITION "Where we are": strike the two-seas line. Invariants: add
   ambients (W2–W4) and per-session playout (W8); extend I4 (W7).
-- STAGE.md: `ambient` in the instance and api tables; the Atmosphere
+- API.md: `ambient` in the instance and api tables; the Atmosphere
   convention becomes the ambient `atmosphere`; a Water convention naming
   the water package.
 - DESIGN.md §3 and "How the examples compose": "the outermost doc gives
@@ -1524,7 +1524,7 @@ Each is fixed here with a test that fails without the fix, or answered.
     extension's value under that name, so a broken override leaves no value
     rather than quietly falling back to someone else's, the same "never the
     wrong value" as W11. An array element that is undefined, or a hole, is
-    copied as `null`, as JSON writes it (it used to throw). STAGE.md
+    copied as `null`, as JSON writes it (it used to throw). API.md
     "Ambients" says both.
 38. **The published harbour frames the boat at anchor, and Ship at sea
     sails through it** (decided at integration, 2026-11-14). The first

@@ -1,5 +1,5 @@
 // The weather extension (WEATHER.md): the `weather` scene trait offered as
-// the world's `wind` and `atmosphere` ambients (scene STAGE.md, "Ambients"),
+// the world's `wind` and `atmosphere` ambients (scene API.md, "Ambients"),
 // and the three editing commands that set where and when it is, and fetch
 // what it was there and then.
 //
@@ -168,7 +168,7 @@ export function clockName(offset) {
 
 /**
  * Whether this stage's weather is the world's: the outermost stage's
- * (STAGE.md "Ambients": api.ambient's `mine`). A linked world's weather is
+ * (API.md "Ambients": api.ambient's `mine`). A linked world's weather is
  * not in force, so its commands would write a weather nothing shows.
  */
 export const isWorlds = (api) => api.ambient?.("wind")?.mine === true;

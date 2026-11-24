@@ -3,7 +3,7 @@
 A world's weather as physical data. One scene trait, `weather`, says where and
 when the world is and what the air and sky are doing. One extension offers it
 as the world's two existing ambient conventions, `wind` and `atmosphere`
-(scene STAGE.md, "Ambients", and CONVENTIONS.md, "Atmosphere"). Everything that already reads
+(scene API.md, "Ambients", and CONVENTIONS.md, "Atmosphere"). Everything that already reads
 those (the viewport's sky, sun and fog, water's tint, reflection and roughness,
 sailing's sea and every boat's physics) follows the weather without knowing
 this package exists.
@@ -802,7 +802,7 @@ undo stack; only the editor records its writes (EDITOR.md, "Undo"; Question
     and the inner pair wrote a weather the outermost rule keeps out of
     force, with nothing to say so. Each command's state is now null, and
     its run writes nothing, unless this stage is the outermost:
-    `api.ambient("wind").mine` (STAGE.md "Ambients": `mine` is "this is
+    `api.ambient("wind").mine` (API.md "Ambients": `mine` is "this is
     the outermost stage"; a stage with the trait offers a wind, so it is
     non-null exactly there). A boat linked into a dry room gets none
     either (the outermost offers no wind: null). No scene change. The
