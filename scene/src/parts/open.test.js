@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Open (./open.js; PLANS.md §5): the target's Open is the first `open: true`
 // command that applies; the Edit hand Opens the selection on a double-click
 // (same thing, within DOUBLE_MS and DOUBLE_PX), in Edit only; an Open's key
@@ -55,7 +56,7 @@ describe("the Edit hand Opens", () => {
   });
   async function mount() {
     clock = 1000;
-    s = await mountStage({ time: wallAt(() => clock), extensions: [{ meta: { id: "scene.select" }, module: select }, { meta: { id: "scene.keys" }, module: keys }, OPENER], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, order: ["a", "b"] } });
+    s = await mountStage({ editor: true,  time: wallAt(() => clock), extensions: [{ meta: { id: "scene.select" }, module: select }, { meta: { id: "scene.keys" }, module: keys }, OPENER], doc: { objects: { a: object({ name: "A" }), b: object({ name: "B" }) }, order: ["a", "b"] } });
     s.edit(true);
     await settle();
   }

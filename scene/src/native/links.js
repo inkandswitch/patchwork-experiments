@@ -183,7 +183,7 @@ function create(api) {
   // it, each a way back out to there, and Leave. (The names are in the view
   // value, so every view plugin hears a rename: the clock chips name their
   // docs as the trail does.)
-  const part = api.edge("top");
+  const part = api.overlay("top");
   part.parentElement?.prepend(part);
   const focus = () => api.view.get().focus ?? [];
   function names() {
@@ -232,7 +232,7 @@ function create(api) {
         key: "Enter",
         show: ["menu", "inspector"],
         state: (target) => (target == null ? null : enterState(role(at(null, target)))),
-        run: (target) => api.focus()?.view.enter(target) ?? false,
+        run: (target) => api.view.enter([...api.view.get().focus, target]),
       },
     ],
   };

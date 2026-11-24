@@ -13,32 +13,32 @@ import { describe, it, expect } from "vitest";
 import { FakeRepo, fakeUrl } from "./test/fake-repo.js";
 import { emptyScene } from "./test/empty-scene.js";
 import { newRenderDoc } from "./datatype.js";
-import { boxIn, bundleLink, bundlePlan, composeTransforms, extractHost, extractObjects, extractPlan, extractable } from "./extract.js";
+import { boxIn, bundleLink, bundlePlan, extractHost, extractObjects, extractPlan, extractable } from "./extract.js";
 import { describesOf, entryText, lostText, refsOf, runtimeOf, RUNTIME_FIELDS } from "./transfer.js";
 import { resolveAnchor } from "./anchors.js";
 import { isLink } from "./native/link-graph.js";
 import { isGroup, resolveGroups } from "./groups.js";
 import { resolveParents, worldMatrix } from "./hierarchy.js";
-import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices } from "./transform.js";
+import { applyMatrix, invertMatrix } from "./transform.js";
 
 // ─── the rules the scene's extensions describe ─────────────────────────────
 
 const META = {
   id: "t.parts",
-  traits: ["seats", "t.sea", "t.rule", "t.lever", "t.zone", "t.keep"],
+  traits: ["t.seats", "t.sea", "t.rule", "t.lever", "t.zone", "t.keep"],
   describes: {
-    seats: { name: "Seats", on: "scene" },
+    "t.seats": { name: "Seats", on: "scene" },
     "t.sea": { name: "Sea", on: "scene", runtime: ["phase"] },
     "t.rule": { name: "Rule", on: "scene" },
     "t.lever": { name: "Lever", fields: [{ key: "target", kind: "object", label: "Target" }] },
-    "t.zone": { name: "Zone", fields: [{ key: "seat", kind: "entry", of: "seats", label: "Seat" }] },
+    "t.zone": { name: "Zone", fields: [{ key: "seat", kind: "entry", of: "t.seats", label: "Seat" }] },
     "t.keep": { name: "Keeper", runtime: ["bound"], fields: [{ key: "doc", copy: "drop", label: "Doc" }] },
   },
 };
 const DESCRIBES = describesOf([META]);
 const RUNTIME = runtimeOf(DESCRIBES);
 const REFS = refsOf(DESCRIBES);
-const ROOT_TRAITS = ["seats", "t.sea", "t.rule"];
+const ROOT_TRAITS = ["t.seats", "t.sea", "t.rule"];
 const LOST = `warn: ${lostText({ name: "Lever", label: "Target" })}`;
 const ENTRY = `warn: ${entryText({ name: "Zone", label: "Seat", ofName: "Seats" })}`;
 
@@ -71,13 +71,13 @@ function fixture(repo) {
     title: "Host",
     objects,
     order: ["table", "shelf", "lamp", "card", "crate", "cargo", "wheel"],
-    traits: { seats: { p1: { name: "One" }, p2: { name: "Two" } }, "t.sea": { level: 0, phase: 3 }, "t.rule": { game: "x" } },
+    traits: { "t.seats": { p1: { name: "One" }, p2: { name: "Two" } }, "t.sea": { level: 0, phase: 3 }, "t.rule": { game: "x" } },
     dimensions: {
       d1: { a: fresh("table", [0, 1, 0]), b: fresh("lamp", [0, 0, 0]), label: "rise" },
       d2: { a: fresh("crate", [0, 0, 0]), b: fresh("wheel", [0, 0, 0]), label: "gap" },
     },
     assets: { table: { url: file }, crate: { url: other } },
-    view: { units: "cm", start: { body: "t.walk", place: "crate", home: { position: [5, 5, 5], target: [0, 0, 0] } } },
+    view: { units: "cm", start: { body: "t.mover", place: "crate", home: { position: [5, 5, 5], target: [0, 0, 0] } } },
   });
   return repo.add(doc);
 }
@@ -367,8 +367,8 @@ async function roundTrip(roots, K, { squat = false } = {}) {
 
 // The fixture's counts: 584 sets of roots × K hang S's tops on two parents (a
 // table-side and a shelf-side root, say). Of the exact ones: the whole scene
-// (64: every roots ⊇ {table, shelf, cargo} × K ∋ seats); the table with what's
-// on it (16, K ∋ seats) and the shelf with the cargo (16, K ∌ seats), each
+// (64: every roots ⊇ {table, shelf, cargo} × K ∋ t.seats); the table with what's
+// on it (16, K ∋ t.seats) and the shelf with the cargo (16, K ∌ t.seats), each
 // spread through the order; the cargo group on the shelf (16: p the shelf,
 // one block); the crate and wheel without their group (4: p the shelf, the
 // link filed in the cargo group, spread).
@@ -407,35 +407,6 @@ describe("extract and bundle (I9): every set of roots × every K", () => {
 });
 
 describe("extract: the pieces", () => {
-  it("composeTransforms: the identity gives b back exactly; otherwise the product", () => {
-    const b = { position: [0.1, 0.2, 0.3], rotation: [0.7, -0.2, 1.3], scale: 0.37 };
-    expect(composeTransforms(T(), b)).toEqual(b);
-    const a = T([1, 2, 3], [0, Math.PI / 2, 0], 2);
-    const m = composeMatrix(composeTransforms(a, b));
-    const want = multiplyMatrices(composeMatrix(a), composeMatrix(b));
-    m.forEach((v, i) => expect(v).toBeCloseTo(want[i], 9));
-  });
-
-  it("extract keeps transforms below p and sets references to p to null; the link takes the group S's members share and S's box in p's frame", () => {
-    const doc = emptyScene({
-      objects: {
-        deck: obj("Deck", { transform: T([0, 2, 0], [0, 0, 0], 2) }),
-        g: { kind: "group", name: "Fit-out", group: null },
-        winch: obj("Winch", { parent: "deck", group: "g", transform: T([1, 0, 0]), hint: box, traits: { "t.lever": { target: "deck" } } }),
-      },
-      order: ["deck", "g", "winch"],
-    });
-    const plan = extractPlan(doc, ["winch"], { runtime: RUNTIME, refs: REFS });
-    expect(plan.ok && plan.parent === "deck" && plan.group === "g").toBe(true);
-    const t = plan.doc();
-    expect(t.objects.winch.transform).toEqual(T([1, 0, 0]));
-    expect(t.objects.winch.parent).toBe(null);
-    expect(t.objects.winch.traits["t.lever"].target).toBe(null);
-    // S's box, in the deck's frame (the deck's scale 2 taken out)
-    expect(plan.hint.min.map((v) => +v.toFixed(9))).toEqual([0.5, 0, -0.5]);
-    expect(plan.hint.max.map((v) => +v.toFixed(9))).toEqual([1.5, 1, 0.5]);
-  });
-
   it("the link's hint is S's box in p's frame: each object's own box carried there, never a box boxed again, under a turned p; the stage's box asked for in p's frame when it has one", () => {
     // p turned 45° about y, the winch on it unturned in p's frame: its box in p's frame is its hint, moved
     const objects = {
@@ -479,11 +450,11 @@ describe("extract: the pieces", () => {
   });
 
   it("extract refuses K the scene hasn't; bundle refuses K the host has, naming it, and K the linked doc hasn't", () => {
-    const doc = emptyScene({ objects: { a: obj("A") }, order: ["a"], traits: { seats: {} } });
+    const doc = emptyScene({ objects: { a: obj("A") }, order: ["a"], traits: { "t.seats": {} } });
     expect(extractPlan(doc, ["a"], { traits: ["t.sea"] })).toMatchObject({ ok: false });
-    const host = emptyScene({ objects: { L: obj("L", { providerId: "scene.link", sourceUrl: "automerge:abc" }) }, order: ["L"], traits: { seats: {} } });
-    const linked = emptyScene({ objects: {}, traits: { seats: { p1: {} }, "t.sea": { level: 1 } } });
-    expect(bundlePlan(host, "L", linked, { traits: ["seats"], describes: DESCRIBES, newId: () => "n" })).toEqual({ ok: false, reason: "This scene already has Seats." });
+    const host = emptyScene({ objects: { L: obj("L", { providerId: "scene.link", sourceUrl: "automerge:abc" }) }, order: ["L"], traits: { "t.seats": {} } });
+    const linked = emptyScene({ objects: {}, traits: { "t.seats": { p1: {} }, "t.sea": { level: 1 } } });
+    expect(bundlePlan(host, "L", linked, { traits: ["t.seats"], describes: DESCRIBES, newId: () => "n" })).toEqual({ ok: false, reason: "This scene already has Seats." });
     expect(bundlePlan(host, "L", linked, { traits: ["t.rule"], describes: DESCRIBES, newId: () => "n" })).toEqual({ ok: false, reason: "That scene has no Rule to bring." });
     expect(bundlePlan(host, "L", linked, { traits: ["t.sea"], describes: DESCRIBES, newId: () => "n" }).ok).toBe(true);
   });
@@ -504,7 +475,7 @@ describe("extract: the pieces", () => {
     const linked = emptyScene({
       objects: { a: obj("Winch", { transform: T([0, 0, 1]) }), b: obj("Handle", { parent: "a", traits: { "t.lever": { target: "a" } } }) },
       order: ["a", "b"],
-      view: { start: { body: "t.walk", place: "a" } },
+      view: { start: { body: "t.mover", place: "a" } },
     });
     let n = 0;
     const plan = bundlePlan(host, "L", linked, { runtime: RUNTIME, refs: REFS, describes: DESCRIBES, newId: (p) => `${p}${++n}` });
@@ -522,7 +493,7 @@ describe("extract: the pieces", () => {
     expect(d.objects.lever.traits["t.lever"].target).toBeUndefined();
     expect(plan.lost).toEqual([{ id: "lever", trait: "t.lever", key: "target", label: "Target" }]);
     // a start through the link: the linked doc's start, here, its place following its id
-    expect(d.view.start).toEqual({ body: "t.walk", place: "o1", home: { position: [1, 1, 1] } });
+    expect(d.view.start).toEqual({ body: "t.mover", place: "o1", home: { position: [1, 1, 1] } });
   });
 
   it("bundling a fixed link keeps a live link inside it fixed where the pin held it", () => {
@@ -587,9 +558,9 @@ describe("extract's compare-and-set: anything T was made from that changes meanw
     "a new dimension with both ends on S": (d) => (d.dimensions.d9 = { a: { objectId: "table", local: [0, 0, 0], world: [1, 0, 2] }, b: { objectId: "lamp", local: [0, 0, 0], world: [1, 1, 2] }, label: null }),
     "a new dimension with one end on S": (d) => (d.dimensions.d9 = { a: { objectId: "table", local: [0, 0, 0], world: [1, 0, 2] }, b: { objectId: "shelf", local: [0, 0, 0], world: [-3, 0, 0] }, label: null }),
     "a dimension on S edited": (d) => (d.dimensions.d1.label = "high"),
-    "the start moved onto S": (d) => (d.view.start = { body: "t.walk", place: "card" }),
+    "the start moved onto S": (d) => (d.view.start = { body: "t.mover", place: "card" }),
     "the start moved off S": (d) => (d.view.start.place = null),
-    "a trait of K edited": (d) => (d.traits.seats.p3 = { name: "Three" }),
+    "a trait of K edited": (d) => (d.traits["t.seats"].p3 = { name: "Three" }),
   };
   // and edits that touch nothing T was made from: the extract goes ahead
   const HARMLESS = {
@@ -599,7 +570,7 @@ describe("extract's compare-and-set: anything T was made from that changes meanw
     "a reference into S added from outside": (d) => (d.objects.shelf.traits = { "t.lever": { target: "lamp" } }),
   };
 
-  /** Extract the table with K = [seats], `edit` landing on the host while T is being made. */
+  /** Extract the table with K = [t.seats], `edit` landing on the host while T is being made. */
   async function racing(edit) {
     const repo = new FakeRepo();
     const host = fixture(repo);
@@ -612,36 +583,34 @@ describe("extract's compare-and-set: anything T was made from that changes meanw
       return h;
     };
     const before = JSON.parse(JSON.stringify(host.doc()));
-    const res = await extractObjects(api, ["table"], ["seats"]);
+    const res = await extractObjects(api, ["table"], ["t.seats"]);
     return { res, host, before, writes, notices };
   }
 
-  for (const [name, edit] of Object.entries(EDITS)) {
-    it(`${name}: refused, the host only as the edit left it`, async () => {
-      const { res, host, before, writes, notices } = await racing(edit);
-      expect(res).toBe(null);
-      expect(writes.get(host.url)).toBe(1); // the edit's own change, nothing of extract's
-      const want = JSON.parse(JSON.stringify(before));
-      edit(want);
-      expect(JSON.parse(JSON.stringify(host.doc()))).toEqual(want);
-      expect(notices).toContain("error: It changed while it was being extracted: nothing was changed here. Try again.");
-    });
-  }
+  // the wiring, one edit each way: the pure test below runs every edit against extractHost, which decides
+  it.each([["a member of S edited"]])("%s: refused, the host only as the edit left it", async (name) => {
+    const edit = EDITS[name];
+    const { res, host, before, writes, notices } = await racing(edit);
+    expect(res).toBe(null);
+    expect(writes.get(host.url)).toBe(1); // the edit's own change, nothing of extract's
+    const want = JSON.parse(JSON.stringify(before));
+    edit(want);
+    expect(JSON.parse(JSON.stringify(host.doc()))).toEqual(want);
+    expect(notices).toContain("error: It changed while it was being extracted: nothing was changed here. Try again.");
+  });
 
-  for (const [name, edit] of Object.entries(HARMLESS)) {
-    it(`${name}: extracted, the host intra-doc`, async () => {
-      const { res, host, writes } = await racing(edit);
-      expect(res).not.toBe(null);
-      expect(writes.get(host.url)).toBe(2);
-      expect(intraDoc(host.doc())).toEqual([]);
-      expect(host.doc().objects.table).toBeUndefined();
-    });
-  }
+  it.each([["an object outside S edited"]])("%s: extracted, the host intra-doc", async (name) => {
+    const { res, host, writes } = await racing(HARMLESS[name]);
+    expect(res).not.toBe(null);
+    expect(writes.get(host.url)).toBe(2);
+    expect(intraDoc(host.doc())).toEqual([]);
+    expect(host.doc().objects.table).toBeUndefined();
+  });
 
   it("extractHost against a stale plan is null for every edit above, and a change for every harmless one (the pure function, no doer)", () => {
     const repo = new FakeRepo();
     const doc = JSON.parse(JSON.stringify(fixture(repo).doc()));
-    const plan = extractPlan(doc, ["table"], { traits: ["seats"], runtime: RUNTIME, refs: REFS });
+    const plan = extractPlan(doc, ["table"], { traits: ["t.seats"], runtime: RUNTIME, refs: REFS });
     expect(extractHost(doc, plan, { link: "L", url: "automerge:t", refs: REFS })).not.toBe(null);
     for (const [name, edit] of Object.entries(EDITS)) {
       const now = JSON.parse(JSON.stringify(doc));

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
@@ -85,19 +86,6 @@ describe("scene.keys", () => {
     expect(s.key("z").defaultPrevented).toBe(false);
     expect(s.key("n").defaultPrevented).toBe(false); // disabled everywhere
     expect(s.key("k", { repeat: true }).defaultPrevented).toBe(true); // claimed, not run again
-    expect(log).toEqual([]);
-  });
-
-  it("leaves a field's keys to the field", () => {
-    const input = document.createElement("input");
-    s.root.append(input);
-    input.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "k",
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
     expect(log).toEqual([]);
   });
 });

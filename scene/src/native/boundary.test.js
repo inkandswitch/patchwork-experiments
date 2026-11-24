@@ -48,7 +48,7 @@ const LAYERS = {
 const FACE = "stage/public.js";
 
 /** The contract pages and their most lines. */
-const PAGES = { "STAGE.md": 200, "NATIVE.md": 400, "EDITOR.md": 300, "CONVENTIONS.md": 200 };
+const PAGES = { "STAGE.md": 200, "API.md": 200, "NATIVE.md": 400, "EDITOR.md": 300, "CONVENTIONS.md": 200 };
 
 /** Other pages whose invariants (C…: README.md, "Content") are named by tests too. */
 const LABELLED = ["README.md"];
@@ -156,14 +156,14 @@ describe("the layers and the kernel's boundary", () => {
     expect(offered.filter((n) => !used.has(n))).toEqual([]);
   });
 
-  it("the kernel runs on the stage's one time: no page clock or timer in a kernel module but stage/time.js (STAGE.md, `api`: now, after, frame)", () => {
+  it("the kernel runs on the stage's one time: no page clock or timer in a kernel module but stage/time.js (API.md, `api`: now, after)", () => {
     const PAGE = /\b(Date\.now|setTimeout|setInterval|requestAnimationFrame)\b/;
     const code = (m) => readFileSync(join(SRC, m), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     const wrong = modules.filter((m) => layerOf(m) === "kernel" && m !== "stage/time.js" && PAGE.test(code(m)));
     expect(wrong).toEqual([]);
   });
 
-  it("each contract page fits: STAGE.md ≤ 200 lines, NATIVE.md ≤ 400, EDITOR.md ≤ 300, CONVENTIONS.md ≤ 200", () => {
+  it("each contract page fits: STAGE.md ≤ 200 lines, API.md ≤ 200, NATIVE.md ≤ 400, EDITOR.md ≤ 300, CONVENTIONS.md ≤ 200", () => {
     for (const [page, most] of Object.entries(PAGES)) {
       const lines = readFileSync(join(ROOT, page), "utf8").replace(/\n$/, "").split("\n").length;
       expect(lines, page).toBeLessThanOrEqual(most);

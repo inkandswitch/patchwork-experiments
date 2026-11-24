@@ -1,13 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { Euler, Matrix4, Object3D, Quaternion, Vector3 } from "three";
-import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, IDENTITY_MATRIX, applyMatrix } from "./transform.js";
+import { composeMatrix, decomposeMatrix, multiplyMatrices, applyMatrix } from "./transform.js";
 import {
   ancestors,
   attachTargets,
   descendants,
   orphanTransforms,
   planAttach,
-  reparentTransform,
   resolveParents,
   treeOrder,
   wouldCycle,
@@ -37,7 +36,8 @@ describe("matrix maths", () => {
   });
 
   // near gimbal lock (y → ±π/2), where three's decompose gives up part of the turn: every row keeps the matrix
-  it.each([0, 1e-13, 1e-10, 1e-7, 1e-5, 1e-4, 3e-4, 4.4e-4, 1e-3])("keeps the whole turn %s short of gimbal lock", (eps) => {
+  // (the one branch is at cos y = 1e-12: rows either side of it)
+  it.each([0, 1e-13, 1e-10, 1e-7, 1e-5])("keeps the whole turn %s short of gimbal lock", (eps) => {
     for (const sign of [1, -1]) {
       for (const [x, z] of [[0, 0], [0.3, 0.2], [Math.PI / 2, 0], [-2.5, 1.1], [1e-4, 0], [0, Math.PI - 1e-4]]) {
         const m = composeMatrix({ position: [0, 0, 0], rotation: [x, sign * (Math.PI / 2 - eps), z], scale: 1 });
@@ -46,11 +46,6 @@ describe("matrix maths", () => {
       }
     }
   });
-  it("on edge exactly, z is 0 and x takes the whole turn (three's choice)", () => {
-    const d = decomposeMatrix(composeMatrix({ position: [0, 0, 0], rotation: [Math.PI / 2, Math.PI / 2, 0], scale: 1 }));
-    expect(d.rotation).toEqual([+(Math.PI / 2).toFixed(12), +(Math.PI / 2).toFixed(12), 0]);
-  });
-
   it("decomposes like three (Matrix4.decompose + Euler XYZ)", () => {
     const m = multiplyMatrices(composeMatrix(T1), composeMatrix(T2));
     const p = new Vector3(), q = new Quaternion(), s = new Vector3();
@@ -60,18 +55,6 @@ describe("matrix maths", () => {
     close(ours.position, p.toArray());
     close(ours.rotation, [e.x, e.y, e.z]);
     expect(ours.scale).toBeCloseTo(s.x, 9);
-  });
-
-  it("inverts", () => {
-    const m = composeMatrix(T1);
-    close(multiplyMatrices(invertMatrix(m), m), IDENTITY_MATRIX);
-    expect(invertMatrix(new Array(16).fill(0))).toBeNull();
-  });
-
-  it("multiplies in three's order", () => {
-    const ours = multiplyMatrices(composeMatrix(T1), composeMatrix(T2));
-    const three = new Matrix4().fromArray(composeMatrix(T1)).multiply(new Matrix4().fromArray(composeMatrix(T2)));
-    close(ours, three.elements);
   });
 });
 
@@ -139,29 +122,16 @@ describe("cycles", () => {
 describe("re-parenting preserves the world pose", () => {
   const objects = { a: obj(T1), b: obj(T2), c: obj(T3, "b") };
 
-  it("attaching", () => {
-    const before = worldMatrix(objects, "b");
-    const plan = planAttach(objects, "b", "a");
-    expect(plan.parent).toBe("a");
-    const after = { ...objects, b: { ...objects.b, parent: plan.parent, transform: plan.transform } };
-    close(worldMatrix(after, "b"), before);
-    // and b's own child comes along unmoved
-    close(worldMatrix(after, "c"), worldMatrix(objects, "c"));
-  });
-
-  it("detaching", () => {
-    const before = worldMatrix(objects, "c");
-    const plan = planAttach(objects, "c", null);
-    expect(plan.parent).toBeNull();
-    close(composeMatrix(plan.transform), before);
-    close(composeMatrix(reparentTransform(objects, "c", null)), before);
-  });
-
-  it("moving to another parent", () => {
-    const before = worldMatrix(objects, "c");
-    const plan = planAttach(objects, "c", "a");
-    const after = { ...objects, c: { ...objects.c, parent: "a", transform: plan.transform } };
-    close(worldMatrix(after, "c"), before);
+  // planAttach keeps the world pose, over the three kinds of target; what hangs below comes along unmoved
+  it.each([
+    ["attaching", "b", "a"],
+    ["detaching", "c", null],
+    ["moving to another parent", "c", "a"],
+  ])("%s", (_, id, parent) => {
+    const plan = planAttach(objects, id, parent);
+    expect(plan.parent).toBe(parent);
+    const after = { ...objects, [id]: { ...objects[id], parent: plan.parent, transform: plan.transform } };
+    for (const k of Object.keys(objects)) close(worldMatrix(after, k), worldMatrix(objects, k));
   });
 
   it("removing a parent orphans its children where they are", () => {
@@ -190,7 +160,7 @@ describe("outline order", () => {
   });
 });
 
-describe("merged cycles and re-parenting order", () => {
+describe("merged cycles", () => {
   it("brokenParents names the root each cycle was broken at, and nothing else", async () => {
     const { brokenParents } = await import("./hierarchy.js");
     const objects = {

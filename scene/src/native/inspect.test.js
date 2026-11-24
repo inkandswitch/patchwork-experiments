@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The natives' `inspect()` (CONVENTIONS.md, "Inspect"): each a frozen
 // plain-JSON snapshot of what it holds, read with collect("inspect"). On one
 // stage: a claim, a pose hold, a process, an audience policy and a link.
@@ -32,7 +33,7 @@ describe("the natives' inspect snapshots", () => {
       },
     };
     const objects = { x: object({ name: "X" }), y: object({ name: "Y" }), L: object({ name: "B", sourceUrl: b.url, providerId: LINK, renderUrl: null }) };
-    s = await mountStage({ repo, extensions: [t], doc: { objects, order: Object.keys(objects) }, viewerId: "viewer:ana" });
+    s = await mountStage({ natives: true,  repo, extensions: [t], doc: { objects, order: Object.keys(objects) }, viewerId: "viewer:ana" });
     await until(() => s.debug.view.stageAt(["L"]), 2000);
     // (t.x runs in every doc: the outermost's)
     const api = s.api("t.x");

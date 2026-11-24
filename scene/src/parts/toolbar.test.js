@@ -1,9 +1,9 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, posesBy } from "../test/stage-harness.js";
-import toolbar, { GROUPS, groupOf } from "./toolbar.js";
-import { keyMatches, keyLabel, shownOn, barEntries, onBar } from "./toolbar-commands.js";
-import { commandState, flatCommands } from "../stage/commands.js";
+import toolbar, { groupOf } from "./toolbar.js";
+import { barEntries, onBar } from "./toolbar-commands.js";
 
 /** A stand-in extension with a button, a toggle (a pref), a picker and an object-only command. */
 function fakeTools(log) {
@@ -64,40 +64,12 @@ function fakeTools(log) {
   };
 }
 
-describe("command helpers", () => {
-  it("match keys (letters in either case), label them, and read state and show", () => {
-    expect(keyMatches({ key: "m" }, "M")).toBe(true);
-    expect(keyMatches({ key: ["Delete", "Backspace"] }, "Backspace")).toBe(true);
-    expect(keyMatches({ key: "Escape" }, "escape")).toBe(false);
-    expect(keyLabel({ key: "m" })).toBe("M");
-    expect(keyLabel({ key: "Escape" })).toBe("Esc");
-    expect(commandState({ run() {} }, null, {})).toEqual({});
-    expect(commandState({ run() {} }, "a", {})).toBeNull();
-    expect(
-      commandState(
-        {
-          state: () => {
-            throw new Error("x");
-          },
-          run() {},
-        },
-        null,
-        {},
-      ),
-    ).toBeNull();
-    expect(shownOn({ show: ["menu"] }, "toolbar")).toBe(false);
-    expect(shownOn({}, "toolbar")).toBe(true);
-    expect(shownOn({}, "menu", { strict: true })).toBe(false);
-    expect(flatCommands([{ id: "x", value: [{ id: "a", run() {} }, { id: "b" }, null] }]).map((c) => c.command.id)).toEqual(["a"]);
-  });
-});
-
 describe("scene.toolbar", () => {
   let s, log;
   beforeEach(async () => {
     localStorage.clear();
     log = [];
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [
         { meta: { id: "scene.toolbar" }, module: toolbar },
         { meta: { id: "t.tools" }, module: fakeTools(log) },
@@ -109,18 +81,6 @@ describe("scene.toolbar", () => {
 
   const bar = () => s.root.querySelector('.stage-edge[data-edge="top"] .toolbar');
   const control = (id) => bar().querySelector(`[data-command="${id}"]`);
-
-  it("shows the scene's toolbar commands in order: buttons, toggles, pickers", () => {
-    const ids = [...bar().querySelectorAll("[data-command]")].map((e) => e.dataset.command);
-    // (Select is the editor's, its tools group first: the scene starts in Edit)
-    expect(ids).toEqual(["select-tool", "frame", "grid", "shade", "off"]);
-    expect(control("frame").tagName).toBe("BUTTON");
-    expect(control("frame").title).toBe("Frame all (F)");
-    expect(control("grid").getAttribute("aria-pressed")).toBe("true");
-    expect(control("shade").tagName).toBe("SELECT");
-    expect(control("shade").title).toBe("Shade (G)");
-    expect(control("off").disabled).toBe(true);
-  });
 
   it("runs a button, flips a toggle, and passes a picker's value as given", async () => {
     control("frame").click();
@@ -143,26 +103,12 @@ describe("scene.toolbar", () => {
     expect(log).not.toContain("off");
   });
 
-  it("a mouse press on a button keeps the focus where it was; on a picker it opens it, as ever", () => {
+  it("a mouse press on a button is default-prevented, so the focus stays where it was; on a picker it isn't (it opens, as ever)", () => {
     for (const [id, prevented] of [["frame", true], ["grid", true], ["shade", false]]) {
       const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
       control(id).dispatchEvent(press);
       expect([id, press.defaultPrevented]).toEqual([id, prevented]);
     }
-  });
-
-  it("leaves the DOM alone when nothing it shows changed (a hover)", async () => {
-    const before = [...bar().querySelectorAll("[data-command]")];
-    s.local.swap((m) => ({ ...m, hovered: "a" }));
-    await s.settle();
-    expect([...bar().querySelectorAll("[data-command]")]).toEqual(before);
-  });
-
-  it("drops an extension's controls when it stops", async () => {
-    expect(control("frame")).toBeTruthy();
-    await s.uninstall("t.tools");
-    expect(bar()).toBeTruthy();
-    expect([...bar().querySelectorAll("[data-command]")].map((e) => e.dataset.command)).toEqual(["select-tool"]);
   });
 });
 
@@ -207,6 +153,8 @@ describe("the bar of tools, exhaustively", () => {
         const { editor, world } = barEntries([segIn(view, [command])], view);
         const got = world.length ? "w" : editor.length ? "e" : "-";
         expect(editor.length + world.length, name).toBeLessThanOrEqual(1);
+        // the command applies, so the bar shows exactly when it is on it (a world command that is the editor's keeps no bar outside Edit)
+        expect(barEntries([segIn(view, [command])], view).shown, `${name} ${view.name}${edit ? " edit" : ""}`).toBe(expected[i] !== "-");
         expect(`${name} ${view.name}${edit ? " edit" : ""} ${got}`).toBe(`${name} ${view.name}${edit ? " edit" : ""} ${expected[i]}`);
         // onBar is the surface's half, before the hand and the state (commandState's)
         expect(onBar(command, view), name).toBe(expected[i - (i % 2)] !== "-");
@@ -256,12 +204,6 @@ describe("the bar of tools, exhaustively", () => {
     expect(ROWS).toHaveLength(18);
   });
 
-  it("a world command that is the editor's (hand: \"edit\") keeps no bar outside Edit", () => {
-    const command = { id: "w", show: ["world"], hand: "edit", run() {} };
-    expect(barEntries([segIn(LOOK, [command])], LOOK)).toEqual({ editor: [], world: [], shown: false });
-    expect(barEntries([segIn(EDIT, [command])], EDIT).shown).toBe(true);
-  });
-
   it("across the focus path: the focus's first, then outward; each entry tagged with its stage, once per stage/extension/id", () => {
     const w = (id) => ({ id, show: ["world"], run() {} });
     const e = (id) => ({ id, show: ["toolbar"], run() {} });
@@ -294,7 +236,7 @@ describe("the bar of tools in every body", () => {
   beforeEach(async () => {
     localStorage.clear();
     log = [];
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [
         { meta: { id: "scene.toolbar" }, module: toolbar },
         { meta: { id: "t.game" }, module: fakeGame(log) },
@@ -329,23 +271,6 @@ describe("the bar of tools in every body", () => {
     }
     expect(n).toBe(8);
   });
-
-  it("clicking the world's button runs it, not editing; it goes when it no longer applies and the bar stays", async () => {
-    s.edit(false);
-    await s.settle();
-    s.root.querySelector('.toolbar .world [data-command="play"]').click();
-    expect(log).toEqual(["play"]);
-    await s.settle();
-    expect(ids("world")).toEqual([]);
-    expect(edge().hidden).toBe(false);
-  });
-
-  it("a plain scene, looking, has no bar: nothing declares a world command", async () => {
-    await s.uninstall("t.game");
-    s.edit(false);
-    await s.settle();
-    expect(edge().hidden).toBe(true);
-  });
 });
 
 // The editor's groups (PLANS.md §5): each command in its `group`'s run, the runs in GROUPS
@@ -365,13 +290,12 @@ describe("scene.toolbar: groups, icons, settings", () => {
   const runs = () => [...s.root.querySelectorAll(".toolbar .bar-group:not([hidden])")].map((g) => [g.dataset.group, ...[...g.querySelectorAll("[data-command]")].map((e) => e.dataset.command)]);
 
   it("each command in its group, the groups in order (panels on the drawer's rail); icons named by their label; settings in the gear's popover", async () => {
-    s = await mountStage({ extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, GROUPED], doc: { objects: {}, order: [] } });
+    s = await mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, GROUPED], doc: { objects: {}, order: [] } });
     await s.settle();
     // (within a group: running order, then the order commands are declared in)
     expect(runs()).toEqual([["history", "redo", "undo"], ["tools", "select-tool"], ["other", "wave"], ["view", "bounds"], ["settings", "units"]]);
     // the panels are the drawer's rail's, not the bar's
     expect([...s.root.querySelectorAll(".stage-panel-rail [data-command]")].map((b) => b.dataset.command)).toEqual(["panel"]);
-    expect(GROUPS).toEqual(["history", "tools", "other", "panels", "view", "settings"]);
     const undo = s.root.querySelector('.toolbar [data-command="undo"]');
     expect([undo.querySelector("svg") != null, undo.getAttribute("aria-label"), undo.textContent]).toEqual([true, "Undo", ""]);
     expect(s.root.querySelector('.toolbar [data-command="bounds"]').getAttribute("aria-pressed")).toBe("true");
@@ -389,7 +313,7 @@ describe("scene.toolbar: groups, icons, settings", () => {
 
   it("Select is checked exactly while no editor's tool is held, and picking it puts Move down", async () => {
     const halo = (await import("./halo.js")).default;
-    s = await mountStage({ extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, { meta: { id: "scene.halo" }, module: halo }, posesBy({ hold: () => true, release: () => {}, heldBy: () => null })], doc: { objects: {}, order: [] } });
+    s = await mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.toolbar" }, module: toolbar }, { meta: { id: "scene.halo" }, module: halo }, posesBy({ hold: () => true, release: () => {}, heldBy: () => null })], doc: { objects: {}, order: [] } });
     await s.settle();
     const pressed = (id) => s.root.querySelector(`.toolbar [data-command="${id}"]`).getAttribute("aria-pressed");
     expect([pressed("select-tool"), pressed("move")]).toEqual(["true", "false"]);

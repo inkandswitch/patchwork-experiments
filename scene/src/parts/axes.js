@@ -7,6 +7,7 @@
 import { editing } from "./editing.js";
 import { perFocus } from "../per-focus.js";
 import css from "./axes.css?inline";
+import { resolveCssColor } from "../stage/public.js";
 import { gridFor } from "../units.js";
 
 const TRIAD_PX = 96;
@@ -67,9 +68,8 @@ export default {
       triadKey = "";
       return { f, layer, labels: f.labels() };
     });
-    const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
-    const FALLBACK = [0xd03030, 0x30b040, 0x3060e0];
-    const axisColors = (theme) => [theme?.axisX, theme?.axisY, theme?.axisZ].map((c, i) => color(c, FALLBACK[i]));
+    // its own colour tokens (axes.css), read again as the theme changes
+    const axisColors = () => ["x", "y", "z"].map((k) => new THREE.Color().setRGB(...resolveCssColor(api.root, `--scene-axis-${k}`), THREE.SRGBColorSpace));
 
     // One label set (the focus facet's labels()), so the axes' and the triad's are set together.
     let axisItems = [];
@@ -106,14 +106,14 @@ export default {
       if (!here) return;
       const { f, layer } = here;
       const on = drawn();
-      const len = on ? axisLength(f.sceneBox(), { grid: pref("grid", true) !== false, unit: pref("units", "m") }) : 0;
+      const len = on ? axisLength(f.box(null), { grid: pref("grid", true) !== false, unit: pref("units", "m") }) : 0;
       const next = `${on}|${len}`;
       if (next === key) return;
       key = next;
       clearGroup(layer);
       axisItems = [];
       if (on) {
-        const cols = axisColors(theme);
+        const cols = axisColors();
         AXES.forEach((_, i) => {
           const end = [0, 0, 0];
           end[i] = len;
@@ -140,7 +140,7 @@ export default {
 
     function buildTriad() {
       clearGroup(triad);
-      const cols = axisColors(theme);
+      const cols = axisColors();
       const up = new THREE.Vector3(0, 1, 0);
       AXES.forEach((_, i) => {
         const d = new THREE.Vector3(i === 0 ? 1 : 0, i === 1 ? 1 : 0, i === 2 ? 1 : 0);

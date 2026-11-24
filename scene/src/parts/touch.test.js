@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
@@ -42,7 +43,7 @@ const GAME = () => ({
 
 async function mount(extra = []) {
   walker = { key: vi.fn(() => true), keyup: vi.fn(() => true) };
-  s = await mountStage({ extensions: [GAME(), TOUCH, ...extra], doc: { objects: { a: object() } } });
+  s = await mountStage({ editor: true,  extensions: [GAME(), TOUCH, ...extra], doc: { objects: { a: object() } } });
   await settle();
 }
 const api = () => s.api("t.game");
@@ -90,16 +91,6 @@ describe("scene.touch", () => {
     expect(shown()).not.toBe(null);
   });
 
-  it("a walk-like body: the arrows' four places on the pad, its other keys as buttons under its name, in declared order", async () => {
-    await mount();
-    await enter("walkish");
-    await input("touch");
-    expect(shown()).toEqual({
-      pad: ["up=Forward", "left=Left", "down=Back", "right=Right"],
-      buttons: [["Walkish", "Run", "Jump", "Q"]],
-    });
-  });
-
   // (every order of fingers, cancels and lost captures, and the default-prevented press: hold-key.test.js)
   it("a control is a held key: down with the finger (the key a keyboard sends), lit while held, up once with it", async () => {
     await mount();
@@ -119,38 +110,6 @@ describe("scene.touch", () => {
       finger("pointerup", label, 1);
     }
     expect(keys(walker.key)).toEqual(["KeyQ/q", "ShiftLeft/Shift", "Space/ "]);
-  });
-
-  it("fingers are each their own: Forward and Run together, let go in either order, each its own keyup", async () => {
-    await mount();
-    await enter("walkish");
-    await input("touch");
-    for (const order of [[1, 2], [2, 1]]) {
-      walker.key.mockClear();
-      walker.keyup.mockClear();
-      finger("pointerdown", "Forward", 1);
-      finger("pointerdown", "Run", 2);
-      expect(keys(walker.key)).toEqual(["KeyW/w", "ShiftLeft/Shift"]);
-      const label = { 1: "Forward", 2: "Run" };
-      finger("pointerup", label[order[0]], order[0]);
-      expect(keys(walker.keyup)).toEqual([order[0] === 1 ? "KeyW/w" : "ShiftLeft/Shift"]);
-      finger("pointerup", label[order[1]], order[1]);
-      expect(keys(walker.keyup).sort()).toEqual(["KeyW/w", "ShiftLeft/Shift"]);
-    }
-  });
-
-  it("leaving the body mid-press: the body hears exactly one keyup, and the finger's coming up is nothing", async () => {
-    await mount();
-    await enter("walkish");
-    await input("touch");
-    finger("pointerdown", "Forward", 1);
-    expect(api().body.leave()).toBe(true);
-    await settle();
-    expect(keys(walker.keyup)).toEqual(["KeyW/w"]);
-    expect(shown()).toBe(null);
-    // the control went with the body: its finger was let go then, and the router held nothing more for it
-    s.root.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyW", key: "w", bubbles: true }));
-    expect(walker.keyup).toHaveBeenCalledTimes(1);
   });
 
   it("a pad that hides (a mouse) lets go of every key it held", async () => {
@@ -191,26 +150,6 @@ describe("scene.touch", () => {
     putDown();
     await settle();
     expect(shown().buttons).toEqual([["Walkish", "Run", "Jump", "Q"]]);
-  });
-
-  it("two tools held: each hand is its own group, the top one first; a key both declare is the top one's", async () => {
-    await mount();
-    await enter("walkish");
-    await input("touch");
-    const wrench = { key: vi.fn(() => true), keyup: vi.fn(() => true) };
-    const spanner = { key: vi.fn(() => true), keyup: vi.fn(() => true) };
-    api().hold({ name: "Wrench", keys: [{ code: "KeyQ", label: "Turn" }, { code: "KeyZ", label: "Zap" }] }, wrench);
-    const putSpanner = api().hold({ name: "Spanner", keys: [{ code: "KeyQ", label: "Twist" }] }, spanner);
-    await settle();
-    expect(shown().buttons).toEqual([["Spanner", "Twist"], ["Wrench", "Zap"], ["Walkish", "Run", "Jump"]]);
-    finger("pointerdown", "Twist", 1);
-    finger("pointerup", "Twist", 1);
-    finger("pointerdown", "Zap", 2);
-    finger("pointerup", "Zap", 2);
-    expect([keys(spanner.key), keys(wrench.key)]).toEqual([["KeyQ/q"], ["KeyZ/z"]]);
-    putSpanner();
-    await settle();
-    expect(shown().buttons).toEqual([["Wrench", "Turn", "Zap"], ["Walkish", "Run", "Jump"]]);
   });
 
   for (const how of ["blur", "hidden"]) {

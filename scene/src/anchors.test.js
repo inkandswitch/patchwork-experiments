@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Matrix4, Vector3 } from "three";
-import { composeMatrix, detachAnchor, distance, localToWorld, makeAnchor, normalizeTransform, resolveAnchor, worldToLocal } from "./anchors.js";
+import { composeMatrix, detachAnchor, localToWorld, makeAnchor, normalizeTransform, resolveAnchor, worldToLocal } from "./anchors.js";
 
 const T = { position: [1, 2, 3], rotation: [0.3, -1.1, 2.0], scale: 2.5 };
 
@@ -29,8 +29,5 @@ describe("anchors", () => {
     const d = detachAnchor(anchor, { a: { transform: { ...T, position: [2, 2, 3] } } });
     expect(d.objectId).toBeNull();
     expect(d.world[0]).toBeCloseTo(4);
-  });
-  it("measures", () => {
-    expect(distance([0, 0, 0], [3, 4, 0])).toBe(5);
   });
 });

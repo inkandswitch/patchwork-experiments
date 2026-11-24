@@ -75,8 +75,8 @@ run once per view, whatever the focus, and work on the focus doc.
 
 A `scene:extension` adds behaviour or UI without the scene knowing what it
 means; a `scene:template` lays out an empty scene; a `scene:part` is in the
-parts bin. Extensions never import one another. [STAGE.md](STAGE.md) is the
-contract.
+parts bin. Extensions never import one another. [STAGE.md](STAGE.md) and
+[API.md](API.md) are the contract.
 
 ## Content
 
@@ -260,7 +260,7 @@ and run `node scripts/check-kit.mjs --fix` at the repo root.
 
 ## Where to look
 
-[STAGE.md](STAGE.md) is the kernel's contract, [NATIVE.md](NATIVE.md) the
+[STAGE.md](STAGE.md) and [API.md](API.md) are the kernel's contract, [NATIVE.md](NATIVE.md) the
 native services, [EDITOR.md](EDITOR.md) the editor and the commands packages
 meet it by, [CONVENTIONS.md](CONVENTIONS.md) what packages agree among
 themselves; [DESIGN.md](DESIGN.md) the idea, [HISTORY.md](HISTORY.md) how and

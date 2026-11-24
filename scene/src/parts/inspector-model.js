@@ -165,32 +165,6 @@ export function buildSummary(load, now) {
   return `Up to date · built ${when}`;
 }
 
-// ─── what extensions contribute: commands ───────────────────────────────────
-
-/**
- * Walk what api.collect gathered, `first`'s own first, then the rest in
- * running order: pick(ext, entry) → what to keep, or null. One extension's
- * value that isn't a list (or whose iterator throws) contributes nothing.
- * @param {{ id: string, value: any }[]} collected
- */
-function contributed(collected, first, pick) {
-  const mine = [];
-  const rest = [];
-  for (const { id: ext, value } of collected ?? []) {
-    let list;
-    try {
-      list = Array.isArray(value) ? value : value && typeof value[Symbol.iterator] === "function" ? [...value] : [];
-    } catch {
-      continue;
-    }
-    for (const entry of list) {
-      const kept = entry ? pick(ext, entry) : null;
-      if (kept) (ext === first ? mine : rest).push(kept);
-    }
-  }
-  return [...mine, ...rest];
-}
-
 /** An entry's state(target, ctx); one that throws doesn't apply, and says so. */
 function stateOf(ext, kind, entry, target, ctx) {
   try {
@@ -199,46 +173,6 @@ function stateOf(ext, kind, entry, target, ctx) {
     console.warn(`[scene] “${ext}” ${kind} “${entry.id}” failed`, err);
     return null;
   }
-}
-
-// ─── commands ────────────────────────────────────────────────────────────────
-
-const shownOnInspector = (c) => (Array.isArray(c?.show) ? c.show.includes("inspector") : typeof c?.show === "string" ? c.show === "inspector" : true);
-
-/**
- * The commands that apply to `target` and are meant for the inspector, as
- * [{ ext, command, state }]: `first`'s own first, then the rest in running
- * order. A command without state() applies only to the scene, so never here;
- * one whose state throws doesn't apply (with a warning).
- * @param {{ id: string, value: any }[]} collected  api.collect("commands")
- */
-export function commandsFor(collected, target, ctx, first = null) {
-  if (target == null) return [];
-  return contributed(collected, first, (ext, command) => {
-    if (command.id == null || typeof command.run !== "function" || typeof command.state !== "function") return null;
-    if (!shownOnInspector(command)) return null;
-    const state = stateOf(ext, "command", command, target, ctx);
-    if (state == null || state === false) return null;
-    return { ext, command, state: typeof state === "object" ? state : {} };
-  });
-}
-
-/** A key that changes when the command buttons would. */
-export function commandsKey(list) {
-  return JSON.stringify(
-    list.map(({ ext, command, state }) => [
-      ext,
-      command.id,
-      command.name ?? "",
-      state.label ?? null,
-      state.title ?? "",
-      !!state.disabled,
-      state.checked ?? null,
-      state.value ?? null,
-      Array.isArray(state.choices) ? state.choices.map((c) => [c?.value ?? null, c?.label ?? ""]) : null,
-      Array.isArray(state.options) ? state.options.map((c) => [c?.value ?? null, c?.label ?? ""]) : null,
-    ]),
-  );
 }
 
 // ─── documents: the inspector's sections ────────────────────────────────────

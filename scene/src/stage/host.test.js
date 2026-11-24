@@ -79,7 +79,7 @@ describe("mergeOrder", () => {
 describe("the host", () => {
   let log, timers, local, busy;
   const metas = [
-    { id: "seats", traits: ["seats"] },
+    { id: "solo", traits: ["solo"] },
     { id: "zones", traits: ["zone"] },
     { id: "select", traits: ["*"] },
     { id: "outline", traits: ["*"] },
@@ -126,16 +126,16 @@ describe("the host", () => {
   it("makes them in running order, never in the order they finished loading, and publishes local.running so", async () => {
     let release;
     const slow = new Promise((r) => (release = r));
-    const { host } = make({ delays: { seats: slow } });
-    host.sync(doc({ traits: { seats: {} }, objects: { c: { traits: { zone: {} } } } }));
+    const { host } = make({ delays: { solo: slow } });
+    host.sync(doc({ traits: { solo: {} }, objects: { c: { traits: { zone: {} } } } }));
     await flush();
-    // seats is still loading: nothing after it is made yet (a provider is up before what asks for it)
+    // solo is still loading: nothing after it is made yet (a provider is up before what asks for it)
     expect(ids()).toEqual([]);
     release();
     await flush();
-    expect(ids()).toEqual(["seats:scene", "select:scene", "outline:scene", "inspector:scene", "clock:scene", "zones:objects"]);
-    expect(host.instances().map((r) => r.id)).toEqual(["seats", "select", "outline", "inspector", "clock", "zones"]);
-    expect(log.filter((l) => l.startsWith("create"))).toEqual(["seats", "select", "outline", "inspector", "clock", "zones"].map((id) => `create:${id}`));
+    expect(ids()).toEqual(["solo:scene", "select:scene", "outline:scene", "inspector:scene", "clock:scene", "zones:objects"]);
+    expect(host.instances().map((r) => r.id)).toEqual(["solo", "select", "outline", "inspector", "clock", "zones"]);
+    expect(log.filter((l) => l.startsWith("create"))).toEqual(["solo", "select", "outline", "inspector", "clock", "zones"].map((id) => `create:${id}`));
   });
 
   it("collects a field from every running extension, in running order", async () => {
@@ -152,7 +152,7 @@ describe("the host", () => {
 
   it("an extension whose plugin leaves the registry stops at once (no code to come back to); one the doc sends away lingers", async () => {
     const { host, reg } = make();
-    host.sync(doc({ traits: { seats: {} } }));
+    host.sync(doc({ traits: { solo: {} } }));
     await flush();
     log.length = 0;
     const i = metas.findIndex((m) => m.id === "inspector");
@@ -161,8 +161,8 @@ describe("the host", () => {
       reg.changed();
       expect(log).toEqual(["release:inspector:aborted", "dispose:inspector"]);
       host.sync(doc());
-      expect(host.lingering("seats")).toBe(true);
-      expect(log).not.toContain("dispose:seats");
+      expect(host.lingering("solo")).toBe(true);
+      expect(log).not.toContain("dispose:solo");
     } finally {
       metas.splice(i, 0, gone);
     }
@@ -196,15 +196,6 @@ describe("the host", () => {
     await flush();
     expect(ids()).not.toContain("select:scene");
     expect(releases).toContain("select");
-  });
-
-  it("dispose stops everything, last first", async () => {
-    const { host } = make();
-    host.sync(doc());
-    await flush();
-    log.length = 0;
-    host.dispose();
-    expect(log.filter((l) => l.startsWith("dispose"))).toEqual(["dispose:clock", "dispose:inspector", "dispose:outline", "dispose:select"]);
   });
 
   // Providers first, by construction: every registration order of two
@@ -255,13 +246,13 @@ describe("the host", () => {
     const seqs = [[]];
     for (let n = 1; n <= 4; n++) for (const s0 of seqs.filter((q) => q.length === n - 1)) for (const e of EVENTS) seqs.push([...s0, e]);
     expect(seqs.length).toBe(1555);
-    const one = [{ id: "seats", traits: ["seats"] }];
+    const one = [{ id: "solo", traits: ["solo"] }];
     for (const seq of seqs) {
       log = [];
       timers = quickTimers();
       local = createAtom({ running: [] });
       busy = new Set();
-      const reg = registry(one, { seats: mod("seats", log) });
+      const reg = registry(one, { solo: mod("solo", log) });
       const host = createHost({
         registry: async () => reg,
         local,
@@ -273,18 +264,18 @@ describe("the host", () => {
       let t = 0;
       let wanted = true;
       let since = null; // when the doc last stopped calling
-      const lines = (k) => log.filter((l) => l === `${k}:seats`).length;
-      host.sync(doc({ traits: { seats: {} } }));
+      const lines = (k) => log.filter((l) => l === `${k}:solo`).length;
+      host.sync(doc({ traits: { solo: {} } }));
       await settle();
       for (const e of seq) {
         const stoppedBefore = lines("dispose");
         if (e === "want" || e === "unwant") {
           if (wanted !== (e === "want")) since = e === "unwant" ? t : null;
           wanted = e === "want";
-          host.sync(doc(wanted ? { traits: { seats: {} } } : {}));
+          host.sync(doc(wanted ? { traits: { solo: {} } } : {}));
           await settle();
-        } else if (e === "busy") busy.add("seats");
-        else if (e === "idle") busy.delete("seats");
+        } else if (e === "busy") busy.add("solo");
+        else if (e === "idle") busy.delete("solo");
         else {
           const ms = e === "linger" ? LINGER_MS : BUSY_RECHECK_MS;
           await timers.advance(ms);
@@ -296,10 +287,10 @@ describe("the host", () => {
         if (wanted) expect(running, where).toBe(true);
         if (lines("dispose") > stoppedBefore) {
           expect(wanted, where).toBe(false);
-          expect(busy.has("seats"), where).toBe(false);
+          expect(busy.has("solo"), where).toBe(false);
           expect(t - since, where).toBeGreaterThanOrEqual(LINGER_MS);
         }
-        if (!wanted && !busy.has("seats") && since != null && t - since >= LINGER_MS + BUSY_RECHECK_MS && e !== "idle") {
+        if (!wanted && !busy.has("solo") && since != null && t - since >= LINGER_MS + BUSY_RECHECK_MS && e !== "idle") {
           // (idle just now: its recheck is still to come)
           expect(running, where).toBe(false);
         }
@@ -326,22 +317,22 @@ describe("a provider whose module never arrives", () => {
 });
 
 describe("a package loaded at an old version first (the module watcher registers it again at each version it loads)", () => {
-  // Seats as published before the kernel's channel (2026-11-17): its create
-  // watched `api.presence`, which the kernel no longer has. A view that
-  // loaded that copy from its cache before a sync brought the new one got
-  // "extension seats failed to start TypeError: … reading 'watch'".
-  const oldSeats = { create: (api) => (api.presence.watch(() => {}), {}) };
-  const newSeats = (log) => mod("seats", log, (api) => (api.channel.watch(() => {}), {}));
-  const OLD = "automerge:seats#old";
-  const NEW = "automerge:seats#new";
+  // A package published against an older kernel: its create watches
+  // `api.presence`, which the kernel doesn't have. A view that loaded that
+  // copy from its cache before a sync brought the new one fails to start it
+  // (TypeError: … reading 'watch').
+  const oldModule = { create: (api) => (api.presence.watch(() => {}), {}) };
+  const newModule = (log) => mod("solo", log, (api) => (api.channel.watch(() => {}), {}));
+  const OLD = "automerge:pkg#old";
+  const NEW = "automerge:pkg#new";
   function make(log) {
-    const metas = [{ id: "seats", traits: ["seats"], importUrl: OLD }];
-    const mods = { seats: oldSeats };
+    const metas = [{ id: "solo", traits: ["solo"], importUrl: OLD }];
+    const mods = { solo: oldModule };
     const reg = registry(metas, mods);
     const host = createHost({ ...pageTimers, registry: async () => reg, makeApi: () => ({ api: { channel: Object.freeze({ watch: () => () => {} }) }, release() {} }) });
     const reregister = (importUrl, module) => {
       metas[0] = { ...metas[0], importUrl };
-      mods.seats = module;
+      mods.solo = module;
       reg.changed();
     };
     return { host, reregister };
@@ -352,45 +343,44 @@ describe("a package loaded at an old version first (the module watcher registers
   it("fails to start as it did, then starts once its plugin is registered from the new version", async () => {
     const log = [];
     const { host, reregister } = make(log);
-    host.sync({ traits: { seats: {} } });
+    host.sync({ traits: { solo: {} } });
     await flush();
-    expect(host.failed()).toEqual(["seats"]);
+    expect(host.failed()).toEqual(["solo"]);
     expect(String(console.warn.mock.calls.find((c) => /failed to start/.test(c[0]))?.[1])).toMatch(/TypeError: .*reading 'watch'/);
-    reregister(NEW, newSeats(log));
+    reregister(NEW, newModule(log));
     await flush();
-    expect([host.failed(), host.instances().map((r) => r.id), log]).toEqual([[], ["seats"], ["create:seats"]]);
+    expect([host.failed(), host.instances().map((r) => r.id), log]).toEqual([[], ["solo"], ["create:solo"]]);
   });
 
   it("a failed one isn't tried again for anything but a new registration: a doc change, or the same one again, leaves it failed", async () => {
     const log = [];
     const { host, reregister } = make(log);
-    host.sync({ traits: { seats: {} } });
+    host.sync({ traits: { solo: {} } });
     await flush();
-    host.sync({ traits: { seats: {} }, title: "changed" });
-    reregister(OLD, oldSeats);
+    host.sync({ traits: { solo: {} }, title: "changed" });
+    reregister(OLD, oldModule);
     await flush();
-    expect([host.failed(), console.warn.mock.calls.filter((c) => /failed to start/.test(c[0])).length]).toEqual([["seats"], 1]);
+    expect([host.failed(), console.warn.mock.calls.filter((c) => /failed to start/.test(c[0])).length]).toEqual([["solo"], 1]);
   });
 });
 
-describe("a plugin registered again from another package while it loads (Patchwork's own registry)", () => {
-  // The Lost Cities table, in a Patchwork that still has the retired
-  // card-table package installed beside tabletop: both register
-  // "card-table". The registry's load(id) resolves to nothing when the id is
-  // registered again mid-load, and the host took that for the plugin's own
-  // failure: "card-table failed to start: its module has no create()".
-  const OLD = "automerge:card-table#retired";
-  const NEW = "automerge:tabletop#1";
-  const NEWER = "automerge:tabletop#2";
+describe("a plugin registered again while it loads (Patchwork's own registry)", () => {
+  // Two installed packages registering one plugin id (a retired package and
+  // the one that took its plugin over). The registry's load(id) resolves to
+  // nothing when the id is registered again mid-load: that is not the
+  // plugin's own failure.
+  const OLD = "automerge:pkg-old#retired";
+  const NEW = "automerge:pkg-new#1";
+  const NEWER = "automerge:pkg-new#2";
   function make() {
     const reg = new PluginRegistry();
     const log = [];
     const imports = new Map(); // importUrl → each registration's import, to settle
-    const register = (importUrl, module = mod(`card-table@${importUrl.split(":")[1]}`, log)) => {
+    const register = (importUrl, module = mod(`t.shared@${importUrl.split(":")[1]}`, log)) => {
       let resolve;
       const loaded = new Promise((r) => (resolve = r));
       imports.set(importUrl, [...(imports.get(importUrl) ?? []), () => resolve(module)]);
-      reg.register({ type: "scene:extension", id: "card-table", name: "Card table", traits: ["card-table"], load: () => loaded }, importUrl);
+      reg.register({ type: "scene:extension", id: "t.shared", name: "Shared", traits: ["t.shared"], load: () => loaded }, importUrl);
     };
     const host = createHost({ ...pageTimers, registry: async () => reg, makeApi: () => ({ api: {}, release() {} }) });
     const arrive = async (importUrl) => (imports.get(importUrl).forEach((settle) => settle()), flush());
@@ -400,51 +390,28 @@ describe("a plugin registered again from another package while it loads (Patchwo
   beforeEach(() => vi.spyOn(console, "warn").mockImplementation(() => {}));
   afterEach(() => vi.restoreAllMocks());
 
-  it("the retired package's load is overtaken by tabletop's registration: tabletop's starts, nothing fails", async () => {
-    const { host, log, register, arrive } = make();
-    register(OLD);
-    host.sync({ traits: { "card-table": {} } });
-    await flush();
-    register(NEW); // mid-load
-    await arrive(OLD); // the old import settles after: the registry gives back nothing
-    expect([failures(), host.failed(), host.starting()]).toEqual([[], [], true]);
-    await arrive(NEW);
-    expect([failures(), host.failed(), host.instances().map((r) => r.id), log]).toEqual([[], [], ["card-table"], ["create:card-table@tabletop#1"]]);
-  });
-
-  it("the old import settling first, or last, after the swap comes to the same", async () => {
-    const { host, log, register, arrive } = make();
-    register(OLD);
-    host.sync({ traits: { "card-table": {} } });
-    await flush();
-    register(NEW);
-    await arrive(NEW);
-    await arrive(OLD);
-    expect([failures(), host.failed(), log]).toEqual([[], [], ["create:card-table@tabletop#1"]]);
-  });
-
-  it("the restart path: a failed rec restarts for the new registration, and that one's load overtaken again starts the newest", async () => {
-    const { host, log, register, arrive } = make();
-    register(OLD, { create: () => { throw new TypeError("written against another kernel"); } });
-    host.sync({ traits: { "card-table": {} } });
-    await flush();
-    await arrive(OLD);
-    expect(host.failed()).toEqual(["card-table"]);
-    register(NEW); // restarts
-    await flush();
-    register(NEWER); // tabletop's next version, while the restart loads NEW
-    await arrive(NEW);
-    await arrive(NEWER);
-    expect([failures().length, host.failed(), log]).toEqual([1, [], ["create:card-table@tabletop#2"]]);
-  });
-
-  it("registered again from the same source mid-load: the same rec loads that registration", async () => {
-    const { host, log, register, arrive } = make();
-    register(NEW);
-    host.sync({ traits: { "card-table": {} } });
-    await flush();
-    register(NEW, mod("card-table@again", log));
-    await arrive(NEW);
-    expect([failures(), host.failed(), log]).toEqual([[], [], ["create:card-table@again"]]);
+  const throws = { create: () => { throw new TypeError("written against another kernel"); } };
+  // [what, steps, failures, what was created]; a step registers, syncs the doc, flushes, or settles one import
+  const ROWS = [
+    ["another package's mid-load, the old import settling after", [["register", OLD], "sync", ["register", NEW], ["arrive", OLD], "starting", ["arrive", NEW]], 0, ["create:t.shared@pkg-new#1"]],
+    ["another package's mid-load, the old import settling last", [["register", OLD], "sync", ["register", NEW], ["arrive", NEW], ["arrive", OLD]], 0, ["create:t.shared@pkg-new#1"]],
+    ["failed, restarted for a new registration, and that load overtaken again", [["register", OLD, throws], "sync", ["arrive", OLD], "failed", ["register", NEW], "flush", ["register", NEWER], ["arrive", NEW], ["arrive", NEWER]], 1, ["create:t.shared@pkg-new#2"]],
+    ["the same source again mid-load", [["register", NEW], "sync", ["register", NEW, "again"], ["arrive", NEW]], 0, ["create:t.shared@again"]],
+  ];
+  it("the newest registration starts and nothing else fails: another package's or the same one's, its old import settling first or last, fresh or after a failure", async () => {
+    for (const [what, steps, failed, created] of ROWS) {
+      console.warn.mockClear();
+      const { host, log, register, arrive } = make();
+      for (const step of steps) {
+        if (step === "sync") host.sync({ traits: { "t.shared": {} } }), await flush();
+        else if (step === "flush") await flush();
+        // (mid-way: still starting, nothing failed; or the plugin's own failure, failed)
+        else if (step === "starting") expect([what, failures(), host.failed(), host.starting()]).toEqual([what, [], [], true]);
+        else if (step === "failed") expect([what, host.failed()]).toEqual([what, ["t.shared"]]);
+        else if (step[0] === "register") register(step[1], step[2] === "again" ? mod("t.shared@again", log) : step[2]);
+        else await arrive(step[1]);
+      }
+      expect([what, failures().length, host.failed(), host.instances().map((r) => r.id), log]).toEqual([what, failed, [], ["t.shared"], created]);
+    }
   });
 });

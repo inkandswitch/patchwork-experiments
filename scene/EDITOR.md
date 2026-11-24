@@ -1,7 +1,7 @@
 # The editor
 
 The editor is view plugins the scene package ships (`src/parts/`), on the
-kernel's public api ([STAGE.md](STAGE.md)); the boundary test
+kernel's public api ([API.md](API.md)); the boundary test
 (`src/native/boundary.test.js`) keeps them off its internals. This page is what
 they do and the conventions packages meet them by: commands, traits described,
 drops, templates and parts. An **edit** is the editor's write
@@ -17,6 +17,13 @@ drops, templates and parts. An **edit** is the editor's write
 | `scene.halo`, `scene.handles`, `scene.dimensions`, `scene.measure` | Move (`V`), a tool, and while it's held the selection's move, rotate and scale handles (in the parent's drawn frame, one write on release) and knobs; dimensions and their panel; Measure (`M`, the Dimensions panel's button) |
 | `scene.frame`, `scene.autoframe`, `scene.grid`, `scene.axes`, `scene.bounds`, `scene.units`, `scene.legends` | the view's aids |
 | `scene.add`, `scene.transfer`, `scene.parts`, `scene.undo` | drops; copy and paste; the parts bin; Undo and Redo |
+
+**Colours**: a part that draws declares its CSS colour tokens, each with its
+one default, in its own stylesheet, and reads them (`resolveCssColor`,
+`stage/public.js`) as `view.theme` changes: the grid's `--scene-grid-major`
+and `--scene-grid-minor`; the axes' `--scene-axis-x`, `-y`, `-z`, which the
+halo's handles take too; the dimensions' `--scene-dimension`, Measure's and a
+dimension's leader's too.
 
 ## The Edit hand
 
@@ -48,12 +55,12 @@ and shows exactly then (H13). Putting it down puts down the selection.
   open?: true,                // the target's Open (below)
   group?: string, icon?: string, order?: number,  // where it sits on the bar (below)
   state(target, ctx) → null | { title?, label?, checked?, value?, choices?, options?, disabled? },
-  run(target, value?, ctx) → void | session | input }   // ctx: api.context(hit)
+  run(target, value?, ctx) → void | session | input }   // ctx: a reader's context(hit)
 ```
 
 An instance's `commands`. What applies and running it (`hand`, `reach`, `tool`,
 `state`, `run`) are the kernel's (STAGE.md, "Commands"); every surface asks its
-`commandState` in the context it passes, `api.context(hit)`. **Open** (`open:
+`commandState` in the context it passes, a stage reader's `context(hit)`. **Open** (`open:
 true`, `src/parts/open.js`) goes into a thing to edit what's inside, in place:
 a link's (scene.links'), a package's editor for its content; a target's Open is
 the first that applies, and the inspector, the menu (after Select), the outline
@@ -113,7 +120,7 @@ A doc added by drop or paste goes to each extension whose metadata `drops`
 takes its datatype (`"*"`: any): its module's `drop(ctx, info)` → boolean (or a
 promise of one), until one says true; the
 traits it writes start its extension. A drop-only extension declares the marker
-trait its layout writes. **The drop context** `ctx` is `{ id, repo, handle,
+trait its layout writes. **The drop context** `ctx` is `{ id, repo,
 url, viewer, doc, scene, change, newId, addObject, file, content, worldOf,
 registry, local, select, notify }`, made from the focus, its writes one undo
 step. `info` is `{ url, doc, handle, group, at }`. Drops, templates, parts and
@@ -125,8 +132,8 @@ paste write the focus doc: to add to a linked doc, enter it.
 load() → { create(ctx, params) → Promise } }`. The empty scene's start screen
 lists every template from metadata, with a form for its `params`
 (`src/param-form.js`); `create` gets exactly those (`paramsBySpec`). It writes
-objects, traits and `view.start`, and its maker then arrives as the doc says
-(`api.view.arrive()`).
+objects, traits and `view.start`; written to the outermost doc, its maker
+then arrives as the doc says (the view plugin's `view.arrive()`).
 
 ### Parts
 
@@ -192,8 +199,9 @@ field as its default.
   pressed while its tab is open. A command with an `icon` (`src/parts/icons.js`) is
   drawn as it; otherwise a button, toggle (`checked`) or picker (`choices`,
   `value`).
-- **The body chip** (`scene.body`): Look, the bodies with `here` not false,
-  Leave; **Edit** beside it; who's here in the focus doc, with body and top
+- **The body chip** (`scene.body`): Look, the bodies with `here` not false
+  (a body def's `here: false`: it needs a place, a seat's or a station's, and
+  is entered by that thing's verb), Leave; **Edit** beside it; who's here in the focus doc, with body and top
   hand; the Esc hint (the layer the next Escape pops).
 - **The clock chips** (`scene.clock-chip`): one per focus-path doc with a
   process (its `"clock"` service), ▶ or ⏸, pausing or resuming that doc.

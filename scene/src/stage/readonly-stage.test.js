@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // I6, a read-only stage writes nothing, through its api or its repo
 // (STAGE.md, Invariants), checked over every read-only stage there is
 // (a pin, and a live doc acting where its handle refuses writes)
@@ -39,7 +40,7 @@ vi.mock("./readonly.js", async (importOriginal) => {
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, FakeHandle } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
+import { LINK, linkOpener } from "../test/links.js";
 import { drop, editor, part, template } from "../parts/editor.js";
 import { manualTime } from "./time.js";
 import { CLOCK_HZ, CHECKPOINT_MS } from "../native/clock.js";
@@ -127,9 +128,9 @@ async function mount(role) {
   };
   const link = (extra) => object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null, transform: T, ...extra });
   const objects = role === "pinned" ? { P: link({ at: { heads: then } }) } : { L1: link() };
-  s = await mountStage({ repo, time, extensions: [PROBE, GENERAL], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
+  s = await mountStage({ repo, time, natives: true, extensions: [PROBE, GENERAL, linkOpener()], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
   const want = role === "pinned" ? ["P"] : ["L1"];
-  for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle(1);
+  for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle();
   const stage = s.debug.view.stages().find((x) => x.path.join() === want.join());
   return { repo, time, g, then, log, arm, stage, api: stage.debug.host.record("t.probe").api };
 }
@@ -192,9 +193,7 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("template refuses", (await template(api, "t.template")) === false);
       ok("drop refuses", (await drop(api, { url: g.url, datatype: "scene" })) === false);
       ok("addObject refuses", await api.addObject(g.url).then(() => false, (e) => /read-only/.test(e.message)));
-      // the handle and the repo it was handed refuse (the only refusals it reaches are these, asked for directly)
-      for (const what of REFUSED) ok(`api.handle.${what} refuses`, (() => { try { api.handle[what]?.(() => {}); return typeof api.handle[what] !== "function"; } catch (e) { return /read-only/.test(e.message); } })());
-      // (those were asked for directly: from here, anything tried on its handle is the stage's own)
+      // the repo it was handed refuses (from here, anything tried on its handle is the stage's own)
       tried.length = 0;
       const found = await api.repo.find(s.handle.url);
       ok("a handle the repo gives out refuses", (() => { try { found.change((d) => (d.title = "through the repo")); return false; } catch (e) { return /read-only/.test(e.message); } })());
@@ -250,12 +249,11 @@ describe("I6: a read-only stage writes nothing", () => {
       const general = view.stage(0).debug.host.record("t.general").api;
       ok("a general part can't run one of its commands either", general.run({ stage: stage.n, ext: "t.probe", command: "poke" }) === false && api.doc().title !== "poked");
       const el = api.overlay();
-      const edge = api.edge("right");
+      const edge = api.overlay("right");
       ok("overlay and edge stay out of the DOM", !el.isConnected && !edge.isConnected);
       ok("no notices, drawer or prefs", ["notices", "drawer", "prefs"].every((n) => api.use(n) === null));
       api.view.select("card");
-      api.cursor("grab");
-      ok("the selection and cursor stay the viewer's", view.atom.get().selected === before.selected && s.canvas.style.cursor !== "grab");
+      ok("the selection stays the viewer's", view.atom.get().selected === before.selected);
       const ride = api.camera.ride("card");
       api.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
       ok("the camera is not its to move", typeof ride === "function" && view.viewport.held === false);

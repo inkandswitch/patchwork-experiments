@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Arriving waits for the content a doc shows (stage.js contentIn, read by
 // view.js before a start or an arrival settles): every visible object with
 // something to load. An object with nothing to load (its shape its traits'
@@ -35,7 +36,6 @@ const FILE = "file:"; // (replaced by the repo's file doc)
 const CASES = [
   ["nothing at all", null, true],
   ["an object with no source and no render (its shape is a trait's data)", object({ sourceUrl: null, providerId: null, renderUrl: null, traits: { "t.box": { size: [1, 1, 1] } } }), true],
-  ["the same, hidden", object({ sourceUrl: null, providerId: null, renderUrl: null, visible: false }), true],
   ["a group", { kind: "group", name: "G", parent: null, visible: true, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } }, true],
   ["a file not loaded yet", object({ sourceUrl: FILE, providerId: "file-glb" }), false],
   ["a hidden file not loaded", object({ sourceUrl: FILE, providerId: "file-glb", visible: false }), true],

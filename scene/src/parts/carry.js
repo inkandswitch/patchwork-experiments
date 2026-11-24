@@ -155,8 +155,8 @@ export default {
 
     // ─── carrying ───────────────────────────────────────────────────────────
 
-    /** The pointer's ray: the event's, else the stage's at its port point. */
-    const rayOf = (ev) => ev?.ray ?? (ev?.x != null && ev?.y != null ? api.ray(ev.x, ev.y) : null);
+    /** The pointer's ray: the event's. */
+    const rayOf = (ev) => ev?.ray ?? null;
 
     /** What it would be put down for: every running extension's landing, the last word winning per field. */
     function landingAt(id, point, hitId) {

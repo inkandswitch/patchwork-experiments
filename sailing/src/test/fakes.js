@@ -464,7 +464,6 @@ export function fakeWorld(doc, { content = {} } = {}) {
           view.keys = { ...view.keys, [ext]: mine };
           view.at = Date.now();
         },
-        get: () => Object.fromEntries(Object.entries(api.channel.peers()).flatMap(([s, p]) => (p.keys?.[ext] ? [[s, p.keys[ext]]] : []))),
         peers() {
           const out = {};
           for (const [s, v] of views) if (s !== session && v.here) out[s] = { viewer: v.viewer, at: v.at, keys: v.keys };

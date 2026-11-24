@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Pins, and a live doc linked twice (STAGE.md, "Views, stages and links", build step 13):
 // every occurrence of a linked doc that isn't closed is opened. A live doc
 // acts at one occurrence (the first in path order); every other live
@@ -49,7 +50,7 @@ async function mountWith(makeObjects, { log = [] } = {}) {
   const box = repo.add({ n: 1 });
   const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card", traits: { "t.card": {} } }) }, order: ["card"], traits: { "t.game": { box: box.url } } }));
   const objects = { table: object({ name: "Table", traits: { "t.host": {} } }), ...makeObjects(game) };
-  const s = await mountStage({ repo, extensions: extensions(log), doc: { objects, order: Object.keys(objects) } });
+  const s = await mountStage({ editor: true, natives: true,  repo, extensions: extensions(log), doc: { objects, order: Object.keys(objects) } });
   return { s, repo, game, box, log };
 }
 
@@ -123,7 +124,7 @@ describe("pinned: its doc at the pinned heads", () => {
     const then = game.heads();
     game.change((d) => (d.title = "G now"));
     box.change((d) => (d.n = 2));
-    s = await mountStage({ repo, extensions: extensions(log), doc: { objects: { P: link(game.url, { at: { heads: then, deps: { [box.url]: boxThen } } }) }, order: ["P"] } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: extensions(log), doc: { objects: { P: link(game.url, { at: { heads: then, deps: { [box.url]: boxThen } } }) }, order: ["P"] } });
     await until(() => running(stageAt(s, "P")));
     const pin = stageAt(s, "P");
     expect(pin.role).toBe("pinned");
@@ -137,7 +138,7 @@ describe("pinned: its doc at the pinned heads", () => {
     expect(log).toEqual(["box read-only 1"]);
   });
 
-  it("a pin at heads not here yet is drawn as its hint until they arrive", async () => {
+  it("a pin at heads not here yet is pinned but not open, with no stage", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith((g) => ({ P: link(g.url, { at: { heads: ["Hnothere"] } }) }));
     s = m.s;
@@ -155,7 +156,7 @@ describe("fixing a link at a version, and following latest again", () => {
     const box = repo.add({ n: 1 });
     const inner = repo.add(emptyScene({ title: "K", objects: {}, order: [] }));
     const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card", traits: { "t.card": {} } }), K: link(inner.url) }, order: ["card", "K"], traits: { "t.game": { box: box.url } } }));
-    s = await mountStage({ repo, extensions: extensions(log), doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: extensions(log), doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
     await until(() => running(stageAt(s, "L")) && stageAt(s, "L", "K") && log.some((e) => e.startsWith("box writable")));
     const host = s.api("t.host");
     const point = host.use("links").fixPoint("L");
@@ -207,7 +208,7 @@ describe("fixing a link at a version, and following latest again", () => {
       },
     };
     const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card" }) }, order: ["card"], traits: { "t.game": { deck: deck.url } }, packages: [{ url: folder.url }] }));
-    s = await mountStage({ repo, extensions: [keeper, ...extensions(log)], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: [keeper, ...extensions(log)], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
     await until(() => log.includes("kept") && found.includes(pkgFile.url));
     expect(s.api("t.host").use("links").fixPoint("L")).toEqual({ heads: game.heads(), deps: { [deck.url]: deck.heads(), [file.url]: file.heads() } });
   });
@@ -224,7 +225,7 @@ describe("fixing a link at a version, and following latest again", () => {
     repo.find = (url, ...rest) => (url === deck.url ? new Promise((r) => (arrive = () => r(find(url, ...rest)))) : find(url, ...rest));
     const keeper = { meta: { id: "t.keep", traits: ["t.game"] }, module: { create: (api) => (void api.repo.find(api.scene().traits["t.game"].deck), {}) } };
     const game = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": { deck: deck.url } } }));
-    s = await mountStage({ repo, extensions: [keeper, ...extensions([])], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: [keeper, ...extensions([])], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
     await until(() => arrive != null && stageAt(s, "L")?.debug.host.instanceOf("t.keep"));
     expect(s.api("t.host").use("links").fixPoint("L")).toBe(null);
     arrive();
@@ -241,7 +242,7 @@ describe("fixing a link at a version, and following latest again", () => {
     const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card", traits: { "t.card": {} } }) }, order: ["card"], traits: { "t.game": { box: box.url } } }));
     box.change((d) => (d.n = 2));
     const heads = game.heads();
-    s = await mountStage({ repo, extensions: extensions(log), doc: { objects: { P: link(game.url, { at: { heads, deps: { [box.url]: boxThen } } }) }, order: ["P"] } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: extensions(log), doc: { objects: { P: link(game.url, { at: { heads, deps: { [box.url]: boxThen } } }) }, order: ["P"] } });
     await until(() => log.includes("box read-only 1"));
     const pin = stageAt(s, "P");
     s.change((d) => (d.objects.P.at.deps[box.url] = box.heads()));
@@ -267,7 +268,7 @@ describe("fixing a link at a version, and following latest again", () => {
     const log = [];
     const repo = new FakeRepo();
     const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card", traits: { "t.card": {} } }) }, order: ["card"], traits: { "t.game": {} } }));
-    s = await mountStage({ repo, extensions: [...extensions(log), { meta: { id: "scene.inspector" }, module: inspector }], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: [...extensions(log), { meta: { id: "scene.inspector" }, module: inspector }], doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(game.url) }, order: ["table", "L"] } });
     await until(() => running(stageAt(s, "L")));
     const api = s.api("scene.inspector");
     s.edit(true);

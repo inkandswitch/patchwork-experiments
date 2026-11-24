@@ -61,13 +61,15 @@ describe("following", () => {
  * every frame. Presence is shared at once: who's here (a crash drops a view
  * from it, as the TTL would), and each computer's published t.
  */
+// (the clock's map made with the doc, as the scene datatype's init makes it; each world's replicas are copies of it, and it is never written)
+const BASE = Automerge.from({ clock: { running: true, t: 0 }, objects: { o: { transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } } } });
+
 function world(caps) {
   let wall = 1_000_000;
   // every replica's wasm handle, freed with free(): a run makes hundreds of thousands of worlds, and Automerge's memory isn't the GC's
   const handles = new Set();
   const own = (doc) => (handles.add(Automerge.getBackend(doc)), doc);
-  // (the clock's map made with the doc, as the scene datatype's init makes it)
-  const base = own(Automerge.from({ clock: { running: true, t: 0 }, objects: { o: { transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } } } }));
+  const base = BASE;
   const views = caps.map((cap, i) => ({ i, cap, session: `s${i}`, viewer: `v${i}`, state: "gone", doc: null, clock: null, steps: [], ts: [], startedCold: null }));
   const samples = new Map(); // session → { t, at }
   const here = () => views.filter((v) => v.state !== "gone");
@@ -162,9 +164,11 @@ function world(caps) {
     if (live.length < 2) return;
     const heads = live.map((v) => Automerge.getHeads(v.doc).sort().join());
     if (heads.every((h) => h === heads[0])) return; // nothing new anywhere
-    const changes = live.flatMap((v) => Automerge.getAllChanges(v.doc));
+    // every replica takes in every other's changes (into the first, then back out from it)
+    const [first, ...rest] = live;
+    for (const v of rest) first.doc = Automerge.merge(first.doc, v.doc);
+    for (const v of rest) v.doc = Automerge.merge(v.doc, first.doc);
     for (const v of live) {
-      [v.doc] = Automerge.applyChanges(v.doc, changes);
       // the stage's recheck: our claim's field names another session now
       const c = claimOf(v);
       if (v.claimHeld() && c && c.session !== v.session) v.lose();
@@ -237,7 +241,9 @@ function options(w) {
   const out = [];
   for (const v of w.views) {
     if (v.state === "gone") {
-      if (!v.crashed) out.push(["join", v]); // (a crashed view's browser is gone; a new one joins as another)
+      // (a crashed view's browser is gone; a new one joins as another). A view whose capability isn't
+      // chosen yet chooses it as it first joins: each one is a join of its own
+      if (!v.crashed) for (const cap of v.cap == null ? CAPS : [null]) out.push(["join", v, cap]);
       continue;
     }
     out.push(["leave", v], ["crash", v]);
@@ -262,7 +268,8 @@ export function run(caps, picks) {
       w.free();
       return null;
     }
-    const [kind, v] = opts[p];
+    const [kind, v, cap] = opts[p];
+    if (cap) v.cap = cap;
     if (kind === "crash") crashed = true;
     w.events[kind](v);
     for (let i = 0; i < FRAMES; i++) w.frame();
@@ -322,8 +329,9 @@ function describe_(caps, picks) {
   w.frame();
   const out = [];
   for (const p of picks) {
-    const [kind, v] = options(w)[p];
-    out.push(v ? `${kind} ${v.i}` : kind);
+    const [kind, v, cap] = options(w)[p];
+    if (cap) v.cap = cap;
+    out.push(v ? `${kind} ${v.i}${cap ? ` (${cap})` : ""}` : kind);
     w.events[kind](v);
     for (let i = 0; i < FRAMES; i++) w.frame();
   }
@@ -333,8 +341,8 @@ function describe_(caps, picks) {
 
 const CAPS = ["writable", "read-only", "missing"];
 const DEPTH = Number(process.env.H7_DEPTH ?? 3);
-/** How many sequences each depth is, all 27 configs (measured): the default run and the deeper ones. */
-const PINNED = { 3: 17673, 4: 131568, 5: 961400 };
+/** How many sequences each depth is, all 9 configs (measured): the default run and a deeper one. */
+const PINNED = { 3: 11021, 4: 96830 };
 // frames after each event, each merged: enough for every claim to have arrived and every loser to have heard
 const FRAMES = 2;
 
@@ -390,16 +398,20 @@ describe("H7: the clock across views, on Automerge", () => {
   });
 
   // (H7_CONFIG=i runs config i alone: a deep run is split across processes, each with a fresh Automerge)
+  // Views 0 and 1 are here from the start, view 2 joins later. A view's capability is read only once
+  // it has joined, so until view 2 first joins the world is the same whatever its capability: it is
+  // chosen at that join (three joins on offer), and the tree is walked once per capability of views
+  // 0 and 1, covering every one of the 27 configurations.
   const configs = [];
-  for (const a of CAPS) for (const b of CAPS) for (const c of CAPS) configs.push([a, b, c]);
+  for (const a of CAPS) for (const b of CAPS) configs.push([a, b, null]);
   if (process.env.H7_CONFIG != null) configs.splice(0, configs.length, configs[Number(process.env.H7_CONFIG)]);
-  it(`every sequence of up to ${DEPTH} events, three views of every capability (${configs.length} configs)`, async () => {
+  it(`every sequence of up to ${DEPTH} events, three views of every capability (the third chosen as it joins; ${configs.length} configs)`, async () => {
     let runs = 0;
     const t0 = Date.now();
     for (const caps of configs) runs += await explore(caps, DEPTH);
     console.log(`H7: ${runs} sequences in ${Date.now() - t0} ms`);
     // the whole space at each depth measured, so a change that quietly prunes it fails here
-    if (configs.length === 27 && PINNED[DEPTH] != null) expect(runs).toBe(PINNED[DEPTH]);
+    if (configs.length === 9 && PINNED[DEPTH] != null) expect(runs).toBe(PINNED[DEPTH]);
     else expect(runs).toBeGreaterThan(0);
   }, DEPTH > 3 ? 7_200_000 : 600_000);
 });
@@ -454,8 +466,10 @@ describe("H7: clock writes made at once, on Automerge", () => {
     let x = 0;
     v.clock.process({ step() {}, save: (d) => x && (d.objects.o.transform.position[0] = x) });
     for (let i = 0; i < 5; i++) w.frame();
+    expect(v.doc.objects.o.saved_n).toBeUndefined(); // (the world's own kept process: it counts its saves)
     w.events.save();
     w.frame();
+    expect(v.doc.objects.o.saved_n).toBe(1); // the 30 s checkpoint ran, and its saves were written
     expect(v.doc.objects.o.saved).toBeUndefined(); // saved, but not moved
     x = 2;
     v.clock.pause();
@@ -488,11 +502,20 @@ describe("H7: replicated processes", () => {
 });
 
 describe("the computer's status", () => {
-  it("says who paused, who computes, a stall, and why nobody here can", () => {
-    const w = world(["read-only"]);
+  // (a stall: the follower's test above)
+  it("says who paused, who computes, and why nobody here can", () => {
+    const w = world(["writable", "read-only"]);
     w.events.join(w.views[0]);
     w.frame();
-    expect(w.views[0].clock.status()).toMatchObject({ running: true, computer: null, able: false, why: "view only" });
+    w.events.join(w.views[1]);
+    for (let i = 0; i < 3; i++) w.frame();
+    const [a, b] = w.views;
+    expect(a.clock.status()).toMatchObject({ running: true, computer: { viewer: "v0", mine: true }, able: true, why: null });
+    expect(b.clock.status()).toMatchObject({ running: true, computer: { viewer: "v0", mine: false }, able: false, why: "view only" });
+    a.clock.pause();
+    for (let i = 0; i < 3; i++) w.frame();
+    expect(b.clock.status()).toMatchObject({ running: false, by: "v0", computer: null });
+    w.free();
   });
 });
 

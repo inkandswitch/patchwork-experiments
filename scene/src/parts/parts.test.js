@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // scene.parts, the parts bin: lists the registered scene:parts by category
 // (no panel without any), searches them, and puts one in by a click (where
 // the view is looking) or a drop (where it lands: on an object, under it;
@@ -5,7 +6,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
-import parts, { OTHER, PART_MIME, SEARCH_FROM, byCategory, matches, partsOf, readPartDrag } from "./parts.js";
+import parts, { OTHER, PART_MIME, SEARCH_FROM, byCategory, matches, partsOf } from "./parts.js";
 import { composeMatrix } from "../transform.js";
 
 /** A part that puts one object (named after it) where it's told, and records what it was told. */
@@ -39,7 +40,7 @@ afterEach(() => {
 const toggle = () => s.instance("scene.parts").commands.find((c) => c.id === "parts").state(null, {});
 
 async function mount(list, doc = {}) {
-  s = await mountStage({ extensions: EXTS, parts: list, doc });
+  s = await mountStage({ editor: true, natives: true,  extensions: EXTS, parts: list, doc });
   await settle();
   // the viewer opens the Parts tab, when there are any
   if (toggle()) s.api("scene.parts").run({ ext: "scene.parts", command: "parts", value: true });
@@ -86,12 +87,6 @@ describe("pure", () => {
     expect(matches(p, "RIG mast")).toBe(true);
     expect(matches(p, "wheel")).toBe(false);
     expect(matches(p, "canvas", (k) => (k === "t.sail" ? "Canvas" : k))).toBe(true);
-  });
-
-  it("readPartDrag", () => {
-    expect(readPartDrag({ getData: (t) => (t === PART_MIME ? '{"part":"a"}' : "") })).toBe("a");
-    expect(readPartDrag({ getData: () => "nope" })).toBe(null);
-    expect(readPartDrag(null)).toBe(null);
   });
 });
 

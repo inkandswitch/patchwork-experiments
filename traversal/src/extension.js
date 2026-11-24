@@ -11,7 +11,7 @@ import { exitVerb } from "./exit.js";
 import { go } from "./go.js";
 
 function create(api) {
-  const here = () => api.url ?? api.handle?.url ?? null;
+  const here = () => api.url ?? null;
   return {
     commands: [
       {

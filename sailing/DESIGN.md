@@ -2327,7 +2327,7 @@ pitch, station }` from everyone aboard. The presence rate is play.js's to
 set: 30 Hz while simulating, 20 aboard, else the stage's default.
 The sail is its own node ("Sail") in the rig's GLB, so each view lowers it
 toward the boom by the sail's `raised`, and bellies it to leeward of the
-boom as drawn (STAGE.md's "dressing": only content that sailing's own
+boom as drawn (API.md's "dressing": only content that sailing's own
 traits mark, put back when it stops).
 `api.worldOf` and `api.raycast` see the pose drawn this frame.
 

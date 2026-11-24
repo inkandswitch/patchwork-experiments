@@ -340,7 +340,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     onProviders: () => packages.check(),
   });
 
-  // ─── display (STAGE.md, "Display") ──────────────────────────────────────────
+  // ─── display (API.md, "Display") ──────────────────────────────────────────
   // How this viewer sees an object instead of as the doc says, never written:
   // each extension's override { transform?, content?, hidden?, name?, tint?,
   // opacity?, outline? }, layered in running order, later winning per field. A
@@ -485,13 +485,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }),
   );
 
-  // ─── the page (STAGE.md, "`api`") ──────────────────────────────────────
-  // The view's pagehide or the stage closing ("hide": last-first, as extensions stop), pageshow and the tab's visibility, as api.page's events.
-  const pageFns = { hide: new Set(), show: new Set(), visible: new Set() };
+  // ─── the page (API.md, "`api`") ──────────────────────────────────────
+  // The view's pagehide or the stage closing ("hide": last-first, as extensions stop) and pageshow ("show"), as api.page's events.
+  const pageFns = { hide: new Set(), show: new Set() };
   const pageSay = (type) => [...pageFns[type]][type === "hide" ? "reverse" : "slice"]().forEach((fn) => fn());
-  const onVisibility = () => pageSay("visible");
-  globalThis.document?.addEventListener?.("visibilitychange", onVisibility);
-  cleanups.push(() => globalThis.document?.removeEventListener?.("visibilitychange", onVisibility));
   let away = false; // said goodbye on pagehide
 
   // ─── the update flush ─────────────────────────────────────────────────────
@@ -879,7 +876,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       cameraHolds: new Set(),
       frame: new Set(), // loops and afterRender hooks
       offs: new Set(), // listeners, watchers, rides
-      els: new Set(), // overlays, edges, styles
+      els: new Set(), // overlays, styles
     };
     owned.set(id, own);
     const live = () => !signal.aborted && !dead;
@@ -889,13 +886,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     // its elements marked with this stage (several docs' extensions share one view's DOM)
     const lent = view.viewParts({ id, key: ownerKey(id), own, live, stage: n });
     const viewNow = () => viewValue();
-    let watched = viewNow(); // what api.view.watch last told of
 
     const api = {
       // doc and identity
       id,
       repo,
-      handle,
       url: handle.url,
       signal,
       doc,
@@ -917,16 +912,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       local: Object.freeze({
         get: local.get,
         swap: (fn) => local.swap(fn),
-        watch: (fn, select) =>
-          acquire(own.offs, () =>
-            local.watch(
-              typeof select === "function"
-                ? (next, prev) => {
-                    if (select(next) !== select(prev)) fn(next, prev);
-                  }
-                : fn,
-            ),
-          ),
       }),
       /**
        * The viewer's (STAGE.md, "Views, stages and links"), as this stage sees it: the body,
@@ -936,29 +921,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        */
       view: Object.freeze({
         get: viewNow,
-        watch: (fn, select) =>
-          acquire(own.offs, () =>
-            view.atom.watch(() => {
-              const next = viewNow();
-              const prev = watched;
-              watched = next;
-              if (next === prev) return;
-              if (typeof select === "function" ? select(next) !== select(prev) : true) fn(next, prev);
-            }),
-          ),
         select: (target) => {
           if (live()) view.select(target == null ? null : [...path, target]);
         },
-        /** move the focus into the acting stage under this stage's `target` (a link's): false if there is none */
-        enter: (target) => (live() && target != null ? view.enter([...path, target]) : false),
-        /** arrive again where the outermost doc's view.start now says (a template's maker): only from the outermost */
-        arrive: () => {
-          if (live() && n === 0) view.arrive();
-        },
-        // (leaving is the view's: Escape's last rung, the trail; no stage learns whether there's anywhere to leave)
+        // (entering, leaving and arriving are the view plugins': no stage learns where the focus goes)
       }),
       /**
-       * The doc's ephemeral side (STAGE.md, "`api`"): this view's
+       * The doc's ephemeral side (API.md, "`api`"): this view's
        * session (null in a pin: it has none), every peer, and this
        * extension's own keys and sends; cleared when it stops.
        */
@@ -968,14 +937,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
           return channel ? presence.session : null;
         },
         peers: () => presence.get(),
-        get: () => Object.fromEntries(Object.entries(presence.get()).flatMap(([s, p]) => (p.keys?.[id] ? [[s, p.keys[id]]] : []))),
         set: (key, value) => void (live() && presence.set(id, key, value)),
         watch: (fn) => acquire(own.offs, () => presence.watch(fn)),
         send: (type, data) => void (live() && presence.send(id, type, data)),
         rate: (hz) => void (live() && presence.rate(id, hz)),
       }),
       page: Object.freeze({
-        visible: () => globalThis.document?.visibilityState !== "hidden",
         on: (type, fn) => (pageFns[type] && typeof fn === "function" ? acquire(own.offs, () => (pageFns[type].add(fn), () => pageFns[type].delete(fn))) : noop),
       }),
       /** a service (NATIVE.md, "Native services"): this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null */
@@ -992,9 +959,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // content
       nameOf,
       content: (oid) => scope.contentOf(oid),
-      box: (oid, { hints = true, in: frameId = null } = {}) => scope.objectBox(oid, { hints, in: frameId }),
-      groupBox: (gid, { hints = true } = {}) => scope.groupBox(gid, { hints }),
-      sceneBox: () => scope.sceneBox(),
+      /** the box of an object, a group (its members') or, for null, the scene; `in`: an object's frame instead of the stage's */
+      box: (target, { hints = true, in: frameId = null } = {}) => (target == null ? scope.sceneBox({ hints }) : scope.objectBox(target, { hints, in: frameId })),
       worldOf: displayedWorld,
       focus: (ids) => {
         if (!live()) return;
@@ -1007,7 +973,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
       // picking and camera
       pick: (x, y, opts) => scope.pick(x, y, opts),
-      ray: (x, y) => scope.ray(x, y),
       raycast: (origin, dir, opts) => scope.raycast(origin, dir, opts),
       project: (p) => scope.project(p),
       camera: Object.freeze({
@@ -1020,7 +985,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
         /** has the camera been placed for this viewer: moved by them or restored as they opened the view (nothing frames it on its own then)? */
         touched: () => viewport.touched() || view.cameraPlaced,
-        watch: (fn) => acquire(own.offs, () => scope.camera.watch(fn)),
         /** someone finished moving the camera (an orbit, a zoom, a Frame); never while it's held */
         onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
       }),
@@ -1045,15 +1009,14 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
           },
         });
       },
-      owners,
       ...lent,
-      /** draw an object otherwise for this viewer (STAGE.md, "Display"): again from this extension replaces its override → release */
+      /** draw an object otherwise for this viewer (API.md, "Display"): again from this extension replaces its override → release */
       display: (oid, o) => (live() ? display(id, oid, o ?? {}) : noop),
       extent: (box) => {
         if (live()) scope.setExtent(id, box ?? null);
       },
       /**
-       * One of the world's ambients (STAGE.md, "Ambients"): the outermost
+       * One of the world's ambients (API.md, "Ambients"): the outermost
        * doc's value under `name` (frozen plain JSON, the same object until it
        * changes), with `mine` (this is the outermost stage), this stage's
        * frame (scope.js: the world is the outermost's root) and `use`: the
@@ -1073,16 +1036,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
       // bodies, held tools, attention (STAGE.md, "The input chain"–§5)
       body: Object.freeze({
-        /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
-        current: () => viewNow().body,
         /** enter body `id` (any running extension's; the stage's "look" leaves every body) at `place`: false if none offers it or it can't */
         enter: (bid, place) => (live() ? enterBody(bid, place) : false),
         /** leave the top body (never Look) */
         leave: () => (live() ? view.leaveBody() : false),
         /** the eye: { position, direction } in this stage's frame, or null */
         eye: () => bodyEye(),
-        /** the top body's reach (m; Look's is Infinity) */
-        reach: () => bodyReach(),
       }),
       /**
        * Hold a tool not picked up through a command (bag's drawn piece in
@@ -1094,10 +1053,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (!live() || !input || !tool || typeof tool.name !== "string") return noop;
         return holdTool(id, { command: null, name: tool.name, keys: tool.keys, pointer: tool.pointer }, input);
       },
-      /** the context every surface passes to commands (scene, local, from, reach, hit, distance) */
-      context: (hit) => context(hit),
-      /** attention: { selected, hit } (the selection, else the look) */
-      attention: () => attention(),
       /** the look: under lock the eye ray's hit, else the pointer's; { id, point, distance } or null */
       look: () => look(),
 
@@ -1125,14 +1080,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       scheduled = scheduled.filter((s) => s.rec !== rec);
       // 6: its world groups
       scope.removeLayers(id);
-      // 7: labels, overlays, edges, styles, listeners and watchers, cursor, extent, focus
+      // 7: labels, overlays, styles, listeners and watchers, extent, focus
       for (const key of own.labelKeys ?? []) scope.labels.clear(key);
       router.refresh();
       for (const el of own.els) el.remove();
       own.els.clear();
       for (const give of [...own.offs]) give();
       own.offs.clear();
-      view.cursor(ownerKey(id), null);
       scope.setExtent(id, null);
       content.focus(id, null);
       owned.delete(id);
@@ -1142,7 +1096,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   /**
-   * Who draws what in this stage (STAGE.md, "`api`", `owners`), in running
+   * Who draws what in this stage (API.md, "View plugins", `trace.draws`), in running
    * order: each extension's (and view plugin's facet's) world layers with
    * their mesh counts, its labels (key, text, the object `on`), and each
    * object's display overrides by author, in layering order. Plain, frozen;
@@ -1179,11 +1133,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const facet = (base, over) => Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(base), ...Object.getOwnPropertyDescriptors(over) }));
     const loose = (className) => Object.assign(document.createElement("div"), { className });
     return facet(api, {
-      view: facet(api.view, { select: noop, enter: () => false }),
-      overlay: () => loose("stage-overlay"),
-      edge: () => loose("stage-edge-part"),
+      view: facet(api.view, { select: noop }),
+      overlay: (side) => loose(side ? "stage-edge-part" : "stage-overlay"),
       popover: () => noop,
-      cursor: noop,
       camera: facet(api.camera, { set: noop, frame: noop, hold: () => noop, ride: () => noop }),
       body: facet(api.body, { enter: () => false, leave: () => false }),
       hold: () => noop,
@@ -1217,7 +1169,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     first: () => view.plugins?.providersStarted(),
   });
 
-  // ─── the view's plugins' facets (STAGE.md, "View plugins") ─────────────────
+  // ─── the view's plugins' facets (API.md, "View plugins") ─────────────────
   // A view plugin's api.focus(), while this stage is the focus: this stage's
   // api, made for it on asking. What it acquires through one is given back
   // when the focus leaves (the view drops it), the plugin stops or this
@@ -1429,6 +1381,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     doc,
     scene,
     scope,
+    /** who draws what in it (the view plugins' trace.draws()) */
+    owners,
     frame: () => scope.frame(),
     packages,
     debug,

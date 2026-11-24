@@ -21,7 +21,7 @@ export function flatCommands(collected) {
     } catch {
       continue;
     }
-    // (a view plugin's collection tags each with the stage it is from: STAGE.md, "View plugins")
+    // (a view plugin's collection tags each with the stage it is from: API.md, "View plugins")
     for (const command of list) if (command && command.id != null && typeof command.run === "function") out.push(stage === undefined ? { ext, command } : { ext, command, stage });
   }
   return out;
@@ -41,7 +41,7 @@ export function flatCommands(collected) {
  *     permission: Look's is Infinity.
  * @param {object} command
  * @param {string | null} target
- * @param {{ view?: object, reach?: number, distance?: (target: string) => number }} ctx  api.context(hit)
+ * @param {{ view?: object, reach?: number, distance?: (target: string) => number }} ctx  its stage reader's context(hit)
  * @returns {object | null}
  */
 export function commandState(command, target, ctx) {

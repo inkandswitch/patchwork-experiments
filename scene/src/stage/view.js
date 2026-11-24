@@ -123,7 +123,7 @@ export function startArrival(s, { doc, next }) {
 }
 
 /**
- * Where the camera starts (STAGE.md, "Saving"): this viewer's saved camera,
+ * Where the camera starts (API.md, "`api`": the camera): this viewer's saved camera,
  * else the doc's suggested home (view.start.home), else null
  * (a frame extension frames on first content).
  */
@@ -371,7 +371,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
   }
-  // A world's ambients (STAGE.md, "Ambients") are its outermost stage's: the
+  // A world's ambients (API.md, "Ambients") are its outermost stage's: the
   // one read path, which every stage's api.ambient and the viewport's
   // atmosphere both go through, so the viewport is a reader like any other.
   /** The world's ambient `name`: the outermost stage's frozen value, or undefined. */
@@ -475,7 +475,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /** Leave: the focus one link out. */
   const leave = () => selectStep({ type: "leave" });
 
-  /** The view's plugins' facets are the focus stage's (STAGE.md, "View plugins"): every other stage lets its go. */
+  /** The view's plugins' facets are the focus stage's (API.md, "View plugins"): every other stage lets its go. */
   function placeFocus() {
     const at = focusStage();
     for (const s of stages.values()) if (s !== at) s.dropFacets();
@@ -891,7 +891,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /**
    * A stage's reader; the focus stage's with the view's plugins' commands
    * and other contributions after its extensions', run in its context
-   * (STAGE.md, "View plugins").
+   * (API.md, "View plugins").
    */
   function readerOf(s) {
     const r = s.reader;
@@ -939,8 +939,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       atom.swap((m) => (samePath(m.hovered, path) ? m : { ...m, hovered: path }));
     },
     onCursor: (name) => {
-      routerCursor = name;
-      applyCursor();
+      const c = name ?? "";
+      if (canvas.style.cursor !== c) canvas.style.cursor = c;
     },
     onState: (st) => {
       if (dead) return;
@@ -971,21 +971,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       pointer: same(m.pointer, pointer) ? m.pointer : pointer,
       escape: same(m.escape, escape) ? m.escape : escape,
     };
-  }
-
-  // ─── the cursor ───────────────────────────────────────────────────────────
-
-  const extCursors = new Map(); // owner key → cursor (latest set last)
-  let routerCursor = null;
-  function applyCursor() {
-    const mine = [...extCursors.values()].at(-1) ?? null;
-    const c = mine ?? routerCursor ?? "";
-    if (canvas.style.cursor !== c) canvas.style.cursor = c;
-  }
-  function cursor(owner, name) {
-    extCursors.delete(owner);
-    if (name) extCursors.set(owner, String(name));
-    applyCursor();
   }
 
   // ─── the atom → storage, the stages ───────────────────────────────────────
@@ -1071,7 +1056,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     style.remove();
   }
 
-  // ─── the view's plugins (STAGE.md, "View plugins") ─────────────────────────
+  // ─── the view's plugins (API.md, "View plugins") ─────────────────────────
 
   // An event of the router's as a view plugin's hand hears it: in the world,
   // its hit also naming the path it is at (null: nothing, or something its
@@ -1110,14 +1095,14 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   };
   /**
    * What the view lends an extension or a view plugin (`id`, its router key
-   * `key`): overlays, edge parts, styles, listeners, its
-   * cursor, popovers, frame hooks and timers. What it acquires goes in
+   * `key`): overlays (over the canvas or beside it), styles, listeners,
+   * popovers, frame hooks and timers. What it acquires goes in
    * `own` (`els`, `offs`, `frame`), given back as it stops; `stage` marks its
    * elements with the stage it is of.
    */
   function viewParts({ id, key, own, live, stage = null }) {
     const acquire = acquirer(live);
-    /** A one-shot callback set through `set` (time.after or time.frame), cancelled if it stops first. */
+    /** A one-shot callback set through `set` (time.after), cancelled if it stops first. */
     const timed = (set, fn) => {
       if (!live() || typeof fn !== "function") return noop;
       let cancel = null;
@@ -1141,27 +1126,23 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     };
     const div = (className) => Object.assign(document.createElement("div"), { className });
     return {
-      overlay: () => add(div("stage-overlay"), port),
-      edge: (side) => add(div("stage-edge-part"), edges[EDGES.includes(side) ? side : "right"]),
+      /** a part of the view's DOM: over the canvas, or beside it at `side` ("top", "right", "bottom", "left") */
+      overlay: (side) => (EDGES.includes(side) ? add(div("stage-edge-part"), edges[side]) : add(div("stage-overlay"), port)),
       style: (text) => add(Object.assign(document.createElement("style"), { textContent: String(text ?? "") }), root),
       listen: (target, type, fn, opts) =>
         acquire(own.offs, () => {
           target.addEventListener(type, fn, opts);
           return () => target.removeEventListener(type, fn, opts);
         }),
-      cursor: (name) => {
-        if (live()) cursor(key, name);
-      },
       /** an open menu or dialog: it wants the pointer, and Escape closes it (close()). → release, for when it closes itself */
       popover: (close) => (live() && typeof close === "function" ? acquire(own.offs, () => router.popover(key, close)) : noop),
       invalidate: () => viewport.invalidate(),
       /** fn(dt, now) every frame; `first`: before the others (what moves what they read) */
       loop: (fn, { first = false } = {}) => acquire(own.frame, () => viewport.addLoop(fn, { first })),
       afterRender: (fn) => acquire(own.frame, () => viewport.afterRender(fn)),
-      /** the view's one time (./time.js): now() (ms), after(ms, fn) → cancel, frame(fn) → cancel */
+      /** the view's one time (./time.js): now() (ms), after(ms, fn) → cancel */
       now: () => time.now(),
       after: (ms, fn) => timed((cb) => time.after(ms, cb), fn),
-      frame: (fn) => timed((cb) => time.frame(cb), fn),
     };
   }
 
@@ -1175,18 +1156,13 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   function makeApi(rec) {
     const { id, signal } = rec;
     const key = viewKey(id);
-    const own = { offs: new Set(), frame: new Set(), cameraHolds: new Set(), hands: new Set(), els: new Set() };
+    const own = { offs: new Set(), frame: new Set(), hands: new Set(), els: new Set() };
     const live = () => !signal.aborted && !dead;
     const acquire = acquirer(live);
     let watched = atom.get();
     const api = {
       id,
-      viewer,
       signal,
-      /** this view's presence session (it changes on coming back from the back-forward cache) */
-      get session() {
-        return session;
-      },
       repo,
       THREE,
       registry: getRegistry,
@@ -1195,7 +1171,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       root,
       /** the view's url: the outermost doc's */
       url,
-      /** the viewer's value, whole (the selection, hover and focus as paths, and each view plugin's own at its id); step(ev): a selection step (../selection.js) but enter; set(value): this plugin's own, view[id] */
+      /** the viewer's value, whole (the selection, hover and focus as paths, and each view plugin's own at its id); step(ev): a selection step (../selection.js) but enter; enter(path), arrive(); set(value): this plugin's own, view[id] */
       view: Object.freeze({
         get: () => atom.get(),
         watch: (fn, select) =>
@@ -1209,6 +1185,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
             }),
           ),
         step: (ev) => (live() && ev?.type !== "enter" ? selectStep(ev) : false),
+        /** move the focus into the acting stage at `path` (a link's, from the outermost in): false if there is none */
+        enter: (path) => (live() ? enter(path) : false),
+        /** arrive again where the outermost doc's view.start now says (a template's maker) */
+        arrive: () => void (live() && arrive()),
         set: (value) => void (live() && atom.swap((m) => (m[id] === value ? m : { ...m, [id]: value }))),
       }),
       /** every open doc's missing packages (view.packages): load them (a yes), or don't ask again in this view */
@@ -1216,36 +1196,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       ...viewParts({ id, key, own, live }),
       /** the pointer wanted free (no lock) until release(): an open drawer. → release */
       wantPointer: () => acquire(own.offs, (t = {}) => (pointerWants.add(t), router.refresh(), () => (pointerWants.delete(t), router.refresh()))),
-      /** run fn after the focus stage's next update flush (through its facet) */
-      schedule: (fn) => api.focus()?.schedule(fn),
-      // the camera and picking, in the world (the outermost's frame); a hit's `path` is where it is
-      camera: Object.freeze({
-        get: () => viewport.getCamera(),
-        set: (cam) => viewport.setCamera(cam),
-        frame: (box) => viewport.frame(box ?? null),
-        hold: () => acquire(own.cameraHolds, () => viewport.hold()),
-        watch: (fn) => acquire(own.offs, () => viewport.watchCamera(fn)),
-        onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
-        /** has the camera been placed for this viewer: moved by them or restored as they opened the view? */
-        touched: () => viewport.touched() || cameraPlaced,
-      }),
-      pick: (x, y, opts) => {
-        const h = viewport.pick(x, y, opts);
-        return h ? Object.freeze({ ...h, path: hitPath(h) }) : null;
-      },
-      ray: (x, y) => viewport.ray(x, y),
-      project: (p) => viewport.project(p),
-      // bodies and hands (STAGE.md, "Bodies", "Hands")
-      body: Object.freeze({
-        /** the top body: { id, label, ext, depth, lock, reach, keys } */
-        current: () => atom.get().body,
-        /** enter body `id` (the focus stage's own first) at `place`: false if none offers it or it can't */
-        enter: (bid, place) => (live() ? enterBody(bid, place, focusStage()) : false),
-        leave: () => (live() ? leaveBody() : false),
-        /** the eye, in the world: { position, direction }, or null */
-        eye: () => bodyEye(),
-        reach: () => bodyReach(),
-      }),
+      // the hands (STAGE.md, "Hands")
       /**
        * Put a hand on the stack ({ kind?, name, input, keys?, pointer?,
        * escape?() → boolean, escaping?() → layer | null, put?() }), hearing
@@ -1282,15 +1233,17 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       focus: () => (live() ? (focusStage()?.facetFor(rec) ?? null) : null),
       /** a service (NATIVE.md, "Native services"): a view plugin's, else the focus stage's provider's */
       use: (name) => (live() ? (plugins.use(name, { id, signal }) ?? api.focus()?.use(name)) : null),
-      /** the last events' routes through the input chain, oldest first (STAGE.md, "The input chain") */
-      routes: () => routes(),
-      /** hear every message every stage's channel sends or receives (presence.js tap), read-only → off */
-      tap: (fn) => (live() && typeof fn === "function" ? acquire(own.offs, () => (taps.add(fn), () => taps.delete(fn))) : noop),
+      /** how the view works right now: who draws what in the focus stage, the last events' routes (oldest first), every channel message → off */
+      trace: Object.freeze({
+        draws: () => focusStage()?.owners() ?? null,
+        routes: () => routes(),
+        tap: (fn) => (live() && typeof fn === "function" ? acquire(own.offs, () => (taps.add(fn), () => taps.delete(fn))) : noop),
+      }),
     };
 
     function release() {
       router.stopOwner(key);
-      for (const bag of [own.hands, own.cameraHolds, own.frame]) {
+      for (const bag of [own.hands, own.frame]) {
         for (const give of [...bag]) give();
         bag.clear();
       }
@@ -1299,7 +1252,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       own.els.clear();
       for (const give of [...own.offs]) give();
       own.offs.clear();
-      cursor(key, null);
       for (const s of stages.values()) s.dropFacets(id);
       router.refresh();
     }
@@ -1342,7 +1294,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const pluginsAt = (s) => (s && s === focusStage() ? plugins.running() : []);
   // What the view's plugins were last told (host.js updateAll), afresh as the focus moves.
   let told = new WeakMap();
-  /** A stage flushed: the view's plugins hear it when it is the focus (STAGE.md, "View plugins"). */
+  /** A stage flushed: the view's plugins hear it when it is the focus (API.md, "View plugins"). */
   function flushed(s, now, content) {
     if (!dead && s === focusStage()) updateAll(plugins.running(), told, now, content);
   }
@@ -1437,7 +1389,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     leaveBody,
     leaveBodiesOf,
     holdTool,
-    cursor,
     arrive,
     tryArrive,
     stageUnder,

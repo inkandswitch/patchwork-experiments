@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { Box3, BoxGeometry, Group, Mesh, MeshBasicMaterial } from "three";
 import { createObjectTree } from "./object-tree.js";

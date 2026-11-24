@@ -39,7 +39,6 @@ export async function part(api, partId, { parent = null, transform = IDENTITY } 
   const ctx = Object.freeze({
     id: partId,
     repo: api.repo,
-    handle: api.handle,
     url: api.url,
     viewer: api.channel.viewer,
     doc: api.doc,

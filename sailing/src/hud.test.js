@@ -311,7 +311,7 @@ describe("the HUD", () => {
     const s = stage(me);
     for (const [name, m, seated] of STATES) {
       me.current = m;
-      s.api.body = { current: () => (seated ? { depth: 1, ext: "tabletop" } : { depth: 0 }) };
+      s.api.view = { get: () => ({ body: seated ? { depth: 1, ext: "tabletop" } : { depth: 0 } }) };
       s.tick();
       expect(s.root.querySelector("button"), name).toBe(null);
       expect(s.root.dataset.state, name).toBe(name === "seated" || name === "lobby" ? "lobby" : name === "swimming" ? "aboard" : name);

@@ -1,5 +1,5 @@
 // Starting and stopping extensions (STAGE.md, "Activation" and "Stopping"),
-// and a view's plugins (STAGE.md, "View plugins": `wanted` is every one
+// and a view's plugins (API.md, "View plugins": `wanted` is every one
 // registered, so only the registry starts or stops one).
 //
 // The running set is a pure function of the registry's metadata and the doc
@@ -68,7 +68,7 @@ export function mergeOrder(prev, want, lingering) {
 }
 
 /**
- * The update flush (STAGE.md, "`instance`"): each instance's
+ * The update flush (API.md, "`instance`"): each instance's
  * update(scene, local, prev, view) when any of the three is new to it
  * (`seen`: instance → what it was last told). What's shown changing in the
  * same flush as the doc or local state (`content`: a rebuilt GLB lands with

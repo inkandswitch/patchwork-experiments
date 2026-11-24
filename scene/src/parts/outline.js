@@ -23,8 +23,7 @@
 // on its row does too), and the pane stays open, showing the doc inside
 // (./focus.js). It reads the doc through scene(), writes it through ops
 // planners, and selects by writing local.selected. Everything else is someone else's:
-//   - Remove runs scene.select's "remove" command when it's running (it owns
-//     the confirm), else remove();
+//   - Remove runs scene.select's "remove" command (it owns the confirm);
 //   - load and build state comes from local.status (the stage's);
 //   - names come from nameOf (as displayed);
 //   - peers' selections and hovers come from presence, under "scene.select".
@@ -37,7 +36,7 @@
 
 import { openFor, runOpen } from "./open.js";
 import css from "./outline.css?inline";
-import { atFocus, perFocus } from "../per-focus.js";
+import { atFocus, focusReader, perFocus } from "../per-focus.js";
 import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../groups.js";
 import { treeOrder } from "../hierarchy.js";
 import { dropIntent, placementFor } from "../tree-drop.js";
@@ -254,7 +253,7 @@ export function createOutline(api, { shown = () => true } = {}) {
 
   const selectedId = () => here.view.get().selected ?? null;
   /** Can this row be opened (./open.js: a link to go inside, a model to edit in place)? */
-  const openable = (id) => !!openFor(api.collect("commands"), id, here.context(null));
+  const openable = (id) => !!openFor(api.collect("commands"), id, focusReader(api)?.context(null));
   /** What each link is here, as one value: a link's role changing (it opens, closes, is fixed) draws the rows again. */
   const linksKey = (snap) => JSON.stringify(snap.ids.map((id) => linkOf(id)).filter(Boolean));
   function select(id) {
@@ -264,7 +263,7 @@ export function createOutline(api, { shown = () => true } = {}) {
   /** Point the camera at a row's object (or the group's members). */
   function frameRow(id) {
     const o = here.scene().objects[id];
-    const box = !o ? null : isGroup(o) ? here.groupBox(id) : here.box(id);
+    const box = o ? here.box(id) : null;
     if (box) here.camera.frame(box);
   }
 
@@ -279,24 +278,9 @@ export function createOutline(api, { shown = () => true } = {}) {
     write(here.ops.setField(here.scene(), id, key, value), key === "name" ? "Rename" : key === "visible" ? "Visible" : key);
   }
 
-  /** Remove: scene.select's command when it's running (it confirms), else straight through the stage. */
+  /** Remove: scene.select's command (it confirms). */
   function removeRow(id) {
-    const sel = api.collect("commands").find((c) => c.id === SELECT_EXT);
-    if (Array.isArray(sel?.value) && sel.value.some((c) => c?.id === "remove")) {
-      api.run({ ext: SELECT_EXT, command: "remove", target: id });
-      return;
-    }
-    const snap = here.scene();
-    const o = snap.objects[id];
-    if (!o) return;
-    const plan = here.ops.removeObjects(snap, [id]);
-    if (!plan || plan.ok === false) return;
-    const n = plan.within?.length ?? 0;
-    if (n > 0 && typeof globalThis.confirm === "function") {
-      if (!globalThis.confirm(`Remove “${o.name || "Group"}” and the ${n} object${n === 1 ? "" : "s"} in it?`)) return;
-    }
-    editor(here).edit(here.remove([id]), { label: "Delete" });
-    if (new Set(plan.ids).has(selectedId())) select(null);
+    api.run({ ext: SELECT_EXT, command: "remove", target: id });
   }
 
   /** New group: inside the selected group, if one is; opened and selected. */
@@ -748,7 +732,7 @@ export function createOutline(api, { shown = () => true } = {}) {
   const presence = perFocus(api, (f) => {
     f.channel.watch(() => {
       presenceSeq++;
-      api.schedule(renderAll);
+      f.schedule(renderAll);
     });
     return f.channel;
   });

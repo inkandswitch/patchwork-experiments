@@ -160,7 +160,8 @@ function create(api) {
     for (const b of inputs()) b.disabled = true;
     try {
       const f = api.focus();
-      if (f) await template(f, id, chosen.get(id) ?? {});
+      // its maker arrives as the doc says: the outermost's start, so only when that is the doc written
+      if (f && (await template(f, id, chosen.get(id) ?? {})) && live() && !api.view.get().focus.length) api.view.arrive();
     } finally {
       starting = false;
       if (live()) for (const b of inputs()) b.disabled = false;

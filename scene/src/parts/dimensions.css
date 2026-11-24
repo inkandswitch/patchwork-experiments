@@ -1,6 +1,15 @@
 /* scene.dimensions: dimension labels in the view and the Dimensions panel
    (ported from styles.css: .dimension-label, the dimension list and its rows). */
 
+/* its colour tokens, each with its one default (a theme may set them) */
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --scene-dimension: color-mix(in oklch, var(--studio-warning, orange) 80%, var(--editor-line, black));
+  }
+}
+
 /* Dimensions are the thing the user made on purpose: above other labels, and opaque. */
 .scene-stage .dimension-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
   z-index: 2;
@@ -106,4 +115,9 @@
   gap: 6px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--scene-border);
+}
+
+/* a dimension's leader (the stage draws it: labels.js), in the dimension's colour */
+.scene-stage .label-leader:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-top-color: var(--scene-dimension);
 }

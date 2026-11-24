@@ -6,7 +6,7 @@ MIME types and events. Each is specified once, exactly, by the package that
 owns it, under "Conventions" in its README (scene's own are below, and in
 its README's "Content"); the table lists every one. The members, services
 and contributions of the kernel, the natives and the editor are stated on
-their own pages ([STAGE.md](STAGE.md), [NATIVE.md](NATIVE.md),
+their own pages ([STAGE.md](STAGE.md), [API.md](API.md), [NATIVE.md](NATIVE.md),
 [EDITOR.md](EDITOR.md)), and none of scene names another package's; the
 kernel reads none of the names here but `atmosphere`, which it draws. Depend
 on the convention, never its provider: a package names another's only
@@ -101,7 +101,7 @@ the veil; else the object's own.
 
 ## World ambients
 
-A world's ambients are its outermost doc's (STAGE.md, "`api`", **Ambients**).
+A world's ambients are its outermost doc's (API.md, "`api`", **Ambients**).
 `atmosphere` is scene's; `wind` and `water` are their packages' (Names).
 
 ### Atmosphere

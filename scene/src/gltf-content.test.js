@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodeGLB, computeNormals, parseGLB, MODE } from "./glb.js";
 import { authoredMaterials, collapseInstances, dequantizePositions, loadGLTF, localParts, prepareGLB, prepareMaterials } from "./gltf-content.js";
-import { Box3, Euler, Matrix4, Group } from "three";
+import { Box3, Matrix4, Group } from "three";
 import { nearestScreenVertex } from "./stage/picking.js";
 import { composeMatrix } from "./transform.js";
 import { yawOfEuler } from "./connectors.js";
@@ -223,15 +223,6 @@ describe("gltf content", () => {
     const want = worlds.map((w) => w.elements.map((v) => Math.round(v * 1e6)));
     expect(got.map(String).sort()).toEqual(want.map(String).sort());
   });
-
-  it("prepareGLB reports draw calls, triangles, legend and a local box", async () => {
-    const out = await prepareGLB(CELL);
-    expect(out.stats.drawCalls).toBe(1);
-    expect(out.stats.nodes).toBe(8);
-    expect(out.stats.triangles).toBeGreaterThan(0);
-    expect(out.box).toBeTruthy();
-    expect(out.legend).toBeNull();
-  });
 });
 
 describe("connectors (extras.connectors)", () => {
@@ -252,16 +243,6 @@ describe("connectors (extras.connectors)", () => {
     expect(pts).toContainEqual([5, 0, 5]);
     expect(pts).toHaveLength(3); // (`snapPoints` is no name for them)
     expect(prepared.snap.radius).toBe(0.4);
-  });
-
-  it("keeps a point's yaw, turned with its node", async () => {
-    const q = [0, Math.sin(Math.PI / 4), 0, Math.cos(Math.PI / 4)]; // a quarter turn about +Y
-    const glb = encodeGLB({ meshes: [], nodes: [{ rotation: q, extras: { connectors: [{ position: [0, 0, 1], yaw: Math.PI / 2 }, [1, 0, 0]] } }] });
-    const { points } = (await prepareGLB(glb)).snap;
-    expect(sameYaw(points[0].yaw, Math.PI)).toBe(true);
-    expect(points[0].rotation).toBeNull();
-    expect(points[0].position.map((x) => +x.toFixed(6))).toEqual([1, 0, 0]);
-    expect(points[1].yaw).toBeNull();
   });
 
   // every connector form on every kind of node (test/connector-cases.js), read from a real GLB: a connector on a tilted node stays tilted

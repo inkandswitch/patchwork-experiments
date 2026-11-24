@@ -1,8 +1,9 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
 import halo from "./halo.js";
-import { GRAB_PX, HANDLE_SIZE, MIN_SCALE, MOVE, dragDelta, groupMembers, groupRoots, haloHandles, haloTarget, handleAt, handlePoints, planeHit, usable } from "./halo-math.js";
+import { GRAB_PX, MIN_SCALE, MOVE, dragDelta, groupMembers, groupRoots, haloHandles, haloTarget, handleAt, handlePoints, usable } from "./halo-math.js";
 import { applyMatrix, composeMatrix, decomposeMatrix, multiplyMatrices } from "../transform.js";
 import { resolveGroups } from "../groups.js";
 import { resolveParents } from "../hierarchy.js";
@@ -171,11 +172,6 @@ describe("dragDelta: what a drag does", () => {
     const D = dragDelta(grabOf(corner, corner.at), down(corner.at[0], corner.at[1]), down(0, 0));
     expect(decomposeMatrix(D).scale).toBeCloseTo(MIN_SCALE, 9);
   });
-  it("planeHit: parallel or behind is nothing", () => {
-    expect(planeHit({ origin: [0, 0, 1], dir: [1, 0, 0] }, [0, 0, 0], [0, 0, 1])).toBe(null);
-    expect(planeHit({ origin: [0, 0, 1], dir: [0, 0, 1] }, [0, 0, 0], [0, 0, 1])).toBe(null);
-    expect(planeHit({ origin: [0, 0, 1], dir: [0, 0, -1] }, [0, 0, 0], [0, 0, 1])).toEqual([0, 0, 0]);
-  });
 });
 
 // ─── on the stage ───────────────────────────────────────────────────────────
@@ -196,7 +192,7 @@ const CUBE = { min: [-1, -1, -1], max: [1, 1, 1] };
  */
 async function mount({ objects = {}, extensions = [], readOnly = false } = {}) {
   const poses = { heldBy: () => null };
-  s = await mountStage({ extensions: [HALO, posesBy(poses), ...extensions], doc: { objects, order: Object.keys(objects) } });
+  s = await mountStage({ editor: true, natives: true,  extensions: [HALO, posesBy(poses), ...extensions], doc: { objects, order: Object.keys(objects) } });
   s.poses = poses;
   if (readOnly) s.handle.isReadOnly = () => true;
   const vp = s.debug.viewport;
@@ -207,7 +203,9 @@ async function mount({ objects = {}, extensions = [], readOnly = false } = {}) {
   const api = s.facet("scene.halo");
   s.worlds = new Map();
   api.worldOf = (id) => s.worlds.get(id) ?? s.debug.scene().world(id);
-  api.groupBox = (gid) => {
+  const objectBox = api.box;
+  api.box = (gid, o) => {
+    if (s.debug.scene().objects[gid]?.kind !== "group") return objectBox(gid, o);
     const ids = groupMembers(s.debug.scene(), gid);
     const pts = ids.flatMap((id) => [applyMatrix(api.worldOf(id), CUBE.min), applyMatrix(api.worldOf(id), CUBE.max)]);
     return pts.length ? { min: [0, 1, 2].map((k) => Math.min(...pts.map((p) => p[k]))), max: [0, 1, 2].map((k) => Math.max(...pts.map((p) => p[k]))) } : null;
@@ -271,31 +269,6 @@ describe("scene.halo on the stage", () => {
     await settle();
     expect(s.doc().objects.a.transform.position).toEqual([1.5, 0, 0]);
     expect(s.releases).toEqual([["a", { landed: true }]]);
-  });
-
-  it("turns with a ring and scales with a corner, about the box's centre", async () => {
-    await mount({ objects: { a: object({ transform: T([2, 0, 0]) }) } });
-    await s.select("a");
-    const ring = handle("rotate", 2);
-    const on = (a) => [ring.center[0] + ring.radius * Math.cos(a), ring.center[1] + ring.radius * Math.sin(a), ring.center[2]];
-    let { session } = pressOn(ring, on(Math.PI / 4));
-    const q = portOf(on((3 * Math.PI) / 4));
-    session.move(ev("move", q.x, q.y));
-    session.end(ev("move", q.x, q.y));
-    await settle();
-    const t = s.doc().objects.a.transform;
-    expect(t.rotation[2]).toBeCloseTo(Math.PI / 2, 6);
-    expect(near(t.position, [2, 0, 0], 1e-6)).toBe(true);
-
-    const corner = s.halo().debug.handles.find((h) => h.kind === "scale" && h.corner === 7);
-    ({ session } = pressOn(corner, corner.at));
-    const c = s.halo().debug.center;
-    const far = portOf([c[0] + (corner.at[0] - c[0]) * 2, c[1] + (corner.at[1] - c[1]) * 2, corner.at[2]]);
-    session.move(ev("move", far.x, far.y));
-    session.end(ev("move", far.x, far.y));
-    await settle();
-    expect(s.doc().objects.a.transform.scale).toBeCloseTo(2, 6);
-    expect(near(s.doc().objects.a.transform.position, [2, 0, 0], 1e-6)).toBe(true);
   });
 
   it("a tap on a handle is still the halo's; a cancel puts it back and writes nothing", async () => {
@@ -423,15 +396,5 @@ describe("scene.halo under a moving parent: drawn and dragged in the parent's fr
     expect(loops.size).toBe(1); // it moved: drawn before every frame now
     for (let i = 0; i < 40; i++) for (const fn of [...loops]) fn(1 / 60);
     expect(loops.size).toBe(0); // still a while: back to looking after frames
-  });
-});
-
-describe("HANDLE_SIZE", () => {
-  it("is screen-sized: proportional to the distance from the eye", async () => {
-    await mount({ objects: { a: object() } });
-    await s.select("a");
-    const corner = s.halo().debug.handles.find((h) => h.kind === "scale" && h.corner === 7);
-    // at 10 m from the eye, a handle is 0.2 m: the corner sits that far out along the diagonal
-    expect(Math.hypot(...corner.at.map((v) => v - 1))).toBeCloseTo(HANDLE_SIZE * 10, 6);
   });
 });

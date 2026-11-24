@@ -1,8 +1,9 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import { fakeCamera } from "../test/fake-camera.js";
-import autoframe, { sameCamera, shownObjects } from "./autoframe.js";
+import autoframe, { shownObjects } from "./autoframe.js";
 
 const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kind: "group", ...extra });
 
@@ -11,13 +12,12 @@ const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kin
  * own need WebGL). `world.box` is the scene's box; `world.loaded` the ids whose content is in.
  */
 async function mount(doc = {}) {
-  const s = await mountStage({ extensions: [{ meta: { id: "scene.autoframe" }, module: autoframe }], doc });
+  const s = await mountStage({ natives: true,  extensions: [{ meta: { id: "scene.autoframe" }, module: autoframe }], doc });
   const api = s.facet("scene.autoframe");
   const world = { box: null, loaded: new Set(), boxes: {} };
   const camera = fakeCamera();
   api.camera = camera.rig;
-  api.sceneBox = () => world.box;
-  api.box = (id) => world.boxes[id] ?? null;
+  api.box = (id) => (id == null ? world.box : (world.boxes[id] ?? null));
   api.content = (id) => ({ loaded: world.loaded.has(id), box: null, extras: null, stats: null });
   return { s, api, world, camera };
 }
@@ -26,13 +26,6 @@ const B2 = { min: [0, 0, 0], max: [2, 1, 1] };
 const B3 = { min: [-1, 0, 0], max: [2, 1, 1] };
 
 describe("scene.autoframe (pure)", () => {
-  it("tells whether the camera is where it was left", () => {
-    const a = { position: [0, 0, 10], target: [0, 0, 0] };
-    expect(sameCamera(a, { position: [0, 0, 10.0000001], target: [0, 0, 0] })).toBe(true);
-    expect(sameCamera(a, { position: [0, 0, 10.1], target: [0, 0, 0] })).toBe(false);
-    expect(sameCamera(a, { position: [0, 0, 10], target: [0, 1, 0] })).toBe(false);
-    expect(sameCamera(a, null)).toBe(false);
-  });
   it("counts what is shown: not hidden, not in a hidden group, not a group", () => {
     const objects = { a: object(), b: object({ visible: false }), c: object({ group: "g" }), g: group({ visible: false }) };
     expect(shownObjects({ objects, ids: ["a", "b", "c", "g"], parents: new Map(), groups: new Map([["c", "g"]]) })).toEqual(["a"]);
@@ -140,7 +133,7 @@ describe("scene.autoframe", () => {
   it("never frames a camera this viewer had already placed", () => {
     const camera = fakeCamera({ touched: true });
     // (a view plugin's api, its focus facet the one stage's)
-    const facet = { camera: camera.rig, sceneBox: () => B1, content: () => ({ loaded: true }), local: { get: () => ({}) } };
+    const facet = { camera: camera.rig, box: (t) => (t == null ? B1 : null), content: () => ({ loaded: true }), local: { get: () => ({}) } };
     const x = autoframe.create({ focus: () => facet });
     const scene = { objects: { a: object() }, ids: ["a"], parents: new Map(), groups: new Map() };
     x.update(scene, {}, { scene: null, local: null });

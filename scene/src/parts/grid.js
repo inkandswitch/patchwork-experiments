@@ -7,6 +7,7 @@
 import { editing } from "./editing.js";
 import { perFocus } from "../per-focus.js";
 import css from "./grid.css?inline";
+import { resolveCssColor } from "../stage/public.js";
 import { gridFor, roundForDisplay, toUnits } from "../units.js";
 
 /** How far the scene reaches from the origin, horizontally (or half its height): what the grid must cover. */
@@ -58,7 +59,8 @@ export default {
     const shown = () => pref("grid", true) !== false;
     // what's drawn: shown, and only while editing (the aids are the editor's: ./editing.js)
     const drawn = () => shown() && editing(api.view.get());
-    const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
+    // its own colour tokens (grid.css), read again as the theme changes
+    const color = (token) => new THREE.Color().setRGB(...resolveCssColor(api.root, token), THREE.SRGBColorSpace);
 
     function clear(layer) {
       for (const c of [...layer.children]) {
@@ -68,13 +70,13 @@ export default {
       }
     }
 
-    function redraw(theme) {
+    function redraw() {
       const here = at();
       if (!here) return;
       const { f, layer, labels } = here;
       const on = drawn();
       const unit = pref("units", "m");
-      const grid = gridFor(sceneExtent(f.sceneBox()), unit);
+      const grid = gridFor(sceneExtent(f.box(null)), unit);
       const next = on ? JSON.stringify([unit, grid.size, grid.divisions]) : "off";
       if (next === key) return;
       key = next;
@@ -86,7 +88,7 @@ export default {
         api.invalidate();
         return;
       }
-      const helper = new THREE.GridHelper(grid.size, grid.divisions, color(theme?.gridMajor, 0x999999), color(theme?.gridMinor, 0xd0d0d0));
+      const helper = new THREE.GridHelper(grid.size, grid.divisions, color("--scene-grid-major"), color("--scene-grid-minor"));
       helper.material.transparent = true;
       helper.material.opacity = 0.8;
       helper.material.depthWrite = false;
@@ -120,7 +122,7 @@ export default {
         const content = scene === prev.scene && local === prev.local && view === was;
         if (was && scene === prev.scene && !content && view["scene.prefs"] === was["scene.prefs"] && view.theme === was.theme && view.hands === was.hands) return;
         if (was && view.theme !== was.theme) key = null;
-        redraw(view.theme);
+        redraw();
       },
     };
   },

@@ -1,9 +1,10 @@
+// @vitest-environment happy-dom
 // I4, placement independence (STAGE.md, "Views, stages and links", Invariants): a stage's
 // snapshot, running set, audience, shown and display are functions of its doc
 // and the registry, never of its host, the focus, the viewer's body or held
 // tool. Checked over the finite case the
 // invariant names: a synthetic game G in the shape of Lost Cities' (two
-// extensions: seats, which contributes the roster and a seat body; a table
+// extensions: t.roster, which contributes the roster and a seat body; a table
 // whose audience reads the roster, and displays to this viewer what its
 // audience lets it see, else the veil) × seats {none, p1, p1 + p2} × clock {running,
 // paused} × card state {dealt, p2's card played to the table}, open
@@ -27,18 +28,35 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
+import { LINK, linkOpener } from "../test/links.js";
 import { keyOf } from "./paths.js";
-import { readClock } from "../native/clock.js";
 
 const ME = "automerge:ana";
 const BEN = "automerge:ben";
 const HEEL = { position: [0, 0, 0], rotation: [(20 * Math.PI) / 180, 0, 0], scale: 1 };
 const FLAT = { position: [3, 0, 0], rotation: [0, 0, 0], scale: 1 };
 
+// a hand the viewer holds with no body (as the editor's is): hold(on) picks it up or puts it down
+const HAND = {
+  meta: { id: "t.hand", type: "scene:view" },
+  module: {
+    create(api) {
+      let release = null;
+      return {
+        hold(on) {
+          if (on && !release) release = api.hand({ kind: "edit", name: "Hand", input: {} });
+          if (!on && release) release = void release();
+        },
+      };
+    },
+  },
+};
+
 const EXTENSIONS = [
+  HAND,
+  linkOpener(),
   {
-    meta: { id: "t.seats", traits: ["t.game"] },
+    meta: { id: "t.roster", traits: ["t.game"] },
     module: {
       create: () => ({
         roster: {
@@ -121,7 +139,7 @@ function seen(st) {
     traits: snap.traits,
     running: st.debug.host.running().map((r) => r.id).sort(),
     // the doc's clock, and the stage's own reading of it (its t moves with each view's frames, so only whether it runs)
-    clock: { doc: readClock(st.doc()).running, api: api.use("clock").running() },
+    clock: { doc: st.doc().clock?.running !== false, api: api.use("clock").running() },
     cards: ["h1", "h2", "t"].map((id) => [id, api.use("audience").audience(id), api.use("audience").shown(id), ((d) => (!d ? null : d.content instanceof Uint8Array ? { veil: true } : { name: d.name }))(st.debug.displayed().get(id))]),
   });
 }
@@ -150,7 +168,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
       const Y = repo.add(emptyScene({ title: "Y", traits: host, objects: { LX: link(X.url, { transform: HEEL }) }, order: ["LX"] }));
       const P = repo.add(emptyScene({ title: "P", traits: host, objects: { L: link(G.url, { transform: FLAT, at: { heads: G.heads() } }) }, order: ["L"] }));
       // the first view registers the extensions (the harness's), on G itself
-      const s = await mountStage({ repo, handle: undefined, viewerId: ME, extensions: EXTENSIONS, doc: { objects: {}, order: [] } });
+      const s = await mountStage({ repo, handle: undefined, viewerId: ME, extensions: EXTENSIONS, natives: true, doc: { objects: {}, order: [] } });
       cleanups.push(() => s.unmount());
       const views = {
         alone: { v: await view(repo, G), into: [] },
@@ -161,11 +179,11 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
       };
       // (a pin's url carries its heads)
       const gStages = (v) => v.stages().filter((st) => st.url.split("#")[0] === G.url);
-      const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.seats") && st.debug.displayed().size === 3;
+      const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.roster") && st.debug.displayed().size === 3;
       await until(() => Object.values(views).every(({ v }) => gStages(v).length === 1 && gStages(v).every(ready)), 4000);
       for (const { v, pinned } of Object.values(views)) expect(gStages(v).map((st) => st.role)).toEqual([pinned ? "pinned" : "acting"]);
       // G's extensions see G: no other stage's reader (api.path is a general part's only)
-      for (const { v } of Object.values(views)) for (const st of gStages(v)) for (const ext of ["t.table", "t.seats"]) expect(st.debug.host.record(ext).api.path).toBeUndefined();
+      for (const { v } of Object.values(views)) for (const st of gStages(v)) for (const ext of ["t.table", "t.roster"]) expect(st.debug.host.record(ext).api.path).toBeUndefined();
 
       let checked = 0;
       for (const paused of [false, true])
@@ -197,7 +215,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
             // ("edit": Look holding the editor, which is no body)
             for (const body of pinned ? ["look", "edit", "t.walk"] : ["look", "edit", "t.walk", "t.sit"])
               for (const held of pinned ? [false] : [false, true]) {
-                v.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: body === "edit" });
+                v.plugins.instanceOf("t.hand").hold(body === "edit");
                 expect(v.enterBody(body === "edit" ? "look" : body, null)).toBeTruthy();
                 const acting = gStages(v).find((st) => st.acts);
                 const release = held ? v.holdTool(keyOf(acting.n, "t.table"), { name: "Measure" }, {}) : null;

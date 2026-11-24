@@ -1,16 +1,18 @@
+// @vitest-environment happy-dom
 // One world's ambients (W2), and the atmosphere through them (W9): every
 // stage's api.ambient(name) is the outermost stage's stacked value or null,
 // `mine` exactly at the outermost. Here, a pinned link, whatever the host
-// offers (nothing, one extension, two in their running order) and whatever
-// the viewer's body: nothing the pinned doc offers reaches its host, and the
-// viewport's atmosphere is the outermost's.
+// offers (nothing, one extension, two in their running order): nothing the
+// pinned doc offers reaches its host, and the viewport's atmosphere is the
+// outermost's. (No body or focus: `ambient` reads neither; placement.test.js
+// has body × ambient.)
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
+import { LINK, linkOpener } from "../test/links.js";
 
 const ME = "automerge:ana";
 
@@ -27,10 +29,10 @@ const offering = (id) => ({
     }),
   },
 });
-const EXTENSIONS = [offering("t.a"), offering("t.b"), { meta: { id: "t.walk" }, module: { create: () => ({ bodies: [{ id: "t.walk", label: "Walk", enter: () => ({ input: {}, leave() {} }) }] }) } }];
+const EXTENSIONS = [offering("t.a"), offering("t.b"), linkOpener()];
 
-/** What a doc offers: nothing, one extension, or both (in whatever running order the stage starts them). */
-const OFFERS = { none: {}, a: { "t.a": {} }, b: { "t.b": {} }, both: { "t.a": {}, "t.b": {} } };
+/** What a doc offers: nothing, one extension, or both (in whatever running order the stage starts them; a and b are alike). */
+const OFFERS = { none: {}, a: { "t.a": {} }, both: { "t.a": {}, "t.b": {} } };
 
 const link = (url, extra = {}) => object({ name: "Link", sourceUrl: url, providerId: LINK, renderUrl: null, ...extra });
 
@@ -81,31 +83,24 @@ describe("one world's ambients (W2): the outermost's, everywhere in the view", (
       const world = v.outermost();
       const value = expected(world);
       let checked = 0;
-      // (holding the editor is no body: it is tried in Look and walking)
-      for (const [body, edit] of [["look", false], ["look", true], ["t.walk", true]]) {
-        v.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: edit });
-        expect(v.enterBody(body, null)).toBeTruthy();
-        await settle();
-        for (const st of v.stages()) {
-          for (const ext of ["t.a", "t.b"]) {
-            const inst = st.debug.host.instanceOf(ext);
-            if (!inst) continue;
-            const a = inst.read("x");
-            if (value === null) expect(a).toBeNull();
-            else {
-              // the same frozen object to every caller
-              expect(a.value).toBe(world.ambients().x);
-              expect(a.value).toEqual(value);
-              expect(a.mine).toBe(st === world);
-            }
-            checked++;
+      for (const st of v.stages()) {
+        for (const ext of ["t.a", "t.b"]) {
+          const inst = st.debug.host.instanceOf(ext);
+          if (!inst) continue;
+          const a = inst.read("x");
+          if (value === null) expect(a).toBeNull();
+          else {
+            // the same frozen object to every caller
+            expect(a.value).toBe(world.ambients().x);
+            expect(a.value).toEqual(value);
+            expect(a.mine).toBe(st === world);
           }
+          checked++;
         }
-        // the sky is the outermost's, never a linked doc's
-        const sky = world.debug.viewport.atmosphere?.sky?.top ?? null;
-        expect(sky).toBe(value ? (value.by === "t.a" ? "#111111" : "#222222") : null);
-        v.enterBody("look", null);
       }
+      // the sky is the outermost's, never a linked doc's
+      const sky = world.debug.viewport.atmosphere?.sky?.top ?? null;
+      expect(sky).toBe(value ? (value.by === "t.a" ? "#111111" : "#222222") : null);
       // the pinned doc runs both, so something was read
       expect(checked > 0).toBe(true);
     }, 20_000);

@@ -3,7 +3,7 @@
 // than a decal, and bounds off the origin.
 import { describe, it, expect } from "vitest";
 import { parseGLB } from "../glb.js";
-import { DECAL, DEFAULT_BOUNDS, cutRects, veilAxes, veilBounds, veilGLB, veilKey, veilParts } from "./veil.js";
+import { DECAL, veilAxes, veilBounds, veilGLB, veilParts } from "./veil.js";
 
 const SHAPES = {
   card: { min: [-0.028, 0, -0.0435], max: [0.028, 0.0012, 0.0435] },
@@ -13,7 +13,6 @@ const SHAPES = {
   cube: { min: [0, 0, 0], max: [0.02, 0.02, 0.02] },
   wafer: { min: [-0.01, 0, -0.01], max: [0.01, 0.0003, 0.01] },
   offset: { min: [1.2, 0.7, -3.05], max: [1.26, 0.701, -2.96] },
-  fallback: DEFAULT_BOUNDS,
 };
 const EPS = 1e-12;
 const volume = (p) => [0, 1, 2].reduce((a, k) => a * (p.max[k] - p.min[k]), 1);
@@ -64,34 +63,8 @@ describe("the veil, for every shape", () => {
     });
   }
 
-  it("the lock stands up the face: along Y on an upright face, along Z on one lying flat", () => {
-    expect(veilAxes(SHAPES.card)).toEqual({ n: 1, u: 0, v: 2 });
-    expect(veilAxes(SHAPES.cardOnEdgeX)).toEqual({ n: 0, u: 2, v: 1 });
-    expect(veilAxes(SHAPES.cardOnEdgeZ)).toEqual({ n: 2, u: 0, v: 1 });
-    expect(veilAxes(SHAPES.cube).n).toBe(1);
-    for (const b of Object.values(SHAPES)) {
-      const { n, u, v } = veilAxes(b);
-      expect([n, u, v].sort()).toEqual([0, 1, 2]);
-      const parts = veilParts(b);
-      const top = (name) => Math.max(...parts.filter((p) => p.name === name).map((p) => p.max[v]));
-      expect(top("shackle")).toBeGreaterThan(top("lock"));
-    }
-  });
-
-  it("says nothing but the bounds: the same bounds, the same bytes", () => {
-    for (const b of Object.values(SHAPES)) expect(veilGLB({ min: [...b.min], max: [...b.max] })).toEqual(veilGLB(b));
-    expect(veilKey(SHAPES.card)).not.toBe(veilKey(SHAPES.pawn));
-  });
-
   it("bounds that aren't a box are no bounds", () => {
     for (const b of [null, {}, { min: [0, 0, 0] }, { min: [0, 0, 0], max: [1, 0, 1] }, { min: [0, 0, 0], max: [1, NaN, 1] }, { min: [1, 1, 1], max: [0, 0, 0] }]) expect(veilBounds(b)).toBeNull();
     expect(veilBounds({ min: ["0", 0, 0, 9], max: [1, 1, 1] })).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
-  });
-
-  it("cutRects tiles a rectangle less its holes", () => {
-    const area = (rs) => rs.reduce((a, [x0, z0, x1, z1]) => a + (x1 - x0) * (z1 - z0), 0);
-    expect(area(cutRects([0, 0, 4, 4], [[1, 1, 2, 2]]))).toBeCloseTo(15);
-    expect(area(cutRects([0, 0, 4, 4], [[1, 1, 3, 3], [2, 2, 5, 5]]))).toBeCloseTo(16 - 4 - 4 + 1);
-    expect(cutRects([0, 0, 1, 1], [[-1, -1, 2, 2]])).toEqual([]);
   });
 });

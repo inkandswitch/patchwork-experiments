@@ -175,11 +175,9 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
       const w = vp.worldOf(key(frameId));
       return w ? box(vp.objectBox(key(id), { hints, within: invertMatrix(w), inStage: true })) : null;
     },
-    groupBox: (gid, { hints = true } = {}) => box(vp.groupBox(key(gid), { hints, within: within(), inStage: true })),
     sceneBox: ({ hints = true } = {}) => box(vp.sceneBox({ hints, within: within(), stage: n })),
     // picking, in this stage's frame; "not mine" is id null
     pick: (x, y, opts) => worldHit(vp.pick(x, y, opts)),
-    ray: (x, y) => rayIn(f(), vp.ray(x, y)),
     centerRay: () => rayIn(f(), vp.centerRay()),
     raycast: (origin, dir, { skip = null, far = Infinity, ...rest } = {}) => {
       const fr = f();
@@ -195,7 +193,6 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
       frame: (b) => vp.frame(boxOut(f(), b && typeof b.isEmpty === "function" ? (b.isEmpty() ? null : { min: b.min.toArray(), max: b.max.toArray() }) : b)),
       /** ride an object of this stage, or its root (null: the link; nothing for the outermost) */
       ride: (id, opts) => (id != null ? vp.ride(key(id), opts) : root ? vp.ride(root, opts) : () => {}),
-      watch: (fn) => vp.watchCamera((cam) => fn(cameraThrough(f(), cam, false))),
     },
     /** a body's ride spec in the viewport's keys (id null: this stage's root) */
     rideSpec: (spec) => (spec && typeof spec === "object" ? (spec.id != null ? { ...spec, id: key(spec.id) } : root ? { ...spec, id: root } : null) : null),
