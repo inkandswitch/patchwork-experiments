@@ -17,15 +17,17 @@
 // is told `suspended` only while live, `resumed` only when it was not.
 
 /**
- * A body as the stack keeps it: { owner, id, input, lock, keys, serial }; its
- * notices (`left`, `suspended`, `resumed`) are methods of its input.
- * @typedef {{ owner: string | null, id: string, input: object, lock: boolean, keys: { code: string, label?: string }[], serial: number }} Body
+ * A body as the stack keeps it: { owner, id, input, lock, keys, data, left,
+ * serial }. `suspended` and `resumed` are told to its input (the body's);
+ * `left()` is its holder's own (who pushed it), and so is `data`, what the
+ * holder keeps of it (the view's: what the body's enter answered).
+ * @typedef {{ owner: string | null, id: string, input: object, lock: boolean, keys: { code: string, label?: string }[], data: any, left?: () => void, serial: number }} Body
  * @typedef {{ stack: Body[], live: Body | null }} Bodies
  * @typedef {{ owner: string | null, to: object, what: string }} Tell  call `to[what]()` on behalf of `owner`
  * @typedef {{ bodies: Bodies, off: Body[], tell: Tell[] }} BodyChange  off: the bodies whose keys are let go
  */
 
-const told = (b, what) => ({ owner: b.owner, to: b.input, what });
+const told = (b, what) => ({ owner: b.owner, to: what === "left" ? b : b.input, what });
 
 /** The stack with only its base. @returns {Bodies} */
 export const baseOnly = (base) => ({ stack: [base], live: base });

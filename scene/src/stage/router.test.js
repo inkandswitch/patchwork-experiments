@@ -511,8 +511,8 @@ describe("the body stack", () => {
     const seat = { left: vi.fn() };
     expect(t.router.bodies()).toEqual([{ id: "look", owner: null }]);
     expect(t.router.leave()).toBe(false);
-    t.router.pushBody("walker", { id: "walk", input: walk });
-    t.router.pushBody("s", { id: "seat", input: seat });
+    t.router.pushBody("walker", { id: "walk", input: walk, left: walk.left });
+    t.router.pushBody("s", { id: "seat", input: seat, left: seat.left });
     expect(walk.suspended).toHaveBeenCalledTimes(1);
     expect(t.router.body()).toEqual({ id: "seat", owner: "s" });
     expect(t.router.leave()).toBe(true);
@@ -527,8 +527,8 @@ describe("the body stack", () => {
     const t = setup();
     const walk = { left: vi.fn() };
     const seat = { left: vi.fn() };
-    t.router.pushBody("walker", { id: "walk", input: walk });
-    t.router.pushBody("s", { id: "seat", input: seat });
+    t.router.pushBody("walker", { id: "walk", input: walk, left: walk.left });
+    t.router.pushBody("s", { id: "seat", input: seat, left: seat.left });
     expect(t.router.leaveAll()).toBe(true);
     expect([seat.left.mock.calls.length, walk.left.mock.calls.length]).toEqual([1, 1]);
     expect(t.router.bodies()).toEqual([{ id: "look", owner: null }]);
@@ -539,8 +539,8 @@ describe("the body stack", () => {
     const t = setup();
     const walk = { left: vi.fn() };
     const seat = { left: vi.fn() };
-    const popWalk = t.router.pushBody("walker", { id: "walk", input: walk });
-    t.router.pushBody("s", { id: "seat", input: seat });
+    const popWalk = t.router.pushBody("walker", { id: "walk", input: walk, left: walk.left });
+    t.router.pushBody("s", { id: "seat", input: seat, left: seat.left });
     popWalk();
     expect(seat.left).toHaveBeenCalledTimes(1);
     expect(walk.left).toHaveBeenCalledTimes(1);
@@ -551,7 +551,7 @@ describe("the body stack", () => {
     const under = { move: vi.fn() };
     const over = { move: vi.fn() };
     t.router.pushBody("w", { id: "walk", input: under });
-    t.router.pushBody("s", { id: "station", input: over });
+    t.router.pushBody("s", { id: "station", input: over, left: over.left });
     move(t, { x: 20, buttons: 0 });
     move(t, { x: 30, buttons: 1 });
     expect(over.move).toHaveBeenCalledTimes(2);
@@ -661,7 +661,7 @@ describe("Escape", () => {
       const seq = [...steps, "esc"];
       const t = setup();
       const body = { left: vi.fn() };
-      t.router.pushBody("w", { id: "walk", input: body });
+      t.router.pushBody("w", { id: "walk", input: body, left: body.left });
       const session = { move() {}, end: vi.fn(), cancel: vi.fn(), key: vi.fn(() => false), keys: [{ code: "Escape" }] };
       t.inputs.carry = { press: () => (gestureOpen ? null : session) };
       let gestureOpen = false;
@@ -1195,8 +1195,8 @@ describe("stopping an owner", () => {
     const tool = { put: vi.fn() };
     const close = vi.fn();
     down(t);
-    t.router.pushBody("hand", { id: "walk", input: body, keys: [{ code: "KeyQ" }] });
-    t.router.pushBody("s", { id: "seat", input: over });
+    t.router.pushBody("hand", { id: "walk", input: body, keys: [{ code: "KeyQ" }], left: body.left });
+    t.router.pushBody("s", { id: "seat", input: over, left: over.left });
     t.router.hold("hand", { command: "gun", input: tool });
     t.router.popover("hand", close);
     t.router.leave(); // the seat goes; the walk is on top again

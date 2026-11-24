@@ -423,9 +423,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
 
   // ─── bodies and hands (STAGE.md, "Bodies", "Hands") ──────────────────────
 
-  // The bodies entered, bottom first, over Look: { stage, ext, owner, def, sitting }.
-  const sittings = [];
-  const topSitting = () => sittings.at(-1) ?? null;
+  // Each body entered is the router's (its stack, ./body-stack.js), and what the view keeps of it rides
+  // there as its data: { stage, ext, owner, def, sitting } (`sitting`: what its enter answered).
+  const topSitting = () => router?.topData() ?? null;
   const reachOf = (def) => (typeof def?.reach === "number" && def.reach >= 0 ? def.reach : Infinity);
 
   /**
@@ -503,20 +503,15 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     if (!sitting || typeof sitting !== "object") return false;
     const owner = keyOf(stage.n, ext);
     const rec = { stage, ext, owner, def, sitting };
-    const input = stage.bodyInput(ext, rec, sitting.input ?? {}, () => leftBody(rec));
+    const input = stage.bodyInput(ext, sitting.input ?? {});
     if (!input) return false;
-    sittings.push(rec);
-    router.pushBody(owner, { id, input, lock: !!def.lock, keys: sitting.keys ?? def.keys ?? [] });
+    router.pushBody(owner, { id, input, lock: !!def.lock, keys: sitting.keys ?? def.keys ?? [], data: rec, left: () => leftBody(rec) });
     applyBodyRide();
     return true;
   }
 
-  // A body went off the stack (left, popped with one under it, or its stage or extension stopped).
+  // A body went off the stack (left, popped with one under it, or its extension stopped: router.js stopOwner).
   function leftBody(rec) {
-    const i = sittings.indexOf(rec);
-    if (i < 0) return;
-    sittings.splice(i, 1);
-    rec.stage.bodyLeft(rec);
     try {
       rec.sitting.leave?.();
     } catch (err) {
@@ -524,11 +519,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     }
     applyBodyRide();
   }
-  const leaveBody = () => (sittings.length ? !!router?.leave() : false);
-  /** Leave every body an extension of a stage put on the stack (it stopped). */
-  function leaveBodiesOf(stage, ext) {
-    for (const rec of [...sittings]) if (rec.stage === stage && rec.ext === ext) leftBody(rec);
-  }
+  const leaveBody = () => !!router?.leave();
 
   /** The camera rides the top body's ride, in the viewport's keys, if it has one; else the orbit's base rides apply. */
   function applyBodyRide() {
@@ -593,7 +584,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   function tryArrive() {
     const a = arrival;
     if (!a || dead || !router) return;
-    if (sittings.length) {
+    if (router.bodies().length > 1) {
       arrival = null;
       return;
     }
@@ -839,10 +830,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   // The router's state as the view's fields. A field that didn't change keeps its value.
   function viewOfRouter(st, m) {
     const s = topSitting();
-    const body =
-      s && s.def.id === st.body.id
-        ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.owner, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]), serial: st.body.serial })
-        : LOOK_LOCAL;
+    const body = s
+      ? Object.freeze({ id: s.def.id, label: String(s.sitting.label ?? s.def.label ?? s.def.id), ext: s.owner, depth: st.body.depth, lock: !!s.def.lock, reach: reachOf(s.def), keys: Object.freeze([...(s.sitting.keys ?? s.def.keys ?? [])]), serial: st.body.serial })
+      : LOOK_LOCAL;
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const hands = Object.freeze(st.hands.map((h) => Object.freeze({ ...h, keys: Object.freeze([...h.keys]) })));
     const held = Object.freeze(st.held.map((t) => Object.freeze({ ...t, keys: Object.freeze([...t.keys]) })));
@@ -1244,7 +1234,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     bodyReach,
     enterBody,
     leaveBody,
-    leaveBodiesOf,
     holdTool,
     arrive,
     tryArrive,

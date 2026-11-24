@@ -434,7 +434,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // (a body it put on the stack, a held tool, an open session, or a service busy on its behalf (a pose it holds): a doc-caused stop waits)
   const busy = (id) => {
     const own = owned.get(id);
-    return !!own && (own.bodies.size > 0 || own.tools.size > 0 || own.sessions > 0 || host.instances().some((r) => r.instance.busy?.(id) === true));
+    return !!own && (router.bodies().some((b) => b.owner === ownerKey(id)) || own.tools.size > 0 || own.sessions > 0 || host.instances().some((r) => r.instance.busy?.(id) === true));
   };
 
   /** Write fn for extension `ext`, stamped with its id (./provenance.js), and say what it wrote: its patches ([] for nothing: null, a refusal (ops.js), or a stage that may not write). */
@@ -517,13 +517,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     return offeredBodies(host.collect("bodies"), (id, kept, other) => console.warn(`[scene] body “${id}” is offered by both ${kept} and ${other}; ${kept}'s is used`));
   }
   /** A body of this stage's going on the stack: its input, the extension's (null if it has stopped). */
-  function bodyInput(ext, rec, input, left) {
+  function bodyInput(ext, input) {
     const own = owned.get(ext);
-    if (!own) return null;
-    own.bodies.add(rec);
-    return withSessions(own, input, { left: { value: left } });
+    return own ? withSessions(own, input) : null;
   }
-  const bodyLeft = (rec) => owned.get(rec.ext)?.bodies.delete(rec);
   /** The eye, in this stage's frame: { position, direction } or null. */
   function bodyEye() {
     const e = view.bodyEye();
@@ -618,7 +615,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const signal = rec.signal;
     // What it holds. Each bag holds the "give it back" functions.
     const own = {
-      bodies: new Set(), // the bodies it put on the stack (sittings)
       tools: new Set(), // put()s: the held tools that are its
       sessions: 0, // open press sessions
       cameraHolds: new Set(),
@@ -819,7 +815,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // 1–2: its open session, its bodies and its held tools (the router
       // cancels, pops, puts down and unlocks), then its camera holds
       router.stopOwner(ownerKey(id));
-      view.leaveBodiesOf(stage, id);
       own.tools.clear();
       own.sessions = 0;
       for (const give of [...own.cameraHolds]) give();
@@ -1113,7 +1108,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     contentIn: content.allIn,
     bodyDefs,
     bodyInput,
-    bodyLeft,
     inputOf,
     widgetsAt,
     segment,
