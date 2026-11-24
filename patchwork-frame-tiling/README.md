@@ -52,6 +52,29 @@ and resize freely.
   Enter goes back. Keys in an iframe-isolated tool don't reach the frame, so
   ⌘P there prints. See `quickOpenItems.ts`.
 
+  **Tab keys.** The browser keeps ⌘W/Ctrl-W and its next/previous-tab keys
+  (Ctrl-Tab, ⌘⇧[ ]), so the frame uses the stand-ins editors in a browser
+  use: **⌥W / Alt+W** closes the tab showing (a panel's last tab closes the
+  panel, as its × does), **Ctrl+Shift+] / [** shows the next or previous tab
+  (Ctrl on a Mac too), and **⌃1–9** on a Mac (**Alt+1–9** elsewhere) shows
+  tab N, 9 the last. They act on the focused panel, or, with focus in the
+  folder, on the selected document's. A tool that takes one of these keys
+  (calls `preventDefault`) keeps it; Quick Open's keys are its own while it's
+  up. Like Quick Open's, they don't reach the frame from an iframe-isolated
+  tool. These keys, Quick Open's, Back and Forward, and a modifier held on
+  its own aren't engagement: stepping past a preview doesn't keep it. See
+  `tabKeys.ts`.
+
+  **Finding the keys.** **?** (anywhere but a text field) or the top bar's
+  keyboard button opens a sheet of every key and modified click the frame
+  answers to, spelled for your platform; Escape, ?, × or a click elsewhere
+  closes it. The buttons that do the same name their keys in their
+  tooltips: the showing tab's × (⌥W), a lone document's panel × (⌥W), each
+  tab its number (⌃1–8, ⌃9 for the last), the tab list ⌃⇧[ ]. All of it
+  comes from one table, `shortcuts.ts`, whose tests press every key it lists
+  through the frame's own matchers, so it can't name a key the frame doesn't
+  answer to.
+
   **Closing the browser tab** (⌘W, which pages can't intercept) asks
   first, while the frame is mounted: tools hold things outside their
   documents (a call, unsent text, undo). It doesn't ask when the page itself

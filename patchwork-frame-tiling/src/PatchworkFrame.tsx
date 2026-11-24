@@ -108,6 +108,9 @@ import { rememberToolInDoc } from "./toolMemory";
 import { installUnloadGuard } from "./unloadGuard";
 import { QuickOpen } from "./QuickOpen";
 import { isQuickOpenKey, openTabUrls, type QuickPlacement } from "./quickOpenItems";
+import { isGetAroundKey, tabActionFor, tabCommandFor } from "./tabKeys";
+import { isShortcutsKey, keyFor, tabNumberKey, withKey } from "./shortcuts";
+import { ShortcutsSheet } from "./ShortcutsSheet";
 
 /**
  * Which pane *this tab* is looking at. Deliberately **not** synced: focus and
@@ -791,6 +794,7 @@ const StackTab = ({
   leafId,
   url,
   index,
+  count,
   active,
   preview,
   ops,
@@ -801,6 +805,8 @@ const StackTab = ({
   leafId: string;
   url: AutomergeUrl;
   index: number;
+  /** How many tabs the strip holds (for the tab's number key). */
+  count: number;
   active: boolean;
   /** Not yet engaged with (see `PanelView.preview`): its name is set in italic. */
   preview?: boolean;
@@ -834,7 +840,10 @@ const StackTab = ({
       role="tab"
       aria-selected={active}
       tabIndex={0}
-      title={title}
+      title={(() => {
+        const key = tabNumberKey(index, count);
+        return key ? `${title} (${key})` : title;
+      })()}
       draggable={!editing}
       onClick={() => ops.activateTab(leafId, index)}
       onKeyDown={(event) => {
@@ -879,7 +888,7 @@ const StackTab = ({
       <button
         type="button"
         className="tile-panel__tab-close"
-        title="Close tab"
+        title={active ? withKey("Close tab", "close-tab") : "Close tab"}
         aria-label={`Close ${title}`}
         draggable={false}
         onClick={(event) => {
@@ -1293,6 +1302,7 @@ const TilePanel = ({
                 leafId={leaf.id}
                 url={tab.url}
                 index={index}
+                count={stackTabs.length}
                 active={index === activeTab}
                 preview={!!tab.preview}
                 ops={ops}
@@ -1321,7 +1331,7 @@ const TilePanel = ({
         <button
           type="button"
           className="tile-panel__tab-list-btn"
-          title={`All ${stackTabs.length} tabs`}
+          title={`All ${stackTabs.length} tabs (${keyFor("previous-tab")} ${keyFor("next-tab")})`}
           aria-haspopup="menu"
           aria-expanded={tabListOpen}
           data-tab-list-toggle
@@ -1375,7 +1385,10 @@ const TilePanel = ({
         {canClose && (
           <button
             className="tile-panel__icon-btn tile-panel__icon-btn--close"
-            title="Close panel"
+            title={
+              // ⌥W closes a document panel along with its last tab.
+              !isRootFolder && !stacked ? withKey("Close panel", "close-tab") : "Close panel"
+            }
             onClick={() => ops.close(leaf.id)}
           >
             <CloseIcon />
@@ -1721,7 +1734,14 @@ const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
               if (event.button < 3) engage(leaf.id);
             }
       }
-      onKeyDownCapture={isRootFolder || isEmpty ? undefined : () => engage(leaf.id)}
+      onKeyDownCapture={
+        isRootFolder || isEmpty
+          ? undefined
+          : (event) => {
+              // Keys that only move you around aren't engagement.
+              if (!isGetAroundKey(event.nativeEvent)) engage(leaf.id);
+            }
+      }
     >
       <div className="tile-panel__docs">
         {isEmpty ? (
@@ -2791,6 +2811,59 @@ export const PatchworkFrame = ({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+
+  // The tab keys (see `tabKeys.ts`): close, next/previous, tab N. They
+  // listen as the event bubbles out, so a tool that takes one of these keys
+  // for itself (and says so with preventDefault) keeps it. Not while Quick
+  // Open is up: its keys are its own.
+  useEffect(() => {
+    if (quickOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const command = tabCommandFor(event);
+      if (!command) return;
+      // The key is the frame's even with nothing to do (no ∑ typed instead).
+      event.preventDefault();
+      const action = tabActionFor(
+        layoutNow(),
+        focusRef.current.activeLeafId,
+        selectedLeafId,
+        command,
+      );
+      if (!action) return;
+      if (action.op === "closeTab") closeTab(action.leafId, action.index);
+      else if (action.op === "closePanel") close(action.leafId);
+      else activateTab(action.leafId, action.index);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [quickOpen, layoutNow, selectedLeafId, closeTab, close, activateTab]);
+
+  // The shortcuts sheet: ? where it isn't typing, or the top bar's button.
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const shortcutsFocusRef = useRef<Element | null>(null);
+  const openShortcuts = useCallback(() => {
+    setShortcutsOpen((open) => {
+      if (!open) shortcutsFocusRef.current = deepActiveElement();
+      return true;
+    });
+  }, []);
+  const closeShortcuts = useCallback(() => {
+    setShortcutsOpen(false);
+    const back = shortcutsFocusRef.current;
+    shortcutsFocusRef.current = null;
+    if (back instanceof HTMLElement && back.isConnected) back.focus();
+  }, []);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isShortcutsKey(event)) return;
+      event.preventDefault();
+      openShortcuts();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openShortcuts]);
+
   const closeQuickOpen = useCallback(() => {
     setQuickOpen(false);
     const back = quickOpenFocusRef.current;
@@ -2919,7 +2992,9 @@ export const PatchworkFrame = ({
           onToggleOverlay={toggleOverlay}
           onHome={goHome}
           onOpen={openFromChrome}
+          onShortcuts={openShortcuts}
         />
+        {shortcutsOpen && <ShortcutsSheet onClose={closeShortcuts} />}
         {quickOpen && (
           <QuickOpen
             repo={repo}

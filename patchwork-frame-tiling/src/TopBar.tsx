@@ -18,6 +18,7 @@ import {
   type Plugin,
 } from "@inkandswitch/patchwork-plugins";
 import { useEffect, useRef, useState } from "react";
+import { withKey } from "./shortcuts";
 import type { PanelView } from "./types";
 import type { SlotTool } from "./useDocTitle";
 
@@ -106,6 +107,23 @@ const PlusIcon = () => (
       strokeWidth="1.4"
       strokeLinecap="round"
     />
+  </svg>
+);
+
+const KeyboardIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    <rect width="20" height="16" x="2" y="4" rx="2" />
+    <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10" />
   </svg>
 );
 
@@ -338,6 +356,7 @@ export const TopBar = ({
   onToggleOverlay,
   onHome,
   onOpen,
+  onShortcuts,
 }: {
   repo: Repo;
   accountDocUrl: AutomergeUrl;
@@ -350,6 +369,8 @@ export const TopBar = ({
   onToggleOverlay: (id: string) => void;
   onHome: () => void;
   onOpen: (view: PanelView) => void;
+  /** Show the keyboard shortcuts sheet. */
+  onShortcuts: () => void;
 }) => {
   const openAccount = () =>
     onOpen({ url: accountDocUrl, toolId: "account-picker" });
@@ -393,6 +414,14 @@ export const TopBar = ({
           }
         >
           <ShoppingBagIcon />
+        </button>
+        <button
+          className="tile-topbar__btn"
+          title={withKey("Keyboard shortcuts", "shortcuts")}
+          aria-label="Keyboard shortcuts"
+          onClick={onShortcuts}
+        >
+          <KeyboardIcon />
         </button>
         <button
           className="tile-topbar__btn"
