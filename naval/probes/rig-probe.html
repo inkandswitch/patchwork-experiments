@@ -83,7 +83,7 @@ try {
       const file = repo.add({ "@patchwork": { type: "file" }, name: "hull.glb", extension: "glb", mimeType: "model/gltf-binary", content: r.glb });
       const render = repo.add({
         "@patchwork": { type: "scene-render" }, title: `${hullDoc.doc().title}`, parent: hullUrl, providerId: "camber-hull-surface",
-        params, glbUrl: file.url, builtFrom: null, builtAt: Date.now(), status: "idle", error: null, bounds: r.meta?.bounds ?? null,
+        params, pinned: false, result: { glbUrl: file.url, builtFrom: null, bounds: r.meta?.bounds ?? null, builtAt: Date.now() }, failure: null,
       });
       return render.url;
     },

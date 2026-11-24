@@ -52,7 +52,7 @@
     fixtureBytes
       ? memHandle(HULL, { "@patchwork": { type: "file" }, name: fixture, extension: "glb", content: fixtureBytes })
       : path === "render"
-      ? memHandle(HULL, { "@patchwork": { type: "scene-render" }, title: "Probe hull", parent: "automerge:src", providerId: "probe-hull-surface", glbUrl: GLB, status: "idle", error: null })
+      ? memHandle(HULL, { "@patchwork": { type: "scene-render" }, title: "Probe hull", parent: "automerge:src", providerId: "probe-hull-surface", pinned: false, result: { glbUrl: GLB, builtFrom: { heads: ["a"] }, bounds: null, builtAt: 1 }, failure: null })
       : path === "file"
         ? memHandle(HULL, glbFile("Probe hull.glb"))
         : memHandle(HULL, { "@patchwork": { type: "probe-hull" }, title: "Probe hull", scale: 1 });

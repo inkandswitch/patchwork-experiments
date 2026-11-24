@@ -67,18 +67,16 @@ function fakeRepo(handles) {
 
 const scaled = (k) => transomWaterline().map(([x, y]) => [x * k, y * k]);
 const fileDoc = (bytes) => ({ "@patchwork": { type: "file" }, name: "Hull.glb", extension: "glb", mimeType: "model/gltf-binary", content: bytes });
+const built = (glbUrl) => ({ glbUrl, builtFrom: { heads: ["a"], fingerprint: null, paramsKey: "{}" }, bounds: null, builtAt: 1 });
 const renderDoc = (glbUrl, extra = {}) => ({
   "@patchwork": { type: "scene-render" },
   title: "Hull",
   parent: HULL,
   providerId: "test-hull-surface",
   params: { scale: 2 },
-  glbUrl,
-  builtFrom: glbUrl ? { heads: ["a"], fingerprint: null, paramsKey: "{}" } : null,
-  builtAt: glbUrl ? 1 : null,
-  status: "idle",
-  error: null,
   pinned: false,
+  result: glbUrl ? built(glbUrl) : null,
+  failure: null,
   ...extra,
 });
 const hullDoc = () => ({ "@patchwork": { type: "test-hull" }, name: "Mk 1" });
@@ -163,7 +161,7 @@ describe("a linked scene render", () => {
     const lines = await streamSource.build({ doc, params: { seedCount: 4, rakeRows: 1 }, repo, url: FLOW });
     expect(lines.meta.notes).toMatch(/linked body not built yet/);
 
-    const failed = fakeRepo({ [RENDER]: fakeHandle(RENDER, renderDoc(null, { status: "error", error: "OpenSCAD crashed" })) });
+    const failed = fakeRepo({ [RENDER]: fakeHandle(RENDER, renderDoc(null, { failure: { error: "OpenSCAD crashed", inputs: '{"scale":2}|h:a' } })) });
     expect((await acquireSection({ url: RENDER, repo: failed })).error).toMatch(/its last build failed: OpenSCAD crashed/);
   });
 
@@ -321,23 +319,23 @@ describe("dropping a scene row onto the editor", () => {
     expect(q(".chip-path").textContent).toBe("not built yet");
     expect(q(".body-status").textContent).toMatch(/^Linked body not built yet/);
 
-    render.change((d) => (d.status = "building")); // no GLB yet: nothing to do
+    render.change((d) => (d.failure = { error: "boom", inputs: "k" })); // no GLB yet: nothing to do
     await settle(BODY_DEBOUNCE_MS + 50);
     expect(q(".chip-path").textContent).toBe("not built yet");
 
-    render.change((d) => ((d.status = "idle"), (d.glbUrl = GLB1)));
+    render.change((d) => ((d.failure = null), (d.result = built(GLB1))));
     await settle(BODY_DEBOUNCE_MS + 50);
     expect(q(".chip-path").textContent).toBe("scene render");
     expect(q(".body-status").textContent).toMatch(/Slice of the scene render “Hull”: 1 loop at z = 0\.00 m/);
     const finds = repo.finds[GLB1];
 
-    // status writes, a rename of nothing that matters: same GLB, no re-cut
-    render.change((d) => (d.status = "building"));
-    render.change((d) => (d.status = "idle"));
+    // a failure written beside it, a param edit: same GLB, no re-cut
+    render.change((d) => (d.failure = { error: "boom", inputs: "k" }));
+    render.change((d) => (d.params.scale = 3));
     await settle(BODY_DEBOUNCE_MS + 50);
     expect(repo.finds[GLB1]).toBe(finds);
 
-    render.change((d) => (d.glbUrl = GLB2));
+    render.change((d) => (d.result = built(GLB2)));
     await settle(BODY_DEBOUNCE_MS + 50);
     expect(repo.finds[GLB2]).toBe(1);
     expect(q(".chip-path").textContent).toBe("scene render");
