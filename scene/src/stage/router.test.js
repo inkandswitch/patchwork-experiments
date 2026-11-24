@@ -612,6 +612,24 @@ describe("held tools", () => {
     expect(t.router.putDown()).toBe(true);
     expect([c.put.mock.calls.length, t.router.held(), t.router.putDown()]).toEqual([2, [], false]);
   });
+  // STAGE.md, "Keys": a key with ctrl or meta held is no reserver's, whatever declares it (a pad's Z is not ⌘Z)
+  it("a reserved key with ctrl or meta held goes to the chain, not its reserver, for every reserver; without them, to its reserver", () => {
+    for (const reserver of ["gesture", "hand", "body"]) {
+      for (const mod of [null, "ctrlKey", "metaKey"]) {
+        const t = setup();
+        const seen = [];
+        const input = { key: (ev) => (seen.push(reserver), true), keyup: () => true };
+        if (reserver === "body") t.router.pushBody("b", { id: "pad", input, keys: [{ code: "KeyZ" }] });
+        if (reserver === "hand") t.router.pushHand("h", { kind: "pad", name: "Pad", input, keys: [{ code: "KeyZ" }] });
+        if (reserver === "gesture") t.inputs.hand = { press: () => ({ move() {}, end() {}, cancel() {}, keys: [{ code: "KeyZ" }], key: input.key }) };
+        t.inputs.keys = { key: () => (seen.push("chain"), true) };
+        if (reserver === "gesture") down(t);
+        key(t.root, "keydown", "z", "KeyZ", mod ? { [mod]: true } : {});
+        expect([reserver, mod, seen]).toEqual([reserver, mod, [mod ? "chain" : reserver]]);
+        t.router.dispose();
+      }
+    }
+  });
   it("a reserved key does nothing else even when its reserver passes", () => {
     const t = setup();
     t.inputs.keys = { key: vi.fn(() => true) };

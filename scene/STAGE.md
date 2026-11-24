@@ -83,7 +83,8 @@ groups or `widgetAt`; `onTop` beats any object. No double-click. **The look**: t
 lock (`looksFromEye`).
 
 **Keys**: one key order (`src/key-order.js`; H12): a focused field, the gesture's declared keys, the topmost hand's
-declaring it, the top body's, then `input.key` over attention's path, innermost first (I10). Declared keys are `[{ code,
+declaring it, the top body's, then `input.key` over attention's path, innermost first (I10). A key with ctrl or meta
+held (a modifier itself aside) is no reserver's: it goes to `input.key`. Declared keys are `[{ code,
 label }]`; a reserved key is its reserver's; a keyup, its keydown's.
 
 ### Bodies
