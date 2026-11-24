@@ -34,6 +34,10 @@ class Handle {
   heads() {
     return Automerge.getHeads(this._doc);
   }
+  /** As DocHandle.containsHeads: does this replica have every one of these changes? */
+  containsHeads(heads) {
+    return Automerge.hasHeads(this._doc, heads);
+  }
   change(fn) {
     this._doc = Automerge.change(this._doc, fn);
     this.emit("change", { handle: this, doc: this._doc });

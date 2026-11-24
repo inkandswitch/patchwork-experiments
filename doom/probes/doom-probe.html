@@ -184,7 +184,7 @@ try {
     panelOpen: (w, id) => !!hosts[w].querySelector(`.stage-drawer [data-panel="${id}"]`),
     /** a button by its text (a toolbar's Inspector, say), to click */
     buttonRect(w, label) {
-      const b = [...hosts[w].querySelectorAll("button")].find((x) => x.textContent.trim() === label && x.getBoundingClientRect().width > 0);
+      const b = [...hosts[w].querySelectorAll("button")].find((x) => (x.getAttribute("aria-label") || x.textContent).trim() === label && x.getBoundingClientRect().width > 0);
       if (!b) return null;
       const r = b.getBoundingClientRect();
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };

@@ -15,11 +15,19 @@ import { gameOf, writeGame } from "../src/game.js";
 /** The stub registry, as a drop context's `registry`. */
 export const registry = async (type) => getRegistry(type);
 
-/** Register every plugin of these built packages (each `…/dist/index.js`), optionally as from a package URL. */
+/** The URLs the three packages are published at (src/scene-package.js PUBLISHED): where a viewer who has them got them. */
+const FROM = { scene: "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F", seats: "automerge:2rZNSyrVf5YKPTGLAHuqso4BxoXJ", tabletop: "automerge:3uPxcveQxJkJ6D2GKPnrS7uTh2h2" };
+
+/**
+ * Register every plugin of these built packages (each `…/dist/index.js`) as a
+ * viewer who has them installed does: from the package's URL, so the scene
+ * (which lists the packages a table is made from) has nothing to ask about.
+ */
 export async function install(urls) {
   for (const url of urls) {
     const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
+    const from = url.includes("scene/dist") ? FROM.scene : url.includes("seats/dist") ? FROM.seats : FROM.tabletop;
+    for (const p of plugins) getRegistry(p.type).register(p, from);
   }
 }
 

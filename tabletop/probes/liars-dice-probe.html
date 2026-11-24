@@ -22,6 +22,7 @@
 <script type="module">
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { twoPeers } from "./real-repo.js";
+import { install } from "./table-setup.js";
 import { emptyScene } from "../src/empty-scene.js";
 import { faceOfSeed, seedFor } from "../src/dice/roll.js";
 
@@ -38,10 +39,9 @@ console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? Strin
 const sha = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 try {
-  for (const url of ["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js"]) {
-    const { plugins } = await import(url);
-    for (const p of plugins) getRegistry(p.type).register(p);
-  }
+  // from their published URLs, as a viewer who has them installed: the table the start screen makes lists them
+  // (doc.packages), and with one unmatched nothing it calls for is settled, so every audience is unknown (NATIVE.md, "Audience")
+  await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js"]);
   time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
   const net = twoPeers({ delay: 25, later: (ms, fn) => time.after(ms, fn) }); // the network on the page's clock too
   window.repo = net.a;
@@ -161,7 +161,7 @@ try {
     /** what each die of a cup's last shake must show, from a seed */
     expected: (seed, n = 6, count = 5) => Array.from({ length: count }, (_, k) => faceOfSeed(seedFor(parseInt(seed.slice(0, 8), 16) >>> 0, k), n)),
     drawnFace, drawn,
-    veiled: (w, id) => new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id)?.veil === true,
+    veiled: (w, id) => new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array && !o.name ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id)?.veil === true,
     audience: (w, id) => plain(dbg[w].host.use("audience", { id: "probe", signal: new AbortController().signal }).audience(id)),
     /** the cup's content root turned from plain (a peek, in that view alone) */
     tilted: (w, id) => { const r = dbg[w].viewport.contentOf(id)?.root; return !!r && Math.abs(r.quaternion.w) < 0.999; },
@@ -173,7 +173,7 @@ try {
     cupDebug: (w) => plain(dbg[w].host.instanceOf("dice.cup")?.debug?.()),
     /** the cup extension's own account of what it dressed in view w (cup-extension.js debug) */
     cupDebug: (w) => plain(dbg[w].host.instanceOf("dice.cup")?.debug?.() ?? null),
-    whyNotDrawn(w, id) { const c = dbg[w].viewport.contentOf(id); return { loaded: c?.loaded ?? null, extras: c?.extras ? Object.keys(c.extras) : null, veiled: new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id)?.veil === true, look: plain(new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id) ?? null) }; },
+    whyNotDrawn(w, id) { const c = dbg[w].viewport.contentOf(id); return { loaded: c?.loaded ?? null, extras: c?.extras ? Object.keys(c.extras) : null, veiled: new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array && !o.name ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id)?.veil === true, look: plain(new Map([...(dbg[w]?.displayed() ?? [])].map(([i, o]) => [i, o.content instanceof Uint8Array && !o.name ? { veil: true } : { name: o.name, sourceUrl: o.content }])).get(id) ?? null) }; },
     hovered: (w) => dbg[w].local.get().hovered ?? null,
     focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
     menu: (w) => [...hosts[w].querySelectorAll(".context-menu .menu-item")].map((e) => ({ text: (e.querySelector(".menu-label") ?? e).textContent.trim(), ...rectOf(e) })),

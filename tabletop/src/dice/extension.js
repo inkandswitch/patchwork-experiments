@@ -61,9 +61,11 @@
 // answers only when the doc moved that die lately, to a pose showing that
 // face as built here, and spends that move: once per move.
 //
-// A selected die also offers its own panel (tool.js), "Edit die", docked in
-// the stage's drawer (api.use("drawer").dock), whose panes are embedded documents: the
-// keys typed in it are its own (STAGE.md, "Keys").
+// A die built from a die doc also offers its own panel (tool.js), "Edit die",
+// docked in the stage's drawer (api.use("drawer").dock), whose panes are
+// embedded documents: the keys typed in it are its own (STAGE.md, "Keys").
+// It is the die's Open (EDITOR.md, "A command"), so the inspector's header,
+// the menu, a double-click in Edit and Enter all run it.
 
 import { cupsOf } from "./cup.js";
 import { endedWhy } from "./lots.js";
@@ -653,9 +655,12 @@ function create(api) {
         run: turn,
       },
       {
+        // the die's Open (scene EDITOR.md, "A command"): its own editor, docked beside the scene
         id: "open",
         name: "Edit die",
-        show: ["menu", "inspector"],
+        open: true,
+        key: "Enter",
+        show: ["menu"],
         state(id, ctx) {
           const o = (ctx?.scene ?? scene)?.objects?.[id];
           if (id == null || !isDie(o) || o.providerId !== PROVIDER) return null;
