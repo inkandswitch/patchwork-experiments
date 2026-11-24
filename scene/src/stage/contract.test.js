@@ -112,6 +112,25 @@ describe("api.loop (API.md, “`api`”)", () => {
   });
 });
 
+describe("api.ray (API.md, “`api`”)", () => {
+  it("is the ray an event at that port point carries, in the stage's frame: for a point no event carries", async () => {
+    gl.on = true;
+    const rays = [];
+    const { ext, seen } = keeper("t.ray", { traits: ["*"] }, () => ({ input: { press: (ev) => (rays.push(ev.ray), null) } }));
+    const s = await mount({ extensions: [ext] });
+    // (happy-dom has no pointer capture, which the orbit controls ask for)
+    s.canvas.setPointerCapture ??= () => {};
+    s.canvas.releasePointerCapture ??= () => {};
+    s.canvas.hasPointerCapture ??= () => false;
+    s.pointer("pointerdown", 30, 40);
+    s.pointer("pointerup", 30, 40);
+    expect(rays.length).toBeGreaterThan(0);
+    const r6 = (r) => r && { origin: r.origin.map((v) => +v.toFixed(6)), dir: r.dir.map((v) => +v.toFixed(6)) };
+    expect(r6(seen.api.ray(30, 40))).toEqual(r6(rays[0]));
+    expect(r6(seen.api.ray(30, 40))).not.toEqual(r6(seen.api.ray(80, 10)));
+  });
+});
+
 describe("api.box (API.md, “`api`”)", () => {
   it("one box for an object, a group (its members') and the scene (null), in the stage's frame; nothing for an id it lacks", async () => {
     gl.on = true;
