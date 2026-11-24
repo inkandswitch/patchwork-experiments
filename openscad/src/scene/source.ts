@@ -58,8 +58,7 @@ export function hash53(str: string, seed = 0): string {
  *
  * The *content* of imported docs is deliberately not in here: fingerprint()
  * only sees this doc, and the scene host covers the imported docs itself by
- * recording the heads of every doc dependencies() lists (scene contract v2,
- * "Provider dependencies").
+ * recording the heads of every doc dependencies() lists.
  *
  * It describes the *inputs* only. When build() starts making different output
  * from the same inputs (a new engine flag, a changed transform), bump the

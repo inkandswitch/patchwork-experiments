@@ -33,11 +33,7 @@ yet — see "Possible follow-ups" below.
   default. On a plate with 64 holes and a row of spheres (`$fn = 48`), in
   Chrome against the vendored engine, CGAL takes ~52 s and Manifold ~0.26 s.
   (`--enable=manifold` is not a feature: OpenSCAD ignores it with a warning
-  and renders with CGAL.) Moving from the npm `openscad-wasm@0.0.4`
-  (OpenSCAD 2025.07.18, Manifold 3.1.1) to this engine changed speed little
-  (±25% either way on four benchmark models); Manifold 3.2–3.5 is about
-  correctness: deterministic output across platforms, colour (`originalID`)
-  tracking fixes, robustness, and error propagation.
+  and renders with CGAL.)
 - **One cache for the whole bundle.** `renderScad()` in `src/render/engine.ts`
   keeps the last 8 results, keyed by the source text plus each import's name,
   JSON and OpenSCAD source, and a request whose key is already rendering joins that render
@@ -53,11 +49,9 @@ yet — see "Possible follow-ups" below.
 `color()` shows in the viewer, in a scene, and in the 3MF download.
 
 - The engine exports **OFF**, which carries an RGB(A) colour per face. (It
-  can write 3MF too, but see below for why the tool writes its own; the npm
-  `openscad-wasm@0.0.4` this tool used before crashed on 3MF.) On the
-  Manifold backend colours survive
-  CSG: the faces a coloured `difference()` cuts take the cutter's colour, as in
-  OpenSCAD's own preview.
+  can write 3MF too, but see below for why the tool writes its own.) On the
+  Manifold backend colours survive CSG: the faces a coloured `difference()`
+  cuts take the cutter's colour, as in OpenSCAD's own preview.
 - OpenSCAD gives faces without `color()` its default colour, `#f9d72c`. Faces
   of exactly that opaque colour read as *uncoloured*, so a part with no colour
   keeps the viewer's grey (and the scene's default material) rather than going
@@ -265,11 +259,9 @@ lives in `src/scene/`:
   is `cheap`. The host clamps params to their spec before `build()`.
 - `fingerprint()` hashes the source and the import bindings (name, doc url),
   not the title, so renaming never rebuilds. It describes the inputs only.
-- `version` (currently 3: the vendored engine; 2 was colours, 1 the Manifold
-  backend) is bumped whenever `build()`
-  would make different output from the same doc and params. Renders built by
-  an older version (or by none) go stale once; don't change the `scad1:`
-  fingerprint prefix for that.
+- `version` (4) is bumped whenever `build()` would make different output
+  from the same doc and params. Renders built by another version (or by none)
+  go stale once; don't change the `scad1:` fingerprint prefix for that.
 - `dependencies()` lists the imported docs (once each, not transitively,
   since imports are bound as plain JSON or as one source file each), included
   ones among them. The scene host records their heads
@@ -305,21 +297,18 @@ washed in the accent in the scene. The hand hit-tests the meshes it draws
 itself, so this needs nothing from the scene's kernel; a click that misses
 the model goes on to the scene.
 
-The built GLB (provider version 4) has a mesh and node per part, the node
-named by the part's label with `extras.source = {label, chain, at}` (`at`:
-the call in the document's own source, `{line, col, from, to}`); triangles
-no part claims go in a last node named `OpenSCAD`. Without a source map it is
-one mesh, as before.
+The built GLB has a mesh and node per part, the node named by the part's
+label with `extras.source = {label, chain, at}` (`at`: the call in the
+document's own source, `{line, col, from, to}`); triangles no part claims go
+in a last node named `OpenSCAD`. Without a source map it is one mesh.
 
 ## Possible follow-ups
 
 - Customizer panel for OpenSCAD `/* [group] */` parameters.
 - Basic `.scad` syntax highlighting in the editor.
 - Bundled community libraries (BOSL2, MCAD, ...).
-- Fonts, so `text()` works: the engine bundles none ("Can't get font"; it
-  never worked here, with the old engine either).
+- Fonts, so `text()` works: the engine bundles none ("Can't get font").
 - Export to STEP/OFF too.
-- Correct reported error line numbers for the generated imports prelude.
 
 ## Develop
 
