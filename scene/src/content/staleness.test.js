@@ -4,7 +4,7 @@ import { atKey, depsKey, normalizeAt, normalizeDeps } from "../shared/versions.j
 import { changedKeys, defaultParams, effectiveParams, paramsBySpec, withDefaults } from "../shared/params.js";
 const isStale = (r, s) => staleReason(r, s) !== null;
 
-const built = (params, heads, fingerprint = null) => ({ params, builtFrom: { heads, fingerprint, paramsKey: paramsKey(params) } });
+const built = (params, heads, fingerprint = null) => ({ params, result: { builtFrom: { heads, fingerprint, paramsKey: paramsKey(params) } } });
 
 describe("paramsKey", () => {
   it("is independent of key order and nested order", () => {
@@ -17,7 +17,7 @@ describe("paramsKey", () => {
 
 describe("staleness", () => {
   it("is stale when never built", () => {
-    expect(staleReason({ params: {}, builtFrom: null }, { heads: ["a"] })).toBe("never-built");
+    expect(staleReason({ params: {}, result: null }, { heads: ["a"] })).toBe("never-built");
   });
   it("compares params", () => {
     const r = built({ a: 1 }, ["x"]);
@@ -76,7 +76,7 @@ describe("params", () => {
 });
 
 describe("dependencies", () => {
-  const withDeps = (deps, fingerprint = null) => ({ params: {}, builtFrom: { heads: ["s"], fingerprint, paramsKey: "{}", ...(deps ? { deps } : {}) } });
+  const withDeps = (deps, fingerprint = null) => ({ params: {}, result: { builtFrom: { heads: ["s"], fingerprint, paramsKey: "{}", ...(deps ? { deps } : {}) } } });
 
 
   it("is stale when the set of dependency urls changes", () => {
@@ -109,7 +109,7 @@ describe("dependencies", () => {
     expect(builtInputsKey({ paramsKey: "{}", heads: ["a"] })).toBe("{}|a");
     expect(builtInputsKey({ paramsKey: "{}", heads: ["a"], deps: { "automerge:b": ["x"] } })).toBe("{}|a|d:automerge:b=x");
     const r = withDeps({ "automerge:a": ["x"] }, "v2");
-    const mine = builtInputsKey(r.builtFrom);
+    const mine = builtInputsKey(r.result.builtFrom);
     expect(isContested(r, { heads: ["s"], fingerprint: "v1", deps: { "automerge:a": ["x"] } }, mine)).toBe(true);
     expect(isContested(r, { heads: ["s"], fingerprint: "v1", deps: { "automerge:a": ["x2"] } }, mine)).toBe(false);
   });
@@ -117,7 +117,7 @@ describe("dependencies", () => {
 });
 
 describe("peers that disagree about dependencies", () => {
-  const withDeps = (deps, fingerprint = null) => ({ params: {}, builtFrom: { heads: ["s"], fingerprint, paramsKey: "{}", deps } });
+  const withDeps = (deps, fingerprint = null) => ({ params: {}, result: { builtFrom: { heads: ["s"], fingerprint, paramsKey: "{}", deps } } });
   it("is contested when we'd build exactly what we last built and a peer recorded other deps", () => {
     // we built with no deps (a provider without dependencies()); a newer peer recorded one
     const mine = currentInputsKey({ params: {} }, { heads: ["s"], deps: {} });
@@ -165,7 +165,7 @@ describe("provider versions", () => {
   it("staleReason says provider, after params and before the fingerprint", () => {
     const r = built({ a: 1 }, ["h"], "fp");
     expect(staleReason(r, { heads: ["h"], fingerprint: "fp", providerVersion: 1 })).toBe("provider");
-    r.builtFrom.providerVersion = 1;
+    r.result.builtFrom.providerVersion = 1;
     expect(staleReason(r, { heads: ["h"], fingerprint: "fp", providerVersion: 1 })).toBeNull();
     expect(staleReason(r, { heads: ["h"], fingerprint: "other", providerVersion: 2 })).toBe("provider");
     expect(staleReason({ ...r, params: { a: 2 } }, { heads: ["h"], fingerprint: "fp", providerVersion: 2 })).toBe("params");

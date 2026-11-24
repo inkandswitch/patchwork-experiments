@@ -118,15 +118,17 @@ describe("what's copied", () => {
   });
 
   it("renderSeed and seededRenderDoc: params by the same provider; the build too when it's the same source", () => {
-    const r = { providerId: "shape-maker", parent: "automerge:src", params: { beam: 3.2 }, glbUrl: "automerge:glb", builtFrom: { heads: ["h"], paramsKey: "{}" }, builtAt: 5, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, status: "building", error: "x", pinned: true };
+    const result = { glbUrl: "automerge:glb", builtFrom: { heads: ["h"], paramsKey: "{}" }, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, builtAt: 5 };
+    const r = { providerId: "shape-maker", parent: "automerge:src", params: { beam: 3.2 }, result, failure: { error: "x", inputs: "k" }, pinned: true };
     const seed = renderSeed(r);
-    expect(seed).toEqual({ providerId: "shape-maker", parent: "automerge:src", params: { beam: 3.2 }, glbUrl: "automerge:glb", builtFrom: { heads: ["h"], paramsKey: "{}" }, builtAt: 5, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, pinned: true });
-    const fresh = { "@patchwork": { type: "scene-render" }, title: "Hull", parent: "automerge:src", providerId: "shape-maker", params: { beam: 3 }, glbUrl: null, builtFrom: null, builtAt: null, bounds: null, status: "idle", error: null, pinned: false };
+    expect(seed).toEqual({ providerId: "shape-maker", parent: "automerge:src", params: { beam: 3.2 }, result, pinned: true });
+    const fresh = { "@patchwork": { type: "scene-render" }, title: "Hull", parent: "automerge:src", providerId: "shape-maker", params: { beam: 3 }, pinned: false, result: null, failure: null };
     const doc = seededRenderDoc(fresh, seed);
-    expect(doc).toMatchObject({ params: { beam: 3.2 }, glbUrl: "automerge:glb", builtFrom: { heads: ["h"] }, builtAt: 5, status: "idle", error: null, pinned: true, title: "Hull" });
+    expect(doc).toEqual({ ...fresh, params: { beam: 3.2 }, result, pinned: true });
+    expect(doc.result).not.toBe(seed.result);
     expect(doc.params).not.toBe(seed.params);
     // another source: the params, not the build
-    expect(seededRenderDoc({ ...fresh, parent: "automerge:other" }, seed)).toMatchObject({ params: { beam: 3.2 }, glbUrl: null, builtFrom: null });
+    expect(seededRenderDoc({ ...fresh, parent: "automerge:other" }, seed)).toMatchObject({ params: { beam: 3.2 }, result: null });
     // another provider: nothing
     expect(seededRenderDoc({ ...fresh, providerId: "stl" }, seed)).toEqual({ ...fresh, providerId: "stl" });
     expect(seededRenderDoc(fresh, null)).toBe(fresh);

@@ -38,7 +38,11 @@ export const SceneDatatype = {
   },
 };
 
-/** A fresh scene-render doc (pass to repo.create2). */
+/**
+ * A fresh scene-render doc (pass to repo.create2). `result` is its last build,
+ * written whole as one value ({ glbUrl, builtFrom, bounds, builtAt }), so a
+ * merge keeps one writer's; `failure` its last failed build ({ error, inputs }).
+ */
 export function newRenderDoc({ title, parent, providerId, params }) {
   return {
     "@patchwork": { type: "scene-render" },
@@ -46,13 +50,9 @@ export function newRenderDoc({ title, parent, providerId, params }) {
     parent,
     providerId,
     params: params ?? {},
-    glbUrl: null,
-    builtFrom: null,
-    builtAt: null,
-    bounds: null,
-    status: "idle",
-    error: null,
     pinned: false,
+    result: null,
+    failure: null,
   };
 }
 
@@ -68,12 +68,7 @@ export function seededRenderDoc(fresh, seed) {
   const out = { ...fresh };
   if (seed.params && typeof seed.params === "object") out.params = copy(seed.params);
   if (seed.pinned === true) out.pinned = true;
-  if (seed.parent === fresh.parent && typeof seed.glbUrl === "string" && seed.builtFrom && typeof seed.builtFrom === "object") {
-    out.glbUrl = seed.glbUrl;
-    out.builtFrom = copy(seed.builtFrom);
-    out.builtAt = Number.isFinite(seed.builtAt) ? seed.builtAt : null;
-    out.bounds = seed.bounds ? copy(seed.bounds) : null;
-  }
+  if (seed.parent === fresh.parent && typeof seed.result?.glbUrl === "string" && seed.result.builtFrom && typeof seed.result.builtFrom === "object") out.result = copy(seed.result);
   return out;
 }
 

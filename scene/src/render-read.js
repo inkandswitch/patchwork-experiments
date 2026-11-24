@@ -1,5 +1,5 @@
 /**
- * render-read.js — read a scene's `scene-render` doc from another package.  [kit: render-read.js v1]
+ * render-read.js — read a scene's `scene-render` doc from another package.  [kit: render-read.js v2]
  *
  * COPY THIS FILE into your package; do not import it across packages. It has no
  * imports, so it runs anywhere. The canonical copy is
@@ -12,10 +12,16 @@
  * provider yourself means the work is done once and shared, you see exactly
  * the geometry the scene shows, and the render's own dependencies come along.
  *
+ * A render doc holds { title, parent (its source), providerId, params, pinned,
+ * result, failure }: `result` is its last build, one value written whole,
+ * { glbUrl, builtFrom, bounds, builtAt } (null until built); `failure` is the
+ * last build that failed, { error, inputs } (null when none has).
+ *
  *   readRender(repo, url) -> {
  *     url, render,                    // the render doc
  *     glb: Uint8Array | null,         // null until it has been built
- *     glbUrl, builtFrom, builtAt, status, error, bounds,
+ *     glbUrl, builtFrom, builtAt, bounds,  // its result's
+ *     failure: { error, inputs } | null,
  *     source: AutomergeUrl | null,    // what it renders (render.parent)
  *   }
  *   isRenderDoc(doc) -> boolean
@@ -23,9 +29,8 @@
  *   fileBytes(fileDoc) -> Uint8Array  // the bytes of a Patchwork `file` doc
  *
  * As a scene:source provider, list the render's url in dependencies(doc). The
- * scene host keys a scene-render dependency by renderKey() on its own, so the
- * render's status writes ("building", "idle") don't rebuild you; only a new GLB
- * does. Elsewhere (a tool), watch the render handle and compare renderKey().
+ * scene host keys a scene-render dependency by renderKey() on its own, so
+ * only a new GLB rebuilds you. Elsewhere (a tool), watch the render handle and compare renderKey().
  */
 
 export const RENDER_TYPE = "scene-render";
@@ -36,7 +41,7 @@ export function isRenderDoc(doc) {
 
 /** A key that changes exactly when the render's GLB does (a rebuild with identical bytes keeps it). */
 export function renderKey(render) {
-  return `render:${render?.glbUrl ?? ""}`;
+  return `render:${render?.result?.glbUrl ?? ""}`;
 }
 
 /** The bytes of a Patchwork `file` doc: Uint8Array, ArrayBuffer(-view), string or ImmutableString content. */
@@ -53,24 +58,24 @@ export function fileBytes(doc) {
 /**
  * Load a render doc and its current GLB. Throws if the url isn't a render doc,
  * or its GLB file doc can't be loaded; a render that hasn't been built yet
- * gives `glb: null` (check `status` / `error` to say why).
+ * gives `glb: null` (its `failure` says if a build failed).
  */
 export async function readRender(repo, url) {
   const handle = await repo.find(url);
   const render = handle.doc();
   if (!isRenderDoc(render)) throw new Error("not a scene render");
+  const result = render.result ?? null;
   let glb = null;
-  if (render.glbUrl) glb = fileBytes((await repo.find(render.glbUrl)).doc());
+  if (result?.glbUrl) glb = fileBytes((await repo.find(result.glbUrl)).doc());
   return {
     url,
     render,
     glb,
-    glbUrl: render.glbUrl ?? null,
-    builtFrom: render.builtFrom ?? null,
-    builtAt: render.builtAt ?? null,
-    status: render.status ?? "idle",
-    error: render.error ?? null,
-    bounds: render.bounds ?? null,
+    glbUrl: result?.glbUrl ?? null,
+    builtFrom: result?.builtFrom ?? null,
+    builtAt: result?.builtAt ?? null,
+    bounds: result?.bounds ?? null,
+    failure: render.failure ?? null,
     source: render.parent ?? null,
   };
 }
