@@ -252,11 +252,15 @@ export function fakeTimers() {
  * for here: a timer turn costs Node a whole millisecond (`timer: false`
  * leaves it out, for settle's flushes but the last).
  */
+// (the real ones, taken as this module loads: a test may fake the globals, vi.useFakeTimers, and still flush)
+const immediate = globalThis.setImmediate;
+const timeout = globalThis.setTimeout;
+
 export async function flush({ timer = true } = {}) {
-  for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  for (let i = 0; i < 10; i++) await new Promise((r) => immediate(r));
   while (globalThis.__offThread?.size) {
     await Promise.allSettled([...globalThis.__offThread]);
-    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    for (let i = 0; i < 10; i++) await new Promise((r) => immediate(r));
   }
-  if (timer) await new Promise((r) => setTimeout(r, 0));
+  if (timer) await new Promise((r) => timeout(r, 0));
 }

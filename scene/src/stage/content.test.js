@@ -48,12 +48,15 @@ endsolid part
 `;
 const STL2 = STL.replace("vertex 10 0 0", "vertex 30 0 0");
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// The render manager's timers and clock are the page's (setTimeout, Date): faked here, so its settle
+// window and debounce pass when the test says, not on the wall.
+const wait = (ms) => vi.advanceTimersByTimeAsync(ms);
 
 describe("the stage's content loop (mounted, no WebGL)", () => {
   let s, repo, file;
   beforeAll(() => defineStandInView({ plugins, repo: () => repo }));
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "info").mockImplementation(() => {});
@@ -62,6 +65,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     s?.unmount();
     s = null;
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   async function mount(doc = {}) {
