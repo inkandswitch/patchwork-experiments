@@ -198,7 +198,9 @@ field as its default.
   of icons at the right edge, there while some panel is on offer, each
   pressed while its tab is open. A command with an `icon` (`src/parts/icons.js`) is
   drawn as it; otherwise a button, toggle (`checked`) or picker (`choices`,
-  `value`).
+  `value`). Its tooltip names a key only while that key would run it now
+  (H3): while the look is on something whose verb takes the key (a link's
+  Open, Enter), the world's verb with that key shows none.
 - **The body chip** (`scene.body`): Look, the bodies with `here` not false
   (a body def's `here: false`: it needs a place, a seat's or a station's, and
   is entered by that thing's verb), Leave; **Edit** beside it; who's here in the focus doc, with body and top

@@ -4,3 +4,8 @@ export class Counter {
     this.value = value;
   }
 }
+
+// the editor's text writes ask updateText; the probes' fake docs hold plain strings, so there is no splice to make
+export function updateText() {
+  throw new Error("no automerge text in the probes' fake docs");
+}

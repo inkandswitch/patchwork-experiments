@@ -17,13 +17,14 @@
 //     again, it asks again;
 //   - Load: the served package is imported at its heads and registered under
 //     its bare URL, its extension starts, its provider builds the object;
-//     the other's failure is on the card and stopped nothing; only the one
-//     that loaded is remembered; every need answered now, the one nothing
-//     calls for is taken off;
-//   - opened again: the remembered one loads without a click, and only the
-//     other is asked about;
+//     the other's failure stopped nothing; only the one that loaded is
+//     remembered; every need answered now, what no running plugin comes from
+//     (the one nothing calls for, and the one that failed) is taken off the
+//     list, so nothing is left to report or ask;
+//   - opened again: the remembered one loads without a click, and nothing is
+//     asked about;
 //   - the trait the third package answers taken off the scene: its entry
-//     goes, and the one that failed (not here) stays.
+//     goes.
 // Prints a JSON report and exits non-zero if any check fails.
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -122,7 +123,7 @@ try {
   {
     await b.waitFor(`window.__p.card() && !window.__p.card().hidden`, 5_000);
     await click("load");
-    const settled = await b.waitFor(`window.__p.packages().failed.length === 1 && window.__p.packages().loading.length === 0 && window.__p.running().includes("probe.sea")`, 15_000);
+    const settled = await b.waitFor(`window.__p.packages().loading.length === 0 && window.__p.running().includes("probe.sea") && window.__p.imported().length === 2`, 15_000);
     const imported = await P("imported()");
     const registered = await P("registered()");
     check("loadedAtItsHeads", !!settled && imported.length === 2 && imported.every((u) => /^automerge:[^#]+#.+/.test(u)) && imported.some((u) => u.startsWith(`${PKG}#`)), imported);
@@ -135,28 +136,25 @@ try {
     const card = await P("card()");
     const packages = await P("packages()");
     await shot("loaded");
-    check(
-      "theOtherFailureIsReported",
-      JSON.stringify(urls(packages.failed)) === JSON.stringify([BROKEN]) && !card.hidden && card.title === "A package this scene uses couldn't be loaded." && card.rows.length === 1 && /no package at/.test(card.rows[0].error ?? "") && JSON.stringify(card.actions) === JSON.stringify(["Dismiss", "Try again"]),
-      { packages, card },
-    );
+    // (nothing runs from the one that failed and every need is answered: it is taken off the list at once, so no failure is left to show)
+    check("theOtherFailureLeavesNothingToAskOrShow", packages.failed.length === 0 && packages.ask.length === 0 && card.hidden === true, { packages, card });
     const accepted = await P("accepted()");
     check("onlyWhatLoadedIsRemembered", JSON.stringify(accepted) === JSON.stringify([PKG]), accepted);
     // every need answered now: the one nothing calls for goes, the one that failed (not here) stays, and nothing is added
     const gone = await b.waitFor(`!window.__p.listed().includes(window.__p.STALE)`, 5_000);
     const listed = await P("listed()");
-    check("takesOffWhatNothingCallsForOnceEveryNeedIsAnswered", !!gone && JSON.stringify(listed) === JSON.stringify([PKG, BROKEN, LOCAL]) && (await P("registered()")).some((p) => p.id === "probe.stale"), listed);
+    check("takesOffWhatNothingCallsForOnceEveryNeedIsAnswered", !!gone && JSON.stringify(listed) === JSON.stringify([PKG, LOCAL]) && (await P("registered()")).some((p) => p.id === "probe.stale"), listed);
   }
 
   // ── remembered ────────────────────────────────────────────────────────────
   {
     await reopen();
-    const started = await b.waitFor(`window.__p.running().includes("probe.sea") && window.__p.packages().ask.length === 1`, 15_000);
+    const started = await b.waitFor(`window.__p.running().includes("probe.sea")`, 15_000);
     const packages = await P("packages()");
     const card = await P("card()");
     await shot("remembered");
     check("rememberedLoadsWithoutAsking", !!started && (await P("imported()")).length === 1 && (await P("imported()"))[0].startsWith(`${PKG}#`), { imported: await P("imported()"), packages });
-    check("theOtherIsStillAskedAbout", JSON.stringify(urls(packages.ask)) === JSON.stringify([BROKEN]) && card.title === "This scene uses a package you don't have." && JSON.stringify(card.actions) === JSON.stringify(["Not now", "Load it"]), card);
+    check("nothingIsAskedAbout", packages.ask.length === 0 && card.hidden === true, { packages, card });
     check("builtAgainUnasked", !!(await b.waitFor(`window.__p.loaded("box")`, 20_000)), await P('status("box")'));
   }
 
@@ -165,7 +163,7 @@ try {
     await P('untrait("probe.local")');
     const gone = await b.waitFor(`!window.__p.listed().includes(window.__p.LOCAL)`, 5_000);
     const listed = await P("listed()");
-    check("takesOffWhatIsNoLongerCalledFor", !!gone && JSON.stringify(listed) === JSON.stringify([PKG, BROKEN]), listed);
+    check("takesOffWhatIsNoLongerCalledFor", !!gone && JSON.stringify(listed) === JSON.stringify([PKG]), listed);
   }
 
   // SwiftShader's WebGL says it lacks an extension; the package that isn't served is meant to fail

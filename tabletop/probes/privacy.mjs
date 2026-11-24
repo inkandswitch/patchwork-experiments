@@ -48,6 +48,16 @@ const b = await browser({ root: ROOT, port: 4774, cdp: 9774, page: `/tabletop/pr
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
 const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
+/** The secure deck's crypto is the wall's; what it delivers (the faces) needs the page's frames too: a few at each look, so a poll isn't one frame of the clock. */
+const deals = async (expr, ms) => {
+  const t = Date.now();
+  for (;;) {
+    if (await js(`window.__p.${expr}`).catch(() => false)) return true;
+    if (Date.now() - t > ms) return false;
+    await b.step(30);
+    await sleep(60);
+  }
+};
 const list = checklist();
 const { check } = list;
 const report = { part: PART, checks: list.checks, details: list.details, shots: [], timeline: [] };
@@ -91,7 +101,7 @@ async function seatBoth({ secure }) {
   await P("pick('b', 'p2')");
   check("A in Player 1, B in Player 2", await until(`seats().p1.player === ${J(viewers.a)} && __p.seats().p2.player === ${J(viewers.b)}`), await P("seats()"));
   if (secure) {
-    const dealt = await until("phase() === 'playing' && __p.where().p1.every((id) => __p.state('a', id) === 'face') && __p.where().p2.every((id) => __p.state('b', id) === 'face') && __p.where().p1.length >= 8", 120_000);
+    const dealt = await deals("phase() === 'playing' && __p.where().p1.every((id) => __p.state('a', id) === 'face') && __p.where().p2.every((id) => __p.state('b', id) === 'face') && __p.where().p1.length >= 8", 120_000);
     check("the secure deck is dealt and each hand's faces delivered", dealt, { phase: await P("phase()"), a: await P("tally('a')"), b: await P("tally('b')") });
   }
   mark("seated");
