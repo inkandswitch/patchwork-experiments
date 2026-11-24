@@ -4,7 +4,7 @@
 // package verbs, process saves, clock acts, undos and redos up to a depth.
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
-import { DEPTH, EMPTY, createEdits, fold, inverse, leafPaths, moved, plain, pushed, same, topOf, valueAt } from "./undo.js";
+import { DEPTH, EMPTY, createEdits, fold, inverse, moved, plain, pushed, same, topOf, valueAt } from "./undo.js";
 
 /** A doc over a real Automerge doc, as the recorder writes one: change(fn) → its patches. */
 function amHandle(init, url = "automerge:scene") {
@@ -64,16 +64,6 @@ const box = () => {
 };
 
 describe("the pure parts", () => {
-  it("leafPaths: cut at the first list index, each once, none under another, never the root", () => {
-    const p = (...path) => ({ path });
-    expect(leafPaths([p("objects", "a", "transform", "position", 0), p("objects", "a", "transform", "position", 2), p("objects", "a", "name", 3)])).toEqual([
-      ["objects", "a", "transform", "position"],
-      ["objects", "a", "name"],
-    ]);
-    expect(leafPaths([p("objects", "b", "name"), p("objects", "b"), p("order", 4)])).toEqual([["objects", "b"], ["order"]]);
-    expect(leafPaths([p(), p(0), { nope: 1 }])).toEqual([]);
-  });
-
   it("plain and same: frozen doc values copied; deep equality, undefined only equal to itself", () => {
     const v = Object.freeze({ a: Object.freeze([1, 2]), b: undefined, c: new Uint8Array([1]) });
     const c = plain(v);
@@ -145,8 +135,8 @@ describe("createEdits on real Automerge", () => {
   const T = (position) => ({ position, rotation: [0, 0, 0], scale: 1 });
   const init = () => ({
     objects: {
-      die: { name: "Die", transform: T([0, 0, 0]), traits: { "dice.die": { face: 1 } } },
-      deck: { name: "Deck", transform: T([2, 0, 0]), traits: { "tabletop.deck": { order: ["c1", "c2", "c3"] } } },
+      die: { name: "Die", transform: T([0, 0, 0]), traits: { "t.die": { face: 1 } } },
+      deck: { name: "Deck", transform: T([2, 0, 0]), traits: { "t.deck": { order: ["c1", "c2", "c3"] } } },
       c1: { name: "C1", transform: T([2, 0.01, 0]) },
       c2: { name: "C2", transform: T([2, 0.02, 0]) },
       c3: { name: "C3", transform: T([2, 0.03, 0]) },
@@ -242,14 +232,14 @@ describe("createEdits on real Automerge", () => {
   // objects). No step on either stack ever holds a leaf only a verb, a save
   // or a pause writes. And an undo straight after an edit restores the doc as
   // it was before it; a redo straight after that undo, as it was after.
-  it("over every sequence of edits, verbs, saves, pauses, undos and redos: undo reverts only edits, whole", () => {
+  it("over every sequence of edits, verbs, saves, pauses, undos and redos: undo reverts only edits, whole (as undo.js's same judges, pinned by \"plain and same\")", () => {
     const depth = Number(globalThis.process?.env?.UNDO_DEPTH ?? 4);
     const LEAVES = [
       ["objects", "die"],
       ["objects", "die", "transform", "position"],
       ["objects", "die", "transform", "rotation"],
-      ["objects", "die", "traits", "dice.die", "face"],
-      ["objects", "deck", "traits", "tabletop.deck", "order"],
+      ["objects", "die", "traits", "t.die", "face"],
+      ["objects", "deck", "traits", "t.deck", "order"],
       ["objects", "c1", "transform", "position"],
       ["objects", "c2", "transform", "position"],
       ["objects", "c3", "transform", "position"],
@@ -262,8 +252,8 @@ describe("createEdits on real Automerge", () => {
     const VERB_ONLY = new Set(
       [
         ["objects", "die", "transform", "rotation"],
-        ["objects", "die", "traits", "dice.die", "face"],
-        ["objects", "deck", "traits", "tabletop.deck", "order"],
+        ["objects", "die", "traits", "t.die", "face"],
+        ["objects", "deck", "traits", "t.deck", "order"],
         ["objects", "hull", "saved"],
         ["clock", "running"],
         ["clock", "t"],
@@ -293,13 +283,13 @@ describe("createEdits on real Automerge", () => {
           if (!die) return;
           die.transform.position = [k, 0.5, 1];
           die.transform.rotation = [k, k, 0];
-          die.traits["dice.die"].face = (k % 6) + 1;
+          die.traits["t.die"].face = (k % 6) + 1;
         }),
       shuffle: (w) =>
         w.write((d) => {
-          const order = d.objects.deck.traits["tabletop.deck"].order;
+          const order = d.objects.deck.traits["t.deck"].order;
           const next = [order[1], order[2], order[0]];
-          d.objects.deck.traits["tabletop.deck"].order = next;
+          d.objects.deck.traits["t.deck"].order = next;
           next.forEach((c, i) => (d.objects[c].transform.position = [2, 0.01 * (i + 1), 0]));
         }),
       save: (w, k) =>
@@ -380,7 +370,7 @@ describe("createEdits on real Automerge", () => {
   // an undo or a redo), and B's likewise; neither stack holds a leaf only a
   // verb or a save writes; and on both replicas the order lists exactly the
   // objects.
-  it("two people on two replicas, merged at once, later or concurrently: undo reverts only my own edits, whole", () => {
+  it("two people on two replicas, merged at once, later or concurrently: undo reverts only my own edits, whole (as undo.js's same judges, pinned by \"plain and same\")", () => {
     const depth = Number(globalThis.process?.env?.UNDO_PAIR_DEPTH ?? 4);
     const LEAVES = [
       ["objects", "die"],

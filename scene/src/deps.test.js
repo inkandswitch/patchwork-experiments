@@ -44,18 +44,12 @@ describe("dependency watcher", () => {
     await timers.advance(2000);
     expect(w.snapshot()).toEqual({ "automerge:later": h.heads() });
     expect(timers.pendingDelays()).toEqual([]);
-    w.set([]);
-    expect(h.listenerCount("change")).toBe(0);
-  });
-
-  it("dropping a doc mid-retry cancels the retry", async () => {
-    const repo = new FakeRepo();
-    const timers = fakeTimers();
-    const w = createDependencyWatcher({ repo, onChange: () => {}, timers, now: timers.now });
-    w.set(["automerge:gone"]);
+    w.set(["automerge:later", "automerge:gone"]);
     await flush();
-    w.set([]);
+    expect(timers.pendingDelays()).toEqual([1000]);
+    w.set([]); // dropping a doc mid-retry cancels the retry
     expect(timers.pendingDelays()).toEqual([]);
+    expect(h.listenerCount("change")).toBe(0);
   });
 });
 

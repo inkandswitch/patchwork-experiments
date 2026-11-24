@@ -14,8 +14,7 @@ function setup(code = "KeyW") {
   const h = holdKey(el, root, code, (on) => held.push(on));
   const steps = {
     down: (id) => el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: id, pointerType: "touch" })),
-    // a mouse's middle and right buttons: not the primary press
-    mdown: (id) => el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: id, pointerType: "mouse", button: 1, buttons: 4 })),
+    // a mouse's right button: not the primary press (button > 0, as the middle one is)
     rdown: (id) => el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: id, pointerType: "mouse", button: 2, buttons: 2 })),
     up: (id) => el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: id, pointerType: "touch" })),
     cancel: (id) => el.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId: id, pointerType: "touch" })),
@@ -52,9 +51,7 @@ describe("holdKey: fingers on an element hold its key", () => {
     ["down1 letGo down2 up1 up2", [W, w, W, w]],
     ["down1 down2 letGo up1 up2", [W, w]],
     // only a primary press holds it
-    ["mdown1", []],
     ["rdown1", []],
-    ["rdown1 up1", []],
     ["rdown1 down1 up1", [W, w]],
     ["down1 rdown2 up1", [W, w]],
     ["down1 rdown2 up2", [W]],

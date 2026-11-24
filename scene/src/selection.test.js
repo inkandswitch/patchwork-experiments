@@ -19,6 +19,7 @@ const EVENTS = [
   ...PATHS.map((path) => ({ type: "enter", path, link: isLink(path) })),
   { type: "leave" },
   { type: "escape" },
+  { type: "clear" },
 ];
 const START = Object.freeze({ focus: Object.freeze([]), selected: null });
 const key = (st) => JSON.stringify(st);
@@ -43,7 +44,7 @@ describe("H10: the selection is at the focus", () => {
     ...PATHS.filter((p) => p.length === st.focus.length + 1 && atFocus(st.focus, p)).map((selected) => ({ focus: st.focus, selected })),
   ]);
 
-  it("each event from each state does what it says", () => {
+  it("each event from each state does what it says, given atFocus (which the next test pins)", () => {
     for (const st of STATES)
       for (const ev of EVENTS) {
         const next = selectionStep(st, ev);
@@ -52,6 +53,7 @@ describe("H10: the selection is at the focus", () => {
         if (ev.type === "press" && !ev.path.length) want = { focus: st.focus, selected: null };
         else if (ev.type === "press" || ev.type === "select") want = at ? { focus: st.focus, selected: at } : st; // outside the focus: nothing
         else if (ev.type === "enter") want = at && ev.link && at.length === ev.path.length ? { focus: at, selected: null } : st;
+        else if (ev.type === "clear") want = st.selected ? { focus: st.focus, selected: null } : st;
         else if (ev.type === "leave") want = st.focus.length ? { focus: st.focus.slice(0, -1), selected: null } : st;
         else want = st.selected ? { focus: st.focus, selected: null } : st.focus.length ? { focus: st.focus.slice(0, -1), selected: null } : st;
         expect([key(st), key(ev), key(next)]).toEqual([key(st), key(ev), key(want)]);
@@ -99,13 +101,5 @@ describe("focusSteps: from any focus to any other, a leave a level, then an ente
           if (!blocked) expect(st.focus).toEqual(to);
           else expect(st.focus.length).toBeLessThan(shut.length);
         }
-  });
-});
-
-describe("clear", () => {
-  it("clears a selection and nothing else", () => {
-    expect(selectionStep({ focus: ["a"], selected: ["a", "c"] }, { type: "clear" })).toEqual({ focus: ["a"], selected: null });
-    const st = { focus: ["a"], selected: null };
-    expect(selectionStep(st, { type: "clear" })).toBe(st);
   });
 });

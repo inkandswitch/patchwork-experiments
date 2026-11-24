@@ -1,7 +1,7 @@
 // Linearity (STAGE.md, "Views, stages and links", invariant I11): runtime state has at most one
 // writable holder among the docs a view reaches. A live link shares the one
 // holder, a pin can't write, and copy, extract and bundle leave runtime
-// state behind (src/transfer.js cleanObject, src/extract.js), so nothing
+// state behind (src/transfer.js planCopy, src/extract.js), so nothing
 // ever makes a second.
 //
 // Checked over three docs on real Automerge: A and C (empty scenes) and B,
@@ -18,7 +18,7 @@ import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
 import { emptyScene } from "./test/empty-scene.js";
 import { bundlePlan, extractHost, extractPlan } from "./extract.js";
-import { cleanObject, describesOf, refsOf, runtimeOf, RUNTIME_FIELDS } from "./transfer.js";
+import { describesOf, planCopy, refsOf, runtimeOf, RUNTIME_FIELDS } from "./transfer.js";
 import { LINK, atOf, isLink } from "./native/link-graph.js";
 import { orderedIds } from "./ops.js";
 
@@ -89,20 +89,18 @@ const OPS = {
   "bundle in C": (w, r) => bundleFirst(w, C, r),
 };
 
-// paste's copy: the subtree of x, each object as cleanObject leaves it (runtime state behind), with new ids
+// paste's copy, as planCopy plans it: the subtree of x, each object as cleanObject leaves it (runtime state behind), with new ids
 function copyInto(w, to, r) {
   const b = plainDoc(w.get(B_));
   if (!b.objects.x) return;
-  const ids = ["x", ...Object.keys(b.objects).filter((id) => b.objects[id].parent === "x")];
-  const map = new Map(ids.map((id) => [id, `c-${r.tag}-${++r.n}`]));
+  const { items } = planCopy({ objects: b.objects, order: b.order, roots: ["x"], runtime: RUNTIME });
+  const map = new Map(items.map((it) => [it.from, `c-${r.tag}-${++r.n}`]));
   w.set(
     to,
     Automerge.change(w.get(to), (d) => {
-      for (const id of ids) {
-        const o = cleanObject(b.objects[id], RUNTIME);
-        o.parent = o.parent ? map.get(o.parent) : null;
-        d.objects[map.get(id)] = o;
-        d.order.push(map.get(id));
+      for (const it of items) {
+        d.objects[map.get(it.from)] = { ...it.data, parent: it.parent != null ? map.get(it.parent) : null, transform: it.transform };
+        d.order.push(map.get(it.from));
       }
     }),
   );

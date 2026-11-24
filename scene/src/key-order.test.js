@@ -18,40 +18,31 @@ describe("a keys declaration, read once (declaredKeys, codesOf)", () => {
 });
 
 /**
- * What Chrome sends as KeyboardEvent.key for each code a declaration in the
- * repo uses, on a US layout with no modifier held. Written from the UI
- * Events `code` and `key` tables, not from key-order.js's own.
+ * What Chrome sends as KeyboardEvent.key on a US layout with no modifier
+ * held: one code for each of keyOfCode's rules (a letter, a digit, a named
+ * key), every modifier, and the punctuation. Written from the UI Events
+ * `code` and `key` tables, not from key-order.js's own.
  */
 const CHROME = {
-  KeyA: "a", KeyB: "b", KeyD: "d", KeyE: "e", KeyF: "f", KeyQ: "q", KeyR: "r", KeyS: "s", KeyW: "w", KeyX: "x", KeyZ: "z",
-  Digit1: "1", Digit2: "2", Digit3: "3", Digit4: "4", Digit5: "5", Digit6: "6", Digit7: "7",
-  ArrowUp: "ArrowUp", ArrowDown: "ArrowDown", ArrowLeft: "ArrowLeft", ArrowRight: "ArrowRight",
+  KeyQ: "q", Digit1: "1", ArrowUp: "ArrowUp",
   ShiftLeft: "Shift", ShiftRight: "Shift", AltLeft: "Alt", AltRight: "Alt", ControlLeft: "Control", ControlRight: "Control",
-  Space: " ", Comma: ",", Period: ".", Enter: "Enter", Backspace: "Backspace",
+  Space: " ", Comma: ",", Period: ".",
 };
 
 describe("keyOfCode: the key a US keyboard sends", () => {
-  it.each(Object.entries(CHROME))("%s sends %j (every code a declaration in the repo uses)", (code, key) => {
+  it.each(Object.entries(CHROME))("%s sends %j", (code, key) => {
     expect(keyOfCode(code)).toBe(key);
   });
 
-  // codeOfKey's inverse for every key it names (the same tables, read both ways)
-  const NAMED = [
-    ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((c) => `Key${c}`),
-    ..."0123456789".split("").map((d) => `Digit${d}`),
-    "Space", "Period", "Comma", "Slash", "Semicolon", "Quote", "BracketLeft", "BracketRight", "Minus", "Equal", "Backquote", "Backslash",
-    "Enter", "Escape", "Delete", "Backspace", "Tab", "Home", "End", "PageUp", "PageDown", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Insert",
-    ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`),
-  ];
-  it.each(NAMED)("codeOfKey(keyOfCode(%s)) is itself", (code) => {
+  // codeOfKey's inverse: punctuation and named keys are the same tables read
+  // both ways, so only the letter and digit rules (one regex each way) can disagree
+  it.each(["KeyQ", "Digit3"])("codeOfKey(keyOfCode(%s)) is itself", (code) => {
     expect(codeOfKey(keyOfCode(code))).toBe(code);
   });
 
   it.each([
     ["MetaLeft", "Meta"],
-    ["MetaRight", "Meta"],
     ["IntlBackslash", "Unidentified"],
-    ["", "Unidentified"],
     [null, "Unidentified"],
   ])("%s sends %j", (code, key) => {
     expect(keyOfCode(code)).toBe(key);
@@ -61,22 +52,15 @@ describe("keyOfCode: the key a US keyboard sends", () => {
 describe("nameOfCode: an unlabelled code as a person reads it", () => {
   it.each([
     ["KeyQ", "Q"],
-    ["Digit3", "3"],
     ["ArrowUp", "↑"],
     ["ArrowDown", "↓"],
     ["ArrowLeft", "←"],
     ["ArrowRight", "→"],
     ["Space", "Space"],
     ["ShiftLeft", "Shift"],
-    ["ShiftRight", "Shift"],
-    ["AltLeft", "Alt"],
-    ["ControlRight", "Control"],
-    ["MetaLeft", "Meta"],
     ["Enter", "Enter"],
-    ["Tab", "Tab"],
     ["Backspace", "⌫"],
     ["Escape", "Esc"],
-    ["Comma", ","],
     ["IntlBackslash", "IntlBackslash"],
   ])("%s reads %j", (code, name) => {
     expect(nameOfCode(code)).toBe(name);

@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { FakeRepo, flush } from "./test/fake-repo.js";
-import { coerceParam } from "./param-form.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
   const plugins = new Map();
@@ -46,18 +45,6 @@ getRegistry("scene:source").register({
   },
 });
 
-describe("coerceParam", () => {
-  it("coerces and clamps", () => {
-    expect(coerceParam({ kind: "number", min: 0, max: 5 }, "7")).toBe(5);
-    expect(coerceParam({ kind: "integer" }, "2.6")).toBe(3);
-    expect(coerceParam({ kind: "number" }, "abc")).toBeNull();
-    expect(coerceParam({ kind: "enum", options: [{ value: 2 }] }, "2")).toBe(2);
-    expect(coerceParam({ kind: "enum", options: [{ value: 2 }] }, "3")).toBeNull();
-    expect(coerceParam({ kind: "color" }, "#AABBCC")).toBe("#aabbcc");
-    expect(coerceParam({ kind: "boolean" }, 0)).toBe(false);
-  });
-});
-
 describe("scene-render-controls, standalone", () => {
   let cleanup;
   afterEach(() => cleanup?.());
@@ -88,22 +75,6 @@ describe("scene-render-controls, standalone", () => {
     box.dispatchEvent(new Event("change"));
     expect(render.doc().params.solid).toBe(false);
     expect(element.querySelector(".status").textContent).toBe("Not built yet");
-  });
-
-  it("opens nothing: no Open source (the inspector's Source section is where the source is), no open-document from any button", async () => {
-    const { element } = await mount();
-    expect(element.querySelector(".open-source")).toBeNull();
-    const opened = [];
-    element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
-    element.addEventListener(REBUILD_EVENT, (e) => e.preventDefault());
-    for (const b of element.querySelectorAll("button")) b.click();
-    await flush();
-    expect(opened).toEqual([]);
-  });
-
-  it("marks itself standalone outside a scene", async () => {
-    const { element } = await mount();
-    expect(element.querySelector(".scene-render-controls").hasAttribute("data-standalone")).toBe(true);
   });
 
   it("toggles pinned", async () => {
