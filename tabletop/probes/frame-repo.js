@@ -30,6 +30,7 @@ export function frameRepo(shared, who) {
         return local;
       },
       heads: () => Array.from(h.heads()),
+      containsHeads: (heads) => h.containsHeads(heads),
       view: (heads) => ({ url: `${h.url}#${Array.from(heads).join("|")}`, doc: () => fh.doc(), heads: () => Array.from(heads), isReadOnly: () => true }),
       change(fn) {
         const draft = structuredClone(fh.doc());
