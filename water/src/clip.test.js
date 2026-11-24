@@ -72,13 +72,17 @@ function reading(R, p, t) {
 describe("a live clip is a box (W27): G with { clip: c } in a dry world is, bit for bit, G with { size: c }", () => {
   const CLIPS = [[10, 3, 10], [60, 6, 60], [37.5, 2, 200]];
   const KINDS = { "inside, below the level": 0.4, "in the band": -0.2, above: -5, "below the floor": null };
+  // A clip enters the pipeline in one place (clipBody: the open body becomes { id, size: clip }); from
+  // there it is the code a size takes, on the same Sea object. So the pose (yaw, scale, position) reaches
+  // clip and size alike and cannot make them differ on one axis and not another: the two poses below are
+  // the identity and one that turns, scales and moves at once. What can differ is how the box meets the
+  // placement (3), its shape (3: a square, a large one, a thin deep one) and a tank aboard (2).
+  const POSES = [{ yawD: 0, scale: 1, at: [0, 0, 0] }, { yawD: 30, scale: 2, at: [12, 0, -7] }];
   for (const [label, place] of DRY_PLACEMENTS)
     for (const c of CLIPS)
-      for (const yawD of [0, 30])
-        for (const scale of [1, 2])
-          for (const at of [[0, 0, 0], [12, 0, -7]])
-            for (const tank of [false, true])
-              it(`${label}, clip ${c.join("×")}, yaw ${yawD}°, scale ${scale}, at ${at.join(",")}${tank ? ", a tank aboard" : ""}`, () => {
+      for (const { yawD, scale, at } of POSES)
+        for (const tank of [false, true])
+          it(`${label}, clip ${c.join("×")}, yaw ${yawD}°, scale ${scale}, at ${at.join(",")}${tank ? ", a tank aboard" : ""}`, () => {
                 const pose = { position: at, rotation: [0, deg(yawD), 0], scale };
                 const run = (trait) => {
                   const view = fakeView(place(boat({ trait, pose, tank })));
@@ -430,20 +434,25 @@ describe("the drawn block is the read water (W33)", () => {
             const origin = [M[12], M[13], M[14]];
             const n = mesh.rim.length;
             expect(mesh.positions.length / 3).toBe(mesh.top + 2 * n + 4);
+            // Every vertex is checked, and each failure is collected (never one expect per vertex: this
+            // loop runs over tens of thousands of them); one assertion at the end says there is none.
+            const bad = [];
+            const same = (what, a, b) => void (Object.is(a, b) || bad.push([what, a, b]));
+            const close = (what, a, b, tol) => void (Math.abs(a - b) < tol || bad.push([what, a, b]));
             for (let r = 0; r < n; r++) {
               const rim = mesh.rim[r], up = mesh.top + 2 * r, down = up + 1;
               // the skirt's top is the rim itself, bit for bit, and moves as it does
-              for (let k = 0; k < 3; k++) expect(mesh.positions[up * 3 + k]).toBe(mesh.positions[rim * 3 + k]);
-              expect([mesh.disp[up], mesh.disp[rim], mesh.disp[down]]).toEqual([1, 1, 0]);
+              for (let k = 0; k < 3; k++) same(`skirt top ${r}.${k}`, mesh.positions[up * 3 + k], mesh.positions[rim * 3 + k]);
+              if (![mesh.disp[up], mesh.disp[rim], mesh.disp[down]].every((x, i) => x === [1, 1, 0][i])) bad.push([`disp ${r}`, mesh.disp[up], mesh.disp[rim], mesh.disp[down]]);
               // its bottom on the body's floor, under the rim
               const X = origin[0] + mesh.positions[down * 3], Z = origin[2] + mesh.positions[down * 3 + 2];
-              expect(mesh.positions[down * 3]).toBe(mesh.positions[rim * 3]);
-              expect(mesh.positions[down * 3 + 1]).toBeCloseTo(floorAt(box, X, Z).y - box.level, 5);
+              same(`skirt bottom x ${r}`, mesh.positions[down * 3], mesh.positions[rim * 3]);
+              close(`skirt bottom y ${r}`, mesh.positions[down * 3 + 1], floorAt(box, X, Z).y - box.level, 5e-6);
             }
             for (let k = 0; k < 4; k++) {
               const f = mesh.top + 2 * n + k;
               const X = origin[0] + mesh.positions[f * 3], Z = origin[2] + mesh.positions[f * 3 + 2];
-              expect(mesh.positions[f * 3 + 1]).toBeCloseTo(floorAt(box, X, Z).y - box.level, 5);
+              close(`floor corner ${k}`, mesh.positions[f * 3 + 1], floorAt(box, X, Z).y - box.level, 5e-6);
             }
             for (const t of [0, 3.7, 1000])
               for (let i = 0; i < mesh.positions.length / 3; i++) {
@@ -451,14 +460,12 @@ describe("the drawn block is the read water (W33)", () => {
                 // the drawn top and rim are the reader's displaced surface
                 if (mesh.disp[i]) {
                   const d = R.displaced(origin[0] + mesh.positions[i * 3], origin[2] + mesh.positions[i * 3 + 2], t);
-                  for (const [a, b] of [[p[0], d[0]], [p[1], d[1]], [p[2], d[2]]]) expect(Math.abs(a - b)).toBeLessThan(1e-9);
+                  for (let k = 0; k < 3; k++) close(`displaced ${i}.${k} at ${t}`, p[k], d[k], 1e-9);
                 }
                 // and every face inside the extent
-                for (let k = 0; k < 3; k++) {
-                  expect(p[k]).toBeGreaterThanOrEqual(ext.min[k] - 1e-5);
-                  expect(p[k]).toBeLessThanOrEqual(ext.max[k] + 1e-5);
-                }
+                for (let k = 0; k < 3; k++) if (!(p[k] >= ext.min[k] - 1e-5 && p[k] <= ext.max[k] + 1e-5)) bad.push([`extent ${i}.${k} at ${t}`, p[k], ext.min[k], ext.max[k]]);
               }
+            expect(bad.slice(0, 5)).toEqual([]);
           });
 });
 
