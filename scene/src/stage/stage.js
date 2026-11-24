@@ -54,12 +54,11 @@ import { createContent } from "../content/content.js";
 import { modelOf, snapshotOf } from "./model.js";
 import { createDisplay } from "./display.js";
 import { apiOf } from "./drawn.js";
+import { lazyCopy, mapEvents } from "./events.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";
 
-/** Is this one of the router's events (so a stage hands it on in its own frame)? */
-const isEvent = (a) => !!a && typeof a === "object" && typeof a.type === "string" && "locked" in a;
 const noop = () => {};
 
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
@@ -345,22 +344,18 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // stage's frame; a widget's owner is this stage's extension id when it is one.
   function eventIn(ev) {
     const f = scope.frame();
-    const d = Object.getOwnPropertyDescriptors(ev);
-    const memo = {};
-    const lazy = (k, fn) => ({ enumerable: true, configurable: true, get: () => (k in memo ? memo[k] : (memo[k] = fn())) });
-    return Object.defineProperties({}, {
-      ...d,
-      hit: lazy("hit", () => {
+    return lazyCopy(ev, {
+      hit: () => {
         const h = ev.hit;
         return h ? hitIn(f, h, h.id == null ? null : elementOfKey(h.id)) : null;
-      }),
-      ray: lazy("ray", () => rayIn(f, ev.ray)),
-      widget: lazy("widget", () => {
+      },
+      ray: () => rayIn(f, ev.ray),
+      widget: () => {
         const w = ev.widget;
         if (!w) return w;
         const p = parseKey(w.owner);
         return { ...w, owner: p && p.n === n ? p.id : w.owner, ...(Array.isArray(w.point) ? { point: f.pointIn(w.point) } : {}), ...(Number.isFinite(w.distance) ? { distance: f.lengthIn(w.distance) } : {}) };
-      }),
+      },
     });
   }
   // An input or a session whose every method hears the router's events in this stage's frame.
@@ -368,16 +363,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   function framed(obj) {
     if (!obj || typeof obj !== "object") return obj;
     let f = framedOf.get(obj);
-    if (!f)
-      framedOf.set(
-        obj,
-        (f = new Proxy(obj, {
-          get(target, k) {
-            const v = Reflect.get(target, k, target);
-            return typeof v === "function" ? (...args) => v.apply(target, args.map((a) => (isEvent(a) ? eventIn(a) : a))) : v;
-          },
-        })),
-      );
+    if (!f) framedOf.set(obj, (f = mapEvents(obj, eventIn)));
     return f;
   }
 
