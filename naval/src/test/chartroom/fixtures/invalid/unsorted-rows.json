@@ -1,0 +1,540 @@
+{
+  "$schema": "../../schema.json",
+  "format": "hydrostatic-table",
+  "version": 1,
+  "name": "Analytical rectangular box",
+  "frame": {
+    "axes": "x-forward-y-port-z-up",
+    "originDescription": "Mid-length on the bottom centreline of the box",
+    "knReferenceM": [0, 0, 0]
+  },
+  "body": {
+    "description": "Closed 4 x 2 x 2 m rectangular box: x in [-2, 2], y in [-1, 1], z in [0, 2]. Includes bottom, four walls and a watertight top. The opening marker is hypothetical; the envelope stays closed after it immerses.",
+    "buoyancyEnvelope": "closed-watertight"
+  },
+  "table": {
+    "interpolation": "linear",
+    "rows": [
+      {
+        "heelDeg": 10,
+        "trimDeg": 2,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4.06418223755157,
+            "buoyancyCenterM": [
+              -0.0916514531435919, -0.115765451777954, 0.265824166956178
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 0.508022779693946],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": 0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 14.0962733563274
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8.12836447510313,
+            "buoyancyCenterM": [
+              -0.0458257265717959, -0.0578827258889768, 0.513929168248549
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 1.01604555938789],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": 0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 20.1925467126547
+          },
+          {
+            "waterplaneOffsetM": 1.5,
+            "volumeM3": 12.1925467126547,
+            "buoyancyCenterM": [
+              -0.0305504843811973, -0.0385884839259845, 0.765971761910654
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 1.52406833908184],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": 0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 26.2888200689821
+          }
+        ]
+      },
+      {
+        "heelDeg": 0,
+        "trimDeg": 2,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4.00243817719529,
+            "buoyancyCenterM": [-0.0930653245400026, 0, 0.251777342447673],
+            "waterplane": {
+              "areaM2": 8.00487635439057,
+              "centroidM": [0, 0, 0.500304772149411],
+              "secondMomentsM4": {
+                "xx": 10.6861839760607,
+                "xy": 0,
+                "yy": 2.66829211813019
+              }
+            },
+            "wettedAreaM2": 14.0036572657929
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8.00487635439057,
+            "buoyancyCenterM": [-0.0465326622700013, 0, 0.501117250335895],
+            "waterplane": {
+              "areaM2": 8.00487635439057,
+              "centroidM": [0, 0, 1.00060954429882],
+              "secondMomentsM4": {
+                "xx": 10.6861839760607,
+                "xy": 0,
+                "yy": 2.66829211813019
+              }
+            },
+            "wettedAreaM2": 20.0073145315859
+          },
+          {
+            "waterplaneOffsetM": 1.5,
+            "volumeM3": 12.0073145315859,
+            "buoyancyCenterM": [-0.0310217748466675, 0, 0.750998810348439],
+            "waterplane": {
+              "areaM2": 8.00487635439057,
+              "centroidM": [0, 0, 1.50091431644823],
+              "secondMomentsM4": {
+                "xx": 10.6861839760607,
+                "xy": 0,
+                "yy": 2.66829211813019
+              }
+            },
+            "wettedAreaM2": 26.0109717973788
+          }
+        ]
+      },
+      {
+        "heelDeg": -10,
+        "trimDeg": 2,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4.06418223755157,
+            "buoyancyCenterM": [
+              -0.0916514531435919, 0.115765451777954, 0.265824166956178
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 0.508022779693946],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": -0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 14.0962733563274
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8.12836447510313,
+            "buoyancyCenterM": [
+              -0.0458257265717959, 0.0578827258889768, 0.513929168248549
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 1.01604555938789],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": -0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 20.1925467126547
+          },
+          {
+            "waterplaneOffsetM": 1.5,
+            "volumeM3": 12.1925467126547,
+            "buoyancyCenterM": [
+              -0.0305504843811973, 0.0385884839259845, 0.765971761910654
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 1.52406833908184],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": -0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 26.2888200689821
+          }
+        ]
+      },
+      {
+        "heelDeg": 10,
+        "trimDeg": 0,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4.06170644754298,
+            "buoyancyCenterM": [0, -0.115765451777954, 0.264062939262615],
+            "waterplane": {
+              "areaM2": 8.12341289508596,
+              "centroidM": [0, 0, 0.507713305942873],
+              "secondMomentsM4": {
+                "xx": 10.8312171934479,
+                "xy": 0,
+                "yy": 2.79199319453498
+              }
+            },
+            "wettedAreaM2": 14.0925596713145
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8.12341289508596,
+            "buoyancyCenterM": [0, -0.0578827258889768, 0.512816449088462],
+            "waterplane": {
+              "areaM2": 8.12341289508596,
+              "centroidM": [0, 0, 1.01542661188575],
+              "secondMomentsM4": {
+                "xx": 10.8312171934479,
+                "xy": 0,
+                "yy": 2.79199319453498
+              }
+            },
+            "wettedAreaM2": 20.1851193426289
+          },
+          {
+            "waterplaneOffsetM": 1.5,
+            "volumeM3": 12.1851193426289,
+            "buoyancyCenterM": [0, -0.0385884839259845, 0.764972054344702],
+            "waterplane": {
+              "areaM2": 8.12341289508596,
+              "centroidM": [0, 0, 1.52313991782862],
+              "secondMomentsM4": {
+                "xx": 10.8312171934479,
+                "xy": 0,
+                "yy": 2.79199319453498
+              }
+            },
+            "wettedAreaM2": 26.2776790139434
+          }
+        ]
+      },
+      {
+        "heelDeg": 0,
+        "trimDeg": 0,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4.0,
+            "buoyancyCenterM": [0, 0, 0.25],
+            "waterplane": {
+              "areaM2": 8.0,
+              "centroidM": [0, 0, 0.5],
+              "secondMomentsM4": {
+                "xx": 10.6666666666667,
+                "xy": 0,
+                "yy": 2.66666666666667
+              }
+            },
+            "wettedAreaM2": 14.0
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8.0,
+            "buoyancyCenterM": [0, 0, 0.5],
+            "waterplane": {
+              "areaM2": 8.0,
+              "centroidM": [0, 0, 1.0],
+              "secondMomentsM4": {
+                "xx": 10.6666666666667,
+                "xy": 0,
+                "yy": 2.66666666666667
+              }
+            },
+            "wettedAreaM2": 20.0
+          },
+          {
+            "waterplaneOffsetM": 1.5,
+            "volumeM3": 12.0,
+            "buoyancyCenterM": [0, 0, 0.75],
+            "waterplane": {
+              "areaM2": 8.0,
+              "centroidM": [0, 0, 1.5],
+              "secondMomentsM4": {
+                "xx": 10.6666666666667,
+                "xy": 0,
+                "yy": 2.66666666666667
+              }
+            },
+            "wettedAreaM2": 26.0
+          }
+        ]
+      },
+      {
+        "heelDeg": -10,
+        "trimDeg": 0,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4.06170644754298,
+            "buoyancyCenterM": [0, 0.115765451777954, 0.264062939262615],
+            "waterplane": {
+              "areaM2": 8.12341289508596,
+              "centroidM": [0, 0, 0.507713305942873],
+              "secondMomentsM4": {
+                "xx": 10.8312171934479,
+                "xy": 0,
+                "yy": 2.79199319453498
+              }
+            },
+            "wettedAreaM2": 14.0925596713145
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8.12341289508596,
+            "buoyancyCenterM": [0, 0.0578827258889768, 0.512816449088462],
+            "waterplane": {
+              "areaM2": 8.12341289508596,
+              "centroidM": [0, 0, 1.01542661188575],
+              "secondMomentsM4": {
+                "xx": 10.8312171934479,
+                "xy": 0,
+                "yy": 2.79199319453498
+              }
+            },
+            "wettedAreaM2": 20.1851193426289
+          },
+          {
+            "waterplaneOffsetM": 1.5,
+            "volumeM3": 12.1851193426289,
+            "buoyancyCenterM": [0, 0.0385884839259845, 0.764972054344702],
+            "waterplane": {
+              "areaM2": 8.12341289508596,
+              "centroidM": [0, 0, 1.52313991782862],
+              "secondMomentsM4": {
+                "xx": 10.8312171934479,
+                "xy": 0,
+                "yy": 2.79199319453498
+              }
+            },
+            "wettedAreaM2": 26.2776790139434
+          }
+        ]
+      },
+      {
+        "heelDeg": 10,
+        "trimDeg": -2,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4.06418223755157,
+            "buoyancyCenterM": [
+              0.0916514531435919, -0.115765451777954, 0.265824166956178
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 0.508022779693946],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": -0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 14.0962733563274
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8.12836447510313,
+            "buoyancyCenterM": [
+              0.0458257265717959, -0.0578827258889768, 0.513929168248549
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 1.01604555938789],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": -0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 20.1925467126547
+          },
+          {
+            "waterplaneOffsetM": 1.5,
+            "volumeM3": 12.1925467126547,
+            "buoyancyCenterM": [
+              0.0305504843811973, -0.0385884839259845, 0.765971761910654
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 1.52406833908184],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": -0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 26.2888200689821
+          }
+        ]
+      },
+      {
+        "heelDeg": 0,
+        "trimDeg": -2,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4.00243817719529,
+            "buoyancyCenterM": [0.0930653245400026, 0, 0.251777342447673],
+            "waterplane": {
+              "areaM2": 8.00487635439057,
+              "centroidM": [0, 0, 0.500304772149411],
+              "secondMomentsM4": {
+                "xx": 10.6861839760607,
+                "xy": 0,
+                "yy": 2.66829211813019
+              }
+            },
+            "wettedAreaM2": 14.0036572657929
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8.00487635439057,
+            "buoyancyCenterM": [0.0465326622700013, 0, 0.501117250335895],
+            "waterplane": {
+              "areaM2": 8.00487635439057,
+              "centroidM": [0, 0, 1.00060954429882],
+              "secondMomentsM4": {
+                "xx": 10.6861839760607,
+                "xy": 0,
+                "yy": 2.66829211813019
+              }
+            },
+            "wettedAreaM2": 20.0073145315859
+          },
+          {
+            "waterplaneOffsetM": 1.5,
+            "volumeM3": 12.0073145315859,
+            "buoyancyCenterM": [0.0310217748466675, 0, 0.750998810348439],
+            "waterplane": {
+              "areaM2": 8.00487635439057,
+              "centroidM": [0, 0, 1.50091431644823],
+              "secondMomentsM4": {
+                "xx": 10.6861839760607,
+                "xy": 0,
+                "yy": 2.66829211813019
+              }
+            },
+            "wettedAreaM2": 26.0109717973788
+          }
+        ]
+      },
+      {
+        "heelDeg": -10,
+        "trimDeg": -2,
+        "samples": [
+          {
+            "waterplaneOffsetM": 0.5,
+            "volumeM3": 4.06418223755157,
+            "buoyancyCenterM": [
+              0.0916514531435919, 0.115765451777954, 0.265824166956178
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 0.508022779693946],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": 0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 14.0962733563274
+          },
+          {
+            "waterplaneOffsetM": 1,
+            "volumeM3": 8.12836447510313,
+            "buoyancyCenterM": [
+              0.0458257265717959, 0.0578827258889768, 0.513929168248549
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 1.01604555938789],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": 0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 20.1925467126547
+          },
+          {
+            "waterplaneOffsetM": 1.5,
+            "volumeM3": 12.1925467126547,
+            "buoyancyCenterM": [
+              0.0305504843811973, 0.0385884839259845, 0.765971761910654
+            ],
+            "waterplane": {
+              "areaM2": 8.12836447510313,
+              "centroidM": [0, 0, 1.52406833908184],
+              "secondMomentsM4": {
+                "xx": 10.8511383163812,
+                "xy": 0.0169407655228158,
+                "yy": 2.79369503806906
+              }
+            },
+            "wettedAreaM2": 26.2888200689821
+          }
+        ]
+      }
+    ]
+  },
+  "referenceState": {
+    "heelDeg": 0,
+    "trimDeg": 0,
+    "waterplaneOffsetM": 1
+  },
+  "immersionMarkers": [
+    {
+      "id": "deck-edge",
+      "label": "Top perimeter",
+      "kind": "deck-edge",
+      "pointsM": [
+        [-2, -1, 2],
+        [2, -1, 2],
+        [2, 1, 2],
+        [-2, 1, 2]
+      ]
+    },
+    {
+      "id": "starboard-opening",
+      "label": "Hypothetical unprotected starboard opening",
+      "kind": "downflooding",
+      "pointsM": [[1, -1, 1.6]]
+    }
+  ],
+  "source": {
+    "tool": "Analytical rectangular-box fixture",
+    "modelId": "box-4x2x2",
+    "method": "Exact integration of z <= (h - nx*x - ny*y)/nz over the rectangular plan. All sampled cuts lie strictly between bottom and top at every corner.",
+    "notes": [
+      "Waterplane moments use the world-horizontal basis after Rx(heel) Ry(-trim). No synthetic closure area is included in wetted area; all six box faces are physical."
+    ]
+  },
+  "notes": [
+    "Demonstration data, not a ship stability assessment.",
+    "Coverage is deliberately limited to heel [-10, 10] degrees, trim [-2, 2] degrees and plane offset [0.5, 1.5] metres.",
+    "Samples are analytical; the specified linear interpolant is approximate. No 30/40 degree criteria or angle of vanishing stability can be established from this dataset."
+  ]
+}

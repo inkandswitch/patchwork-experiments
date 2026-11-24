@@ -1,0 +1,185 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rig probe</title>
+<!-- Driven by probes/rig-run.mjs. The BUILT rig plugins (naval/dist) and
+     camber's BUILT plugins (served at /camber/ from camber/patchwork/dist; its
+     scene:source builds a hull's GLB here, as a scene host would), in a stub
+     registry, on an in-memory repo. The runner makes a camber hull doc from
+     one of camber's examples (made at real size in node by
+     camber-hull-doc.mts), builds it with camber's default params, links
+     a rig to it, drags the rig's handles with real pointer events, and reads
+     the readouts' data attributes. A dev tool: no package imports another. -->
+<script type="importmap">
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  #host { height: 100vh; }
+  :root[data-dark] {
+    /* what a host's dark theme sets: the editor tokens the tool reads */
+    --editor-fill: #1a1a19; --editor-line: #f0efec; --studio-link: #6ea0ff; color-scheme: dark;
+  }
+  :root[data-dark] body { background: #1a1a19; }
+</style>
+<div id="host"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origError = console.error;
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+try {
+  for (const url of ["../dist/index.js", "/camber/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo; // the tool's late-bound repo (globalThis.repo, as in a Patchwork host)
+  const host = document.getElementById("host");
+  const RigDatatype = await getRegistry("patchwork:datatype").get("rig-design").load();
+  const RigTool = (await getRegistry("patchwork:tool").load("rig-design")).module;
+  const camberSource = (await getRegistry("scene:source").load("camber-hull-surface")).module;
+  const camberSpec = getRegistry("scene:source").get("camber-hull-surface");
+  const rigSourceSpec = getRegistry("scene:source").get("rig-design");
+  const rigSource = (await getRegistry("scene:source").load("rig-design")).module;
+  const defaults = (specs) => Object.fromEntries((specs ?? []).map((s) => [s.key, s.default]));
+
+  let mounted = null; // { handle, cleanup }
+  const $ = (s) => host.querySelector(s);
+  const $$ = (s) => [...host.querySelectorAll(s)];
+  const rect = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; };
+
+  /** The GLB's JSON chunk. */
+  const glbJson = (bytes) => {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const len = dv.getUint32(12, true);
+    return JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + len)));
+  };
+
+  const P = (window.__p = {
+    errors, repo,
+    /**
+     * A camber hull doc (made in node by camber-hull-doc.mts, camber's stored
+     * form, at real size when given a length), and what camber's scene:source
+     * builds from it with its DEFAULT params: the rig's source path.
+     */
+    async hull(hullDocJson) {
+      const hullDoc = repo.add(hullDocJson);
+      const params = defaults(camberSpec.params);
+      const r = await camberSource.build({ doc: hullDoc.doc(), handle: hullDoc, url: hullDoc.url, params, repo });
+      const ship = glbJson(r.glb).scenes?.[0]?.extras?.ship ?? null;
+      return { hullUrl: hullDoc.url, bounds: r.meta?.bounds ?? null, ship, notes: r.meta?.notes ?? null, params };
+    },
+    /** A scene's render of a hull, stretched by "Scale to length" (what the rig must refuse). */
+    async scaledRender(hullUrl, lengthMeters) {
+      const hullDoc = await repo.find(hullUrl);
+      const params = { ...defaults(camberSpec.params), size: "length", lengthMeters };
+      const r = await camberSource.build({ doc: hullDoc.doc(), handle: hullDoc, url: hullUrl, params, repo });
+      const file = repo.add({ "@patchwork": { type: "file" }, name: "hull.glb", extension: "glb", mimeType: "model/gltf-binary", content: r.glb });
+      const render = repo.add({
+        "@patchwork": { type: "scene-render" }, title: `${hullDoc.doc().title}`, parent: hullUrl, providerId: "camber-hull-surface",
+        params, glbUrl: file.url, builtFrom: null, builtAt: Date.now(), status: "idle", error: null, bounds: r.meta?.bounds ?? null,
+      });
+      return render.url;
+    },
+    /** A fresh rig doc (the datatype's init: the stock sloop), `edit` applied, mounted in place of any other. */
+    mount(edit = null) {
+      mounted?.cleanup();
+      host.innerHTML = "";
+      const d = {};
+      RigDatatype.init(d);
+      const handle = repo.add({ "@patchwork": { type: "rig-design" }, ...d });
+      if (edit) handle.change(new Function("d", edit));
+      mounted = { handle, cleanup: RigTool(handle, host) };
+      return handle.url;
+    },
+    change(edit) { mounted.handle.change(new Function("d", edit)); },
+    doc: () => mounted.handle.doc(),
+    /** every readout: id → { v (SI), prov, text } */
+    readouts() {
+      const out = {};
+      for (const el of $$("[data-readout]")) {
+        const v = el.dataset.value;
+        out[el.dataset.readout] = { v: v === "" ? null : Number(v), prov: el.dataset.prov, text: el.querySelector("dd")?.textContent.replace(/\s+/g, " ").trim() ?? "" };
+      }
+      return out;
+    },
+    warnings: () => $$(".rig-warnings li").map((li) => li.textContent),
+    linkStatus: () => ({ text: $(".link-status")?.textContent ?? null, tone: $(".link-status")?.dataset.tone ?? null, chip: $('[data-chip="hull"]')?.textContent ?? null }),
+    helperStatus: () => ({ text: $(".helper-status")?.textContent ?? "", tone: $(".helper-status")?.dataset.tone ?? "" }),
+    title: () => $(".rig-title")?.textContent ?? null,
+    /** page coords of a drawing handle, and the drawing's pixels per metre */
+    handleAt: (id) => rect($(`[data-handle="${id}"]`)),
+    markAt: (id) => rect($(`[data-mark="${id}"]`)),
+    pxPerM() {
+      const svg = $(".profile-svg");
+      const vb = svg.getAttribute("viewBox").split(/\s+/).map(Number);
+      const r = svg.getBoundingClientRect();
+      return Math.min(r.width / vb[2], r.height / vb[3]);
+    },
+    dragging: () => $(".rig-design")?.getAttribute("data-dragging") ?? null,
+    /** "New from…", as a person picks it from the menu */
+    pick(value) {
+      const s = $('[data-act="new-from"]');
+      s.value = value;
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    options: () => [...$('[data-act="new-from"]').options].map((o) => o.value).filter(Boolean),
+    polar() {
+      const g = $('[data-group="performance"]');
+      const dots = $$(".polar-dot").map((c) => ({ hollow: c.hasAttribute("data-hollow"), regime: c.dataset.regime ?? null, title: c.querySelector("title")?.textContent ?? "" }));
+      const cells = $$(".polar-table td[data-regime]").map((td) => ({ regime: td.dataset.regime, text: td.textContent, title: td.title }));
+      return { stale: g?.hasAttribute("data-stale") ?? null, dots, cells, caption: $(".polar-table caption")?.textContent ?? null };
+    },
+    /** the rig's scene:source, as a scene host calls it, on the mounted rig doc: its GLB's extras, nodes and meta */
+    async buildGlb(params = {}) {
+      const h = mounted.handle;
+      const r = await rigSource.build({ doc: h.doc(), handle: h, url: h.url, params: { ...defaults(rigSourceSpec.params), ...params }, repo });
+      const json = glbJson(r.glb);
+      return { bytes: r.glb.byteLength, meta: r.meta ?? null, extras: json.scenes?.[json.scene ?? 0]?.extras ?? null, nodes: (json.nodes ?? []).map((n) => n.name), asset: json.asset };
+    },
+    fingerprint: () => rigSource.fingerprint?.(mounted.handle.doc()),
+    dependencies: () => rigSource.dependencies?.(mounted.handle.doc()),
+    setTheme(dark) { if (dark) document.documentElement.setAttribute("data-dark", ""); else document.documentElement.removeAttribute("data-dark"); },
+    scrollTo(sel) { const el = $(sel); el?.scrollIntoView({ block: "start" }); return !!el; },
+    contentHeight: () => $(".rig-design")?.scrollHeight ?? 0,
+    /** the strip under the drawing: its items, its lines, and where it sits in the viewport */
+    glance() {
+      const g = $(".rig-glance");
+      if (!g) return null;
+      const r = g.getBoundingClientRect();
+      const items = Object.fromEntries($$(".glance-item").map((el) => [el.dataset.glance, { text: el.textContent.replace(/\s+/g, " ").trim(), out: el.hasAttribute("data-out") }]));
+      return { top: r.top, bottom: r.bottom, height: r.height, inView: r.top >= -1 && r.bottom <= innerHeight + 1, items, at: $(".glance-at")?.textContent ?? null, disagree: $(".glance-disagree")?.textContent ?? null, doubt: $(".glance-doubt")?.textContent ?? null };
+    },
+    /** on-screen sizes in the drawing: a visible handle's radius, its touch target's, a label's font, px */
+    drawingSizes() {
+      const k = P.pxPerM();
+      const h = $(".profile-svg .handle"), hit = $(".profile-svg .handle-hit"), lab = $(".profile-svg .label");
+      return { pxPerM: k, handleR: h ? Number(h.getAttribute("r")) * k : null, hitR: hit ? Number(hit.getAttribute("r")) * k : null, labelPx: lab ? Number(lab.getAttribute("font-size")) * k : null, svgTouch: getComputedStyle($(".profile-svg")).touchAction, handleTouch: h ? getComputedStyle(h).touchAction : null };
+    },
+    /** a numbers group's top, in the tool's scrolled content (px from its top) */
+    groupTop(id) {
+      const root = $(".rig-design"), el = $(`[data-group="${id}"]`);
+      return el ? el.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop : null;
+    },
+    banner: () => ({ text: $(".extrap-banner")?.textContent.replace(/\s+/g, " ").trim() ?? null, level: $(".extrap-banner")?.dataset.level ?? null, dashed: !!$(".perf-figures[data-extrapolated]") }),
+    scrollTop(y) { const el = $(".rig-design"); if (el) el.scrollTop = y; return el?.scrollTop ?? 0; },
+    overflowX() {
+      // anything wider than the tool's own box (the page must not scroll sideways)
+      const root = $(".rig-design");
+      const w = root.clientWidth;
+      const wide = $$(".rig-design *").filter((el) => { const r = el.getBoundingClientRect(); return r.right > root.getBoundingClientRect().right + 1 && !el.closest(".polar-table-wrap") && getComputedStyle(el).position !== "fixed"; });
+      return { scrollWidth: root.scrollWidth, clientWidth: w, wide: wide.slice(0, 8).map((el) => `${el.tagName.toLowerCase()}.${el.className?.baseVal ?? el.className}`) };
+    },
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`fatal: ${err?.stack || err}`);
+  window.__ready = true;
+}
+</script>

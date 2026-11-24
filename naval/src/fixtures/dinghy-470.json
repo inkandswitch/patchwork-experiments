@@ -1,0 +1,261 @@
+{
+  "version": 1,
+  "title": "470",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 4.7,
+      "lwl": 4.4,
+      "beam": 1.69,
+      "bwl": 1.37,
+      "tc": 0.105,
+      "draft": 0.97,
+      "freeboard": 0.4,
+      "displacementKg": 250,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "fractional",
+    "mast": {
+      "aftOfStem": 1.575,
+      "rakeDeg": 0,
+      "stepped": "keel",
+      "kgPerM": null
+    },
+    "I": 4.5,
+    "P": 5.75,
+    "E": 2.65,
+    "BAS": 0.55,
+    "ISP": null,
+    "forestayAftOfStem": 0.07,
+    "main": {
+      "roach": 0.197047,
+      "reefs": []
+    },
+    "headsail": {
+      "kind": "genoa",
+      "LP": 1.78,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "centreboard",
+      "aftOfStem": 1.96,
+      "span": 0.8756,
+      "rootChord": 0.46,
+      "tipChord": 0.295,
+      "sweepDeg": 0,
+      "tc": 0.0478,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "kick-up",
+      "aftOfStem": 4.75,
+      "span": 0.58,
+      "rootChord": 0.25,
+      "tipChord": 0.25,
+      "sweepDeg": 0,
+      "tc": 0.088,
+      "maxDeg": 30,
+      "stockFrac": 0.15
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 0,
+      "at": "hull"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 2,
+      "kgEach": 65,
+      "mode": "trapeze",
+      "arm": null
+    }
+  },
+  "conditions": {
+    "heelLimitDeg": 15
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "hull.dims.freeboard": "estimated",
+    "hull.dims.displacementKg": "estimated",
+    "rig.I": "estimated",
+    "rig.BAS": "estimated",
+    "rig.headsail.LP": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.rudder.maxDeg": "estimated",
+    "appendages.rudder.stockFrac": "estimated",
+    "loading.crew.kgEach": "estimated",
+    "loading.crew.mode": "estimated"
+  },
+  "sources": [
+    {
+      "id": "470-class-rules",
+      "what": "Hull length 4690–4710 mm between the aft measurement point (AMP, the transom's lower edge on the centreplane) and the sheer point on the stem; the mast's aft edge at the step 3055–3115 mm from the hull datum point, its section 65–75 mm fore and aft; forestay height 4995–5025 mm above the mast's heel; lower point 1055 mm, upper point 5750 mm above it; boom outer point 2650 mm; centreboard pivot 2650 ± 10 mm from the datum, 102 ± 10 mm above the hull; centreboard chord 450–470, 285–305 at the lower edge, pivot 1015–1035 from the lower edge and 85–95 from the leading edge, 20–24 mm thick; rudder chord 240–260, 20–24 mm thick, its pivot at most 150 mm abaft the transom; boat weight 120 kg; two crew, one trapeze",
+      "cite": "International 470 Class Rules 2019 (World Sailing, effective 15 January 2019), C.6, C.8, D.3, D.4, E.3, E.4, F.3, F.4",
+      "url": "https://arbitrage.ffvoile.fr/media/lgjjpzdb/470-2019-gbr.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "quoted": "The distance of the centre of the centreboard pivot from the HDP shall be 2650mm ± 10mm and its height above the prolongation of the hull at the centreplane shall be 102mm ± 10mm"
+    },
+    {
+      "id": "470-measurement-form",
+      "what": "From the AMP: the headsail attachment hole in the stemhead fitting 4615–4645 mm; the mast partner's aft end 2990–3020 and forward end 3160–3190 mm; the centreboard slot at the keel 1575–1585 to 2755–2765 mm",
+      "cite": "ISAF, International 470 Class measurement form (2013), as hosted by Svensk Segling",
+      "url": "https://www.svensksegling.se/om-oss/dokumentbanken/217-470-matformular-2013.pdf/",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "470-class",
+      "what": "Length 4.7 m, waterline 4.4 m, boat weight 120 kg, main 9.12 m², jib 3.58 m², optimum crew weight 110–145 kg",
+      "cite": "International 470 Class Association, 'About the 470'",
+      "url": "https://www.470.org/default/classinfo/content/id/about-the-470",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "wiki-470",
+      "what": "Beam 1690 mm, draft 150 / 970 mm (neither with an inline citation); D-PN 86.3, RYA PN 973",
+      "cite": "Wikipedia, \"470 (dinghy)\" (infobox; cites 470.org and the two yardstick lists)",
+      "url": "https://en.wikipedia.org/wiki/470_(dinghy)",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "Its sketch (470_dinghy.svg) was used only for the hull's depth at the mast, 0.52 m: I and BAS above the sheer are the rule's heights above the heel less about 0.5 m, ±0.1 m."
+    },
+    {
+      "id": "rya-pn-2010",
+      "what": "470: Portsmouth Number 973",
+      "cite": "RYA Portsmouth Yardstick List 2010 (archived)",
+      "url": "https://web.archive.org/web/20130525172946if_/http://www.rya.org.uk/SiteCollectionDocuments/technical/Web%20Documents/py-general/2010%20Part%207%20PN%20List.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "The Laser's fixture quotes 1102 from Wikipedia's 2024 list: two editions, usable for order only."
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give the ratios as sailboatdata prints them",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-10",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval. Its ratios are quoted here from the sites that reproduce its table (named per figure)."
+    }
+  ],
+  "published": {
+    "note": "Mast, forestay, centreboard and rudder are class-rule dimensions from the transom's measurement point, turned into distances from the stem with the rule's hull length (4.70 m ± 0.01). No source gives her waterline beam, canoe-body draft, coefficients or a polar.",
+    "figures": [
+      {
+        "id": "mainM2",
+        "label": "Main, with roach",
+        "value": 9.12,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.01
+        },
+        "source": "470-class",
+        "roundTrip": "the roach is set so the main is the class's 9.12 m² (½·5.75·2.65 = 7.619 m²)"
+      },
+      {
+        "id": "hullSpeedKn",
+        "label": "Hull speed",
+        "value": 5.09,
+        "unit": "kn",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "470-class",
+        "work": "1.34·√(4.4/0.3048) = 5.091, worked here from the class's waterline"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft, board down",
+        "value": 0.97,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "wiki-470",
+        "roundTrip": "the board's span is solved so that the draft reaches 0.97 m; the rule's board, its leading edge vertical, reaches 0.92 m below the hull"
+      }
+    ],
+    "balance": {
+      "phrf": null,
+      "portsmouth": {
+        "value": 973,
+        "source": "rya-pn-2010"
+      },
+      "real": {
+        "mastAftOfStem": {
+          "value": 1.575,
+          "status": "given",
+          "how": "the middle of where the rule lets the mast's front be at the deck: inside the partner (1.510–1.710 m aft of the stem) with the 65–75 mm section, 1.525–1.625",
+          "pm": 0.05
+        },
+        "keelLeAftOfStem": {
+          "value": 1.96,
+          "status": "given",
+          "how": "the pivot 2650 mm from the transom's datum, 85–95 mm aft of the leading edge, the leading edge taken vertical (the down angle is the sailor's)",
+          "pm": 0.05
+        },
+        "wlFwdAftOfStem": {
+          "value": null,
+          "status": "not sourced"
+        }
+      },
+      "weight": "fair",
+      "why": "Her rig and foils are fixed by class rule to within 0.05 m, the best positions in the fleet. But no lead band is quoted for a centreboard dinghy with a trapeze crew, whose balance is trimmed by rake, board angle and heel, and her hull (BWL, Tc, displacement with crew) is estimated throughout."
+    },
+    "disagreements": [
+      {
+        "what": "Jib area",
+        "values": [
+          {
+            "value": "3.58 m²",
+            "source": "470-class"
+          },
+          {
+            "value": "3.66 m² (Heron's formula on the rule's maximum luff 4100, leech 3750, foot 1955)",
+            "source": "470-class-rules"
+          }
+        ],
+        "used": "LP 1.78 m, from the rule's edges"
+      },
+      {
+        "what": "Crew weight",
+        "values": [
+          {
+            "value": "110–145 kg",
+            "source": "470-class"
+          },
+          {
+            "value": "120–135 kg (World Sailing's class page)",
+            "source": "470-class"
+          }
+        ],
+        "used": "130 kg"
+      }
+    ],
+    "estimatedWhy": "BWL is 0.81 of the beam, the Laser's proportion in Day (2017); Tc is what the synthetic hull then needs to float 250 kg (the rule's 120 kg boat and an estimated 130 kg crew). Freeboard, I and BAS go through a hull depth read off a sketch. The board's span is solved to the published draft and its leading edge is taken vertical; the rudder hangs from the waterline, 0.58 m of its blade below it."
+  }
+}

@@ -1,0 +1,134 @@
+    nearest surface : 0
+    rest            : 13828
+
+--> FOAM Warning : Displacement (8.2134536e-06 -0.00042826324 -0.00010196564) at mesh point 12670 coord (5.9785249 -0.02032767 -1.455689) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+    nearest surface : 0
+    rest            : 13828
+
+--> FOAM Warning : Displacement (1.6996784e-05 -0.00074313961 -0.00029076587) at mesh point 12670 coord (5.9785332 -0.020755933 -1.4557909) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+    nearest surface : 0
+    rest            : 13828
+
+--> FOAM Warning : Displacement (3.4549167e-05 -0.00098227308 -0.00047418112) at mesh point 12670 coord (5.9785501 -0.021499073 -1.4560817) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+    nearest surface : 0
+    rest            : 13828
+
+--> FOAM Warning : Displacement (4.0042881e-05 -0.0010478069 -0.00060956119) at mesh point 12670 coord (5.9785847 -0.022481346 -1.4565559) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+    nearest surface : 0
+    rest            : 13828
+
+--> FOAM Warning : Displacement (3.6058176e-05 -0.0012028239 -0.0005438333) at mesh point 12670 coord (5.9786247 -0.023529153 -1.4571654) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+    nearest surface : 0
+    rest            : 13829
+
+--> FOAM Warning : Displacement (3.2672328e-05 -0.00085613773 -0.00045112723) at mesh point 12670 coord (5.9786608 -0.024731977 -1.4577093) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+    nearest surface : 0
+    rest            : 13829
+
+--> FOAM Warning : Displacement (2.2385676e-05 -0.00046028176 -0.00027298027) at mesh point 12670 coord (5.9786931 -0.025578768 -1.4581555) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+    nearest surface : 0
+    rest            : 13829
+
+--> FOAM Warning : Displacement (1.5171596e-05 -0.0001929447 -0.00020405748) at mesh point 12670 coord (5.9787078 -0.025880036 -1.4583341) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+    nearest surface : 0
+    rest            : 13828
+
+--> FOAM Warning : Displacement (7.0153746e-06 2.3841099e-05 -0.00012188513) at mesh point 12670 coord (5.9787177 -0.026006266 -1.4584676) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+    nearest surface : 0
+    rest            : 13828
+
+--> FOAM Warning : Displacement (2.6813266e-07 -2.005111e-06 -4.7194773e-06) at mesh point 12670 coord (5.9787223 -0.025990673 -1.4585473) points through the surrounding patch faces
+Smoothing displacement ...
+Iteration 0
+Iteration 10
+Iteration 20
+Iteration 30
+Iteration 40
+--
+Handling feature edges (angle < 120) ...
+Set displacement to zero for points on 3 feature edges
+
+Handling cells with warped patch faces ...
+Set displacement to zero on 0 warped faces since layer would be > 0.5 of the size of the bounding box.
+
+patch faces    layers avg thickness[m]
+                     near-wall overall
+----- -----    ------ --------- -------
+hull 7287     3      0.0131    0.0521  
+
+
+Outer iteration : 0
+--
+    Number of intersected edges : 29047
+Mesh with layers : cells:122840  faces:390408  points:146952
+
+patch faces        layers        overall thickness
+              target   mesh     [m]       [%]
+----- -----    -----    ----     ---       ---
+hull 7287     3        2.99     0.0513    97.8    
+
+Layer mesh : cells:122840  faces:390408  points:146952
+Cells per refinement level:

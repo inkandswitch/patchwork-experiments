@@ -1,0 +1,495 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --openfoam-bg: var(--editor-fill, white);
+    --openfoam-fg: var(--editor-line, black);
+    --openfoam-muted: var(--editor-line-offset-50, color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 50%));
+    --openfoam-faint: var(--editor-line-offset-30, color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 70%));
+    --openfoam-panel: var(--editor-fill-offset-10, color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 4%));
+    --openfoam-border: var(--editor-fill-offset-20, color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 12%));
+    --openfoam-grid: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 9%);
+    --openfoam-accent: var(--studio-primary, #35f7ca);
+    --openfoam-accent-fg: var(--studio-primary-line, black);
+    --openfoam-accent-text: var(--editor-primary-text, var(--editor-line, black));
+    --openfoam-danger: var(--studio-danger, crimson);
+    --openfoam-danger-text: var(--editor-danger-text, var(--studio-danger, crimson));
+    --openfoam-warning: var(--studio-warning, orange);
+    --openfoam-good: var(--studio-added, green);
+    --openfoam-family: var(--editor-family-sans, system-ui, sans-serif);
+    --openfoam-family-code: var(--editor-family-code, ui-monospace, monospace);
+    /* chart series, in a fixed order: ink first, then the theme's accents */
+    --openfoam-series-1: var(--editor-line, black);
+    --openfoam-series-2: var(--studio-link, royalblue);
+    --openfoam-series-3: var(--studio-secondary, darkorange);
+    --openfoam-series-4: var(--studio-modified, purple);
+    --openfoam-water: color-mix(in oklch, var(--studio-link, royalblue), var(--editor-fill, white) 80%);
+    --openfoam-hull: color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 75%);
+  }
+}
+
+.openfoam {
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  background: var(--openfoam-bg);
+  color: var(--openfoam-fg);
+  font-family: var(--openfoam-family);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.openfoam *,
+.openfoam *::before,
+.openfoam *::after {
+  box-sizing: border-box;
+}
+
+.openfoam {
+  container-type: inline-size;
+}
+.openfoam .case {
+  padding: var(--studio-space-lg, 24px);
+  max-width: 1100px;
+}
+
+/* two tabs (model setup, runs), each of two parts with a heading and a one-line summary */
+.openfoam .case-tabs {
+  margin-bottom: 0;
+}
+.openfoam .case-tabs button {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 14px;
+}
+.openfoam .case-tabs .tab-sum {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--openfoam-muted);
+}
+.openfoam .phase + .phase {
+  border-top: 1px solid var(--openfoam-border);
+  padding-top: var(--studio-space-sm, 10px);
+}
+.openfoam .phase-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0 var(--studio-space-sm, 10px);
+}
+.openfoam .phase-head .name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.openfoam .phase-head .sum {
+  color: var(--openfoam-muted);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.openfoam .phase-body {
+  padding: 0 0 var(--studio-space-md, 16px);
+}
+.openfoam .cols {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: var(--studio-space-lg, 24px);
+  align-items: start;
+}
+@container (max-width: 720px) {
+  .openfoam .cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.openfoam fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.openfoam fieldset > legend {
+  padding: 0;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--openfoam-muted);
+}
+.openfoam .launch {
+  border-top: 1px solid var(--openfoam-grid);
+  padding-top: 10px;
+}
+.openfoam .launch button.run {
+  width: 100%;
+  padding: 7px 10px;
+}
+.openfoam .hull-canvas {
+  display: block;
+  width: 100%;
+}
+/* a run's inputs, and another's beside them */
+.openfoam table.inputs tr.group td {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--openfoam-muted);
+  padding-top: 10px;
+  text-align: left;
+}
+.openfoam table.figures.inputs td,
+.openfoam table.figures.inputs th {
+  white-space: normal;
+  word-break: break-word;
+  text-align: left;
+}
+.openfoam table.inputs tr[data-differs] td {
+  background: color-mix(in oklch, var(--openfoam-accent), transparent 82%);
+}
+.openfoam table.inputs tr[data-differs] td:first-child {
+  box-shadow: inset 3px 0 0 var(--openfoam-accent);
+}
+.openfoam .run-view .run-title {
+  font-size: 14px;
+}
+
+.openfoam .flow > * + * {
+  margin-top: var(--flow-space, var(--studio-space-md, 16px));
+}
+.openfoam .cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--studio-space-xs, 6px);
+  align-items: center;
+}
+
+.openfoam h2 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--openfoam-muted);
+  margin: 0 0 var(--studio-space-xs, 6px);
+}
+.openfoam h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+.openfoam .section {
+  border-top: 1px solid var(--openfoam-border);
+  padding-top: var(--studio-space-sm, 10px);
+}
+.openfoam .title {
+  font-size: 18px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  width: 100%;
+  padding: 0;
+}
+
+.openfoam label.field {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr);
+  gap: var(--studio-space-xs, 6px);
+  align-items: center;
+  margin: 4px 0;
+}
+.openfoam label.field > span:first-child {
+  color: var(--openfoam-muted);
+}
+.openfoam label.field > input[type="checkbox"] {
+  justify-self: start;
+  margin: 0;
+}
+.openfoam input,
+.openfoam select,
+.openfoam button,
+.openfoam textarea {
+  font: inherit;
+  color: inherit;
+}
+.openfoam input[type="text"],
+.openfoam input[type="number"],
+.openfoam select {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--openfoam-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--openfoam-bg);
+}
+.openfoam .pair {
+  display: flex;
+  gap: 4px;
+}
+.openfoam .pair > * {
+  flex: 1;
+}
+.openfoam .pair > button {
+  flex: none;
+  white-space: nowrap;
+}
+.openfoam button {
+  border: 1px solid var(--openfoam-border);
+  background: var(--openfoam-panel);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.openfoam button:hover:not(:disabled) {
+  border-color: var(--openfoam-muted);
+}
+.openfoam button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.openfoam button[data-primary] {
+  background: var(--openfoam-accent);
+  color: var(--openfoam-accent-fg);
+  border-color: transparent;
+  font-weight: 600;
+}
+.openfoam button[data-danger] {
+  color: var(--openfoam-danger-text);
+}
+.openfoam .hint {
+  color: var(--openfoam-muted);
+  font-size: 12px;
+}
+.openfoam .warn {
+  color: var(--openfoam-danger-text);
+  font-size: 12px;
+}
+.openfoam .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: var(--studio-radius-round, 9999px);
+  background: var(--openfoam-panel);
+  border: 1px solid var(--openfoam-border);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.openfoam .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--openfoam-faint);
+  flex: none;
+}
+.openfoam .dot[data-state="online"],
+.openfoam .dot[data-state="done"] {
+  background: var(--openfoam-good);
+}
+.openfoam .dot[data-state="running"] {
+  background: var(--openfoam-accent);
+  animation: openfoam-pulse 1.2s ease-in-out infinite;
+}
+.openfoam .dot[data-state="failed"] {
+  background: var(--openfoam-danger);
+}
+@keyframes openfoam-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.openfoam .drop {
+  border: 1px dashed var(--openfoam-border);
+  border-radius: var(--studio-radius-md, 8px);
+  padding: var(--studio-space-sm, 10px);
+}
+.openfoam .drop[data-over] {
+  border-color: var(--openfoam-accent);
+  background: color-mix(in oklch, var(--openfoam-accent), transparent 85%);
+}
+
+/* tables of figures */
+.openfoam table.figures {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.openfoam table.figures th,
+.openfoam table.figures td {
+  text-align: right;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--openfoam-grid);
+  white-space: nowrap;
+}
+.openfoam table.figures th:first-child,
+.openfoam table.figures td:first-child {
+  text-align: left;
+  white-space: normal;
+}
+.openfoam table.figures th {
+  color: var(--openfoam-muted);
+  font-weight: 500;
+}
+.openfoam table.figures td.method {
+  color: var(--openfoam-muted);
+  font-size: 11px;
+  text-align: left;
+  white-space: normal;
+}
+.openfoam table.figures tr[data-selected] td {
+  background: var(--openfoam-panel);
+}
+.openfoam table.figures tr[data-click] {
+  cursor: pointer;
+}
+
+/* the big numbers */
+.openfoam .tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: var(--studio-space-sm, 10px);
+}
+.openfoam .tile {
+  border: 1px solid var(--openfoam-border);
+  border-radius: var(--studio-radius-md, 8px);
+  padding: 8px 10px;
+}
+.openfoam .tile .v {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.openfoam .tile .k {
+  color: var(--openfoam-muted);
+  font-size: 11px;
+}
+
+/* stages */
+.openfoam ol.stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.openfoam ol.stages li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+.openfoam ol.stages li[data-status="pending"],
+.openfoam ol.stages li[data-status="skipped"] {
+  color: var(--openfoam-faint);
+}
+.openfoam ol.stages .note {
+  grid-column: 2 / 4;
+  color: var(--openfoam-muted);
+  font-size: 12px;
+}
+.openfoam ol.stages .time {
+  color: var(--openfoam-muted);
+  font-variant-numeric: tabular-nums;
+}
+.openfoam pre.tail {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  max-height: 14em;
+  overflow: auto;
+  background: var(--openfoam-panel);
+  border-radius: var(--studio-radius-sm, 4px);
+  font-family: var(--openfoam-family-code);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre;
+}
+.openfoam .error {
+  border-left: 3px solid var(--openfoam-danger);
+  padding: 6px 10px;
+  white-space: pre-wrap;
+  font-family: var(--openfoam-family-code);
+  font-size: 12px;
+}
+.openfoam progress {
+  width: 100%;
+  accent-color: var(--openfoam-accent);
+}
+
+/* charts and plots */
+.openfoam .chart {
+  position: relative;
+}
+.openfoam .chart canvas {
+  display: block;
+  width: 100%;
+}
+.openfoam .chart .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--openfoam-muted);
+  margin-bottom: 4px;
+}
+.openfoam .chart .legend i {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+.openfoam .chart .tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--openfoam-bg);
+  border: 1px solid var(--openfoam-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: var(--studio-shadow-sm, 0 1px 3px rgb(0 0 0 / 0.15));
+  display: none;
+}
+.openfoam .chart .tip[data-show] {
+  display: block;
+}
+.openfoam .colorbar {
+  display: grid;
+  justify-content: center;
+  grid-template-columns: auto minmax(60px, 220px) auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--openfoam-muted);
+  font-variant-numeric: tabular-nums;
+}
+.openfoam .colorbar span.bar {
+  height: 8px;
+  border-radius: 2px;
+}
+.openfoam .tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--openfoam-border);
+  margin-bottom: 8px;
+}
+.openfoam .tabs button {
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 4px 10px;
+  color: var(--openfoam-muted);
+}
+.openfoam .tabs button[aria-selected="true"] {
+  color: var(--openfoam-fg);
+  border-bottom-color: var(--openfoam-accent);
+}
+.openfoam [hidden] {
+  display: none !important;
+}

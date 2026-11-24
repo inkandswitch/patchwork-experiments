@@ -1,0 +1,124 @@
+// Harbour structures from OSM, extruded: floats (man_made=pier,
+// floating=yes) as low pontoons among their tall black guide piles, fixed piers as decks above the
+// highest tide among the same black piles, breakwaters as rock walls,
+// groynes as low walls. An area
+// is extruded as drawn; a line is widened (its width tag, else the kind's).
+// Heights are above mean water level (the floats don't ride the tide).
+
+import { hashString } from "./buildings.js";
+import { soup, prism, widen, cylinder } from "./shapes.js";
+
+export const KINDS = Object.freeze({
+  // decks weathered grey, not beige; black creosote piles every 15 m along a float's and a pier's sides
+  // a float's deck wet timber, darker than any boat's deck, with a pale bull rail along its edges (boats.js DECKS): the boats read against it from above
+  float: { width: 2.4, top: 0.5, bottom: -0.6, colour: "#5e5a53", edge: { colour: "#a9a59c", width: 0.3, height: 0.15 }, piles: { every: 15, top: [5, 7], colour: "#2e2721", r: 0.22 } },
+  pier: { width: 3, top: 2.8, bottom: 2.0, colour: "#74726c", piles: { every: 15, top: [5, 7], colour: "#2e2721", r: 0.22 } },
+  // rock rubble, dark, not a pale slab
+  breakwater: { width: 8, top: 3, bottom: -6, colour: "#57544e" },
+  groyne: { width: 3, top: 1.5, bottom: -2, colour: "#807a6e" },
+});
+
+export const kindOf = (s) => (s.kind === "pier" ? (s.floating ? "float" : "pier") : s.kind);
+
+/**
+ * @param {{ id, kind, floating, area, width, points }[]} structures
+ * @param {{ inside?: (x: number, z: number) => boolean }} [o]  keep only structures with a point inside (the grid)
+ * @returns {{ positions: Float32Array, colors: Float32Array, made: number, skipped: string[] }}
+ */
+export function structureMesh(structures, { inside = () => true, dress = {} } = {}) {
+  const s = soup();
+  let made = 0;
+  const skipped = [];
+  for (const st of structures) {
+    if (!st.points.some(([x, z]) => inside(x, z))) continue;
+    const k = KINDS[kindOf(st)];
+    if (!k) continue;
+    const width = st.width > 0 && st.width < 50 ? st.width : k.width;
+    const ring = st.area ? st.points : widen(st.points, width);
+    if (ring && prism(s, ring, k.bottom, k.top, k.colour)) made++;
+    else skipped.push(st.id);
+    if (k.piles && !st.area) floatPiles(s, st, width, k.piles, inside);
+    // a float's bull rail: a pale strip along every edge of its deck
+    if (ring && k.edge) for (let a = 0; a < ring.length; a++) {
+      const A = ring[a], B = ring[(a + 1) % ring.length];
+      if (Math.hypot(B[0] - A[0], B[1] - A[1]) < 0.5) continue;
+      const e = widen([A, B], k.edge.width);
+      if (e) prism(s, e, k.top, k.top + k.edge.height, k.edge.colour, { bottom: false });
+    }
+    // a place's dressing for one structure (its look's structures: a wharf's railings and curb)
+    if (ring && dress[st.id]?.rail) railing(s, ring, k.top, dress[st.id]);
+  }
+  return { ...s.done(), made, skipped };
+}
+
+/**
+ * A float's guide piles: tall, black, creosoted, through hoops at its edges
+ * every `every` metres along each side (alternating sides, so a slip has one
+ * either end), from well under the water to `top` (a range: by hash of the
+ * float's id and the pile), as a harbour's floats stand among them.
+ */
+export function floatPiles(s, st, width, { every, top: [t0, t1], colour, r }, inside = () => true) {
+  let q = 0;
+  for (let p = 0; p + 1 < st.points.length; p++) {
+    const [ax, az] = st.points[p], [bx, bz] = st.points[p + 1];
+    const L = Math.hypot(bx - ax, bz - az);
+    if (L < 1) continue;
+    const ux = (bx - ax) / L, uz = (bz - az) / L;
+    const n = Math.max(1, Math.round(L / every));
+    for (let i = 0; i <= n; i++, q++) {
+      if (i === n && p + 2 < st.points.length) continue; // the next leg's first
+      const side = q % 2 ? 1 : -1, off = width / 2 - 0.1;
+      const x = ax + ux * L * (i / n) - uz * off * side, z = az + uz * L * (i / n) + ux * off * side;
+      if (!inside(x, z)) continue;
+      cylinder(s, x, z, -6, t0 + (t1 - t0) * hashString(`${st.id}#${q}`, 9), r, r * 0.9, colour, 6);
+    }
+  }
+  return q;
+}
+
+/**
+ * Railings round a deck's outline at `top`: a curb (0.2 m wide, 0.15 m
+ * high) in `curb`, square posts every `every` metres and a top rail at 1.05 m
+ * in `rail`, along every edge of the ring. Returns the posts made.
+ */
+export function railing(s, ring, top, { rail, curb = null, every = 2.5 }) {
+  let posts = 0;
+  for (let a = 0; a < ring.length; a++) {
+    const A = ring[a], B = ring[(a + 1) % ring.length];
+    const L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    if (L < 0.5) continue;
+    if (curb) prism(s, widen([A, B], 0.2), top, top + 0.15, curb);
+    prism(s, widen([A, B], 0.08), top + 0.97, top + 1.05, rail);
+    const n = Math.max(1, Math.round(L / every));
+    for (let i = 0; i < n; i++) {
+      const t = i / n, x = A[0] + (B[0] - A[0]) * t, z = A[1] + (B[1] - A[1]) * t;
+      prism(s, [[x - 0.05, z - 0.05], [x + 0.05, z - 0.05], [x + 0.05, z + 0.05], [x - 0.05, z + 0.05]], top, top + 1.05, rail);
+      posts++;
+    }
+  }
+  return posts;
+}
+
+export const ROCK = Object.freeze({ colour: "#7a7267" });
+
+/**
+ * OSM islets too small to hold a node of the grid (burn.js), as rocks: each
+ * ring extruded from below the bottom round it to its top.
+ * @param {{ id, top, points }[]} rocks
+ * @param {(x: number, z: number) => number | null} groundAt  the heightfield (metres), null off the grid
+ * @param {(y: number) => number} [yOf]  the vertical exaggeration of land
+ */
+export function rockMesh(rocks, groundAt, yOf = (y) => y) {
+  const s = soup();
+  let made = 0;
+  for (const r of rocks) {
+    let bottom = Infinity;
+    for (const [x, z] of r.points) {
+      const g = groundAt(x, z);
+      if (g != null) bottom = Math.min(bottom, g);
+    }
+    if (!Number.isFinite(bottom)) bottom = 0;
+    if (prism(s, r.points, Math.min(bottom, 0) - 0.5, yOf(r.top), ROCK.colour)) made++;
+  }
+  return { ...s.done(), made };
+}

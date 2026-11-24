@@ -1,0 +1,338 @@
+{
+  "version": 1,
+  "title": "Nordic Folkboat",
+  "hull": {
+    "link": null,
+    "dims": {
+      "loa": 7.68,
+      "lwl": 6,
+      "beam": 2.2,
+      "bwl": 1.83,
+      "tc": 0.42,
+      "draft": 1.2,
+      "freeboard": 0.65,
+      "displacementKg": 2203.75,
+      "cp": null,
+      "cm": null,
+      "lcbFrac": null,
+      "deadriseDeg": null
+    }
+  },
+  "rig": {
+    "type": "fractional",
+    "mast": {
+      "aftOfStem": 2.795,
+      "rakeDeg": 0,
+      "stepped": "keel",
+      "kgPerM": null
+    },
+    "I": 6.5,
+    "P": 8.75,
+    "E": 3.38,
+    "BAS": 1,
+    "ISP": null,
+    "forestayAftOfStem": 0.8,
+    "main": {
+      "roach": 0.175806,
+      "reefs": [
+        0.15
+      ]
+    },
+    "headsail": {
+      "kind": "jib",
+      "LP": 1.9451,
+      "clewHeight": null,
+      "furl": 0
+    },
+    "staysail": null
+  },
+  "appendages": {
+    "keel": {
+      "kind": "long",
+      "aftOfStem": 2.08,
+      "span": 0.7724,
+      "rootChord": 4.52,
+      "tipChord": 2.18,
+      "sweepDeg": 66,
+      "tc": 0.06,
+      "bulb": null
+    },
+    "rudder": {
+      "kind": "skeg",
+      "aftOfStem": 6.6,
+      "span": 0.66,
+      "rootChord": 0.645,
+      "tipChord": 0.3,
+      "sweepDeg": -45,
+      "tc": 0.07,
+      "maxDeg": 35,
+      "stockFrac": 0
+    }
+  },
+  "loading": {
+    "displacement": {
+      "from": "hull",
+      "kg": null
+    },
+    "ballast": {
+      "kg": 1000,
+      "at": "keel"
+    },
+    "lightship": {
+      "kg": null,
+      "vcg": null
+    },
+    "crew": {
+      "count": 3,
+      "kgEach": 75,
+      "mode": "sitting",
+      "arm": null
+    }
+  },
+  "prov": {
+    "hull.dims.bwl": "estimated",
+    "hull.dims.tc": "estimated",
+    "hull.dims.freeboard": "estimated",
+    "rig.main.roach": "estimated",
+    "rig.main.reefs": "estimated",
+    "rig.headsail.LP": "estimated",
+    "appendages.keel.aftOfStem": "estimated",
+    "appendages.keel.span": "estimated",
+    "appendages.keel.rootChord": "estimated",
+    "appendages.keel.tipChord": "estimated",
+    "appendages.keel.sweepDeg": "estimated",
+    "appendages.keel.tc": "estimated",
+    "appendages.rudder.kind": "estimated",
+    "appendages.rudder.aftOfStem": "estimated",
+    "appendages.rudder.span": "estimated",
+    "appendages.rudder.rootChord": "estimated",
+    "appendages.rudder.tipChord": "estimated",
+    "appendages.rudder.sweepDeg": "estimated",
+    "appendages.rudder.tc": "estimated",
+    "appendages.rudder.stockFrac": "estimated",
+    "loading.crew.kgEach": "estimated"
+  },
+  "sources": [
+    {
+      "id": "folkboat-class-rules",
+      "what": "LOA 7.68 m, LWL 6.00, beam 2.20, lowest freeboard 0.568, draft 1.20, displacement from the CWL 2.15 m³, sail area (actual) 24.00 m², keel 1000–1050 kg cast iron; weight not less than 1930 kg; fore side of the mast 1990–2000 mm from the forestay at deck (6.1.7); the forestay not less than 800 mm from the bow point (7.21); bands 1000 mm above deck, 5500 and 8750 above that; boom band 3380 mm; mainsail girths (9.22); rudder offsets (5.20); two or three crew",
+      "cite": "Nordic Folkboat International Class Rules 2025–2028, update March 2026 (NFIA)",
+      "url": "https://folkboat.com/wp-content/uploads/2026/03/NORDIC-FOLKBOAT-CLASS-RULES-2025-2028-Update-March-2026.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "quoted": "The distance from the fore side of the mast, with the mast in the center of the mast hole, to the intersecting point of the center line of the forestay or its extension with the deck shall not exceed 2000mm and be not less than 1990mm."
+    },
+    {
+      "id": "folkboat-plan-5",
+      "what": "The official 1:10 construction plan: MAST POSITION MANDATORY; 800 mm bow point to forestay; 1020 mm bow point to the forward end of the CWL; stations 500 mm apart, the bow point 140 mm forward of station 16; stem profile depths at stations 9–16; the iron keel's forward tip 170 mm forward of station 11; 1200 mm CWL to keel base; measured for the sternpost, the keel's aft corner and the section at station 8",
+      "cite": "NFIA Plan No. 5, 'Nordic Folkboat Construction Plan', scale 1:10, drawn 1947, redrawn 1961, Rev 3 July 2024",
+      "url": "https://folkboat.com/wp-content/uploads/2025/01/5_Construction-plan-wood-English-Rev-3-July-2024-1.pdf",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "Scale 0.8333 mm/px from the stations. Checks: deck length 7639 mm (7640 given), LWL 5994 (6000), forestay 793 (800), CWL forward end 1026 (1020). Read off it: the mast's fore edge 2.798 m aft of the bow point; the sternpost straight at 45° from the vertical, meeting the CWL 7.02 m aft of the bow point and the keel base at 5.82 m; half-breadth at the CWL at station 8 0.914 m. Centreline profile (mm aft of the bow point, depth below the CWL): (1020, 0) (1640, 249) (2140, 442) (2640, 670) (3140, 947) (3640, 1110) (4140, 1152) (4640, 1161), then 1200 to the aft lower corner at 5817."
+    },
+    {
+      "id": "keelindex-folkboat",
+      "what": "SA/D 15.72 (258 ft²), ballast/displacement 51.82, D/L 248.84, capsize screening 1.78, hull speed 5.95 kn; displacement 4,255 lb, ballast 2,205 lb, LWL 19.68 ft",
+      "cite": "keelindex.com, Nordic Folkboat (reproduces sailboatdata's table)",
+      "url": "https://www.keelindex.com/boat/nordic-folkboat",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "gob-folkboat",
+      "what": "I 18.04 ft (above the lower band, not the deck), J 6.72, P 28.71, E 11.10 ft; main 162.12 ft², jib 70.46 ft² (calculated)",
+      "cite": "Good Old Boat sail data (Sailrite), \"Nordic Folkboat 25\"",
+      "url": "https://goodoldboat.com/saildata/boat/nordic-folkboat-25/",
+      "retrieved": "2026-11-10",
+      "fetched": true
+    },
+    {
+      "id": "usphrf-hla",
+      "what": "PHRF lowest / highest / average across US fleets: FARR 40 OD 0 / 12 / 6; SOLING ODR 135 / 175 / 153; FOLKBOAT NORDIC 276 / 276 / 276",
+      "cite": "US Sailing PHRF, \"High, low and average performance handicaps by class/type\" (fleet reports March 1995 to March 2007), as attached to a sailboatowners.com forum thread",
+      "url": "https://forums.sailboatowners.com/attachments/phrf_ratings_report-pdf.174186/",
+      "retrieved": "2026-11-10",
+      "fetched": true,
+      "note": "A different list from the Alamo's and twenty years old: usable for order only."
+    },
+    {
+      "id": "sailboatdata",
+      "what": "Would give the ratios as sailboatdata prints them",
+      "cite": "sailboatdata.com",
+      "url": "https://sailboatdata.com/",
+      "retrieved": "2026-11-10",
+      "fetched": false,
+      "note": "Not fetched: HTTP 403 to automated retrieval. Its ratios are quoted here from the sites that reproduce its table (named per figure)."
+    }
+  ],
+  "published": {
+    "note": "Everything fore and aft is a class rule or a dimension on the official 1:10 plan. The doc floats at the class's design displacement (2.15 m³ at the CWL, where LWL is 6.00 m and the draft 1.20 m); the published ratios are on the class's minimum weight, 1930 kg, and are compared in that condition.",
+    "figures": [
+      {
+        "id": "saDesignerM2",
+        "label": "Sail area, main + 100% foretriangle",
+        "value": 21.271,
+        "unit": "m²",
+        "tol": {
+          "rel": 0.005
+        },
+        "source": "folkboat-class-rules",
+        "work": "½·8.75·3.38 + ½·6.50·1.995 = 14.7875 + 6.4838 = 21.271, from the rule's bands (the class's 24.00 m² is the sails' actual area)"
+      },
+      {
+        "id": "saD",
+        "label": "SA/D, designer's, at 1930 kg",
+        "value": 13.95,
+        "unit": "",
+        "tol": {
+          "abs": 0.05
+        },
+        "source": "folkboat-class-rules",
+        "condition": "class-minimum",
+        "work": "21.271 / (1930/1025)^(2/3) = 21.271/1.5249 = 13.95, worked here; keelindex prints 15.72 on the actual 258 ft² and yachtdatabase 13.3 on an ISO reference sail"
+      },
+      {
+        "id": "dL",
+        "label": "D/L, at 1930 kg",
+        "value": 248.84,
+        "unit": "",
+        "tol": {
+          "abs": 0.5
+        },
+        "source": "keelindex-folkboat",
+        "condition": "class-minimum",
+        "work": "(4,255/2240)/(0.01·19.68)³ = 1.8996/0.007622 = 249.2 (printed 248.84)"
+      },
+      {
+        "id": "ballastRatio",
+        "label": "Ballast / displacement, at 1930 kg",
+        "value": 0.5182,
+        "unit": "",
+        "tol": {
+          "abs": 0.005
+        },
+        "source": "keelindex-folkboat",
+        "condition": "class-minimum",
+        "work": "1000 / 1930 (the rule's minimum keel over its minimum weight)"
+      },
+      {
+        "id": "hullSpeedKn",
+        "label": "Hull speed",
+        "value": 5.95,
+        "unit": "kn",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "keelindex-folkboat",
+        "work": "1.34·√19.685 = 5.945"
+      },
+      {
+        "id": "capsize",
+        "label": "Capsize screening at 1930 kg, beam / (Δ/64)^⅓ (worked from the doc: the tool has no such row)",
+        "value": 1.78,
+        "unit": "",
+        "tol": {
+          "abs": 0.01
+        },
+        "source": "keelindex-folkboat",
+        "condition": "class-minimum",
+        "work": "7.218 / (4,255/64)^⅓ = 7.218/4.051 = 1.782"
+      },
+      {
+        "id": "draftM",
+        "label": "Draft",
+        "value": 1.2,
+        "unit": "m",
+        "tol": {
+          "abs": 0.02
+        },
+        "source": "folkboat-class-rules",
+        "roundTrip": "the keel's span is solved so that the draft reaches the class's 1.20 m"
+      }
+    ],
+    "conditions": {
+      "class-minimum": {
+        "what": "The class's minimum weight, 1930 kg (rigged, no crew or sails): what the ratio sites call her displacement",
+        "displacementKg": 1930,
+        "crew": {
+          "count": 0,
+          "kgEach": 75,
+          "mode": "none"
+        }
+      }
+    },
+    "balance": {
+      "phrf": {
+        "value": 276,
+        "source": "usphrf-hla"
+      },
+      "real": {
+        "mastAftOfStem": {
+          "value": 2.795,
+          "status": "given",
+          "how": "the rule's forestay 800 mm from the bow point plus its 1990–2000 mm to the mast's fore side; the plan reads 2.798",
+          "pm": 0.01
+        },
+        "keelLeAftOfStem": {
+          "value": 2.08,
+          "status": "estimated",
+          "how": "where the plan's dimensioned stem profile passes 0.42 m below the CWL, the depth taken for the canoe body (a modelling choice on a wineglass section)",
+          "pm": 0.15
+        },
+        "wlFwdAftOfStem": {
+          "value": 1.02,
+          "status": "given",
+          "how": "dimensioned on the plan"
+        }
+      },
+      "weight": "good",
+      "why": "Mast, forestay, the waterline's forward end and the whole underwater profile are class rules or dimensions on the official 1:10 plan. What is a choice is where the canoe body ends and the keel begins (Tc 0.42 m): the model's keel is a trapezoid fitted to the profile below that depth (2.61 m² against the profile's 2.50)."
+    },
+    "disagreements": [
+      {
+        "what": "Displacement",
+        "values": [
+          {
+            "value": "2.15 m³ from the CWL (2204 kg in sea water)",
+            "source": "folkboat-class-rules"
+          },
+          {
+            "value": "weight not less than 1930 kg (4,255 lb)",
+            "source": "folkboat-class-rules"
+          }
+        ],
+        "used": "2204 kg in the doc (the condition LWL 6.00 and draft 1.20 belong to); 1930 kg for the published ratios"
+      },
+      {
+        "what": "J",
+        "values": [
+          {
+            "value": "1.990–2.000 m",
+            "source": "folkboat-class-rules"
+          },
+          {
+            "value": "6.72 ft = 2.048 m",
+            "source": "gob-folkboat"
+          }
+        ],
+        "used": "1.995 m (the rule)"
+      },
+      {
+        "what": "Sail area",
+        "values": [
+          {
+            "value": "24.00 m² actual",
+            "source": "folkboat-class-rules"
+          },
+          {
+            "value": "main 162.12 + jib 70.46 ft² = 21.61 m²",
+            "source": "gob-folkboat"
+          }
+        ],
+        "used": "the rule's bands for the designer's area; the main's roach from its girths (17.39 m²), the jib the remainder of 24.00"
+      }
+    ],
+    "estimatedWhy": "BWL is twice the half-breadth read off the plan's station 8 (±0.05 m); Tc (0.42 m) is where that section turns into the garboard. The keel is a trapezoid fitted to the dimensioned profile below Tc: leading edge at 2.08 m, root on the sternpost at 6.60 m, bottom from 3.64 to 5.82 m, leading edge swept 66°. The rudder is hung on the 45° sternpost: modelled as a skeg rudder, its chords the rule's offsets turned to the horizontal, only the part below Tc. Freeboard is between the rule's lowest (0.568) and the plan's ends (0.62, 0.865). The jib's LP gives the area left of the class's 24.00 m² after the main."
+  }
+}

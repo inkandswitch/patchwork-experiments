@@ -1,0 +1,888 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --rig-bg: var(--editor-fill, white);
+    --rig-fg: var(--editor-line, black);
+    --rig-muted: var(--editor-line-offset-50, color-mix(in oklch, var(--editor-line, black), var(--editor-fill, white) 50%));
+    --rig-border: var(--editor-fill-offset-20, color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 20%));
+    --rig-panel: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 4%);
+    --rig-input: var(--editor-fill, white);
+    --rig-accent: var(--studio-primary, #35f7ca);
+    --rig-accent-fill: var(--studio-primary-fill, var(--studio-primary, #35f7ca));
+    --rig-accent-line: var(--studio-primary-line, var(--editor-line, black));
+    --rig-warning: var(--studio-warning, #d9a400);
+    --rig-warning-soft: color-mix(in oklch, var(--studio-warning, #d9a400), var(--editor-fill, white) 82%);
+    --rig-danger: var(--studio-danger-text, var(--studio-danger, crimson));
+    --rig-sail: color-mix(in oklch, var(--studio-primary, #35f7ca), var(--editor-fill, white) 55%);
+    --rig-sail-edge: color-mix(in oklch, var(--studio-primary, #35f7ca), var(--editor-line, black) 45%);
+    --rig-water: var(--studio-link, #3d6fd9);
+    --rig-hull: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 10%);
+    --rig-rm: var(--studio-link, #3d6fd9);
+    --rig-crew: color-mix(in oklch, var(--studio-link, #3d6fd9), var(--editor-fill, white) 72%);
+    --rig-hm: color-mix(in oklch, var(--studio-primary, #35f7ca), var(--editor-line, black) 45%);
+    --rig-foil: color-mix(in oklch, var(--studio-link, #3d6fd9), var(--editor-fill, white) 55%);
+    --rig-family: var(--editor-family-sans, system-ui, sans-serif);
+    --rig-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
+}
+
+/* Composition */
+.rig-design .flow > * + * {
+  margin-top: var(--flow-space, var(--studio-space-sm, 0.5rem));
+}
+.rig-design .cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-sm, 0.5rem);
+}
+
+/* Block */
+.rig-design {
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+  padding: var(--studio-space-md, 1rem);
+  background: var(--rig-bg);
+  color: var(--rig-fg);
+  font-family: var(--rig-family);
+  font-size: 14px;
+  container-type: inline-size;
+}
+.rig-design *,
+.rig-design *::before,
+.rig-design *::after {
+  box-sizing: border-box;
+}
+
+.rig-design .rig-bar {
+  justify-content: space-between;
+  margin-bottom: var(--studio-space-sm, 0.5rem);
+}
+.rig-design .rig-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  flex: 1;
+}
+.rig-design .chip {
+  padding: 2px 10px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-round, 9999px);
+  color: var(--rig-muted);
+  font-size: 12px;
+}
+.rig-design .units button {
+  min-width: 2.5em;
+  padding: 3px 8px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--rig-input);
+  color: var(--rig-fg);
+  font: inherit;
+  cursor: pointer;
+}
+.rig-design .units button[aria-pressed="true"] {
+  background: var(--rig-accent-fill);
+  color: var(--rig-accent-line);
+  border-color: var(--rig-accent-fill);
+}
+
+.rig-design .rig-actions {
+  margin-bottom: var(--studio-space-sm, 0.5rem);
+  font-size: 13px;
+}
+.rig-design .rig-actions .helper {
+  gap: 4px;
+  margin: 0;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--rig-panel);
+}
+.rig-design .rig-actions input {
+  width: 3.5em;
+  padding: 2px 4px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--rig-input);
+  color: var(--rig-fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.rig-design .rig-actions select,
+.rig-design .rig-actions button {
+  padding: 3px 8px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--rig-input);
+  color: var(--rig-fg);
+  font: inherit;
+  cursor: pointer;
+}
+.rig-design .rig-actions button:hover,
+.rig-design .rig-actions select:hover {
+  border-color: var(--rig-accent-fill);
+}
+.rig-design .rig-actions button:disabled {
+  color: var(--rig-muted);
+  cursor: progress;
+}
+.rig-design .helper-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--rig-muted);
+  font-size: 12px;
+}
+.rig-design .helper-status:empty {
+  display: none;
+}
+.rig-design .helper-status[data-tone="error"] {
+  color: var(--rig-danger);
+}
+.rig-design .rig-warnings {
+  margin: 0 0 var(--studio-space-sm, 0.5rem);
+  padding: 0;
+  list-style: none;
+}
+.rig-design .rig-warnings li {
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--rig-warning);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--rig-warning-soft);
+}
+
+.rig-design .rig-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: var(--studio-space-md, 1rem);
+  align-items: start;
+}
+@container (max-width: 640px) {
+  .rig-design .rig-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* one column: the drawing first (what the fields change), then the fields, then the numbers;
+     otherwise the drawing sat below some 3,000 px of fields on a phone */
+  .rig-design .rig-main {
+    display: contents;
+  }
+  .rig-design .rig-profile,
+  .rig-design .rig-glance {
+    order: -1;
+    margin: 0;
+  }
+}
+
+/* fields */
+.rig-design .field-group {
+  margin: 0;
+  padding: var(--studio-space-sm, 0.5rem) var(--studio-space-md, 1rem) var(--studio-space-md, 1rem);
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-md, 6px);
+  background: var(--rig-panel);
+}
+.rig-design .field-group legend {
+  padding: 0 6px;
+  color: var(--rig-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rig-design .field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 10em;
+  align-items: center;
+  column-gap: var(--studio-space-sm, 0.5rem);
+}
+.rig-design .field-label {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.rig-design .field input,
+.rig-design .field select {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--rig-input);
+  color: var(--rig-fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.rig-design .field select {
+  text-align: left;
+}
+.rig-design .field .hint {
+  grid-column: 1 / -1;
+  color: var(--rig-muted);
+  font-size: 11px;
+}
+.rig-design .field-group > .hint {
+  margin: 0;
+  color: var(--rig-muted);
+  font-size: 12px;
+}
+.rig-design .est {
+  color: var(--rig-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* drawing */
+.rig-design .rig-profile {
+  margin: 0;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-md, 6px);
+  background: var(--rig-bg);
+}
+.rig-design .profile-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 60vh;
+  aspect-ratio: 4 / 3;
+}
+.rig-design .profile-svg * {
+  vector-effect: non-scaling-stroke;
+}
+.rig-design .profile-svg .dwl {
+  stroke: var(--rig-water);
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+}
+.rig-design .profile-svg .lwl {
+  stroke: var(--rig-water);
+  stroke-width: 2.5;
+}
+.rig-design .profile-svg .hull {
+  fill: var(--rig-hull);
+  stroke: var(--rig-fg);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.rig-design .profile-svg .hull.mesh {
+  stroke-dasharray: none;
+  stroke-linejoin: round;
+}
+.rig-design .profile-svg .lateral {
+  fill: var(--rig-water);
+  fill-opacity: 0.18;
+  stroke: var(--rig-water);
+  stroke-width: 1;
+}
+.rig-design .profile-svg .clr-canoe {
+  fill: var(--rig-bg);
+  stroke: var(--rig-water);
+  stroke-width: 1.5;
+}
+.rig-design .profile-svg .draft {
+  stroke: var(--rig-muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.rig-design .profile-svg .mast {
+  stroke: var(--rig-fg);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.rig-design .profile-svg .boom {
+  stroke: var(--rig-fg);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.rig-design .profile-svg .stay {
+  stroke: var(--rig-muted);
+  stroke-width: 1;
+}
+.rig-design .profile-svg .foretriangle {
+  fill: none;
+  stroke: var(--rig-muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.rig-design .profile-svg .sail {
+  fill: var(--rig-sail);
+  fill-opacity: 0.7;
+  stroke: var(--rig-sail-edge);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.rig-design .profile-svg .reef {
+  stroke: var(--rig-sail-edge);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.rig-design .profile-svg .ce-sail {
+  fill: var(--rig-sail-edge);
+}
+.rig-design .profile-svg .ce-designer circle {
+  fill: var(--rig-bg);
+  stroke: var(--rig-fg);
+  stroke-width: 1.5;
+}
+.rig-design .profile-svg .ce-designer line {
+  stroke: var(--rig-fg);
+  stroke-width: 1.5;
+}
+.rig-design .profile-svg .ce-actual {
+  fill: var(--rig-fg);
+}
+.rig-design .profile-svg .label {
+  fill: var(--rig-fg);
+  font-family: var(--rig-family);
+}
+.rig-design .profile-svg .label.muted {
+  fill: var(--rig-muted);
+}
+
+/* a finger on the drawing scrolls the page; only a handle (or a drag under way) takes the pointer */
+.rig-design .profile-svg .handle,
+.rig-design .profile-svg .handle-hit,
+.rig-design[data-dragging] .profile-svg {
+  touch-action: none;
+}
+.rig-design .profile-svg .handle-hit {
+  fill: transparent;
+  stroke: none;
+  cursor: grab;
+}
+.rig-design .profile-svg .foil {
+  fill: var(--rig-foil);
+  stroke: var(--rig-fg);
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+}
+.rig-design .profile-svg .stock {
+  stroke: var(--rig-fg);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 2 1 2;
+}
+.rig-design .profile-svg .clr {
+  fill: var(--rig-fg);
+  stroke: var(--rig-bg);
+  stroke-width: 1;
+}
+.rig-design .profile-svg .clr.whole {
+  fill: var(--rig-bg);
+  stroke: var(--rig-fg);
+  stroke-width: 1.5;
+}
+.rig-design .profile-svg .hc {
+  fill: none;
+  stroke: var(--rig-water);
+  stroke-width: 2;
+}
+.rig-design .profile-svg .cg circle {
+  fill: var(--rig-bg);
+  stroke: var(--rig-fg);
+  stroke-width: 1.25;
+}
+.rig-design .profile-svg .cg path {
+  fill: var(--rig-fg);
+}
+.rig-design .profile-svg .cb {
+  fill: var(--rig-water);
+}
+.rig-design .profile-svg .lead-dim line {
+  stroke: var(--rig-muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.rig-design .profile-svg .lead-dim line.dim {
+  stroke: var(--rig-fg);
+  stroke-dasharray: none;
+}
+.rig-design .profile-svg .label.warn {
+  fill: var(--rig-danger);
+}
+.rig-design .profile-svg .handle {
+  fill: var(--rig-accent-fill);
+  fill-opacity: 0.85;
+  stroke: var(--rig-accent-line);
+  stroke-width: 1.5;
+  cursor: grab;
+}
+.rig-design .profile-svg .handle:hover,
+.rig-design .profile-svg .handle[data-active] {
+  fill-opacity: 1;
+  stroke-width: 2.5;
+}
+.rig-design[data-dragging],
+.rig-design[data-dragging] .profile-svg .handle {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* the stability chart */
+.rig-design .stability-chart {
+  margin: 0 0 8px;
+}
+.rig-design .stability-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.rig-design .chart-legend {
+  gap: 4px 12px;
+  margin-bottom: 4px;
+  color: var(--rig-muted);
+  font-size: 11px;
+}
+.rig-design .chart-legend .key {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  margin-right: 4px;
+  vertical-align: middle;
+  border-top: 2px solid var(--rig-rm);
+}
+.rig-design .chart-legend .key.crew {
+  height: 8px;
+  border: none;
+  background: var(--rig-crew);
+}
+.rig-design .chart-legend .key.hm {
+  border-top-color: var(--rig-hm);
+}
+.rig-design .chart-legend .key.steady {
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--rig-bg);
+  border-radius: 50%;
+  background: var(--rig-hm);
+  outline: 1px solid var(--rig-hm);
+}
+.rig-design .stability-chart .grid {
+  stroke: var(--rig-border);
+  stroke-width: 1;
+}
+.rig-design .stability-chart .tick,
+.rig-design .stability-chart .hm-label {
+  fill: var(--rig-muted);
+  font-size: 9px;
+  font-family: var(--rig-family);
+}
+.rig-design .stability-chart .crew-area {
+  fill: var(--rig-crew);
+}
+.rig-design .stability-chart .rm-line {
+  fill: none;
+  stroke: var(--rig-rm);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.rig-design .stability-chart .hm-line {
+  fill: none;
+  stroke: var(--rig-hm);
+  stroke-width: 1.5;
+}
+.rig-design .stability-chart .limit {
+  stroke: var(--rig-muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.rig-design .stability-chart .steady {
+  fill: var(--rig-hm);
+  stroke: var(--rig-bg);
+  stroke-width: 2;
+}
+.rig-design .stability-chart .hit {
+  fill: transparent;
+}
+.rig-design .stability-chart .hit:hover {
+  fill: var(--rig-rm);
+}
+
+/* numbers */
+.rig-design .rig-numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--studio-space-md, 1rem);
+}
+.rig-design .numbers-group {
+  padding: var(--studio-space-sm, 0.5rem) var(--studio-space-md, 1rem);
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-md, 6px);
+}
+.rig-design .numbers-group h3 {
+  margin: 0 0 6px;
+  color: var(--rig-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rig-design .numbers-group dl {
+  margin: 0;
+}
+.rig-design .readout {
+  padding: 5px 0;
+  border-top: 1px solid var(--rig-border);
+}
+.rig-design .readout:first-child {
+  border-top: none;
+}
+.rig-design .readout dt {
+  color: var(--rig-muted);
+  font-size: 12px;
+}
+.rig-design .readout dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0;
+}
+.rig-design .readout strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.rig-design .prov,
+.rig-design .band {
+  padding: 0 6px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-round, 9999px);
+  color: var(--rig-muted);
+  font-size: 11px;
+}
+.rig-design .prov[data-prov="estimated"] {
+  border-style: dashed;
+  font-style: italic;
+}
+/* lighter than "estimated": the value is computed, from inputs that are estimated (named inline) */
+.rig-design .prov[data-prov="from-estimated"] {
+  border-color: transparent;
+  padding: 0 2px;
+  font-style: italic;
+}
+.rig-design .est-line {
+  margin: 0 0 6px;
+  color: var(--rig-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+.rig-design .extrap-banner {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--rig-warning);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--rig-warning-soft);
+  font-size: 12px;
+}
+.rig-design .extrap-banner[data-level="near"] {
+  border-left-color: var(--rig-border);
+  background: var(--rig-panel);
+}
+.rig-design .extrap-banner details {
+  display: inline;
+  color: var(--rig-muted);
+  font-size: 11px;
+}
+.rig-design .extrap-banner summary {
+  display: inline;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+.rig-design .perf-figures[data-extrapolated] .polar-line {
+  stroke-dasharray: 5 3;
+}
+.rig-design .chart-legend .key.dashed {
+  width: 14px;
+  border-top: 2px dashed var(--rig-muted);
+}
+
+/* the strip under the drawing: the reference point's helm, speed, heel and the lead, always in view */
+.rig-design .rig-glance {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-md, 6px);
+  background: var(--rig-bg);
+}
+.rig-design .rig-glance:empty {
+  display: none;
+}
+.rig-design .glance-at {
+  margin: 0 0 4px;
+  color: var(--rig-muted);
+  font-size: 11px;
+}
+.rig-design .glance-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.rig-design .glance-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+}
+.rig-design .glance-label {
+  color: var(--rig-muted);
+  font-size: 11px;
+}
+.rig-design .glance-item strong {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.rig-design .glance-item[data-out] strong {
+  color: var(--rig-danger);
+}
+.rig-design .rig-glance-inner[data-approx] strong {
+  opacity: 0.75;
+}
+.rig-design .glance-disagree,
+.rig-design .glance-doubt {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+.rig-design .glance-disagree {
+  padding-left: 8px;
+  border-left: 3px solid var(--rig-warning);
+}
+.rig-design .glance-doubt {
+  color: var(--rig-muted);
+}
+.rig-design .band[data-out] {
+  border-color: var(--rig-warning);
+  color: var(--rig-fg);
+}
+.rig-design .readout .note {
+  flex-basis: 100%;
+  color: var(--rig-muted);
+  font-size: 11px;
+}
+
+.rig-design .section-note {
+  margin: 0 0 6px;
+  color: var(--rig-muted);
+  font-size: 11px;
+}
+.rig-design .gz-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-bottom: 6px;
+}
+.rig-design .gz-chart .gz-zero {
+  stroke: var(--rig-border);
+  stroke-width: 1;
+}
+.rig-design .gz-chart .gz-line {
+  fill: none;
+  stroke: var(--rig-water);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.rig-design .gz-chart .gz-tick {
+  fill: var(--rig-muted);
+  font-size: 9px;
+  font-family: var(--rig-family);
+}
+.rig-design .gz-chart .gz-hit {
+  fill: transparent;
+}
+.rig-design .gz-chart .gz-hit:hover {
+  fill: var(--rig-water);
+}
+
+/* hull link */
+.rig-design .hull-link {
+  display: grid;
+  /* one column: it is also a .field (label | 10em input), which squeezed the link's input and two buttons into 10em */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+.rig-design .hull-link .cluster {
+  flex-wrap: nowrap;
+}
+.rig-design .hull-link .cluster input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--rig-input);
+  color: var(--rig-fg);
+  font: inherit;
+  font-family: var(--rig-family-code);
+  font-size: 12px;
+}
+.rig-design .hull-link button {
+  padding: 3px 10px;
+  border: 1px solid var(--rig-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--rig-input);
+  color: var(--rig-fg);
+  font: inherit;
+  cursor: pointer;
+}
+.rig-design .hull-link .link-status {
+  color: var(--rig-muted);
+  font-size: 12px;
+}
+.rig-design .hull-link .link-status[data-tone="error"] {
+  color: var(--rig-danger);
+}
+.rig-design .rig-fields[data-dropping] {
+  outline: 2px dashed var(--rig-accent);
+  outline-offset: 4px;
+}
+
+/* Exception */
+.rig-design .field input[data-invalid] {
+  border-color: var(--rig-danger);
+  outline: 1px solid var(--rig-danger);
+}
+.rig-design .field[data-estimated] input {
+  font-style: italic;
+}
+
+/* the performance polar and table */
+.rig-design {
+  /* sequential, light wind to strong: from the series colour a quarter of the way to the background
+     (the lightest step that keeps about 3:1 against it) through the series colour to it mixed
+     toward the foreground, so the strongest wind has the most contrast in either theme */
+  --rig-tws-0: color-mix(in oklch, var(--rig-rm), var(--rig-bg) 26%);
+  --rig-tws-1: color-mix(in oklch, var(--rig-rm), var(--rig-bg) 13%);
+  --rig-tws-2: var(--rig-rm);
+  --rig-tws-3: color-mix(in oklch, var(--rig-rm), var(--rig-fg) 12%);
+  --rig-tws-4: color-mix(in oklch, var(--rig-rm), var(--rig-fg) 24%);
+  --rig-tws-5: color-mix(in oklch, var(--rig-rm), var(--rig-fg) 36%);
+  --rig-tws-6: color-mix(in oklch, var(--rig-rm), var(--rig-fg) 48%);
+}
+.rig-design .numbers-group[data-group="performance"] {
+  grid-column: 1 / -1;
+}
+.rig-design .numbers-group[data-stale] .perf-figures {
+  opacity: 0.45;
+}
+.rig-design .perf-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--studio-space-md, 1rem);
+  align-items: start;
+}
+.rig-design .polar-chart {
+  margin: 0;
+}
+.rig-design .polar-chart svg {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+}
+.rig-design .polar-chart .grid {
+  fill: none;
+  stroke: var(--rig-border);
+  stroke-width: 1;
+}
+.rig-design .polar-chart .tick,
+.rig-design .polar-chart .polar-label {
+  fill: var(--rig-muted);
+  font-size: 9px;
+  font-family: var(--rig-family);
+}
+.rig-design .polar-chart .polar-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.rig-design .polar-chart .polar-dot {
+  stroke: var(--rig-bg);
+  stroke-width: 1.5;
+}
+.rig-design .polar-chart .polar-dot[data-hollow] {
+  fill: var(--rig-bg);
+  stroke-width: 1.5;
+}
+.rig-design .polar-chart .vmg {
+  fill: var(--rig-fg);
+  stroke: var(--rig-bg);
+  stroke-width: 1;
+}
+.rig-design .polar-chart .polar-line.tws-0 { stroke: var(--rig-tws-0); }
+.rig-design .polar-chart .polar-line.tws-1 { stroke: var(--rig-tws-1); }
+.rig-design .polar-chart .polar-line.tws-2 { stroke: var(--rig-tws-2); }
+.rig-design .polar-chart .polar-line.tws-3 { stroke: var(--rig-tws-3); }
+.rig-design .polar-chart .polar-line.tws-4 { stroke: var(--rig-tws-4); }
+.rig-design .polar-chart .polar-line.tws-5 { stroke: var(--rig-tws-5); }
+.rig-design .polar-chart .polar-line.tws-6 { stroke: var(--rig-tws-6); }
+.rig-design .polar-chart .polar-dot.tws-0 { fill: var(--rig-tws-0); }
+.rig-design .polar-chart .polar-dot.tws-1 { fill: var(--rig-tws-1); }
+.rig-design .polar-chart .polar-dot.tws-2 { fill: var(--rig-tws-2); }
+.rig-design .polar-chart .polar-dot.tws-3 { fill: var(--rig-tws-3); }
+.rig-design .polar-chart .polar-dot.tws-4 { fill: var(--rig-tws-4); }
+.rig-design .polar-chart .polar-dot.tws-5 { fill: var(--rig-tws-5); }
+.rig-design .polar-chart .polar-dot.tws-6 { fill: var(--rig-tws-6); }
+.rig-design .polar-chart .polar-dot[data-hollow].tws-0 { stroke: var(--rig-tws-0); fill: var(--rig-bg); }
+.rig-design .polar-chart .polar-dot[data-hollow].tws-1 { stroke: var(--rig-tws-1); fill: var(--rig-bg); }
+.rig-design .polar-chart .polar-dot[data-hollow].tws-2 { stroke: var(--rig-tws-2); fill: var(--rig-bg); }
+.rig-design .polar-chart .polar-dot[data-hollow].tws-3 { stroke: var(--rig-tws-3); fill: var(--rig-bg); }
+.rig-design .polar-chart .polar-dot[data-hollow].tws-4 { stroke: var(--rig-tws-4); fill: var(--rig-bg); }
+.rig-design .polar-chart .polar-dot[data-hollow].tws-5 { stroke: var(--rig-tws-5); fill: var(--rig-bg); }
+.rig-design .polar-chart .polar-dot[data-hollow].tws-6 { stroke: var(--rig-tws-6); fill: var(--rig-bg); }
+.rig-design .chart-legend .key.polar { border-top-width: 3px; }
+.rig-design .chart-legend .key.polar.tws-0 { border-top-color: var(--rig-tws-0); }
+.rig-design .chart-legend .key.polar.tws-1 { border-top-color: var(--rig-tws-1); }
+.rig-design .chart-legend .key.polar.tws-2 { border-top-color: var(--rig-tws-2); }
+.rig-design .chart-legend .key.polar.tws-3 { border-top-color: var(--rig-tws-3); }
+.rig-design .chart-legend .key.polar.tws-4 { border-top-color: var(--rig-tws-4); }
+.rig-design .chart-legend .key.polar.tws-5 { border-top-color: var(--rig-tws-5); }
+.rig-design .chart-legend .key.polar.tws-6 { border-top-color: var(--rig-tws-6); }
+.rig-design .chart-legend .key.hollow {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--rig-muted);
+  border-radius: 50%;
+}
+.rig-design .chart-legend .key.vmg {
+  width: 7px;
+  height: 7px;
+  border: none;
+  background: var(--rig-fg);
+}
+.rig-design .polar-table-wrap {
+  overflow-x: auto;
+}
+.rig-design .polar-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rig-design .polar-table caption {
+  caption-side: top;
+  text-align: left;
+  color: var(--rig-muted);
+  font-size: 11px;
+  padding-bottom: 4px;
+}
+.rig-design .polar-table th,
+.rig-design .polar-table td {
+  padding: 2px 6px;
+  text-align: right;
+  border-bottom: 1px solid var(--rig-border);
+}
+.rig-design .polar-table th {
+  color: var(--rig-muted);
+  font-weight: 500;
+}
+.rig-design .polar-table td[data-flagged] {
+  color: var(--rig-muted);
+  font-style: italic;
+}
+.rig-design .readout[data-readout="helm"] strong,
+.rig-design .readout[data-readout="refHelm"] strong {
+  font-variant-numeric: tabular-nums;
+}
