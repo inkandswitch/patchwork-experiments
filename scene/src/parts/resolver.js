@@ -4,7 +4,7 @@
 // attention. Every surface that shows a key asks hintFor with this, and the
 // key map dispatches with it, so what a surface shows is what a key does.
 
-import { elementOf } from "../stage/paths.js";
+import { elementOf } from "../stage/public.js";
 
 /**
  * The command context keys are resolved in, from attention: its hit, else

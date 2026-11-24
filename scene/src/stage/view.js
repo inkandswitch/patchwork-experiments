@@ -33,7 +33,7 @@ import { createRouter } from "./router.js";
 import { offer } from "./chain.js";
 import { looksFromEye } from "./pointer.js";
 import { escapeHint, restLayer } from "./ladder.js";
-import { LOOK } from "./bodies.js";
+import { KERNEL_KINDS, LOOK } from "./bodies.js";
 import { collectFrom, createHost, updateAll } from "./host.js";
 import { frozenJSON } from "./ambients.js";
 import { providersFirst } from "./activation.js";
@@ -639,10 +639,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     viewport.bodyRide?.(s && r && typeof r === "object" ? s.stage.scope.rideSpec(r) : null);
   }
 
-  /** Hold a tool for an extension of a stage: its declaration ({ command?, name, hand?, keys, pointer }) and its input (already the stage's). → put, or null (no router, or a toggle that put it down) */
+  /** Hold a tool for an extension of a stage: its declaration ({ command?, name, handKind?, keys, pointer }) and its input (already the stage's). → put, or null (no router, or a toggle that put it down) */
   function holdTool(owner, t, input) {
     if (!router) return null;
-    return router.hold(owner, { command: t.command ?? null, name: String(t.name ?? t.command ?? owner), hand: t.hand ?? null, input, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
+    return router.hold(owner, { command: t.command ?? null, name: String(t.name ?? t.command ?? owner), handKind: t.handKind ?? null, input, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
   }
 
   // ─── arriving: view.start (STAGE.md, "Arriving") ───────────────────────────────────
@@ -1253,8 +1253,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
        */
       hand: (spec) => {
         if (!live() || !spec || typeof spec.name !== "string") return noop;
-        const kind = typeof spec.kind === "string" && !["tool", "popover"].includes(spec.kind) ? spec.kind : "hand";
-        return acquire(own.hands, () => router.pushHand(key, { ...spec, kind, input: viewInput(spec.input ?? {}) }));
+        const kind = typeof spec.kind === "string" && !KERNEL_KINDS.includes(spec.kind) ? spec.kind : "hand";
+        const { name, keys, pointer, escape, escaping, put } = spec;
+        return acquire(own.hands, () => router.pushHand(key, { kind, name, keys, pointer, escape, escaping, put, input: viewInput(spec.input ?? {}) }));
       },
       /** put a held tool down, whoever's it is, from wherever it is in the stack: `which` one of view.held's, else the topmost */
       putDown: (which) => (live() ? router.putDown(which ? { serial: which.serial, owner: which.ext, command: which.command } : undefined) : false),

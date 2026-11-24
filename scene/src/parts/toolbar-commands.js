@@ -2,7 +2,7 @@
 // tools, the key map and the menu. Whether a command applies is the kernel's
 // (../stage/commands.js). Pure: no DOM, no api.
 
-import { commandState, flatCommands, inHand } from "../stage/commands.js";
+import { commandState, flatCommands, inHand } from "../stage/public.js";
 import { editing } from "./editing.js";
 
 /**

@@ -15,7 +15,7 @@
 import { IDENTITY_MATRIX, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
 import { groupChain, isGroup } from "../groups.js";
 import { closestOnLine } from "../handles.js";
-import { pointing } from "../stage/bodies.js";
+import { pointing } from "../stage/public.js";
 
 /** How big a handle is, as a fraction of its distance from the eye: the same size on screen at any zoom. */
 export const HANDLE_SIZE = 0.02;
