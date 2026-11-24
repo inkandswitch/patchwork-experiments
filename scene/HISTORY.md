@@ -1363,3 +1363,17 @@ veil, tell, pause the clock, start a process. That facet is made for a
 `role` beside `acts` went, and with it an unread frame-cost log. A drawn
 stage that is live (not at fixed heads) still announces nothing: no plugin
 opens one, and the stage can't tell it from a pin until the view says.
+
+**The stacks are rules of their own (2026-11-24).** The router kept the body
+stack and the hand stack inside its closure, and the view kept a second list
+of the bodies beside it. Both stacks became pure modules (`body-stack.js`,
+`hands.js`): a change is a value (the stack after, whose keys go, who is told
+what), and the router's one `restack` applies it, keeping the stack before
+any plugin is told. A body's `suspended` flag went: the body stack remembers
+which body was last told it is on top, which also keeps the tells exact when
+a body enters another from its own `leave()`. The router's toggle for a tool
+held again went (no kernel caller reached it; a command's run again is the
+stage's), and with the stack's rules checked on every reachable stack, the
+router's mounted enumeration shrank from every sequence of four steps to
+three. The view's open stages became `tree.js`, its camera `camera-memory.js`,
+`view.start`'s reading `arriving.js`. Unattended.

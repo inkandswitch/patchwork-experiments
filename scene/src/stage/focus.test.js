@@ -381,6 +381,45 @@ describe("what the viewer holds across a focus move", () => {
   }, 60_000);
 });
 
+describe("a holder going takes its bodies off the stack", () => {
+  // A body is its extension's (STAGE.md, "Bodies"): when the stage it was entered from closes, or the extension
+  // stops, it leaves the stack, and every body over it with it (they stood on it); the view then shows the body
+  // under it, with its reach, and nothing of what left is anywhere to lock the pointer. The
+  // router pops them (stopOwner, as each extension stops), so the view never has a body the router doesn't.
+  const body = (id, reach) => ({ id, label: id, reach, lock: true, keys: [{ code: "KeyW" }], enter: () => ({ input: {}, leave: () => left.push(id) }) });
+  let left = [];
+  const bodies = [
+    { meta: { id: "t.walk", traits: ["*"] }, module: { create: () => ({ bodies: [body("t.walk", 3)] }) } },
+    { meta: { id: "t.seat", traits: ["t.host"] }, module: { create: () => ({ bodies: [body("t.seat", 1)] }) } },
+  ];
+  const CASES = [
+    ["L closes under its walk", [["L", "t.walk"]], (m) => m.s.change((d) => void delete d.objects.L), ["t.walk"]],
+    ["L closes under its walk, A's seat over it", [["L", "t.walk"], ["", "t.seat"]], (m) => m.s.change((d) => void delete d.objects.L), ["t.seat", "t.walk"]],
+    ["A's seat under L's walk, L closes: the walk goes, the seat stays", [["", "t.seat"], ["L", "t.walk"]], (m) => m.s.change((d) => void delete d.objects.L), ["t.walk"]],
+    ["t.seat uninstalled", [["", "t.seat"]], (m) => m.s.uninstall("t.seat"), ["t.seat"]],
+    ["t.walk uninstalled, in every stage", [["", "t.walk"], ["L", "t.walk"]], (m) => m.s.uninstall("t.walk"), ["t.walk", "t.walk"]],
+  ];
+  it("a stage closing or an extension stopping, under every arrangement of two bodies: the router's stack and the view agree", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const [label, entered, go, gone] of CASES) {
+      left = [];
+      const m = await mountNested({ extra: bodies });
+      s = m.s;
+      const { view } = m;
+      await until(() => stageOf(view, "L")?.debug.host.instanceOf("t.walk") && s.instance("t.seat"), 2000);
+      for (const [sp, id] of entered) expect(view.enterBody(id, null, stageOf(view, sp), true), label).toBe(true);
+      const stillThere = entered.slice(0, entered.length - gone.length).map(([, id]) => id);
+      await go(m);
+      await until(() => view.router.bodies().length === 1 + stillThere.length, 2000).catch(() => {});
+      const top = stillThere.at(-1) ?? "look";
+      expect([label, view.router.bodies().map((x) => x.id), view.router.state().body.lock]).toEqual([label, ["look", ...stillThere], top !== "look"]);
+      expect([label, view.atom.get().body.id, view.bodyReach(), left]).toEqual([label, top, { look: Infinity, "t.seat": 1, "t.walk": 3 }[top], gone]);
+      s.unmount();
+      s = null;
+    }
+  });
+});
+
 describe("the camera's rides don't depend on the focus (I8)", () => {
   it("a sibling link's stage rides while the focus is inside another link: the latest base ride of any acting stage applies, wherever the focus", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
