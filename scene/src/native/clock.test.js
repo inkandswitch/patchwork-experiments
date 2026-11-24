@@ -61,13 +61,15 @@ describe("following", () => {
  * every frame. Presence is shared at once: who's here (a crash drops a view
  * from it, as the TTL would), and each computer's published t.
  */
+// (the clock's map made with the doc, as the scene datatype's init makes it; each world's replicas are copies of it, and it is never written)
+const BASE = Automerge.from({ clock: { running: true, t: 0 }, objects: { o: { transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } } } });
+
 function world(caps) {
   let wall = 1_000_000;
   // every replica's wasm handle, freed with free(): a run makes hundreds of thousands of worlds, and Automerge's memory isn't the GC's
   const handles = new Set();
   const own = (doc) => (handles.add(Automerge.getBackend(doc)), doc);
-  // (the clock's map made with the doc, as the scene datatype's init makes it)
-  const base = own(Automerge.from({ clock: { running: true, t: 0 }, objects: { o: { transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 } } } }));
+  const base = BASE;
   const views = caps.map((cap, i) => ({ i, cap, session: `s${i}`, viewer: `v${i}`, state: "gone", doc: null, clock: null, steps: [], ts: [], startedCold: null }));
   const samples = new Map(); // session → { t, at }
   const here = () => views.filter((v) => v.state !== "gone");
@@ -162,9 +164,11 @@ function world(caps) {
     if (live.length < 2) return;
     const heads = live.map((v) => Automerge.getHeads(v.doc).sort().join());
     if (heads.every((h) => h === heads[0])) return; // nothing new anywhere
-    const changes = live.flatMap((v) => Automerge.getAllChanges(v.doc));
+    // every replica takes in every other's changes (into the first, then back out from it)
+    const [first, ...rest] = live;
+    for (const v of rest) first.doc = Automerge.merge(first.doc, v.doc);
+    for (const v of rest) v.doc = Automerge.merge(v.doc, first.doc);
     for (const v of live) {
-      [v.doc] = Automerge.applyChanges(v.doc, changes);
       // the stage's recheck: our claim's field names another session now
       const c = claimOf(v);
       if (v.claimHeld() && c && c.session !== v.session) v.lose();
