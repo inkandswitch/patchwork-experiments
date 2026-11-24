@@ -47,8 +47,8 @@
 // document, so its pointer stays captured), until its key comes up.
 
 import css from "./use.css?inline";
-import { applicable, keysOf } from "./toolbar-commands.js";
-import { codeOfKey, commandState, flatCommands, looksFromEye, samePath } from "../stage/public.js";
+import { keysOf, shownOn } from "./toolbar-commands.js";
+import { applicable, codeOfKey, commandState, looksFromEye, samePath } from "../stage/public.js";
 import { attentionPath, hintFor, keyFor, segmentsOf } from "./keymap.js";
 import { resolverState } from "./resolver.js";
 import { perFocus } from "../per-focus.js";
@@ -103,8 +103,7 @@ export function promptEntries(collected, attention, ctx, max = MAX_VERBS) {
 }
 
 function verbsOf(collected, target, ctx) {
-  const flat = flatCommands(collected).filter(({ command }) => keysOf(command).length);
-  return applicable(flat, target, ctx, "use");
+  return applicable(collected, target, ctx, ({ command }) => keysOf(command).length > 0 && shownOn(command, "use"));
 }
 
 const verbName = ({ command, state }) => String(state.label ?? command.name ?? command.id);

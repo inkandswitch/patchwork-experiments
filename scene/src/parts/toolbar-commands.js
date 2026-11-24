@@ -1,8 +1,9 @@
 // What the surfaces do with commands (EDITOR.md, "A command"): the bar of
-// tools, the key map and the menu. Whether a command applies is the kernel's
+// tools, the key map and the menu. Whether a command applies, and the one
+// walk every surface takes over them (`applicable`), are the kernel's
 // (../stage/commands.js). Pure: no DOM, no api.
 
-import { commandState, flatCommands, inHand } from "../stage/public.js";
+import { applicable, flatCommands, inHand } from "../stage/public.js";
 
 /**
  * Is this command meant for this surface? An explicit `show` list decides;
@@ -74,25 +75,6 @@ export function cleanChoices(choices) {
 }
 
 /**
- * The commands that apply to a target on a surface, each with its state.
- * @param {{ ext, command }[]} flat  flatCommands()
- * @param {string | null} target
- * @param {{ scene, local }} ctx
- * @param {string} surface
- * @param {{ strict?: boolean }} [opts]
- * @returns {{ ext, command, state }[]}
- */
-export function applicable(flat, target, ctx, surface, opts) {
-  const out = [];
-  for (const { ext, command } of flat) {
-    if (surface && !shownOn(command, surface, opts)) continue;
-    const state = commandState(command, target, ctx);
-    if (state) out.push({ ext, command, state });
-  }
-  return out;
-}
-
-/**
  * Is this a world command, the bar's in every body? Only an explicit
  * mention counts (show names "world"), as for the menu's scene commands:
  * a command that says nothing about its surfaces is no game's call to make.
@@ -132,13 +114,11 @@ export function barEntries(segs, view, cluster) {
   let shown = false;
   const seen = new Set();
   for (const seg of segs ?? []) {
-    for (const { ext, command } of flatCommands(seg.collected)) {
-      if (!onBar(command, cluster)) continue;
-      if (inHand(command, view)) shown = true;
+    const on = ({ command }) => onBar(command, cluster);
+    if (flatCommands(seg.collected).some((e) => on(e) && inHand(e.command, view))) shown = true;
+    for (const { ext, command, state } of applicable(seg.collected, null, seg.ctx, on)) {
       const k = `${seg.stage ?? ""}\u0000${ext}\u0000${command.id}`;
       if (seen.has(k)) continue;
-      const state = commandState(command, null, seg.ctx);
-      if (!state) continue;
       seen.add(k);
       (isWorld(command) ? world : editor).push(seg.stage === undefined ? { ext, command, state } : { ext, command, state, stage: seg.stage });
     }

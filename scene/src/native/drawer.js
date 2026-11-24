@@ -50,6 +50,7 @@
 // createDrawer, which keeps an element per docked key.
 
 import { ICONS } from "../icons.js";
+import { applicable } from "../stage/public.js";
 import css from "./drawer.css?inline";
 import { EMBED_ATTR, documentBox, documentView } from "../embed.js";
 import { docKey, hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
@@ -417,23 +418,8 @@ export function createDrawer({ parent, onChange = () => {}, prefs = () => ({}), 
 
 // ─── the plugin ─────────────────────────────────────────────────────────────
 
-/** The rail's entries from what's collected: [{ ext, command, state }] of the "panels" group that apply to the scene. Pure. */
-export function railEntries(collected, ctx) {
-  const out = [];
-  for (const { id: ext, value } of collected ?? []) {
-    for (const command of Array.isArray(value) ? value : []) {
-      if (command?.group !== "panels" || typeof command.state !== "function" || typeof command.run !== "function") continue;
-      let state = null;
-      try {
-        state = command.state(null, ctx);
-      } catch {
-        state = null;
-      }
-      if (state) out.push({ ext, command, state: typeof state === "object" ? state : {} });
-    }
-  }
-  return out;
-}
+/** The rail's entries from what's collected: [{ ext, command, state, stage? }] of the "panels" group that apply to the scene (the kernel's walk: a panel naming a hand applies only while it is held). Pure. */
+export const railEntries = (collected, ctx) => applicable(collected, null, ctx, ({ command }) => command.group === "panels");
 
 /** The rail: a part of the right edge of its own, a button per panel on offer. */
 function createRail(api) {
@@ -451,12 +437,12 @@ function createRail(api) {
     if (next === key) return;
     key = next;
     rail.replaceChildren(
-      ...entries.map(({ ext, command, state }) => {
+      ...entries.map(({ ext, command, state, stage }) => {
         const b = make("button", "button icon-button stage-panel-toggle", { type: "button", "aria-pressed": String(!!state.checked), "aria-label": String(command.name ?? command.id), title: String(state.title ?? command.name ?? command.id), "data-ext": ext, "data-command": command.id });
         if (ICONS[command.icon]) b.innerHTML = ICONS[command.icon];
         else b.textContent = String(command.name ?? command.id).slice(0, 1);
         b.addEventListener("mousedown", (e) => e.preventDefault());
-        b.addEventListener("click", () => api.run({ ext, command: command.id, target: null, value: !state.checked }));
+        b.addEventListener("click", () => api.run({ ...(stage !== undefined ? { stage } : {}), ext, command: command.id, target: null, value: !state.checked }));
         return b;
       }),
     );

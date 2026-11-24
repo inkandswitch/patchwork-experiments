@@ -3,7 +3,7 @@
 // acts on three keys, and the DOM that follows it; its width, as finite
 // tables and every sequence of up to three acts on two kinds of pane.
 import { describe, it, expect, vi } from "vitest";
-import { EMPTY, KINDS, MAX_PX, MIN_PX, createDrawer, docked, dockedBehind, dragged, prefKey, shown, shownOf, stepped, undocked, widthFor } from "./drawer.js";
+import { EMPTY, KINDS, MAX_PX, MIN_PX, createDrawer, docked, dockedBehind, dragged, prefKey, railEntries, shown, shownOf, stepped, undocked, widthFor } from "./drawer.js";
 import { EMBED_ATTR } from "../embed.js";
 
 // Does a stage-scoped style rule reach `el`? Every one is `.scene-tool <x>:where(:not(.about-embed *),
@@ -639,5 +639,20 @@ describe("documents docked in the drawer", () => {
     expect(strip.classList.contains("drop-over")).toBe(true);
     strip.dispatchEvent(dragEvent("dragleave"));
     expect(strip.classList.contains("drop-over")).toBe(false);
+  });
+});
+
+// H14: the rail is a surface like any other: a panel toggle naming a kind of
+// hand is on it only while a hand of that kind is held, and runs in the stage
+// it was collected from.
+describe("the drawer's rail", () => {
+  it("a panel naming a hand is there only while one of that kind is held (H14); each entry keeps its stage", () => {
+    const panel = (id, extra = {}) => ({ id, group: "panels", state: (t) => (t == null ? { checked: false } : null), run() {}, ...extra });
+    const collected = [{ id: "t.a", value: [panel("edit-only", { hand: "edit" }), panel("always"), { id: "not-a-panel", run() {} }], stage: 3 }];
+    const ctx = (hands) => ({ scene: { objects: {} }, local: {}, view: { hands } });
+    const ids = (hands) => railEntries(collected, ctx(hands)).map((e) => [e.command.id, e.stage]);
+    expect(ids([])).toEqual([["always", 3]]);
+    expect(ids([{ kind: "other" }])).toEqual([["always", 3]]);
+    expect(ids([{ kind: "edit" }])).toEqual([["edit-only", 3], ["always", 3]]);
   });
 });

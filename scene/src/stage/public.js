@@ -11,7 +11,7 @@ export { LOOK, pointing } from "./bodies.js";
 // what a view plugin keeps while a hand of a kind is held (the editor's chrome, while the Edit hand is)
 export { whileHolding } from "./holding.js";
 // what a command is and whether it applies (STAGE.md, "Commands")
-export { TOO_FAR, commandState, flatCommands, inHand } from "./commands.js";
+export { TOO_FAR, applicable, commandState, flatCommands, inHand } from "./commands.js";
 // the path grammar: how the view names an object across stages
 export { elementOf, parseKey, samePath } from "./paths.js";
 // what the view's own Escape does now (the Edit hand's escape is it)

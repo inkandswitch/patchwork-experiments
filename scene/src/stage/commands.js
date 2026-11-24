@@ -28,6 +28,27 @@ export function flatCommands(collected) {
 }
 
 /**
+ * The one walk every surface takes: each collected command `keep` accepts
+ * (given its flat entry `{ ext, command, stage? }`), with its state for
+ * `target` in `ctx` (commandState), those that apply, in collected order,
+ * each with the stage it was collected from, so it runs there.
+ * @param {{ id: string, value: any, stage?: number }[]} collected  a stage's or view's collect("commands")
+ * @param {string | null} target
+ * @param {object} ctx  its stage reader's context(hit)
+ * @param {(entry: { ext: string, command: object, stage?: number }) => boolean} [keep]  the surface's filter
+ * @returns {{ ext: string, command: object, state: object, stage?: number }[]}
+ */
+export function applicable(collected, target, ctx, keep = () => true) {
+  const out = [];
+  for (const entry of flatCommands(collected)) {
+    if (!keep(entry)) continue;
+    const state = commandState(entry.command, target, ctx);
+    if (state) out.push({ ...entry, state });
+  }
+  return out;
+}
+
+/**
  * A command's state for a target in a context, or null when it doesn't
  * apply. In order:
  *   - `hand: kind`: it applies only while a hand of that kind is in the

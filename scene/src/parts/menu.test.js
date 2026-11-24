@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object } from "../test/stage-harness.js";
+import { mountStage, object, until } from "../test/stage-harness.js";
+import { emptyScene } from "../test/empty-scene.js";
+import { FakeRepo } from "../test/fake-repo.js";
+import { LINK, linkOpener } from "../test/links.js";
 import menu, { menuEntries } from "./menu.js";
 
 function commandsExt(log) {
@@ -114,7 +117,9 @@ describe("scene.menu", () => {
       const ran = vi.spyOn(s.api("scene.menu"), "run");
       open();
       el().querySelector('[data-command="lock"]').click();
+      // (run in the stage each row is from: here the one stage, 0)
       expect(ran).toHaveBeenLastCalledWith({
+        stage: 0,
         ext: "t.cmds",
         command: "lock",
         target: "a",
@@ -125,6 +130,7 @@ describe("scene.menu", () => {
       open();
       el().querySelectorAll('[data-command="color"]')[1].click();
       expect(ran).toHaveBeenLastCalledWith({
+        stage: 0,
         ext: "t.cmds",
         command: "color",
         target: null,
@@ -236,5 +242,35 @@ describe("scene.menu", () => {
         const look = s.facet("scene.menu").look();
         expect([s.facet("scene.menu").nameOf(look?.id), menuTitle]).toEqual([lookAt, menuOf]);
       }, 30_000);
+  });
+});
+
+// The pointer's path crosses stages: a row for an element of an inner stage
+// (a link's doc) runs in that stage, wherever the focus is.
+describe("scene.menu across stages", () => {
+  let s;
+  afterEach(() => s?.unmount());
+
+  it("a row for an object of the linked doc under the pointer runs there, not in the focus stage", async () => {
+    const log = [];
+    // an extension of every doc: in A and in B, each with its own doc
+    const FLIP = {
+      meta: { id: "t.flip", traits: ["*"] },
+      module: {
+        create: (api) => ({
+          commands: [{ id: "flip", name: "Flip", show: ["menu"], state: (t, { scene }) => (t != null && scene.objects[t] ? {} : null), run: (t) => log.push([api.doc().title, t]) }],
+        }),
+      },
+    };
+    const repo = new FakeRepo();
+    const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card" }) }, order: ["card"] }));
+    const objects = { L: object({ name: "B", sourceUrl: b.url, providerId: LINK, renderUrl: null }) };
+    s = await mountStage({ repo, extensions: [{ meta: { id: "scene.menu" }, module: menu }, FLIP, linkOpener()], doc: { title: "A", objects, order: ["L"] } });
+    await until(() => s.debug.view.stageAt(["L"])?.reader.runs("t.flip"), 2000);
+    // the pointer on B's card, through L; the focus stays A
+    s.debug.view.atom.swap((v) => ({ ...v, hovered: Object.freeze(["L", "card"]) }));
+    expect(s.instance("scene.menu").input.menu({ type: "menu", x: 10, y: 10, hit: { id: "L" } })).toBe(true);
+    s.root.querySelector('.context-menu [data-command="flip"]').click();
+    expect(log).toEqual([["B", "card"]]);
   });
 });

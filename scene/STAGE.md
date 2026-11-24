@@ -59,7 +59,7 @@ plain data for plugins (`drops`, `describes`: EDITOR.md).
 
 ## Commands
 
-| An instance's `commands` | the kernel runs them, surfaces show them (their other fields: EDITOR.md, "A command"), both by `commandState` (`stage/commands.js`) |
+| An instance's `commands` | the kernel runs them, surfaces show them (their other fields: EDITOR.md, "A command"), both by `commandState` (`stage/commands.js`); every surface's one walk is `applicable(collected, target, ctx, keep?)`: those that apply, each with its state and the stage it runs in |
 |---|---|
 | `id`, `run(target, value?, ctx)` | `api.run({ stage?, ext, command, target, value?, hit? })` runs it, `ctx` being its stage's reader's `context(hit)`, only where it applies and isn't disabled |
 | `state(target, ctx)` | null: not for this target (no `state`: the scene only; a throw: null), else `{ disabled?, title?, … }` |

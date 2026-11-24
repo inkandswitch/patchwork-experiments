@@ -61,8 +61,10 @@ Putting it down puts down the selection.
 ```
 
 An instance's `commands`. What applies and running it (`hand`, `reach`, `tool`,
-`state`, `run`) are the kernel's (STAGE.md, "Commands"); every surface asks its
-`commandState` in the context it passes, a stage reader's `context(hit)`. **Open** (`open:
+`state`, `run`) are the kernel's (STAGE.md, "Commands"); every surface (the
+bar, the rail, the menu, the use prompt, the key map, Open, the body chip's
+Edit) takes its one walk, `applicable`, in the context it passes, a stage
+reader's `context(hit)`, and runs what it shows in the stage it came from. **Open** (`open:
 true`, `src/parts/open.js`) goes into a thing to edit what's inside, in place:
 a link's (scene.links'), a package's editor for its content; a target's Open is
 the first that applies, and the inspector, the menu (after Select), the outline

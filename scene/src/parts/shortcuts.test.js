@@ -42,14 +42,13 @@ describe("shortcuts: pure", () => {
   });
 
   it("invocation: the first that applies on attention's path, innermost first, then the scene; never one another part does", () => {
-    const cmd = (id, shortcut, applies, extra = {}) => ({ ext: "t", command: { id, shortcut, state: (t) => (applies(t) ? {} : null), ...extra } });
-    const flat = [cmd("scene-g", "Mod+G", (t) => t == null), cmd("obj-g", "Mod+G", (t) => t === "a"), cmd("copy", "Mod+C", () => true, { shortcutBy: "clipboard" }), cmd("off", "Mod+O", () => true)];
-    const stateOf = (c, t) => c.state(t);
-    const press = (k, targets) => shortcutInvocation(flat, ev(k, { meta: true }), true, stateOf, targets);
+    const cmd = (id, shortcut, applies, extra = {}) => ({ id, shortcut, state: (t) => (applies(t) ? {} : null), run() {}, ...extra });
+    const commands = [cmd("scene-g", "Mod+G", (t) => t == null), cmd("obj-g", "Mod+G", (t) => t === "a"), cmd("copy", "Mod+C", () => true, { shortcutBy: "clipboard" }), cmd("off", "Mod+O", () => true)];
+    const press = (k, targets) => shortcutInvocation([{ id: "t", value: commands }], ev(k, { meta: true }), true, {}, targets);
     expect(press("g", ["a", null])).toEqual({ ext: "t", command: "obj-g", target: "a" });
     expect(press("g", ["b", null])).toEqual({ ext: "t", command: "scene-g", target: null });
     expect(press("c", ["a", null])).toBe(null);
-    flat[3].command.state = () => ({ disabled: true });
+    commands[3].state = () => ({ disabled: true });
     expect(press("o", ["a", null])).toBe(null);
   });
 });

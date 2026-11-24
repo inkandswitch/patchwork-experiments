@@ -23,7 +23,7 @@
 // It writes nothing to the doc.
 
 import css from "./body.css?inline";
-import { LOOK, commandState, flatCommands } from "../stage/public.js";
+import { LOOK, applicable } from "../stage/public.js";
 import { EDIT_HAND } from "./editing.js";
 import { holdKey } from "../hold-key.js";
 import { focusReader, perFocus } from "../per-focus.js";
@@ -169,8 +169,8 @@ function create(api) {
   /** The Edit command's state, as the focus's context gives it, or null where it doesn't run. */
   function editState() {
     const r = focusReader(api);
-    const e = r && flatCommands(r.collect("commands")).find((c) => c.ext === EDIT_COMMAND.ext && c.command.id === EDIT_COMMAND.command);
-    return e ? commandState(e.command, null, r.context(null)) : null;
+    const is = ({ ext, command }) => ext === EDIT_COMMAND.ext && command.id === EDIT_COMMAND.command;
+    return (r && applicable(r.collect("commands"), null, r.context(null), is)[0]?.state) ?? null;
   }
   let shown = "";
   function render() {
