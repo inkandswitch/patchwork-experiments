@@ -6,6 +6,8 @@
 // browser's copy and paste events, which transfer.js hears): such a shortcut
 // is only shown, never run here. Pure.
 
+import { applicable } from "../stage/public.js";
+
 /** Is this a Mac (⌘ is Mod there)? As the router tells. */
 export const onMac = (nav = globalThis.navigator) => /Mac/i.test(`${nav?.platform ?? ""} ${nav?.userAgent ?? ""}`);
 
@@ -51,20 +53,18 @@ export function shortcutLabel(text, mac) {
 
 /**
  * Which command a ⌘ key runs: the first whose shortcut it presses (and that
- * isn't another's to do: `shortcutBy`) and that applies, on attention's
- * path, innermost first, then the scene. → { ext, command, target } or null.
- * @param {{ ext: string, command: object }[]} flat  flatCommands(collected)
- * @param {(command, target) => object | null} stateOf  a command's state for a target
+ * isn't another's to do: `shortcutBy`) and that applies (the kernel's walk),
+ * on attention's path, innermost first, then the scene. → { ext, command,
+ * target } or null.
+ * @param {{ id: string, value: any }[]} collected  a stage's collect("commands")
+ * @param {object} ctx  its context
  * @param {(string | null)[]} targets  attention's path, then null
  */
-export function shortcutInvocation(flat, ev, mac, stateOf, targets) {
-  const matching = flat.filter(({ command }) => !command.shortcutBy && shortcutsOf(command).some((s) => shortcutMatches(s, ev, mac)));
-  if (!matching.length) return null;
+export function shortcutInvocation(collected, ev, mac, ctx, targets) {
+  const presses = ({ command }) => !command.shortcutBy && shortcutsOf(command).some((s) => shortcutMatches(s, ev, mac));
   for (const target of targets) {
-    for (const { ext, command } of matching) {
-      const s = stateOf(command, target);
-      if (s && !s.disabled) return { ext, command: command.id, target };
-    }
+    const e = applicable(collected, target, ctx, presses).find(({ state }) => !state.disabled);
+    if (e) return { ext: e.ext, command: e.command.id, target };
   }
   return null;
 }

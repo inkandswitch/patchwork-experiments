@@ -14,7 +14,7 @@
 // when the spoke has none for that key). The key map tries the path, then
 // the scene (the null target).
 
-import { codeOfKey, commandState, flatCommands, labelOf, lookChain, reservedBy } from "../stage/public.js";
+import { applicable, codeOfKey, flatCommands, labelOf, lookChain, reservedBy } from "../stage/public.js";
 import { keyMatches, keysOf } from "./toolbar-commands.js";
 
 /**
@@ -41,14 +41,12 @@ export function attentionPath(attention, parents) {
  * @returns {{ ext: string, command: string, target: string | null } | null}
  */
 export function mapInvocation(collected, key, ctx, attention) {
-  const matching = flatCommands(collected).filter(({ command }) => keyMatches(command, key));
-  if (!matching.length) return null;
+  const matches = ({ command }) => keyMatches(command, key);
+  if (!flatCommands(collected).some(matches)) return null;
   const path = attentionPath(attention, ctx?.scene?.parents).filter((t) => attention?.selected != null || ctx?.scene?.objects?.[t]);
   for (const target of [...path, null]) {
-    for (const { ext, command } of matching) {
-      const s = commandState(command, target, ctx);
-      if (s && !s.disabled) return { ext, command: command.id, target };
-    }
+    const e = applicable(collected, target, ctx, matches).find(({ state }) => !state.disabled);
+    if (e) return { ext: e.ext, command: e.command.id, target };
   }
   return null;
 }

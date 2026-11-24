@@ -12,8 +12,8 @@
 // reach), as every surface's are.
 
 import css from "./menu.css?inline";
-import { applicable, cleanChoices, controlKind } from "./toolbar-commands.js";
-import { flatCommands } from "../stage/public.js";
+import { cleanChoices, controlKind, shownOn } from "./toolbar-commands.js";
+import { applicable } from "../stage/public.js";
 import { hintFor } from "./keymap.js";
 import { onMac, shortcutLabel, shortcutsOf } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
@@ -24,15 +24,14 @@ const isSelect = (e) => e.ext === SELECT.ext && e.command.id === SELECT.command;
 const isOpen = (e) => e.command.open === true;
 
 /**
- * The menu's entries for a target: [{ ext, command, state }] for the object,
- * Select first and the rest in running order, then for the scene. Pure
- * (given the collected commands).
+ * The menu's entries for a target: [{ ext, command, state, stage? }] for the
+ * object, Select first and the rest in running order, then for the scene,
+ * each with the stage it runs in. Pure (given the collected commands).
  */
 export function menuEntries(collected, target, ctx) {
-  const flat = flatCommands(collected);
-  const all = target != null ? applicable(flat, target, ctx, "menu") : [];
+  const all = target != null ? applicable(collected, target, ctx, ({ command }) => shownOn(command, "menu")) : [];
   const forObject = [...all.filter(isSelect), ...all.filter((e) => !isSelect(e) && isOpen(e)), ...all.filter((e) => !isSelect(e) && !isOpen(e))];
-  const forScene = applicable(flat, null, ctx, "menu", { strict: true });
+  const forScene = applicable(collected, null, ctx, ({ command }) => shownOn(command, "menu", { strict: true }));
   return { forObject, forScene };
 }
 

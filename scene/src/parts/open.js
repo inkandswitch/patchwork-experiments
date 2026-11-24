@@ -4,32 +4,19 @@
 // model editor); a target's Open is the first that applies to it, in running
 // order. The inspector's header, the menu, the outline, Enter and a
 // double-click in Edit all run this one.
+import { applicable } from "../stage/public.js";
 import { focusReader } from "../per-focus.js";
 
 /**
  * The target's Open: { ext, command, state, stage? }, or null when none
- * applies (or the one that would is disabled). One whose state throws
- * doesn't apply.
+ * applies (or the one that would is disabled). Whether one applies is the
+ * kernel's walk (its hand, its state, its reach), as on every surface.
  * @param {{ id: string, value: any, stage?: number }[]} collected  api.collect("commands")
  */
 export function openFor(collected, target, ctx) {
   if (target == null) return null;
-  for (const { id: ext, value, stage } of collected ?? []) {
-    for (const command of Array.isArray(value) ? value : []) {
-      if (command?.open !== true || command.id == null || typeof command.run !== "function" || typeof command.state !== "function") continue;
-      let state;
-      try {
-        state = command.state(target, ctx);
-      } catch {
-        state = null;
-      }
-      if (state == null || state === false) continue;
-      const s = typeof state === "object" ? state : {};
-      if (s.disabled) return null;
-      return { ext, command, state: s, ...(stage !== undefined ? { stage } : {}) };
-    }
-  }
-  return null;
+  const first = applicable(collected, target, ctx, ({ command }) => command.open === true)[0] ?? null;
+  return first && !first.state.disabled ? first : null;
 }
 
 /** Run `target`'s Open, through a view plugin's api, in its focus stage. @returns whether there was one */

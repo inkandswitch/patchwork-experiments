@@ -30,7 +30,7 @@
 // (api.collect).
 
 import { controlKind } from "./toolbar-commands.js";
-import { commandState, flatCommands, samePath } from "../stage/public.js";
+import { applicable, samePath } from "../stage/public.js";
 import { attentionPath, mapInvocation, segmentsOf } from "./keymap.js";
 import { onMac, shortcutInvocation } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
@@ -133,15 +133,17 @@ function create(api) {
   // The code a key event is held under (its physical key, as the router keeps it).
   const codeOf = (ev) => ev.code || ev.key;
 
+  /** The command a resolved invocation names, with its state, as the walk gives it in its segment, or null. */
+  const named = (inv, { collected, ctx }) => applicable(collected, inv.target, ctx, (e) => e.ext === inv.ext && e.command.id === inv.command)[0] ?? null;
+
   /** Run what a resolved invocation names, in its segment, as the plain keys do. → whether it ran */
   function invoke(inv, seg) {
-    const { collected, ctx } = seg;
-    const entry = flatCommands(collected).find((e) => e.ext === inv.ext && e.command.id === inv.command);
+    const { ctx } = seg;
+    const entry = named(inv, seg);
     if (!entry) return false;
-    const { command } = entry;
+    const { command, state } = entry;
     if (command.tool) return api.run({ ...inv, ...(seg.stage !== undefined ? { stage: seg.stage } : {}), hit: ctx.hit });
-    const state = commandState(command, inv.target, ctx);
-    if (!state || state.disabled) return false;
+    if (state.disabled) return false;
     try {
       command.run(inv.target, controlKind(state) === "toggle" ? !state.checked : undefined, ctx);
     } catch (err) {
@@ -157,7 +159,7 @@ function create(api) {
     for (const seg of segmentsOf(resolverState(api, held.path ?? null))) {
       const parents = seg.ctx?.scene?.parents;
       const targets = [...attentionPath(seg.attention, parents).filter((t) => seg.attention?.selected != null || seg.ctx?.scene?.objects?.[t]), null];
-      const inv = shortcutInvocation(flatCommands(seg.collected), ev, mac, (c, t) => commandState(c, t, seg.ctx), targets);
+      const inv = shortcutInvocation(seg.collected, ev, mac, seg.ctx, targets);
       if (inv) return invoke(inv, seg);
     }
     return false;
@@ -180,16 +182,15 @@ function create(api) {
       }
     }
     if (!inv) return false;
-    const { collected, ctx } = seg;
+    const { ctx } = seg;
     if (ev.repeat) return true;
-    const entry = flatCommands(collected).find((e) => e.ext === inv.ext && e.command.id === inv.command);
+    const entry = named(inv, seg);
     if (!entry) return false;
-    const { command } = entry;
+    const { command, state } = entry;
     // a tool: the stage holds it (or puts it down)
     if (command.tool) return api.run({ ...inv, ...(seg.stage !== undefined ? { stage: seg.stage } : {}), hit: ctx.hit });
     // what api.run does, keeping what run returns: still applies, then run
-    const state = commandState(command, inv.target, ctx);
-    if (!state || state.disabled) return false;
+    if (state.disabled) return false;
     const value = controlKind(state) === "toggle" ? !state.checked : undefined;
     let out;
     try {
