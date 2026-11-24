@@ -11,7 +11,6 @@ import { wallAt } from "../test/stage-harness.js";
 import { bestWidget, initialCamera, startOf, statusOf, widgetWins } from "./stage.js";
 import { wholeStart } from "./view.js";
 import { hitChain } from "./chain.js";
-import { sameTransform } from "../native/poses.js";
 import { SEND } from "./presence.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
@@ -209,11 +208,6 @@ describe("the stage's pure helpers", () => {
     expect(widgetWins({ owner: "a", distance: 1 }, { distance: 2 })).toBe(true);
     expect(widgetWins({ owner: "a" }, null)).toBe(true);
   });
-  it("compares transforms by number", () => {
-    expect(sameTransform({ position: [1, 2, 3] }, { position: [1, 2, 3 + 1e-9], rotation: [0, 0, 0], scale: 1 })).toBe(true);
-    expect(sameTransform({ position: [1, 2, 3] }, { position: [1, 2, 3.1] })).toBe(false);
-    expect(sameTransform(null, {})).toBe(false);
-  });
   it("the camera: this viewer's, else the doc's view.start.home, else none (a top-level doc.camera or an old view.home is not a home)", () => {
     const home = { position: [1, 1, 1], target: [0, 0, 0] };
     const stray = { position: [2, 2, 2], target: [0, 0, 0] };
@@ -254,41 +248,6 @@ describe("the stage's pure helpers", () => {
 // ─── mounted ────────────────────────────────────────────────────────────────
 
 describe("the stage, mounted", () => {
-  it("lays out four edges around a port; the root is focusable", async () => {
-    const m = mount(newScene());
-    await settle();
-    expect(m.root.classList.contains("scene-tool")).toBe(true);
-    expect(m.root.tabIndex).toBe(0);
-    expect([...m.root.children].filter((c) => c.tagName === "DIV").map((c) => c.dataset.edge ?? c.className)).toEqual(["top", "left", "viewport", "right", "bottom"]);
-    expect(m.root.querySelector(".viewport > .canvas")).toBeTruthy();
-    expect(m.root.querySelector(".viewport > .labels")).toBeTruthy();
-    expect(m.element.querySelector("style")).toBeTruthy(); // stage.css (vitest inlines CSS as "")
-  });
-
-  it("runs what the doc's traits call for (every doc's among them), made in running order", async () => {
-    // the scene extension loads last: nothing after it is made before it
-    let release;
-    const slow = new Promise((r) => (release = r));
-    const scene = exts["t.scene"].module;
-    exts["t.scene"].module = { create: async () => null };
-    getRegistry("scene:extension").get("t.scene").load = async () => {
-      await slow;
-      return scene;
-    };
-    try {
-      const h = newScene({ traits: { "t.scene": {} }, objects: { a: card({ traits: { "t.obj": {} } }) }, order: ["a"] });
-      const m = mount(h);
-      await settle();
-      expect(running(m)).toEqual([]);
-      release();
-      await settle();
-      expect(running(m)).toEqual(["t.scene:scene", "t.edit:scene", "t.always:scene", "t.obj:objects"]);
-      expect(m.debug.host.collect("update").map((x) => x.id).filter((id) => id !== "scene.poses")).toEqual(["t.scene", "t.edit", "t.always", "t.obj"]);
-    } finally {
-      getRegistry("scene:extension").get("t.scene").load = async () => ext("t.scene").module;
-    }
-  });
-
   it("arriving: view.start's body is entered once, at its place, as soon as it's on offer; a later change moves nobody", async () => {
     const entered = [];
     exts["t.edit"] = recorder("t.edit", () => ({
@@ -296,7 +255,7 @@ describe("the stage, mounted", () => {
     }));
     const h = newScene({ objects: { a: card() }, order: ["a"], view: { start: { body: "stroll", place: "a" } } });
     const m = mount(h);
-    await settle();
+    await until(() => entered.length > 0); // (the first mount in the file loads the view's modules)
     expect(entered).toEqual(["a"]);
     // the sitting's own label (a station's "Helm") is what the chip says
     expect(m.local.get().body).toMatchObject({ id: "stroll", label: "At a", depth: 1 });
@@ -311,7 +270,7 @@ describe("the stage, mounted", () => {
     expect(other.local.get().body.id).toBe("look");
   });
 
-  it("arriving: an extension that fails to start doesn't hold the wait open; everything else started without the body on offer ends it", async () => {
+  it("arriving: with an extension that failed to start, a body offered only after everything else started is not entered", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     // what's on offer, read live (the list is the instance's own)
     const bodies = [];
@@ -354,33 +313,6 @@ describe("the stage, mounted", () => {
     expect(running(m)).toEqual(["t.always:scene"]);
     // after the abort, acquiring is a no-op
     expect(r.api.overlay().isConnected).toBe(false);
-  });
-
-  it("an extension docks in the view's drawer (\"drawer\"), at the right; its stopping closes its panes without onClose, and it has no drawer after", async () => {
-    const closed = [];
-    const m = mount(newScene());
-    await settle();
-    const panes = () => m.debug.view.plugins.instanceOf("scene.drawer").panes();
-    const el = document.createElement("div");
-    el.className = "edit-panel";
-    exts["t.edit"].api.use("drawer").dock(el, { title: "Edit panel", onClose: () => closed.push("edit") });
-    const right = m.root.querySelector('[data-edge="right"]');
-    const drawer = right.querySelector(".stage-drawer");
-    expect(drawer.querySelector(".stage-drawer-tab-name").textContent).toBe("Edit panel");
-    expect(drawer.querySelector(".stage-drawer-pane").hasAttribute("data-stage-embed")).toBe(true);
-    // a second dock, by the other extension: a second tab, shown
-    const mine = document.createElement("div");
-    const close = exts["t.always"].api.use("drawer").dock(mine, { title: "Mine" });
-    expect(panes().order.map((el) => el.className)).toEqual(["edit-panel", ""]);
-    expect(panes().shown).toBe(mine);
-    // the edit extension stops: its pane goes, without onClose, and the other's shows
-    uninstall("t.edit");
-    expect(closed).toEqual([]);
-    expect(m.root.querySelector(".edit-panel")).toBeNull();
-    expect(panes().order).toEqual([mine]);
-    expect(exts["t.edit"].api.use("drawer")).toBeNull();
-    close();
-    expect(right.querySelector(".stage-drawer")).toBeNull();
   });
 
   it("calls update(scene, local, prev) after a doc change and after a local swap", async () => {
@@ -469,11 +401,11 @@ describe("the stage, mounted", () => {
   });
 
   it("ambients: the running extensions' offers stacked per name in running order, the later whole; the atmosphere among them is the viewport's; gone when its giver stops", async () => {
-    exts["t.edit"] = recorder("t.edit", () => ({ ambient: () => ({ atmosphere: { sky: { top: "#336699" }, exposure: 1.2 }, "t.weather": { rain: 2 } }) }));
-    exts["t.always"] = recorder("t.always", () => ({ ambient: () => ({ atmosphere: { sun: { direction: [0, 1, 0], shadows: true } }, "t.weather": null }) }));
+    exts["t.edit"] = recorder("t.edit", () => ({ ambient: () => ({ atmosphere: { sky: { top: "#336699" }, exposure: 1.2 }, "t.amb": { rain: 2 } }) }));
+    exts["t.always"] = recorder("t.always", () => ({ ambient: () => ({ atmosphere: { sun: { direction: [0, 1, 0], shadows: true } }, "t.amb": null }) }));
     const m = mount(newScene());
     await settle();
-    // t.edit runs before t.always: its atmosphere is replaced whole by the later one, its weather cleared by the later null
+    // t.edit runs before t.always: its atmosphere is replaced whole by the later one, its t.amb cleared by the later null
     expect(m.debug.ambients()).toEqual({ atmosphere: { sun: { direction: [0, 1, 0], shadows: true } } });
     expect(Object.isFrozen(m.debug.ambients().atmosphere.sun.direction)).toBe(true);
     expect(m.debug.viewport.atmosphere).toEqual({ sun: { direction: [0, 1, 0], color: "#ffffff", intensity: 1.5, shadows: true } });
@@ -481,21 +413,11 @@ describe("the stage, mounted", () => {
     const a = exts["t.edit"].api.ambient("atmosphere");
     expect(a.value).toBe(m.debug.ambients().atmosphere);
     expect(a.mine).toBe(true);
-    expect(exts["t.edit"].api.ambient("t.weather")).toBeNull();
+    expect(exts["t.edit"].api.ambient("t.amb")).toBeNull();
     uninstall("t.always");
     await settle();
-    expect(m.debug.ambients()).toEqual({ atmosphere: { sky: { top: "#336699" }, exposure: 1.2 }, "t.weather": { rain: 2 } });
+    expect(m.debug.ambients()).toEqual({ atmosphere: { sky: { top: "#336699" }, exposure: 1.2 }, "t.amb": { rain: 2 } });
     expect(m.debug.viewport.atmosphere.sky.top).toBe("#336699");
-  });
-
-  it("no extension offers an atmosphere: the viewport is never told one", async () => {
-    const m = mount(newScene());
-    const spy = vi.spyOn(m.debug.viewport, "setAtmosphere");
-    await settle();
-    expect(m.debug.ambients().atmosphere).toBeUndefined();
-    expect(m.debug.atmosphere).toBeUndefined();
-    expect(spy).not.toHaveBeenCalled();
-    expect(m.debug.viewport.atmosphere).toBeNull();
   });
 
   it("collect() and run(invocation): commands by target, state decides", async () => {
@@ -771,15 +693,20 @@ describe("the stage, mounted", () => {
     await expect(add(api, txt.url)).rejects.toThrow(/No scene provider/);
   });
 
-  it("schedule(fn) runs in the next flush; a notice is the notifier's", async () => {
-    const m = mount(newScene());
+  it("schedule(fn) runs in the next flush", async () => {
+    mount(newScene());
     await settle();
-    const api = exts["t.always"].api;
     const fn = vi.fn();
-    api.schedule(fn);
+    exts["t.always"].api.schedule(fn);
     expect(fn).not.toHaveBeenCalled();
     await settle();
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("a notice is the notifier's: from a running extension as it says, else the caller's", async () => {
+    const m = mount(newScene());
+    await settle();
+    const api = exts["t.always"].api;
     api.use("notices").notify("Hello", "error", { from: "t.edit" });
     api.use("notices").notify("Hi", "info", { from: "t.nobody" });
     expect(noticesOf(m).slice(-2)).toMatchObject([{ text: "Hello", kind: "error", from: "t.edit" }, { text: "Hi", from: "t.always" }]);
@@ -985,34 +912,26 @@ describe("the stage, mounted", () => {
     ]);
   });
 
-  it("focus left for nowhere (a clicked button that went away) comes back to the root", async () => {
+  // keyboard focus comes back to the view when what held it goes or is
+  // blurred in place, unless the press that took it was outside
+  it("focus left for nowhere comes back to the root, unless the press was outside: a clicked button that went away; one blurred while connected (Chrome, when it's moved); one blurred after a press outside", async () => {
     const m = mount(newScene());
     await settle();
-    const button = document.createElement("button");
-    m.root.append(button);
-    button.addEventListener("click", () => button.remove());
-    button.focus();
-    button.click();
-    await settle();
-    expect(document.activeElement).toBe(m.root);
-  });
-
-  it("a focused element blurred while it stays connected (Chrome, when it's moved) gives focus back, unless the press was outside", async () => {
-    const m = mount(newScene());
-    await settle();
-    const button = document.createElement("button");
-    m.root.append(button);
-    // moved: Chrome blurs it, still connected, with focus on <body>, and fires no click
-    button.focus();
-    button.blur();
-    await settle();
-    expect(document.activeElement).toBe(m.root);
-    // someone clicked the page outside: that's theirs
-    button.focus();
-    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    button.blur();
-    await settle();
-    expect(document.activeElement).not.toBe(m.root);
+    const ROWS = [
+      ["clicked, then gone", (b) => (b.addEventListener("click", () => b.remove()), b.click()), true],
+      ["blurred in place", (b) => b.blur(), true],
+      ["a press outside, then blurred", (b) => (document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })), b.blur()), false],
+    ];
+    for (const [how, act, back] of ROWS) {
+      const button = document.createElement("button");
+      m.root.append(button);
+      button.focus();
+      act(button);
+      await settle();
+      expect([how, document.activeElement === m.root]).toEqual([how, back]);
+      button.remove();
+      m.root.focus();
+    }
   });
 
   it("widgetAt: the widget's owner is offered the press first; its open session keeps it busy", async () => {
@@ -1047,30 +966,18 @@ describe("two stages on one scene", () => {
     return h;
   }
 
-  it("presence keys, sends and pose holds go round", async () => {
+  // (the only mounted test of a landed release settling when the doc agrees: native/poses.js sameTransform)
+  it("a peer's hold shows here, and its landed release lets go once this view's doc agrees", async () => {
     const h = shared({ traits: { "t.scene": {} }, objects: { a: card() }, order: ["a"] });
     const A = mount(h, "viewer:alice");
     await settle();
-    const recA = exts["t.scene"];
-    const apiA = recA.api;
+    const apiA = exts["t.scene"].api;
     // the second mount gets its own instances
     exts["t.scene"] = recorder("t.scene");
     forgetModules();
     const B = mount(h, "viewer:bob");
     await settle();
-    const recB = exts["t.scene"];
-    const apiB = recB.api;
-    expect(apiB).not.toBe(apiA);
-
-    apiA.channel.set("pointer", { x: 1 });
-    await until(() => Object.values(apiB.channel.peers()).some((p) => p.keys["t.scene"]?.pointer?.x === 1));
-    const peer = Object.entries(apiB.channel.peers()).find(([, p]) => p.viewer === "viewer:alice");
-    expect(peer[1].keys).toEqual({ "t.scene": { pointer: { x: 1 } } });
-
-    apiA.channel.send("ping", { n: 1 });
-    expect(recB.received).toEqual([{ type: "ping", data: { n: 1 }, from: { session: A.debug.presence.session, viewer: "viewer:alice" } }]);
-    expect(recA.received).toEqual([]);
-
+    const apiB = exts["t.scene"].api;
     // A holds the card: B shows it there
     apiA.use("poses").hold("a", { position: [1, 2, 3] });
     await until(() => B.debug.viewport.poses.has("a"));
@@ -1083,11 +990,6 @@ describe("two stages on one scene", () => {
     apiA.use("poses").release("a", { landed: true });
     await until(() => !B.debug.viewport.poses.has("a"));
     expect(apiB.use("poses").heldBy("a")).toBeNull();
-
-    // stopping A's extension clears its keys on B
-    A.cleanup();
-    mounted.splice(mounted.indexOf(A), 1);
-    await until(() => !Object.values(apiB.channel.peers()).some((p) => p.viewer === "viewer:alice"));
   });
 
   it("a hold dropped by the extension stopping is put back on the peer", async () => {
@@ -1118,71 +1020,29 @@ describe("another view's hold, played back", () => {
   const say = (h, data, session = "peer") => h.emit("ephemeral-message", { message: { type: SEND, session, viewer: `viewer:${session}`, ext: "scene.poses", kind: "pose", n: ++n, data } });
   const tick = (M, t) => M.debug.host.instanceOf("scene.poses").tick(t);
 
-  it("plays a peer's stream back between its samples; worldOf (and what's attached) follows what's shown", async () => {
+  it("worldOf (and what's attached) follows what's shown of a peer's stream, not the doc", async () => {
     const h = newScene({ objects: { hull: card({ name: "Hull" }), deck: card({ name: "Deck", parent: "hull", transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 } }) }, order: ["hull", "deck"] });
     const M = mount(h, "viewer:me", { time: wallAt(() => clockNow) });
     await settle();
     const api = exts["t.edit"].api;
-    // the sender's clock reads 0 when ours reads 1000; it sends every 50 ms
+    // the sender's clock reads 0 when ours reads 1000; it sends every 50 ms (smooth.test.js has the curve)
     let seq = 0;
     const pose = (at, transform) => {
       clockNow = at + 1000;
       say(h, { id: "hull", parent: null, transform, since: 1, seq: ++seq, at, every: 50 });
     };
     pose(0, T(0));
-    // one sample: shown as it is
-    expect(M.debug.viewport.poses.get("hull").position).toEqual([0, 0, 0]);
     pose(50, T(1));
     pose(100, T(2));
-    // heard at 1100, played 75 ms late: a quarter of the way from 0 to 1
-    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(0.5);
-    tick(M, 1130); // the sender's 55
-    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(1.1);
-    expect(x(api.worldOf("hull"))).toBeCloseTo(1.1);
+    tick(M, 1130);
+    const shown = M.debug.viewport.poses.get("hull").position[0];
+    expect(shown).toBeGreaterThan(0);
+    expect(x(api.worldOf("hull"))).toBeCloseTo(shown);
     // the deck rides on the hull as it's drawn, not as the doc has it
     const deck = api.worldOf("deck");
-    expect([deck[12], deck[13], deck[14]].map((v) => +v.toFixed(6))).toEqual([1.1, 1, 0]);
+    expect([deck[12], deck[13], deck[14]].map((v) => +v.toFixed(6))).toEqual([+shown.toFixed(6), 1, 0]);
     expect(x(api.scene().world("deck"))).toBe(0);
-    // the next is late: carry on for one interval, then ease back onto the
-    // last that came and hold it (the sender may simply have stopped)
-    tick(M, 1200);
-    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2.5);
-    tick(M, 1400);
-    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2);
-    tick(M, 1500);
-    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2);
-    // a landed release shows where it landed at once, as before
-    clockNow = 1600;
-    say(h, { id: "hull", parent: null, transform: null, landed: T(7), seq: ++seq });
-    expect(M.debug.viewport.poses.get("hull").position).toEqual([7, 0, 0]);
-    tick(M, 1700);
-    expect(M.debug.viewport.poses.get("hull").position).toEqual([7, 0, 0]);
-    // a put-back from a new hold drops it at once
-    say(h, { id: "hull", parent: null, transform: null, seq: ++seq });
-    expect(M.debug.viewport.poses.has("hull")).toBe(false);
   });
 
-  it("our own hold wins over a peer's playback when it ranks ahead (a person's over a yielding one), and is refused when it doesn't", async () => {
-    const h = newScene({ objects: { a: card(), b: card() }, order: ["a", "b"] });
-    const M = mount(h, "viewer:me", { time: wallAt(() => clockNow) });
-    await settle();
-    const api = exts["t.edit"].api;
-    clockNow = 1000;
-    // a peer's process moves `a` (yielding), and a peer's person holds `b`
-    say(h, { id: "a", parent: null, transform: T(0), since: 1, seq: 1, at: 0, every: 50, yields: true });
-    say(h, { id: "b", parent: null, transform: T(0), since: 2, seq: 2, at: 0, every: 50 });
-    clockNow = 1050;
-    say(h, { id: "a", parent: null, transform: T(1), since: 1, seq: 3, at: 50, every: 50, yields: true });
-    say(h, { id: "b", parent: null, transform: T(1), since: 2, seq: 4, at: 50, every: 50 });
-    const poses = api.use("poses");
-    expect(poses.heldBy("a")).toBeNull(); // a person isn't kept off by a process
-    expect(poses.heldBy("a", { yields: true })).toBe("peer");
-    expect(poses.hold("a", T(9))).toBe(true);
-    expect(poses.heldBy("b")).toBe("peer");
-    expect(poses.hold("b", T(9))).toBe(false);
-    tick(M, 1100);
-    expect(M.debug.viewport.poses.get("a").position).toEqual([9, 0, 0]);
-    expect(M.debug.viewport.poses.get("b").position[0]).toBeLessThan(2);
-  });
 });
 

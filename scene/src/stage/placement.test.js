@@ -4,7 +4,7 @@
 // and the registry, never of its host, the focus, the viewer's body or held
 // tool. Checked over the finite case the
 // invariant names: a synthetic game G in the shape of Lost Cities' (two
-// extensions: seats, which contributes the roster and a seat body; a table
+// extensions: t.roster, which contributes the roster and a seat body; a table
 // whose audience reads the roster, and displays to this viewer what its
 // audience lets it see, else the veil) × seats {none, p1, p1 + p2} × clock {running,
 // paused} × card state {dealt, p2's card played to the table}, open
@@ -39,7 +39,7 @@ const FLAT = { position: [3, 0, 0], rotation: [0, 0, 0], scale: 1 };
 
 const EXTENSIONS = [
   {
-    meta: { id: "t.seats", traits: ["t.game"] },
+    meta: { id: "t.roster", traits: ["t.game"] },
     module: {
       create: () => ({
         roster: {
@@ -162,11 +162,11 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
       };
       // (a pin's url carries its heads)
       const gStages = (v) => v.stages().filter((st) => st.url.split("#")[0] === G.url);
-      const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.seats") && st.debug.displayed().size === 3;
+      const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.roster") && st.debug.displayed().size === 3;
       await until(() => Object.values(views).every(({ v }) => gStages(v).length === 1 && gStages(v).every(ready)), 4000);
       for (const { v, pinned } of Object.values(views)) expect(gStages(v).map((st) => st.role)).toEqual([pinned ? "pinned" : "acting"]);
       // G's extensions see G: no other stage's reader (api.path is a general part's only)
-      for (const { v } of Object.values(views)) for (const st of gStages(v)) for (const ext of ["t.table", "t.seats"]) expect(st.debug.host.record(ext).api.path).toBeUndefined();
+      for (const { v } of Object.values(views)) for (const st of gStages(v)) for (const ext of ["t.table", "t.roster"]) expect(st.debug.host.record(ext).api.path).toBeUndefined();
 
       let checked = 0;
       for (const paused of [false, true])

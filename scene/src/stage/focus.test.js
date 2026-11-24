@@ -230,32 +230,27 @@ describe("H10 across docs: the selection is always an element of the focus stage
 });
 
 describe("Enter and Leave", () => {
-  it("Enter moves the view plugins' facets to the linked doc's stage, Leave moves them back, and the plugins never start again; a repeat, a pin and a closed link don't", async () => {
+  it("Enter moves the view plugins' facets to the linked doc's stage, the trail and Leave move them back, and the plugins never start again; a repeat, a pin, a closed link and a plain object move nothing; the camera comes along untouched", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountNested();
     s = m.s;
     const { view } = m;
     const host = s.api("t.host");
     await placed(view);
-    // Enter's verb says what each link does
     const plugins = ["scene.links", "t.general"].map((id) => s.instance(id));
-    const enterOf = (id) => s.instance("scene.links").commands[0].state(id);
-    expect(enterOf("table")).toBe(null);
-    expect(enterOf("L").disabled).toBeFalsy();
-    expect(enterOf("R")).toMatchObject({ disabled: true, title: expect.stringMatching(/repeat/) });
-    expect(enterOf("P")).toMatchObject({ disabled: true, title: expect.stringMatching(/Follow latest/) });
-    expect(enterOf("X")).toMatchObject({ disabled: true, title: expect.stringMatching(/unavailable/) });
-    expect(host.view.enter("R")).toBe(false);
-    expect(host.view.enter("P")).toBe(false);
-    expect(host.view.enter("X")).toBe(false);
-    expect(host.view.enter("table")).toBe(false);
+    // (what Enter's verb says of each link is links.test.js's)
+    for (const id of ["R", "P", "X", "table"]) {
+      expect([id, host.view.enter(id)]).toEqual([id, false]);
+      expect([id, view.atom.get().focus]).toEqual([id, []]);
+      await placed(view);
+    }
     // nobody has placed the camera yet: something may frame it on opening (scene.autoframe)
     expect(host.camera.touched()).toBe(false);
     expect(host.view.enter("L")).toBe(true);
     expect(view.atom.get().focus).toEqual(["L"]);
     await placed(view);
-    // the camera came along, and nobody learns it was placed: not a stage's part (B's, or the host's: sailing's
-    // quarter view still waits for a camera nobody placed), nor a view plugin (scene.autoframe knows the focus moved)
+    // the camera came along, and nobody learns it was placed: not a stage's part (B's, or the host's, which
+    // may still be waiting to frame a camera nobody placed), nor a view plugin (scene.autoframe knows the focus moved)
     const touched = () => [host.camera.touched(), apiIn(m, "L").camera.touched(), s.facet("scene.links").camera.touched()];
     expect(touched()).toEqual([false, false, false]);
     // what the doc runs is untouched (H1): only the view plugins' facets moved
@@ -342,42 +337,15 @@ describe("Enter and Leave", () => {
   });
 });
 
-describe("surfaces across docs", () => {
-  it("entered in B, the toolbar holds the focus path's commands, the host's among them (worked out in the host's context), runs each where it's from, and doesn't change under the pointer", async () => {
+describe("the bar of tools across docs", () => {
+  it("looking, entered in B: the game's and the host's world commands are on the bar, the game's first, the host's worked out in the host's context; it doesn't change under the pointer; each runs where it's from; no editor command shows", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const repo = new FakeRepo();
     const ran = [];
-    const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card" }) }, order: ["card"] }));
-    const HOST = { meta: { id: "t.host", traits: ["t.host"] }, module: { create: (api) => ({ commands: [{ id: "ring", name: "Ring", show: ["toolbar"], state: (t, ctx) => (t == null && ctx.scene.objects.table ? { title: "Ring the bell" } : null), run: () => ran.push(api.url) }] }) } };
-    const objects = { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(b.url, { name: "B" }) };
-    s = await mountStage({ repo, extensions: [HOST, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
-    const view = s.debug.view;
-    await until(() => stageOf(view, "L")?.debug, 3000);
-    s.edit(true);
-    expect(s.api("t.host").view.enter("L")).toBe(true);
-    const labels = () => [...view.root.querySelectorAll(".toolbar button")].map((x) => x.textContent);
-    await until(() => labels().includes("Ring"), 2000);
-    const before = labels();
-    // the pointer over B's card, then the host's table: the bar stays as it is
-    for (const [i, hit] of [{ id: keyOf(stageOf(view, "L").n, "card") }, { id: "table" }, null].entries()) {
-      view.viewport.pick = () => (hit ? { ...hit, point: [0, 0, 0], normal: [0, 1, 0], distance: 3 } : null);
-      s.pointer("pointermove", 20 + i * 3, 20, { buttons: 0 });
-      await settle();
-      expect(labels()).toEqual(before);
-    }
-    [...view.root.querySelectorAll(".toolbar button")].find((x) => x.textContent === "Ring").click();
-    expect(ran).toEqual([s.handle.url]);
-  });
-});
-
-describe("the bar of tools across docs, not editing", () => {
-  it("looking, entered in B: the game's and the host's world commands are on the bar, the game's first, and each runs where it's from; no editor command shows", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const repo = new FakeRepo();
-    const ran = [];
-    const world = (id, name) => (api) => ({ commands: [{ id, name, show: ["world"], run: () => ran.push([id, api.url]) }, { id: `${id}-edit`, name: `${name} (editor)`, show: ["toolbar"], run() {} }] });
+    const world = (id, name, state) => (api) => ({ commands: [{ id, name, show: ["world"], ...(state ? { state } : {}), run: () => ran.push([id, api.url]) }, { id: `${id}-edit`, name: `${name} (editor)`, show: ["toolbar"], run() {} }] });
     const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card", traits: { "t.game": {} } }) }, order: ["card"] }));
-    const HOST = { meta: { id: "t.host", traits: ["t.host"] }, module: { create: world("ring", "Ring") } };
+    // the host's applies only where there is a table: in its own doc, never in B's
+    const HOST = { meta: { id: "t.host", traits: ["t.host"] }, module: { create: world("ring", "Ring", (t, ctx) => (t == null && ctx.scene.objects.table ? {} : null)) } };
     const GAME = { meta: { id: "t.game", traits: ["t.game"] }, module: { create: world("deal", "Deal") } };
     const objects = { table: object({ name: "Table", traits: { "t.host": {} } }), L: link(b.url, { name: "B" }) };
     s = await mountStage({ repo, extensions: [HOST, GAME, { meta: { id: "scene.toolbar" }, module: toolbar }], doc: { title: "A", objects, order: Object.keys(objects) } });
@@ -393,6 +361,13 @@ describe("the bar of tools across docs, not editing", () => {
     await until(() => J(labels("world")) === J(["Deal", "Ring"]), 2000);
     expect(s.local.get().body.id).toBe("look");
     expect(labels("tools")).toEqual([]);
+    // the pointer over B's card, then the host's table, then nothing: the bar stays as it is
+    for (const [i, hit] of [{ id: keyOf(stageOf(view, "L").n, "card") }, { id: "table" }, null].entries()) {
+      view.viewport.pick = () => (hit ? { ...hit, point: [0, 0, 0], normal: [0, 1, 0], distance: 3 } : null);
+      s.pointer("pointermove", 20 + i * 3, 20, { buttons: 0 });
+      await settle();
+      expect(labels("world")).toEqual(["Deal", "Ring"]);
+    }
     for (const x of buttons("world")) x.click();
     expect(ran).toEqual([
       ["deal", b.url],
@@ -516,14 +491,14 @@ describe("the camera's rides don't depend on the focus (I8)", () => {
 describe("putting the editor down puts the selection down; a body doesn't (HISTORY.md, Kernel step 1)", () => {
   // Attention is the selection, so a selection kept from editing would aim F
   // and the use prompt at what was last edited. Every state changed from × to
-  // (Look and a walk, each holding the editor or not; a seat over Look) × the
-  // focus (the scene, one link in, two) × a selection or none: the selection
-  // goes exactly when the editor is put down; the focus never moves.
-  // 5 × 5 × 3 × 2 = 150 cases.
+  // (Look and a walk, each holding the editor or not; a seat over Look) × a
+  // selection or none, with the focus two links in (edit-body.test.js has
+  // the rule in the scene itself): the selection goes exactly when the
+  // editor is put down; the focus never moves. 5 × 5 × 2 = 50 cases.
   const STATES = [["look", false], ["look", true], ["t.walk", false], ["t.walk", true], ["t.seat", false]];
-  const FOCI = [[], ["L"], ["L", "M"]];
-  const ELEMENT = { "": "table", L: "card", "L/M": "piece" };
-  it("every state × every state × every focus × a selection or none: cleared exactly on putting the editor down, the focus kept", async () => {
+  const FOCI = [["L", "M"]];
+  const ELEMENT = { "L/M": "piece" };
+  it("every state × every state × a selection or none, two links in: cleared exactly on putting the editor down, the focus kept", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const started = {};
     const m = await mountNested({ extra: holders(started) });
@@ -550,19 +525,18 @@ describe("putting the editor down puts the selection down; a body doesn't (HISTO
             cases++;
           }
     }
-    expect(cases).toBe(150);
+    expect(cases).toBe(50);
   }, 60_000);
 });
 
 describe("holding the editor, a click is its wherever it lands (HISTORY.md, COMPOSITION Decisions, Edit's click is Edit's)", () => {
   // HISTORY.md, Kernel step 1: holding the editor a plain click selects, before any package's click verb. Inside an entered
-  // link a click on the host (the boat round a game linked aboard her) can't select, and it used to go down
-  // the chain, where the boat's click verb came aboard: the body left Edit for "aboard" under a card missed on
-  // her moving table (presence-check.nopause, 2026-11-16). Editing or not × every focus × a selection or
-  // none × every thing a click can land on (each stage's objects, a pin's and a closed link's, and
-  // nothing, and a stale hit, which editInput takes as nothing): the click goes down the chain exactly without the
-  // editor, or holding it on nothing (or a stale hit) with nothing selected; the selection is selectionStep's
-  // (outside the focus: unchanged); the body and the focus never move. 2 × 3 × 2 × 17 = 204 cases.
+  // link a click on the host can't select, and must not go down the chain either, where a host's click verb
+  // would take it. Editing or not × every focus × a selection or none × every thing a click can land on
+  // outside the focus (another stage's objects, a pin's and a closed link's), nothing, and a stale hit (which
+  // editInput takes as nothing): the click goes down the chain exactly without the editor, or holding it on
+  // nothing (or a stale hit) with nothing selected; the selection is selectionStep's (outside the focus:
+  // unchanged); the body and the focus never move. Clicks under the focus are the H10 test's above.
   const FOCI = [[], ["L"], ["L", "M"]];
   const ELEMENT = { "": "table", L: "card", "L/M": "piece" };
   // a hit is { key: (view) => the viewport's key, path: the hit's path, or null for nothing }. Stale hits: an id
@@ -587,7 +561,7 @@ describe("holding the editor, a click is its wherever it lands (HISTORY.md, COMP
       await placed(view);
       for (const base of ["look", "edit"])
         for (const withSel of [false, true])
-          for (const hit of HITS) {
+          for (const hit of HITS.filter((h) => !h.path || !atFocus(focus, h.path))) {
             const name = `${base} ${J(focus)}${withSel ? " selected" : ""} click on ${hit.name}`;
             view.enterBody("look");
             s.edit(base === "edit");
@@ -604,7 +578,7 @@ describe("holding the editor, a click is its wherever it lands (HISTORY.md, COMP
             cases++;
           }
     }
-    expect(cases).toBe(204);
+    // per focus, the live hits outside it (none at the scene, whose focus holds every path; 7 one in; 9 two in), and 6 stale and nothing
+    expect(cases).toBe(2 * 2 * (7 + 14 + 16));
   }, 60_000);
-
 });

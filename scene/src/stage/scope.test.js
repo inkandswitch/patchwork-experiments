@@ -150,8 +150,8 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
     expect(close(rc[1], [10, 0, 0], 1e-9)).toBe(true);
     expect(rc[3]).toBeCloseTo(6, 9);
     sc.camera.ride(null);
-    sc.worldLayer("seats");
-    expect(calls.filter((c) => c[0] === "ride" || c[0] === "layer")).toEqual([["ride", "L"], ["layer", keyOf(1, "seats"), "L"]]);
+    sc.worldLayer("t.ext");
+    expect(calls.filter((c) => c[0] === "ride" || c[0] === "layer")).toEqual([["ride", "L"], ["layer", keyOf(1, "t.ext"), "L"]]);
     expect(sc.rideSpec({ id: null, at: [0, 0, 0] })).toEqual({ id: "L", at: [0, 0, 0] });
     // the outermost has no root: riding its root rides nothing
     const top = scopeViewport(vp, { n: 0 });

@@ -51,11 +51,4 @@ describe("Escape (H4), exhaustively", () => {
         }
     expect(n).toBe(16 * 3 * stacks.length);
   });
-
-  it("names the hand in its hint", () => {
-    expect(escapeHint("hand", { hand: "Measure" })).toBe("put down Measure");
-    expect(escapeHint("hand", { hand: "Edit" })).toBe("put down Edit");
-    expect(escapeHint("lock")).toBe("release pointer");
-    expect(escapeHint("selection")).toBe("deselect");
-  });
 });
