@@ -133,8 +133,8 @@ function world({ pView, driven }) {
     bus.deliver();
   };
   const land = (a) => {
-    // a well-behaved process saves only what it still holds (H6 asks it of authors; nothing here
-    // or in clock.js enforces it); a person writes where they put it down
+    // a well-behaved process saves only what it still holds (its own rule: NATIVE.md, "World
+    // time"; clock.js doesn't enforce it); a person writes where they put it down
     if (!holds(a)) return false;
     doc.objects[OBJ].transform = at(a.x);
     a.view.holds.release(a.ext, OBJ, at(a.x));
