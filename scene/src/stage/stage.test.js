@@ -9,9 +9,9 @@ import { FakeRepo } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
 import { settle, until, wallAt } from "../test/stage-harness.js";
 import { FRAME_MS, manualTime } from "./time.js";
-import { bestWidget, initialCamera, startOf, widgetWins } from "./stage.js";
-import { wholeStart } from "./view.js";
-import { hitChain } from "./chain.js";
+import { startOf, wholeStart } from "./arriving.js";
+import { initialCamera } from "./camera-memory.js";
+import { bestWidget, hitChain, widgetWins } from "./chain.js";
 import { SEND } from "./presence.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
@@ -203,11 +203,12 @@ describe("the stage's pure helpers", () => {
   it("the camera: this viewer's, else the doc's view.start.home, else none (a top-level doc.camera or an old view.home is not a home)", () => {
     const home = { position: [1, 1, 1], target: [0, 0, 0] };
     const stray = { position: [2, 2, 2], target: [0, 0, 0] };
-    expect(initialCamera({ stored: { position: [3, 3, 3], target: [0, 1, 0], fov: 30 }, doc: { view: { start: { home } } } })).toEqual({ position: [3, 3, 3], target: [0, 1, 0], fov: 30 });
-    expect(initialCamera({ stored: { position: "nope" }, doc: { view: { start: { home } } } })).toEqual(home);
-    expect(initialCamera({ doc: { camera: stray } })).toBeNull();
-    expect(initialCamera({ doc: { view: { home } } })).toBeNull();
-    expect(initialCamera({ doc: {} })).toBeNull();
+    const homeOf = (doc) => startOf(doc).home;
+    expect(initialCamera({ stored: { position: [3, 3, 3], target: [0, 1, 0], fov: 30 }, home: homeOf({ view: { start: { home } } }) })).toEqual({ position: [3, 3, 3], target: [0, 1, 0], fov: 30 });
+    expect(initialCamera({ stored: { position: "nope" }, home: homeOf({ view: { start: { home } } }) })).toEqual(home);
+    expect(initialCamera({ home: homeOf({ camera: stray }) })).toBeNull();
+    expect(initialCamera({ home: homeOf({ view: { home } }) })).toBeNull();
+    expect(initialCamera({ home: homeOf({}) })).toBeNull();
   });
   it("view.start: the kernel reads a body (look too: the stage's), a place, a home; anything else is nothing to it", () => {
     const home = { position: [1, 1, 1], target: [0, 0, 0] };
