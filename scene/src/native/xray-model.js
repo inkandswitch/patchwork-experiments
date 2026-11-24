@@ -13,7 +13,7 @@
 //   details(g, id, colour, o)  its details, folded per extension
 //   strip(routes, o)           the last event's route as boxes
 
-import { TOO_FAR } from "../stage/commands.js";
+import { TOO_FAR } from "../stage/public.js";
 import { gearsOfObject } from "./gears.js";
 
 // ── colour ──

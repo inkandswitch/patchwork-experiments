@@ -128,6 +128,27 @@ her mast and rigging are drawn: a "Mast and sail" filed as
 whose file carries no contract is a plain one, and so is the stock rig on
 any other hull (camber's): its contract describes the stock hull only.
 
+## Conventions
+
+What other packages may rely on (scene/CONVENTIONS.md lists them). Her other
+traits (`sailing.ship`, `.helm`, `.winch`, …) are hers alone; the inspector
+writes them from their descriptions (`src/index.js`).
+
+| Name | |
+|---|---|
+| trait `sailing.sea` | `{ seed: 1, scale: 1 }` on an object with the water package's `water`: waves on it, raised by the world's `wind` (an integer seed; `scale` × the wave height, 0..3). Sailing contributes them as `water.waves` |
+| trait `sailing.sail` | `{ raised: 1, sheet: 0.5 }` on the main's object (attached under a ship): hoisted 0..1, sheet 0 in .. 1 out |
+| trait `sailing.jib` | `{ sheet: 0.5, held: null, furl: 0 }` on the jib's object: sheet 0 in .. 1 out; `held` `null` (tends itself), `"port"` or `"starboard"` (made fast there); furled 0 out .. 1 rolled away |
+| trait `sailing.anchor` | `{ down: true, rode: 0 }` on the windlass: the anchor down or up, metres of rode out |
+| part `sailing.sloop` | looked up by id (`registry("scene:part").load("sailing.sloop")`, module `default` or itself): `create(ctx, at)` (scene EDITOR.md, "Parts") puts the rigged 12 m sloop at `at.world`'s x and z, on y = 0 and turned by its heading, her pieces with these traits as made, and a Sea and the weather where the doc has no open water; it returns her hull's id. Terrain's templates moor her this way, writing `sailing.sail.raised`, `sailing.jib.furl` and `sailing.anchor` on what is attached under her |
+| GLB extras `ship` | on a hull GLB's glTF scene, what sailing takes her frame and size from (any field may be missing): `{ forward?: [x, y, z], up?: [x, y, z], origin?: [x, y, z], length?, beam?, draft?, freeboard?, displacement? }`: her bow's and up's directions and her middle on her waterline, in the model's frame; metres; kilograms. camber's hulls and her own say it |
+| GLB extras `sail` | on a sail's GLB (the rig's, the jib's): `{ plan?: { tack: [x, y, z], luff, foot, area }, at?: { position, rotation }, cloth? }`: the lumped sail the physics flies (metres, m²), where the rig's model is fitted on the mast, and the cloth `src/cloth.js` draws. naval's rigs write `plan` |
+| reads GLB extras `rig` | the naval package's patchwork-rig v1 contract, on a rig GLB (naval README, "Conventions") |
+
+She reads walk's traits, body and contributions (her parts write `walk.*`),
+`joints.slide` and `traversal.exit` (her companionway), and the water and
+weather packages' names.
+
 ## Controls
 
 Click her (or press Enter) to come aboard; the body chip's Leave goes

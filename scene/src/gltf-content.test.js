@@ -6,7 +6,7 @@ import { authoredMaterials, collapseInstances, dequantizePositions, loadGLTF, lo
 import { Box3, Matrix4, Group } from "three";
 import { nearestScreenVertex } from "./stage/picking.js";
 import { composeMatrix } from "./transform.js";
-import { yawOfEuler } from "./carry-rules.js";
+import { yawOfEuler } from "./connectors.js";
 import { AT, FORMS, NODES, axesOf, connectorCases, sameYaw } from "./test/connector-cases.js";
 
 // Two unmodified files from solander38.com (CC BY 4.0, Rising Tide Research
@@ -225,23 +225,23 @@ describe("gltf content", () => {
   });
 });
 
-describe("snap points (extras.snapPoints)", () => {
+describe("connectors (extras.connectors)", () => {
   it("reads them from the scene and from nodes, in the GLB's own frame, even off meshes that get instanced", async () => {
     const glb = encodeGLB({
       meshes: [{ name: "tile", positions: tri, color: "#808080" }],
       nodes: [
-        { name: "board", children: [1, 2], translation: [0, 0.01, 0], extras: { snapPoints: [[0, 0.02, 0]] } },
-        { mesh: 0, translation: [1, 0, 0], extras: { snapPoints: [[0, 0, 0], "junk"], snapRadius: 0.4 } },
+        { name: "board", children: [1, 2], translation: [0, 0.01, 0], extras: { connectors: [[0, 0.02, 0]] } },
+        { mesh: 0, translation: [1, 0, 0], extras: { connectors: [[0, 0, 0], "junk"], snapRadius: 0.4 } },
         { mesh: 0, translation: [2, 0, 0] },
       ],
-      extras: { snapPoints: [{ position: [5, 0, 5] }] },
+      extras: { connectors: [{ position: [5, 0, 5] }], snapPoints: [[9, 9, 9]] },
     });
     const prepared = await prepareGLB(glb);
     const pts = prepared.snap.points.map((p) => p.position.map((v) => +v.toFixed(6)));
     expect(pts).toContainEqual([0, 0.03, 0]);
     expect(pts).toContainEqual([1, 0.01, 0]);
     expect(pts).toContainEqual([5, 0, 5]);
-    expect(pts).toHaveLength(3);
+    expect(pts).toHaveLength(3); // (`snapPoints` is no name for them)
     expect(prepared.snap.radius).toBe(0.4);
   });
 

@@ -58,7 +58,7 @@ import { isGroup } from "../groups.js";
 import { createCarry, flipAt, flipInPlace, localTransform, snapCandidates, turnRadius, turning, worldBox } from "./carry-math.js";
 import { decomposeMatrix, frameConversions } from "../transform.js";
 import { CARRY, carryable } from "../carry-rules.js";
-import { pointing } from "../stage/bodies.js";
+import { pointing } from "../stage/public.js";
 
 export { CARRY, carryable };
 

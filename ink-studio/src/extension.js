@@ -245,7 +245,8 @@ function create(api) {
     return null;
   }
 
-  const hasWater = () => !!api.registry?.("scene:extension")?.get?.("water");
+  // something draws the water trait (its convention, never its provider's id)
+  const hasWater = () => !!api.registry?.("scene:extension")?.filter?.((p) => Array.isArray(p?.traits) && p.traits.includes("water"))?.length;
 
   return {
     update,

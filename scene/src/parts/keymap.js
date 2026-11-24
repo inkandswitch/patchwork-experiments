@@ -1,5 +1,5 @@
 // The key map's resolver (EDITOR.md, "The use prompt and key map"): where a
-// key goes once the key order (../keys.js) leaves it to the key map, and the
+// key goes once the key order (../key-order.js) leaves it to the key map, and the
 // key a surface shows for a verb. Pure: no api, no DOM.
 //
 // A shown key works by construction: every surface that shows a command's
@@ -14,8 +14,7 @@
 // when the spoke has none for that key). The key map tries the path, then
 // the scene (the null target).
 
-import { codeOfKey, labelOf, lookChain, reservedBy } from "../key-order.js";
-import { commandState, flatCommands } from "../stage/commands.js";
+import { codeOfKey, commandState, flatCommands, labelOf, lookChain, reservedBy } from "../stage/public.js";
 import { keyMatches, keysOf } from "./toolbar-commands.js";
 
 /**

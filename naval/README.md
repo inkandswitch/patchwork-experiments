@@ -88,6 +88,21 @@ Sailing reads `extras.rig` off the rig GLB and keeps test copies of
 fixtures (`sailing/src/test/rig-contract/`). No package imports another:
 when any of those change here, they are copied again there.
 
+## Conventions
+
+What other packages may rely on (scene/CONVENTIONS.md lists them):
+
+| Name | |
+|---|---|
+| GLB extras `rig` | on the glTF scene of a `rig-design` render (the `rig-design` source's GLB): the patchwork-rig v1 contract, exactly as `contract/v1/specification.md` states and `contract/v1/validate.js` checks. The same scene carries sailing's `sail: { plan }` (sailing README, "Conventions"). Sailing sails a hull by it |
+
+It reads, from packages outside this repository: Chartroom's plugin type
+`chartroom:source` and its `hydrostatic-table/1` (below), and a hull GLB's
+own fingerprint (camber's `extras.camber.fingerprint`); from scene, a
+GLB's `asset.extras.units`; and it calls any `scene:source`'s `build()`
+on a linked hull doc, with its params' defaults (scene README, "Writing a
+provider").
+
 ## The Chartroom boundary
 
 Hydrostatics cross between packages as Rising Tide's Chartroom

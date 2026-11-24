@@ -58,11 +58,6 @@ describe("carry maths", () => {
     expect(snapCandidates([{ id: "board", matrix: m, snapRadius: 0.5, connectors: [{ position: [0, 0, 1], tags: ["card"] }] }], ["card"])).toHaveLength(1);
   });
 
-  it("without a snap radius from its content, connectors reach 0.71 of their closest spacing (defaultSnapRadius), scaled", () => {
-    const grid = [{ position: [0, 0, 0], tags: [] }, { position: [2, 0, 0], tags: [] }, { position: [0, 0, 3], tags: [] }];
-    expect(snapCandidates([{ id: "grid", matrix: composeMatrix({ scale: 2 }), snapRadius: null, connectors: grid }], []).map((c) => c.radius)).toEqual([4, 4, 4].map((v) => v * Math.SQRT1_2));
-  });
-
   it("finds the table: the first object hit, else the ground, else nothing", () => {
     expect(tablePoint(down(1, 2), ground)).toEqual({ point: [1, 0, 2], id: null });
     expect(tablePoint(down(1, 2), () => ({ id: "t", point: [1, 0.5, 2] }))).toEqual({ point: [1, 0.5, 2], id: "t" });

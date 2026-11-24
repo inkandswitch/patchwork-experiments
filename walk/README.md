@@ -8,12 +8,7 @@ Built only from the scene's extension contract (scene/STAGE.md).
 |---|---|---|
 | `scene:extension` | `walk` | general: the walk body, which says where its walker stands (`avatar`) on the channel of the doc it walks in, and stands it at a stand spot for a body going over it (`stand(id)`: a station's eye is that walker's) |
 | `scene:extension` | `walk.people` | a part of every doc (`traits: ["*"]`): everyone else who walks, drawn where `walk`'s `avatar` says, in every stage whatever the focus |
-| `scene:extension` | `walk.spawn` | the part of walk's traits (below): a doc that carries one calls for this package by it (and lists it, as a `view.start` of `{ body: "walk", place: <a spawn point> }` needs); its verbs are Walk from here (menu, on a spawn point) and Climb (F, on a ladder, while you swim within 2 m of its foot) |
-| trait | `walk.spawn` | on an object: where people start walking, facing the way it faces (`{}`); on an object with a `walk.stand`, at that stand spot. Written by whatever lays a level out: arena's spawn pad part, doom's layout through it, sailing's wheel |
-| trait | `walk.support` | on an object: something you stand on that moves (a deck, a lift), walked in its own drawn frame, everything under it baked with it (`{}`) |
-| trait | `walk.moves` | on an object: a moving part, never baked as drawn: `{ swept: "x"\|"y"\|"z" }` (the solid its turn sweeps), `{ blocks: true }` (an obstacle where it's drawn each frame: doom's doors) or `{}` (people pass through it) |
-| trait | `walk.stand` | on an object: `{ at, facing?, claim? }` in its own frame, where someone stands to use it; whoever holds the object's `claim` is drawn standing there |
-| trait | `walk.ladder` | on an object: `{ top }` in its own frame, the climb out of the water onto its owner |
+| `scene:extension` | `walk.spawn` | the part of walk's traits ("Conventions"): a doc that carries one calls for this package by it (and lists it, as a `view.start` of `{ body: "walk", place: <a spawn point> }` needs); its verbs are Walk from here (menu, on a spawn point) and Climb (F, on a ladder, while you swim within 2 m of its foot) |
 
 How it stands: [DESIGN.md](DESIGN.md), "Standing on supports", and under it
 "Foundations" (the mesh, B1–B7, the transitions and the cases, moved from
@@ -22,6 +17,25 @@ ground included; sailing walks her deck in it (N10). `pnpm test` runs
 everything, the walker's enumerated cases and the static checks of a whole
 support (`structure.test.js`, a hut on a railed porch built from boxes)
 included.
+
+## Conventions
+
+What other packages may rely on (scene/CONVENTIONS.md lists them). Points
+and offsets are metres in the object's own frame.
+
+| Name | |
+|---|---|
+| trait `walk.spawn` | `{}` on an object: people start walking at its origin, facing its −Z as drawn; on an object that also has a `walk.stand`, at that stand spot. Walk entered with no place and no floor under the eye starts at one of the doc's spawn points, at random. Written by whatever lays a scene out (arena's spawn pad, doom's layout through it, sailing's wheel) |
+| trait `walk.support` | `{}` on an object: a floor that moves (a deck, a lift), walked in its own drawn frame; it and everything attached under it (down to the next support) are baked into its navmesh at their rest pose. Without it an object is part of the ground (the stage's frame) |
+| trait `walk.moves` | on an object (and what hangs under it): a moving part, never baked as drawn. `{ swept: "x" \| "y" \| "z" }`: the solid its turn about that local axis sweeps is baked instead (a wheel); `{ blocks: true }`: an obstacle where it is drawn each frame, as a box in the walker's support's frame (a door); `{}`: people pass through it (a jib) |
+| trait `walk.stand` | `{ at: [x, y, z], facing?: [x, y, z], claim?: string }`: where someone stands to use the object, facing the point `facing` (absent: its origin), on the floor under `at`. `claim`: a claim kind on this object (scene NATIVE.md, "Claims"); whoever holds it is drawn standing there |
+| trait `walk.ladder` | `{ top: [x, y, z] }`: the climb out of the water, hanging at the object's origin, onto its owner (its nearest `walk.support` up, else the ground), arriving at `top` facing inboard |
+| body `walk` | the walk body (scene STAGE.md, "Bodies"): `api.body.enter("walk", place)`, `place` an object id: a support (its spawn point, else where you look), a stand spot (stood there), any other object (at its origin, facing its way); null: on the floor under the eye within 10 m, else a spawn point. `view.start = { body: "walk", place }` arrives so. `{ keys }` are W A S D, the arrows, Shift and Space; `lock: true`, `reach: 2` |
+| contribution `avatar` | `() → { on, feet, yaw, pitch, swimming } \| null`: this viewer's walker in this stage, on top or waiting under another body; null when not walking here. `on` the support's object id (null: the ground), `feet` in its frame, `yaw` (rad, 0 looking down −Z) in it, `pitch` (rad) |
+| contribution `stand` | `(id) → { eye() → [x, y, z] \| null, yaw } \| null`: stand this viewer's walker at stand spot `id`, for a body about to go over walk (a station): its `eye()` in this stage's frame each frame is that body's eye, `yaw` in the world; null when `id` has no `walk.stand` here, or walk isn't walking here or hasn't baked |
+
+Walk reads `scene.carry` (a carried object is loose: never baked) and the
+water package's `water` contribution (where it swims).
 
 ## The body
 

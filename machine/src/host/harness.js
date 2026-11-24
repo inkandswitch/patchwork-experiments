@@ -10,6 +10,36 @@ import { createSession, Host } from "./host.js";
 import { seating, holder, chunkSpan, unpack } from "./session.js";
 
 export const FRAME = 16;
+
+// Gzip and gunzip (a checkpoint's state) run on the platform's streams, which finish on the event loop's
+// time, not the fake timers'. Counting those in flight lets the harness wait for them, by what it is
+// waiting for, before it moves virtual time on: a peer's catching up then does not depend on how fast the
+// machine is. (A stream is in flight from its construction to its flush.)
+let streaming = 0;
+for (const name of ["CompressionStream", "DecompressionStream"]) {
+  const Real = globalThis[name];
+  if (!Real || Real.counted) continue;
+  globalThis[name] = class extends Real {
+    static counted = true;
+    constructor(format) {
+      super(format);
+      streaming++;
+      const writable = this.writable;
+      const readable = this.readable.pipeThrough(new TransformStream({ flush: () => void streaming-- }));
+      Object.defineProperty(this, "readable", { value: readable });
+      Object.defineProperty(this, "writable", { value: writable });
+    }
+  };
+}
+const turn = () => new Promise((r) => setImmediate(r));
+/** Lets every gzip or gunzip begun finish (on real time), then the promises waiting on it run. */
+export async function drained() {
+  for (let i = 0; streaming > 0; i++) {
+    if (i > 100_000) throw new Error("a gzip or gunzip never finished");
+    await turn();
+  }
+  await vi.advanceTimersByTimeAsync(0);
+}
 export const LAN = [20, 25, 30];
 export const WAN = [60, 140, 90, 250, 70];
 export const LOSSLESS = [false];
@@ -34,9 +64,13 @@ export async function rig({ wasm, content, input }) {
   async function open(p, url, o = {}) {
     const found = p.repo.find(url);
     await vi.advanceTimersByTimeAsync(500);
+    await drained();
     await found;
     const opening = Host.open(p.repo, url, { wasm, content, id: p.name, now: p.now, input: p.input, ...o });
-    while (!(await settled(opening))) await vi.advanceTimersByTimeAsync(20);
+    while (!(await settled(opening))) {
+      await vi.advanceTimersByTimeAsync(20);
+      await drained();
+    }
     p.host = await opening;
     trace(p);
     return p.host;
@@ -95,7 +129,14 @@ export async function rig({ wasm, content, input }) {
   // `others` run along without being checked.
   async function settle(peers, others = []) {
     peers[0].host.pause();
+    // Until every peer has the same tick and every input below it (at most 60 virtual seconds: a run that
+    // does not converge by then fails the checks below, loudly).
+    const converged = () => {
+      const t = peers.map((p) => p.host.tick);
+      return new Set(t).size === 1 && peers.every((p) => p.host.frontier >= t[0]);
+    };
     await run([...peers, ...others], 1500);
+    for (let spent = 0; !converged() && spent < 60_000; spent += 500) await run([...peers, ...others], 500);
     const ticks = peers.map((p) => p.host.tick);
     expect(new Set(ticks).size).toBe(1);
     for (const p of peers) expect(p.host.frontier).toBeGreaterThanOrEqual(ticks[0]);
@@ -143,6 +184,7 @@ export async function run(peers, ms) {
   for (let t = 0; t < ms; t += FRAME) {
     for (const p of peers) if (p.host) p.host.frame();
     await vi.advanceTimersByTimeAsync(FRAME);
+    await drained();
   }
 }
 

@@ -4,7 +4,7 @@
 // `show`, keys, icon, the bar, the menu, the key map) is the surface's
 // (EDITOR.md, "A command").
 
-import { holding } from "./bodies.js";
+import { KERNEL_KINDS, holding } from "./bodies.js";
 
 /**
  * Every running extension's commands, flattened, in running order then
@@ -31,7 +31,7 @@ export function flatCommands(collected) {
  * A command's state for a target in a context, or null when it doesn't
  * apply. In order:
  *   - `hand: kind`: it applies only while a hand of that kind is in the
- *     view's stack (`ctx.view.hands`);
+ *     view's stack (`ctx.view.hands`; inHand);
  *   - `state(target, ctx)`: null (or false) doesn't apply, an object is the
  *     state; a throw doesn't apply. Without state() it applies only to the
  *     null target (the scene);
@@ -62,10 +62,12 @@ export function commandState(command, target, ctx) {
 
 /**
  * Is the hand this command names held in this view (or does it name none)?
- * Whether it applies at all, before its state: a surface may ask this alone
- * to know whether a command is there, whatever its state says now.
+ * Whether it may apply at all, before its state: a surface may ask this
+ * alone to know whether a command is there, whatever its state says now. A
+ * command naming one of the kernel's own kinds (KERNEL_KINDS: a tool, a
+ * popover) is never there.
  */
-export const inHand = (command, view) => typeof command?.hand !== "string" || holding(view, command.hand);
+export const inHand = (command, view) => typeof command?.hand !== "string" || (!KERNEL_KINDS.includes(command.hand) && holding(view, command.hand));
 
 /** What a verb beyond reach says. */
 export const TOO_FAR = "too far";
