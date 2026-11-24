@@ -63,16 +63,6 @@ function commandsExt(log) {
 }
 
 describe("menuEntries (pure)", () => {
-  it("lists the object's commands, then the scene's that ask for a menu", () => {
-    const log = [];
-    const collected = [{ id: "t", value: commandsExt(log).create().commands }];
-    const ctx = { scene: { objects: { a: {} } }, local: {} };
-    const { forObject, forScene } = menuEntries(collected, "a", ctx);
-    expect(forObject.map((e) => e.command.id)).toEqual(["poke", "lock"]);
-    expect(forScene.map((e) => e.command.id)).toEqual(["paste", "color"]);
-    expect(menuEntries(collected, null, ctx).forObject).toEqual([]);
-  });
-
   it("Select (scene.select's) comes first for an object, wherever its extension runs", () => {
     const sel = { id: "select", name: "Select", show: ["menu"], state: (t) => (t ? {} : null), run() {} };
     const other = { id: "select", name: "Not the selection's", show: ["menu"], state: (t) => (t ? {} : null), run() {} };

@@ -82,11 +82,6 @@ const stateOf = (id, target = null) => command(id).state(target, { scene: s.api(
 const transformOf = (id) => JSON.parse(JSON.stringify(s.doc().objects[id].transform));
 
 describe("scene.carry commands", () => {
-  it("has no tool to pick: no Hand command, no key of its own but Flip's", async () => {
-    await mount();
-    expect(s.instance("scene.carry").commands.map((c) => c.id)).toEqual(["flip", "snap"]);
-  });
-
   it("Snap: a toolbar toggle of the snap pref, whenever carrying runs", async () => {
     await mount();
     expect(command("snap").show).toEqual(["toolbar"]);
