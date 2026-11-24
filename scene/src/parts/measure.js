@@ -22,6 +22,7 @@ import { distance, makeAnchor } from "../anchors.js";
 import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
 import { perFocus } from "../per-focus.js";
+import { placeBetween } from "./segment-label.js";
 
 /** The extension that owns doc.dimensions (and saves what's measured). */
 export const DIMENSIONS = "scene.dimensions";
@@ -140,7 +141,7 @@ function measureAt(api, view, hint) {
         ? [
             {
               key: "preview",
-              position: [(aw[0] + hw[0]) / 2, (aw[1] + hw[1]) / 2, (aw[2] + hw[2]) / 2],
+              place: placeBetween(aw, hw),
               text: formatLength(distance(aw, hw), units()),
               className: "measure-label",
               data: { preview: true },
