@@ -233,7 +233,8 @@ field as its default.
   Editor and Dock. While editing it opens on the first selection and stays
   open.
 - **The outline** (`outline.js`): the focus doc's tree; rows select, drag,
-  group; a link's row says what it is and enters.
+  group; a link's row says what it is and enters. Which rows are open is
+  the viewer's, in its prefs (`outline`: `{ [doc url]: { [row id]: open } }`).
 - **The menu** (`scene.menu`): a target's commands with `"menu"` (or none),
   Select first, then the scene's asking for a menu; each key shown by the
   resolver.

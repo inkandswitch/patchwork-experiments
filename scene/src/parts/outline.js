@@ -28,8 +28,9 @@
 //   - names come from nameOf (as displayed);
 //   - peers' selections and hovers come from presence, under "scene.select".
 //
-// Collapsed / expanded is this viewer's alone: localStorage
-// ("scene-outline:<url>"), never the doc. The filter is view-only too.
+// Collapsed / expanded is this viewer's alone: its prefs (NATIVE.md,
+// "Prefs": `outline`, { [doc url]: { [row id]: open } }), never the doc. The
+// filter is view-only too.
 //
 // Rows are kept per object id and updated in place: rebuilding them on every
 // doc change would destroy the colour input mid-drag (its picker closes).
@@ -155,30 +156,25 @@ export function createOutline(api, { shown = () => true } = {}) {
   const here = atFocus(api);
   const linkOf = (id) => api.use("links")?.role(id) ?? null;
 
-  // ── expand state: this viewer's, per doc, in localStorage ──────────────
+  // ── expand state: this viewer's, per doc, in its prefs ("outline") ─────
   // (`firstDefaults`: a row's default is taken the first time it's drawn, so
   // hiding a root group later doesn't fold it away under the pointer)
-  let expand = { key: null, overrides: new Map(), firstDefaults: new Map() };
+  const OUTLINE = "outline";
+  const prefs = () => api.use("prefs");
+  const byDoc = () => {
+    const all = prefs()?.get(OUTLINE, null);
+    return all && typeof all === "object" && !Array.isArray(all) ? all : {};
+  };
+  let expand = { url: null, overrides: new Map(), firstDefaults: new Map() };
   /** The focus doc's expand state, read again when the focus is another doc. */
   function expandState() {
-    const key = `scene-outline:${here.url ?? "scene"}`;
-    if (expand.key === key) return expand;
-    expand = { key, overrides: new Map(), firstDefaults: new Map() };
-    try {
-      const saved = JSON.parse(globalThis.localStorage?.getItem(key) ?? "null");
-      if (saved && typeof saved === "object") for (const [k, v] of Object.entries(saved)) if (typeof v === "boolean") expand.overrides.set(k, v);
-    } catch {
-      // no storage (private window, sandbox): defaults only
-    }
+    const url = here.url ?? "scene";
+    if (expand.url === url) return expand;
+    const saved = byDoc()[url];
+    expand = { url, overrides: new Map(Object.entries(saved && typeof saved === "object" ? saved : {}).filter(([, v]) => typeof v === "boolean")), firstDefaults: new Map() };
     return expand;
   }
-  const save = () => {
-    try {
-      globalThis.localStorage?.setItem(expand.key, JSON.stringify(Object.fromEntries(expand.overrides)));
-    } catch {
-      // best effort
-    }
-  };
+  const save = () => prefs()?.set(OUTLINE, { ...byDoc(), [expand.url]: Object.fromEntries(expand.overrides) });
   let expandSeq = 0; // bumped on every expand change, so the view redraws
 
   // ── what the tree is, once per scene snapshot ──────────────────────────
