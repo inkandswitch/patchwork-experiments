@@ -28,16 +28,33 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
+import { LINK, linkOpener } from "../test/links.js";
 import { keyOf } from "./paths.js";
-import { readClock } from "../native/clock.js";
 
 const ME = "automerge:ana";
 const BEN = "automerge:ben";
 const HEEL = { position: [0, 0, 0], rotation: [(20 * Math.PI) / 180, 0, 0], scale: 1 };
 const FLAT = { position: [3, 0, 0], rotation: [0, 0, 0], scale: 1 };
 
+// a hand the viewer holds with no body (as the editor's is): hold(on) picks it up or puts it down
+const HAND = {
+  meta: { id: "t.hand", type: "scene:view" },
+  module: {
+    create(api) {
+      let release = null;
+      return {
+        hold(on) {
+          if (on && !release) release = api.hand({ kind: "edit", name: "Hand", input: {} });
+          if (!on && release) release = void release();
+        },
+      };
+    },
+  },
+};
+
 const EXTENSIONS = [
+  HAND,
+  linkOpener(),
   {
     meta: { id: "t.roster", traits: ["t.game"] },
     module: {
@@ -122,7 +139,7 @@ function seen(st) {
     traits: snap.traits,
     running: st.debug.host.running().map((r) => r.id).sort(),
     // the doc's clock, and the stage's own reading of it (its t moves with each view's frames, so only whether it runs)
-    clock: { doc: readClock(st.doc()).running, api: api.use("clock").running() },
+    clock: { doc: st.doc().clock?.running !== false, api: api.use("clock").running() },
     cards: ["h1", "h2", "t"].map((id) => [id, api.use("audience").audience(id), api.use("audience").shown(id), ((d) => (!d ? null : d.content instanceof Uint8Array ? { veil: true } : { name: d.name }))(st.debug.displayed().get(id))]),
   });
 }
@@ -151,7 +168,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
       const Y = repo.add(emptyScene({ title: "Y", traits: host, objects: { LX: link(X.url, { transform: HEEL }) }, order: ["LX"] }));
       const P = repo.add(emptyScene({ title: "P", traits: host, objects: { L: link(G.url, { transform: FLAT, at: { heads: G.heads() } }) }, order: ["L"] }));
       // the first view registers the extensions (the harness's), on G itself
-      const s = await mountStage({ repo, handle: undefined, viewerId: ME, extensions: EXTENSIONS, doc: { objects: {}, order: [] } });
+      const s = await mountStage({ repo, handle: undefined, viewerId: ME, extensions: EXTENSIONS, natives: true, doc: { objects: {}, order: [] } });
       cleanups.push(() => s.unmount());
       const views = {
         alone: { v: await view(repo, G), into: [] },
@@ -198,7 +215,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
             // ("edit": Look holding the editor, which is no body)
             for (const body of pinned ? ["look", "edit", "t.walk"] : ["look", "edit", "t.walk", "t.sit"])
               for (const held of pinned ? [false] : [false, true]) {
-                v.focusStage().reader.run({ ext: "scene.edit", command: "edit", target: null, value: body === "edit" });
+                v.plugins.instanceOf("t.hand").hold(body === "edit");
                 expect(v.enterBody(body === "edit" ? "look" : body, null)).toBeTruthy();
                 const acting = gStages(v).find((st) => st.acts);
                 const release = held ? v.holdTool(keyOf(acting.n, "t.table"), { name: "Measure" }, {}) : null;

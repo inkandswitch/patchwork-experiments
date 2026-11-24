@@ -43,7 +43,7 @@ async function mountWithLink() {
   const notes = repo.add({ title: "notes" });
   const b = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card" }) }, order: ["card"] }));
   const objects = { table: object({ name: "Table" }), chair: object({ name: "Chair" }), L: link(b.url, { name: "B" }) };
-  s = await mountStage({
+  s = await mountStage({ editor: true, natives: true, 
     repo,
     extensions: [
       { meta: { id: "scene.inspector" }, module: inspector },

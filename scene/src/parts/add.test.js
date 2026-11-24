@@ -39,7 +39,7 @@ describe("scene.add", () => {
   });
 
   async function mount(opts = {}) {
-    s = await mountStage({ extensions: [ADD, ...(opts.extensions ?? [])], templates: opts.templates ?? [], doc: opts.doc ?? {} });
+    s = await mountStage({ editor: true, natives: true,  extensions: [ADD, ...(opts.extensions ?? [])], templates: opts.templates ?? [], doc: opts.doc ?? {} });
     stl = s.repo.add({ "@patchwork": { type: "file" }, name: "part.stl", extension: "stl", mimeType: "model/stl", content: new Uint8Array(84) });
     return s;
   }

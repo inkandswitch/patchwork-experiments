@@ -6,7 +6,6 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import { manualTime, MANUAL_EPOCH } from "./time.js";
-import { STEP_S } from "../native/clock.js";
 
 const mounted = [];
 afterEach(() => {
@@ -59,7 +58,7 @@ describe("a stage on a manual clock", () => {
   it("moves only when stepped, by exactly the frames stepped, and never reads the wall while it runs", async () => {
     const time = manualTime({ yieldTo: () => Promise.resolve() });
     const { ext, seen } = mover();
-    const s = await mountStage({ extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] }, viewerId: "viewer:ana", time });
+    const s = await mountStage({ natives: true, extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] }, viewerId: "viewer:ana", time });
     mounted.push(s);
     await time.until(() => s.api("t.mover")?.use("clock").computer()?.mine, { frames: 10, what: "computing" });
     const calls = spyOnTheWall();
@@ -80,7 +79,8 @@ describe("a stage on a manual clock", () => {
     expect(s.api("t.mover").use("clock").t() - w0).toBeCloseTo(1, 9);
     const stepped = seen.steps.slice(n0);
     expect(stepped.length).toBe(60);
-    for (let i = 1; i < stepped.length; i++) expect(stepped[i] - stepped[i - 1]).toBeCloseTo(STEP_S, 8);
+    // (one grid: every step the same length, 60 of them to the second)
+    for (let i = 1; i < stepped.length; i++) expect(stepped[i] - stepped[i - 1]).toBeCloseTo(1 / 60, 8);
     expect(s.api("t.mover").use("clock").t()).toBeCloseTo(stepped.at(-1), 9);
     // the extension's frame came at the first frame, its timer at 500 ms of the stage's time
     expect(seen.frame).toBe(MANUAL_EPOCH + time.frameMs);

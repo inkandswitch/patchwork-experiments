@@ -69,7 +69,7 @@ function clipEvent(type, data = {}) {
  * something else.
  */
 async function setup({ sea = false } = {}) {
-  s = await mountStage({
+  s = await mountStage({ editor: true, natives: true, 
     extensions: EXTS,
     doc: { objects: { hull: object({ name: "Hull", transform: T([5, 0, 0]) }) }, order: ["hull"], ...(sea ? { traits: { "t.sea": {} } } : {}) },
   });
@@ -231,7 +231,7 @@ describe("copy and paste", () => {
   });
 
   it("the menu offers Copy on an object and Paste on the scene, once something is copied", async () => {
-    s = await mountStage({ extensions: [{ meta: { id: "scene.menu" }, module: menuPart }, ...EXTS], doc: { objects: { hull: object({ name: "Hull" }) }, order: ["hull"] } });
+    s = await mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.menu" }, module: menuPart }, ...EXTS], doc: { objects: { hull: object({ name: "Hull" }) }, order: ["hull"] } });
     await settle();
     const cmds = s.instance("scene.transfer").commands;
     const ctx = { scene: s.debug.scene?.() ?? { objects: s.doc().objects }, local: s.local.get() };
@@ -284,7 +284,7 @@ describe("references", () => {
     module: { create: () => ({}) },
   };
   async function mountWith(doc) {
-    s = await mountStage({ extensions: [...EXTS, LEVERS], doc });
+    s = await mountStage({ editor: true, natives: true,  extensions: [...EXTS, LEVERS], doc });
     const api = s.facet("scene.transfer");
     api.pick = () => ({ id: null, point: [9, 0, 9] });
     return api;
@@ -359,7 +359,7 @@ describe("Extract and Bundle", () => {
   const META = { id: "t.parts", traits: ["t.sea", "t.lever"], describes: { "t.sea": { name: "Sea", on: "scene" }, "t.lever": { name: "Lever", fields: [{ key: "target", kind: "object", label: "Target" }] } } };
   const PARTS = { meta: META, module: { create: () => ({}) } };
   async function mount(extra = []) {
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [{ meta: { id: "scene.transfer" }, module: transfer }, PARTS, ...extra],
       doc: {
         objects: {

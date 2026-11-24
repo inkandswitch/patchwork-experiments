@@ -40,7 +40,7 @@ vi.mock("./readonly.js", async (importOriginal) => {
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, FakeHandle } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
+import { LINK, linkOpener } from "../test/links.js";
 import { drop, editor, part, template } from "../parts/editor.js";
 import { manualTime } from "./time.js";
 import { CLOCK_HZ, CHECKPOINT_MS } from "../native/clock.js";
@@ -128,7 +128,7 @@ async function mount(role) {
   };
   const link = (extra) => object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null, transform: T, ...extra });
   const objects = role === "pinned" ? { P: link({ at: { heads: then } }) } : { L1: link() };
-  s = await mountStage({ repo, time, extensions: [PROBE, GENERAL], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
+  s = await mountStage({ repo, time, natives: true, extensions: [PROBE, GENERAL, linkOpener()], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
   const want = role === "pinned" ? ["P"] : ["L1"];
   for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle();
   const stage = s.debug.view.stages().find((x) => x.path.join() === want.join());

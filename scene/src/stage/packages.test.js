@@ -40,7 +40,7 @@ function folder(repo, name, url = fakeUrl()) {
 
 let mounted = [];
 const mount = async (o) => {
-  const s = await mountStage(o);
+  const s = await mountStage({ natives: true, ...o });
   mounted.push(s);
   return s;
 };

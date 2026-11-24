@@ -51,7 +51,7 @@ describe("the chip on a stage", () => {
       },
     };
     const CHIP = { meta: { id: "scene.clock-chip" }, module: clockPart };
-    const s = await mountStage({ time, extensions: [PROC, CHIP], viewerId: "me" });
+    const s = await mountStage({ natives: true,  time, extensions: [PROC, CHIP], viewerId: "me" });
     mounted.push(s);
     const clock = () => s.api("t.proc").use("clock");
     await time.until(() => clock().computer()?.mine);
@@ -92,7 +92,7 @@ describe("the chip on a stage", () => {
         },
       },
     };
-    const s = await mountStage({ time, extensions: [PROC] });
+    const s = await mountStage({ natives: true,  time, extensions: [PROC] });
     mounted.push(s);
     const computing = () => !!s.api("t.proc").use("clock").computer()?.mine;
     await time.until(computing);
@@ -112,7 +112,7 @@ describe("the chip on a stage", () => {
     const BROKEN = { meta: { id: "t.broken" }, module: { create: () => { throw new Error("boom"); } } };
     const CHIP = { meta: { id: "scene.clock-chip" }, module: clockPart };
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const s = await mountStage({ time, extensions: [PROC, BROKEN, CHIP] });
+    const s = await mountStage({ natives: true,  time, extensions: [PROC, BROKEN, CHIP] });
     mounted.push(s);
     const api = s.api("t.proc");
     await time.until(() => api.settled().failed.includes("t.broken"));
@@ -129,7 +129,7 @@ describe("the chip on a stage", () => {
   it("a closing stage checkpoints every process in one change, before its claim goes", async () => {
     const saves = []; // each save's draft, while the claim is still in it
     const proc = (id) => ({ meta: { id }, module: { create: (api) => (api.use("clock").process({ step() {}, save: (d) => saves.push(d.claims?.clock && d) }), {}) } });
-    const s = await mountStage({ time, extensions: [proc("t.a"), proc("t.b")] });
+    const s = await mountStage({ natives: true,  time, extensions: [proc("t.a"), proc("t.b")] });
     await time.until(() => s.api("t.a").use("clock").computer()?.mine);
     s.unmount();
     expect(saves.length === 2 && saves[0] && saves[0] === saves[1]).toBe(true);

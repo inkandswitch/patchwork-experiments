@@ -13,13 +13,13 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
-import body from "../parts/body.js";
+import { LINK, linkOpener } from "../test/links.js";
 import { manualTime } from "./time.js";
 import { DEFAULT_HZ, HEARTBEAT_MS } from "./presence.js";
 
 const SIT = { meta: { id: "t.seatish", traits: ["t.game"] }, module: { create: () => ({ bodies: [{ id: "t.sit", label: "Player 1", here: false, enter: () => ({ input: {} }) }] }) } };
-const BODY = { meta: { id: "scene.body" }, module: body };
+// a part of every doc: what its doc's channel says of each person there is what this view knows of them
+const PEERS = { meta: { id: "t.peers" }, module: { create: () => ({}) } };
 
 let cleanups = [];
 afterEach(() => {
@@ -43,8 +43,8 @@ async function second(repo, handle, time) {
   });
   return { el, debug: () => el.querySelector(".scene-stage").__sceneDebug };
 }
-/** What a view's chip says of `session`, or null if it doesn't list them. */
-const rowOf = (el, session) => el.querySelector(`.body-person[data-session="${session}"]`)?.textContent ?? null;
+/** The body a view's outermost doc's channel says `session` is in, or null if it doesn't list them. */
+const bodyOf = (view, session) => view.debug()?.host.record("t.peers")?.api.channel.peers()[session]?.body?.id ?? null;
 
 describe("who's here, across links", () => {
   async function setup() {
@@ -56,7 +56,7 @@ describe("who's here, across links", () => {
       repo,
       viewerId: "viewer:ana",
       time,
-      extensions: [SIT, BODY],
+      extensions: [SIT, PEERS, linkOpener()],
       doc: { objects: { L: object({ name: "Game", sourceUrl: game.url, providerId: LINK, renderUrl: null }) }, order: ["L"] },
     });
     cleanups.push(() => s.unmount());
@@ -67,19 +67,19 @@ describe("who's here, across links", () => {
   it("seated at the game linked into a host: someone viewing the game alone sees them seated, not looking", async () => {
     const { s, repo, game, time, session } = await setup();
     const alone = await second(repo, game, time);
-    await time.until(() => alone.debug()?.view.plugins.instanceOf("scene.body") && rowOf(alone.el, session) != null, { what: "the game's chip listing ana" });
-    expect(rowOf(alone.el, session)).not.toContain("player 1"); // (the harness's start: Edit)
+    await time.until(() => bodyOf(alone, session) != null, { what: "the game's channel listing ana" });
+    expect(bodyOf(alone, session)).toBe("look");
     expect(s.debug.view.enterBody("t.sit", null)).toBeTruthy();
-    await time.until(() => rowOf(alone.el, session)?.includes("player 1"), { what: "ana seated, on the game's chip" });
+    await time.until(() => bodyOf(alone, session) === "t.sit", { what: "ana seated, on the game's channel" });
     expect(s.debug.view.focusStage().n).toBe(0); // the focus never moved: the host's
   });
 
   it("entering the game moves the focus, and someone viewing the host still sees what they're doing", async () => {
     const { s, repo, time, session } = await setup();
     const host = await second(repo, s.handle, time);
-    await time.until(() => host.debug()?.view.plugins.instanceOf("scene.body"), { what: "the host's chip" });
+    await time.until(() => bodyOf(host, session) != null, { what: "the host's channel listing ana" });
     expect(s.debug.view.enterBody("t.sit", null)).toBeTruthy();
-    await time.until(() => rowOf(host.el, session)?.includes("player 1"), { what: "ana seated, on the host's chip" });
+    await time.until(() => bodyOf(host, session) === "t.sit", { what: "ana seated, on the host's channel" });
     expect(s.debug.view.enter(["L"])).toBeTruthy();
     await settle();
     expect(s.debug.view.focusStage().path).toEqual(["L"]);
@@ -89,8 +89,8 @@ describe("who's here, across links", () => {
     const frames = Math.ceil((HEARTBEAT_MS + 1000 / DEFAULT_HZ) / time.frameMs) + 2;
     for (let i = 0; i < frames; i++) {
       await time.step(1, { draw: false });
-      const row = rowOf(host.el, session);
-      if (!row?.includes("player 1")) throw new Error(`frame ${i} after Enter: the host's chip says ${JSON.stringify(row)}`);
+      const b = bodyOf(host, session);
+      if (b !== "t.sit") throw new Error(`frame ${i} after Enter: the host's channel says ${JSON.stringify(b)}`);
     }
   });
 });

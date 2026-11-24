@@ -50,7 +50,7 @@ async function setup({ view = {}, params = { height: 0.2 } } = {}) {
   clicks.length = 0;
   const repo = new FakeRepo();
   const render = repo.add({ params });
-  const s = await mountStage({
+  const s = await mountStage({ editor: true, 
     repo,
     extensions: [fakeSelect, { meta: { id: "scene.handles", name: "Handles" }, module: handles }, fakeTool, ...MOVE_TOOL],
     doc: { objects: { a: object({ name: "Slice", providerId: "slice-test", renderUrl: render.url }), g: object({ kind: "group", providerId: null }) }, view },
@@ -277,7 +277,7 @@ describe("scene.handles on the stage", () => {
   it("a provider registered after the object is selected shows up on the next update", async () => {
     const repo = new FakeRepo();
     const render = repo.add({ params: { height: 0.2 } });
-    const s = await mountStage({
+    const s = await mountStage({ editor: true, 
       repo,
       extensions: [{ meta: { id: "scene.handles" }, module: handles }, ...MOVE_TOOL],
       doc: { objects: { a: object({ providerId: "slice-later", renderUrl: render.url }) } },

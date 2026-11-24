@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
-// Presence where it is (STAGE.md, "Views, stages and links", EDITOR.md, "The interface"): what a doc's
+// Presence where it is (STAGE.md, "Views, stages and links"): what a doc's
 // people are is drawn wherever the doc is drawn with its channel, each in
-// its own stage's frame, whatever the focus; and the clock chips are the
-// focus path's.
+// its own stage's frame, whatever the focus.
 //
 // The people are drawn by a part of every doc (traits ["*"]): it runs in
 // every stage, as that doc's own part, and never restarts when the focus
@@ -24,9 +23,8 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
-import { LINK } from "../native/link-graph.js";
+import { LINK, linkOpener } from "../test/links.js";
 import { keyOf } from "./paths.js";
-import clockPart from "../parts/clock.js";
 
 const J = JSON.stringify;
 const at = (x, y, z) => ({ position: [x, y, z], rotation: [0, 0, 0], scale: 1 });
@@ -95,15 +93,13 @@ const PEOPLE = {
   },
 };
 /** A process, where the doc says (a scene trait): so the doc has a clock to show. */
-const PROC = { meta: { id: "t.proc", traits: ["t.proc"] }, module: { create: (api) => (api.use("clock").process({ step() {}, save() {} }), {}) } };
-const CHIP = { meta: { id: "scene.clock-chip" }, module: clockPart };
 
 /**
  * A: L a live link to B, P a pin of B, S a live
  * link to E (a sibling of L, off any focus inside L). B: M, live, to C. C: N,
  * live, to D. So the stages are A [], B [L], C [L/M], D [L/M/N] (three
  * deep), E [S], and the pin [P] (its M
- * closed: the pin holds no C). A, B and D have a process. Each link is
+ * closed: the pin holds no C). Each link is
  * placed off its host's origin, so every stage's frame is its own.
  */
 async function mountTree() {
@@ -117,7 +113,7 @@ async function mountTree() {
     P: link(b.url, "B fixed", { transform: at(0, 0, -100), at: { heads: b.heads() } }),
     S: link(e.url, "E", { transform: at(0, -50, 0) }),
   };
-  const s = await mountStage({ repo, viewerId: "viewer:me", extensions: [WALK, PEOPLE, PROC, CHIP], doc: { title: "A", objects, order: Object.keys(objects), traits: { "t.proc": {} } } });
+  const s = await mountStage({ repo, viewerId: "viewer:me", extensions: [WALK, PEOPLE, linkOpener()], doc: { title: "A", objects, order: Object.keys(objects), traits: { "t.proc": {} } } });
   const view = s.debug.view;
   await until(() => Object.keys(ROLE).every((p) => stageOf(view, p)), 4000);
   return { s, view, repo, docs: { A: s.handle, B: b, C: c, D: d, E: e } };
@@ -135,7 +131,6 @@ const ROLE = {
 const ACTING = Object.keys(ROLE).filter((p) => ROLE[p][0] === "acting");
 const pathOf = (p) => (p === "" ? [] : p.split("/"));
 const stageOf = (view, p) => view.stages().find((x) => x.path.join("/") === p) ?? null;
-const PROCS = new Set(["A", "B", "D"]);
 
 /** One view per doc, each alone on it and present there (its body part at its focus says where it is). */
 async function others(repo, docs) {
@@ -197,19 +192,6 @@ function expected(view, f, held) {
   return out;
 }
 
-/** The focus path's clocks, outermost first, as the model says: the stages from the outermost to `f` whose doc has a process. */
-function expectedClocks(f) {
-  const path = pathOf(f);
-  const out = [];
-  for (let i = 0; i <= path.length; i++) {
-    const p = path.slice(0, i).join("/");
-    if (PROCS.has(ROLE[p][1])) out.push(p);
-  }
-  return out;
-}
-/** The names the chips show: none at the outermost alone; each doc's, as the trail names it, inside a link. */
-const NAME = { "": "A", L: "B", "L/M": "C", "L/M/N": "D", S: "E" };
-
 let cleanups = [];
 afterEach(() => {
   for (const c of cleanups.reverse()) c();
@@ -260,41 +242,4 @@ describe("presence where it is", () => {
     // 5 foci with nothing held, 5 × 5 held and then let go
     expect(cases).toBe(5 + 25 * 2);
   }, 120_000);
-
-  it("every focus: the clock chips are the focus path's, outermost first, each named inside a link; none at all, no bar", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { s, view } = await mountTree();
-    cleanups.push(() => s.unmount());
-    const chipStages = () => [...s.root.querySelectorAll(".clock-chip")].map((el) => view.stage(Number(el.dataset.stage)));
-    const clocksAt = () => chipStages().map((st) => st?.path.join("/"));
-    for (const f of ACTING) {
-      expect(view.focusOn(pathOf(f)), f).toBe(true);
-      const want = expectedClocks(f);
-      await until(() => J(clocksAt()) === J(want), 4000).catch(() => expect([f, clocksAt()]).toEqual([f, want]));
-      for (const st of chipStages()) expect(st.acts, f).toBe(true);
-      const names = [...s.root.querySelectorAll(".clock-chip .clock-doc")].map((el) => (el.hidden ? "" : el.textContent));
-      expect([f, names]).toEqual([f, want.map((p) => (f === "" ? "" : NAME[p]))]);
-      expect([f, s.root.querySelector(".clock-bar").hidden]).toEqual([f, want.length === 0]);
-    }
-  });
-
-  it("each chip pauses and resumes its own doc, and only it: inside three links, every chip on the path", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { s, view, docs } = await mountTree();
-    cleanups.push(() => s.unmount());
-    expect(view.focusOn(["L", "M", "N"])).toBe(true);
-    const chips = () => [...s.root.querySelectorAll(".clock-chip")];
-    await until(() => chips().length === 3 && chips().every((c) => c.querySelector(".clock-text").textContent.startsWith("▶")), 4000);
-    const running = () => ["A", "B", "D"].map((t) => docs[t].doc().clock?.running !== false);
-    for (const [i, title] of ["A", "B", "D"].entries()) {
-      const chip = chips()[i];
-      expect(chip.querySelector(".clock-doc").textContent).toBe(title);
-      chip.querySelector(".clock-toggle").click();
-      await until(() => !running()[i], 4000);
-      expect([title, running()]).toEqual([title, ["A", "B", "D"].map((t) => t !== title)]);
-      await until(() => chips()[i].querySelector(".clock-text").textContent === "⏸ Paused by you", 4000);
-      chips()[i].querySelector(".clock-toggle").click();
-      await until(() => running().every(Boolean), 4000);
-    }
-  });
 });

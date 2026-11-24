@@ -61,7 +61,7 @@ async function mount() {
   const log = { clicks: [] };
   const objects = { a: object({ name: "Ace", traits: { "t.card": { suit: "red", n: 1 } } }), b: object({ name: "Two", traits: { "t.card": { suit: "blue", n: 2 } } }), t: object({ name: "Table" }) };
   time = manualTime();
-  s = await mountStage({ time, extensions: [KEYS, XRAY, MEASURE, game(log)], doc: { objects, order: Object.keys(objects) } });
+  s = await mountStage({ editor: true, natives: true,  time, extensions: [KEYS, XRAY, MEASURE, game(log)], doc: { objects, order: Object.keys(objects) } });
   await settle();
   // (the stage's boxes are null without WebGL: a fixed one each)
   s.facet("scene.xray").box = (id) => (objects[id] ? { min: [0, 0, 0], max: [1, 1, 1] } : null);

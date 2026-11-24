@@ -30,7 +30,7 @@ afterEach(() => {
  */
 async function mount({ doc = {}, before = [], extensions = [], content = {} } = {}) {
   const fake = {};
-  s = await mountStage({
+  s = await mountStage({ editor: true, natives: true, 
     extensions: [...before, CARRY_EXT, posesBy(fake), ...extensions],
     doc: { ...doc, objects: { a: piece({ name: "A" }), ...(doc.objects ?? {}) } },
   });

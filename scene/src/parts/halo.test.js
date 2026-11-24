@@ -192,7 +192,7 @@ const CUBE = { min: [-1, -1, -1], max: [1, 1, 1] };
  */
 async function mount({ objects = {}, extensions = [], readOnly = false } = {}) {
   const poses = { heldBy: () => null };
-  s = await mountStage({ extensions: [HALO, posesBy(poses), ...extensions], doc: { objects, order: Object.keys(objects) } });
+  s = await mountStage({ editor: true, natives: true,  extensions: [HALO, posesBy(poses), ...extensions], doc: { objects, order: Object.keys(objects) } });
   s.poses = poses;
   if (readOnly) s.handle.isReadOnly = () => true;
   const vp = s.debug.viewport;

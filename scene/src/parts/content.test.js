@@ -69,7 +69,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
 
   async function mount(doc = {}) {
     repo ??= new FakeRepo();
-    s = await mountStage({ repo, extensions: EXTS, doc });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: EXTS, doc });
     return s;
   }
   beforeEach(() => {
@@ -227,7 +227,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
       y: object({ sourceUrl: stl.url, providerId: "file-stl" }),
       g: { kind: "group", name: "G", visible: true, group: null },
     };
-    s = await mountStage({ repo, extensions: EXTS, doc: { objects } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: EXTS, doc: { objects } });
     getRegistry("scene:source").register(gltfSource());
     await settle();
     // [object, queued, tracked by the manager, loadState]
@@ -251,7 +251,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const hints = vi.spyOn(Viewport.prototype, "setHint");
     const file = glbFile("part.gltf", "gltf");
-    s = await mountStage({ repo, extensions: EXTS, doc: { objects: { x: object({ sourceUrl: file.url, providerId: "t-gltf", hint: { bounds: { min: [0, 0, 0], max: [1, 1, 1] } } }) } } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: EXTS, doc: { objects: { x: object({ sourceUrl: file.url, providerId: "t-gltf", hint: { bounds: { min: [0, 0, 0], max: [1, 1, 1] } } }) } } });
     await settle();
     expect(queued()).toEqual([]);
     expect(tracked()).toEqual([]);
@@ -276,7 +276,7 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
 
   it("a source that declares no content kind is never offered, and is warned about once", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    s = await mountStage({ repo, extensions: EXTS });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: EXTS });
     getRegistry("scene:source").register({ type: "scene:source", id: "t-bare", name: "Bare", supportedDatatypes: ["bare"], params: [], load: async () => ({ build: async () => null }) });
     getRegistry("scene:source").register({ type: "scene:source", id: "t-old", name: "Old", supportedDatatypes: ["old"], params: [], passthrough: true });
     await settle();

@@ -59,7 +59,7 @@ afterEach(() => {
 });
 
 async function mount({ objects = {}, doc = {}, extensions = [GAME] } = {}) {
-  s = await mountStage({
+  s = await mountStage({ editor: true, natives: true, 
     extensions: [INSPECTOR, OPENED, ...extensions],
     doc: { objects, order: Object.keys(objects), ...doc },
   });
