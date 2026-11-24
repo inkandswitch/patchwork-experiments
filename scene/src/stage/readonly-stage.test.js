@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // I6, a read-only stage writes nothing, through its api or its repo
 // (STAGE.md, Invariants), checked over every read-only stage there is
 // (a pin, and a live doc acting where its handle refuses writes)

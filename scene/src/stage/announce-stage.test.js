@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // A view tells the host which linked docs it shows live (./announce.js), so
 // the providers around it treat them as its own: a draft clones them and a
 // history checkpoint pins them with the scene. Over every shape of link —

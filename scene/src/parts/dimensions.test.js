@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as THREE from "three";

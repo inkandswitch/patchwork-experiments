@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Arriving waits for the content a doc shows (stage.js contentIn, read by
 // view.js before a start or an arrival settles): every visible object with
 // something to load. An object with nothing to load (its shape its traits'

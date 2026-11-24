@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // scene.undo, mounted: ⌘Z / Ctrl+Z and the toolbar's Undo and Redo take back
 // the editor's own edits (here Delete, scene.select's; ./editor.js), this viewer's; a
 // package's verb (a roll) is never on it, and an edit since changed by one is

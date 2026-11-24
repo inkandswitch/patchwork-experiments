@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The audience and the veil through the mounted stage (scene.audience:
 // NATIVE.md, "Audience", "The veil"): policies merged whatever order they run in, a broken one
 // closed, unknown while a listed package is missing whatever the viewer

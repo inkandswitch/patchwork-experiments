@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // scene.clock-chip: the chip's words (pure), and the chip on a mounted stage with
 // a process, paused and resumed through it.
 import { describe, it, expect, vi, afterEach } from "vitest";

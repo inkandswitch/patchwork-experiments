@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The stage's content loop, mounted with the model's add and inspector (its
 // tree too) (no WebGL): render docs built through the stage, the sync
 // settle window, the inspector's build controls (its params, Rebuild through

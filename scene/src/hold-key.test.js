@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect } from "vitest";
 import { arrange, holdKey, pressKey } from "./hold-key.js";
 

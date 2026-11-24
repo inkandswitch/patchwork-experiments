@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The inspector where the host has no <patchwork-view> (a local probe, a
 // test): it mounts no document anyway (PLANS.md §5): its documents are rows,
 // and its build's controls are its own fields, never the controls tool.

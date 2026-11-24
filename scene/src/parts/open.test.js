@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Open (./open.js; PLANS.md §5): the target's Open is the first `open: true`
 // command that applies; the Edit hand Opens the selection on a double-click
 // (same thing, within DOUBLE_MS and DOUBLE_PX), in Edit only; an Open's key

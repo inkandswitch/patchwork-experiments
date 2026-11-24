@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The editor is a hand (STAGE.md, "Hands"; HISTORY.md, Kernel step 1): its chrome shows while the Edit
 // hand is held and never otherwise, whatever the body. Every body (the
 // stage's Look; a walk and a seat over Look; a station over a walk) × holding

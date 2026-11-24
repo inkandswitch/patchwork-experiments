@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The drawer (drawer.js): the pure model over every sequence of up to five
 // acts on three keys, and the DOM that follows it; its width, as finite
 // tables and every sequence of up to three acts on two kinds of pane.

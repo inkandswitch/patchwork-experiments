@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi } from "vitest";
 import { Box3, BoxGeometry, Mesh, MeshBasicMaterial } from "three";
 import { keyOf } from "./paths.js";

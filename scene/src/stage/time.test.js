@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The stage's one source of time (time.js): the manual clock probes step,
 // against the real one, over finite cases.
 import { describe, it, expect, vi, afterEach } from "vitest";

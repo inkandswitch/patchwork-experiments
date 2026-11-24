@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Commands (./commands.js, STAGE.md, "Commands"): what applies, by the hand a
 // command names, its state and its reach, read alike by `api.run` and every
 // surface; and on the stage, a tool held for a kind of hand goes down with

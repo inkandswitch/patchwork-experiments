@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // One world's ambients (W2), and the atmosphere through them (W9): every
 // stage's api.ambient(name) is the outermost stage's stacked value or null,
 // `mine` exactly at the outermost. Here, a pinned link, whatever the host
