@@ -1,9 +1,64 @@
 # Conventions
 
-Contributions, traits and module exports by which packages that don't know each
-other meet. The kernel ([STAGE.md](STAGE.md)) and the editor
-([EDITOR.md](EDITOR.md)) never read them, but for the atmosphere, which the
-kernel draws. Depend on the convention, never its provider. Traits are keyed `<extension>.<name>`.
+The names by which packages that don't know each other meet: trait keys,
+contributions, ambients, body ids, plugin ids looked up, GLB extras fields,
+MIME types and events. Each is specified once, exactly, by the package that
+owns it, under "Conventions" in its README (scene's own are below, and in
+its README's "Content"); the table lists every one. The members, services
+and contributions of the kernel, the natives and the editor are stated on
+their own pages ([STAGE.md](STAGE.md), [NATIVE.md](NATIVE.md),
+[EDITOR.md](EDITOR.md)), and none of scene names another package's; the
+kernel reads none of the names here but `atmosphere`, which it draws. Depend
+on the convention, never its provider: a package names another's only
+through a name listed here. Traits are keyed `<extension>.<name>`. `node
+scripts/check-conventions.mjs` fails on a name one package uses of
+another's that isn't listed here or on those pages.
+
+## Names
+
+| Name | Kind | Owner | Means | Specified in |
+|---|---|---|---|---|
+| `walk.spawn` | trait | walk | where the walk body starts, facing the object's way | walk/README.md |
+| `walk.support` | trait | walk | a floor that moves (a deck), walked in its own frame | walk/README.md |
+| `walk.moves` | trait | walk | a moving part: swept, blocking where drawn, or passed through | walk/README.md |
+| `walk.stand` | trait | walk | where someone stands to use the object | walk/README.md |
+| `walk.ladder` | trait | walk | the climb out of the water onto the object's owner | walk/README.md |
+| `walk` | body id, plugin id | walk | first person on the scene, entered at an object | walk/README.md |
+| `avatar`, `stand` | contributions | walk | this viewer's walker in a stage; stand it at a stand spot | walk/README.md |
+| `seats` | trait, plugin id | seats | the places people take, on the scene or an object | seats/README.md |
+| `seat` | body id | seats | sitting in a seat, entered at a seat ref | seats/README.md |
+| `roster` | contribution, metadata | seats | who sits where; `roster: true` marks the plugin with `lay` | seats/README.md |
+| `seatPlaces` | contribution (collected) | seats | boxes that are a seat's places | seats/README.md |
+| `joints.slide` | trait | joints | a part that slides between two stops | joints/README.md |
+| `traversal.exit` | trait | traversal | an object that leads to another document | traversal/README.md |
+| `arena.level` | trait | arena | the scene is a level, and its look | arena/README.md |
+| `arena.spawn` | part id | arena | the spawn pad part, looked up by id | arena/README.md |
+| `doom-map` | source id | doom | a part of a WAD's map, by params | doom/README.md |
+| `doom` | GLB extras | doom | where a map part's frame is | doom/README.md |
+| `door`, `line` | GLB node extras | doom | which door or exit switch a whole map's node is | doom/README.md |
+| `water` | trait, ambient, contribution, plugin id | water | an object that is water; the world's open water; which water a point is in | water/README.md |
+| `water.waves` | contribution (collected) | water | the waves on each water body | water/README.md |
+| `water.shore` | contribution (collected) | water | the shore's shape round an eye, and shelter | water/README.md |
+| `weather` | trait | weather | the world's weather, as plain data | weather/README.md |
+| `wind` | ambient | weather | how the world's air moves | weather/README.md |
+| `sailing.sea` | trait | sailing | waves on a water object, raised by the wind | sailing/README.md |
+| `sailing.sail`, `sailing.jib`, `sailing.anchor` | traits | sailing | a ship's main, jib and anchor, as worked | sailing/README.md |
+| `sailing.sloop` | part id | sailing | the rigged 12 m sloop, looked up by id | sailing/README.md |
+| `ship`, `sail` | GLB extras | sailing | a hull's frame and size; a sail's plan, place and cloth | sailing/README.md |
+| `rig` | GLB extras | naval | a rig's patchwork-rig v1 contract | naval/README.md |
+| `scene.carry` | trait | scene | carried by anyone ("Carry") | CONVENTIONS.md |
+| `carry`, `landing`, `carryable`, `landed` | contributions | scene | starting and answering a carry ("Carry") | CONVENTIONS.md |
+| `inspect` | contribution | scene | an instance's state for the X-ray ("Inspect") | CONVENTIONS.md |
+| `keeper` | contribution, metadata | scene | what holds objects away from the doc ("Keepers") | CONVENTIONS.md |
+| `atmosphere` | ambient | scene | the world's sky, fog and sun ("World ambients") | CONVENTIONS.md |
+| `scene:source`, `scene:extension`, `scene:view`, `scene:template`, `scene:part` | plugin types | scene | providers, extensions, view plugins, templates, parts | README.md |
+| `file-glb` | source id | scene | a `.glb` file doc shown as it is | README.md |
+| `scene-render` | datatype | scene | one built object's GLB and what it was built from | README.md |
+| `units`, `layers`, `layer`, `connectors`, `snapRadius`, `legend`, `receiveShadow` | GLB extras | scene | units, layers, connectors, a colour bar, a one-sided sheet | README.md |
+| `chartroom:source` | plugin type | Chartroom | a hull datatype's hydrostatic table | naval/README.md |
+| `patchwork:datatype`, `patchwork:tool` | plugin types | Patchwork | datatypes and tools | Patchwork |
+| `text/x-patchwork-dnd`, `text/x-patchwork-urls` | MIME types | Patchwork | documents dragged from Patchwork's sidebar | Patchwork |
+| `patchwork:open-document` | DOM event | Patchwork | `{ url, toolId? }`, bubbling and composed: open a document | Patchwork |
 
 ## Docs
 
@@ -35,16 +90,6 @@ and extensions: `claims` (`[{ id, kind, ext?, viewer, session, … }]`), `holds`
 `snapshot(v)` (`src/native/inspect.js`) makes one. The natives publish
 theirs (NATIVE.md, "Inspect").
 
-## Seats
-
-From the `seats` package (its README). Trait `seats`: `{
-[seatId]: { name, player, lasting?, camera? } }` on the scene or an object.
-Contributions: `roster` (`seats`, `viewers`, `open`, `nameOf`, pure in the
-snapshot; `who`, `sitting`, `stateOf`, `sit`) and `seatPlaces` (`(scene) → [{
-seat, of?, id, min, max }]`). The plugin with `roster: true` exports `lay(d,
-seats, of?)` for setup code. The seat body (`here: false`) tilts with its
-table.
-
 ## Keepers
 
 An extension with its own trait that holds what objects are, away from the
@@ -57,7 +102,7 @@ the veil; else the object's own.
 ## World ambients
 
 A world's ambients are its outermost doc's (STAGE.md, "`api`", **Ambients**).
-The names packages share:
+`atmosphere` is scene's; `wind` and `water` are their packages' (Names).
 
 ### Atmosphere
 
@@ -87,12 +132,6 @@ at all is no atmosphere.
 A sun replaces the stage's key light and dims its headlight to a third; a sky
 tints the sky/ground light with its top and bottom; with fog and no sky the
 background is the fog's colour. Ask a flush with `api.schedule` when it changes on its own.
-
-### Water and wind
-
-**Water**: trait, ambient and contributions `water` and `water.waves` (the
-`water` package's WATER.md). **Wind**: the ambient `wind`, from the `weather`
-trait (the `weather` package's WEATHER.md).
 
 ## Carry
 
