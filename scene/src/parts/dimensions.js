@@ -25,6 +25,7 @@
 // the focus doc's.
 
 import css from "./dimensions.css?inline";
+import { resolveCssColor } from "../stage/public.js";
 import { detachAnchor, distance } from "../anchors.js";
 import { applyMatrix, contentMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
@@ -341,11 +342,12 @@ export function create(api) {
       obj.userData.noPick = true;
       layer.add(obj);
     };
-    const key = JSON.stringify([list, theme?.dim, theme?.accent]);
+    const key = JSON.stringify([list, theme]);
     if (key === drawnKey) return;
     drawnKey = key;
     clearLayer(layer);
-    const dimCol = color(theme?.dim, 0xe68019);
+    // its own colour token (dimensions.css), read again as the theme changes
+    const dimCol = color(resolveCssColor(api.root, "--scene-dimension"));
     const accent = color(theme?.accent, 0x33e6bf);
     const segs = [];
     const selSegs = [];

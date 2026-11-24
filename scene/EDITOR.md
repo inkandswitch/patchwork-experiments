@@ -18,6 +18,13 @@ drops, templates and parts. An **edit** is the editor's write
 | `scene.frame`, `scene.autoframe`, `scene.grid`, `scene.axes`, `scene.bounds`, `scene.units`, `scene.legends` | the view's aids |
 | `scene.add`, `scene.transfer`, `scene.parts`, `scene.undo` | drops; copy and paste; the parts bin; Undo and Redo |
 
+**Colours**: a part that draws declares its CSS colour tokens, each with its
+one default, in its own stylesheet, and reads them (`resolveCssColor`,
+`stage/public.js`) as `view.theme` changes: the grid's `--scene-grid-major`
+and `--scene-grid-minor`; the axes' `--scene-axis-x`, `-y`, `-z`, which the
+halo's handles take too; the dimensions' `--scene-dimension`, Measure's and a
+dimension's leader's too.
+
 ## The Edit hand
 
 `scene.edit`'s, an ordinary hand of kind `edit` (`api.hand`). The body chip's

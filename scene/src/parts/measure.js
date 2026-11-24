@@ -18,6 +18,7 @@
 // until it's put down.
 
 import css from "./measure.css?inline";
+import { resolveCssColor } from "../stage/public.js";
 import { distance, makeAnchor } from "../anchors.js";
 import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
@@ -114,7 +115,8 @@ function measureAt(api, view, hint) {
       return;
     }
     const theme = api.view.get().theme ?? {};
-    const dimCol = color(theme.dim, 0xe68019);
+    // a dimension's colour token (dimensions.css: a measurement is a dimension not yet saved)
+    const dimCol = color(resolveCssColor(view.root, "--scene-dimension"));
     const accent = color(theme.accent, 0x33e6bf);
     const aw = a ? anchorWorld(a, api.scene().objects, worldOf) : null;
     const hw = hover?.world ?? null;
