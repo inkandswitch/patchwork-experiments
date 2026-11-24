@@ -232,7 +232,7 @@ function create(api) {
         key: "Enter",
         show: ["menu", "inspector"],
         state: (target) => (target == null ? null : enterState(role(at(null, target)))),
-        run: (target) => api.focus()?.view.enter(target) ?? false,
+        run: (target) => api.view.enter([...api.view.get().focus, target]),
       },
     ],
   };

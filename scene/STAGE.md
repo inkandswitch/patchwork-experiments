@@ -30,7 +30,7 @@ content, in its frame.
 | **Embedded documents** | A document the stage shows inside it, marked `data-stage-embed` (`embed.js`), keeps its own keys, pastes and drops. A render's build controls ask the stage with DOM events bubbling to its root: `scene:rebuild` (`detail: { renderUrl }`; the stage rebuilds it and cancels the event) and `scene:render-context` (the stage sets `detail.at`, the object's fixed version); it tells every `.scene-render-controls` element `scene:render-context-changed` when an object is fixed, refixed or let go. |
 | **Drawn** | Extensions run and draw, nothing more: no segment, body, tool, command, widget, chrome, camera, selection or view service (`drawnApi`). |
 | **Read-only** | A stage that doesn't act, or whose handle refuses, gets a doc and repo refusing every write (`stage/readonly.js`; I6). |
-| **The focus** | Goes in with `api.view.enter(id)`, out on Escape's last rung; it scopes the selection (H10), changes only through `selectionStep` (`src/selection.js`), and no stage sees it. |
+| **The focus** | Goes in with a view plugin's `view.enter(path)`, out on Escape's last rung; it scopes the selection (H10), changes only through `selectionStep` (`src/selection.js`), and no stage sees it. |
 | **Frames** (I7) | Everything spatial in an api is in its stage's root frame, a similarity (`stage/scope.js`); a hit not of this doc is `{ id: null, point, normal, distance }`. World = parent's world · local; groups give scope, not motion. |
 | **Presence where it is** (I12) | A doc's people are drawn where it acts, from its channel. |
 | **The outermost doc** | Gives the view its ambients, `view.start` and the camera's home. |
@@ -41,7 +41,7 @@ content, in its frame.
 |---|---|---|---|---|
 | **Doc** | yes | yes | `doc()`, `scene()`; ignore missing ids | `change(fn)`, field by field |
 | **Channel** | yes | no | `channel.peers()`, `.watch` | `channel.set`, `.send` |
-| **Local** | no | no | `local.get()`, `view.get()` | `local.swap`, `view.select`, `view.enter` |
+| **Local** | no | no | `local.get()`, `view.get()` | `local.swap`, `view.select` |
 
 ## Activation
 
@@ -66,7 +66,7 @@ What is a stage's (its doc, content, space, camera, bodies, presence, flush) it 
 |---|---|
 | as the extension `api`'s, for its whole life | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `overlay`, `edge`, `style`, `listen`, `popover`, `loop`, `afterRender`, `invalidate`, `now`, `after`, `frame` |
 | `url`, `use(name)` | the outermost's url; a view plugin's service, else the focus stage's |
-| `view` | `get()`, `watch(fn, select?)`: the value whole (`selected`, `hovered`, `focus` as paths; `packages`; `arrived`: "Arriving"); `step(ev)`, `set(value)` (its own) |
+| `view` | `get()`, `watch(fn, select?)`: the value whole (`selected`, `hovered`, `focus` as paths; `packages`; `arrived`: "Arriving"); `step(ev)`, `enter(path)`, `arrive()`, `set(value)` (its own) |
 | `packages` | `{ load(urls?), dismiss(urls?) }`: the prompt's answer for every open doc's (`view.packages`) |
 | `hand(spec)`, `putDown(tool?)`, `offerWidget(type, ev)`, `wantPointer()` | "Hands"; events in the world, each hit with its `path`; `putDown` one of `held`, else the topmost |
 | `open(handle, o)`, `opening()` | "Views, stages and links"; `close.reached`: docs its repo found; arriving waits on `opening` |
@@ -86,7 +86,7 @@ Each extension's own; what it acquires through it goes when it stops.
 | `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed, errors }` (`ready`: nothing the doc calls for is still on its way, a failed one included; the clock and the audience also need `failed` empty; `errors[id]`: why) |
 | `now()`, `after(ms, fn)`, `frame(fn)`, `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame`; rendering every frame while a loop runs, `dt` ≤ 0.1 s |
 | `local` | `get`, `swap(fn)`: the stage's frozen value; the kernel's `running` (`[{ id, scope }]`), `status` (`{ [id]: { state, reason?, text, title } }`), `packages` (`{ ask, loading, failed, missing }`); plugins' keys `<id>.`-prefixed |
-| `view` | `get`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, keys, pointer, serial }]`, top last), `held` (its tools, `[{ ext, command, name, handKind, keys, pointer, serial }]`), `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)`, `enter(id)`, `arrive()` |
+| `view` | `get`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, keys, pointer, serial }]`, top last), `held` (its tools, `[{ ext, command, name, handKind, keys, pointer, serial }]`), `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)` |
 | `channel` | the doc's ephemeral side (`stage/presence.js`; I5): `{ viewer, session, peers(), set(key, value), watch(fn), send(type, data), rate(hz) }`; `peers()` → `{ [session]: { viewer, body, held: [{ name }] (top last), at, keys } }`; `send` reaches `receive` on every peer; `session` null in a pin |
 | `page`, `packages` | `{ on("hide" \| "show", fn) }`: the page goes into the back-forward cache (or the stage closes), it is back; the prompt's answer for its doc, `{ load(urls?), dismiss(urls?) }` |
 | `nameOf(id)`, `content(id)`, `loadState(id)`, `box(target, { hints?, in? })`, `worldOf(id)` | `{ loaded, box, extras, stats, root }`; where content went, what its loader said; `{ min, max }` or null, an object's, a group's (its members') or the scene's (`null`); the drawn matrix |
@@ -160,11 +160,11 @@ are pruned. Nothing loads without a click on Load for its URL.
 
 ## Arriving
 
-`view.start` is read on open and on `api.view.arrive()`; view plugins are told `view.arrived` (`{ start, n }`: the start
-whole, frozen, and how many times this viewer arrived; keys beyond `body`, `place`, `home` are theirs, and an extension
-reads its own doc's). `home` is the camera when none is saved; `body` is entered at `place` once offered and loaded (or
-after `ARRIVE_WAIT_MS`), after anything `opening()`; a place holding an acting stage arrives in that stage alone, a
-drawn one nowhere.
+`view.start` is read on open and on a view plugin's `view.arrive()`; view plugins are told `view.arrived` (`{ start, n
+}`: the start whole, frozen, and how many times this viewer arrived; keys beyond `body`, `place`, `home` are theirs, and
+an extension reads its own doc's). `home` is the camera when none is saved; `body` is entered at `place` once offered
+and loaded (or after `ARRIVE_WAIT_MS`), after anything `opening()`; a place holding an acting stage arrives in that
+stage alone, a drawn one nowhere.
 
 ## Invariants
 

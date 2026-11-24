@@ -1367,13 +1367,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         select: (target) => {
           if (live()) view.select(target == null ? null : [...path, target]);
         },
-        /** move the focus into the acting stage under this stage's `target` (a link's): false if there is none */
-        enter: (target) => (live() && target != null ? view.enter([...path, target]) : false),
-        /** arrive again where the outermost doc's view.start now says (a template's maker): only from the outermost */
-        arrive: () => {
-          if (live() && n === 0) view.arrive();
-        },
-        // (leaving is the view's: Escape's last rung, the trail; no stage learns whether there's anywhere to leave)
+        // (entering, leaving and arriving are the view plugins': no stage learns where the focus goes)
       }),
       /**
        * The doc's ephemeral side (STAGE.md, "`api`"): this view's
@@ -1587,7 +1581,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const facet = (base, over) => Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(base), ...Object.getOwnPropertyDescriptors(over) }));
     const loose = (className) => Object.assign(document.createElement("div"), { className });
     return facet(api, {
-      view: facet(api.view, { select: noop, enter: () => false }),
+      view: facet(api.view, { select: noop }),
       overlay: () => loose("stage-overlay"),
       edge: () => loose("stage-edge-part"),
       popover: () => noop,

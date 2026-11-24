@@ -125,8 +125,8 @@ paste write the focus doc: to add to a linked doc, enter it.
 load() → { create(ctx, params) → Promise } }`. The empty scene's start screen
 lists every template from metadata, with a form for its `params`
 (`src/param-form.js`); `create` gets exactly those (`paramsBySpec`). It writes
-objects, traits and `view.start`, and its maker then arrives as the doc says
-(`api.view.arrive()`).
+objects, traits and `view.start`; written to the outermost doc, its maker
+then arrives as the doc says (the view plugin's `view.arrive()`).
 
 ### Parts
 
