@@ -56,10 +56,11 @@ describe("partLanding", () => {
     expect(near(land.spot, [0, 1, 4])).toBe(true);
     // its yaw turned with the hull's (π + π/2)
     expect(Math.atan2(worldOf(land, matrix)[8], worldOf(land, matrix)[10])).toBeCloseTo(-Math.PI / 2);
-    // out of reach, or Alt: where it was dropped; an object with no radius isn't snapped to (as the hand)
+    // out of reach, or Alt: where it was dropped; with no radius, the carry's default (0.71 × the 4 m spacing) reaches
     expect(partLanding({ point: [0, 1, 1.5], parent: { id: "hull", matrix, connectors, snapRadius: 1 }, tags: ["mast"] }).snapped).toBe(false);
     expect(partLanding({ point: [0, 1, 1.5], parent: { id: "hull", matrix, connectors, snapRadius: 3 }, tags: ["mast"], free: true }).snapped).toBe(false);
-    expect(partLanding({ point: [0, 1, 1.5], parent: { id: "hull", matrix, connectors }, tags: ["mast"] }).snapped).toBe(false);
+    expect(partLanding({ point: [0, 1, 1.5], parent: { id: "hull", matrix, connectors }, tags: ["mast"] }).snapped).toBe(true);
+    expect(partLanding({ point: [0, 1, 1], parent: { id: "hull", matrix, connectors }, tags: ["mast"] }).snapped).toBe(false);
   });
 
   it("a part without tags goes to an open connector only within reach, never to a tagged one", () => {
