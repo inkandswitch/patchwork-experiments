@@ -1345,3 +1345,17 @@ and write it after listening once more. Writing it by compare-and-set alone
 was tried first: the model found a woken holder's older build written
 concurrently with its successor's newer one, the merge keeping the older,
 so the fence kept its second condition.
+
+**The stacks are rules of their own (2026-11-24).** The router kept the body
+stack and the hand stack inside its closure, and the view kept a second list
+of the bodies beside it. Both stacks became pure modules (`body-stack.js`,
+`hands.js`): a change is a value (the stack after, whose keys go, who is told
+what), and the router's one `restack` applies it, keeping the stack before
+any plugin is told. A body's `suspended` flag went: the body stack remembers
+which body was last told it is on top, which also keeps the tells exact when
+a body enters another from its own `leave()`. The router's toggle for a tool
+held again went (no kernel caller reached it; a command's run again is the
+stage's), and with the stack's rules checked on every reachable stack, the
+router's mounted enumeration shrank from every sequence of four steps to
+three. The view's open stages became `tree.js`, its camera `camera-memory.js`,
+`view.start`'s reading `arriving.js`. Unattended.
