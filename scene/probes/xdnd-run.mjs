@@ -126,7 +126,7 @@ async function main() {
   const urlA = await P(`url("a")`);
   // the bracket's render built in A (so a copy can take its build)
   const aRenderUrl = (await P(`doc("a")`)).objects.bracket.renderUrl;
-  check("aBracketBuilt", await b.waitFor(`__p.docOf(${J(aRenderUrl)}).then((r) => !!r.glbUrl)`, 30_000));
+  check("aBracketBuilt", await b.waitFor(`__p.docOf(${J(aRenderUrl)}).then((r) => !!r.result?.glbUrl)`, 30_000));
   await b.rest(600);
   const A0 = await P(`doc("a")`);
   const aRender0 = await P(`docOf(${J(aRenderUrl)})`);
@@ -250,11 +250,11 @@ async function main() {
     const o = B.objects[id] ?? {};
     bracketCopy = id;
     const rd = o.renderUrl ? await P(`docOf(${J(o.renderUrl)})`) : null;
-    report.bracket = { id, renderUrl: o.renderUrl, render: rd && { params: rd.params, glbUrl: rd.glbUrl, builtAt: rd.builtAt, status: rd.status }, hit };
+    report.bracket = { id, renderUrl: o.renderUrl, render: rd && { params: rd.params, result: rd.result, failure: rd.failure }, hit };
     check("bracketOneCopy", r.added.length === 1);
     check("bracketNewRenderDoc", !!o.renderUrl && o.renderUrl !== aRenderUrl && o.sourceUrl === files.stl && o.providerId === "file-stl", { renderUrl: o.renderUrl, a: aRenderUrl, sourceUrl: o.sourceUrl });
     check("bracketSameParams", rd && sameJSON(rd.params, aRender0.params) && rd.parent === files.stl && rd.providerId === "file-stl", rd && { params: rd.params, parent: rd.parent });
-    check("bracketSameBuild", rd && rd.glbUrl === aRender0.glbUrl && sameJSON(rd.builtFrom, aRender0.builtFrom), rd && { glbUrl: rd.glbUrl, a: aRender0.glbUrl });
+    check("bracketSameBuild", rd && sameJSON(rd.result, aRender0.result), rd && { glbUrl: rd.result?.glbUrl, a: aRender0.result?.glbUrl });
     check("bracketAtHitKeepsLook", near(o.transform?.position, hit?.point, 2e-3) && o.transform?.scale === 2 && near(o.transform?.rotation, A0.objects.bracket.transform.rotation, 1e-6) && o.color === "#6aa84f", { t: o.transform, hit, color: o.color });
     check("bracketLoadsInB", await b.waitFor(`__p.loaded("b", ${J(id)})`, 15_000));
     // tune B's copy: A's render doc doesn't change
@@ -301,7 +301,7 @@ async function main() {
     const A1 = await P(`doc("a")`);
     const aR = await P(`docOf(${J(aRenderUrl)})`);
     check("sourceSceneUnchanged", sameJSON(A1, A0), { before: Object.keys(A0.objects), after: Object.keys(A1.objects) });
-    check("sourceRenderUnchanged", sameJSON(aR.params, aRender0.params) && aR.glbUrl === aRender0.glbUrl, aR.params);
+    check("sourceRenderUnchanged", sameJSON(aR.params, aRender0.params) && aR.result?.glbUrl === aRender0.result?.glbUrl, aR.params);
   }
 
   // ── 7. same scene: a row dropped in A's own view adds nothing; in A's outline it only reorders ──

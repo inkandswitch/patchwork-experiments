@@ -7,7 +7,7 @@ import { builtInputsKey, paramsKey } from "./staleness.js";
 
 const H = ["h1"];
 const builtFrom = (o = {}) => ({ heads: H, fingerprint: null, paramsKey: paramsKey({}), deps: {}, ...o });
-const render = (o = {}) => ({ providerId: "p", params: {}, builtFrom: builtFrom(), pinned: false, status: "idle", ...o });
+const render = ({ builtFrom: b = builtFrom(), ...o } = {}) => ({ providerId: "p", params: {}, pinned: false, result: b ? { glbUrl: "automerge:glb", builtFrom: b, bounds: null, builtAt: 1 } : null, failure: null, ...o });
 const source = (o = {}) => ({ heads: H, fingerprint: null, deps: {}, ...o });
 const known = (o = {}) => ({ route: "built", render: render(), source: source(), building: null, behind: false, lastBuilt: null, deps: {}, failure: null, ...o });
 
@@ -27,7 +27,7 @@ describe("contentState: every state, and which wins", () => {
     ["source not here", known({ source: null }), { state: "loading" }],
     ["its fixed version not here", known({ source: null, version: true }), { state: "loading", version: true }],
     ["fresh", known(), { state: "fresh" }],
-    ["fresh, with an error left in the doc", known({ render: render({ status: "error", error: "old" }) }), { state: "fresh" }],
+    ["fresh, with a failure of other inputs left in the doc", known({ render: render({ failure: { error: "old", inputs: "{}|h:h0" } }) }), { state: "fresh" }],
     ["built from changes not synced here", known({ source: source({ heads: ["h0"] }), behind: true }), { state: "fresh", behind: true }],
     ["never built", known({ render: render({ builtFrom: null }) }), { state: "stale", reason: "never-built", hold: null }],
     ["params moved", known({ render: render({ params: { a: 1 } }) }), { state: "stale", reason: "params", hold: null }],

@@ -11,7 +11,7 @@ import { heldDeps, isContested, staleReason } from "./staleness.js";
  *   loading      its documents (or the fixed version it's read at: `version`) are on their way
  *   no-provider  the provider it names (`providerId`) isn't installed here
  *   building     a build is in progress (`by`: "here", or the builder's id); only a
- *                builder heard on the render's channel counts, never a status in the doc
+ *                builder heard on the render's channel counts, or this peer's own build
  *   failed       it couldn't be built (`in: "build"`) or what it has couldn't be loaded or
  *                shown (`in: "load"`), with the `error`; `retrying`: it will be tried again
  *   waiting      it can't be judged or built until a linked document loads (`on`: their urls)
@@ -69,7 +69,7 @@ export function contentState(k) {
   const deps = k.deps ?? {};
   const notReady = new Set(deps.notReady ?? []);
   const failed = new Set(deps.failed ?? []);
-  const held = heldDeps(k.render.builtFrom?.deps, k.source.deps, (u) => !notReady.has(u));
+  const held = heldDeps(k.render.result?.builtFrom?.deps, k.source.deps, (u) => !notReady.has(u));
   const pending = held.filter((u) => !failed.has(u));
   if (pending.length) return freeze({ state: "waiting", on: Object.freeze(pending) });
   const stale = (hold) => freeze({ state: "stale", reason, hold });

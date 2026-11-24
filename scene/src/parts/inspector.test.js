@@ -344,7 +344,7 @@ describe("scene.inspector: an object's parts and its documents, a row each (PLAN
   async function mountKinds(extensions = []) {
     const repo = new FakeRepo();
     const src = repo.add({ "@patchwork": { type: "thing" }, title: "the source" });
-    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: src.url, providerId: "file-glb", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
+    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: src.url, providerId: "file-glb", params: {}, pinned: false, result: null, failure: null });
     const glb = repo.add({ "@patchwork": { type: "file" }, name: "hull.glb", extension: "glb" });
     const linked = repo.add(emptyScene({ title: "B", objects: { card: object({ name: "Card" }) }, order: ["card"] }));
     const info = repo.add({ title: "the boat" });
@@ -482,7 +482,7 @@ describe("scene.inspector: an object's parts and its documents, a row each (PLAN
   it("the build's controls are fields on its render doc: Rebuild asks the scene, Pinned and each param are edits the scene's undo takes back", async () => {
     const repo = new FakeRepo();
     const src = repo.add({ "@patchwork": { type: "thing" }, title: "the source" });
-    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: src.url, providerId: "t-sized", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
+    const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: src.url, providerId: "t-sized", params: {}, pinned: false, result: null, failure: null });
     await mount({ repo, objects: { it: object({ name: "It", sourceUrl: src.url, renderUrl: render.url, providerId: "t-sized", visible: false }) }, extensions: [{ meta: { id: "scene.undo" }, module: (await import("./undo.js")).default }] });
     // (the harness's registry is made fresh by the mount: the provider is installed after it)
     getRegistry("scene:source").register({ type: "scene:source", id: "t-sized", name: "Sized thing", content: "built", params: [{ key: "size", label: "Size", kind: "number", default: 2 }], load: async () => ({ build: async () => ({ kind: "glb", glb: new Uint8Array() }) }) });

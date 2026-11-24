@@ -1,7 +1,10 @@
 // One build of one scene-render doc: call the provider, store the GLB as a new
-// immutable file doc, repoint the render doc at it. The source doc is only read.
-// The write fence: the result is written only over the build the render had
-// as this one began (a build someone committed meanwhile is never replaced),
+// immutable file doc, write the render doc's `result` at it. The source doc is
+// only read. The result is one value under one key ({ glbUrl, builtFrom,
+// bounds, builtAt }), so a merge of two writes keeps one writer's whole; a
+// failure is likewise `failure: { error, inputs }`. The write fence: the
+// result is written by compare-and-set, only over the result the render had
+// as this build began (one someone committed meanwhile is never replaced),
 // and only if `mayCommit` still says so as it is written.
 // A build whose bytes are identical to the current GLB's keeps the current file
 // doc (builtFrom.glbHash), so a rebuild that changes nothing makes no new doc.
@@ -53,7 +56,7 @@ export function dependenciesOf(impl, doc, sourceUrl = null) {
  * A narrower key than heads for one dependency doc (SourceImpl's optional
  * fingerprintDependency(url, doc)), or null to use its heads. A provider
  * without one still gets a key for a scene-render dependency: its glbUrl, so a
- * consumer of a render rebuilds when the render does, not when its status flips.
+ * consumer of a render rebuilds when the render's GLB changes, not when its params or a failure are written.
  */
 export function dependencyKeyOf(impl, url, doc) {
   if (!doc) return null;
@@ -122,12 +125,14 @@ export function glbFileDoc(title, glb) {
  * @param {AbortSignal} o.signal  aborts when the result is no longer wanted; build() is handed it
  * @param {() => number} o.now  when it was built (builtAt), on the stage's time
  * @param {() => Promise<boolean>} [o.mayCommit]  asked just before the write: false, it isn't written
+ * @param {string} [o.inputs]  what a failure is recorded against (failure.inputs): the caller's
+ *        key for these exact inputs (staleness.js inputsKey)
  * @returns {Promise<{ ok: true, glbUrl, builtFrom, meta, reused?: boolean } | { ok: false, error: string, aborted?: true, fenced?: true }>}
  *        aborted: cancelled (the signal aborted, or build() rejected with an
- *        AbortError); nothing is written but the status put back, and it isn't an error.
+ *        AbortError); nothing is written, and it isn't an error.
  *        fenced: built, but the fence kept it from being written; not an error either
  */
-export async function runBuild({ repo, renderHandle, sourceHandle, provider, deps = {}, depsAfter, signal, now, mayCommit = async () => true }) {
+export async function runBuild({ repo, renderHandle, sourceHandle, provider, deps = {}, depsAfter, signal, now, mayCommit = async () => true, inputs = null }) {
   const render = renderHandle.doc();
   const source = sourceHandle.doc();
   const impl = provider?.module;
@@ -145,15 +150,10 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     const key = paramsKey(storedParams);
     const params = effectiveParams(provider.params, storedParams);
     const providerVersion = providerVersionOf(provider.version);
-    const buildOf = (r) => stableStringify([r?.glbUrl ?? null, r?.builtFrom ?? null]);
-    const before = buildOf(render);
-    const fenced = () => buildOf(renderHandle.doc()) !== before;
+    const resultOf = (r) => stableStringify(r?.result ?? null);
+    const before = resultOf(render);
+    const fenced = () => resultOf(renderHandle.doc()) !== before;
     const depsBefore = normalizeDeps(deps);
-
-    renderHandle.change((d) => {
-      d.status = "building";
-      d.error = null;
-    });
 
     const result = await impl.build({ doc: source, handle: sourceHandle, url: sourceHandle.url, params, repo, signal });
     signal.throwIfAborted();
@@ -169,7 +169,7 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     // the fence: nothing is written over a build committed while this one ran, nor once the caller says no
     if (fenced() || !(await mayCommit()) || fenced()) return { ok: false, fenced: true, error: "fenced" };
     signal.throwIfAborted();
-    const current = renderHandle.doc();
+    const current = renderHandle.doc()?.result;
 
     // Same bytes as the GLB already shown (a rename, a provider bump that changed
     // nothing, a param that doesn't affect this doc): keep that file doc.
@@ -181,35 +181,25 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     const builtFrom = { heads, fingerprint, paramsKey: key, deps: depHeads, glbHash };
     if (providerVersion != null) builtFrom.providerVersion = providerVersion;
     renderHandle.change((d) => {
-      d.glbUrl = glbUrl;
-      d.builtFrom = {
-        ...builtFrom,
-        heads: [...heads],
-        deps: Object.fromEntries(Object.entries(depHeads).map(([u, h]) => [u, [...h]])),
+      d.result = {
+        glbUrl,
+        builtFrom: { ...builtFrom, heads: [...heads], deps: Object.fromEntries(Object.entries(depHeads).map(([u, h]) => [u, [...h]])) },
+        bounds: bounds ? { min: [...bounds.min], max: [...bounds.max] } : null,
+        builtAt: now(),
       };
-      if (bounds) d.bounds = { min: [...bounds.min], max: [...bounds.max] };
-      else if (d.bounds != null) d.bounds = null;
-      d.builtAt = now();
-      d.status = "idle";
-      d.error = null;
+      if (d.failure != null) d.failure = null;
     });
     return { ok: true, glbUrl, builtFrom, meta: result.meta ?? null, reused };
   } catch (err) {
     if (err?.name === "AbortError" || signal.aborted) {
       // Cancelled (its result isn't wanted, or the provider gave it up): not
-      // a failure. Put the status back; the caller looks at it again.
-      if (renderHandle.doc()?.status === "building") {
-        renderHandle.change((d) => {
-          d.status = "idle";
-        });
-      }
+      // a failure; the caller looks at it again.
       return { ok: false, aborted: true, error: errorMessage(err) };
     }
     const error = errorMessage(err);
     console.warn(`[scene] build failed (${provider?.id ?? "?"})`, err);
     renderHandle.change((d) => {
-      d.status = "error";
-      d.error = error;
+      d.failure = { error, inputs };
     });
     return { ok: false, error };
   }

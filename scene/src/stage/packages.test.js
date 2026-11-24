@@ -136,7 +136,7 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     await mount({ repo });
     for (const [id, url] of [["p-mesh", P], ["q-mesh", Q], ["r-mesh", R]]) getRegistry("scene:source").register({ type: "scene:source", id, content: "built", load: async () => ({}) }, url);
     const source = repo.add({ "@patchwork": { type: "thing" }, title: "Thing" });
-    const render = repo.add({ providerId: "p-mesh", status: "idle" });
+    const render = repo.add({ providerId: "p-mesh" });
     // hidden, so its render doc isn't loaded yet: P and R are both sources, so both stay
     const h = repo.add(emptyScene({ title: "T", objects: { a: object({ providerId: "q-mesh", sourceUrl: source.url, renderUrl: render.url, visible: false }) }, order: ["a"], packages: [{ url: P }, { url: R }] }));
     const seen = [];
