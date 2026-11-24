@@ -47,12 +47,15 @@ export function parseKey(key) {
   return { n: Number(digits), id: key.slice(end + 1) };
 }
 
-/** Does `path` go through `prefix` (a stage's own path), with something past it? */
-export function within(path, prefix) {
-  if (!Array.isArray(path) || path.length <= prefix.length) return false;
+/** Does `path` start with `prefix` (a stage's own path), or equal it? */
+export function startsWith(path, prefix) {
+  if (!Array.isArray(path) || path.length < prefix.length) return false;
   for (let i = 0; i < prefix.length; i++) if (path[i] !== prefix[i]) return false;
   return true;
 }
+
+/** Does `path` go through `prefix` (a stage's own path), with something past it? */
+export const within = (path, prefix) => startsWith(path, prefix) && path.length > prefix.length;
 
 /** A stage's element of a path: the entry just past its own path, else null. */
 export function elementOf(path, prefix) {

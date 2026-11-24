@@ -113,3 +113,29 @@ export function offer(order, inputOf, type, ev) {
   }
   return null;
 }
+
+/**
+ * The widget under the pointer from several candidates: an onTop one beats
+ * any other, else the nearest (a widget that gives no distance counts as
+ * nearest of all: it says "I have something here").
+ * @param {{ owner: string, onTop?: boolean, distance?: number }[]} candidates
+ */
+export function bestWidget(candidates) {
+  let best = null;
+  const dist = (w) => (Number.isFinite(w?.distance) ? w.distance : 0);
+  for (const w of candidates) {
+    if (!w || w.owner == null) continue;
+    if (!best) best = w;
+    else if (!!w.onTop !== !!best.onTop) best = w.onTop ? w : best;
+    else if (dist(w) < dist(best)) best = w;
+  }
+  return best;
+}
+
+/** Does this widget come before the object hit (onTop, or no further away)? */
+export function widgetWins(widget, hit) {
+  if (!widget || widget.owner == null) return false;
+  if (widget.onTop || !hit) return true;
+  const d = Number.isFinite(widget.distance) ? widget.distance : 0;
+  return d <= (hit.distance ?? Infinity);
+}
