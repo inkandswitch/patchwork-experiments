@@ -28,7 +28,21 @@ const RAW = Symbol("raw handle");
 /** Is this a handle (it can be changed)? */
 const isHandle = (v) => !!v && typeof v === "object" && typeof v.change === "function" && typeof v.doc === "function";
 
-/** A handle as given to a read-only stage: reads as `handle` does, refuses every write and send, and says it is read-only. */
+/** What a read-only handle's listener is told: a handle, or a payload naming one (automerge-repo's "change" does), read-only too. */
+const said = (x) => (isHandle(x) ? readOnlyHandle(x) : x && typeof x === "object" && isHandle(x.handle) ? { ...x, handle: readOnlyHandle(x.handle) } : x);
+const hearing = new WeakMap(); // a listener → the one function that hears for it, so off(fn) finds what on(fn) added
+/** A function handed to a read-only handle (a listener), as the raw handle calls it: what it is told goes through `said`. */
+function heard(fn) {
+  let g = hearing.get(fn);
+  if (!g) hearing.set(fn, (g = (...told) => fn(...told.map(said))));
+  return g;
+}
+
+/**
+ * A handle as given to a read-only stage: reads as `handle` does, refuses
+ * every write and send, and says it is read-only. What it gives out, and
+ * what it tells a listener, is read-only too.
+ */
 export function readOnlyHandle(handle) {
   if (!isHandle(handle)) return handle;
   if (handle[READ_ONLY]) return handle;
@@ -40,9 +54,9 @@ export function readOnlyHandle(handle) {
       if (REFUSED.includes(prop)) return refusal(target.url, String(prop));
       const v = Reflect.get(target, prop, target);
       if (typeof v !== "function") return v;
-      // a handle it gives out (a view at other heads, a sub-handle) is read-only too
+      // a handle it gives out (a view at other heads, a sub-handle) is read-only too, and so is one a listener is told of
       return (...args) => {
-        const out = v.apply(target, args);
+        const out = v.apply(target, args.map((a) => (typeof a === "function" ? heard(a) : a)));
         return isHandle(out) ? readOnlyHandle(out) : out;
       };
     },

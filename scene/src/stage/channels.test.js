@@ -73,7 +73,7 @@ async function world() {
   await time.until(() => views.every((_, i) => gStages(i).length === 1 && gStages(i).every((st) => api(st))), { frames: 600, what: "every stage of G" });
   const acting = (i) => api(gStages(i).find((st) => st.acts));
   /** every stage of G that is still open, with whose view it is */
-  const everywhere = () => views.flatMap((x, i) => (x.v.dead ? [] : gStages(i).map((st) => ({ i, role: st.role, api: api(st) }))));
+  const everywhere = () => views.flatMap((x, i) => (x.v.dead ? [] : gStages(i).map((st) => ({ i, role: st.acts ? "acting" : "pinned", api: api(st) }))));
   const deliver = async () => {
     await settle();
     await time.advance(400);

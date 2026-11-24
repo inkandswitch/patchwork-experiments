@@ -208,5 +208,14 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
       clear: (owner) => vp.labels.clear(keyOf(n, owner)),
     },
     setExtent: (owner, b) => vp.setExtent(keyOf(n, owner), boxOut(f(), b)),
+    /** What this stage's owners draw (the viewport's draws()): layers { owner, group, onTop }, label sets { owner, items }, each owner the id it drew as */
+    draws() {
+      const { layers, labels } = vp.draws();
+      return {
+        layers: layers.filter((l) => mine(l.owner) != null).map((l) => ({ ...l, owner: mine(l.owner) })),
+        // (a label set's owner is "<id>#<n>": api.labels() makes one per call)
+        labels: labels.filter((l) => mine(l.owner) != null).map((l) => ({ ...l, owner: mine(l.owner).replace(/#\d+$/, "") })),
+      };
+    },
   };
 }

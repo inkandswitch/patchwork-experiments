@@ -511,8 +511,8 @@ describe("the body stack", () => {
     const seat = { left: vi.fn() };
     expect(t.router.bodies()).toEqual([{ id: "look", owner: null }]);
     expect(t.router.leave()).toBe(false);
-    t.router.pushBody("walker", { id: "walk", input: walk });
-    t.router.pushBody("s", { id: "seat", input: seat });
+    t.router.pushBody("walker", { id: "walk", input: walk, left: walk.left });
+    t.router.pushBody("s", { id: "seat", input: seat, left: seat.left });
     expect(walk.suspended).toHaveBeenCalledTimes(1);
     expect(t.router.body()).toEqual({ id: "seat", owner: "s" });
     expect(t.router.leave()).toBe(true);
@@ -527,8 +527,8 @@ describe("the body stack", () => {
     const t = setup();
     const walk = { left: vi.fn() };
     const seat = { left: vi.fn() };
-    t.router.pushBody("walker", { id: "walk", input: walk });
-    t.router.pushBody("s", { id: "seat", input: seat });
+    t.router.pushBody("walker", { id: "walk", input: walk, left: walk.left });
+    t.router.pushBody("s", { id: "seat", input: seat, left: seat.left });
     expect(t.router.leaveAll()).toBe(true);
     expect([seat.left.mock.calls.length, walk.left.mock.calls.length]).toEqual([1, 1]);
     expect(t.router.bodies()).toEqual([{ id: "look", owner: null }]);
@@ -539,8 +539,8 @@ describe("the body stack", () => {
     const t = setup();
     const walk = { left: vi.fn() };
     const seat = { left: vi.fn() };
-    const popWalk = t.router.pushBody("walker", { id: "walk", input: walk });
-    t.router.pushBody("s", { id: "seat", input: seat });
+    const popWalk = t.router.pushBody("walker", { id: "walk", input: walk, left: walk.left });
+    t.router.pushBody("s", { id: "seat", input: seat, left: seat.left });
     popWalk();
     expect(seat.left).toHaveBeenCalledTimes(1);
     expect(walk.left).toHaveBeenCalledTimes(1);
@@ -551,7 +551,7 @@ describe("the body stack", () => {
     const under = { move: vi.fn() };
     const over = { move: vi.fn() };
     t.router.pushBody("w", { id: "walk", input: under });
-    t.router.pushBody("s", { id: "station", input: over });
+    t.router.pushBody("s", { id: "station", input: over, left: over.left });
     move(t, { x: 20, buttons: 0 });
     move(t, { x: 30, buttons: 1 });
     expect(over.move).toHaveBeenCalledTimes(2);
@@ -568,7 +568,7 @@ describe("the body stack", () => {
     const steps = [
       ["walk", () => t.router.pushBody("w", walk), [2, null, null]],
       ["measure", () => t.router.hold("m", measure), [2, 3, null]],
-      ["measure again: put down", () => t.router.hold("m", measure), [2, null, null]],
+      ["measure put down", () => t.router.putDown({ owner: "m", command: "measure" }), [2, null, null]],
       ["and again: picked up anew", () => t.router.hold("m", measure), [2, 4, null]],
       ["walk left and taken again", () => (t.router.leave(), t.router.pushBody("w", walk)), [5, 4, null]],
       ["a press opens a session", () => down(t), [5, 4, 6]],
@@ -583,7 +583,7 @@ describe("the body stack", () => {
 });
 
 describe("held tools", () => {
-  it("a stack: another goes on top and puts none down; one held picked up again is put down (a toggle); put() and putDown take one from wherever it is", () => {
+  it("a stack: another goes on top and puts none down; put() and putDown take one from wherever it is", () => {
     const t = setup();
     const a = { put: vi.fn() };
     const b = { put: vi.fn() };
@@ -591,26 +591,26 @@ describe("held tools", () => {
     const putA = t.router.hold("x", { command: "a", input: a });
     t.router.hold("y", { command: "b", input: b });
     t.router.hold("z", { command: null, name: "Piece", input: c });
-    expect([a.put.mock.calls.length, t.router.held()]).toEqual([0, [{ owner: "x", command: "a", name: "a", serial: 2 }, { owner: "y", command: "b", name: "b", serial: 3 }, { owner: "z", command: null, name: "Piece", serial: 4 }]]);
-    // b again: b goes, from the middle; nothing else
-    expect(t.router.hold("y", { command: "b", input: b })).toBe(null);
+    expect([a.put.mock.calls.length, t.router.tools()]).toEqual([0, [{ owner: "x", command: "a", name: "a", serial: 2 }, { owner: "y", command: "b", name: "b", serial: 3 }, { owner: "z", command: null, name: "Piece", serial: 4 }]]);
+    // b put down: b goes, from the middle; nothing else
+    expect(t.router.putDown({ owner: "y", command: "b" })).toBe(true);
     expect([a.put.mock.calls.length, b.put.mock.calls.length, c.put.mock.calls.length]).toEqual([0, 1, 0]);
-    expect(t.router.held().map((h) => h.owner)).toEqual(["x", "z"]);
-    // a tool held directly (no command) is never a toggle: another goes on top
+    expect(t.router.tools().map((h) => h.owner)).toEqual(["x", "z"]);
+    // a tool held directly (no command), held again: another goes on top
     t.router.hold("z", { command: null, name: "Piece", input: c });
-    expect(t.router.held().map((h) => h.owner)).toEqual(["x", "z", "z"]);
+    expect(t.router.tools().map((h) => h.owner)).toEqual(["x", "z", "z"]);
     // put(): its own, from the bottom
     putA();
     putA();
-    expect([a.put.mock.calls.length, t.router.held().map((h) => h.owner)]).toEqual([1, ["z", "z"]]);
+    expect([a.put.mock.calls.length, t.router.tools().map((h) => h.owner)]).toEqual([1, ["z", "z"]]);
     // putDown(): the one named (by its serial: a tool held directly has no command to name it by), else the topmost
     expect(t.router.putDown({ owner: "x", command: "a" })).toBe(false);
     expect(t.router.putDown({ owner: "z", command: null })).toBe(false);
-    const [under, over] = t.router.held();
+    const [under, over] = t.router.tools();
     expect(t.router.putDown({ serial: under.serial })).toBe(true);
-    expect(t.router.held()).toEqual([over]);
+    expect(t.router.tools()).toEqual([over]);
     expect(t.router.putDown()).toBe(true);
-    expect([c.put.mock.calls.length, t.router.held(), t.router.putDown()]).toEqual([2, [], false]);
+    expect([c.put.mock.calls.length, t.router.tools(), t.router.putDown()]).toEqual([2, [], false]);
   });
   // STAGE.md, "Keys": a key with ctrl or meta held is no reserver's, whatever declares it (a pad's Z is not ⌘Z)
   it("a reserved key with ctrl or meta held goes to the chain, not its reserver, for every reserver; without them, to its reserver", () => {
@@ -661,7 +661,7 @@ describe("Escape", () => {
       const seq = [...steps, "esc"];
       const t = setup();
       const body = { left: vi.fn() };
-      t.router.pushBody("w", { id: "walk", input: body });
+      t.router.pushBody("w", { id: "walk", input: body, left: body.left });
       const session = { move() {}, end: vi.fn(), cancel: vi.fn(), key: vi.fn(() => false), keys: [{ code: "Escape" }] };
       t.inputs.carry = { press: () => (gestureOpen ? null : session) };
       let gestureOpen = false;
@@ -723,8 +723,11 @@ describe("Escape", () => {
   });
 });
 
-describe("H4, H5, H12: one stack of hands, exhaustively", () => {
-  // Every sequence of up to four steps, each picking up or putting down one
+describe("H4, H5, H12: one stack of hands, wired", () => {
+  // The stack's, Escape's and the pointer's rules are proved alone (hands, ladder, pointer .test.js); left to show is the
+  // wiring (each handed the stack, its answer done) and key ownership, which every ordered triple shows as any longer.
+  //
+  // Every sequence of up to three steps, each picking up or putting down one
   // of five hands, or pressing Escape, over a body that locks the pointer
   // (walk) or one that doesn't (seat), both declaring W and Q:
   //   M  Measure: a tool that wants the pointer, passes presses, takes clicks; declares Q
@@ -732,8 +735,9 @@ describe("H4, H5, H12: one stack of hands, exhaustively", () => {
   //   X  the X-ray: a tool that passes everything and wants nothing
   //   E  the Edit hand: wants the pointer, takes clicks
   //   P  a popover: wants the pointer, modal (the router's own input: it takes everything)
-  // Picking up a tool held puts it down (the router's toggle); picking up E or
-  // P held puts it down too (as the editor's command and a menu's button do).
+  // Picking up a tool held puts it down (as running its command again does:
+  // stage.js runCommand); picking up E or P held puts it down too (as the
+  // editor's command and a menu's button do).
   // Escape under the lock is the browser's (released, the page hears
   // nothing); else it pops the top hand. After the steps, against a model:
   // the stack and the tools in it, every put-down told once (H4: Escape put
@@ -776,10 +780,10 @@ describe("H4, H5, H12: one stack of hands, exhaustively", () => {
     return { heard, took: type === "click" ? "body" : null };
   }
 
-  it("every sequence of ≤4 steps × a lock body or not: the stack, the put-downs, the pointer, Escape's rung, the offering order and its cut, and key ownership are the model's", () => {
+  it("every sequence of ≤3 steps × a lock body or not: the stack, the put-downs, the pointer, Escape's rung, the offering order and its cut, and key ownership are the model's", () => {
     let n = 0;
     for (const lockBody of [true, false])
-      for (let len = 1; len <= 4; len++)
+      for (let len = 1; len <= 3; len++)
         for (const seq of seqs(len)) {
           const t = setup({ touch: false });
           // a lock the browser grants at once, and lets go on its own Escape
@@ -819,9 +823,8 @@ describe("H4, H5, H12: one stack of hands, exhaustively", () => {
                 key(t.root, "keydown", "Escape", "Escape");
               }
             } else if (E[k].tool) {
-              if (step[0] === "+") {
-                if (held) drop(k);
-                else m.stack.push(k);
+              if (step[0] === "+" && !held) {
+                m.stack.push(k);
                 t.router.hold(E[k].owner, { command: E[k].tool, name: E[k].name, input: input[k], keys: E[k].keys.map((code) => ({ code })), pointer: E[k].pointer });
               } else {
                 if (held) drop(k);
@@ -841,7 +844,7 @@ describe("H4, H5, H12: one stack of hands, exhaustively", () => {
           }
           const top = m.stack.at(-1);
           const owners = (ks) => ks.map((x) => E[x].owner);
-          expect([seq, lockBody, t.router.hands().map((h) => h.owner), t.router.held().map((h) => h.owner), puts]).toEqual([seq, lockBody, owners(m.stack), owners(m.stack.filter((x) => E[x].tool)), m.puts]);
+          expect([seq, lockBody, t.router.hands().map((h) => h.owner), t.router.tools().map((h) => h.owner), puts]).toEqual([seq, lockBody, owners(m.stack), owners(m.stack.filter((x) => E[x].tool)), m.puts]);
           const st = t.router.state();
           expect([seq, lockBody, st.pointer.wanted, st.pointer.locked, lockEl === t.canvas, st.escape]).toEqual([seq, lockBody, wanted(), locked(), locked(), locked() ? "lock" : top ? (top === "P" ? "popover" : "hand") : null]);
           // a press and its release: after the browser's Escape, the first press on the world only relocks
@@ -875,8 +878,8 @@ describe("H4, H5, H12: one stack of hands, exhaustively", () => {
           delete document.pointerLockElement;
           n++;
         }
-    expect(n).toBe(2 * (9 + 9 ** 2 + 9 ** 3 + 9 ** 4));
-  }, 600_000);
+    expect(n).toBe(2 * (9 + 9 ** 2 + 9 ** 3));
+  });
 });
 
 describe("the pointer", () => {
@@ -1192,8 +1195,8 @@ describe("stopping an owner", () => {
     const tool = { put: vi.fn() };
     const close = vi.fn();
     down(t);
-    t.router.pushBody("hand", { id: "walk", input: body, keys: [{ code: "KeyQ" }] });
-    t.router.pushBody("s", { id: "seat", input: over });
+    t.router.pushBody("hand", { id: "walk", input: body, keys: [{ code: "KeyQ" }], left: body.left });
+    t.router.pushBody("s", { id: "seat", input: over, left: over.left });
     t.router.hold("hand", { command: "gun", input: tool });
     t.router.popover("hand", close);
     t.router.leave(); // the seat goes; the walk is on top again
@@ -1206,7 +1209,7 @@ describe("stopping an owner", () => {
     expect(tool.put).toHaveBeenCalledTimes(1);
     expect(close).not.toHaveBeenCalled();
     expect(t.router.body().id).toBe("look");
-    expect(t.router.held()).toEqual([]);
+    expect(t.router.tools()).toEqual([]);
     expect(t.router.state().escape).toBe(null);
     up(t, { x: 40 });
     expect(session.end).not.toHaveBeenCalled();

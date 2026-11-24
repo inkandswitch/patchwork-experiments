@@ -73,7 +73,7 @@ describe("a live doc linked twice: one acting, one closed", () => {
     const host = s.api("t.host");
     expect(host.use("links").role("L1")).toEqual({ role: "acting", open: true });
     expect(host.use("links").role("L2")).toEqual({ role: "closed", open: false, reason: "repeat" });
-    expect(stageAt(s, "L1").role).toBe("acting");
+    expect(stageAt(s, "L1").acts).toBe(true);
     expect(stageAt(s, "L2")).toBe(null);
     expect(s.debug.view.stages().length).toBe(2);
     await settle();
@@ -106,7 +106,7 @@ describe("a live doc linked twice: one acting, one closed", () => {
       delete d.objects.L1;
       d.order.splice(d.order.indexOf("L1"), 1);
     });
-    await until(() => stageAt(s, "L2")?.role === "acting" && running(stageAt(s, "L2")));
+    await until(() => stageAt(s, "L2")?.acts === true && running(stageAt(s, "L2")));
     expect(s.api("t.host").use("links").role("L2")).toEqual({ role: "acting", open: true });
     expect(stageAt(s, "L2").frame().pointOut([0, 0, 0])).toEqual([5, 0, 0]);
     expect(s.debug.view.stages().length).toBe(2);
@@ -127,7 +127,7 @@ describe("pinned: its doc at the pinned heads", () => {
     s = await mountStage({ editor: true, natives: true,  repo, extensions: extensions(log), doc: { objects: { P: link(game.url, { at: { heads: then, deps: { [box.url]: boxThen } } }) }, order: ["P"] } });
     await until(() => running(stageAt(s, "P")));
     const pin = stageAt(s, "P");
-    expect(pin.role).toBe("pinned");
+    expect(pin.acts).toBe(false);
     expect(s.api("scene.links").use("links").role("P")).toEqual({ role: "pinned", open: true });
     expect(pin.doc().title).toBe("G then");
     game.change((d) => (d.title = "G later"));
@@ -163,7 +163,7 @@ describe("fixing a link at a version, and following latest again", () => {
     expect(point).toEqual({ heads: game.heads(), deps: { [box.url]: box.heads(), [inner.url]: inner.heads() } });
     // fixed: G, K and the box are held there; each goes on live and the pin doesn't
     host.change((d) => (d.objects.L.at = JSON.parse(JSON.stringify(point))));
-    await until(() => stageAt(s, "L")?.role === "pinned" && stageAt(s, "L", "K")?.role === "pinned");
+    await until(() => stageAt(s, "L")?.acts === false && stageAt(s, "L", "K")?.acts === false);
     expect(host.use("links").role("L")).toEqual({ role: "pinned", open: true });
     expect(host.use("links").fixPoint("L")).toBe(null); // fixed already: Follow latest first
     game.change((d) => (d.title = "G later"));
@@ -175,9 +175,9 @@ describe("fixing a link at a version, and following latest again", () => {
     await until(() => log.includes("box read-only 1"));
     // Follow latest: live again, acting, as G is now
     host.change((d) => delete d.objects.L.at);
-    await until(() => stageAt(s, "L")?.role === "acting" && running(stageAt(s, "L")));
+    await until(() => stageAt(s, "L")?.acts === true && running(stageAt(s, "L")));
     expect(stageAt(s, "L").doc().title).toBe("G later");
-    expect(stageAt(s, "L", "K").role).toBe("acting");
+    expect(stageAt(s, "L", "K").acts).toBe(true);
     await until(() => log.includes("box writable 2"));
   });
 
@@ -278,12 +278,12 @@ describe("fixing a link at a version, and following latest again", () => {
     // (G's heads as fixed: closing its acting stage then checkpoints its clock, which moves G on)
     const heads = game.heads();
     expect(api.run({ ext: "scene.inspector", command: "fix-version", target: "L" })).toBe(true);
-    await until(() => stageAt(s, "L")?.role === "pinned");
+    await until(() => stageAt(s, "L")?.acts === false);
     expect(s.doc().objects.L.at).toEqual({ heads });
     expect(ids()).toContain("scene.inspector:follow-latest");
     expect(ids()).not.toContain("scene.inspector:fix-version");
     expect(api.run({ ext: "scene.inspector", command: "follow-latest", target: "L" })).toBe(true);
-    await until(() => stageAt(s, "L")?.role === "acting");
+    await until(() => stageAt(s, "L")?.acts === true);
     expect("at" in s.doc().objects.L).toBe(false);
   });
 });

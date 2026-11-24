@@ -115,6 +115,10 @@ export class LabelLayer {
     }
     this.onChange?.();
   }
+  /** Every owner's labels as it last set them: [{ owner, items }], in the order the sets were made. */
+  items() {
+    return [...this.groups].map(([owner, entries]) => ({ owner, items: [...entries.values()].map((e) => e.item) }));
+  }
   /** Remove an owner's labels. */
   clear(owner) {
     if (this.groups.has(owner)) this.sync(owner, []);

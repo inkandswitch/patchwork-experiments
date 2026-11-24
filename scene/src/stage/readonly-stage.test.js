@@ -86,6 +86,8 @@ const PROBE = {
 };
 /** A general part (no trait: it runs in the focus, the host here), as the command bar or the menu is. */
 const GENERAL = { meta: { id: "t.general" }, module: { create: () => ({}) } };
+/** Every doc's: the outermost's offers the world's ambient "t.world" (G's own offer is never the world's). */
+const WORLD = { meta: { id: "t.world", traits: ["*"] }, module: { create: () => ({ ambient: () => ({ "t.world": { here: true } }) }) } };
 const PART = { meta: { id: "t.part" }, module: { create: (ctx) => ctx.addObject(ctx.url) } };
 const TEMPLATE = { meta: { id: "t.template" }, module: { create: (ctx) => ctx.change((d) => (d.title = "templated")) } };
 
@@ -129,7 +131,7 @@ async function mount(role) {
   };
   const link = (extra) => object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null, transform: T, ...extra });
   const objects = role === "pinned" ? { P: link({ at: { heads: then } }) } : { L1: link() };
-  s = await mountStage({ repo, time, natives: true, extensions: [PROBE, GENERAL, linkOpener()], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
+  s = await mountStage({ repo, time, natives: true, extensions: [PROBE, GENERAL, WORLD, linkOpener()], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
   const want = role === "pinned" ? ["P"] : ["L1"];
   for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle();
   const stage = s.debug.view.stages().find((x) => x.path.join() === want.join());
@@ -145,7 +147,6 @@ function watchConsole() {
 }
 
 const ROLES = ["pinned", "readonly"];
-const ROLE = { pinned: "pinned", readonly: "acting" };
 
 describe("I6: a read-only stage writes nothing", () => {
   for (const role of ROLES) {
@@ -154,7 +155,7 @@ describe("I6: a read-only stage writes nothing", () => {
       vi.spyOn(console, "error").mockImplementation(() => {});
       const m = await mount(role);
       const { api, g } = m;
-      expect(m.stage.role).toBe(ROLE[role]);
+      expect(m.stage.acts).toBe(role === "readonly");
       expect("role" in api).toBe(false); // where it's placed is the view's, never an extension's to branch on (I4)
       expect(api.writable()).toBe(false);
       // since it opened: nothing of its own tried on its handle (its presence's hello and keys included)
@@ -226,7 +227,7 @@ describe("I6: a read-only stage writes nothing", () => {
   }
 
   for (const role of ["pinned"]) {
-    it(`${role}: drawn, never acted on: no segment, body, tool, command, widget, chrome, camera, selection, notice or pref; its extensions still collect from it`, async () => {
+    it(`${role}: drawn, never acted on: no segment, body, tool, command, widget, chrome, listener, camera, selection, notice or pref; its extensions still collect from it`, async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       vi.spyOn(console, "error").mockImplementation(() => {});
       const m = await mount(role);
@@ -245,7 +246,7 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("not acting", !view.acting().includes(stage));
       ok("off the input path", !view.onPath([...stage.path, "card"]).includes(stage));
       ok("body.enter refuses", api.body.enter("t.sit") === false);
-      ok("hold refuses", api.hold({ name: "Tool" }, {}) && view.router.held().length === 0);
+      ok("hold refuses", api.hold({ name: "Tool" }, {}) && view.router.tools().length === 0);
       ok("run refuses", api.run({ ext: "t.probe", command: "poke" }) === false);
       const general = view.stage(0).debug.host.record("t.general").api;
       ok("a general part can't run one of its commands either", general.run({ stage: stage.n, ext: "t.probe", command: "poke" }) === false && api.doc().title !== "poked");
@@ -259,9 +260,64 @@ describe("I6: a read-only stage writes nothing", () => {
       api.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
       ok("the camera is not its to move", typeof ride === "function" && view.viewport.held === false);
       // what it draws into the world, it may: its styles too
+      let heard = 0;
+      api.listen(document, "keydown", () => heard++);
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+      ok("a listener hears nothing", heard === 0);
+      // the same api as an acting stage's, member for member (each acting one in its inert form: stage/drawn.js)
+      const shape = (o, at = "") => Object.keys(o).flatMap((k) => { const v = Object.getOwnPropertyDescriptor(o, k).value; return v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype ? shape(v, `${at}${k}.`) : [`${at}${k}`]; }).sort();
+      ok("the api has the acting api's shape", JSON.stringify(shape(api)) === JSON.stringify(shape(s.debug.host.record("t.world").api)));
       ok("a style goes in", api.style(".x{}").isConnected);
       ok("its world layer is there", !!api.world());
       expect(steps.filter(([, v]) => !v).map(([w]) => w)).toEqual([]);
+    });
+  }
+});
+
+// What an extension of a drawn or read-only stage reaches of the world through api.ambient(name).use: the
+// outermost's services, made for a read-only caller, so it reads (the world's time, who holds what) and acts on
+// nothing there: no write, send, hold, veil or process, whatever it calls.
+describe("I6 through the world: a read-only stage's ambient services only read", () => {
+  for (const role of ROLES) {
+    it(`${role}: the outermost's clock, claims, poses, tell and audience read, and refuse whatever would act`, async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const m = await mount(role);
+      await m.time.advance(100);
+      await settle();
+      const world = m.api.ambient("t.world");
+      expect(world?.mine).toBe(false);
+      const host = s.handle;
+      const out = [];
+      const change = host.change.bind(host);
+      const broadcast = host.broadcast.bind(host);
+      host.change = (...a) => (out.push("change"), change(...a));
+      host.broadcast = (msg) => (out.push(`broadcast ${msg?.type} ${JSON.stringify(msg?.keys ?? {})}`), broadcast(msg));
+      const before = JSON.stringify(s.doc());
+      const id = role === "pinned" ? "P" : "L1";
+      const clock = world.use("clock");
+      const steps = [];
+      const ok = (what, v) => steps.push([what, !!v]);
+      const running = clock.running();
+      ok("the clock reads", typeof clock.t() === "number" && typeof running === "boolean");
+      if (running) clock.pause();
+      else clock.resume();
+      let started = 0;
+      clock.process({ start: () => started++, step: () => started++ });
+      ok("a claim refuses", world.use("claims").claim(null, "seat:p1") === null);
+      ok("claims read", world.use("claims").claimedBy(null, "seat:p1") === null);
+      ok("a pose refuses", world.use("poses").hold(id, { ...T, position: [1, 0, 0] }) === false);
+      world.use("poses").release(id, { landed: true });
+      world.use("tell").tell("t", { x: 1 });
+      const veil = world.use("audience").veil(id);
+      ok("a veil draws nothing", typeof veil === "function" && !s.debug.displayed().has(id));
+      ok("the audience reads", world.use("audience").audience(id) !== undefined);
+      await m.time.advance(HEARTBEAT_MS + 1, { draw: false });
+      await settle();
+      ok("no process started", started === 0);
+      ok("the clock as it was", clock.running() === running);
+      expect(steps.filter(([, v]) => !v).map(([w]) => w)).toEqual([]);
+      expect(JSON.stringify(s.doc())).toBe(before);
+      expect(out.filter((o) => !o.startsWith("broadcast scene:presence {"))).toEqual([]);
     });
   }
 });
@@ -290,6 +346,28 @@ describe("the read-only handle and repo, over everything they refuse", () => {
       expect(readOnlyHandle(ro)).toBe(ro);
     });
   }
+
+  it("a listener hears through the wrapper: the handle a change names refuses every write, and off(fn) takes the listener away", () => {
+    // a handle that tells its listeners as automerge-repo's does: the payload names the handle itself
+    const listeners = new Set();
+    const raw = { url: "automerge:x", doc: () => ({ title: "x" }), change: () => {}, on: (_type, fn) => listeners.add(fn), off: (_type, fn) => listeners.delete(fn) };
+    const emit = () => [...listeners].forEach((fn) => fn({ handle: raw, doc: raw.doc() }, raw));
+    const ro = readOnlyHandle(raw);
+    const told = [];
+    const fn = (payload, second) => told.push([payload.handle, second]);
+    ro.on("change", fn);
+    emit();
+    expect(told).toHaveLength(1);
+    for (const h of told[0]) {
+      expect(h).not.toBe(raw);
+      expect(h.isReadOnly()).toBe(true);
+      expect(h.doc().title).toBe("x");
+      for (const what of REFUSED) expect(() => h[what](() => {})).toThrow(/read-only/);
+    }
+    ro.off("change", fn);
+    emit();
+    expect(told).toHaveLength(1);
+  });
 
   it("the repo is an allowlist: find, create, create2 and peerId, and no other door to a handle (handles, findWithProgress)", async () => {
     const repo = new FakeRepo();

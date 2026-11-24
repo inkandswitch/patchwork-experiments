@@ -29,7 +29,7 @@ content, in its frame.
 | **Opening** | `api.open(handle, { under: [stagePath, id], acting?, heads?, deps? })` → close, or null: a doc acts at one stage per view, only under one that acts (NATIVE.md, I3). `acting: false` is drawn; `heads` a pin (its repo finding docs at `deps`' heads). Closing one closes what is under it and takes the focus out. A `content: "scene"` source is drawn as its hint until a stage is open under it. |
 | **Its doc** | An api touches only its stage's doc: `null` is its root, every id its own (I1, I2). |
 | **Embedded documents** | A document the stage shows inside it, marked `data-stage-embed` (`embed.js`), keeps its own keys, pastes and drops. A render's build controls ask the stage with DOM events bubbling to its root: `scene:rebuild` (`detail: { renderUrl }`; the stage rebuilds it and cancels the event) and `scene:render-context` (the stage sets `detail.state`, the object's content state, and `detail.at`, its fixed version, and calls the asker's `detail.tell(state, at)` whenever either changes, until `detail.stop()`). |
-| **Drawn** | Extensions run and draw, nothing more: no segment, body, tool, command, widget, chrome, camera, selection or view service (`drawnApi`). |
+| **Drawn** | Extensions run and draw, nothing more: no segment, body, tool, command, widget, chrome, listener, camera, selection or view service. Its api is what every stage's has, with each acting member's inert form (`stage/drawn.js`). |
 | **Read-only** | A stage that doesn't act, or whose handle refuses, gets a doc and repo refusing every write (`stage/readonly.js`; I6). |
 | **The focus** | Goes in with a view plugin's `view.enter(path)`, out on Escape's last rung; it scopes the selection (H10), changes only through `selectionStep` (`src/stage/selection.js`), and no stage sees it. |
 | **Frames** (I7) | Everything spatial in an api is in its stage's root frame, a similarity (`stage/scope.js`); a hit not of this doc is `{ id: null, point, normal, distance }`. World = parent's world · local; groups give scope, not motion. |
@@ -54,7 +54,7 @@ plain data for plugins (`drops`, `describes`: EDITOR.md).
 |---|---|
 | **The running set** | A pure function of metadata and the doc (`stage/activation.js`; H1). An extension runs for a trait: scope `scene` (a scene trait, or `"*"`) or `objects`; a trait covers what it sits on and what hangs or is filed under it. One instance per stage. |
 | **Order** | Providers (after those of what they `uses`), then the rest; each `scene`, then `objects`, in registry order (`local.running`), the only order anything combines in. Providers start in parallel, each waiting only for the providers of what it `uses`; the rest wait for all before them and the view's providers, so a create's `use` finds every service that runs. |
-| **Stopping** (H2) | Leaving the running set, an extension lingers `LINGER_MS` (2 s), and while it holds a body, tool or session or an instance's `busy(id)` says so; one loading or unregistered stops at once. Its `signal` aborts (services' gifts go), then what it acquired goes, `dispose()`. |
+| **Stopping** (H2) | Leaving the running set, an extension lingers `LINGER_MS` (2 s), and while it holds a body on the stack, a held tool or an open session (its input's, body's or tool's; `router.js` `holds`) or an instance's `busy(id)` says so; one loading or unregistered stops at once. Its `signal` aborts (services' gifts go), then what it acquired goes, `dispose()`. |
 | **Failing** | A failed one starts again only when its plugin registers from elsewhere (its package's next version). |
 
 ## Commands
@@ -90,12 +90,13 @@ label }]`; a reserved key is its reserver's; a keyup, its keydown's.
 ### Bodies
 
 `bodies: [{ id, label, keys, lock, reach, enter(place) → { input, eye?(), ride?, keys?, label?, leave() } | null }]`.
-Look (`stage/bodies.js`, the orbit camera) is at the bottom; the first to offer an id has it. `api.body.enter(id,
-place)` pushes what `enter` answers (`"look"` leaves every body); `leave()`, `eye()` (the top body is
-`view.get().body`). The top body hears every move and its keys; its eye and reach are every command's. A body's input is
-told `suspended()` when another goes over it and `resumed()` when it is on top again.
+Look (`stage/bodies.js`, the orbit camera) is at the bottom of the stack (`stage/body-stack.js`); the first to offer an
+id has it. `api.body.enter(id, place)` pushes what `enter` answers (`"look"` leaves every body); `leave()`, `eye()` (the
+top body is `view.get().body`); a body leaving takes those over it. The top body hears every move and its keys; its eye
+and reach are every command's. A body's input is told `suspended()` when another goes over it and `resumed()` when it is
+on top again.
 
-**Hands**: one stack per view (`stage/router.js`): a view plugin's `hand({ kind, name, input, keys?, pointer?,
+**Hands**: one stack per view (`stage/hands.js`): a view plugin's `hand({ kind, name, input, keys?, pointer?,
 escape?(), escaping?(), put?() })` → release, onto the top, putting none down; each input consumes an event (true, a
 session) or passes it (false, null), acted or not, and hears every `move`; `put()` is told as it leaves the stack,
 `escaping()` says what `escape()` would pop (the hint). **A tool** (kind `"tool"`: a command's `tool`, or an extension's

@@ -1345,3 +1345,46 @@ and write it after listening once more. Writing it by compare-and-set alone
 was tried first: the model found a woken holder's older build written
 concurrently with its successor's newer one, the merge keeping the older,
 so the fence kept its second condition.
+
+**The stage, decomposed (2026-11-24).** `stage.js`, one 1,455-line closure,
+became the composition of its parts. The derived model of a doc snapshot is
+`model.js`; when a flush runs is `flush.js` (what a pass does stays the
+stage's); what a stage draws and the display overrides are `display.js`;
+the segment, the offered bodies, the ambients, the statuses and a command's
+distance are pure functions beside their kin (`chain.js`, `bodies.js`,
+`ambients.js`, `content.js`, `commands.js`). The drawn api, built by
+subtracting from the acting one, became the api built from what a stage
+allows (`drawn.js`): an acting member with no inert form can't be built
+into a drawn stage, and a drawn stage's `listen` came to hear nothing.
+Reading the code found that a pin's or a read-only stage's extension could
+act on the outermost doc through `api.ambient(name).use`: claim, hold,
+veil, tell, pause the clock, start a process. That facet is made for a
+`readOnly` caller, which the native services let only read. The stage's
+`role` beside `acts` went, and with it an unread frame-cost log. A drawn
+stage that is live (not at fixed heads) still announces nothing: no plugin
+opens one, and the stage can't tell it from a pin until the view says.
+
+**The stacks are rules of their own (2026-11-24).** The router kept the body
+stack and the hand stack inside its closure, and the view kept a second list
+of the bodies beside it. Both stacks became pure modules (`body-stack.js`,
+`hands.js`): a change is a value (the stack after, whose keys go, who is told
+what), and the router's one `restack` applies it, keeping the stack before
+any plugin is told. A body's `suspended` flag went: the body stack remembers
+which body was last told it is on top, which also keeps the tells exact when
+a body enters another from its own `leave()`. The router's toggle for a tool
+held again went (no kernel caller reached it; a command's run again is the
+stage's), and with the stack's rules checked on every reachable stack, the
+router's mounted enumeration shrank from every sequence of four steps to
+three. The view's open stages became `tree.js`, its camera `camera-memory.js`,
+`view.start`'s reading `arriving.js`. Unattended.
+
+**One record each (2026-11-24).** What the router, the view and the stage
+each kept of the same bodies, tools and sessions became the router's alone.
+A body entered is the router's entry, carrying what the view keeps of it;
+the view's list of sittings, the stage's set of bodies and the `left` it put
+on a body's input went. A stage's `busy` became the router's `holds` (a body
+on the stack, a held tool, the open session) or a service's say; the stage's
+session counting went, and `trace.draws` came to read the viewport's layers
+and labels. H2's cases were pinned before the change and pass unchanged; a
+press on an open popover, the kernel's own input, holds nobody, as before. A
+live drawn stage came to be announced as an acting one is. Unattended.

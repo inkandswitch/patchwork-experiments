@@ -11,7 +11,7 @@
 // isn't plain JSON (a function, a cycle, a handle, a Map, a non-finite
 // number) is refused whole. The stage never reads inside a value.
 //
-// Pure.
+// Pure, but for offeredAmbients asking each instance.
 
 const PLAIN = new Set([Object.prototype, null]);
 
@@ -93,6 +93,25 @@ export function mergeAmbients(offers, prev = EMPTY, refuse = () => {}) {
     if (merged[k] !== was) same = false;
   }
   return same ? prev : Object.freeze(merged);
+}
+
+/**
+ * A stage's ambients: each running extension's `ambient()` asked in running
+ * order, then stacked (mergeAmbients, against `prev`). An `ambient()` that
+ * throws offers nothing; `warn(id, name, err)` hears of it (name null) and of
+ * each refused value.
+ * @param {{ id: string, instance: object }[]} running
+ */
+export function offeredAmbients(running, prev = EMPTY, warn = () => {}) {
+  const offers = running.map((r) => {
+    try {
+      return { id: r.id, offer: r.instance.ambient?.() ?? null };
+    } catch (err) {
+      warn(r.id, null, err);
+      return { id: r.id, offer: null };
+    }
+  });
+  return mergeAmbients(offers, prev, warn);
 }
 
 /** No ambients. */

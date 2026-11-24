@@ -13,7 +13,7 @@ import { NATIVES, mountStage, object, settle, wallAt } from "../test/stage-harne
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, fakeHead } from "../test/fake-repo.js";
 import { LINK } from "./link-graph.js";
-import { ARRIVE_WAIT_MS, startArrival } from "../stage/view.js";
+import { ARRIVE_WAIT_MS, startArrival } from "../stage/arriving.js";
 import { keyOf } from "../stage/paths.js";
 import { spy } from "../test/spy.js";
 import keys from "../parts/keys.js";
