@@ -158,7 +158,7 @@ function create(api) {
         Object.freeze({
           /** say it here as "You" and send it, after the change that bears it out (a view that can't write tells nothing) */
           tell(type, data) {
-            if (caller.signal.aborted || !api.writable()) return;
+            if (caller.signal.aborted || caller.readOnly || !api.writable()) return;
             const m = messagesOf(caller.id);
             if (!declared(m, type)) return void console.warn(`[scene] extension “${caller.id}”: tell(“${type}”) isn't among its messages`);
             let copy;

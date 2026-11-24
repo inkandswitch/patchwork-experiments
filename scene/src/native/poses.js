@@ -91,11 +91,11 @@ function create(api) {
     });
     return Object.freeze({
       /** true when the hold stands: false while another's ranks ahead (a person's before a yielding one, then the first) */
-      hold: (id, transform, { yields = false } = {}) => !caller.signal.aborted && api.writable() && holds.hold(ext, id, normalizeTransform(transform), { yields }),
+      hold: (id, transform, { yields = false } = {}) => !caller.signal.aborted && !caller.readOnly && api.writable() && holds.hold(ext, id, normalizeTransform(transform), { yields }),
       release: (id, { landed = false } = {}) => release(ext, id, landed),
       heldBy: (id, o) => wire.heldBy(id, o),
       /** stream this caller's holds faster than 20 Hz (up to 60), or null for the default */
-      rate: (hz) => (Number.isFinite(hz) && hz > 0 ? rates.set(ext, hz) : rates.delete(ext)),
+      rate: (hz) => (caller.readOnly ? false : Number.isFinite(hz) && hz > 0 ? rates.set(ext, hz) : rates.delete(ext)),
       /** the moment (a peer's now()) whose poses of that peer this view draws, or null */
       shownAt: (session) => wire.shownAt(session),
     });

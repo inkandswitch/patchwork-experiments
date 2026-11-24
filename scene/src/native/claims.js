@@ -87,7 +87,7 @@ function create(api) {
 
   /** Take a claim for a caller: its release, or null while someone else (here or there) holds it. Again from the same caller: the same release. */
   function take(caller, oid, kind, onLost) {
-    if (caller.signal.aborted || !isKind(kind) || !api.writable() || (oid != null && !api.doc().objects?.[oid])) return null;
+    if (caller.signal.aborted || caller.readOnly || !isKind(kind) || !api.writable() || (oid != null && !api.doc().objects?.[oid])) return null;
     const k = keyOf(oid, kind);
     const h = held.get(k);
     if (h) {
