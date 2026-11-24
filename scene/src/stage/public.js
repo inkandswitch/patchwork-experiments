@@ -27,5 +27,5 @@ export { resolveCssColor } from "../theme.js";
 // the packages rule: what an extracted doc lists
 export { listedPackages, packageUrl, packagesToList } from "../packages.js";
 // what a source document is, said for people; an object's fixed version (README.md, "Content")
-export { describeForHumans, describeSource, extensionOf } from "../content/providers.js";
+export { describeForHumans, describeSource, extensionOf, matchProviders } from "../content/providers.js";
 export { atKey, normalizeAt } from "../content/staleness.js";

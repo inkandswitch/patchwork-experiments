@@ -962,7 +962,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       /** the box of an object, a group (its members') or, for null, the scene; `in`: an object's frame instead of the stage's */
       box: (target, { hints = true, in: frameId = null } = {}) => (target == null ? scope.sceneBox({ hints }) : scope.objectBox(target, { hints, in: frameId })),
       worldOf: displayedWorld,
-      providersFor: content.providersFor,
       addObject: content.addObject,
 
       // picking and camera

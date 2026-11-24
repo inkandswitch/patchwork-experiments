@@ -395,9 +395,6 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     return ops.planned(add, { id });
   }
 
-  /** The providers that can show a source doc, most specific first. */
-  const providersFor = async (url, sourceDoc) => matchProviders(listProviders(), describeSource(sourceDoc));
-
   /** Build an object's render doc now (loading it first if it's hidden). @returns {boolean} whether there was one */
   function rebuild(id) {
     const o = doc().objects?.[id];
@@ -503,7 +500,6 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
       return true;
     },
     addObject,
-    providersFor,
     rebuild,
     /** say once of each registered source that declares no content kind */
     warnUnusable,
