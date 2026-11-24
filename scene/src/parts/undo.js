@@ -12,7 +12,7 @@
 // wrote: undo's compare-and-set).
 
 import { fromEmbed } from "../embed.js";
-import { isTyping } from "../key-order.js";
+import { isTyping } from "../stage/public.js";
 import { editor } from "./editor.js";
 import { editing } from "./editing.js";
 

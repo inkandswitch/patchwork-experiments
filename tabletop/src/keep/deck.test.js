@@ -21,13 +21,16 @@ describe("the group", () => {
     expect(decrypt(decrypt(c, a), b)).toBe(m);
   });
 
+  // Every card is (i + 2)^2, a square, hence a residue; the residues are a subgroup, so every power of
+  // one (every encryption) is a residue too. No card index can differ in outcome: the first, the
+  // second and the last of 60 stand for all (each case is a 2048-bit modular power).
   it("every card, and so every encrypted card, is a quadratic residue: residuosity says nothing", () => {
     const k = newKey();
-    for (let i = 0; i < 60; i++) {
+    for (const i of [0, 1, 59]) {
       expect(isResidue(encodeCard(i))).toBe(true);
       expect(isResidue(encrypt(encodeCard(i), k))).toBe(true);
     }
-  }, 60_000); // exhaustive and CPU-bound: ~1 s alone, ~11 s seen with other suites building alongside
+  });
 
   it("decodes cards back to their index, and nothing else", () => {
     const dec = cardDecoder(60);
@@ -66,8 +69,8 @@ describe("a player's keys", () => {
 });
 
 /** One deck doc, shared by several clients (synchronously, like a merged doc). */
-function table(n, url = "automerge:deck") {
-  let state = structuredClone(newDeckDoc({ title: "Test deck", faces: Array.from({ length: n }, (_, i) => ({ name: `card ${i}` })) }));
+function table(n, url = "automerge:deck", from = null) {
+  let state = structuredClone(from ?? newDeckDoc({ title: "Test deck", faces: Array.from({ length: n }, (_, i) => ({ name: `card ${i}` })) }));
   return {
     url,
     doc: () => state,
@@ -96,15 +99,22 @@ describe("a secure deck", () => {
   const ids = Array.from({ length: N }, (_, i) => i);
   const players = ["alice", "bob", "carol"];
 
+  // The deal itself (2048-bit modular powers for every card, three times over) is the slow part, and
+  // every test but the first only needs a dealt deck. A participant is a function of the deck's doc and
+  // its secret alone (the "account's, not the device's" test below says so), so the first call deals for
+  // real and each later call is the same dealt doc, copied, with fresh participants holding the same
+  // secrets: nothing is shared between tests but the deal's result.
+  let deal = null;
   async function dealt() {
-    const handle = table(N);
-    const secrets = Object.fromEntries(players.map((p) => [p, newSecret()]));
+    const secrets = deal?.secrets ?? Object.fromEntries(players.map((p) => [p, newSecret()]));
+    const handle = table(N, "automerge:deck", deal?.doc ?? null);
     const [alice, bob, carol] = players.map((playerId) => createParticipant({ handle, playerId, secret: secrets[playerId] }));
     const watcher = createParticipant({ handle, playerId: null, secret: null });
     const where = { 0: "alice", 1: "alice", 2: "bob", 3: "bob", 4: "carol", 5: "public" };
     for (const id of ids) where[id] ??= "deck";
     const clients = [alice, bob, carol, watcher];
     await settle(clients, players, where);
+    deal ??= { doc: structuredClone(handle.doc()), secrets };
     return { handle, alice, bob, carol, watcher, where, clients, secrets };
   }
 

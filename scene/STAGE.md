@@ -17,7 +17,7 @@ another, and the kernel knows none by name. The rest is plugins':
 | **Contribution** | A named field of an instance, read with `collect(name)`; the kernel reads only those under "`instance`". |
 | **Event** | A value the view makes of DOM input on the canvas ("The input chain"). |
 | **Service** | What an instance `provides` by name, for others to `use`. |
-| **Layer** | Of the scene package's modules, lowest first: shared (formats, math), the kernel (`src/stage/` and the modules it is built from), native (`src/native/`), the editor (`src/parts/`), entry. Imports go only down; above the kernel, only to its api and an allowlist of pure helpers. The table and its check: `src/native/boundary.test.js`. |
+| **Layer** | Of the scene package's modules, lowest first: shared (formats, math), the kernel (`src/stage/` and the modules it is built from), native (`src/native/`, `src/sources/`), the editor (`src/parts/`), entry. Imports go only down; above the kernel, only to its api and its face, `stage/public.js` (pure helpers, re-exported). The table and its check: `src/native/boundary.test.js`. |
 
 ## Views, stages and links
 
@@ -28,6 +28,7 @@ opens under an object of another, as its content, in its frame.
 |---|---|
 | **Opening** | `api.open(handle, { under: [stagePath, id], acting?, heads?, deps? })` → close, or null: a doc acts at one stage per view, only under one that acts (NATIVE.md, I3). `acting: false` is drawn; `heads` a pin (its repo finding docs at `deps`' heads). Closing one closes what is under it and takes the focus out. A `content: "scene"` source is drawn as its hint until a stage is open under it. |
 | **Its doc** | An api touches only its stage's doc: `null` is its root, every id its own (I1, I2). |
+| **Embedded documents** | A document the stage shows inside it, marked `data-stage-embed` (`embed.js`), keeps its own keys, pastes and drops. A render's build controls ask the stage with DOM events bubbling to its root: `scene:rebuild` (`detail: { renderUrl }`; the stage rebuilds it and cancels the event) and `scene:render-context` (the stage sets `detail.at`, the object's fixed version); it tells every `.scene-render-controls` element `scene:render-context-changed` when an object is fixed, refixed or let go. |
 | **Drawn** | Extensions run and draw, nothing more: no segment, body, tool, command, widget, chrome, camera, selection or view service (`drawnApi`). |
 | **Read-only** | A stage that doesn't act, or whose handle refuses, gets a doc and repo refusing every write (`stage/readonly.js`; I6). |
 | **The focus** | Goes in with `api.view.enter(id)`, out on Escape's last rung; it scopes the selection (H10), changes only through `selectionStep` (`src/selection.js`), and no stage sees it. |
@@ -85,7 +86,7 @@ Each extension's own; what it acquires through it goes when it stops.
 | `use(name)`, `settled()` | the stage's first provider's facet, else (acting) a view plugin's, or null; `{ ready, missing, failed, errors }` (`ready`: nothing the doc calls for is still on its way, a failed one included; the clock and the audience also need `failed` empty; `errors[id]`: why) |
 | `now()`, `after(ms, fn)`, `frame(fn)`, `loop(fn(dt, now), { first? })`, `afterRender(fn)` | the stage's one time (`stage/time.js`; `manualTime()` moves when stepped), → cancel; never `Date.now`, `setTimeout`, `requestAnimationFrame`; rendering every frame while a loop runs, `dt` ≤ 0.1 s |
 | `local` | `get`, `swap(fn)`, `watch(fn, select?)`: the stage's frozen value; the kernel's `running` (`[{ id, scope }]`), `status` (`{ [id]: { state, reason?, text, title } }`), `packages` (`{ ask, loading, failed, missing }`); plugins' keys `<id>.`-prefixed |
-| `view` | `get`, `watch`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, keys, pointer, serial }]`, top last), `held` (its tools, `[{ ext, command, name, hand, keys, pointer, serial }]`), `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)`, `enter(id)`, `arrive()` |
+| `view` | `get`, `watch`: the viewer's, as this stage sees it: `selected`, `hovered` (its element or null; I10), `body` (`{ id, label, ext, depth, lock, reach, keys, serial }`), `hands` (`[{ ext, kind, name, keys, pointer, serial }]`, top last), `held` (its tools, `[{ ext, command, name, handKind, keys, pointer, serial }]`), `gesture`, `pointer` (`{ locked, lock, wanted, released, refused, touch }`), `escape`, `theme`, view plugins' values; `select(target)`, `enter(id)`, `arrive()` |
 | `channel` | the doc's ephemeral side (`stage/presence.js`; I5): `{ viewer, session, peers(), get(), set(key, value), watch(fn), send(type, data), rate(hz) }`; `peers()` → `{ [session]: { viewer, body, held: [{ name }] (top last), at, keys } }`; `send` reaches `receive` on every peer; `session` null in a pin |
 | `page`, `packages` | `{ visible(), on("hide" \| "show" \| "visible", fn) }`; the prompt's answer `{ load(urls?), dismiss(urls?) }` |
 | `nameOf(id)`, `content(id)`, `loadState(id)`, `box(id, o)`, `groupBox`, `sceneBox`, `worldOf(id)` | `{ loaded, box, extras, stats, root }`; where content went, what its loader said; `{ min, max }` or null; the drawn matrix |
@@ -114,7 +115,7 @@ Each extension's own; what it acquires through it goes when it stops.
 |---|---|
 | `id`, `run(target, value?, ctx)` | `api.run({ stage?, ext, command, target, value?, hit? })` runs it, `ctx` being `api.context(hit)`, only where it applies and isn't disabled |
 | `state(target, ctx)` | null: not for this target (no `state`: the scene only; a throw: null), else `{ disabled?, title?, … }` |
-| `hand: kind`, `reach: true` | it applies only while a hand of that kind (its `kind`: `tool`, `popover`, a plugin's own) is held (H14); beyond the body's reach it is disabled, "too far" (H9) |
+| `hand: kind`, `reach: true` | it applies only while a hand of that kind (a plugin's own; one naming the kernel's `tool` or `popover` never applies) is held (H14); beyond the body's reach it is disabled, "too far" (H9) |
 | `tool: { keys?, pointer? }` | `run` returns an input, held on top for the command's `hand`, going with the last such hand; run again, it is put down (`value` true only picks up, false only puts down) |
 
 ## The input chain
@@ -136,11 +137,10 @@ meshes in `world()` groups or `widgetAt`; `onTop` beats any object. No
 double-click. **The look**: the pointer's hit, or the eye ray's under lock
 (`looksFromEye`).
 
-**Keys**: those in an embedded document (`data-stage-embed`) are its own. **One
-key order** (`src/key-order.js`; H12): a focused field, the gesture's declared
-keys, the topmost hand's that declares it, the top body's, then `input.key` over
-attention's path, innermost first (I10). Declared keys are `[{ code, label }]`;
-a reserved key is its reserver's; a `keyup` goes to its `keydown`'s claimer.
+**Keys**: one key order (`src/key-order.js`; H12): a focused field, the
+gesture's declared keys, the topmost hand's declaring it, the top body's, then
+`input.key` over attention's path, innermost first (I10). Declared keys are
+`[{ code, label }]`; a reserved key is its reserver's; a keyup, its keydown's.
 
 ### Bodies
 
@@ -168,12 +168,12 @@ from are pruned. Nothing loads without a click on Load for its URL.
 
 ## Arriving
 
-`view.start` is read on open and on `api.view.arrive()`, said as `view.arrived`
-(`{ start, n }`, the start whole, frozen: keys beyond `body`, `place` and `home`
-are plugins'). `home` is the camera when none is saved; `body` is entered at
-`place` once offered and loaded (or after `ARRIVE_WAIT_MS`), after anything
-`opening()`; a place with an acting stage under it arrives in that stage alone,
-a drawn one nowhere.
+`view.start` is read on open and on `api.view.arrive()`; view plugins are told
+`view.arrived` (`{ start, n }`: the start whole, frozen; keys beyond `body`,
+`place`, `home` are theirs, and an extension reads its own doc's). `home` is the
+camera when none is saved; `body` is entered at `place` once offered and loaded
+(or after `ARRIVE_WAIT_MS`), after anything `opening()`; a place holding an
+acting stage arrives in that stage alone, a drawn one nowhere.
 
 ## Invariants
 
@@ -183,10 +183,10 @@ a drawn one nowhere.
 | H2 | One stop rule: stop only when the doc stops calling, after the linger or once not busy. |
 | H4 | Escape pops exactly the top of lock, field, gesture, the hand stack's top (its escape first), else selection, then focus; never a body or the clock; every state ends in as many presses as layers. |
 | H5 | locked ⇔ body.lock ∧ ¬wanted ∧ ¬released ∧ ¬refused ∧ ¬touch, wanted ⇔ any hand, a selection or a wantPointer() asks; after a release or a finger, a press on the world only relocks. |
-| H9 | A `reach` command applies to a target iff its distance ≤ the body's reach; beyond it, it is disabled, "too far", and runs nowhere. |
+| H9 | A `reach` command that applies to a target is enabled iff its distance ≤ the body's reach; beyond it, it is disabled, "too far", and runs nowhere. |
 | H10 | The selected path ends at an element of the focus stage. |
 | H12 | An event goes to the hands top first, then the chain, then the top body, cut exactly at the first that consumes it; a tool picked up goes on top (one held: put down) and puts none down; a key is the gesture's, else the topmost hand's declaring it, else the top body's. |
-| H14 | A command naming a kind of hand applies (`run`, every surface) iff a hand of that kind is held; a tool held through it is held only while one is. |
+| H14 | A command naming a kind of hand applies (`run`, every surface) only while a hand of that kind is held; a tool held through it is held only while one is. |
 | I1 | Every api read and write goes to its stage's handle. |
 | I2 | No reference crosses docs; a link (an object whose source is a scene doc) is the only edge between docs. |
 | I4 | A stage's snapshot, running set and display depend only on its doc and the registry; only space and `ambient`'s `mine`, `frame`, `use` depend on placement. |

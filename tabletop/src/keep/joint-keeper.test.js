@@ -2,7 +2,7 @@
 // players' clients on one deck, each with its own reading of who may see
 // what; the looks each gets by the rule; nothing handed over while the
 // audience is unknown; the `keeper` convention; `contain`; the plugin.
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { TRAIT, contain, create, playing } from "./joint-keeper.js";
 import { lookFor } from "./rule.js";
 import { newSecret } from "./crypto/derive.js";
@@ -11,7 +11,24 @@ import { newDeckDoc } from "./deck.js";
 import { plugins } from "../index.js";
 import { fakeRepo } from "../test/games.js";
 
+// What "nothing more will happen" is measured by: writes to the deck, and WebCrypto calls begun and not
+// yet finished (the keeper's only work off the event loop; it has no timers).
+let writes;
+let inflight;
+beforeEach(() => {
+  writes = 0;
+  inflight = 0;
+  const subtle = globalThis.crypto.subtle;
+  for (const m of ["generateKey", "exportKey", "importKey", "deriveBits", "encrypt", "decrypt"]) {
+    const real = subtle[m].bind(subtle);
+    vi.spyOn(subtle, m).mockImplementation((...args) => {
+      inflight++;
+      return real(...args).finally(() => inflight--);
+    });
+  }
+});
 afterEach(() => vi.restoreAllMocks());
+const turn = () => new Promise((r) => setTimeout(r, 0));
 
 const DECK = "automerge:2DeckDeckDeckDeckDeckDeck1";
 const FACES = Array.from({ length: 6 }, (_, i) => ({ sourceUrl: `automerge:face${i}`, name: `Card ${i}` }));
@@ -27,6 +44,7 @@ function sharedDeck(faces = FACES) {
       const d = structuredClone(state);
       fn(d);
       state = d;
+      writes++;
       queueMicrotask(() => {
         for (const l of [...listeners]) l();
       });
@@ -41,7 +59,19 @@ const until = async (fn, ms = 30000) => {
   const t0 = Date.now();
   while (!fn()) {
     if (Date.now() - t0 > ms) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 10));
+    await turn();
+  }
+};
+
+/** Every client looks again until a pass in which the deck was not written and no crypto call is outstanding. */
+const quiet = async (t) => {
+  for (let i = 0; ; i++) {
+    if (i > 1000) throw new Error("quiet: still writing after 1000 passes");
+    const seen = writes;
+    t.update();
+    await turn();
+    while (inflight > 0) await turn();
+    if (writes === seen) return;
   }
 };
 
@@ -141,7 +171,7 @@ describe("the joint keeper", () => {
     await until(() => me.status()[0] === "Waiting for YOU to shuffle Deck.");
     expect(me.told.at(-1)).toEqual(me.status());
     t.dispose();
-  }, 60000);
+  });
 
   it("two seated players: shuffled between them once both are here, then each sees their own hand and the face-up card, by the rule", async () => {
     const t = table();
@@ -169,7 +199,7 @@ describe("the joint keeper", () => {
     expect(t.shares("me")).toEqual({ 1: ["you"], 2: ["open"], 3: ["you"] });
     expect(t.shares("you")).toEqual({ 0: ["me"], 2: ["open"] });
     t.dispose();
-  }, 60000);
+  });
 
   it("a face named by its game is drawn when it's first shown to someone, with its group: the game records every card of the deck, whichever were dealt", async () => {
     // a table set up from a game page (setup.js faceOf): six cards cut from two sheets, one deck
@@ -205,7 +235,7 @@ describe("the joint keeper", () => {
     expect(states.length).toBeGreaterThan(0);
     for (const s of states) expect(s).toBe(kinds.join());
     t.dispose();
-  }, 60000);
+  });
 
   it("mine to see, its key not here yet: the veil, and the HUD says who it waits for", async () => {
     const t = table();
@@ -220,7 +250,7 @@ describe("the joint keeper", () => {
     await until(() => me.looks().c1 === "veil" && me.status().some((s) => /Waiting for YOU to show you 1 card/.test(s)));
     expect(me.looks().c0).not.toBe("veil");
     t.dispose();
-  }, 60000);
+  });
 
   it("fails closed: a client whose audience is unknown shuffles its turn, and hands over nothing, to anyone; it sees no faces", async () => {
     const t = table();
@@ -231,10 +261,7 @@ describe("the joint keeper", () => {
     you.unknown = true;
     await until(() => t.dealt() && Object.keys(t.shares("me")).length === 2);
     // let anything that was going to happen, happen
-    for (let i = 0; i < 20; i++) {
-      t.update();
-      await new Promise((r) => setTimeout(r, 10));
-    }
+    await quiet(t);
     expect(t.shares("you")).toEqual({});
     expect(you.looks()).toEqual({});
     // so I wait for them: my own card and the public one are veiled, not shown
@@ -245,7 +272,7 @@ describe("the joint keeper", () => {
     await until(() => me.looks().c0 !== "veil" && me.looks().c2 !== "veil" && Object.keys(you.looks()).length === 2);
     expect(t.shares("you")).toEqual({ 0: ["me"], 2: ["open"] });
     t.dispose();
-  }, 60000);
+  });
 
   it("waits for every seat: an open one, or no roster at all, and nothing is dealt", async () => {
     const t = table({ seated: ["me"], open: ["Player 2"] });
@@ -281,7 +308,7 @@ describe("the joint keeper", () => {
     // the scene's binding never moved: the deck's order did
     expect(t.objects.c0.traits[TRAIT]).toEqual({ by: DECK, slot: 0 });
     t.dispose();
-  }, 60000);
+  });
 
   it("two objects naming one position: the lower id keeps it, the other stays closed and is flagged", async () => {
     const t = table();
@@ -294,7 +321,7 @@ describe("the joint keeper", () => {
     expect(me.x.keeper.of("c9")).toBeNull();
     expect(me.x.hud().at(-1)).toMatchObject({ state: "error" });
     t.dispose();
-  }, 60000);
+  });
 
   it("a deck that can't be found, or isn't one: closed, and the HUD says so", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -321,9 +348,7 @@ describe("the joint keeper", () => {
       const ro = t.join("me", { writable: false, ...(pinned ? { at: "h1" } : {}) });
       if (twin.startsWith("mine")) t.join("me");
       if (twin !== "none") t.join("you");
-      const settle = async () => {
-        for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 5));
-      };
+      const settle = () => quiet(t);
       if (twin.startsWith("mine")) {
         // dealt by the writable clients (a pin's deck is the same deck: its keys are the same); the read-only one shows exactly what its twin shows
         await until(() => t.dealt() && t.clients.you.looks().c1 && t.clients.you.looks().c1 !== "veil");
@@ -344,7 +369,7 @@ describe("the joint keeper", () => {
       expect(warned).toEqual([]);
       expect(ro.status().filter((x) => /problem/.test(x))).toEqual([]);
       t.dispose();
-    }, 60000);
+    });
   }
 
   it("the rule it shows by (rule.js): the item only inside the audience, the veil only when it's turned toward you", () => {

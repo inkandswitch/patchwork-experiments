@@ -4,8 +4,8 @@
 // snapshot, its running list, what its instances contribute (commands,
 // inputs, `inspect` snapshots: CONVENTIONS.md, "Inspect") and the kernel's
 // reads (`owners()`, `settled()`, provenance). Built on the kernel's own pure
-// helpers for who holds what (stage/chain.js) and what a command says
-// (parts/toolbar-commands.js), so it can't disagree with them.
+// helpers (stage/public.js) for who holds what (the chain's order) and whether a
+// command applies (stage/commands.js), so it can't disagree with them.
 //
 //   extensions ↔ traits ↔ objects ↔ verbs (state per object) ↔ services
 //   ↔ claims, poses, display overrides ↔ layers and labels; and what isn't
@@ -16,8 +16,7 @@
 // (the objects carrying its traits, their values, the objects × verbs grid,
 // what it holds now, its services, what it last wrote). The X-ray draws them.
 
-import { commandState, flatCommands } from "../stage/commands.js";
-import { chainOrder, hitChain, holdersFor } from "../stage/chain.js";
+import { chainOrder, commandState, flatCommands, hitChain, holdersFor } from "../stage/public.js";
 
 /** The input events an `input` may take (STAGE.md, "The input chain"). */
 export const EVENTS = ["press", "click", "menu", "key", "keyup", "wheel", "widgetAt", "cursor"];

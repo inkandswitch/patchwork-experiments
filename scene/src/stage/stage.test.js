@@ -920,7 +920,7 @@ describe("the stage, mounted", () => {
     // (not editing: the Edit hand wants the pointer too)
     m.debug.view.plugins.record("scene.edit").api.run({ ext: "scene.edit", command: "edit", value: false });
     expect(api.run({ ext: "t.always", command: "gun" })).toBe(true);
-    expect(m.local.get().held).toEqual([{ ext: "t.always", command: "gun", name: "Gun", hand: null, keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) }]);
+    expect(m.local.get().held).toEqual([{ ext: "t.always", command: "gun", name: "Gun", handKind: null, keys: [{ code: "KeyR", label: "Reload" }], pointer: false, serial: expect.any(Number) }]);
     const serials = [m.local.get().held[0].serial];
     expect(m.local.get().pointer.wanted).toBe(false);
     // another tool goes on top: the gun stays held
@@ -948,7 +948,7 @@ describe("the stage, mounted", () => {
     expect([put, names()]).toEqual([["gun", "brush", "brush"], ["gun"]]);
     // a tool held directly, not through a command: its declaration, and no command; on top of the gun
     const putDown = api.hold({ name: "Drawn piece", keys: [{ code: "KeyQ", label: "Turn" }], pointer: true }, { put: () => put.push("piece") });
-    expect(m.local.get().held[1]).toEqual({ ext: "t.always", command: null, name: "Drawn piece", hand: null, keys: [{ code: "KeyQ", label: "Turn" }], pointer: true, serial: expect.any(Number) });
+    expect(m.local.get().held[1]).toEqual({ ext: "t.always", command: null, name: "Drawn piece", handKind: null, keys: [{ code: "KeyQ", label: "Turn" }], pointer: true, serial: expect.any(Number) });
     serials.push(m.local.get().held[1].serial);
     // each tool held is its own (the gun held again is a new one)
     expect(new Set(serials).size).toBe(4);

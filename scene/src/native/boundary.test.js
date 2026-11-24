@@ -1,15 +1,17 @@
-// The scene package's layers and the kernel's boundary (STAGE.md, "Layers").
-// Checks on the source and the docs, not on behaviour:
+// The scene package's layers and the kernel's boundary (STAGE.md, "Words":
+// Layer). Checks on the source and the docs, not on behaviour:
 //   - every module sits in exactly one layer (LAYERS: a folder's, or a root
-//     module's by name) and imports only from its own layer or one below;
-//   - the native services and the editor reach a kernel module only through
-//     the allowlist of pure public helpers below: everything else they get
-//     is the api they were created with;
+//     module's by name: the one layer that uses it, or shared when several
+//     do) and imports only from its own layer or one below;
+//   - every relative import resolves to a file, and every import() names one;
+//   - the native services and the editor import from the kernel only its face
+//     (stage/public.js), which only re-exports kernel helpers, each used above
+//     it: everything else they get is the api they were created with;
 //   - each contract page stays within its size;
 //   - every invariant label the pages list is named by a test: in its title
 //     or in the comment directly above it.
 
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -22,32 +24,26 @@ const ORDER = ["shared", "kernel", "native", "editor", "entry"];
 
 /**
  * Every module's layer: its folder's, else (a module at src/'s root) by name.
+ * A root module is in the one layer that uses it, or shared when several
+ * layers (or a shared module) use it: checked below.
  *   shared  formats, math and plain data; they know no layer
  *   kernel  src/stage/ and the modules it is built from: its rules and machinery
- *   native  the native services (NATIVE.md)
+ *   native  the package's own plugins below the editor: the native services
+ *           (NATIVE.md) and the sources (src/sources/)
  *   editor  the editor's parts (EDITOR.md) and what only they use
- *   entry   what registers the plugins, and the package's other tools
+ *   entry   what registers the plugins (index.js), and the package's other tool
  */
 const LAYERS = {
-  folders: { stage: "kernel", native: "native", parts: "editor", sources: "entry" },
-  shared: ["anchors", "build", "carry-rules", "datatype", "deps", "dnd", "embed", "file-content", "glb", "groups", "handles", "hierarchy", "icons", "layers", "legend", "ops", "param-form", "per-focus", "providers", "render-read", "shallow", "staleness", "stl", "surface", "transform", "tree-drop", "units"],
+  folders: { stage: "kernel", native: "native", sources: "native", parts: "editor" },
+  shared: ["build", "connectors", "datatype", "deps", "dnd", "embed", "file-content", "glb", "groups", "hierarchy", "icons", "layers", "ops", "param-form", "per-focus", "providers", "render-read", "shallow", "staleness", "transform", "tree-drop", "units"],
   kernel: ["glb-queue", "gltf-content", "key-order", "packages", "pick-accel", "render-manager", "selection", "theme"],
-  editor: ["extract", "hold-key", "peers", "touch-keys", "transfer", "undo"],
+  native: ["stl"],
+  editor: ["anchors", "carry-rules", "extract", "handles", "hold-key", "legend", "peers", "surface", "touch-keys", "transfer", "undo"],
   entry: ["controls-tool", "index"],
 };
 
-/** What a native service or the editor may import from a kernel module, by module: names and why. */
-const ALLOW = {
-  "stage/bodies.js": { names: ["LOOK", "holding", "pointing"], why: "pure readers of the view value: the Look body, whether a hand of a kind is held, whether a pointing tool is held" },
-  "stage/commands.js": { names: ["flatCommands", "commandState", "inHand", "TOO_FAR"], why: "what a command is and whether it applies (STAGE.md, \"Commands\"): every surface and the gears graph ask the kernel's own rule" },
-  "stage/paths.js": { names: ["samePath", "parseKey", "elementOf"], why: "the path grammar, pure: how the view names an object across stages (and an owner: whose a held tool is)" },
-  "stage/ladder.js": { names: ["restLayer"], why: "what the view's own Escape does now, pure: the Edit hand's escape is it" },
-  "stage/pointer.js": { names: ["looksFromEye"], why: "whether the look goes along the eye ray, pure: the use prompt's anchor, the X-ray's look" },
-  "stage/provenance.js": { names: ["writers"], why: "who wrote what a path shows, read from the doc's change messages, pure: the X-ray's last writers (STAGE.md, `change`)" },
-  "stage/chain.js": { names: ["hitChain", "holdersFor", "chainOrder"], why: "the input chain's order, pure: who holds an object, in the order the chain offers it (the gears graph agrees with the chain by using it)" },
-  "key-order.js": { names: ["isTyping", "codeOfKey", "keyOfCode", "nameOfCode", "declaredKeys", "keyLayers", "keyHolder", "reservedBy", "lookChain", "labelOf"], why: "the key order, pure: who reserves a key (the key map resolves after it, the touch pad shows it), how a key is named" },
-  "packages.js": { names: ["listedPackages", "packageUrl", "packagesToList"], why: "the packages rule, pure: what an extracted doc lists" },
-};
+/** The kernel's face: the one kernel module the layers above it may import. */
+const FACE = "stage/public.js";
 
 /** The contract pages and their most lines. */
 const PAGES = { "STAGE.md": 200, "NATIVE.md": 400, "EDITOR.md": 300, "CONVENTIONS.md": 200 };
@@ -60,7 +56,11 @@ const ELSEWHERE = {
 const walk = (dir) =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
 
-/** Every import of a module's source: `{ spec, names }` (names null: a default, namespace or dynamic import). */
+/**
+ * Every import of a module's source: `{ spec, names }` (names null: a
+ * default, namespace or dynamic import; spec null: an import() of something
+ * other than a string literal, its argument as `expr`).
+ */
 function importsOf(text) {
   const out = [];
   for (const m of text.matchAll(/^\s*(?:import|export)\s+([^;]*?)\s+from\s+["']([^"']+)["']/gm)) {
@@ -70,7 +70,15 @@ function importsOf(text) {
   }
   for (const m of text.matchAll(/^\s*import\s+["']([^"']+)["']/gm)) out.push({ spec: m[1], names: null });
   for (const m of text.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)) out.push({ spec: m[1], names: null });
+  for (const m of text.matchAll(/\bimport\(\s*(?!["'][^"'`]*["']\s*\))([^)]*)\)/g)) out.push({ spec: null, names: null, expr: m[1].trim() });
   return out;
+}
+
+/** A relative spec of module `from` as a path under src/ (".js" added when it names no file), or null when it names none. */
+function resolveSpec(from, spec) {
+  const p = resolve(dirname(join(SRC, from)), spec.split("?")[0]);
+  for (const f of [p, `${p}.js`]) if (existsSync(f) && statSync(f).isFile()) return relative(SRC, f);
+  return null;
 }
 
 const modules = walk(SRC)
@@ -85,15 +93,16 @@ function layerOf(m) {
   return ORDER.find((l) => LAYERS[l]?.includes(name));
 }
 const rank = (m) => ORDER.indexOf(layerOf(m));
-/** Every import of one module by another: `{ from, to, names }`, as paths under src/. */
-const edges = modules.flatMap((from) =>
+/** Every relative import of every module: `{ from, spec, to, names, expr? }`, `to` a path under src/, or null: no file (or `expr`, no literal). */
+const imports = modules.flatMap((from) =>
   importsOf(readFileSync(join(SRC, from), "utf8"))
-    .map(({ spec, names }) => ({ spec: spec.split("?")[0], names }))
-    .filter(({ spec }) => spec.startsWith(".") && spec.endsWith(".js"))
-    .map(({ spec, names }) => ({ from, to: relative(SRC, resolve(dirname(join(SRC, from)), spec)), names })),
+    .filter(({ spec }) => spec == null || spec.startsWith("."))
+    .map((i) => ({ ...i, from, to: i.spec == null ? null : resolveSpec(from, i.spec) })),
 );
-/** A module of a layer above the kernel (a native service, the editor, an entry). */
-const aboveKernel = (m) => rank(m) > ORDER.indexOf("kernel");
+/** The imports of one module by another. */
+const edges = imports.filter(({ to }) => to?.endsWith(".js"));
+/** A native service or a module of the editor (the entry wires everything). */
+const aboveKernel = (m) => rank(m) > ORDER.indexOf("kernel") && layerOf(m) !== "entry";
 
 describe("the layers and the kernel's boundary", () => {
   it("every module is in exactly one layer, and every root module the table names exists", () => {
@@ -105,32 +114,41 @@ describe("the layers and the kernel's boundary", () => {
     expect(named.filter((n) => !roots.has(n))).toEqual([]);
   });
 
-  it("imports go one way: from a module's own layer or one below, never above", () => {
-    expect(edges.filter(({ from, to }) => rank(to) > rank(from)).map(({ from, to }) => `${from} (${layerOf(from)}) → ${to} (${layerOf(to)})`)).toEqual([]);
-  });
-
-  it("the native services and the editor import from the kernel only the allowlisted pure helpers", () => {
+  it("a root module is in the one layer that uses it, or shared when several layers (or a shared module) use it", () => {
     const wrong = [];
-    for (const { from, to, names } of edges) {
-      if (!aboveKernel(from) || layerOf(to) !== "kernel" || layerOf(from) === "entry") continue;
-      const allowed = ALLOW[to]?.names ?? [];
-      const bad = names == null ? ["(default, namespace or dynamic)"] : names.filter((n) => !allowed.includes(n));
-      if (bad.length) wrong.push(`${from}: ${bad.join(", ")} from ${to}`);
+    for (const m of modules.filter((x) => !x.includes("/") && layerOf(x) !== "entry")) {
+      const users = new Set(edges.filter(({ to }) => to === m).map(({ from }) => layerOf(from)));
+      const ok = layerOf(m) === "shared" ? users.size > 1 || users.has("shared") : [...users].every((l) => l === layerOf(m));
+      if (!ok) wrong.push(`${m} (${layerOf(m)}) is used by ${[...users].join(", ") || "nothing"}`);
     }
     expect(wrong).toEqual([]);
   });
 
-  it("every allowlisted helper exists and is still imported (the list never outlives its use)", () => {
-    const used = new Set(edges.filter(({ from }) => aboveKernel(from) && layerOf(from) !== "entry").flatMap(({ to, names }) => (names ?? []).map((n) => `${to}:${n}`)));
-    for (const [mod, { names, why }] of Object.entries(ALLOW)) {
-      expect(why.length).toBeGreaterThan(0);
-      expect(layerOf(mod), mod).toBe("kernel");
-      const text = readFileSync(join(SRC, mod), "utf8");
-      for (const n of names) {
-        expect(text, `${mod} exports ${n}`).toMatch(new RegExp(`export (const|function) ${n}\\b`));
-        expect(used.has(`${mod}:${n}`), `${mod}:${n} is imported`).toBe(true);
-      }
-    }
+  it("every relative import resolves to a file, and every import() names its module by a string literal", () => {
+    expect(imports.filter(({ to }) => to == null).map(({ from, spec, expr }) => `${from}: ${spec ?? `import(${expr})`}`)).toEqual([]);
+  });
+
+  it("imports go one way: from a module's own layer or one below, never above", () => {
+    expect(edges.filter(({ from, to }) => rank(to) > rank(from)).map(({ from, to }) => `${from} (${layerOf(from)}) → ${to} (${layerOf(to)})`)).toEqual([]);
+  });
+
+  it("the native services and the editor import from the kernel only its face, and by name", () => {
+    const wrong = edges.filter(({ from, to, names }) => aboveKernel(from) && layerOf(to) === "kernel" && (to !== FACE || names == null));
+    expect(wrong.map(({ from, to }) => `${from} → ${to}`)).toEqual([]);
+  });
+
+  it("the face only re-exports, by name, from kernel modules, and every name it offers is imported above the kernel (it never outlives its use)", () => {
+    const text = readFileSync(join(SRC, FACE), "utf8");
+    // nothing but comments and `export { … } from` lines
+    expect(text.replace(/^\/\/.*$/gm, "").replace(/^export \{[^}]*\} from "[^"]+";$/gm, "").trim()).toBe("");
+    const offered = importsOf(text).flatMap(({ spec, names }) => {
+      expect(names, spec).not.toBeNull();
+      expect(layerOf(resolveSpec(FACE, spec)), spec).toBe("kernel");
+      return names;
+    });
+    expect(offered.length).toBe(new Set(offered).size);
+    const used = new Set(edges.filter(({ from, to }) => aboveKernel(from) && to === FACE).flatMap(({ names }) => names ?? []));
+    expect(offered.filter((n) => !used.has(n))).toEqual([]);
   });
 
   it("each contract page fits: STAGE.md ≤ 200 lines, NATIVE.md ≤ 400, EDITOR.md ≤ 300, CONVENTIONS.md ≤ 200", () => {

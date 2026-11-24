@@ -30,11 +30,10 @@
 // (api.collect).
 
 import { controlKind } from "./toolbar-commands.js";
-import { commandState, flatCommands } from "../stage/commands.js";
+import { commandState, flatCommands, samePath } from "../stage/public.js";
 import { attentionPath, mapInvocation, segmentsOf } from "./keymap.js";
 import { onMac, shortcutInvocation } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
-import { samePath } from "../stage/paths.js";
 
 /** Does this look like a session (something a held verb returns)? */
 const isSession = (r) => !!r && typeof r === "object" && (typeof r.end === "function" || typeof r.cancel === "function");

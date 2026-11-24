@@ -115,12 +115,10 @@ describe("a piece's places, from the scene's connectors alone", () => {
 });
 
 describe("how far a slot reaches", () => {
-  it("its object's snapRadius, else 0.71 of its places' closest spacing (the carry's default), scaled with the object", () => {
+  it("its object's snapRadius (the scene's: the GLB's, else from the connectors' spacing), scaled with the object; none, nothing", () => {
     const places = [{ position: [0, 0, 0], tags: ["card"] }, { position: [0.1, 0, 0], tags: ["card"] }];
     const scaled = composeMatrix({ scale: 2 });
     expect(worldSlots(scaled, { connectors: places, snapRadius: 0.04 }, ["card"]).map((s) => s.radius)).toEqual([0.08, 0.08]);
-    expect(worldSlots(scaled, { connectors: places }, ["card"]).map((s) => +s.radius.toFixed(9))).toEqual([0.141421356, 0.141421356]);
-    // one place alone: no default, so it reaches nothing
-    expect(worldSlots(scaled, { connectors: places.slice(0, 1) }, ["card"])).toEqual([]);
+    expect(worldSlots(scaled, { connectors: places, snapRadius: null }, ["card"])).toEqual([]);
   });
 });
