@@ -122,6 +122,8 @@ const EDIT = { name: "edit", body: { id: "look" }, hands: [{ kind: "edit", name:
 const WALK = { name: "walk", body: { id: "walk" }, hands: [] };
 const ctxIn = (view) => ({ scene: { objects: {} }, local: {}, view });
 const segIn = (view, commands, stage) => ({ stage, collected: [{ id: "t.x", value: commands }], ctx: ctxIn(view) });
+/** The bar's editor cluster is there exactly while the Edit hand is held (the bar makes it then). */
+const bar = (segs, view) => barEntries(segs, view, view.hands.some((h) => h.kind === "edit"));
 
 describe("the bar of tools, exhaustively", () => {
   // show × body × the Edit hand named: which cluster a command (applying to the scene) lands in.
@@ -150,14 +152,14 @@ describe("the bar of tools, exhaustively", () => {
     for (const [name, show, expected] of SHOWS) {
       COLUMNS.forEach(([view, edit], i) => {
         const command = { id: "c", name: "C", run() {}, ...(show === undefined ? {} : { show }), ...(edit ? { hand: "edit" } : {}) };
-        const { editor, world } = barEntries([segIn(view, [command])], view);
+        const { editor, world } = bar([segIn(view, [command])], view);
         const got = world.length ? "w" : editor.length ? "e" : "-";
         expect(editor.length + world.length, name).toBeLessThanOrEqual(1);
         // the command applies, so the bar shows exactly when it is on it (a world command that is the editor's keeps no bar outside Edit)
-        expect(barEntries([segIn(view, [command])], view).shown, `${name} ${view.name}${edit ? " edit" : ""}`).toBe(expected[i] !== "-");
+        expect(bar([segIn(view, [command])], view).shown, `${name} ${view.name}${edit ? " edit" : ""}`).toBe(expected[i] !== "-");
         expect(`${name} ${view.name}${edit ? " edit" : ""} ${got}`).toBe(`${name} ${view.name}${edit ? " edit" : ""} ${expected[i]}`);
         // onBar is the surface's half, before the hand and the state (commandState's)
-        expect(onBar(command, view), name).toBe(expected[i - (i % 2)] !== "-");
+        expect(onBar(command, view === EDIT), name).toBe(expected[i - (i % 2)] !== "-");
         n++;
       });
     }
@@ -197,7 +199,7 @@ describe("the bar of tools, exhaustively", () => {
         ...(ed !== "none" ? [{ id: "ed", name: "Snap", show: ["toolbar"], hand: "edit", state: state(ed), run() {} }] : []),
         ...(w !== "none" ? [{ id: "w", name: "Play", show: ["world", "menu"], state: state(w), run() {} }] : []),
       ];
-      const entries = barEntries([segIn(view, commands)], view);
+      const entries = bar([segIn(view, commands)], view);
       const row = [view.name, ed, w];
       expect([...row, entries.shown, entries.editor.map((e) => e.command.id), entries.world.map((e) => e.command.id)]).toEqual([...row, shown, eds, ws]);
     }
@@ -208,11 +210,11 @@ describe("the bar of tools, exhaustively", () => {
     const w = (id) => ({ id, show: ["world"], run() {} });
     const e = (id) => ({ id, show: ["toolbar"], run() {} });
     const segs = [segIn(EDIT, [w("deal"), e("snap"), w("deal")], 2), segIn(EDIT, [e("frame"), w("ring")], 0)];
-    const { editor, world } = barEntries(segs, EDIT);
+    const { editor, world } = bar(segs, EDIT);
     expect(editor.map((x) => [x.stage, x.command.id])).toEqual([[2, "snap"], [0, "frame"]]);
     expect(world.map((x) => [x.stage, x.command.id])).toEqual([[2, "deal"], [0, "ring"]]);
     // the same command in another stage is another entry
-    expect(barEntries([segIn(LOOK, [w("deal")], 1), segIn(LOOK, [w("deal")], 0)], LOOK).world.map((x) => x.stage)).toEqual([1, 0]);
+    expect(bar([segIn(LOOK, [w("deal")], 1), segIn(LOOK, [w("deal")], 0)], LOOK).world.map((x) => x.stage)).toEqual([1, 0]);
   });
 });
 

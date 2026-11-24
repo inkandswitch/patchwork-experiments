@@ -36,12 +36,14 @@ first to a widget's owner under it (`api.offerWidget`); presses aren't its; it
 wants the pointer. Its `escape()` clears the selection, then leaves the entered
 link. It stays in hand across Enter and Leave, in any body; a tool can sit over
 it. A second click on the same thing within 500 ms and 6 px Opens the
-selection. **Editing** is `editing(view)` (`src/parts/editing.js`: a hand of
-kind `edit` is held). The editor's commands say `hand: "edit"`, so they apply
-exactly then and a tool picked up through one (Move, Measure) goes down with it
-(STAGE.md, "Commands"); its chrome (the halo, inspector, toolbar's editor
-cluster, grid, axes, bounds, dimensions, drops and paste) asks `editing(view)`
-and shows exactly then (H13). Putting it down puts down the selection.
+selection. **Editing** is holding a hand of kind `edit` (`src/parts/editing.js`).
+The editor's commands say `hand: "edit"`, so they apply exactly then and a tool
+picked up through one (Move, Measure) goes down with it (STAGE.md, "Commands");
+its chrome (the inspector, the toolbar's editor cluster, the grid, axes and
+bounds, the knobs, the drawer's tabs, drops and paste) is made with
+`whileHolding(api, "edit", make)` (STAGE.md, "Hands") as it is picked up and
+disposed as it is put down (H13), and no part asks whether it is editing.
+Putting it down puts down the selection.
 
 ## A command
 

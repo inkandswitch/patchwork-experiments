@@ -9,8 +9,9 @@
 // go writes the param to the object's render doc, and the stage rebuilds the
 // object from it. A tap on a knob is consumed (it selects nothing).
 //
-// They are the halo's build-param knobs (STAGE.md, "The input chain"): shown for the
-// selection while editing with Move held (they are Move's, as the halo is)
+// They are the halo's build-param knobs (STAGE.md, "The input chain"): made as
+// the Edit hand is picked up, and shown for the selection while Move is held
+// (they are Move's, as the halo is)
 // where the scene may be written, hidden while another extension holds the
 // tool (measuring, say).
 //
@@ -23,8 +24,8 @@ import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.j
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
 import { editor } from "./editor.js";
-import { pointing } from "../stage/public.js";
-import { editing } from "./editing.js";
+import { pointing, whileHolding } from "../stage/public.js";
+import { EDIT } from "./editing.js";
 import { MOVE, moving } from "./halo-math.js";
 import { perFocus } from "../per-focus.js";
 
@@ -35,7 +36,7 @@ export const GRAB_PX = 12;
 
 /**
  * May the selection's knobs show? Only with Move held (they are Move's, as the
- * halo's handles are: ./halo.js; an editor's tool, so only while editing:
+ * halo's handles are: ./halo.js; an editor's tool, held only while editing:
  * STAGE.md, "Commands", H14), where the scene may be
  * written, and while no other extension holds a pointing tool (bodies.js
  * pointing). Pure.
@@ -103,11 +104,8 @@ const rgbKey = (c) => (Array.isArray(c) ? c.join(",") : "");
 // ─── the part ───────────────────────────────────────────────────────────────
 
 /** The knobs in one focus stage: `api` is its facet, `view` the view plugin's api. */
-function handlesAt(api, view) {
+function handlesAt(api, view, { layer, labels }) {
   const THREE = api.THREE;
-  const layer = api.world({ onTop: true });
-  layer.name = "handles";
-  const labels = api.labels();
 
   let sources = null; // the scene:source registry
   let offSources = null;
@@ -122,7 +120,8 @@ function handlesAt(api, view) {
   let drawn = null; // the key of what's drawn, so a redraw happens only when it changes
   let placed = []; // [{ spec, line, at }] as drawn, for widgetAt and the drag
 
-  const dead = () => api.signal.aborted;
+  let gone = false; // disposed: the Edit hand put down
+  const dead = () => gone || api.signal.aborted;
 
   Promise.resolve(view.registry("scene:source"))
     .then((reg) => {
@@ -144,7 +143,7 @@ function handlesAt(api, view) {
   /** The selected object, if it's one with a provider that declares handles: { id, o, provider }. */
   function target() {
     const local = api.view.get();
-    if (!editing(local) || !api.writable()) return null;
+    if (!api.writable()) return null;
     const id = local.selected ?? null;
     const o = id ? api.doc()?.objects?.[id] : null;
     if (!o || o.kind === "group" || !o.renderUrl || !o.providerId) return null;
@@ -273,7 +272,7 @@ function handlesAt(api, view) {
 
   // an object moved by a held pose (a halo drag or a carry) moves its handles
   // too: nothing else tells us, so look after each frame (cheap when nothing moved)
-  api.afterRender(() => {
+  const offFrame = api.afterRender(() => {
     if (sub && specs.length) draw();
   });
 
@@ -378,11 +377,18 @@ function handlesAt(api, view) {
     /** The selected object's handles, at the values shown (for probes and tests). */
     handles: () => specs.map((s) => ({ ...s, value: valueOf(s) })),
     dispose() {
+      gone = true;
       token++;
       sub?.off();
       sub = null;
       offSources?.();
       offSources = null;
+      offFrame();
+      drawn = null;
+      placed = [];
+      clearDrawing();
+      labels.set([]);
+      api.invalidate();
     },
   };
 }
@@ -390,7 +396,15 @@ function handlesAt(api, view) {
 export default {
   create(api) {
     api.style(css);
-    const at = perFocus(api, (f) => handlesAt(f, api));
+    // its layer and labels: the focus stage's, made once there
+    const drawing = perFocus(api, (f) => {
+      const layer = f.world({ onTop: true });
+      layer.name = "handles";
+      return { layer, labels: f.labels() };
+    });
+    // the knobs are the editor's: made in the focus as the Edit hand is picked up, gone as it goes
+    const knobs = whileHolding(api, EDIT, () => perFocus(api, (f) => handlesAt(f, api, drawing())));
+    const at = () => knobs()?.() ?? null;
     return {
       // (its focus's: what the view offers is read as it offers it)
       get input() {

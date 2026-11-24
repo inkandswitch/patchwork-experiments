@@ -34,14 +34,14 @@
 //     the linked scene's), offered as `options`: checkboxes in the
 //     inspector, none ticked; the menu takes none.
 // Keys, pastes and drops inside an embedded document are that document's.
-// Copying, pasting, extracting and bundling are the editor's
-// (./editing.js): the commands, ⌘C / ⌘V and a dropped row are taken
-// only while editing.
+// Copying, pasting, extracting and bundling are the editor's: the commands
+// say `hand: "edit"`, and ⌘C / ⌘V and a dropped row are heard from the Edit
+// hand's pick-up until it goes.
 
 import { isGroup } from "../groups.js";
-import { editing } from "./editing.js";
+import { EDIT } from "./editing.js";
 import { fromEmbed } from "../embed.js";
-import { isTyping } from "../stage/public.js";
+import { isTyping, whileHolding } from "../stage/public.js";
 import { landings } from "./landing.js";
 import { parseAutomergeUrl } from "../dnd.js";
 import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
@@ -190,38 +190,40 @@ function create(api) {
     return fromScene(dt, here.url);
   }
 
-  const on = () => editing(here.view.get());
-  api.listen(root, "dragover", (e) => {
-    if (!on() || e.defaultPrevented || fromEmbed(e, root) || !isRowDrag(e.dataTransfer)) return;
-    if (!inPort(e) || ownRow(e.dataTransfer) === true) return hideRing();
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-    const known = currentDrag();
-    const land = landAt(...local(e), known?.tags ?? [], e.altKey);
-    if (land) showRing(land, known?.radius ?? sizeOf(e.dataTransfer), known?.name ?? "");
-    else hideRing();
-  });
-  api.listen(root, "dragleave", (e) => {
-    if (!isRowDrag(e.dataTransfer)) return;
-    if (!(e.relatedTarget instanceof Node) || !port.contains(e.relatedTarget)) hideRing();
-  });
-  api.listen(root, "drop", (e) => {
-    if (!isRowDrag(e.dataTransfer)) return;
-    hideRing();
-    if (!on() || e.defaultPrevented || fromEmbed(e, root) || !inPort(e)) return;
-    let raw = "";
-    try {
-      raw = e.dataTransfer.getData(ROW_MIME);
-    } catch {
-      raw = "";
-    }
-    const payload = readRowPayload(raw);
-    if (!payload || parseAutomergeUrl(payload.scene) === here.url) return; // our own rows: the outline's
-    e.preventDefault();
-    const [x, y] = local(e);
-    const free = e.altKey;
-    void copyObjects(api.focus(), payload, { land: (tags) => landAt(x, y, tags, free) });
-  });
+  /** The drop listeners, while editing (below). → their offs */
+  const listenForRows = () => [
+    api.listen(root, "dragover", (e) => {
+      if (e.defaultPrevented || fromEmbed(e, root) || !isRowDrag(e.dataTransfer)) return;
+      if (!inPort(e) || ownRow(e.dataTransfer) === true) return hideRing();
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      const known = currentDrag();
+      const land = landAt(...local(e), known?.tags ?? [], e.altKey);
+      if (land) showRing(land, known?.radius ?? sizeOf(e.dataTransfer), known?.name ?? "");
+      else hideRing();
+    }),
+    api.listen(root, "dragleave", (e) => {
+      if (!isRowDrag(e.dataTransfer)) return;
+      if (!(e.relatedTarget instanceof Node) || !port.contains(e.relatedTarget)) hideRing();
+    }),
+    api.listen(root, "drop", (e) => {
+      if (!isRowDrag(e.dataTransfer)) return;
+      hideRing();
+      if (e.defaultPrevented || fromEmbed(e, root) || !inPort(e)) return;
+      let raw = "";
+      try {
+        raw = e.dataTransfer.getData(ROW_MIME);
+      } catch {
+        raw = "";
+      }
+      const payload = readRowPayload(raw);
+      if (!payload || parseAutomergeUrl(payload.scene) === here.url) return; // our own rows: the outline's
+      e.preventDefault();
+      const [x, y] = local(e);
+      const free = e.altKey;
+      void copyObjects(api.focus(), payload, { land: (tags) => landAt(x, y, tags, free) });
+    }),
+  ];
 
   // ── copy and paste ───────────────────────────────────────────────────────
   /** Put these on this page's clipboard; what goes on the system's: { [type]: string }. */
@@ -279,35 +281,46 @@ function create(api) {
     });
   }
 
-  api.listen(root, "copy", (e) => {
-    if (!on() || e.defaultPrevented || fromEmbed(e, root)) return;
-    if (isTyping(e.composedPath?.()[0] ?? e.target) || textSelected()) return;
-    const sel = selectedTarget();
-    if (sel == null || !e.clipboardData) return;
-    for (const [t, v] of Object.entries(copy([sel]))) if (v) e.clipboardData.setData(t, v);
-    e.preventDefault();
-  });
-
-  // heard before scene.add's paste (which takes a pasted URL as a document)
-  api.listen(
-    root,
-    "paste",
-    (e) => {
-      if (!on() || e.defaultPrevented || fromEmbed(e, root)) return;
-      if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
-      const cd = e.clipboardData;
-      let payload = readRowPayload(cd?.getData?.(ROW_MIME) ?? "");
-      if (!payload) {
-        const h = heldCopy();
-        const text = cd?.getData?.("text/plain") ?? "";
-        if (h && text && text === h.text) payload = h;
-      }
-      if (!payload) return;
+  /** The clipboard's events, while editing (below). → their offs */
+  const listenForClipboard = () => [
+    api.listen(root, "copy", (e) => {
+      if (e.defaultPrevented || fromEmbed(e, root)) return;
+      if (isTyping(e.composedPath?.()[0] ?? e.target) || textSelected()) return;
+      const sel = selectedTarget();
+      if (sel == null || !e.clipboardData) return;
+      for (const [t, v] of Object.entries(copy([sel]))) if (v) e.clipboardData.setData(t, v);
       e.preventDefault();
-      void paste(payload);
-    },
-    { capture: true },
-  );
+    }),
+    // heard before scene.add's paste (which takes a pasted URL as a document)
+    api.listen(
+      root,
+      "paste",
+      (e) => {
+        if (e.defaultPrevented || fromEmbed(e, root)) return;
+        if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
+        const cd = e.clipboardData;
+        let payload = readRowPayload(cd?.getData?.(ROW_MIME) ?? "");
+        if (!payload) {
+          const h = heldCopy();
+          const text = cd?.getData?.("text/plain") ?? "";
+          if (h && text && text === h.text) payload = h;
+        }
+        if (!payload) return;
+        e.preventDefault();
+        void paste(payload);
+      },
+      { capture: true },
+    ),
+  ];
+
+  // a dropped row, ⌘C and ⌘V are the editor's: heard from the Edit hand's pick-up until it goes
+  whileHolding(api, EDIT, () => {
+    const offs = [...listenForRows(), ...listenForClipboard()];
+    return () => {
+      for (const off of offs) off();
+      hideRing();
+    };
+  });
 
   // ── extract and bundle ──────────────────────────────────────────────────
   // trait names for the options, as the extensions describe them

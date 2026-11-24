@@ -6,15 +6,15 @@
 // unless a field has the keys (its own text undo) or they come from a docked
 // pane; the toolbar has both, named for the step they'd take. A package's
 // own writes go on it through the "edits" service (EDITOR.md, "Undo"). Both are the
-// editor's (./editing.js): only while editing. A step recorded
+// editor's: only while editing. A step recorded
 // there stays on the stack while the viewer looks, walks or sits, and is
 // there to take back on coming back to Edit (if the doc still holds what it
 // wrote: undo's compare-and-set).
 
 import { fromEmbed } from "../embed.js";
-import { isTyping } from "../stage/public.js";
+import { isTyping, whileHolding } from "../stage/public.js";
 import { editor } from "./editor.js";
-import { editing } from "./editing.js";
+import { EDIT } from "./editing.js";
 
 /** Which of undo and redo a keydown asks for, or null. Pure. */
 export function undoKey(e) {
@@ -32,14 +32,16 @@ function create(api) {
     return f ? editor(f)[which]() : false;
   };
 
-  api.listen(root, "keydown", (e) => {
-    const which = undoKey(e);
-    // undo is the editor's (./editing.js): only while editing
-    if (!which || e.defaultPrevented || fromEmbed(e, root) || !editing(api.view.get())) return;
-    if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
-    e.preventDefault();
-    if (!e.repeat) take(which);
-  });
+  // undo is the editor's: its keys heard from the Edit hand's pick-up until it goes
+  whileHolding(api, EDIT, () =>
+    api.listen(root, "keydown", (e) => {
+      const which = undoKey(e);
+      if (!which || e.defaultPrevented || fromEmbed(e, root)) return;
+      if (isTyping(e.composedPath?.()[0] ?? e.target)) return;
+      e.preventDefault();
+      if (!e.repeat) take(which);
+    }),
+  );
 
   const command = (which, name) => ({
     id: which,

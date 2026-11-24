@@ -11,7 +11,8 @@ import { openTabs } from "../test/tabs.js";
 import select from "../parts/select.js";
 import inspector from "../parts/inspector.js";
 import { MAX_PX, prefKey } from "./drawer.js";
-import { editing } from "../parts/editing.js";
+import { holding } from "../stage/bodies.js";
+const editing = (view) => holding(view, "edit");
 
 const SELECT = { meta: { id: "scene.select" }, module: select };
 const INSPECTOR = { meta: { id: "scene.inspector" }, module: inspector };

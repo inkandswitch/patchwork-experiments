@@ -7,15 +7,14 @@
 // mount(body) runs once, on the first open, and answers { opened(),
 // update(scene, local), dispose() }, each optional: opened runs each time the
 // tab docks, just before the update it gets as it opens; update runs while
-// the tab is open; dispose when the part stops.
+// the tab is open; dispose as the tab goes.
 //
-// The drawer's tabs are the editor's (./editing.js): a tab opens only
-// while the Edit hand is held, and shuts when it is put down (not the viewer
-// closing it: onClosed isn't told). The parts that own tabs are view
-// plugins, which don't move with the focus: a tab open stays open across
-// Enter and Leave, showing the focus doc wherever it is now.
-
-import { editing } from "./editing.js";
+// A tab is the editor's chrome: its owner makes it while the Edit hand is
+// held and disposes it as the hand goes (whileHolding, ../stage/public.js),
+// which shuts it without telling onClosed (not the viewer closing it). The
+// parts that own tabs are view plugins, which don't move with the focus: a
+// tab open stays open across Enter and Leave, showing the focus doc
+// wherever it is now.
 
 /**
  * @param {object} api  a view plugin's
@@ -31,7 +30,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
 
   /** Dock it (if it isn't); `show: false` puts it behind a pane already shown, a tab to pick. */
   function open({ show = true } = {}) {
-    if (close || !editing(api.view.get())) return;
+    if (close) return;
     if (!view) {
       try {
         view = mount(body) ?? null;
@@ -63,14 +62,6 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
     close = null;
     c?.();
   }
-  // the editor put down, the tab goes
-  api.view.watch?.(
-    () => api.focus()?.schedule(() => {
-      if (close && !editing(api.view.get())) shut();
-    }),
-    (v) => v.hands,
-  );
-
   return {
     open,
     close: shut,
@@ -100,6 +91,7 @@ export function drawerTab(api, { id, title, mount, onClosed }) {
 
 /**
  * A toolbar toggle that opens and closes a tab: { id, name, show, state, run }.
+ * `tab()` is the tab while it is made (null: no tab, the toggle not there);
  * `available()` false (nothing to show: no parts on offer) leaves it out.
  */
 export function tabToggle(tab, { id, name, title, icon, available = () => true }) {
@@ -109,11 +101,14 @@ export function tabToggle(tab, { id, name, title, icon, available = () => true }
     // the drawer's rail shows the "panels" group (../native/drawer.js), not the bar
     group: "panels",
     ...(icon ? { icon } : {}),
-    // the drawer's tabs are the editor's (./editing.js): only while editing
+    // the drawer's tabs are the editor's: only while editing
     hand: "edit",
     show: ["toolbar"],
-    state: (target) => (target == null && available() ? { checked: tab.isOpen(), title } : null),
+    state: (target) => (target == null && tab() && available() ? { checked: tab().isOpen(), title } : null),
     // (the toolbar says which way; a key or the menu toggles)
-    run: (_target, value) => ((value === undefined ? !tab.isOpen() : !!value) ? tab.open() : tab.close()),
+    run: (_target, value) => {
+      const t = tab();
+      if (t) (value === undefined ? !t.isOpen() : !!value) ? t.open() : t.close();
+    },
   };
 }

@@ -7,24 +7,37 @@
 
 /**
  * `make(facet)` once per facet, on asking; its dispose() (if it has one) runs
- * as that facet goes.
+ * once, as that facet goes or on the getter's `dispose()`, which lets go of
+ * what is made now (asked again, it is made again).
  * @template T
  * @param {{ focus(): object | null }} api  a view plugin's
  * @param {(facet: object) => T} make
- * @returns {() => T | null} the current focus's (null while there is none)
+ * @returns {(() => T | null) & { dispose(): void }} the current focus's (null while there is none)
  */
 export function perFocus(api, make) {
   let at = null;
   let value = null;
-  return () => {
+  let letGo = null; // the made value's dispose, once
+  const get = () => {
     const f = api.focus();
     if (f !== at) {
       at = f;
       const made = (value = f ? make(f) : null);
-      if (typeof made?.dispose === "function") f.signal?.addEventListener?.("abort", () => made.dispose(), { once: true });
+      letGo = null;
+      if (typeof made?.dispose === "function") {
+        let done = false;
+        const once = (letGo = () => void (done || ((done = true), made.dispose())));
+        f.signal?.addEventListener?.("abort", once, { once: true });
+      }
     }
     return value;
   };
+  get.dispose = () => {
+    const give = letGo;
+    at = value = letGo = null;
+    give?.();
+  };
+  return get;
 }
 
 /** The focus stage's reader (API.md, "View plugins": `path`), for a view plugin's `api`; null before there is one. */

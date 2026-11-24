@@ -8,9 +8,9 @@
 //   says `here: false` and is entered by that thing's verb instead), and
 //   Leave pops the top body (never Look): standing up returns to walking,
 //   and from walking or a seat to Look.
-// - Edit, beside the chip, picks up the editor's hand or puts it down
-//   (scene.edit's `edit` command). It is not a body: you can walk or sit
-//   holding it.
+// - Edit, beside the chip, picks up the editor's hand or puts it down: a
+//   surface of scene.edit's `edit` command, pressed as its state is checked.
+//   It is not a body: you can walk or sit holding it.
 // - Who's here: each person present in the focus doc, with their body and
 //   what they hold (every hand, top last: "Edit, Measure, X-ray"), from presence (the view
 //   says every viewer's on every channel it acts on: a person at another
@@ -23,10 +23,13 @@
 // It writes nothing to the doc.
 
 import css from "./body.css?inline";
-import { LOOK } from "../stage/public.js";
-import { EDIT_HAND, editing } from "./editing.js";
+import { LOOK, commandState, flatCommands } from "../stage/public.js";
+import { EDIT_HAND } from "./editing.js";
 import { holdKey } from "../hold-key.js";
-import { perFocus } from "../per-focus.js";
+import { focusReader, perFocus } from "../per-focus.js";
+
+/** The command the Edit button is a surface of. */
+const EDIT_COMMAND = Object.freeze({ ext: "scene.edit", command: "edit" });
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -83,7 +86,7 @@ function create(api) {
   edit.type = "button";
   edit.title = "Pick up the editor: select, move and change things";
   edit.addEventListener("click", () => {
-    api.run({ ext: "scene.edit", command: "edit", target: null, value: !editing(api.view.get()) });
+    api.run({ ...EDIT_COMMAND, target: null });
     api.root.focus?.({ preventScroll: true });
   });
   const hint = el("div", "body-escape");
@@ -163,6 +166,12 @@ function create(api) {
     f.channel.watch(() => f.schedule(render));
     return f.channel;
   });
+  /** The Edit command's state, as the focus's context gives it, or null where it doesn't run. */
+  function editState() {
+    const r = focusReader(api);
+    const e = r && flatCommands(r.collect("commands")).find((c) => c.ext === EDIT_COMMAND.ext && c.command.id === EDIT_COMMAND.command);
+    return e ? commandState(e.command, null, r.context(null)) : null;
+  }
   let shown = "";
   function render() {
     const local = api.view.get();
@@ -171,7 +180,7 @@ function create(api) {
     const rung = local.escape?.hint ?? "";
     const esc = local.pointer?.released ? "Click the view to take the pointer back" : !rung ? "" : touch ? rung[0].toUpperCase() + rung.slice(1) : `Esc: ${rung}`;
     const isKey = touch && !local.pointer?.released && !!rung;
-    const on = editing(local);
+    const on = !!editState()?.checked;
     const key = JSON.stringify([list.map((p) => [p.session, p.you ? "You" : nameOf(p.viewer), p.body, p.held]), local.body?.label, local.body?.depth, on, esc, isKey]);
     if (key === shown) return;
     shown = key;

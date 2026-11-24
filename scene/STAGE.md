@@ -17,7 +17,7 @@ what the kernel reads of an instance, is [API.md](API.md).
 | **Contribution** | A named field of an instance, read with `collect(name)`; the kernel reads only those under "`instance`" (API.md). |
 | **Event** | A value the view makes of DOM input on the canvas ("The input chain"). |
 | **Service** | What an instance `provides` by name, for others to `use`. |
-| **Layer** | Of the scene package's modules, lowest first: shared (formats, math), the kernel (`src/stage/` and the modules it is built from), native (`src/native/`, `src/sources/`), the editor (`src/parts/`), entry. Imports go only down; above the kernel, only to its api and its face, `stage/public.js` (pure helpers, re-exported). The table and its check: `src/native/boundary.test.js`. |
+| **Layer** | Of the scene package's modules, lowest first: shared (formats, math), the kernel (`src/stage/` and the modules it is built from), native (`src/native/`, `src/sources/`), the editor (`src/parts/`), entry. Imports go only down; above the kernel, only to its api and its face, `stage/public.js` (helpers on the api's values and the api, re-exported). The table and its check: `src/native/boundary.test.js`. |
 
 ## Views, stages and links
 
@@ -101,7 +101,9 @@ session) or passes it (false, null), acted or not, and hears every `move`; `put(
 `hold({ name, keys?, pointer? }, input)`) is in `view.held`, its extension kept while it is held, its input told `put()`
 as it goes down. **A popover** (an extension's or view plugin's `popover(close)`) wants the pointer, takes every event,
 isn't announced, and Escape closes it. **Escape** (`stage/ladder.js`; H4): the lock, a field, the gesture, the top
-hand's `escape()` else putting it down; no hand: the selection, else the focus.
+hand's `escape()` else putting it down; no hand: the selection, else the focus. **While holding**
+(`whileHolding(api, kind, make)`, `stage/holding.js`): what a view plugin makes as the first hand of a kind is picked up
+and disposes as the last goes, however it goes.
 
 ## Packages
 
