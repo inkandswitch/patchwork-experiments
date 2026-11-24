@@ -249,13 +249,14 @@ export function fakeTimers() {
  * and doc event drains in each), then whatever off-thread work is in flight
  * (setup.js), then one timer turn, so a timer set at 0 by then has run.
  * Time-dependent work is stepped on the stage's manualTime(), never waited
- * for here: a timer turn costs Node a whole millisecond.
+ * for here: a timer turn costs Node a whole millisecond (`timer: false`
+ * leaves it out, for settle's flushes but the last).
  */
-export async function flush() {
+export async function flush({ timer = true } = {}) {
   for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
   while (globalThis.__offThread?.size) {
     await Promise.allSettled([...globalThis.__offThread]);
     for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
   }
-  await new Promise((r) => setTimeout(r, 0));
+  if (timer) await new Promise((r) => setTimeout(r, 0));
 }

@@ -27,8 +27,15 @@ import { editing } from "../stage/bodies.js";
 
 export { flush };
 
+/**
+ * Let a stage's work land: n flushes' event-loop turns (each turn a frame, as
+ * happy-dom's requestAnimationFrame is an immediate, and every microtask
+ * drained), then one timer turn. A stage's flush is a microtask or the next
+ * frame, so what a change causes has landed; time is stepped (manualTime),
+ * not waited for.
+ */
 export const settle = async (n = 6) => {
-  for (let i = 0; i < n; i++) await flush();
+  for (let i = 0; i < n; i++) await flush({ timer: i === n - 1 });
 };
 
 export async function until(fn, ms = 1000) {
