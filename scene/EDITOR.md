@@ -73,8 +73,9 @@ the first that applies, and the inspector, the menu (after Select), the outline
 the reason when `disabled`; `options` become checkboxes under its menu row,
 what's ticked passed as `value`. `shortcut` is a ⌘ key (`"Mod+G"`,
 `"Shift+Mod+G"`; `src/parts/shortcuts.js`), run by the key map on attention's
-target and shown in the menu; `shortcutBy` names what does it already (the
-clipboard's ⌘C): shown, not run.
+target and shown in the menu and the bar's tooltips; `shortcutBy` names what
+does it already (the clipboard's ⌘V, the browser's paste event, the one way to
+read the clipboard): shown, not run.
 **Surfaces**: absent `show` means every surface but `"world"`; keys work
 whatever `show` says. **`hand: "edit"`**: the editor's, only while editing.
 **`hold`**: a held verb, whose `run` returns `{ end(), cancel(), update?(dt) }`,
@@ -109,7 +110,7 @@ what `change` returns, per person and per focus doc, in the focus stage's
 `local.edits`; a package's verb, a clock act or a process save is never one. A
 step restores only if the doc still holds all it wrote, else it is dropped and
 said; kept objects come back as their keeper has them now. Undo and Redo are
-`hand: "edit"`. A package puts its own writes on it with the `edits` service
+`hand: "edit"`, their shortcuts (⌘Z; ⇧⌘Z and ⌘Y) run by the key map. A package puts its own writes on it with the `edits` service
 (`scene.undo`'s): `use("edits").edit(doc, fn, { label })` writes `fn` to `doc`
 (`{ url, doc(), change(fn) → patches }`; the patches are what the step takes
 back, so a doc leaves out writes that aren't the person's) as one step of this

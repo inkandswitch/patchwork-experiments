@@ -2,9 +2,9 @@
 // Mac) held: "Mod+G", "Shift+Mod+G". The key map's keys are plain keys, and a
 // key with ⌘ or Ctrl is the browser's (./keys.js); a shortcut is the one
 // way a command takes one, run by scene.keys on attention's target (./keys.js).
-// `shortcutBy` names what already does it ("clipboard": ⌘C and ⌘V are the
-// browser's copy and paste events, which transfer.js hears): such a shortcut
-// is only shown, never run here. Pure.
+// `shortcutBy` names what already does it ("clipboard": ⌘V is the browser's
+// paste event, the one way to read the clipboard, which transfer.js hears):
+// such a shortcut is only shown, never run here. Pure.
 
 import { applicable } from "../stage/public.js";
 

@@ -46,6 +46,7 @@ import css from "./toolbar.css?inline";
 import { barEntries, cleanChoices, controlKey, controlKind, tooltip } from "./toolbar-commands.js";
 import { localChanged } from "../shallow.js";
 import { hintFor } from "./keymap.js";
+import { onMac, shortcutLabel, shortcutsOf } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
 import { ICONS } from "../icons.js";
 import { whileHolding } from "../stage/public.js";
@@ -221,7 +222,8 @@ function create(api) {
       const ks = [];
       const els = [];
       for (const it of items) {
-        const item = { ...it, key: hintFor({ ext: it.ext, command: it.command, target: null, stage: it.stage }, keys) };
+        // its key, else its ⌘ shortcut, as the menu shows them
+        const item = { ...it, key: hintFor({ ext: it.ext, command: it.command, target: null, stage: it.stage }, keys) || shortcutLabel(shortcutsOf(it.command)[0], onMac()) };
         const k = keyOf(item.ext, item.command.id, item.stage);
         seen.add(k);
         const kind = controlKind(item.state);

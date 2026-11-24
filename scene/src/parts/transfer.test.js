@@ -9,6 +9,7 @@ import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import transfer from "./transfer.js";
 import menuPart from "./menu.js";
+import keys from "./keys.js";
 import { ROW_MIME, endDrag, hold, rowPayload, startDrag, summaryTypes } from "../transfer.js";
 import { editor } from "./editor.js";
 
@@ -22,7 +23,8 @@ const SHIP = {
   },
   module: { create: () => ({}) },
 };
-const EXTS = [{ meta: { id: "scene.transfer" }, module: transfer }, SHIP];
+// (the key map runs Copy's ⌘C)
+const EXTS = [{ meta: { id: "scene.transfer" }, module: transfer }, { meta: { id: "scene.keys" }, module: keys }, SHIP];
 
 let s = null;
 beforeEach(() => {
@@ -59,6 +61,28 @@ function clipEvent(type, data = {}) {
   Object.defineProperty(e, "clipboardData", { value: { getData: (t) => data[t] ?? "", setData: (t, v) => (written[t] = v) } });
   e.written = written;
   return e;
+}
+/**
+ * ⌘C (Ctrl+C: the harness's navigator is no Mac), as the key map runs Copy:
+ * whether the key was taken, and what Copy's own copy event wrote (the
+ * browser's execCommand("copy"), which runs one, stood in for).
+ */
+function copyKey() {
+  const written = {};
+  const had = Object.getOwnPropertyDescriptor(document, "execCommand");
+  document.execCommand = (cmd) => {
+    if (cmd !== "copy") return false;
+    const c = clipEvent("copy");
+    document.dispatchEvent(c);
+    Object.assign(written, c.written);
+    return true;
+  };
+  try {
+    return { taken: s.key("c", { code: "KeyC", ctrlKey: true }).defaultPrevented, written };
+  } finally {
+    if (had) Object.defineProperty(document, "execCommand", had);
+    else delete document.execCommand;
+  }
 }
 
 /**
@@ -175,17 +199,14 @@ describe("copy and paste", () => {
     const { other, glb } = await setup();
     // copying in the other scene is the same as this: the payload with the link
     s.local.swap((m) => ({ ...m, selected: "hull" }));
-    const c = clipEvent("copy");
-    s.root.dispatchEvent(c);
-    expect(c.defaultPrevented).toBe(true);
+    const c = copyKey();
+    expect(c.taken).toBe(true);
     const written = JSON.parse(c.written[ROW_MIME]);
     expect(written).toMatchObject({ scene: s.handle.url, id: "hull", ids: ["hull"] });
     expect(typeof written.copy).toBe("string"); // which Copy it was: repeats of it are counted
     // nothing selected: the browser's
     s.local.swap((m) => ({ ...m, selected: null }));
-    const none = clipEvent("copy");
-    s.root.dispatchEvent(none);
-    expect(none.defaultPrevented).toBe(false);
+    expect(copyKey().taken).toBe(false);
     // a paste from the other scene: in the middle of the view (the ground at 9, 0, 9 here, as the port has no size)
     s.facet("scene.transfer").pick = () => ({ id: null, point: [9, 0, 9] });
     const p = clipEvent("paste", { [ROW_MIME]: rowPayload(other.url, ["crate"]), "text/plain": glb.url });
@@ -203,8 +224,7 @@ describe("copy and paste", () => {
     });
     await settle();
     s.local.swap((m) => ({ ...m, selected: "cleat" }));
-    const c = clipEvent("copy");
-    s.root.dispatchEvent(c);
+    const c = copyKey();
     const p = clipEvent("paste", { ...c.written });
     s.root.dispatchEvent(p);
     for (let i = 0; i < 3; i++) await settle();
@@ -320,8 +340,7 @@ describe("repeats", () => {
     });
     await settle();
     s.local.swap((m) => ({ ...m, selected: "cleat" }));
-    const c = clipEvent("copy");
-    s.root.dispatchEvent(c);
+    const c = copyKey();
     for (let n = 0; n < 3; n++) {
       s.root.dispatchEvent(clipEvent("paste", { ...c.written }));
       for (let i = 0; i < 3; i++) await settle();
