@@ -33,6 +33,10 @@ class Handle {
   heads() {
     return Automerge.getHeads(this._doc);
   }
+  /** As DocHandle.containsHeads: does this replica have every one of these changes? */
+  containsHeads(heads) {
+    return Automerge.hasHeads(this._doc, heads);
+  }
   // options (a patchCallback: the scene's undo reads it) go to Automerge as a DocHandle passes them
   change(fn, opts) {
     this._doc = opts ? Automerge.change(this._doc, opts, fn) : Automerge.change(this._doc, fn);
