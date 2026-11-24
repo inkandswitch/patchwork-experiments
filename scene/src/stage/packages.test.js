@@ -14,7 +14,7 @@ import { ACCEPTED_KEY, resetPackages } from "./packages.js";
 import { writerOf } from "./provenance.js";
 import { ARRIVE_WAIT_MS } from "./stage.js";
 import packagesPart from "../parts/packages.js";
-import * as editor from "../parts/editor.js";
+import * as making from "../parts/making.js";
 import { LINK } from "../native/link-graph.js";
 
 const HEAD = "H".repeat(48);
@@ -187,11 +187,11 @@ describe("reconcile: the list names what the doc calls for and this viewer has",
     const s = await mount({ extensions: [user, light], parts: [part, lit], templates: [template] });
     await settle();
     expect(urls(s)).toEqual([]); // offered in the bin, not used: not listed
-    await editor.part(s.api("t.user"), "buoy", { parent: null });
-    await editor.template(s.api("t.user"), "level");
+    await making.part(s.api("t.user"), "buoy", { parent: null });
+    await making.template(s.api("t.user"), "level");
     await settle();
     expect(urls(s)).toEqual([]); // what they made calls for nothing
-    await editor.part(s.api("t.user"), "lit-buoy", { parent: null });
+    await making.part(s.api("t.user"), "lit-buoy", { parent: null });
     await settle();
     expect(urls(s)).toEqual([PARTS]); // the light the lit buoy carries is the package's
     s.change((d) => delete d.objects.c);

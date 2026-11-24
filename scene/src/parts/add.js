@@ -33,7 +33,8 @@ import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomerge
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
 import { whileHolding } from "../stage/public.js";
-import { add as addObject, drop, template } from "./editor.js";
+import { add as addObject } from "./editor.js";
+import { drop, template } from "./making.js";
 import { atFocus } from "../per-focus.js";
 import { EDIT } from "./editing.js";
 import { createParamForm } from "../param-form.js";

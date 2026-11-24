@@ -31,7 +31,7 @@ import css from "./parts.css?inline";
 import { isGroup } from "../groups.js";
 import { partLanding } from "./parts-place.js";
 import { drawerTab, tabToggle } from "./tab.js";
-import { part } from "./editor.js";
+import { part } from "./making.js";
 import { atFocus, perFocus } from "../per-focus.js";
 import { whileHolding } from "../stage/public.js";
 import { EDIT } from "./editing.js";

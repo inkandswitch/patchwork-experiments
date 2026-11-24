@@ -3,7 +3,7 @@
 // trait (`"*"`: every doc), in running order, as the doc calls
 // for them; the api they get; presence between two mounted stages; prefs
 // kept per scene; where the doc starts people; and the editor's templates,
-// parts and drops (../parts/editor.js) run on an api.
+// parts and drops (../parts/making.js) run on an api.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
@@ -55,7 +55,8 @@ const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
 const { plugins } = await import("../index.js");
 const { emptyScene } = await import("../test/empty-scene.js");
 const { default: Stage } = await import("./stage.js");
-const { add, drop, editor, part, template: runTemplate } = await import("../parts/editor.js");
+const { add, editor } = await import("../parts/editor.js");
+const { drop, part, template: runTemplate } = await import("../parts/making.js");
 // the drop context (EDITOR.md, "Drops"), whole: what a drop, a part and a template get
 const CTX = ["addObject", "change", "content", "doc", "file", "id", "local", "newId", "notify", "registry", "repo", "scene", "select", "url", "viewer", "worldOf"];
 // (and the editor's hand, a view plugin: the start's `edit` picks it up; and the view's native services)

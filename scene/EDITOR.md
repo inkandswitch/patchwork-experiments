@@ -133,7 +133,8 @@ never reaches them; what nobody takes is the browser's. The editor's:
 `scene.transfer` (a row from another scene, a copied object), `scene.add` (a
 document or file, a pasted document link), `scene.parts` (a part).
 
-A doc added by drop or paste goes to each extension whose metadata `drops`
+A doc added by drop or paste (`src/parts/making.js`, as parts and templates
+are) goes to each extension whose metadata `drops`
 takes its datatype (`"*"`: any): its module's `drop(ctx, info)` → boolean (or a
 promise of one), until one says true; the
 traits it writes start its extension. A drop-only extension declares the marker
