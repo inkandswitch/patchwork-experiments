@@ -3,7 +3,6 @@
 // (../stage/commands.js). Pure: no DOM, no api.
 
 import { commandState, flatCommands, inHand } from "../stage/public.js";
-import { editing } from "./editing.js";
 
 /**
  * Is this command meant for this surface? An explicit `show` list decides;
@@ -101,12 +100,14 @@ export function applicable(flat, target, ctx, surface, opts) {
 export const isWorld = (command) => shownOn(command, "world", { strict: true });
 
 /**
- * Is this command meant for the bar of tools in this view (EDITOR.md, "The interface")?
+ * Is this command meant for the bar of tools (EDITOR.md, "The interface")?
  * A world command is, in every body; a toolbar command (show names
- * "toolbar", or says nothing) is the editor's, so only while editing. Whether it
- * applies (its hand, its state) is commandState's, as on every surface.
+ * "toolbar", or says nothing) is the editor's cluster's, so only while
+ * that is there (`cluster`: the bar makes it while the Edit hand is held).
+ * Whether it applies (its hand, its state) is commandState's, as on every
+ * surface.
  */
-export const onBar = (command, view) => isWorld(command) || (editing(view) && shownOn(command, "toolbar"));
+export const onBar = (command, cluster) => isWorld(command) || (!!cluster && shownOn(command, "toolbar"));
 
 /**
  * The bar of tools for a view: the focus path's scene commands (the null
@@ -121,17 +122,18 @@ export const onBar = (command, view) => isWorld(command) || (editing(view) && sh
  * which extensions run, never on a command's state, and the canvas under it
  * doesn't move as Play or Lift all comes and goes.
  * @param {{ stage?: number, collected: any, ctx: object }[]} segs  the focus path's stages, focus first
- * @param {{ body?: { id?: string } } | null | undefined} view
+ * @param {{ hands?: object[] } | null | undefined} view
+ * @param {boolean} cluster  is the editor's cluster there (onBar)?
  * @returns {{ editor: { ext, command, state, stage? }[], world: { ext, command, state, stage? }[], shown: boolean }}
  */
-export function barEntries(segs, view) {
+export function barEntries(segs, view, cluster) {
   const editor = [];
   const world = [];
   let shown = false;
   const seen = new Set();
   for (const seg of segs ?? []) {
     for (const { ext, command } of flatCommands(seg.collected)) {
-      if (!onBar(command, view)) continue;
+      if (!onBar(command, cluster)) continue;
       if (inHand(command, view)) shown = true;
       const k = `${seg.stage ?? ""}\u0000${ext}\u0000${command.id}`;
       if (seen.has(k)) continue;

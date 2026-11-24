@@ -122,7 +122,7 @@ function shown(state) {
   const m = menuEntries(state.collected, target, state.ctx);
   for (const e of m.forObject) out.push({ ...e, target, surface: "menu" });
   for (const e of m.forScene) out.push({ ...e, target: null, surface: "menu" });
-  const bar = barEntries([{ collected: state.collected, ctx: state.ctx }], state.ctx.view);
+  const bar = barEntries([{ collected: state.collected, ctx: state.ctx }], state.ctx.view, !!state.ctx.view?.hands?.some((h) => h.kind === "edit"));
   for (const e of [...bar.editor, ...bar.world]) out.push({ ...e, target: null, surface: "bar" });
   return out;
 }

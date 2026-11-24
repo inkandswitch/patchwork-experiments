@@ -9,8 +9,8 @@
 //
 // Saved dimensions are the doc's, drawn in every body (an author's
 // annotation, like a label); measuring them, their panel, selecting one by
-// its label and deleting it are the editor's (./editing.js): only in
-// Edit.
+// its label and deleting it are the editor's: commands that say `hand:
+// "edit"`, and a tab made while the Edit hand is held.
 //
 // A dimension is selectable though it isn't a scene object: selecting one
 // sets local.selected, the one selection, to its ref "dimension:<id>"
@@ -25,14 +25,14 @@
 // the focus doc's.
 
 import css from "./dimensions.css?inline";
-import { resolveCssColor } from "../stage/public.js";
+import { resolveCssColor, whileHolding } from "../stage/public.js";
 import { detachAnchor, distance } from "../anchors.js";
 import { applyMatrix, contentMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { editor } from "./editor.js";
-import { editing } from "./editing.js";
+import { EDIT } from "./editing.js";
 import { perFocus } from "../per-focus.js";
 import { placeBetween } from "./segment-label.js";
 
@@ -367,8 +367,8 @@ export function create(api) {
         className: "dimension-label",
         rank: 3,
         data: { id: d.id, selected: d.selected, detached: d.detached, offsurface: d.offSurface },
-        // selecting one is the editor's (./editing.js): only while editing
-        onPointerDown: () => editing(api.view.get()) && select(d.id),
+        // selecting one is the editor's: its `select` command, which applies only while editing
+        onPointerDown: () => api.run({ ext: api.id, command: "select", target: dimensionRef(d.id) }),
       })),
     );
     api.invalidate();
@@ -494,6 +494,15 @@ export function create(api) {
       run: (target, value) => addDimension(value),
     },
     {
+      // its label's click (above): select the dimension
+      id: "select",
+      hand: "edit",
+      name: "Select dimension",
+      show: [],
+      state: (target, ctx) => (applies(target, ctx) ? { title: "Select this dimension" } : null),
+      run: (target) => select(dimensionOf(target, F()?.scene())),
+    },
+    {
       id: "delete",
       hand: "edit",
       name: "Delete dimension",
@@ -504,25 +513,27 @@ export function create(api) {
     },
   ];
 
-  // a drawer tab the viewer opens (Dimensions in the toolbar)
-  const tab = drawerTab(api, { id: "dimensions", title: "Dimensions", mount: mountPanel });
-  commands.push(tabToggle(tab, { id: "dimensions", name: "Dimensions", icon: "dimensions", title: "The dimensions saved in this scene, and Measure" }));
+  // a drawer tab the viewer opens (Dimensions in the toolbar): the editor's, made while the Edit hand is held
+  const tabNow = whileHolding(api, EDIT, () => drawerTab(api, { id: "dimensions", title: "Dimensions", mount: mountPanel }));
+  commands.push(tabToggle(tabNow, { id: "dimensions", name: "Dimensions", icon: "dimensions", title: "The dimensions saved in this scene, and Measure" }));
 
   return {
     update(scene, local, prev, view) {
       const s = seen(local, view);
       update(scene, s, { scene: prev?.scene ?? null, local: prev?.scene ? lastSeen : null });
       lastSeen = s;
-      tab.update(scene, s);
+      tabNow()?.update(scene, s);
     },
     commands,
-    tab,
+    /** the tab, while editing (for tests and probes) */
+    get tab() {
+      return tabNow();
+    },
     // (the focus stage's removal: the view's plugins are offered only there)
     beforeRemove(draft, ids) {
       detachEnds(draft, ids, F()?.scene().objects ?? {});
     },
     dispose() {
-      tab.dispose();
       panels.clear();
     },
   };

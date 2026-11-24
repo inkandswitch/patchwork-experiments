@@ -25,7 +25,8 @@ import { FakeRepo, flush } from "./fake-repo.js";
 import { emptyScene } from "./empty-scene.js";
 import { realTime } from "../stage/time.js";
 import { getRegistry, resetRegistries } from "./plugins-mock.js";
-import { editing } from "../parts/editing.js";
+import { holding } from "../stage/bodies.js";
+const editing = (view) => holding(view, "edit");
 
 export { flush };
 

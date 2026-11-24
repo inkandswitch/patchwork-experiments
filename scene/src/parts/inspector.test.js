@@ -8,7 +8,8 @@ import { manualTime } from "../stage/time.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
 import inspector from "./inspector.js";
-import { editing } from "./editing.js";
+import { holding } from "../stage/bodies.js";
+const editing = (view) => holding(view, "edit");
 import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
 import { aboutFor, attachOptions, groupOptions, statusParts } from "./inspector-model.js";
@@ -693,7 +694,7 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
       await settle();
       expect(tab().body.querySelector('.object-row[data-id="x"]')).toBe(null);
       await before();
-      expect(tab().isOpen()).toBe(false);
+      expect(!!tab()?.isOpen()).toBe(false);
       calls.length = 0;
       open();
       await settle();
@@ -711,27 +712,28 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
 
   // A shut pane is drawn into by nothing (a scene that changes every frame
   // isn't redrawn into a tree nobody sees); it catches up as it opens.
+  // (putting the editor down disposes the pane: nothing is left to draw into)
   it.each([
-    ["×", () => s.root.querySelector(".stage-drawer-tab-close").click(), toolbarOn],
-    ["putting the editor down", () => s.edit(false), () => (s.edit(true), toolbarOn())],
-  ])("shut by %s, the tree isn't drawn; opened again, it shows the scene as it is", async (_name, shut, reopen) => {
+    ["×", () => s.root.querySelector(".stage-drawer-tab-close").click(), toolbarOn, "A"],
+    ["putting the editor down", () => s.edit(false), () => (s.edit(true), toolbarOn()), null],
+  ])("shut by %s, the tree isn't drawn; opened again, it shows the scene as it is", async (_name, shut, reopen, whileShut) => {
     s = await mountStage({ editor: true, natives: true,  extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     await settle();
     toolbarOn();
     await settle();
-    const name = () => tab().body.querySelector('.object-row[data-id="a"] .name')?.textContent ?? null;
+    const name = () => tab()?.body.querySelector('.object-row[data-id="a"] .name')?.textContent ?? null;
     expect(name()).toBe("A");
     shut();
     await settle();
-    expect(tab().isOpen()).toBe(false);
+    expect(!!tab()?.isOpen()).toBe(false);
     s.change((d) => {
       d.objects.a.name = "A2";
       d.objects.b = object({ name: "B" });
       d.order.push("b");
     });
     await settle();
-    expect(name()).toBe("A");
-    expect(tab().body.querySelector('.object-row[data-id="b"]')).toBe(null);
+    expect(name()).toBe(whileShut);
+    expect(tab()?.body.querySelector('.object-row[data-id="b"]') ?? null).toBe(null);
     reopen();
     await settle();
     expect(tab().isOpen()).toBe(true);

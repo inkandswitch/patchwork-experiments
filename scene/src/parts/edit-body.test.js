@@ -23,7 +23,8 @@ import axes from "./axes.js";
 import bounds from "./bounds.js";
 import toolbar from "./toolbar.js";
 import select from "./select.js";
-import { editing } from "./editing.js";
+import { holding } from "../stage/bodies.js";
+const editing = (view) => holding(view, "edit");
 
 const SLICE = {
   type: "scene:source",
@@ -122,7 +123,7 @@ function chrome() {
   return {
     handles: s.instance("scene.halo").debug.target != null,
     knobs: s.port.querySelectorAll(".handle-label").length > 0,
-    inspector: s.instance("scene.inspector").tab.isOpen(),
+    inspector: !!s.instance("scene.inspector").tab?.isOpen(),
     grid: drawnIn("scene.grid"),
     axes: drawnIn("scene.axes"),
     bounds: drawnIn("scene.bounds") || s.port.querySelectorAll(".bounds-label").length > 0, // (a selected object gets sizes, not a box)

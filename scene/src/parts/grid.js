@@ -1,13 +1,14 @@
 // scene.grid: the ground grid, its ruler labels along X and Z, and the
-// "grid 10 cm" caption in the corner, while the viewer's `grid` pref is on.
+// "grid 10 cm" caption in the corner, while the viewer's `grid` pref is on
+// and the Edit hand is held (made as it is picked up, gone as it goes).
 // The grid is sized to the
 // scene in the current units (units.js gridFor), and its plane is given to
 // the stage as an extent so the near plane never cuts it.
 
-import { editing } from "./editing.js";
+import { EDIT } from "./editing.js";
 import { perFocus } from "../per-focus.js";
 import css from "./grid.css?inline";
-import { resolveCssColor } from "../stage/public.js";
+import { resolveCssColor, whileHolding } from "../stage/public.js";
 import { gridFor, roundForDisplay, toUnits } from "../units.js";
 
 /** How far the scene reaches from the origin, horizontally (or half its height): what the grid must cover. */
@@ -42,23 +43,15 @@ export default {
   create(api) {
     const { THREE } = api;
     api.style(css);
-    let key = null;
     // its layer and rulers are the focus stage's, in its frame: made again where the focus goes
     const at = perFocus(api, (f) => {
       const layer = f.world();
       layer.userData.noPick = true;
-      key = null;
       return { f, layer, labels: f.labels() };
     });
-    const caption = document.createElement("div");
-    caption.className = "grid-caption";
-    caption.hidden = true;
-    api.overlay().append(caption);
-
+    const corner = api.overlay();
     const pref = (key, fallback) => api.use("prefs")?.get(key, fallback) ?? fallback;
     const shown = () => pref("grid", true) !== false;
-    // what's drawn: shown, and only while editing (the aids are the editor's: ./editing.js)
-    const drawn = () => shown() && editing(api.view.get());
     // its own colour tokens (grid.css), read again as the theme changes
     const color = (token) => new THREE.Color().setRGB(...resolveCssColor(api.root, token), THREE.SRGBColorSpace);
 
@@ -70,38 +63,66 @@ export default {
       }
     }
 
-    function redraw() {
-      const here = at();
-      if (!here) return;
-      const { f, layer, labels } = here;
-      const on = drawn();
-      const unit = pref("units", "m");
-      const grid = gridFor(sceneExtent(f.box(null)), unit);
-      const next = on ? JSON.stringify([unit, grid.size, grid.divisions]) : "off";
-      if (next === key) return;
-      key = next;
-      clear(layer);
-      if (!on) {
-        labels.set([]);
+    /** The grid as drawn while the Edit hand is held (the aids are the editor's): its caption, and what it drew where. */
+    function grid() {
+      const caption = document.createElement("div");
+      caption.className = "grid-caption";
+      caption.hidden = true;
+      corner.append(caption);
+      let key = null;
+      let drawnAt = null; // the focus's layer it drew in
+      const undraw = () => {
+        if (!drawnAt) return;
+        clear(drawnAt.layer);
+        drawnAt.labels.set([]);
+        drawnAt.f.extent(null);
         caption.hidden = true;
-        f.extent(null);
         api.invalidate();
-        return;
+      };
+      function redraw() {
+        const here = at();
+        if (!here) return;
+        if (here !== drawnAt) key = null;
+        const { f, layer, labels } = here;
+        const on = shown();
+        const unit = pref("units", "m");
+        const g = gridFor(sceneExtent(f.box(null)), unit);
+        const next = on ? JSON.stringify([unit, g.size, g.divisions]) : "off";
+        if (next === key) return;
+        key = next;
+        undraw();
+        drawnAt = here;
+        if (!on) return;
+        const helper = new THREE.GridHelper(g.size, g.divisions, color("--scene-grid-major"), color("--scene-grid-minor"));
+        helper.material.transparent = true;
+        helper.material.opacity = 0.8;
+        helper.material.depthWrite = false;
+        helper.renderOrder = -1;
+        helper.raycast = () => {};
+        layer.add(helper);
+        const half = g.size / 2;
+        f.extent({ min: [-half, 0, -half], max: [half, 0, half] });
+        labels.set(rulerLabels(g, unit));
+        caption.hidden = false;
+        caption.textContent = `grid ${roundForDisplay(g.stepInUnits)} ${unit}`;
+        api.invalidate();
       }
-      const helper = new THREE.GridHelper(grid.size, grid.divisions, color("--scene-grid-major"), color("--scene-grid-minor"));
-      helper.material.transparent = true;
-      helper.material.opacity = 0.8;
-      helper.material.depthWrite = false;
-      helper.renderOrder = -1;
-      helper.raycast = () => {};
-      layer.add(helper);
-      const half = grid.size / 2;
-      f.extent({ min: [-half, 0, -half], max: [half, 0, half] });
-      labels.set(rulerLabels(grid, unit));
-      caption.hidden = false;
-      caption.textContent = `grid ${roundForDisplay(grid.stepInUnits)} ${unit}`;
-      api.invalidate();
+      return {
+        update(scene, local, prev, view) {
+          // only a doc change, a content change (same scene and local) or a pref or theme change can move the grid
+          const was = prev.view;
+          const content = scene === prev.scene && local === prev.local && view === was;
+          if (key != null && was && scene === prev.scene && !content && view["scene.prefs"] === was["scene.prefs"] && view.theme === was.theme) return;
+          if (was && view.theme !== was.theme) key = null;
+          redraw();
+        },
+        dispose() {
+          undraw();
+          caption.remove();
+        },
+      };
     }
+    const drawn = whileHolding(api, EDIT, grid);
 
     return {
       commands: [
@@ -116,14 +137,7 @@ export default {
           run: () => api.use("prefs")?.set("grid", !shown()),
         },
       ],
-      update(scene, local, prev, view) {
-        // only a doc change, a content change (same scene and local) or a pref or theme change can move the grid
-        const was = prev.view;
-        const content = scene === prev.scene && local === prev.local && view === was;
-        if (was && scene === prev.scene && !content && view["scene.prefs"] === was["scene.prefs"] && view.theme === was.theme && view.hands === was.hands) return;
-        if (was && view.theme !== was.theme) key = null;
-        redraw();
-      },
+      update: (...args) => drawn()?.update(...args),
     };
   },
 };

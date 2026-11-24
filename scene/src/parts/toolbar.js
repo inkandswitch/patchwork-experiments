@@ -1,14 +1,13 @@
 // scene.toolbar: the bar of tools (EDITOR.md, "The interface"), a row along the top
 // presenting the scene commands (the null target) of every running
 // extension on the focus path, in two clusters: the editor's, at the left,
-// only while editing (show includes "toolbar", or says nothing), and the world's,
+// made while the Edit hand is held (show includes "toolbar", or says nothing), and the world's,
 // at the right, in every body (show includes "world": a game's Play, a
 // table's Lift all cups, a boat's Come aboard), so a world command sits at the
 // same place looking, walking, seated or editing. Each is a button, a
 // toggle (aria-pressed from `checked`) or a picker (`choices`/`value`), in
-// running order then command order. It owns no verbs of its own; what used
-// to be hard-wired here (frame, measure, grid, units…) is each part's
-// command now.
+// running order then command order. It owns no verbs of its own: frame,
+// measure, grid, units… are each part's command.
 //
 // The editor's cluster is in groups (PLANS.md §5), by a command's `group`:
 // history (undo, redo), tools (Select, Move…), the rest (a package's, X-ray),
@@ -49,6 +48,8 @@ import { localChanged } from "../shallow.js";
 import { hintFor } from "./keymap.js";
 import { resolverState } from "./resolver.js";
 import { ICONS } from "../icons.js";
+import { whileHolding } from "../stage/public.js";
+import { EDIT } from "./editing.js";
 
 /** The editor's groups, in the order they sit (a command without a group is "other"). */
 export const GROUPS = Object.freeze(["history", "tools", "other", "panels", "view", "settings"]);
@@ -105,9 +106,16 @@ function create(api) {
     // a popover (STAGE.md, "Hands"): Escape closes it, and the canvas is its while it's open
     releasePop = api.popover?.(shut) ?? null;
   });
-  api.listen(document, "pointerdown", (e) => {
-    if (!pop.hidden && !settings.contains(e.target)) shut();
-  }, true);
+  // the editor's cluster is chrome: there (and its popover's outside click heard) while the Edit hand is held
+  const cluster = whileHolding(api, EDIT, () => {
+    const off = api.listen(document, "pointerdown", (e) => {
+      if (!pop.hidden && !settings.contains(e.target)) shut();
+    }, true);
+    return () => {
+      off();
+      shut();
+    };
+  });
   // (settings outside the row's sideways scroll, which would clip its popover)
   row.append(...[...groupEls.values()].filter((g) => g !== settings));
   bar.insertBefore(settings, world);
@@ -207,7 +215,7 @@ function create(api) {
     const keys = resolverState(api);
     // the focus path's stages, each its own commands in its own context (each key is the resolver's: shown only where pressing it does this)
     const segs = api.path({ focus: true }).map((seg) => ({ stage: seg.stage, collected: seg.collect("commands"), ctx: seg.context(null) }));
-    const entries = barEntries(segs, view);
+    const entries = barEntries(segs, view, !!cluster());
     const seen = new Set();
     const place = (el, items, wrap = null) => {
       const ks = [];

@@ -1159,7 +1159,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     const own = { offs: new Set(), frame: new Set(), hands: new Set(), els: new Set() };
     const live = () => !signal.aborted && !dead;
     const acquire = acquirer(live);
-    let watched = atom.get();
     const api = {
       id,
       signal,
@@ -1174,8 +1173,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       /** the viewer's value, whole (the selection, hover and focus as paths, and each view plugin's own at its id); step(ev): a selection step (../selection.js) but enter; enter(path), arrive(); set(value): this plugin's own, view[id] */
       view: Object.freeze({
         get: () => atom.get(),
+        // (each watch keeps its own last value, so one plugin's watches never hide each other's changes)
         watch: (fn, select) =>
-          acquire(own.offs, () =>
+          acquire(own.offs, (watched = atom.get()) =>
             atom.watch(() => {
               const next = atom.get();
               const prev = watched;
