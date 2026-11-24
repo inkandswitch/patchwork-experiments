@@ -1,5 +1,5 @@
 // The hand, with a real mouse, in headless Chrome: two peers on one scene, a
-// locked board with snap points (extras.snapPoints), blocks and pawns.
+// locked board with connectors (extras.connectors), blocks and pawns.
 //
 //   pnpm build
 //   node probes/hand-run.mjs [--port 4602] [--cdp 9602] [--show] [--shots <dir>]

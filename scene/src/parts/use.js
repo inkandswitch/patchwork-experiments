@@ -48,12 +48,9 @@
 
 import css from "./use.css?inline";
 import { applicable, keysOf } from "./toolbar-commands.js";
-import { commandState, flatCommands } from "../stage/commands.js";
-import { codeOfKey } from "../key-order.js";
+import { codeOfKey, commandState, flatCommands, looksFromEye, samePath } from "../stage/public.js";
 import { attentionPath, hintFor, keyFor, segmentsOf } from "./keymap.js";
 import { resolverState } from "./resolver.js";
-import { samePath } from "../stage/paths.js";
-import { looksFromEye } from "../stage/pointer.js";
 import { arrange, holdKey } from "../hold-key.js";
 
 /** How many verbs the prompt shows before its "more". */

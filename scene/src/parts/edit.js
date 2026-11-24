@@ -14,7 +14,7 @@
 // (Enter is the Open commands' own key, so the key map shows and resolves
 // it.) Its Select, on the bar beside Move, puts the editor's tools down.
 
-import { restLayer } from "../stage/ladder.js";
+import { restLayer } from "../stage/public.js";
 import { EDIT, EDIT_HAND } from "./editing.js";
 import { runOpen } from "./open.js";
 
@@ -48,8 +48,8 @@ export default {
         return true;
       },
     };
-    /** The held tools picked up through the editor's commands (each says the hand it was held for). */
-    const tools = () => (api.view.get().held ?? []).filter((t) => t.hand === EDIT);
+    /** The held tools picked up through the editor's commands (each says the kind of hand it was held for, `handKind`). */
+    const tools = () => (api.view.get().held ?? []).filter((t) => t.handKind === EDIT);
     function put() {
       const r = release;
       release = null;

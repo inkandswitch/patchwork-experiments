@@ -13,7 +13,7 @@
 
 import css from "./menu.css?inline";
 import { applicable, cleanChoices, controlKind } from "./toolbar-commands.js";
-import { flatCommands } from "../stage/commands.js";
+import { flatCommands } from "../stage/public.js";
 import { hintFor } from "./keymap.js";
 import { onMac, shortcutLabel, shortcutsOf } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";

@@ -43,8 +43,9 @@ export function placeLocal(g, t) {
 
 /**
  * What a GLB says about itself, for contentOf(id).extras: the scene's own
- * extras, plus its connectors (in body space), their snap radius as the GLB
- * gives it (null when it gives none), its raw legend and its layer table.
+ * extras, plus its connectors (in body space), how far they reach
+ * (findSnapPoints: the GLB's, else from their spacing; null with fewer than
+ * two), its raw legend and its layer table.
  * The stage's fields win over same-named scene extras.
  * @param {{ extras?: object, snap?: { points: object[], radius: number | null }, legend?: object | null, layers?: object[] }} prepared  prepareGLB's result
  */

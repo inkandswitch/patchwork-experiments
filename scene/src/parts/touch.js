@@ -23,7 +23,7 @@
 // twice is nothing: the router ignores a keyup for a key it doesn't hold.
 
 import css from "./touch.css?inline";
-import { keyHolder } from "../key-order.js";
+import { keyHolder } from "../stage/public.js";
 import { touchControls } from "../touch-keys.js";
 import { arrange, holdKey } from "../hold-key.js";
 

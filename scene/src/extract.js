@@ -71,7 +71,7 @@ import { resolveParents, worldMatrix } from "./hierarchy.js";
 import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "./transform.js";
 import { detachAnchor, resolveAnchor } from "./anchors.js";
 import { newObjectRecord, orderedIds } from "./ops.js";
-import { listedPackages, packageUrl, packagesToList } from "./packages.js";
+import { listedPackages, packagesToList, packageUrl } from "./stage/public.js";
 import { pinnedRepo } from "./build.js";
 import { LINK, atOf, isLink } from "./native/link-graph.js";
 import { editor } from "./parts/editor.js";
