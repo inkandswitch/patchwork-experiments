@@ -124,7 +124,7 @@ function everyArrival(docs, { gone = new Set(), orders = true } = {}) {
     const docOf = docOfGraph(docs, { gone, arrived });
     const out = expand(root, docOf);
     check(out, docOf);
-    if (arrived.size === k) expect(out).toEqual(full);
+    if (arrived.size === k && JSON.stringify(out) !== JSON.stringify(full)) throw new Error(`the end isn't the one-shot expansion: ${JSON.stringify({ out, full })}`);
   }
   return full;
 }
