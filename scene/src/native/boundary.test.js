@@ -187,8 +187,8 @@ describe("the layers and the kernel's boundary", () => {
   // editor's) does on the kernel's behalf.
   it("the kernel runs on the stage's one time: no page clock or timer in it, nor in a shared module it imports, but stage/time.js and the stated exceptions", () => {
     const PAGE = /\b(Date\s*\.\s*now|new\s+Date\b|Date\s*\(|performance\s*\.\s*now|setTimeout|setInterval|setImmediate|requestAnimationFrame|requestIdleCallback|AbortSignal\s*\.\s*timeout)\b|\b(globalThis|window|self)\s*\[/g;
-    // CPU, not time: the stage and the viewport measure what their work costs, and pick structures are built while the page is idle
-    const EXCEPT = { "stage/stage.js": ["performance.now"], "stage/viewport.js": ["performance.now"], "stage/picking.js": ["requestIdleCallback"] };
+    // CPU, not time: the flush and the viewport measure what their work costs, and pick structures are built while the page is idle
+    const EXCEPT = { "stage/flush.js": ["performance.now"], "stage/viewport.js": ["performance.now"], "stage/picking.js": ["requestIdleCallback"] };
     const kernel = new Set(modules.filter((m) => layerOf(m) === "kernel"));
     for (let grew = true; grew; ) {
       grew = false;
