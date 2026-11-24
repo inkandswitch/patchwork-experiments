@@ -63,6 +63,7 @@ Each extension's own; what it acquires through it goes when it stops. Everything
 | `addObject(url, o)` | → a change function with its new object's `id` |
 | `display(id, o)` → release | **Display** (below) |
 | `pick(x, y, o?)`, `raycast(origin, dir, o?)` | → `{ id, point, normal, distance }` or null; `{ ground?, snapPx? }`; `{ far?, skip(id)? }` |
+| `ray(x, y)` | → `{ origin, dir }` or null: the ray an event at that port point carries, for a point no event carries |
 | `project(p)`, `look()` | → `{ x, y, visible }` (port px); the pointer's hit, the eye ray's under lock |
 | `camera` | `get()` → `{ position, target, fov, up }`; `set(cam)`; `frame(box)`; `hold()` → release; `touched()`; `onEnd(fn)` |
 | | `set({ position?, target?, quaternion?, fov?, near?, far? })`; `near`, `far` hold only while it is held |

@@ -137,6 +137,8 @@ export function fakeStage(sceneDoc, { session = "s-me", repo = new FakeRepo(), h
     },
     schedule: (fn) => fn(),
     listen: () => () => {},
+    // the ray through a port point (straight down onto the table at x, y here)
+    ray: (x, y) => ({ origin: [x, 10, y], dir: [0, -1, 0] }),
     port: null,
     local: { get: () => rec.local },
   };
