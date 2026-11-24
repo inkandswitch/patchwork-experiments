@@ -139,7 +139,7 @@ nothing.
 | `src/layout.js` | putting blocks into a scene doc: a kind's file, a block's object, the whole arena |
 | `src/template.js`, `src/parts.js`, `src/reset.js` | the template, the parts, Stand targets up |
 | `src/glb.js` | the GLB encoder, copied from the scene package (the kit: `node scripts/check-kit.mjs` at the repo root) |
-| `src/test/empty-scene.js` | an empty scene doc, as the scene datatype's init makes it (a copy; scene/src/datatype.js is the source of truth): what the tests and probes start a scene doc from |
+| `src/test/empty-scene.js` | an empty scene doc, as the scene datatype's init makes it (a copy; scene/src/shared/datatype.js is the source of truth): what the tests and probes start a scene doc from |
 | `probes/arena-run.mjs`, `probes/arena-probe.html` | the browser probe (below); `fake-repo.js` and the stubs are its in-memory repo and registry |
 | `probes/publish-level.mjs` | publish an arena level to a real sync server (`--dry-run` to only check); `probes/scene-packages.mjs` gives the scene its suggested import and `packages` |
 | `probes/chrome-guard.mjs`, `probes/chrome-guard-check.mjs` | Chrome never outlives the probe driver that started it (copied, the same in every package), and a finite check of it |

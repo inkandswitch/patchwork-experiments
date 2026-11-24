@@ -1,6 +1,6 @@
 // 4 × 4 matrices for a table that sits on something: a scene transform's
 // matrix and back, products, inverses, points. Column-major, Euler XYZ, a
-// uniform scale, as the scene's own (scene/src/transform.js), copied rather
+// uniform scale, as the scene's own (scene/src/shared/transform.js), copied rather
 // than imported: packages stand alone.
 
 const tidy = (v) => Math.round(v * 1e9) / 1e9 + 0;
@@ -39,7 +39,7 @@ export function invert(m) {
 export const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
 
 /**
- * The transform whose matrix is `m` (scene/src/transform.js decomposeMatrix):
+ * The transform whose matrix is `m` (scene/src/shared/transform.js decomposeMatrix):
  * the rotation is exact as a matrix even a hair from gimbal lock (a tile
  * standing in a rack turned a hair), its z making up for whatever x comes out
  * there; standing exactly on edge, z is 0 and x takes the whole turn.

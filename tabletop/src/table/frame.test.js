@@ -1,4 +1,4 @@
-// The table's matrix copy (scene/src/transform.js): a pose read back from its
+// The table's matrix copy (scene/src/shared/transform.js): a pose read back from its
 // matrix is the same frame, even a hair from gimbal lock, where a tile
 // standing on edge in a rack turned a hair is (y → ±π/2).
 import { describe, it, expect } from "vitest";

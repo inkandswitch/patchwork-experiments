@@ -51,5 +51,5 @@ export function kindOf(record) {
   return { key: `${record?.sourceUrl ?? ""}\u0000${name}`, name };
 }
 
-/** Is this object a group (scene/src/groups.js isGroup)? */
+/** Is this object a group (scene/src/shared/groups.js isGroup)? */
 export const isGroup = (o) => o?.kind === "group";

@@ -7,7 +7,7 @@
 // falls back to where the scene is published (PUBLISHED, below), so one made
 // with the scene not installed here still offers it; a die or bag doc
 // without its package registered says only its type. The URL rule is the
-// scene's own (scene/src/packages.js packageUrl).
+// scene's own (scene/src/stage/packages-rule.js packageUrl).
 
 /** A host only this machine or this network can reach. */
 function isLocalHost(hostname) {
@@ -130,7 +130,7 @@ export const OWN_SOURCES = Object.freeze(["die", "bag-sack"]);
 const traitKeys = (o) => (o?.traits && typeof o.traits === "object" ? Object.keys(o.traits) : []);
 
 /**
- * Whether a scene doc calls for this package (scene/src/packages.js
+ * Whether a scene doc calls for this package (scene/src/stage/packages-rule.js
  * neededPlugins, answered by what it registers): the doc or an object has
  * one of its traits, or an object is built by one of its sources. Pure.
  * @param {object} doc

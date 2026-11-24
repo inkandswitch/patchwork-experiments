@@ -1,5 +1,5 @@
 // 3 × 3 rotations and 3-vectors, row-major. Pure. Rotations are kept in docs
-// as Euler XYZ, as the scene's transforms are (scene/src/transform.js):
+// as Euler XYZ, as the scene's transforms are (scene/src/shared/transform.js):
 // R = Rx · Ry · Rz.
 
 export const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];

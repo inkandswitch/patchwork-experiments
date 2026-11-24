@@ -4,7 +4,7 @@
 // gives it (content(id).extras.connectors): its position and its frame on its
 // object, the whole frame where the GLB gave one (`rotation`) and else a turn
 // to its yaw, read in that object's frame and never composed here. What it
-// takes and how far it reaches are the scene carry's rule (scene/src/carry-rules.js
+// takes and how far it reaches are the scene carry's rule (scene/src/shared/carry-rules.js
 // `accepts`), copied rather than imported, since packages stand alone: a
 // connector that lists tags takes only objects with one of them, and it
 // reaches as far as its object's `snapRadius` (scaled with the object), in plan.

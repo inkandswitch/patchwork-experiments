@@ -22,7 +22,7 @@
 // arguments' -warp), worked out here as the command works it out from the
 // running engine.
 //
-// Render docs are fresh (newRenderDoc's shape: scene/src/datatype.js): the
+// Render docs are fresh (newRenderDoc's shape: scene/src/shared/datatype.js): the
 // first view builds them, as for any object put in. It lists scene, machine,
 // doom and seats (the cabinets lay their seats through the seats package's
 // roster). People start in Look, in front of the cabinets. Checks the

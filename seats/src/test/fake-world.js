@@ -30,7 +30,7 @@
 import { vi } from "vitest";
 import { createTelling, declared } from "./telling.js";
 
-/** T · R(XYZ) · S as a column-major 4×4 (scene/src/transform.js). */
+/** T · R(XYZ) · S as a column-major 4×4 (scene/src/shared/transform.js). */
 export function composeMatrix(t) {
   const p = t?.position ?? [0, 0, 0];
   const r = t?.rotation ?? [0, 0, 0];
@@ -69,7 +69,7 @@ function sameTransform(a, b) {
 }
 
 /**
- * The one planner a table uses, as scene/src/ops.js has it: a whole local
+ * The one planner a table uses, as scene/src/shared/ops.js has it: a whole local
  * transform, written number by number (so a peer's unrelated field lands);
  * null when the object isn't there.
  */
