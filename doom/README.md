@@ -49,10 +49,7 @@ north–south a little lighter). One primitive per texture, so a part draws in
 one call per texture it uses. `asset.copyright` is the WAD doc's notice
 (below). The render's notes say what of the map doesn't work here.
 
-Every part's scene extras say where its frame is: `doom: { map, anchor,
-unitsPerMetre }`, the anchor in map units `[x, y, z]`. Whatever draws into a
-part's frame (the machine package's 3D view of a running Doom) reads the
-frame from the part, rather than keeping a copy of the rule.
+Every part's GLB says where its frame is (`doom`, "Conventions").
 
 **The whole map** (`whole: true`) is the static part at the root of its
 GLB with a node in it per door and per exit switch: each node is exactly
@@ -195,6 +192,21 @@ The About says the scene is made from Freedoom's data, is not Freedoom, and
 isn't endorsed by the Freedoom project, whenever the WAD is Freedoom's (by
 its lump, not by what its origin is called). A WAD with no notice that isn't
 Freedoom gets an About saying so.
+
+## Conventions
+
+What other packages may rely on (scene/CONVENTIONS.md lists them):
+
+| Name | |
+|---|---|
+| source `doom-map` | the provider above, by id: an object of a `.wad` file doc with `providerId: "doom-map"` and render params `{ map, door: null, line: null, whole }` as "The provider" says. The machine package lays out a running Doom's world this way, `whole: true` |
+| GLB extras `doom` | on every part's glTF scene (`scenes[0].extras`; the stage's `content(id).extras`): `{ map, anchor: [x, y, z], unitsPerMetre }`: the map's name, the part's origin in map units (the map's own x and y, then height), and 36 map units to the metre. Whatever draws into a part's frame (machine's 3D view of a running Doom) reads the frame from the part, rather than keeping a copy of the rule |
+| node extras `door`, `line` | on a whole map's nodes: `{ door: <sector> }` or `{ line: <line> }`, the node being exactly that part's geometry at its anchor, in the static part's frame |
+
+It writes, in their owners' shapes and never importing them: `joints.slide`
+and `walk.moves { blocks: true }` on each door, `traversal.exit` on each exit
+switch, `arena.level { look: "sky" }` on a map dropped into an empty scene,
+and its player 1 start with arena's `arena.spawn` part.
 
 ## Layout
 

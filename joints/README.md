@@ -29,7 +29,10 @@ While any part in the scene closes itself (a `wait`), it registers a
 **process** on the scene's world clock (`use("clock").process`, scene
 NATIVE.md, "Native services"): the closing.
 
-## The trait
+## Conventions
+
+The trait `joints.slide` (scene/CONVENTIONS.md lists it); doom's doors and
+sailing's hatch write it, in this shape:
 
 ```js
 "joints.slide": {

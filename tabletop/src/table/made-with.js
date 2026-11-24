@@ -1,7 +1,7 @@
 // What a table is made with: its containers, by a keeper (a `secure` deck
 // by the joint keeper, whose players shuffle it between them; anything else
 // by the plain one), its bags (bag/fill.js), and, found in the registry by
-// what a plugin's metadata says it is (scene/CONVENTIONS.md, "Seats"):
+// what a plugin's metadata says it is (seats/README.md, "Conventions"):
 //
 //   - the seats' owner (`scene:extension`): the plugin with `roster: true`.
 //     Its module's `lay(d, seats)` writes seats into a scene doc being set up.
