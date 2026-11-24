@@ -533,22 +533,17 @@ try {
       check("unitsPickerIsLocal", (await doc()).view.units === "cm" && (await A(`d.local.get()["scene.prefs"]?.units`)) === "mm", { doc: (await doc()).view.units, pref: await A(`d.local.get()["scene.prefs"]`) });
       await shot("14-stl-bounds");
       // the build controls embedded in the inspector: the STL's unit param to cm
-      const hasControls = await b.waitFor(`!!__p.hostA.querySelector('.scene-render-controls select')`, 4000);
+      const hasControls = await b.waitFor(`!!__p.hostA.querySelector('.inspector-body .build-params select')`, 4000);
       check("inspectorEmbedsBuildControls", hasControls);
-      // the built object's documents, a section each (EDITOR.md, "The interface"): its Source, then its Build (the
-      // controls, open); no button anywhere opens the source but a section's Open
-      const docs = await A(`[...p.hostA.querySelectorAll('.inspector-body .doc-section')].map((s) => [s.dataset.section, s.querySelector('.section-label').textContent, !s.hasAttribute('data-folded'), !!s.querySelector('.scene-render-controls')])`);
-      check("sectionsSourceThenBuild", JSON.stringify(docs) === JSON.stringify([["source", "Source", true, false], ["build", "Build", true, true]]), docs);
+      // the built object's source is a row (Open Editor, Dock), then its build's controls, open, the inspector's own fields; no document is mounted
+      const docs = await A(`(() => { const body = p.hostA.querySelector('.inspector-body'), row = body.querySelector('.doc-row'), build = body.querySelector('.build-controls'); return { rows: [...body.querySelectorAll('.doc-row')].map((r) => r.dataset.section), acts: row ? [...row.querySelectorAll('button')].map((x) => x.textContent.trim()) : [], buildAfterRow: !!(row && build && (row.compareDocumentPosition(build) & Node.DOCUMENT_POSITION_FOLLOWING)), mounted: body.querySelectorAll('patchwork-view, .section-embed').length }; })()`);
+      check("sourceRowThenBuildControls", JSON.stringify(docs.rows) === '["source"]' && JSON.stringify(docs.acts) === '["Open Editor","Dock"]' && docs.buildAfterRow && docs.mounted === 0, docs);
       // long fields (two sections) never squeeze the tree: it keeps its rows' height, up to its 40%
       const sq = await A(`(() => { const t = p.hostA.querySelector('.inspector-tree'), pane = p.hostA.querySelector('.inspector-pane'), want = t.querySelector('.scene-outline').scrollHeight; return { tree: t.getBoundingClientRect().height, pane: pane.getBoundingClientRect().height, want, fieldsScroll: p.hostA.querySelector('.inspector-body').scrollHeight }; })()`);
       check("treeNotSqueezedByLongFields", sq.tree >= Math.min(sq.want, 0.38 * sq.pane) && sq.fieldsScroll > sq.pane - sq.tree, sq);
-      // an open section's box has a height of its own, which its (stand-in) view fills, so a tool that fills its host
-      // gets one; a tool taller than it scrolls inside it (the build controls are the stand-in's mount here)
-      const hs = await A(`[...p.hostA.querySelectorAll('.inspector-body .doc-section:not([data-folded])')].map((s) => { const e = s.querySelector('.section-embed'), v = e.querySelector('patchwork-view'); return [s.dataset.section, Math.round(e.getBoundingClientRect().height), Math.round(v?.getBoundingClientRect().height ?? 0)]; })`);
-      check("sectionsHaveAHeight", hs.length === 2 && hs.every(([, box, view]) => box >= 120 && Math.abs(view - (box - 2)) <= 2), hs);
       check("noOpenSource", (await A(`p.hostA.querySelectorAll('.open-source, .open-file, .open-linked, .open-about').length`)) === 0);
       if (hasControls) {
-        await A(`(() => { const s = p.hostA.querySelector('.scene-render-controls select'); s.value = "cm"; s.dispatchEvent(new Event("change")); return true; })()`);
+        await A(`(() => { const s = p.hostA.querySelector('.inspector-body .build-params select'); s.value = "cm"; s.dispatchEvent(new Event("change")); return true; })()`);
         const rebuilt = await b.waitFor(`(() => { const l = __p.text('.bounds-label'); return l.length === 3 && l.every((t) => /^200(\\.0+)?\\s*mm$/.test(t)) && l; })()`, 20_000);
         check("unitParamRebuildsAt200mm", rebuilt, await A(`p.text('.bounds-label')`));
         await shot("15-stl-rebuilt");
@@ -583,6 +578,11 @@ try {
     await b.click(p2.x, p2.y);
     await b.rest(150);
     check("parentSelected", (await selected()) === "b2", await selected());
+    // the handles are Move's (V): the Escapes above put it down
+    if (!(await P("halo()"))) {
+      await b.key("v");
+      await b.rest(200);
+    }
     const s0 = await P('haloAt("move", 0)'), s1 = await P('haloAt("move", 0, 0.05)');
     const L = s0 && s1 ? Math.hypot(s1.x - s0.x, s1.y - s0.y) : 0;
     const u = L ? [(s1.x - s0.x) / L, (s1.y - s0.y) / L] : [0, 0];
@@ -671,7 +671,7 @@ try {
   // selection stays; an editor's pane has its own width; a double-click gives the default back; a narrow stage
   // clamps a stored width without forgetting it; opening the scene again remembers it ──
   {
-    const R = () => A(`({ drawer: p.rect('.stage-drawer'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage'), grip: p.rect('.stage-drawer-grip'),
+    const R = () => A(`({ drawer: p.rect('.stage-drawer'), rail: p.rect('.stage-panel-rail'), canvas: p.rect('canvas'), stage: p.rect('.scene-stage'), grip: p.rect('.stage-drawer-grip'),
       kind: p.hostA.querySelector('.stage-drawer')?.dataset.kind ?? null, rows: p.hostA.querySelectorAll('.stage-drawer .object-row').length,
       prefs: JSON.parse(localStorage.getItem('scene-prefs:' + window.sceneHandle.url) ?? '{}'), locked: !!document.pointerLockElement })`);
     const tab = (name) => A(`(() => { const e = [...p.hostA.querySelectorAll('.stage-drawer-tab-name')].find((x) => x.textContent.trim() === ${JSON.stringify(name)}); e?.click(); return !!e; })()`);
@@ -723,7 +723,7 @@ try {
     await A(`(p.hostA.style.width = "600px", true)`);
     await b.rest(250);
     const rn = await R();
-    check("narrowStageClampsTheDrawer", rn.drawer.w <= 0.7 * rn.stage.w + 1 && rn.canvas.w >= 0.3 * rn.stage.w - 1 && rn.prefs["drawer.chrome"] === rw.prefs["drawer.chrome"], { stored: rw.prefs, narrow: rn });
+    check("narrowStageClampsTheDrawer", rn.drawer.w <= 0.7 * rn.stage.w + 1 && rn.canvas.w + rn.rail.w >= 0.3 * rn.stage.w - 1 && rn.prefs["drawer.chrome"] === rw.prefs["drawer.chrome"], { stored: rw.prefs, narrow: rn });
     await A(`(p.hostA.style.width = "", true)`);
     await b.rest(250);
     const rg = await R();
