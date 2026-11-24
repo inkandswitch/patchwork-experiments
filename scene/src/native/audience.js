@@ -124,7 +124,7 @@ function create(api) {
     v.release = api.display(id, { content: drawings.get(k) });
   }
   function veil(caller, id) {
-    if (caller.signal.aborted || !api.scene().objects[id]) return () => {};
+    if (caller.signal.aborted || caller.readOnly || !api.scene().objects[id]) return () => {};
     const v = veils.get(id) ?? { n: 0, key: null, release: null };
     veils.set(id, v);
     v.n++;

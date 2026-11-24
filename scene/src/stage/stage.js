@@ -767,13 +767,14 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        * doc's value under `name` (frozen plain JSON, the same object until it
        * changes), with `mine` (this is the outermost stage), this stage's
        * frame (scope.js: the world is the outermost's root) and `use`: the
-       * outermost's services (its world time); null when it offers none.
+       * outermost's services (its world time), made for a read-only caller
+       * where this stage may not write (I6); null when it offers none.
        */
       ambient: (name) => {
         const value = view.ambient(name);
         if (value === undefined) return null;
         const world = view.outermost();
-        return Object.freeze({ value, mine: world === stage, frame: scope.frame(), use: (s) => (live() ? world.use(s, { id, signal }) : null) });
+        return Object.freeze({ value, mine: world === stage, frame: scope.frame(), use: (s) => (live() ? world.use(s, { id, signal, readOnly: !writable() }) : null) });
       },
       schedule: (fn) => {
         if (!live() || typeof fn !== "function") return;

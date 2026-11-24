@@ -520,11 +520,11 @@ function create(api) {
           /** what a chip shows (null: nothing to show), and fn() whenever it changes → off */
           status: () => clock.status(),
           watch: (fn) => (watchers.add(fn), tie(caller.signal, () => watchers.delete(fn))),
-          pause: () => clock.pause(),
-          resume: () => clock.resume(),
+          pause: () => void (caller.readOnly || clock.pause()),
+          resume: () => void (caller.readOnly || clock.resume()),
           process(spec) {
             // (a pin has no channel, and no processes)
-            if (!ch.session || caller.signal.aborted) return () => {};
+            if (!ch.session || caller.signal.aborted || caller.readOnly) return () => {};
             const remove = clock.process(spec);
             procs.set(caller.id, (procs.get(caller.id) ?? 0) + 1);
             const mine = [spec?.on ?? []].flat().filter((id) => typeof id === "string").map((id) => ({ id, ext: caller.id }));

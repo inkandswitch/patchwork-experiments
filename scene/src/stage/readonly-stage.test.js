@@ -86,6 +86,8 @@ const PROBE = {
 };
 /** A general part (no trait: it runs in the focus, the host here), as the command bar or the menu is. */
 const GENERAL = { meta: { id: "t.general" }, module: { create: () => ({}) } };
+/** Every doc's: the outermost's offers the world's ambient "t.world" (G's own offer is never the world's). */
+const WORLD = { meta: { id: "t.world", traits: ["*"] }, module: { create: () => ({ ambient: () => ({ "t.world": { here: true } }) }) } };
 const PART = { meta: { id: "t.part" }, module: { create: (ctx) => ctx.addObject(ctx.url) } };
 const TEMPLATE = { meta: { id: "t.template" }, module: { create: (ctx) => ctx.change((d) => (d.title = "templated")) } };
 
@@ -129,7 +131,7 @@ async function mount(role) {
   };
   const link = (extra) => object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null, transform: T, ...extra });
   const objects = role === "pinned" ? { P: link({ at: { heads: then } }) } : { L1: link() };
-  s = await mountStage({ repo, time, natives: true, extensions: [PROBE, GENERAL, linkOpener()], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
+  s = await mountStage({ repo, time, natives: true, extensions: [PROBE, GENERAL, WORLD, linkOpener()], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
   const want = role === "pinned" ? ["P"] : ["L1"];
   for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle();
   const stage = s.debug.view.stages().find((x) => x.path.join() === want.join());
@@ -262,6 +264,53 @@ describe("I6: a read-only stage writes nothing", () => {
       ok("a style goes in", api.style(".x{}").isConnected);
       ok("its world layer is there", !!api.world());
       expect(steps.filter(([, v]) => !v).map(([w]) => w)).toEqual([]);
+    });
+  }
+});
+
+// What an extension of a drawn or read-only stage reaches of the world through api.ambient(name).use: the
+// outermost's services, made for a read-only caller, so it reads (the world's time, who holds what) and acts on
+// nothing there: no write, send, hold, veil or process, whatever it calls.
+describe("I6 through the world: a read-only stage's ambient services only read", () => {
+  for (const role of ROLES) {
+    it(`${role}: the outermost's clock, claims, poses, tell and audience read, and refuse whatever would act`, async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const m = await mount(role);
+      await m.time.advance(100);
+      await settle();
+      const world = m.api.ambient("t.world");
+      expect(world?.mine).toBe(false);
+      const host = s.handle;
+      const out = [];
+      const change = host.change.bind(host);
+      const broadcast = host.broadcast.bind(host);
+      host.change = (...a) => (out.push("change"), change(...a));
+      host.broadcast = (msg) => (out.push(`broadcast ${msg?.type} ${JSON.stringify(msg?.keys ?? {})}`), broadcast(msg));
+      const before = JSON.stringify(s.doc());
+      const id = role === "pinned" ? "P" : "L1";
+      const clock = world.use("clock");
+      const steps = [];
+      const ok = (what, v) => steps.push([what, !!v]);
+      const running = clock.running();
+      ok("the clock reads", typeof clock.t() === "number" && typeof running === "boolean");
+      if (running) clock.pause();
+      else clock.resume();
+      let started = 0;
+      clock.process({ start: () => started++, step: () => started++ });
+      ok("a claim refuses", world.use("claims").claim(null, "seat:p1") === null);
+      ok("claims read", world.use("claims").claimedBy(null, "seat:p1") === null);
+      ok("a pose refuses", world.use("poses").hold(id, { ...T, position: [1, 0, 0] }) === false);
+      world.use("tell").tell("t", { x: 1 });
+      const veil = world.use("audience").veil(id);
+      ok("a veil draws nothing", typeof veil === "function" && !s.debug.displayed().has(id));
+      ok("the audience reads", world.use("audience").audience(id) !== undefined);
+      await m.time.advance(HEARTBEAT_MS + 1, { draw: false });
+      await settle();
+      ok("no process started", started === 0);
+      ok("the clock as it was", clock.running() === running);
+      expect(steps.filter(([, v]) => !v).map(([w]) => w)).toEqual([]);
+      expect(JSON.stringify(s.doc())).toBe(before);
+      expect(out.filter((o) => !o.startsWith("broadcast scene:presence {"))).toEqual([]);
     });
   }
 });
