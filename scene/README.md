@@ -18,7 +18,7 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:datatype` | `scene` | the composition |
 | `patchwork:datatype` | `scene-render` | one per built object (unlisted) |
 | `patchwork:tool` | `scene` | the stage (`src/stage/stage.js`) |
-| `patchwork:tool` | `scene-render-controls` | the build-param form for a render doc; alone (no scene around it) it builds when asked, on `element.time` if given (a stage time), else the page's |
+| `patchwork:tool` | `scene-render-controls` | the build-param form for a render doc; alone (no scene around it) it builds when asked, from the source's latest version (a scene object's fixed version lives in the scene, which it doesn't know), on `element.time` if given (a stage time), else the page's |
 | `scene:source` | `file-glb` | `.glb` file docs, `content: "file"` |
 | `scene:source` | `file-stl` | `.stl` file docs, `content: "built"` (params `unit`, `up`) |
 | `scene:source` | `scene.link` | a scene doc placed in a scene, `content: "scene"` |
@@ -109,9 +109,9 @@ SourceImpl = {
 - **Where `build()` runs.** On the page's main thread, called by the render
   manager (`src/content/render-manager.js`) of the open scene the lock
   chooses ("Who builds"), or of a render's build controls opened alone,
-  which build only when asked: at most one build per render doc at a time, builds
-  of different objects side by side; a provider that needs a thread starts
-  its own worker. It is given exactly `{ doc, handle, url, params, repo,
+  which build only when asked. Builds of one render doc don't overlap while
+  the lock's timing assumption holds (C1); builds of different objects run
+  side by side; a provider that needs a thread starts its own worker. It is given exactly `{ doc, handle, url, params, repo,
   signal }`: the source doc and its handle (a read-only view at `at.heads`
   for a fixed object, `url` then carrying `#heads`), the params as above,
   the repo to read dependencies from, and an `AbortSignal` that aborts when
@@ -122,15 +122,20 @@ SourceImpl = {
   flow-field's and openfoam's hull links; they may pass no `signal`). A
   build cancelled, by its signal or by rejecting with an error named
   `"AbortError"`, is not a failure: nothing is written and the render is
-  looked at again. Any other rejection is the render's `error`, retried
-  with backoff.
+  looked at again. Any other rejection is the render's `failure`, retried
+  with backoff by the peer holding it.
 - `"file"`: the source doc already is a GLB file. No render doc, no `load()`.
   `file-glb` is this package's: a package adding a GLB file doc to a scene
   writes `providerId: "file-glb"`.
-- A render doc records `glbUrl` and what it was `builtFrom`; new bytes make a
-  new immutable GLB file doc (`newRenderDoc` in `src/datatype.js`, staleness
-  in `src/content/staleness.js`). Its `status` is written as a build starts
-  and ends, and read only to learn that a build failed.
+- A render doc (`newRenderDoc` in `src/datatype.js`) holds `{ "@patchwork":
+  { type: "scene-render" }, title, parent, providerId, params, pinned,
+  result, failure }`. `result` is the last build written, one value written
+  whole, so a merge of two keeps one writer's: `{ glbUrl, builtFrom: { heads,
+  fingerprint, paramsKey, deps, glbHash, providerVersion? }, bounds, builtAt }`,
+  or null. `failure` is the last failed build, `{ error, inputs }` with the
+  inputs it was of (`inputsKey` in `src/content/staleness.js`), or null; a
+  result written clears it. Bytes other than the current GLB's make another
+  immutable GLB file doc. Nothing is written as a build starts.
 
 ### An object's state
 
@@ -140,7 +145,7 @@ One value says whether what is drawn for an object is built and current:
 provider and its version, the params, who is building, failures). Its
 states are a closed set: `loading` (`version`: a fixed version not synced
 yet), `no-provider`, `building` (`by`), `failed` (`in: "build"` with
-`retryAt`, or `"load"`), `waiting` (`on`: linked documents loading),
+`retrying`, or `"load"`), `waiting` (`on`: linked documents loading),
 `stale` (`reason`; `hold`: `"pinned"`, `"contested"`, `"unavailable"` or
 null, the one it will rebuild on its own) and `fresh` (`behind`: built
 from changes this replica hasn't synced). `api.content(id).state` is it;
@@ -156,48 +161,71 @@ peer that wants it built claims it on the render doc's channel, waits
 move (cancelling the build in flight through its `signal`), retries a
 failure, says it still holds it every `HEARTBEAT_MS`, and lets it go once it
 has wanted nothing for `HEARTBEAT_MS`. Nobody claims while another's claim
-is live, nor before listening `LISTEN_MS` to a render it didn't make; of two
-claims at once the lower id holds, and a holder beats a claimer. A peer that
-learns of a failure it isn't holding leaves those inputs alone until they
-change or someone asks.
+is live. Of two claims at once the lower id holds; a holder beats a claimer;
+of two holders (after a lost message) the higher id lets go once it isn't
+building. Whoever beats a claim answers it at once (a holder says it holds,
+a lower-id claimer claims again), so a peer that opens the render late hears
+them within its window. The scene that made a render builds it the first
+time without claiming: nobody else knows of it. A peer not holding the
+render that reads a failure of exactly its own inputs leaves those inputs
+alone until they change or someone asks; a failure of other inputs (another
+provider version's) is nothing to it. A peer's "building" is a builder it
+hears, or its own build, the wait on the fence included.
 
-**The write fence.** A result is written only over the build the render had
-as it began (nothing committed meanwhile is replaced), only if no other peer
-claimed the render meanwhile, and, if its holder was silent past `LEASE_MS`
-(a frozen tab, a blocked thread), only after it has listened `RECHECK_MS`
-more; a holder silent that long lets the render go if it hears another
-holding it.
+**The write fence.** A result is written by compare-and-set, only over the
+result the render had as its build began, and only if its writer has heard
+no other peer hold or build the render since. A holder silent past
+`LEASE_MS` (a frozen tab, a blocked thread, a background tab's slowed
+timers) says nothing until it has listened `RECHECK_MS`, then lets the
+render go if it heard anyone at all.
 
 **Timing.** One assumption, `REACH_MS` (D = 250 ms): every message and change
 reaches every peer within it. With the heartbeat H = 2 s: `CLAIM_MS` = 4D
-(needs > 2D, an exact tie included); `LAPSE_MS` = `LISTEN_MS` = 3H (needs >
-2H + D: one heartbeat may be lost); `LEASE_MS` = `LAPSE_MS` − H − D;
+(needs > 2D: a claim and its answer, an exact tie included); `LAPSE_MS` = 3H
+(needs > 2H + D: one heartbeat may be lost); `LEASE_MS` = `LAPSE_MS` − H − D;
 `RECHECK_MS` = 2D (needs > D and < `CLAIM_MS` − D). The derivation is in
 `lock.js`.
+
+**What a person waits for**, the debounce being `DEBOUNCE` (150 ms for a
+cheap change, 800 ms otherwise, `staleness.js`):
+
+- an edit while this scene still holds the render (within H of its last
+  build): the build starts after the debounce;
+- an edit once the render has been idle: debounce + `CLAIM_MS`, 1.15 or 1.8 s;
+  a render never built, 1 s; one this scene just made, at once;
+- a render another live peer holds: that peer builds it; nobody else starts;
+- its holder vanished: another starts within `REACH_MS` + `LAPSE_MS` +
+  `CLAIM_MS` = 7.25 s of the holder's last word (C2);
+- "Rebuild now": at once if this scene holds the render (after the build in
+  flight); `CLAIM_MS` = 1 s if nobody does; if another peer does, H + D +
+  `CLAIM_MS` = 3.25 s after that peer's last build, when it has let go.
 
 | | Among the peers with the render open |
 |---|---|
 | C1 | (needs the assumption) At most one peer builds it at a time, a frozen peer aside. |
 | C2 | (needs it) A builder that vanishes is replaced within `REACH_MS` + `LAPSE_MS` + `CLAIM_MS` of its last word. |
-| C3 | (always) A peer that can't write never builds; a build is shown in progress only while one is, until its release arrives, or `LAPSE_MS` after its holder's last word. |
-| C4 | (always) A write replaces only the build its writer saw as its own began, so never a newer one it had received. (Needs the assumption) No older build replaces a newer one, a peer that froze mid-build and woke included. |
-| C5 | (always) Once nothing moves, it is built from the current inputs (or failed for them, or pinned), and nobody holds it; failing inputs are tried at most 1 + `RETRY_BACKOFF_MS.length` times in all (with the assumption). |
+| C3 | (always) A peer that can't write never builds nor writes; a build is shown in progress only while one is, until its release arrives, or `LAPSE_MS` after its holder's last word. |
+| C4 | (always) A write replaces only the result its writer had as its build began, so never a newer one it had received; a merge keeps one writer's result whole. (Needs the assumption) No two results are written concurrently, and no older build replaces a newer one at any replica, a peer that froze mid-build included. |
+| C5 | (always) Once nothing moves, every replica holds the same render doc, built from the current inputs (or failed for them, or pinned), and nobody holds it; failing inputs are tried at most 1 + `RETRY_BACKOFF_MS.length` times in all (with the assumption). |
 
 `src/content/lock.test.js` checks them on a finite model: two or three real
-managers, each with its own replica of the docs and its own view of one
-manual clock, over a network delivering each message and change at once or
-at exactly `REACH_MS`, every run enumerated over who edits, when, builds
-short or past `LAPSE_MS`, failing, a builder freezing past `LAPSE_MS` and
-waking to write, a forced rebuild, a peer joining mid-build, one or two
-messages lost. The protocol before this one (`scene-render:building`
-messages) and this one ignore each other: scenes on the two can build the
-same render twice, and the later write wins; they converge.
+managers, each with its own replica of the docs, merging as Automerge does
+(each key the write with the greater op id, actor ties broken both ways),
+and its own view of one manual clock, over a network delivering each message
+and change at once or at exactly `REACH_MS`. Every run is enumerated over
+who edits, when, builds short or past `LAPSE_MS`, failing, a builder
+freezing past `LAPSE_MS` (or only into another's claim) and waking to write,
+a builder whose timers fire on whole minutes, a forced rebuild, a peer
+joining mid-build or between heartbeats, provider versions one of which
+fails, lost messages, and writers that can't hear each other.
+`src/content/result-merge.test.js` merges two results on real Automerge
+docs.
 
 ### Consuming a render
 
 To use another object's geometry, read its render doc, never its source or
 another package's provider. Copy `src/render-read.js`: `readRender(repo,
-url)` gives `{ glb, glbUrl, builtFrom, status, error, bounds, source }`. List
+url)` gives `{ glb, glbUrl, builtFrom, builtAt, bounds, failure, source }`. List
 the render's URL in `dependencies(doc)`; you rebuild only on a new GLB. An
 unbuilt render gives `glb: null`: say so in `meta.notes`.
 
