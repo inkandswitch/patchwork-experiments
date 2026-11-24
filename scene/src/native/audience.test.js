@@ -26,56 +26,64 @@ const allows = (a, v) => !a || a.only === undefined || a.only.includes(v);
 const shownTo = (list, v) => list.some((a) => shows(a, v));
 const mayKnow = (list, v) => shownTo(list, v) && list.every((a) => allows(a, v));
 
+/** Over every case, the ones where `ok` fails (a few, said): one expect for the lot, so the cases cost only themselves. */
+function failures(cases, ok, say = JSON.stringify) {
+  const bad = [];
+  for (const c of cases) if (!ok(c) && bad.push(say(c)) >= 5) break;
+  return bad;
+}
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
 describe("the audience algebra, exhaustively", () => {
   it("a viewer is in the audience exactly when some policy shows it to them and none screens it from them", () => {
-    for (const list of LISTS) {
+    const ok = (list) => {
       const A = mergeAudience(list);
       const S = mergeShown(list);
-      for (const v of VIEWERS) {
-        expect(inAudience(A, v)).toBe(mayKnow(list, v));
-        expect(inAudience(S, v)).toBe(shownTo(list, v));
-      }
-    }
+      return VIEWERS.every((v) => inAudience(A, v) === mayKnow(list, v) && inAudience(S, v) === shownTo(list, v));
+    };
+    expect(failures(LISTS, ok)).toEqual([]);
   });
 
   it('"all" exactly when something shows it to all and nothing limits it; otherwise a sorted list without repeats', () => {
-    for (const list of LISTS) {
+    const ok = (list) => {
       const A = mergeAudience(list);
       const top = list.some((a) => a?.show === ALL) && list.every((a) => !a || a.only === undefined);
-      expect(A === ALL).toBe(top);
-      if (A !== ALL) expect(A).toEqual([...new Set(A)].sort());
-    }
+      return (A === ALL) === top && (A === ALL || eq(A, [...new Set(A)].sort()));
+    };
+    expect(failures(LISTS, ok)).toEqual([]);
   });
 
   it("order never matters, and saying a thing twice says it once", () => {
-    for (const [x, y, z] of LISTS.filter((l) => l.length === 3)) {
+    const ok = ([x, y, z]) => {
       const want = JSON.stringify(mergeAudience([x, y, z]));
-      for (const p of [[x, z, y], [y, x, z], [y, z, x], [z, x, y], [z, y, x], [x, y, z, x], [x, x, y, z, z]]) expect(JSON.stringify(mergeAudience(p))).toBe(want);
       const shown = JSON.stringify(mergeShown([x, y, z]));
-      for (const p of [[z, y, x], [y, z, x, y]]) expect(JSON.stringify(mergeShown(p))).toBe(shown);
-    }
+      return (
+        [[x, z, y], [y, x, z], [y, z, x], [z, x, y], [z, y, x], [x, y, z, x], [x, x, y, z, z]].every((p) => JSON.stringify(mergeAudience(p)) === want) &&
+        [[z, y, x], [y, z, x, y]].every((p) => JSON.stringify(mergeShown(p)) === shown)
+      );
+    };
+    expect(failures(LISTS.filter((l) => l.length === 3), ok)).toEqual([]);
   });
 
   it("the audience is within who it's shown to; nobody without a show", () => {
-    for (const list of LISTS) {
+    const ok = (list) => {
       const A = mergeAudience(list);
       const S = mergeShown(list);
-      for (const v of VIEWERS) if (inAudience(A, v)) expect(inAudience(S, v)).toBe(true);
-      if (!list.some((a) => a?.show !== undefined)) expect(A).toEqual([]);
-    }
+      return VIEWERS.every((v) => !inAudience(A, v) || inAudience(S, v)) && (list.some((a) => a?.show !== undefined) || eq(A, []));
+    };
+    expect(failures(LISTS, ok)).toEqual([]);
   });
 
   it("one more policy: an `only` never lets anyone new in, a bare `show` never puts anyone out", () => {
-    for (const list of LISTS.filter((l) => l.length <= 2)) {
-      for (const extra of ANSWERS) {
-        const before = mergeAudience(list);
-        const after = mergeAudience([...list, extra]);
-        for (const v of VIEWERS) {
-          if (!extra || extra.show === undefined) expect(inAudience(after, v) && !inAudience(before, v)).toBe(false);
-          if (!extra || extra.only === undefined) expect(inAudience(before, v) && !inAudience(after, v)).toBe(false);
-        }
-      }
-    }
+    const cases = LISTS.filter((l) => l.length <= 2).flatMap((list) => ANSWERS.map((extra) => [list, extra]));
+    const ok = ([list, extra]) => {
+      const before = mergeAudience(list);
+      const after = mergeAudience([...list, extra]);
+      return VIEWERS.every(
+        (v) => (!(!extra || extra.show === undefined) || !(inAudience(after, v) && !inAudience(before, v))) && (!(!extra || extra.only === undefined) || !(inAudience(before, v) && !inAudience(after, v))),
+      );
+    };
+    expect(failures(cases, ok)).toEqual([]);
   });
 
   it("a missing `only` enlarges the audience: why an unknown policy must fail closed", () => {
