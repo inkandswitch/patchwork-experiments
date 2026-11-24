@@ -859,7 +859,6 @@ export function createRouter(o) {
     const s = openSession();
     return {
       body: { id: b.id, owner: b.owner, depth: stack.length - 1, lock: !!b.lock, keys: [...(b.keys ?? [])], serial: b.serial },
-      bodies: stack.map((x) => ({ id: x.id, owner: x.owner })),
       hands: hands.map((h) => ({ ext: h.owner, kind: h.kind, name: h.name, keys: [...h.keys], pointer: h.pointer, serial: h.serial })),
       held: tools().map((t) => ({ ext: t.owner, command: t.command, name: t.name, handKind: t.handKind, keys: [...t.keys], pointer: t.pointer, serial: t.serial })),
       gesture: s ? { owner: gesture.owner, keys: [...(Array.isArray(s.keys) ? s.keys : [])], serial: gesture.serial } : null,
@@ -974,17 +973,14 @@ export function createRouter(o) {
 
   /**
    * Pick up a tool (a hand of kind "tool"): it goes on top, over whatever is
-   * held. A tool picked up through a command that is held already is put
-   * down instead (a toggle). A tool held for a kind of hand (`handKind`: the
-   * command's `hand`) is held only while a hand of that kind is (drop); one
-   * for a kind not held, or for one of the kernel's own (KERNEL_KINDS), is
-   * refused.
+   * held. A tool held for a kind of hand (`handKind`: the command's `hand`)
+   * is held only while a hand of that kind is (drop); one for a kind not
+   * held, or for one of the kernel's own (KERNEL_KINDS), is refused. (Running
+   * a held tool's command again puts it down: the stage's, stage.js runCommand.)
    * @param {string} owner  @param {{ command: string | null (a tool held directly, not through a command), name?: string, handKind?: string | null, input: object, keys?: object[], pointer?: boolean }} t
-   * @returns {(() => void) | null} put it down (if it's still held); null for a toggle that put one down, or a refusal
+   * @returns {(() => void) | null} put it down (if it's still held); null for a refusal
    */
   function hold(owner, t) {
-    const was = toolOf(owner, t.command);
-    if (was) return (drop(was), null);
     const handKind = typeof t.handKind === "string" ? t.handKind : null;
     if (handKind != null && (KERNEL_KINDS.includes(handKind) || !hands.some((h) => h.kind === handKind))) return null;
     return place(owner, { kind: "tool", command: t.command, name: t.name, input: t.input, keys: t.keys, pointer: t.pointer, put: () => call(owner, t.input, "put") }, handKind);
