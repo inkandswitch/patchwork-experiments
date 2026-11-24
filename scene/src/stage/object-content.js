@@ -17,7 +17,6 @@ import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { prepareGLB } from "../gltf-content.js";
 import { layerShown, layerStates } from "../layers.js";
-import { defaultSnapRadius } from "../carry-rules.js";
 
 /** Dispose everything under root: geometry, materials and their textures (not shared placeholders). */
 export function disposeObject(root) {
@@ -44,15 +43,13 @@ export function placeLocal(g, t) {
 
 /**
  * What a GLB says about itself, for contentOf(id).extras: the scene's own
- * extras, plus its connectors (in body space), their snap radius (the GLB's,
- * or the spacing of its connectors when it gives none), its raw legend and
- * its layer table. The stage's fields win over same-named scene extras.
+ * extras, plus its connectors (in body space), their snap radius as the GLB
+ * gives it (null when it gives none), its raw legend and its layer table.
+ * The stage's fields win over same-named scene extras.
  * @param {{ extras?: object, snap?: { points: object[], radius: number | null }, legend?: object | null, layers?: object[] }} prepared  prepareGLB's result
  */
 export function contentExtras(prepared) {
-  const points = prepared?.snap?.points ?? [];
-  const radius = prepared?.snap?.radius ?? (points.length ? defaultSnapRadius(points) : null);
-  return Object.freeze({ ...(prepared?.extras ?? {}), connectors: points, snapRadius: radius ?? null, legend: prepared?.legend ?? null, layers: prepared?.layers ?? [] });
+  return Object.freeze({ ...(prepared?.extras ?? {}), connectors: prepared?.snap?.points ?? [], snapRadius: prepared?.snap?.radius ?? null, legend: prepared?.legend ?? null, layers: prepared?.layers ?? [] });
 }
 
 /** A new object's nodes and state, its group not yet anywhere. */
