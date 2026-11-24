@@ -29,6 +29,7 @@ const REFS = refsOf(DESCRIBES);
 const obj = (name, extra = {}) => ({ name, sourceUrl: null, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 }, ...extra });
 
 const A = "automerge:A";
+let bundles = 0; // how many bundles ran, over the whole test
 const B_ = "automerge:B";
 const C = "automerge:C";
 
@@ -118,7 +119,7 @@ function bundleFirst(w, at, r) {
   const plan = bundlePlan(host, id, linked, { runtime: RUNTIME, refs: REFS, newId: (p) => `${p}-${r.tag}-${++r.n}` });
   expect(plan.ok).toBe(true);
   w.set(at, Automerge.change(w.get(at), plan.change));
-  r.bundled++;
+  bundles++;
 }
 
 /** The docs holding runtime state now: a stage field on an object, or a runtime trait field. */
@@ -132,13 +133,12 @@ function holders(world) {
   return out;
 }
 
-let bundles = 0;
-const run = (world, names, tag) => {
-  const r = { tag, n: 0, bundled: 0 };
+/** Run operations on a world in turn, on replica `r` ({ tag, n }: its counter goes on from where it is). */
+const runOn = (world, names, r) => {
   for (const n of names) OPS[n](world, r);
-  bundles += r.bundled;
   return world;
 };
+const run = (world, names, tag) => runOn(world, names, { tag, n: 0 });
 
 describe("linearity (I11): every sequence and interleaving of up to three operations", () => {
   it(
@@ -153,16 +153,33 @@ describe("linearity (I11): every sequence and interleaving of up to three operat
         expect(h.length <= 1 && h.every((u) => u === B_), `${label}: ${h.join(", ")}`).toBe(true);
       };
       const W = base();
-      // one after another
-      for (const n of [1, 2, 3]) for (const seq of at(n)) check(run(fork(W), seq, "s"), seq.join(" ; "));
-      // interleaved: from the same state on two or three replicas, merged
-      for (const [a, b] of at(2)) check(merge(run(fork(W), [a], "p"), run(fork(W), [b], "q")), `${a} ‖ ${b}`);
+      // one after another: each sequence a node of their tree, run once from its parent's world (forked) and checked
+      const visit = (world, r, seq) => {
+        for (const a of names) {
+          const w = fork(world);
+          const rr = { ...r };
+          runOn(w, [a], rr);
+          check(w, [...seq, a].join(" ; "));
+          if (seq.length < 2) visit(w, rr, [...seq, a]);
+        }
+      };
+      visit(W, { tag: "s", n: 0 }, []);
+      // interleaved: from the same state on two or three replicas, merged. What a replica does from W
+      // is the same every time (its ids and urls are its tag's), so each is run once and forked
+      // wherever it is written to again; a merge writes only into copies of its left side's docs.
+      const memo = new Map();
+      const once = (seq, tag) => {
+        const key = `${tag}:${seq.join(",")}`;
+        if (!memo.has(key)) memo.set(key, run(fork(W), seq, tag));
+        return memo.get(key);
+      };
+      for (const [a, b] of at(2)) check(merge(once([a], "p"), once([b], "q")), `${a} ‖ ${b}`);
       for (const [a, b, c] of at(3)) {
-        check(merge(merge(run(fork(W), [a], "p"), run(fork(W), [b], "q")), run(fork(W), [c], "r")), `${a} ‖ ${b} ‖ ${c}`);
-        const first = run(fork(W), [a], "p");
+        check(merge(merge(once([a], "p"), once([b], "q")), once([c], "r")), `${a} ‖ ${b} ‖ ${c}`);
+        const first = once([a], "p");
         check(merge(run(fork(first), [b], "q"), run(fork(first), [c], "r")), `${a} ; (${b} ‖ ${c})`);
-        check(run(merge(run(fork(W), [a], "p"), run(fork(W), [b], "q")), [c], "r"), `(${a} ‖ ${b}) ; ${c}`);
-        check(merge(run(fork(W), [a], "p"), run(fork(W), [b, c], "q")), `${a} ‖ (${b} ; ${c})`);
+        check(run(fork(merge(once([a], "p"), once([b], "q"))), [c], "r"), `(${a} ‖ ${b}) ; ${c}`);
+        check(merge(once([a], "p"), once([b, c], "q")), `${a} ‖ (${b} ; ${c})`);
       }
       const k = names.length;
       expect(cases).toBe(k + k ** 2 + k ** 3 + k ** 2 + 4 * k ** 3);
