@@ -96,9 +96,9 @@ they are a preset's (Decision 32).
 existing conventions and adds no new ambient:
 
 - **`wind`** = `{ speed: wind, from, seed, gustiness }`: the trait's own
-  fields, passed through. This is the convention's documentation (it moved
-  here from sailing/DESIGN.md in W5; scene CONVENTIONS.md, "Conventions", points
-  here). How the world's air moves, one copy: nothing else carries it.
+  fields, passed through. The convention is stated in README.md,
+  "Conventions" (scene CONVENTIONS.md, "Names", points there); this is
+  why. How the world's air moves, one copy: nothing else carries it.
   - `speed`: m/s at 10 m.
   - `from`: the compass bearing it blows *from*, in degrees, measured from
     −Z (north) toward +X (east), as sailors say it: 0 from −Z (it blows
