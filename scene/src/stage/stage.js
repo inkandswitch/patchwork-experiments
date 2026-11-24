@@ -49,6 +49,7 @@ import { createPresence } from "./presence.js";
 import { stamp } from "./provenance.js";
 import { traitKeys } from "./activation.js";
 import { createPackages } from "./packages.js";
+import { createFlush } from "./flush.js";
 import { chainOrder, hitChain, holdersFor } from "./chain.js";
 import { handleReadOnly, readOnlyHandle, stageRepo } from "./readonly.js";
 import { LOOK } from "./bodies.js";
@@ -68,19 +69,11 @@ import { composeMatrix, multiplyMatrices, normalizeTransform } from "../shared/t
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";
 
-// Doc and local changes reach the extensions at once while that has cost
-// little this frame (UI_PASSES passes, UI_BUDGET_MS in all), so a click or a
-// single remote edit answers immediately; past that, the rest of a burst is
-// coalesced into one pass per frame.
-const UI_BUDGET_MS = 4;
-const UI_PASSES = 3;
 /** Is this one of the router's events (so a stage hands it on in its own frame)? */
 const isEvent = (a) => !!a && typeof a === "object" && typeof a.type === "string" && "locked" in a;
 const noop = () => {};
 
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
-/** CPU time (ms), for what a flush costs (the budget): never time in the scene, which is `time` (time.js). */
-const cpuNow = () => performance.now();
 
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
 
@@ -137,8 +130,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   let dead = false;
   const cleanups = [];
   const time = view.time;
-  const raf = (f) => time.frame(f);
-  const caf = (cancel) => cancel?.();
   const life = new AbortController(); // aborted as it closes: what the view asks of its services goes then
   const { root, port } = view;
   const viewport = view.viewport;
@@ -420,41 +411,16 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // ─── the update flush ─────────────────────────────────────────────────────
 
-  let flushQueued = false;
-  let flushFrame = null;
-  let uiSpent = 0;
-  let uiPasses = 0;
-  let uiResetReq = null;
   const seen = new WeakMap(); // instance → { scene, local } it last updated with
   let scheduled = []; // [{ rec, fn }] (api.schedule)
-
-  function spend(ms) {
-    // (a manual clock's frames have no budget: what a pass cost on this CPU
-    // mustn't decide which frame the next one runs in, or a probe's run
-    // would depend on the machine; the pass count still spreads them)
-    uiSpent += time.manual ? 0 : ms;
-    uiPasses++;
-    if (uiResetReq == null)
-      uiResetReq = raf(() => {
-        uiResetReq = null;
-        uiSpent = 0;
-        uiPasses = 0;
-      });
-  }
-  const uiFree = () => uiSpent < UI_BUDGET_MS && uiPasses < UI_PASSES;
-
+  // (when: ./flush.js; what a pass does: flush below)
+  const flushing = createFlush({ pass: flush, frame: (fn) => time.frame(fn), manual: () => !!time.manual });
   function requestFlush() {
-    if (dead || flushQueued) return;
-    flushQueued = true;
-    if (uiFree()) queueMicrotask(flush);
-    else flushFrame = raf(flush);
+    if (!dead) flushing.request();
   }
 
   function flush() {
-    flushFrame = null;
-    if (!flushQueued || dead) return;
-    flushQueued = false;
-    const t0 = cpuNow();
+    if (dead) return;
     if (statusDirty) {
       statusDirty = false;
       // what each object's state says to people (local.status)
@@ -508,8 +474,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       ambients = offered;
       view.ambientsChanged();
     }
-    const ms = cpuNow() - t0;
-    spend(ms);
   }
 
   // ─── ownership and the api ────────────────────────────────────────────────
@@ -1267,9 +1231,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     host.dispose();
     life.abort();
     dead = true;
+    flushing.dispose();
     presence.dispose();
-    if (flushFrame != null) caf(flushFrame);
-    if (uiResetReq != null) caf(uiResetReq);
     for (const c of cleanups) {
       try {
         c();
