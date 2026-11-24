@@ -1377,3 +1377,14 @@ stage's), and with the stack's rules checked on every reachable stack, the
 router's mounted enumeration shrank from every sequence of four steps to
 three. The view's open stages became `tree.js`, its camera `camera-memory.js`,
 `view.start`'s reading `arriving.js`. Unattended.
+
+**One record each (2026-11-24).** What the router, the view and the stage
+each kept of the same bodies, tools and sessions became the router's alone.
+A body entered is the router's entry, carrying what the view keeps of it;
+the view's list of sittings, the stage's set of bodies and the `left` it put
+on a body's input went. A stage's `busy` became the router's `holds` (a body
+on the stack, a held tool, the open session) or a service's say; the stage's
+session counting went, and `trace.draws` came to read the viewport's layers
+and labels. H2's cases were pinned before the change and pass unchanged; a
+press on an open popover, the kernel's own input, holds nobody, as before. A
+live drawn stage came to be announced as an acting one is. Unattended.
