@@ -243,7 +243,11 @@ export default {
         pointer = { x: e.clientX - r.left, y: e.clientY - r.top, alt: !!e.altKey };
       });
     }
-    const pointerNow = () => pointer ?? { x: (api.port?.clientWidth ?? 0) / 2, y: (api.port?.clientHeight ?? 0) / 2, alt: false };
+    // the pointer as an event there would be (its ray the stage's at that port point): what a carry started from a key moves by
+    const pointerNow = () => {
+      const p = pointer ?? { x: (api.port?.clientWidth ?? 0) / 2, y: (api.port?.clientHeight ?? 0) / 2, alt: false };
+      return { ...p, ray: api.ray?.(p.x, p.y) ?? null };
+    };
     /** The hand's carry, if a running extension provides one (CONVENTIONS.md, `carry`). */
     const carryFn = () => (api.collect?.("carry") ?? []).map((c) => c.value).find((v) => typeof v === "function") ?? null;
 
