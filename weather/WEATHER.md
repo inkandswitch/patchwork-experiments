@@ -739,9 +739,8 @@ undo stack; only the editor records its writes (EDITOR.md, "Undo"; Question
 
 28. **The weather's commands are on the toolbar and the menu, not the
     inspector.** The plan put Place and Now on the scene inspector, by the
-    sliders. The scene inspector shows no scene commands: its
-    `commandsFor` (scene/src/parts/inspector-model.js) answers [] for the
-    null target, and with nothing selected it shows only the scene's
+    sliders. The scene inspector shows no commands: with nothing
+    selected it shows only the scene's
     Behaviours and Starts in. The Behaviours section draws describes
     fields, one write each, and no field kind is a button or writes four
     fields at once, so Place can't be a field without a scene change. The
