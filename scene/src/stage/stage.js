@@ -56,8 +56,6 @@ import { createDisplay } from "./display.js";
 import { apiOf } from "./drawn.js";
 import { lazyCopy, mapEvents } from "./events.js";
 
-// the view's pure parts, where they have always been imported from
-export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";
 
 const noop = () => {};
 
@@ -89,13 +87,12 @@ export default function Stage(handle, element) {
  *   path?: string[],                   // the links that lead to it ([]: the outermost)
  *   frame?: () => number[] | null,     // its root's world matrix now (null: the identity)
  *   under?: string | null,             // the viewport key its root hangs under (the link's)
- *   role?: "acting" | "pinned",       // "acting": it acts; else it is drawn (view.js openUnder)
+ *   acts?: boolean,                    // does it act, or is it drawn (view.js openUnder)
+ *   live?: boolean,                    // is its doc the live one (not a pin, at fixed heads): it and its content are announced
  *   deps?: object | null,              // a pin's: the heads of the docs reached through it ({ url: heads })
  * }} o
  */
-export function createStage({ handle: given, view, n, path = [], frame = () => null, under = null, role = "acting", deps = null }) {
-  // does it act (STAGE.md, "Views, stages and links"): a pin is drawn, never acted on
-  const acts = role === "acting";
+export function createStage({ handle: given, view, n, path = [], frame = () => null, under = null, acts = true, live = true, deps = null }) {
   // read-only: its doc, and every doc it reaches, refuse writes (I6)
   const readOnly = !acts || handleReadOnly(given);
   const handle = readOnly ? readOnlyHandle(given) : given;
@@ -215,7 +212,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     time,
     readOnly,
     // what it shows live is announced (./announce.js); a pin's docs keep their own version
-    announce: acts ? view.announcer : null,
+    announce: live ? view.announcer : null,
     root,
     scope,
     sources: patchworkPlugins.getRegistry("scene:source"),
@@ -438,7 +435,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       if (!st || st.disabled) return false;
       if (c.tool) {
         const which = { owner: ownerKey(ext), command: c.id };
-        if (router?.held().some((h) => h.owner === which.owner && h.command === which.command)) {
+        if (router?.tools().some((h) => h.owner === which.owner && h.command === which.command)) {
           if (value !== true) router.putDown(which);
           return true;
         }
@@ -1010,6 +1007,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     reader,
     /** does it act (STAGE.md, "Views, stages and links"), or is it drawn? */
     acts,
+    /** is its doc the live one (not a pin): the view announces it */
+    live,
     /** the docs found through its repo, url → handle (a link's fixPoint holds their heads) */
     reached,
     path: Object.freeze([...path]),

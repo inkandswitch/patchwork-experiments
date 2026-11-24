@@ -51,11 +51,6 @@ const EDGES = ["top", "right", "bottom", "left"];
 const noop = () => {};
 const getRegistry = (type) => patchworkPlugins.getRegistry(type) ?? null;
 
-// (stage.js re-exports these)
-export { ARRIVE_WAIT_MS, startOf } from "./arriving.js";
-export { cleanCamera, initialCamera } from "./camera-memory.js";
-export { bestWidget, widgetWins } from "./chain.js";
-
 /** Acquire something while `live()`: `take` gives a give-back, kept in `bag`; → off, giving it back once. */
 const acquirer = (live) => (bag, take) => {
   if (!live()) return noop;
@@ -69,7 +64,7 @@ const acquirer = (live) => (bag, take) => {
 
 // The stage's own body, Look (./bodies.js, STAGE.md, "Bodies"): the orbit
 // camera, always at the bottom of the stack. As view.body:
-const LOOK_LOCAL = Object.freeze({ id: LOOK.id, label: LOOK.label, ext: null, depth: 0, lock: false, reach: Infinity, keys: Object.freeze([]) });
+const LOOK_LOCAL = Object.freeze({ ...LOOK, ext: null, depth: 0 });
 
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
 
@@ -261,7 +256,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     tree.remove(s);
     packagesChanged();
     ambientsChanged();
-    if (s.path.length && s.acts) announcer.release(s.url);
+    if (s.path.length && s.live) announcer.release(s.url);
     // (what it was opened under shows that object's hint again; its bodies, tools and sessions went as its extensions stopped)
     if (s.path.length) stageUnder(s.path.slice(0, -1))?.childrenChanged();
   }
@@ -299,9 +294,9 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       const f = parent.frame();
       return m && f.matrix ? multiplyMatrices(f.matrix, m) : m;
     };
-    const s = addStage((n) => openStage({ handle: h, view: api, n, path: [...at, id], frame, under: keyOf(parent.n, id), role: acts ? "acting" : "pinned", deps }));
-    // a doc it plays is announced (./announce.js); a pin keeps its own version
-    if (s.acts) announcer.hold(s.url);
+    const s = addStage((n) => openStage({ handle: h, view: api, n, path: [...at, id], frame, under: keyOf(parent.n, id), acts, live: h === handle, deps }));
+    // a doc it shows live is announced, acting or drawn (./announce.js); a pin keeps its own version
+    if (s.live) announcer.hold(s.url);
     parent.childrenChanged();
     return s;
   }
@@ -389,7 +384,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
    */
   function focusMoved() {
     if (dead) return;
-    for (const tool of router?.held() ?? []) {
+    for (const tool of router?.tools() ?? []) {
       const p = parseKey(tool.owner);
       const s = p ? tree.get(p.n) : null;
       // (a stage on the focus path is one whose path the focus starts with)
@@ -805,7 +800,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     centerRay: () => viewport.centerRay(),
     chainFor,
     inputOf,
-    base: { id: LOOK.id, lock: false, keys: [], input: {} },
+    base: { ...LOOK, input: {} },
     // a coarse pointer is touch until a press says otherwise (STAGE.md, "Bodies")
     touch: !!globalThis.matchMedia?.("(pointer: coarse)")?.matches,
     cameraHeld: () => viewport.held,
@@ -1136,6 +1131,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
       c = null;
     }
     if (!c) return s.reader.run(inv);
+    // (the plugin's facet there owns what the command does in that stage: a tool it holds is put down when the plugin stops or the focus leaves, as the facet goes)
     s.facetFor(p);
     return s.runCommand(inv.ext, c, inv);
   }
