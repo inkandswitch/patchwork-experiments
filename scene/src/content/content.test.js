@@ -111,7 +111,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
 
   // One state per object (./state.js), read by everything that shows it: the
   // controls embedded in the stage show the stage's, not one of their own.
-  it("the build controls inside a stage show the stage's state of the object: a render a peer built from changes not synced here is up to date in both", async () => {
+  it("the build controls inside a stage show the stage's state of the object, told as it changes: a render a peer built from changes not synced here is up to date in both", async () => {
     const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "r", parent: file.url, providerId: "file-stl", params: { unit: "mm", up: "z" }, glbUrl: null, builtFrom: { heads: ["a-change-not-synced-here"], fingerprint: null, paramsKey: '{"unit":"mm","up":"z"}', deps: {} }, builtAt: 1, bounds: null, status: "idle", error: null, pinned: false });
     await mount({ objects: { a: object({ name: "a", sourceUrl: file.url, providerId: "file-stl", renderUrl: render.url }) }, order: ["a"] });
     await wait(100);
@@ -125,6 +125,11 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await wait(100);
     expect(el.querySelector(".status").textContent).toBe("Up to date");
     expect(el.querySelector(".scene-render-controls").hasAttribute("data-standalone")).toBe(false);
+    // the stage tells them as the state moves: pinned, then a param that makes it stale
+    render.change((d) => (d.pinned = true));
+    render.change((d) => (d.params.unit = "in"));
+    await wait(100);
+    expect([s.facet("scene.add").content("a").state, el.querySelector(".status").textContent]).toEqual([{ state: "stale", reason: "params", hold: "pinned" }, "Stale (pinned)"]);
     off();
   });
 

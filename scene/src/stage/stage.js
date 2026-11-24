@@ -60,7 +60,7 @@ import { lookChain } from "../key-order.js";
 import { commandState } from "./commands.js";
 import * as ops from "../ops.js";
 import { layersKey } from "../layers.js";
-import { createContent } from "../content/content.js";
+import { createContent, statusOf } from "../content/content.js";
 import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
 import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
 import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
@@ -531,7 +531,13 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const t0 = cpuNow();
     if (statusDirty) {
       statusDirty = false;
-      const next = content.status();
+      // what each object's state says to people (local.status)
+      const objects = derive().objects;
+      const next = {};
+      for (const id of content.ids()) {
+        const st = objects[id] && !isGroup(objects[id]) ? statusOf(content.of(id)?.state, { writable: writable() }) : null;
+        if (st) next[id] = Object.freeze(st);
+      }
       if (JSON.stringify(next) !== JSON.stringify(local.get().status)) local.swap(assoc("status", Object.freeze(next)));
     }
     if (redraw) {
@@ -862,6 +868,21 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   /**
+   * Add a document to the scene as an object (API.md, `addObject`): content
+   * chooses its provider and makes its render doc; the write, a change
+   * function with the new object's `id` for the caller to make, is
+   * ops.placeObject. `o.id` names it beforehand (a copy maps every id before
+   * it writes); refused when the scene has it. Rejects with a sentence to show.
+   */
+  async function addObject(input, o = {}) {
+    const made = await content.make(input, o);
+    if (dead) throw new Error("The scene was closed.");
+    const id = typeof o.id === "string" && o.id ? o.id : newId("o");
+    if (doc().objects?.[id]) throw new Error(`This scene already has an object “${id}”.`);
+    return ops.placeObject({ ...made, id, parent: o.parent ?? null, group: o.group, before: o.before ?? null, transform: o.transform ?? null, hint: o.hint ?? null, fields: o.fields ?? null });
+  }
+
+  /**
    * The api one extension gets, and release(): give back everything it
    * acquired, in the STAGE.md order (the host aborts its signal first and
    * calls dispose() after).
@@ -960,7 +981,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       /** the box of an object, a group (its members') or, for null, the scene; `in`: an object's frame instead of the stage's */
       box: (target, { hints = true, in: frameId = null } = {}) => (target == null ? scope.sceneBox({ hints }) : scope.objectBox(target, { hints, in: frameId })),
       worldOf: displayedWorld,
-      addObject: content.addObject,
+      addObject,
 
       // picking and camera
       pick: (x, y, opts) => scope.pick(x, y, opts),
@@ -1409,7 +1430,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     pageHide,
     pageShow,
     /** where an object's content was routed ("built", "file", "scene": a stage) */
-    routeOf: content.route,
+    routeOf: (id) => content.of(id)?.route ?? null,
     /** a stage opened or closed under one of its objects: draw it again (that stage, or its hint) */
     childrenChanged: () => {
       if (!dead) {
@@ -1423,7 +1444,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         root.__sceneDebug = debug;
         globalThis.__sceneDebug = debug;
       }
-      content.warnUnusable();
       sync();
       if (n === 0) view.arrive();
     },
