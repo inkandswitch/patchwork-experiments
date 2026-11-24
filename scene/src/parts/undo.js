@@ -1,7 +1,7 @@
 // scene.undo: Undo and Redo (HISTORY.md, TOOLS Decisions 2). What they take back is
 // the editor's own writes only (the halo's handles, the inspector, transfer,
 // add, remove: whatever wrote through ./editor.js), this viewer's, in the focus
-// doc, as inverse changes (src/undo.js); a die's roll, a shuffle, a pause or
+// doc, as inverse changes (src/parts/undo-log.js); a die's roll, a shuffle, a pause or
 // a process's save is never on it. ⌘Z undoes, ⇧⌘Z redoes (Ctrl+Z, Ctrl+Shift+Z
 // or Ctrl+Y off a Mac): the commands' shortcuts, which the key map runs in the key order
 // (STAGE.md, "Keys": a field keeps its own text undo, a docked pane its own

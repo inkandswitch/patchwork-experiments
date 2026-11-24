@@ -374,7 +374,7 @@ export default {
         // a press that didn't move: not a carry, so the click goes on (to selection)
         tap: () => false,
         cancel: () => giveBack("back"),
-        // the gesture's keys, declared, so the key order knows them before they're pressed (../key-order.js)
+        // the gesture's keys, declared, so the key order knows them before they're pressed (../stage/key-order.js)
         keys: CARRY_KEYS,
         key(ev) {
           if (done || !c) return false;

@@ -2,8 +2,8 @@
 // the open gesture, the hands (each held tool) and the body declare are shown as controls
 // a finger holds: the pad's arrows bottom left, the rest as buttons bottom
 // right, each under the layer it is for. Which controls, and which key each
-// presses, is ../touch-keys.js (pure); this only draws them, and a finger on
-// one holds its key (../hold-key.js).
+// presses, is ./touch-keys.js (pure); this only draws them, and a finger on
+// one holds its key (./hold-key.js).
 //
 // The pad presses keys as a keyboard does: a finger down on a control sends
 // the keydown a keyboard sends for its code to the view's root, where the
@@ -137,7 +137,7 @@ function create(api) {
     for (const k of [...shown.keys()]) if (!ids.has(k)) drop(k);
     for (const control of controls) if (!shown.has(id(control))) shown.set(id(control), make(control));
     const elOf = (c) => shown.get(id(c)).el;
-    // (moving as few as can be: a control under a finger keeps its capture, ../hold-key.js arrange)
+    // (moving as few as can be: a control under a finger keeps its capture, ./hold-key.js arrange)
     // the pad's arrows (each in its place: CSS, by data-slot); the buttons in a group per layer, in the key order
     arrange(pad, controls.filter((c) => c.slot).map(elOf));
     const buttonsOf = controls.filter((c) => !c.slot);

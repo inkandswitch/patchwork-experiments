@@ -21,7 +21,7 @@ What is a stage's (its doc, content, space, camera, bodies, presence, flush) it 
 | | `context(hit)`: what its commands are asked in, `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `collect(name)`, `run(inv)` | every acting stage's offers, the input path's first, tagged `stage`; run in `inv.stage`, else the focus |
 | `use(name)` | a view plugin's service, else the focus stage's |
-| `view` | `get()`, `watch(fn, select?)`; `step(ev)` (`src/selection.js`), `enter(path)`, `arrive()`; `set(value)`: its own, `view[id]` |
+| `view` | `get()`, `watch(fn, select?)`; `step(ev)` (`src/stage/selection.js`), `enter(path)`, `arrive()`; `set(value)`: its own, `view[id]` |
 | `hand(spec)`, `putDown(which?)` | STAGE.md, "Hands"; events in the world, each hit with its `path`; `putDown` one of `view.held`, else the topmost |
 | `offerWidget(type, ev)` | offers `ev` to its widget's owner, as step 2 does, when the widget is nearer than the hit: did it take it? |
 | `wantPointer()` → release | the pointer free (no lock) until released (H5) |
@@ -47,7 +47,7 @@ Each extension's own; what it acquires through it goes when it stops. Everything
 | `doc()`, `scene()` | the doc; `{ d, objects, ids, parents, groups, members, traits, world(id), toLocal(id, p) }`, `d` the doc |
 | `change(fn)`, `writable()` | → its patches (`[]`: none), message `{"ext":id}` (`lastWriter`: `stage/provenance.js`); may it write |
 | `newId(prefix)`, `remove(ids)` | a fresh id; removes, running every `beforeRemove` first |
-| `ops` | `src/ops.js`: planners (`setTransform`, `setField`, `removeObjects`, `attachTo`, `fileIn`, `newGroup`, `ungroup`, |
+| `ops` | `src/shared/ops.js`: planners (`setTransform`, `setField`, `removeObjects`, `attachTo`, `fileIn`, `newGroup`, `ungroup`, |
 | | `moveRow`, `setLayerShown`, `clearLayers`, `setTransformPart`) → a change function, or null with a reason |
 | `local` | `get()`, `swap(fn)`: the stage's frozen value (below); plugins' keys `<id>.`-prefixed |
 | `view` | `get()`: the viewer's, as this stage sees it (below); `select(target)` |

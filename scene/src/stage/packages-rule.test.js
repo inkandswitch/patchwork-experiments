@@ -1,4 +1,4 @@
-// The packages rules (src/packages.js), case by case: every branch of the
+// The packages rules (src/stage/packages-rule.js), case by case: every branch of the
 // URL rule, every kind of mark a doc can carry, every way a plugin can be
 // registered, the prune rule's every case and its fixed point, viewers who
 // disagree, and the list's invariants under concurrent adds and prunes

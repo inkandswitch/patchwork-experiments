@@ -1,5 +1,5 @@
 // Accepting Patchwork documents: drag-and-drop payloads and pasted URLs.
-// Copied from scene/src/dnd.js (packages never import each other).
+// Copied from scene/src/shared/dnd.js (packages never import each other).
 //
 // The sidebar (and anything following its convention, e.g. universal-dnd) sets
 // `text/x-patchwork-dnd` = { source, items: [{ url, name?, type? }] } and the

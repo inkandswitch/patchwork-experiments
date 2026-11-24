@@ -2,7 +2,7 @@
 // list a scene has, made with it, so no two peers ever create one at once
 // (scene/CONVENTIONS.md, "Shared maps").
 //
-// The source of truth is scene/src/datatype.js (SceneDatatype.init and
+// The source of truth is scene/src/shared/datatype.js (SceneDatatype.init and
 // DEFAULT_VIEW). This is a copy, since packages don't import each other: when
 // the init there changes, change this to match. Everything in this package
 // that writes a scene doc whole (the code, its tests and its probe pages)

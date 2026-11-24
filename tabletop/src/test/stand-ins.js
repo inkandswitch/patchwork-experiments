@@ -123,7 +123,7 @@ export function keeperOf(objects, { name = () => "Deck" } = {}) {
 
 /**
  * What the stage's content(id).extras holds for a GLB with these extras on
- * its root (scene/STAGE.md `content(id)`, scene/src/carry-rules.js
+ * its root (scene/STAGE.md `content(id)`, scene/src/shared/carry-rules.js
  * sanitizeConnectors and placeConnector, copied): each connector cleaned and
  * placed in its root's frame, so a whole frame (`rotation`) comes back as the
  * stage's decompose writes it (the same frame, maybe another triple: [0, π, 0]

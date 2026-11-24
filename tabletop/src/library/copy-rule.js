@@ -1,6 +1,6 @@
 // The scene's copy rule, as a whole doc is copied (a session forked): what
 // of an object is about now, never copied. The source of truth is
-// scene/src/transfer.js (RUNTIME_FIELDS, runtimeOf, cleanTraits,
+// scene/src/parts/copy-rule.js (RUNTIME_FIELDS, runtimeOf, cleanTraits,
 // cleanObject; refsOf's `copy: "drop"`) and extract.js's whole-doc copy.
 // This is a copy, since packages don't import each other: when the rule
 // there changes, change this to match (as empty-scene.js is to the scene's init).

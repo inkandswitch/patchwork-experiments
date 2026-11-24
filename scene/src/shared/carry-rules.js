@@ -74,7 +74,7 @@ export function intoFrame(W, rotation, face = 0) {
  * through W's origin until W's length (+Z) faces that way, seen from above
  * (left as it is when that length is within VERTICAL of straight up or down:
  * it faces no way); else as it is. The one rule for a carry (carry-math
- * landedPose) and a copy (transfer.js moveBy). Pure.
+ * landedPose) and a copy (../parts/copy-rule.js moveBy). Pure.
  */
 export function intoSnap(W, snap) {
   if (finite3(snap?.rotation)) return intoFrame(W, snap.rotation.map(Number), faceOf(W));

@@ -88,7 +88,7 @@ The launcher (`tool.js`, every step in `actions.js`, the data in `model.js`):
 - **Continue** opens a session; Sessions lists the newest first (each link
   a list insert: two people starting games at once both appear).
 - **Fork** copies a session into a new scene doc by the scene's copy rule
-  (`copy-rule.js`, a copy of scene/src/transfer.js's): every object under its
+  (`copy-rule.js`, a copy of scene/src/parts/copy-rule.js's): every object under its
   id; the stage's runtime fields, runtime traits (a keeper's binding: a card
   is a bare back) and `copy: "drop"` fields left behind; each `entries`
   trait's entries set back to its `init` (the seats emptied). A built

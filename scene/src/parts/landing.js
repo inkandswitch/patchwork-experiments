@@ -20,7 +20,7 @@
 // somewhere already); `rotation` is the whole frame (world, Euler XYZ) of a
 // connector it snapped to that has one (a rack's place, standing a tile on
 // edge), else null: the copy goes into that frame, face up or down as it
-// was (carry-rules intoSnap, the carry's rule, through src/transfer.js moveBy).
+// was (carry-rules intoSnap, the carry's rule, through src/parts/copy-rule.js moveBy).
 
 import { isGroup } from "../shared/groups.js";
 import { partLanding } from "./parts-place.js";

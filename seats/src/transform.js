@@ -1,6 +1,6 @@
 // The two matrix operations seats need, on plain 4×4 column-major arrays
 // (three.js / glTF order), as the stage hands them out (api.worldOf,
-// snapshot.world). A copy of scene/src/transform.js's, since packages don't
+// snapshot.world). A copy of scene/src/shared/transform.js's, since packages don't
 // import each other.
 
 /** m · v, for a point v. */

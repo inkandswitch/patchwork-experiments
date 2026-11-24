@@ -1,6 +1,6 @@
 // The stage's side of a scene's packages (STAGE.md, "Packages"): keeping the
 // doc's list true to what the doc calls for, and loading the listed packages
-// this viewer doesn't have. The rules are src/packages.js (pure); this is
+// this viewer doesn't have. The rules are src/stage/packages-rule.js (pure); this is
 // when they're applied.
 //
 //   - reconcile: after every doc change and every registry change, add

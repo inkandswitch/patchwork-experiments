@@ -49,7 +49,7 @@ export function staleReason(render, source) {
   return sameDeps(source?.deps, built.deps) ? null : "deps";
 }
 
-// ─── fixed versions (`at`): ../versions.js ───────────────────────────────────
+// ─── fixed versions (`at`): ../shared/versions.js ───────────────────────────────────
 
 /**
  * The `at` that freezes exactly what a build was made from: its source heads,

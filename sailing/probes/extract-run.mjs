@@ -15,7 +15,7 @@
 //     the hull's frame was); the boat holds one link to T at the hull, no
 //     transform of its own, a hint the table's size; the link is selected;
 //     one undo step (that each is one host change and writes nothing else
-//     is scene/src/extract.test.js's, over every case);
+//     is scene/src/parts/extract.test.js's, over every case);
 //  2. the game, linked inside T now, acts there (its stage's path is the
 //     boat's link to T, then T's link to the game): its cards are drawn
 //     exactly where they were (to 1e-9 m), its rule and keeper run;
@@ -80,7 +80,7 @@ const HELPERS = `window.__ex = (() => {
     heads: (url) => window.repo.handles.get(url)?.heads() ?? null,
     links: () => links(focus().doc()),
     selected: () => dbg().local.get().selected ?? null,
-    // the labels of the top undo and redo steps for the focus doc (the editor's stacks, per doc url: scene/src/undo.js)
+    // the labels of the top undo and redo steps for the focus doc (the editor's stacks, per doc url: scene/src/parts/undo-log.js)
     edits: () => { const e = dbg().local.get().edits?.[focus().url]; return { undo: e?.undo?.at(-1)?.label ?? null, redo: e?.redo?.at(-1)?.label ?? null }; },
     run: (command, target, value) => api().run({ ext: "scene.transfer", command, target, value }),
     edit: () => dbg().view.plugins.record("scene.edit")?.api.run({ ext: "scene.edit", command: "edit", target: null, value: true }),

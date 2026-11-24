@@ -1,6 +1,6 @@
 // Picking (API.md, "`api`": `pick`, `raycast`, `project`): rays through the port, what
 // they hit among the bodies they're given, the vertex snap, and building
-// the pick acceleration (../pick-accel.js) in idle time. Functions of the
+// the pick acceleration (./pick-accel.js) in idle time. Functions of the
 // camera, raycaster and meshes they're handed; nearestScreenVertex is pure.
 
 import { Matrix3, Matrix4, Plane, Vector2, Vector3 } from "three";

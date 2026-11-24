@@ -22,7 +22,7 @@
 //     it says: an arena's maker lands in the game). Blank only puts the
 //     choice away, for this view; the drop hint stays.
 // Pastes, drops and keys inside an embedded document (marked with the
-// stage's EMBED_ATTR, src/embed.js) are that document's, never ours.
+// stage's EMBED_ATTR, src/shared/embed.js) are that document's, never ours.
 // Adding is the editor's: drops and pastes reach it through scene.drops
 // (./drops.js), which hears them while the Edit hand is held, and the start
 // screen is made as it is picked up and gone as it goes. (A scene made new starts
@@ -355,7 +355,7 @@ function create(api) {
       return true;
     },
   };
-  /** A pasted automerge URL is a document to add; an object copy's link isn't (scene.transfer's: ../transfer.js isObjectCopy). */
+  /** A pasted automerge URL is a document to add; an object copy's link isn't (scene.transfer's: ./copy-rule.js isObjectCopy). */
   const pasting = (e) => {
     const text = e.clipboardData?.getData?.("text/plain");
     if (!parseAutomergeUrl(text) || isObjectCopy(e.clipboardData)) return false;

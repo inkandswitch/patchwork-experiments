@@ -29,7 +29,7 @@
 // (walking, D) shows without one.
 //
 // Verbs are buttons, for touch and a mouse. A button whose verb has a key
-// is that key: a press on it presses the key (../hold-key.js, as the touch
+// is that key: a press on it presses the key (./hold-key.js, as the touch
 // pad's controls do) and lifting it lets the key up, so the verb goes the
 // key order and the key map, and a held verb ("hold E": winding a capstan)
 // lasts as long as the finger or the mouse button. Which key is asked as

@@ -17,7 +17,7 @@
 //
 // It is drawn, picked and dragged in the frame of what the object is
 // attached to, as drawn this frame (the world for a group, or at the root):
-// the conversions are the carry's (../transform.js frameConversions). So a
+// the conversions are the carry's (../shared/transform.js frameConversions). So a
 // winch's handles heel with the hull, and dragging its arrow while she sails
 // moves it along her deck. The handles are found in screen space (within
 // GRAB_PX of the pointer) and offered as a widget at their distance from the

@@ -15,12 +15,12 @@
 //   - else the viewer (its +Z toward the eye), as the arena's "Add target"
 //     did, so a target is put down facing whoever placed it.
 //
-// Snapping is the carry's (../native/carry-math.js snapCandidates, ../carry-rules.js
+// Snapping is the carry's (../native/carry-math.js snapCandidates, ../shared/carry-rules.js
 // nearestSnap), one rule for both: a part goes to the nearest of the object's
 // connectors that takes it (a tagged connector takes only a part with one of
 // its tags, an open one any part) within the object's snap radius, in plan
 // (its content's `extras.snapRadius`: the GLB's, else from its connectors'
-// spacing, ../gltf-content.js findSnapPoints). An object with no radius (one
+// spacing, ../stage/gltf-content.js findSnapPoints). An object with no radius (one
 // connector and none stated) isn't snapped to.
 
 import { nearestSnap } from "../shared/carry-rules.js";

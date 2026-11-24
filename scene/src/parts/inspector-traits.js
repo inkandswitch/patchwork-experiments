@@ -4,7 +4,7 @@
 // trait's value. No DOM, no api.
 //
 // A field is a ParamSpec ({ key, label?, kind, default?, options?, min?, max?,
-// step? }), so the scene's param form (src/param-form.js) draws it. Four kinds
+// step? }), so the scene's param form (src/shared/param-form.js) draws it. Four kinds
 // beyond the ParamSpec ones are turned into ParamSpec ones here:
 // - "object": an object or group id in this scene (a select; None removes it);
 // - "entry": a key of the scene trait `of`, a map of entries such as seats,

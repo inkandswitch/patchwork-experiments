@@ -37,7 +37,7 @@ const NORMALIZE = {
   5123: (c) => c / 65535,
 };
 
-/** Metres per unit (as scene/src/units.js), and the long names a writer might use. */
+/** Metres per unit (as scene/src/shared/units.js), and the long names a writer might use. */
 export const METRES_PER_UNIT = Object.freeze({ m: 1, cm: 0.01, mm: 0.001, in: 0.0254, ft: 0.3048 });
 const LONG_UNITS = {
   metre: "m", metres: "m", meter: "m", meters: "m",

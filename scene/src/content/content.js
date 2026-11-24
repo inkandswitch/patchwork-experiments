@@ -421,7 +421,7 @@ export function createContent({ repo, time, readOnly, announce, root, scope, sou
     });
   }
 
-  // rebuild requests from embedded controls (../embed.js)
+  // rebuild requests from embedded controls (../shared/embed.js)
   const onRebuild = (e) => {
     const url = e.detail?.renderUrl;
     const entry = Object.entries(doc().objects ?? {}).find(([, o]) => o?.renderUrl === url);

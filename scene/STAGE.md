@@ -17,7 +17,7 @@ what the kernel reads of an instance, is [API.md](API.md).
 | **Contribution** | A named field of an instance, read with `collect(name)`; the kernel reads only those under "`instance`" (API.md). |
 | **Event** | A value the view makes of DOM input on the canvas ("The input chain"). |
 | **Service** | What an instance `provides` by name, for others to `use`. |
-| **Layer** | Of the scene package's modules, lowest first: shared (formats, math), the kernel (`src/stage/`, `src/content/` and what they are built from), native (`src/native/`, `src/sources/`), the editor (`src/parts/`), entry. Imports go only down; above the kernel, only to its api and its face, `stage/public.js` (pure helpers, re-exported). The table and its check: `src/native/boundary.test.js`. |
+| **Layer** | Of the scene package's modules, lowest first, each its directory: shared (`src/shared/`, formats and math, and the kit files at `src/`'s root), the kernel (`src/stage/`, `src/content/`), native (`src/native/`, `src/sources/`), the editor (`src/parts/`), entry (`src/index.js`, `src/controls-tool.js`). Imports go only down; above the kernel, only to its api and its face, `stage/public.js` (pure helpers, re-exported). The check: `src/native/boundary.test.js`. |
 
 ## Views, stages and links
 
@@ -31,7 +31,7 @@ content, in its frame.
 | **Embedded documents** | A document the stage shows inside it, marked `data-stage-embed` (`embed.js`), keeps its own keys, pastes and drops. A render's build controls ask the stage with DOM events bubbling to its root: `scene:rebuild` (`detail: { renderUrl }`; the stage rebuilds it and cancels the event) and `scene:render-context` (the stage sets `detail.state`, the object's content state, and `detail.at`, its fixed version, and calls the asker's `detail.tell(state, at)` whenever either changes, until `detail.stop()`). |
 | **Drawn** | Extensions run and draw, nothing more: no segment, body, tool, command, widget, chrome, camera, selection or view service (`drawnApi`). |
 | **Read-only** | A stage that doesn't act, or whose handle refuses, gets a doc and repo refusing every write (`stage/readonly.js`; I6). |
-| **The focus** | Goes in with a view plugin's `view.enter(path)`, out on Escape's last rung; it scopes the selection (H10), changes only through `selectionStep` (`src/selection.js`), and no stage sees it. |
+| **The focus** | Goes in with a view plugin's `view.enter(path)`, out on Escape's last rung; it scopes the selection (H10), changes only through `selectionStep` (`src/stage/selection.js`), and no stage sees it. |
 | **Frames** (I7) | Everything spatial in an api is in its stage's root frame, a similarity (`stage/scope.js`); a hit not of this doc is `{ id: null, point, normal, distance }`. World = parent's world · local; groups give scope, not motion. |
 | **Presence where it is** (I12) | A doc's people are drawn where it acts, from its channel. |
 | **The outermost doc** | Gives the view its ambients, `view.start` and the camera's home. |
@@ -82,7 +82,7 @@ right-click or a 500 ms hold; `move` starts past 4 px, a shorter release is a `t
 groups or `widgetAt`; `onTop` beats any object. No double-click. **The look**: the pointer's hit, or the eye ray's under
 lock (`looksFromEye`).
 
-**Keys**: one key order (`src/key-order.js`; H12): a focused field, the gesture's declared keys, the topmost hand's
+**Keys**: one key order (`src/stage/key-order.js`; H12): a focused field, the gesture's declared keys, the topmost hand's
 declaring it, the top body's, then `input.key` over attention's path, innermost first (I10). A key with ctrl or meta
 held (a modifier itself aside) is no reserver's: it goes to `input.key`. Declared keys are `[{ code,
 label }]`; a reserved key is its reserver's; a keyup, its keydown's.
@@ -106,7 +106,7 @@ hand's `escape()` else putting it down; no hand: the selection, else the focus.
 
 ## Packages
 
-`doc.packages` (`[{ url }]`, `automerge:` or public `https:`) lists where its contents come from (`src/packages.js`,
+`doc.packages` (`[{ url }]`, `automerge:` or public `https:`) lists where its contents come from (`src/stage/packages-rule.js`,
 `stage/packages.js`). Each viewer adds the package of every plugin answering a need of the doc's (a source or a trait)
 here; once its registry is quiet, it prunes only an entry it can judge: a package registered here none of whose
 plugins, shadowed or not, answers a need, while every need is answered here (never the scene package or the suggested

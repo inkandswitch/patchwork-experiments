@@ -85,7 +85,7 @@ function shortHeads(heads) {
   return (heads ?? []).map((h) => String(h).slice(0, 8)).join(" + ");
 }
 
-/** What a row is as a document outside the scene (../transfer.js). */
+/** What a row is as a document outside the scene (./copy-rule.js). */
 export { rowDocument };
 
 /** A row-drag payload `{ scene, id, ids }`, or null if there is none (or it isn't ours). */
@@ -101,7 +101,7 @@ export function readRowDrag(dt) {
 
 // ─── peers ─────────────────────────────────────────────────────────────────
 
-/** A peer's colour, as CSS: the same as their box in the view (src/peers.js). */
+/** A peer's colour, as CSS: the same as their box in the view (src/parts/peers.js). */
 export const peerColor = peerCss;
 
 /**
@@ -341,7 +341,7 @@ export function createOutline(api, { shown = () => true } = {}) {
 
   /**
    * Another scene's row dropped at a place in this tree: copied here (with
-   * what's attached under it, or filed in it, ../transfer.js). The tree
+   * what's attached under it, or filed in it, ./copy-rule.js). The tree
    * says only where it goes in the tree; it's put down as the view would
    * (./landing.js): onto an object row, on that object, snapped to the
    * nearest of its connectors that takes it; at the top or in a group,

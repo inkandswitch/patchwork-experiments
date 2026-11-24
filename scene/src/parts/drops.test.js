@@ -60,7 +60,7 @@ describe("scene.drops", () => {
   });
 
   // a Copy's clipboard holds the row payload and the doc link as text: it is pasted as a copy, whichever of
-  // scene.transfer and scene.add runs first (scene.add declines an object copy: ../transfer.js isObjectCopy)
+  // scene.transfer and scene.add runs first (scene.add declines an object copy: ./copy-rule.js isObjectCopy)
   it.each([
     ["transfer, then add", ["transfer", "add"]],
     ["add, then transfer", ["add", "transfer"]],
