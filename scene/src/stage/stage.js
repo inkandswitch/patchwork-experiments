@@ -60,11 +60,10 @@ import { elementOf, keyOf, parseKey } from "./paths.js";
 import { lookChain } from "./key-order.js";
 import { commandState } from "./commands.js";
 import * as ops from "../shared/ops.js";
-import { layersKey } from "../layers.js";
 import { createContent, statusOf } from "../content/content.js";
 import { modelOf, snapshotOf } from "./model.js";
+import { createDisplay } from "./display.js";
 import { isGroup } from "../shared/groups.js";
-import { composeMatrix, multiplyMatrices, normalizeTransform } from "../shared/transform.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";
@@ -74,17 +73,6 @@ const isEvent = (a) => !!a && typeof a === "object" && typeof a.type === "string
 const noop = () => {};
 
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
-
-// ─── pure helpers (exported for tests) ──────────────────────────────────────
-
-/** The fields an extension may display an object as, merged per field in layering order. */
-const DISPLAY_FIELDS = ["transform", "content", "hidden", "name", "tint", "opacity", "outline"];
-
-/** Everything applyDisplay reads, as one string: an object is re-applied only when this changes. */
-function displayKey(o, parent, inh) {
-  const t = o.transform ?? {};
-  return `${o.kind === "group" ? "g" : "o"}|${o.visible !== false}|${o.color ?? ""}|${o.opacity ?? 1}|${!!o.wireframe}|${!!o.locked}|${o.tags ?? ""}|${t.position}|${t.rotation}|${t.scale}|${parent ?? ""}|${inh?.visible}|${inh?.opacity}|${layersKey(o.layers)}`;
-}
 
 // ─── the tool ───────────────────────────────────────────────────────────────
 
@@ -217,8 +205,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // ─── content (../content/content.js) ──────────────────────────────────────
 
-  const displayKeys = new Map(); // id → displayKey last applied
-  const outlineKeys = new Map(); // id → the outline last drawn, as a string
   let statusDirty = false;
   let contentDirty = false;
 
@@ -253,105 +239,25 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     // the sources changed: what each object's content routes to may have too
     onSources: () => {
       if (dead) return;
-      applyDoc(derive());
+      display.draw(derive());
       statusChanged();
     },
     onProviders: () => packages.check(),
   });
 
-  // ─── display (API.md, "Display") ──────────────────────────────────────────
-  // How this viewer sees an object instead of as the doc says, never written:
-  // each extension's override { transform?, content?, hidden?, name?, tint?,
-  // opacity?, outline? }, layered in running order, later winning per field. A
-  // transform is a pose (the viewport's, so worldOf, boxes and picking follow
-  // it); content is a file doc's URL or a stand-in's GLB bytes; hidden and
-  // name are as they say; tint is a colour over the object's own, opacity
-  // multiplies its own, outline is a list of colours its box is drawn in
-  // (alternating dashes for several).
+  // ─── display (API.md, "Display"): what it draws of the doc, and how its extensions display objects instead ───
 
-  const overrides = new Map(); // object id → Map extension id → its override
-  const displayed = new Map(); // object id → the merged override
-  let redraw = false; // content, hidden, tint, opacity or an outline changed: applyDoc on the next flush
+  const display = createDisplay({
+    scope,
+    content,
+    rank: () => host.running().map((r) => r.id),
+    opened: (id) => !!view.stageUnder([...path, id]),
+    changed: displayChanged,
+  });
+  const nameOf = (id) => display.nameOf(derive(), id);
+  /** An object's displayed world matrix (display.worldOf). */
+  const displayedWorld = (oid) => display.worldOf(derive(), oid);
   let ambients = NO_AMBIENTS; // what its running extensions offer, stacked per name (./ambients.js): the view's when it's the outermost
-  const nameOf = (id) => displayed.get(id)?.name ?? derive().objects[id]?.name ?? null;
-
-  function display(ext, id, o) {
-    if (typeof id !== "string") return noop;
-    const mine = Object.freeze({ ...o });
-    if (!overrides.has(id)) overrides.set(id, new Map());
-    overrides.get(id).set(ext, mine);
-    redisplay(id);
-    return () => {
-      const by = overrides.get(id);
-      if (by?.get(ext) !== mine) return;
-      by.delete(ext);
-      if (!by.size) overrides.delete(id);
-      redisplay(id);
-    };
-  }
-  /** An object's overrides in layering order (running order; a view plugin's after), as [ext, override]. */
-  function layered(id) {
-    const rank = new Map(host.running().map((r, i) => [r.id, i]));
-    return [...(overrides.get(id) ?? [])].sort(([a], [b]) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
-  }
-  function redisplay(id) {
-    const next = {};
-    for (const [, o] of layered(id)) for (const k of DISPLAY_FIELDS) if (o[k] !== undefined) next[k] = o[k];
-    const was = displayed.get(id) ?? {};
-    if (Object.keys(next).length) displayed.set(id, next);
-    else displayed.delete(id);
-    if (next.transform !== was.transform) scope.setPose(id, next.transform ? normalizeTransform(next.transform) : null);
-    // a pose moving isn't news (what moves reads worldOf in its loop); anything else wakes every update
-    const look = (d) => JSON.stringify([d.tint, d.opacity, d.outline]);
-    if (next.content === was.content && next.hidden === was.hidden && next.name === was.name && !next.transform === !was.transform && look(next) === look(was)) return;
-    redraw ||= next.content !== was.content || next.hidden !== was.hidden || look(next) !== look(was);
-    displayChanged();
-  }
-
-  // Display state, then content: only what is shown is loaded, and once
-  // loaded it stays loaded. Parents before children (attachment order), so
-  // each object's new parent is already in place when it's attached to it.
-  function applyDoc(m) {
-    const { objects, parents, attachOrder, inherited } = m;
-    scope.setGroups(m.members);
-    let rerouted = false;
-    for (const { id } of attachOrder) {
-      const o = objects[id];
-      if (isGroup(o)) {
-        content.forget(id);
-        continue;
-      }
-      const parent = parents.get(id) ?? null;
-      const inh = inherited.get(id);
-      // back (an undo): what extensions display for it applies again
-      if (overrides.has(id) && !displayed.has(id)) redisplay(id);
-      // placed even without geometry, so whatever is attached to it sits right
-      const over = displayed.get(id);
-      const oo = over ? { ...o, ...(over.hidden ? { visible: false } : {}), ...(over.tint ? { color: over.tint } : {}), ...(over.opacity != null ? { opacity: (o.opacity ?? 1) * over.opacity } : {}) } : o;
-      const key = displayKey(oo, parent, inh);
-      if (displayKeys.get(id) !== key) {
-        displayKeys.set(id, key);
-        scope.applyDisplay(id, oo, parent, inh);
-      }
-      const outline = over?.outline?.length ? over.outline : null;
-      const outlineKey = outline ? outline.join("|") : "";
-      if (outlineKeys.get(id) !== outlineKey) {
-        outlineKeys.set(id, outlineKey);
-        scope.setOutline(id, outline);
-      }
-      // a route that moved (its provider arrived or went) is a change to what's shown
-      if (content.place(id, o, { shown: oo.visible !== false && inh.visible, show: over?.content, opened: !!view.stageUnder([...path, id]) })) rerouted = true;
-    }
-    for (const id of new Set([...content.ids(), ...scope.ids(), ...displayKeys.keys()])) {
-      if (objects[id]) continue;
-      content.forget(id);
-      scope.removeObject(id);
-      displayKeys.delete(id);
-      outlineKeys.delete(id);
-      displayed.delete(id); // (its overrides stay until released: it may come back)
-    }
-    if (rerouted) displayChanged();
-  }
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
@@ -367,26 +273,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     tap: { on: () => view.tapping(), say: (e) => view.tapSay(n, handle.url ?? null, e) },
   });
 
-  /**
-   * An object's displayed world matrix: the viewport's, which displayed
-   * transforms have moved; without WebGL, the doc's chain with each displayed
-   * transform in place of its own.
-   */
-  function displayedWorld(oid) {
-    const w = scope.worldOf(oid);
-    if (w) return w;
-    const m = derive();
-    if (!m.objects[oid]) return null;
-    if (!scope.posed) return scene().world(oid);
-    let out = null;
-    const seen = new Set();
-    for (let id = oid; id != null && m.objects[id] && !seen.has(id); id = m.parents.get(id) ?? null) {
-      seen.add(id);
-      const local = composeMatrix(scope.poseOf(id) ?? m.objects[id].transform);
-      out = out ? multiplyMatrices(local, out) : local;
-    }
-    return out;
-  }
   // what a peer sends an extension here is its `receive`'s (where it went, for the tap: an extension's, a service's, or dropped and why)
   cleanups.push(
     presence.onReceive((ext, kind, data, from) => {
@@ -432,10 +318,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       }
       if (JSON.stringify(next) !== JSON.stringify(local.get().status)) local.swap(assoc("status", Object.freeze(next)));
     }
-    if (redraw) {
-      redraw = false;
-      applyDoc(derive());
-    }
+    display.redraw(derive());
     const snap = scene();
     const loc = local.get();
     const drawnAgain = contentDirty;
@@ -913,7 +796,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       },
       ...lent,
       /** draw an object otherwise for this viewer (API.md, "Display"): again from this extension replaces its override → release */
-      display: (oid, o) => (live() ? display(id, oid, o ?? {}) : noop),
+      display: (oid, o) => (live() ? display.set(id, oid, o ?? {}) : noop),
       extent: (box) => {
         if (live()) scope.setExtent(id, box ?? null);
       },
@@ -974,7 +857,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       for (const give of [...own.cameraHolds]) give();
       own.cameraHolds.clear();
       // 3: its display overrides, its presence keys (and its rate); what services gave it went as its signal aborted
-      for (const [oid, by] of [...overrides]) if (by.delete(id)) (by.size || overrides.delete(oid), redisplay(oid));
+      display.drop(id);
       presence.clear(id);
       // 5: loops, afterRender hooks, scheduled work
       for (const give of [...own.frame]) give();
@@ -1013,8 +896,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     };
     const layers = exts.flatMap((ext) => (owned.get(ext).layers ?? []).map((l) => Object.freeze({ ext, onTop: l.onTop, meshes: meshes(l.group) })));
     const labels = exts.flatMap((ext) => [...(owned.get(ext).labelItems?.values() ?? [])].flat().filter((i) => i?.key != null).map((i) => Object.freeze({ ext, key: String(i.key), text: i.text == null ? "" : String(i.text), on: typeof i.on === "string" ? i.on : null })));
-    const display = Object.fromEntries([...overrides.keys()].sort().map((oid) => [oid, Object.freeze(layered(oid).map(([ext, o]) => Object.freeze({ ext, fields: Object.freeze(Object.keys(o).filter((k) => o[k] !== undefined)) })))]));
-    return Object.freeze({ layers: Object.freeze(layers), labels: Object.freeze(labels), display: Object.freeze(display) });
+    return Object.freeze({ layers: Object.freeze(layers), labels: Object.freeze(labels), display: Object.freeze(display.authors()) });
   }
 
   /**
@@ -1151,7 +1033,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       const sel = viewValue().selected ?? null;
       if (sel === selectedSeen) return;
       selectedSeen = sel;
-      if (sel != null && !dead) applyDoc(derive());
+      if (sel != null && !dead) display.draw(derive());
     }),
   );
 
@@ -1178,7 +1060,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const d = doc();
     const m = derive();
     host.sync(d);
-    applyDoc(m);
+    display.draw(m);
     packages.check();
     requestFlush();
   }
@@ -1205,7 +1087,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     root,
     scene,
     /** what this viewer sees instead of the doc (api.display), merged: id → { transform?, content?, hidden?, name?, tint?, opacity?, outline? } */
-    displayed: () => displayed,
+    displayed: () => display.merged(),
     /** its ambients (./ambients.js), the atmosphere among them */
     ambients: () => ambients,
     /** does this extension hold a body, a held tool or an open session, or is a service busy for it (so a doc-caused stop waits)? */
@@ -1318,7 +1200,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     /** a stage opened or closed under one of its objects: draw it again (that stage, or its hint) */
     childrenChanged: () => {
       if (!dead) {
-        applyDoc(derive());
+        display.draw(derive());
         displayChanged();
       }
     },
