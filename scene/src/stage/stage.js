@@ -98,7 +98,7 @@ export default function Stage(handle, element) {
  *   path?: string[],                   // the links that lead to it ([]: the outermost)
  *   frame?: () => number[] | null,     // its root's world matrix now (null: the identity)
  *   under?: string | null,             // the viewport key its root hangs under (the link's)
- *   role?: "acting" | "pinned",       // does it act, or is it drawn (a pin: view.js openUnder)
+ *   role?: "acting" | "pinned",       // "acting": it acts; else it is drawn (view.js openUnder)
  *   deps?: object | null,              // a pin's: the heads of the docs reached through it ({ url: heads })
  * }} o
  */
@@ -1048,8 +1048,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     ambients: () => ambients,
     /** does this extension hold a body, a held tool or an open session, or is a service busy for it (so a doc-caused stop waits)? */
     busy,
-    /** does it act ("acting"), or is it drawn ("pinned")? */
-    role,
     /** the view plugins with a facet here (api.focus()) */
     facets: () => [...facets.keys()],
     stats: () => ({
@@ -1114,7 +1112,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   stage = Object.freeze({
     n,
     reader,
-    role,
+    /** does it act (STAGE.md, "Views, stages and links"), or is it drawn? */
     acts,
     /** the docs found through its repo, url → handle (a link's fixPoint holds their heads) */
     reached,

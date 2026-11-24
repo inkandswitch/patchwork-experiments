@@ -233,7 +233,7 @@ try {
     // wherever it is: scene/API.md, "View plugins")
     runsIn: (w, ext) => (dbg[w].view.plugins.instanceOf(ext) ? [dbg[w].view.focusStage()] : dbg[w].view.stages().filter((s) => s.debug.host.instanceOf(ext))).map((s) => [...s.path]),
     /** what each of view w's stages runs because its doc calls for it (not the general parts, which follow the focus) */
-    traitRuns: (w) => dbg[w].view.stages().map((s) => [s.path.join("/"), s.role, s.debug.host.running().map((r) => r.id)]),
+    traitRuns: (w) => dbg[w].view.stages().map((s) => [s.path.join("/"), s.acts ? "acting" : "pinned", s.debug.host.running().map((r) => r.id)]),
     /** Enter on a link of the focus stage's, as the menu runs it (scene.focus's command): false where it can't */
     enter(w, id) {
       const c = dbg[w].view.focusStage()?.debug.view.plugins.instanceOf("scene.links")?.commands.find((k) => k.id === "enter");
@@ -296,7 +296,7 @@ try {
       return { audience: aud ? aud.audience(id) : "no api", shown: aud?.shown(id) ?? null, look: looks.get(id) ?? null, looks: looks.size, hud: kept?.hud?.() ?? null, roster: api?.collect("roster").map((r) => r.value?.viewers?.(api.scene())) ?? null, packages: st.packages?.complete?.() ?? null, failed: st.debug.host.failed?.() ?? null, at: G().title };
     },
     i6Stages: () => {
-      const one = (st) => (st ? { role: st.role, writable: st.debug.host.record("tabletop")?.api.writable() ?? null, running: st.debug.host.running().map((r) => r.id) } : null);
+      const one = (st) => (st ? { role: st.acts ? "acting" : "pinned", writable: st.debug.host.record("tabletop")?.api.writable() ?? null, running: st.debug.host.running().map((r) => r.id) } : null);
       return { acting: one(gStage("a")), repeat: one(stageAtLink("a", ids.repeatLink)), pin: one(stageAtLink("a", ids.pinLink)), d: one(gStage("d")), aLinks: { repeat: apiOf("a").use("links").role(ids.repeatLink), pin: apiOf("a").use("links").role(ids.pinLink), room: apiOf("a").use("links").role(ids.roomLink) } };
     },
     where() { const out = { p1: [], p2: [], table: [] }; for (const id of hidden()) out[zoneOf(id) ?? "table"].push(id); return out; },
@@ -354,7 +354,7 @@ try {
       // (a pin's url names G at its heads: G's stages are those whose url starts with G's)
       return dbg[w].view.stages().filter((s) => typeof s.url === "string" && s.url.startsWith(docs.game?.url)).map((s) => {
         const groups = [...(dbg[w].viewport.layers.get(keyOf(s.n, ext)) ?? [])];
-        return { path: s.path.join("/"), role: s.role, runs: !!s.debug.host.instanceOf(ext), children: groups.flatMap((g) => g.children) };
+        return { path: s.path.join("/"), role: s.acts ? "acting" : "pinned", runs: !!s.debug.host.instanceOf(ext), children: groups.flatMap((g) => g.children) };
       });
     },
     /** each stage of G's peer selection boxes in view w */

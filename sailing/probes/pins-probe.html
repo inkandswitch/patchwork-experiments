@@ -216,7 +216,7 @@ try {
     vrun("scene.edit", { command: "edit", value: true });
     const fixed = vrun("scene.inspector", { command: "fix-version", target: ids.fitout });
     vrun("scene.edit", { command: "edit", value: false });
-    await loaded(() => stageAt(ids.fitout)?.role === "pinned" && stageAt(ids.fitout)?.debug.host.instanceOf("joints"));
+    await loaded(() => stageAt(ids.fitout)?.acts === false && stageAt(ids.fitout)?.debug.host.instanceOf("joints"));
     ids.f = docs.f.url;
     ids.w = docs.w.url;
     ids.s = docs.s.url;
@@ -229,7 +229,7 @@ try {
   /** a link of S's: its state as S's view has it */
   const linkOf = (id) => apiOf("s")?.use("links").role(id) ?? null;
   /** what a stage of view s says of itself */
-  const about = (st) => (st ? { n: st.n, url: st.url, path: [...st.path], role: st.role, running: st.debug.host.running().map((r) => r.id), title: st.doc().title } : null);
+  const about = (st) => (st ? { n: st.n, url: st.url, path: [...st.path], role: st.acts ? "acting" : "pinned", running: st.debug.host.running().map((r) => r.id), title: st.doc().title } : null);
   /** an object of the stage at `path`, as view s draws it: its world matrix */
   const drawnIn = (path, id) => { const st = stageAt(...path); return st ? dbg.s.viewport.worldOf(keyOf(st.n, id)) : null; };
   /** an object as drawn, in the frame of the link it is in (its doc's frame there) */
@@ -345,7 +345,7 @@ try {
         r.hold = api.use("poses").hold(name === "pinned" ? ids.fHatch : ids.wHatch, { position: [0, 9, 0], rotation: [0, 0, 0], scale: 1 });
         r.run = api.run({ ext: "joints", command: "slide", target: name === "pinned" ? ids.fHatch : ids.wHatch });
         r.writable = api.writable();
-        r.role = stageAt(...path).role; // (the view's to say: an extension has no api.role)
+        r.role = stageAt(...path).acts ? "acting" : "pinned"; // (the view's to say: an extension has no api.role)
         r.hasRole = "role" in api;
         out[name] = r;
       }

@@ -181,7 +181,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
       const gStages = (v) => v.stages().filter((st) => st.url.split("#")[0] === G.url);
       const ready = (st) => st.debug.host.instanceOf("t.table") && st.debug.host.instanceOf("t.roster") && st.debug.displayed().size === 3;
       await until(() => Object.values(views).every(({ v }) => gStages(v).length === 1 && gStages(v).every(ready)), 4000);
-      for (const { v, pinned } of Object.values(views)) expect(gStages(v).map((st) => st.role)).toEqual([pinned ? "pinned" : "acting"]);
+      for (const { v, pinned } of Object.values(views)) expect(gStages(v).map((st) => st.acts)).toEqual([!pinned]);
       // G's extensions see G: no other stage's reader (api.path is a general part's only)
       for (const { v } of Object.values(views)) for (const st of gStages(v)) for (const ext of ["t.table", "t.roster"]) expect(st.debug.host.record(ext).api.path).toBeUndefined();
 
@@ -222,7 +222,7 @@ describe("placement independence (I4): G alone, linked, heeled, two links deep",
                 await settle();
                 for (const st of gStages(v)) {
                   const got = seen(st);
-                  if (got !== want) throw new Error(`${where} ${st.role}, focus ${focus}, body ${body}, held ${held}, ${state}:\n${got}\n≠\n${want}`);
+                  if (got !== want) throw new Error(`${where} ${st.acts ? "acting" : "drawn"}, focus ${focus}, body ${body}, held ${held}, ${state}:\n${got}\n≠\n${want}`);
                   // W7: the ambient read is the world's, and says where G sits
                   const amb = ambientSeen(st, v.outermost());
                   expect(amb.value).toBe(amb.want.value);

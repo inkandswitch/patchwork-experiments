@@ -147,7 +147,6 @@ function watchConsole() {
 }
 
 const ROLES = ["pinned", "readonly"];
-const ROLE = { pinned: "pinned", readonly: "acting" };
 
 describe("I6: a read-only stage writes nothing", () => {
   for (const role of ROLES) {
@@ -156,7 +155,7 @@ describe("I6: a read-only stage writes nothing", () => {
       vi.spyOn(console, "error").mockImplementation(() => {});
       const m = await mount(role);
       const { api, g } = m;
-      expect(m.stage.role).toBe(ROLE[role]);
+      expect(m.stage.acts).toBe(role === "readonly");
       expect("role" in api).toBe(false); // where it's placed is the view's, never an extension's to branch on (I4)
       expect(api.writable()).toBe(false);
       // since it opened: nothing of its own tried on its handle (its presence's hello and keys included)

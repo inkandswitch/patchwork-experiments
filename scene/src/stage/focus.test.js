@@ -320,7 +320,7 @@ describe("Enter and Leave", () => {
     try {
       const ov = other.debug.view;
       await until(() => stageOf(ov, "L/M")?.debug.host.instanceOf("t.card"), 3000);
-      const runs = (v) => J(v.stages().map((x) => [x.path, x.role, x.debug.host.running().map((r) => r.id)]));
+      const runs = (v) => J(v.stages().map((x) => [x.path, x.acts, x.debug.host.running().map((r) => r.id)]));
       const before = { mine: runs(m.view), theirs: runs(ov), focus: ov.atom.get().focus, facets: facetsAt(ov) };
       const writes = [spy(s.handle), spy(m.b), spy(m.c)];
       m.view.enter(["L"]);
