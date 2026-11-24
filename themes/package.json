@@ -1,14 +1,352 @@
 {
-  "name": "@patchwork/themes",
-  "private": true,
-  "version": "0.0.1",
-  "type": "module",
-  "main": "./main.js",
-  "exports": {
-    ".": "./main.js"
-  },
-  "scripts": {
-    "sync": "pushwork sync",
-    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
-  }
+	"name": "@patchwork/themes",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"patchwork": {
+		"plugins": {
+			"patchwork:theme": {
+				"acid": {
+					"name": "Acid",
+					"style": "./acid.css"
+				},
+				"alabaster": {
+					"name": "Alabaster",
+					"style": "./alabaster.css"
+				},
+				"ayu-light": {
+					"name": "Ayu Light",
+					"style": "./ayu-light.css"
+				},
+				"ayu-mirage": {
+					"name": "Ayu Mirage",
+					"style": "./ayu-mirage.css"
+				},
+				"bear": {
+					"name": "Bear",
+					"style": "./bear.css"
+				},
+				"bento": {
+					"name": "Bento",
+					"style": "./bento.css"
+				},
+				"bubblegum": {
+					"name": "Bubblegum",
+					"style": "./bubblegum.css"
+				},
+				"catppuccin-frappe": {
+					"name": "Catppuccin Frappé",
+					"style": "./catppuccin-frappe.css"
+				},
+				"catppuccin-latte": {
+					"name": "Catppuccin Latte",
+					"style": "./catppuccin-latte.css"
+				},
+				"catppuccin-macchiato": {
+					"name": "Catppuccin Macchiato",
+					"style": "./catppuccin-macchiato.css"
+				},
+				"catppuccin-mocha": {
+					"name": "Catppuccin Mocha",
+					"style": "./catppuccin-mocha.css"
+				},
+				"citrus": {
+					"name": "Citrus",
+					"style": "./citrus.css"
+				},
+				"classic-macos": {
+					"name": "Classic macOS",
+					"style": "./classic-macos.css"
+				},
+				"cobalt2": {
+					"name": "Cobalt2",
+					"style": "./cobalt2.css"
+				},
+				"dracula": {
+					"name": "Dracula",
+					"style": "./dracula.css"
+				},
+				"electric": {
+					"name": "Electric",
+					"style": "./electric.css"
+				},
+				"everforest-dark": {
+					"name": "Everforest Dark",
+					"style": "./everforest-dark.css"
+				},
+				"everforest-light": {
+					"name": "Everforest Light",
+					"style": "./everforest-light.css"
+				},
+				"fairyfloss": {
+					"name": "Fairyfloss",
+					"style": "./fairyfloss.css"
+				},
+				"flexoki-dark": {
+					"name": "Flexoki Dark",
+					"style": "./flexoki-dark.css"
+				},
+				"flexoki-light": {
+					"name": "Flexoki Light",
+					"style": "./flexoki-light.css"
+				},
+				"forest": {
+					"name": "Forest",
+					"style": "./forest.css"
+				},
+				"github-dark": {
+					"name": "GitHub Dark",
+					"style": "./github-dark.css"
+				},
+				"github-light": {
+					"name": "GitHub Light",
+					"style": "./github-light.css"
+				},
+				"gruvbox-dark": {
+					"name": "Gruvbox Dark",
+					"style": "./gruvbox-dark.css"
+				},
+				"gruvbox-light": {
+					"name": "Gruvbox Light",
+					"style": "./gruvbox-light.css"
+				},
+				"highlighter": {
+					"name": "Highlighter",
+					"style": "./highlighter.css"
+				},
+				"iceberg-dark": {
+					"name": "Iceberg Dark",
+					"style": "./iceberg-dark.css"
+				},
+				"iceberg-light": {
+					"name": "Iceberg Light",
+					"style": "./iceberg-light.css"
+				},
+				"ink": {
+					"name": "Ink",
+					"style": "./ink.css"
+				},
+				"ivy": {
+					"name": "Ivy",
+					"style": "./ivy.css"
+				},
+				"kanagawa": {
+					"name": "Kanagawa",
+					"style": "./kanagawa.css"
+				},
+				"kanagawa-lotus": {
+					"name": "Kanagawa Lotus",
+					"style": "./kanagawa-lotus.css"
+				},
+				"laser": {
+					"name": "Laser",
+					"style": "./laser.css"
+				},
+				"lavender": {
+					"name": "Lavender",
+					"style": "./lavender.css"
+				},
+				"lily": {
+					"name": "Lily",
+					"style": "./lily.css"
+				},
+				"limon": {
+					"name": "Limón",
+					"style": "./limon.css"
+				},
+				"macaron": {
+					"name": "Macaron",
+					"style": "./macaron.css"
+				},
+				"material-ocean": {
+					"name": "Material Ocean",
+					"style": "./material-ocean.css"
+				},
+				"minimal": {
+					"name": "Minimal",
+					"style": "./minimal.css"
+				},
+				"modus-operandi": {
+					"name": "Modus Operandi",
+					"style": "./modus-operandi.css"
+				},
+				"modus-vivendi": {
+					"name": "Modus Vivendi",
+					"style": "./modus-vivendi.css"
+				},
+				"mojito": {
+					"name": "Mojito",
+					"style": "./mojito.css"
+				},
+				"monokai": {
+					"name": "Monokai",
+					"style": "./monokai.css"
+				},
+				"night-owl": {
+					"name": "Night Owl",
+					"style": "./night-owl.css"
+				},
+				"nord": {
+					"name": "Nord",
+					"style": "./nord.css"
+				},
+				"ocean": {
+					"name": "Ocean",
+					"style": "./ocean.css"
+				},
+				"one-dark": {
+					"name": "One Dark",
+					"style": "./one-dark.css"
+				},
+				"one-light": {
+					"name": "One Light",
+					"style": "./one-light.css"
+				},
+				"oxocarbon": {
+					"name": "Oxocarbon",
+					"style": "./oxocarbon.css"
+				},
+				"palo-alto": {
+					"name": "Palo Alto",
+					"style": "./palo-alto.css"
+				},
+				"paper": {
+					"name": "Paper",
+					"style": "./paper.css"
+				},
+				"papercolor-light": {
+					"name": "PaperColor Light",
+					"style": "./papercolor-light.css"
+				},
+				"plan9": {
+					"name": "Plan 9",
+					"style": "./plan9.css"
+				},
+				"pushpin": {
+					"name": "Pushpin",
+					"style": "./pushpin.css"
+				},
+				"rose-pine": {
+					"name": "Rose Pine",
+					"style": "./rose-pine.css"
+				},
+				"rose-pine-dawn": {
+					"name": "Rose Pine Dawn",
+					"style": "./rose-pine-dawn.css"
+				},
+				"rspca": {
+					"name": "RSPCA",
+					"style": "./rspca.css"
+				},
+				"sakura": {
+					"name": "Sakura",
+					"style": "./sakura.css"
+				},
+				"selenized-dark": {
+					"name": "Selenized Dark",
+					"style": "./selenized-dark.css"
+				},
+				"selenized-light": {
+					"name": "Selenized Light",
+					"style": "./selenized-light.css"
+				},
+				"solarized-dark": {
+					"name": "Solarized Dark",
+					"style": "./solarized-dark.css"
+				},
+				"solarized-light": {
+					"name": "Solarized Light",
+					"style": "./solarized-light.css"
+				},
+				"sundae": {
+					"name": "Sundae",
+					"style": "./sundae.css"
+				},
+				"sunset": {
+					"name": "Sunset",
+					"style": "./sunset.css"
+				},
+				"swooshiee": {
+					"name": "Swooshiee",
+					"style": "./swooshiee.css"
+				},
+				"swooshienites": {
+					"name": "Swooshnites",
+					"style": "./swooshienites.css"
+				},
+				"swooshyyy": {
+					"name": "swooshyyy",
+					"style": "./swooshyyy.css"
+				},
+				"synthwave84": {
+					"name": "Synthwave '84",
+					"style": "./synthwave84.css"
+				},
+				"tangerine": {
+					"name": "Tangerine",
+					"style": "./tangerine.css"
+				},
+				"terminal": {
+					"name": "Terminal",
+					"style": "./terminal.css"
+				},
+				"tokyo-night": {
+					"name": "Tokyo Night",
+					"style": "./tokyo-night.css"
+				},
+				"tokyo-night-day": {
+					"name": "Tokyo Night Day",
+					"style": "./tokyo-night-day.css"
+				},
+				"tokyo-night-storm": {
+					"name": "Tokyo Night Storm",
+					"style": "./tokyo-night-storm.css"
+				},
+				"tomorrow": {
+					"name": "Tomorrow",
+					"style": "./tomorrow.css"
+				},
+				"turbo": {
+					"name": "Turbo",
+					"style": "./turbo.css"
+				},
+				"twentyfour": {
+					"name": "Twentyfour",
+					"style": "./twentyfour.css"
+				},
+				"ultraviolet": {
+					"name": "Ultraviolet",
+					"style": "./ultraviolet.css"
+				},
+				"unicorn": {
+					"name": "Unicorn",
+					"style": "./unicorn.css"
+				},
+				"vesper": {
+					"name": "Vesper",
+					"style": "./vesper.css"
+				},
+				"watermelon": {
+					"name": "Watermelon",
+					"style": "./watermelon.css"
+				},
+				"yalla": {
+					"name": "Yalla",
+					"style": "./yalla.css"
+				},
+				"zenbones-light": {
+					"name": "Zenbones Light",
+					"style": "./zenbones-light.css"
+				},
+				"zenburn": {
+					"name": "Zenburn",
+					"style": "./zenburn.css"
+				}
+			}
+		}
+	},
+	"scripts": {
+		"sync": "pushwork sync",
+		"register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+	}
 }
