@@ -84,8 +84,8 @@ try {
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   Tool(scene, host);
   // the tree is the top of the inspector's pane, which the viewer opens from the toolbar (Edit's: a scene made new starts people in Edit)
-  for (let i = 0; i < 400 && !host.querySelector('.toolbar [data-command="inspector"]'); i++) await new Promise((r) => setTimeout(r, 25));
-  host.querySelector('.toolbar [data-command="inspector"]')?.click();
+  for (let i = 0; i < 400 && !host.querySelector('.stage-panel-rail [data-command="inspector"]'); i++) await new Promise((r) => setTimeout(r, 25));
+  host.querySelector('.stage-panel-rail [data-command="inspector"]')?.click();
   for (let i = 0; i < 400 && !host.querySelector(".object-row"); i++) await new Promise((r) => setTimeout(r, 25));
 
   // Every drag event the page sees, for the runner to read back.

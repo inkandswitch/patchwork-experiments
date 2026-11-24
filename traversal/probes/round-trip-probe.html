@@ -203,7 +203,7 @@ try {
     },
     canvasRect() { const r = dbg().viewport.canvas.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; },
     /** the body on top of the stack, its stack and the held tool's command (scene/TOOLS.md §4) */
-    body: () => ({ id: dbg().local.get().body?.id ?? null, stack: dbg().router.bodies().map((b) => b.id), tool: dbg().local.get().held?.command ?? null }),
+    body: () => ({ id: dbg().local.get().body?.id ?? null, stack: dbg().router.bodies().map((b) => b.id), tool: dbg().local.get().held?.at(-1)?.command ?? null }),
     /** an object's world matrix as drawn */
     worldOf: (id) => { const m = dbg().viewport.worldOf(id); return m ? [...m] : null; },
     /**

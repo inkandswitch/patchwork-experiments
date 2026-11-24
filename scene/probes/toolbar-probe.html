@@ -86,7 +86,7 @@ try {
       const edge = b.closest(".stage-edge-part") ?? b.parentElement;
       const ids = (sel) => [...b.querySelectorAll(`${sel} [data-command]`)].map((e) => e.dataset.command);
       const tools = b.querySelector(".tools");
-      const controls = [...b.querySelectorAll("[data-command]")].map((e) => {
+      const controls = [...b.querySelectorAll("[data-command]")].filter((e) => !e.closest(".settings-popover")).map((e) => {
         const r = rect(e);
         // in view: inside the bar's box, and what's really there at its middle
         const at = document.elementFromPoint(r.x + r.w / 2, r.y + r.h / 2);
