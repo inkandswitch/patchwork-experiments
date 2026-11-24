@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createGLBQueue, QUEUE_LIMITS } from "./glb-queue.js";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { manualTime } from "../stage/time.js";
-import { fileBytes } from "../file-content.js";
+import { fileBytes } from "../shared/file-content.js";
 
 const bytes = (n) => new Uint8Array([n]);
 

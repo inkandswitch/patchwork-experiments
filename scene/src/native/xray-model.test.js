@@ -13,8 +13,8 @@
 
 import { describe, expect, it } from "vitest";
 import { activeSet } from "../stage/activation.js";
-import { resolveParents } from "../hierarchy.js";
-import { resolveGroups } from "../groups.js";
+import { resolveParents } from "../shared/hierarchy.js";
+import { resolveGroups } from "../shared/groups.js";
 import { TOO_FAR } from "../stage/commands.js";
 import { buildGears } from "./gears.js";
 import { BANDS, GHOST, NEUTRAL, OPACITY, PALETTE, card, colours, details, glyphs, isGeneric, lead, legend, looks, responders, routeBoxes, strip, verbChip } from "./xray-model.js";

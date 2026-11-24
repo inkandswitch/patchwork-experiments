@@ -5,7 +5,7 @@
 // order. The inspector's header, the menu, the outline, Enter and a
 // double-click in Edit all run this one.
 import { applicable } from "../stage/public.js";
-import { focusReader } from "../per-focus.js";
+import { focusReader } from "../shared/per-focus.js";
 
 /**
  * The target's Open: { ext, command, state, stage? }, or null when none

@@ -29,16 +29,16 @@
 // people holding the editor, so its maker sees the start screen.)
 
 import css from "./add.css?inline";
-import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
-import { fromEmbed } from "../embed.js";
+import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../shared/dnd.js";
+import { fromEmbed } from "../shared/embed.js";
 import { describeForHumans, describeSource, extensionOf, matchProviders } from "../stage/public.js";
 import { add as addObject } from "./editor.js";
-import { isObjectCopy } from "../transfer.js";
+import { isObjectCopy } from "./copy-rule.js";
 import { drop, template } from "./making.js";
-import { atFocus } from "../per-focus.js";
+import { atFocus } from "../shared/per-focus.js";
 import { whileEditing } from "./editing.js";
-import { createParamForm } from "../param-form.js";
-import { paramsBySpec } from "../params.js";
+import { createParamForm } from "../shared/param-form.js";
+import { paramsBySpec } from "../shared/params.js";
 
 export { fromEmbed };
 

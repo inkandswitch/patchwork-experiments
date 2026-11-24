@@ -10,7 +10,7 @@ import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "../native/link-graph.js";
-import { ROW_MIME, rowPayload } from "../transfer.js";
+import { ROW_MIME, rowPayload } from "./copy-rule.js";
 import add from "./add.js";
 import transfer from "./transfer.js";
 import parts from "./parts.js";

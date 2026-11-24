@@ -4,7 +4,7 @@
 // place that writes a scene doc whole without the shell builds it here, so
 // none can go without a field init gains later. No imports beyond the
 // datatype: it loads as it is in node and in a probe page.
-import { SceneDatatype } from "../datatype.js";
+import { SceneDatatype } from "../shared/datatype.js";
 
 /**
  * @param {object} [fields]  top-level fields over init's. `view` and

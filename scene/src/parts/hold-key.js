@@ -21,7 +21,7 @@
 // counted, so the element's click is what it does. holds(pointerId) says
 // whether a press is the key's (its pointer is one holding it).
 
-import { keyOfCode } from "./stage/public.js";
+import { keyOfCode } from "../stage/public.js";
 
 /**
  * Press `code` at `root`: its keydown now.

@@ -3,7 +3,7 @@
 // hand's: the nearest connector that takes it, within the object's reach.
 import { describe, it, expect } from "vitest";
 import { partLanding } from "./parts-place.js";
-import { composeMatrix, multiplyMatrices } from "../transform.js";
+import { composeMatrix, multiplyMatrices } from "../shared/transform.js";
 
 const near = (a, b, eps = 1e-9) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= eps);
 const worldOf = (land, parentMatrix) => multiplyMatrices(parentMatrix ?? composeMatrix({}), composeMatrix(land.at.transform));

@@ -4,7 +4,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
 import carry from "./carry.js";
 import touch from "../parts/touch.js";
-import { applyMatrix, composeMatrix, multiplyMatrices } from "../transform.js";
+import { applyMatrix, composeMatrix, multiplyMatrices } from "../shared/transform.js";
 
 const BOX = { min: [-0.1, 0, -0.1], max: [0.1, 0.1, 0.1] };
 const down = (x, z) => ({ origin: [x, 10, z], dir: [0, -1, 0] });

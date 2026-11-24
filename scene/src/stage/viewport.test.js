@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { Box3, BoxGeometry, Mesh, MeshBasicMaterial } from "three";
 import { keyOf } from "./paths.js";
 import { scopeViewport } from "./scope.js";
-import { applyMatrix } from "../transform.js";
+import { applyMatrix } from "../shared/transform.js";
 import { LIGHTS } from "./atmosphere.js";
 import { ladderRadius } from "./shadows.js";
 import { Viewport } from "./viewport.js";

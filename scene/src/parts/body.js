@@ -25,8 +25,8 @@
 import css from "./body.css?inline";
 import { LOOK, applicable } from "../stage/public.js";
 import { EDIT_HAND } from "./editing.js";
-import { holdKey } from "../hold-key.js";
-import { focusReader, perFocus } from "../per-focus.js";
+import { holdKey } from "./hold-key.js";
+import { focusReader, perFocus } from "../shared/per-focus.js";
 
 /** The command the Edit button is a surface of. */
 const EDIT_COMMAND = Object.freeze({ ext: "scene.edit", command: "edit" });

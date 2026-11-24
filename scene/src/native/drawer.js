@@ -49,11 +49,11 @@
 // below, the widths' `kindOf`, `widthFor`, `dragged` and `stepped`, and
 // createDrawer, which keeps an element per docked key.
 
-import { ICONS } from "../icons.js";
+import { ICONS } from "../shared/icons.js";
 import { applicable } from "../stage/public.js";
 import css from "./drawer.css?inline";
-import { EMBED_ATTR, documentBox, documentView } from "../embed.js";
-import { docKey, hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
+import { EMBED_ATTR, documentBox, documentView } from "../shared/embed.js";
+import { docKey, hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../shared/dnd.js";
 
 /** The owner of the documents docked in the drawer: the view's, so no extension's closeOwner reaches them. */
 const DOCS = Symbol("the view's documents");

@@ -8,8 +8,8 @@
 
 import { parseGLB } from "../glb.js";
 import { isRenderDoc, renderKey } from "../render-read.js";
-import { effectiveParams, stableStringify } from "../params.js";
-import { normalizeDeps, sortedHeads } from "../versions.js";
+import { effectiveParams, stableStringify } from "../shared/params.js";
+import { normalizeDeps, sortedHeads } from "../shared/versions.js";
 import { paramsKey, providerVersionOf } from "./staleness.js";
 
 export function errorMessage(err) {

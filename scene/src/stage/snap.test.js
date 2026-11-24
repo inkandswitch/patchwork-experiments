@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nearestScreenVertex, nearestVertex } from "./stage/picking.js";
+import { nearestScreenVertex, nearestVertex } from "./picking.js";
 
 // Column-major identity: clip = model = world, w = 1, so a vertex at (x, y)
 // lands on screen at ((x + 1) / 2 · W, (1 − y) / 2 · H).

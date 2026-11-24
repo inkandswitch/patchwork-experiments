@@ -3,8 +3,8 @@
 // which of the registered plugins answer that, and which listed packages
 // this viewer doesn't have. Pure. The stage's side is src/stage/packages.js.
 
-import { parseAutomergeLink } from "./dnd.js";
-import { traitKeys } from "./stage/activation.js";
+import { parseAutomergeLink } from "../shared/dnd.js";
+import { traitKeys } from "./activation.js";
 
 const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x) : []);
 

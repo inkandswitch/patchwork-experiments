@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
 import legends, { legendCards, sanitizeLegend } from "./legends.js";
-import { legendModel, tintStop } from "../legend.js";
+import { legendModel, tintStop } from "./legend.js";
 
 const LEGEND = { title: "Speed", unit: "m/s", min: 2, max: 3, stops: ["#000000", "#808080", "#ffffff"] };
 const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kind: "group", ...extra });

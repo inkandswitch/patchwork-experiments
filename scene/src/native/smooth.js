@@ -17,7 +17,7 @@
 // Everything here is pure: plain transforms ({ position, rotation (Euler
 // XYZ, radians), scale }, as the doc stores them) and numbers.
 
-import { eulerOfRotation, normalizeTransform } from "../transform.js";
+import { eulerOfRotation, normalizeTransform } from "../shared/transform.js";
 
 /** How far behind the newest sample a peer plays, in the sender's send intervals. */
 export const PLAYOUT_INTERVALS = 1.5;

@@ -37,12 +37,12 @@ import { KERNEL_KINDS, LOOK } from "./bodies.js";
 import { collectFrom, createHost, updateAll } from "./host.js";
 import { frozenJSON } from "./ambients.js";
 import { providersFirst } from "./activation.js";
-import { focusSteps, selectionStep } from "../selection.js";
+import { focusSteps, selectionStep } from "./selection.js";
 import { realTime } from "./time.js";
 import { comparePaths, elementOf, keyOf, parseKey, pathOf, samePath, viewKey } from "./paths.js";
-import { viewAt } from "../versions.js";
-import { unionPackages } from "../packages.js";
-import { multiplyMatrices } from "../transform.js";
+import { viewAt } from "../shared/versions.js";
+import { unionPackages } from "./packages-rule.js";
+import { multiplyMatrices } from "../shared/transform.js";
 
 /** How long after the orbit stops the camera is saved. */
 const CAMERA_SAVE_MS = 500;

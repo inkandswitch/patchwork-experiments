@@ -26,11 +26,11 @@ import {
   sizeOf,
   subtreeOf,
   summaryTypes,
-} from "./transfer.js";
-import { seededRenderDoc } from "./datatype.js";
-import { composeMatrix, invertMatrix as invert, multiplyMatrices } from "./transform.js";
-import { worldMatrix } from "./hierarchy.js";
-import { intoSnap } from "./carry-rules.js";
+} from "./copy-rule.js";
+import { seededRenderDoc } from "../shared/datatype.js";
+import { composeMatrix, invertMatrix as invert, multiplyMatrices } from "../shared/transform.js";
+import { worldMatrix } from "../shared/hierarchy.js";
+import { intoSnap } from "../shared/carry-rules.js";
 
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
 const obj = (name, extra = {}) => ({ name, sourceUrl: `automerge:${name}`, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: T(), ...extra });

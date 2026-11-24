@@ -28,7 +28,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { createRenderManager, RETRY_BACKOFF_MS } from "./render-manager.js";
 import { CLAIM_MS, LAPSE_MS, LISTEN_MS, REACH_MS } from "./lock.js";
 import { manualTime } from "../stage/time.js";
-import { newRenderDoc } from "../datatype.js";
+import { newRenderDoc } from "../shared/datatype.js";
 import { encodeGLB } from "../glb.js";
 import { fakeHead, fakeUrl } from "../test/fake-repo.js";
 

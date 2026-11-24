@@ -7,9 +7,9 @@
 // (arrays); `raycast(origin, dir)` → { id, point } | null is the stage's,
 // already told to skip the carried object and what's attached to it.
 
-import { accepts, faceOf, footprintSamples, intoSnap, liftFor, nearestSnap, sideOf } from "../carry-rules.js";
-import { placeConnector } from "../connectors.js";
-import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
+import { accepts, faceOf, footprintSamples, intoSnap, liftFor, nearestSnap, sideOf } from "../shared/carry-rules.js";
+import { placeConnector } from "../shared/connectors.js";
+import { composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "../shared/transform.js";
 
 const Y = [0, 1, 0];
 

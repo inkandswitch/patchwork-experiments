@@ -24,8 +24,8 @@
 
 import css from "./touch.css?inline";
 import { keyHolder } from "../stage/public.js";
-import { touchControls } from "../touch-keys.js";
-import { arrange, holdKey } from "../hold-key.js";
+import { touchControls } from "./touch-keys.js";
+import { arrange, holdKey } from "./hold-key.js";
 
 /** The pad's places, as arrows. */
 const GLYPH = { up: "▲", down: "▼", left: "◀", right: "▶" };

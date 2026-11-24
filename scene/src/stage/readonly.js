@@ -13,7 +13,7 @@
 // Fixing a link at a version holds the heads of every doc reached through it
 // (`fixPoint`), so a pin is whole.
 
-import { pinnedRepo } from "../versions.js";
+import { pinnedRepo } from "../shared/versions.js";
 
 /** What a read-only handle refuses: every write and every send automerge-repo's DocHandle has. */
 export const REFUSED = Object.freeze(["change", "changeAt", "update", "merge", "begin", "delete", "remove", "broadcast"]);

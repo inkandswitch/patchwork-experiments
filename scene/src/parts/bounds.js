@@ -7,10 +7,10 @@
 // loaded geometry only (no hints), from api.box.
 
 import { whileEditing } from "./editing.js";
-import { perFocus } from "../per-focus.js";
+import { perFocus } from "../shared/per-focus.js";
 import css from "./bounds.css?inline";
-import { formatLength } from "../units.js";
-import { isGroup } from "../groups.js";
+import { formatLength } from "../shared/units.js";
+import { isGroup } from "../shared/groups.js";
 
 /** The size labels for one box, at the middle of three of its edges. Pure. */
 export function sizeLabels(id, box, unit) {

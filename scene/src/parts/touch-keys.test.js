@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { touchControls } from "./touch-keys.js";
-import { keyOfCode } from "./key-order.js";
-import { LOOK } from "./stage/bodies.js";
+import { keyOfCode } from "../stage/key-order.js";
+import { LOOK } from "../stage/bodies.js";
 
 // Three made-up declarations whose overlaps give every outcome the layering
 // can have: a label over several codes (Forward, Left, Run, Weapon), a higher

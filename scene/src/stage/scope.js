@@ -15,7 +15,7 @@
 // something inside a link of this stage's is that link: the stage's element
 // of the hit's path.
 
-import { applyMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
+import { applyMatrix, invertMatrix, multiplyMatrices } from "../shared/transform.js";
 import { keyOf, parseKey } from "./paths.js";
 
 const det3 = (m) => m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]);

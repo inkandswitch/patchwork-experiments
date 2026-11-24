@@ -12,7 +12,7 @@ import { FakeRepo } from "../test/fake-repo.js";
 import { manualTime } from "../stage/time.js";
 import { createRenderManager } from "./render-manager.js";
 import { createDependencyWatcher } from "./deps.js";
-import { newRenderDoc } from "../datatype.js";
+import { newRenderDoc } from "../shared/datatype.js";
 import { encodeGLB } from "../glb.js";
 
 /** An announcer that keeps counts, as ./stage/announce.js does, and checks it is never released below zero. */

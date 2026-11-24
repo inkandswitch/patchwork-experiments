@@ -26,14 +26,14 @@
 
 import css from "./dimensions.css?inline";
 import { resolveCssColor } from "../stage/public.js";
-import { detachAnchor, distance } from "../anchors.js";
-import { applyMatrix, contentMatrix } from "../transform.js";
-import { formatLength } from "../units.js";
-import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
+import { detachAnchor, distance } from "./anchors.js";
+import { applyMatrix, contentMatrix } from "../shared/transform.js";
+import { formatLength } from "../shared/units.js";
+import { distanceToPrimitives, onSurfaceTolerance } from "./surface.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { editor } from "./editor.js";
 import { whileEditing } from "./editing.js";
-import { perFocus } from "../per-focus.js";
+import { perFocus } from "../shared/per-focus.js";
 import { placeBetween } from "./segment-label.js";
 
 /** The measuring tool this panel offers (./measure.js). */

@@ -10,7 +10,7 @@
 // pointed at its things (a game table, an arena) can require it without
 // bringing the editor's framing keys along: those are scene.frame's.
 
-import { inheritedDisplay, isGroup, outlineParents } from "../groups.js";
+import { inheritedDisplay, isGroup, outlineParents } from "../shared/groups.js";
 
 /** Do two cameras ({ position, target }) sit in the same place, within a hair of their distance? Pure. */
 export function sameCamera(a, b) {

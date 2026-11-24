@@ -54,10 +54,10 @@
 // extension's to veto: `carryable(id)` returning false (collected each time)
 // means it is neither picked up nor flipped just now (a die under a cup).
 
-import { isGroup } from "../groups.js";
+import { isGroup } from "../shared/groups.js";
 import { createCarry, flipAt, flipInPlace, localTransform, snapCandidates, turnRadius, turning, worldBox } from "./carry-math.js";
-import { decomposeMatrix, frameConversions } from "../transform.js";
-import { CARRY, carryable } from "../carry-rules.js";
+import { decomposeMatrix, frameConversions } from "../shared/transform.js";
+import { CARRY, carryable } from "../shared/carry-rules.js";
 import { pointing } from "../stage/public.js";
 
 export { CARRY, carryable };

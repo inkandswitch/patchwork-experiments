@@ -1,7 +1,7 @@
 // STL (binary and ASCII) → triangle soup, plus unit / up-axis conversion to the
 // scene's Y-up metres. Pure; no three.
 
-import { UNITS } from "./units.js";
+import { UNITS } from "../shared/units.js";
 
 const decoder = new TextDecoder();
 

@@ -4,7 +4,7 @@
 // tables and every sequence of up to three acts on two kinds of pane.
 import { describe, it, expect, vi } from "vitest";
 import { EMPTY, KINDS, MAX_PX, MIN_PX, createDrawer, docked, dockedBehind, dragged, prefKey, railEntries, shown, shownOf, stepped, undocked, widthFor } from "./drawer.js";
-import { EMBED_ATTR } from "../embed.js";
+import { EMBED_ATTR } from "../shared/embed.js";
 
 // Does a stage-scoped style rule reach `el`? Every one is `.scene-tool <x>:where(:not(.about-embed *),
 // .about-embed .scene-tool *)` (embed-css.test.js); spelled out, since happy-dom can't match a complex

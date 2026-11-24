@@ -4,7 +4,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { NATIVES, mountStage, object, settle } from "../test/stage-harness.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import add, { accepts, ROW_MIME } from "./add.js";
-import { SECTION_MIME } from "../dnd.js";
+import { SECTION_MIME } from "../shared/dnd.js";
 
 const ADD = { meta: { id: "scene.add" }, module: add };
 

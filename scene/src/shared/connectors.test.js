@@ -3,7 +3,7 @@ import { defaultSnapRadius, placeConnector, sanitizeConnectors, yawOfEuler } fro
 import { composeMatrix, multiplyMatrices } from "./transform.js";
 
 const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-import { axesOf } from "./test/connector-cases.js";
+import { axesOf } from "../test/connector-cases.js";
 
 describe("connectors", () => {
   it("keeps finite bare [x, y, z] and { position, yaw } connectors, drops the rest", () => {

@@ -37,13 +37,13 @@
 
 import { openFor, runOpen } from "./open.js";
 import css from "./outline.css?inline";
-import { atFocus, focusReader, perFocus } from "../per-focus.js";
-import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../groups.js";
-import { treeOrder } from "../hierarchy.js";
-import { dropIntent, placementFor } from "../tree-drop.js";
-import { DND_MIME, ROW_MIME, URLS_MIME, hasPatchworkDrop, ownDrag, parsePatchworkDrop } from "../dnd.js";
-import { peerCss } from "../peers.js";
-import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "../transfer.js";
+import { atFocus, focusReader, perFocus } from "../shared/per-focus.js";
+import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../shared/groups.js";
+import { treeOrder } from "../shared/hierarchy.js";
+import { dropIntent, placementFor } from "../shared/tree-drop.js";
+import { DND_MIME, ROW_MIME, URLS_MIME, hasPatchworkDrop, ownDrag, parsePatchworkDrop } from "../shared/dnd.js";
+import { peerCss } from "./peers.js";
+import { copyObjects, endDrag, liftOf, reachOf, readRowPayload, rowDocument, rowPayload, startDrag, subtreeOf, summaryTypes } from "./copy-rule.js";
 import { landings } from "./landing.js";
 import { add, editor } from "./editor.js";
 import { drop } from "./making.js";

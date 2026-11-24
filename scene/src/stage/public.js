@@ -21,10 +21,10 @@ export { writers } from "./provenance.js";
 // the input chain's order: who holds an object, in the order the chain offers it
 export { chainOrder, hitChain, holdersFor } from "./chain.js";
 // the key order: who reserves a key, and how a key is named
-export { codeOfKey, declaredKeys, isTyping, keyHolder, keyLayers, keyOfCode, labelOf, lookChain, nameOfCode, reservedBy } from "../key-order.js";
+export { codeOfKey, declaredKeys, isTyping, keyHolder, keyLayers, keyOfCode, labelOf, lookChain, nameOfCode, reservedBy } from "./key-order.js";
 // a CSS colour token as sRGB 0..1, as the view's CSS resolves it (each part reads its own)
-export { resolveCssColor } from "../theme.js";
+export { resolveCssColor } from "./theme.js";
 // the packages rule: what an extracted doc lists
-export { listedPackages, packageUrl, packagesToList } from "../packages.js";
+export { listedPackages, packageUrl, packagesToList } from "./packages-rule.js";
 // what a source document is, said for people, and which sources take it (README.md, "Content")
 export { describeForHumans, describeSource, extensionOf, matchProviders } from "../content/providers.js";

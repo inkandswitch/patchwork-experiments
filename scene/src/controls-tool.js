@@ -16,11 +16,11 @@
 // by default.
 
 import css from "./styles.css?inline";
-import { createParamForm } from "./param-form.js";
+import { createParamForm } from "./shared/param-form.js";
 import { createRenderManager } from "./content/render-manager.js";
 import { realTime } from "./stage/time.js";
 import { handleReadOnly } from "./stage/readonly.js";
-import { CONTEXT_EVENT, REBUILD_EVENT } from "./embed.js";
+import { CONTEXT_EVENT, REBUILD_EVENT } from "./shared/embed.js";
 
 /** The controls' root's class (their styles in styles.css). */
 const CONTROLS_CLASS = "scene-render-controls";

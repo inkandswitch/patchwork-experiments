@@ -21,7 +21,7 @@
 // pointer took first (a drawer's tab strip, an outline row) and a paste or
 // copy in a field.
 
-import { fromEmbed } from "../embed.js";
+import { fromEmbed } from "../shared/embed.js";
 import { isTyping } from "../stage/public.js";
 import { whileEditing } from "./editing.js";
 

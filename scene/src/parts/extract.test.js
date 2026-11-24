@@ -10,16 +10,16 @@
 // holding T's ids when it comes back. The order mixes the clusters, so S is
 // one block of it in some cases and not in others.
 import { describe, it, expect } from "vitest";
-import { FakeRepo, fakeUrl } from "./test/fake-repo.js";
-import { emptyScene } from "./test/empty-scene.js";
-import { newRenderDoc } from "./datatype.js";
+import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
+import { emptyScene } from "../test/empty-scene.js";
+import { newRenderDoc } from "../shared/datatype.js";
 import { boxIn, bundleLink, bundlePlan, extractHost, extractObjects, extractPlan, extractable } from "./extract.js";
-import { describesOf, entryText, lostText, refsOf, runtimeOf, RUNTIME_FIELDS } from "./transfer.js";
+import { describesOf, entryText, lostText, refsOf, runtimeOf, RUNTIME_FIELDS } from "./copy-rule.js";
 import { resolveAnchor } from "./anchors.js";
-import { isLink } from "./native/link-graph.js";
-import { isGroup, resolveGroups } from "./groups.js";
-import { resolveParents, worldMatrix } from "./hierarchy.js";
-import { applyMatrix, invertMatrix } from "./transform.js";
+import { isLink } from "../native/link-graph.js";
+import { isGroup, resolveGroups } from "../shared/groups.js";
+import { resolveParents, worldMatrix } from "../shared/hierarchy.js";
+import { applyMatrix, invertMatrix } from "../shared/transform.js";
 
 // ─── the rules the scene's extensions describe ─────────────────────────────
 

@@ -7,7 +7,7 @@ import halo from "./halo.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import handles, { handleLine, handlePlacement, dragValue, GRAB_PX } from "./handles.js";
-import { handleSpecs } from "../handles.js";
+import { handleSpecs } from "./param-handles.js";
 
 const SLICE = {
   type: "scene:source",

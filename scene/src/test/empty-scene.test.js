@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SceneDatatype } from "../datatype.js";
+import { SceneDatatype } from "../shared/datatype.js";
 import { emptyScene } from "./empty-scene.js";
 
 const init = () => {

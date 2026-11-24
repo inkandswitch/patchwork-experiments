@@ -9,10 +9,10 @@
 //
 // Anchor = { objectId: string | null, local: [x,y,z] | null, world: [x,y,z] }
 
-import { IDENTITY_TRANSFORM, applyMatrix, composeMatrix, invertMatrix, normalizeTransform, vec3 } from "./transform.js";
-import { resolveParents, worldMatrix } from "./hierarchy.js";
+import { IDENTITY_TRANSFORM, applyMatrix, composeMatrix, invertMatrix, normalizeTransform, vec3 } from "../shared/transform.js";
+import { resolveParents, worldMatrix } from "../shared/hierarchy.js";
 
-export { IDENTITY_TRANSFORM, applyMatrix, composeMatrix, normalizeTransform } from "./transform.js";
+export { IDENTITY_TRANSFORM, applyMatrix, composeMatrix, normalizeTransform } from "../shared/transform.js";
 
 /** Object-local → world for a transform. */
 export function localToWorld(transform, local) {

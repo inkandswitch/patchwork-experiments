@@ -5,9 +5,9 @@
 // (./editor.js).
 
 import { editor } from "./editor.js";
-import { isGroup } from "../groups.js";
-import { paramsBySpec } from "../params.js";
-import { composeMatrix, decomposeMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
+import { isGroup } from "../shared/groups.js";
+import { paramsBySpec } from "../shared/params.js";
+import { composeMatrix, decomposeMatrix, multiplyMatrices, normalizeTransform } from "../shared/transform.js";
 
 const copy = (v) => JSON.parse(JSON.stringify(v));
 

@@ -12,11 +12,11 @@ import { contentState } from "./state.js";
 // what the stage says to people of an object's state (local.status)
 export { statusOf } from "./state.js";
 import { contentOf, describeForHumans, describeSource, matchProviders, routeOf, showsContent } from "./providers.js";
-import { newRenderDoc, seededRenderDoc } from "../datatype.js";
-import { defaultParams } from "../params.js";
-import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
-import { fileBytes } from "../file-content.js";
-import { CONTEXT_EVENT, REBUILD_EVENT } from "../embed.js";
+import { newRenderDoc, seededRenderDoc } from "../shared/datatype.js";
+import { defaultParams } from "../shared/params.js";
+import { parseAutomergeLink, parseAutomergeUrl } from "../shared/dnd.js";
+import { fileBytes } from "../shared/file-content.js";
+import { CONTEXT_EVENT, REBUILD_EVENT } from "../shared/embed.js";
 
 /** Load priority of the selected object: before anything else. */
 const SELECTED_PRIORITY = 1e12;

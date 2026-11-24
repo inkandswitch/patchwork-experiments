@@ -34,7 +34,7 @@ export const plugins = [
     name: "Scene",
     icon: "Box",
     async load() {
-      return (await import("./datatype.js")).SceneDatatype;
+      return (await import("./shared/datatype.js")).SceneDatatype;
     },
   },
   {
@@ -44,7 +44,7 @@ export const plugins = [
     icon: "Box",
     unlisted: true,
     async load() {
-      return (await import("./datatype.js")).SceneRenderDatatype;
+      return (await import("./shared/datatype.js")).SceneRenderDatatype;
     },
   },
   {

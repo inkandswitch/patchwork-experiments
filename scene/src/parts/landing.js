@@ -22,7 +22,7 @@
 // edge), else null: the copy goes into that frame, face up or down as it
 // was (carry-rules intoSnap, the carry's rule, through src/transfer.js moveBy).
 
-import { isGroup } from "../groups.js";
+import { isGroup } from "../shared/groups.js";
 import { partLanding } from "./parts-place.js";
 import { yawOfMatrix } from "../native/carry-math.js";
 

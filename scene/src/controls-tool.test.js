@@ -24,8 +24,8 @@ vi.mock("@inkandswitch/patchwork-plugins", () => {
 
 const { getRegistry } = await import("@inkandswitch/patchwork-plugins");
 const { default: Controls } = await import("./controls-tool.js");
-const { REBUILD_EVENT } = await import("./embed.js");
-const { newRenderDoc } = await import("./datatype.js");
+const { REBUILD_EVENT } = await import("./shared/embed.js");
+const { newRenderDoc } = await import("./shared/datatype.js");
 const { encodeGLB } = await import("./glb.js");
 
 const build = vi.fn(async ({ params }) => ({ kind: "glb", glb: encodeGLB({ meshes: [{ positions: [0, 0, 0, params.size, 0, 0, 0, 1, 0] }] }) }));

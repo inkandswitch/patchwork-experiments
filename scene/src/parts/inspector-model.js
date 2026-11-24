@@ -1,9 +1,9 @@
 // scene.inspector's pure side: what the panel shows, worked out from the
 // stage's snapshot (api.scene()) and a few lookups passed in. No DOM, no api.
 
-import { groupChain, groupTargets, inheritedDisplay, isGroup, outlineParents } from "../groups.js";
-import { attachTargets, treeOrder } from "../hierarchy.js";
-import { docKey, parseAutomergeUrl } from "../dnd.js";
+import { groupChain, groupTargets, inheritedDisplay, isGroup, outlineParents } from "../shared/groups.js";
+import { attachTargets, treeOrder } from "../shared/hierarchy.js";
+import { docKey, parseAutomergeUrl } from "../shared/dnd.js";
 
 export const DEG = 180 / Math.PI;
 const NBSP = " ";

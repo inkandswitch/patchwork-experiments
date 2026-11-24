@@ -4,9 +4,9 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
 import halo from "./halo.js";
 import { GRAB_PX, MIN_SCALE, MOVE, dragDelta, groupMembers, groupRoots, haloHandles, haloTarget, handleAt, handlePoints, usable } from "./halo-math.js";
-import { applyMatrix, composeMatrix, decomposeMatrix, multiplyMatrices } from "../transform.js";
-import { resolveGroups } from "../groups.js";
-import { resolveParents } from "../hierarchy.js";
+import { applyMatrix, composeMatrix, decomposeMatrix, multiplyMatrices } from "../shared/transform.js";
+import { resolveGroups } from "../shared/groups.js";
+import { resolveParents } from "../shared/hierarchy.js";
 
 const HALO = { meta: { id: "scene.halo" }, module: halo };
 const T = (position, rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });

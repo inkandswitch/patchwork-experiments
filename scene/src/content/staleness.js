@@ -1,8 +1,8 @@
 // Staleness and build scheduling, per the scene contract (README.md,
 // "Content"). Pure; no automerge.
 
-import { stableStringify } from "../params.js";
-import { depsKey, isFpKey, normalizeDeps, sameHeads, sortedHeads } from "../versions.js";
+import { stableStringify } from "../shared/params.js";
+import { depsKey, isFpKey, normalizeDeps, sameHeads, sortedHeads } from "../shared/versions.js";
 
 /** paramsKey = stable JSON of params with sorted keys. */
 export function paramsKey(params) {

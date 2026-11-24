@@ -1,8 +1,8 @@
 // scene:source "file-stl" — STL (binary or ASCII) → GLB, converted from the
 // file's units and up axis to Y-up metres, with computed normals.
-import { fileContent, stripExtension } from "../file-content.js";
+import { fileContent, stripExtension } from "../shared/file-content.js";
 import { computeBounds, computeNormals, encodeGLB } from "../glb.js";
-import { parseSTL, toYUpMeters } from "../stl.js";
+import { parseSTL, toYUpMeters } from "../native/stl.js";
 
 export function stlToGLB(content, { unit = "mm", up = "z" } = {}, name = "STL") {
   const stl = parseSTL(content);
