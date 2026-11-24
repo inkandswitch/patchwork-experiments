@@ -114,7 +114,7 @@ describe("the inspector's tree", () => {
     const framed = [];
     const api = s.facet("scene.inspector");
     api.camera = { ...api.camera, frame: (box) => framed.push(box) };
-    api.groupBox = (id) => ({ min: [0, 0, 0], max: [1, 1, 1], id });
+    api.box = (id) => ({ min: [0, 0, 0], max: [1, 1, 1], id });
     row("battery").querySelector(".row-main").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     expect(s.local.get().selected).toBe("battery");
     expect(framed).toEqual([{ min: [0, 0, 0], max: [1, 1, 1], id: "battery" }]); // a double-click frames it too

@@ -18,8 +18,7 @@ async function mount(doc = {}) {
   const world = { box: null, loaded: new Set(), boxes: {} };
   const camera = fakeCamera();
   api.camera = camera.rig;
-  api.sceneBox = () => world.box;
-  api.box = (id) => world.boxes[id] ?? null;
+  api.box = (id) => (id == null ? world.box : (world.boxes[id] ?? null));
   api.content = (id) => ({ loaded: world.loaded.has(id), box: null, extras: null, stats: null });
   return { s, api, world, camera };
 }

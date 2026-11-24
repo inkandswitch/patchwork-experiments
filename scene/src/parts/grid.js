@@ -74,7 +74,7 @@ export default {
       const { f, layer, labels } = here;
       const on = drawn();
       const unit = pref("units", "m");
-      const grid = gridFor(sceneExtent(f.sceneBox()), unit);
+      const grid = gridFor(sceneExtent(f.box(null)), unit);
       const next = on ? JSON.stringify([unit, grid.size, grid.divisions]) : "off";
       if (next === key) return;
       key = next;

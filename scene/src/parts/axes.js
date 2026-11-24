@@ -106,7 +106,7 @@ export default {
       if (!here) return;
       const { f, layer } = here;
       const on = drawn();
-      const len = on ? axisLength(f.sceneBox(), { grid: pref("grid", true) !== false, unit: pref("units", "m") }) : 0;
+      const len = on ? axisLength(f.box(null), { grid: pref("grid", true) !== false, unit: pref("units", "m") }) : 0;
       const next = `${on}|${len}`;
       if (next === key) return;
       key = next;

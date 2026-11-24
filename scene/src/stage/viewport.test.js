@@ -280,7 +280,7 @@ describe("a hidden link hides its doc", () => {
       expect(vp.contentShown("L")).toBe(linkDrawn);
       expect(!!vp.pickWidget(100, 50)).toBe(linkDrawn);
       expect(label.style.display).toBe(linkDrawn ? "" : "none");
-      // its own stage's boxes (api.box, groupBox, sceneBox: I7, "boxes are S's own"): a linked root's is its
+      // its own stage's boxes (api.box of an object, a group or the scene: I7, "boxes are S's own"): a linked root's is its
       // doc's say, whatever the host does with the link; an attachment's, its own doc's (the host's) as drawn
       expect(vp.objectBox(key, { inStage: true }) != null).toBe(child === "attachment" ? shown : true);
       if (child === "linked root") {

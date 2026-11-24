@@ -27,7 +27,7 @@ export default {
           },
           run: () => {
             const f = api.focus();
-            if (f) f.camera.frame(selectedBox(f.view.get()) ?? f.sceneBox());
+            if (f) f.camera.frame(selectedBox(f.view.get()) ?? f.box(null));
           },
         },
         {

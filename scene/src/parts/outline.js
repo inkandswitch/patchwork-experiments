@@ -263,7 +263,7 @@ export function createOutline(api, { shown = () => true } = {}) {
   /** Point the camera at a row's object (or the group's members). */
   function frameRow(id) {
     const o = here.scene().objects[id];
-    const box = !o ? null : isGroup(o) ? here.groupBox(id) : here.box(id);
+    const box = o ? here.box(id) : null;
     if (box) here.camera.frame(box);
   }
 

@@ -1413,9 +1413,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       // content
       nameOf,
       content: (oid) => scope.contentOf(oid),
-      box: (oid, { hints = true, in: frameId = null } = {}) => scope.objectBox(oid, { hints, in: frameId }),
-      groupBox: (gid, { hints = true } = {}) => scope.groupBox(gid, { hints }),
-      sceneBox: () => scope.sceneBox(),
+      /** the box of an object, a group (its members') or, for null, the scene; `in`: an object's frame instead of the stage's */
+      box: (target, { hints = true, in: frameId = null } = {}) => (target == null ? scope.sceneBox({ hints }) : scope.objectBox(target, { hints, in: frameId })),
       worldOf: displayedWorld,
       focus: (ids) => {
         if (!live()) return;

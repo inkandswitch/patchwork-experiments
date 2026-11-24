@@ -46,7 +46,7 @@ describe("scene.grid", () => {
     expect(caption(s).textContent).toBe("grid 10 cm");
     expect(labels(s).some((l) => l.textContent.endsWith(" cm"))).toBe(true);
     // content arriving makes the scene bigger (no WebGL here, so the box is stubbed)
-    s.facet("scene.grid").sceneBox = () => ({ min: [-3, 0, -1], max: [2, 1, 1] });
+    s.facet("scene.grid").box = (t) => (t == null ? { min: [-3, 0, -1], max: [2, 1, 1] } : null);
     s.api("scene.grid").use("prefs").set("units", "m");
     s.change((d) => (d.objects.a = object()));
     await s.settle();

@@ -82,7 +82,7 @@ function haloAt(api, view) {
 
   /** Its box in the frame, or null while there's nothing to box. */
   function boxInFrame() {
-    if (target.kind === "group") return api.groupBox(target.id);
+    if (target.kind === "group") return api.box(target.id);
     const W = api.worldOf(target.id);
     const box = api.content(target.id)?.box;
     if (W && box) return worldBox(box, frame.matrixIn(W));
