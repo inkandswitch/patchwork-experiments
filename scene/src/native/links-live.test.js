@@ -6,9 +6,9 @@
 // (every write and send through an api goes to its own stage's handle), and
 // adding a scene doc as a link.
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { NATIVES, mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
+import { NATIVES, mountStage, object, settle, wallAt } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, fakeHead } from "../test/fake-repo.js";
 import { LINK } from "./link-graph.js";
@@ -75,6 +75,16 @@ async function mountLinked({ log = [] } = {}) {
 }
 
 let s = null;
+// Arrival polls on the page's timers (its retries until ARRIVE_WAIT_MS): faked, and moved on while a test waits
+beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] }));
+afterEach(() => vi.useRealTimers());
+/** Until fn() holds, the fake timers moving on 25 ms a step. */
+const until = async (fn, ms = 1000) => {
+  for (let waited = 0; !fn(); waited += 25) {
+    if (waited > ms) throw new Error("timed out");
+    await vi.advanceTimersByTimeAsync(25);
+  }
+};
 afterEach(() => {
   s?.unmount();
   s = null;
