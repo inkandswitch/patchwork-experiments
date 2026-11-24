@@ -22,9 +22,46 @@ function amHandle(init, url = "automerge:scene") {
     merge(other) {
       doc = Automerge.merge(doc, Automerge.clone(other.doc()));
     },
+    /** stand at a doc (a fork of one this handle held) */
+    at(d) {
+      doc = d;
+    },
     free: () => Automerge.free(doc),
   };
 }
+
+/** A copy of a doc to go on writing from, as the same actor (its other copies never meet it). */
+const fork = (doc) => Automerge.clone(doc, { actor: Automerge.getActorId(doc) });
+
+/**
+ * Every sequence of `names` up to `depth` long, each visited once as a node
+ * of their tree: a node's state is copied (`copy`) for each of its children
+ * and `step(state, seq)` runs the child's last event on it. A sequence's
+ * checks at its i-th event depend only on its first i events, so this checks
+ * what running each sequence from the start would, once per prefix.
+ * @returns how many sequences were visited
+ */
+function everySequence(depth, names, root, copy, step, drop) {
+  let all = 0;
+  const visit = (state, seq) => {
+    for (const name of names) {
+      const s = copy(state);
+      const next = [...seq, name];
+      step(s, next);
+      all++;
+      if (next.length < depth) visit(s, next);
+      drop(s);
+    }
+  };
+  visit(root, []);
+  return all;
+}
+
+/** A recorder's stacks in a box a walk can stand at (createEdits' `store`). */
+const box = () => {
+  let v = EMPTY;
+  return { get: () => v, swap: (fn) => void (v = fn(v)), at: (x) => void (v = x) };
+};
 
 describe("the pure parts", () => {
   it("leafPaths: cut at the first list index, each once, none under another, never the root", () => {
@@ -280,55 +317,51 @@ describe("createEdits on real Automerge", () => {
     };
     const names = Object.keys(EVENTS);
     const kindOf = (n) => (["moveDie", "moveCard", "moveHull", "add", "removeDie"].includes(n) ? "edit" : n === "undo" || n === "redo" ? "edit" : "verb");
-    let seqs = [[]];
-    let all = 0;
-    for (let n = 1; n <= depth; n++) {
-      seqs = seqs.flatMap((q) => names.map((e) => [...q, e]));
-      all += seqs.length;
-      for (const seq of seqs) run(seq);
-    }
-    expect(all).toBe([...Array(depth)].reduce((a, _, i) => a + names.length ** (i + 1), 0));
-
-    function run(seq) {
-      const h = amHandle(init());
-      const e = createEdits({ handle: h });
-      const last = new Map(LEAVES.map((p) => [key(p), "init"]));
-      const w = {
-        edit: (label, fn) => {
-          const g = e.begin(label);
-          g.change(fn);
-          g.end();
-        },
-        write: (fn) => h.change(fn),
-        take: (which) => e.take(which),
-      };
-      let prevName = null;
-      let prevDoc = null;
-      let beforeEdit = null; // the doc before the last edit, and after it
-      let k = 0;
-      for (const name of seq) {
-        k++;
-        const before = plain(h.doc());
+    // one handle and recorder, stood at each node's doc and stacks in turn (a step's parts name the handle)
+    const h = amHandle(init());
+    const store = box();
+    const e = createEdits({ handle: h, store });
+    const w = {
+      edit: (label, fn) => {
+        const g = e.begin(label);
+        g.change(fn);
+        g.end();
+      },
+      write: (fn) => h.change(fn),
+      take: (which) => e.take(which),
+    };
+    const root = { doc: h.doc(), stacks: EMPTY, now: plain(h.doc()), last: new Map(LEAVES.map((p) => [key(p), "init"])), prevName: null, prevDoc: null, beforeEdit: null };
+    const all = everySequence(
+      depth,
+      names,
+      root,
+      (s) => ({ ...s, doc: fork(s.doc), last: new Map(s.last) }),
+      (s, seq) => {
+        const name = seq.at(-1);
+        const k = seq.length;
+        h.at(s.doc);
+        store.at(s.stacks);
+        const before = s.now;
         EVENTS[name](w, k);
         const after = plain(h.doc());
         const where = `${seq.join(",")} @${name}`;
         const changed = LEAVES.filter((p) => !same(valueAt(before, p), valueAt(after, p)));
         if (name === "undo" || name === "redo") {
-          for (const p of changed) expect(last.get(key(p)), `${where}: ${key(p)}`).not.toBe("verb");
-          if (name === "undo" && kindOf(prevName) === "edit" && prevName !== "undo" && prevName !== "redo" && beforeEdit && !same(beforeEdit.before, beforeEdit.after)) expect(same(after, beforeEdit.before), where).toBe(true);
-          if (name === "redo" && prevName === "undo" && !same(prevDoc, before)) expect(same(after, prevDoc), where).toBe(true);
+          for (const p of changed) expect(s.last.get(key(p)), `${where}: ${key(p)}`).not.toBe("verb");
+          if (name === "undo" && kindOf(s.prevName) === "edit" && s.prevName !== "undo" && s.prevName !== "redo" && s.beforeEdit && !same(s.beforeEdit.before, s.beforeEdit.after)) expect(same(after, s.beforeEdit.before), where).toBe(true);
+          if (name === "redo" && s.prevName === "undo" && !same(s.prevDoc, before)) expect(same(after, s.prevDoc), where).toBe(true);
         }
         // never half an edit: the order lists exactly the objects there are, whatever undo and redo did
         expect([...after.order].sort(), where).toEqual(Object.keys(after.objects).sort());
-        for (const p of changed) last.set(key(p), kindOf(name));
-        if (kindOf(name) === "edit" && name !== "undo" && name !== "redo") beforeEdit = { before, after };
+        for (const p of changed) s.last.set(key(p), kindOf(name));
+        if (kindOf(name) === "edit" && name !== "undo" && name !== "redo") s.beforeEdit = { before, after };
         // no stack holds a leaf only verbs, saves and pauses write
         for (const st of Object.values(e.stacks())) for (const step of [...st.undo, ...st.redo]) for (const part of step.parts) for (const l of part.leaves) expect(VERB_ONLY.has(key(l.path)), `${where}: ${key(l.path)} on a stack`).toBe(false);
-        prevDoc = before;
-        prevName = name;
-      }
-      h.free();
-    }
+        Object.assign(s, { doc: h.doc(), stacks: store.get(), now: after, prevDoc: before, prevName: name });
+      },
+      (s) => Automerge.free(s.doc),
+    );
+    expect(all).toBe([...Array(depth)].reduce((a, _, i) => a + names.length ** (i + 1), 0));
   }, 300_000);
 
   // The same guarantee with two people, each on their own replica with their
@@ -402,46 +435,49 @@ describe("createEdits on real Automerge", () => {
     };
     const names = Object.keys(EVENTS);
     const takes = new Set(["undo", "redo", "bUndo", "bRedo"]);
-    let seqs = [[]];
-    let all = 0;
-    for (let n = 1; n <= depth; n++) {
-      seqs = seqs.flatMap((q) => names.map((e) => [...q, e]));
-      all += seqs.length;
-      for (const seq of seqs) run(seq);
-    }
-    expect(all).toBe([...Array(depth)].reduce((a, _, i) => a + names.length ** (i + 1), 0));
-
-    function run(seq) {
-      const a = amHandle(init());
-      const b = amHandle(Automerge.load(Automerge.save(a.doc())));
-      const h = { A: a, B: b };
-      const e = { A: createEdits({ handle: a }), B: createEdits({ handle: b }) };
-      // leaf → value → who wrote it
-      const by = new Map(LEAVES.map((p) => [key(p), new Map()]));
-      const wrote = (p, v, who) => {
-        const m = by.get(key(p));
-        if (!m.has(vkey(v))) m.set(vkey(v), new Set());
-        m.get(vkey(v)).add(who);
-      };
-      for (const p of LEAVES) wrote(p, look(plain(a.doc()), p), "init");
-      const w = {
-        edit: (who, label, fn) => {
-          const g = e[who].begin(label);
-          g.change(fn);
-          g.end();
-        },
-        write: (who, fn) => h[who].change(fn),
-        take: (who, which) => e[who].take(which),
-        sync: () => {
-          a.merge(b);
-          b.merge(a);
-        },
-      };
-      let k = 0;
-      for (const name of seq) {
-        k++;
+    // one handle and recorder per replica, stood at each node's docs and stacks in turn
+    const a = amHandle(init());
+    const b = amHandle(Automerge.load(Automerge.save(a.doc())));
+    const h = { A: a, B: b };
+    const store = { A: box(), B: box() };
+    const e = { A: createEdits({ handle: a, store: store.A }), B: createEdits({ handle: b, store: store.B }) };
+    const w = {
+      edit: (who, label, fn) => {
+        const g = e[who].begin(label);
+        g.change(fn);
+        g.end();
+      },
+      write: (who, fn) => h[who].change(fn),
+      take: (who, which) => e[who].take(which),
+      sync: () => {
+        a.merge(b);
+        b.merge(a);
+      },
+    };
+    // leaf → value → who wrote it
+    const by0 = new Map(LEAVES.map((p) => [key(p), new Map([[vkey(look(plain(a.doc()), p)), new Set(["init"])]])]));
+    const copyBy = (by) => new Map([...by].map(([p, m]) => [p, new Map([...m].map(([v, s]) => [v, new Set(s)]))]));
+    const root = { doc: { A: a.doc(), B: b.doc() }, stacks: { A: EMPTY, B: EMPTY }, now: { A: plain(a.doc()), B: plain(b.doc()) }, by: by0 };
+    const all = everySequence(
+      depth,
+      names,
+      root,
+      (s) => ({ ...s, doc: { A: fork(s.doc.A), B: fork(s.doc.B) }, by: copyBy(s.by) }),
+      (s, seq) => {
+        const name = seq.at(-1);
+        const k = seq.length;
+        const by = s.by;
+        const wrote = (p, v, who) => {
+          const m = by.get(key(p));
+          if (!m.has(vkey(v))) m.set(vkey(v), new Set());
+          m.get(vkey(v)).add(who);
+        };
+        for (const r of ["A", "B"]) {
+          h[r].at(s.doc[r]);
+          store[r].at(s.stacks[r]);
+        }
         const { who, run } = EVENTS[name];
-        const before = { A: plain(a.doc()), B: plain(b.doc()) };
+        const before = s.now;
         run(w, k);
         const after = { A: plain(a.doc()), B: plain(b.doc()) };
         const where = `${seq.join(",")} @${name}#${k}`;
@@ -464,9 +500,15 @@ describe("createEdits on real Automerge", () => {
         for (const r of ["A", "B"])
           for (const st of Object.values(e[r].stacks()))
             for (const step of [...st.undo, ...st.redo]) for (const part of step.parts) for (const l of part.leaves) expect(VERB_ONLY.has(key(l.path)), `${where}: ${key(l.path)} on ${r}'s stack`).toBe(false);
-      }
-      a.free();
-      b.free();
-    }
+        s.doc = { A: a.doc(), B: b.doc() };
+        s.stacks = { A: store.A.get(), B: store.B.get() };
+        s.now = after;
+      },
+      (s) => {
+        Automerge.free(s.doc.A);
+        Automerge.free(s.doc.B);
+      },
+    );
+    expect(all).toBe([...Array(depth)].reduce((a, _, i) => a + names.length ** (i + 1), 0));
   }, 300_000);
 });
