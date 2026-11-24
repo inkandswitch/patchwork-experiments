@@ -53,7 +53,7 @@ export const WALK = Object.freeze({ support: "walk.support", moves: "walk.moves"
  * where a scene has none; the weather package offers it as the ambient below.
  */
 export const WEATHER = "weather";
-/** The ambient name of the world's wind (weather/WEATHER.md, "What it offers"; CONVENTIONS.md, "Conventions"): `{ speed (m/s), from (degrees), seed, gustiness (0..1) }`. Sailing reads it and offers none. */
+/** The ambient name of the world's wind (weather/README.md, "Conventions"): `{ speed (m/s), from (degrees), seed, gustiness (0..1) }`. Sailing reads it and offers none. */
 export const WIND_AMBIENT = "wind";
 /** joints' slide: a part that moves along a line between two stops (the companionway's hatch). */
 export const SLIDE = "joints.slide";
