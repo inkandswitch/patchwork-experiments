@@ -26,7 +26,10 @@ trait.
 It runs by its trait, whatever the viewer is doing; the use prompt that
 shows its verb is the scene's, in every scene.
 
-## The trait
+## Conventions
+
+The trait `traversal.exit` (scene/CONVENTIONS.md lists it); doom's exit
+switches and sailing's companionway write it, in this shape:
 
 ```js
 "traversal.exit": {

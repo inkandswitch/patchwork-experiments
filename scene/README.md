@@ -106,7 +106,24 @@ SourceImpl = {
 - `"built"`: `build()` makes a GLB, kept in the object's own `scene-render`
   doc and rebuilt when the source, params, dependencies or `version` change.
   `params` arrive with defaults filled in and clamped to their spec.
+- **Where `build()` runs.** On the page's main thread, called by the render
+  manager (`src/build.js`) of whichever open scene finds the render stale:
+  at most one build per render doc at a time, builds of different objects
+  side by side; a provider that needs a thread starts its own worker. It is
+  given exactly `{ doc, handle, url, params, repo }`: the source doc and its
+  handle (a read-only view at `at.heads` for a fixed object, `url` then
+  carrying `#heads`), the params as above, the repo to read dependencies
+  from. It must not write the source, nor assume a stage, a DOM or a scene:
+  other packages call it too, outside any scene, to get a doc's geometry
+  with its params' defaults (naval's, flow-field's and openfoam's hull
+  links). Nothing cancels it: a removed object's build runs out and is
+  dropped. A provider may cancel its own build by rejecting with an error
+  named `"AbortError"` (a newer build of the same doc superseding it): that
+  is not a failure, and the render is looked at again. Any other rejection
+  is the render's `error`, retried with backoff.
 - `"file"`: the source doc already is a GLB file. No render doc, no `load()`.
+  `file-glb` is this package's: a package adding a GLB file doc to a scene
+  writes `providerId: "file-glb"`.
 - A render doc records `glbUrl` and what it was `builtFrom`; new bytes make a
   new immutable GLB file doc (`newRenderDoc` in `src/datatype.js`, staleness
   in `src/staleness.js`).
@@ -165,6 +182,9 @@ CONVENTIONS.md.
 ### GLB conventions
 
 - glTF 2.0, **Y-up, metres**, right-handed. Convert inside the provider.
+  `asset.extras.units` says so (`"m"`; `src/glb.js` writes it). The stage
+  draws every GLB as metres; a package reading a GLB from outside a scene
+  (a hull file) honours `"m"`, `"cm"`, `"mm"`, `"in"` or `"ft"` there.
 - Name nodes and meshes. Triangles for surfaces, lines for edges. Include
   `NORMAL`. A mesh with no material takes the theme colour. Optional vertex
   attributes: `_ID`, `_<NAME>`. Meshopt, quantization, `KHR_materials_*` and
@@ -179,6 +199,9 @@ CONVENTIONS.md.
   closest spacing, so a lone connector doesn't snap.
 - **Legend:** `extras.legend = { title, unit, min, max, stops }` on a mesh,
   2–32 `#rrggbb` stops, draws a colour bar.
+- **Shadows:** a mesh whose node's `extras.receiveShadow` is `false` casts
+  the sun's shadows but takes none (a one-sided sheet: a sail). Dressing may
+  set `userData.receiveShadow = false` on a mesh it draws for the same.
 
 ### The kit
 
