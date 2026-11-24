@@ -611,7 +611,7 @@ export function createSim(api, ctx) {
     }
   }
 
-  /** The checkpoint's: write each ship this view still holds into the draft, transform and motion (a process saves only what it holds). */
+  /** The checkpoint's: write each ship this view still holds into the draft, transform and motion: only what it holds (the clock leaves that to the process: scene NATIVE.md, "World time"). */
   function save(d) {
     for (const [id, s] of ships) {
       const o = d.objects?.[id];
