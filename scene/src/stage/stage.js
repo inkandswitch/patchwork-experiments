@@ -79,7 +79,7 @@ const isEvent = (a) => !!a && typeof a === "object" && typeof a.type === "string
 const noop = () => {};
 
 const newId = (prefix = "x") => `${prefix}${Math.random().toString(36).slice(2, 10)}`;
-/** CPU time (ms), for measuring what work costs (`perf`): never time in the scene, which is `time` (time.js). */
+/** CPU time (ms), for what a flush costs (the budget): never time in the scene, which is `time` (time.js). */
 const cpuNow = () => performance.now();
 
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
@@ -88,26 +88,9 @@ const cpuNow = () => performance.now();
 const DISPLAY_FIELDS = ["transform", "content", "hidden", "name", "tint", "opacity", "outline"];
 
 /** Everything applyDisplay reads, as one string: an object is re-applied only when this changes. */
-export function displayKey(o, parent, inh) {
+function displayKey(o, parent, inh) {
   const t = o.transform ?? {};
   return `${o.kind === "group" ? "g" : "o"}|${o.visible !== false}|${o.color ?? ""}|${o.opacity ?? 1}|${!!o.wireframe}|${!!o.locked}|${o.tags ?? ""}|${t.position}|${t.rotation}|${t.scale}|${parent ?? ""}|${inh?.visible}|${inh?.opacity}|${layersKey(o.layers)}`;
-}
-
-/** A small ring buffer of durations (ms), for __sceneDebug. */
-function timings(size = 400) {
-  const buf = [];
-  let total = 0;
-  return {
-    add(v) {
-      total++;
-      buf.push(v);
-      if (buf.length > size) buf.shift();
-    },
-    values: () => [...buf],
-    get total() {
-      return total;
-    },
-  };
 }
 
 // ─── the tool ───────────────────────────────────────────────────────────────
@@ -154,18 +137,17 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   let dead = false;
   const cleanups = [];
   const time = view.time;
-  const perf = { sync: timings(), flush: timings() };
   const raf = (f) => time.frame(f);
   const caf = (cancel) => cancel?.();
   const life = new AbortController(); // aborted as it closes: what the view asks of its services goes then
   const { root, port } = view;
-  const vp = view.viewport;
+  const viewport = view.viewport;
   /** An extension of this stage, as the view and the router name it. */
   const ownerKey = (ext) => keyOf(n, ext);
   /** This stage's element of the path a viewport key names (null: not its own, nor inside one of its links). */
   const elementOfKey = (key) => elementOf(view.pathOfKey(key), path);
   // the viewport as this stage sees it: its ids, its frame (./scope.js, the one choke point)
-  const scope = scopeViewport(vp, { n, root: under, frame, elementOf: elementOfKey });
+  const scope = scopeViewport(viewport, { n, root: under, frame, elementOf: elementOfKey });
   const doc = () => handle.doc() ?? {};
   const viewer = view.viewer;
   let stage = null; // what the view knows this stage by (made at the end)
@@ -187,7 +169,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }
     return seenBy.value;
   };
-  const viewport = vp; // (the raw viewport, for what isn't spatial: frames, loops, invalidation)
   if (n === 0) view.restoreCamera(doc());
 
   // ─── the plugin registry ──────────────────────────────────────────────────
@@ -226,7 +207,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       const p = local.get().packages;
       if (p === packagesSeen) return;
       packagesSeen = p;
-      view.packagesChanged?.();
+      view.packagesChanged();
     }),
   );
 
@@ -322,7 +303,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     time,
     readOnly,
     // what it shows live is announced (./announce.js); a pin's docs keep their own version
-    announce: role === "pinned" ? null : view.announcer,
+    announce: acts ? view.announcer : null,
     root,
     scope,
     sources: patchworkPlugins.getRegistry("scene:source"),
@@ -437,17 +418,16 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
-  // its doc's channel: a read-only stage hears it and says nothing (its handle refuses to broadcast, too); a pin, a value, has none
-  const channel = role !== "pinned";
+  // its doc's channel: a read-only stage hears it and says nothing (its handle refuses to broadcast, too); a drawn one has none
   const presence = createPresence({
-    handle: channel ? handle : null,
+    handle: acts ? handle : null,
     listen: readOnly,
     viewer,
     session: view.session,
     now: time.now,
     setTimer: (fn, ms) => time.after(ms, fn),
     clearTimer: (cancel) => cancel?.(),
-    tap: { on: () => !!view.tapping?.(), say: (e) => view.tapSay(n, handle.url ?? null, e) },
+    tap: { on: () => view.tapping(), say: (e) => view.tapSay(n, handle.url ?? null, e) },
   });
 
   /**
@@ -552,7 +532,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const now = { scene: snap, local: loc, view: viewValue() };
     updateAll(running, seen, now, drawnAgain);
     // (the view's plugins are told what its focus stage shows: view.js)
-    view.flushed?.(stage, now, drawnAgain);
+    view.flushed(stage, now, drawnAgain);
     view.tryArrive();
     const work = scheduled;
     scheduled = [];
@@ -580,11 +560,10 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     );
     if (offered !== ambients) {
       ambients = offered;
-      view.ambientsChanged?.();
+      view.ambientsChanged();
     }
     const ms = cpuNow() - t0;
     spend(ms);
-    perf.flush.add(ms);
   }
 
   // ─── ownership and the api ────────────────────────────────────────────────
@@ -705,7 +684,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   function remove(ids) {
     const plan = writable() ? ops.removeObjects(scene(), ids) : null;
     if (!plan?.ok) return plan;
-    const running = [...host.running(), ...(view.pluginsAt?.(stage) ?? [])];
+    const running = [...host.running(), ...view.pluginsAt(stage)];
     return Object.assign((d) => {
       for (const r of running) {
         if (typeof r.instance.beforeRemove !== "function") continue;
@@ -907,7 +886,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     // what the view lends it: chrome, frame hooks, timers (view.js viewParts),
     // its elements marked with this stage (several docs' extensions share one view's DOM)
     const lent = view.viewParts({ id, key: ownerKey(id), own, live, stage: n });
-    const viewNow = () => viewValue();
 
     const api = {
       // doc and identity
@@ -940,7 +918,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        * select(target) selects this stage's target (null: nothing).
        */
       view: Object.freeze({
-        get: viewNow,
+        get: viewValue,
         select: (target) => {
           if (live()) view.select(target == null ? null : [...path, target]);
         },
@@ -954,7 +932,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       channel: Object.freeze({
         viewer,
         get session() {
-          return channel ? presence.session : null;
+          return acts ? presence.session : null;
         },
         peers: () => presence.get(),
         set: (key, value) => void (live() && presence.set(id, key, value)),
@@ -1179,7 +1157,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     setTimer: (fn, ms) => time.after(ms, fn),
     clearTimer: (cancel) => cancel?.(),
     // (none created before the view's providers: a create's use() finds the drawer, notices, prefs)
-    first: () => view.plugins?.providersStarted(),
+    first: () => view.plugins.providersStarted(),
   });
 
   // ─── the view's plugins' facets (API.md, "View plugins") ─────────────────
@@ -1288,13 +1266,11 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   function sync() {
     if (dead) return;
     const d = doc();
-    const t0 = cpuNow();
     const m = derive();
     host.sync(d);
     applyDoc(m);
     packages.check();
     requestFlush();
-    perf.sync.add(cpuNow() - t0);
   }
   handle.on("change", sync);
   cleanups.push(() => handle.off("change", sync));
@@ -1313,7 +1289,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     host,
     router,
     presence,
-    perf,
     queue: content.debug.queue,
     manager: content.debug.manager,
     packages,
@@ -1402,7 +1377,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     ambients: () => ambients,
     /** a service of its, for `caller` ({ id, signal }): what api.ambient's `use` asks the outermost */
     use: (name, caller) => host.use(name, caller),
-    handle,
     doc,
     scene,
     scope,
@@ -1417,7 +1391,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     bodyDefs,
     bodyInput,
     bodyLeft,
-    commandOf,
     inputOf,
     widgetsAt,
     segment,
