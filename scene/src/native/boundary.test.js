@@ -35,10 +35,10 @@ const ORDER = ["shared", "kernel", "native", "editor", "entry"];
  */
 const LAYERS = {
   folders: { stage: "kernel", native: "native", sources: "native", parts: "editor" },
-  shared: ["build", "connectors", "datatype", "deps", "dnd", "embed", "file-content", "glb", "groups", "hierarchy", "icons", "layers", "ops", "param-form", "per-focus", "providers", "render-read", "shallow", "staleness", "transform", "tree-drop", "units"],
+  shared: ["build", "carry-rules", "connectors", "datatype", "deps", "dnd", "embed", "file-content", "glb", "groups", "hierarchy", "icons", "layers", "ops", "param-form", "per-focus", "providers", "render-read", "shallow", "staleness", "transform", "tree-drop", "units"],
   kernel: ["glb-queue", "gltf-content", "key-order", "packages", "pick-accel", "render-manager", "selection", "theme"],
   native: ["stl"],
-  editor: ["anchors", "carry-rules", "extract", "handles", "hold-key", "legend", "peers", "surface", "touch-keys", "transfer", "undo"],
+  editor: ["anchors", "extract", "handles", "hold-key", "legend", "peers", "surface", "touch-keys", "transfer", "undo"],
   entry: ["controls-tool", "index"],
 };
 

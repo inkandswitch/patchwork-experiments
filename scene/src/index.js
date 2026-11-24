@@ -276,7 +276,7 @@ export const plugins = [
       },
     },
     async load() {
-      return (await import("./parts/carry.js")).default;
+      return (await import("./native/carry.js")).default;
     },
   },
   {

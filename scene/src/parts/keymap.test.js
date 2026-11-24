@@ -6,7 +6,7 @@ import { keyContext, resolverState } from "./resolver.js";
 import { barEntries, keysOf } from "./toolbar-commands.js";
 import { promptEntries } from "./use.js";
 import { menuEntries } from "./menu.js";
-import { CARRY_KEYS } from "./carry.js";
+import { CARRY_KEYS } from "../native/carry.js";
 
 // A table with a card on it, a wheel's spoke attached to its helm, and a
 // crate: every kind of command the surfaces show, from several extensions.

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
 import carry from "./carry.js";
-import touch from "./touch.js";
+import touch from "../parts/touch.js";
 import { applyMatrix, composeMatrix, multiplyMatrices } from "../transform.js";
 
 const BOX = { min: [-0.1, 0, -0.1], max: [0.1, 0.1, 0.1] };
@@ -466,7 +466,7 @@ describe("Flip: turning a piece over where it lies", () => {
   });
 
   it("F over a piece flips it at a table, where nothing else answers F", async () => {
-    const { default: keys } = await import("./keys.js");
+    const { default: keys } = await import("../parts/keys.js");
     const { stub } = await mount({ doc: { objects: { a: piece({ transform: lying }) } }, before: [{ meta: { id: "scene.keys" }, module: keys }] });
     s.local.swap((m) => ({ ...m, hovered: "a" }));
     s.key("f");

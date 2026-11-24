@@ -24,7 +24,7 @@
 
 import { isGroup } from "../groups.js";
 import { partLanding } from "./parts-place.js";
-import { yawOfMatrix } from "./carry-math.js";
+import { yawOfMatrix } from "../native/carry-math.js";
 
 /**
  * @param {object} api  the stage's (a focus facet: scene, worldOf, content, pick, raycast, camera)

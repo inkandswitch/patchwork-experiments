@@ -136,7 +136,7 @@ background is the fog's colour. Ask a flush with `api.schedule` when it changes 
 
 ## Carry
 
-`scene.carry` (`src/parts/carry.js`) runs where an object has the `scene.carry`
+`scene.carry` (`src/native/carry.js`) runs where an object has the `scene.carry`
 trait; the input chain offers it a press as a holder (a press that doesn't move
 is a tap it gives back), and other extensions start one with `carry(id, ev,
 opts)` → session (`collect("carry")`). A carried piece is a pose hold
@@ -152,7 +152,7 @@ changes an object's doc or parent. Every running extension may answer:
 ### Landing
 
 Where a carried piece goes down, how it lies is `landedPose`
-(`src/parts/carry-math.js`): how it is held (Q/E turn 45°, F turns it over), the
+(`src/native/carry-math.js`): how it is held (Q/E turn 45°, F turns it over), the
 snap, then the merged `landing` answer. `flat` lays it on its broadest face;
 `faceUp` turns it face up unless F has turned it since; the snap (`intoSnap`,
 `src/carry-rules.js`) applies a connector's frame or yaw. A connector reaches
