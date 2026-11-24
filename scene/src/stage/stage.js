@@ -952,8 +952,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         const missing = Object.freeze([...p.ask, ...p.loading, ...p.failed].map((e) => e.url));
         return Object.freeze({ ready: !host.starting() && packages.complete(), missing, failed: Object.freeze(host.failed()), errors: Object.freeze(host.errors()) });
       },
-      /** the listed packages this viewer doesn't have (local.packages): load them (a yes), or don't ask again in this view */
-      packages: Object.freeze({ load: (urls) => packages.load(urls), dismiss: (urls) => packages.dismiss(urls) }),
 
       // content
       nameOf,

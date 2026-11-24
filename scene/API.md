@@ -55,7 +55,6 @@ Each extension's own; what it acquires through it goes when it stops. Everything
 | `page.on(type, fn)` | `"hide"`: the page goes into the back-forward cache, or the stage closes; `"show"`: it is back |
 | `use(name)` | the stage's first provider's facet, else (acting) a view plugin's, or null |
 | `settled()` | `{ ready, missing, failed, errors }`: `ready`, nothing the doc calls for still on its way; `errors[id]`: why |
-| `packages` | the prompt's answer for its doc: `{ load(urls?), dismiss(urls?) }` |
 | `content(id)` | what it shows and how it got there, or null: `loaded`, `box` (its frame's), `extras`, `stats`, `root` (drawn); |
 | | `route` (`"built"`, `"file"`, `"scene"`, null), `state` (README.md, "An object's state"), `render` (built: `providerId`, |
 | | `providerName`, `pinned`, `builtAt`, `builtHeads`, `bounds`, `at`, `notes`), `fix` (the `at` fixing it as it is, or null) |
