@@ -12,14 +12,14 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC = join(process.cwd(), "src/dice"); // (vitest runs from the package)
-// (api.now, after and frame are the stage's time, which never pauses: allowed)
+// (api.now, after and loop are the stage's time, which never pauses: allowed)
 const WORLD_CLOCK = [/\buse\(\s*["'`]clock["'`]\s*\)/, /\bclock\s*\.\s*(t|running|pause|resume|process|computer)\s*\(/, /claims\??\.\s*clock\b/, /\bclaims\[\s*["']clock["']\s*\]/, /\b(doc|d)\(?\)?\??\.clock\b/];
 
 describe("H8: dice, lots and the cup never read the world's clock", () => {
   it("tells the world's clock from the stage's time", () => {
     const flagged = (text) => WORLD_CLOCK.some((re) => re.test(text));
     for (const yes of ['api.use("clock").t()', "clock.running()", "clock.process({})", "const c = api.use('clock');", "doc.clock.t"]) expect(flagged(yes), yes).toBe(true);
-    for (const no of ["api.now()", "api.after(250, act)", "api.frame(fn)", 'api.use("claims")']) expect(flagged(no), no).toBe(false);
+    for (const no of ["api.now()", "api.after(250, act)", "api.loop(fn)", 'api.use("claims")']) expect(flagged(no), no).toBe(false);
   });
   const files = readdirSync(SRC).filter((f) => f.endsWith(".js") && !f.endsWith(".test.js"));
   it(`in all ${files.length} source files`, () => {
