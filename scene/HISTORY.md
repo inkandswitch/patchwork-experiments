@@ -1249,3 +1249,17 @@ input chain, bodies and hands, packages, arriving and the invariants; API.md
 holds what a plugin is handed and what the kernel reads of it (the view
 plugins' api, the extension `api`, `instance`), in short rows. Each page is
 capped at 200 lines; citations of the moved sections point at API.md.
+
+### 2026-11-24 — The editor without its special cases
+
+The editor's chrome is made as the Edit hand is picked up and disposed as it
+goes, through `whileHolding(api, kind, make)` (`stage/holding.js`, on the
+face), so no part asks `editing(view)` (it went). Every surface takes one walk
+over commands, the kernel's `applicable`, which keeps each command's stage: a
+menu row for an inner stage's element ran in the focus stage, and the drawer's
+rail showed panels naming the Edit hand outside Edit (H14). No command names
+the inspector as a surface. Undo, Redo and Copy are shortcuts the key map runs;
+Paste stays the browser's event. `scene.drops` hears drops and pastes once and
+offers them to the parts' `dropping` and `pasting`. The outline's open rows
+are prefs. `making.js` holds what packages' modules make with the drop
+context, `editor.js` the recorded writes. Carry is native.
