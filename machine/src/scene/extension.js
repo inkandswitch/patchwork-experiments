@@ -509,7 +509,7 @@ function create(api) {
       {
         id: "world",
         name: "Lay out its world",
-        show: ["menu", "inspector"],
+        show: ["menu"],
         state: (target) => worldCommand(target != null ? machines.get(target) : null, mapSource()),
         run: (target) => {
           const e = machines.get(target);

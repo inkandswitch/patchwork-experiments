@@ -148,7 +148,7 @@ describe("washing the boneyard", () => {
     const t = table();
     const wash = t.cmd(t.A, "wash");
     expect(wash.key).toBe("w");
-    expect(wash.show).toEqual(["use", "menu", "inspector"]);
+    expect(wash.show).toEqual(["use", "menu"]);
     for (const id of ["b0", "b3", "b5"]) expect(t.state(t.A, "wash", id)).toMatchObject({ label: "Wash (6)" });
     // not: alone, face up, not a tile at all, nothing
     expect(t.state(t.A, "wash", "far")).toBeNull();
@@ -420,7 +420,7 @@ describe("laying your hand face up", () => {
     const t = await withHand();
     const reveal = t.cmd(t.A, "reveal");
     expect(reveal.key).toBeUndefined();
-    expect(reveal.show).toEqual(["menu", "inspector"]);
+    expect(reveal.show).toEqual(["menu"]);
     expect(t.state(t.A, "reveal", "h3")).toMatchObject({ label: "Lay my hand face up (7)" });
     expect(t.state(t.A, "reveal", "rack1")).toMatchObject({ label: "Lay my hand face up (7)" });
     // not someone else's, not a tile out on the table, not an empty rack

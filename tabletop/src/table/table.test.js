@@ -370,7 +370,7 @@ describe("telling the others", () => {
 
   it("Shuffle is on the use prompt, and on the menu and inspector", () => {
     const t = table();
-    expect(t.xa.commands.find((c) => c.id === "shuffle").show).toEqual(expect.arrayContaining(["use", "menu", "inspector"]));
+    expect(t.xa.commands.find((c) => c.id === "shuffle").show).toEqual(expect.arrayContaining(["use", "menu"]));
     t.w.done();
   });
 

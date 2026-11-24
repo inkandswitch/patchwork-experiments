@@ -693,10 +693,10 @@ function create(api) {
       return out;
     },
     commands: [
-      { id: "shake", name: "Shake", key: "s", show: ["use", "menu", "inspector"], state: (id, ctx) => shakeState(id, ctx, false), run: (id) => shake(id, false) },
-      { id: "shake-blind", name: "Shake blind", show: ["menu", "inspector"], state: (id, ctx) => shakeState(id, ctx, true), run: (id) => shake(id, true) },
+      { id: "shake", name: "Shake", key: "s", show: ["use", "menu"], state: (id, ctx) => shakeState(id, ctx, false), run: (id) => shake(id, false) },
+      { id: "shake-blind", name: "Shake blind", show: ["menu"], state: (id, ctx) => shakeState(id, ctx, true), run: (id) => shake(id, true) },
       { id: "peek", name: "Peek", key: "p", hold: true, show: ["use", "menu"], state: peekState, run: peekRun },
-      { id: "lift", name: "Lift", key: "l", show: ["use", "menu", "inspector"], state: liftState, run: (id) => liftState(id, { scene: api.scene(), local: api.local.get() }) && lift([id]) },
+      { id: "lift", name: "Lift", key: "l", show: ["use", "menu"], state: liftState, run: (id) => liftState(id, { scene: api.scene(), local: api.local.get() }) && lift([id]) },
       {
         id: "lift-all",
         name: "Lift all cups",

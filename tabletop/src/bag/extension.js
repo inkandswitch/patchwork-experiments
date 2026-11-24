@@ -1,7 +1,9 @@
 // The bag's scene extension (`scene:extension` "bag"): what makes an object a
 // container in a scene. Things dropped on it go in, Draw takes one out into
 // the drawer's hand, a label says how many it holds, and its 2D panel docks
-// in the stage's drawer (its "drawer"). A bag is a physical thing, not a rule: it knows nothing
+// in the stage's drawer (its "drawer") by Look inside, the bag's Open (so the
+// inspector's header, the menu, a double-click in Edit and Enter all run it).
+// A bag is a physical thing, not a rule: it knows nothing
 // of turns, hands, seats or limits.
 //
 // It is built only from the scene's extension contract (scene/STAGE.md).
@@ -613,7 +615,7 @@ export default {
           name: "Draw",
           key: "d",
           // on the use prompt, so hovering a bag says it can be drawn from
-          show: ["use", "menu", "inspector"],
+          show: ["use", "menu"],
           state: (target) =>
             onBag(target, (bag, n) => {
               const title = titleOf(bag.url);
@@ -626,7 +628,7 @@ export default {
         {
           id: "draw-several",
           name: "Draw several",
-          show: ["menu", "inspector"],
+          show: ["menu"],
           state: (target) =>
             onBag(target, (bag, n) => {
               const most = replaces(ruleOf(docOf(bag.url))) ? (n ? MAX_DRAW : 0) : Math.min(n, MAX_DRAW);
@@ -641,7 +643,7 @@ export default {
         {
           id: "put",
           name: "Put in a bag",
-          show: ["menu", "inspector"],
+          show: ["menu"],
           // on anything that isn't the only bag: which bag it goes into
           state(target) {
             const o = target != null ? scene?.objects?.[target] : null;
@@ -658,7 +660,7 @@ export default {
         {
           id: "pour",
           name: "Pour into",
-          show: ["menu", "inspector"],
+          show: ["menu"],
           state: (target) =>
             onBag(target, (bag, n) => {
               const others = bagsIn().filter((b) => b.url !== bag.url && isBagDoc(docOf(b.url)));
@@ -675,7 +677,7 @@ export default {
           name: "Empty out",
           // everything set down round the bag: a deliberate act (the menu's and the inspector's, no key),
           // as tipping a bag out on the table is, whoever does it and whatever they're in
-          show: ["menu", "inspector"],
+          show: ["menu"],
           state: (target) => onBag(target, (bag, n) => (n ? { title: `Set all ${n} down round the bag` } : null)),
           run(target) {
             const bag = bagAt(target);
@@ -683,9 +685,12 @@ export default {
           },
         },
         {
+          // the bag's Open (scene EDITOR.md, "A command"): its own panel, docked beside the scene
           id: "inside",
           name: "Look inside",
-          show: ["menu", "inspector"],
+          open: true,
+          key: "Enter",
+          show: ["menu"],
           state: (target) => onBag(target, () => ({ checked: dock?.bagId === target, title: "Open the bag's panel beside the scene. Anyone can: what is inside is not a secret, and the others are told you looked" })),
           run: (target) => (dock?.bagId === target ? closeDock() : openDock(target)),
         },

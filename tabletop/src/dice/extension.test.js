@@ -123,9 +123,9 @@ describe("the dice's verbs", () => {
   it("are Roll (R), Roll all (G), Turn (T) and Edit die, on the use prompt, the menu and the inspector as each needs", () => {
     const t = world();
     expect(t.xa.commands.map((c) => [c.id, c.name, c.key ?? null, c.show])).toEqual([
-      ["roll", "Roll", "r", ["use", "menu", "inspector"]],
+      ["roll", "Roll", "r", ["use", "menu"]],
       ["roll-all", "Roll all", "g", ["use", "menu"]],
-      ["turn", "Turn", "t", ["use", "menu", "inspector"]],
+      ["turn", "Turn", "t", ["use", "menu"]],
       ["open", "Edit die", null, ["menu", "inspector"]],
     ]);
     t.w.done();
