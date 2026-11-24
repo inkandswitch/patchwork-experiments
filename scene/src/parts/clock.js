@@ -37,7 +37,7 @@ const possessive = (n) => (n === "you" ? "your" : /s$/.test(n) ? `${n}'` : `${n}
 
 function create(api) {
   api.style(css);
-  const bar = api.edge("top");
+  const bar = api.overlay("top");
   bar.classList.add("clock-bar");
   bar.hidden = true;
 

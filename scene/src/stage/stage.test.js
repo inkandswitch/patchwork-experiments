@@ -294,7 +294,7 @@ describe("the stage, mounted", () => {
   it("stops an uninstalled extension at once: its overlay goes, then dispose", async () => {
     exts["t.edit"] = recorder("t.edit", (api) => {
       api.overlay().textContent = "edit overlay";
-      api.edge("left").textContent = "edit edge";
+      api.overlay("left").textContent = "edit edge";
       api.labels().set([{ key: "k", text: "label", screen: { x: 1, y: 1 } }]);
       return {};
     });

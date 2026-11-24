@@ -64,7 +64,7 @@ What is a stage's (its doc, content, space, camera, bodies, presence, flush) it 
 
 | Member | |
 |---|---|
-| as the extension `api`'s, for its whole life | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `overlay`, `edge`, `style`, `listen`, `popover`, `loop`, `afterRender`, `invalidate`, `now`, `after`, `frame` |
+| as the extension `api`'s, for its whole life | `id`, `signal`, `repo`, `THREE`, `registry`, `port`, `root`, `overlay`, `style`, `listen`, `popover`, `loop`, `afterRender`, `invalidate`, `now`, `after`, `frame` |
 | `url`, `use(name)` | the outermost's url; a view plugin's service, else the focus stage's |
 | `view` | `get()`, `watch(fn, select?)`: the value whole (`selected`, `hovered`, `focus` as paths; `packages`; `arrived`: "Arriving"); `step(ev)`, `enter(path)`, `arrive()`, `set(value)` (its own) |
 | `packages` | `{ load(urls?), dismiss(urls?) }`: the prompt's answer for every open doc's (`view.packages`) |
@@ -99,7 +99,7 @@ Each extension's own; what it acquires through it goes when it stops.
 | `body`, `hold`, `popover(close)`, `look()` | "Bodies", "Hands"; the pointer's hit, the eye ray's under lock, `{ id, point, distance }` |
 | `collect(name)`, `run(inv)` | this stage's offers, tagged `stage`; run in the stage `inv.stage` names ("Commands") |
 | `THREE`, `world({ onTop? })`, `labels()` | a `Group` whose meshes are its widgets (one under a `userData.noPick` node never is); `{ set([{ key, text, place?, screen?, on? (+ offset), at?, position?, rank?, className?, data?, onPointerDown? }]) }`, placed by the first of these given: `place({ project, w, h })` → `{ x, y, leader?: { x, y } }` (port px), `screen` (port px), an object's drawn frame, `at()` → a point, `position`; each asked every frame (`stage/labels.js`); rank 2 and up never give way |
-| `overlay()`, `edge(side)`, `style`, `listen`, `invalidate`, `schedule`, `port`, `root` | DOM over or beside the canvas; draw once more; after the next update flush; the canvas's element, the stage's root |
+| `overlay(side?)`, `style`, `listen`, `invalidate`, `schedule`, `port`, `root` | a `div` over the canvas, or beside it (`top`, `right`, `bottom`, `left`); a stylesheet; a listener; draw once more; after the next update flush; the canvas's element, the stage's root |
 
 ## `instance`
 
