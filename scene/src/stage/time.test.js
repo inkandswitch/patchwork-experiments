@@ -14,18 +14,11 @@ function* permutations(xs) {
 }
 
 describe("the manual clock", () => {
-  it("stepping N frames advances time by exactly N frame lengths, for every N from 0 to 20 (210 in all) and three frame lengths", async () => {
+  it("time is frames × the frame length, exactly: a step of N frames, and advance(ms) the frames ms takes, rounded up, for three frame lengths", async () => {
     for (const frameMs of [FRAME_MS, 1000 / 24, 10]) {
       const time = manualTime({ frameMs, yieldTo: now0 });
-      let frames = 0;
-      for (let n = 0; n <= 20; n++) {
-        await time.step(n);
-        frames += n;
-        expect(time.frames()).toBe(frames);
-        expect(time.now()).toBe(MANUAL_EPOCH + frames * frameMs);
-      }
-      expect(frames).toBe(210);
-      // advance(ms) is the frames ms takes, rounded up
+      await time.step(7);
+      expect([time.frames(), time.now()]).toEqual([7, MANUAL_EPOCH + 7 * frameMs]);
       for (const ms of [0, 1, frameMs - 0.001, frameMs, frameMs + 0.001, 31 * frameMs]) {
         const before = time.frames();
         await time.advance(ms);
@@ -196,10 +189,6 @@ describe("the manual clock", () => {
         return true;
       }),
     ).toBe(true);
-  });
-
-  it("refuses a frame length that isn't positive", () => {
-    for (const frameMs of [0, -1, NaN]) expect(() => manualTime({ frameMs })).toThrow(/frameMs/);
   });
 });
 

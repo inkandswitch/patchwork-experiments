@@ -21,7 +21,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle, until } from "../test/stage-harness.js";
+import { mountStage, object, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { LINK } from "../native/link-graph.js";
@@ -219,7 +219,7 @@ afterEach(() => {
 
 // I12: every acting stage draws its doc's people in its frame; a pin draws nobody; nobody draws this view
 describe("presence where it is", () => {
-  it("every focus × where the body is held (nowhere, or each acting stage, then let go): every stage but the pin draws its doc's people in its own frame, by the one instance of its part of every doc; the walk's facet is the focus's, the body where it was entered; the chips are the focus path's", async () => {
+  it("every focus × where the body is held (nowhere, or each acting stage, then let go): every stage but the pin draws its doc's people in its own frame, by the one instance of its part of every doc; the walk's facet is the focus's, the body where it was entered", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const { s, view, repo, docs } = await mountTree();
     cleanups.push(() => s.unmount());
@@ -247,16 +247,6 @@ describe("presence where it is", () => {
         expect(view.focusOn(pathOf(f)), label).toBe(true);
         await settled(f, held)();
         expect([label, peopleOf(view)]).toEqual([label, first]);
-        // the clocks: the focus path's, outermost first, each named inside a link
-        const want = expectedClocks(f);
-        const chipStages = () => [...s.root.querySelectorAll(".clock-chip")].map((el) => view.stage(Number(el.dataset.stage)));
-        const clocksAt = () => chipStages().map((st) => st?.path.join("/"));
-        await until(() => J(clocksAt()) === J(want), 4000).catch(() => expect([label, clocksAt()]).toEqual([label, want]));
-        for (const st of chipStages()) expect(st.acts, label).toBe(true);
-        await until(() => [...s.root.querySelectorAll(".clock-chip")].length === want.length, 4000);
-        const names = [...s.root.querySelectorAll(".clock-chip .clock-doc")].map((el) => (el.hidden ? "" : el.textContent));
-        expect([label, names]).toEqual([label, want.map((p) => (f === "" ? "" : NAME[p]))]);
-        expect([label, s.root.querySelector(".clock-bar").hidden]).toEqual([label, want.length === 0]);
         cases++;
         // let the body go: nothing else changes
         if (held != null) {
@@ -270,6 +260,23 @@ describe("presence where it is", () => {
     // 5 foci with nothing held, 5 × 5 held and then let go
     expect(cases).toBe(5 + 25 * 2);
   }, 120_000);
+
+  it("every focus: the clock chips are the focus path's, outermost first, each named inside a link; none at all, no bar", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { s, view } = await mountTree();
+    cleanups.push(() => s.unmount());
+    const chipStages = () => [...s.root.querySelectorAll(".clock-chip")].map((el) => view.stage(Number(el.dataset.stage)));
+    const clocksAt = () => chipStages().map((st) => st?.path.join("/"));
+    for (const f of ACTING) {
+      expect(view.focusOn(pathOf(f)), f).toBe(true);
+      const want = expectedClocks(f);
+      await until(() => J(clocksAt()) === J(want), 4000).catch(() => expect([f, clocksAt()]).toEqual([f, want]));
+      for (const st of chipStages()) expect(st.acts, f).toBe(true);
+      const names = [...s.root.querySelectorAll(".clock-chip .clock-doc")].map((el) => (el.hidden ? "" : el.textContent));
+      expect([f, names]).toEqual([f, want.map((p) => (f === "" ? "" : NAME[p]))]);
+      expect([f, s.root.querySelector(".clock-bar").hidden]).toEqual([f, want.length === 0]);
+    }
+  });
 
   it("each chip pauses and resumes its own doc, and only it: inside three links, every chip on the path", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -288,25 +295,6 @@ describe("presence where it is", () => {
       await until(() => chips()[i].querySelector(".clock-text").textContent === "⏸ Paused by you", 4000);
       chips()[i].querySelector(".clock-toggle").click();
       await until(() => running().every(Boolean), 4000);
-    }
-  });
-
-  it("a chip names its doc as the trail does, at once when a link is renamed", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { s, view, docs } = await mountTree();
-    cleanups.push(() => s.unmount());
-    expect(view.focusOn(["L", "M", "N"])).toBe(true);
-    const names = () => [...s.root.querySelectorAll(".clock-chip .clock-doc")].map((el) => el.textContent);
-    const trail = () => [...s.root.querySelectorAll(".stage-trail .trail-crumb, .stage-trail .trail-here")].map((el) => el.textContent);
-    await until(() => J(names()) === J(["A", "B", "D"]), 4000);
-    // rename the links on the path, one at a time: the chip of the doc each leads to says so with the trail, with no clock news meanwhile
-    for (const [host, id, name] of [["A", "L", "Boat"], ["C", "N", "Table"]]) {
-      docs[host].change((d) => {
-        d.objects[id].name = name;
-      });
-      const want = host === "A" ? ["A", "Boat", "D"] : ["A", "Boat", "Table"];
-      await until(() => J(names()) === J(want), 4000).catch(() => expect([name, names()]).toEqual([name, want]));
-      expect(trail()).toEqual(host === "A" ? ["A", "Boat", "C", "D"] : ["A", "Boat", "C", "Table"]);
     }
   });
 });

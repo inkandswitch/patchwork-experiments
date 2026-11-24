@@ -57,21 +57,21 @@ describe("activation: traits only (STAGE.md, “Activation”)", () => {
 
 describe("the input chain", () => {
   const running = [
-    { id: "tabletop", meta: { traits: ["tabletop.seats", "tabletop.hidden"] }, scope: "scene" },
-    { id: "arena", meta: { traits: ["arena.target"] }, scope: "objects" },
+    { id: "t.game", meta: { traits: ["t.game.seats", "t.game.hidden"] }, scope: "scene" },
+    { id: "t.range", meta: { traits: ["t.range.target"] }, scope: "objects" },
   ];
-  const traits = { card: ["tabletop.hidden"], crate: ["arena.target"], table: [] };
-  const sceneTraits = ["tabletop.seats"];
+  const traits = { card: ["t.game.hidden"], crate: ["t.range.target"], table: [] };
+  const sceneTraits = ["t.game.seats"];
   const holders = (chain) => holdersFor(running, chain, (id) => (id === null ? sceneTraits : (traits[id] ?? [])));
 
   it("the widget's owner, then the holders nearest first — each once", () => {
-    expect(chainOrder({ running, widgetOwner: "arena", holders: holders(["card"]) })).toEqual(["arena", "tabletop"]);
-    expect(chainOrder({ running, widgetOwner: "gone", holders: holders([]) })).toEqual(["tabletop"]);
+    expect(chainOrder({ running, widgetOwner: "t.range", holders: holders(["card"]) })).toEqual(["t.range", "t.game"]);
+    expect(chainOrder({ running, widgetOwner: "gone", holders: holders([]) })).toEqual(["t.game"]);
   });
 
   it("a part of every doc (traits [\"*\"]) is held by the scene, whatever the hit and whatever traits the doc has", () => {
     const any = [{ id: "any", meta: { traits: ["*"] }, scope: "scene" }];
-    for (const scene of [[], ["tabletop.seats"]])
+    for (const scene of [[], ["t.game.seats"]])
       for (const chain of [[], ["card"], ["table", "card", "crate"]]) {
         const h = holdersFor(any, chain, (id) => (id === null ? scene : (traits[id] ?? [])));
         expect([scene, chain, [...h]]).toEqual([scene, chain, [["any", { id: null, depth: chain.length }]]]);

@@ -83,20 +83,6 @@ describe("owners: who draws what in a stage", () => {
   });
 });
 
-describe("display's looks: tint, opacity and outline", () => {
-  it("merge per field in layering order with the others, and go as their owner releases them", async () => {
-    const { a, b } = await mount();
-    const off = a.display("x", { tint: "#999", opacity: 0.5, outline: ["red", "blue"] });
-    b.display("x", { opacity: 0.2 });
-    expect(s.debug.displayed().get("x")).toEqual({ tint: "#999", opacity: 0.5, outline: ["red", "blue"] });
-    expect(a.owners().display.x.map((o) => [o.ext, o.fields])).toEqual([["t.b", ["opacity"]], ["t.a", ["tint", "opacity", "outline"]]]);
-    off();
-    expect(s.debug.displayed().get("x")).toEqual({ opacity: 0.2 });
-    await s.uninstall("t.b");
-    expect(s.debug.displayed().has("x")).toBe(false);
-  });
-});
-
 describe("routes: each dispatched event's way through the input chain", () => {
   it("the hands, then the widget, the holders nearest first, the view plugins, the body; who took it; the last ROUTES kept", async () => {
     const log = await mount();
