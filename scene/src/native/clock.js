@@ -489,7 +489,7 @@ function create(api) {
     },
     eligible: () => {
       const s = api.settled();
-      return eligibility({ acts: !!ch.session, writable: api.writable(), visible: api.page.visible(), settled: s.ready, complete: !s.missing.length, failed: s.failed.length > 0 });
+      return eligibility({ acts: !!ch.session, writable: api.writable(), visible: document.visibilityState !== "hidden", settled: s.ready, complete: !s.missing.length, failed: s.failed.length > 0 });
     },
     writable: api.writable,
     viewer: ch.viewer,
@@ -504,7 +504,7 @@ function create(api) {
     else if (!clock.live() && frames) frames = void frames();
   }
   ch.watch(check);
-  api.page.on("visible", check);
+  api.listen(document, "visibilitychange", check);
   api.page.on("hide", () => (clock.letGo(), (away = true)));
   api.page.on("show", () => ((away = false), check()));
 

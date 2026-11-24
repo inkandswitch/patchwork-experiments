@@ -754,12 +754,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   );
 
   // ─── the page (STAGE.md, "`api`") ──────────────────────────────────────
-  // The view's pagehide or the stage closing ("hide": last-first, as extensions stop), pageshow and the tab's visibility, as api.page's events.
-  const pageFns = { hide: new Set(), show: new Set(), visible: new Set() };
+  // The view's pagehide or the stage closing ("hide": last-first, as extensions stop) and pageshow ("show"), as api.page's events.
+  const pageFns = { hide: new Set(), show: new Set() };
   const pageSay = (type) => [...pageFns[type]][type === "hide" ? "reverse" : "slice"]().forEach((fn) => fn());
-  const onVisibility = () => pageSay("visible");
-  globalThis.document?.addEventListener?.("visibilitychange", onVisibility);
-  cleanups.push(() => globalThis.document?.removeEventListener?.("visibilitychange", onVisibility));
   let away = false; // said goodbye on pagehide
 
   // ─── the update flush ─────────────────────────────────────────────────────
@@ -1389,14 +1386,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
           return channel ? presence.session : null;
         },
         peers: () => presence.get(),
-        get: () => Object.fromEntries(Object.entries(presence.get()).flatMap(([s, p]) => (p.keys?.[id] ? [[s, p.keys[id]]] : []))),
         set: (key, value) => void (live() && presence.set(id, key, value)),
         watch: (fn) => acquire(own.offs, () => presence.watch(fn)),
         send: (type, data) => void (live() && presence.send(id, type, data)),
         rate: (hz) => void (live() && presence.rate(id, hz)),
       }),
       page: Object.freeze({
-        visible: () => globalThis.document?.visibilityState !== "hidden",
         on: (type, fn) => (pageFns[type] && typeof fn === "function" ? acquire(own.offs, () => (pageFns[type].add(fn), () => pageFns[type].delete(fn))) : noop),
       }),
       /** a service (NATIVE.md, "Native services"): this stage's first running provider's facet, made for this extension, else (acting) a view plugin's, or null */
@@ -1493,8 +1488,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
       // bodies, held tools, attention (STAGE.md, "The input chain"–§5)
       body: Object.freeze({
-        /** the top body: { id, label, ext, depth, lock, reach, keys } (as local.body) */
-        current: () => viewNow().body,
         /** enter body `id` (any running extension's; the stage's "look" leaves every body) at `place`: false if none offers it or it can't */
         enter: (bid, place) => (live() ? enterBody(bid, place) : false),
         /** leave the top body (never Look) */
