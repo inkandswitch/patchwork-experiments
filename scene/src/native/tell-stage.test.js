@@ -78,8 +78,10 @@ describe("a peer's word, held to the doc", () => {
   //   after update : the second doc change inside the window gets it there
   //   after window : only a change past TELL_MS does
   const SAYS = ["never", "at once", "after update", "after window"];
-  const cases = [];
-  for (const valid of [false, true]) for (const says of SAYS) for (const times of [1, 2]) cases.push({ valid, says, times });
+  // an invalid word is never asked about, so `says` and repeats can't change its outcome: one row,
+  // the one that would be told at once if it were
+  const cases = [{ valid: false, says: "at once", times: 1 }];
+  for (const says of SAYS) for (const times of [1, 2]) cases.push({ valid: true, says, times });
 
   it.each(cases)("valid $valid, says text $says, delivered $times time(s)", async ({ valid, says, times }) => {
     const t = await setup();

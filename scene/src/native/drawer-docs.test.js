@@ -57,7 +57,7 @@ async function mountWithLink() {
   view.select(["table"]);
   // the selection opens the shut inspector
   await until(() => panes(view).order.some((el) => el.dataset.panel === "inspector"), 3000);
-  return { view, notes };
+  return { view, notes, b };
 }
 
 const panes = (view) => view.plugins.instanceOf("scene.drawer").panes();
@@ -125,12 +125,17 @@ describe("a document docked in the drawer is the view's", () => {
     return e;
   };
   it("a document dropped in the view is the scene's to take, never docked", async () => {
-    const { view, notes } = await mountWithLink();
-    const e = dropOf(notes.url);
+    const { view, b } = await mountWithLink();
+    // (a scene: something the harness's providers can show)
+    const e = dropOf(b.url);
+    const before = Object.keys(s.doc().objects).length;
     s.canvas.dispatchEvent(e);
     await settle();
     expect(e.defaultPrevented).toBe(true);
     expect(docsOf(view)).toEqual([]);
+    // the scene took it: one object more, from that document
+    await until(() => Object.keys(s.doc().objects).length === before + 1, 3000);
+    expect(Object.values(s.doc().objects).filter((o) => o.sourceUrl === b.url)).toHaveLength(2);
   });
 
   it("keys typed in a docked document are its own: Escape there leaves the selection; on the stage it clears it", async () => {

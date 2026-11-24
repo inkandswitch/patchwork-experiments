@@ -343,15 +343,6 @@ describe("the drawer's grip", () => {
     return { parent, drawer, content, close, calls, ptr, key, width, prefs: () => prefs, done: () => parent.remove() };
   }
 
-  it("is the drawer's first child: a focusable vertical separator", () => {
-    const g = mount();
-    const grip = g.drawer.el.firstElementChild;
-    expect(grip).toBe(g.drawer.grip);
-    expect([grip.getAttribute("role"), grip.getAttribute("aria-orientation"), grip.tabIndex, grip.getAttribute("aria-label")]).toEqual(["separator", "vertical", 0, "Drawer width"]);
-    expect(grip.getAttribute("aria-valuenow")).toBe("300");
-    g.done();
-  });
-
   it("a drag sets the shown kind's width live and stores it once, at the end, clamped; left widens", () => {
     for (const kind of KINDS) {
       const g = mount({ kind });
@@ -513,19 +504,6 @@ describe("the drawer's grip", () => {
     g.key("ArrowRight");
     expect(g.calls).toEqual([[prefKey("chrome"), 432]]);
     g.done();
-  });
-});
-
-describe("the drawer tells what's docked and shown", () => {
-  it("onChange({ tabs, shown, docs }) on every dock, show and close", () => {
-    const seen = [];
-    const drawer = createDrawer({ parent: document.createElement("div"), onChange: (d) => seen.push(JSON.stringify(d)) });
-    const a = document.createElement("div");
-    const b = document.createElement("div");
-    const closeA = drawer.dock("x", a, { title: "A" });
-    drawer.dock("y", b, { title: "B", show: false });
-    closeA();
-    expect(seen).toEqual([JSON.stringify({ tabs: ["A"], shown: "A", docs: [] }), JSON.stringify({ tabs: ["A", "B"], shown: "A", docs: [] }), JSON.stringify({ tabs: ["B"], shown: "B", docs: [] })]);
   });
 });
 

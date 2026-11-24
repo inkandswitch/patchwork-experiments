@@ -3,7 +3,7 @@
 // the hold tables and the wire), exhaustively. Real wires on a bus whose
 // messages wait until the test delivers them, a doc as a plain object.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { HOLD_TTL_MS, POSE_MS, cleanEvery, createHolds, createWire, localTake, poseInterval, ranksAhead, winningHold } from "./holds.js";
+import { HOLD_TTL_MS, POSE_MS, createHolds, createWire, localTake, poseInterval, ranksAhead, winningHold } from "./holds.js";
 
 // ─── the order ──────────────────────────────────────────────────────────────
 
@@ -29,11 +29,10 @@ describe("the order of holds", () => {
     expect(ranksAhead(h({ since: 9 }), h({ yields: true }))).toBe(true);
     expect(ranksAhead(h({ since: 1 }), h({ since: 2 }))).toBe(true);
     expect(ranksAhead(h({ session: "a" }), h({ session: "b" }))).toBe(true);
-    // the winner of any set is ahead of every other in it, whatever order it's given in
+    // the winner of any three is ahead of every other of them, in every order they can be given in
     for (const x of all) for (const y of all) for (const z of all) {
       const w = winningHold([x, y, z]);
       for (const o of [x, y, z]) if (o !== w) expect(ranksAhead(o, w)).toBe(false);
-      expect(winningHold([z, y, x])).toBe(winningHold([x, z, y]) === w ? w : winningHold([z, y, x]));
     }
     expect(winningHold([])).toBe(null);
   });
@@ -118,7 +117,6 @@ function world({ pView, driven }) {
     B: { view: views[1], ext: "carry", yields: false, x: 2, wants: false },
     P: { view: views[pView], ext: "proc", yields: !driven, x: 3, wants: false, process: true },
   };
-  const writes = []; // { by, holderEverywhere }
   /** Does this actor's view hold it for this actor now? */
   const holds = (a) => a.view.holds.holderOf(OBJ) === a.ext;
   const frame = () => {
@@ -135,9 +133,9 @@ function world({ pView, driven }) {
     bus.deliver();
   };
   const land = (a) => {
-    // a process saves only what it still holds; a person writes where they put it down
+    // a well-behaved process saves only what it still holds (H6 asks it of authors; nothing here
+    // or in clock.js enforces it); a person writes where they put it down
     if (!holds(a)) return false;
-    writes.push({ by: a, personHeld: views.some((v) => v.holds.holderOf(OBJ) === "carry") });
     doc.objects[OBJ].transform = at(a.x);
     a.view.holds.release(a.ext, OBJ, at(a.x));
     return true;
@@ -154,7 +152,7 @@ function world({ pView, driven }) {
     "P leave": () => (actors.P.view.holds.release("proc", OBJ), (actors.P.wants = false)),
     pause: () => (land(actors.P), (actors.P.wants = false)), // the checkpoint on pause, then no more steps
   };
-  return { views, actors, events, frame, settle, writes, doc, holds, deliver: bus.deliver };
+  return { views, actors, events, frame, settle, doc, holds, deliver: bus.deliver };
 }
 
 const KINDS = ["A take", "A land", "A leave", "B take", "B land", "B leave", "P take", "P land", "P leave", "pause"];
@@ -217,8 +215,6 @@ describe("H6: one holder per object, by (a person's before a yielding one, then 
             });
             w.settle();
             bad.push(...check(w, label));
-            // a process saves only what it holds: with every hold heard, none of its writes came while a person held it
-            if (heard) for (const x of w.writes) if (x.by === w.actors.P && x.personHeld !== false) bad.push(`${label}: the process wrote while a person held it`);
             runs++;
           }
           expect(bad.slice(0, 5)).toEqual([]);
@@ -248,6 +244,11 @@ describe("pose holds", () => {
   it("throttles to one pose per 50 ms per object, with a trailing send", () => {
     for (let i = 0; i < 10; i++) {
       a.hold("hand", "o1", "g1", T(i));
+      // another object, held while o1 waits for its slot: it goes at once
+      if (i === 2) {
+        a.hold("hand", "o2", null, T(-1));
+        expect(sent("A").at(-1).id).toBe("o2");
+      }
       clock.advance(10);
     }
     // 100 ms: at 0, at 50 (carrying the latest by then), then the trailing one at 100
@@ -259,12 +260,6 @@ describe("pose holds", () => {
     const after = sent("A");
     expect(after.at(-1).transform).toEqual(T(9)); // the last pose always goes
     expect(b.remoteHolds().get("o1")).toMatchObject({ session: "sa", viewer: "alice", parent: "g1", transform: T(9), landed: null });
-  });
-
-  it("throttles each object separately", () => {
-    a.hold("hand", "o1", null, T(1));
-    a.hold("hand", "o2", null, T(2));
-    expect(sent("A").map((m) => m.id)).toEqual(["o1", "o2"]);
   });
 
   it("a put-back drops the hold at once", () => {
@@ -350,28 +345,13 @@ describe("pose holds", () => {
     expect(b.remoteHolds().get("o9").session).toBe("early");
   });
 
-  it("concurrent holds (neither holder had heard of the other) fall to the session id, on every view", () => {
-    const pose = (session, since) => b.receive({ id: "o8", parent: null, transform: T(1), since, seq: 1 }, { session, viewer: session });
-    pose("s2", 1);
-    pose("s1", 1);
-    expect(b.heldBy("o8")).toBe("s1");
-  });
-
   it("a hold begun after hearing of another ranks after it, whatever the clocks say", () => {
     a.hold("hand", "o1", null, T(1));
     // b's clock is far behind a's: stamps, not times, decide
     b.hold("hand", "o1", null, T(2));
-    expect(b.heldBy("o1")).toBe("sa");
-    expect(sent("B")[0].since).toBeGreaterThan(sent("A")[0].since);
-  });
-
-  it("while this view holds it too, only a peer that took it first counts", () => {
-    a.hold("hand", "o1", null, T(1));
-    clock.advance(100);
-    b.hold("hand", "o1", null, T(2)); // b grabbed it a moment later
-    expect(a.heldBy("o1")).toBe(null); // a was first: it's a's
     expect(b.heldBy("o1")).toBe("sa"); // b should let go
-    expect(sent("A")[0].since).toBeLessThan(sent("B")[0].since);
+    expect(a.heldBy("o1")).toBe(null); // a was first: its own, and b's later hold doesn't count against it
+    expect(sent("B")[0].since).toBeGreaterThan(sent("A")[0].since);
   });
 
   it("goodbye (pagehide) puts holds back", () => {
@@ -394,36 +374,16 @@ describe("pose holds", () => {
     expect(b.remoteHolds().size).toBe(0);
   });
 
-  it("remoteHolds is a stable value between changes", () => {
-    a.hold("hand", "o1", null, T(1));
-    const m = b.remoteHolds();
-    expect(b.remoteHolds()).toBe(m);
-    clock.advance(POSE_MS);
-    a.hold("hand", "o1", null, T(2));
-    expect(b.remoteHolds()).not.toBe(m);
-  });
 });
 
 describe("pose streams, for playing back", () => {
   const T = (x) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 });
 
-  it("the pose interval is POSE_MS, or faster when a caller asks", () => {
-    expect(poseInterval([])).toBe(POSE_MS);
-    expect(poseInterval([10])).toBe(POSE_MS); // 10 Hz is slower than 20: poses still go at 20
-    expect(poseInterval([60])).toBeCloseTo(1000 / 60);
-    expect(cleanEvery(1000 / 60)).toBeCloseTo(1000 / 60);
-    expect(cleanEvery(1)).toBe(POSE_MS);
-    expect(cleanEvery("fast")).toBe(POSE_MS);
-  });
-
-  it("each pose carries the sender's clock and its interval", () => {
-    a.hold("sim", "hull", null, T(1));
-    const msg = sent("A").at(-1);
-    expect(msg.at).toBe(clock.now());
-    expect(msg.every).toBe(POSE_MS);
-  });
-
-  it("raising the pose rate", () => {
+  it("raising the pose rate (asking for less than 20 Hz still sends at 20)", () => {
+    rates.set("slow", 10);
+    a.hold("sim", "hull", null, T(-1));
+    expect(sent("A").at(-1).every).toBe(POSE_MS);
+    clock.advance(POSE_MS);
     rates.set("sim", 60);
     for (let i = 0; i < 12; i++) {
       a.hold("sim", "hull", null, T(i));

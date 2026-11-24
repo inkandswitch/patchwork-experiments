@@ -138,7 +138,7 @@ describe("pinned: its doc at the pinned heads", () => {
     expect(log).toEqual(["box read-only 1"]);
   });
 
-  it("a pin at heads not here yet is drawn as its hint until they arrive", async () => {
+  it("a pin at heads not here yet is pinned but not open, with no stage", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountWith((g) => ({ P: link(g.url, { at: { heads: ["Hnothere"] } }) }));
     s = m.s;

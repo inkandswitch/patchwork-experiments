@@ -1,8 +1,8 @@
 // telling.js on its own, handed a clock, a scene and whether the extension
 // still runs: what the stage's own tests can't easily reach. Each case is one
-// row: what happens to a message while it waits (nothing, its extension
-// stops, the stage is disposed), what `says` does (answers, throws), and
-// what data comes (an object, or not).
+// row: what happens to a message while it waits (its extension stops, the
+// stage is disposed; told when the doc bears it out is tell-stage.test.js's),
+// what `says` does (answers, throws), and what data comes (an object, or not).
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createTelling, TELL_MS } from "./telling.js";
 
@@ -42,17 +42,6 @@ function rig({ says } = {}) {
 }
 
 describe("a waiting message", () => {
-  it("is told when the doc bears it out and its extension still runs", () => {
-    const r = rig();
-    r.hear({ to: 1 });
-    expect(r.telling.waiting()).toBe(1);
-    r.scene.ok = true;
-    r.telling.ask();
-    expect(r.told).toEqual(["Someone moved to 1"]);
-    expect(r.telling.waiting()).toBe(0);
-    expect(r.timers.size).toBe(0);
-  });
-
   it("is forgotten, untold, once its extension has stopped (or another instance runs in its place)", () => {
     const r = rig();
     r.hear({ to: 1 });
