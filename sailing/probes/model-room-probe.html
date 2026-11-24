@@ -186,7 +186,7 @@ try {
       mount("h", docs.R);
       const up = () => ["LA", "LB"].every((id) => inst(stageAt("h", [id]), "sailing") && inst(stageAt("h", [id]), "water"));
       const ok = await loaded(up, 60_000);
-      return ok ? { blocks: lay.map((l) => l.block), links: lay.map(({ block, ...t }) => t), stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], role: s.role, running: s.debug.host.running().map((r) => r.id) })) } : { error: "the room's stages never all ran sailing and water" };
+      return ok ? { blocks: lay.map((l) => l.block), links: lay.map(({ block, ...t }) => t), stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], role: s.acts ? "acting" : "pinned", running: s.debug.host.running().map((r) => r.id) })) } : { error: "the room's stages never all ran sailing and water" };
     }),
     /** H: a wet harbour (a Sea and the weather) with R linked into it */
     wet: () => pumping(async () => {
@@ -201,7 +201,7 @@ try {
       mount("h", docs.H);
       const up = () => ["LA", "LB"].every((id) => inst(stageAt("h", ["LR", id]), "sailing") && inst(stageAt("h", ["LR", id]), "water")) && inst(stageAt("h"), "water");
       const ok = await loaded(up, 60_000);
-      return ok ? { stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], role: s.role })) } : { error: "the harbour's stages never all ran" };
+      return ok ? { stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], role: s.acts ? "acting" : "pinned" })) } : { error: "the harbour's stages never all ran" };
     }),
     oceans: (w) => meshes(w, "ocean").length,
     patches: (w) => meshes(w, "water-patch").length,

@@ -170,7 +170,7 @@ try {
       mount("h", docs.H);
       const up = () => ["LA", "LB"].every((id) => inst(stageOf("h", id), "sailing") && inst(stageOf("h", id), "water")) && inst(stageOf("h"), "water") && inst(stageOf("h"), "sailing.sea");
       const ok = await loaded(up, 60_000);
-      return ok ? { links: P.links("h"), stages: dbg.h.view.stages().map((s) => ({ n: s.n, path: [...s.path], role: s.role, running: s.debug.host.running().map((r) => r.id) })) } : { error: "the harbour's stages never all ran sailing and water", links: P.links("h"), stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], running: s.debug.host.running().map((r) => r.id) })) };
+      return ok ? { links: P.links("h"), stages: dbg.h.view.stages().map((s) => ({ n: s.n, path: [...s.path], role: s.acts ? "acting" : "pinned", running: s.debug.host.running().map((r) => r.id) })) } : { error: "the harbour's stages never all ran sailing and water", links: P.links("h"), stages: dbg.h.view.stages().map((s) => ({ path: [...s.path], running: s.debug.host.running().map((r) => r.id) })) };
     }),
     oceans,
     /** which stages of view w draw a surface (the water extension's debug) */
