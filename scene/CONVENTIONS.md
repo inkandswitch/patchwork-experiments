@@ -116,8 +116,9 @@ Where a carried piece goes down, how it lies is `landedPose`
 snap, then the merged `landing` answer. `flat` lays it on its broadest face;
 `faceUp` turns it face up unless F has turned it since; the snap (`intoSnap`,
 `src/carry-rules.js`) applies a connector's frame or yaw. A connector reaches
-its content's `extras.snapRadius`, else `defaultSnapRadius` of its connectors
-(0.71 × the closest spacing; one alone doesn't snap). Up, down and on edge
+its content's `extras.snapRadius`: the GLB's, else 0.71 × the closest spacing
+of its connectors measured in plan (`src/connectors.js`; one alone reaches
+nothing). Up, down and on edge
 are one 45° test (`sideOf`). Paste and the parts bin use the snap step.
 
 ### How a carry ends

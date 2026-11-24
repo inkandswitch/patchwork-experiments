@@ -16,7 +16,7 @@ import { Box3, BufferAttribute, DoubleSide, InstancedMesh, Matrix4 } from "three
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { toArrayBuffer } from "./file-content.js";
-import { placeConnector, sanitizeConnectors } from "./carry-rules.js";
+import { defaultSnapRadius, placeConnector, sanitizeConnectors } from "./connectors.js";
 import { nodeLayer, sanitizeLayers } from "./layers.js";
 
 let loader = null;
@@ -232,11 +232,12 @@ export function findLegend(root) {
 }
 
 /**
- * Connectors from any node's (or the scene's) `extras.connectors` and older
- * `extras.snapPoints`, moved into root's frame (placeConnector: a whole frame
- * turns with its node, tilt and all; a yaw-only one by its node's yaw), with
- * the first `extras.snapRadius` found. Read before instancing collapses
- * meshes, which drops their userData. Root at identity.
+ * Connectors from any node's (or the scene's) `extras.connectors`, moved into
+ * root's frame (placeConnector: a whole frame turns with its node, tilt and
+ * all; a yaw-only one by its node's yaw), and how far they reach: the first
+ * `extras.snapRadius` found beside some, else defaultSnapRadius of them all
+ * (null with fewer than two). Read before instancing collapses meshes, which
+ * drops their userData. Root at identity.
  * @returns {{ points: { position: number[], rotation: number[] | null, yaw: number | null, tags: string[] }[], radius: number | null }}
  */
 export function findSnapPoints(root) {
@@ -244,12 +245,12 @@ export function findSnapPoints(root) {
   const points = [];
   let radius = null;
   root.traverse((o) => {
-    const raw = [...(Array.isArray(o.userData?.connectors) ? o.userData.connectors : []), ...(Array.isArray(o.userData?.snapPoints) ? o.userData.snapPoints : [])];
+    const raw = Array.isArray(o.userData?.connectors) ? o.userData.connectors : [];
     for (const p of sanitizeConnectors(raw)) points.push(placeConnector(p, o.matrixWorld.elements));
     const r = Number(o.userData?.snapRadius);
     if (radius == null && raw.length && Number.isFinite(r) && r > 0) radius = r;
   });
-  return { points, radius };
+  return { points, radius: radius ?? defaultSnapRadius(points) };
 }
 
 /** Triangles drawn, counting instances. */

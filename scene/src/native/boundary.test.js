@@ -30,7 +30,7 @@ const ORDER = ["shared", "kernel", "native", "editor", "entry"];
  */
 const LAYERS = {
   folders: { stage: "kernel", native: "native", parts: "editor", sources: "entry" },
-  shared: ["anchors", "build", "carry-rules", "datatype", "deps", "dnd", "embed", "file-content", "glb", "groups", "handles", "hierarchy", "icons", "layers", "legend", "ops", "param-form", "per-focus", "providers", "render-read", "shallow", "staleness", "stl", "surface", "transform", "tree-drop", "units"],
+  shared: ["anchors", "build", "carry-rules", "connectors", "datatype", "deps", "dnd", "embed", "file-content", "glb", "groups", "handles", "hierarchy", "icons", "layers", "legend", "ops", "param-form", "per-focus", "providers", "render-read", "shallow", "staleness", "stl", "surface", "transform", "tree-drop", "units"],
   kernel: ["glb-queue", "gltf-content", "key-order", "packages", "pick-accel", "render-manager", "selection", "theme"],
   editor: ["extract", "hold-key", "peers", "touch-keys", "transfer", "undo"],
   entry: ["controls-tool", "index"],

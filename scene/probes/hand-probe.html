@@ -10,7 +10,7 @@
      Written to STAGE.md's extension contract (looks, landing, commands with
      state, panels, notices). -->
 <!-- Driven by probes/hand-run.mjs: two scene tools on one doc (each peer's
-     broadcasts reach only the other), a 5×5 board GLB with extras.snapPoints
+     broadcasts reach only the other), a 5×5 board GLB with extras.connectors
      (locked), blocks and pawns, all loaded through the BUILT tool (dist/). The
      runner carries pieces with a real mouse over CDP. -->
 <script type="importmap">
@@ -84,9 +84,9 @@ try {
     return { positions: f.flat().flatMap((i) => v[i]), color };
   };
   const file = (name, scene) => repo.add({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(scene) });
-  const snapPoints = [];
-  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) snapPoints.push([i * 0.06, 0.04, j * 0.06]);
-  const boardGLB = file("board.glb", { meshes: [box(0.32, 0.04, 0.32, "#78a656")], extras: { snapPoints } });
+  const connectors = [];
+  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) connectors.push({ position: [i * 0.06, 0.04, j * 0.06] });
+  const boardGLB = file("board.glb", { meshes: [box(0.32, 0.04, 0.32, "#78a656")], extras: { connectors } });
   const blockGLB = file("block.glb", { meshes: [box(0.05, 0.032, 0.05, "#f1ede3")] });
   const pawnGLB = file("pawn.glb", { meshes: [box(0.016, 0.03, 0.016, "#3a78d8")] });
   const obj = (name, glb, position, extra = {}) => ({ name, sourceUrl: glb.url, providerId: "file-glb", renderUrl: null, parent: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation: [0, 0, 0], scale: 1 }, ...extra });

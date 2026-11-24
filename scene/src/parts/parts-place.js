@@ -18,8 +18,10 @@
 // Snapping is the carry's (./carry-math.js snapCandidates, ../carry-rules.js
 // nearestSnap), one rule for both: a part goes to the nearest of the object's
 // connectors that takes it (a tagged connector takes only a part with one of
-// its tags, an open one any part) within the object's snap radius, in plan.
-// An object that states no radius isn't snapped to.
+// its tags, an open one any part) within the object's snap radius, in plan
+// (its content's `extras.snapRadius`: the GLB's, else from its connectors'
+// spacing, ../gltf-content.js findSnapPoints). An object with no radius (one
+// connector and none stated) isn't snapped to.
 
 import { nearestSnap } from "../carry-rules.js";
 import { composeMatrix } from "../transform.js";

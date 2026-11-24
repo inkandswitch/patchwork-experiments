@@ -5,7 +5,7 @@
 // frame facing straight up (no yaw), a yaw, and a bare point.
 import { describe, it, expect } from "vitest";
 import { landings } from "./landing.js";
-import { sanitizeConnectors } from "../carry-rules.js";
+import { sanitizeConnectors } from "../connectors.js";
 import { composeMatrix } from "../transform.js";
 
 const H = Math.PI / 2;

@@ -74,11 +74,6 @@ describe("carry maths", () => {
     expect(snapCandidates([{ id: "board", matrix: m, snapRadius: 0.5, connectors: [{ position: [0, 0, 1], tags: ["card"] }] }], ["card"])).toHaveLength(1);
   });
 
-  it("without a snap radius from its content, connectors reach 0.71 of their closest spacing (defaultSnapRadius), scaled", () => {
-    const grid = [{ position: [0, 0, 0], tags: [] }, { position: [2, 0, 0], tags: [] }, { position: [0, 0, 3], tags: [] }];
-    expect(snapCandidates([{ id: "grid", matrix: composeMatrix({ scale: 2 }), snapRadius: null, connectors: grid }], []).map((c) => c.radius)).toEqual([4, 4, 4].map((v) => v * Math.SQRT1_2));
-  });
-
   it("carries a connector's whole frame into world, turned (not scaled) with its object; a yaw-only one stays yaw-only", () => {
     const axes = (r) => { const m = composeMatrix({ rotation: r }); return [[m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]]; };
     // a rack's place (its X up, Y toward +Z, length along +X) on a rack turned a quarter about Y and twice the size
