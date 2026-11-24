@@ -1,7 +1,7 @@
 // The atmosphere (CONVENTIONS.md, "Atmosphere"): the world ambient the
 // viewport draws, as a value. What an offered value is once checked, the
 // lights it implies, and the cloud deck the sky shader draws, worked in JS.
-// Pure: plain data, no three.js. ./sky.js draws what this decides.
+// Pure: plain data, no three.js. ./draw-atmosphere.js draws what this decides.
 
 /**
  * The stage's own lights, which no atmosphere is exactly (intensities, and
@@ -84,7 +84,7 @@ export function cleanAtmosphere(a) {
  * horizon (where the deck's cells shrink under a pixel and the fog takes
  * over), and nothing below it. A factor in [1 − contrast, 1 + contrast], and
  * how white (0 to 1) a scattered cloud makes the sky there. The sky
- * shader's own working (./sky.js), tested over directions and covers.
+ * shader's own working (./draw-atmosphere.js), tested over directions and covers.
  */
 export function cloudAt(d, { cover, contrast, scale, base }, noise) {
   if (!(d[1] > 0)) return { factor: 1, white: 0 };
