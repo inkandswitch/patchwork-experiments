@@ -5,11 +5,14 @@
 import { encodeGLB, computeBounds, computeNormals } from "./glb.js";
 import { layerShown, layerStates, sanitizeLayers } from "./layers.js";
 
-export const RHINO_URL = "https://cdn.jsdelivr.net/npm/rhino3dm@8.35.0/";
 let rhinoPromise;
+// rhino3dm's JavaScript loads when a .3dm is first read; its WebAssembly is
+// found from this module's own URL, which the build rewrites to the copy it
+// ships.
 export function loadRhino() {
-  rhinoPromise ??= import(/* @vite-ignore */ RHINO_URL + "rhino3dm.module.min.js")
-    .then((m) => m.default({ locateFile: (f) => RHINO_URL + f }))
+  const wasm = new URL("./node_modules/rhino3dm/rhino3dm.wasm", import.meta.url);
+  rhinoPromise ??= import("rhino3dm/rhino3dm.module.js")
+    .then((m) => m.default({ locateFile: (f) => (f.endsWith(".wasm") ? wasm.href : f) }))
     .catch((e) => { rhinoPromise = null; throw e; });
   return rhinoPromise;
 }

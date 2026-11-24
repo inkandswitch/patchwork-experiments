@@ -1,20 +1,16 @@
-// three.js and its loaders, fetched on first use. esm.sh pins every loader to
-// the same three build, so they all share one copy.
-const V = "0.180.0";
-const base = `https://esm.sh/three@${V}`;
-const ex = (p) => import(/* @vite-ignore */ `${base}/examples/jsm/${p}`);
-
+// three.js and its loaders, loaded on first use. They ship in the package's
+// build; every loader imports the same "three", so they share one copy.
 let p;
 export function loadThree() {
   p ??= Promise.all([
-    import(/* @vite-ignore */ base),
-    ex("controls/OrbitControls.js"),
-    ex("loaders/GLTFLoader.js"),
-    ex("loaders/STLLoader.js"),
-    ex("loaders/3MFLoader.js"),
-    ex("loaders/OBJLoader.js"),
-    ex("loaders/PLYLoader.js"),
-    ex("environments/RoomEnvironment.js"),
+    import("three"),
+    import("three/examples/jsm/controls/OrbitControls.js"),
+    import("three/examples/jsm/loaders/GLTFLoader.js"),
+    import("three/examples/jsm/loaders/STLLoader.js"),
+    import("three/examples/jsm/loaders/3MFLoader.js"),
+    import("three/examples/jsm/loaders/OBJLoader.js"),
+    import("three/examples/jsm/loaders/PLYLoader.js"),
+    import("three/examples/jsm/environments/RoomEnvironment.js"),
   ]).then(([THREE, oc, gltf, stl, tmf, obj, ply, env]) => ({
     THREE,
     OrbitControls: oc.OrbitControls,

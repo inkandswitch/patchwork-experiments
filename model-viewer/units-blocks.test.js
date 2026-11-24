@@ -1,7 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { convert3dm, loadRhino, rhinoUnit, RHINO_UNIT_METRES, RHINO_URL } from "./source.js";
+import { convert3dm, loadRhino, rhinoUnit, RHINO_UNIT_METRES } from "./source.js";
 
 let rhino;
 beforeAll(async () => { rhino = await loadRhino(); }, 60000);
@@ -22,14 +20,6 @@ function groups(glb) {
     return { name: m.name, color: "#" + f.slice(0, 3).map((c) => Math.round(srgb(c) * 255).toString(16).padStart(2, "0")).join("") };
   });
 }
-
-describe("rhino3dm under test", () => {
-  it("is the version source.js loads from the CDN", () => {
-    const req = createRequire(import.meta.url);
-    const { version } = JSON.parse(readFileSync(req.resolve("rhino3dm/package.json"), "utf8"));
-    expect(RHINO_URL).toContain(`rhino3dm@${version}/`);
-  });
-});
 
 describe("units", () => {
   // Every unit system rhino3dm has: either we know its scale, or it's one of

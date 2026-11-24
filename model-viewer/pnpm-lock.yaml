@@ -7,10 +7,17 @@ settings:
 importers:
 
   .:
-    devDependencies:
+    dependencies:
       rhino3dm:
         specifier: 8.35.0
         version: 8.35.0
+      three:
+        specifier: 0.180.0
+        version: 0.180.0
+    devDependencies:
+      vite:
+        specifier: ^7.1.9
+        version: 7.3.8
       vitest:
         specifier: ^3.2.4
         version: 3.2.7
@@ -474,6 +481,9 @@ packages:
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
 
+  three@0.180.0:
+    resolution: {integrity: sha512-o+qycAMZrh+TsE01GqWUxUIKR1AL0S8pq7zDkYOQw8GqfX8b8VoCKYUoHbhiX5j+7hr8XsuHDVU6+gkQJQKg9w==}
+
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
 
@@ -920,6 +930,8 @@ snapshots:
   strip-literal@3.1.0:
     dependencies:
       js-tokens: 9.0.1
+
+  three@0.180.0: {}
 
   tinybench@2.9.0: {}
 

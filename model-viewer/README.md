@@ -2,11 +2,10 @@
 
 View 3D files in Patchwork, and use Rhino `.3dm` files in a scene.
 
-There is no build step: the package is plain ES modules and `index.js` is its
-entry.
+The package builds with vite into `dist/`, and `dist/index.js` is its entry.
 
 ```
-pnpm install && pnpm test
+pnpm install && pnpm build && pnpm test
 ```
 
 ## What it registers
@@ -59,9 +58,12 @@ file, copied whole.
 
 ## What it fetches at run time
 
-- three.js 0.180.0 and its loaders, from esm.sh, on first use (`three.js`).
-- rhino3dm 8.35.0, its JavaScript and its WebAssembly, from jsDelivr, the
-  first time a `.3dm` is read (`source.js`).
+Nothing from another origin. The build ships both dependencies inside the
+package:
 
-The tests run the same rhino3dm from `node_modules` and check that the two
-versions match.
+- three.js 0.180.0 and its loaders, loaded on first use (`three.js`).
+- rhino3dm 8.35.0, its JavaScript and its WebAssembly, loaded the first time a
+  `.3dm` is read (`source.js`). The `.wasm` is found from the module's own URL.
+
+`local.test.js` checks that no source file names an `http` or `https` URL. The
+tests run the same rhino3dm from `node_modules`.
