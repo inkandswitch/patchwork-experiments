@@ -9,8 +9,8 @@ import { mountStage, object, settle } from "../test/stage-harness.js";
 import { openTabs } from "../test/tabs.js";
 import select from "../parts/select.js";
 import inspector from "../parts/inspector.js";
-import { MAX_PX, prefKey } from "../native/drawer.js";
-import { editing } from "./bodies.js";
+import { MAX_PX, prefKey } from "./drawer.js";
+import { editing } from "../stage/bodies.js";
 
 const SELECT = { meta: { id: "scene.select" }, module: select };
 const INSPECTOR = { meta: { id: "scene.inspector" }, module: inspector };

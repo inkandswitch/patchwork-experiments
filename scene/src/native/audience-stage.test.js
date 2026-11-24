@@ -7,8 +7,8 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
 import { resetPackagesServed, servePackage } from "../test/filesystem-mock.js";
-import { resetPackages } from "./packages.js";
-import { veilGLB } from "../native/veil.js";
+import { resetPackages } from "../stage/packages.js";
+import { veilGLB } from "./veil.js";
 import packagesPart from "../parts/packages.js";
 
 let mounted = [];
