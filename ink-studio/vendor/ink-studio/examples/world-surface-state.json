@@ -1,0 +1,74 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "split-sign",
+  "dt": 0.08,
+  "systems": {
+    "rig": {
+      "kind": "mechanics",
+      "config": {
+        "bodies": {
+          "sign": {
+            "position": [0, 1.28, 0],
+            "half": [2.05, 0.65, 0.14],
+            "fixed": true,
+            "mass": 2.4,
+            "material": "stained-wood",
+            "look": [13, 14, 15, 16],
+            "surfaceState": {
+              "fresh": { "material": "fresh-wood", "ramp": [20, 21, 22, 23] },
+              "faces": {
+                "+z": [
+                  { "channel": "paint", "value": "#ffda8a", "brush": {
+                    "kind": "bitmap", "min": [0.12, 0.22], "max": [0.88, 0.78],
+                    "rows": [
+                      "#####..#...#..#...#",
+                      "..#....##..#..#..#.",
+                      "..#....#.#.#..#.#..",
+                      "..#....#..##..##...",
+                      "..#....#...#..#.#..",
+                      "..#....#...#..#..#.",
+                      "#####..#...#..#...#"
+                    ]
+                  } },
+                  { "channel": "paint", "value": "#bfc293", "brush": { "kind": "rect", "min": [0.05, 0.1], "max": [0.95, 0.13] } },
+                  { "channel": "paint", "value": "#bfc293", "brush": { "kind": "rect", "min": [0.05, 0.87], "max": [0.95, 0.9] } },
+                  { "channel": "grime", "value": 0.26, "brush": { "kind": "rect", "min": [0, 0], "max": [1, 0.18] } },
+                  { "channel": "wear", "value": 0.38, "brush": { "kind": "rect", "min": [0.78, 0.22], "max": [0.85, 0.32] } },
+                  { "channel": "scar", "value": 0.34, "brush": {
+                    "kind": "stroke", "points": [[0.56, 0.61], [0.74, 0.73]], "width": 0.075, "softness": 0.02
+                  } }
+                ]
+              }
+            }
+          },
+          "post-left": { "position": [-1.55, 0.49, -0.34], "half": [0.13, 0.49, 0.13], "fixed": true, "look": [1, 2, 3, 4] },
+          "post-right": { "position": [1.55, 0.49, -0.34], "half": [0.13, 0.49, 0.13], "fixed": true, "look": [1, 2, 3, 4] }
+        }
+      }
+    }
+  },
+  "commands": [
+    { "id": "warm-face", "tick": 1, "action": "rig/surface-stamp", "args": {
+      "body": "sign", "face": "+z", "stamp": { "channel": "heat", "value": 60, "brush": {
+        "kind": "rect", "min": [0.06, 0.43], "max": [0.42, 0.68]
+      } }
+    } },
+    { "id": "stretch-sign", "tick": 2, "action": "rig/reshape", "args": { "body": "sign", "half": [2.38, 0.69, 0.16] } },
+    { "id": "split-sign", "tick": 4, "action": "rig/fracture", "args": { "body": "sign", "parts": 2, "axis": 0 } },
+    { "id": "move-left", "tick": 5, "action": "rig/impulse", "args": { "body": "sign.0", "linear": [-1.25, 1.9, 0.15], "angular": [0, -1.5, 0.12] } },
+    { "id": "move-right", "tick": 5, "action": "rig/impulse", "args": { "body": "sign.1", "linear": [1.25, 1.6, 0.12], "angular": [0, 1.35, -0.1] } }
+  ],
+  "visual": {
+    "bounds": { "min": [-4.05, -0.24, -1.7], "max": [4.05, 2.9, 1.7] },
+    "resolution": 0.068,
+    "camera": { "target": [0, 1.1, 0], "dist": 9.5, "yaw": 0.12, "pitch": 0.19 },
+    "palette": [
+      1120547, 1778218, 2568762, 4148818, 5792093, 7829605, 9605241, 2635573,
+      3887431, 5859150, 7832933, 9213556, 11775360, 1847604, 3494995, 5996895,
+      9415036, 12567187, 15127713, 6441014, 9003326, 12486991, 15054445,
+      16767626, 16773073, 15843986, 10250831, 6901572, 13732699, 12362110
+    ],
+    "fields": { "bodies": "rig/bodies" }
+  }
+}

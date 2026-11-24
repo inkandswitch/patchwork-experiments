@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>
+    Signal House · Ink Studio
+  </title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #080f19;
+      color: #dbe9e0;
+      font:
+        14px/1.6 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 1540px;
+      margin: auto;
+      padding: 30px 42px 24px;
+    }
+    .eyebrow {
+      display: flex;
+      justify-content: space-between;
+      font: 10px monospace;
+      letter-spacing: 2px;
+      color: #6b9d9d;
+      border-bottom: 1px solid #233b49;
+      padding-bottom: 17px;
+    }
+    h1 {
+      font:
+        normal 60px/1 Georgia,
+        serif;
+      letter-spacing: -2.5px;
+      margin: 25px 0 12px;
+    }
+    h1 em {
+      font-weight: normal;
+      color: #e99b65;
+    }
+    p.intro {
+      color: #8eabb3;
+      max-width: 770px;
+      margin: 0 0 26px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 290px;
+      gap: 24px;
+    }
+    .viewer {
+      border: 1px solid #2c4653;
+      background: #060d18;
+      position: relative;
+    }
+    .viewer canvas {
+      width: 100%;
+      display: block;
+      aspect-ratio: 1.447;
+      image-rendering: pixelated;
+      touch-action: none;
+      cursor: grab;
+    }
+    .tag {
+      position: absolute;
+      top: 16px;
+      left: 18px;
+      pointer-events: none;
+      font: 10px/1.9 monospace;
+      letter-spacing: 1px;
+      color: #91b4b8;
+    }
+    .tag b {
+      font-weight: 400;
+      color: #e9ae79;
+    }
+    .bar {
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #27404d;
+      font: 9px monospace;
+      color: #85aaaf;
+      letter-spacing: 0.6px;
+    }
+    aside {
+      border-top: 1px solid #35515b;
+      padding-top: 17px;
+    }
+    .tiny {
+      font: 10px monospace;
+      letter-spacing: 1px;
+      color: #76b8ba;
+    }
+    h2 {
+      font:
+        normal 25px Georgia,
+        serif;
+      margin: 10px 0 20px;
+    }
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin: 0;
+      padding: 10px 0;
+      border-bottom: 1px solid #1e3341;
+      cursor: pointer;
+    }
+    .toggle input {
+      accent-color: #f2a25d;
+      flex: 0 0 auto;
+    }
+    .toggle strong {
+      display: block;
+      font: 12px monospace;
+      font-weight: 400;
+      color: #c6dedc;
+    }
+    .toggle small {
+      display: block;
+      font: 10px/1.6 monospace;
+      color: #7d9aa5;
+      margin-top: 3px;
+    }
+    .toggle span {
+      flex: 1;
+    }
+    .num {
+      font: 10px monospace !important;
+      color: #4d7182 !important;
+      flex: 0 !important;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin: 19px 0 16px;
+    }
+    button {
+      cursor: pointer;
+      border: 1px solid #3c5b68;
+      background: #112432;
+      color: #c8dbd8;
+      padding: 10px 11px;
+      font: 11px monospace;
+    }
+    .actions button {
+      flex: 1;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      border-top: 1px solid #2d4653;
+      padding-top: 16px;
+    }
+    .metrics label {
+      font: 9px monospace;
+      letter-spacing: 0.5px;
+      color: #7e9ba6;
+    }
+    .metrics output {
+      display: block;
+      font: 17px monospace;
+      color: #e4ad78;
+      margin-top: 5px;
+    }
+    .caption {
+      font: 10px/1.8 monospace;
+      color: #8caab1;
+      margin-top: 16px;
+    }
+    .bottom {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 30px;
+    }
+    .bottom strong {
+      font: 10px monospace;
+      letter-spacing: 1px;
+      color: #b5d0d0;
+    }
+    .bottom p {
+      font-size: 12px;
+      color: #7f9ba7;
+      line-height: 1.7;
+      margin: 9px 0;
+    }
+    .accent {
+      color: #e4a36d;
+    }
+    #note {
+      min-height: 30px;
+      color: #90bac0;
+      font: 10px monospace;
+    }
+    footer {
+      margin-top: 15px;
+      border-top: 1px solid #223c48;
+      padding-top: 15px;
+      color: #60838e;
+      font: 9px monospace;
+      letter-spacing: 1px;
+    }
+    @media (max-width: 1050px) {
+      main {
+        padding: 24px;
+      }
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .bottom {
+        gap: 16px;
+      }
+      h1 {
+        font-size: 46px;
+      }
+      aside {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 20px;
+      }
+      .metrics {
+        margin-top: 20px;
+      }
+    }
+  </style>
+  <main>
+    <div class="eyebrow"><span>INK STUDIO / SIGNAL STUDIES</span><span>012 · THE RESOLVED FRAME</span></div>
+    <h1>Signal <em>House.</em></h1>
+    <p class="intro">
+      Cyan glass. Amber light. A little relay station, caught between a clean signal and the memory of one.
+    </p>
+    <div class="layout">
+      <div>
+        <div class="viewer">
+          <div class="tag">
+            <b>STATION 012 / AFTERIMAGE</b><br />DRAG TO ORBIT · SHIFT DRAG TO PAN · SCROLL TO DOLLY
+          </div>
+          <canvas id="view"></canvas>
+          <div class="bar">
+            <span id="mode">SELECTIVE LIGHT / BOUNDED SIGNAL CORRUPTION</span
+            ><output id="status">BUILDING STATION</output>
+          </div>
+        </div>
+        <div class="bottom">
+          <div>
+            <strong>01 / LIGHT LEAVES A TRACE</strong>
+            <p>Selected emitters cast cyan bloom and warm halation. Foreground instruments keep their silhouette.</p>
+          </div>
+          <div>
+            <strong>02 / A SIGNAL INTERRUPTED</strong>
+            <p>
+              Rectangular displacement and ordered pixel runs stay on the monitor. Crisp atlas print survives elsewhere.
+            </p>
+          </div>
+          <div>
+            <strong>03 / KEEP THE FRAME</strong>
+            <p>
+              Only effect work is reduced. Geometry, lettering and untouched surfaces retain their original resolution.
+            </p>
+          </div>
+        </div>
+      </div>
+      <aside>
+        <div class="tiny">SIX FILTERS + TEMPORAL MEMORY</div>
+        <h2>Shape the interference</h2>
+        <div id="effects"></div>
+        <div class="actions"><button id="clean">Hold for original</button><button id="pause">Pause signal</button></div>
+        <div class="actions"><button id="return">Return camera</button><button id="reset">Reset stack</button></div>
+        <div id="note">All passes enabled · original SDF + pixel atlas</div>
+        <div class="metrics">
+          <div><label>GLOW WORK GRID</label><output id="grid"></output></div>
+          <div><label>RETAINED SIGNAL</label><output id="history"></output></div>
+          <div><label>GRAPH WORKING SET*</label><output id="memory"></output></div>
+          <div><label>SOURCE GEOMETRY</label><output id="splats"></output></div>
+        </div>
+        <p class="caption">
+          Native object/depth masks. Deterministic seeds. Free camera. No external assets or runtime dependencies.<br /><br />*RGBA
+          graph estimates, including retained signal ping-pong. Excludes scene renderer storage and driver overhead.
+        </p>
+      </aside>
+    </div>
+    <footer>ORIGINAL PIXEL PRINT / NATIVE SDF SCULPTURE / INSPECTABLE RESOLUTION BUDGETS</footer>
+  </main>
+  <script src="../dist/ink-studio.browser.js"></script>
+  <script src="./render-effects.js"></script>
+  <script type="module">
+    import { createRenderer } from '../webgl.mjs';
+    const kit = { KIT, makeBuilder, makeSculpt, SpriteSurface, PixelLook, RenderStages },
+      demo = renderEffectsScene(kit),
+      canvas = document.getElementById('view'),
+      renderer = createRenderer(canvas, { toolkit: kit }),
+      $ = id => document.getElementById(id);
+    const descriptions = {
+      bloom: ['Selective bloom', 'Source-masked · soft cyan radiance'],
+      halation: ['Warm halation', 'Annular scatter · amber film response'],
+      outline: ['Depth-aware outlines', 'Native depth + logical object boundaries'],
+      chromatic: ['Chromatic separation', 'Restrained red / blue lens offset'],
+      blocks: ['Block displacement', 'Coherent chunks · monitor only'],
+      pixelSort: ['Pixel sorting', 'Stable luminance runs · monitor only'],
+      feedback: ['Temporal feedback', 'Budgeted memory · resets on camera moves']
+    };
+    for (const [id, [name, description]] of Object.entries(descriptions)) {
+      $('effects').insertAdjacentHTML(
+        'beforeend',
+        `<label class="toggle"><input type="checkbox" id="fx-${id}" checked><span><strong>${name}</strong><small>${description}</small></span><span class="num">${String(Object.keys(descriptions).indexOf(id) + 1).padStart(2, '0')}</span></label>`
+      );
+      $('fx-' + id).onchange = e => {
+        demo.toggle(id, e.target.checked);
+        metrics();
+      };
+    }
+    function metrics() {
+      const r = demo.inspect();
+      $('grid').value =
+        r.passes.find(p => p.id === 'bloom').width + ' × ' + r.passes.find(p => p.id === 'bloom').height;
+      $('history').value = (r.historyPixels / 1000).toFixed(0) + 'K PX';
+      $('memory').value = ((r.transientBytes + r.historyBytes) / 1048576).toFixed(1) + ' MB';
+      $('splats').value = (demo.world.count / 1000).toFixed(1) + 'K';
+    }
+    metrics();
+    let clean = false;
+    const setClean = v => {
+      clean = v;
+      $('note').textContent = v ? 'Original frame · effects bypassed' : 'Live stack · scoped, depth-aware effects';
+      $('mode').textContent = v ? 'ORIGINAL / UNPROCESSED FRAME' : 'SELECTIVE LIGHT / BOUNDED SIGNAL CORRUPTION';
+    };
+    $('clean').onpointerdown = e => {
+      $('clean').setPointerCapture(e.pointerId);
+      setClean(true);
+    };
+    $('clean').onpointerup = $('clean').onpointercancel = () => setClean(false);
+    $('clean').onkeydown = e => {
+      if (e.key === ' ') setClean(true);
+    };
+    $('clean').onkeyup = () => setClean(false);
+    $('pause').onclick = () => {
+      demo.state.paused = !demo.state.paused;
+      $('pause').textContent = demo.state.paused ? 'Resume signal' : 'Pause signal';
+    };
+    $('return').onclick = () => demo.control.release();
+    $('reset').onclick = () => {
+      for (const id of Object.keys(descriptions)) {
+        demo.toggle(id, true);
+        $('fx-' + id).checked = true;
+      }
+      metrics();
+    };
+    let drag,
+      last,
+      stamp,
+      frames = 0,
+      fps = 60;
+    canvas.onpointerdown = e => {
+      drag = [e.clientX, e.clientY];
+      canvas.setPointerCapture(e.pointerId);
+      demo.control.take();
+    };
+    canvas.onpointermove = e => {
+      if (!drag) return;
+      const x = e.clientX - drag[0],
+        y = e.clientY - drag[1];
+      drag = [e.clientX, e.clientY];
+      demo.control.input(e.shiftKey ? { pan: [-x * 0.01, y * 0.01] } : { yaw: -x * 0.004, pitch: y * 0.004 });
+    };
+    canvas.onpointerup = canvas.onpointercancel = () => (drag = null);
+    canvas.addEventListener(
+      'wheel',
+      e => {
+        e.preventDefault();
+        demo.control.input({ dolly: e.deltaY * 0.001 });
+      },
+      { passive: false }
+    );
+    window.effectsQA = { demo, renderer, setClean };
+    function tick(now) {
+      const dt = last === undefined ? 0 : Math.min(0.05, (now - last) / 1000);
+      last = now;
+      demo.update(dt);
+      renderer.render(demo.world, {
+        width: 1100,
+        height: 760,
+        camera: demo.control.read().camera,
+        time: demo.state.time,
+        interfaceTime: demo.state.time,
+        renderGraph: clean ? false : demo.graph,
+        changedRows: [],
+        damp: false
+      });
+      stamp ??= now;
+      frames++;
+      if (now - stamp > 900) {
+        fps = Math.round((frames * 1000) / (now - stamp));
+        stamp = now;
+        frames = 0;
+      }
+      $('status').value = fps + ' FPS · ' + (demo.state.paused ? 'SIGNAL HELD' : 'LIVE / 12 HZ DISPLAY');
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  </script>
+</html>

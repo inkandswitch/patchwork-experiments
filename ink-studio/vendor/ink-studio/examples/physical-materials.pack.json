@@ -1,0 +1,36 @@
+{
+  "format": "ink-studio/asset-pack",
+  "version": 1,
+  "id": "earthworks",
+  "title": "Earthworks materials",
+  "revision": 1,
+  "materials": [
+    {
+      "id": "earthworks/clay",
+      "label": "Clay",
+      "friction": { "dry": 0.82, "wet": 0.10 },
+      "permeability": { "dry": 0.12, "wet": 0.025 },
+      "dryingRate": 0.55,
+      "thermal": { "heatCapacity": { "dry": 700, "wet": 1400 }, "conductance": 700 },
+      "fracture": { "energy": { "dry": 3, "wet": 8 }, "parts": 4 },
+      "erosion": { "threshold": { "dry": 0.38, "wet": 0.10 }, "rate": { "dry": 0.01, "wet": 0.065 } },
+      "sounds": { "step": "earthworks/clay.step", "roll": "earthworks/clay.roll", "impact": "earthworks/clay.impact", "fracture": "earthworks/clay.crack" },
+      "appearance": {
+        "dry": ["#4f2f28", "#784731", "#a86943", "#ce9760", "#edbd81"],
+        "wet": ["#232139", "#3c3550", "#55516b", "#77758b", "#9c99aa"]
+      }
+    },
+    {
+      "id": "earthworks/gravel",
+      "label": "Gravel",
+      "friction": 0.95,
+      "permeability": 0.2,
+      "dryingRate": 1.2,
+      "thermal": { "heatCapacity": 830, "conductance": 540 },
+      "fracture": { "energy": 15, "parts": 2 },
+      "erosion": { "threshold": 2, "rate": 0.005 },
+      "sounds": { "step": "earthworks/gravel.step", "roll": "earthworks/gravel.roll" },
+      "appearance": { "dry": ["#273532", "#455851", "#657267", "#899688", "#b9ba9e"] }
+    }
+  ]
+}

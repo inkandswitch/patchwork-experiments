@@ -1,0 +1,44 @@
+{
+  "id": "data-shrine",
+  "name": "Shrine, as data",
+  "blurb": "Written down, not programmed: change \"style\" to moss or ember and build it again",
+  "seed": 4,
+  "style": "slate",
+  "camera": { "target": [0, 2.6, 0], "dist": 19, "pitch": 0.17, "yaw": 0.5 },
+  "groups": { "heap": { "blend": 0.25 } },
+  "solids": [
+    { "kind": "ground", "mat": { "role": "earth", "over": { "role": "moss", "patch": 0.45 } }, "rad": 8, "res": 0.14 },
+    { "kind": "join", "how": "stairs", "size": 0.9, "steps": 3, "res": 0.085, "mat": { "role": "stone", "noise": 0.2 },
+      "a": { "kind": "box", "at": [0, 0.5, 0], "half": [2.4, 0.5, 2.4] },
+      "b": { "kind": "box", "at": [0, -0.5, 0], "half": [5, 0.5, 5] } },
+    { "kind": "fold", "polar": 4, "res": 0.08, "mat": { "role": "stone", "noise": 0.18, "over": { "role": "moss", "above": 0.7, "patch": 0.4 } },
+      "of": { "kind": "warp", "twist": 0.5, "centre": [1.8, 0, 1.8], "wide": 0.5,
+        "of": { "kind": "join", "how": "cut",
+          "a": { "kind": "lathe", "at": [1.8, 1.0, 1.8], "h": 3.6, "r": 0.34 },
+          "b": { "kind": "fold", "polar": 6, "centre": [1.8, 0, 1.8], "of": { "kind": "lathe", "at": [2.14, 1.2, 1.8], "h": 3.2, "r": 0.09 } } } } },
+    { "kind": "fold", "polar": 4, "res": 0.08, "mat": "pale", "of": { "kind": "box", "at": [1.8, 4.75, 1.8], "half": [0.5, 0.15, 0.5], "round": 0.05 } },
+    { "kind": "torus", "at": [0, 5.0, 0], "R": 2.55, "r": 0.2, "mat": { "role": "stone", "noise": 0.15 }, "res": 0.08 },
+    { "kind": "rock", "at": [3.6, 0.3, -3.2], "r": 0.7, "mat": "stone", "group": "heap" },
+    { "kind": "rock", "at": [4.3, 0.2, -2.6], "r": 0.5, "mat": "stone", "group": "heap" },
+    { "kind": "bubbles", "cell": 0.34, "h": 0.07, "res": 0.06, "mat": "metal", "of": { "kind": "lathe", "at": [-3.6, 0, 3.0], "h": 1.1, "r": [[0, 0.5], [0.6, 0.62], [1, 0.3]] } },
+
+    { "kind": "regular", "shape": "d8", "at": [0, 2.7, 0], "r": 0.8, "round": 0.06, "mat": { "role": "accent", "glow": true }, "res": 0.06, "part": "gem" },
+    { "kind": "tube", "pts": [[0, 5.0, 2.55], [0, 4.1, 2.55]], "r": 0.05, "mat": "metal", "res": 0.05, "part": "lantern" },
+    { "kind": "lathe", "at": [0, 3.5, 2.55], "h": 0.6, "r": [[0, 0.16], [0.5, 0.3], [1, 0.12]], "mat": "metal", "res": 0.055, "part": "lantern" },
+    { "kind": "ball", "at": [0, 3.78, 2.55], "r": 0.17, "mat": { "role": "glow", "glow": true }, "res": 0.05, "part": "lantern" }
+  ],
+  "parts": { "lantern": { "joint": [0, 5.0, 2.55] }, "gem": { "joint": [0, 2.7, 0] } },
+  "motion": [
+    { "do": "spin", "part": "gem", "axis": [0, 1, 0], "speed": 0.8 },
+    { "do": "bob", "part": "gem", "amount": 0.22, "period": 3.2 },
+    { "do": "squash", "part": "gem", "amount": 0.06, "period": 1.6 },
+    { "do": "turn", "part": "lantern", "axis": [1, 0, 0], "amount": 0.32, "period": 2.6 }
+  ],
+  "effects": [
+    { "do": "reveal" },
+    { "do": "lamp", "at": [0, 3.78, 2.55], "r": 6, "strength": 0.9, "flicker": 0.35, "follow": "lantern" },
+    { "do": "embers", "at": [0, 1.2, 0], "every": 0.35, "n": 2 },
+    { "do": "wind", "v": [0.3, 0.5, 0], "swirl": 0.6 }
+  ],
+  "tap": { "do": "sparks", "colours": "glow", "n": 14 }
+}

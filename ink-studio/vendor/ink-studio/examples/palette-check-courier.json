@@ -1,0 +1,16 @@
+{
+  "subjects": [
+    { "id": "Courier", "select": { "object": "courier" } },
+    { "id": "Lantern core", "select": { "tag": "lantern-core" } }
+  ],
+  "views": [
+    { "id": "Front", "yaw": 0.30, "pitch": 0.21, "dist": 6.35, "target": [0, 1.37, 0.15] },
+    { "id": "Orbit 2", "yaw": 0.52, "pitch": 0.21, "dist": 6.35, "target": [0, 1.37, 0.15] },
+    { "id": "Orbit 3", "yaw": 0.74, "pitch": 0.21, "dist": 6.35, "target": [0, 1.37, 0.15] },
+    { "id": "Oblique", "yaw": 0.96, "pitch": 0.21, "dist": 6.35, "target": [0, 1.37, 0.15] }
+  ],
+  "checks": [
+    { "id": "Keep the lantern accent", "type": "swatch", "subject": "Lantern core", "swatch": "#fff0c2", "minShare": 1, "minPixels": 3 },
+    { "id": "Courier contour through orbit", "type": "readability", "subject": "Courier", "minSamples": 30, "maxWeakColorShare": 0.32, "maxWeakLightnessShare": 0.40, "maxCroppedEdges": 0 }
+  ]
+}

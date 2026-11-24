@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion Review · Ink Studio</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #131b26; color: #eff8df; }
+  body { margin: 0; }
+  main { max-width: 800px; margin: auto; padding: 24px 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 14px; }
+  nav, .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  nav { margin-bottom: 14px; }
+  button { padding: 6px 9px; }
+  nav button[aria-current=true] { border-color: #83ded0; color: #defcf4; }
+  .workbench { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .view { width: 288px; max-width: 100%; }
+  canvas { display: block; width: 100%; aspect-ratio: 1; background: #111923; image-rendering: pixelated; }
+  .inspection { flex: 1 1 240px; }
+  .inspection h2 { margin: 0 0 8px; font-size: 1.1rem; }
+  output { display: block; margin-top: 8px; color: #a6c7c5; font-variant-numeric: tabular-nums; }
+  input[type=range] { accent-color: #83ded0; max-width: 125px; }
+  label { display: inline-flex; gap: 5px; align-items: center; }
+  label[hidden] { display: none; }
+  #metric { margin: 0 0 14px; }
+  #key { color: #ffdc83; margin: 12px 0; }
+  figure { margin: 12px 0; }
+  figure canvas { width: 144px; margin-bottom: 4px; }
+  figcaption { color: #a6c7c5; font-size: .9rem; }
+</style>
+<main>
+  <h1>Motion Review</h1>
+  <nav id="findings" aria-label="Motion findings"></nav>
+  <div class="workbench">
+    <div class="view">
+      <canvas id="sprite" width="96" height="96" aria-label="Focused sprite playback"></canvas>
+      <output id="clock">Loading motion…</output>
+    </div>
+    <section class="inspection" aria-labelledby="finding">
+      <h2 id="finding"></h2>
+      <p id="metric"></p>
+      <div class="controls">
+        <button id="play" type="button">Play focus loop</button>
+        <label>Focus time <input id="time" type="range" min="0" max="1" value="0" step="0.001"></label>
+      </div>
+      <p id="key"></p>
+      <figure id="ghosts" hidden>
+        <canvas id="ghost" width="96" height="96" aria-label="Last pose ghost over first pose"></canvas>
+        <figcaption>Last pose ghost over first pose</figcaption>
+      </figure>
+      <div class="controls">
+        <button id="fix" type="button">Apply fix</button>
+        <label id="layer-control" hidden><input type="checkbox" id="layer"> Correction layer</label>
+        <label id="before-control" hidden><input type="checkbox" id="before"> Compare source</label>
+      </div>
+      <output id="result" aria-live="polite"></output>
+    </section>
+  </div>
+</main>
+<script src="../dist/ink-studio.browser.js"></script>
+<script src="./pose-blocking.js"></script>
+<script src="./motion-review.js"></script>
+<script type="module">
+  import { createRenderer } from '../webgl.mjs';
+  import { makeCamera } from '../src/webgl/view.mjs';
+
+  const $ = id => document.getElementById(id);
+  const clock = $('clock');
+  try {
+    const scene = motionReviewScene({ makeBuilder, makeSculpt, KIT });
+    const world = scene.build(scene.seed);
+    const review = world.motionReview;
+    const size = 96, camera = { ortho: true };
+    const gpu = document.createElement('canvas');
+    const renderer = createRenderer(gpu, { toolkit: { KIT, PixelLook } });
+    const screen = $('sprite').getContext('2d'), ghost = $('ghost').getContext('2d');
+    const buttons = new Map();
+    let issue, range, elapsed = 0, playing = false, lastFrame;
+    function render(time, ctx, before, alpha = 1) {
+      world.motionDemo.update(time, { before });
+      renderer.render(world, { width: size, height: size, time, camera, damp: false });
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(gpu, 0, 0);
+      ctx.globalAlpha = 1;
+    }
+    function layer() {
+      return review.layers().find(layer => layer.id === issue.id);
+    }
+    function draw() {
+      const before = $('before').checked;
+      const time = range.timeAt(elapsed);
+      render(time, screen, before);
+      if (range.evidence.type === 'path') {
+        const { view: m, projection: p } = makeCamera(world, { camera }, size, size);
+        const dots = range.evidence.points.map(({ point: [x, y, z], time }) => ({
+          x: Math.round((1 + (m[0]*x + m[4]*y + m[8]*z + m[12])*p[0])*size/2),
+          y: Math.round((1 - (m[1]*x + m[5]*y + m[9]*z + m[13])*p[5])*size/2), time
+        }));
+        const active = dots.reduce((a, b) => Math.abs(a.time-time) < Math.abs(b.time-time) ? a : b);
+        screen.strokeStyle = screen.fillStyle = layer()?.enabled && !before ? '#83ded0' : '#ffdc83';
+        screen.beginPath();
+        screen.moveTo(dots[0].x, dots[0].y);
+        for (const dot of dots.slice(1)) screen.lineTo(dot.x, dot.y);
+        screen.stroke();
+        for (const dot of dots) screen.fillRect(dot.x-1, dot.y-1, 2, 2);
+        screen.fillStyle = '#eff8df';
+        screen.fillRect(active.x-1, active.y-1, 3, 3);
+      }
+      const mode = layer()?.enabled && !before ? 'Corrected' : 'Source';
+      clock.value = time.toFixed(2) + ' s · ' + mode + ' · 96 × 96';
+    }
+    function refresh() {
+      const applied = layer();
+      $('layer-control').hidden = $('before-control').hidden = !applied;
+      $('layer').checked = !!applied?.enabled;
+      $('fix').textContent = applied ? 'Remove fix' : 'Apply fix';
+      const before = $('before').checked;
+      range = review.focus(issue.id, { before });
+      $('ghosts').hidden = range.evidence.type !== 'ghosts';
+      $('key').textContent = range.evidence.type === 'path'
+        ? 'Each dot is one equally timed sample.' : 'Focus playback crosses the end and first frame.';
+      if (range.evidence.type === 'ghosts') {
+        const [last, first] = range.evidence.times;
+        render(first, ghost, before);
+        render(last, ghost, before, 0.5);
+      }
+      draw();
+    }
+    function play(active) {
+      playing = active;
+      lastFrame = undefined;
+      $('play').textContent = active ? 'Pause' : 'Play focus loop';
+    }
+    function select(next) {
+      play(false);
+      issue = next;
+      for (const [id, button] of buttons) button.setAttribute('aria-current', id === issue.id);
+      $('finding').textContent = issue.label + ' · ' + issue.name;
+      const distance = issue.distance.toFixed(2) + ' units';
+      const evidence = {
+        'loop-pop': distance + ' between the last and first poses.',
+        'spacing-spike': distance + ' in one sample.',
+        'arc-kink': Math.round(issue.angle ?? 0) + '° turn over two samples.',
+        'foot-drift': distance + ' of horizontal drift near the ground.'
+      };
+      $('metric').textContent = evidence[issue.kind];
+      $('before').checked = false;
+      $('result').value = '';
+      elapsed = 0;
+      $('time').value = 0;
+      refresh();
+    }
+    for (const finding of review.findings) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = finding.label;
+      button.onclick = () => select(finding);
+      buttons.set(finding.id, button);
+      $('findings').append(button);
+    }
+    $('fix').onclick = () => {
+      const wasApplied = !!layer();
+      const result = wasApplied ? review.remove(issue.id) : review.accept(issue.id);
+      $('before').checked = false;
+      $('result').value = wasApplied ? 'Correction removed' : result ? 'Correction layer added' : 'No correction available';
+      refresh();
+    };
+    $('layer').onchange = () => {
+      review.setEnabled(issue.id, $('layer').checked);
+      $('result').value = $('layer').checked ? 'Correction enabled' : 'Correction muted';
+      refresh();
+    };
+    $('before').onchange = refresh;
+    $('play').onclick = () => play(!playing);
+    $('time').oninput = () => {
+      play(false);
+      elapsed = Math.min(Number($('time').value), 0.99999) * range.duration;
+      draw();
+    };
+    function animate(now) {
+      if (playing && (lastFrame === undefined || now-lastFrame >= 1000/24)) {
+        if (lastFrame !== undefined) elapsed = (elapsed + (now-lastFrame)/2000) % range.duration;
+        lastFrame = now;
+        $('time').value = elapsed / range.duration;
+        draw();
+      }
+      requestAnimationFrame(animate);
+    }
+    select(review.findings[0]);
+    requestAnimationFrame(animate);
+  } catch (error) {
+    clock.value = error.message;
+  }
+</script>

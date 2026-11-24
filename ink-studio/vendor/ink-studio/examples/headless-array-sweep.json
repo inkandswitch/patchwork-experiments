@@ -1,0 +1,6 @@
+{
+  "idPrefix": "signal",
+  "sweep": {
+    "inputs": { "gain": [1, 2, 3], "threshold": [2, 3] }
+  }
+}

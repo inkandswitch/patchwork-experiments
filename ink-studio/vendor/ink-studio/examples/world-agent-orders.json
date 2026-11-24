@@ -1,0 +1,107 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "courier-orders",
+  "dt": 0.1,
+  "entities": {
+    "depot": {"position": [-3.6, 0.12, -0.63], "sockets": {"counter": [0, 0, 0.72]}},
+    "market": {"position": [3.65, 0.12, -0.63], "sockets": {"counter": [0, 0, 0.85]}},
+    "shelter": {"position": [0.16, 0.12, -1.27], "sockets": {"porch": [0, 0, 0.33]}},
+    "lookout": {"position": [2.38, 0.12, 1.4]}
+  },
+  "systems": {
+    "weather": {"kind": "fields", "config": {"fields": {"rain": {"default": 0, "units": "mm/h"}}}},
+    "logistics": {"kind": "logistics", "config": {
+      "resources": {"grain": {"units": "sack", "type": "integer", "look": [17, 18, 19, 20]}},
+      "containers": {
+        "depot": {"stocks": {"grain": {"initial": 6, "max": 6,
+          "display": {"at": [-3.6, 0.32, -0.69], "half": [0.33, 0.33, 0.22]}}}},
+        "courier": {"stocks": {"grain": {"max": 2}}},
+        "market": {"stocks": {"grain": {"max": 4,
+          "display": {"at": [3.65, 0.32, -0.69], "half": [0.33, 0.34, 0.22]}}}}
+      }
+    }},
+    "yard": {"kind": "mechanics", "config": {"bodies": {
+      "island": {"fixed": true, "position": [0, -0.17, 0], "half": [4.64, 0.24, 2.42], "look": [2, 3, 4, 5]},
+      "courtyard": {"fixed": true, "position": [0, 0.045, 0.51], "half": [4.41, 0.067, 1.44], "look": [5, 6, 7, 8]},
+      "depot-base": {"fixed": true, "position": [-3.6, 0.20, -0.69], "half": [0.72, 0.10, 0.49], "look": [6, 7, 8]},
+      "depot-left": {"fixed": true, "position": [-4.16, 0.68, -1.08], "half": [0.08, 0.48, 0.08], "look": [17, 18, 19]},
+      "depot-right": {"fixed": true, "position": [-3.04, 0.68, -1.08], "half": [0.08, 0.48, 0.08], "look": [17, 18, 19]},
+      "depot-back": {"fixed": true, "position": [-3.6, 0.52, -1.15], "half": [0.56, 0.26, 0.07], "look": [8, 9, 10]},
+      "depot-roof": {"fixed": true, "position": [-3.6, 1.10, -0.75], "half": [0.75, 0.084, 0.51], "look": [8, 9, 10]},
+      "market-base": {"fixed": true, "position": [3.65, 0.20, -0.69], "half": [0.72, 0.10, 0.49], "look": [6, 7, 8]},
+      "market-left": {"fixed": true, "position": [3.09, 0.68, -1.08], "half": [0.08, 0.48, 0.08], "look": [17, 18, 19]},
+      "market-right": {"fixed": true, "position": [4.21, 0.68, -1.08], "half": [0.08, 0.48, 0.08], "look": [17, 18, 19]},
+      "market-back": {"fixed": true, "position": [3.65, 0.51, -1.15], "half": [0.56, 0.25, 0.07], "look": [12, 13, 14]},
+      "market-roof": {"fixed": true, "position": [3.65, 1.10, -0.75], "half": [0.75, 0.084, 0.51], "look": [12, 13, 14]},
+      "shelter-base": {"fixed": true, "position": [0.16, 0.08, -1.47], "half": [0.89, 0.05, 0.65], "look": [4, 5, 6, 7]},
+      "shelter-back": {"fixed": true, "position": [0.16, 0.7, -1.99], "half": [0.75, 0.61, 0.09], "look": [5, 6, 7, 8]},
+      "shelter-left": {"fixed": true, "position": [-0.53, 0.7, -1.04], "half": [0.065, 0.61, 0.065], "look": [17, 18, 19]},
+      "shelter-right": {"fixed": true, "position": [0.86, 0.7, -1.04], "half": [0.065, 0.61, 0.065], "look": [17, 18, 19]},
+      "shelter-eave": {"fixed": true, "position": [0.16, 1.27, -1.43], "half": [0.94, 0.09, 0.72], "look": [14, 15, 16]},
+      "shelter-roof": {"fixed": true, "position": [0.16, 1.42, -1.55], "half": [0.82, 0.08, 0.56], "look": [15, 16, 17]},
+      "lookout-post": {"fixed": true, "position": [2.38, 0.52, 1.78], "half": [0.065, 0.43, 0.065], "look": [17, 18, 19]},
+      "lookout-flag": {"fixed": true, "position": [2.56, 0.88, 1.78], "half": [0.17, 0.13, 0.05], "look": [11, 12, 13]}
+    }}},
+    "crew": {"kind": "agents", "config": {
+      "bounds": {"min": [-4.4, 0, -1.7], "max": [4.4, 1, 1.8]},
+      "ground": 0.12,
+      "cell": 0.22,
+      "species": {
+        "courier": {"mode": "walk", "radius": 0.21, "speed": 1.8, "look": [17, 18, 20, 22]},
+        "scout": {"mode": "walk", "radius": 0.19, "speed": 1.36, "look": [11, 12, 13, 15]}
+      },
+      "agents": {
+        "courier": {"species": "courier", "position": [-2.16, 0.12, 0.12]},
+        "scout": {"species": "scout", "position": [-3.09, 0.12, 1.41]}
+      },
+      "orders": {
+        "tasks": {
+          "move": {"steps": [{"op": "move", "at": {"target": "destination"}}]},
+          "shelter": {"steps": [
+            {"op": "move", "at": {"target": "cover"}},
+            {"op": "wait", "field": "weather/rain", "when": {"op": "lte", "value": 0}}
+          ]},
+          "deliver": {"steps": [
+            {"op": "move", "at": {"target": "pickup"}},
+            {"op": "transfer", "from": {"param": "source"}, "to": {"param": "cargo"}, "amount": {"param": "load"}},
+            {"op": "move", "at": {"target": "dropoff"}},
+            {"op": "transfer", "from": {"param": "cargo"}, "to": {"param": "destination"}, "amount": {"param": "load"}},
+            {"op": "emit", "kind": "delivery-confirmed", "data": {"goods": "grain"}}
+          ]}
+        }
+      }
+    }}
+  },
+  "commands": [
+    {"tick": 1, "action": "crew/issue-order", "args": {"agent": "courier", "order": {
+      "id": "market-delivery", "task": "deliver",
+      "targets": {"pickup": {"entity": "depot", "socket": "counter"}, "dropoff": {"entity": "market", "socket": "counter"}},
+      "params": {"source": "logistics/depot.grain", "cargo": "logistics/courier.grain",
+        "destination": "logistics/market.grain", "load": 2}
+    }}},
+    {"tick": 1, "action": "crew/issue-order", "args": {"agent": "scout", "order": {
+      "id": "reach-lookout", "task": "move", "targets": {"destination": {"entity": "lookout"}}
+    }}},
+    {"tick": 2, "action": "crew/issue-order", "args": {"agent": "scout", "order": {
+      "id": "return-to-depot", "task": "move", "targets": {"destination": [-3.7, 0.12, 1.12]}
+    }}},
+    {"tick": 14, "action": "crew/cancel-order", "args": {"agent": "scout", "order": "return-to-depot"}},
+    {"tick": 22, "action": "weather/set", "args": {"field": "rain", "region": {
+      "bounds": {"min": [-5, -1, -3], "max": [5, 3, 3]}, "value": 5
+    }}},
+    {"tick": 22, "action": "crew/issue-order", "args": {"agent": "courier", "mode": "interrupt", "order": {
+      "id": "wait-out-rain", "task": "shelter", "targets": {"cover": {"entity": "shelter", "socket": "porch"}}
+    }}},
+    {"tick": 48, "action": "weather/set", "args": {"field": "rain", "region": {
+      "bounds": {"min": [-5, -1, -3], "max": [5, 3, 3]}, "value": 0
+    }}}
+  ],
+  "visual": {
+    "bounds": {"min": [-5, -0.5, -2.7], "max": [5, 2.1, 2.75]},
+    "ground": -0.5,
+    "resolution": 0.07,
+    "camera": {"target": [0, 0.33, 0.03], "dist": 12.6, "yaw": 0.20, "pitch": 0.60},
+    "fields": {"bodies": ["yard/bodies", "logistics/stock-bodies"], "agents": ["crew/agents"]}
+  }
+}

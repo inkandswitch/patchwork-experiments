@@ -1,0 +1,96 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ink-studio in a scene</title>
+<!-- pnpm build (here and in ../scene) && node probes/probe-server.mjs 4790 --keep
+     http://localhost:4790/probes/stage-probe.html?example=sculpt.js[&also=cloth.js]
+     The BUILT scene tool with the BUILT scene and ink-studio plugins in a stub
+     registry, on real Automerge docs (probes/real-repo.js). Each example
+     becomes an ink-scene doc and is PASTED into a new scene, so it goes the
+     real way: the drop, addObject, the source's build, the extension.
+     window.__ready once every pasted object has loaded (or errors); window.__p. -->
+<script type="importmap">{{IMPORTMAP}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; overflow: hidden; }
+  #a { position: relative; width: 100vw; height: 100vh; }
+</style>
+<div id="a"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { twoPeers } from "./real-repo.js";
+import { emptyScene, DEFAULT_VIEW } from "./empty-scene.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origError = console.error;
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+const q = new URLSearchParams(location.search);
+const examples = [q.get("example") ?? "sculpt.js", ...q.getAll("also")];
+
+async function filesOf(main) {
+  const files = {};
+  async function collect(name) {
+    if (name in files) return;
+    const res = await fetch(`/vendor/ink-studio/examples/${name}`);
+    if (!res.ok) return;
+    files[name] = await res.text();
+    for (const [, req] of files[name].matchAll(/require\(\s*['"]\.\/([^'"/]+)['"]\s*\)/g))
+      await collect(/\.(js|json)$/.test(req) ? req : `${req}.js`);
+  }
+  await collect(main);
+  return files;
+}
+
+try {
+  // ?water: the water package too (ink's "Add this world's water" writes its objects)
+  for (const url of ["/scene/dist/index.js", ...(q.has("water") ? ["/water/dist/index.js"] : []), "/dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const net = twoPeers({ delay: 25 });
+  const ana = await net.a.create2({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const inks = [];
+  for (const main of examples)
+    inks.push(await net.a.create2({ "@patchwork": { type: "ink-scene" }, title: main, kind: main.endsWith(".json") ? "diorama" : "js", main, files: await filesOf(main) }));
+  const scene = await net.a.create2(emptyScene({ title: "Ink in a scene", view: { ...DEFAULT_VIEW, start: { edit: true } } }));
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("a");
+  host.repo = net.a;
+  host.viewerId = ana.url;
+  Tool(scene, host);
+  const root = host.querySelector(".scene-stage");
+  const dbg = root.__sceneDebug;
+  const paste = (text) => {
+    const dt = new DataTransfer();
+    dt.setData("text/plain", text);
+    root.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  };
+  await new Promise((r) => setTimeout(r, 500));
+  for (const h of inks) {
+    root.focus();
+    paste(h.url);
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  const objects = () => Object.entries(scene.doc().objects ?? {}).filter(([, o]) => o.kind !== "group");
+  window.__p = {
+    errors, scene, inks, dbg,
+    doc: () => JSON.parse(JSON.stringify(scene.doc())),
+    running: () => (dbg?.local.get().running ?? []).map((r) => r.id),
+    status: () => JSON.parse(JSON.stringify(dbg?.local.get().status ?? {})),
+    loaded: () => objects().map(([id, o]) => ({ id, name: o.name, provider: o.providerId, traits: Object.keys(o.traits ?? {}), loaded: !!dbg?.viewport.contentOf(id)?.loaded })),
+    ink: () => window.__inkStudio?.inspect?.() ?? null,
+  };
+  const t0 = performance.now();
+  (function wait() {
+    const os = objects();
+    const done = os.length >= inks.length && os.every(([id]) => dbg?.viewport.contentOf(id)?.loaded);
+    if (done || errors.length || performance.now() - t0 > 120000) window.__ready = { objects: os.length, errors: errors.length, ms: Math.round(performance.now() - t0) };
+    else setTimeout(wait, 200);
+  })();
+} catch (err) {
+  errors.push(`probe: ${err?.stack ?? err}`);
+  window.__ready = { errors: errors.length };
+}
+</script>

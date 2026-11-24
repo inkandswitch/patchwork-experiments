@@ -1,0 +1,74 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "routed-workshop",
+  "dt": 0.05,
+  "entities": {
+    "bank": { "position": [-3.45, 0.66, 0], "sockets": {
+      "hose": [0.39, 0.69, 0.82], "belt-top": [0.16, 0.85, -0.12], "belt-return": [0.05, 0.36, -0.12],
+      "wire": [0.35, 0.63, -0.89], "power": [0.37, 0.35, 0.34]
+    } },
+    "carriage": { "position": [0.86, 0.66, 0], "sockets": {
+      "hose": [-0.40, 0.69, 0.82], "belt-top": [-0.07, 0.85, -0.12], "belt-return": [0.04, 0.36, -0.12],
+      "wire": [-0.37, 0.63, -0.89], "power": [-0.40, 0.35, 0.34]
+    } },
+    "hose-guide": { "position": [-1.65, 0.79, 1.09], "sockets": { "roller": [0, 0.79, 0] } }
+  },
+  "systems": {
+    "rig": { "kind": "mechanics", "config": {
+      "bodies": {
+        "bank": { "fixed": true, "position": [-3.45, 0.66, 0], "half": [0.47, 0.66, 1.03], "look": [2, 3, 4, 5, 6] },
+        "carriage": { "half": [0.47, 0.60, 1.03], "look": [2, 3, 4, 5, 6] },
+        "motor-arm": { "half": [0.3, 0.063, 0.10], "look": [19, 20, 21, 22, 23] },
+        "load-arm": { "half": [0.30, 0.063, 0.10], "look": [19, 20, 21, 22, 23] },
+        "hose-guide": { "fixed": true, "position": [-1.65, 0.79, 1.09], "half": [0.067, 0.79, 0.067], "look": [1, 2, 3, 4] },
+        "rail-front": { "fixed": true, "position": [-0.06, 0.12, 0.70], "half": [4.02, 0.12, 0.069], "look": [1, 2, 3, 4] },
+        "rail-back": { "fixed": true, "position": [-0.06, 0.12, -0.70], "half": [4.02, 0.12, 0.069], "look": [1, 2, 3, 4] }
+      },
+      "joints": {
+        "travel": { "kind": "slider", "child": "carriage", "anchor": [0.86, 0.66, 0], "axis": [1, 0, 0], "mode": "position", "speed": 2, "range": [0, 2.25] },
+        "motor": { "kind": "shaft", "parent": "bank", "child": "motor-arm", "anchor": [0, 0.56, -0.12], "axis": [0, 0, 1], "speed": 2.6, "capacity": 5, "externalLoad": true },
+        "follower": { "kind": "shaft", "parent": "carriage", "child": "load-arm", "anchor": [0, 0.56, -0.12], "axis": [0, 0, 1], "load": 2.4, "externalLoad": true }
+      }
+    } },
+    "routes": { "kind": "routed-links", "config": { "links": {
+      "hose": { "from": { "entity": "bank", "socket": "hose" }, "to": { "entity": "carriage", "socket": "hose" },
+        "guides": [{ "entity": "hose-guide", "socket": "roller" }], "slack": 0.40, "stiffness": 85,
+        "breakTension": 32, "radius": 0.065, "look": [13, 14, 15, 16, 17, 18], "material": "hose",
+        "carry": { "kind": "transfer", "from": "basin/outlet", "to": "trolley/coolant", "rate": 0.9 } },
+      "belt": { "from": { "entity": "bank", "socket": "belt-top" }, "to": { "entity": "carriage", "socket": "belt-top" },
+        "returnGuides": [{ "entity": "carriage", "socket": "belt-return" }, { "entity": "bank", "socket": "belt-return" }],
+        "slack": 0.12, "stiffness": 60, "breakTension": 128, "radius": 0.042, "look": [19, 20, 21, 22, 23, 24], "material": "belt",
+        "carry": { "kind": "drive", "ratio": 1.5, "capacity": 4 } },
+      "signal": { "from": { "entity": "bank", "socket": "wire" }, "to": { "entity": "carriage", "socket": "wire" },
+        "guides": [[-1.88, 1.85, -1.16]], "slack": 1.55, "radius": 0.048, "look": [25, 26, 27, 28, 29], "material": "wire",
+        "carry": { "kind": "signal", "type": "bool" } },
+      "power": { "from": { "entity": "bank", "socket": "power" }, "to": { "entity": "carriage", "socket": "power" },
+        "slack": 0.80, "breakTension": 250, "radius": 0.042, "look": [3, 4, 5, 6], "material": "power-cable",
+        "carry": { "kind": "transfer", "from": "battery/charge", "to": "trolley/charge", "rate": 12 } }
+    } } },
+    "basin": { "kind": "water", "config": { "width": 1, "height": 1,
+      "initial": [{ "bounds": { "min": [0, 0], "max": [1, 1] }, "value": 6 }], "accounts": { "outlet": [0.5, 0.5] } } },
+    "battery": { "kind": "store", "config": { "accounts": { "charge": { "resource": "energy", "units": "J", "initial": 80 } } } },
+    "trolley": { "kind": "store", "config": { "accounts": {
+      "charge": { "resource": "energy", "units": "J", "initial": 8, "max": 55 },
+      "coolant": { "resource": "water", "units": "world^3", "initial": 0.25, "max": 5 }
+    } } },
+    "lamp": { "kind": "control", "config": { "op": "not" } }
+  },
+  "connections": [
+    { "from": "rig/speed.motor", "to": "routes/speed.belt" },
+    { "from": "rig/load.follower", "to": "routes/load.belt" },
+    { "from": "routes/speed-out.belt", "to": "rig/drive.follower" },
+    { "from": "routes/load-out.belt", "to": "rig/external-load.motor" },
+    { "from": "routes/out.signal", "to": "lamp/value" }
+  ],
+  "visual": {
+    "palette": [1317672, 2698810, 4343383, 6448501, 9079188, 11708840, 14272948, 2506303, 3496275, 5075808,
+      6982248, 10004088, 12893066, 1519687, 1853275, 2255480, 3314579, 6600874, 11132626, 5124138,
+      8474674, 11234875, 13803349, 15780731, 16313808, 4335182, 6832248, 9330083, 12092623, 14660334],
+    "bounds": { "min": [-4.5, -0.30, -1.7], "max": [4.38, 2.45, 1.85] }, "resolution": 0.07,
+    "camera": { "target": [-0.2, 0.68, 0], "dist": 11.35, "yaw": -0.37, "pitch": 0.51 },
+    "fields": { "bodies": "rig/bodies", "routedLinks": "routes/links" }
+  }
+}

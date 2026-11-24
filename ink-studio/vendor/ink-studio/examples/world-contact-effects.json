@@ -1,0 +1,91 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "clay-cart-tracks",
+  "seed": 41,
+  "dt": 0.03333333333333333,
+  "assetPacks": [
+    {
+      "format": "ink-studio/asset-pack",
+      "version": 1,
+      "id": "trackside",
+      "title": "Trackside materials",
+      "revision": 1,
+      "materials": [
+        {
+          "id": "trackside/clay",
+          "label": "Clay",
+          "friction": 0.72,
+          "sounds": { "roll": "trackside/clay.roll", "step": "trackside/clay.step" },
+          "appearance": {
+            "dry": ["#4e302a", "#815032", "#ab6e3b", "#d29f55", "#f0cb7b"],
+            "wet": ["#173047", "#1c475b", "#226a78", "#329393", "#64b8aa"]
+          },
+          "contactEffects": {
+            "rut": { "dry": 0.2, "wet": 2.8 },
+            "spray": { "count": { "dry": 0, "wet": 3 }, "color": "#a9ded2", "life": 0.36, "radius": 0.045, "speed": 2.5 },
+            "sound": { "gain": { "dry": 0.45, "wet": 0.85 }, "interval": 0.16 },
+            "shake": { "strength": { "dry": 0.004, "wet": 0.018 }, "life": 0.14, "frequency": 15 }
+          }
+        }
+      ]
+    }
+  ],
+  "systems": {
+    "ground": {
+      "kind": "materials",
+      "config": {
+        "grid": { "width": 16, "height": 24, "cell": 0.25, "origin": [-2, -3] },
+        "material": "trackside/clay",
+        "regions": [{ "bounds": { "min": [-2, -3], "max": [0, 3] }, "material": "trackside/clay", "wetness": 1 }]
+      }
+    },
+    "drive": {
+      "kind": "mechanics",
+      "config": {
+        "terrain": "tracks/ruttedBed",
+        "surface": "ground/surface",
+        "contactEvents": "material",
+        "bodies": {
+          "wet-cart": { "position": [-0.85, 0.18, -2.35], "half": [0.3, 0.18, 0.38], "mass": 2, "look": [19,20,21,22,23] },
+          "dry-cart": { "position": [0.85, 0.18, -2.35], "half": [0.3, 0.18, 0.38], "mass": 2, "look": [1,2,3,4,5,6] }
+        },
+        "forces": {
+          "wet-left": { "kind": "wheel", "body": "wet-cart", "at": [-0.23, 0, 0], "axis": [0,0,1], "radius": 0.2, "magnitude": 4.5, "input": 1 },
+          "wet-right": { "kind": "wheel", "body": "wet-cart", "at": [0.23, 0, 0], "axis": [0,0,1], "radius": 0.2, "magnitude": 4.5, "input": 1 },
+          "dry-left": { "kind": "wheel", "body": "dry-cart", "at": [-0.23, 0, 0], "axis": [0,0,1], "radius": 0.2, "magnitude": 4.5, "input": 1 },
+          "dry-right": { "kind": "wheel", "body": "dry-cart", "at": [0.23, 0, 0], "axis": [0,0,1], "radius": 0.2, "magnitude": 4.5, "input": 1 }
+        }
+      }
+    },
+    "feedback": { "kind": "contact-effects", "config": { "maxParticles": 200 } },
+    "tracks": {
+      "kind": "wear",
+      "config": {
+        "bounds": { "min": [-2, -0.5, -3], "max": [2, 1, 3] },
+        "contactEvents": true,
+        "cell": 0.15,
+        "gain": 1.4,
+        "spread": 0.3,
+        "recovery": 0.005,
+        "rutDepth": 0.19
+      }
+    }
+  },
+  "connections": [
+    { "from": "drive/contacts", "to": "feedback/contacts" },
+    { "from": "feedback/ruts", "to": "tracks/contacts" }
+  ],
+  "visual": {
+    "bounds": { "min": [-2, -0.27, -3], "max": [2, 0.8, 3] },
+    "resolution": 0.045,
+    "camera": { "target": [0, 0.02, -0.6], "dist": 8.6, "yaw": 0.48, "pitch": 0.73 },
+    "fields": {
+      "surface": "ground/surface",
+      "bodies": "drive/bodies",
+      "bed": "tracks/ruttedBed",
+      "wear": "tracks/wear",
+      "contactEffects": "feedback/frame"
+    }
+  }
+}

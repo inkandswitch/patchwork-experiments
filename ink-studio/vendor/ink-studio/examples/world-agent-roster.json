@@ -1,0 +1,25 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "agent-roster",
+  "dt": 0.25,
+  "systems": {
+    "flock": {
+      "kind": "agents",
+      "config": {
+        "bounds": {"min": [-8, -1, -8], "max": [8, 8, 8]},
+        "species": {"bird": {"mode": "fly", "speed": 1}},
+        "agents": {"lookout": {"species": "bird", "position": [0, 1, 0], "task": "stand-watch"}}
+      }
+    }
+  },
+  "commands": [
+    {"tick": 1, "action": "flock/spawn", "args": {
+      "agent": "scout", "species": "bird", "position": [1, 1, 0], "name": "Robin",
+      "metadata": {"team": "north"}
+    }},
+    {"tick": 1, "action": "flock/seek", "args": {"agent": "scout", "to": [5, 1, 0]}},
+    {"tick": 1, "action": "flock/set-task", "args": {"agent": "scout", "task": "survey"}},
+    {"tick": 4, "action": "flock/despawn", "args": {"agent": "lookout"}}
+  ]
+}

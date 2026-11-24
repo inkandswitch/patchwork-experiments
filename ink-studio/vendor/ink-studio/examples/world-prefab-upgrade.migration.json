@@ -1,0 +1,18 @@
+{
+  "from": { "prefab": "sluice.v1", "revision": 1 },
+  "to": { "prefab": "sluice.v2", "revision": 2 },
+  "entities": { "frame": "housing" },
+  "systems": { "clock": "counter", "pool": "basin" },
+  "sockets": { "frame/top": "housing/lug", "@root/tether": "@root/mount" },
+  "params": { "span": "width" },
+  "ports": { "arm": "run", "count": "progress", "open": "aperture" },
+  "pins": { "pool/gate.sluice": "basin/gate.door" },
+  "overridePaths": { "/entities/panel/paint": "/entities/panel/finish" },
+  "actionEdits": { "pool/gate": [{ "op": "set", "path": "/gate", "value": "door" }] },
+  "state": {
+    "pool": { "mode": "preserve", "paths": {
+      "/gate/sluice": "/gate/door",
+      "/manual/gate.sluice": "/manual/gate.door"
+    } }
+  }
+}

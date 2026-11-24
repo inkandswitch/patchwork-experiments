@@ -1,0 +1,91 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "deformable-yard",
+  "dt": 0.03333333333333333,
+  "entities": {
+    "winch": { "position": [-5.85, 0.77, -1.3], "sockets": { "eye": [0, 0.7, 0] } }
+  },
+  "systems": {
+    "weather": { "kind": "fields", "config": { "fields": {
+      "rain": { "type": "number", "units": "world/s", "default": 0.021 },
+      "wind": { "type": "vec3", "units": "world/s", "default": [0.3, 0, -0.23] }
+    } } },
+    "rig": { "kind": "mechanics", "config": {
+      "deformables": ["fabric/surfaces"], "drag": 1.5,
+      "bodies": {
+        "winch": { "fixed": true, "position": [-5.85, 0.77, -1.3], "half": [0.09, 0.77, 0.09] },
+        "net-left-front": { "fixed": true, "position": [-5.85, 0.77, 1.3], "half": [0.09, 0.77, 0.09] },
+        "net-right-front": { "fixed": true, "position": [-2.75, 0.77, 1.3], "half": [0.09, 0.77, 0.09] },
+        "net-right-back": { "fixed": true, "position": [-2.75, 0.77, -1.3], "half": [0.09, 0.77, 0.09] },
+        "crate": { "position": [-4.27, 3.35, 0.025], "half": [0.33, 0.28, 0.30], "mass": 1.25,
+          "velocity": [0, -5, 0], "look": [19, 20, 21, 22, 23, 24] },
+        "tarp-back-left": { "fixed": true, "position": [-1.47, 0.71, -1.03], "half": [0.07, 0.71, 0.07] },
+        "tarp-front-left": { "fixed": true, "position": [-1.47, 0.71, 1.03], "half": [0.07, 0.71, 0.07] },
+        "tarp-back-right": { "fixed": true, "position": [1.37, 0.71, -1.03], "half": [0.07, 0.71, 0.07] },
+        "tarp-front-right": { "fixed": true, "position": [1.37, 0.71, 1.03], "half": [0.07, 0.71, 0.07] },
+        "bridge-front": { "fixed": true, "position": [3.9, 0.57, 2.04], "half": [0.99, 0.57, 0.59], "look": [1, 2, 3, 4, 5] },
+        "handline-front": { "fixed": true, "position": [2.99, 1.50, 1.57], "half": [0.065, 0.37, 0.065], "look": [19, 20, 21, 22, 23] },
+        "handline-back": { "fixed": true, "position": [2.99, 1.50, -1.57], "half": [0.065, 0.37, 0.065], "look": [19, 20, 21, 22, 23] },
+        "bridge-back": { "fixed": true, "position": [3.9, 0.57, -2.04], "half": [0.99, 0.57, 0.59], "look": [1, 2, 3, 4, 5] }
+      }
+    } },
+    "fabric": { "kind": "deformables", "config": {
+      "supports": ["rig/support"], "clearance": "rig/clearance", "rain": "weather/rain", "wind": "weather/wind",
+      "damping": 3, "friction": 0.35, "trafficDuration": 0.16,
+      "shapes": {
+        "catch-net": { "kind": "cloth", "style": "net", "at": [-5.85, 1.47, -1.30], "u": [3.1, 0, 0], "v": [0, 0, 2.6],
+          "nu": 7, "nv": 7, "mass": 2.6, "radius": 0.041, "stretch": 0.00015, "shear": 0.00019, "tear": 2.1,
+          "look": [8, 9, 10, 11, 12], "material": "hemp",
+          "attachments": {
+            "winch-pin": { "node": 0, "entity": "winch", "socket": "eye" }, "back-right": { "node": 6, "point": [-2.75, 1.47, -1.3] },
+            "front-left": { "node": 42, "point": [-5.85, 1.47, 1.3] }, "front-right": { "node": 48, "point": [-2.75, 1.47, 1.3] }
+          }
+        },
+        "tarp": { "kind": "cloth", "at": [-1.47, 1.36, -1.03], "u": [2.84, 0, 0], "v": [0, 0, 2.06],
+          "nu": 9, "nv": 9, "mass": 3.1, "radius": 0.028, "stretch": 0.00008, "shear": 0.00009, "tear": 2.0,
+          "material": "canvas", "look": [19, 20, 21, 22, 23, 24], "water": { "capacity": 0.071, "drain": 0.1 },
+          "attachments": {
+            "back-left": { "node": 0, "point": [-1.47, 1.36, -1.03] }, "back-right": { "node": 8, "point": [1.37, 1.36, -1.03] },
+            "front-left": { "node": 72, "point": [-1.47, 1.36, 1.03] }, "front-right": { "node": 80, "point": [1.37, 1.36, 1.03] },
+            "back-center": { "node": 4, "point": [-0.05, 1.3, -1.03] }, "front-center": { "node": 76, "point": [-0.05, 1.3, 1.03] },
+            "left-center": { "node": 36, "point": [-1.47, 1.3, 0] }, "right-center": { "node": 44, "point": [1.37, 1.3, 0] }
+          }
+        },
+        "bridge": { "kind": "cloth", "at": [3, 1.105, -1.57], "u": [1.8, 0, 0], "v": [0, 0, 3.14],
+          "nu": 5, "nv": 11, "mass": 3.5, "radius": 0.035, "stretch": 0.0003, "shear": 0.0001,
+          "material": "planking", "look": [19, 20, 21, 22, 23, 24],
+          "attachments": {
+            "back-left": { "node": 0, "point": [3, 1.105, -1.57] }, "back-one": { "node": 1, "point": [3.45, 1.105, -1.57] },
+            "back-center": { "node": 2, "point": [3.9, 1.105, -1.57] }, "back-three": { "node": 3, "point": [4.35, 1.105, -1.57] },
+            "back-right": { "node": 4, "point": [4.8, 1.105, -1.57] }, "front-left": { "node": 50, "point": [3, 1.105, 1.57] },
+            "front-one": { "node": 51, "point": [3.45, 1.105, 1.57] }, "front-center": { "node": 52, "point": [3.9, 1.105, 1.57] },
+            "front-three": { "node": 53, "point": [4.35, 1.105, 1.57] }, "front-right": { "node": 54, "point": [4.8, 1.105, 1.57] }
+          }
+        },
+        "handline": { "kind": "rope", "points": [[3, 1.83, -1.57], [3, 1.73, -1.04], [3, 1.65, -0.52],
+          [3, 1.62, 0], [3, 1.65, 0.52], [3, 1.73, 1.04], [3, 1.83, 1.57]], "mass": 0.45, "radius": 0.041,
+          "look": [19, 20, 21, 22, 23], "support": false,
+          "attachments": { "back": { "node": 0, "point": [3, 1.83, -1.57] },
+            "front": { "node": 6, "point": [3, 1.83, 1.57] } }
+        }
+      }
+    } },
+    "traffic": { "kind": "agents", "config": {
+      "bounds": { "min": [2.9, -0.12, -2.58], "max": [4.89, 2.35, 2.58] }, "cell": 0.18,
+      "support": "fabric/support", "contactEvents": true,
+      "species": { "porter": { "mode": "walk", "radius": 0.17, "height": 0.56, "speed": 1.39,
+        "stepUp": 0.18, "drop": 0.55, "stride": 0.19, "weight": 1.7, "look": [13, 14, 15, 16, 17, 18] } },
+      "agents": { "porter": { "species": "porter", "position": [4.04, 1.14, 2.16], "goal": [4.04, 1.14, -2.16] } }
+    } }
+  },
+  "connections": [
+    { "from": "rig/deformable-loads", "to": "fabric/loads" },
+    { "from": "traffic/contacts", "to": "fabric/traffic" }
+  ],
+  "visual": {
+    "bounds": { "min": [-6.35, -0.32, -2.84], "max": [5.27, 3.8, 2.84] }, "resolution": 0.072,
+    "camera": { "target": [-0.5, 0.65, 0], "dist": 14.4, "yaw": -0.24, "pitch": 0.59 },
+    "fields": { "bodies": "rig/bodies", "deformables": "fabric/surfaces", "agents": ["traffic/agents"] }
+  }
+}

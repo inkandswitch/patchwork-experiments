@@ -1,0 +1,17 @@
+{
+  "controls": {"parameters": {"b": -2.3, "d": -2.1}},
+  "seeds": [37],
+  "parameters": {
+    "a": {"path": "/parameters/a", "values": [0.71, 1.4, 2.12]},
+    "c": {"path": "/parameters/c", "values": [1.66, 2.4, 3.15]}
+  },
+  "visual": {
+    "title": "De Jong attractor sweep",
+    "width": 300,
+    "height": 192,
+    "pixelSize": 2,
+    "columns": 3,
+    "at": 0.5,
+    "clip": {"from": 0, "to": 2, "fps": 8}
+  }
+}

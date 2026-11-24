@@ -1,0 +1,13 @@
+{
+  "swatches": {
+    "blue": {"preset": "blue"},
+    "yellow": {"preset": "yellow"},
+    "red": {"preset": "red"},
+    "white": {"preset": "white"},
+    "leaf": {"mix": [{"paint": "blue", "weight": 1}, {"paint": "yellow", "weight": 1}]}
+  },
+  "mix": [{"paint": "blue", "weight": 1}, {"paint": "yellow", "weight": 1}],
+  "stops": [{"at": 0, "paint": "blue"}, {"at": 1, "paint": "yellow"}],
+  "paints": ["blue", "yellow", "red", "white"],
+  "size": 17
+}

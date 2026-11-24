@@ -1,0 +1,1407 @@
+{
+  "about": "What the ink-studio toolkit can do. CLI entries describe commands, API entries describe package interfaces, and other kinds group authoring tools and effects. Ready entries are implemented.",
+  "entries": [
+    {
+      "id": "studio.render",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Render a scene without a browser",
+      "what": "A software splat renderer with built-in motion kinds, projected ellipses, depth-ordered blending, low-resolution sampling, dithering and palette quantization.",
+      "use": "ink-studio render <id> [--t 1.5 --yaw 0.3 --zoom 2 --target x,y,z]",
+      "where": "cli/render.js",
+      "tags": [
+        "preview",
+        "screenshot",
+        "headless"
+      ]
+    },
+    {
+      "id": "studio.webgl",
+      "kind": "api",
+      "status": "ready",
+      "title": "Render an Ink Studio world into a WebGL 2 canvas",
+      "what": "The browser package entry draws packed splats with palette and tone resolution, per-pixel materials, and optional edge sprites. The default uses a specialized resolve and reuses stable order on unchanged frames.",
+      "use": "createRenderer(canvas, { toolkit: { KIT, PixelLook } }).render(world, { time: 0 })",
+      "where": "webgl.mjs, src/webgl/renderer.mjs",
+      "example": "docs/browser-renderer.md",
+      "tags": [
+        "browser",
+        "gpu",
+        "webgl",
+        "preview"
+      ]
+    },
+    {
+      "id": "studio.transitions",
+      "kind": "api",
+      "status": "ready",
+      "title": "Compose retro screen transitions and custom shader sequences",
+      "what": "The WebGL 2 transition compositor provides 49 parameterized presets, timing and cue markers, custom GLSL stages, and same-context render targets.",
+      "use": "composer.draw(createTransition('sleepy-double-blink').sample(seconds))",
+      "where": "webgl.mjs, src/webgl/transition-composer.mjs",
+      "example": "docs/transitions.md, examples/transitions/index.html",
+      "tags": [
+        "transition",
+        "browser",
+        "webgl",
+        "shader"
+      ]
+    },
+    {
+      "id": "studio.sheet",
+      "kind": "cli",
+      "status": "ready",
+      "title": "The same view at several moments, on one sheet",
+      "what": "Motion capture for an animated diorama: a labelled grid of frames.",
+      "use": "ink-studio sheet <id> --from 0 --to 6 --n 12",
+      "tags": [
+        "animation",
+        "motion",
+        "contact sheet"
+      ]
+    },
+    {
+      "id": "studio.turn",
+      "kind": "cli",
+      "status": "ready",
+      "title": "The diorama from all round",
+      "what": "Eight views a full turn apart, to catch what the default camera hides.",
+      "use": "ink-studio turn <id> [--n 8 --t 0]",
+      "tags": [
+        "preview",
+        "orbit"
+      ]
+    },
+    {
+      "id": "studio.clip",
+      "kind": "cli",
+      "status": "ready",
+      "title": "An animated PNG of it moving",
+      "what": "Frames rendered headless and packed as an APNG a browser will play.",
+      "use": "ink-studio clip <id> --from 0 --to 6 --fps 12",
+      "tags": [
+        "animation",
+        "video",
+        "gif"
+      ]
+    },
+    {
+      "id": "studio.motion",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Numbers about how it moves",
+      "what": "Fastest splat and where, jumps (teleports), lowest point reached, how much of the moving span never moves, loop error when anim.period is set.",
+      "use": "ink-studio motion <id> [--from 0 --to 12 --jump 0.6]",
+      "tags": [
+        "animation",
+        "check",
+        "speed"
+      ]
+    },
+    {
+      "id": "studio.stats",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Counts, colours, cost, warnings",
+      "what": "Splat counts by kind, extent, build time, animation cost per frame and estimated graphics uploads, and the share of the picture each palette colour takes.",
+      "use": "ink-studio stats <id>",
+      "tags": [
+        "budget",
+        "palette",
+        "performance"
+      ]
+    },
+    {
+      "id": "studio.snap",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Reference pictures, and a check against them",
+      "what": "snap keeps exact renders; check draws again and reports the share of pixels that changed, with a before/after picture. For refactoring without changing a diorama.",
+      "use": "ink-studio snap <id|all> ; ink-studio check [id ...]",
+      "tags": [
+        "regression",
+        "test",
+        "diff"
+      ]
+    },
+    {
+      "id": "studio.lab",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Try a model on its own",
+      "what": "Every command takes a file in place of an id: module.exports = kit => ({ id, name, seed, build }) where kit has makeBuilder, makeSculpt, basis, pondMat, motes. Build and render one creature in isolation.",
+      "use": "ink-studio render lab/example.js",
+      "example": "lab/example.js",
+      "tags": [
+        "sandbox",
+        "model"
+      ]
+    },
+    {
+      "id": "sculpt.solids",
+      "kind": "solid",
+      "status": "ready",
+      "title": "ball, box, lathe, torus, tube, rock, ground",
+      "what": "Signed-distance solids. Options: res, ax (frame), g/k via S.grp(k) (members melt together), tag, neg (carve), ghost (drawn, casts nothing, may sit inside another solid), bump.",
+      "use": "S.ball(c, r|[rx,ry,rz], mat, o) ; S.tube(pts, r0|fn, r1, mat, o) ; S.lathe(base, h, r|[r0,r1]|fn, mat, o)",
+      "where": "src/sculpt.js makeSculpt",
+      "tags": [
+        "sdf",
+        "shape"
+      ]
+    },
+    {
+      "id": "sculpt.material",
+      "kind": "material",
+      "status": "ready",
+      "title": "Materials: ramps and what bends them",
+      "what": "{ r: ramp of palette indices, s: sunlit ramp, g: ramp under a point light, rf() ramp chosen per point, mod() shifts tone, tex() returns a flat colour or -1 for no splat, top, leaf, blade, em }.",
+      "where": "src/sculpt.js light()",
+      "tags": [
+        "colour",
+        "palette",
+        "holes"
+      ]
+    },
+    {
+      "id": "sculpt.emit",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Know which solid made each splat",
+      "what": "Set S.emit = (solid, n0, n1) before S.bake(); solids carry o.tag. Ghost solids report too. The base of every rig.",
+      "where": "src/sculpt.js S.bake",
+      "tags": [
+        "animation",
+        "ownership",
+        "parts"
+      ]
+    },
+    {
+      "id": "anim.hook",
+      "kind": "rig",
+      "status": "ready",
+      "title": "A diorama that moves",
+      "what": "world.anim = { start, count, update(dt, t) -> true }. update rewrites positions and covariances in world.data; a host renderer can upload the changed rows. Optional: period, stateful, parts, partOf(i).",
+      "where": "src/kit/k1-stage.js",
+      "tags": [
+        "animation"
+      ]
+    },
+    {
+      "id": "anim.rigid-parts",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Rigid parts about joints",
+      "what": "K.rig moves named parts about joints with matrices and transforms their splat covariances. K.M provides matrix operations; K.ik2 solves two-bone legs.",
+      "tags": [
+        "animation",
+        "ik",
+        "keyframes"
+      ],
+      "where": "src/kit/k1-stage.js, src/kit/k2-motion.js"
+    },
+    {
+      "id": "anim.spine",
+      "kind": "rig",
+      "status": "ready",
+      "title": "A body that follows a bent line",
+      "what": "Catmull-Rom line resampled to equal lengths with a frame each (tangent, back, side); rings() lays skin along it; link() keeps every length the same when the line is moved, so nothing stretches; each length carries its splats rigidly.",
+      "tags": [
+        "snake",
+        "tail",
+        "tentacle",
+        "noodle"
+      ]
+    },
+    {
+      "id": "anim.kit",
+      "kind": "rig",
+      "status": "ready",
+      "title": "The shared rig: stage, parts, paint",
+      "what": "K.stage(W) is the world's clock: systems are added and run in order, and only the rows of splats they wrote are sent to the graphics card. K.rig(B, S) names parts from solid tags and moves each by a 3x3 matrix about a joint (a turn or a squash; splat shapes follow), with rig.child for limbs. Every splat's colour goes through st.painters, so effects stack.",
+      "tags": [
+        "refactor",
+        "spring",
+        "state machine"
+      ],
+      "where": "src/kit/k1-stage.js, k0-math.js",
+      "example": "demos/labscenes.js sceneWatcher, sceneBench"
+    },
+    {
+      "id": "anim.gait",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Feet that plan their own steps",
+      "what": "K.gait: each foot has a home under the body and steps when the body has carried the home too far, never while a neighbour in its group is in the air. K.ik2 bends a two-bone leg to reach it. Flat ground or a height function.",
+      "tags": [
+        "walk",
+        "legs",
+        "locomotion"
+      ],
+      "where": "src/kit/k2-motion.js",
+      "example": "demos/labscenes.js sceneBench (the beetle)"
+    },
+    {
+      "id": "sdf.ops",
+      "kind": "op",
+      "status": "ready",
+      "title": "More ways to join and repeat solids",
+      "what": "K.sculpt(S) adds S.join(kind, a, b, {r, n}) with kinds union, cut, common, round, chamfer, stairs, columns (and cut/common versions), pipe, engrave, groove, tongue; S.fold(p, {polar | mirror | repeat}); S.poly and S.regular('d4'..'d20') with a frame on every face. Operands are solids made with { hold: true }. Also: S.warp(p, { twist | bend | taper | map }) sees a held solid through bent space; S.shell (hollow skin), S.swell (grown all round), S.rough (surface pushed by a function); S.extrude and S.revolve make flat outlines solid, with K.poly2.ngon/star/gear/rect/svg/with for the outlines (an SVG path can be extruded). Not added: elongate, and the oddities (blob, the baroque picture frame). S.inflate is S.swell under its usual name; S.bubbles(p, { cell, h, flat }) raises a surface into rows of domes (bubble wrap); S.puff(outline, c, height) blows a flat outline up like a cushion or a balloon letter.",
+      "tags": [
+        "architecture",
+        "repeat",
+        "bevel",
+        "twist",
+        "bend",
+        "taper",
+        "shell",
+        "extrude",
+        "revolve",
+        "svg",
+        "inflate",
+        "bubble wrap",
+        "puff",
+        "pillow"
+      ],
+      "where": "src/kit/k3-shapes.js",
+      "example": "lab/warps.js, lab/shapes.js, demos/labscenes.js"
+    },
+    {
+      "id": "fx.field",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Change splats by where they are",
+      "what": "K.field({ soft, shapes: [{ shape, color, opacity, displace }] }) with K.shape.sphere/box/capsule/plane/cone/all. K.fx.tint (multiply | set | add; opacity 0 is a hole), K.fx.push (displace and restore), K.fx.reveal (form in blocks, low first, or unmake), K.fx.grade (regrade the whole palette).",
+      "tags": [
+        "reveal",
+        "dissolve",
+        "holes",
+        "light"
+      ],
+      "where": "src/kit/k5-fields.js"
+    },
+    {
+      "id": "state.grid",
+      "kind": "fx",
+      "status": "ready",
+      "title": "The ground remembers (2D)",
+      "what": "K.play.eco() provides a flat grid for persistent fire, frost and burn marks. See state.voxels for the 3D counterpart.",
+      "where": "src/kit/kg-play.js",
+      "tags": [
+        "persistent",
+        "fire",
+        "frost",
+        "memory",
+        "voxel"
+      ]
+    },
+    {
+      "id": "state.voxels",
+      "kind": "fx",
+      "status": "ready",
+      "title": "A world that remembers, in 3D",
+      "what": "K.voxels(st, { cell }): one byte per cell per channel, made on first use. brush/get, neighbours, unsupported() for collapse. Ready rules, each a system and a painter: fire (fuel by material, climbs, burns out, leaves soot and ash, heals after a while), frost (creeps to a set reach, melts near heat), grow.",
+      "tags": [
+        "persistent",
+        "damage",
+        "heat",
+        "wet",
+        "memory",
+        "sparse"
+      ],
+      "where": "src/kit/k6-voxels.js",
+      "example": "demos/labscenes.js sceneBurn"
+    },
+    {
+      "id": "flow.field",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Splats carried by a flow",
+      "what": "K.flow.wind/curl/vortex/sink/sum, and K.flow.around(flow, sdf, margin) which turns a current along any surface it meets. K.particles rides them (ride: 0..1).",
+      "tags": [
+        "wind",
+        "advection",
+        "vortex",
+        "drip",
+        "vector field"
+      ],
+      "where": "src/kit/k7-particles.js",
+      "example": "demos/labscenes.js sceneBurn (embers go round the trunks)"
+    },
+    {
+      "id": "select.tags",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Know what each splat is",
+      "what": "Every solid can carry a tag and the rig turns tags into parts (rig.bid[i], rig.list[part]). K.palIndex(st) gives each splat's palette index, for choosing by material. K.pick(st, o, d) finds what a line from the eye hits and which part it belongs to.",
+      "where": "src/sculpt.js S.emit, o.tag",
+      "tags": [
+        "selection",
+        "segmentation",
+        "parts"
+      ]
+    },
+    {
+      "id": "fx.matter",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Splats as stuff: breaking, jelly, sand",
+      "what": "K.breaker: a blow carves a ball, the splats become spinning lumps, the hole gets real inner faces from the sculpt's field, and whatever is left hanging comes down and smashes (support found through the voxel grid). K.jelly: shape matching on a coarse lattice, splats squashed with it (C' = A C At). K.sand: grains that pile and slide. This is the light version: no full material-point solver, no splats inside bodies.",
+      "tags": [
+        "physics",
+        "soft body",
+        "fracture",
+        "sand"
+      ],
+      "where": "src/kit/k9-matter.js",
+      "example": "demos/labscenes.js sceneIdol, sceneBench"
+    },
+    {
+      "id": "sdf.surface-fit",
+      "kind": "op",
+      "status": "ready",
+      "title": "Lights that move after the bake",
+      "what": "K.light.capture(B, S) keeps each plain splat's ramp, brightness and normal; K.light.system(st, cap, lamps) steps splats up their own ramps under moving lamps, and flash() for lightning. Not done from this entry: thinning splats where they overlap, and keeping the signed distance per splat.",
+      "tags": [
+        "relight",
+        "normals",
+        "density"
+      ],
+      "where": "src/kit/k8-light.js"
+    },
+    {
+      "id": "art.faces",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Flat artwork that lives on a surface",
+      "what": "K.art({ shapes: [{ d: svg path | circle | ellipse | rect | pts, fill, key(t) -> { tx, ty, rot, sx, sy, px, py, morph, fill, hide } }], warp }) is drawn into a small grid of palette colours; K.art.faces(st, [{ face, art, size, turn, part }]) makes splats on a face look their colour up by where they were made. The art turns and squashes with the solid, and can be keyed or warped by itself. K.art.pixels(rows, map) takes a grid of characters instead. K.art.mat bakes art in for good.",
+      "where": "src/kit/k4-art.js",
+      "example": "demos/labscenes.js sceneWatcher (the eye)",
+      "tags": [
+        "svg",
+        "decal",
+        "face",
+        "eye",
+        "texture",
+        "uv"
+      ]
+    },
+    {
+      "id": "build.rules",
+      "kind": "op",
+      "status": "ready",
+      "title": "Things built to rule",
+      "what": "K.fit(span, unit) cuts a span into whole equal bays. K.build.pillar / fence / stairs / arch / pipe keep two rules: fixed parts never stretch, repeated parts are fitted. Each returns { recipe, sockets, rules }; pipe.clear() checks the bore is open. st.socket(name, p, part) / st.where(name) track named points on a moving rig.",
+      "where": "src/kit/ka-build.js",
+      "example": "demos/labscenes.js sceneIdol",
+      "from": "Inkwell Object Studio (27 construction families, recipes, attachment points)",
+      "tags": [
+        "procedural",
+        "recipe",
+        "sockets",
+        "pillar",
+        "fence",
+        "stairs",
+        "arch",
+        "pipe"
+      ]
+    },
+    {
+      "id": "motion.clips",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Clips, a state machine, springs, ropes, spines",
+      "what": "K.kf (keyed values with ease names), K.ease, K.clip (tracks and cues), K.machine (states, events, cross-fades, cue callbacks), K.spring (lag and overshoot), K.settle, K.rope (a trailing chain), K.spine (skin in rings along a bent line, lay() without stretching, drive() with twist and squash).",
+      "where": "src/kit/k0-math.js, k2-motion.js",
+      "tags": [
+        "keyframes",
+        "easing",
+        "state machine",
+        "noodle",
+        "tail"
+      ]
+    },
+    {
+      "id": "fx.particles",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Loose splats",
+      "what": "K.pool(B, n) keeps spare splats; K.particles(st, pool, { flow, ground }) with emit() and ready-made dust, sparks, embers, smoke, chips, ring, bolt (lightning), rain.",
+      "where": "src/kit/k7-particles.js, k1-stage.js",
+      "tags": [
+        "emitter",
+        "lightning",
+        "smoke",
+        "dust"
+      ]
+    },
+    {
+      "id": "page.hooks",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Embedding an animated world",
+      "what": "world.anim (the stage) gets update(dt, t) every frame; a host can upload the rows it marks; anim.poke(eye, dir, t) on a tap that is not a drag (st.poke picks the splat and tells every system with a poke); anim.kick shakes the view; anim.grade regrades the palette.",
+      "where": "src/kit/k1-stage.js, cli/render.js",
+      "tags": [
+        "tap",
+        "click",
+        "shake",
+        "upload"
+      ]
+    },
+    {
+      "id": "studio.selftest",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Every module checked in numbers",
+      "what": "44 checks: the maths, each motion helper, joins and folds against known distances, art lookup, fields, voxels, flow, build rules, and each lab diorama run for several seconds with taps, looking for bad numbers and for the thing it is meant to do.",
+      "use": "ink-studio selftest",
+      "where": "cli/selftest.js",
+      "tags": [
+        "test"
+      ]
+    },
+    {
+      "id": "lab.dioramas",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Seven dioramas that exercise the lab",
+      "what": "watcher: face art and animation; burn: fire, frost and flow; idol: breaking and collapse; bench: jelly, sand, gait and IK; stuff: material-point simulation; cabinet: translucent materials, smoke and a puppet; rehearsal: clips, deformers and reaction fields. All respond to taps.",
+      "where": "demos/labscenes.js",
+      "tags": [
+        "demo",
+        "example"
+      ]
+    },
+    {
+      "id": "sculpt.vox",
+      "kind": "solid",
+      "status": "ready",
+      "title": "A shape typed in, a block at a time",
+      "what": "A model is a pile of small pictures made of letters; every letter is a material and '.' is nothing. It is not drawn as blocks: by default the blocks only say where the stuff is, and what is made of them is one soft solid (faces stay where they were typed, corners and steps are rounded, a hole one block deep is a dimple), with each letter's material where it was typed. hard: true keeps flat faces and square corners. Either way it is a solid like any other: it lights, shadows, joins a group, carves with neg, rides a bone with tag.",
+      "use": "S.vox({ cell: 0.06, key: { c: [2, 3, 4], g: goldMat }, layers: [plan, [plan, n], 'cc/cg'] | front: [...], mirror: 'x' }, { at, yaw, anchor: 'base'|'centre', hard, round, tag, neg, ghost })",
+      "where": "src/kit/kl-vox.js VOX ; hooked into makeSculpt as S.vox",
+      "tags": [
+        "sdf",
+        "shape",
+        "voxel",
+        "pixel",
+        "detail"
+      ]
+    },
+    {
+      "id": "look.inked",
+      "kind": "material",
+      "status": "ready",
+      "title": "Inked detail: colour looked up for each pixel",
+      "what": "Optional, off unless asked for. A plain dab is one flat colour, so a line thinner than a dab comes out ragged. With S.fine = 1 (or --fine on the command line) each plain dab is also baked with a 4 by 4 picture of the surface under it: its pattern, the edge of a cast shadow, something cut into it, a flush neighbour. Compatible host renderers and the headless renderer look the colour up for each pixel from where on the dab that pixel is. Thin cuts (runes, comb cells, seams) come out whole; broad surfaces do not change. Costs: baking takes four to five times as long, twelve more numbers a dab. A dab recoloured after baking is drawn plain. Not followed by parts moved by K.rig on the CPU (bones on the graphics card are).",
+      "use": "S.fine = 1 before baking ; ink-studio render <id> --fine",
+      "where": "src/sculpt.js fineTile ; src/builder.js fineTile ; cli/render.js",
+      "tags": [
+        "detail",
+        "pixel",
+        "line",
+        "texture",
+        "uv"
+      ]
+    },
+    {
+      "id": "light.bounce",
+      "kind": "op",
+      "status": "ready",
+      "title": "Bounce light, baked",
+      "what": "Optional (S.bounce = { k, reach, rays, glow, tint }, or --bounce on the command line; B.bounce(S.sdf, o) by hand). After a bake every plain dab sends a few lines out over the side it faces; where one lands, the colour already there is what arrives, weaker with distance, more from things that glow. The dab moves up its own ramp by that much, and takes another palette colour only where what arrives is strongly coloured. Shadows beside bright things fill in. It is subtle at k 1 (two or three pixels in a hundred change) and costs three to four times the bake. Only palette colours are used.",
+      "use": "S.bounce = { k: 1.5 } before S.bake() ; ink-studio render <id> --bounce",
+      "where": "src/builder.js bounce ; src/sculpt.js S.bake",
+      "tags": [
+        "light",
+        "bake",
+        "gi",
+        "colour"
+      ]
+    },
+    {
+      "id": "light.fixed-lamp",
+      "kind": "fx",
+      "status": "ready",
+      "title": "A lamp that stays put: shadows, its own colours, flicker",
+      "what": "On top of the moving lamps of K.light.system. K.light.shadow(st, cap, lamp, S.sdf) works out once what the lamp can see, so it casts shadows and can then be dimmed, switched off and on and recoloured for nothing. lamp.ramp = [dark .. bright] paints what it mostly lights from its own colours (a fire's orange on stone). K.light.flicker(sys, lamp, { rate, depth }) makes it gutter. To have a baked lamp flicker, leave it out of S.lights and give it to K.light.system this way.",
+      "use": "const lit = st.add(K.light.system(st, cap, [lamp])); K.light.shadow(st, cap, lamp, S.sdf); st.add(K.light.flicker(lit, lamp))",
+      "where": "src/kit/k8-light.js",
+      "tags": [
+        "light",
+        "lamp",
+        "shadow",
+        "flicker",
+        "live"
+      ]
+    },
+    {
+      "id": "studio.values",
+      "kind": "cli",
+      "status": "ready",
+      "title": "The value check: does it read in three tones",
+      "what": "Draws the diorama, takes the background out and sorts what is left into dark, middle and light by brightness. Prints the share of each and a verdict (flat, one tone, two tones, or reads in three tones), and saves the picture beside its three-tone version. A check to run while making art; nothing is changed by it.",
+      "use": "ink-studio values <id> [--t 2] ; --quiet for the line only",
+      "where": "cli/ink-studio.js values",
+      "tags": [
+        "art",
+        "value",
+        "tone",
+        "check"
+      ]
+    },
+    {
+      "id": "grow.kit",
+      "kind": "op",
+      "status": "ready",
+      "title": "Growers: one description, many individuals",
+      "what": "K.grow.scatter picks places on what has been sculpted by slope, height, how much sun reaches them and spacing. K.grow.branch grows a forking thing that leans to the light and turns aside from a field it is told about; K.grow.limbs adds it as tubes. K.grow.arrange gives the places of parts in a spiral, a whorl or a rosette (petals, spots, fronds). K.grow.rock is a lump cut by flat faces, laid in beds, with worn edges. K.grow.species wraps a recipe and a set of ranges: every individual draws its own numbers from where it stands. All from a seed; none of it touches the builder's dice.",
+      "use": "const places = K.grow.scatter(S, { disc: [0, 0, 6], n: 30, shade: [0, 0.4] }); K.grow.species({ vary: { h: [0.3, 0.8] }, make(S, at, v, k) { ... } }).sow(S, places)",
+      "where": "src/kit/ko-grow.js ; S.solid in src/sculpt.js (a solid of your own)",
+      "tags": [
+        "plant",
+        "tree",
+        "mushroom",
+        "rock",
+        "scatter",
+        "procedural",
+        "species"
+      ]
+    },
+    {
+      "id": "art.ramp",
+      "kind": "material",
+      "status": "ready",
+      "title": "Ramps that turn as they darken",
+      "what": "K.ramp.make(pal, { hue | base, n }) picks from a palette a ramp that runs dark to light with the hue travelling, cool in the shade and warm in the light, and says how far it had to reach for each step. K.ramp.check says what kind a ramp is. ink-studio ramps <id> lists the ramps a diorama is really shaded on, most used first, marks those that are one hue darker and lighter, and offers a turning one from the same palette where there is one.",
+      "use": "K.ramp.make(B.pal, { hue: 110, n: 5 }).ramp ; ink-studio ramps watcher",
+      "where": "src/kit/km-ramp.js ; cli/ink-studio.js ramps",
+      "tags": [
+        "colour",
+        "ramp",
+        "hue",
+        "palette",
+        "art"
+      ]
+    },
+    {
+      "id": "bake.focus",
+      "kind": "op",
+      "status": "ready",
+      "title": "Uneven detail: fine at the point of focus, quiet away from it",
+      "what": "Optional. S.focus = { p, near, far, coarse, fine }: within near of p dabs are laid at the usual spacing, beyond far at coarse times it, halfway between. A solid lying across a boundary is sampled once for each side. The page's Uneven detail option tries it on any diorama with the focus at the middle of the stand.",
+      "use": "S.focus = { p: [0, 3, 0], near: 4, far: 8, coarse: 1.6 } ; ink-studio render <id> --focus 0,3,0,4,8,1.6",
+      "where": "src/sculpt.js S.bake focusBands",
+      "tags": [
+        "detail",
+        "density",
+        "focus",
+        "art"
+      ]
+    },
+    {
+      "id": "bake.follow",
+      "kind": "op",
+      "status": "ready",
+      "title": "Dabs that follow the form",
+      "what": "Optional. S.follow = { stretch, broad }: each dab is drawn out along the way the surface runs straightest (along a limb, round a rim), and is bigger where the surface is flat both ways. How the surface bends is read from how the normal turns a little way off. About a quarter more baking time. The page's Dabs option tries it on any diorama.",
+      "use": "S.follow = { stretch: 1.1, broad: 1.35 } ; ink-studio render <id> --follow",
+      "where": "src/sculpt.js formDab ; src/builder.js dab",
+      "tags": [
+        "brush",
+        "curvature",
+        "detail",
+        "art"
+      ]
+    },
+    {
+      "id": "look.clean",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Pixel clean-up: no lone pixels",
+      "what": "Optional, in the last pass. A pixel unlike all eight round it, on the same surface as they are, takes the colour most of its four neighbours have. Checkered shading and motes in the air are left alone. Works on rendered dioramas.",
+      "use": "ink-studio render <id> --clean",
+      "where": "cli/render.js",
+      "tags": [
+        "pixel",
+        "noise",
+        "cleanup",
+        "art"
+      ]
+    },
+    {
+      "id": "fx.named",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Window light, reflection, shatter, dissolve: one name each",
+      "what": "K.windowLight projects window colors onto surfaces and supplies a lamp and air-light metadata. K.reflect creates reflections over still water. K.shatter bursts or topples loose pieces. K.dissolve.at separates a body into splats or, when run backward, assembles it.",
+      "use": "const WL = K.windowLight({ at, dir, pane }); K.reflect(B, { y, where, colours }); K.shatter(B, 2600).burst(list, c, power, floor); K.dissolve.at(i, t, nx, nz, out)",
+      "where": "src/kit/kn-effects.js",
+      "tags": [
+        "shaft",
+        "window",
+        "reflection",
+        "debris",
+        "dissolve"
+      ]
+    },
+    {
+      "id": "sculpt.attrs",
+      "kind": "material",
+      "status": "ready",
+      "title": "Attributes on every surface point, and rules on them",
+      "what": "What a surface point is like, measured where it is baked: curvature (+ an edge, - a crease), how shut in it is, how much of a hollow it is, which way it faces, how high it is within its own solid, how far along its limb (tubes and sweeps), and any made with S.attr(name, fn). Materials read them through mod, tex and rf, or through rules: m.by = [{ a, from, to, t, ramp }], and short ways in: m.wear (edges lighter), m.grime (another ramp in hollows: moss, dirt), m.root (darker toward the root of a limb). Curvature is measured only for materials that use it. S.keepAttrs keeps four of them on every dab (world.attr).",
+      "use": "{ r: [..], wear: { from: 2.5, to: 6, t: 0.35 }, grime: { ramp: [8, 9] }, root: -0.3 }",
+      "where": "src/sculpt.js measure, rules",
+      "tags": [
+        "attribute",
+        "curvature",
+        "wear",
+        "dirt",
+        "moss",
+        "field"
+      ]
+    },
+    {
+      "id": "curve.sweep",
+      "kind": "solid",
+      "status": "ready",
+      "title": "Curves, and shapes swept along them",
+      "what": "K.curve makes curves (line, arc, circle, helix, spiral, star, bezier, spline) and changes them (resample, trim, noise, at, length, frames with the least twist). K.sweep carries a cross-section along a curve as a solid: flat (blades, leaves, ribbons), rect (planks) or round; width and thickness may change along it (K.sweep.leaf gives a leaf's outline), and fold, cup and twist bend it. It knows how far along it a point is.",
+      "use": "K.sweep(S, K.curve.spline(pts, 6), { w: K.sweep.leaf(0.2), h: 0.01, fold: 0.3 }, mat, { up: [0, 0, 1] })",
+      "where": "src/kit/kp-curve.js",
+      "tags": [
+        "curve",
+        "leaf",
+        "plank",
+        "ribbon",
+        "sweep",
+        "profile"
+      ]
+    },
+    {
+      "id": "sculpt.cover",
+      "kind": "op",
+      "status": "ready",
+      "title": "Cover: a coat over everything that faces up",
+      "what": "S.cover(mat, o) after a bake lays a layer over what was baked: thickest where the surface is level, thinning to nothing at the lip, with a ragged edge and lumps; o.where masks it (only on the rocks, only where lichen has spread). Snow, moss, dust, sand, lichen.",
+      "use": "S.bake(); S.cover({ r: [7, 8] }, { up: 0.7, thick: 0.05, where: (x, y, z) => onRock(x, y, z) })",
+      "where": "src/sculpt.js S.cover",
+      "tags": [
+        "snow",
+        "moss",
+        "dust",
+        "layer",
+        "cover"
+      ]
+    },
+    {
+      "id": "sculpt.instance",
+      "kind": "op",
+      "status": "ready",
+      "title": "Instances: bake once, place many",
+      "what": "S.template(build) bakes a thing once and keeps its surface points, materials and field. S.place(tpl, at, { yaw, scale, up, lean, sway }) puts a copy there, lit where it stands, its field joined to the scene's so it shadows and hides what is inside it. sway makes it sway from its foot in the shader (a new motion, kind 14), at no cost to the CPU. Species sow with { instances: n }.",
+      "use": "species.sow(S, places, { instances: 5, sway: { amp: 0.05 } })",
+      "where": "src/sculpt.js S.template, S.place ; cli/render.js kind 14",
+      "tags": [
+        "instance",
+        "copy",
+        "forest",
+        "sway"
+      ]
+    },
+    {
+      "id": "grow.steps",
+      "kind": "op",
+      "status": "ready",
+      "title": "Growth that runs in steps: settle, creep, spread",
+      "what": "K.grow.settle drops a shape until it touches what is there and leans it to the ground (K.grow.rock with settle: true). K.grow.creep walks a creeper over the surface toward a direction, forking now and then; K.grow.vine gives it a stem and swept leaves. K.grow.spread grows a patch over the surface step by step where a rule allows it, and gives a mask for S.cover (lichen, moss, frost, rust). Also K.grow.scatterIn (points inside a shape) and K.grow.ray (where a line meets the scene).",
+      "use": "K.grow.creep(S, { from, dir: [0, 1, 0], steps: 40 }) ; K.grow.spread(S, { from: [p], ok: (x, y, z, n) => n[1] > 0.3 })",
+      "where": "src/kit/ko-grow.js",
+      "tags": [
+        "settle",
+        "creeper",
+        "vine",
+        "lichen",
+        "spread",
+        "simulation"
+      ]
+    },
+    {
+      "id": "grow.dials",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Species parameter ranges",
+      "what": "Named species expose their ranges through K.grow.seen. Set K.grow.over to override those ranges before building; a host interface can present these as controls.",
+      "use": "K.grow.species({ name: 'mushroom', vary: { h: [0.3, 0.75] }, limits: { h: [0.1, 1.4] }, make })",
+      "where": "src/kit/ko-grow.js species",
+      "tags": [
+        "dials",
+        "controls",
+        "species",
+        "art-direct"
+      ]
+    },
+    {
+      "id": "tex.patterns",
+      "kind": "material",
+      "status": "ready",
+      "title": "Patterns: voronoi, wave, brick, checker, gradient, noise",
+      "what": "K.tex gives functions over space for materials, covers and attributes: voronoi (distance, cell edges as true lines, cell ids), wave bands that a noise can bend, brick and plank courses with mortar, checker, gradient, white noise, smooth noise; and range, curve and step to shape them.",
+      "use": "mod: K.tex.range(K.tex.wave(9, { warp: 0.4 }), 0, 1, -0.12, 0.1) ; K.tex.voronoi(1.6, { out: 'edge' })",
+      "where": "src/kit/kr-tex.js",
+      "tags": [
+        "texture",
+        "voronoi",
+        "noise",
+        "brick",
+        "pattern"
+      ]
+    },
+    {
+      "id": "sim.xpbd",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Cloth and hair: one XPBD solver",
+      "what": "Extended position-based dynamics: points, constraints with a softness that holds at any frame rate (links, ties to a shape, pins), many small steps a frame, collisions with the sculpt's own field and with moving spheres, wind with gusts, air pressing on cloth faces (pressure and drag, which is what flies a flag) and air drag on hair. K.cloth makes a rectangle of cloth with its dabs, coloured from a pattern and lit as it moves on both faces. K.hair grows strands from roots on a rig part, groomed (droop, curl, frizz, clump, trim, length per root), holding their shape loosely, lit as hair. Both are stage systems.",
+      "use": "st.add(K.cloth(B, { at, u, v, wind: K.xpbd.gust([5, 0, 1]), pattern })) ; st.add(K.hair(B, { roots, len, ramp, spheres }))",
+      "where": "src/kit/ks-xpbd.js",
+      "tags": [
+        "cloth",
+        "hair",
+        "flag",
+        "fur",
+        "physics",
+        "xpbd",
+        "wind"
+      ]
+    },
+    {
+      "id": "import.mesh",
+      "kind": "solid",
+      "status": "ready",
+      "title": "A mesh from a file becomes a solid",
+      "what": "OBJ (with MTL), glTF and GLB are read, fitted to the scene, and turned into a signed-distance field on a grid: exact distance near the faces, swept outward; inside or outside by counting crossings along three axes. From there it joins, is carved, breaks and bakes like any other solid. Colours come from materials and vertex colours and become palette ramps; textures are not read. An open mesh is treated as a sheet with thickness.",
+      "from": "Inkwell Object Studio import",
+      "tags": [
+        "mesh",
+        "obj",
+        "gltf",
+        "glb",
+        "import",
+        "model"
+      ],
+      "use": "K.mesh.obj(text, mtl) | K.mesh.glb(bytes) | K.mesh.fit(mesh, { size }) | K.mesh.look(mesh, { hues }) | S.mesh(mesh, look, { res, cells })   ·   ink-studio mesh model.obj",
+      "where": "src/kit/kb-mesh.js, lab/mesh.js"
+    },
+    {
+      "id": "recipes.data",
+      "kind": "op",
+      "status": "ready",
+      "title": "A diorama written as data",
+      "what": "Plain objects and lists, so it can be a JSON file: solids, joins, folds, warps, recipes and meshes; moving parts with joints and parents; turn, spin, bob, squash; lamps, particles, wind, reveal; what a tap does. Materials are roles (stone, moss, ember ...) and a style says what colours the roles are, so one word puts the same diorama in another style. The checker lists every mistake at once with what was probably meant.",
+      "tags": [
+        "data",
+        "json",
+        "style",
+        "validate",
+        "schema",
+        "roles",
+        "palette"
+      ],
+      "use": "K.diorama.check(spec) | K.diorama.build(spec, { assets }) | K.diorama.scene(spec)   ·   ink-studio validate lab/data-shrine.json   ·   ink-studio render lab/data-shrine.json --style moss",
+      "where": "src/kit/kc-data.js, lab/data-shrine.json"
+    },
+    {
+      "id": "port.creatures",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Bones on the graphics card",
+      "what": "Splats carried by a bone remain in their rest data. A compatible host renderer applies bone matrices in its shader, including shared weights from a second bone. Animation can upload bone matrices instead of rewriting all splats. K.bones.posed supplies a posed copy for headless rendering and measurement.",
+      "tags": [
+        "bones",
+        "skinning",
+        "gpu",
+        "upload",
+        "rig",
+        "creature"
+      ],
+      "use": "const tg = K.bones.tag(W, ids, bid, bid2, w2); W.anim = { bones: M, boned: tg.boned, rows, update }   ·   K.bones.posed(W)",
+      "where": "src/kit/k1-stage.js"
+    },
+    {
+      "id": "game.on-kit",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Gameplay effects",
+      "what": "K.play.fx provides rings, sparks, drops and flakes; K.play.debris provides loose pieces; K.play.eco provides persistent ground memory for burning and freezing.",
+      "tags": [
+        "game",
+        "particles",
+        "debris",
+        "eco",
+        "fire",
+        "frost"
+      ],
+      "use": "const fx = K.play.fx(B, 520), debris = K.play.debris(B, 2600), eco = K.play.eco()",
+      "where": "src/kit/kg-play.js"
+    },
+    {
+      "id": "matter.mpm",
+      "kind": "fx",
+      "status": "ready",
+      "title": "One solver for jelly, clay, sand and water",
+      "what": "The material point method: splats are the points, a coarse grid carries forces between them. Jelly springs back, clay gives and stays, sand has friction and no pull, water keeps only its volume. Splats of stuff that keeps a shape are stretched and turned with it. Fixed step, so the same at any frame rate; goes to sleep at rest. Static solids and moving colliders push it; a tap shoves it or scoops a bite out.",
+      "use": "const mp = st.add(K.mpm(st, { lo, hi, cell: 0.25, floor: 0, sdf })); mp.add(ids, { kind: \"clay\", yield: 14, tap: \"scoop\" }); mp.kick(p, r, v); mp.collider({ sd, v })",
+      "where": "src/kit/kd-mpm.js, demos/labscenes.js (stuff)",
+      "tags": [
+        "mpm",
+        "physics",
+        "jelly",
+        "clay",
+        "sand",
+        "water",
+        "soft",
+        "solver"
+      ]
+    },
+    {
+      "id": "matter.inside",
+      "kind": "solid",
+      "status": "ready",
+      "title": "Splats inside a body",
+      "what": "Fills a solid with splats under its skin, coloured by depth or by place (layers, rings, a core), so a bite, a cut or a tear shows something. They can start unseen and be brought out only where a cut is made. The breaker can also colour a fresh hole by place (o.flesh).",
+      "use": "const ins = K.inside(B, solid.sd, { lo, hi, cell: 0.15, cols: (depth, x, y, z) => index, hidden: true }); ins.showNear(st, p, r)",
+      "where": "src/kit/kd-mpm.js, src/kit/k9-matter.js",
+      "tags": [
+        "inside",
+        "interior",
+        "volume",
+        "layers",
+        "cut",
+        "bite"
+      ]
+    },
+    {
+      "id": "studio.mesh",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Look at a mesh file as splats",
+      "what": "What the mesh is made of (faces, open or closed, materials), and a sheet of it from all round, baked the way a diorama is. A mesh file also works wherever a diorama id does.",
+      "use": "ink-studio mesh model.glb [--size 6 --cells 64 --res 0.09 --hues 6 --up z --thick 0.1]",
+      "where": "cli/ink-studio.js",
+      "tags": [
+        "mesh",
+        "cli"
+      ]
+    },
+    {
+      "id": "studio.validate",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Check a diorama written as data",
+      "what": "Every mistake listed with its place and what was probably meant; nothing is built. A .json diorama also works wherever a diorama id does.",
+      "use": "ink-studio validate lab/data-shrine.json",
+      "where": "cli/ink-studio.js",
+      "tags": [
+        "validate",
+        "json",
+        "cli"
+      ]
+    },
+    {
+      "id": "studio.pixel-look",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Smooth pixels with body-colored contours",
+      "what": "Optional fixed-grid 2x sampling and coverage-aware palette votes. A native pass preserves crisp interior detail and dither; only silhouettes use coverage smoothing and body-colored contours, including palette grades. No global black stroke or temporal palette fitting. Shared CPU and WebGL resolves; the original look remains the default.",
+      "use": "ink-studio render <id> --colored",
+      "where": "src/pixel-look.js, cli/render.js",
+      "tags": [
+        "antialias",
+        "outline",
+        "palette",
+        "render"
+      ]
+    },
+    {
+      "id": "look.translucent",
+      "kind": "material",
+      "status": "ready",
+      "title": "Light through a body: wax and jelly",
+      "what": "At the bake each point measures how far it is through the solid toward the sun and how far straight in. Light that has come a short way through arrives on the side turned away from the sun and dies off smoothly with distance, so thin parts are bright, thick ones show a dark saturated band, and the lit side wraps softly round the terminator. A glow ramp (dark to bright) takes over where the light comes through. A light inside the body (core) shows through the skin as the eye at S.view sees it; gloss adds a small wet highlight where the body mirrors the sun to the eye. Best lit from behind. True see-through (a under 1) dithers in a palette, so it is kept for thin things like glass.",
+      "use": "S.view = towards the camera; S.ball(c, r, K.look.jelly([9, 10, 10, 11, 12], { depth: 1.3, k: 0.85, glow: [11, 12, 13, 35], core: { p, r: 0.3, k: 0.6 }, gloss: { c: 36, at: 0.985 } }))   ·   K.look.wax(ramp, { depth: 0.5, glow })   ·   K.caustic(B, p, r, cols)",
+      "where": "src/sculpt.js, src/kit/ke-volume.js",
+      "tags": [
+        "translucent",
+        "subsurface",
+        "sss",
+        "jelly",
+        "wax",
+        "alpha"
+      ]
+    },
+    {
+      "id": "look.glass",
+      "kind": "material",
+      "status": "ready",
+      "title": "Glass that bends what is behind it",
+      "what": "Faint tinted splats marked as glass. Their coverage is kept in a spare channel of the depth picture; the final pass looks the picture up a little to one side by how that coverage changes, so the bend is strongest at the rim of a jar and nothing in the flat of a pane. Make the solid a ghost so it shades and hides nothing.",
+      "use": "S.lathe(c, h, profile, K.look.glass([6, 7, 8], { a: 0.085 }), { ghost: true })   ·   K.glint(B, p, axis, len, col)   ·   B.finish({ refract: 7 })",
+      "where": "src/sculpt.js, cli/render.js",
+      "tags": [
+        "glass",
+        "refraction",
+        "transparent",
+        "jar"
+      ]
+    },
+    {
+      "id": "look.fur",
+      "kind": "material",
+      "status": "ready",
+      "title": "Fur",
+      "what": "Each point of skin grows a few hairs of three strokes that droop more toward the tip, so a hair curves. The coat lies along a comb direction laid into the surface; neighbouring hairs lean and lengthen together (a slow noise), which makes locks. Root darker, tip lighter; where the light rakes across the coat the tips step up again (sheen), and round the edge of the lit side they catch the light from behind (rim, with its own ramp). The skin under it is two tones down.",
+      "use": "S.ball(c, r, K.look.fur([14, 15, 16, 17, 18], { len: 0.44, comb: [0.45, -0.55, -0.25], lay: 0.62, droop: 0.4, clump: 0.55, rim: [18, 18, 39] }))",
+      "where": "src/sculpt.js",
+      "tags": [
+        "fur",
+        "hair",
+        "grass",
+        "groom"
+      ]
+    },
+    {
+      "id": "volume.smoke",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Smoke that shades itself",
+      "what": "Soft puffs carried by a current. Each frame every puff looks toward the light and adds up the smoke in its way (a coarse grid), and that decides its colour: bright on the lit side, dark inside and underneath.",
+      "use": "const smoke = st.add(K.smoke(st, pool, { at, ramp: [lit ... dark], sun, rate, life, size, rise, flow })); smoke.burst(p, 10)",
+      "where": "src/kit/ke-volume.js",
+      "tags": [
+        "smoke",
+        "gas",
+        "volume",
+        "plume",
+        "self-shadow"
+      ]
+    },
+    {
+      "id": "volume.fog",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Mist, shafts of light, distance haze",
+      "what": "K.mist lays a low drifting haze of soft splats; K.shafts puts beams in the air; fog in B.finish fades things toward a palette colour with distance. All three cost nothing per frame in JS.",
+      "use": "K.mist(B, { rad, y, depth, n, cols, a, where })   ·   K.shafts(B, { from, dir, len, r, col })   ·   B.finish({ fog: { c: 29, start: 0.62, max: 0.38 } })",
+      "where": "src/kit/ke-volume.js",
+      "tags": [
+        "fog",
+        "mist",
+        "haze",
+        "god rays",
+        "shafts"
+      ]
+    },
+    {
+      "id": "look.ao",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Contact shade that follows what moves",
+      "what": "In the final pass a pixel with nearer things close round it is darkened before the palette is applied, so moving parts sit in their own shadow. Off unless a diorama asks. Baked occlusion is still there under it.",
+      "use": "B.finish({ ao: { k: 0.55, range: 0.7 } })",
+      "where": "cli/render.js",
+      "tags": [
+        "ambient occlusion",
+        "ao",
+        "contact shadow",
+        "ssao"
+      ]
+    },
+    {
+      "id": "rig.creature",
+      "kind": "rig",
+      "status": "ready",
+      "title": "The creature rig",
+      "what": "Named bones capture tagged solids. Parts can be cut along a spine and shared between neighboring bones so the skin bends smoothly; helpers include two-bone limbs and wounds. K.bones.bind supplies the animation data for a compatible host renderer.",
+      "use": "const R = K.creature(B, S); S.ball(c, r, mat, { tag: \"body\" }); S.bake(); const W = B.finish({...}); R.bind(W, t => { R.set(\"body\", R.rot(R.AY, t), from, to); })",
+      "where": "src/kit/kf-creature.js, src/kit/k1-stage.js (K.bones.bind)",
+      "tags": [
+        "rig",
+        "creature",
+        "bones",
+        "spine",
+        "limb",
+        "skin"
+      ]
+    },
+    {
+      "id": "place.seen",
+      "kind": "op",
+      "status": "ready",
+      "title": "Placing things by where they are seen",
+      "what": "S.on finds the point of a solid's surface that the eye sees (so far across and up it, in parts of its size), or the point in a given direction out from its middle, with which way the surface faces there. S.stud sets a ball into the skin at that point (an eye, a nose, a rivet), and can be given another stud to sit on (a pupil on an eye, a glint on a pupil). S.seen says whether a point can be seen with everything made so far in the way; a stud that cannot is reported in S.warnings, which the tools print and the selftest checks for every lab diorama.",
+      "use": "S.view = towards the camera; const eye = S.stud(head, { at: [0.42, 0.2], sink: 0.25 }, 0.11, mat, { ghost: true }); S.stud(eye, { sink: 0.3 }, 0.06, black, { ghost: true }); B.finish({ warnings: S.warnings })",
+      "where": "src/kit/k3-shapes.js",
+      "tags": [
+        "place",
+        "surface",
+        "snap",
+        "eye",
+        "visible",
+        "buried",
+        "camera"
+      ]
+    },
+    {
+      "id": "anim.tools",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Animation tools: easing, clips, layers, follow-through",
+      "what": "Twenty easings with Bezier; keyed values; clips of tracks over named parts and channels; pose layers with influence, masks, source clips and drivers; follow-through read from the keys at an earlier time, so scrubbing and playing backward give the same pose; paths with true length; an exact spring; an expression graph as data; copy and limit constraints.",
+      "use": "const c = K.anim.clip({ dur: 2, loop: true, parents: { ear: \"head\" }, tracks: { \"head.rot\": [[0, [0, 0, 0]], [1, [0, 30, 0], \"out-back\"], [2, [0, 0, 0]]] }, tools: { follow: [{ part: \"ear\", preset: \"loose\" }] } }); c.sample(t, pose)",
+      "where": "src/kit/kh-animate.js",
+      "tags": [
+        "easing",
+        "keyframes",
+        "timeline",
+        "clip",
+        "layers",
+        "follow through",
+        "secondary motion",
+        "bezier",
+        "elastic",
+        "bounce",
+        "spring",
+        "path",
+        "constraint",
+        "driver"
+      ]
+    },
+    {
+      "id": "anim.machine",
+      "kind": "rig",
+      "status": "ready",
+      "title": "State machines, joysticks, drawing swaps",
+      "what": "States that play clips, in layers; boolean, number and trigger inputs; transitions with conditions, exit time and cross-fade, from any state and to exit; a later layer overrides only the channels it animates. A pose joystick scrubs two source clips from one handle. A solo group shows one of several drawings and swaps on keys.",
+      "use": "const m = K.anim.machine({ inputs: [{ id: \"poke\", type: \"trigger\" }], layers: [{ id: \"body\", entry: \"idle\", states: [{ id: \"idle\", clip }, { id: \"startle\", clip: K.acts.clip(\"hurt\"), playback: \"once\" }], transitions: [{ from: \"any\", to: \"startle\", conditions: [{ input: \"poke\", op: \"fired\" }] }, { from: \"startle\", to: \"idle\", exitTime: 1 }] }] }); m.fire(\"poke\"); m.advance(dt); m.pose(pose)",
+      "where": "src/kit/kh-animate.js",
+      "tags": [
+        "state machine",
+        "transition",
+        "trigger",
+        "blend",
+        "joystick",
+        "solo",
+        "swap",
+        "layered"
+      ]
+    },
+    {
+      "id": "anim.present",
+      "kind": "fx",
+      "status": "ready",
+      "title": "Presentation cues: hit stop, shake, flash, zoom, bars",
+      "what": "Cues on a timeline: freeze and slow motion change the clip's own clock (and the wall time can be found again); shake, pan and zoom move the camera; flash, fade and impact go through the palette, leaving the background black; letterbox bars. Presets: heavy-impact, contact-impact, lightning, discovery, slow. K.anim.show hands the result to a world's anim (kick, zoom, bars, grade), which a compatible host and the headless renderer can honor. K.anim.camera is a shake that takes impulses.",
+      "use": "cues.cues = K.anim.preset(\"contact-impact\", t); const s = K.anim.present(cues, t); K.anim.show(W.anim, s, W.pal); const ct = K.anim.animTime(cues, t)",
+      "where": "src/kit/kh-animate.js",
+      "tags": [
+        "hitstop",
+        "freeze",
+        "shake",
+        "flash",
+        "zoom",
+        "letterbox",
+        "impact",
+        "slow motion",
+        "camera",
+        "cue"
+      ]
+    },
+    {
+      "id": "anim.face",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Faces: expression, blink, gaze, talk",
+      "what": "An expression (how open, how tilted) eased toward; blinks on a schedule and on demand; a gaze that wanders or follows a pointer; timeline holds over the face by priority with a release; a mouth that opens with speech.",
+      "use": "const face = K.anim.face({ gaze: { mode: \"curious\", response: 6, amplitude: [0.8, 0.3], frequency: [0.41, 0.27] } }); const f = face.step(dt); eye.scale = [1, f.open, 1]; pupil.pos = [f.gaze[0] * 0.03, f.gaze[1] * 0.03, 0]",
+      "where": "src/kit/kh-animate.js",
+      "tags": [
+        "face",
+        "blink",
+        "gaze",
+        "expression",
+        "eyes",
+        "lip sync",
+        "talk"
+      ]
+    },
+    {
+      "id": "anim.bodies",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Fields in the air, steering, looking, standing",
+      "what": "Gusts and pulses in space with receivers that answer late and softly; a body that walks to within reach of a target and turns to face it; a look that eases within yaw, pitch and cone limits; a body held level over its planted feet.",
+      "use": "K.anim.response(fields, p, t, { lag: 0.16 }); K.anim.steer(m, state, at, forward, target, dt); pose.head.turn = K.anim.track({ yaw: [-0.9, 0.9] }, state, dir, dt)",
+      "where": "src/kit/kh-animate.js",
+      "tags": [
+        "wind",
+        "gust",
+        "pulse",
+        "steer",
+        "look at",
+        "track",
+        "support",
+        "locomotion"
+      ]
+    },
+    {
+      "id": "deform.maps",
+      "kind": "op",
+      "status": "ready",
+      "title": "Deformers: squash and stretch, noodle, fold, lattice, morph, smear",
+      "what": "Point maps over the splats themselves. Squash and stretch with the bottom held and the volume kept, with a waist and a lean; a body laid along a curve with widths, twist, stretch and volume, whose far end trails and overshoots when keyed with lag and spring; a bend region that is a crease or an arc; a cage of handles (keyed mesh deformation); inflate, taper, arc and twist; a smear along a fast move; the 21 reaction fields; grass, bush and tree in wind and when struck; hand-drawn line boil. Applied exactly on the processor (each splat's shape carried through), or through a skin of bones.",
+      "use": "const m = K.deform.body({ base, height: 2, stretch: 1.3, waist: -0.3, bend: [0.4, 0] }); K.deform.apply(W, ids, K.deform.rest(W, ids), m)",
+      "where": "src/kit/ki-deform.js",
+      "tags": [
+        "squash",
+        "stretch",
+        "deform",
+        "mesh deformation",
+        "noodle",
+        "bend",
+        "twist",
+        "fold",
+        "lattice",
+        "cage",
+        "ffd",
+        "morph",
+        "smear",
+        "boil",
+        "foliage",
+        "volume preservation"
+      ]
+    },
+    {
+      "id": "rig.puppet",
+      "kind": "rig",
+      "status": "ready",
+      "title": "The puppet: named parts, deformed, on bones",
+      "what": "A creature of named parts in a hierarchy, each cut into slices or cells of bones on the graphics card, so a deformer costs a few kilobytes a frame however many splats it bends. Set a pose (pos, rot, scale, turn, stretch, waist, bend, inflate, taper, arc, twist, fold, show), add maps, then constraints: look, reach (a two-bone limb), pin, distance, path. A child rides its parent's deformer where it is attached. Hair and grass that sway are carried and still sway (a new splat kind). Works on a stage.",
+      "use": "const tags = K.deform.tags(S); S.ball(c, r, mat, { tag: \"body\" }); S.bake(); const W = B.finish({}); K.puppet(W, { parts: { body: { ids: tags.body, pivot, slices: 6 }, head: { ids: tags.head, pivot, parent: \"body\" } }, pose(t, dt, p) { p.pose.body = { stretch: 1.2 }; p.look(\"head\", target, { limit: 60 }); } })",
+      "where": "src/kit/ki-deform.js, src/kit/k1-stage.js (K.bones); demos/labscenes.js (cabinetBeast)",
+      "tags": [
+        "puppet",
+        "rig",
+        "bones",
+        "skin",
+        "ik",
+        "look at",
+        "hierarchy",
+        "character",
+        "creature"
+      ]
+    },
+    {
+      "id": "acts.clips",
+      "kind": "rig",
+      "status": "ready",
+      "title": "The clip library",
+      "what": "Clips as data and small functions of time. Squash and stretch on a body: attack, hurt, defeat, victory, dodge, windup, heart-hurt, heart-recover, press, denied; what a struck thing does; a floating spin; breath. 25 reactions with their envelope, a player with a queue, and priorities for a fight. An action clock with its hit stop; follow-through and smear of a swung tool; hit flash; a struck and a felled tree; a camera kick. A gait. Clouds, butterflies, a falling leaf, a bird's flight. ink-studio acts lists them.",
+      "use": "K.acts.clip(\"victory\", { part: \"body\", unit: 0.01 }); const pl = K.acts.emotes(); pl.trigger(\"surprise\"); const ev = pl.update(dt)",
+      "where": "src/kit/kj-acts.js",
+      "tags": [
+        "clip",
+        "attack",
+        "hurt",
+        "victory",
+        "dodge",
+        "emote",
+        "reaction",
+        "hit",
+        "gait",
+        "walk",
+        "cloud",
+        "leaf",
+        "bird",
+        "butterfly",
+        "squash and stretch"
+      ]
+    },
+    {
+      "id": "tool.ghost",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Ghost pictures and taps from the command line",
+      "what": "ink-studio ghost draws one moment with those either side laid faintly over it, so what moved and how far shows at a glance. --poke 2:x,y,z taps a diorama at a time, toward a point, in any command that plays it, so reactions can be drawn and checked without a browser.",
+      "use": "ink-studio ghost cabinet --t 2.2 --ghosts 2.05,2.12,2.32 --poke 2:0.2,1.5,0.9",
+      "where": "cli/ink-studio.js",
+      "tags": [
+        "onion skin",
+        "ghost",
+        "preview",
+        "tap",
+        "poke",
+        "strip"
+      ]
+    },
+    {
+      "id": "rig.character",
+      "kind": "rig",
+      "status": "ready",
+      "title": "A character you can steer",
+      "what": "A controllable character built from a spec (points, a sculpt whose solids are tagged with the bone that carries them, speeds, an attack style, a gait, tails), steered by inputs (move, run, jump, dash, attack, cast, crouch), with squash on landing, stretch on take-off, a lean and a nod on springs, a hem that follows and tails as ropes. With the animation tools: ch.play('victory') plays any K.acts or K.anim clip over what it is doing, ch.react('spring') runs a reaction field through its bones, ch.st.act takes a pose by hand, ch.warp takes any K.deform map.",
+      "use": "const ch = K.character(B, spec, lane); const W = B.finish({}); ch.bind(W, W.count - ch.total); ch.update(dt, { move: 1, run: true, jump: false }, t); ch.play('victory')",
+      "where": "src/kit/kk-character.js",
+      "tags": [
+        "character",
+        "player",
+        "hero",
+        "walk",
+        "run",
+        "jump",
+        "attack",
+        "squash",
+        "stretch",
+        "cast",
+        "steer"
+      ]
+    },
+    {
+      "id": "bones.warp",
+      "kind": "rig",
+      "status": "ready",
+      "title": "Bend and flinch anything on bones",
+      "what": "Whatever rides K.bones (a K.creature, a K.puppet, anything bound by hand) can be put through a K.deform map: set anim.warp and each bone goes where the map sends the middle of what it carries, stretched as the map stretches space there. anim.flinch(p) is a blow from the animation tools: a squash and spring back about where it stands, a hit stop on its own clock, a jog of the camera. A tap does it by default (anim.poke); bind with react: false to leave that out.",
+      "use": "W.anim.warp = K.deform.emote({ center, width, height, motion: 'shiver' }); W.anim.flinch()",
+      "where": "src/kit/k1-stage.js (K.bones.bind)",
+      "tags": [
+        "bones",
+        "warp",
+        "flinch",
+        "tap",
+        "hit stop",
+        "squash",
+        "creature",
+        "reaction"
+      ]
+    },
+    {
+      "id": "look.edge-sprites",
+      "kind": "material",
+      "status": "ready",
+      "title": "Surface-anchored edge sprites",
+      "what": "Tiny pixel sprites attach to fixed surface points and appear beyond the silhouette. The same points are kept as the scene changes detail level.",
+      "use": "K.pixel.edge(material, { up: 'grass', every: 5, share: 0.55 })",
+      "where": "src/kit/kpz-sprite.js and cli/render.js",
+      "tags": ["pixel art", "sprite", "tuft", "silhouette"]
+    },
+    {
+      "id": "look.surface",
+      "kind": "material",
+      "status": "ready",
+      "title": "View-dependent surface finishes",
+      "what": "Compose directional roughness, fibre highlights, grazing reflection, sheen, thin-film colour, diffraction, directional tint and anchored glints. Forty editable presets use the same layer settings.",
+      "use": "K.surface.preset('brushed-steel', { r: [1, 2, 3] }, { direction: 'y' })",
+      "where": "docs/surface-materials.md",
+      "tags": ["material", "anisotropy", "iridescence", "specular", "glints"]
+    },
+    {
+      "id": "look.planar-reflection",
+      "kind": "material",
+      "status": "ready",
+      "title": "Planar reflections and ripple emitters",
+      "what": "Render the world around a named mirror plane and distort it with surface normal variation. Drop sources add travelling rings after the scene is baked.",
+      "use": "K.reflection.plane({ id: 'pool' }) · K.reflection.material(base, 'pool') · K.ripple.field(options)",
+      "where": "docs/scene-optics.md",
+      "tags": ["water", "reflection", "mirror", "ripples", "normal"]
+    },
+    {
+      "id": "look.atmosphere-volumes",
+      "kind": "op",
+      "status": "ready",
+      "title": "Height fog, mist volumes and light shafts",
+      "what": "Integrate world-space fog, local spheres and boxes, and tinted beams along the camera ray up to the nearest opaque surface.",
+      "use": "B.finish({ cam, atmosphere: [K.atmosphere.fog({ top: 0.4 }), K.atmosphere.sphere({ at, radius })] })",
+      "where": "docs/scene-optics.md",
+      "tags": ["atmosphere", "mist", "fog", "shaft", "depth"]
+    },
+    {
+      "id": "convert.signed-field",
+      "kind": "op",
+      "status": "ready",
+      "title": "Signed fields into meshes and splats",
+      "what": "Polygonize a bounded signed-distance function, use it in an existing sculpt, or bake it into a splat world with a fitted camera.",
+      "use": "K.sdf.toMesh(sd, { bounds }) · K.sdf.solid(S, sd, mat, { bounds }) · K.sdf.toSplats(sd, { bounds })",
+      "where": "docs/depth-maps.md",
+      "tags": ["sdf", "mesh", "splats", "conversion"]
+    },
+    {
+      "id": "place.props",
+      "kind": "op",
+      "status": "ready",
+      "title": "Seeded prop placement",
+      "what": "Reusable libraries place small objects in an area, along a path, around a solid or at the foot of a wall. Each library uses roles to map its props to the scene materials.",
+      "use": "K.props.clutter(S, K.props.starter, materials, rules)",
+      "where": "src/kit/kpy-props.js",
+      "tags": ["scatter", "props", "decoration", "path"]
+    },
+    {
+      "id": "studio.paint",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Paint surface-pinned decals",
+      "what": "Export a per-pixel view and its surface coordinates, then turn edited pixels into palette-colored decals that stay in place from every camera angle.",
+      "use": "ink-studio paint export <scene> and ink-studio paint absorb <scene>",
+      "where": "cli/ink-studio.js and src/builder.js",
+      "tags": ["paint", "decal", "pixel art"]
+    },
+    {
+      "id": "studio.pixel-critique",
+      "kind": "cli",
+      "status": "ready",
+      "title": "Measure pixel-art renders",
+      "what": "Check isolated pixels and unwanted shading patterns, review fixed camera angles, compare a reference or measure flicker as the view moves.",
+      "use": "ink-studio lint <scene> or ink-studio shimmer <scene> --mode orbit",
+      "where": "cli/crisp.js and cli/critic.js",
+      "tags": ["lint", "crisp", "compare", "review", "shimmer"]
+    },
+    {
+      "id": "import.depth",
+      "kind": "op",
+      "status": "ready",
+      "title": "Depth maps into splats, signed fields and meshes",
+      "what": "Unproject a calibrated raster, preserve holes and depth breaks, project an optional RGB image, and build a backed closed solid from the visible surface.",
+      "use": "ink-studio depth input.png --image aligned.png",
+      "where": "docs/depth-maps.md",
+      "tags": ["depth", "mesh", "sdf", "splats", "projection", "import"]
+    },
+    {
+      "id": "sim.sandbox",
+      "kind": "op",
+      "status": "ready",
+      "title": "Cellular material sandbox",
+      "what": "A seeded grid simulates liquids, powders, gases, heat and phase changes. The simulation can run in a worker and draw its cells as splats.",
+      "use": "const grid = K.sandbox.grid({ at, size, cell }); const sim = K.sandbox(grid.spec())",
+      "where": "src/kit/kq-sandbox.js",
+      "tags": ["simulation", "heat", "matter", "worker"]
+    },
+    {
+      "id": "chance.seeded",
+      "kind": "op",
+      "status": "ready",
+      "title": "Chance that repeats",
+      "what": "K.rnd() is Math.random from a seed. K.stage seeds it, so a diorama run twice from the start does the same thing both times, and a test can say what it should do. Everything in the lab that rolls dice while it runs uses it.",
+      "use": "K.seed(5); const a = K.rnd()",
+      "where": "src/kit/k0-math.js",
+      "tags": [
+        "random",
+        "seed",
+        "deterministic",
+        "repeatable",
+        "test"
+      ]
+    }
+  ]
+}

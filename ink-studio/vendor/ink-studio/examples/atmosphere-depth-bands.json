@@ -1,0 +1,32 @@
+[
+  {
+    "id": "near air",
+    "depth": [4.8, 10.2],
+    "feather": [1.4, 2.1],
+    "height": [0.18, 1.73],
+    "heightFeather": [0.32, 0.55],
+    "density": 0.094,
+    "color": "#c5d6d5",
+    "texture": { "scale": [2.4, 0.42, 1.5], "strength": 0.88, "seed": 9, "velocity": [0.45, 0.009, 0.08] }
+  },
+  {
+    "id": "crossing mist",
+    "depth": [8.8, 24.2],
+    "feather": [2.8, 5.2],
+    "height": [0.60, 3.1],
+    "heightFeather": [0.38, 0.82],
+    "density": 0.185,
+    "color": "#bdd0da",
+    "texture": { "scale": [3.4, 0.59, 1.85], "strength": 0.93, "seed": 27, "velocity": [0.8, 0.015, -0.14], "windInfluence": 0.3 }
+  },
+  {
+    "id": "headland haze",
+    "depth": [20, 68],
+    "feather": [8, 10],
+    "height": [-4.9, 10.3],
+    "heightFeather": [1.05, 3.25],
+    "density": 0.035,
+    "color": "#a7bbc9",
+    "texture": { "scale": [15, 4.8, 12], "strength": 0.45, "seed": 74, "velocity": [-0.28, 0.008, 0.06] }
+  }
+]

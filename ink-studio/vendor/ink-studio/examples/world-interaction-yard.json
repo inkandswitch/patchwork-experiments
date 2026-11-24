@@ -1,0 +1,98 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "interaction-yard",
+  "dt": 0.1,
+  "entities": {
+    "gate-control": {"position": [-0.56, 0.1, 0.38], "sockets": {"handle": [0, 0.15, 0]}, "metadata": {"faction": "canal"}},
+    "berry-bed": {"position": [-3.43, 0.1, 1.02]}
+  },
+  "systems": {
+    "rig": {"kind": "mechanics", "config": {
+      "bodies": {
+        "plinth": {"position": [0, -0.25, 0], "half": [5.75, 0.22, 2.78], "look": [2, 3, 4, 5], "fixed": true},
+        "yard": {"position": [0, -0.011, 0], "half": [5.55, 0.041, 2.58], "look": [5, 6, 7, 8], "fixed": true},
+        "walk": {"position": [0, 0.059, -0.33], "half": [5.51, 0.033, 0.67], "look": [17, 18, 19, 20], "fixed": true},
+        "wall-north": {"position": [0, 0.65, -1.93], "half": [0.13, 0.55, 0.6], "look": [4, 5, 6, 7], "fixed": true},
+        "wall-south": {"position": [0, 0.65, 1.48], "half": [0.13, 0.55, 0.91], "look": [4, 5, 6, 7], "fixed": true},
+        "gate": {"position": [0, 0.77, -0.33], "half": [0.13, 0.66, 1.01], "look": [11, 12, 13, 14, 15]},
+        "gate-lintel": {"position": [0, 2.79, -0.35], "half": [0.22, 0.13, 1.3], "look": [16, 17, 18, 19], "fixed": true},
+        "gate-post-l": {"position": [0, 1.55, -1.45], "half": [0.17, 1.45, 0.13], "look": [16, 17, 18, 19], "fixed": true},
+        "gate-post-r": {"position": [0, 1.55, 0.79], "half": [0.17, 1.45, 0.13], "look": [16, 17, 18, 19], "fixed": true},
+        "pedestal": {"position": [-0.5, 0.32, 0.48], "half": [0.15, 0.24, 0.15], "look": [5, 6, 7, 8], "fixed": true},
+        "selector": {"position": [-0.5, 0.58, 0.48], "half": [0.17, 0.07, 0.15], "look": [20, 21, 22, 23], "fixed": true},
+        "planter-a": {"position": [-3.91, 0.2, 1.54], "half": [0.64, 0.11, 0.44], "look": [17, 18, 19, 20], "fixed": true},
+        "planter-b": {"position": [-2.32, 0.2, 1.78], "half": [0.56, 0.11, 0.42], "look": [17, 18, 19, 20], "fixed": true},
+        "soil-a": {"position": [-3.91, 0.31, 1.54], "half": [0.56, 0.04, 0.36], "look": [3, 4, 17, 18], "fixed": true},
+        "soil-b": {"position": [-2.32, 0.31, 1.78], "half": [0.48, 0.04, 0.34], "look": [3, 4, 17, 18], "fixed": true},
+        "clinic-floor": {"position": [3.96, 0.138, 1.28], "half": [1.05, 0.05, 0.73], "look": [6, 7, 8, 9], "fixed": true},
+        "cot": {"position": [4.15, 0.33, 1.36], "half": [0.62, 0.1, 0.26], "look": [11, 12, 13, 14, 15], "fixed": true},
+        "cloth": {"position": [4.19, 0.44, 1.38], "half": [0.47, 0.03, 0.23], "look": [7, 8, 9, 10], "fixed": true},
+        "clinic-back": {"position": [4.04, 0.43, 1.99], "half": [1.16, 0.26, 0.055], "look": [7, 8, 9, 10], "fixed": true},
+        "clinic-roof": {"position": [4.01, 1.45, 1.96], "half": [1.16, 0.06, 0.24], "look": [11, 12, 13, 14, 15], "fixed": true},
+        "clinic-left": {"position": [2.95, 0.81, 1.04], "half": [0.06, 0.64, 0.06], "look": [16, 17, 18, 19], "fixed": true},
+        "clinic-right": {"position": [5.08, 0.81, 1.04], "half": [0.06, 0.64, 0.06], "look": [16, 17, 18, 19], "fixed": true},
+        "clinic-sign": {"position": [4.88, 1.18, 0.88], "half": [0.21, 0.2, 0.045], "look": [5, 6, 7, 8, 9], "fixed": true},
+        "clinic-mark-x": {"position": [4.88, 1.18, 0.822], "half": [0.14, 0.031, 0.013], "look": [21, 22, 23], "fixed": true},
+        "clinic-mark-y": {"position": [4.88, 1.18, 0.822], "half": [0.031, 0.14, 0.013], "look": [21, 22, 23], "fixed": true},
+        "packing-bench": {"position": [-1.84, 0.27, -1.83], "half": [0.63, 0.18, 0.39], "look": [8, 9, 10, 11], "fixed": true},
+        "surface-trim": {"position": [0, 0.035, 2.51], "half": [5.54, 0.08, 0.08], "look": [8, 9, 10, 11], "fixed": true},
+        "berry-bush-0": {"position": [-4.2, 0.49, 1.38], "half": [0.19, 0.19, 0.18], "look": [6, 7, 8, 9], "fixed": true},
+        "berry-0": {"position": [-4.11, 0.63, 1.2899999999999998], "half": [0.065, 0.06, 0.067], "look": [20, 21, 22, 23], "fixed": true},
+        "berry-bush-1": {"position": [-3.65, 0.49, 1.65], "half": [0.19, 0.19, 0.18], "look": [6, 7, 8, 9], "fixed": true},
+        "berry-1": {"position": [-3.56, 0.63, 1.5599999999999998], "half": [0.065, 0.06, 0.067], "look": [20, 21, 22, 23], "fixed": true},
+        "berry-bush-2": {"position": [-2.55, 0.49, 1.64], "half": [0.19, 0.19, 0.18], "look": [6, 7, 8, 9], "fixed": true},
+        "berry-2": {"position": [-2.46, 0.63, 1.5499999999999998], "half": [0.065, 0.06, 0.067], "look": [20, 21, 22, 23], "fixed": true},
+        "berry-bush-3": {"position": [-2.1, 0.49, 1.87], "half": [0.19, 0.19, 0.18], "look": [6, 7, 8, 9], "fixed": true},
+        "berry-3": {"position": [-2.0100000000000002, 0.63, 1.78], "half": [0.065, 0.06, 0.067], "look": [20, 21, 22, 23], "fixed": true}
+      },
+      "joints": {"lift": {"kind": "slider", "mode": "position", "child": "gate", "anchor": [0, 0.77, -0.33], "axis": [0, 1, 0], "range": [0, 1.47], "speed": 2.1}}
+    }},
+    "crew": {"kind": "agents", "config": {
+      "ground": 0.1,
+      "cell": 0.22,
+      "bounds": {"min": [-5.4, 0, -2.42], "max": [5.41, 2.4, 2.42]},
+      "species": {
+        "keeper": {"mode": "walk", "radius": 0.19, "speed": 1.65, "look": [12, 13, 14, 15]},
+        "visitor": {"mode": "walk", "radius": 0.18, "speed": 1.6, "look": [18, 19, 21, 23]},
+        "gardener": {"mode": "walk", "radius": 0.19, "speed": 1.5, "look": [6, 7, 8, 9]},
+        "medic": {"mode": "walk", "radius": 0.19, "speed": 1.7, "look": [12, 13, 15, 16]},
+        "patient": {"mode": "walk", "radius": 0.17, "speed": 1.4, "look": [17, 18, 19, 21]}
+      },
+      "agents": {
+        "keeper": {"species": "keeper", "position": [-1.03, 0.1, 0.23], "metadata": {"faction": "canal"}},
+        "visitor": {"species": "visitor", "position": [-0.81, 0.1, -0.42], "metadata": {"faction": "ridge"}},
+        "gardener": {"species": "gardener", "position": [-3.01, 0.1, 0.63], "metadata": {"faction": "canal"}},
+        "medic": {"species": "medic", "position": [1.37, 0.1, 0.21], "metadata": {"faction": "canal"}},
+        "patient": {"species": "patient", "position": [3.85, 0.1, 0.02], "metadata": {"faction": "canal"}}
+      },
+      "orders": {"tasks": {"collect": {"steps": [{"op": "interact", "system": "use", "target": "berry-bed", "verb": "harvest"}]}, "aid": {"steps": [{"op": "interact", "system": "use", "target": "patient", "verb": "heal"}]}}}
+    }},
+    "stock": {"kind": "logistics", "config": {
+      "resources": {"berries": {"units": "basket", "type": "integer", "look": [19, 20, 21, 22]}},
+      "containers": {
+        "bed": {"stocks": {"berries": {"initial": 4, "max": 4, "display": {"at": [-4.62, 0.29, 1.09], "half": [0.23, 0.23, 0.2]}}}},
+        "reserves": {"stocks": {"berries": {"initial": 0, "max": 4, "display": {"at": [-1.84, 0.47, -1.83], "half": [0.23, 0.25, 0.2]}}}}
+      }
+    }},
+    "use": {"kind": "targeted-interactions", "config": {
+      "verbs": {
+        "open": {"range": 1, "ticks": 10, "access": {"relation": "same"}, "cue": "gate-opened"},
+        "harvest": {"range": 0.9, "ticks": 10, "access": {"factions": ["canal"]}, "cue": "berries-stored"},
+        "heal": {"range": 0.61, "ticks": 10, "access": {"relation": "same"}, "targetWhen": {"path": "/values/health", "op": "lt", "value": 10}, "cue": "aid-completed"}
+      },
+      "targets": {
+        "floodgate": {"at": {"entity": "gate-control", "socket": "handle"}, "verbs": {"open": {"effect": {"action": "world/input", "args": {"port": "rig/drive.lift", "value": 1.47}}}}},
+        "berry-bed": {"at": {"entity": "berry-bed"}, "attributes": {"harvests": {"initial": 0, "min": 0}}, "verbs": {"harvest": {"changes": {"harvests": {"add": 1}}, "effect": {"action": "world/transfer", "args": {"from": "stock/bed.berries", "to": "stock/reserves.berries", "amount": 2}}}}},
+        "patient": {"at": {"agent": {"system": "crew", "id": "patient"}}, "attributes": {"health": {"initial": 4, "min": 0, "max": 10}}, "verbs": {"heal": {"changes": {"health": {"add": 5}}}}}
+      }
+    }}
+  },
+  "commands": [
+    {"tick": 1, "action": "use/start", "args": {"id": "visitor-open", "actor": {"system": "crew", "id": "visitor"}, "target": "floodgate", "verb": "open"}},
+    {"tick": 4, "action": "use/start", "args": {"id": "keeper-open", "actor": {"system": "crew", "id": "keeper"}, "target": "floodgate", "verb": "open"}},
+    {"tick": 7, "action": "crew/issue-order", "args": {"agent": "medic", "order": {"id": "give-aid", "task": "aid"}}},
+    {"tick": 15, "action": "crew/issue-order", "args": {"agent": "gardener", "order": {"id": "gather-berries", "task": "collect"}}}
+  ],
+  "visual": {"bounds": {"min": [-6, -0.5, -2.97], "max": [6, 3.4, 2.98]}, "ground": -0.48, "resolution": 0.07, "camera": {"target": [0, 0.69, 0.05], "dist": 13.5, "yaw": 0.23, "pitch": 0.58}, "fields": {"bodies": ["rig/bodies", "stock/stock-bodies"], "agents": "crew/agents"}}
+}

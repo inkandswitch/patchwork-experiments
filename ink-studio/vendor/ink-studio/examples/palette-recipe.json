@@ -1,0 +1,10 @@
+{
+  "anchors": {"primary": "#58aeb7", "accent": "#efad72"},
+  "background": "#09171e",
+  "roles": {
+    "stone": {"anchor": "primary", "steps": 7, "lightness": [0.14, 0.94]},
+    "foliage": {"anchor": "primary", "steps": 7, "hueShift": [-29, 13], "chromaScale": [0.3, 1.2, 0.2], "lightness": [0.16, 0.87]},
+    "metal": {"anchor": "accent", "steps": 5, "lightness": [0.19, 0.87]},
+    "glow": {"anchor": "accent", "steps": 4, "curves": {"lightness": {"stops": [[0, 0.62], [1, 0.98]], "interpolation": "smooth"}}}
+  }
+}

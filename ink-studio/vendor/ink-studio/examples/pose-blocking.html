@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pose blocking · Ink Studio</title>
+<style>
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #131b26; color: #eff8df; }
+  body { margin: 0; }
+  main { max-width: 820px; margin: auto; padding: 24px 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 16px; }
+  .workbench { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 20px; }
+  canvas { display: block; width: 288px; max-width: 100%; aspect-ratio: 1; image-rendering: pixelated; background: #111923; }
+  fieldset { border: 1px solid #465864; padding: 12px; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 10px; }
+  label { display: flex; align-items: center; gap: 6px; }
+  button, select, input[type=text] { padding: 5px 7px; }
+  input[type=range] { accent-color: #83ded0; }
+  output { display: block; margin-top: 8px; color: #a6c7c5; font-variant-numeric: tabular-nums; }
+  nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
+  nav button[data-kind=breakdown] { color: #ffdc83; }
+  nav button[aria-current=true] { border-color: #83ded0; }
+  @media (max-width: 680px) { .workbench { grid-template-columns: 1fr; } }
+</style>
+<main>
+  <h1>Signal courier</h1>
+  <div class="workbench">
+    <div>
+      <canvas width="96" height="96" aria-label="96 by 96 pixel pose preview"></canvas>
+      <output id="status" aria-live="off">Loading sprite preview…</output>
+    </div>
+    <div>
+      <fieldset>
+        <legend>Playback</legend>
+        <button id="play" type="button">Play</button>
+        <label>Preview <select id="mode"><option value="held">Held poses</option><option value="spline">Interpolated</option></select></label>
+        <label>Direction <select id="direction">
+          <option value="0">Front</option><option value="1">Front 45°</option><option value="2">Side 90°</option>
+          <option value="3">Back 135°</option><option value="4">Back</option><option value="5">Back 225°</option>
+          <option value="6">Side 270°</option><option value="7">Front 315°</option>
+        </select></label>
+        <label>Time <input id="time" type="range" min="0" max="3.2" value="0" step="0.01"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Lift breakdown</legend>
+        <label>Time <input id="break-time" type="range" min="0.50" max="1.26" value="0.82" step="0.01"></label>
+        <label>Pose bias <input id="bias" type="range" min="0" max="1" value="0.72" step="0.01"></label>
+        <output id="breakdown"></output>
+      </fieldset>
+      <fieldset>
+        <legend>Pose shelf</legend>
+        <label>Pose <select id="asset"></select></label>
+        <label>Apply to <select id="scope"><option value="">Whole puppet</option><option value="left">Left arm</option><option value="right">Right arm</option></select></label>
+        <label><input id="mirror" type="checkbox"> Mirror</label>
+        <label>Weight <input id="weight" type="range" min="0" max="1" value="1" step="0.01"></label>
+        <button id="audition" type="button">Preview pose</button>
+        <button id="key" type="button">Key pose</button>
+        <label>Name <input id="name" type="text" placeholder="New shelf pose"></label>
+        <button id="save" type="button">Save to shelf</button>
+        <output id="shelf-status" aria-live="polite"></output>
+      </fieldset>
+    </div>
+  </div>
+  <nav id="markers" aria-label="Pose landmarks"></nav>
+</main>
+<script src="../dist/ink-studio.browser.js"></script>
+<script src="./pose-blocking.js"></script>
+<script type="module">
+  import { createRenderer } from '../webgl.mjs';
+
+  const $ = id => document.getElementById(id);
+  const canvas = document.querySelector('canvas');
+  const status = $('status');
+  try {
+    const scene = poseBlockingScene({ makeBuilder, makeSculpt, KIT });
+    const world = scene.build(scene.seed, { controls: { mode: $('mode').value } });
+    const { shelf, setMode, setBreakdown, preview, save, key, clearPreview } = world.poseDemo;
+    const renderer = createRenderer(canvas, { toolkit: { KIT, PixelLook } });
+    let lastFrame, time = 0, playing = false, nextPose = 0, previewing = false;
+    function draw() {
+      const yaw = world.cam.yaw + Number($('direction').value) * Math.PI / 4;
+      world.anim.update(0, time);
+      renderer.render(world, { width: 96, height: 96, time, camera: { yaw, ortho: true }, damp: false });
+      const active = world.poseBlocking.markers.filter(marker => marker.time <= time).at(-1);
+      status.value = time.toFixed(2) + ' s · ' + (previewing ? 'Shelf preview' : active.name) + ' · 96 × 96';
+      for (const button of $('markers').children) button.setAttribute('aria-current', Number(button.dataset.time) === active.time);
+    }
+    function pause() {
+      playing = false;
+      $('play').textContent = 'Play';
+    }
+    function seek(value) {
+      pause();
+      clearPreview();
+      previewing = false;
+      time = value;
+      $('time').value = value;
+      draw();
+    }
+    function markers() {
+      $('markers').replaceChildren(...world.poseBlocking.markers.map(marker => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = marker.name;
+        button.dataset.kind = marker.kind;
+        button.dataset.time = marker.time;
+        button.onclick = () => seek(marker.time);
+        return button;
+      }));
+    }
+    function breakdown() {
+      const at = Number($('break-time').value), bias = Number($('bias').value);
+      setBreakdown(at, bias);
+      $('breakdown').value = at.toFixed(2) + ' s · ' + Math.round(bias * 100) + '% toward the next pose';
+      markers();
+      return at;
+    }
+    function updateShelf(selected) {
+      $('asset').replaceChildren(...shelf.list().map(asset => new Option(asset.name, asset.id)));
+      if (selected) $('asset').value = selected;
+    }
+    function audition() {
+      pause();
+      const side = $('scope').value;
+      preview($('asset').value, { time, weight: Number($('weight').value), mirror: $('mirror').checked,
+        ...(side && { parts: [side + 'Arm', side + 'Forearm'] }) });
+      previewing = true;
+      draw();
+    }
+    function capture(defaultName) {
+      const id = 'saved-' + ++nextPose;
+      const name = $('name').value.trim() || defaultName;
+      save(id, name, time);
+      updateShelf(id);
+      $('name').value = '';
+      return { id, name };
+    }
+    $('save').onclick = () => {
+      const { name } = capture('Pose ' + (nextPose + 1));
+      $('shelf-status').value = 'Saved ' + name;
+    };
+    $('key').onclick = () => {
+      if (!previewing) audition();
+      const { id, name } = capture('Pose at ' + time.toFixed(2) + ' s');
+      key(id, time);
+      previewing = false;
+      markers();
+      draw();
+      $('shelf-status').value = 'Keyed ' + name;
+    };
+    $('audition').onclick = audition;
+    for (const id of ['asset', 'scope', 'mirror', 'weight'])
+      $(id).addEventListener('input', () => { if (previewing) audition(); });
+    $('mode').onchange = () => { setMode($('mode').value); seek(time); };
+    $('direction').onchange = draw;
+    $('time').oninput = () => seek(Number($('time').value));
+    $('break-time').oninput = $('bias').oninput = () => seek(breakdown());
+    $('play').onclick = () => {
+      if (playing) return pause();
+      seek(time >= 3.2 ? 0 : time);
+      playing = true;
+      lastFrame = undefined;
+      $('play').textContent = 'Pause';
+    };
+    function animate(now) {
+      if (playing && (lastFrame === undefined || now - lastFrame >= 1000 / 12)) {
+        if (lastFrame !== undefined) time = Math.min(3.2, time + (now - lastFrame) / 1000);
+        lastFrame = now;
+        $('time').value = time;
+        draw();
+        if (time >= 3.2) pause();
+      }
+      requestAnimationFrame(animate);
+    }
+    breakdown();
+    updateShelf('reach');
+    draw();
+    requestAnimationFrame(animate);
+  } catch (error) {
+    status.value = error.message;
+  }
+</script>

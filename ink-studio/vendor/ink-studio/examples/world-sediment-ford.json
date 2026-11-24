@@ -1,0 +1,29 @@
+{
+  "format": "ink-studio/world", "version": 1, "id": "settling-ford", "dt": 0.05,
+  "systems": {
+    "river": { "kind": "water", "config": {
+      "width": 14, "height": 5, "cell": 0.5, "base": 0.43,
+      "bed": [{ "bounds": { "min": [0, 1], "max": [7, 1.5] }, "value": 0 }],
+      "initial": [{ "bounds": { "min": [0, 1], "max": [7, 1.5] }, "value": 0.39 }],
+      "sediment": { "erodibleDepth": 0, "capacity": 0.01, "settling": 2.5,
+        "initial": [{ "bounds": { "min": [2.75, 1], "max": [4.25, 1.5] }, "value": 0.4 }]
+      }
+    } },
+    "nav": { "kind": "navigation", "config": {
+      "bounds": { "min": [3, -0.1, 0.1], "max": [4, 1, 2.4] }, "cell": 0.25,
+      "bed": "river/bed", "water": "river/water"
+    } },
+    "walk": { "kind": "agents", "config": {
+      "bounds": { "min": [3, -0.1, 0.1], "max": [4, 1, 2.4] }, "cell": 0.25, "replanTicks": 10,
+      "bed": "river/bed", "water": "river/water",
+      "species": { "porter": { "mode": "walk", "radius": 0.115, "speed": 0.8, "height": 0.48,
+        "stepUp": 0.19, "drop": 0.24, "maxWade": 0.18, "maxSlope": 2.6, "look": [22, 23, 24] } },
+      "agents": { "porter": { "species": "porter", "position": [3.6, 0.43, 0.62], "goal": [3.6, 0.43, 1.88] } }
+    } }
+  },
+  "visual": {
+    "bounds": { "min": [0, -0.26, 0], "max": [7, 0.97, 2.5] }, "resolution": 0.055,
+    "camera": { "target": [3.52, 0.31, 1.2], "dist": 8.3, "yaw": -0.18, "pitch": 0.62 },
+    "fields": { "bed": "river/bed", "water": "river/water", "sediment": "river/bed-change", "agents": ["walk/agents"] }
+  }
+}

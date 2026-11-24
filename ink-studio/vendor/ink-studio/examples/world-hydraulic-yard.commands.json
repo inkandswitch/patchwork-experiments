@@ -1,0 +1,6 @@
+[
+  { "tick": 71, "action": "world/input", "args": { "port": "network/leak.gasket", "value": 1 } },
+  { "tick": 71, "action": "world/input", "args": { "port": "network/valve.pump", "value": 0 } },
+  { "tick": 95, "action": "world/input", "args": { "port": "network/leak.gasket", "value": 0 } },
+  { "tick": 105, "action": "world/input", "args": { "port": "network/valve.pump", "value": 1 } }
+]

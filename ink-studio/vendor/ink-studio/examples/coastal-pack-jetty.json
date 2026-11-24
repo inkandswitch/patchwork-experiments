@@ -1,0 +1,81 @@
+{
+  "id": "tideline-jetty",
+  "name": "Salt jetty",
+  "seed": 48,
+  "camera": {
+    "target": [
+      0,
+      0.53,
+      0.05
+    ],
+    "dist": 14.7,
+    "yaw": -0.22,
+    "pitch": 0.095
+  },
+  "environmentPreset": {
+    "asset": "tideline/coast",
+    "revision": 1,
+    "overrides": {
+      "skyEnvironment": {
+        "profiles": {
+          "dawn": {
+            "horizon": "#f2bc98"
+          }
+        }
+      }
+    }
+  },
+  "solids": [
+    {"kind": "box", "at": [0, -0.58, -3], "half": [21, 0.21, 20], "mat": {"role": "water", "noise": 0.14}, "res": 0.39, "round": 0.15},
+    {"kind": "box", "at": [-1.66, -0.2, 2.19], "half": [2.92, 0.44, 1.12], "mat": {"role": "earth", "noise": 0.23, "over": {"role": "stone", "patch": 0.37}}, "res": 0.17, "round": 0.31},
+    {"kind": "rock", "at": [-3.3, -0.13, 1.15], "r": 0.66, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [-2.75, -0.13, 2.13], "r": 0.77, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [-1.97, -0.13, 2.83], "r": 0.55, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [-0.34, -0.13, 2.78], "r": 0.66, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [1.54, -0.13, 0.22], "r": 0.52, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [-2.34, -0.13, -1.53], "r": 0.51, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "rock", "at": [-3.2, -0.13, -0.69], "r": 0.42, "mat": {"role": "stone", "noise": 0.2, "over": {"role": "moss", "above": 0.2}}, "res": 0.11},
+    {"kind": "box", "at": [0.06, 0.08, 2.94], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "lathe", "at": [-0.77, -0.36, 2.94], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "lathe", "at": [0.89, -0.36, 2.94], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "box", "at": [0.1055, 0.08, 2.51], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "box", "at": [0.1399, 0.08, 2.08], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "box", "at": [0.1548, 0.08, 1.65], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "lathe", "at": [-0.6752, -0.36, 1.65], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "lathe", "at": [0.9848, -0.36, 1.65], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "box", "at": [0.1464, 0.08, 1.22], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "box", "at": [0.1169, 0.08, 0.79], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "box", "at": [0.0734, 0.08, 0.36], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "lathe", "at": [-0.7566, -0.36, 0.36], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "lathe", "at": [0.9034, -0.36, 0.36], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "box", "at": [0.0267, 0.08, -0.07], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "box", "at": [-0.0119, 0.08, -0.5], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "box", "at": [-0.0329, 0.08, -0.93], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "lathe", "at": [-0.8629, -0.36, -0.93], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "lathe", "at": [0.7971, -0.36, -0.93], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "box", "at": [-0.0311, 0.08, -1.36], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "box", "at": [-0.007, 0.08, -1.79], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "box", "at": [0.0335, 0.08, -2.22], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "lathe", "at": [-0.7965, -0.36, -2.22], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "lathe", "at": [0.8635, -0.36, -2.22], "h": 1.03, "r": [0.115, 0.093], "mat": "wood", "res": 0.067},
+    {"kind": "box", "at": [0.0804, 0.08, -2.65], "half": [0.9, 0.075, 0.2], "mat": {"role": "wood", "noise": 0.18}, "res": 0.077, "round": 0.042},
+    {"kind": "lathe", "at": [-0.77, 0.58, 0.22], "h": 0.12, "r": [0.11, 0.12], "mat": "metal", "res": 0.067},
+    {"kind": "ball", "at": [-0.77, 0.79, 0.22], "r": 0.103, "mat": {"role": "glow", "glow": true}, "res": 0.058},
+    {"kind": "lathe", "at": [-0.77, 0.87, 0.22], "h": 0.17, "r": [0.18, 0.02], "mat": "dark", "res": 0.067},
+    {"kind": "lathe", "at": [0.88, 0.58, -2.31], "h": 0.12, "r": [0.11, 0.12], "mat": "metal", "res": 0.067},
+    {"kind": "ball", "at": [0.88, 0.79, -2.31], "r": 0.103, "mat": {"role": "glow", "glow": true}, "res": 0.058},
+    {"kind": "lathe", "at": [0.88, 0.87, -2.31], "h": 0.17, "r": [0.18, 0.02], "mat": "dark", "res": 0.067},
+    {"kind": "box", "at": [-4.6, -0.348, -2.8], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [-3.84, -0.348, -2.9764], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [-3.08, -0.348, -2.4507], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [-2.32, -0.348, -3.3151], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [-1.56, -0.348, -2.1293], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [-0.8, -0.348, -3.6129], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [-0.04, -0.348, -1.8613], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [0.72, -0.348, -3.8458], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [1.48, -0.348, -1.668], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [2.24, -0.348, -3.9955], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [3.0, -0.348, -1.565], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044},
+    {"kind": "box", "at": [3.76, -0.348, -4.0499], "half": [0.27, 0.026, 0.022], "mat": {"role": "pale"}, "res": 0.044}
+  ]
+}

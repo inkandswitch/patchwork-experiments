@@ -1,0 +1,30 @@
+{
+  "subjects": [
+    { "id": "Courier", "select": { "object": "courier" } },
+    { "id": "Face", "select": { "surface": "courier-face" } },
+    { "id": "Lantern", "select": { "surface": "courier-lantern" } },
+    { "id": "Beacon", "select": { "object": "mist-beacon" } }
+  ],
+  "views": [
+    { "id": "Front", "yaw": 0.30, "pitch": 0.21, "dist": 6.35, "target": [0, 1.37, 0.15] },
+    { "id": "Oblique", "yaw": 0.96, "pitch": 0.21, "dist": 6.35, "target": [0, 1.37, 0.15] }
+  ],
+  "states": [
+    {
+      "id": "Daylight",
+      "time": 0,
+      "lighting": {
+        "liveSun": { "direction": [-0.5, 0.76, 0.41], "ambient": 0.45, "intensity": 0.9, "shadows": false },
+        "skyEnvironment": { "defaults": { "zenith": "#3e6681", "horizon": "#a5c6cb", "ground": "#668a96", "sunStrength": 0 } }
+      }
+    },
+    {
+      "id": "Blue hour",
+      "time": 1,
+      "lighting": {
+        "liveSun": { "direction": [0.43, 0.19, -0.88], "ambient": 0.18, "intensity": 0.32, "shadows": false },
+        "skyEnvironment": { "defaults": { "zenith": "#26304d", "horizon": "#727eac", "ground": "#333d5e", "sunStrength": 0 } }
+      }
+    }
+  ]
+}

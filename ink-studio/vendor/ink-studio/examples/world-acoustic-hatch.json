@@ -1,0 +1,59 @@
+{
+  "format": "ink-studio/world",
+  "version": 1,
+  "id": "acoustic-hatch",
+  "dt": 0.1,
+  "entities": {
+    "beacon": { "position": [2.7, 0, 0], "sockets": { "speaker": [0, 1, 0] } },
+    "listen-post": { "position": [-2, 1, 0] }
+  },
+  "systems": {
+    "air": {
+      "kind": "ventilation",
+      "config": {
+        "rooms": {
+          "hall": { "bounds": { "min": [-5, -1, -2], "max": [0, 3, 2] } },
+          "machine-room": { "bounds": { "min": [0, -1, -2], "max": [5, 3, 2] } }
+        },
+        "openings": {
+          "hatch": { "from": "hall", "to": "machine-room", "at": [0, 1, 0], "fan": -0.25 }
+        }
+      }
+    },
+    "acoustics": {
+      "kind": "acoustics",
+      "config": { "layout": "air/acoustic-layout", "sourceLevelDb": 60, "thresholdDb": 38 }
+    },
+    "crew": {
+      "kind": "agents",
+      "config": {
+        "bounds": { "min": [-4.8, -0.1, -1.8], "max": [-0.2, 2, 1.8] },
+        "species": { "worker": { "mode": "walk", "speed": 1.3, "radius": 0.17 } },
+        "agents": { "worker": { "species": "worker", "position": [-2.4, 0, 0] } },
+        "decisions": {
+          "interval": 1,
+          "members": { "worker": ["inspect", "standby"] },
+          "activities": {
+            "inspect": {
+              "priority": 1,
+              "when": [
+                {
+                  "field": "acoustics/audible",
+                  "args": { "from": { "entity": "beacon", "socket": "speaker" } },
+                  "when": { "path": "/audible", "value": true },
+                  "reason": "Beacon must be audible"
+                }
+              ],
+              "destinations": { "approach": { "at": [-1.4, 0, 0.4] } }
+            },
+            "standby": { "destinations": { "desk": { "at": [-2.4, 0, 0] } } }
+          }
+        }
+      }
+    }
+  },
+  "commands": [
+    { "id": "close-hatch", "tick": 6, "action": "world/input", "args": { "port": "air/opening.hatch", "value": 0 } },
+    { "id": "reopen-hatch", "tick": 14, "action": "world/input", "args": { "port": "air/opening.hatch", "value": 1 } }
+  ]
+}

@@ -1,0 +1,4 @@
+[
+  { "tick": 1, "action": "world/input", "args": { "port": "routes/in.signal", "value": true } },
+  { "tick": 15, "action": "world/input", "args": { "port": "rig/drive.travel", "value": 2.25 } }
+]

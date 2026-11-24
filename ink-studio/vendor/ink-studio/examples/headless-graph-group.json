@@ -1,0 +1,12 @@
+{
+  "format": "ink-studio/graph-group",
+  "version": 1,
+  "inputs": {
+    "value": "number",
+    "gain": { "type": "number", "default": 2 }
+  },
+  "nodes": {
+    "scale": { "op": "multiply", "inputs": { "a": { "input": "value" }, "b": { "input": "gain" } } }
+  },
+  "outputs": { "value": { "node": "scale" } }
+}

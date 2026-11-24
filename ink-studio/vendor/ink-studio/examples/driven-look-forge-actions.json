@@ -1,0 +1,6 @@
+[
+  {"tick": 12,"action": "world/input","args": {"port": "heater/value","value": 0.42}},
+  {"tick": 14,"action": "forge/set","args": {"field": "temperature","region": {"bounds": {"min": [-2.2,0.25,-1.8],"max": [1.1,2.2,1.4]},"value": 420}}},
+  {"tick": 48,"action": "world/input","args": {"port": "heater/value","value": 1}},
+  {"tick": 50,"action": "forge/set","args": {"field": "temperature","region": {"bounds": {"min": [-2.2,0.25,-1.8],"max": [1.1,2.2,1.4]},"value": 1080}}}
+]
