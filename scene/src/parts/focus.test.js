@@ -104,8 +104,8 @@ describe("the bar of tools across docs", () => {
     s.edit(false);
     const buttons = (cluster) => [...view.root.querySelectorAll(`.toolbar .${cluster} button`)];
     const labels = (cluster) => buttons(cluster).map((x) => x.textContent);
-    await until(() => J(labels("world")) === J(["Ring"]), 2000);
-    // outside the game, its command isn't on the focus path
+    // outside the game, its command isn't on the focus path (both clusters: the world's shows in every body, the tools' goes on the bar's next pass)
+    await until(() => J([labels("tools"), labels("world")]) === J([[], ["Ring"]]), 2000);
     expect([labels("tools"), labels("world")]).toEqual([[], ["Ring"]]);
     expect(view.enter(["L"])).toBe(true);
     await until(() => J(labels("world")) === J(["Deal", "Ring"]), 2000);

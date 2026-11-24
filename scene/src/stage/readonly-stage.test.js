@@ -306,6 +306,7 @@ describe("I6 through the world: a read-only stage's ambient services only read",
       ok("a claim refuses", world.use("claims").claim(null, "seat:p1") === null);
       ok("claims read", world.use("claims").claimedBy(null, "seat:p1") === null);
       ok("a pose refuses", world.use("poses").hold(id, { ...T, position: [1, 0, 0] }) === false);
+      world.use("poses").release(id, { landed: true });
       world.use("tell").tell("t", { x: 1 });
       const veil = world.use("audience").veil(id);
       ok("a veil draws nothing", typeof veil === "function" && !s.debug.displayed().has(id));
@@ -345,6 +346,28 @@ describe("the read-only handle and repo, over everything they refuse", () => {
       expect(readOnlyHandle(ro)).toBe(ro);
     });
   }
+
+  it("a listener hears through the wrapper: the handle a change names refuses every write, and off(fn) takes the listener away", () => {
+    // a handle that tells its listeners as automerge-repo's does: the payload names the handle itself
+    const listeners = new Set();
+    const raw = { url: "automerge:x", doc: () => ({ title: "x" }), change: () => {}, on: (_type, fn) => listeners.add(fn), off: (_type, fn) => listeners.delete(fn) };
+    const emit = () => [...listeners].forEach((fn) => fn({ handle: raw, doc: raw.doc() }, raw));
+    const ro = readOnlyHandle(raw);
+    const told = [];
+    const fn = (payload, second) => told.push([payload.handle, second]);
+    ro.on("change", fn);
+    emit();
+    expect(told).toHaveLength(1);
+    for (const h of told[0]) {
+      expect(h).not.toBe(raw);
+      expect(h.isReadOnly()).toBe(true);
+      expect(h.doc().title).toBe("x");
+      for (const what of REFUSED) expect(() => h[what](() => {})).toThrow(/read-only/);
+    }
+    ro.off("change", fn);
+    emit();
+    expect(told).toHaveLength(1);
+  });
 
   it("the repo is an allowlist: find, create, create2 and peerId, and no other door to a handle (handles, findWithProgress)", async () => {
     const repo = new FakeRepo();
