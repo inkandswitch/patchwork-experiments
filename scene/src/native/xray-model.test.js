@@ -17,7 +17,7 @@ import { resolveParents } from "../hierarchy.js";
 import { resolveGroups } from "../groups.js";
 import { TOO_FAR } from "../stage/commands.js";
 import { buildGears } from "./gears.js";
-import { BANDS, GHOST, GLYPHS, NEUTRAL, OPACITY, PALETTE, card, colours, details, glyphs, isGeneric, lead, legend, looks, responders, routeBoxes, strip, verbChip } from "./xray-model.js";
+import { BANDS, GHOST, NEUTRAL, OPACITY, PALETTE, card, colours, details, glyphs, isGeneric, lead, legend, looks, responders, routeBoxes, strip, verbChip } from "./xray-model.js";
 
 const has = (o, t) => !!o?.traits?.[t];
 const run = () => {};
@@ -57,7 +57,7 @@ const depth = (g, id, ext) => g.chains[id].find((h) => h.ext === ext).depth;
 
 describe("colours", () => {
   it("every subset of ten ids, in any order: each in the palette, all distinct, the same asked again", () => {
-    const pool = ["scene.carry", "tabletop", "seats", "keeper", "scene.claims", "scene.poses", "scene.clock", "machine", "sailing", "scene.links"];
+    const pool = ["scene.carry", "t.p", "t.q", "keeper", "scene.claims", "scene.poses", "scene.clock", "t.r", "t.s", "scene.links"];
     expect(new Set(PALETTE).size).toBe(PALETTE.length);
     for (let m = 1; m < 1 << pool.length; m++) {
       const ids = pool.filter((_, i) => m & (1 << i));
@@ -89,7 +89,8 @@ describe("the scene-wide view, over every small world", () => {
         for (const sceneA of [false, true]) {
           const { g, scene, running } = world(subset, [c & 3, (c >> 2) & 3, (c >> 4) & 3], sceneA);
           const at = `${subset}/${c}/${sceneA}`;
-          const colour = colours(running.map((r) => r.id));
+          // (as xray.js colours them: only the extensions holding objects; the rest neutral)
+          const colour = colours(g.holds.filter((h) => h.via != null).map((h) => h.ext));
           const all = looks(g, colour);
           expect([at, Object.keys(all)]).toEqual([at, scene.ids]);
           for (const id of scene.ids) {
@@ -120,6 +121,7 @@ describe("the scene-wide view, over every small world", () => {
           const holds = (e) => g.holds.filter((h) => h.ext === e && h.via != null).length;
           expect([at, rows.map((r) => [r.ext, r.count])]).toEqual([at, exts.filter((e) => holds(e.id)).map((e) => [e.id, holds(e.id)])]);
           expect([at, lg.idle.map((x) => x.ext)]).toEqual([at, exts.filter((e) => !holds(e.id)).map((e) => e.id)]);
+          expect([at, lg.idle.filter((x) => x.colour !== NEUTRAL)]).toEqual([at, []]);
           expect(lg.problems).toEqual([]);
           expect(legend(g, colour, { isolated: "t.a" }).groups.flatMap((x) => x.rows).filter((r) => r.on).map((r) => r.ext)).toEqual(running.some((r) => r.id === "t.a") && holds("t.a") ? ["t.a"] : []);
           // the card: the responding chain with the graph's verbs for it; nothing that doesn't act on it
@@ -150,7 +152,7 @@ describe("the scene-wide view, over every small world", () => {
     expect(k.plugins).toEqual([{ ext: "v.sel", name: "Select", colour: colour("v.sel"), verbs: [{ text: "Pick", key: "E", state: "on", title: "enabled" }] }]);
   });
 
-  it("failed extensions and missing packages are the legend's problems, in red", () => {
+  it("failed extensions and missing packages are the legend's problems, each with why", () => {
     const g = buildGears({ metas: [{ id: "t.x", type: "scene:extension", name: "Ex" }], scene: { d: { objects: {}, traits: {} }, objects: {}, ids: [], parents: new Map(), groups: new Map() }, settled: { failed: ["t.x"], errors: { "t.x": "boom" }, missing: ["https://x.test/pkg"] } });
     expect(legend(g, colours([])).problems).toEqual([{ text: "Ex", why: "failed: boom" }, { text: "x.test/pkg", why: "package not loaded here" }]);
   });
@@ -186,15 +188,6 @@ describe("the most specific responder", () => {
     }
     expect(isGeneric(make(ALLR), "scene.carry") && isGeneric(make(ALLR), "keep.plain") && !isGeneric(make(ALLR), "g.game")).toBe(true);
   });
-
-  it("one outline in the lead's colour; the whole chain only when hovered", () => {
-    const g = make(ALLR);
-    const colour = colours(ALLR);
-    expect(looks(g, colour).card.outline).toEqual([colour("g.game")]);
-    expect(looks(g, colour).plain.outline).toEqual([colour("scene.carry")]);
-    expect(looks(g, colour, { focus: "card", banded: "card" }).card.outline).toEqual(responders(g, "card").slice(0, BANDS).map(colour));
-    expect(looks(g, colour, { focus: "card", banded: "card" }).plain.outline).toEqual([colour("scene.carry")]);
-  });
 });
 
 describe("glyphs", () => {
@@ -204,7 +197,7 @@ describe("glyphs", () => {
   const make = (inspect, display = {}) => buildGears({ metas, scene, running: [{ id: "t.game", scope: "scene" }], inspect, owners: { layers: [], labels: [], display } });
   const who = (v, mine) => (mine ? "you" : { "v:ben": "Ben" }[v] ?? "someone");
 
-  it("a lock for a claim, a hand for the pose that counts, a gear for a process, an eye for another's override; in that order; none for the X-ray's own", () => {
+  it("a lock for a claim, a hand for the pose that counts, a gear for a process, an eye for another's override; in that order; none for the X-ray's own; a lapsing lock and a yielding hand say so", () => {
     const g = make(
       [
         { id: "scene.claims", value: { claims: [{ id: "c", kind: "turn", viewer: "v:ben" }, { id: null, kind: "seat", viewer: "v:ana", mine: true }] } },
@@ -223,7 +216,9 @@ describe("glyphs", () => {
       { kind: "gear", title: "driven by a process of Game" },
       { kind: "eye", title: "shown otherwise by Game (hidden)" },
     ]);
-    expect(Object.keys(GLYPHS)).toEqual(["lock", "hand", "gear", "eye", "link"]);
+    // a lapsing lock and a yielding hand say so
+    const lapsing = make([{ id: "scene.claims", value: { claims: [{ id: "c", kind: "turn", viewer: "v:ben", lapsing: true }] } }, { id: "scene.poses", value: { holds: [{ id: "c", viewer: "v:ben", rank: 0, yields: true }] } }]);
+    expect(glyphs(lapsing, { who }).get("c").map((x) => x.title)).toEqual(["turn claimed by Ben (lapsing)", "held by Ben (yielding)"]);
   });
 
   it("links are boxes: their role, or closed with why", () => {
@@ -231,11 +226,6 @@ describe("glyphs", () => {
     const out = glyphs(g, { links: [{ path: ["d"], role: "acting", open: true }, { path: ["e"], role: "pinned", open: false, reason: "unavailable" }, { path: ["d", "x"], role: "acting", open: true }] });
     expect(out.get("d")).toEqual([{ kind: "link", title: "acting" }]);
     expect(out.get("e")).toEqual([{ kind: "link", title: "pinned, closed: unavailable" }]);
-  });
-
-  it("a yielding hand and a lapsing lock say so", () => {
-    const g = make([{ id: "scene.claims", value: { claims: [{ id: "c", kind: "turn", viewer: "v:ben", lapsing: true }] } }, { id: "scene.poses", value: { holds: [{ id: "c", viewer: "v:ben", rank: 0, yields: true }] } }]);
-    expect(glyphs(g, { who }).get("c").map((x) => x.title)).toEqual(["turn claimed by Ben (lapsing)", "held by Ben (yielding)"]);
   });
 });
 

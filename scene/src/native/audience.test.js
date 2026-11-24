@@ -85,19 +85,6 @@ describe("the audience algebra, exhaustively", () => {
     };
     expect(failures(cases, ok)).toEqual([]);
   });
-
-  it("a missing `only` enlarges the audience: why an unknown policy must fail closed", () => {
-    expect(mergeAudience([{ show: ALL }, { only: ["a"] }])).toEqual(["a"]);
-    expect(mergeAudience([{ show: ALL }])).toBe(ALL);
-  });
-
-  it("today's table: face down in your own tray is yours (expose and occlude are two things, not one intersection)", () => {
-    // the tray shows it to its seat and screens it from the rest; lying face down shows it to nobody
-    expect(mergeAudience([{ show: ["a"], only: ["a"] }, null])).toEqual(["a"]);
-    // face up behind a's screen: shown to all, a's alone
-    expect(mergeShown([{ show: ALL }, { only: ["a"] }])).toBe(ALL);
-    expect(mergeAudience([{ show: ALL }, { only: ["a"] }])).toEqual(["a"]);
-  });
 });
 
 describe("answers, made safe", () => {

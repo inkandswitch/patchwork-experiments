@@ -466,8 +466,10 @@ describe("H7: clock writes made at once, on Automerge", () => {
     let x = 0;
     v.clock.process({ step() {}, save: (d) => x && (d.objects.o.transform.position[0] = x) });
     for (let i = 0; i < 5; i++) w.frame();
+    expect(v.doc.objects.o.saved_n).toBeUndefined(); // (the world's own kept process: it counts its saves)
     w.events.save();
     w.frame();
+    expect(v.doc.objects.o.saved_n).toBe(1); // the 30 s checkpoint ran, and its saves were written
     expect(v.doc.objects.o.saved).toBeUndefined(); // saved, but not moved
     x = 2;
     v.clock.pause();
@@ -500,11 +502,20 @@ describe("H7: replicated processes", () => {
 });
 
 describe("the computer's status", () => {
-  it("says who paused, who computes, a stall, and why nobody here can", () => {
-    const w = world(["read-only"]);
+  // (a stall: the follower's test above)
+  it("says who paused, who computes, and why nobody here can", () => {
+    const w = world(["writable", "read-only"]);
     w.events.join(w.views[0]);
     w.frame();
-    expect(w.views[0].clock.status()).toMatchObject({ running: true, computer: null, able: false, why: "view only" });
+    w.events.join(w.views[1]);
+    for (let i = 0; i < 3; i++) w.frame();
+    const [a, b] = w.views;
+    expect(a.clock.status()).toMatchObject({ running: true, computer: { viewer: "v0", mine: true }, able: true, why: null });
+    expect(b.clock.status()).toMatchObject({ running: true, computer: { viewer: "v0", mine: false }, able: false, why: "view only" });
+    a.clock.pause();
+    for (let i = 0; i < 3; i++) w.frame();
+    expect(b.clock.status()).toMatchObject({ running: false, by: "v0", computer: null });
+    w.free();
   });
 });
 

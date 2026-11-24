@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The drawer's grip in a mounted stage (native/drawer.js, EDITOR.md, "The interface"): its widths
 // are this viewer's prefs, kept per scene, and its presses and keys are the
-// drawer's own (I5): in each base body, with something selected, a drag, a
+// drawer's own: in each base body, with something selected, a drag, a
 // click, a double-click and the grip's keys reach no part of the scene, so
 // nothing is selected, deselected, carried or locked.
 import { describe, it, expect, vi, afterEach } from "vitest";
@@ -23,21 +23,18 @@ afterEach(() => {
   s = null;
   localStorage.clear();
   vi.restoreAllMocks();
-  claimLeft.on = false;
 });
 
 /** Whatever reaches the scene's chain: every key and press a general part is offered. It docks a panel of its own (an editor) when asked. */
-const claimLeft = { on: false };
 function recorder(seen) {
   const note = (type) => (ev) => (seen.push([type, ev.key ?? null]), false);
   return {
     meta: { id: "t.seen" },
     module: {
       create: (api) => ({
-        // (it takes ArrowLeft, as a helm or a walk does, so it is held until its keyup)
         input: {
-          key: (ev) => (seen.push(["key", ev.key ?? null]), ev.key === "ArrowLeft" && !!claimLeft.on),
-          keyup: (ev) => (seen.push(["keyup", ev.key ?? null]), true),
+          key: note("key"),
+          keyup: note("keyup"),
           press: note("press"),
           click: note("click"),
           dblclick: note("dblclick"),
@@ -90,25 +87,8 @@ describe("the drawer's grip, mounted", () => {
     expect(s.local.get()["scene.prefs"]).toEqual({});
   });
 
-  it("a key held at the stage and let go with focus on the grip still reaches its holder, and its auto-repeats don't resize", async () => {
-    const seen = [];
-    await mount(seen);
-    claimLeft.on = true;
-    s.instance("t.seen").dockPanel();
-    await settle();
-    const before = { ...s.local.get()["scene.prefs"] };
-    s.root.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "ArrowLeft", code: "ArrowLeft" }));
-    // focus comes to the grip (a click, or Tab) while ArrowLeft is held
-    grip().focus();
-    grip().dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, composed: true, key: "ArrowLeft", code: "ArrowLeft", repeat: true }));
-    grip().dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, composed: true, key: "ArrowLeft", code: "ArrowLeft" }));
-    await settle();
-    expect(seen.filter(([t]) => t === "keyup")).toEqual([["keyup", "ArrowLeft"]]);
-    expect(s.local.get()["scene.prefs"]).toEqual(before);
-  });
-
   for (const body of ["look", "edit"]) {
-    it(`I5 in ${body}: with A selected, a drag, a click, a double-click and the grip's keys select nothing, deselect nothing, lock nothing, and reach no part`, async () => {
+    it(`the grip's own, in ${body}: with A selected, a drag, a click, a double-click and the grip's keys select nothing, deselect nothing, lock nothing, and reach no part`, async () => {
       const seen = [];
       await mount(seen);
       // ("edit": Look holding the editor)

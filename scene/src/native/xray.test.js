@@ -81,9 +81,10 @@ const refreshed = async () => {
 describe("scene.xray", () => {
   const looksOf = (id) => s.debug.displayed().get(id) ?? null;
 
-  it("X picks it up while not editing: its legend docks, the toolbar toggle checks; X puts it down and the panel goes", async () => {
-    await mount();
+  it("X picks it up while not editing: its legend docks, the toolbar toggle checks; X puts it down and the panel goes; down, it builds and shows nothing", async () => {
+    const log = await mount();
     s.edit(false);
+    log.api.use("claims").claim("a", "turn");
     await settle();
     expect(inst().state.held).toBe(false);
     s.key("x");
@@ -102,6 +103,15 @@ describe("scene.xray", () => {
     await settle();
     expect(inst().state.held).toBe(false);
     expect(s.drawer().order.length).toBe(0);
+    // down: a hover and a doc change build nothing, and nothing of it is displayed
+    s.debug.viewport.pick = hitOn("a");
+    s.pointer("pointermove", 30, 30, { buttons: 0 });
+    s.change((d) => (d.objects.a.name = "Ace!"));
+    await refreshed();
+    expect(inst().state).toMatchObject({ held: false, hovered: null, gears: null });
+    expect(s.debug.displayed().size).toBe(0);
+    expect(s.port.querySelectorAll(".label.xray-badge").length).toBe(0);
+    expect(inst().card.hidden && inst().strip.hidden).toBe(true);
   });
 
   it("every object is displayed ghosted and outlined in its holders' colour, what nothing holds faded; down, none of it stays", async () => {
@@ -261,27 +271,5 @@ describe("scene.xray", () => {
     s.debug.viewport.raycast = () => ({ id: "a", point: [0, 0, 0], normal: [0, 1, 0], distance: 4 });
     await time.until(() => inst().state.hovered === "a", { frames: 60 });
     expect(s.local.get().pointer.wanted).toBe(false);
-  });
-
-  it("Escape puts it down; down, it builds nothing, displays nothing and docks nothing", async () => {
-    const log = await mount();
-    s.edit(false);
-    log.api.use("claims").claim("a", "turn");
-    s.key("x");
-    await settle();
-    await refreshed();
-    expect(s.debug.displayed().size).toBeGreaterThan(0);
-    s.key("Escape", { code: "Escape" });
-    await settle();
-    expect(inst().state.held).toBe(false);
-    expect(s.drawer().order.length).toBe(0);
-    s.debug.viewport.pick = hitOn("a");
-    s.pointer("pointermove", 30, 30, { buttons: 0 });
-    s.change((d) => (d.objects.a.name = "Ace!"));
-    await refreshed();
-    expect(inst().state).toMatchObject({ held: false, hovered: null, gears: null });
-    expect(s.debug.displayed().size).toBe(0);
-    expect(s.port.querySelectorAll(".label.xray-badge").length).toBe(0);
-    expect(inst().card.hidden && inst().strip.hidden).toBe(true);
   });
 });

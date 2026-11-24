@@ -225,7 +225,7 @@ describe("a live link opens a stage for its doc", () => {
     expect(s.doc().objects.card).toBeUndefined();
   });
 
-  it("a link removed closes its stage; a link to a doc that can't be opened is closed, unavailable, and drawn as its hint", async () => {
+  it("a link removed closes its stage; a link to a doc that can't be opened is closed, unavailable", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountLinked();
     s = m.s;
