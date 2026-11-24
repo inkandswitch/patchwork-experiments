@@ -47,23 +47,21 @@ import { createAtom, assoc } from "./atom.js";
 import { createHost, updateAll } from "./host.js";
 import { createPresence } from "./presence.js";
 import { stamp } from "./provenance.js";
-import { traitKeys } from "./activation.js";
 import { createPackages } from "./packages.js";
 import { createFlush } from "./flush.js";
-import { chainOrder, hitChain, holdersFor } from "./chain.js";
+import { segmentOf } from "./chain.js";
 import { handleReadOnly, readOnlyHandle, stageRepo } from "./readonly.js";
-import { LOOK } from "./bodies.js";
+import { offeredBodies } from "./bodies.js";
 import { createView, projectView } from "./view.js";
-import { EMPTY as NO_AMBIENTS, mergeAmbients } from "./ambients.js";
+import { EMPTY as NO_AMBIENTS, offeredAmbients } from "./ambients.js";
 import { scopeViewport, hitIn, rayIn } from "./scope.js";
 import { elementOf, keyOf, parseKey } from "./paths.js";
 import { lookChain } from "./key-order.js";
-import { commandState } from "./commands.js";
+import { commandState, distanceTo } from "./commands.js";
 import * as ops from "../shared/ops.js";
-import { createContent, statusOf } from "../content/content.js";
+import { createContent } from "../content/content.js";
 import { modelOf, snapshotOf } from "./model.js";
 import { createDisplay } from "./display.js";
-import { isGroup } from "../shared/groups.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";
@@ -310,12 +308,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     if (statusDirty) {
       statusDirty = false;
       // what each object's state says to people (local.status)
-      const objects = derive().objects;
-      const next = {};
-      for (const id of content.ids()) {
-        const st = objects[id] && !isGroup(objects[id]) ? statusOf(content.of(id)?.state, { writable: writable() }) : null;
-        if (st) next[id] = Object.freeze(st);
-      }
+      const next = content.statuses({ objects: derive().objects, writable: writable() });
       if (JSON.stringify(next) !== JSON.stringify(local.get().status)) local.swap(assoc("status", Object.freeze(next)));
     }
     display.redraw(derive());
@@ -341,17 +334,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     }
     // its ambients, stacked per name the same way, as frozen plain JSON (./ambients.js);
     // the outermost doc's are the world's (STAGE.md, "Views, stages and links"), which the view reads (view.ambient)
-    const offered = mergeAmbients(
-      running.map((r) => {
-        try {
-          return { id: r.id, offer: r.instance.ambient?.() ?? null };
-        } catch (err) {
-          console.warn(`[scene] extension “${r.id}”: ambient failed`, err);
-          return { id: r.id, offer: null };
-        }
-      }),
-      ambients,
-      (ext, name, err) => console.warn(`[scene] extension “${ext}”: ambient “${name}” refused: ${err.message}`),
+    const offered = offeredAmbients(running, ambients, (ext, name, err) =>
+      name == null ? console.warn(`[scene] extension “${ext}”: ambient failed`, err) : console.warn(`[scene] extension “${ext}”: ambient “${name}” refused: ${err.message}`),
     );
     if (offered !== ambients) {
       ambients = offered;
@@ -538,18 +522,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   /** Every running extension's bodies, by id (the first to offer an id has it); the view asks only a stage that acts. */
   function bodyDefs() {
-    const out = new Map();
-    for (const { id: ext, value } of host.collect("bodies")) {
-      for (const def of Array.isArray(value) ? value : []) {
-        if (!def || typeof def.id !== "string" || typeof def.enter !== "function" || def.id === LOOK.id) continue;
-        if (out.has(def.id)) {
-          console.warn(`[scene] body “${def.id}” is offered by both ${out.get(def.id).ext} and ${ext}; ${out.get(def.id).ext}'s is used`);
-          continue;
-        }
-        out.set(def.id, { ext, def });
-      }
-    }
-    return out;
+    return offeredBodies(host.collect("bodies"), (id, kept, other) => console.warn(`[scene] body “${id}” is offered by both ${kept} and ${other}; ${kept}'s is used`));
   }
   /** A body of this stage's going on the stack: its input, the extension's (null if it has stopped). */
   function bodyInput(ext, rec, input, left) {
@@ -614,18 +587,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
 
   /** How far a target is from the eye: to the hit when it's on the target (or under it), else to its box. */
   function distanceFrom(from, hit, target) {
-    if (!Array.isArray(from) || target == null) return Infinity;
-    if (hit?.id != null && lookChain(hit.id, derive().parents).includes(target)) {
-      if (Number.isFinite(hit.distance)) return hit.distance;
-      if (Array.isArray(hit.point)) return Math.hypot(hit.point[0] - from[0], hit.point[1] - from[1], hit.point[2] - from[2]);
-    }
-    const b = viewport.ok ? scope.objectBox(target, { hints: true }) : null;
-    if (b) {
-      const q = [0, 1, 2].map((i) => Math.max(b.min[i], Math.min(from[i], b.max[i])));
-      return Math.hypot(q[0] - from[0], q[1] - from[1], q[2] - from[2]);
-    }
-    const m = displayedWorld(target);
-    return m ? Math.hypot(m[12] - from[0], m[13] - from[1], m[14] - from[2]) : Infinity;
+    return distanceTo(from, hit, target, { chain: (id) => lookChain(id, derive().parents), box: (t) => (viewport.ok ? scope.objectBox(t, { hints: true }) : null), worldOf: displayedWorld });
   }
 
   /**
@@ -1006,14 +968,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   // This stage's segment of the chain (STAGE.md, "The input chain") for its element of
   // the hit's path: its holders, nearest first, then its root's. (The view
   // offers its plugins after every segment.)
-  function segment(element) {
-    const running = host.running();
-    const m = derive();
-    const chain = element != null && m.objects[element] ? hitChain(element, m.parents, m.groups, m.objects) : [];
-    const holders = holdersFor(running, chain, (oid) => traitKeys(oid == null ? m.d : m.objects[oid]));
-    const order = chainOrder({ running, holders });
-    return { order, holderOf: (ext) => holders.get(ext)?.id ?? null };
-  }
+  const segment = (element) => segmentOf(host.running(), derive(), element);
   /** One of this stage's extensions' commands, or null. */
   function commandOf(ext, command) {
     try {
