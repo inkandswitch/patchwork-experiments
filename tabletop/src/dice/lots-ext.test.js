@@ -13,6 +13,34 @@ import { cupOf, redrawFor } from "./cup.js";
 
 const CUP = "dice.cup";
 
+// Time is the test's. Two axes, as the code under test uses two: the wall clock (`now`, which Date.now and
+// the stage's `now` read; it moves only when a test jumps it) and elapsed timer time (`elapsed`, which the
+// runner's `after` timers wait on; it moves only when `elapse` runs the timers due). Nothing here waits on
+// the event loop's clock.
+let now;
+let elapsed;
+let timers;
+let version; // bumped by every write to the doc or to a client's local state
+let inflight; // WebCrypto calls begun and not yet finished
+beforeEach(() => {
+  now = 1_000_000;
+  elapsed = 0;
+  timers = [];
+  version = 0;
+  inflight = 0;
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  const subtle = globalThis.crypto.subtle;
+  for (const m of ["generateKey", "exportKey", "importKey", "deriveBits", "encrypt", "decrypt"]) {
+    const real = subtle[m].bind(subtle);
+    vi.spyOn(subtle, m).mockImplementation((...args) => {
+      inflight++;
+      return real(...args).finally(() => inflight--);
+    });
+  }
+});
+afterEach(() => vi.restoreAllMocks());
+const turn = () => new Promise((r) => setTimeout(r, 0));
+
 function world({ seated, present: arrived, running = arrived }) {
   const present = [...arrived];
   let doc = { objects: { cup: { name: "Cup", traits: { [CUP]: { holder: null, up: true, blind: false, roll: null, round: null } } }, d1: { name: "d1", traits: { "dice.die": {} } } }, traits: { [START]: { steps: [{ first: true }], started: { by: "ana" } } } };
@@ -32,6 +60,7 @@ function world({ seated, present: arrived, running = arrived }) {
       change(fn) {
         doc = structuredClone(doc);
         fn(doc);
+        version++;
         queueMicrotask(flush);
       },
       use: (n) => (n === "audience" ? { audience: (id) => audience(id, v) } : null),
@@ -39,13 +68,14 @@ function world({ seated, present: arrived, running = arrived }) {
       // everyone here, each saying whether their client runs lots (the extension's presence key)
       channel: { viewer: v, peers: () => Object.fromEntries(present.filter((p) => p !== v).map((p) => [`s-${p}`, { viewer: p, keys: running.includes(p) ? { [ID]: { here: true } } : {} }])), set() {} },
       collect: (name) => (name === "roster" ? [{ id: "seats", value: { viewers: () => seated, who: (x) => x } }] : []),
-      local: { swap: (fn) => ((c.local = fn(c.local)), queueMicrotask(flush)) },
+      local: { swap: (fn) => ((c.local = fn(c.local)), version++, queueMicrotask(flush)) },
       nameOf: (id) => (id === "cup" ? "Cup" : id),
-      // the stage's time (scene/src/stage/time.js): the event loop's wall, here
-      now: () => Date.now(),
+      // the stage's time (scene/src/stage/time.js): the test's clocks
+      now: () => now,
       after(ms, fn) {
-        const h = setTimeout(fn, ms);
-        return () => clearTimeout(h);
+        const t = { at: elapsed + ms, fn };
+        timers.push(t);
+        return () => void (timers = timers.filter((x) => x !== t));
       },
     };
     c.api = api;
@@ -61,17 +91,37 @@ function world({ seated, present: arrived, running = arrived }) {
     write(fn) {
       doc = structuredClone(doc);
       fn(doc);
+      version++;
     },
     hud: (v) => clients.get(v).ext.hud().map((l) => l.text),
     setAudience(fn) {
       audience = fn;
       flush();
     },
+    // Until nothing more happens: a pass in which every client looked again, no crypto call was
+    // outstanding at its end, and neither the doc nor any client's local state was written.
     async settle() {
-      for (let i = 0; i < 60; i++) {
+      for (let i = 0; ; i++) {
+        if (i > 1000) throw new Error("settle: still writing after 1000 passes");
+        const seen = version;
         flush();
-        await new Promise((r) => setTimeout(r, 2));
+        await turn();
+        while (inflight > 0) await turn();
+        if (version === seen) return;
       }
+    },
+    // `ms` of timer time pass (the wall clock is not moved): each timer due runs, in order, settling after each.
+    async elapse(ms) {
+      const end = elapsed + ms;
+      for (;;) {
+        const due = timers.filter((t) => t.at <= end).sort((a, b) => a.at - b.at)[0];
+        if (!due) break;
+        timers = timers.filter((t) => t !== due);
+        elapsed = Math.max(elapsed, due.at);
+        due.fn();
+        await this.settle();
+      }
+      elapsed = end;
     },
     /** `v`'s client starts again (a reload): what it kept in memory is gone, what it kept in storage isn't. */
     rejoin(v) {
@@ -326,20 +376,16 @@ describe("dice.lots, a draw open to all (a throw in the open)", () => {
   it("a veto by not opening: Cy, the last to open, knows its seed and doesn't open; the asker's deadline draws again without him, and the round says who was left out", async () => {
     const w = world({ seated: ["ana", "ben", "cy"], present: ["ana", "ben", "cy"] });
     w.clients.get("cy").ext.dispose();
-    let now = 1_000_000;
-    const spy = vi.spyOn(Date, "now").mockImplementation(() => now);
     const draw = w.lots("ana").draw("d1", { sealers: [], of: ["d1"] });
     const id = w.round("d1").id;
     w.write((d) => void (d.objects.d1.traits["dice.die"].round.commits.cy = commitOf(id, "cy", freshNonce(), "", ["d1"])));
     await w.settle();
     now += OPEN_MS + 100;
     await w.settle();
-    await new Promise((r) => setTimeout(r, 300));
-    await w.settle();
+    await w.elapse(300);
     const r2 = w.round("d1");
     expect(r2).toMatchObject({ draw, members: ["ana", "ben"], excluded: ["cy"], protests: {} });
     expect(w.lots("ben").state("d1")).toMatchObject({ phase: "open", excluded: ["cy"], contributors: ["ana", "ben"] });
-    spy.mockRestore();
     w.dispose();
   });
 
@@ -364,18 +410,10 @@ describe("dice.lots, a draw open to all (a throw in the open)", () => {
 
 describe("dice.lots, a round whose asker can't move it on", () => {
   // time by hand: what each client first saw, and when the deadlines fall
-  let now;
-  let spy;
-  beforeEach(() => {
-    now = 1_000_000;
-    spy = vi.spyOn(Date, "now").mockImplementation(() => now);
-  });
-  afterEach(() => spy.mockRestore());
   const later = async (w, ms) => {
     now += ms;
     await w.settle();
-    await new Promise((r) => setTimeout(r, 1100)); // the runner's own timer (a second, watching someone else's round)
-    await w.settle();
+    await w.elapse(1100); // the runner's own timer (a second, watching someone else's round)
   };
 
   it("the asker leaves before opening: everyone waits on her until STALE_MS has passed with her gone, then the first client to see it gives it up in the doc, and every client says it's ended", async () => {
@@ -405,7 +443,7 @@ describe("dice.lots, a round whose asker can't move it on", () => {
     await later(w, STALE_MS);
     expect(JSON.stringify(w.raw("d1"))).toBe(after);
     w.dispose();
-  }, 15_000);
+  });
 
   it("the asker leaves before the commits are in (one member never commits): her deadline never comes, and the round is ended the same way", async () => {
     const w = world({ seated: ["ana", "ben", "cy"], present: ["ana", "ben", "cy"] });
@@ -419,7 +457,7 @@ describe("dice.lots, a round whose asker can't move it on", () => {
     expect(w.round("d1").gone).toEqual({ ben: true });
     expect(w.lots("ben").state("d1").phase).toBe("ended");
     w.dispose();
-  }, 15_000);
+  });
 
   it("an asker who is here is never given up on, however long its round takes: it moves it on itself", async () => {
     const w = world({ seated: null, present: ["ana", "ben", "cy"] });
@@ -431,7 +469,7 @@ describe("dice.lots, a round whose asker can't move it on", () => {
     expect(w.round("d1").gone).toEqual({});
     expect(w.lots("ben").state("d1")).toMatchObject({ phase: "opening", waiting: ["ana"] });
     w.dispose();
-  }, 15_000);
+  });
 
   it("the asker's own client, back without its part (another browser's, or storage cleared), gives up its own round at once", async () => {
     const r = newRound({ draw: "dLOSTxxx", id: "rLOSTxxx", by: "ana", at: 0, of: ["d1"], sealers: [], members: ["ana", "ben"], commit: commitOf("rLOSTxxx", "ana", freshNonce(), "", ["d1"]) });
@@ -445,7 +483,7 @@ describe("dice.lots, a round whose asker can't move it on", () => {
     expect(w.round("d1").protests).toEqual({});
     expect(w.lots("ana").state("d1").fault).toBe(null);
     w.dispose();
-  }, 15_000);
+  });
 
   it("the last to open, knowing the face, writes `gone` in its own name: nothing is ended; everyone waits on it, by name, and the asker draws again without it at its deadline, as if it had only stalled", async () => {
     const id = "rVETOxxx";
@@ -475,7 +513,7 @@ describe("dice.lots, a round whose asker can't move it on", () => {
     expect(again).toMatchObject({ draw: "dVETOxxx", members: ["ana", "ben"], excluded: ["cy"], tries: 1 });
     expect(again.id).not.toBe(id);
     w.dispose();
-  }, 15_000);
+  });
 
   it("a `gone` in my name my client didn't write is a forgery: my client refuses the round and says so, and everyone's HUD says who says so", async () => {
     const w = world({ seated: ["ana", "ben", "cy"], present: ["ana", "ben", "cy"] });
@@ -492,7 +530,7 @@ describe("dice.lots, a round whose asker can't move it on", () => {
     expect(w.hud("ben")).toContain("Someone wrote the lots for d1 in your name: your client refused them, and nothing lands by them.");
     expect(w.hud("ana")).toContain("Ben says the lots for d1 were written in their name by someone else: nothing lands by them.");
     w.dispose();
-  }, 15_000);
+  });
 
   it("a cup lifted while its holder is away waits for her by design: never ended", async () => {
     const w = world({ seated: ["ana", "ben"], present: ["ana", "ben"] });
@@ -506,7 +544,7 @@ describe("dice.lots, a round whose asker can't move it on", () => {
     expect(w.round().gone).toEqual({});
     expect(w.lots("ben").state("cup")).toMatchObject({ phase: "sealed", waiting: ["ana"] });
     w.dispose();
-  }, 15_000);
+  });
 });
 
 describe("dice.lots, who could know a cup's roll, as its holder's client tells it: never less than whom it sealed its own part to", () => {
