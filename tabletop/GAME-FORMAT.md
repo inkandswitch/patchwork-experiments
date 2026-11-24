@@ -188,7 +188,7 @@ Piece = {
                               // places other pieces snap to, in its frame; a whole `rotation` is the frame a
                               // drawn card lies in there (a domino rack's places stand a tile on edge)
   snapRadius?: number,        // how near a snap point a thing snaps to it (and how far a hand's card slot reaches);
-                              // without it the scene guesses from the points' spacing, and one point alone has none
+                              // without it the scene takes 0.71 × the points' closest spacing in plan, and one point alone has none
   zone?: { min: Vec3, max: Vec3 },   // a hand, when a thing places it for a seat: a box in its frame, +Z toward the seat
   bag?: { rule: "random" | "random-replace" | "top" },   // a bag: things placed with `contents` go in it
   traits?: { [key]: object }  // traits every copy carries, as the scene documents them (a die's `dice.die`)
