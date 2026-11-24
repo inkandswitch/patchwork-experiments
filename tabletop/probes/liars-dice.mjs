@@ -83,7 +83,18 @@ const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "li
 const b = await browser({ root: ROOT, port: 4893, cdp: 9893, page: "/tabletop/probes/liars-dice-probe.html", width: 1816, height: 610, show: process.argv.includes("--show"), timeout: 300_000 });
 const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
 const P = (e) => js(`window.__p.${e}`);
-const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
+/** Poll `expr` on the wall for up to ms, a few frames of the page's clock at each look: the secure deck's crypto is the wall's, and what it delivers moves with the clock. */
+const settleBy = async (expr, ms, every = 40) => {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await b.js(expr).catch(() => false);
+    if (v) return v;
+    if (Date.now() - t0 > ms) return false;
+    await b.step(20);
+    await sleep(every);
+  }
+};
+const until = (expr, ms = 10_000) => settleBy(`window.__p.${expr}`, ms, 40);
 const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, shots: [], timeline: [] };
