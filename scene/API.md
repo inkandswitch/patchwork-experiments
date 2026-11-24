@@ -97,7 +97,8 @@ its own, `opacity` × its own, `outline` the colours its box is drawn in (severa
 stacked in running order, copied to frozen JSON; `ambient(name)` is the outermost doc's, `null | { value, mine, frame,
 use }` (I13); the viewport draws `atmosphere` as CONVENTIONS.md, "Atmosphere" states. **The camera** is saved per
 viewer, else `view.start.home`; held, the orbit is off. **Time** is never `Date.now`, `setTimeout` or
-`requestAnimationFrame` (`manualTime()` moves when stepped).
+`requestAnimationFrame` (`manualTime()` moves when stepped); yielding the thread is scheduling, not time (the kernel's
+`yieldThread`, the same under either).
 
 ## `instance`
 
