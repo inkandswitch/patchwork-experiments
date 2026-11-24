@@ -1202,3 +1202,21 @@ dimension's label off a short line is the dimensions part's (a label item's
 (tabletop's slots copy it). Comments and constants that named one example
 scene are said in general terms. The atmosphere's every field, default and
 range are written down in CONVENTIONS.md.
+
+### 2026-11-24 — The kernel's face; one snap radius; hands held for a kind, tightened
+
+A review of the layers commit. The snap radius default is part of the GLB
+convention, so it is applied once where the GLB is read
+(`gltf-content.js findSnapPoints`, with `defaultSnapRadius` beside
+`sanitizeConnectors` in the shared `connectors.js`): `content(id).extras.snapRadius`
+is the effective reach, or null under two connectors. The carry's and
+tabletop's copies of the default went, and the GLB field `snapPoints` (a
+second name for `connectors`) is no longer read. Only `router.hold` takes the
+kind a tool is held for (`held[].handKind`), refusing a kind not held and the
+kernel's own (`tool`, `popover`), which a command's `hand` may never name; a
+command's `tool` gives only `keys` and `pointer`. The layers above the kernel
+import from it only `stage/public.js`, a module of re-exports checked to be
+used; a root module is filed in the one layer that uses it, or shared; the
+sources are native; the boundary test resolves extensionless specs and
+refuses a non-literal `import()`. STAGE.md states the build controls' DOM
+events, and that only view plugins are told `view.arrived`.

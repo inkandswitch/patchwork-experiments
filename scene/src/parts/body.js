@@ -23,7 +23,7 @@
 // It writes nothing to the doc.
 
 import css from "./body.css?inline";
-import { LOOK } from "../stage/bodies.js";
+import { LOOK } from "../stage/public.js";
 import { EDIT_HAND, editing } from "./editing.js";
 import { holdKey } from "../hold-key.js";
 import { perFocus } from "../per-focus.js";

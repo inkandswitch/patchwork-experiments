@@ -7,7 +7,7 @@
 // cluster, drops and paste) asks `editing(view)` and nothing else, so what
 // editing shows is decided in one place.
 
-import { holding } from "../stage/bodies.js";
+import { holding } from "../stage/public.js";
 
 /** The Edit hand's kind: what the editor's commands name. */
 export const EDIT = "edit";

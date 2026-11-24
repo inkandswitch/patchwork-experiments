@@ -9,16 +9,18 @@ const swap = (entry, bytes, stale = () => false) => swapGLB(entry, bytes, { comp
 const unit = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 describe("content extras", () => {
-  it("carry the GLB scene's own extras, its connectors, its snap radius as it gives it, and its raw legend", async () => {
+  it("carry the GLB scene's own extras, its connectors, how far they reach (the GLB's, else from their spacing), and its raw legend", async () => {
     const glb = (nodeExtras) =>
       encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 0, 1] }], nodes: [{ mesh: 0, extras: nodeExtras }], extras: { seats: 4, connectors: "raw, replaced", legend: "raw scene legend" } });
-    const x = contentExtras(await prepareGLB(glb({ snapPoints: [[0, 0, 0], [2, 0, 0]] })));
+    const x = contentExtras(await prepareGLB(glb({ connectors: [[0, 0, 0], [2, 0, 0]] })));
     expect(x.seats).toBe(4);
     expect(x.connectors.map((p) => p.position)).toEqual([[0, 0, 0], [2, 0, 0]]);
-    // none given: none (the carry's rule supplies a reach, not the stage)
-    expect(x.snapRadius).toBe(null);
+    // none given: from the connectors' spacing in plan (0.71 × 2 m)
+    expect(x.snapRadius).toBeCloseTo(2 * Math.SQRT1_2);
     expect(Object.isFrozen(x)).toBe(true);
-    expect(contentExtras(await prepareGLB(glb({ snapPoints: [[0, 0, 0]], snapRadius: 0.3 }))).snapRadius).toBe(0.3);
+    expect(contentExtras(await prepareGLB(glb({ connectors: [[0, 0, 0]], snapRadius: 0.3 }))).snapRadius).toBe(0.3);
+    // one connector and no radius: no reach
+    expect(contentExtras(await prepareGLB(glb({ connectors: [[0, 0, 0]] }))).snapRadius).toBe(null);
     expect(contentExtras({ snap: { points: [], radius: null }, legend: null })).toEqual({ connectors: [], snapRadius: null, legend: null, layers: [] });
   });
 });

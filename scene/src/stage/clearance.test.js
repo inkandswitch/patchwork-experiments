@@ -28,7 +28,6 @@ describe("the depth range", () => {
     expect(sceneDepth([], []).radius).toBe(1);
     const one = sceneDepth([cube()], []);
     expect(one.radius).toBeCloseTo(Math.sqrt(3) / 2);
-    expect(one.boxes).toEqual([{ min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] }]);
     expect(sceneDepth([cube()], [new Box3(new Vector3(-10, 0, -10), new Vector3(10, 0, 10))]).radius).toBeGreaterThan(10);
   });
 });

@@ -138,7 +138,7 @@ is selected. `ctx.file(key, make)` → `{ url, hint }` is the scene's file doc f
 a versioned key (`"sailing/mast@1"`), made once and kept in `doc.assets`. A
 dropped part goes under the object hit, snapped to a connector that takes its
 `tags` (Alt: free), upright (`src/parts/parts-place.js`); a trait a body reads
-(`walk.spawn`) has a part declaring it.
+(a spawn point's) has a part declaring it.
 
 ## Copying objects
 

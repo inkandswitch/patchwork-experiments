@@ -1,24 +1,25 @@
 // The stage's renderer (STAGE.md, "Picking and camera"): the WebGL renderer
 // and the frame loop, put together from small modules, each one idea:
-//   ./atmosphere.js, ./sky.js        the atmosphere's value, lights and sky
-//   ./shadows.js                     the sun's shadow frame
-//   ./object-content.js              an object's nodes and what's in them
-//   ./clearance.js                   the depth range, from the nearest geometry
-//   ./camera.js                      the orbit, hold and ride
-//   ./picking.js                     rays, hits and the vertex snap
-//   ./widget-layers.js, ./labels.js  what extensions draw: groups, DOM labels
+//   ./object-tree.js, ./object-content.js  the objects: their tree, and what's in each
+//   ./atmosphere.js, ./draw-atmosphere.js  the atmosphere's value; its lights, fog and sky drawn
+//   ./shadows.js                           the sun's shadow frame
+//   ./clearance.js                         the depth range, from the nearest geometry
+//   ./camera.js                            the orbit, hold and ride
+//   ./picking.js                           rays, hits and the vertex snap
+//   ./widget-layers.js, ./labels.js        what extensions draw: groups, DOM labels
 // It draws nothing of its own beyond the objects and the sky, listens to no
 // input but the orbit's, and knows nothing about automerge: the stage
 // drives it from the scene doc.
 
-import { Box3, Color, DirectionalLight, Group, HemisphereLight, Matrix4, PerspectiveCamera, PMREMGenerator, Raycaster, Scene, SRGBColorSpace, Vector3, WebGLRenderer } from "three";
+import { Color, DirectionalLight, Group, HemisphereLight, PerspectiveCamera, PMREMGenerator, Raycaster, Scene, SRGBColorSpace, Vector3, WebGLRenderer } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { installLazyBVH } from "../pick-accel.js";
 import { colorSchemeOf, onThemeChange, readTheme } from "../theme.js";
 import { cleanAtmosphere, clearColourOf, LIGHTS } from "./atmosphere.js";
-import { createLights, drawAtmosphere } from "./sky.js";
+import { createLights, drawAtmosphere } from "./draw-atmosphere.js";
 import { aimShadow, castShadows, fitShadow, SHADOW_MAP } from "./shadows.js";
-import { bodyBox, contentOf, disposeObject, display, newEntry, placeholderLook, placeLocal, removePlaceholder, setHint, setOutline, swapGLB } from "./object-content.js";
+import { contentOf, disposeObject, display, placeholderLook, setHint, setOutline, swapGLB } from "./object-content.js";
+import { createObjectTree } from "./object-tree.js";
 import { depthRange, nearestClear, sceneDepth } from "./clearance.js";
 import { createCamera, toBox3 } from "./camera.js";
 import { aimRay, bvhQueue, castRay, pickAt, projectPoint, screenOf } from "./picking.js";
@@ -26,10 +27,8 @@ import { addLayer, followLayers, layerMeshes, removeLayers, widgetAt } from "./w
 import { LabelLayer } from "./labels.js";
 import { createRides } from "./ride.js";
 import { realTime } from "./time.js";
-import { parseKey } from "./paths.js";
 
 const color = (rgb) => new Color().setRGB(rgb[0], rgb[1], rgb[2], SRGBColorSpace);
-const stageOf = (key) => parseKey(key)?.n ?? 0;
 
 export class Viewport {
   /**
@@ -116,12 +115,6 @@ export class Viewport {
 
   /** Everything that doesn't need WebGL or a scene graph. The labels exist even when WebGL doesn't, so syncing them is always safe. */
   initState() {
-    /** group id → the ids of the objects in it (at any depth): a group has no node of its own */
-    this.groupMembers = new Map(); // the union of groupSets
-    this.groupSets = new Map(); // stage number → its groups' members
-    this.objects = new Map(); // id → its entry (object-content.js)
-    /** objectId → a held local transform, shown instead of the doc's (setPose) */
-    this.poses = new Map();
     /** owner → Set of its world-layer groups (widget-layers.js) */
     this.layers = new Map();
     /** owner → Box3 the near plane must not cut (setExtent) */
@@ -135,13 +128,15 @@ export class Viewport {
     this.theme = readTheme();
     this.disposers = [];
     this.needsRender = true;
-    /** what the depth range and shadow frame are fitted from (clearance.js sceneDepth), recomputed when stale */
-    this.depth = null;
+    /** what's shown, as the depth range and the shadow frame are fitted from it (fitted()); null: stale */
+    this.fit = null;
     /** the extensions' atmosphere, cleaned (setAtmosphere); null: the stage's own look */
     this.atmosphere = null;
     this.atmosphereKey = "null";
     /** the sky's mesh, made the first time a sky is asked for */
     this.sky = null;
+    /** the faint box every loading object's placeholder shares (object-content.js placeholderLook), made at the first */
+    this.placeholder = null;
     /** does the sun cast shadows (objects cast and receive them)? */
     this.shadows = false;
     /** the sun's shadow frame now and its key (shadows.js fitShadow); key null: fit again */
@@ -171,6 +166,7 @@ export class Viewport {
     this.widgets = new Group();
     this.widgets.name = "widgets";
     this.scene.add(this.content, this.widgets);
+    this.tree = createObjectTree({ root: this.content, changed: () => this.contentChanged() });
     // The on-top pass: extensions' onTop groups, drawn after the main pass
     // over a cleared depth buffer, so they're depth-tested among themselves
     // but never hidden by an object. Its own light rig, so a lit widget isn't
@@ -181,7 +177,6 @@ export class Viewport {
     const topKey = new DirectionalLight(0xffffff, 1.2);
     topKey.position.set(...LIGHTS.keyFrom);
     this.topScene.add(topKey);
-    this.placeholder = placeholderLook(color(this.theme.muted));
     installLazyBVH();
     this.raycaster = new Raycaster();
     // with a BVH, each mesh reports only its nearest hit; picking wants just that
@@ -200,7 +195,7 @@ export class Viewport {
 
   /** Something that changes the scene's extent did: the depth is fitted again before the next frame (and the shadow map redrawn). */
   contentChanged() {
-    this.depth = null;
+    this.fit = null;
     this.invalidate();
   }
 
@@ -223,7 +218,7 @@ export class Viewport {
   applyTheme() {
     if (!this.ok) return;
     this.readTheme();
-    this.placeholder.material.color.copy(color(this.theme.muted));
+    this.placeholder?.material.color.copy(color(this.theme.muted));
     for (const [id, entry] of this.objects) if (entry.display) this.applyDisplay(id, entry.display, entry.parentId, entry.inherited);
     this.invalidate();
     for (const fn of [...this.themeListeners]) fn(this.theme);
@@ -253,30 +248,29 @@ export class Viewport {
     this.render();
   }
 
-  /** What the depth range and the shadow frame are fitted from: each shown object's content and world box, and the extents. */
-  sceneDepth() {
-    if (!this.depth) {
-      const shown = [];
-      for (const [id, e] of this.objects) {
-        const box = e.kind === "group" ? null : this.objectBox(id);
-        if (box) shown.push({ content: e.content, box });
-      }
-      this.depth = sceneDepth(shown, this.extents.values());
+  /** What's shown, as the depth range (clearance.js sceneDepth) and the sun's frame (its boxes) are fitted from it; worked out again after a change. */
+  fitted() {
+    if (!this.fit) {
+      const shown = [...this.tree.shown()];
+      this.fit = {
+        depth: sceneDepth(shown.map(({ entry, box }) => ({ content: entry.content, box })), this.extents.values()),
+        sunBoxes: shown.map(({ box }) => ({ min: box.min.toArray(), max: box.max.toArray() })),
+      };
       if (this.shadows && this.renderer) this.renderer.shadowMap.needsUpdate = true;
     }
-    return this.depth;
+    return this.fit;
   }
 
   /** How near the nearest geometry is to world point p (clearance.js nearestClear). */
   nearestClear(p) {
-    return nearestClear(p, this.extents.values(), this.sceneDepth().near);
+    return nearestClear(p, this.extents.values(), this.fitted().depth.near);
   }
 
   /** The camera's depth range for this frame: what a render sets first, and a frame not drawn sets too (picks use it). */
   fitDepth() {
     const held = this.rig.heldDepth;
     const { clear, known } = held?.near != null ? { clear: 0, known: false } : this.nearestClear(this.camera.position);
-    const { near, far } = depthRange({ dist: this.rig.focusDistance(), radius: this.sceneDepth().radius, clear, known, held });
+    const { near, far } = depthRange({ dist: this.rig.focusDistance(), radius: this.fitted().depth.radius, clear, known, held });
     if (this.camera.near !== near || this.camera.far !== far) {
       this.camera.near = near;
       this.camera.far = far;
@@ -381,7 +375,7 @@ export class Viewport {
   fitSun() {
     const sun = this.atmosphere?.sun;
     if (!sun) return;
-    const fit = fitShadow(this.sceneDepth().boxes, this.rig?.focusPoint() ?? this.camera.position.toArray(), sun.direction, this.sunFrame?.radius);
+    const fit = fitShadow(this.fitted().sunBoxes, this.rig?.focusPoint() ?? this.camera.position.toArray(), sun.direction, this.sunFrame?.radius);
     if (!fit || fit.key === this.sunKey) return;
     this.sunKey = fit.key;
     this.sunFrame = fit.frame;
@@ -479,55 +473,45 @@ export class Viewport {
     return widgetAt(meshes, aimRay(this.raycaster, this.camera, this.size, x, y));
   }
 
-  // ─── objects ──────────────────────────────────────────────────────────────
+  // ─── objects (object-tree.js, object-content.js) ──────────────────────────
 
-  // A link's content is its doc (STAGE.md, "Views, stages and links"): the
-  // roots of the stage it opens (keys of another stage, ./paths.js) hang in
-  // the link's body, so hiding a link hides its doc, as hiding any object
-  // hides what it's made of; a link has no GLB, so its body's own box is its hint.
+  /** The object tree's entries by key. */
+  get objects() {
+    return this.tree.entries;
+  }
+  /** The poses held over the doc's transforms, by key. */
+  get poses() {
+    return this.tree.poses;
+  }
   ensureObject(id) {
-    let entry = this.objects.get(id);
-    if (!entry) {
-      entry = newEntry(id);
-      this.content.add(entry.group);
-      this.objects.set(id, entry);
-      const pose = this.poses.get(id);
-      if (pose) placeLocal(entry.group, pose);
-    }
-    return entry;
+    return this.tree.ensure(id);
   }
-
-  /** Put an object's group under its parent's (null = the scene root); a linked doc's root, in its link's body. */
-  setParent(id, parentId) {
-    const entry = this.objects.get(id);
-    if (!entry) return;
-    let target = this.content;
-    if (parentId && parentId !== id) {
-      const pe = this.ensureObject(parentId);
-      const p = stageOf(id) !== stageOf(parentId) ? pe.body : pe.group;
-      // never make a loop in the scene graph, whatever the caller says
-      let loops = false;
-      for (let o = p; o; o = o.parent) if (o === entry.group) loops = true;
-      if (!loops) target = p;
-    }
-    if (entry.group.parent !== target) target.add(entry.group);
-  }
-
   removeObject(id) {
-    const entry = this.objects.get(id);
-    if (!entry) return;
-    this.poses.delete(id);
-    entry.gen++;
-    // Attached objects outlive their parent: move them to the root (the scene
-    // doc gives them their new transforms).
-    for (const child of [...entry.group.children]) if (child !== entry.body) this.content.add(child);
-    // (and a link's doc, hung in its body: its stage closes on its own)
-    for (const child of [...entry.body.children]) if (this.objects.get(child.userData?.objectId)?.group === child) this.content.add(child);
-    removePlaceholder(entry);
-    disposeObject(entry.body);
-    entry.group.removeFromParent();
-    this.objects.delete(id);
-    this.contentChanged();
+    this.tree.remove(id);
+  }
+  setPose(id, transform) {
+    this.tree.setPose(id, transform);
+  }
+  worldOf(id) {
+    return this.tree.worldOf(id);
+  }
+  isShown(entry, opts) {
+    return this.tree.isShown(entry, opts);
+  }
+  contentShown(key) {
+    return this.tree.contentShown(key);
+  }
+  objectBox(id, opts) {
+    return this.tree.objectBox(id, opts);
+  }
+  groupBox(gid, opts) {
+    return this.tree.groupBox(gid, opts);
+  }
+  sceneBox(opts) {
+    return this.tree.sceneBox(opts);
+  }
+  setGroups(members, n = 0) {
+    if (this.tree.setGroups(members, n)) this.invalidate();
   }
 
   /** What the stage knows of an object's content (object-content.js contentOf), or null if it isn't here. */
@@ -539,7 +523,9 @@ export class Viewport {
   /** Where an object will be before its GLB arrives (object-content.js setHint); null clears. */
   setHint(id, bounds) {
     if (!this.ok) return;
-    if (setHint(this.ensureObject(id), bounds, this.placeholder)) this.contentChanged();
+    // the placeholders' look, made the first time one is shown, in the theme as it is then
+    this.placeholder ??= placeholderLook(color(this.theme.muted));
+    if (setHint(this.tree.ensure(id), bounds, this.placeholder)) this.contentChanged();
   }
 
   /** Draw an object's box in these colours (object-content.js setOutline); null clears. */
@@ -553,7 +539,7 @@ export class Viewport {
   /** Swap in a new GLB (object-content.js swapGLB): the old content stays until the new one is ready. */
   async setGLB(id, bytes) {
     if (!this.ok) return;
-    const entry = this.ensureObject(id);
+    const entry = this.tree.ensure(id);
     const gen = ++entry.gen;
     const took = await swapGLB(entry, bytes, {
       compile: (content) => this.renderer.compileAsync?.(content, this.camera, this.scene),
@@ -571,107 +557,15 @@ export class Viewport {
   /**
    * Display state from the scene doc (object-content.js display), under
    * `parentId`'s group (the caller has already checked for cycles: see
-   * hierarchy.js). A held pose (setPose) wins over the doc's transform until
-   * it's let go.
+   * hierarchy.js). A held pose wins over the doc's transform until it's let go.
    */
   applyDisplay(id, obj, parentId = null, inherited = null) {
     if (!this.ok) return;
-    const entry = this.ensureObject(id);
+    const entry = this.tree.ensure(id);
     entry.parentId = parentId ?? null;
-    this.setParent(id, parentId);
+    this.tree.setParent(id, parentId);
     display(entry, obj, inherited, this.poses.get(id) ?? obj?.transform, color(this.theme.object));
     this.contentChanged();
-  }
-
-  /**
-   * Show an object at a local transform ({ position, rotation, scale }, as
-   * the doc stores it, under its current parent) instead of the doc's, until
-   * it's set to null, which puts the doc's back.
-   */
-  setPose(id, transform) {
-    if (transform) this.poses.set(id, transform);
-    else if (!this.poses.delete(id)) return;
-    const entry = this.objects.get(id);
-    if (!this.ok || !entry) return;
-    placeLocal(entry.group, transform ?? entry.display?.transform ?? {});
-    this.contentChanged();
-  }
-
-  /** An object's displayed world matrix (held poses included): 16 numbers, column-major; null if it isn't here. */
-  worldOf(id) {
-    const entry = this.objects.get(id);
-    if (!this.ok || !entry) return null;
-    entry.group.updateWorldMatrix(true, false);
-    return Array.from(entry.group.matrixWorld.elements);
-  }
-
-  /**
-   * Is this object drawn: its body and every node above it visible (groups
-   * hide their subtree)? Takes an id or an entry. `inStage`: shown in its own
-   * stage, its doc's say only: the walk stops at its stage's root, so a host
-   * hiding the link it hangs in doesn't count (a stage's boxes are its own, I7).
-   */
-  isShown(entry, { inStage = false } = {}) {
-    if (typeof entry === "string") entry = this.objects.get(entry);
-    if (!entry || !entry.body.visible) return false;
-    const n = inStage ? stageOf(entry.group.userData.objectId) : null;
-    for (let o = entry.group; o && o !== this.content; o = o.parent) {
-      const at = o.userData?.objectId;
-      if (inStage && at != null && stageOf(at) !== n) return true; // the link's body: its host's
-      if (!o.visible) return false;
-    }
-    return true;
-  }
-
-  /**
-   * An object's own geometry (not its attachments'), boxed in world space, or
-   * in a frame (`within`: its inverse world matrix, a stage's); its hint box
-   * while the GLB is still on its way (unless hints: false). For a group,
-   * the union of its shown members' boxes.
-   */
-  objectBox(id, { hints = true, within = null, inStage = false } = {}) {
-    if (this.groupMembers.has(id)) return this.groupBox(id, { hints, within, inStage });
-    const entry = this.objects.get(id);
-    if (!entry || entry.kind === "group" || !this.isShown(entry, { inStage })) return null;
-    entry.body.updateWorldMatrix(true, false);
-    const world = within ? new Matrix4().fromArray(within).multiply(entry.body.matrixWorld) : entry.body.matrixWorld;
-    return bodyBox(entry, world, hints);
-  }
-
-  /** A group's box: the union of what's shown of what's in it. */
-  groupBox(gid, { hints = true, within = null, inStage = false } = {}) {
-    const box = new Box3();
-    for (const id of this.groupMembers.get(gid) ?? []) {
-      const b = this.objectBox(id, { hints, within, inStage });
-      if (b) box.union(b);
-    }
-    return box.isEmpty() ? null : box;
-  }
-
-  /** Who is in each of stage `n`'s groups (group key → object keys, at any depth). */
-  setGroups(members, n = 0) {
-    const next = new Map([...members].map(([g, ids]) => [g, [...ids]]));
-    const was = this.groupSets.get(n) ?? new Map();
-    const same = next.size === was.size && [...next].every(([g, ids]) => {
-      const w = was.get(g);
-      return w && w.length === ids.length && w.every((x, i) => x === ids[i]);
-    });
-    if (same) return;
-    if (next.size) this.groupSets.set(n, next);
-    else this.groupSets.delete(n);
-    this.groupMembers = new Map([...this.groupSets.values()].flatMap((m) => [...m]));
-    this.invalidate();
-  }
-
-  /** The union of every shown object's box (an empty Box3 when nothing is shown); `stage`: one stage's, as its doc shows them. */
-  sceneBox({ hints = true, within = null, stage = null } = {}) {
-    const box = new Box3();
-    for (const [id, e] of this.objects) {
-      if (e.kind === "group" || (stage != null && stageOf(id) !== stage)) continue;
-      const b = this.objectBox(id, { hints, within, inStage: stage != null });
-      if (b) box.union(b);
-    }
-    return box;
   }
 
   // ─── the camera (camera.js) ───────────────────────────────────────────────
@@ -748,24 +642,15 @@ export class Viewport {
     return this.ok ? projectPoint(this.camera, this.size, p) : null;
   }
 
-  /** The bodies picking looks at: shown objects with content, less any `skip(id)` says to. */
-  pickTargets(skip = null) {
-    // where they are now, not where the last frame drew them (a doc change or a pose may have moved them since)
-    this.content.updateMatrixWorld();
-    const out = [];
-    for (const [id, e] of this.objects) if (e.kind !== "group" && e.content && this.isShown(e) && !skip?.(id)) out.push(e.body);
-    return out;
-  }
-
   /** What's under a port-local point (picking.js pickAt). */
   pick(x, y, opts) {
     if (!this.ok) return null;
-    return pickAt({ raycaster: this.raycaster, camera: this.camera, size: this.size, targets: this.pickTargets(), focusDistance: this.rig.focusDistance() }, x, y, opts);
+    return pickAt({ raycaster: this.raycaster, camera: this.camera, size: this.size, targets: this.tree.bodies(), focusDistance: this.rig.focusDistance() }, x, y, opts);
   }
 
   /** The nearest shown object along a world ray, up to `far`; skip(id) → true leaves one out (picking.js castRay). */
   raycast(origin, dir, { far = Infinity, skip = null } = {}) {
-    return this.ok ? castRay(this.raycaster, this.pickTargets(skip), origin, dir, far) : null;
+    return this.ok ? castRay(this.raycaster, this.tree.bodies(skip), origin, dir, far) : null;
   }
 
   dispose() {
@@ -789,8 +674,8 @@ export class Viewport {
     // empty scene, not every object's geometry.
     this.scene.clear();
     this.topScene.clear();
-    this.placeholder.geometry.dispose();
-    this.placeholder.material.dispose();
+    this.placeholder?.geometry.dispose();
+    this.placeholder?.material.dispose();
     this.envTexture?.dispose();
     this.pmrem?.dispose();
     this.renderer.dispose();

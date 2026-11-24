@@ -65,6 +65,35 @@ describe("LabelLayer", () => {
     expect(items(layer, "o")[2].el.style.display).toBe("none");
   });
 
+  it("a placed label coming back from hidden is measured shown, so it's placed by its real size", () => {
+    const layer = new LabelLayer(document.createElement("div"));
+    let where = null;
+    const place = vi.fn(({ w }) => (where ? { x: where.x + w, y: where.y } : null));
+    layer.sync("o", [{ key: "q", text: "q", place }]);
+    const el = items(layer, "o")[0].el;
+    // as a browser does: a label not displayed has no size
+    Object.defineProperty(el, "offsetWidth", { get: () => (el.style.display === "none" ? 0 : 40) });
+    Object.defineProperty(el, "offsetHeight", { get: () => (el.style.display === "none" ? 0 : 14) });
+    layer.update(() => ({ x: 0, y: 0 }));
+    expect(el.style.display).toBe("none");
+    where = { x: 100, y: 50 };
+    layer.update(() => ({ x: 0, y: 0 }));
+    expect(el.style.transform).toBe("translate(140px, 50px) translate(-50%, -50%)");
+  });
+
+  it("an item that follows something is placed where its at() says each time, and hidden while it says nowhere", () => {
+    const layer = new LabelLayer(document.createElement("div"));
+    let p = [1, 2, 0];
+    layer.sync("o", [{ key: "k", text: "t", at: () => p, position: [9, 9, 9] }]);
+    const el = items(layer, "o")[0].el;
+    const place = () => (layer.update((v) => ({ x: v.x * 10, y: v.y * 10 })), el.style.display === "none" ? null : el.style.transform);
+    expect(place()).toBe("translate(10px, 20px) translate(-50%, -50%)");
+    p = [3, 4, 0];
+    expect(place()).toBe("translate(30px, 40px) translate(-50%, -50%)");
+    p = null;
+    expect(place()).toBe(null);
+  });
+
   it("hides what it can't place, and an owner's labels while it says they aren't shown", () => {
     const layer = new LabelLayer(document.createElement("div"));
     let shown = true;

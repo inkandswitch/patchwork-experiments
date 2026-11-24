@@ -176,4 +176,35 @@ describe("merged cycles", () => {
     expect([...resolveParents(repaired)]).toEqual([...resolveParents(objects)]);
     for (const id of ["A", "B", "C"]) worldMatrix(repaired, id).forEach((v, i) => expect(v).toBeCloseTo(worldMatrix(objects, id)[i], 12));
   });
+
+  it("re-parenting roots-first gives the viewport the resolved tree when an edge inverts", async () => {
+    const { createObjectTree } = await import("./stage/object-tree.js");
+    const { Group } = await import("three");
+    // the viewport's object tree, under a root of its own
+    const fake = () => {
+      const t = createObjectTree({ root: new Group() });
+      return { objects: t.entries, ensureObject: t.ensure, setParent: t.setParent };
+    };
+    const parentOf = (v, id) => [...v.objects].find(([, e]) => e.group === v.objects.get(id).group.parent)?.[0] ?? null;
+    const apply = (v, ids, parents) => {
+      for (const id of ids) {
+        v.ensureObject(id);
+        v.setParent(id, parents.get(id) ?? null);
+      }
+    };
+    // before: A under B. After a merge of "A → B" with "B → A": B under A (cycle broken at A).
+    const before = { A: { parent: "B" }, B: { parent: null } };
+    const after = { A: { parent: "B" }, B: { parent: "A" } };
+    const order = ["B", "A"];
+    const plain = fake();
+    apply(plain, order, resolveParents(before));
+    apply(plain, order, resolveParents(after));
+    expect(parentOf(plain, "B")).toBeNull(); // the bug: B fell to the root
+    const tree = fake();
+    apply(tree, order, resolveParents(before));
+    const parents = resolveParents(after);
+    apply(tree, treeOrder(after, order, parents).map((r) => r.id), parents);
+    expect(parentOf(tree, "A")).toBeNull();
+    expect(parentOf(tree, "B")).toBe("A");
+  });
 });
