@@ -216,7 +216,13 @@ try {
   // ── 6: the bar's Come aboard, from Edit ──
   await js(`(__p.A.view.focusOn([]), __p.A.view.select(null), true)`);
   await b.rest(300);
-  const way = await js(`(() => { const e = document.querySelector('#a .toolbar .world [data-command="aboard"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent.trim(), title: e.title, enabled: !e.disabled }; })()`);
+  const aboardButton = `(() => { const e = document.querySelector('#a .toolbar .world [data-command="aboard"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: e.textContent.trim(), title: e.title, enabled: !e.disabled }; })()`;
+  // the pointer goes to the button, as a person's does to read its tooltip: off the canvas, so nothing is looked at
+  // (looking at G, a link, Enter is its Open's, and the bar shows Come aboard without it: EDITOR.md, H3)
+  const at6 = await js(aboardButton);
+  if (at6) await b.move(at6.x, at6.y);
+  await b.rest(300);
+  const way = await js(aboardButton);
   const cr6 = await canvasRect();
   check("6: in Edit on her, the bar of tools offers Come aboard (Enter)", way?.text === "Come aboard" && way.enabled && way.title === "Walk the deck in first person (Enter)", way);
   if (way) {
