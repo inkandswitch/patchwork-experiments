@@ -25,7 +25,6 @@
 import { isGroup } from "../groups.js";
 import { partLanding } from "./parts-place.js";
 import { yawOfMatrix } from "./carry-math.js";
-import { snapRadiusOf } from "../carry-rules.js";
 
 /**
  * @param {object} api  the stage's (a focus facet: scene, worldOf, content, pick, raycast, camera)
@@ -41,7 +40,7 @@ export function landings(api, view = api) {
     const matrix = id ? worldOf(id) : null;
     if (!matrix) return null;
     const extras = api.content?.(id)?.extras;
-    return { id, matrix, connectors: extras?.connectors ?? [], snapRadius: snapRadiusOf(extras) };
+    return { id, matrix, connectors: extras?.connectors ?? [], snapRadius: extras?.snapRadius ?? null };
   }
   const snapOff = (free) => !!free || view.pref?.("snap", true) === false;
 

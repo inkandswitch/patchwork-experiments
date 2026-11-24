@@ -1187,6 +1187,18 @@ from carry. Now:
 - **Keys**: the kernel's key order is `src/key-order.js`; the key map's
   resolver is `parts/keymap.js`.
 - The build controls' DOM events and class are `embed.js`'s; the viewport
-  gives a GLB's `snapRadius` as written and carry applies its default
-  (`carry-rules.js snapRadiusOf`); `per-focus.js` and `shallow.js` are
-  shared.
+  gives a GLB's `snapRadius` as written and the carry's `snapCandidates`
+  applies the default; `per-focus.js` and `shallow.js` are shared.
+
+### 2026-11-24 — The viewport, composed of small modules
+
+`stage/viewport.js` was 2,564 lines with a dozen ideas in it. It is the
+renderer, the frame loop, the object registry and the glue now, over
+`atmosphere.js` and `sky.js`, `shadows.js`, `object-content.js`,
+`clearance.js`, `camera.js`, `picking.js`, `widget-layers.js` and
+`labels.js`. Two things that were not the kernel's left it: placing a
+dimension's label off a short line is the dimensions part's (a label item's
+`place`), and the default snap radius from a GLB's connectors is the carry's
+(tabletop's slots copy it). Comments and constants that named one example
+scene are said in general terms. The atmosphere's every field, default and
+range are written down in CONVENTIONS.md.
