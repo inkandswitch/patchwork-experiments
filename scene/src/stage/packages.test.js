@@ -300,13 +300,13 @@ describe("loading: the listed packages this viewer doesn't have", () => {
         { url: PKG_B, name: "@tiny/pkg-b" },
       ]);
       expect([...card(s).querySelectorAll(".package")].map((li) => li.dataset.url)).toEqual([PKG_A, PKG_B]);
-      // a doc's part sees no union, and its api.packages is its own doc's; a view plugin's is every open doc's
+      // a doc's part sees no union; a view plugin's is every open doc's, and loading through the stage loads its own doc's
       expect("packages" in s.api("t.own").view.get()).toBe(false);
       expect("packages" in s.api("scene.packages").view.get()).toBe(true);
       // nor the other stages' readers (their packages, scenes, runs): api.path is the view plugins'
       expect(typeof s.api("scene.packages").path).toBe("function");
       for (const st of s.debug.view.stages()) for (const r of st.debug.host.running()) expect(st.debug.host.record(r.id).api.path).toBeUndefined();
-      await advancing(s.api("t.own").packages.load());
+      await advancing(s.debug.packages.load());
       await settle();
       expect(imported.map((u) => u.split("#")[0])).toEqual([PKG_A]);
       expect(viewAsks(s)).toEqual([PKG_B]);
