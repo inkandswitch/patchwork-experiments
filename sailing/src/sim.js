@@ -378,7 +378,7 @@ export function createSim(api, ctx) {
     const c = claims.claimedBy(id, STATION);
     if (!c) return null;
     if (c.mine) return inputs[id] ?? null;
-    return api.channel.get()[c.session]?.input?.[id] ?? null;
+    return api.channel.peers()[c.session]?.keys?.[api.id]?.input?.[id] ?? null;
   }
 
   function value(id, sc = api.scene()) {
@@ -693,7 +693,7 @@ export function createSim(api, ctx) {
       if (stale.length) setInputs(Object.fromEntries(Object.entries(inputs).filter(([id]) => !stale.includes(id))));
       if (computing) return pose();
       const c = simulator();
-      const latest = c ? api.channel.get()[c]?.ships : null;
+      const latest = c ? api.channel.peers()[c]?.keys?.[api.id]?.ships : null;
       if (latest) streamed = latest;
       // where the computer last held each hull (its hold, or a person's ahead of it): a successor starts there, not at the last save
       for (const id of shipsOf(sc)) if (poses?.heldBy(id, { yields: true })) shown.set(id, api.worldOf(id));

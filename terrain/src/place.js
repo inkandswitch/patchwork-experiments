@@ -10,7 +10,7 @@
 // place's water is to the wind's fetch (exposure.js), made again only when
 // the wind turns a degree or the GLB or its place changes.
 //
-// And it dresses the place's ground (STAGE.md: dressing, for an object that
+// And it dresses the place's ground (API.md: dressing, for an object that
 // carries its trait): the grain at the eye (grain.js), on the materials of
 // the meshes whose GLB gives them the grain, put back when it stops.
 //

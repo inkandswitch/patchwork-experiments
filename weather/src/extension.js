@@ -1,5 +1,5 @@
 // The weather extension (WEATHER.md): the `weather` scene trait offered as
-// the world's `wind` and `atmosphere` ambients (scene STAGE.md, "Ambients"),
+// the world's `wind` and `atmosphere` ambients (scene API.md, "Ambients"),
 // and the three editing commands that set where and when it is, and fetch
 // what it was there and then.
 //
@@ -11,8 +11,7 @@
 // The commands are the editor's (`hand: "edit"`: only while editing) and the
 // scene's (the null target), and only the world's: a linked world's weather
 // is not in force (the outermost rule), so its commands don't apply there
-// (Decision 31). The scene inspector shows no scene commands (scene's
-// inspector-model.js commandsFor: the null target gets none), so they are
+// (Decision 31). The scene inspector shows no commands, so they are
 // shown on the toolbar, which is the editor's and always in view then, and in the
 // scene's menu (WEATHER.md Decision 28):
 //   - Place: a picker of PLACES, plus the coordinates in force when the
@@ -169,7 +168,7 @@ export function clockName(offset) {
 
 /**
  * Whether this stage's weather is the world's: the outermost stage's
- * (STAGE.md "Ambients": api.ambient's `mine`). A linked world's weather is
+ * (API.md "Ambients": api.ambient's `mine`). A linked world's weather is
  * not in force, so its commands would write a weather nothing shows.
  */
 export const isWorlds = (api) => api.ambient?.("wind")?.mine === true;
