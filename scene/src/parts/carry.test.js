@@ -55,7 +55,6 @@ async function mount({ doc = {}, before = [], extensions = [], content = {} } = 
     }
     return best;
   };
-  api.sceneBox = () => ({ min: [-1, 0, -1], max: [1, 1, 1] });
   api.content = (id) => ({ loaded: true, box: BOX, extras: content[id] ?? { connectors: [], snapRadius: null }, stats: null, root: null });
   api.box = (id) => ({ min: [-1, 0, -1], max: [1, 1, 1] });
   // scene.poses, as holds.js: a peer's hold that ranks ahead (`stub.heldBy`) refuses it, and so

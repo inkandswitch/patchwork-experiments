@@ -175,7 +175,6 @@ export function scopeViewport(vp, { n, root = null, frame = () => null, elementO
       const w = vp.worldOf(key(frameId));
       return w ? box(vp.objectBox(key(id), { hints, within: invertMatrix(w), inStage: true })) : null;
     },
-    groupBox: (gid, { hints = true } = {}) => box(vp.groupBox(key(gid), { hints, within: within(), inStage: true })),
     sceneBox: ({ hints = true } = {}) => box(vp.sceneBox({ hints, within: within(), stage: n })),
     // picking, in this stage's frame; "not mine" is id null
     pick: (x, y, opts) => worldHit(vp.pick(x, y, opts)),

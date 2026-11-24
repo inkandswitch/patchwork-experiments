@@ -1023,7 +1023,7 @@ function create(api) {
       state: (target, { scene }) => (objectOf(target, scene) ? { title: "Fit the view to this" } : null),
       run: (target) => {
         const o = objectOf(target, here.scene());
-        const box = !o ? null : isGroup(o) ? here.groupBox(target) : here.box(target);
+        const box = o ? here.box(target) : null;
         if (box) here.camera.frame(box);
       },
     },

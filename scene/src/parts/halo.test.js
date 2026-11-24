@@ -203,7 +203,9 @@ async function mount({ objects = {}, extensions = [], readOnly = false } = {}) {
   const api = s.facet("scene.halo");
   s.worlds = new Map();
   api.worldOf = (id) => s.worlds.get(id) ?? s.debug.scene().world(id);
-  api.groupBox = (gid) => {
+  const objectBox = api.box;
+  api.box = (gid, o) => {
+    if (s.debug.scene().objects[gid]?.kind !== "group") return objectBox(gid, o);
     const ids = groupMembers(s.debug.scene(), gid);
     const pts = ids.flatMap((id) => [applyMatrix(api.worldOf(id), CUBE.min), applyMatrix(api.worldOf(id), CUBE.max)]);
     return pts.length ? { min: [0, 1, 2].map((k) => Math.min(...pts.map((p) => p[k]))), max: [0, 1, 2].map((k) => Math.max(...pts.map((p) => p[k]))) } : null;

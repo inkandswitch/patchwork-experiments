@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Members of the kernel's contract (STAGE.md) checked on a mounted stage with
 // small plugins of the test's own: `api.loop` renders every frame while it
-// runs and caps dt ("`api`"); the one stop rule (H2, "Stopping"); what wants
+// runs and caps dt ("`api`"); `api.box` of each kind of target; the one stop rule (H2, "Stopping"); what wants
 // the pointer (H5); keys in an embedded document are its own ("Keys"); and
 // `api.page` ("`api`").
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -109,6 +109,33 @@ describe("api.loop (STAGE.md, “`api`”)", () => {
     expect(dts.every((dt) => dt >= 0 && dt <= 0.1)).toBe(true);
     // (measured from the last frame all the same: once there is one, the cap is what it gets)
     expect(dts.slice(1)).toEqual([0.1, 0.1, 0.1]);
+  });
+});
+
+describe("api.box (STAGE.md, “`api`”)", () => {
+  it("one box for an object, a group (its members') and the scene (null), in the stage's frame; nothing for an id it lacks", async () => {
+    gl.on = true;
+    // (no provider: each is drawn as its hint)
+    const unit = { bounds: { min: [0, 0, 0], max: [1, 1, 1] } };
+    const at = (x) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 });
+    const doc = {
+      objects: {
+        a: object({ name: "A", providerId: null, hint: unit }),
+        g: { kind: "group", name: "G", group: null, visible: true },
+        b: object({ name: "B", providerId: null, group: "g", hint: unit, transform: at(2) }),
+        c: object({ name: "C", providerId: null, group: "g", hint: unit, transform: at(4) }),
+      },
+      order: ["a", "g", "b", "c"],
+    };
+    const { ext, seen } = keeper("t.box");
+    await mount({ extensions: [ext], doc });
+    const box = (t) => ((b) => b && { min: b.min.map((v) => +v.toFixed(9)), max: b.max.map((v) => +v.toFixed(9)) })(seen.api.box(t));
+    expect([box("a"), box("g"), box(null), box("gone")]).toEqual([
+      { min: [0, 0, 0], max: [1, 1, 1] },
+      { min: [2, 0, 0], max: [5, 1, 1] },
+      { min: [0, 0, 0], max: [5, 1, 1] },
+      null,
+    ]);
   });
 });
 
