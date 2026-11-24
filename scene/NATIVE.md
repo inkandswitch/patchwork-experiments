@@ -78,7 +78,7 @@ a view that can't write tells nothing.
 
 `use("poses")`: `hold(id, transform, { yields })` → boolean, `release(id, {
 landed })` after the put-down's write, `heldBy(id, { yields })`, `rate(hz)`,
-`shownAt(session)`. A hold is a displayed transform (STAGE.md, "`api`",
+`shownAt(session)`. A hold is a displayed transform (API.md, "`api`",
 **Display**), streamed on the channel every 50 ms (`rate` up to 60 Hz; a still
 one kept alive each second, dropped after 3 s unheard) and played back about
 1.5 intervals late (`smooth.js`). One holder per object (H6): one still held
@@ -184,7 +184,7 @@ shown, veiled }] }` for objects a policy answers for: who, never what.
 **The gears graph** (`gears.js`, pure): `buildGears` makes one value of the
 registry's metadata, a stage's scene, its running list, its instances'
 commands, inputs and `inspect`s, and the kernel's `trace.draws()`, `settled()` and
-provenance (STAGE.md, "`api`"); `gearsOfObject` (its holders in input order,
+provenance (API.md, "`api`"); `gearsOfObject` (its holders in input order,
 then the view plugins: verbs, events, drawing, services) and
 `gearsOfExtension` (objects by trait, the objects × verbs grid, what it holds
 now, its services, what it wrote last) read it. It uses the chain's own order
@@ -203,7 +203,7 @@ look, as the use prompt's), looked at again every 200 ms.
 
 - **The scene, ghosted and outlined.** Every object is displayed ghosted
   (a neutral tint, partly transparent: `display`'s `tint`, `opacity`,
-  `outline`; STAGE.md, "`api`") and outlined **once**, in the colour of its
+  `outline`; API.md, "`api`") and outlined **once**, in the colour of its
   most specific responder, so a sixty-card deck reads as one pile. Most
   specific (`lead`): a holder that is not a generic part (a native "scene."
   one, a keeper) before one that is, then the nearer to the object (holding

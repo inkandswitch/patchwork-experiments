@@ -1,4 +1,4 @@
-// The stage's renderer (STAGE.md, "Picking and camera"): the WebGL renderer
+// The stage's renderer (API.md, "`api`"): the WebGL renderer
 // and the frame loop, put together from small modules, each one idea:
 //   ./object-tree.js, ./object-content.js  the objects: their tree, and what's in each
 //   ./atmosphere.js, ./draw-atmosphere.js  the atmosphere's value; its lights, fog and sky drawn

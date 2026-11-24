@@ -1,4 +1,4 @@
-// Write provenance (STAGE.md, "`api`", `change`): every change the kernel
+// Write provenance (API.md, "`api`", `change`): every change the kernel
 // makes stamps its Automerge change message with who made it, as JSON:
 // `{ "ext": "<extension or view plugin id>" }`, or `{ "kernel": "<part>" }`
 // for the stage's own writes (the packages list). The message travels with

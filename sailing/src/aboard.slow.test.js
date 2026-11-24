@@ -149,7 +149,7 @@ function join(w, session, hull) {
       get: () => ({ ...s.cam }),
       set: (c) => (s.cam = { ...s.cam, ...c }),
       hold: () => (s.held++, () => s.held--),
-      // the stage carries the camera with what it rides (STAGE.md, "Riding"): here, only asked and let go
+      // the stage carries the camera with what it rides (API.md, "`api`": `camera.ride`): here, only asked and let go
       ride: () => () => {},
     },
   });

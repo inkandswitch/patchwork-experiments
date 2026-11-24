@@ -1,7 +1,7 @@
 // A fake view of linked stages for the water extension's tests: each stage a
 // doc, a frame (its root's world matrix, null for the outermost), a world
 // clock and the extensions it runs; the api each gets is the slice of
-// scene's api water uses, with scene's ambient rule (STAGE.md, "Ambients"):
+// scene's api water uses, with scene's ambient rule (API.md, "Ambients"):
 // a stage stacks its extensions' offers per name in running order, the later
 // whole, null clearing, when it flushes (asking every running extension's
 // `ambient()`, as the stage's flush does); every stage reads the outermost's

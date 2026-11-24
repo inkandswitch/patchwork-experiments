@@ -1,4 +1,4 @@
-// Riding along (STAGE.md, "Picking and camera": `camera.ride`): the orbit
+// Riding along (API.md, "`api`": `camera.ride`): the orbit
 // camera carried by a moving object, as a passenger is. Each frame, after
 // the loops have moved what's drawn and before the orbit updates, the camera
 // and its orbit target move by how the object moved since the last frame:

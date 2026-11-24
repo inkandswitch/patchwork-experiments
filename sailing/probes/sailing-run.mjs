@@ -260,7 +260,7 @@ try {
 
   // both open off her quarter (Look: view.start's home), running what the doc calls for: sailing,
   // by its traits, and every general part, the same in both views (scene/STAGE.md, H1)
-  // (the general parts are the view's plugins, beside the doc's extensions: scene/STAGE.md, "View plugins")
+  // (the general parts are the view's plugins, beside the doc's extensions: scene/API.md, "View plugins")
   const SOME = ["sailing", "scene.body", "scene.clock-chip", "scene.halo", "scene.keys", "scene.menu", "scene.notices", "scene.packages", "scene.select", "scene.use"];
   await b.rest(1000);
   const run = { a: [...(await P("running('a')")), ...(await P("views('a')"))].sort(), b: [...(await P("running('b')")), ...(await P("views('b')"))].sort() };

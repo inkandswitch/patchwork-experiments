@@ -123,7 +123,7 @@ export function startArrival(s, { doc, next }) {
 }
 
 /**
- * Where the camera starts (STAGE.md, "Saving"): this viewer's saved camera,
+ * Where the camera starts (API.md, "`api`": the camera): this viewer's saved camera,
  * else the doc's suggested home (view.start.home), else null
  * (a frame extension frames on first content).
  */
@@ -371,7 +371,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     // what it held of the view goes with it: its bodies, its tool, its sessions
     for (const rec of [...sittings]) if (rec.stage === s) leftBody(rec);
   }
-  // A world's ambients (STAGE.md, "Ambients") are its outermost stage's: the
+  // A world's ambients (API.md, "Ambients") are its outermost stage's: the
   // one read path, which every stage's api.ambient and the viewport's
   // atmosphere both go through, so the viewport is a reader like any other.
   /** The world's ambient `name`: the outermost stage's frozen value, or undefined. */
@@ -475,7 +475,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /** Leave: the focus one link out. */
   const leave = () => selectStep({ type: "leave" });
 
-  /** The view's plugins' facets are the focus stage's (STAGE.md, "View plugins"): every other stage lets its go. */
+  /** The view's plugins' facets are the focus stage's (API.md, "View plugins"): every other stage lets its go. */
   function placeFocus() {
     const at = focusStage();
     for (const s of stages.values()) if (s !== at) s.dropFacets();
@@ -891,7 +891,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   /**
    * A stage's reader; the focus stage's with the view's plugins' commands
    * and other contributions after its extensions', run in its context
-   * (STAGE.md, "View plugins").
+   * (API.md, "View plugins").
    */
   function readerOf(s) {
     const r = s.reader;
@@ -1056,7 +1056,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     style.remove();
   }
 
-  // ─── the view's plugins (STAGE.md, "View plugins") ─────────────────────────
+  // ─── the view's plugins (API.md, "View plugins") ─────────────────────────
 
   // An event of the router's as a view plugin's hand hears it: in the world,
   // its hit also naming the path it is at (null: nothing, or something its
@@ -1294,7 +1294,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   const pluginsAt = (s) => (s && s === focusStage() ? plugins.running() : []);
   // What the view's plugins were last told (host.js updateAll), afresh as the focus moves.
   let told = new WeakMap();
-  /** A stage flushed: the view's plugins hear it when it is the focus (STAGE.md, "View plugins"). */
+  /** A stage flushed: the view's plugins hear it when it is the focus (API.md, "View plugins"). */
   function flushed(s, now, content) {
     if (!dead && s === focusStage()) updateAll(plugins.running(), told, now, content);
   }

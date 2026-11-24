@@ -228,7 +228,7 @@ try {
     focusPath: (w) => dbg[w].view.atom.get().focus,
     /** where view w runs an extension: the paths of the stages that run it (a general part runs in the focus stage alone) */
     // (an extension runs in the stages whose docs call for it; a view plugin, the general parts, at the focus stage
-    // wherever it is: scene/STAGE.md, "View plugins")
+    // wherever it is: scene/API.md, "View plugins")
     runsIn: (w, ext) => (dbg[w].view.plugins.instanceOf(ext) ? [dbg[w].view.focusStage()] : dbg[w].view.stages().filter((s) => s.debug.host.instanceOf(ext))).map((s) => [...s.path]),
     /** what each of view w's stages runs because its doc calls for it (not the general parts, which follow the focus) */
     traitRuns: (w) => dbg[w].view.stages().map((s) => [s.path.join("/"), s.role, s.debug.host.running().map((r) => r.id)]),

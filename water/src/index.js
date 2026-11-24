@@ -1,7 +1,7 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// Water is a scene extension (see the scene package's STAGE.md, "Ambients"
+// Water is a scene extension (see the scene package's API.md, "Ambients"
 // and "Water", and WATER.md, "Water bodies"): water is a shape, an object
 // with the `water` trait. Without a size it is open water, everything below
 // its origin: weather, so only the outermost doc's counts, offered as the

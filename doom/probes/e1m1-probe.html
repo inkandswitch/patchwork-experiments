@@ -78,7 +78,7 @@ try {
     },
     doc: () => JSON.parse(JSON.stringify(scene.doc())),
     running: () => (dbg.local.get().running ?? []).map((r) => r.id),
-    /** the view's plugins running (scene.add, the editor's Add, among them: scene/STAGE.md, "View plugins") */
+    /** the view's plugins running (scene.add, the editor's Add, among them: scene/API.md, "View plugins") */
     views: () => dbg.view.plugins.running().map((r) => r.id),
     loaded() {
       const os = Object.entries(objects()).filter(([, o]) => o.kind !== "group");

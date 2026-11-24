@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// View plugins (STAGE.md, "View plugins"): one per view, for the view's whole
+// View plugins (API.md, "View plugins"): one per view, for the view's whole
 // life, whatever the focus. api.focus() is the focus stage's api for it:
 // what it acquires through that goes when the focus leaves.
 

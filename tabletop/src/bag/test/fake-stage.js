@@ -1,4 +1,4 @@
-// For tests: the part of the stage's extension api (scene/STAGE.md, "api")
+// For tests: the part of the stage's extension api (scene/API.md, "`api`")
 // that the bag's extension uses, over FakeHandles. Each thing the stage would
 // do is recorded so a test can read it back: notices, sends, labels, held tools (arms),
 // loops, docked panels, addObject calls.
