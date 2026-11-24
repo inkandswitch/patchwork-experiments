@@ -302,11 +302,28 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       if (!entry.recheck && now - entry.lastSaid > LEASE_MS) startRecheck(entry);
       if (entry.recheck) {
         if (now < entry.recheck.at) return void wakeAt(entry, entry.recheck.at);
-        const { waiters } = entry.recheck;
+        const { waiters, since } = entry.recheck;
         entry.recheck = null;
-        if ([...entry.heard].some(([, c]) => live(c, now))) entry.run?.controller.abort(), release(entry);
+        if (since != null) {
+          // it said it builds and listened again: it writes its finished build (compare-and-set) and lets go, unless a
+          // lower id said it holds or builds meanwhile; then it lets go without writing
+          const lower = [...entry.heard].some(([peer, c]) => c.phase !== "claim" && c.at >= since && live(c, now) && peer < self);
+          release(entry);
+          for (const w of waiters) w(lower ? "no" : "last");
+          return;
+        }
+        const heard = [...entry.heard].some(([, c]) => live(c, now));
+        if (heard && waiters.length) {
+          // it heard someone, and its build has finished: it says it builds (a peer that began a build before hearing it won't
+          // write: the fence's second condition) and listens RECHECK_MS more, its write's own window
+          say(entry, "build", true);
+          entry.recheck = { at: now + RECHECK_MS, waiters, since: now };
+          return void wakeAt(entry, entry.recheck.at);
+        }
+        // it heard someone and its build is still running (or it has none): it is dropped and the render let go
+        if (heard) entry.run?.controller.abort(), release(entry);
         else say(entry, entry.run ? "build" : "hold", true);
-        for (const w of waiters) w();
+        for (const w of waiters) w(heard ? "no" : "go");
         if (!entry.holding) return;
       }
       // two holders after a split (a lost message): the higher id lets go once it isn't building
@@ -403,7 +420,10 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       mayCommit: async () => {
         if (!entry.holding) return false;
         if (!entry.recheck && time.now() - entry.lastSaid > LEASE_MS) startRecheck(entry);
-        if (entry.recheck) await new Promise((r) => entry.recheck.waiters.push(r));
+        // ("last": it heard someone while it listened, announced this finished build and heard no lower id: it writes, and has let go)
+        const verdict = entry.recheck ? await new Promise((r) => entry.recheck.waiters.push(r)) : "go";
+        if (verdict === "last") return !entry.dead && !disposed && !controller.signal.aborted;
+        if (verdict === "no") return false;
         return !entry.dead && !disposed && entry.holding && !controller.signal.aborted && !(entry.foreignAt > run.startedAt);
       },
     });
@@ -467,7 +487,7 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
       holding: false, // this peer holds the render
       idleSince: null, // holding, it has wanted nothing since
       lastSaid: -Infinity, // when it last spoke on the render's channel
-      recheck: null, // holding, silent past its lease: { at, waiters }, when it will have listened long enough
+      recheck: null, // holding, silent past its lease: { at, waiters, since? }, when it will have listened long enough (since: it announced a finished build)
       run: null, // the build in flight: { key, controller, startedAt, pending, loose }
       wake: null,
       wantKey: null,
@@ -565,7 +585,7 @@ export function createRenderManager({ repo, time, loadProvider, onState, onGLB, 
     if (!entry) return;
     if (entry.holding || entry.mine) say(entry, "done");
     entry.dead = true;
-    for (const w of entry.recheck?.waiters ?? []) w();
+    for (const w of entry.recheck?.waiters ?? []) w("go");
     announceEntry(entry);
     entry.wake?.cancel();
     entry.run?.controller.abort();
