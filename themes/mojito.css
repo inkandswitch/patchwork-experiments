@@ -72,13 +72,13 @@
 	--syntax-emphasis: var(--studio-secondary);
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: var(--studio-primary);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: var(--studio-link);
 	--syntax-style-link: underline;
 
-	--syntax-quote: #7bb89a;
+	--syntax-quote: var(--text-editor-line);
 
 	--syntax-inserted: var(--studio-added);
 	--syntax-deleted: var(--studio-deleted);

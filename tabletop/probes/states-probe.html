@@ -1,0 +1,298 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>states and custom dice probe</title>
+<!-- Driven by probes/states-run.mjs. A game library (the BUILT package, in
+     an in-memory repo) imports a TTS mod from this machine's files (Arcs by
+     default: its JSON and whatever of its assets TTS cached), sets up a
+     table for four through the launcher (New game: table/session.js
+     newSession), shows it with the BUILT scene tool, turns a ship to its
+     Damaged state and back with the States verb, and rolls a custom die.
+     What the mod names on the web and the cache hasn't is a STAND-IN made
+     here (fetch answers it, nothing reaches the network): an OBJ (a ship's
+     hull, its damaged state's lower and shorter, so the two look apart),
+     a die's six cells each painted with its value, a grey image for the
+     rest, each at a size like the real one's. window.__step(name) runs one
+     step. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  body { display: flex; }
+  #tool { width: 420px; height: 100%; flex: none; overflow: hidden; border-right: 1px solid #ccc; }
+  #scene { flex: 1; height: 100%; position: relative; }
+</style>
+<div id="tool"></div><div id="scene"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { builtOf, faceUp } from "../src/dice/roll.js";
+
+const probe = (window.__probe = { errors: [], opened: [], standIns: { obj: 0, die: 0, image: 0 } });
+window.addEventListener("error", (e) => probe.errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => probe.errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (fn, ms = 20_000) => {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; await sleep(50)) if (fn()) return true;
+  return false;
+};
+
+// ─── the web, stood in for: every http(s) asset is made here ────────────────
+/** A hull pointing +z, about an inch across (TTS units), its deck `h` high and `l` long. */
+function hullOBJ(l, h) {
+  const w = 0.35;
+  const v = [[-w, 0, -l / 2], [w, 0, -l / 2], [w, 0, l / 4], [0, 0, l / 2], [-w, 0, l / 4], [-w, h, -l / 2], [w, h, -l / 2], [w, h, l / 4], [0, h, l / 2], [-w, h, l / 4]];
+  const f = [[1, 5, 4, 3, 2], [6, 7, 8, 9, 10], [1, 2, 7, 6], [2, 3, 8, 7], [3, 4, 9, 8], [4, 5, 10, 9], [5, 1, 6, 10]];
+  const uv = ["vt 0 0", "vt 1 0", "vt 1 1", "vt 0 1"];
+  return ["# stand-in", ...v.map((p) => `v ${p.join(" ")}`), ...uv, ...f.map((x) => `f ${x.map((i, k) => `${i}/${(k % 4) + 1}`).join(" ")}`)].join("\n") + "\n";
+}
+const cube = () => hullOBJ(0.8, 0.8);
+const png = async (w, h, paint) => {
+  const c = new OffscreenCanvas(w, h);
+  const g = c.getContext("2d");
+  paint(g, w, h);
+  return new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
+};
+const hue = (s) => [...s].reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) >>> 0, 7) % 360;
+/** A custom d6's image, laid out as TTS's D6.png template (tts/translate.js d6Cell): a square in thirds, the top row blank, value n painted in its cell, with the die's initial. */
+const D6_TEMPLATE = [[0, 2], [0, 1], [1, 2], [1, 1], [2, 1], [2, 2]];
+const dieImage = (url) =>
+  png(384, 384, (g, w, h) => {
+    const name = (/\/([a-z]+)-die/i.exec(url)?.[1] ?? "d").toUpperCase();
+    g.fillStyle = "#888";
+    g.fillRect(0, 0, w, 128);
+    for (let k = 0; k < 6; k++) {
+      const [x, y] = D6_TEMPLATE[k].map((c) => c * 128);
+      g.fillStyle = `hsl(${hue(name)} 55% ${k % 2 ? 78 : 88}%)`;
+      g.fillRect(x, y, 128, 128);
+      g.strokeStyle = "#222";
+      g.lineWidth = 6;
+      g.strokeRect(x + 3, y + 3, 122, 122);
+      g.fillStyle = "#111";
+      g.font = "bold 76px system-ui";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(String(k + 1), x + 64, y + 58);
+      g.font = "bold 22px system-ui";
+      g.fillText(name.slice(0, 7), x + 64, y + 108);
+    }
+  });
+const greyImage = (url) => png(/steamusercontent|cloud-3/.test(url) ? 512 : 256, 256, (g, w, h) => {
+  g.fillStyle = `hsl(${hue(url)} 30% 62%)`;
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = "rgba(255,255,255,0.35)";
+  for (let i = 0; i < w; i += 32) g.fillRect(i, 0, 2, h);
+});
+const realFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : input.url;
+  if (!/^https?:\/\//.test(url) || url.startsWith(location.origin)) return realFetch(input, init);
+  let bytes;
+  if (/\.obj(\?|$)/i.test(url)) {
+    probe.standIns.obj++;
+    bytes = new TextEncoder().encode(/shipdamaged/i.test(url) ? hullOBJ(0.9, 0.18) : /ship/i.test(url) ? hullOBJ(1.4, 0.45) : cube());
+  } else if (/-die\.png/i.test(url)) {
+    probe.standIns.die++;
+    bytes = await dieImage(url);
+  } else {
+    probe.standIns.image++;
+    bytes = await greyImage(url);
+  }
+  return new Response(bytes, { status: 200 });
+};
+
+const toolHost = document.getElementById("tool");
+const sceneHost = document.getElementById("scene");
+const rows = (list) => [...toolHost.querySelectorAll(`.${list} li`)];
+const status = () => toolHost.querySelector(".status")?.textContent ?? "";
+
+for (const url of ["../dist/index.js", "/scene/dist/index.js", "/seats/dist/index.js"]) {
+  const { plugins } = await import(url);
+  for (const p of plugins) getRegistry(p.type).register(p);
+}
+const repo = new FakeRepo();
+window.repo = repo;
+const Library = (await getRegistry("patchwork:datatype").load("game-library")).module;
+const seed = {};
+Library.init(seed, repo);
+seed["@patchwork"] = { type: "game-library" };
+const lib = repo.add(seed);
+toolHost.repo = repo;
+toolHost.addEventListener("patchwork:open-document", (e) => probe.opened.push(e.detail));
+const Launcher = (await getRegistry("patchwork:tool").load("game-library")).module;
+Launcher(lib, toolHost);
+const SceneTool = (await getRegistry("patchwork:tool").load("scene")).module;
+const folder = (name) => repo.handles.get(lib.doc().docs.find((l) => l.name === name).url).doc();
+
+let dbg = null;
+let session = null;
+const scene = () => repo.handles.get(session);
+const gameDoc = () => repo.handles.get(game.url).doc();
+let game = null;
+const row = (title) => rows("games-list").find((r) => r.querySelector("strong")?.textContent === title);
+const r6 = (v) => +(+v).toFixed(6) + 0;
+const boxOf = (id) => {
+  const b = dbg.viewport.contentOf(id)?.box;
+  return b && { min: b.min.map(r6), max: b.max.map(r6) };
+};
+/** Run a verb as its command, over object `id` (as pressing its key over it does). */
+const verb = (ext, cmd, id) => {
+  const c = dbg.host.instanceOf(ext)?.commands?.find((x) => x.id === cmd);
+  if (!c) return false;
+  c.run(id);
+  return true;
+};
+const commandState = (ext, cmd, id) => dbg.host.instanceOf(ext)?.commands?.find((x) => x.id === cmd)?.state?.(id) ?? null;
+/** Where a point of a thing's own frame is drawn, in the world. */
+const worldPoint = (id, p) => {
+  const m = dbg.viewport.worldOf(id);
+  return [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
+};
+/** Look at a thing (a point of its own frame: by default its origin) from a little above and in front (the camera in Look). */
+const lookAt = async (id, { dist = 0.16, up = 0.12, point = [0, 0, 0] } = {}) => {
+  const at = worldPoint(id, point);
+  dbg.viewport.setCamera({ position: [at[0], at[1] + up, at[2] + dist], target: at });
+  await sleep(900);
+};
+
+const steps = {
+  async importMod() {
+    const manifest = await (await fetch("/manifest.json")).json();
+    const files = await Promise.all(manifest.map(async (m) => new File([await (await fetch(m.url)).arrayBuffer()], m.name)));
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    const input = toolHost.querySelector("input.import-file");
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => rows("games-list").length === 1 && /Imported/.test(status()), 180_000);
+    game = folder("Games").docs.at(-1);
+    const d = gameDoc();
+    const pieces = Object.values(d.pieces);
+    return {
+      files: files.length,
+      title: d.title,
+      options: (d.recipe?.options ?? []).map((o) => o.key),
+      stated: pieces.filter((p) => p.states).map((p) => [p.name, ...p.states.map((s) => s.name)]),
+      customDice: pieces.filter((p) => p.doc?.faces?.some((f) => f.image)).length,
+    };
+  },
+  async newGame({ players }) {
+    await until(() => row(gameDoc().title)?.querySelector("select.option, input.option"));
+    const r = row(gameDoc().title);
+    const c = r.querySelector('[data-key="players"]');
+    c.value = String(players);
+    c.dispatchEvent(new Event("change"));
+    const n = probe.opened.length;
+    r.querySelector("button.primary").click();
+    await until(() => probe.opened.length > n, 240_000);
+    session = probe.opened.at(-1).url;
+    const sc = scene().doc();
+    sceneHost.repo = repo;
+    sceneHost.viewerId = "viewer:probe";
+    SceneTool(scene(), sceneHost);
+    dbg = sceneHost.querySelector(".scene-tool").__sceneDebug;
+    const visible = Object.values(sc.objects).filter((o) => o.kind !== "group" && o.visible !== false).length;
+    await until(() => dbg.stats().loaded >= visible && dbg.stats().pending === 0, 120_000);
+    // sit in the first seat (white), as someone arriving would
+    const [first] = Object.keys(sc.traits.seats);
+    scene().change((d) => (d.traits.seats[first].player = "viewer:probe"));
+    await sleep(500);
+    const objs = Object.entries(scene().doc().objects);
+    return {
+      sessions: rows("sessions-list").map((x) => x.querySelector(".what").textContent),
+      seats: Object.keys(sc.traits?.seats ?? {}),
+      ships: objs.filter(([, o]) => o.traits?.["tabletop.states"]).length,
+      dice: objs.filter(([, o]) => o.traits?.["dice.die"]).length,
+      drawnStates: Object.keys(gameDoc().drawn ?? {}).filter((k) => k.includes("#")).length,
+      stats: { ...dbg.stats(), visible },
+      standIns: { ...probe.standIns },
+    };
+  },
+  async turnShip() {
+    const objs = scene().doc().objects;
+    // a ship lying on its own (most lie in a pile of their player's), so its look can be seen
+    const ships = Object.keys(objs).filter((id) => objs[id].traits?.["tabletop.states"]);
+    const at = (id) => dbg.viewport.worldOf(id);
+    const room = (id) => Math.min(...ships.filter((x) => x !== id).map((x) => Math.hypot(at(x)[12] - at(id)[12], at(x)[14] - at(id)[14])));
+    const id = ships.sort((a, b) => room(b) - room(a) || (a < b ? -1 : 1))[0];
+    window.__ship = id;
+    // carried a few centimetres out of its pile toward the near edge, onto clear table, as a player would
+    scene().change((d) => {
+      const p = d.objects[id].transform.position;
+      d.objects[id].transform.position = [p[0], p[1], p[2] + 0.07];
+    });
+    await sleep(600);
+    await lookAt(id, { dist: 0.2, up: 0.22 });
+    const before = { box: boxOf(id), tris: dbg.viewport.contentOf(id)?.stats?.triangles ?? null };
+    const offered = commandState("tabletop.states", "state-next", id);
+    const gameChanges = Object.keys(gameDoc().drawn).length;
+    verb("tabletop.states", "state-next", id);
+    const t = () => scene().doc().objects[id].traits["tabletop.states"];
+    await until(() => t().shown === 1, 5000);
+    // shown over it once its look is drawn (the first time: by this viewer, kept in the game)
+    await until(() => JSON.stringify(boxOf(id)) !== JSON.stringify(before.box), 30_000);
+    await sleep(600);
+    const after = { box: boxOf(id), trait: JSON.parse(JSON.stringify(t())) };
+    const ref = after.trait.looks[1].kind;
+    await until(() => !!gameDoc().drawn?.[ref], 10_000);
+    return { id, name: objs[id].name, offered, before, after, ref, kept: !!gameDoc().drawn?.[ref], drawnBefore: gameChanges, drawnAfter: Object.keys(gameDoc().drawn).length, sourceUrl: objs[id].sourceUrl === scene().doc().objects[id].sourceUrl };
+  },
+  async turnBack() {
+    const id = window.__ship;
+    const offered = commandState("tabletop.states", "state-next", id);
+    verb("tabletop.states", "state-next", id);
+    await until(() => scene().doc().objects[id].traits["tabletop.states"].shown === 0, 5000);
+    await sleep(1200);
+    return { offered, shown: scene().doc().objects[id].traits["tabletop.states"].shown, box: boxOf(id) };
+  },
+  async rollDie() {
+    const objs = scene().doc().objects;
+    const dice = Object.keys(objs).filter((id) => objs[id].traits?.["dice.die"]);
+    // a pictured one: its GLB carries its faces' pictures
+    const pictured = (id) => { let n = 0; dbg.viewport.contentOf(id)?.root?.traverse?.((o) => { if (o.material?.map && /^face/.test(o.name)) n++; }); return n; };
+    const id = dice.find((x) => pictured(x) === 6) ?? dice[0];
+    window.__die = id;
+    const built = () => builtOf(dbg.viewport.contentOf(id)?.extras?.dice);
+    const reads = () => {
+      const b = built();
+      const m = dbg.viewport.worldOf(id);
+      const rows = [[m[0], m[4], m[8]], [m[1], m[5], m[9]], [m[2], m[6], m[10]]];
+      const f = faceUp(rows, b);
+      return { face: f, label: b.faces[f].label };
+    };
+    // carried out of the dice's heap onto clear table first, so the face it lands on can be seen
+    scene().change((d) => {
+      const p = d.objects[id].transform.position;
+      d.objects[id].transform.position = [p[0], p[1], p[2] + 0.1];
+    });
+    await sleep(800);
+    const before = { transform: JSON.stringify(scene().doc().objects[id].transform), reads: reads() };
+    await lookAt(id, { dist: 0.06, up: 0.16 });
+    const offered = commandState("dice", "roll", id);
+    verb("dice", "roll", id);
+    const moved = await until(() => JSON.stringify(scene().doc().objects[id].transform) !== before.transform, 20_000);
+    await sleep(2500);
+    // down onto its middle (a die's origin is under the face it stood on when it was made, not under the one it shows)
+    await lookAt(id, { dist: 0.015, up: 0.09, point: built().centre });
+    const shows = reads();
+    // the side up shows its picture: a mesh named for that face, textured
+    let upPictured = false;
+    dbg.viewport.contentOf(id)?.root?.traverse?.((o) => { if ((o.name === `face ${shows.face + 1}` || o.name === `face_${shows.face + 1}`) && o.material?.map) upPictured = true; });
+    const c = worldPoint(id, built().centre);
+    const q = dbg.viewport.project(c);
+    return { id, at: q && { x: Math.round(q.x), y: Math.round(q.y) }, pictured: pictured(id), labels: built().faces.map((f) => f.label), offered, rolled: moved, before: before.reads, shows, upPictured };
+  },
+};
+window.__step = async (name, arg) => {
+  try {
+    return await steps[name](arg);
+  } catch (err) {
+    probe.errors.push(`${name}: ${err?.stack || err}`);
+    return null;
+  }
+};
+window.__ready = true;
+</script>

@@ -126,3 +126,51 @@ const p1 = new Pt(1, 2);`);
     });
   });
 });
+
+describe('global aliases', () => {
+  it('global and globalThis are the global object, in new and upgraded documents', () => {
+    const rt = createFreshRuntime();
+    expect(rt.eval('global === $global')).toBe(true);
+    expect(rt.eval('globalThis === $global')).toBe(true);
+    expect(rt.eval('globalThis === global')).toBe(true);
+    rt.eval('let viaAlias = 7');
+    expect(rt.eval('globalThis.viaAlias')).toBe(7);
+    expect(rt.eval('Object.keys(globalThis).includes("viaAlias")')).toBe(true);
+  });
+});
+
+describe('class prototypes link back to their class', () => {
+  it('instance.constructor is the class, through subclasses and Object.create', () => {
+    const rt = createFreshRuntime();
+    rt.eval('class A { m() { return 1; } }');
+    rt.eval('class B extends A { }');
+    expect(rt.eval('A.prototype.constructor === A')).toBe(true);
+    expect(rt.eval('new A().constructor === A')).toBe(true);
+    expect(rt.eval('new B().constructor === B')).toBe(true);
+    expect(rt.eval('Object.create(A.prototype).constructor === A')).toBe(true);
+    expect(rt.eval('new B().className')).toBe('B');
+    // The link survives a browser-style constructor replacement.
+    rt.eval("replaceMethod('A', 'constructor() { this.k = 9; }')");
+    expect(rt.eval('new A().k')).toBe(9);
+    expect(rt.eval('new A().constructor === A')).toBe(true);
+  });
+});
+
+describe('function names', () => {
+  it('classes, methods and declared functions have a name; arrows do not', () => {
+    const rt = createFreshRuntime();
+    rt.eval('class A { m() { return 1; } }');
+    rt.eval('class B extends A { }');
+    rt.eval('function foo() {}');
+    rt.eval('let arrow = (x) => x');
+    expect(rt.eval('A.name')).toBe('A');
+    expect(rt.eval('new B().constructor.name')).toBe('B');
+    expect(rt.eval('A.prototype.m.name')).toBe('m');
+    expect(rt.eval('foo.name')).toBe('foo');
+    expect(rt.eval('arrow.name')).toBe('');
+    // An own `name` property, if set, wins.
+    rt.eval("foo.name = 'renamed'");
+    expect(rt.eval('foo.name')).toBe('renamed');
+  });
+});
+

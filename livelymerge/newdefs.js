@@ -1,4 +1,4 @@
-//written on 2026-10-11 16:15 PDT
+//written on 2026-11-05 13:28 EST
 // newdefs.js — class-based Livelymerge definitions (full catalog)
 // Conventional ES classes; no w.* prefixes in source.
 
@@ -1379,7 +1379,53 @@ function morphNamed(name) {
   return Lively.get(name);
 }
 
+function seedAiNotes() {
+  /** Starter entries for the shared manual that Talk & Draw agents read and extend
+   * (`aiNotes`, a persistent global: an array of {topic, text, author, when} — see
+   * src/assist/notes.ts). Only topics that are missing are added, so notes an agent
+   * has corrected or a user has pruned are never overwritten; a document that already
+   * has every topic costs no writes. Facts about the UI, never screen positions. */
+  let seeds = [
+    [
+      'halos: opening and closing',
+      'Cmd-click (meta-click) a morph to open its halo: a green frame around the morph with lettered round handles. Cmd-click the same spot again to move the halo to the enclosing (owner) morph; a long press (about 0.7 s without moving) also opens a halo. A plain click on empty background, or on any morph, dismisses the halo and clears keyboard focus. Cmd-click the empty background to get the world halo (M, B, I only).',
+    ],
+    [
+      'halos: handle positions',
+      'Handles sit on the halo frame, clockwise: R (Rotate) at the bottom-left corner, then S (Style), C (Copy) up the left edge, M (Menu) at the top-left corner; G (Grab), D (Drag) along the top edge, X (Delete) at the top-right corner; B (Browse), I (Inspect) down the right edge, Z (Scale) at the bottom-right corner; P (Persist) on the bottom edge when present. Each handle is a small circle about 20 px across with its letter inside — read exact positions off the screenshot.',
+    ],
+    [
+      'halos: what the handles do',
+      'Click handles: S restyles the morph, M opens its menu (or the world menu), X deletes it, B opens a class browser on its class, I opens an inspector, P makes an ephemeral morph persistent. Drag handles: D moves the morph; G picks it up and drops it where released (re-parenting into whatever is under it); C drags off a copy; Z resizes (shift-drag scales the transform instead); R rotates. Click handles close the halo when used.',
+    ],
+    [
+      'rotating a morph',
+      'Open the halo, press on the R handle, and drag it around the morph\'s center: the morph turns by the angle the pointer sweeps around the center (clockwise drag = clockwise rotation). Release to finish, then click empty background to dismiss the halo. Rotate 90° by sweeping a quarter turn around the center at a comfortable radius.',
+    ],
+    [
+      'moving morphs',
+      'Press on a morph and drag it: that moves it. A morph nested inside another is picked up to the world on the first move (drag = carry). Alt-click picks a morph up into your hand; alt-click again to drop it.',
+    ],
+    [
+      'text and keyboard focus',
+      'Click inside a text morph to give it keyboard focus; typing then goes there. Clicking empty background clears the focus. The scroll wheel scrolls the pane under the pointer.',
+    ],
+    [
+      'globals worth knowing',
+      'Lively is the world (a WorldMorph); Lively.submorphs are the top-level morphs. Every morph has className, owner, submorphs, shape (shape.getBounds() is its local rectangle), transform (translation, rotation in radians, scale), and getBounds() for its rectangle in the owner. Classes are globals (Morph, TextMorph, EmojiMorph, HaloMorph, ...); SomeClass.toString() shows their source. Prefer gestures over calling methods.',
+    ],
+  ];
+  if (typeof aiNotes === 'undefined' || aiNotes == null) aiNotes = [];
+  for (let k = 0; k < seeds.length; k++) {
+    let topic = seeds[k][0];
+    let present = false;
+    for (let j = 0; j < aiNotes.length; j++) if (aiNotes[j].topic === topic) present = true;
+    if (!present) aiNotes.push({ topic: topic, text: seeds[k][1], author: 'newdefs (seed)', when: '2026-11-03' });
+  }
+}
+
 function initUI() {
+  seedAiNotes();
   // Per-user UI state: ephemeral (never in the Automerge document), survives across
   // transactions, reset on reload. `eventListeners` keeps the listener closures (and
   // their captured scopes) alive across transactions; without it the GC would collect
@@ -2954,7 +3000,7 @@ class PolyLine extends Shape {
   }
   drawBezierThrough(ctx, verts, closed) {
     /** Smooth cubic Bézier through vertices (Catmull–Rom style). If `closed`, includes last→first segment. */
-    if (verts.length < 2) return;
+    if (!verts || verts.length < 2) return;
     let n = verts.length;
     ctx.moveTo(verts[0].x, verts[0].y);
     if (n === 2) {
@@ -3054,13 +3100,18 @@ class PolyLine extends Shape {
     });
   }
   setBounds(newBnds) {
+    let verts = this.vertices;
+    if (!verts || verts.length < 1) {
+      super.setBounds(newBnds);
+      return;
+    }
     let oldBnds = this.getBounds();
     let oldCtr = oldBnds.center();
     let newCtr = newBnds.center();
     let ow = Math.max(oldBnds.width(), 0.001);
     let oh = Math.max(oldBnds.height(), 0.001);
     let scale = pt(newBnds.width() / ow, newBnds.height() / oh);
-    this.vertices = this.vertices.map((vert) => {
+    this.vertices = verts.map((vert) => {
       return vert.subPt(oldCtr).scaleBy(scale).addPt(newCtr);
     });
     super.setBounds(this.boundsForVertices(this.vertices, this.borderWidth));
@@ -5093,20 +5144,23 @@ class Morph {
     if (this.owner == null) return this.transform.invertPt(pt);
     return this.relativize(this.owner.localize(pt));
   }
-  morphCopy() {
+  morphCopy(asChild) {
     /**
-     * Structural copy whose on-screen appearance matches this morph in the world
-     * (parent rotation/scale baked into the copy's local transform). Owner is left
-     * null so shift-drag / halo Copy can reparent without a dangling parent chain.
+     * Structural copy. The root (asChild falsy) bakes world appearance into its
+     * local transform so halo Copy / shift-drag can reparent with owner null.
+     * Nested copies keep their LOCAL transform — baking world onto children as
+     * well would apply the parent rotation/translation twice and split them off.
      */
     let copy = new Morph(this.bounds, this.shape.copy());
     copy.owner = null;
-    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
+    if (asChild)
+      copy.applyAffineAsLocalTransform(affineFromSimpleTransform(this.transform, 0));
+    else copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex; // keeps submorph stacking on recursive copies
     this.restartSteppingOnCopy(copy);
     this.copyPartNameTo(copy);
     copy.submorphs = this.submorphs.map((m) => {
-      let sub = m.morphCopy();
+      let sub = m.morphCopy(true);
       sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
       return sub;
     });
@@ -5763,15 +5817,17 @@ class ImageMorph extends Morph {
     let ownerPts = corners.map((c) => tfm.transformPt(c));
     return unionPts(ownerPts);
   }
-  morphCopy() {
+  morphCopy(asChild) {
     let copy = new ImageMorph(this.shape.copy());
     copy.owner = null;
-    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
+    if (asChild)
+      copy.applyAffineAsLocalTransform(affineFromSimpleTransform(this.transform, 0));
+    else copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
     this.copyPartNameTo(copy);
     copy.submorphs = this.submorphs.map((m) => {
-      let sub = m.morphCopy();
+      let sub = m.morphCopy(true);
       sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
       return sub;
     });
@@ -5892,15 +5948,17 @@ class EmojiMorph extends ImageMorph {
     this.transform.translation = pt(280, 120);
     Lively.addMorph(this);
   }
-  morphCopy() {
+  morphCopy(asChild) {
     let copy = new EmojiMorph(this._emojiName, this._emojiSize);
     copy.owner = null;
-    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
+    if (asChild)
+      copy.applyAffineAsLocalTransform(affineFromSimpleTransform(this.transform, 0));
+    else copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
     this.copyPartNameTo(copy);
     copy.submorphs = this.submorphs.map((m) => {
-      let sub = m.morphCopy();
+      let sub = m.morphCopy(true);
       sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
       return sub;
     });
@@ -5980,21 +6038,23 @@ class LineMorph extends Morph {
   }
   beClosed(on) {
     /** Connect last vertex back to first. `line.beClosed(true)` or read `line.beClosed()`. */
-    if (arguments.length === 0) return !!this.shape.closed;
-    this.shape.closed = !!on;
-    this.changed();
+    let sh = this.shape;
+    if (on === undefined) return !!(sh && sh.closed);
+    if (sh) sh.closed = !!on;
+    this.hasChanged = true;
     let world = this.world();
-    if (world && world.changed) world.changed();
+    if (world) world.hasChanged = true;
     this.syncShapeFromVertices();
     return this;
   }
   beCurved(on) {
     /** Smooth Bézier vs straight segments. `line.beCurved(true)` or read `line.beCurved()`. */
-    if (arguments.length === 0) return !!this.shape.curved;
-    this.shape.curved = !!on;
-    this.changed();
+    let sh = this.shape;
+    if (on === undefined) return !!(sh && sh.curved);
+    if (sh) sh.curved = !!on;
+    this.hasChanged = true;
     let world = this.world();
-    if (world && world.changed) world.changed();
+    if (world) world.hasChanged = true;
     return this;
   }
   beginEphemeralTransform() {
@@ -6008,6 +6068,7 @@ class LineMorph extends Morph {
     if (this.$transform == null) return; // legacy/shadowed morph: stay on the direct path
     let sh = this.shape;
     if (sh == null || sh.$vertices != null) return; // no shape, or adopted remote overlay
+    if (!sh.vertices || !sh.vertices.length) return;
     let eph = sh.vertices.map((v) => v.copy());
     sh.$vertices = eph;
     // A shape from a pre-getter document carries an own `vertices` data property
@@ -6075,7 +6136,8 @@ class LineMorph extends Morph {
     });
   }
   ensureVertexHandles() {
-    let verts = this.shape.vertices;
+    let verts = this.shape && this.shape.vertices;
+    if (!verts || verts.length < 1) return;
     let r = this.handleRadius;
     let needRebuild =
       !this.$vertexHandles ||
@@ -6123,8 +6185,8 @@ class LineMorph extends Morph {
     mids.forEach((m, i) => this.$midpointHandles[i].positionAt(m.pt));
   }
   layoutVertexHandles() {
-    let verts = this.shape.vertices;
-    if (!this.$vertexHandles || this.$vertexHandles.length !== verts.length) return;
+    let verts = this.shape && this.shape.vertices;
+    if (!verts || !this.$vertexHandles || this.$vertexHandles.length !== verts.length) return;
     verts.forEach((v, i) => this.$vertexHandles[i].positionAtVertex(v));
   }
   mergeDraggedVertexWithNeighbor() {
@@ -6161,8 +6223,8 @@ class LineMorph extends Morph {
     return {
       items: ['be curved', 'be closed', '---------', '------->', '<-------', '<----->'],
       onSelect: function (item, line) {
-        if (item === 'be curved') line.beCurved(!line.beCurved());
-        if (item === 'be closed') line.beClosed(!line.beClosed());
+        if (item === 'be curved') line.beCurved(!(line.shape && line.shape.curved));
+        if (item === 'be closed') line.beClosed(!(line.shape && line.shape.closed));
         if (item === '---------') line.setArrowheads('none');
         if (item === '------->') line.setArrowheads('end');
         if (item === '<-------') line.setArrowheads('start');
@@ -6206,8 +6268,9 @@ class LineMorph extends Morph {
     return super.remove();
   }
   segmentMidpoints() {
-    let verts = this.shape.vertices;
+    let verts = this.shape && this.shape.vertices;
     let mids = [];
+    if (!verts || verts.length < 2) return mids;
     for (let i = 0; i < verts.length - 1; i++) {
       mids.push({
         segmentIndex: i,
@@ -6251,6 +6314,7 @@ class LineMorph extends Morph {
     this.syncBoundsFromGeometry();
   }
   syncShapeFromVertices() {
+    if (!this.shape || !this.shape.vertices) return;
     this.syncGeometryFromVertices();
     let n = this.shape.vertices.length;
     if (!this.$vertexHandles || this.$vertexHandles.length !== n) this.ensureVertexHandles();
@@ -11198,6 +11262,26 @@ class SessionLogPanel extends TranscriptPanel {
 // +---------+
 // Meta-click halo ring and its affordance handles.
 
+function stickyRotation(radians, stuckToIfAny) {
+  /**
+   * Halo rotate: magnetic 45° notches. Snaps within 15°; once on a notch,
+   * stays until the pointer is more than 22° off (hysteresis so it feels sticky).
+   */
+  let step = Math.PI / 4;
+  let stick = (15 * Math.PI) / 180;
+  let unstick = (22 * Math.PI) / 180;
+  let snapped = Math.round(radians / step) * step;
+  let d = radians - snapped;
+  if (d < 0) d = -d;
+  if (stuckToIfAny != null && stuckToIfAny === stuckToIfAny) {
+    let sd = radians - stuckToIfAny;
+    if (sd < 0) sd = -sd;
+    if (sd <= unstick) return stuckToIfAny;
+  }
+  if (d <= stick) return snapped;
+  return radians;
+}
+
 //  HaloHandle
 // ------------
 // One halo affordance (move, rotate, copy, …).
@@ -11257,6 +11341,9 @@ class HaloHandle extends Morph {
       // Pivot is the shape center's true world position (rotateBy keeps it fixed).
       let c = this.target.globalize(this.target.shape.getBounds().center());
       this.$rotateStartAngle = Math.atan2(worldP.y - c.y, worldP.x - c.x);
+      this.$rotateStartRot = this.target.transform.rotation || 0;
+      this.$rotateStuckTo = stickyRotation(this.$rotateStartRot);
+      if (this.$rotateStuckTo !== this.$rotateStartRot) this.$rotateStuckTo = null;
     }
     if (this.handleName == 'Scale') {
       // Anchors are relative to the shape's local topLeft — the fixed point of
@@ -11347,8 +11434,14 @@ class HaloHandle extends Morph {
     if (this.handleName == 'Rotate') {
       let c = this.target.globalize(this.target.shape.getBounds().center());
       let currentAngle = Math.atan2(p.y - c.y, p.x - c.x);
-      this.target.rotateBy(currentAngle - this.$rotateStartAngle);
-      this.$rotateStartAngle = currentAngle;
+      let raw = (this.$rotateStartRot || 0) + (currentAngle - this.$rotateStartAngle);
+      let next = stickyRotation(raw, this.$rotateStuckTo);
+      let step = Math.PI / 4;
+      let snapped = Math.round(next / step) * step;
+      let off = next - snapped;
+      if (off < 0) off = -off;
+      this.$rotateStuckTo = off < 1e-6 ? next : null;
+      this.target.setRotation(next);
     }
   }
   dragEnded(p, evt, wasDrag) {
@@ -13104,7 +13197,7 @@ class WorldMorph extends Morph {
         null,
         `HALOS
     Halos provide ten "handles" for manipulating morphs.  Halos are accessed by a meta-click (see also below) and the handles offer the following functions, not all of which will always be available...
-    'R' - Rotate: Drag the handle to rotate the target object
+    'R' - Rotate: Drag the handle to rotate the target object (sticks near 45° multiples)
     'S' - Style: Open a style editor to choose fill and border color and border width
     'C' - Copy: Make a copy of this object, attached to the hand for dragging
     'M' - Menu: Bring up a menu of commands for this object
@@ -13190,10 +13283,10 @@ class WorldMorph extends Morph {
         this.world().showTextHelp();
       }),
     ];
-    if (typeof initFabrik === 'function') {
+    if (typeof openFabrik === 'function') {
       items.push(
         menuItem('Open Fabrik', function () {
-          initFabrik();
+          openFabrik();
         }),
       );
     }
@@ -14623,6 +14716,6 @@ function inspectString(obj) {
   }
 }
 // Live stamp — eval `NEWDEFS_WRITTEN_ON` in Morphic to confirm this build is loaded.
-let NEWDEFS_WRITTEN_ON = '2026-10-11 16:15 PDT';
+let NEWDEFS_WRITTEN_ON = '2026-11-05 13:28 EST';
 init()
-//written on 2026-10-11 16:15 PDT
+//written on 2026-11-05 13:28 EST

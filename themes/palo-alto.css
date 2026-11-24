@@ -67,13 +67,13 @@
 
 	--syntax-namespace: var(--studio-modified);
 
-	--syntax-heading: var(--studio-primary);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: var(--studio-link);
 	--syntax-style-link: underline;
 
-	--syntax-quote: #6b6b6b;
+	--syntax-quote: var(--text-editor-line);
 
 	--syntax-inserted: var(--studio-added);
 	--syntax-deleted: var(--studio-deleted);

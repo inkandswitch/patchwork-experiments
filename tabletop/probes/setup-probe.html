@@ -1,0 +1,174 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>setup recipe probe</title>
+<!-- Driven by probes/setup-run.mjs. A game library (the BUILT package, in an
+     in-memory repo) imports a TTS mod from this machine's files (its JSON and
+     the cached assets it names), then New game with the options picked in its
+     row as a person would (how many play, which memory bag to lay out,
+     shuffling the face-down decks), shows the session with the BUILT scene
+     tool (the seats package from its own dist), fills the seats, and presses
+     Start game on the bar of tools. window.__step(name) runs one step. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  body { display: flex; }
+  #tool { width: 560px; height: 100%; flex: none; overflow: hidden; border-right: 1px solid #ccc; }
+  #scene { flex: 1; height: 100%; position: relative; }
+</style>
+<div id="tool"></div><div id="scene"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+
+const probe = (window.__probe = { errors: [], opened: [] });
+window.addEventListener("error", (e) => probe.errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => probe.errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (fn, ms = 20_000) => {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; await sleep(50)) if (fn()) return true;
+  return false;
+};
+const toolHost = document.getElementById("tool");
+const sceneHost = document.getElementById("scene");
+const buttons = (text) => [...toolHost.querySelectorAll("button")].filter((b) => b.textContent === text);
+const rows = (list) => [...toolHost.querySelectorAll(`.${list} li`)];
+const status = () => toolHost.querySelector(".status")?.textContent ?? "";
+
+for (const url of ["../dist/index.js", "/scene/dist/index.js", "/seats/dist/index.js"]) {
+  const { plugins } = await import(url);
+  for (const p of plugins) getRegistry(p.type).register(p);
+}
+const repo = new FakeRepo();
+window.repo = repo;
+// a library as the host makes one: init in its first change, with the repo
+const Library = (await getRegistry("patchwork:datatype").load("game-library")).module;
+const seed = {};
+Library.init(seed, repo);
+seed["@patchwork"] = { type: "game-library" };
+const lib = repo.add(seed);
+toolHost.repo = repo;
+toolHost.addEventListener("patchwork:open-document", (e) => probe.opened.push(e.detail));
+const Launcher = (await getRegistry("patchwork:tool").load("game-library")).module;
+Launcher(lib, toolHost);
+const SceneTool = (await getRegistry("patchwork:tool").load("scene")).module;
+const folder = (name) => repo.handles.get(lib.doc().docs.find((l) => l.name === name).url).doc();
+
+let unmountScene = null;
+/** Show a scene with the scene tool, as someone sitting in its first seat would see it, once everything visible has loaded. */
+async function show(url) {
+  unmountScene?.();
+  sceneHost.replaceChildren();
+  sceneHost.repo = repo;
+  sceneHost.viewerId = "viewer:probe";
+  const h = await repo.find(url);
+  unmountScene = SceneTool(h, sceneHost);
+  const dbg = sceneHost.querySelector(".scene-tool").__sceneDebug;
+  const objs = Object.values(h.doc().objects);
+  const visible = objs.filter((o) => o.kind !== "group" && o.visible !== false).length;
+  await until(() => dbg.stats().loaded >= visible && dbg.stats().pending === 0, 60_000);
+  const sc = h.doc();
+  return {
+    title: sc.title,
+    placed: objs.filter((o) => o.kind !== "group").length,
+    cards: objs.filter((o) => o.traits?.["tabletop.card"]).length,
+    keptCards: objs.filter((o) => o.traits?.["tabletop.card"] && (o.traits["keep.plain"]?.by || o.traits["card-table.kept"]?.by)).length,
+    seats: Object.fromEntries(Object.entries(sc.traits?.seats ?? {}).map(([k, s]) => [k, s.player ?? null])),
+    forkedFrom: sc.forkedFrom ?? null,
+    stats: { ...dbg.stats(), visible },
+  };
+}
+
+const row = (title) => rows("games-list").find((r) => r.querySelector("strong")?.textContent === title);
+let game = null; // the imported game's link
+let session = null; // the session's url
+const scene = async () => (await repo.find(session));
+const startButton = () => sceneHost.querySelector('.toolbar [data-command="start"]');
+const steps = {
+  async importMod() {
+    const manifest = await (await fetch("/manifest.json")).json();
+    const files = await Promise.all(manifest.map(async (m) => new File([await (await fetch(m.url)).arrayBuffer()], m.name)));
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    const input = toolHost.querySelector("input.import-file");
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => rows("games-list").length === 1 && /Imported/.test(status()), 120_000);
+    game = folder("Games").docs.at(-1);
+    const d = repo.handles.get(game.url).doc();
+    await until(() => row(d.title)?.querySelector("select.option"));
+    return { files: files.length, title: d.title, status: status(), options: (d.recipe?.options ?? []).map((o) => ({ key: o.key, kind: o.kind, values: o.kind === "enum" ? o.options.map((x) => x.label) : o.kind === "integer" ? [o.min, o.max] : [false, true] })) };
+  },
+  async newGame({ players, layout, shuffle }) {
+    const d = repo.handles.get(game.url).doc();
+    const r = row(d.title);
+    const set = (key, value) => {
+      const c = row(d.title).querySelector(`[data-key="${key}"]`);
+      if (c.type === "checkbox") c.checked = value;
+      else c.value = String(value);
+      c.dispatchEvent(new Event("change"));
+    };
+    set("players", players);
+    set("layout", layout);
+    set("shuffle", shuffle);
+    const n = probe.opened.length;
+    r.querySelector("button.primary").click();
+    await until(() => probe.opened.length > n, 120_000);
+    session = probe.opened.at(-1).url;
+    const sc = (await scene()).doc();
+    const memory = (d.recipe.layout ?? []).find((s) => s.when === `layout == ${layout}`)?.place ?? {};
+    return { status: status(), sessions: rows("sessions-list").map((x) => x.querySelector(".what").textContent), seats: Object.keys(sc.traits?.seats ?? {}), start: sc.traits?.["tabletop.start"] ?? null, placed: Object.keys(memory).length, shown: await show(session) };
+  },
+  async look({ layout }) {
+    // down onto what the memory bag laid out (where it saved them), from above its near edge
+    const d = repo.handles.get(game.url).doc();
+    const at = Object.values((d.recipe.layout ?? []).find((x) => x.when === `layout == ${layout}`)?.place ?? {}).map((p) => p.position);
+    const mid = [0, 1, 2].map((k) => at.reduce((n, p) => n + p[k], 0) / at.length);
+    const dbg = sceneHost.querySelector(".scene-tool").__sceneDebug;
+    const api = ["tabletop", "seats", "scene.claims"].map((id) => dbg.host.record(id)?.api).find(Boolean);
+    api.camera.set({ position: [mid[0], 0.55, mid[2] + 0.3], target: mid });
+    await sleep(1500);
+    return { target: mid.map((v) => +v.toFixed(3)), things: at.length };
+  },
+  async beforeSeats() {
+    await until(() => startButton(), 20_000);
+    const b = startButton();
+    return { button: !!b, disabled: b?.disabled ?? null, title: b?.title ?? null, label: b?.textContent ?? null };
+  },
+  async sit() {
+    const h = await scene();
+    const [a, b] = Object.keys(h.doc().traits.seats);
+    h.change((d) => {
+      d.traits.seats[a].player = "viewer:probe";
+      d.traits.seats[b].player = "viewer:other";
+    });
+    await until(() => startButton() && !startButton().disabled, 20_000);
+    return { seats: Object.fromEntries(Object.entries(h.doc().traits.seats).map(([k, s]) => [k, s.player])), disabled: startButton()?.disabled ?? null, title: startButton()?.title ?? null };
+  },
+  async start() {
+    const h = await scene();
+    const kept = (o) => o.traits?.["keep.plain"]?.by;
+    const challenge = Object.values(h.doc().objects).find((o) => o.traits?.["tabletop.card"] && kept(o) && repo.handles.get(kept(o))?.doc()?.title?.includes("Challenge Deck"));
+    const container = challenge ? repo.handles.get(kept(challenge)) : null;
+    const before = container ? JSON.stringify(container.doc().at) : null;
+    startButton().click();
+    await until(() => h.doc().traits["tabletop.start"]?.started != null, 20_000);
+    await sleep(800);
+    const b = startButton();
+    return { started: h.doc().traits["tabletop.start"].started, shuffled: container ? JSON.stringify(container.doc().at) !== before : null, challengeTitle: container?.doc()?.title ?? null, disabled: b?.disabled ?? null, label: b?.textContent ?? null, title: b?.title ?? null };
+  },
+};
+window.__step = async (name, arg) => {
+  try {
+    return await steps[name](arg);
+  } catch (err) {
+    probe.errors.push(`${name}: ${err?.stack || err}`);
+    return null;
+  }
+};
+window.__ready = true;
+</script>

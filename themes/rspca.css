@@ -86,7 +86,7 @@
 	--syntax-namespace: #a8620d;
 	--syntax-meta: #7a3fd0;
 
-	--syntax-heading: var(--studio-primary);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 	--syntax-link: var(--studio-primary);
 	--syntax-style-link: underline;

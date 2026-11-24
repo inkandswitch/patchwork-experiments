@@ -47,7 +47,7 @@
 	--syntax-namespace: #d99a1f;
 	--syntax-meta: var(--studio-modified);
 
-	--syntax-heading: var(--studio-primary);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 	--syntax-style-link: underline;
 }

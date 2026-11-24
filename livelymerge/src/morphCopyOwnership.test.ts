@@ -124,5 +124,18 @@ Lively.copy = Lively.addMorph(Lively.box.morphCopy());
     expect(rt.eval(`Lively.box.submorphs.length`)).toBe(2);
     expect(rt.eval(`Lively.k1.owner === Lively.box`)).toBe(true);
     expect(rt.eval(`Lively.grandkid.owner === Lively.k1`)).toBe(true);
+    // Nested copies keep local transforms, so a rotated parent does not
+    // double-apply rotation and split children off the frame.
+    rt.eval(`
+Lively.box.setRotation(Math.PI / 4);
+Lively.rotCopy = Lively.addMorph(Lively.box.morphCopy());
+`);
+    expect(rt.eval(`Math.abs((Lively.rotCopy.transform.rotation || 0) - Math.PI / 4) < 0.05`)).toBe(
+      true,
+    );
+    expect(
+      rt.eval(`Math.abs(Lively.rotCopy.submorphs.at(0).transform.rotation || 0) < 0.05`),
+    ).toBe(true);
+    expect(rt.eval(`Lively.rotCopy.submorphs.at(0).owner === Lively.rotCopy`)).toBe(true);
   }, 60_000);
 });

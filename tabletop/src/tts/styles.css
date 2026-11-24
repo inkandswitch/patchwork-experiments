@@ -1,0 +1,251 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --tts-import-bg: var(--editor-fill, white);
+    --tts-import-fg: var(--editor-line, black);
+    --tts-import-muted: var(--editor-line-offset-50, #888);
+    --tts-import-border: var(--editor-fill-offset-20, #ddd);
+    --tts-import-field: var(--editor-fill-offset-10, #f6f6f6);
+    --tts-import-accent: var(--studio-primary-fill, var(--studio-primary, #35f7ca));
+    --tts-import-accent-ink: var(--studio-primary-line, black);
+    --tts-import-accent-soft: color-mix(in oklch, var(--studio-primary, #35f7ca), var(--editor-fill, white) 80%);
+    --tts-import-danger: var(--studio-danger, #d33);
+    --tts-import-danger-soft: color-mix(in oklch, var(--studio-danger, #d33), var(--editor-fill, white) 85%);
+    --tts-import-ok: var(--studio-added, #2a2);
+    --tts-import-family: var(--editor-family-sans, system-ui, sans-serif);
+    --tts-import-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
+}
+
+.tts-import {
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: var(--studio-space-lg, 1.5rem);
+  background: var(--tts-import-bg);
+  color: var(--tts-import-fg);
+  font-family: var(--tts-import-family);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.tts-import > * + * {
+  margin-top: var(--studio-space, 0.75rem);
+}
+
+.tts-import[data-dropping] {
+  outline: 2px dashed var(--tts-import-accent);
+  outline-offset: -6px;
+}
+
+.tts-import .head,
+.tts-import .row {
+  display: flex;
+  gap: var(--studio-space-sm, 0.5rem);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.tts-import .title {
+  flex: 1;
+  min-width: 0;
+  font-size: 1.3em;
+  font-weight: 600;
+}
+
+.tts-import .pill {
+  padding: 0.1em 0.6em;
+  border-radius: var(--studio-radius-round, 9999px);
+  border: 1px solid var(--tts-import-border);
+  color: var(--tts-import-muted);
+  font-size: 0.85em;
+}
+
+.tts-import .pill[data-status="importing"] {
+  background: var(--tts-import-accent-soft);
+  color: var(--tts-import-fg);
+}
+
+.tts-import .pill[data-status="error"] {
+  border-color: var(--tts-import-danger);
+  color: var(--tts-import-danger);
+}
+
+.tts-import .muted,
+.tts-import small {
+  color: var(--tts-import-muted);
+}
+
+.tts-import button {
+  font: inherit;
+  padding: 0.35em 0.9em;
+  border-radius: var(--studio-radius-sm, 4px);
+  border: 1px solid var(--tts-import-border);
+  background: var(--tts-import-field);
+  color: var(--tts-import-fg);
+  cursor: pointer;
+}
+
+.tts-import button.primary {
+  background: var(--tts-import-accent);
+  color: var(--tts-import-accent-ink);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.tts-import button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tts-import .drop {
+  border: 2px dashed var(--tts-import-border);
+  border-radius: var(--studio-radius-lg, 12px);
+  padding: var(--studio-space-lg, 1.5rem);
+}
+
+.tts-import .drop > * + * {
+  margin-top: var(--studio-space-sm, 0.5rem);
+}
+
+.tts-import .drop-title {
+  font-weight: 600;
+  font-size: 1.1em;
+}
+
+.tts-import .drop p {
+  margin: 0;
+}
+
+.tts-import code {
+  font-family: var(--tts-import-family-code);
+  font-size: 0.9em;
+}
+
+.tts-import .progress progress {
+  width: 100%;
+}
+
+.tts-import .error {
+  padding: var(--studio-space-sm, 0.5rem) var(--studio-space, 0.75rem);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--tts-import-danger-soft);
+  color: var(--tts-import-fg);
+}
+
+.tts-import .ok {
+  color: var(--tts-import-ok);
+}
+
+.tts-import .report > * + * {
+  margin-top: var(--studio-space, 0.75rem);
+}
+
+.tts-import .mod {
+  flex: 1;
+  min-width: 0;
+}
+
+.tts-import .mod-name {
+  font-weight: 600;
+}
+
+.tts-import .stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--studio-space-sm, 0.5rem);
+}
+
+.tts-import .stat {
+  display: flex;
+  flex-direction: column;
+  padding: var(--studio-space-sm, 0.5rem);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--tts-import-field);
+}
+
+.tts-import .stat b {
+  font-size: 1.4em;
+}
+
+.tts-import .stat span {
+  color: var(--tts-import-muted);
+  font-size: 0.85em;
+}
+
+.tts-import h3 {
+  margin: 0 0 var(--studio-space-xs, 0.375rem);
+  font-size: 1em;
+}
+
+.tts-import section p {
+  margin: 0 0 var(--studio-space-xs, 0.375rem);
+}
+
+.tts-import table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  font-size: 0.9em;
+}
+
+.tts-import th,
+.tts-import td {
+  overflow-wrap: anywhere;
+  text-align: left;
+  padding: 0.25em 0.5em;
+  border-bottom: 1px solid var(--tts-import-border);
+  vertical-align: top;
+}
+
+.tts-import th {
+  color: var(--tts-import-muted);
+  font-weight: 500;
+}
+
+.tts-import .url {
+  word-break: break-all;
+}
+
+.tts-import a {
+  color: inherit;
+}
+
+.tts-import details > summary {
+  cursor: pointer;
+  color: var(--tts-import-muted);
+}
+
+.tts-import .settings .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--studio-space-sm, 0.5rem) var(--studio-space, 0.75rem);
+  margin-top: var(--studio-space-sm, 0.5rem);
+}
+
+.tts-import .field,
+.tts-import .check {
+  display: grid;
+  gap: 0.15em;
+}
+
+.tts-import .check {
+  grid-template-columns: auto 1fr;
+  column-gap: 0.4em;
+  align-items: baseline;
+}
+
+.tts-import .check small {
+  grid-column: 2;
+}
+
+.tts-import input,
+.tts-import select {
+  font: inherit;
+  color: var(--tts-import-fg);
+  background: var(--tts-import-field);
+  border: 1px solid var(--tts-import-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 0.2em 0.4em;
+}

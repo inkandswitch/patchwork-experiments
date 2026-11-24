@@ -1,0 +1,23 @@
+{
+  "name": "@patchwork/talk-and-draw",
+  "version": "0.1.0",
+  "description": "Talk & Draw for all of Patchwork: ask Claude about (or to change) anything on screen by talking and drawing with disappearing ink.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "sync": "vite build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.3.5"
+  }
+}

@@ -75,13 +75,13 @@
 
 	--syntax-namespace: var(--studio-secondary);
 
-	--syntax-heading: var(--studio-primary);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: var(--studio-link);
 	--syntax-style-link: underline;
 
-	--syntax-quote: #5c3d1e;
+	--syntax-quote: var(--text-editor-line);
 
 	--syntax-inserted: var(--studio-added);
 	--syntax-deleted: var(--studio-deleted);

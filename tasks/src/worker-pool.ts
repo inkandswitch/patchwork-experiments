@@ -1,0 +1,392 @@
+/* eslint-env worker */
+
+import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
+import type { WorkerDoc, RouterDoc, TaskQueueDoc, TaskQueueSet } from './datatype';
+import type {
+  MessageToRouterChannel,
+  MessageToTaskQueueChannel,
+  MessageToWorkerPool,
+  RepoConfig,
+} from './protocol';
+
+import { getRepo, setUpImportMap } from './webworker-lib';
+import { seconds } from './helpers';
+import { Sequencer } from './delivery-stats';
+import { listen, send } from './messages';
+import { retireForNewerBuild } from './retire';
+import { BUILD, protocolOf, WIRE_PROTOCOL } from './version';
+import {
+  AVAILABILITY_CHANNEL,
+  decideAvailability,
+  DEFAULT_AVAILABILITY_MODE,
+  type AvailabilityStatus,
+  type PressureState,
+  type TabReport,
+} from './availability';
+
+interface TaskQueueState {
+  /** The queue's doc, once it has been found. */
+  handle: DocHandle<TaskQueueDoc> | null;
+  /** The doc of the router the queue names as active, once that has been found. */
+  activeRouterHandle: DocHandle<RouterDoc> | null;
+  /** One of the two is being looked for right now. */
+  looking: boolean;
+  /** Stops listening for the queue's router's heartbeats. */
+  stopListening?: () => void;
+  /** The last heartbeat heard from a router of this queue: who, on what protocol, when. */
+  router?: { routerUrl: AutomergeUrl; protocol: number; heardAt: number };
+}
+
+/** How long a router's word on its protocol holds without another heartbeat from it. */
+const ROUTER_WORD_GOOD_FOR_MS = 10_000;
+
+/**
+ * Whether the queue is run by a router on a newer protocol than this pool's
+ * (see version.ts). Such a router gives this pool's workers no work, so they
+ * are reported unavailable to it, and the tabs are told why.
+ */
+function outdatedFor(state: TaskQueueState) {
+  const router = state.router;
+  return (
+    !!router &&
+    router.routerUrl === state.handle?.doc().activeRouter &&
+    Date.now() - router.heardAt < ROUTER_WORD_GOOD_FOR_MS &&
+    router.protocol > WIRE_PROTOCOL
+  );
+}
+
+let repo: Repo;
+
+let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
+const toDoAfterInit: (() => Promise<void>)[] = [];
+
+const sharedWorkerNames = new Set<string>();
+const workerByUrl = new Map<AutomergeUrl, WorkerDoc>();
+
+const taskQueueUrls = new Set<AutomergeUrl>();
+const taskQueueState = new Map<AutomergeUrl, TaskQueueState>();
+
+// A new id each time the pool starts, so routers count this run's heartbeats
+// apart from the last one's.
+const sequencer = new Sequencer(`pool-${crypto.randomUUID()}`);
+
+// What this browser's tabs last said about their host, and the CPU pressure
+// reading if the browser gives one: what `availability` is decided from.
+const tabReports = new Map<string, TabReport>();
+let pressure: PressureState | null = null;
+let availability: AvailabilityStatus = {
+  mode: DEFAULT_AVAILABILITY_MODE,
+  ...decideAvailability(DEFAULT_AVAILABILITY_MODE, { tabs: [], pressure }),
+  build: BUILD,
+};
+
+// Set once a newer build's pool has been heard (see version.ts): this one is
+// on its way out, and says so by reporting its workers unavailable.
+let retiring = false;
+const availabilityChannel = new BroadcastChannel(AVAILABILITY_CHANNEL);
+
+console.log('hi there, I am the worker pool!');
+watchPressure();
+
+self.addEventListener('connect', (e: any) => {
+  console.log('got a connection!');
+  const port = e.ports[0];
+  port.onmessage = (e: any) => {
+    const msg: MessageToWorkerPool = e.data;
+    if (msg.type === 'host activity') {
+      // every couple of seconds from every tab: too many to log
+      if (msg.report) {
+        tabReports.set(msg.tabId, msg.report);
+      } else {
+        tabReports.delete(msg.tabId);
+      }
+      updateAvailability();
+      return;
+    }
+    console.log('received message', msg);
+    try {
+      switch (msg.type) {
+        case 'init':
+          init(msg.repoConfig, msg.importMap, msg.baseURI);
+          break;
+        case 'update task queue set':
+          updateTaskQueueSet(msg.taskQueues);
+          break;
+        case 'register worker':
+          registerWorker(msg.sharedWorkerName, msg.workerUrl);
+          break;
+      }
+    } catch (error) {
+      console.error('uh-oh, error handling message in worker pool', { msg, error });
+    }
+  };
+});
+
+async function init(repoConfig: RepoConfig, importMap: any, baseURI: string) {
+  if (status !== 'not initialized') {
+    // every tab sends `init`; the first one is the one that counts
+    return;
+  }
+
+  console.log('initializing...');
+  status = 'initializing';
+
+  await setUpImportMap(importMap, baseURI);
+  repo = await getRepo(repoConfig, `task-worker-pool-${Math.round(Math.random() * 10_000)}`);
+  pSendWorkerStatuses(); // this is a "process", meant to be running in the background (hence no `await`)
+
+  console.log('ready');
+  status = 'ready';
+
+  while (toDoAfterInit.length > 0) {
+    await toDoAfterInit.shift()!();
+  }
+}
+
+async function updateTaskQueueSet(newTaskQueueUrls: TaskQueueSet) {
+  if (status !== 'ready') {
+    // haven't initialized yet, so save this for later
+    toDoAfterInit.push(() => updateTaskQueueSet(newTaskQueueUrls));
+    return;
+  }
+
+  // remove task queues that are no longer in the set
+  for (const [taskQueueUrl, state] of taskQueueState) {
+    if (!newTaskQueueUrls[taskQueueUrl]) {
+      state.handle?.off('change', findWhatIsMissing);
+      state.stopListening?.();
+      taskQueueUrls.delete(taskQueueUrl);
+      taskQueueState.delete(taskQueueUrl);
+    }
+  }
+
+  // add the new ones
+  for (const taskQueueUrl of Object.keys(newTaskQueueUrls) as AutomergeUrl[]) {
+    if (!taskQueueState.has(taskQueueUrl)) {
+      console.log('joining task queue', taskQueueUrl);
+      taskQueueState.set(taskQueueUrl, { handle: null, activeRouterHandle: null, looking: false });
+    }
+  }
+
+  findWhatIsMissing();
+}
+
+/**
+ * Looks for each joined queue's doc, and for the doc of whichever router each
+ * queue names as active, wherever the pool doesn't have them yet.
+ *
+ * Either can be asked for before it has got here: a queue's url is on the
+ * account before the queue has synced, and a router is named in the queue the
+ * moment it takes over, before its own doc has gone anywhere. So a lookup that
+ * fails is just early, and this is called again every second, and whenever a
+ * queue changes, until nothing is missing. Looking once and giving up left a
+ * pool sending its heartbeats to nobody until the queue next changed, which on
+ * a quiet queue was never.
+ */
+function findWhatIsMissing() {
+  for (const [taskQueueUrl, state] of taskQueueState) {
+    if (state.looking) {
+      continue;
+    }
+    const stillJoined = () => taskQueueState.get(taskQueueUrl) === state;
+
+    if (!state.handle) {
+      state.looking = true;
+      repo
+        .find<TaskQueueDoc>(taskQueueUrl)
+        .then(
+          (handle) => {
+            if (!stillJoined()) return;
+            state.handle = handle;
+            taskQueueUrls.add(taskQueueUrl);
+            handle.on('change', findWhatIsMissing);
+            state.stopListening = listen<MessageToTaskQueueChannel>(handle, (msg) => {
+              if (msg.type === 'router heartbeat') {
+                state.router = {
+                  routerUrl: msg.routerUrl,
+                  protocol: protocolOf(msg.protocol),
+                  heardAt: Date.now(),
+                };
+              }
+            });
+            console.log('done joining task queue', taskQueueUrl);
+          },
+          (error) => console.log('task queue not here yet', { taskQueueUrl, error }),
+        )
+        .finally(() => {
+          state.looking = false;
+          if (state.handle) findWhatIsMissing();
+        });
+      continue;
+    }
+
+    const wanted = state.handle.doc().activeRouter;
+    if (wanted === (state.activeRouterHandle?.url ?? null)) {
+      continue;
+    }
+    if (!wanted) {
+      state.activeRouterHandle = null;
+      continue;
+    }
+    state.looking = true;
+    repo
+      .find<RouterDoc>(wanted)
+      .then(
+        (handle) => {
+          // the queue may have named another router while this one was loading
+          if (stillJoined() && state.handle?.doc().activeRouter === wanted) {
+            state.activeRouterHandle = handle;
+          }
+        },
+        (error) => console.log('active router not here yet', { taskQueueUrl, wanted, error }),
+      )
+      .finally(() => {
+        state.looking = false;
+      });
+  }
+}
+
+async function registerWorker(sharedWorkerName: string, workerUrl: AutomergeUrl) {
+  if (sharedWorkerNames.has(sharedWorkerName)) {
+    // already added!
+    console.log('registerWorker: already know about', sharedWorkerName);
+    return;
+  } else if (status !== 'ready') {
+    // haven't initialized yet, so save this for later
+    console.log('registerWorker: will register', sharedWorkerName, 'after init');
+    toDoAfterInit.push(() => registerWorker(sharedWorkerName, workerUrl));
+    return;
+  }
+
+  console.log('adding worker', { sharedWorkerName, workerUrl });
+
+  sharedWorkerNames.add(sharedWorkerName);
+
+  try {
+    const workerHandle = await repo.find<WorkerDoc>(workerUrl);
+    workerHandle.on('change', (payload) => workerByUrl.set(workerUrl, payload.doc));
+    workerByUrl.set(workerUrl, workerHandle.doc());
+  } catch (error) {
+    console.error('did not add worker, unable to get its doc handle', { workerUrl, error });
+    sharedWorkerNames.delete(sharedWorkerName);
+  }
+}
+
+/**
+ * Decides again whether this browser's workers should be given work, and tells
+ * the tabs. The router hears with the next heartbeat.
+ */
+function updateAvailability() {
+  const now = Date.now();
+  let latest: TabReport | null = null;
+  for (const [tabId, report] of tabReports) {
+    if (now - report.sentAt > 10 * 60_000) {
+      // closed without saying so; even a tab hidden for hours reports every minute
+      tabReports.delete(tabId);
+    } else if (report.sentAt > (latest?.sentAt ?? 0)) {
+      latest = report;
+    }
+  }
+
+  // The mode is whatever the tabs last said. With none left to say, keep it.
+  const mode = latest?.mode ?? availability.mode;
+  const decision = decideAvailability(mode, { tabs: [...tabReports.values()], pressure }, now);
+  const outdated = [...taskQueueState.values()].some(outdatedFor);
+  if (
+    outdated !== !!availability.outdated ||
+    decision.available !== availability.available ||
+    decision.reason !== availability.reason ||
+    mode !== availability.mode
+  ) {
+    console.log(decision.available ? 'taking tasks:' : 'not taking tasks:', decision.reason);
+    if (outdated) {
+      console.warn('a queue is run by a router on a newer protocol; these workers are out of date');
+    }
+  }
+  availability = { mode, ...decision, build: BUILD, outdated };
+  if (status === 'ready' && !retiring) {
+    // Only once it's really running, and not on the way out: older workers
+    // step down for a pool they hear this from, and newer ones mustn't hear
+    // an old one still talking.
+    availabilityChannel.postMessage(availability);
+  }
+}
+
+/** Keeps `pressure` current where the browser reports it (Chrome and Edge). */
+function watchPressure() {
+  const PressureObserver = (self as any).PressureObserver;
+  if (!PressureObserver) {
+    return;
+  }
+  try {
+    const observer = new PressureObserver((records: { state: PressureState }[]) => {
+      pressure = records.at(-1)?.state ?? pressure;
+      updateAvailability();
+    });
+    Promise.resolve(observer.observe('cpu', { sampleInterval: 2_000 })).catch((error: unknown) => {
+      console.log('no CPU pressure readings here:', error);
+    });
+  } catch (error) {
+    console.log('no CPU pressure readings here:', error);
+  }
+}
+
+/**
+ * Steps down for a newer build's pool: one last heartbeat that marks this
+ * pool's workers unavailable, so the router stops sending them work at once
+ * rather than when it notices they've gone quiet, and then closes.
+ */
+function retire() {
+  retiring = true;
+  sendWorkerHeartbeats();
+  setTimeout(() => self.close(), 500);
+}
+retireForNewerBuild(retire);
+
+async function pSendWorkerStatuses() {
+  while (!retiring) {
+    await seconds(1);
+    if (retiring) {
+      break;
+    }
+
+    // time passing changes the answer too: "quiet for 30 seconds" comes true
+    updateAvailability();
+    findWhatIsMissing();
+    sendWorkerHeartbeats();
+  }
+}
+
+/** Tells each joined queue's active router what this pool's workers are up to. */
+function sendWorkerHeartbeats() {
+  const taskQueues: TaskQueueSet = {};
+  for (const taskQueueUrl of taskQueueUrls) {
+    taskQueues[taskQueueUrl] = true;
+  }
+
+  for (const [taskQueueUrl, state] of taskQueueState.entries()) {
+    const { activeRouterHandle } = state;
+    if (!activeRouterHandle) {
+      continue;
+    }
+
+    for (const [workerUrl, { currentTask }] of workerByUrl.entries()) {
+      if (currentTask && currentTask.taskQueueUrl !== taskQueueUrl) {
+        // don't bother sending the heartbeats of workers that are busy with tasks from other queues
+      } else {
+        send(activeRouterHandle, {
+          type: 'worker heartbeat',
+          ...sequencer.stamp(activeRouterHandle.url),
+          workerUrl,
+          currentTask,
+          taskQueues,
+          build: BUILD,
+          protocol: WIRE_PROTOCOL,
+          available: availability.available && !retiring && !outdatedFor(state),
+        } satisfies MessageToRouterChannel);
+      }
+    }
+  }
+}
+
+export { }; // to ensure this is a module

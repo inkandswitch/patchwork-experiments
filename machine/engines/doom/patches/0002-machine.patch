@@ -1,0 +1,215 @@
+Chocolate Doom as a machine engine: what the game source itself must change.
+Applies on top of 0001-trace-saves-bot-join.patch. Everything else the
+machine needs is new code in ../i_machine.c and ../machine_doom.c.
+
+- s_sound.c: every sound the game starts or stops goes to the platform
+  (I_SoundEvent, I_StopSoundEvent) before the listener's distance decides
+  whether Doom mixes it, so a host can place it for any listener. Vanilla's
+  own channel logic, and its M_Random calls, are unchanged.
+- s_sound.c, p_inter.c: S_StartPlayerSound. Pickup sounds, which vanilla
+  plays only for the console player, go to the platform for every player,
+  from that player's body; the console player's still runs vanilla's path.
+- p_trace.c: TRACE_Hashes, the current state's trace record hashes, so the
+  machine can be compared with native Chocolate Doom tic for tic.
+- d_main.c: InitGameVersion and LoadIwadDeh lose `static`, so the machine's
+  setup can call them as D_DoomMain does.
+
+diff --git a/src/doom/d_main.c b/src/doom/d_main.c
+index bc9c40d..681b76e 100644
+--- a/src/doom/d_main.c
++++ b/src/doom/d_main.c
+@@ -997,7 +997,7 @@ static const struct
+ 
+ // Initialize the game version
+ 
+-static void InitGameVersion(void)
++void InitGameVersion(void)
+ {
+     byte *demolump;
+     char demolumpname[6];
+@@ -1188,7 +1188,7 @@ boolean IsFrenchIWAD(void)
+ }
+ 
+ // Load dehacked patches needed for certain IWADs.
+-static void LoadIwadDeh(void)
++void LoadIwadDeh(void)
+ {
+     // The Freedoom IWADs have DEHACKED lumps that must be loaded.
+     if (gamevariant == freedoom || gamevariant == freedm)
+diff --git a/src/doom/p_inter.c b/src/doom/p_inter.c
+index e613dfe..7b5ef0a 100644
+--- a/src/doom/p_inter.c
++++ b/src/doom/p_inter.c
+@@ -182,8 +182,7 @@ P_GiveWeapon
+ 	    P_GiveAmmo (player, weaponinfo[weapon].ammo, 2);
+ 	player->pendingweapon = weapon;
+ 
+-	if (player == &players[consoleplayer])
+-	    S_StartSound (NULL, sfx_wpnup);
++	S_StartPlayerSound (player, sfx_wpnup);
+ 	return false;
+     }
+ 	
+@@ -663,8 +662,7 @@ P_TouchSpecialThing
+ 	player->itemcount++;
+     P_RemoveMobj (special);
+     player->bonuscount += BONUSADD;
+-    if (player == &players[consoleplayer])
+-	S_StartSound (NULL, sound);
++    S_StartPlayerSound (player, sound);
+ }
+ 
+ 
+diff --git a/src/doom/p_trace.c b/src/doom/p_trace.c
+index cdc3880..326cd09 100644
+--- a/src/doom/p_trace.c
++++ b/src/doom/p_trace.c
+@@ -358,6 +358,8 @@ static void WriteFileHeader(void)
+     fwrite(rb, 1, nrb, trace_fp);
+ }
+ 
++static uint64_t last_hashes[12];       // all, strict, then the ten sections
++
+ static void WriteTic(void)
+ {
+     enum { H_MOBJ, H_PLAYER, H_SECTOR, H_SPECIAL, H_WORLD, H_MISC,
+@@ -481,6 +483,8 @@ static void WriteTic(void)
+ 
+     hall = Combine(hs, H_ORDER);
+     hstrict = Combine(hs, H_VIEW);
++    last_hashes[0] = hall; last_hashes[1] = hstrict;
++    for (i = 0; i < NH; i++) last_hashes[2 + i] = hs[i];
+ 
+     // patch header: size and hashes
+     memcpy(rb, &(int32_t){ (int32_t) nrb }, 4);
+@@ -936,6 +940,16 @@ void TRACE_BotCmd(int pnum, ticcmd_t *cmd)
+ 
+ extern void G_EndBotRecording(void);
+ 
++// The hashes of the current state, as a trace record would hold them:
++// all, strict, mobj, player, sector, special, world, misc, order, links,
++// rnd, view. Writes nothing unless -trace or -hashonly is on, but does
++// stamp trace ids on mobjs, so a machine calls it on a copy.
++const uint64_t *TRACE_Hashes(void)
++{
++    WriteTic();
++    return last_hashes;
++}
++
+ // The state before the first ticcmd (demo playback, level just loaded).
+ void TRACE_LevelStart(void)
+ {
+diff --git a/src/doom/p_trace.h b/src/doom/p_trace.h
+index 8d7cbe5..2706098 100644
+--- a/src/doom/p_trace.h
++++ b/src/doom/p_trace.h
+@@ -5,6 +5,7 @@
+ #ifndef __P_TRACE__
+ #define __P_TRACE__
+ 
++#include <stdint.h>
+ #include "d_ticcmd.h"
+ 
+ extern boolean trace_bot;       // -botrecord: bot writes every ticcmd
+@@ -18,5 +19,6 @@ void TRACE_EndTic(void);        // end of G_Ticker: count, trace, save
+ void TRACE_LevelStart(void);    // demo start: record + save for ticcmd 0
+ int  TRACE_JoinTic(char **savepath);  // -join <save> <tic>: tic or -1
+ void TRACE_JoinFixups(void);    // apply -joinfix mask from the sidecar
++const uint64_t *TRACE_Hashes(void);  // the current state's record hashes
+ 
+ #endif
+diff --git a/src/doom/s_sound.c b/src/doom/s_sound.c
+index 7674889..62dda58 100644
+--- a/src/doom/s_sound.c
++++ b/src/doom/s_sound.c
+@@ -263,7 +263,7 @@ void S_Start(void)
+     S_ChangeMusic(mnum, true);
+ }
+ 
+-void S_StopSound(mobj_t *origin)
++static void StopSound(mobj_t *origin)
+ {
+     int cnum;
+ 
+@@ -426,7 +426,7 @@ static int Clamp(int x)
+     return x;
+ }
+ 
+-void S_StartSound(void *origin_p, int sfx_id)
++static void StartSound(void *origin_p, int sfx_id)
+ {
+     sfxinfo_t *sfx;
+     mobj_t *origin;
+@@ -503,7 +503,7 @@ void S_StartSound(void *origin_p, int sfx_id)
+     pitch = Clamp(pitch);
+ 
+     // kill old sound
+-    S_StopSound(origin);
++    StopSound(origin);
+ 
+     // try to find a channel
+     cnum = S_GetChannel(origin, sfx);
+@@ -528,6 +528,32 @@ void S_StartSound(void *origin_p, int sfx_id)
+     channels[cnum].handle = I_StartSound(sfx, cnum, volume, sep, channels[cnum].pitch);
+ }
+ 
++// The device hears every sound, from wherever it starts and for whichever
++// player, before the listener's distance decides whether Doom mixes it.
++
++void S_StartSound(void *origin, int sfx_id)
++{
++    I_SoundEvent(origin, sfx_id);
++    StartSound(origin, sfx_id);
++}
++
++void S_StopSound(mobj_t *origin)
++{
++    I_StopSoundEvent(origin);
++    StopSound(origin);
++}
++
++// A sound only its player hears in vanilla, such as a pickup.
++
++void S_StartPlayerSound(player_t *player, int sfx_id)
++{
++    I_SoundEvent(player->mo, sfx_id);
++    if (player == &players[consoleplayer])
++    {
++        StartSound(NULL, sfx_id);
++    }
++}
++
+ //
+ // Stop and resume music, during game PAUSE.
+ //
+diff --git a/src/doom/s_sound.h b/src/doom/s_sound.h
+index bbd100a..9210213 100644
+--- a/src/doom/s_sound.h
++++ b/src/doom/s_sound.h
+@@ -56,6 +56,10 @@ void S_StartSound(void *origin, int sound_id);
+ // Stop sound for thing at <origin>
+ void S_StopSound(mobj_t *origin);
+ 
++// Start a sound that vanilla plays only for its player (consoleplayer).
++struct player_s;
++void S_StartPlayerSound(struct player_s *player, int sfx_id);
++
+ 
+ // Start music using <music_id> from sounds.h
+ void S_StartMusic(int music_id);
+diff --git a/src/i_sound.h b/src/i_sound.h
+index 376e1bb..716b34d 100644
+--- a/src/i_sound.h
++++ b/src/i_sound.h
+@@ -159,6 +159,11 @@ int I_GetSfxLumpNum(sfxinfo_t *sfxinfo);
+ void I_UpdateSound(void);
+ void I_UpdateSoundParams(int channel, int vol, int sep);
+ int I_StartSound(sfxinfo_t *sfxinfo, int channel, int vol, int sep, int pitch);
++
++// Every sound the game starts or stops, before any listener is applied:
++// origin is a mobj, a sector's sound origin, or NULL.
++void I_SoundEvent(void *origin, int sfx_id);
++void I_StopSoundEvent(void *origin);
+ void I_StopSound(int channel);
+ boolean I_SoundIsPlaying(int channel);
+ void I_PrecacheSounds(sfxinfo_t *sounds, int num_sounds);

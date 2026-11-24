@@ -1,0 +1,166 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>game library probe</title>
+<!-- Driven by probes/library-run.mjs. Makes a game library with the BUILT
+     package's datatype in an in-memory repo (the library's Games and Sessions
+     folders made in its init), mounts the BUILT launcher on it, and drives it
+     as a person would, by its buttons and its file input: Add the built-in
+     games, New game on Lost Cities (the scene that opens is shown with the
+     BUILT scene tool, the seats package installed from its own dist: verification
+     only, not a dependency), Fork the session (shown likewise), Import the
+     tiny TTS fixture mod (its files handed to the file input), Open as folder.
+     window.__probe collects what the runner checks; window.__step(name) runs one step. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  body { display: flex; }
+  #tool { width: 560px; height: 100%; flex: none; overflow: hidden; border-right: 1px solid #ccc; }
+  #scene { flex: 1; height: 100%; position: relative; }
+</style>
+<div id="tool"></div><div id="scene"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+
+const probe = (window.__probe = { errors: [], opened: [] });
+window.addEventListener("error", (e) => probe.errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => probe.errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (fn, ms = 20_000) => {
+  for (const t0 = performance.now(); performance.now() - t0 < ms; await sleep(50)) if (fn()) return true;
+  return false;
+};
+const toolHost = document.getElementById("tool");
+const sceneHost = document.getElementById("scene");
+const buttons = (text) => [...toolHost.querySelectorAll("button")].filter((b) => b.textContent === text);
+const rows = (list) => [...toolHost.querySelectorAll(`.${list} li`)];
+const status = () => toolHost.querySelector(".status")?.textContent ?? "";
+
+for (const url of ["../dist/index.js", "/scene/dist/index.js", "/seats/dist/index.js"]) {
+  const { plugins } = await import(url);
+  for (const p of plugins) getRegistry(p.type).register(p);
+}
+const repo = new FakeRepo();
+window.repo = repo;
+// a library as the host makes one: init in its first change, with the repo
+const Library = (await getRegistry("patchwork:datatype").load("game-library")).module;
+const seed = {};
+Library.init(seed, repo);
+seed["@patchwork"] = { type: "game-library" };
+const lib = repo.add(seed);
+toolHost.repo = repo;
+toolHost.addEventListener("patchwork:open-document", (e) => probe.opened.push(e.detail));
+const Launcher = (await getRegistry("patchwork:tool").load("game-library")).module;
+Launcher(lib, toolHost);
+const SceneTool = (await getRegistry("patchwork:tool").load("scene")).module;
+const folder = (name) => repo.handles.get(lib.doc().docs.find((l) => l.name === name).url).doc();
+
+let unmountScene = null;
+/** Show a scene with the scene tool, as someone sitting in its first seat would see it, once everything visible has loaded. */
+async function show(url) {
+  unmountScene?.();
+  sceneHost.replaceChildren();
+  sceneHost.repo = repo;
+  sceneHost.viewerId = "viewer:probe";
+  const h = await repo.find(url);
+  unmountScene = SceneTool(h, sceneHost);
+  const dbg = sceneHost.querySelector(".scene-tool").__sceneDebug;
+  const objs = Object.values(h.doc().objects);
+  const visible = objs.filter((o) => o.kind !== "group" && o.visible !== false).length;
+  await until(() => dbg.stats().loaded >= visible && dbg.stats().pending === 0, 60_000);
+  const sc = h.doc();
+  return {
+    title: sc.title,
+    placed: objs.filter((o) => o.kind !== "group").length,
+    cards: objs.filter((o) => o.traits?.["tabletop.card"]).length,
+    keptCards: objs.filter((o) => o.traits?.["tabletop.card"] && (o.traits["keep.plain"]?.by || o.traits["card-table.kept"]?.by)).length,
+    seats: Object.fromEntries(Object.entries(sc.traits?.seats ?? {}).map(([k, s]) => [k, s.player ?? null])),
+    forkedFrom: sc.forkedFrom ?? null,
+    stats: { ...dbg.stats(), visible },
+  };
+}
+
+const steps = {
+  async empty() {
+    return { ready: await until(() => /No games yet/.test(toolHost.textContent)), folders: lib.doc().docs.map((l) => [l.name, l.type]) };
+  },
+  async builtIns() {
+    buttons("Add the built-in games")[0].click();
+    await until(() => rows("games-list").length === 4);
+    const players = () => toolHost.querySelector('select.option[aria-label="Draw Dominoes: Players"]');
+    await until(players);
+    return {
+      games: rows("games-list").map((r) => r.querySelector("strong")?.textContent),
+      variants: [...(players()?.options ?? [])].map((o) => o.textContent),
+      status: status(),
+    };
+  },
+  async again() {
+    buttons("Add the built-in games")[0].click();
+    await until(() => /here already|Added/.test(status()));
+    return { games: rows("games-list").length, status: status() };
+  },
+  async newGame() {
+    const at = rows("games-list").findIndex((r) => r.querySelector("strong")?.textContent === "Lost Cities");
+    const n = probe.opened.length;
+    rows("games-list")[at].querySelector("button.primary").click();
+    await until(() => probe.opened.length > n, 60_000);
+    const o = probe.opened.at(-1);
+    await until(() => rows("sessions-list").length === 1);
+    const game = repo.handles.get(folder("Games").docs.find((l) => l.name === "Lost Cities").url).doc();
+    return { opened: o, sessions: rows("sessions-list").map((r) => r.querySelector(".what").textContent), tables: game.tables, drawn: Object.keys(game.drawn ?? {}), status: status(), scene: await show(o.url) };
+  },
+  async sit() {
+    // someone sits at the table: a fork leaves the seat empty
+    const url = probe.opened.at(-1).url;
+    const h = await repo.find(url);
+    h.change((d) => (d.traits.seats.p1.player = "viewer:probe"));
+    await sleep(800);
+    return { seats: h.doc().traits.seats.p1.player };
+  },
+  async fork() {
+    buttons("Fork")[0].click();
+    await until(() => rows("sessions-list").length === 2);
+    await until(() => /forked from/.test(rows("sessions-list")[0].textContent));
+    const link = folder("Sessions").docs.at(-1);
+    return { sessions: rows("sessions-list").map((r) => r.querySelector(".what").textContent), link, scene: await show(link.url) };
+  },
+  async importMod() {
+    const manifest = await (await fetch("/manifest.json")).json();
+    const files = await Promise.all(manifest.map(async (m) => new File([await (await fetch(m.url)).arrayBuffer()], m.name)));
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    const input = toolHost.querySelector("input.import-file");
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => rows("games-list").length === 5 && /Imported/.test(status()), 60_000);
+    const link = folder("Games").docs.at(-1);
+    const game = repo.handles.get(link.url).doc();
+    return { files: files.length, games: rows("games-list").map((r) => r.querySelector("strong")?.textContent), link, origin: game.origin, assets: Object.keys(game.assets ?? {}).length, status: status() };
+  },
+  async playImported() {
+    const n = probe.opened.length;
+    rows("games-list").at(-1).querySelector("button.primary").click();
+    await until(() => probe.opened.length > n, 60_000);
+    return { opened: probe.opened.at(-1), status: status(), scene: await show(probe.opened.at(-1).url) };
+  },
+  async asFolder() {
+    buttons("Open as folder")[0].click();
+    return { opened: probe.opened.at(-1), library: lib.url };
+  },
+};
+window.__step = async (name) => {
+  try {
+    return await steps[name]();
+  } catch (err) {
+    probe.errors.push(`${name}: ${err?.stack || err}`);
+    return null;
+  }
+};
+window.__ready = true;
+</script>

@@ -463,8 +463,11 @@ function renderClassSetup(
 
   // Instances answer `className` via prototype delegation (the classic classProto
   // machinery set `obj.className = this.name` per instance; guards like
-  // `morph.className === 'HaloMorph'` throughout newdefs depend on it).
-  const classNameProp = `'@className': '${className}'`;
+  // `morph.className === 'HaloMorph'` throughout newdefs depend on it), and
+  // `constructor` links back to the class as it would in plain JS — the prototype is
+  // an LM object literal, so nothing installs that link for us. Method lists in the
+  // UIs filter both names out.
+  const classNameProp = `'@className': '${className}', '@constructor': ${ref}`;
   if (prototypeAccessors.length === 0 && instanceMethods.length > 0) {
     lines.push(
       `${ref}.prototype = $obj({ ${classNameProp}, ${instanceMethods.map((m) => `'${atMemberName(m.name)}': ${memberRef(ref, m.name)}`).join(', ')} }${prototypeSuffix(superGlobal, explicitSuper)});`,

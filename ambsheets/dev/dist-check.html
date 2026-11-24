@@ -1,0 +1,63 @@
+<!doctype html>
+<!--
+  Smoke test for the built bundle: loads dist/index.js the way Patchwork does, through
+  its `plugins` array, with solid-js supplied by an importmap. Build, then serve the
+  package directory statically and open this page:
+
+    pnpm build && python3 -m http.server 5198     # http://localhost:5198/dev/dist-check.html
+
+  The document is a plain in-page stand-in for a DocHandle (no Automerge).
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Ambsheets (built bundle)</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      #root { height: 100%; contain: layout; }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "solid-js": "/node_modules/solid-js/dist/solid.js",
+          "solid-js/web": "/node_modules/solid-js/web/dist/web.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      // ?noworker makes starting a worker fail, to check that the tool carries on without one
+      if (location.search.includes('noworker')) window.Worker = undefined;
+
+      import('/dist/index.js').then(async ({ plugins }) => {
+
+      const datatype = await plugins.find((p) => p.type === 'patchwork:datatype').load();
+      const tool = await plugins.find((p) => p.type === 'patchwork:tool').load();
+
+      let doc = {};
+      datatype.init(doc);
+      doc.data[0][0] = '{1 to 6}';
+      doc.data[0][1] = '=normal(A1, 1)';
+      doc.data[1][0] = '{1 to 6}';
+      doc.data[1][1] = '=A1 + A2';
+      const listeners = new Set();
+      const handle = {
+        doc: () => doc,
+        change(fn) {
+          const next = structuredClone(doc);
+          fn(next);
+          doc = next;
+          for (const listener of listeners) listener();
+        },
+        on: (_event, listener) => listeners.add(listener),
+        off: (_event, listener) => listeners.delete(listener),
+      };
+
+      window.cleanup = tool(handle, document.getElementById('root'));
+      window.handle = handle;
+      });
+    </script>
+  </body>
+</html>

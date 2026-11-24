@@ -47,7 +47,7 @@
 	--syntax-namespace: #22b8d6;
 	--syntax-meta: #8a5cff;
 
-	--syntax-heading: var(--studio-secondary);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 	--syntax-style-link: underline;
 }

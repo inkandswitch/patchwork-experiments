@@ -1,0 +1,12 @@
+node_modules
+dist
+.pushwork
+# Built engines are committed: an engine's identity is the hash of its exact
+# bytes, and running the tests should not need emscripten.
+!engines/*/dist/
+# Fetched by engines/doom/test/fetch-freedoom.sh; 28 MB, not committed.
+engines/doom/test/*.wad
+# Written by bench/browser/run.mjs.
+bench/browser/out
+# Written by bench/patchwork/run.mjs.
+bench/patchwork/out

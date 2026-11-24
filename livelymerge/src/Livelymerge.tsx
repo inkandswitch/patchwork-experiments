@@ -21,6 +21,7 @@ import { createRoot } from 'react-dom/client';
 import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import './styles.css';
 import { createLivelymergeRuntime, type LivelymergeRuntime } from './livelymergeRuntime';
+import { startAssist } from './assist/session';
 
 let runtime: LivelymergeRuntime;
 /** The runtime whose initUI() has run. Per runtime (one per mounted document), not per
@@ -229,7 +230,11 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
     const ro = new ResizeObserver(syncCanvasSize);
     ro.observe(canvas);
     window.addEventListener('resize', syncCanvasSize);
+    // Talk & Draw: the disappearing-ink overlay and its session hotkeys (host-level,
+    // UI-independent; see TALK_AND_DRAW.md).
+    const assist = startAssist(canvas);
     return () => {
+      assist.dispose();
       ro.disconnect();
       window.removeEventListener('resize', syncCanvasSize);
       delete (window as any).canvas;
@@ -331,10 +336,13 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
         if (firstInit && typeof g?.initUI === 'function') {
           g.initUI();
         }
-        if (firstInit && typeof g?.populateLively === 'function') {
+        // Populate only a document that has no world yet (a fresh Kit/Fabrik doc, whose
+        // boot source drops newdefs' trailing init()). firstInit is per page load, so
+        // without the Lively check a reload would rebuild the world and lose every morph.
+        if (firstInit && !g?.Lively && typeof g?.populateLively === 'function') {
           g.populateLively();
-        } else if (g?.Lively && g.Lively.isFabrikWorld && typeof g?.initFabrik === 'function') {
-          g.initFabrik();
+        } else if (!firstInit && g?.Lively && g.Lively.isFabrikWorld && typeof g?.openFabrik === 'function') {
+          g.openFabrik();
         } else if (typeof g?.fabrikOfferOpenMenu === 'function') {
           g.fabrikOfferOpenMenu();
         }
@@ -437,7 +445,12 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
       <AutomergeDocStats handle={docHandle} />
 
       {!drawerInDom && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center pb-2">
+        <div
+          className="pointer-events-none absolute left-0 bottom-0 z-10 flex justify-center pb-2"
+          // The Talk & Draw drawer (src/assist/ui.ts) sets this variable to its width while
+          // open, so the Workspace button stays centered in the space left of it.
+          style={{ right: 'var(--lm-assist-drawer-w, 0px)' }}
+        >
           <div className="pointer-events-auto flex items-center gap-2">
             <button
               type="button"
@@ -454,8 +467,10 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
 
       {drawerInDom && (
         <div
-          className="absolute inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden border-t border-base-300 bg-base-200 shadow-[0_-4px_24px_rgba(0,0,0,0.08)]"
+          className="absolute left-0 bottom-0 z-20 flex flex-col overflow-hidden border-t border-base-300 bg-base-200 shadow-[0_-4px_24px_rgba(0,0,0,0.08)]"
           style={{
+            // Ends where the Talk & Draw drawer starts (see the variable above).
+            right: 'var(--lm-assist-drawer-w, 0px)',
             height: drawerShellHeight,
             transition: dragging ? 'none' : 'height 0.32s cubic-bezier(0.32, 0.72, 0, 1)',
           }}

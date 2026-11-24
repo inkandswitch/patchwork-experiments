@@ -1,0 +1,112 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>decode bench</title>
+<script type="module">
+  // probes/decode-bench.mjs: what a table lays out, drawn by pieceDrawer with
+  // the browser's image backend, one decode at a time and several at once.
+  import { pieceDrawer } from "../src/pieces.js";
+  import { canvasImages } from "../src/look/images.js";
+
+  const say = (s) => console.log(`[bench] ${s}`);
+  try {
+    const { kinds, pieces, assets, runs, draws } = await (await fetch("/bench/game.json")).json();
+
+    // ── stand-in assets: a JPEG of each image's size (a few variants of each), an OBJ for a model ──
+    const jpegs = new Map(); // "w×h" → [bytes, …]
+    const jpeg = async (w, h, v) => {
+      const c = new OffscreenCanvas(w, h);
+      const ctx = c.getContext("2d");
+      const g = ctx.createLinearGradient(0, 0, w, h);
+      g.addColorStop(0, `hsl(${v * 47} 60% 40%)`);
+      g.addColorStop(1, `hsl(${v * 47 + 120} 60% 70%)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+      // some detail, as a card's art and text have (a flat image decodes faster than a real one)
+      for (let i = 0; i < 4000; i++) {
+        ctx.fillStyle = `hsl(${(i * 37 + v * 11) % 360} 70% ${30 + (i % 50)}%)`;
+        ctx.fillRect((i * 7919 + v * 131) % w, (i * 104729 + v * 17) % h, 3 + (i % 40), 2 + (i % 23));
+      }
+      return new Uint8Array(await (await c.convertToBlob({ type: "image/jpeg", quality: 0.85 })).arrayBuffer());
+    };
+    let n = 0;
+    const bytes = new Map(); // url → bytes
+    for (const [u, a] of Object.entries(assets)) {
+      if (a.obj) {
+        let s = "# stand-in\n";
+        for (let i = 0; s.length < a.obj; i++) s += `v ${(i % 7) * 0.1} ${(i % 5) * 0.1} ${(i % 3) * 0.1}\nvt 0.5 0.5\n`;
+        bytes.set(u, new TextEncoder().encode(s + "f 1/1 2/2 3/3\n"));
+        continue;
+      }
+      if (a.cached) {
+        bytes.set(u, new Uint8Array(await (await fetch(`/tts-images/${encodeURIComponent(a.cached)}`)).arrayBuffer()));
+        continue;
+      }
+      const key = `${a.w}×${a.h}`;
+      if (!jpegs.has(key)) jpegs.set(key, []);
+      const vs = jpegs.get(key);
+      if (vs.length < 8) vs.push(await jpeg(a.w, a.h, vs.length));
+      bytes.set(u, vs[n++ % vs.length]);
+    }
+    say(`made ${bytes.size} stand-ins`);
+    const fetchStub = async (u) => {
+      const b = bytes.get(u) ?? bytes.get(u.replace(/^http:/, "https:")) ?? bytes.get(u.replace(/^https:/, "http:"));
+      if (!b) return { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) };
+      return { ok: true, status: 200, arrayBuffer: async () => b.slice().buffer };
+    };
+
+    // ── counting the decodes: how many, and how many at once ──
+    const real = globalThis.createImageBitmap.bind(globalThis);
+    const count = { decodes: 0, running: 0, most: 0, ms: 0 };
+    globalThis.createImageBitmap = async (...a) => {
+      count.decodes++;
+      count.most = Math.max(count.most, ++count.running);
+      const t = performance.now();
+      try {
+        return await real(...a);
+      } finally {
+        count.ms += performance.now() - t;
+        count.running--;
+      }
+    };
+
+    // ── an in-memory repo, and the game in it ──
+    const newRepo = () => {
+      const docs = new Map();
+      let k = 0;
+      const handle = (url) => ({ url, doc: () => docs.get(url), change: (fn) => fn(docs.get(url)), isReadOnly: () => false });
+      return {
+        docs,
+        create2: async (d) => {
+          const url = `automerge:bench${k++}`;
+          docs.set(url, d);
+          return handle(url);
+        },
+        find: async (url) => {
+          if (!docs.has(url)) throw new Error("unavailable");
+          return handle(url);
+        },
+      };
+    };
+
+    const results = [];
+    for (let r = 0; r < runs; r++) {
+      for (const d of r % 2 ? [...draws].reverse() : draws) {
+        const repo = newRepo();
+        const game = await repo.create2({ pieces, setup: [], assets: {}, drawn: {} });
+        Object.assign(count, { decodes: 0, running: 0, most: 0, ms: 0 });
+        const pd = pieceDrawer({ repo, handle: game, images: canvasImages(), fetch: fetchStub, draws: d });
+        const t0 = performance.now();
+        const out = await pd.ensure(kinds);
+        const ms = Math.round(performance.now() - t0);
+        const missing = Object.values(game.doc().drawn).filter((e) => e.missing).length;
+        results.push({ run: r, draws: d, ms, drawn: out.drawn, missing, decodes: count.decodes, mostAtOnce: count.most, msPerDecode: +(count.ms / Math.max(1, count.decodes)).toFixed(1) });
+        say(JSON.stringify(results.at(-1)));
+      }
+    }
+    const by = Object.fromEntries(draws.map((d) => [d, results.filter((x) => x.draws === d).map((x) => x.ms)]));
+    window.__result = { results, msByDraws: by, userAgent: navigator.userAgent };
+  } catch (err) {
+    console.error(err);
+    window.__error = err?.stack ?? String(err);
+  }
+</script>

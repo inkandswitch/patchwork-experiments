@@ -154,14 +154,14 @@
 	--syntax-emphasis: var(--pizzazz-dark);
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: var(--purple-heart);
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: var(--blue-crayola);
 	--syntax-style-link: underline;
 
-	--syntax-quote: var(--desaturated-purple-light);
-	--syntax-list: var(--cherries-line);
+	--syntax-quote: var(--text-editor-line);
+	--syntax-list: var(--text-editor-line);
 
 	--syntax-inserted: var(--mosque);
 	--syntax-deleted: var(--chili);

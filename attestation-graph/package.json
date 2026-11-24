@@ -1,0 +1,27 @@
+{
+  "name": "@ccti/attestation-graph",
+  "version": "0.0.1",
+  "description": "Patchwork tool for viewing and editing draw.io-compatible attestation graphs",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "dev": "vite --config vite.dev.config.ts",
+    "build": "tsc && vite build",
+    "test": "vitest run",
+    "push": "npm run build && npx pushwork@latest sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(npx pushwork@latest url)\""
+  },
+  "dependencies": {
+    "solid-js": "^1.9.7"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.2.6",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-solid": "^2.11.11",
+    "vitest": "^3.2.4"
+  }
+}

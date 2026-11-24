@@ -21,7 +21,7 @@ describe('class transpilation', () => {
     expect(result).toMatch(/\$global\.Point = \$fun\(/);
     expect(result).toMatch(/\$global\.Point\['@add'\] = \$fun\(/);
     expect(result).toContain(
-      "$global.Point.prototype = $obj({ '@className': 'Point', '@add': $global.Point['@add'] });",
+      "$global.Point.prototype = $obj({ '@className': 'Point', '@constructor': $global.Point, '@add': $global.Point['@add'] });",
     );
     expect(result).toContain("this['@x'] = 0");
   });
@@ -38,7 +38,7 @@ describe('class transpilation', () => {
 }`);
     expect(result).toMatch(/\$global\.Point\['@toString'\] = \$fun\(/);
     expect(result).toContain(
-      "$global.Point.prototype = $obj({ '@className': 'Point', '@toString': $global.Point['@toString'] });",
+      "$global.Point.prototype = $obj({ '@className': 'Point', '@constructor': $global.Point, '@toString': $global.Point['@toString'] });",
     );
     expect(result).not.toContain("$global.Point.toString =");
     expect(result).toContain("this['@x'] = x");
@@ -67,7 +67,7 @@ describe('class transpilation', () => {
     expect(result).toContain('$global.D.call(this, 1)');
     expect(result).toContain('$global.D.m.call(this, 2)');
     expect(result).toContain('$global.D.n(3)');
-    expect(result).toContain("$obj({ '@className': 'C', '@m': $global.C['@m'] }, $global.D.prototype)");
+    expect(result).toContain("$obj({ '@className': 'C', '@constructor': $global.C, '@m': $global.C['@m'] }, $global.D.prototype)");
   });
 
   it('rewrites bare super() in constructor', () => {
@@ -139,7 +139,7 @@ class D {
   it('uses $obj({}) for implicit Object prototype without Object.prototype', () => {
     const result = transpile(`class C {}`);
     expect(result).toContain('$global.C = $fun(');
-    expect(result).toContain("$global.C.prototype = $obj({ '@className': 'C' });");
+    expect(result).toContain("$global.C.prototype = $obj({ '@className': 'C', '@constructor': $global.C });");
     expect(result).not.toContain('Object.prototype');
   });
 

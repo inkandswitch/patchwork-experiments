@@ -24,6 +24,7 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
         $timeoutFns: { $type: "ref", $id: "timeout-fns" },
         $intervalFns: { $type: "ref", $id: "interval-fns" },
         "@global": { $type: "ref", $id: "global" },
+        "@globalThis": { $type: "ref", $id: "global" },
         "@canvas": { $type: "ref", $id: "canvas" },
         "@ctx": { $type: "ref", $id: "ctx" },
         "@document": { $type: "ref", $id: "document" },

@@ -1,0 +1,1237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patchwork.inkandswitch.com/tabletop-game/v2/schema.json",
+  "title": "tabletop-game v2",
+  "description": "A board game's components and where they start, as data (tabletop/GAME-FORMAT.md). The structural part: GAME-FORMAT.md §9 lists the rules a schema can't say.",
+  "type": "object",
+  "required": [
+    "format",
+    "version",
+    "title",
+    "about",
+    "pieces",
+    "setup"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": "tabletop-game"
+    },
+    "version": {
+      "const": 2
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "about": {
+      "type": "string"
+    },
+    "players": {
+      "type": "string"
+    },
+    "pieces": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/piece"
+      }
+    },
+    "setup": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/thing"
+      }
+    },
+    "seats": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/seat"
+      }
+    },
+    "camera": {
+      "$ref": "#/$defs/camera"
+    },
+    "origin": {
+      "type": "object"
+    },
+    "assets": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/webUrl"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "recipe": {
+      "$ref": "#/$defs/recipe"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "vec2": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "vec3": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^(automerge:[1-9A-HJ-NP-Za-km-z]+|https?://\\S+)$"
+    },
+    "fileUrl": {
+      "type": "string",
+      "pattern": "^automerge:[1-9A-HJ-NP-Za-km-z]+$"
+    },
+    "webUrl": {
+      "type": "string",
+      "pattern": "^https?://\\S+$"
+    },
+    "asset": {
+      "type": "object",
+      "required": [
+        "file"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/fileUrl"
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "camera": {
+      "type": "object",
+      "required": [
+        "position",
+        "target"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "target": {
+          "$ref": "#/$defs/vec3"
+        }
+      }
+    },
+    "seat": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "camera": {
+          "$ref": "#/$defs/camera"
+        },
+        "at": {
+          "$ref": "#/$defs/pose"
+        }
+      }
+    },
+    "pose": {
+      "type": "object",
+      "required": [
+        "position"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": [
+        "file"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/url"
+        },
+        "rect": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "turn": {
+          "enum": [
+            0,
+            90,
+            180,
+            270
+          ]
+        }
+      }
+    },
+    "part": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "size",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "box"
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "bottom",
+            "top",
+            "height",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "frustum"
+            },
+            "bottom": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "top": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "height": {
+              "type": "number",
+              "minimum": 0
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "profile",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "lathe"
+            },
+            "profile": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/vec2"
+              },
+              "minItems": 2
+            },
+            "segments": {
+              "type": "integer",
+              "minimum": 3,
+              "maximum": 256
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "outline",
+            "size",
+            "thickness",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "slab"
+            },
+            "outline": {
+              "enum": [
+                "rect",
+                "rounded",
+                "hex",
+                "circle",
+                "cutout"
+              ]
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "thickness": {
+              "type": "number",
+              "minimum": 0
+            },
+            "aspect": {
+              "const": "image"
+            },
+            "top": {
+              "$ref": "#/$defs/image"
+            },
+            "bottom": {
+              "$ref": "#/$defs/image"
+            },
+            "side": {
+              "$ref": "#/$defs/color"
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "shape",
+            "file",
+            "color"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "const": "model"
+            },
+            "file": {
+              "$ref": "#/$defs/url"
+            },
+            "texture": {
+              "$ref": "#/$defs/url"
+            },
+            "matrix": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 9,
+              "maxItems": 9
+            },
+            "at": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "metalness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "snapPoint": {
+      "type": "object",
+      "required": [
+        "position"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "tags": {
+          "$ref": "#/$defs/tags"
+        }
+      }
+    },
+    "piece": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/part"
+          }
+        },
+        "doc": {
+          "type": "object",
+          "required": [
+            "@patchwork"
+          ],
+          "properties": {
+            "@patchwork": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "states": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/state"
+          }
+        },
+        "back": {
+          "$ref": "#/$defs/id"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "tags": {
+          "$ref": "#/$defs/tags"
+        },
+        "snapPoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/snapPoint"
+          }
+        },
+        "snapRadius": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "zone": {
+          "type": "object",
+          "required": [
+            "min",
+            "max"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "min": {
+              "$ref": "#/$defs/vec3"
+            },
+            "max": {
+              "$ref": "#/$defs/vec3"
+            }
+          }
+        },
+        "bag": {
+          "type": "object",
+          "required": [
+            "rule"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "rule": {
+              "enum": [
+                "random",
+                "random-replace",
+                "top"
+              ]
+            }
+          }
+        },
+        "traits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "state": {
+      "description": "Another look a piece can show (GAME-FORMAT.md §4): its name, and parts or a document, as a piece's look; its own snap points, else the piece's",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/part"
+          }
+        },
+        "doc": {
+          "type": "object",
+          "required": [
+            "@patchwork"
+          ],
+          "properties": {
+            "@patchwork": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "snapPoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/snapPoint"
+          }
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "required": [
+        "cols",
+        "across",
+        "down"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "across": {
+          "$ref": "#/$defs/vec3"
+        },
+        "down": {
+          "$ref": "#/$defs/vec3"
+        }
+      }
+    },
+    "deck": {
+      "type": "object",
+      "required": [
+        "name",
+        "cards"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 1
+        },
+        "faceDown": {
+          "type": "boolean"
+        },
+        "shuffle": {
+          "type": "boolean"
+        },
+        "secure": {
+          "type": "boolean"
+        },
+        "deal": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "to",
+              "count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "to": {
+                "$ref": "#/$defs/id"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "spread": {
+          "type": "object",
+          "required": [
+            "cols",
+            "cell"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "cols": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cell": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        }
+      }
+    },
+    "thing": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "piece"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "piece": {
+              "$ref": "#/$defs/id"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "at": {
+              "$ref": "#/$defs/pose"
+            },
+            "state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "grid": {
+              "$ref": "#/$defs/grid"
+            },
+            "seat": {
+              "$ref": "#/$defs/id"
+            },
+            "contents": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/thing"
+              }
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "deck"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "deck": {
+              "$ref": "#/$defs/deck"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "at": {
+              "$ref": "#/$defs/pose"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "condition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "at": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/pose"
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ]
+    },
+    "placing": {
+      "description": "Where a place step lays a thing: a pose or a spot; or a state it is to show, and where, if it moves (GAME-FORMAT.md §6)",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/at"
+        },
+        {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "state": {
+              "type": "string",
+              "minLength": 1
+            },
+            "at": {
+              "$ref": "#/$defs/at"
+            }
+          }
+        }
+      ]
+    },
+    "option": {
+      "description": "What a new game asks (GAME-FORMAT.md §6): an integer in a range, one of a list, or yes or no",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "key",
+            "label",
+            "min",
+            "max",
+            "default"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "integer"
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "min": {
+              "type": "integer"
+            },
+            "max": {
+              "type": "integer"
+            },
+            "default": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "key",
+            "label",
+            "options",
+            "default"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "enum"
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "options": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": [
+                  "value",
+                  "label"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "value": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "default": {
+              "type": [
+                "string",
+                "integer"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "key",
+            "label",
+            "default"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "boolean"
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "layoutStep": {
+      "description": "A step of laying a table out (GAME-FORMAT.md §6), when its condition holds",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "remove"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "remove": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/id"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "tag"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "tag": {
+                      "$ref": "#/$defs/id"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "seat"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "seat": {
+                      "$ref": "#/$defs/id"
+                    }
+                  }
+                }
+              ]
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "place"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "place": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/placing"
+              }
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "seats"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "seats": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/id"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/at"
+              }
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kit"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kit": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/thing"
+              }
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        }
+      ]
+    },
+    "startStep": {
+      "description": "A step of starting the game, once every seat is taken (GAME-FORMAT.md §6), when its condition holds",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "shuffle"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "shuffle": {
+              "$ref": "#/$defs/id"
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "deal",
+            "count"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "deal": {
+              "$ref": "#/$defs/id"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "draw",
+            "count",
+            "to"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "draw": {
+              "$ref": "#/$defs/id"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "to": {
+              "$ref": "#/$defs/id"
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "first"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "first": {
+              "const": true
+            },
+            "when": {
+              "$ref": "#/$defs/condition"
+            },
+            "unless": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        }
+      ]
+    },
+    "recipe": {
+      "description": "How the setup is adapted to the options a new game is given, and started (GAME-FORMAT.md §6)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/option"
+          }
+        },
+        "spots": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/pose"
+          }
+        },
+        "layout": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/layoutStep"
+          }
+        },
+        "start": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/startStep"
+          }
+        }
+      }
+    }
+  }
+}

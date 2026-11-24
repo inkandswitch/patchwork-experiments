@@ -76,14 +76,14 @@
 	--syntax-emphasis: #cccac2;
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: #ffcc77;
+	--syntax-heading: var(--text-editor-line);
 	--syntax-weight-heading: bold;
 
 	--syntax-link: #73d0ff;
 	--syntax-style-link: underline;
 
-	--syntax-quote: #565b66;
-	--syntax-list: #cccac2;
+	--syntax-quote: var(--text-editor-line);
+	--syntax-list: var(--text-editor-line);
 
 	--syntax-inserted: #d5ff80;
 	--syntax-deleted: #f28779;

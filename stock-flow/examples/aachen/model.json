@@ -1,0 +1,6068 @@
+{
+ "@patchwork": {
+  "type": "stock-flow-model"
+ },
+ "title": "Aachen housing",
+ "description": "Why rents in Aachen rose: students and other households competing for flats that take years to build, on land the city designates slowly. Model years run from 2000 to 2040; rents are in 2000 prices.",
+ "simulation": {
+  "startYear": 2000,
+  "years": 40,
+  "dt": 0.0625,
+  "recordInterval": 0.25
+ },
+ "variables": {
+  "students": {
+   "label": "Students",
+   "unit": "students",
+   "key": true,
+   "kind": "stock",
+   "initial": "baseStudents",
+   "inflows": [
+    "intake"
+   ],
+   "outflows": [
+    "graduation"
+   ]
+  },
+  "shareOutside": {
+   "label": "Share living outside",
+   "unit": "% of students",
+   "scale": 100,
+   "key": true,
+   "kind": "stock",
+   "initial": "baseShareOutside",
+   "inflows": [
+    "shareChange"
+   ],
+   "outflows": []
+  },
+  "permitted": {
+   "label": "Permitted",
+   "unit": "dwellings",
+   "description": "Permitted (planning)",
+   "key": true,
+   "kind": "stock",
+   "initial": "initialStarts * (construction / 2)",
+   "inflows": [
+    "starts"
+   ],
+   "outflows": [
+    "buildingBegins"
+   ]
+  },
+  "underConstruction": {
+   "label": "Under construction",
+   "unit": "dwellings",
+   "key": true,
+   "kind": "stock",
+   "initial": "initialStarts * (construction / 2)",
+   "inflows": [
+    "buildingBegins"
+   ],
+   "outflows": [
+    "completions"
+   ]
+  },
+  "flats": {
+   "label": "Flats",
+   "unit": "dwellings",
+   "key": true,
+   "kind": "stock",
+   "initial": "baseFlats",
+   "inflows": [
+    "completions"
+   ],
+   "outflows": [
+    "demolition"
+   ]
+  },
+  "buildableLand": {
+   "label": "Buildable land",
+   "unit": "dwellings’ worth of land",
+   "key": true,
+   "kind": "stock",
+   "initial": "baseLand",
+   "inflows": [
+    "landDesignated"
+   ],
+   "outflows": [
+    "starts"
+   ]
+  },
+  "rent": {
+   "label": "Rent",
+   "unit": "€ per m² per month, 2000 prices",
+   "key": true,
+   "kind": "stock",
+   "initial": "baseRent",
+   "inflows": [
+    "rentChange"
+   ],
+   "outflows": []
+  },
+  "perceivedPressure": {
+   "label": "Political pressure",
+   "unit": "pressure index",
+   "description": "Perceived pressure",
+   "key": true,
+   "kind": "stock",
+   "initial": "0",
+   "inflows": [
+    "pressureChange"
+   ],
+   "outflows": []
+  },
+  "perceivedWanted": {
+   "label": "Households builders have counted",
+   "unit": "households",
+   "kind": "stock",
+   "initial": "baseDemand - initialTrend * forecast",
+   "inflows": [
+    "demandGrowth"
+   ],
+   "outflows": []
+  },
+  "intake": {
+   "label": "New students / year",
+   "unit": "students arriving per year",
+   "description": "New students",
+   "key": true,
+   "kind": "input",
+   "base": "baseIntake",
+   "range": [
+    0,
+    1.5
+   ]
+  },
+  "population": {
+   "label": "Non-student population",
+   "unit": "people",
+   "kind": "input",
+   "base": "basePopulation",
+   "range": [
+    0.8,
+    1.3
+   ]
+  },
+  "householdSize": {
+   "label": "Household size",
+   "unit": "people per household",
+   "kind": "input",
+   "base": "baseHouseholdSize",
+   "range": [
+    0.8,
+    1.2
+   ]
+  },
+  "landDesignated": {
+   "label": "New land / year",
+   "unit": "dwellings’ worth of land per year",
+   "description": "New land designated",
+   "key": true,
+   "kind": "input",
+   "base": "normalStarts",
+   "range": [
+    0,
+    3
+   ]
+  },
+  "graduation": {
+   "label": "Graduation",
+   "unit": "students per year",
+   "kind": "flow",
+   "equation": "students / study"
+  },
+  "starts": {
+   "label": "Construction starts",
+   "unit": "dwellings per year",
+   "key": true,
+   "kind": "flow",
+   "equation": "min(desiredStarts, maxStarts)"
+  },
+  "buildingBegins": {
+   "label": "Building begins",
+   "unit": "flats per year",
+   "kind": "flow",
+   "equation": "permitted / (construction / 2)"
+  },
+  "completions": {
+   "label": "Completions",
+   "unit": "dwellings per year",
+   "kind": "flow",
+   "equation": "underConstruction / (construction / 2)"
+  },
+  "demolition": {
+   "label": "Demolitions",
+   "unit": "dwellings per year",
+   "description": "Demolition",
+   "kind": "flow",
+   "equation": "flats / flatLifetime"
+  },
+  "rentChange": {
+   "label": "Rent change",
+   "unit": "€ per m² per year",
+   "kind": "flow",
+   "equation": "rent * max(0, rentGrowth) + (rent - rentFloor) * min(0, rentGrowth)"
+  },
+  "shareChange": {
+   "label": "Moving out / back",
+   "unit": "share per year",
+   "kind": "flow",
+   "equation": "(indicatedShareOutside - shareOutside) / moving"
+  },
+  "pressureChange": {
+   "label": "Pressure builds / fades",
+   "unit": "per year",
+   "kind": "flow",
+   "equation": "(pressure - perceivedPressure) / recognition"
+  },
+  "demandGrowth": {
+   "label": "Growth builders expect",
+   "unit": "households per year",
+   "key": true,
+   "kind": "flow",
+   "equation": "(wanted - perceivedWanted) / forecast"
+  },
+  "otherHouseholds": {
+   "label": "Non-student households",
+   "unit": "households",
+   "description": "Non-student households wanting a flat here",
+   "key": true,
+   "kind": "auxiliary",
+   "equation": "population / householdSize"
+  },
+  "otherDemand": {
+   "label": "Non-student households with a flat",
+   "unit": "households",
+   "description": "Households with a flat of their own",
+   "kind": "auxiliary",
+   "equation": "otherHouseholds * (rent / baseRent) ^ -householdRentElasticity"
+  },
+  "studentsInTown": {
+   "label": "Students living in Aachen",
+   "unit": "students",
+   "kind": "auxiliary",
+   "equation": "students * (1 - shareOutside)"
+  },
+  "studentsWithParents": {
+   "label": "Students living with their parents",
+   "unit": "students",
+   "kind": "auxiliary",
+   "equation": "studentsInTown * shareWithParents"
+  },
+  "studentsInHalls": {
+   "label": "Students in halls",
+   "unit": "students",
+   "kind": "auxiliary",
+   "equation": "min(studentsInTown - studentsWithParents, hallPlaces)"
+  },
+  "studentsInMarket": {
+   "label": "Students renting on the market",
+   "unit": "students",
+   "kind": "auxiliary",
+   "equation": "studentsInTown - studentsWithParents - studentsInHalls"
+  },
+  "studentDemand": {
+   "label": "Flats wanted by students",
+   "unit": "households",
+   "kind": "auxiliary",
+   "equation": "studentsInMarket / studentsPerFlat"
+  },
+  "wanted": {
+   "label": "Households wanting a flat at the starting rent",
+   "unit": "households",
+   "kind": "auxiliary",
+   "equation": "otherHouseholds + studentDemand"
+  },
+  "demand": {
+   "label": "Housing demand",
+   "unit": "households",
+   "key": true,
+   "kind": "auxiliary",
+   "equation": "otherDemand + studentDemand"
+  },
+  "occupied": {
+   "label": "Occupied flats",
+   "unit": "flats",
+   "kind": "auxiliary",
+   "equation": "min(demand, flats * (1 - minVacancy))"
+  },
+  "unhoused": {
+   "label": "Households without a flat",
+   "unit": "households",
+   "kind": "auxiliary",
+   "equation": "demand - occupied"
+  },
+  "vacancy": {
+   "label": "Vacancy",
+   "unit": "% of dwellings",
+   "scale": 100,
+   "kind": "auxiliary",
+   "equation": "(flats - occupied) / flats"
+  },
+  "notionalVacancy": {
+   "label": "Vacancy if all housed",
+   "unit": "% of dwellings",
+   "description": "Vacancy if everyone had a flat",
+   "scale": 100,
+   "key": true,
+   "kind": "auxiliary",
+   "equation": "(flats - demand) / flats"
+  },
+  "pressure": {
+   "label": "Shortage pressure",
+   "unit": "0 = balanced, 1 = no empty flats",
+   "kind": "auxiliary",
+   "equation": "(normalVacancy - notionalVacancy) / normalVacancy"
+  },
+  "rentGrowth": {
+   "label": "Rent growth",
+   "unit": "share per year",
+   "kind": "auxiliary",
+   "equation": "clamp(rentSensitivity * pressure, maxRentFall, maxRentRise)"
+  },
+  "landPrice": {
+   "label": "Land price",
+   "unit": "index, start = 1",
+   "key": true,
+   "kind": "auxiliary",
+   "equation": "max(1, baseLand / buildableLand) ^ landPriceElasticity"
+  },
+  "buildingCost": {
+   "label": "Building cost",
+   "unit": "relative to start",
+   "kind": "auxiliary",
+   "equation": "1 - landCostShare + landCostShare * landPrice"
+  },
+  "profitability": {
+   "label": "Profitability",
+   "unit": "index, start = 1",
+   "key": true,
+   "kind": "auxiliary",
+   "equation": "rent / baseRent / buildingCost"
+  },
+  "pipelineEffect": {
+   "label": "Pipeline effect",
+   "unit": "1 = normal pipeline",
+   "kind": "auxiliary",
+   "equation": "(normalPipeline / (permitted + underConstruction)) ^ pipelineResponse"
+  },
+  "growthStarts": {
+   "label": "Starts for expected growth",
+   "unit": "dwellings per year",
+   "kind": "auxiliary",
+   "equation": "growthResponse * max(0, demandGrowth) / (1 - normalVacancy)"
+  },
+  "marketStarts": {
+   "label": "Market starts",
+   "unit": "flats per year",
+   "kind": "auxiliary",
+   "equation": "(normalStarts * pipelineEffect + growthStarts) * profitability ^ startsElasticity"
+  },
+  "subsidisedStarts": {
+   "label": "Subsidised building",
+   "unit": "dwellings per year",
+   "description": "Subsidised starts",
+   "key": true,
+   "kind": "auxiliary",
+   "equation": "policyResponse * typicalStarts * max(0, perceivedPressure)"
+  },
+  "desiredStarts": {
+   "label": "Starts developers want",
+   "unit": "dwellings per year",
+   "kind": "auxiliary",
+   "equation": "marketStarts + subsidisedStarts"
+  },
+  "maxStarts": {
+   "label": "Starts the land allows",
+   "unit": "dwellings per year",
+   "kind": "auxiliary",
+   "equation": "buildableLand / landUseTime"
+  },
+  "indicatedShareOutside": {
+   "label": "Indicated share outside",
+   "unit": "where the share is heading",
+   "kind": "auxiliary",
+   "equation": "min(maxShareOutside, baseShareOutside * (rent / baseRent) ^ spilloverElasticity)"
+  }
+ },
+ "parameters": {
+  "baseStudents": {
+   "label": "BASE_STUDENTS",
+   "group": "Students",
+   "meaning": "Students at the start",
+   "format": "number",
+   "value": 34000
+  },
+  "baseIntake": {
+   "label": "BASE_INTAKE",
+   "group": "Students",
+   "meaning": "Intake that keeps the student number constant",
+   "format": "number",
+   "derived": "baseStudents / study"
+  },
+  "studentsPerFlat": {
+   "label": "STUDENTS_PER_FLAT",
+   "group": "Students",
+   "meaning": "Students per market flat: about half live in their own flat, half in flat shares",
+   "format": "number",
+   "value": 1.8
+  },
+  "shareWithParents": {
+   "label": "SHARE_WITH_PARENTS",
+   "group": "Students",
+   "meaning": "Students in Aachen who live with their parents",
+   "format": "percent",
+   "value": 0.11
+  },
+  "hallPlaces": {
+   "label": "HALL_PLACES",
+   "group": "Students",
+   "meaning": "Places in student halls; the halls fill first",
+   "format": "number",
+   "value": 5300
+  },
+  "baseStudentsInTown": {
+   "label": "baseStudentsInTown",
+   "group": "Students",
+   "meaning": "Students living in Aachen at the start",
+   "format": "number",
+   "derived": "baseStudents * (1 - baseShareOutside)"
+  },
+  "baseStudentDemand": {
+   "label": "BASE_STUDENT_DEMAND",
+   "group": "Students",
+   "meaning": "Market flats wanted by students at the start",
+   "format": "number",
+   "derived": "(baseStudentsInTown - baseStudentsInTown * shareWithParents - min(baseStudentsInTown - baseStudentsInTown * shareWithParents, hallPlaces)) / studentsPerFlat"
+  },
+  "basePopulation": {
+   "label": "BASE_POPULATION",
+   "group": "Households",
+   "meaning": "Non-student population at the start",
+   "format": "number",
+   "value": 216700
+  },
+  "baseHouseholdSize": {
+   "label": "BASE_HOUSEHOLD_SIZE",
+   "group": "Households",
+   "meaning": "People per non-student household at the start",
+   "format": "number",
+   "value": 2.01
+  },
+  "baseOtherHouseholds": {
+   "label": "OTHER_HOUSEHOLDS",
+   "group": "Households",
+   "meaning": "Non-student households wanting a flat of their own at the start",
+   "format": "number",
+   "derived": "basePopulation / baseHouseholdSize"
+  },
+  "normalVacancy": {
+   "label": "NORMAL_VACANCY",
+   "group": "Households",
+   "meaning": "Vacancy at which rents are stable",
+   "format": "percent",
+   "value": 0.03
+  },
+  "minVacancy": {
+   "label": "MIN_VACANCY",
+   "group": "Households",
+   "meaning": "Flats always empty between tenants: about a month every eight years",
+   "format": "percent",
+   "value": 0.01
+  },
+  "baseDemand": {
+   "label": "BASE_DEMAND",
+   "group": "Households",
+   "meaning": "Housing demand at the start",
+   "format": "number",
+   "derived": "baseOtherHouseholds + baseStudentDemand"
+  },
+  "baseShareOutside": {
+   "label": "BASE_SHARE_OUTSIDE",
+   "group": "B2 Priced out",
+   "meaning": "Share of students living outside at the start",
+   "format": "percent",
+   "value": 0.25
+  },
+  "maxShareOutside": {
+   "label": "MAX_SHARE_OUTSIDE",
+   "group": "B2 Priced out",
+   "meaning": "Ceiling set by bus and train capacity",
+   "format": "percent",
+   "value": 0.35
+  },
+  "spilloverElasticity": {
+   "label": "SPILLOVER_ELASTICITY",
+   "group": "B2 Priced out",
+   "meaning": "Rent +10% moves the indicated share up 21% (1.1²)",
+   "format": "number",
+   "value": 2
+  },
+  "householdRentElasticity": {
+   "label": "HOUSEHOLD_RENT_ELASTICITY",
+   "group": "B2 Priced out",
+   "meaning": "Rent +10% means about 2.4% fewer non-student households want a flat of their own here",
+   "format": "number",
+   "value": 0.25
+  },
+  "baseFlats": {
+   "label": "BASE_FLATS",
+   "group": "B1 Construction",
+   "meaning": "Flats at the start: exactly 3% empty",
+   "format": "number",
+   "derived": "baseDemand / (1 - normalVacancy)"
+  },
+  "normalStarts": {
+   "label": "NORMAL_STARTS",
+   "group": "B1 Construction",
+   "meaning": "Starts that exactly replace demolitions",
+   "format": "number",
+   "derived": "baseFlats / flatLifetime"
+  },
+  "startsElasticity": {
+   "label": "STARTS_ELASTICITY",
+   "group": "B1 Construction",
+   "meaning": "Profitability +10% gives 21% more starts (1.1²)",
+   "format": "number",
+   "value": 2
+  },
+  "growthResponse": {
+   "label": "GROWTH_RESPONSE",
+   "group": "B1 Construction",
+   "meaning": "Share of the demand growth builders expect that they build for; 0 knocks the link out",
+   "format": "number",
+   "value": 1
+  },
+  "normalPipeline": {
+   "label": "NORMAL_PIPELINE",
+   "group": "B5 Pipeline",
+   "meaning": "Flats in planning and construction when starts are normal",
+   "format": "number",
+   "derived": "normalStarts * construction"
+  },
+  "pipelineResponse": {
+   "label": "pipelineResponse",
+   "group": "B5 Pipeline",
+   "meaning": "How strongly developers hold back when the pipeline is fuller than normal. 0, the default, means they ignore it: B5 is off in the model as drawn; 1 switches it on.",
+   "format": "number",
+   "value": 0
+  },
+  "baseRent": {
+   "label": "BASE_RENT",
+   "group": "Rent",
+   "meaning": "Rent at the start, per m² per month",
+   "format": "currency",
+   "value": 6
+  },
+  "rentSensitivity": {
+   "label": "RENT_SENSITIVITY",
+   "group": "Rent",
+   "meaning": "Rent change per year when pressure = 1 (no empty flats)",
+   "format": "number",
+   "value": 0.05
+  },
+  "maxRentFall": {
+   "label": "MAX_RENT_FALL",
+   "group": "Rent",
+   "meaning": "Fastest rent can fall per year",
+   "format": "percent",
+   "value": -0.1
+  },
+  "maxRentRise": {
+   "label": "MAX_RENT_RISE",
+   "group": "Rent",
+   "meaning": "Fastest rent can rise per year",
+   "format": "percent",
+   "value": 0.15
+  },
+  "rentFloor": {
+   "label": "RENT_FLOOR",
+   "group": "Rent",
+   "meaning": "Rent at which letting stops paying: falls slow down towards it",
+   "format": "currency",
+   "value": 3
+  },
+  "landYears": {
+   "label": "LAND_YEARS",
+   "group": "B3 Land",
+   "meaning": "Buildable land at the start, in years of normal building",
+   "format": "years",
+   "value": 15
+  },
+  "baseLand": {
+   "label": "BASE_LAND",
+   "group": "B3 Land",
+   "meaning": "Buildable land at the start, in flats",
+   "format": "number",
+   "derived": "landYears * normalStarts"
+  },
+  "landUseTime": {
+   "label": "LAND_USE_TIME",
+   "group": "B3 Land",
+   "meaning": "Shortest time in which the remaining land can be used up",
+   "format": "years",
+   "value": 3
+  },
+  "landCostShare": {
+   "label": "LAND_COST_SHARE",
+   "group": "B3 Land",
+   "meaning": "Land’s share of building cost",
+   "format": "percent",
+   "value": 0.3
+  },
+  "landPriceElasticity": {
+   "label": "LAND_PRICE_ELASTICITY",
+   "group": "B3 Land",
+   "meaning": "Half as much land doubles its price",
+   "format": "number",
+   "value": 1
+  },
+  "policyResponse": {
+   "label": "POLICY_RESPONSE",
+   "group": "B4 Policy",
+   "meaning": "Subsidised starts per unit of perceived pressure, as a share of typical starts",
+   "format": "number",
+   "value": 0.5
+  },
+  "typicalStarts": {
+   "label": "TYPICAL_STARTS",
+   "group": "B4 Policy",
+   "meaning": "Flats Aachen completed per year on average, 2000–2024 (IT.NRW)",
+   "format": "number",
+   "value": 560
+  },
+  "initialTrend": {
+   "label": "initialTrend",
+   "group": "Start",
+   "meaning": "Yearly growth in non-student households the inputs start with. Builders already see it, and the flats they started for it in the years before are in the pipeline.",
+   "format": "number",
+   "derived": "max(0, inputAt(population, 1) / inputAt(householdSize, 1) - inputAt(population, 0) / inputAt(householdSize, 0))"
+  },
+  "initialStarts": {
+   "label": "initialStarts",
+   "group": "Start",
+   "meaning": "Starts per year in the years before the run",
+   "format": "number",
+   "derived": "normalStarts + initialTrend / (1 - normalVacancy)"
+  },
+  "construction": {
+   "label": "D",
+   "group": "Delays",
+   "meaning": "Construction, start to completion",
+   "format": "years",
+   "value": 3,
+   "range": {
+    "min": 1,
+    "max": 8,
+    "step": 0.5
+   },
+   "delay": {
+    "kind": "Material",
+    "shape": "Second order: two stages of D / 2. Completions spread out and peak about D / 2 after the starts."
+   }
+  },
+  "moving": {
+   "label": "MOVING_TIME",
+   "group": "Delays",
+   "meaning": "Moving to nearby towns",
+   "format": "years",
+   "value": 2,
+   "range": {
+    "min": 0.5,
+    "max": 6,
+    "step": 0.5
+   },
+   "delay": {
+    "kind": "Material",
+    "shape": "First order: each year closes 1 / MOVING_TIME of the remaining gap."
+   }
+  },
+  "recognition": {
+   "label": "POLICY_DELAY",
+   "group": "Delays",
+   "meaning": "Political recognition",
+   "format": "years",
+   "value": 4,
+   "range": {
+    "min": 1,
+    "max": 10,
+    "step": 0.5
+   },
+   "delay": {
+    "kind": "Information (a perception)",
+    "shape": "First order: each year closes 1 / POLICY_DELAY of the remaining gap."
+   }
+  },
+  "study": {
+   "label": "STUDY_YEARS",
+   "group": "Delays",
+   "meaning": "Time at university",
+   "format": "years",
+   "value": 6,
+   "range": {
+    "min": 3,
+    "max": 8,
+    "step": 0.5
+   },
+   "delay": {
+    "kind": "Residence time",
+    "shape": "Each year 1 / STUDY_YEARS of all students leave. Changing it also changes BASE_INTAKE, so the model still starts in balance."
+   }
+  },
+  "flatLifetime": {
+   "label": "FLAT_LIFETIME",
+   "group": "Delays",
+   "meaning": "Flat lifetime",
+   "format": "years",
+   "value": 1000,
+   "range": {
+    "min": 100,
+    "max": 2000,
+    "step": 50
+   },
+   "delay": {
+    "kind": "Residence time",
+    "shape": "Each year 1 / FLAT_LIFETIME of all flats are demolished. Changing it also changes NORMAL_STARTS and BASE_LAND."
+   }
+  },
+  "forecast": {
+   "label": "FORECAST_TIME",
+   "group": "Delays",
+   "meaning": "Builders spotting demand growth",
+   "format": "years",
+   "value": 3,
+   "range": {
+    "min": 1,
+    "max": 10,
+    "step": 0.5
+   },
+   "delay": {
+    "kind": "Information (a forecast)",
+    "shape": "First order: builders' count closes 1 / FORECAST_TIME of the gap each year, so the gap measures the growth they expect."
+   }
+  }
+ },
+ "data": {
+  "firstYear.cityDefinition": {
+   "label": "First-year students: all Aachen universities",
+   "unit": "first-year students per year",
+   "variable": "intake",
+   "points": [
+    [
+     1993,
+     4382
+    ],
+    [
+     1994,
+     3973
+    ],
+    [
+     1995,
+     3666
+    ],
+    [
+     1996,
+     3834
+    ],
+    [
+     1997,
+     3825
+    ],
+    [
+     1998,
+     4111
+    ],
+    [
+     1999,
+     4285
+    ],
+    [
+     2000,
+     5025
+    ],
+    [
+     2001,
+     5717
+    ],
+    [
+     2002,
+     5710
+    ],
+    [
+     2003,
+     6166
+    ],
+    [
+     2004,
+     5814
+    ],
+    [
+     2005,
+     6041
+    ],
+    [
+     2006,
+     5821
+    ],
+    [
+     2007,
+     6298
+    ],
+    [
+     2008,
+     6819
+    ],
+    [
+     2009,
+     7025
+    ],
+    [
+     2010,
+     7082
+    ],
+    [
+     2011,
+     8981
+    ],
+    [
+     2012,
+     8372
+    ],
+    [
+     2013,
+     9661
+    ],
+    [
+     2014,
+     8943
+    ],
+    [
+     2015,
+     9130
+    ],
+    [
+     2016,
+     9284
+    ],
+    [
+     2017,
+     8925
+    ],
+    [
+     2018,
+     9549
+    ],
+    [
+     2019,
+     9178
+    ],
+    [
+     2020,
+     9540
+    ],
+    [
+     2021,
+     8843
+    ],
+    [
+     2022,
+     8410
+    ],
+    [
+     2023,
+     8483
+    ],
+    [
+     2024,
+     8814
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studienanfänger (1. Hochschulsemester) nach Hochschularten und Hochschulen – Studienjahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-22i_00.csv",
+    "table": "21311-22i",
+    "retrieved": "2026-10-27",
+    "method": "Summed from downloaded rows"
+   },
+   "notes": [
+    "Academic year counts: summer semester plus the following winter semester.",
+    "Sum of the rows the city counts: RWTH, FH Aachen (Aachen site), music school, KatHO, FOM, and the church music college until 2006. The police college is left out, as in the city's figure."
+   ]
+  },
+  "firstYear.rwth": {
+   "label": "First-year students: RWTH Aachen",
+   "unit": "first-year students per year",
+   "variable": "intake",
+   "points": [
+    [
+     1993,
+     3292
+    ],
+    [
+     1994,
+     2944
+    ],
+    [
+     1995,
+     2791
+    ],
+    [
+     1996,
+     2887
+    ],
+    [
+     1997,
+     3033
+    ],
+    [
+     1998,
+     3205
+    ],
+    [
+     1999,
+     3281
+    ],
+    [
+     2000,
+     3920
+    ],
+    [
+     2001,
+     4415
+    ],
+    [
+     2002,
+     4390
+    ],
+    [
+     2003,
+     4926
+    ],
+    [
+     2004,
+     4516
+    ],
+    [
+     2005,
+     4900
+    ],
+    [
+     2006,
+     4781
+    ],
+    [
+     2007,
+     4970
+    ],
+    [
+     2008,
+     5430
+    ],
+    [
+     2009,
+     5540
+    ],
+    [
+     2010,
+     5601
+    ],
+    [
+     2011,
+     7209
+    ],
+    [
+     2012,
+     6383
+    ],
+    [
+     2013,
+     7486
+    ],
+    [
+     2014,
+     6837
+    ],
+    [
+     2015,
+     7154
+    ],
+    [
+     2016,
+     6929
+    ],
+    [
+     2017,
+     6660
+    ],
+    [
+     2018,
+     7208
+    ],
+    [
+     2019,
+     7092
+    ],
+    [
+     2020,
+     7102
+    ],
+    [
+     2021,
+     6687
+    ],
+    [
+     2022,
+     6619
+    ],
+    [
+     2023,
+     6683
+    ],
+    [
+     2024,
+     6734
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studienanfänger (1. Hochschulsemester) nach Hochschularten und Hochschulen – Studienjahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-22i_00.csv",
+    "table": "21311-22i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Academic year counts: summer semester plus the following winter semester."
+   ],
+   "subgroup": "By university"
+  },
+  "firstYear.fhAachen": {
+   "label": "First-year students: FH Aachen, Aachen site",
+   "unit": "first-year students per year",
+   "variable": "intake",
+   "points": [
+    [
+     1993,
+     945
+    ],
+    [
+     1994,
+     887
+    ],
+    [
+     1995,
+     740
+    ],
+    [
+     1996,
+     716
+    ],
+    [
+     1997,
+     615
+    ],
+    [
+     1998,
+     706
+    ],
+    [
+     1999,
+     806
+    ],
+    [
+     2000,
+     899
+    ],
+    [
+     2001,
+     1028
+    ],
+    [
+     2002,
+     1071
+    ],
+    [
+     2003,
+     1084
+    ],
+    [
+     2004,
+     1112
+    ],
+    [
+     2005,
+     987
+    ],
+    [
+     2006,
+     1016
+    ],
+    [
+     2007,
+     1163
+    ],
+    [
+     2008,
+     1210
+    ],
+    [
+     2009,
+     1320
+    ],
+    [
+     2010,
+     1288
+    ],
+    [
+     2011,
+     1532
+    ],
+    [
+     2012,
+     1732
+    ],
+    [
+     2013,
+     1891
+    ],
+    [
+     2014,
+     1793
+    ],
+    [
+     2015,
+     1695
+    ],
+    [
+     2016,
+     2019
+    ],
+    [
+     2017,
+     1954
+    ],
+    [
+     2018,
+     1994
+    ],
+    [
+     2019,
+     1749
+    ],
+    [
+     2020,
+     2130
+    ],
+    [
+     2021,
+     1894
+    ],
+    [
+     2022,
+     1547
+    ],
+    [
+     2023,
+     1538
+    ],
+    [
+     2024,
+     1842
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studienanfänger (1. Hochschulsemester) nach Hochschularten und Hochschulen – Studienjahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-22i_00.csv",
+    "table": "21311-22i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Academic year counts: summer semester plus the following winter semester."
+   ],
+   "subgroup": "By university"
+  },
+  "firstYear.katho": {
+   "label": "First-year students: KatHO NRW, Aachen dept.",
+   "unit": "first-year students per year",
+   "variable": "intake",
+   "points": [
+    [
+     1993,
+     113
+    ],
+    [
+     1994,
+     102
+    ],
+    [
+     1995,
+     92
+    ],
+    [
+     1996,
+     186
+    ],
+    [
+     1997,
+     132
+    ],
+    [
+     1998,
+     164
+    ],
+    [
+     1999,
+     162
+    ],
+    [
+     2000,
+     164
+    ],
+    [
+     2001,
+     178
+    ],
+    [
+     2002,
+     174
+    ],
+    [
+     2003,
+     120
+    ],
+    [
+     2004,
+     135
+    ],
+    [
+     2005,
+     117
+    ],
+    [
+     2007,
+     145
+    ],
+    [
+     2008,
+     146
+    ],
+    [
+     2009,
+     140
+    ],
+    [
+     2010,
+     162
+    ],
+    [
+     2011,
+     149
+    ],
+    [
+     2012,
+     156
+    ],
+    [
+     2013,
+     171
+    ],
+    [
+     2014,
+     187
+    ],
+    [
+     2015,
+     156
+    ],
+    [
+     2016,
+     201
+    ],
+    [
+     2017,
+     194
+    ],
+    [
+     2018,
+     201
+    ],
+    [
+     2019,
+     201
+    ],
+    [
+     2020,
+     190
+    ],
+    [
+     2021,
+     186
+    ],
+    [
+     2022,
+     196
+    ],
+    [
+     2023,
+     198
+    ],
+    [
+     2024,
+     184
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studienanfänger (1. Hochschulsemester) nach Hochschularten und Hochschulen – Studienjahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-22i_00.csv",
+    "table": "21311-22i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Academic year counts: summer semester plus the following winter semester."
+   ],
+   "subgroup": "By university"
+  },
+  "firstYear.music": {
+   "label": "First-year students: Music school Cologne, Aachen dept.",
+   "unit": "first-year students per year",
+   "variable": "intake",
+   "points": [
+    [
+     1993,
+     32
+    ],
+    [
+     1994,
+     40
+    ],
+    [
+     1995,
+     43
+    ],
+    [
+     1996,
+     45
+    ],
+    [
+     1997,
+     45
+    ],
+    [
+     1998,
+     36
+    ],
+    [
+     1999,
+     36
+    ],
+    [
+     2000,
+     42
+    ],
+    [
+     2001,
+     62
+    ],
+    [
+     2002,
+     66
+    ],
+    [
+     2003,
+     30
+    ],
+    [
+     2004,
+     49
+    ],
+    [
+     2005,
+     37
+    ],
+    [
+     2006,
+     24
+    ],
+    [
+     2007,
+     20
+    ],
+    [
+     2008,
+     33
+    ],
+    [
+     2009,
+     25
+    ],
+    [
+     2010,
+     31
+    ],
+    [
+     2011,
+     28
+    ],
+    [
+     2012,
+     30
+    ],
+    [
+     2013,
+     36
+    ],
+    [
+     2014,
+     31
+    ],
+    [
+     2015,
+     33
+    ],
+    [
+     2016,
+     32
+    ],
+    [
+     2017,
+     29
+    ],
+    [
+     2018,
+     30
+    ],
+    [
+     2019,
+     27
+    ],
+    [
+     2020,
+     19
+    ],
+    [
+     2021,
+     23
+    ],
+    [
+     2022,
+     16
+    ],
+    [
+     2023,
+     32
+    ],
+    [
+     2024,
+     21
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studienanfänger (1. Hochschulsemester) nach Hochschularten und Hochschulen – Studienjahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-22i_00.csv",
+    "table": "21311-22i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Academic year counts: summer semester plus the following winter semester."
+   ],
+   "subgroup": "By university"
+  },
+  "firstYear.fom": {
+   "label": "First-year students: FOM, Aachen site",
+   "unit": "first-year students per year",
+   "variable": "intake",
+   "points": [
+    [
+     2011,
+     63
+    ],
+    [
+     2012,
+     71
+    ],
+    [
+     2013,
+     77
+    ],
+    [
+     2014,
+     95
+    ],
+    [
+     2015,
+     92
+    ],
+    [
+     2016,
+     103
+    ],
+    [
+     2017,
+     88
+    ],
+    [
+     2018,
+     116
+    ],
+    [
+     2019,
+     109
+    ],
+    [
+     2020,
+     99
+    ],
+    [
+     2021,
+     53
+    ],
+    [
+     2022,
+     32
+    ],
+    [
+     2023,
+     32
+    ],
+    [
+     2024,
+     33
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studienanfänger (1. Hochschulsemester) nach Hochschularten und Hochschulen – Studienjahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-22i_00.csv",
+    "table": "21311-22i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Academic year counts: summer semester plus the following winter semester."
+   ],
+   "subgroup": "By university"
+  },
+  "firstYear.police": {
+   "label": "First-year students: Police college HSPV, Aachen site",
+   "unit": "first-year students per year",
+   "variable": "intake",
+   "points": [
+    [
+     2019,
+     266
+    ],
+    [
+     2020,
+     294
+    ],
+    [
+     2021,
+     288
+    ],
+    [
+     2022,
+     290
+    ],
+    [
+     2023,
+     314
+    ],
+    [
+     2024,
+     315
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studienanfänger (1. Hochschulsemester) nach Hochschularten und Hochschulen – Studienjahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-22i_00.csv",
+    "table": "21311-22i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Academic year counts: summer semester plus the following winter semester."
+   ],
+   "subgroup": "By university"
+  },
+  "firstYear.churchMusic": {
+   "label": "First-year students: Church music college (until 2006)",
+   "unit": "first-year students per year",
+   "variable": "intake",
+   "points": [
+    [
+     2001,
+     34
+    ],
+    [
+     2002,
+     9
+    ],
+    [
+     2003,
+     6
+    ],
+    [
+     2004,
+     2
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studienanfänger (1. Hochschulsemester) nach Hochschularten und Hochschulen – Studienjahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-22i_00.csv",
+    "table": "21311-22i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Academic year counts: summer semester plus the following winter semester."
+   ],
+   "subgroup": "By university"
+  },
+  "cityFirstYear": {
+   "label": "First-year students (city figure)",
+   "unit": "first-year students per year",
+   "variable": "intake",
+   "points": [
+    [
+     2015,
+     9130
+    ],
+    [
+     2023,
+     8483
+    ],
+    [
+     2024,
+     8814
+    ],
+    [
+     2025,
+     9258
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "The city's own count for all Aachen universities. Only the 2026 edition lists it."
+   ],
+   "pointSources": {
+    "2015": "2026 edition, p. 8",
+    "2023": "2026 edition, p. 8",
+    "2024": "2026 edition, p. 8",
+    "2025": "2026 edition, p. 8"
+   }
+  },
+  "students.cityDefinition": {
+   "label": "Students: all Aachen universities",
+   "unit": "students",
+   "variable": "students",
+   "points": [
+    [
+     1992,
+     45877
+    ],
+    [
+     1993,
+     45576
+    ],
+    [
+     1994,
+     43933
+    ],
+    [
+     1995,
+     41767
+    ],
+    [
+     1996,
+     40333
+    ],
+    [
+     1997,
+     38663
+    ],
+    [
+     1998,
+     37141
+    ],
+    [
+     1999,
+     35675
+    ],
+    [
+     2000,
+     34076
+    ],
+    [
+     2001,
+     35662
+    ],
+    [
+     2002,
+     36631
+    ],
+    [
+     2003,
+     37960
+    ],
+    [
+     2004,
+     35203
+    ],
+    [
+     2005,
+     36347
+    ],
+    [
+     2006,
+     36772
+    ],
+    [
+     2007,
+     36993
+    ],
+    [
+     2008,
+     38549
+    ],
+    [
+     2009,
+     40322
+    ],
+    [
+     2010,
+     39661
+    ],
+    [
+     2011,
+     43923
+    ],
+    [
+     2012,
+     46904
+    ],
+    [
+     2013,
+     50244
+    ],
+    [
+     2014,
+     52649
+    ],
+    [
+     2015,
+     54469
+    ],
+    [
+     2016,
+     56055
+    ],
+    [
+     2017,
+     57436
+    ],
+    [
+     2018,
+     58047
+    ],
+    [
+     2019,
+     58387
+    ],
+    [
+     2020,
+     60366
+    ],
+    [
+     2021,
+     60349
+    ],
+    [
+     2022,
+     59313
+    ],
+    [
+     2023,
+     56896
+    ],
+    [
+     2024,
+     56643
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studierende nach Hochschularten und Hochschulen – Land – Wintersemester",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-06i_00.csv",
+    "table": "21311-06i",
+    "retrieved": "2026-10-27",
+    "method": "Summed from downloaded rows"
+   },
+   "notes": [
+    "Winter semester counts; the year is the start of the semester (2024 = WS 2024/25).",
+    "Sum of the rows the city counts: RWTH, FH Aachen (Aachen site), music school, KatHO, FOM, and the church music college until 2006. The police college is left out, as in the city's figure."
+   ]
+  },
+  "students.rwth": {
+   "label": "Students: RWTH Aachen",
+   "unit": "students",
+   "variable": "students",
+   "points": [
+    [
+     1992,
+     37093
+    ],
+    [
+     1993,
+     36819
+    ],
+    [
+     1994,
+     35197
+    ],
+    [
+     1995,
+     33361
+    ],
+    [
+     1996,
+     32146
+    ],
+    [
+     1997,
+     30960
+    ],
+    [
+     1998,
+     29716
+    ],
+    [
+     1999,
+     28679
+    ],
+    [
+     2000,
+     27096
+    ],
+    [
+     2001,
+     28462
+    ],
+    [
+     2002,
+     29376
+    ],
+    [
+     2003,
+     30664
+    ],
+    [
+     2004,
+     28210
+    ],
+    [
+     2005,
+     29355
+    ],
+    [
+     2006,
+     29974
+    ],
+    [
+     2007,
+     30044
+    ],
+    [
+     2008,
+     31422
+    ],
+    [
+     2009,
+     32961
+    ],
+    [
+     2010,
+     32220
+    ],
+    [
+     2011,
+     35782
+    ],
+    [
+     2012,
+     37901
+    ],
+    [
+     2013,
+     40281
+    ],
+    [
+     2014,
+     42202
+    ],
+    [
+     2015,
+     43601
+    ],
+    [
+     2016,
+     44438
+    ],
+    [
+     2017,
+     45282
+    ],
+    [
+     2018,
+     45462
+    ],
+    [
+     2019,
+     45871
+    ],
+    [
+     2020,
+     47276
+    ],
+    [
+     2021,
+     47407
+    ],
+    [
+     2022,
+     47192
+    ],
+    [
+     2023,
+     45419
+    ],
+    [
+     2024,
+     45020
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studierende nach Hochschularten und Hochschulen – Land – Wintersemester",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-06i_00.csv",
+    "table": "21311-06i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Winter semester counts; the year is the start of the semester (2024 = WS 2024/25)."
+   ],
+   "subgroup": "By university"
+  },
+  "students.fhAachen": {
+   "label": "Students: FH Aachen, Aachen site",
+   "unit": "students",
+   "variable": "students",
+   "points": [
+    [
+     1992,
+     7894
+    ],
+    [
+     1993,
+     7895
+    ],
+    [
+     1994,
+     7857
+    ],
+    [
+     1995,
+     7524
+    ],
+    [
+     1996,
+     7234
+    ],
+    [
+     1997,
+     6742
+    ],
+    [
+     1998,
+     6468
+    ],
+    [
+     1999,
+     6024
+    ],
+    [
+     2000,
+     6043
+    ],
+    [
+     2001,
+     6188
+    ],
+    [
+     2002,
+     6272
+    ],
+    [
+     2003,
+     6293
+    ],
+    [
+     2004,
+     6034
+    ],
+    [
+     2005,
+     5992
+    ],
+    [
+     2006,
+     5952
+    ],
+    [
+     2007,
+     6013
+    ],
+    [
+     2008,
+     6220
+    ],
+    [
+     2009,
+     6406
+    ],
+    [
+     2010,
+     6490
+    ],
+    [
+     2011,
+     7088
+    ],
+    [
+     2012,
+     7829
+    ],
+    [
+     2013,
+     8640
+    ],
+    [
+     2014,
+     8967
+    ],
+    [
+     2015,
+     9226
+    ],
+    [
+     2016,
+     9891
+    ],
+    [
+     2017,
+     10355
+    ],
+    [
+     2018,
+     10737
+    ],
+    [
+     2019,
+     10576
+    ],
+    [
+     2020,
+     11168
+    ],
+    [
+     2021,
+     11046
+    ],
+    [
+     2022,
+     10378
+    ],
+    [
+     2023,
+     9770
+    ],
+    [
+     2024,
+     10031
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studierende nach Hochschularten und Hochschulen – Land – Wintersemester",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-06i_00.csv",
+    "table": "21311-06i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Winter semester counts; the year is the start of the semester (2024 = WS 2024/25)."
+   ],
+   "subgroup": "By university"
+  },
+  "students.katho": {
+   "label": "Students: KatHO NRW, Aachen dept.",
+   "unit": "students",
+   "variable": "students",
+   "points": [
+    [
+     1992,
+     624
+    ],
+    [
+     1993,
+     611
+    ],
+    [
+     1994,
+     641
+    ],
+    [
+     1995,
+     648
+    ],
+    [
+     1996,
+     709
+    ],
+    [
+     1997,
+     704
+    ],
+    [
+     1998,
+     728
+    ],
+    [
+     1999,
+     751
+    ],
+    [
+     2000,
+     721
+    ],
+    [
+     2001,
+     738
+    ],
+    [
+     2002,
+     691
+    ],
+    [
+     2003,
+     724
+    ],
+    [
+     2004,
+     710
+    ],
+    [
+     2005,
+     769
+    ],
+    [
+     2006,
+     631
+    ],
+    [
+     2007,
+     774
+    ],
+    [
+     2008,
+     748
+    ],
+    [
+     2009,
+     821
+    ],
+    [
+     2010,
+     819
+    ],
+    [
+     2011,
+     832
+    ],
+    [
+     2012,
+     875
+    ],
+    [
+     2013,
+     928
+    ],
+    [
+     2014,
+     981
+    ],
+    [
+     2015,
+     1067
+    ],
+    [
+     2016,
+     1086
+    ],
+    [
+     2017,
+     1127
+    ],
+    [
+     2018,
+     1125
+    ],
+    [
+     2019,
+     1176
+    ],
+    [
+     2020,
+     1163
+    ],
+    [
+     2021,
+     1202
+    ],
+    [
+     2022,
+     1147
+    ],
+    [
+     2023,
+     1193
+    ],
+    [
+     2024,
+     1168
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studierende nach Hochschularten und Hochschulen – Land – Wintersemester",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-06i_00.csv",
+    "table": "21311-06i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Winter semester counts; the year is the start of the semester (2024 = WS 2024/25)."
+   ],
+   "subgroup": "By university"
+  },
+  "students.music": {
+   "label": "Students: Music school Cologne, Aachen dept.",
+   "unit": "students",
+   "variable": "students",
+   "points": [
+    [
+     1992,
+     266
+    ],
+    [
+     1993,
+     251
+    ],
+    [
+     1994,
+     238
+    ],
+    [
+     1995,
+     234
+    ],
+    [
+     1996,
+     244
+    ],
+    [
+     1997,
+     257
+    ],
+    [
+     1998,
+     229
+    ],
+    [
+     1999,
+     221
+    ],
+    [
+     2000,
+     216
+    ],
+    [
+     2001,
+     240
+    ],
+    [
+     2002,
+     261
+    ],
+    [
+     2003,
+     245
+    ],
+    [
+     2004,
+     217
+    ],
+    [
+     2005,
+     209
+    ],
+    [
+     2006,
+     204
+    ],
+    [
+     2007,
+     162
+    ],
+    [
+     2008,
+     159
+    ],
+    [
+     2009,
+     134
+    ],
+    [
+     2010,
+     132
+    ],
+    [
+     2011,
+     139
+    ],
+    [
+     2012,
+     144
+    ],
+    [
+     2013,
+     150
+    ],
+    [
+     2014,
+     159
+    ],
+    [
+     2015,
+     149
+    ],
+    [
+     2016,
+     155
+    ],
+    [
+     2017,
+     148
+    ],
+    [
+     2018,
+     152
+    ],
+    [
+     2019,
+     139
+    ],
+    [
+     2020,
+     140
+    ],
+    [
+     2021,
+     133
+    ],
+    [
+     2022,
+     119
+    ],
+    [
+     2023,
+     128
+    ],
+    [
+     2024,
+     115
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studierende nach Hochschularten und Hochschulen – Land – Wintersemester",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-06i_00.csv",
+    "table": "21311-06i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Winter semester counts; the year is the start of the semester (2024 = WS 2024/25)."
+   ],
+   "subgroup": "By university"
+  },
+  "students.fom": {
+   "label": "Students: FOM, Aachen site",
+   "unit": "students",
+   "variable": "students",
+   "points": [
+    [
+     2011,
+     82
+    ],
+    [
+     2012,
+     155
+    ],
+    [
+     2013,
+     245
+    ],
+    [
+     2014,
+     340
+    ],
+    [
+     2015,
+     426
+    ],
+    [
+     2016,
+     485
+    ],
+    [
+     2017,
+     524
+    ],
+    [
+     2018,
+     571
+    ],
+    [
+     2019,
+     625
+    ],
+    [
+     2020,
+     619
+    ],
+    [
+     2021,
+     561
+    ],
+    [
+     2022,
+     477
+    ],
+    [
+     2023,
+     386
+    ],
+    [
+     2024,
+     309
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studierende nach Hochschularten und Hochschulen – Land – Wintersemester",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-06i_00.csv",
+    "table": "21311-06i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Winter semester counts; the year is the start of the semester (2024 = WS 2024/25)."
+   ],
+   "subgroup": "By university"
+  },
+  "students.police": {
+   "label": "Students: Police college HSPV, Aachen site",
+   "unit": "students",
+   "variable": "students",
+   "points": [
+    [
+     2019,
+     442
+    ],
+    [
+     2020,
+     758
+    ],
+    [
+     2021,
+     850
+    ],
+    [
+     2022,
+     837
+    ],
+    [
+     2023,
+     836
+    ],
+    [
+     2024,
+     870
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studierende nach Hochschularten und Hochschulen – Land – Wintersemester",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-06i_00.csv",
+    "table": "21311-06i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Winter semester counts; the year is the start of the semester (2024 = WS 2024/25)."
+   ],
+   "subgroup": "By university"
+  },
+  "students.churchMusic": {
+   "label": "Students: Church music college (until 2006)",
+   "unit": "students",
+   "variable": "students",
+   "points": [
+    [
+     2001,
+     34
+    ],
+    [
+     2002,
+     31
+    ],
+    [
+     2003,
+     34
+    ],
+    [
+     2004,
+     32
+    ],
+    [
+     2005,
+     22
+    ],
+    [
+     2006,
+     11
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Studierende nach Hochschularten und Hochschulen – Land – Wintersemester",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/21311-06i_00.csv",
+    "table": "21311-06i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Winter semester counts; the year is the start of the semester (2024 = WS 2024/25)."
+   ],
+   "subgroup": "By university"
+  },
+  "cityStudents": {
+   "label": "Students (city figure)",
+   "unit": "students",
+   "variable": "students",
+   "points": [
+    [
+     2011,
+     43841
+    ],
+    [
+     2012,
+     46954
+    ],
+    [
+     2013,
+     50331
+    ],
+    [
+     2015,
+     54587
+    ],
+    [
+     2019,
+     58771
+    ],
+    [
+     2020,
+     60484
+    ],
+    [
+     2021,
+     60512
+    ],
+    [
+     2022,
+     59313
+    ],
+    [
+     2023,
+     56896
+    ],
+    [
+     2024,
+     56643
+    ],
+    [
+     2025,
+     56057
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "The city counts RWTH, FH Aachen (Aachen site), the Cologne music school's Aachen department, KatHO (Aachen department) and FOM (Aachen site).",
+    "Matches the IT.NRW sum for the winter semester starting in the same year, e.g. 2024 = WS 2024/25 = 56,643."
+   ],
+   "pointSources": {
+    "2011": "2022 edition, p. 9",
+    "2012": "2023 edition, p. 9",
+    "2013": "2024 edition, p. 9",
+    "2015": "2026 edition, p. 8",
+    "2019": "2022 edition, p. 9",
+    "2020": "2023 edition, p. 9",
+    "2021": "2024 edition, p. 9",
+    "2022": "2025 edition, p. 9",
+    "2023": "2026 edition, p. 8",
+    "2024": "2026 edition, p. 8",
+    "2025": "2026 edition, p. 8"
+   }
+  },
+  "households": {
+   "label": "Households",
+   "unit": "households",
+   "variable": "demand",
+   "points": [
+    [
+     2011,
+     136790
+    ],
+    [
+     2012,
+     140272
+    ],
+    [
+     2013,
+     143039
+    ],
+    [
+     2015,
+     145063
+    ],
+    [
+     2019,
+     148558
+    ],
+    [
+     2020,
+     149204
+    ],
+    [
+     2022,
+     151413
+    ],
+    [
+     2023,
+     152556
+    ],
+    [
+     2024,
+     151982
+    ],
+    [
+     2025,
+     153086
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "2021 is left out: the report says no usable household figure could be produced for 2021, and its table repeats the 2020 value.",
+    "Household counts come from the city's population register, not from the census."
+   ],
+   "pointSources": {
+    "2011": "2022 edition, p. 9",
+    "2012": "2023 edition, p. 9",
+    "2013": "2024 edition, p. 9",
+    "2015": "2026 edition, p. 8",
+    "2019": "2022 edition, p. 9",
+    "2020": "2023 edition, p. 9",
+    "2022": "2025 edition, p. 9",
+    "2023": "2026 edition, p. 8",
+    "2024": "2026 edition, p. 8",
+    "2025": "2026 edition, p. 8"
+   }
+  },
+  "population": {
+   "label": "Population",
+   "unit": "people",
+   "variable": "demand",
+   "points": [
+    [
+     1962,
+     220311
+    ],
+    [
+     1963,
+     222041
+    ],
+    [
+     1964,
+     223877
+    ],
+    [
+     1965,
+     226244
+    ],
+    [
+     1966,
+     226866
+    ],
+    [
+     1967,
+     226143
+    ],
+    [
+     1968,
+     227482
+    ],
+    [
+     1969,
+     229569
+    ],
+    [
+     1970,
+     233645
+    ],
+    [
+     1971,
+     236883
+    ],
+    [
+     1972,
+     239528
+    ],
+    [
+     1973,
+     241276
+    ],
+    [
+     1974,
+     242416
+    ],
+    [
+     1975,
+     242464
+    ],
+    [
+     1976,
+     242715
+    ],
+    [
+     1977,
+     243297
+    ],
+    [
+     1978,
+     242741
+    ],
+    [
+     1979,
+     242991
+    ],
+    [
+     1980,
+     243957
+    ],
+    [
+     1981,
+     244716
+    ],
+    [
+     1982,
+     245015
+    ],
+    [
+     1983,
+     241879
+    ],
+    [
+     1984,
+     239820
+    ],
+    [
+     1985,
+     238614
+    ],
+    [
+     1986,
+     239191
+    ],
+    [
+     1987,
+     230886
+    ],
+    [
+     1988,
+     233255
+    ],
+    [
+     1989,
+     236987
+    ],
+    [
+     1990,
+     241861
+    ],
+    [
+     1991,
+     244442
+    ],
+    [
+     1992,
+     245627
+    ],
+    [
+     1993,
+     246671
+    ],
+    [
+     1994,
+     247113
+    ],
+    [
+     1995,
+     247923
+    ],
+    [
+     1996,
+     247792
+    ],
+    [
+     1997,
+     245969
+    ],
+    [
+     1998,
+     244429
+    ],
+    [
+     1999,
+     243825
+    ],
+    [
+     2000,
+     244386
+    ],
+    [
+     2001,
+     245778
+    ],
+    [
+     2002,
+     247740
+    ],
+    [
+     2003,
+     256605
+    ],
+    [
+     2004,
+     257821
+    ],
+    [
+     2005,
+     258208
+    ],
+    [
+     2006,
+     258770
+    ],
+    [
+     2007,
+     259030
+    ],
+    [
+     2008,
+     259269
+    ],
+    [
+     2009,
+     258380
+    ],
+    [
+     2010,
+     258664
+    ],
+    [
+     2011,
+     238665
+    ],
+    [
+     2012,
+     240086
+    ],
+    [
+     2013,
+     241683
+    ],
+    [
+     2014,
+     243336
+    ],
+    [
+     2015,
+     245885
+    ],
+    [
+     2016,
+     244951
+    ],
+    [
+     2017,
+     246272
+    ],
+    [
+     2018,
+     247380
+    ],
+    [
+     2019,
+     248960
+    ],
+    [
+     2020,
+     248878
+    ],
+    [
+     2021,
+     249070
+    ],
+    [
+     2022,
+     262886
+    ],
+    [
+     2023,
+     263772
+    ],
+    [
+     2024,
+     262670
+    ],
+    [
+     2025,
+     263703
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Bevölkerungsstand – Gemeinden – Stichtag 31.12.",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/12411-01i_00.csv",
+    "table": "12411-01i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Two municipality codes joined: 05313 until 2008, 05334002 from 2009, when Aachen became part of the StädteRegion.",
+    "Breaks in the series: from 2011 the numbers are based on the 2011 census (about 20,000 fewer people than 2010), and from 2022 on the 2022 census."
+   ]
+  },
+  "cityPopulation": {
+   "label": "Population (city figure)",
+   "unit": "people",
+   "variable": "demand",
+   "points": [
+    [
+     2011,
+     246865
+    ],
+    [
+     2012,
+     248137
+    ],
+    [
+     2013,
+     249746
+    ],
+    [
+     2015,
+     253945
+    ],
+    [
+     2019,
+     258816
+    ],
+    [
+     2020,
+     258828
+    ],
+    [
+     2021,
+     258588
+    ],
+    [
+     2022,
+     262040
+    ],
+    [
+     2023,
+     262846
+    ],
+    [
+     2024,
+     261472
+    ],
+    [
+     2025,
+     262765
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "The city's own register count. It differs from IT.NRW, which uses census-based projections."
+   ],
+   "pointSources": {
+    "2011": "2022 edition, p. 9",
+    "2012": "2023 edition, p. 9",
+    "2013": "2024 edition, p. 9",
+    "2015": "2026 edition, p. 8",
+    "2019": "2022 edition, p. 9",
+    "2020": "2023 edition, p. 9",
+    "2021": "2024 edition, p. 9",
+    "2022": "2025 edition, p. 9",
+    "2023": "2026 edition, p. 8",
+    "2024": "2026 edition, p. 8",
+    "2025": "2026 edition, p. 8"
+   }
+  },
+  "dwellings": {
+   "label": "Dwellings",
+   "unit": "dwellings",
+   "variable": "flats",
+   "points": [
+    [
+     2011,
+     134779
+    ],
+    [
+     2012,
+     135133
+    ],
+    [
+     2013,
+     135874
+    ],
+    [
+     2015,
+     137007
+    ],
+    [
+     2019,
+     140530
+    ],
+    [
+     2020,
+     141077
+    ],
+    [
+     2021,
+     141695
+    ],
+    [
+     2022,
+     142564
+    ],
+    [
+     2023,
+     142799
+    ],
+    [
+     2024,
+     143193
+    ],
+    [
+     2025,
+     143477
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "The city's statistics office count of all dwellings at 31 December.",
+    "The 2026 report text gives 143,194 for 2024; its table gives 143,193 (used here)."
+   ],
+   "pointSources": {
+    "2011": "2022 edition, p. 9",
+    "2012": "2023 edition, p. 9",
+    "2013": "2024 edition, p. 9",
+    "2015": "2026 edition, p. 8",
+    "2019": "2022 edition, p. 9",
+    "2020": "2023 edition, p. 9",
+    "2021": "2024 edition, p. 9",
+    "2022": "2025 edition, p. 9",
+    "2023": "2026 edition, p. 8",
+    "2024": "2026 edition, p. 8",
+    "2025": "2026 edition, p. 8"
+   }
+  },
+  "dwellingsCensus2022": {
+   "label": "Dwellings (census-based)",
+   "unit": "dwellings",
+   "variable": "flats",
+   "points": [
+    [
+     2024,
+     146422
+    ]
+   ],
+   "source": {
+    "publisher": "Statistische Ämter des Bundes und der Länder (Regionalstatistik)",
+    "title": "Bestand an Wohngebäuden und Wohnungen in Wohn- und Nichtwohngebäuden – Stichtag 31.12. – Gemeinden",
+    "url": "https://www.regionalstatistik.de/genesisws/downloader/00/tables/31231-02-01-5_00.csv",
+    "table": "31231-02-01-5",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "Only the latest year is available as a free download. It is based on the 2022 census and is about 3,000 higher than the city's own count for 2024."
+   ]
+  },
+  "vacancyRate": {
+   "label": "Vacancy rate",
+   "unit": "% of dwellings",
+   "variable": "vacancy",
+   "points": [
+    [
+     2017,
+     3.7
+    ],
+    [
+     2018,
+     4
+    ],
+    [
+     2019,
+     3.9
+    ],
+    [
+     2020,
+     3.7
+    ],
+    [
+     2021,
+     4.4
+    ],
+    [
+     2022,
+     4.6
+    ],
+    [
+     2023,
+     4.2
+    ],
+    [
+     2024,
+     4.1
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "Measured with the electricity meter method: a dwelling counts as vacant if it used under 150 kWh a year for at least three months.",
+    "Values are read from the labels of the report's vacancy chart. The 2026 text says the analysis covers 2018–2023, while its chart labels the same values 2019–2024; the chart labels are used."
+   ],
+   "pointSources": {
+    "2017": "2023 edition, p. 52, Abb. 38",
+    "2018": "2023 edition, p. 52, Abb. 38",
+    "2019": "2026 edition, p. 54, Abb. 40",
+    "2020": "2026 edition, p. 54, Abb. 40",
+    "2021": "2026 edition, p. 54, Abb. 40",
+    "2022": "2026 edition, p. 54, Abb. 40",
+    "2023": "2026 edition, p. 54, Abb. 40",
+    "2024": "2026 edition, p. 54, Abb. 40"
+   }
+  },
+  "vacancyRateAdjusted": {
+   "label": "Vacancy rate excluding modernisation",
+   "unit": "% of dwellings",
+   "variable": "vacancy",
+   "points": [
+    [
+     2017,
+     1.7
+    ],
+    [
+     2018,
+     2
+    ],
+    [
+     2019,
+     1.9
+    ],
+    [
+     2020,
+     1.7
+    ],
+    [
+     2021,
+     2.4
+    ],
+    [
+     2022,
+     2.6
+    ],
+    [
+     2023,
+     2.2
+    ],
+    [
+     2024,
+     2.1
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "Measured with the electricity meter method: a dwelling counts as vacant if it used under 150 kWh a year for at least three months.",
+    "Values are read from the labels of the report's vacancy chart. The 2026 text says the analysis covers 2018–2023, while its chart labels the same values 2019–2024; the chart labels are used.",
+    "The city subtracts an assumed 2% of dwellings that are empty for modernisation. The 3% benchmark for a functioning market refers to this rate."
+   ],
+   "pointSources": {
+    "2017": "2023 edition, p. 52, Abb. 38",
+    "2018": "2023 edition, p. 52, Abb. 38",
+    "2019": "2026 edition, p. 54, Abb. 40",
+    "2020": "2026 edition, p. 54, Abb. 40",
+    "2021": "2026 edition, p. 54, Abb. 40",
+    "2022": "2026 edition, p. 54, Abb. 40",
+    "2023": "2026 edition, p. 54, Abb. 40",
+    "2024": "2026 edition, p. 54, Abb. 40"
+   }
+  },
+  "vacantDwellings": {
+   "label": "Vacant dwellings",
+   "unit": "dwellings",
+   "variable": "vacancy",
+   "points": [
+    [
+     2017,
+     4955
+    ],
+    [
+     2018,
+     5275
+    ],
+    [
+     2019,
+     5095
+    ],
+    [
+     2020,
+     5075
+    ],
+    [
+     2021,
+     6017
+    ],
+    [
+     2022,
+     6210
+    ],
+    [
+     2023,
+     5694
+    ],
+    [
+     2024,
+     5641
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "Measured with the electricity meter method: a dwelling counts as vacant if it used under 150 kWh a year for at least three months.",
+    "Values are read from the labels of the report's vacancy chart. The 2026 text says the analysis covers 2018–2023, while its chart labels the same values 2019–2024; the chart labels are used."
+   ],
+   "pointSources": {
+    "2017": "2023 edition, p. 52, Abb. 38",
+    "2018": "2023 edition, p. 52, Abb. 38",
+    "2019": "2026 edition, p. 54, Abb. 40",
+    "2020": "2026 edition, p. 54, Abb. 40",
+    "2021": "2026 edition, p. 54, Abb. 40",
+    "2022": "2026 edition, p. 54, Abb. 40",
+    "2023": "2026 edition, p. 54, Abb. 40",
+    "2024": "2026 edition, p. 54, Abb. 40"
+   }
+  },
+  "askingRent": {
+   "label": "Asking rent",
+   "unit": "€ per m² per month",
+   "variable": "rent",
+   "points": [
+    [
+     2007,
+     6.03
+    ],
+    [
+     2008,
+     5.97
+    ],
+    [
+     2009,
+     6.13
+    ],
+    [
+     2010,
+     6.36
+    ],
+    [
+     2011,
+     6.67
+    ],
+    [
+     2012,
+     7.11
+    ],
+    [
+     2013,
+     7.37
+    ],
+    [
+     2014,
+     7.75
+    ],
+    [
+     2015,
+     8
+    ],
+    [
+     2016,
+     8.33
+    ],
+    [
+     2017,
+     8.42
+    ],
+    [
+     2018,
+     8.6
+    ],
+    [
+     2019,
+     8.97
+    ],
+    [
+     2020,
+     9.13
+    ],
+    [
+     2021,
+     9.49
+    ],
+    [
+     2022,
+     9.88
+    ],
+    [
+     2023,
+     10.12
+    ],
+    [
+     2024,
+     10.73
+    ],
+    [
+     2025,
+     11.19
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "Rents asked in new listings, not rents paid in existing contracts. Cold rent, without utilities.",
+    "2007–2010: median of empirica's listing database (IDN Immodaten), from the 2011 edition, which is no longer online. From 2011: VALUE market data.",
+    "The indicator table calls it the average asking rent; the report text calls the same figure the median."
+   ],
+   "pointSources": {
+    "2007": "2011 edition, p. 28, Tab. 59",
+    "2008": "2011 edition, p. 28, Tab. 59",
+    "2009": "2011 edition, p. 28, Tab. 59",
+    "2010": "2011 edition, p. 28, Tab. 59",
+    "2011": "2022 edition, p. 9",
+    "2012": "2023 edition, p. 9",
+    "2013": "2024 edition, p. 9",
+    "2014": "2019 edition, p. 40, Abb. 33",
+    "2015": "2026 edition, p. 8",
+    "2016": "2019 edition, p. 40, Abb. 33",
+    "2017": "2019 edition, p. 40, Abb. 33",
+    "2018": "2019 edition, p. 40, Abb. 33",
+    "2019": "2022 edition, p. 9",
+    "2020": "2023 edition, p. 9",
+    "2021": "2024 edition, p. 9",
+    "2022": "2025 edition, p. 9",
+    "2023": "2026 edition, p. 8",
+    "2024": "2026 edition, p. 8",
+    "2025": "2026 edition, p. 8"
+   }
+  },
+  "askingRentReal": {
+   "label": "Asking rent in 2000 prices",
+   "unit": "€ per m² per month, 2000 prices",
+   "variable": "rent",
+   "points": [
+    [
+     2007,
+     5.4
+    ],
+    [
+     2008,
+     5.21
+    ],
+    [
+     2009,
+     5.34
+    ],
+    [
+     2010,
+     5.48
+    ],
+    [
+     2011,
+     5.63
+    ],
+    [
+     2012,
+     5.89
+    ],
+    [
+     2013,
+     6.01
+    ],
+    [
+     2014,
+     6.24
+    ],
+    [
+     2015,
+     6.41
+    ],
+    [
+     2016,
+     6.64
+    ],
+    [
+     2017,
+     6.61
+    ],
+    [
+     2018,
+     6.64
+    ],
+    [
+     2019,
+     6.82
+    ],
+    [
+     2020,
+     6.91
+    ],
+    [
+     2021,
+     6.97
+    ],
+    [
+     2022,
+     6.77
+    ],
+    [
+     2023,
+     6.57
+    ],
+    [
+     2024,
+     6.81
+    ],
+    [
+     2025,
+     6.97
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Asking rent divided by the consumer price index for North Rhine-Westphalia (IT.NRW table 61111-01i, 2020 = 100), scaled to 2000 prices.",
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "Rents asked in new listings, not rents paid in existing contracts. Cold rent, without utilities.",
+    "2007–2010: median of empirica's listing database (IDN Immodaten), from the 2011 edition, which is no longer online. From 2011: VALUE market data.",
+    "The indicator table calls it the average asking rent; the report text calls the same figure the median."
+   ],
+   "pointSources": {
+    "2007": "2011 edition, p. 28, Tab. 59",
+    "2008": "2011 edition, p. 28, Tab. 59",
+    "2009": "2011 edition, p. 28, Tab. 59",
+    "2010": "2011 edition, p. 28, Tab. 59",
+    "2011": "2022 edition, p. 9",
+    "2012": "2023 edition, p. 9",
+    "2013": "2024 edition, p. 9",
+    "2014": "2019 edition, p. 40, Abb. 33",
+    "2015": "2026 edition, p. 8",
+    "2016": "2019 edition, p. 40, Abb. 33",
+    "2017": "2019 edition, p. 40, Abb. 33",
+    "2018": "2019 edition, p. 40, Abb. 33",
+    "2019": "2022 edition, p. 9",
+    "2020": "2023 edition, p. 9",
+    "2021": "2024 edition, p. 9",
+    "2022": "2025 edition, p. 9",
+    "2023": "2026 edition, p. 8",
+    "2024": "2026 edition, p. 8",
+    "2025": "2026 edition, p. 8"
+   }
+  },
+  "permits": {
+   "label": "Building permits",
+   "unit": "dwellings per year",
+   "variable": "starts",
+   "points": [
+    [
+     1987,
+     681
+    ],
+    [
+     1988,
+     392
+    ],
+    [
+     1989,
+     924
+    ],
+    [
+     1990,
+     912
+    ],
+    [
+     1991,
+     1726
+    ],
+    [
+     1992,
+     1317
+    ],
+    [
+     1993,
+     1385
+    ],
+    [
+     1994,
+     1236
+    ],
+    [
+     1995,
+     937
+    ],
+    [
+     1996,
+     832
+    ],
+    [
+     1997,
+     579
+    ],
+    [
+     1998,
+     655
+    ],
+    [
+     1999,
+     657
+    ],
+    [
+     2000,
+     651
+    ],
+    [
+     2001,
+     625
+    ],
+    [
+     2002,
+     443
+    ],
+    [
+     2003,
+     418
+    ],
+    [
+     2004,
+     412
+    ],
+    [
+     2005,
+     426
+    ],
+    [
+     2006,
+     557
+    ],
+    [
+     2007,
+     452
+    ],
+    [
+     2008,
+     443
+    ],
+    [
+     2009,
+     568
+    ],
+    [
+     2010,
+     547
+    ],
+    [
+     2011,
+     450
+    ],
+    [
+     2012,
+     691
+    ],
+    [
+     2013,
+     717
+    ],
+    [
+     2014,
+     256
+    ],
+    [
+     2015,
+     1722
+    ],
+    [
+     2016,
+     1333
+    ],
+    [
+     2017,
+     663
+    ],
+    [
+     2018,
+     784
+    ],
+    [
+     2019,
+     261
+    ],
+    [
+     2020,
+     1141
+    ],
+    [
+     2021,
+     490
+    ],
+    [
+     2022,
+     629
+    ],
+    [
+     2023,
+     748
+    ],
+    [
+     2024,
+     553
+    ],
+    [
+     2025,
+     470
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Baugenehmigungen (Neubau und Baumaßnahmen an bestehenden Gebäuden): Wohnungen – Gemeinden – Jahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/31111-02i_00.csv",
+    "table": "31111-02i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "New buildings plus conversions of existing buildings, in residential and non-residential buildings. This is why it is higher than the city's new-build figure.",
+    "Two municipality codes joined: 05313 until 2008, 05334002 from 2009."
+   ]
+  },
+  "cityPermits": {
+   "label": "Building permits, new builds (city figure)",
+   "unit": "dwellings per year",
+   "variable": "starts",
+   "points": [
+    [
+     2011,
+     451
+    ],
+    [
+     2012,
+     683
+    ],
+    [
+     2013,
+     717
+    ],
+    [
+     2015,
+     1334
+    ],
+    [
+     2019,
+     578
+    ],
+    [
+     2020,
+     881
+    ],
+    [
+     2021,
+     451
+    ],
+    [
+     2022,
+     305
+    ],
+    [
+     2023,
+     802
+    ],
+    [
+     2024,
+     407
+    ],
+    [
+     2025,
+     357
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "New builds only. The 2026 report text calls 2022 a low of 178 permits, but its tables give 305 for 2022 and 178 completions for 2023."
+   ],
+   "pointSources": {
+    "2011": "2022 edition, p. 9",
+    "2012": "2023 edition, p. 9",
+    "2013": "2024 edition, p. 9",
+    "2015": "2026 edition, p. 8",
+    "2019": "2022 edition, p. 9",
+    "2020": "2023 edition, p. 9",
+    "2021": "2024 edition, p. 9",
+    "2022": "2025 edition, p. 9",
+    "2023": "2026 edition, p. 8",
+    "2024": "2026 edition, p. 8",
+    "2025": "2026 edition, p. 8"
+   }
+  },
+  "completions": {
+   "label": "Completions",
+   "unit": "dwellings per year",
+   "variable": "completions",
+   "points": [
+    [
+     1987,
+     630
+    ],
+    [
+     1988,
+     871
+    ],
+    [
+     1989,
+     639
+    ],
+    [
+     1990,
+     749
+    ],
+    [
+     1991,
+     765
+    ],
+    [
+     1992,
+     1040
+    ],
+    [
+     1993,
+     1296
+    ],
+    [
+     1994,
+     1494
+    ],
+    [
+     1995,
+     1011
+    ],
+    [
+     1996,
+     809
+    ],
+    [
+     1997,
+     789
+    ],
+    [
+     1998,
+     1277
+    ],
+    [
+     1999,
+     908
+    ],
+    [
+     2000,
+     548
+    ],
+    [
+     2001,
+     812
+    ],
+    [
+     2002,
+     518
+    ],
+    [
+     2003,
+     423
+    ],
+    [
+     2004,
+     278
+    ],
+    [
+     2005,
+     530
+    ],
+    [
+     2006,
+     333
+    ],
+    [
+     2007,
+     332
+    ],
+    [
+     2008,
+     548
+    ],
+    [
+     2009,
+     370
+    ],
+    [
+     2010,
+     231
+    ],
+    [
+     2011,
+     1276
+    ],
+    [
+     2012,
+     360
+    ],
+    [
+     2013,
+     619
+    ],
+    [
+     2014,
+     478
+    ],
+    [
+     2015,
+     637
+    ],
+    [
+     2016,
+     536
+    ],
+    [
+     2017,
+     546
+    ],
+    [
+     2018,
+     1041
+    ],
+    [
+     2019,
+     1003
+    ],
+    [
+     2020,
+     616
+    ],
+    [
+     2021,
+     605
+    ],
+    [
+     2022,
+     803
+    ],
+    [
+     2023,
+     198
+    ],
+    [
+     2024,
+     406
+    ],
+    [
+     2025,
+     306
+    ]
+   ],
+   "source": {
+    "publisher": "IT.NRW",
+    "title": "Baufertigstellungen (Neubau und Baumaßnahmen an bestehenden Gebäuden): Wohnungen – Gemeinden – Jahr",
+    "url": "https://www.landesdatenbank.nrw.de/ldbnrwws/downloader/00/tables/31121-01i_00.csv",
+    "table": "31121-01i",
+    "retrieved": "2026-10-27",
+    "method": "Downloaded as CSV"
+   },
+   "notes": [
+    "New buildings plus conversions of existing buildings, in residential and non-residential buildings.",
+    "Two municipality codes joined: 05313 until 2008, 05334002 from 2009."
+   ]
+  },
+  "cityCompletions": {
+   "label": "Completions, new builds (city figure)",
+   "unit": "dwellings per year",
+   "variable": "completions",
+   "points": [
+    [
+     2011,
+     454
+    ],
+    [
+     2012,
+     346
+    ],
+    [
+     2013,
+     748
+    ],
+    [
+     2015,
+     560
+    ],
+    [
+     2019,
+     912
+    ],
+    [
+     2020,
+     457
+    ],
+    [
+     2021,
+     541
+    ],
+    [
+     2022,
+     703
+    ],
+    [
+     2023,
+     178
+    ],
+    [
+     2024,
+     309
+    ],
+    [
+     2025,
+     210
+    ]
+   ],
+   "source": {
+    "publisher": "Stadt Aachen",
+    "title": "Wohnungsmarktbericht (housing market report), editions 2011–2026",
+    "url": "https://www.aachen.de/in-aachen-leben/gesellschaft-soziales-wohnen/wohnen/wohnraumentwicklung/stadt-aachen-wohnungsmarktbericht-2026.pdf",
+    "location": "Each value's edition and page is listed with the values",
+    "retrieved": "2026-10-27",
+    "method": "Typed from report PDF"
+   },
+   "notes": [
+    "Each edition's table covers the three latest years plus one earlier year, so there are gaps. When editions overlap, the latest edition is used.",
+    "New builds only."
+   ],
+   "pointSources": {
+    "2011": "2022 edition, p. 9",
+    "2012": "2023 edition, p. 9",
+    "2013": "2024 edition, p. 9",
+    "2015": "2026 edition, p. 8",
+    "2019": "2022 edition, p. 9",
+    "2020": "2023 edition, p. 9",
+    "2021": "2024 edition, p. 9",
+    "2022": "2025 edition, p. 9",
+    "2023": "2026 edition, p. 8",
+    "2024": "2026 edition, p. 8",
+    "2025": "2026 edition, p. 8"
+   }
+  }
+ },
+ "scenarios": {
+  "real": {
+   "label": "Aachen as recorded, then forecast",
+   "question": "Students, non-student population and household size as recorded until 2025, then as official forecasts expect.",
+   "changes": {
+    "inputs": {
+     "intake": [
+      1,
+      1.27,
+      1.28,
+      0.99,
+      0.89,
+      1.2,
+      1.14,
+      1.24,
+      1.42,
+      1.28,
+      1.48,
+      1.93,
+      1.93,
+      1.98,
+      1.92,
+      1.9,
+      1.91,
+      1.86,
+      1.79,
+      1.92,
+      1.94,
+      1.68,
+      1.44,
+      1.43,
+      1.59,
+      1.56,
+      1.66,
+      1.8,
+      1.85,
+      1.86,
+      1.88,
+      1.9,
+      1.93,
+      1.97,
+      2.01,
+      2.03,
+      2.03,
+      2.03,
+      2.02,
+      2.02,
+      2.02
+     ],
+     "population": [
+      1,
+      1.001,
+      1.007,
+      1.01,
+      1.024,
+      1.022,
+      1.024,
+      1.024,
+      1.02,
+      1.011,
+      1.014,
+      1.005,
+      1.002,
+      0.999,
+      1.002,
+      1.006,
+      1.007,
+      1.008,
+      1.012,
+      1.016,
+      1.01,
+      1.009,
+      1.028,
+      1.04,
+      1.034,
+      1.042,
+      1.043,
+      1.041,
+      1.04,
+      1.04,
+      1.04,
+      1.039,
+      1.039,
+      1.039,
+      1.039,
+      1.037,
+      1.036,
+      1.035,
+      1.034,
+      1.034,
+      1.032
+     ],
+     "householdSize": [
+      1,
+      0.998,
+      0.995,
+      0.993,
+      0.991,
+      0.989,
+      0.987,
+      0.984,
+      0.982,
+      0.98,
+      0.978,
+      0.975,
+      0.957,
+      0.948,
+      0.953,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.957,
+      0.953,
+      0.95,
+      0.94,
+      0.938,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939
+     ],
+     "landDesignated": [
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56
+     ]
+    }
+   },
+   "derivedFrom": {
+    "series": [
+     "firstYear.cityDefinition",
+     "cityFirstYear",
+     "students.cityDefinition",
+     "cityStudents",
+     "population",
+     "cityPopulation",
+     "households",
+     "completions"
+    ],
+    "method": "Made by realInputs() in aachen-housing-loops/src/inputs.ts. Intake: the yearly arrivals that make the model's student stock follow the recorded student count (IT.NRW, continued by the city's figures), then the stock the medium first-year forecast builds. Population: the city's register from 2011, extended backwards by IT.NRW's growth rates, minus the 66% of students registered as residents, then the medium forecast. Household size: non-student population over households net of student households, with the register's trend before 2011 and IT.NRW's forecast after. Land: as many flats a year as were completed on average since 2000. Each curve is divided by its 2000 value."
+   },
+   "order": 0
+  },
+  "no-student-growth": {
+   "label": "No more students than in 2000",
+   "question": "What if the student count had stayed at its 2000 level, with everything else as recorded?",
+   "changes": {
+    "inputs": {
+     "intake": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+     ],
+     "population": [
+      1,
+      1.001,
+      1.007,
+      1.01,
+      1.024,
+      1.022,
+      1.024,
+      1.024,
+      1.02,
+      1.011,
+      1.014,
+      1.005,
+      1.002,
+      0.999,
+      1.002,
+      1.006,
+      1.007,
+      1.008,
+      1.012,
+      1.016,
+      1.01,
+      1.009,
+      1.028,
+      1.04,
+      1.034,
+      1.042,
+      1.043,
+      1.041,
+      1.04,
+      1.04,
+      1.04,
+      1.039,
+      1.039,
+      1.039,
+      1.039,
+      1.037,
+      1.036,
+      1.035,
+      1.034,
+      1.034,
+      1.032
+     ],
+     "householdSize": [
+      1,
+      0.998,
+      0.995,
+      0.993,
+      0.991,
+      0.989,
+      0.987,
+      0.984,
+      0.982,
+      0.98,
+      0.978,
+      0.975,
+      0.957,
+      0.948,
+      0.953,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.957,
+      0.953,
+      0.95,
+      0.94,
+      0.938,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939
+     ],
+     "landDesignated": [
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56
+     ]
+    }
+   },
+   "derivedFrom": {
+    "series": [
+     "firstYear.cityDefinition",
+     "cityFirstYear",
+     "students.cityDefinition",
+     "cityStudents",
+     "population",
+     "cityPopulation",
+     "households",
+     "completions"
+    ],
+    "method": "As the real data, with intake held at its start value. Made by realInputs() in aachen-housing-loops/src/inputs.ts. Intake: the yearly arrivals that make the model's student stock follow the recorded student count (IT.NRW, continued by the city's figures), then the stock the medium first-year forecast builds. Population: the city's register from 2011, extended backwards by IT.NRW's growth rates, minus the 66% of students registered as residents, then the medium forecast. Household size: non-student population over households net of student households, with the register's trend before 2011 and IT.NRW's forecast after. Land: as many flats a year as were completed on average since 2000. Each curve is divided by its 2000 value."
+   },
+   "order": 1
+  },
+  "no-population-growth": {
+   "label": "No more non-students than in 2000",
+   "question": "What if the non-student population had stayed at its 2000 level?",
+   "changes": {
+    "inputs": {
+     "intake": [
+      1,
+      1.27,
+      1.28,
+      0.99,
+      0.89,
+      1.2,
+      1.14,
+      1.24,
+      1.42,
+      1.28,
+      1.48,
+      1.93,
+      1.93,
+      1.98,
+      1.92,
+      1.9,
+      1.91,
+      1.86,
+      1.79,
+      1.92,
+      1.94,
+      1.68,
+      1.44,
+      1.43,
+      1.59,
+      1.56,
+      1.66,
+      1.8,
+      1.85,
+      1.86,
+      1.88,
+      1.9,
+      1.93,
+      1.97,
+      2.01,
+      2.03,
+      2.03,
+      2.03,
+      2.02,
+      2.02,
+      2.02
+     ],
+     "population": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+     ],
+     "householdSize": [
+      1,
+      0.998,
+      0.995,
+      0.993,
+      0.991,
+      0.989,
+      0.987,
+      0.984,
+      0.982,
+      0.98,
+      0.978,
+      0.975,
+      0.957,
+      0.948,
+      0.953,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.957,
+      0.953,
+      0.95,
+      0.94,
+      0.938,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939
+     ],
+     "landDesignated": [
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56
+     ]
+    }
+   },
+   "derivedFrom": {
+    "series": [
+     "firstYear.cityDefinition",
+     "cityFirstYear",
+     "students.cityDefinition",
+     "cityStudents",
+     "population",
+     "cityPopulation",
+     "households",
+     "completions"
+    ],
+    "method": "As the real data, with non-student population held at its 2000 value. Made by realInputs() in aachen-housing-loops/src/inputs.ts. Intake: the yearly arrivals that make the model's student stock follow the recorded student count (IT.NRW, continued by the city's figures), then the stock the medium first-year forecast builds. Population: the city's register from 2011, extended backwards by IT.NRW's growth rates, minus the 66% of students registered as residents, then the medium forecast. Household size: non-student population over households net of student households, with the register's trend before 2011 and IT.NRW's forecast after. Land: as many flats a year as were completed on average since 2000. Each curve is divided by its 2000 value."
+   },
+   "order": 2
+  },
+  "no-smaller-households": {
+   "label": "Households as large as in 2000",
+   "question": "What if non-student households had kept their 2000 size, so the same people needed no more flats?",
+   "changes": {
+    "inputs": {
+     "intake": [
+      1,
+      1.27,
+      1.28,
+      0.99,
+      0.89,
+      1.2,
+      1.14,
+      1.24,
+      1.42,
+      1.28,
+      1.48,
+      1.93,
+      1.93,
+      1.98,
+      1.92,
+      1.9,
+      1.91,
+      1.86,
+      1.79,
+      1.92,
+      1.94,
+      1.68,
+      1.44,
+      1.43,
+      1.59,
+      1.56,
+      1.66,
+      1.8,
+      1.85,
+      1.86,
+      1.88,
+      1.9,
+      1.93,
+      1.97,
+      2.01,
+      2.03,
+      2.03,
+      2.03,
+      2.02,
+      2.02,
+      2.02
+     ],
+     "population": [
+      1,
+      1.001,
+      1.007,
+      1.01,
+      1.024,
+      1.022,
+      1.024,
+      1.024,
+      1.02,
+      1.011,
+      1.014,
+      1.005,
+      1.002,
+      0.999,
+      1.002,
+      1.006,
+      1.007,
+      1.008,
+      1.012,
+      1.016,
+      1.01,
+      1.009,
+      1.028,
+      1.04,
+      1.034,
+      1.042,
+      1.043,
+      1.041,
+      1.04,
+      1.04,
+      1.04,
+      1.039,
+      1.039,
+      1.039,
+      1.039,
+      1.037,
+      1.036,
+      1.035,
+      1.034,
+      1.034,
+      1.032
+     ],
+     "householdSize": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+     ],
+     "landDesignated": [
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56
+     ]
+    }
+   },
+   "derivedFrom": {
+    "series": [
+     "firstYear.cityDefinition",
+     "cityFirstYear",
+     "students.cityDefinition",
+     "cityStudents",
+     "population",
+     "cityPopulation",
+     "households",
+     "completions"
+    ],
+    "method": "As the real data, with household size held at its 2000 value. Made by realInputs() in aachen-housing-loops/src/inputs.ts. Intake: the yearly arrivals that make the model's student stock follow the recorded student count (IT.NRW, continued by the city's figures), then the stock the medium first-year forecast builds. Population: the city's register from 2011, extended backwards by IT.NRW's growth rates, minus the 66% of students registered as residents, then the medium forecast. Household size: non-student population over households net of student households, with the register's trend before 2011 and IT.NRW's forecast after. Land: as many flats a year as were completed on average since 2000. Each curve is divided by its 2000 value."
+   },
+   "order": 3
+  },
+  "no-surge": {
+   "label": "No 2011 surge",
+   "question": "First-year numbers stay at their 2010 level instead of jumping by a quarter in 2011, everything else as recorded.",
+   "expectation": "Rents rise more slowly from 2011 and the gap to the real run peaks around 2020.",
+   "changes": {
+    "inputs": {
+     "intake": [
+      1,
+      1.27,
+      1.28,
+      0.99,
+      0.89,
+      1.2,
+      1.14,
+      1.24,
+      1.42,
+      1.28,
+      1.31,
+      1.62,
+      1.58,
+      1.56,
+      1.56,
+      1.51,
+      1.54,
+      1.47,
+      1.37,
+      1.51,
+      1.56,
+      1.41,
+      1.2,
+      1.16,
+      1.24,
+      1.26,
+      1.38,
+      1.39,
+      1.39,
+      1.39,
+      1.39,
+      1.4,
+      1.4,
+      1.4,
+      1.4,
+      1.41,
+      1.41,
+      1.4,
+      1.4,
+      1.4,
+      1.4
+     ],
+     "population": [
+      1,
+      1.001,
+      1.007,
+      1.01,
+      1.024,
+      1.022,
+      1.024,
+      1.024,
+      1.02,
+      1.011,
+      1.014,
+      1.005,
+      1.002,
+      0.999,
+      1.002,
+      1.006,
+      1.007,
+      1.008,
+      1.012,
+      1.016,
+      1.01,
+      1.009,
+      1.028,
+      1.04,
+      1.034,
+      1.042,
+      1.043,
+      1.041,
+      1.04,
+      1.04,
+      1.04,
+      1.039,
+      1.039,
+      1.039,
+      1.039,
+      1.037,
+      1.036,
+      1.035,
+      1.034,
+      1.034,
+      1.032
+     ],
+     "householdSize": [
+      1,
+      0.998,
+      0.995,
+      0.993,
+      0.991,
+      0.989,
+      0.987,
+      0.984,
+      0.982,
+      0.98,
+      0.978,
+      0.975,
+      0.957,
+      0.948,
+      0.953,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.957,
+      0.953,
+      0.95,
+      0.94,
+      0.938,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939
+     ],
+     "landDesignated": [
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56
+     ]
+    }
+   },
+   "derivedFrom": {
+    "series": [
+     "firstYear.cityDefinition",
+     "cityFirstYear",
+     "students.cityDefinition",
+     "cityStudents",
+     "population",
+     "cityPopulation",
+     "households",
+     "completions"
+    ],
+    "method": "As the real data, with first-year numbers held at their 2010 level from 2011, so every later cohort is smaller by the difference. Made by realInputs() in aachen-housing-loops/src/inputs.ts. Intake: the yearly arrivals that make the model's student stock follow the recorded student count (IT.NRW, continued by the city's figures), then the stock the medium first-year forecast builds. Population: the city's register from 2011, extended backwards by IT.NRW's growth rates, minus the 66% of students registered as residents, then the medium forecast. Household size: non-student population over households net of student households, with the register's trend before 2011 and IT.NRW's forecast after. Land: as many flats a year as were completed on average since 2000. Each curve is divided by its 2000 value."
+   },
+   "order": 4
+  },
+  "forecast-low": {
+   "label": "Low forecast",
+   "question": "The forecasts' low variants for first-year students, population and households after 2025.",
+   "changes": {
+    "inputs": {
+     "intake": [
+      1,
+      1.27,
+      1.28,
+      0.99,
+      0.89,
+      1.2,
+      1.14,
+      1.24,
+      1.42,
+      1.28,
+      1.48,
+      1.93,
+      1.93,
+      1.98,
+      1.92,
+      1.9,
+      1.91,
+      1.86,
+      1.79,
+      1.92,
+      1.94,
+      1.68,
+      1.44,
+      1.43,
+      1.59,
+      1.49,
+      1.55,
+      1.75,
+      1.83,
+      1.84,
+      1.86,
+      1.89,
+      1.92,
+      1.96,
+      2.01,
+      2.03,
+      2.03,
+      2.03,
+      2.02,
+      2.02,
+      2.02
+     ],
+     "population": [
+      1,
+      1.001,
+      1.007,
+      1.01,
+      1.024,
+      1.022,
+      1.024,
+      1.024,
+      1.02,
+      1.011,
+      1.014,
+      1.005,
+      1.002,
+      0.999,
+      1.002,
+      1.006,
+      1.007,
+      1.008,
+      1.012,
+      1.016,
+      1.01,
+      1.009,
+      1.028,
+      1.04,
+      1.034,
+      1.042,
+      1.044,
+      1.04,
+      1.035,
+      1.03,
+      1.025,
+      1.02,
+      1.015,
+      1.01,
+      1.005,
+      0.999,
+      0.994,
+      0.989,
+      0.986,
+      0.982,
+      0.979
+     ],
+     "householdSize": [
+      1,
+      0.998,
+      0.995,
+      0.993,
+      0.991,
+      0.989,
+      0.987,
+      0.984,
+      0.982,
+      0.98,
+      0.978,
+      0.975,
+      0.957,
+      0.948,
+      0.953,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.957,
+      0.953,
+      0.95,
+      0.94,
+      0.938,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939
+     ],
+     "landDesignated": [
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56
+     ]
+    }
+   },
+   "derivedFrom": {
+    "series": [
+     "firstYear.cityDefinition",
+     "cityFirstYear",
+     "students.cityDefinition",
+     "cityStudents",
+     "population",
+     "cityPopulation",
+     "households",
+     "completions"
+    ],
+    "method": "As the real data, with the forecasts' low variants after 2025. Made by realInputs() in aachen-housing-loops/src/inputs.ts. Intake: the yearly arrivals that make the model's student stock follow the recorded student count (IT.NRW, continued by the city's figures), then the stock the medium first-year forecast builds. Population: the city's register from 2011, extended backwards by IT.NRW's growth rates, minus the 66% of students registered as residents, then the medium forecast. Household size: non-student population over households net of student households, with the register's trend before 2011 and IT.NRW's forecast after. Land: as many flats a year as were completed on average since 2000. Each curve is divided by its 2000 value."
+   },
+   "order": 5
+  },
+  "forecast-high": {
+   "label": "High forecast",
+   "question": "The forecasts' high variants after 2025.",
+   "changes": {
+    "inputs": {
+     "intake": [
+      1,
+      1.27,
+      1.28,
+      0.99,
+      0.89,
+      1.2,
+      1.14,
+      1.24,
+      1.42,
+      1.28,
+      1.48,
+      1.93,
+      1.93,
+      1.98,
+      1.92,
+      1.9,
+      1.91,
+      1.86,
+      1.79,
+      1.92,
+      1.94,
+      1.68,
+      1.44,
+      1.43,
+      1.59,
+      1.63,
+      1.77,
+      1.85,
+      1.87,
+      1.88,
+      1.9,
+      1.92,
+      1.94,
+      1.97,
+      2.01,
+      2.03,
+      2.03,
+      2.03,
+      2.02,
+      2.02,
+      2.02
+     ],
+     "population": [
+      1,
+      1.001,
+      1.007,
+      1.01,
+      1.024,
+      1.022,
+      1.024,
+      1.024,
+      1.02,
+      1.011,
+      1.014,
+      1.005,
+      1.002,
+      0.999,
+      1.002,
+      1.006,
+      1.007,
+      1.008,
+      1.012,
+      1.016,
+      1.01,
+      1.009,
+      1.028,
+      1.04,
+      1.034,
+      1.042,
+      1.043,
+      1.043,
+      1.043,
+      1.044,
+      1.045,
+      1.045,
+      1.046,
+      1.047,
+      1.048,
+      1.048,
+      1.048,
+      1.048,
+      1.049,
+      1.05,
+      1.048
+     ],
+     "householdSize": [
+      1,
+      0.998,
+      0.995,
+      0.993,
+      0.991,
+      0.989,
+      0.987,
+      0.984,
+      0.982,
+      0.98,
+      0.978,
+      0.975,
+      0.957,
+      0.948,
+      0.953,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.958,
+      0.957,
+      0.953,
+      0.95,
+      0.94,
+      0.938,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.934,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939,
+      0.939
+     ],
+     "landDesignated": [
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56
+     ]
+    }
+   },
+   "derivedFrom": {
+    "series": [
+     "firstYear.cityDefinition",
+     "cityFirstYear",
+     "students.cityDefinition",
+     "cityStudents",
+     "population",
+     "cityPopulation",
+     "households",
+     "completions"
+    ],
+    "method": "As the real data, with the forecasts' high variants after 2025. Made by realInputs() in aachen-housing-loops/src/inputs.ts. Intake: the yearly arrivals that make the model's student stock follow the recorded student count (IT.NRW, continued by the city's figures), then the stock the medium first-year forecast builds. Population: the city's register from 2011, extended backwards by IT.NRW's growth rates, minus the 66% of students registered as residents, then the medium forecast. Household size: non-student population over households net of student households, with the register's trend before 2011 and IT.NRW's forecast after. Land: as many flats a year as were completed on average since 2000. Each curve is divided by its 2000 value."
+   },
+   "order": 6
+  },
+  "balanced": {
+   "label": "Balanced",
+   "question": "Does the model stay put when nothing changes? Every stock should hold its starting value.",
+   "changes": {},
+   "order": 7
+  },
+  "no-new-students": {
+   "label": "No new students",
+   "question": "Extreme condition: the universities stop admitting anyone in 2012.",
+   "expectation": "Flats empty out and rents fall towards the level where letting stops paying.",
+   "changes": {
+    "inputs": {
+     "intake": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   },
+   "order": 8
+  },
+  "student-flood": {
+   "label": "Student flood",
+   "question": "Extreme condition: three times the usual number of new students for five years from 2012, then back to normal.",
+   "expectation": "Students double to about 70,000 by 2017 and are back near 34,000 by the mid-2030s. Rents jump, the share living outside hits its 35% ceiling and building land runs out. When the extra students leave, flats built for them stand empty and rents fall below where they started.",
+   "changes": {
+    "inputs": {
+     "intake": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      3,
+      3,
+      3,
+      3,
+      3,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+     ]
+    }
+   },
+   "order": 9
+  },
+  "no-new-land": {
+   "label": "No new building land",
+   "question": "Extreme condition: from 2012 the city designates no more building land, everything else as recorded.",
+   "expectation": "The land already designated is used up within a few years and building stops. Rents climb well above the recorded run and keep climbing as long as non-student households keep growing.",
+   "base": "real",
+   "changes": {
+    "inputs": {
+     "landDesignated": [
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      4.56,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   },
+   "order": 10
+  },
+  "real-instant": {
+   "label": "Real data, no delays",
+   "question": "Equilibrium test: building, moving out, political recognition and builders spotting growth take months instead of years.",
+   "expectation": "Rent rises less and more smoothly, because flats arrive as soon as demand grows. The difference is largest in 2011–2015, when students arrived fastest.",
+   "base": "real",
+   "changes": {
+    "parameters": {
+     "construction": 0.5,
+     "moving": 0.25,
+     "recognition": 0.25,
+     "forecast": 0.25
+    }
+   },
+   "order": 11
+  },
+  "real-half-step": {
+   "label": "Real data, half the time step",
+   "question": "Integration error test: does halving the time step change the result?",
+   "base": "real",
+   "changes": {
+    "dt": 0.03125
+   },
+   "order": 12
+  }
+ },
+ "annotations": {
+  "loops": {
+   "supply": {
+    "label": "B1",
+    "name": "Supply response",
+    "story": "Low vacancy pushes rents up, building pays off, and new flats arrive years later.",
+    "cut": [
+     "rent→profitability"
+    ]
+   },
+   "spillover": {
+    "label": "B2",
+    "name": "Priced out",
+    "story": "High rents push students to Herzogenrath, Stolberg or Eschweiler, and make other households share, stay with their parents or live further out.",
+    "cut": [
+     "rent→otherDemand",
+     "rent→indicatedShareOutside"
+    ]
+   },
+   "land": {
+    "label": "B3",
+    "name": "Land scarcity",
+    "story": "Every project uses up land. Scarce land gets expensive and makes the next project less profitable; without land nothing can be built.",
+    "cut": [
+     "buildableLand→landPrice"
+    ]
+   },
+   "policy": {
+    "label": "B4",
+    "name": "Political response",
+    "story": "A visible shortage leads, years later, to subsidised flats and student halls built regardless of profit.",
+    "cut": [
+     "perceivedPressure→subsidisedStarts"
+    ]
+   },
+   "pipeline": {
+    "label": "B5",
+    "name": "Pipeline awareness",
+    "story": "Developers count the flats already being planned and built, and start fewer when the pipeline is full. Off by default: the market as drawn ignores it.",
+    "cut": [
+     "permitted→pipelineEffect",
+     "underConstruction→pipelineEffect"
+    ]
+   }
+  },
+  "links": {
+   "intake→students": "Each year a new cohort enrols. Students stay for the time at university, so the stock reacts slowly to a change in intake.",
+   "students→demand": "Students who live in Aachen need somewhere to live. Some stay with their parents and some get a place in a hall; the rest rent on the market, on average 1.8 to a flat.",
+   "otherHouseholds→demand": "Workers, families and retirees who would like a flat of their own in Aachen at the starting rent: the non-student population divided by the household size. Both are drawn over time in the controls.",
+   "students→demandGrowth": "Builders watch how fast the number of households wanting a flat grows, students included, and notice a change in that growth only after a few years.",
+   "otherHouseholds→demandGrowth": "Growth in non-student households counts the same way. A city that has been growing for years keeps building for growth.",
+   "demandGrowth→starts": "On top of what pays off at today's rent, developers start as many flats a year as they expect new households, if there is land for them.",
+   "rent→demand": "Higher rents make some households share a flat, stay with their parents or move further out: rent +10% means about 3% fewer of them want a flat of their own.",
+   "shareOutside→demand": "Students who live in nearby towns don't need a flat in Aachen.",
+   "demand→notionalVacancy": "More demand for the same number of flats means fewer empty flats.",
+   "flats→notionalVacancy": "More flats for the same demand means more empty flats.",
+   "notionalVacancy→rent": "When few flats are empty, or more households want one than there are flats, landlords raise rents. Rent is a stock: it keeps climbing for as long as the market is tighter than the normal 3% vacancy.",
+   "rent→profitability": "Higher rents make new buildings worth more, so projects pay off.",
+   "profitability→starts": "Developers start more projects when building pays off. They look at today's rents, not at the flats already in the pipeline, unless B5 is switched on.",
+   "starts→permitted": "New projects enter planning and permitting.",
+   "permitted→underConstruction": "After planning, building begins. Each of the two stages takes half of the construction delay.",
+   "underConstruction→flats": "Flats are finished after the second half of the construction delay. Meanwhile vacancy stays low and developers keep starting more.",
+   "rent→shareOutside": "Higher rents gradually push students to cheaper nearby towns. Bus and train capacity caps this at 35% of students.",
+   "starts→buildableLand": "Each project uses up buildable land. The city designates new land in steady yearly amounts.",
+   "buildableLand→starts": "Starts can't use up the remaining land faster than in LAND_USE_TIME years. No land, no building.",
+   "landDesignated→buildableLand": "The city designates new building land. Drawn over time in the controls; 100% replaces what normal building uses up. With real data, land for as many flats as were completed each year on average.",
+   "buildableLand→landPrice": "The scarcer buildable land gets, the more it costs.",
+   "landPrice→profitability": "Land is about 30% of building costs, so dearer land makes projects less profitable.",
+   "notionalVacancy→perceivedPressure": "A shortage turns into political pressure only after it has been visible for a few years.",
+   "perceivedPressure→subsidisedStarts": "Pressure leads to funding for subsidised flats and student halls, built whether or not they are profitable.",
+   "subsidisedStarts→starts": "Subsidised projects go through the same planning and construction stages.",
+   "permitted→starts": "With B5 on, developers see the flats already in planning and start fewer when the pipeline is fuller than normal.",
+   "underConstruction→starts": "With B5 on, flats under construction count as future supply too."
+  }
+ },
+ "layout": {
+  "stockFlow": {
+   "viewBox": [
+    0,
+    12,
+    940,
+    545
+   ],
+   "nodes": {
+    "intake": {
+     "x": 70,
+     "y": 190,
+     "lines": [
+      "New students",
+      "/ year"
+     ]
+    },
+    "otherHouseholds": {
+     "x": 230,
+     "y": 190,
+     "lines": [
+      "Non-student",
+      "households"
+     ]
+    },
+    "demandGrowth": {
+     "x": 175,
+     "y": 60,
+     "lines": [
+      "Growth builders",
+      "expect"
+     ]
+    },
+    "perceivedPressure": {
+     "x": 390,
+     "y": 60,
+     "lines": [
+      "Political",
+      "pressure"
+     ]
+    },
+    "subsidisedStarts": {
+     "x": 710,
+     "y": 60,
+     "lines": [
+      "Subsidised",
+      "building"
+     ]
+    },
+    "landDesignated": {
+     "x": 870,
+     "y": 190,
+     "lines": [
+      "New land",
+      "/ year"
+     ]
+    },
+    "underConstruction": {
+     "x": 550,
+     "y": 200,
+     "lines": [
+      "Under",
+      "construction"
+     ]
+    },
+    "permitted": {
+     "x": 710,
+     "y": 200
+    },
+    "students": {
+     "x": 70,
+     "y": 340
+    },
+    "demand": {
+     "x": 230,
+     "y": 340,
+     "lines": [
+      "Housing",
+      "demand"
+     ]
+    },
+    "notionalVacancy": {
+     "x": 390,
+     "y": 340,
+     "lines": [
+      "Vacancy if",
+      "all housed"
+     ]
+    },
+    "flats": {
+     "x": 550,
+     "y": 340
+    },
+    "starts": {
+     "x": 710,
+     "y": 340,
+     "lines": [
+      "Construction",
+      "starts"
+     ]
+    },
+    "buildableLand": {
+     "x": 870,
+     "y": 340,
+     "lines": [
+      "Buildable",
+      "land"
+     ]
+    },
+    "shareOutside": {
+     "x": 175,
+     "y": 510,
+     "lines": [
+      "Share living",
+      "outside"
+     ]
+    },
+    "rent": {
+     "x": 390,
+     "y": 510
+    },
+    "profitability": {
+     "x": 710,
+     "y": 510
+    },
+    "landPrice": {
+     "x": 870,
+     "y": 510
+    }
+   },
+   "markers": {
+    "supply": {
+     "x": 550,
+     "y": 430
+    },
+    "spillover": {
+     "x": 330,
+     "y": 415
+    },
+    "land": {
+     "x": 790,
+     "y": 425
+    },
+    "policy": {
+     "x": 550,
+     "y": 115
+    },
+    "pipeline": {
+     "x": 650,
+     "y": 250
+    }
+   },
+   "bends": {
+    "students→demandGrowth": -45,
+    "demandGrowth→starts": 45,
+    "rent→demand": -55,
+    "shareOutside→demand": -30,
+    "shareOutside→demandGrowth": -60,
+    "demand→notionalVacancy": -30,
+    "rent→profitability": 35,
+    "starts→permitted": 25,
+    "rent→shareOutside": -30,
+    "starts→buildableLand": -30,
+    "buildableLand→starts": -30,
+    "buildableLand→landPrice": -30,
+    "landPrice→profitability": -30,
+    "notionalVacancy→perceivedPressure": -30,
+    "perceivedPressure→subsidisedStarts": -30,
+    "subsidisedStarts→starts": -140,
+    "permitted→starts": 25,
+    "underConstruction→starts": 20
+   }
+  },
+  "loops": {
+   "viewBox": [
+    10,
+    -5,
+    910,
+    560
+   ],
+   "nodes": {
+    "intake": {
+     "x": 70,
+     "y": 100,
+     "lines": [
+      "New students",
+      "/ year"
+     ]
+    },
+    "students": {
+     "x": 70,
+     "y": 300
+    },
+    "otherHouseholds": {
+     "x": 220,
+     "y": 100,
+     "lines": [
+      "Non-student",
+      "households"
+     ]
+    },
+    "demandGrowth": {
+     "x": 150,
+     "y": 20,
+     "lines": [
+      "Growth builders",
+      "expect"
+     ]
+    },
+    "demand": {
+     "x": 220,
+     "y": 300,
+     "lines": [
+      "Housing",
+      "demand"
+     ]
+    },
+    "notionalVacancy": {
+     "x": 380,
+     "y": 300,
+     "lines": [
+      "Vacancy if",
+      "all housed"
+     ]
+    },
+    "rent": {
+     "x": 380,
+     "y": 500
+    },
+    "shareOutside": {
+     "x": 220,
+     "y": 500,
+     "lines": [
+      "Share living",
+      "outside"
+     ]
+    },
+    "perceivedPressure": {
+     "x": 380,
+     "y": 100,
+     "lines": [
+      "Political",
+      "pressure"
+     ]
+    },
+    "subsidisedStarts": {
+     "x": 680,
+     "y": 100,
+     "lines": [
+      "Subsidised",
+      "building"
+     ]
+    },
+    "flats": {
+     "x": 530,
+     "y": 300
+    },
+    "starts": {
+     "x": 680,
+     "y": 300,
+     "lines": [
+      "Construction",
+      "starts"
+     ]
+    },
+    "underConstruction": {
+     "x": 530,
+     "y": 190,
+     "lines": [
+      "Pipeline"
+     ]
+    },
+    "profitability": {
+     "x": 680,
+     "y": 500
+    },
+    "landDesignated": {
+     "x": 850,
+     "y": 100,
+     "lines": [
+      "New land",
+      "/ year"
+     ]
+    },
+    "buildableLand": {
+     "x": 850,
+     "y": 300,
+     "lines": [
+      "Buildable",
+      "land"
+     ]
+    },
+    "landPrice": {
+     "x": 850,
+     "y": 500
+    }
+   },
+   "markers": {
+    "policy": {
+     "x": 445,
+     "y": 200
+    },
+    "pipeline": {
+     "x": 612,
+     "y": 140
+    }
+   },
+   "bends": {
+    "students→demandGrowth": 25,
+    "demandGrowth→starts": -40,
+    "demand→notionalVacancy": -30,
+    "rent→shareOutside": -30,
+    "shareOutside→demand": -30,
+    "shareOutside→demandGrowth": -110,
+    "rent→demand": -55,
+    "rent→profitability": 35,
+    "notionalVacancy→perceivedPressure": -30,
+    "perceivedPressure→subsidisedStarts": -30,
+    "subsidisedStarts→starts": -20,
+    "starts→buildableLand": -30,
+    "buildableLand→starts": -30,
+    "starts→underConstruction": 20,
+    "underConstruction→starts": 20,
+    "buildableLand→landPrice": -30,
+    "landPrice→profitability": -30
+   }
+  }
+ }
+}

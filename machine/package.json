@@ -1,0 +1,32 @@
+{
+  "name": "@tiny-patchwork/machine",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Existing programs as deterministic machines: an engine is a WASM module stepped one tick at a time from per-player inputs, its whole state its linear memory, so snapshot and restore are exact for any engine.",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "vite build",
+    "build:engines": "sh engines/toy/build.sh && sh engines/snes/build.sh && sh engines/doom/build.sh",
+    "test": "vitest run",
+    "test:full": "MACHINE_FULL=1 vitest run",
+    "test:watch": "vitest",
+    "bench:integration": "vitest run --config bench/vitest.config.js bench/integration.test.js",
+    "bench:output": "vitest run --config bench/vitest.config.js bench/output.test.js",
+    "bench:traffic": "vitest run --config bench/vitest.config.js bench/traffic.test.js",
+    "check:browser": "node bench/browser/run.mjs",
+    "check:worker": "node bench/worker/run.mjs"
+  },
+  "dependencies": {
+    "@automerge/automerge": "3.3.0-fragments.2",
+    "@automerge/automerge-repo": "2.6.0-subduction.43"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.3.2",
+    "esbuild": "0.28.2",
+    "fake-indexeddb": "^6.2.8",
+    "three": "^0.186.1",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4"
+  }
+}

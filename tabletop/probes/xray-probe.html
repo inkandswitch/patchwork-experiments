@@ -1,0 +1,196 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tabletop X-ray probe</title>
+<!-- Driven by probes/xray.mjs (the scene's X-ray, scene/src/native/xray.js), on the draw probe's table. The BUILT scene tool (scene/dist) with the
+     BUILT seats and tabletop plugins (tabletop/dist: the plain deck) in a
+     stub registry, on an in-memory repo, at a Lost Cities
+     table set up as the game page does (src/setup.js). Two views of one doc,
+     A (Ana) and B (Ben), both open from the start, each view's broadcasts
+     (presence, poses, sends) reaching only the other, a few ms late. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a { width: 1000px; height: 640px; flex: none; position: relative; }
+  #b { width: 592px; height: 640px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { PICKER, SEAT_TAG, cardIds, deckUrlOf, install, isCard, kept, lostCitiesTable, seatClaim, seatsOf, shownAs } from "./table-setup.js";
+
+let time = null; // the page's manual clock (scene's manualTime): window.__time
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+// Two views of one handle. A broadcast from one reaches the other only, 5 ms late.
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => time.after(5, () => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }),
+    eph,
+  };
+  return p;
+}
+
+try {
+  await install(["../../scene/dist/index.js", "../../seats/dist/index.js", "../dist/index.js"]);
+  time = window.__time = (await (await import("../../scene/dist/index.js")).loadTime()).manualTime();
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
+  // the game page's table (tool.js setUpTable): its deck asks for its players to shuffle it, so the joint keeper keeps it
+  const { scene, deckUrl } = await lostCitiesTable(repo, { title: "X-ray probe", secure: false });
+  const deck = await repo.find(deckUrl);
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.time = time; hosts.b.time = time;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  Tool(A, hosts.a);
+  Tool(B, hosts.b);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
+  const told = { a: [], b: [] };
+  const collect = () => {
+    time.frame(collect); // first: a pass that throws doesn't end the loop
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.view.plugins.instanceOf("scene.notices")?.notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  };
+  time.frame(collect);
+  const select = (w) => hosts[w].querySelector(PICKER);
+  const objects = () => scene.doc().objects;
+  const hiddenIds = () => cardIds(objects());
+  const zoneOf = (id) => {
+    const s = dbg.a.scene();
+    const m = s.world(id);
+    for (const [zid, o] of Object.entries(objects())) {
+      const z = o.traits?.["tabletop.zone"];
+      if (!z) continue;
+      const p = s.toLocal(zid, [m[12], m[13], m[14]]);
+      if (p.every((v, k) => v >= z.min[k] && v <= z.max[k])) return z.seat;
+    }
+    return null;
+  };
+
+  window.__p = {
+    errors, viewers: { a: ana.url, b: ben.url },
+    seats: () => seatsOf(scene.doc()),
+    picker: (w) => select(w)?.options.length ?? 0,
+    pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    /** the body a view is in, by what its chip says ("Watching", "Seated", "Look") */
+    body: (w) => dbg[w].local.get().body?.label ?? null,
+    phase: () => deck.doc()?.phase ?? null,
+    hud: (w) => [...hosts[w].querySelectorAll(".scene-hud, .hud, [class*=hud]")].map((e) => e.textContent.trim()).filter(Boolean),
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    /** the cards in each seat's hand, and the ones out on the table */
+    where() {
+      const out = { p1: [], p2: [], table: [] };
+      for (const id of hiddenIds()) out[zoneOf(id) ?? "table"].push(id);
+      return out;
+    },
+    /** the pile at the deck's spot, top first */
+    pile() {
+      const s = dbg.a.scene();
+      return hiddenIds().filter((id) => { const m = s.world(id); return Math.hypot(m[12] - 0.3, m[14]) < 0.01; }).sort((p, q) => s.world(q)[13] - s.world(p)[13]);
+    },
+    transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
+    /** the cards a view sees as what they really are (a look with a source) */
+    faces: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "face"),
+    /** the cards a view sees as the stage's veil (turned toward them, kept from them or not known yet) */
+    veils: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "veil"),
+    /** the cards a view sees as their own backs (no look) */
+    backs: (w) => cardIds(objects()).filter((id) => shownAs(dbg[w], id) === "back"),
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+    /** give a view the keyboard, as clicking into it would (without a click, which the hand would take as a pick-up) */
+    focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    /** the use prompt's text in a view */
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    // ── the hands in view w: the tools held (names, top last), the pointer, the editor, Measure ──
+    held: (w) => dbg[w].local.get().held.map((t) => t.name),
+    hands: (w) => dbg[w].local.get().hands.map((h) => h.name),
+    wanted: (w) => !!dbg[w].local.get().pointer?.wanted,
+    edit(w, on) { return dbg[w].view.plugins.record("scene.edit").api.run({ ext: "scene.edit", command: "edit", value: on }); },
+    measure: (w) => { const m = dbg[w].view.plugins.instanceOf("scene.measure")?.state; return m ? { held: m.held, a: m.a ? (m.a.objectId ?? "free") : null } : null; },
+    /** who's here, as view w's body chip lists it */
+    people: (w) => [...hosts[w].querySelectorAll(".body-person")].map((e) => e.textContent),
+    // ── the X-ray (scene.xray) in view w ──
+    xrayOf: (w) => dbg[w].view.plugins.instanceOf("scene.xray"),
+    xray: (w) => { const x = dbg[w].view.plugins.instanceOf("scene.xray")?.state; return x ? { held: x.held, pinned: x.pinned, hovered: x.hovered, isolated: x.isolated } : null; },
+    /** the legend's rows in view w: [{ ext, name, count, on }] */
+    legend: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll(".xray-pkg .xray-row") ?? [])].map((r) => ({ ext: r.dataset.ext, name: r.querySelector(".xray-name").textContent, count: +r.querySelector(".xray-count").textContent, on: r.hasAttribute("data-on") })),
+    packages: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll(".xray-pkg h3") ?? [])].map((e) => e.textContent),
+    /** click a legend row (isolate / clear) */
+    isolate(w, ext) { const r = dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelector(`.xray-row[data-ext="${ext}"]`); r?.click(); return !!r; },
+    /** how an object is displayed by the X-ray in view w */
+    look: (w, id) => dbg[w].displayed().get(id) ?? null,
+    /** how many objects are lit, ghosted, faded by the X-ray in view w */
+    tally(w) { const out = { lit: 0, ghost: 0, faded: 0 }; for (const v of dbg[w].displayed().values()) if (v.opacity === 1) out.lit++; else if (v.opacity > 0.3) out.ghost++; else if (v.opacity != null) out.faded++; return out; },
+    /** the card in view w: { title, chain: [ext ids], verbs: [text], live: [text] } or null */
+    card(w) {
+      const c = dbg[w].view.plugins.instanceOf("scene.xray")?.card;
+      if (!c || c.hidden) return null;
+      return { title: c.querySelector("h4")?.textContent, chain: [...c.querySelectorAll(".xray-chain:not(.xray-also) > .xray-ext")].map((e) => e.dataset.ext), verbs: [...c.querySelectorAll(".xray-verb")].map((e) => e.textContent), live: [...c.querySelectorAll(".xray-glyph")].map((e) => e.textContent) };
+    },
+    /** the route strip in view w: { on, took, boxes: [labels] } or null */
+    strip(w) {
+      const s = dbg[w].view.plugins.instanceOf("scene.xray")?.strip;
+      if (!s || s.hidden) return null;
+      const r = s.querySelector(".xray-route");
+      return r ? { on: r.querySelector(".xray-route-on").textContent, took: r.querySelector(".xray-box[data-took]")?.textContent ?? null, boxes: [...r.querySelectorAll(".xray-box b")].map((e) => e.textContent) } : null;
+    },
+    swatches: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll(".xray-row") ?? [])].map((r) => [r.dataset.ext, r.querySelector(".xray-swatch").style.getPropertyValue("--xc")]),
+    running: (w) => dbg[w].view.plugins.instanceOf("scene.xray")?.state.gears?.extensions.filter((e) => e.state === "running").map((e) => e.id),
+    /** the claims the X-ray's graph holds in view w */
+    claims: (w) => (dbg[w].view.plugins.instanceOf("scene.xray")?.state.gears?.claims ?? []).map((c) => ({ object: c.object, kind: c.kind, mine: c.mine })),
+    /** the panel's claims on the scene itself in view w */
+    sceneClaims: (w) => [...(dbg[w].view.plugins.instanceOf("scene.xray")?.panel.querySelectorAll(".xray-scene .xray-glyph") ?? [])].map((e) => e.textContent),
+    /** the glyph labels in view w */
+    badges: (w) => [...hosts[w].querySelectorAll(".label.xray-badge")].filter((e) => e.style.display !== "none" && !e.hidden).map((e) => e.textContent),
+    /** how long one rebuild takes in view w (ms, the median of n) */
+    refreshMs(w, n = 9) { const x = dbg[w].view.plugins.instanceOf("scene.xray"); const ts = []; for (let i = 0; i < n; i++) { const t0 = performance.now(); x.isolate(x.state.isolated); ts.push(performance.now() - t0); } return +ts.sort((p, q) => p - q)[n >> 1].toFixed(1); },
+    /** a card in seat s's hand */
+    handCard(s) { return this.where()[s][0] ?? null; },
+    /** a page point over object `id` in view `w` (its origin, then spiralling out until a pick hits it) */
+    aimAt(id, w) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(id);
+      const p = m && v.project([m[12], m[13], m[14]]);
+      if (!p) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 2 * Math.sqrt(k);
+        const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = v.pick(x, y);
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+      }
+      return null;
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>
