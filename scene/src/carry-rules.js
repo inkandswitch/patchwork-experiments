@@ -246,14 +246,6 @@ export function defaultSnapRadius(points) {
 }
 
 /**
- * How close a footprint has to come to a content's connectors to snap
- * (api.content(id).extras: what its GLB says): the GLB's own `snapRadius`,
- * else defaultSnapRadius of its connectors, else null (no snapping).
- * @param {{ connectors?: object[], snapRadius?: number | null } | null | undefined} extras
- */
-export const snapRadiusOf = (extras) => extras?.snapRadius ?? defaultSnapRadius(extras?.connectors ?? []);
-
-/**
  * The snap target for a footprint centred at (x, z): the nearest candidate
  * within its own radius, or null.
  * @param {{ world: number[], radius: number, yaw?: number | null }[]} candidates

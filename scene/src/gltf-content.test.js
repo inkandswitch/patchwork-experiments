@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { encodeGLB, computeNormals, parseGLB, MODE } from "./glb.js";
 import { authoredMaterials, collapseInstances, dequantizePositions, loadGLTF, localParts, prepareGLB, prepareMaterials } from "./gltf-content.js";
 import { Box3, Euler, Matrix4, Group } from "three";
-import { nearestScreenVertex } from "./stage/viewport.js";
+import { nearestScreenVertex } from "./stage/picking.js";
 import { composeMatrix } from "./transform.js";
 import { yawOfEuler } from "./carry-rules.js";
 import { AT, FORMS, NODES, axesOf, connectorCases, sameYaw } from "./test/connector-cases.js";

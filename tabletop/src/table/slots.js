@@ -7,7 +7,9 @@
 // takes and how far it reaches are the scene carry's rule (scene/src/carry-rules.js
 // `accepts`), copied rather than imported, since packages stand alone: a
 // connector that lists tags takes only objects with one of them, and it
-// reaches as far as its object's `snapRadius` (scaled with the object), in plan.
+// reaches as far as its object's `snapRadius` (scaled with the object), in plan,
+// or, where its GLB gives none, the carry's default from the connectors'
+// spacing (`defaultSnapRadius`, copied too).
 
 /** The one tag every card has, and every card slot takes. Never a card's own name: an object's tags are public. */
 export const CARD_TAGS = Object.freeze(["card"]);
@@ -16,6 +18,28 @@ export const CARD_TAGS = Object.freeze(["card"]);
 export function accepts(connectorTags, objectTags) {
   if (!connectorTags?.length) return true;
   return Array.isArray(objectTags) && objectTags.some((t) => connectorTags.includes(t));
+}
+
+/**
+ * How close (in plan) a footprint has to come to one of these points to
+ * snap to it, when the GLB doesn't say: the half-diagonal of the closest
+ * spacing (0.71 of it), so on a square grid every spot of a cell snaps to
+ * that cell's point. null for fewer than two points. (scene/src/carry-rules.js
+ * `defaultSnapRadius`, copied.)
+ */
+export function defaultSnapRadius(points) {
+  if (!points || points.length < 2) return null;
+  let best = Infinity;
+  const n = Math.min(points.length, 2000);
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = points[i].position ?? points[i];
+      const b = points[j].position ?? points[j];
+      const d = Math.hypot(a[0] - b[0], a[2] - b[2]);
+      if (d > 1e-9 && d < best) best = d;
+    }
+  }
+  return Number.isFinite(best) ? best * Math.SQRT1_2 : null;
 }
 
 /**
@@ -47,7 +71,7 @@ export function worldSlots(matrix, extras, tags) {
   const m = matrix;
   if (!m || !extras) return [];
   const scale = Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[8], m[9], m[10]));
-  const radius = (Number(extras.snapRadius) || 0) * scale;
+  const radius = (Number(extras.snapRadius) || defaultSnapRadius(extras.connectors) || 0) * scale;
   if (!(radius > 0)) return [];
   const out = [];
   for (const c of placesOf(extras)) {

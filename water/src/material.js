@@ -397,7 +397,7 @@ float cloudNoise(vec2 p) {
   vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
   return mix(mix(cloudHash(i), cloudHash(i + vec2(1.0, 0.0)), u.x), mix(cloudHash(i + vec2(0.0, 1.0)), cloudHash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
-// the sky's cloud deck, as the stage draws it (scene's viewport.js cloudAt; cloudAt here is it in JS): the luminance's factor and how white a scattered cloud makes it
+// the sky's cloud deck, as the stage draws it (scene's atmosphere.js cloudAt and sky.js; cloudAt here is it in JS): the luminance's factor and how white a scattered cloud makes it
 vec2 cloudAt(vec3 d) {
   if (uClouds.x <= 0.0 || d.y <= 0.0) return vec2(1.0, 0.0);
   vec2 p = d.xz * (uClouds.w / max(d.y, 0.02)) / uClouds.z;
