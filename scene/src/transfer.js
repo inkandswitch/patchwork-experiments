@@ -66,8 +66,8 @@ const docId = (url) => String(parseAutomergeUrl(url) ?? "").replace(/^automerge:
 
 /**
  * What a row is as a document outside the scene: its render doc (the way the
- * sidebar's own drags look, so a slicer or a flow field's body slot can take
- * it; see README "Consuming a render"), or for a file object its GLB
+ * sidebar's own drags look, so another tool's drop target can take it; see
+ * README "Consuming a render"), or for a file object its GLB
  * file. null for a group or an object with neither.
  * @returns {{ url: string, name?: string, type?: string } | null}
  */
@@ -80,7 +80,7 @@ export function rowDocument(o) {
 
 /**
  * The row payload (ROW_MIME, and the clipboard's): `{ scene, id, ids, lift?,
- * copy? }`; `id` is the first, for a reader that takes one (the slicer). `lift`: how far the copy's
+ * copy? }`; `id` is the first, for a reader that takes one. `lift`: how far the copy's
  * reference point (the top object's origin) is above its lowest point, so it
  * lands on its base (measured where it's drawn, in the scene it's from).
  * `copy`: which Copy this was (a paste counts its repeats by it).

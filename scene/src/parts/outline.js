@@ -573,8 +573,8 @@ export function createOutline(api, { shown = () => true } = {}) {
         dt.setData(ROW_MIME, rowPayload(here.url, ids, Number.isFinite(lift) ? { lift } : {}));
         for (const [t, v] of Object.entries(summaryTypes(here.url, reach))) dt.setData(t, v);
         startDrag({ scene: here.url, ids, radius: reach, lift, tags: Array.isArray(snap.objects[id]?.tags) ? [...snap.objects[id].tags] : [], name: here.nameOf(id) || "" });
-        // Outside a scene the row is its geometry (rowDocument): a slicer
-        // or a flow field's body slot can take it. Scenes ignore these
+        // Outside a scene the row is its geometry (rowDocument): another
+        // tool's drop target can take it. Scenes ignore these
         // types on a row drag (scene.add refuses ROW_MIME; scene.transfer
         // copies the row itself).
         const item = rowDocument(snap.objects[id]);
