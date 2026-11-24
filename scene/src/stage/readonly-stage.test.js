@@ -130,7 +130,7 @@ async function mount(role) {
   const objects = role === "pinned" ? { P: link({ at: { heads: then } }) } : { L1: link() };
   s = await mountStage({ repo, time, extensions: [PROBE, GENERAL], parts: [PART], templates: [TEMPLATE], doc: { objects, order: Object.keys(objects) } });
   const want = role === "pinned" ? ["P"] : ["L1"];
-  for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle(1);
+  for (let i = 0; i < 200 && !s.debug.view.stages().some((x) => x.path.join() === want.join() && x.debug.host.instanceOf("t.probe")); i++) await settle();
   const stage = s.debug.view.stages().find((x) => x.path.join() === want.join());
   return { repo, time, g, then, log, arm, stage, api: stage.debug.host.record("t.probe").api };
 }

@@ -53,7 +53,7 @@ async function mount(doc, { extra = [], repo } = {}) {
 const $ = (sel) => s.root.querySelector(sel);
 const rows = () => [...s.root.querySelectorAll(".object-row")].map((r) => r.dataset.id);
 const row = (id) => s.root.querySelector(`.object-row[data-id="${id}"]`);
-const pass = () => settle(3);
+const pass = () => settle();
 
 beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});

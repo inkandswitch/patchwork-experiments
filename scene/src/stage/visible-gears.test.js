@@ -173,7 +173,7 @@ describe("the channel tap", () => {
     document.body.append(el);
     const unmount = Stage(s.handle, el);
     extra.push(() => (unmount(), el.remove()));
-    await settle(12);
+    await settle();
     const other = el.querySelector(".scene-stage").__sceneDebug;
     const ben = other.host.record("t.a").api;
     said.length = 0;

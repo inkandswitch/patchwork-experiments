@@ -245,22 +245,30 @@ export function fakeTimers() {
 }
 
 /**
- * Let pending work land: ten event-loop turns (every microtask, promise chain
- * and doc event drains in each), then whatever off-thread work is in flight
- * (setup.js), then one timer turn, so a timer set at 0 by then has run.
- * Time-dependent work is stepped on the stage's manualTime(), never waited
- * for here: a timer turn costs Node a whole millisecond (`timer: false`
- * leaves it out, for settle's flushes but the last).
+ * Let pending work land: event-loop turns (each drains every microtask,
+ * promise chain and doc event) for as long as anything is due now (setup.js):
+ * a digest in flight, a page timer set for now, a frame asked for, each hop
+ * of them, until none is left. It returns only when nothing is due, and says
+ * so if that never comes (something re-arms itself every turn: run it on a
+ * clock the test steps). Time is stepped (the stage's manualTime(),
+ * vi.useFakeTimers), never waited for here.
  */
-// (the real ones, taken as this module loads: a test may fake the globals, vi.useFakeTimers, and still flush)
+// (the real immediate, taken as this module loads: a test may fake the globals, vi.useFakeTimers, and still flush)
 const immediate = globalThis.setImmediate;
-const timeout = globalThis.setTimeout;
+const turn = () => new Promise((r) => immediate(r));
+/** How many turns a flush waits for what is due to run out before it says it never does. */
+const MAX_TURNS = 10_000;
 
-export async function flush({ timer = true } = {}) {
-  for (let i = 0; i < 10; i++) await new Promise((r) => immediate(r));
-  while (globalThis.__offThread?.size) {
-    await Promise.allSettled([...globalThis.__offThread]);
-    for (let i = 0; i < 10; i++) await new Promise((r) => immediate(r));
+export async function flush() {
+  const offThread = globalThis.__offThread ?? new Set();
+  const timers = globalThis.__dueTimers ?? new Set();
+  const frames = globalThis.__dueFrames ?? new Set();
+  await turn();
+  for (let n = 0; offThread.size || timers.size || frames.size; n++) {
+    if (n > MAX_TURNS) throw new Error(`flush: work due now never runs out (${offThread.size} digests, ${timers.size} timers, ${frames.size} frames)`);
+    if (offThread.size) await Promise.allSettled([...offThread]);
+    // a timer set for now runs on the page's next timer turn (Node's is a millisecond away)
+    if (timers.size) await new Promise((r) => globalThis.__pageTimers.setTimeout(r, 0));
+    await turn();
   }
-  if (timer) await new Promise((r) => timeout(r, 0));
 }

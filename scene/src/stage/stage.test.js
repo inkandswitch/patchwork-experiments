@@ -778,7 +778,7 @@ describe("the stage, mounted", () => {
     const fn = vi.fn();
     api.schedule(fn);
     expect(fn).not.toHaveBeenCalled();
-    await settle(1);
+    await settle();
     expect(fn).toHaveBeenCalledTimes(1);
     api.use("notices").notify("Hello", "error", { from: "t.edit" });
     api.use("notices").notify("Hi", "info", { from: "t.nobody" });
