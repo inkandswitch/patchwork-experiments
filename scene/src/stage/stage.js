@@ -310,9 +310,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const running = host.instances();
     const now = { scene: snap, local: loc, view: viewValue() };
     updateAll(running, seen, now, drawnAgain);
-    // (the view's plugins are told what its focus stage shows: view.js)
+    // (the view's plugins are told what its focus stage shows, and arriving looks again: view.js)
     view.flushed(stage, now, drawnAgain);
-    view.tryArrive();
     const work = scheduled;
     scheduled = [];
     for (const { rec, fn } of work) {

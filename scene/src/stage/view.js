@@ -1141,9 +1141,11 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   }
   /** The view's plugins at stage `s`: all of them when it is the focus, else none. */
   const pluginsAt = (s) => (s && s === focusStage() ? plugins.running() : []);
-  /** A stage flushed: the view's plugins hear it when it is the focus (API.md, "View plugins"). */
+  /** A stage flushed: the view's plugins hear it when it is the focus (API.md, "View plugins"), and arriving looks again (a doc arriving, its content coming in, flush). */
   function flushed(s, now, content) {
-    if (!dead && s === focusStage()) updateAll(plugins.running(), told, now, content);
+    if (dead) return;
+    if (s === focusStage()) updateAll(plugins.running(), told, now, content);
+    tryArrive();
   }
 
   // the view's plugins start
@@ -1224,7 +1226,6 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     leaveBody,
     holdTool,
     arrive,
-    tryArrive,
     stageUnder,
     /** what arriving still waits to enter (where view.start leads: its stage's number, body and place), for probes and tests */
     arriving: () => {
