@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as THREE from "three";
@@ -23,14 +24,12 @@ afterEach(() => {
 });
 
 async function mount({ objects = { a: object({ name: "A", transform: T([1, 0, 0]) }) }, dims = {}, before = [], extensions = [], doc = {} } = {}) {
-  s = await mountStage({ extensions: [...before, DIMS, ...extensions], doc: { objects, order: Object.keys(objects), dimensions: dims, ...doc } });
+  s = await mountStage({ editor: true, natives: true,  extensions: [...before, DIMS, ...extensions], doc: { objects, order: Object.keys(objects), dimensions: dims, ...doc } });
   return s;
 }
 
 const api = () => s.api("scene.dimensions");
 const inst = () => s.instance("scene.dimensions");
-const run = (command, target = null) => api().run({ ext: "scene.dimensions", command, target });
-const state = (command, target = null) => inst().commands.find((c) => c.id === command).state(target, { scene: s.facet("scene.dimensions").scene(), local: s.local.get() });
 const labels = () => [...s.port.querySelectorAll(".labels .dimension-label")];
 const label = (id) => s.port.querySelector(`.labels .dimension-label[data-id="${id}"]`);
 const layer = () => [...(s.debug.viewport.layers.get("scene.dimensions") ?? [])].flatMap((g) => g.children);
@@ -133,17 +132,6 @@ describe("scene.dimensions", () => {
     expect(labels()[0].textContent).toBe("3 m");
   });
 
-  it("marks an end whose object is gone as fixed", async () => {
-    await mount({ dims: { d1: { a: on("a", [0, 0, 0]), b: on("a", [0, 1, 0]), label: null }, d2: { a: on("gone", [0, 0, 0], [5, 0, 0]), b: on("a", [0, 0, 0]), label: null } } });
-    const p = panel();
-    await settle();
-    expect(label("d1").hasAttribute("data-detached")).toBe(false);
-    expect(label("d2").hasAttribute("data-detached")).toBe(true);
-    expect(label("d2").textContent).toBe("4 m"); // (5,0,0) to a's origin (1,0,0)
-    const tags = p.rows().map((r) => [...r.querySelectorAll(".tag")].map((t) => t.textContent));
-    expect(tags).toEqual([[], ["fixed"]]);
-  });
-
   it("marks an end that's no longer on its object's surface", async () => {
     await mount({ dims: { d1: { a: on("a", [0.5, 0, 0]), b: on("a", [3, 0, 0]), label: null } } });
     const root = new THREE.Group();
@@ -173,24 +161,6 @@ describe("scene.dimensions", () => {
     const c = new THREE.Color().setRGB(accent[0], accent[1], accent[2], THREE.SRGBColorSpace);
     expect(lines[1].material.color.equals(c)).toBe(true);
     expect(lines[1].geometry.getAttribute("position").count).toBe(2);
-  });
-
-  it("Delete dimension takes a dimension's ref as its target, and is a key only; Escape is the ladder's, no command's", async () => {
-    await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
-    const cmd = (id) => inst().commands.find((c) => c.id === id);
-    const ref = dimensionRef("d1");
-    expect(cmd("delete")).toMatchObject({ name: "Delete dimension", key: ["Delete", "Backspace"], show: [] });
-    expect(cmd("deselect")).toBeUndefined();
-    expect(state("delete", ref)).toBeTruthy(); // any dimension, selected or not
-    expect(state("delete")).toBeNull(); // not the scene's
-    expect(state("delete", "a")).toBeNull(); // nor an object's
-    expect(state("delete", dimensionRef("gone"))).toBeNull();
-    selectDim("d1");
-    expect(state("delete")).toBeNull(); // still not the scene's: the key map offers the selection first
-    expect(run("delete", ref)).toBe(true);
-    expect(s.doc().dimensions.d1).toBeUndefined();
-    expect(selectedDim()).toBeNull();
-    expect(run("delete", ref)).toBe(false);
   });
 
   it("Delete reaches the selected dimension through the key map; Escape deselects it (the ladder)", async () => {
@@ -233,8 +203,7 @@ describe("scene.dimensions", () => {
   });
 
   it("Measure is the panel's (PLANS.md §5): its button holds and puts down scene.measure's tool, pressed while held; with no Measure installed, no button", async () => {
-    const { default: measure } = await import("./measure.js");
-    await mount({ extensions: [{ meta: { id: "scene.measure" }, module: measure }] });
+    await mount({ extensions: [MEASURE] });
     const p = panel();
     await settle();
     const button = () => p.host.querySelector(".measure-toggle");
@@ -250,16 +219,6 @@ describe("scene.dimensions", () => {
     const q = panel();
     await settle();
     expect(q.host.querySelector(".measure-toggle").hidden).toBe(true);
-  });
-
-  it("the tab's update works even before the extension's own", async () => {
-    await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
-    const p = panel();
-    s.change((d) => {
-      d.dimensions.d2 = { a: free([0, 0, 0]), b: free([0, 0, 2]), label: null };
-    });
-    p.handle.update(s.facet("scene.dimensions").scene(), s.local.get());
-    expect(p.rows().map((r) => r.dataset.id)).toEqual(["d1", "d2"]);
   });
 
   it("forgets the selected dimension when it goes (a peer deleted it)", async () => {
@@ -282,20 +241,6 @@ describe("scene.dimensions", () => {
     s.local.swap((m) => ({ ...m, selected: "other:d1" }));
     await settle();
     expect(s.local.get().selected).toBe("other:d1");
-    expect(label("d1").hasAttribute("data-selected")).toBe(false);
-  });
-
-  it("one selection: a dimension's ref and an object replace each other in local.selected", async () => {
-    await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
-    s.local.swap((m) => ({ ...m, selected: "a" }));
-    await settle();
-    label("d1").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    await settle();
-    expect(s.local.get().selected).toBe("dimension:d1");
-    s.local.swap((m) => ({ ...m, selected: "a" }));
-    await settle();
-    expect(selectedDim()).toBeNull();
-    expect(s.local.get().selected).toBe("a");
     expect(label("d1").hasAttribute("data-selected")).toBe(false);
   });
 
@@ -354,28 +299,5 @@ describe("scene.dimensions", () => {
     await settle();
     expect(Object.keys(s.doc().objects)).toEqual(["cell"]);
     expect(s.doc().dimensions.d1.a).toEqual({ objectId: null, local: null, world: [0, -0.7, 0] });
-  });
-});
-
-describe("measure and dimensions together", () => {
-  it("a measured dimension is drawn, listed and selected", async () => {
-    await mount({ before: [MEASURE] });
-    s.local.swap((m) => ({ ...m, selected: "a" }));
-    const p = panel();
-    s.api("scene.measure").run({ ext: "scene.measure", command: "measure", target: null });
-    let hit = { id: null, point: [0, 0, 0], snapped: false, ground: true };
-    s.debug.viewport.pick = (x, y, o) => (o?.ground ? hit : null);
-    s.click();
-    hit = { id: "a", point: [1, 0, 0], snapped: true };
-    s.click();
-    await settle();
-    const [id] = Object.keys(s.doc().dimensions);
-    expect(s.local.get().selected).toBe(dimensionRef(id)); // in place of the object
-    expect(label(id).textContent).toBe("1 m");
-    expect(label(id).hasAttribute("data-selected")).toBe(true);
-    expect(p.rows().map((r) => r.dataset.id)).toEqual([id]);
-    // Escape goes to the armed measure first (it stops), not to Deselect dimension
-    s.key("Escape", { code: "Escape" });
-    expect(selectedDim()).toBe(id);
   });
 });

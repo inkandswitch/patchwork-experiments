@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { encodeGLB, parseGLB, computeNormals, computeBounds, hexToLinear, MODE } from "./glb.js";
@@ -55,12 +54,15 @@ describe("encodeGLB structure", () => {
     for (const v of json.bufferViews) expect(v.byteOffset % 4).toBe(0);
   });
 
-  it("drops empty primitives and meshes but still encodes a valid scene", () => {
+  it("drops empty primitives and meshes but still encodes a valid scene", async () => {
     const bytes = encodeGLB({ meshes: [{ name: "empty", positions: [] }] });
     const { json, bin } = parseGLB(bytes);
     expect(json.meshes).toBeUndefined();
     expect(json.nodes).toEqual([{ name: "empty" }]);
     expect(bin).toBeNull();
+    // a loader reads it, and an empty scene too
+    expect((await load(bytes)).scene.getObjectByName("empty")).toBeTruthy();
+    expect((await load(encodeGLB({ meshes: [] }))).scene.children.length).toBe(0);
   });
 
   it("rejects malformed input with a useful message", () => {
@@ -137,11 +139,6 @@ describe("encodeGLB round-trips through three's GLTFLoader", () => {
     const p = right.getWorldPosition(right.position.clone());
     expect([p.x, p.y, p.z]).toEqual([1, 2, 0]);
     expect(gltf.scene.getObjectByName("left")).toBeTruthy();
-  });
-
-  it("loads an empty scene", async () => {
-    const gltf = await load(encodeGLB({ meshes: [] }));
-    expect(gltf.scene.children.length).toBe(0);
   });
 });
 

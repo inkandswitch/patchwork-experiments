@@ -53,7 +53,7 @@ export default {
 
     function autoFrame(f, scene, local) {
       const shown = shownObjects(scene);
-      const box = f.sceneBox();
+      const box = f.box(null);
       if (!box) return;
       const k = boxKey(box);
       if (k === lastBox) return;

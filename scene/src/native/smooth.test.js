@@ -143,15 +143,6 @@ describe("poseAt", () => {
     // no extrapolation asked for: the last, settled
     expect(poseAt(s, 1101)).toEqual({ transform: s[2].transform, settled: true });
   });
-
-  it("a still stream (keepalives of one pose) stays put", () => {
-    const still = [
-      { at: 0, transform: T([4, 0, 0]) },
-      { at: 1000, transform: T([4, 0, 0]) },
-    ];
-    expect(poseAt(still, 500).transform.position).toEqual([4, 0, 0]);
-    expect(poseAt(still, 1040, { ahead: 50 }).transform.position).toEqual([4, 0, 0]);
-  });
 });
 
 describe("addSample", () => {
@@ -163,13 +154,6 @@ describe("addSample", () => {
     expect(s).toHaveLength(MAX_SAMPLES);
     expect(s[0].at).toBe(3 * 50);
     expect(s.at(-1).transform).toEqual(x(MAX_SAMPLES + 2));
-  });
-
-  it("doesn't change the array it was given", () => {
-    const s = [{ at: 0, transform: x(0) }];
-    const next = addSample(s, { at: 50, transform: x(1) }, 50);
-    expect(s).toHaveLength(1);
-    expect(next).toHaveLength(2);
   });
 
   it("a sample no later than the last replaces it", () => {

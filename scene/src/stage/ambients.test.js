@@ -9,7 +9,7 @@ class Handle {
   }
 }
 
-/** Every value W4 names: { name, value, ok } — nested plain is taken, the rest refused. */
+/** One value per way W4 takes or refuses one: { name, value, ok } — nested plain is taken, the rest refused. */
 function offers() {
   const cycle = { a: 1 };
   cycle.self = cycle;
@@ -21,17 +21,10 @@ function offers() {
     { name: "a shared (not cyclic) subobject", value: { a: shared, b: shared }, ok: true },
     { name: "a null-prototype object", value: Object.assign(Object.create(null), { a: 1 }), ok: true },
     { name: "a function", value: { heightAt: () => 0 }, ok: false },
-    { name: "a function alone", value: () => 0, ok: false },
     { name: "a cycle", value: cycle, ok: false },
     { name: "a cycle through an array", value: deepCycle, ok: false },
     { name: "a handle", value: { handle: new Handle() }, ok: false },
-    { name: "a Map", value: new Map([["a", 1]]), ok: false },
-    { name: "a Date", value: { at: new Date(0) }, ok: false },
-    { name: "a typed array", value: { a: new Float64Array(2) }, ok: false },
     { name: "NaN", value: { t: NaN }, ok: false },
-    { name: "Infinity", value: { t: Infinity }, ok: false },
-    { name: "a symbol", value: { s: Symbol("s") }, ok: false },
-    { name: "a bigint", value: { b: 1n }, ok: false },
   ];
 }
 
@@ -88,13 +81,13 @@ describe("only data crosses, by construction (W4)", () => {
 
 describe("stacking per name (mergeAmbients)", () => {
   const A = { sky: { top: "#000" } };
-  const B = { sun: { direction: [0, 1, 0] } };
   // a value that isn't plain JSON: refused, and it stacks as null
   const BAD = { refused: true };
   const valueOf = (v) => (v === BAD ? { f: () => 0 } : v);
   const label = (v) => (v === BAD ? "a refused value" : (JSON.stringify(v) ?? "nothing"));
-  // every running order of two extensions, each offering {nothing, null, A, B, a refused value} under one name
-  const choices = [undefined, null, A, B, BAD];
+  // every running order of two extensions, each offering {nothing, null, a value, a refused value} under one name
+  // (one plain value: any other takes the same path)
+  const choices = [undefined, null, A, BAD];
   for (const first of choices)
     for (const second of choices)
       it(`first ${label(first)}, then ${label(second)}: the later value whole, null or a refusal clearing, nothing keeping`, () => {

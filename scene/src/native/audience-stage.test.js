@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The audience and the veil through the mounted stage (scene.audience:
 // NATIVE.md, "Audience", "The veil"): policies merged whatever order they run in, a broken one
 // closed, unknown while a listed package is missing whatever the viewer
@@ -7,13 +8,13 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
 import { resetPackagesServed, servePackage } from "../test/filesystem-mock.js";
-import { resetPackages } from "./packages.js";
-import { veilGLB } from "../native/veil.js";
+import { resetPackages } from "../stage/packages.js";
+import { veilGLB } from "./veil.js";
 import packagesPart from "../parts/packages.js";
 
 let mounted = [];
 const mount = async (o) => {
-  const s = await mountStage(o);
+  const s = await mountStage({ natives: true, ...o });
   mounted.push(s);
   return s;
 };
@@ -76,22 +77,6 @@ describe("the audience, mounted", () => {
       expect(s.api("t.asker").use("audience").shown("card")).toBe("all");
     }
   });
-
-  it("asks each policy once per snapshot, with the snapshot (pure in the doc)", async () => {
-    let calls = 0;
-    const counted = { meta: { id: "t.counted" }, module: { create: () => ({ audience: (scene) => (calls++, (oid) => (scene.objects[oid] ? { show: "all" } : null)) }) } };
-    const s = await mount({ extensions: [counted, asker([])], doc: { objects: { card: card({}) }, order: ["card"] }, viewerId: A });
-    await settle();
-    const api = s.api("t.asker");
-    const before = calls;
-    for (let i = 0; i < 5; i++) api.use("audience").audience("card");
-    expect(calls - before).toBeLessThanOrEqual(1);
-    const n = calls;
-    s.change((d) => (d.objects.card.name = "Renamed"));
-    await settle();
-    api.use("audience").audience("card");
-    expect(calls).toBeGreaterThan(n);
-  });
 });
 
 describe("unknown while a listed package is missing", () => {
@@ -135,16 +120,6 @@ describe("unknown while a listed package is missing", () => {
     expect(after.at(-1)).toEqual({ audience: [B], shown: "all", missing: false });
     // never, at any update, the answer the missing screen would have enlarged
     expect(log.every((e) => e.audience === null || JSON.stringify(e.audience) === JSON.stringify([B]))).toBe(true);
-  });
-
-  it('"Not now": asked no more in this view, and unknown for as long as it stays that way', async () => {
-    const s = await mount({ extensions: [policy("t.faceup"), asker([]), PROMPT], repo, doc: doc(), viewerId: A });
-    await until(() => s.local.get().packages.ask.length === 1);
-    s.api("t.asker").packages.dismiss();
-    await settle();
-    expect(s.local.get().packages).toMatchObject({ ask: [], loading: [], failed: [], missing: true });
-    expect(s.api("t.asker").use("audience").audience("card")).toBeNull();
-    expect(s.api("t.asker").use("audience").shown("card")).toBeNull();
   });
 
   it("before the registry has settled, when nothing is offered yet: unknown already", async () => {

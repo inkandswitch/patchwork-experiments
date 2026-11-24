@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect, vi } from "vitest";
 import { BoxGeometry, Group, Matrix4, Mesh, MeshBasicMaterial, PerspectiveCamera, Raycaster, Scene } from "three";
 import { aimRay } from "./picking.js";

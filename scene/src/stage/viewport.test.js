@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi } from "vitest";
 import { Box3, BoxGeometry, Mesh, MeshBasicMaterial } from "three";
 import { keyOf } from "./paths.js";
@@ -264,12 +265,12 @@ describe("a hidden link hides its doc", () => {
       // where it hangs: a linked root in the link's body, an attachment beside it; either way the link's frame
       expect(entry.group.parent).toBe(child === "attachment" ? vp.objects.get("L").group : vp.objects.get("L").body);
       // a linked doc's layer and labels hang where its root does
-      const layer = vp.worldLayer(keyOf(1, "seats"), { under: "L" });
+      const layer = vp.worldLayer(keyOf(1, "t.ext"), { under: "L" });
       layer.add(new Mesh(new BoxGeometry(0.2, 0.2, 0.2), new MeshBasicMaterial()));
-      vp.labels.sync(keyOf(1, "seats"), [{ key: "x", text: "Seat", position: [0, 0, 0] }], () => null, () => vp.contentShown("L"));
+      vp.labels.sync(keyOf(1, "t.ext"), [{ key: "x", text: "Seat", position: [0, 0, 0] }], () => null, () => vp.contentShown("L"));
       vp.followLayers();
       vp.labels.update(() => ({ x: 1, y: 1 }));
-      const label = [...vp.labels.groups.get(keyOf(1, "seats")).values()][0].el;
+      const label = [...vp.labels.groups.get(keyOf(1, "t.ext")).values()][0].el;
 
       const linkDrawn = how === "shown";
       const shown = child === "attachment" ? how !== "group hidden" : linkDrawn;
@@ -279,7 +280,7 @@ describe("a hidden link hides its doc", () => {
       expect(vp.contentShown("L")).toBe(linkDrawn);
       expect(!!vp.pickWidget(100, 50)).toBe(linkDrawn);
       expect(label.style.display).toBe(linkDrawn ? "" : "none");
-      // its own stage's boxes (api.box, groupBox, sceneBox: I7, "boxes are S's own"): a linked root's is its
+      // its own stage's boxes (api.box of an object, a group or the scene: I7, "boxes are S's own"): a linked root's is its
       // doc's say, whatever the host does with the link; an attachment's, its own doc's (the host's) as drawn
       expect(vp.objectBox(key, { inStage: true }) != null).toBe(child === "attachment" ? shown : true);
       if (child === "linked root") {

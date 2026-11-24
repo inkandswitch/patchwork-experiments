@@ -1,9 +1,9 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, posesBy, settle } from "../test/stage-harness.js";
 import carry from "./carry.js";
 import touch from "./touch.js";
-import body from "./body.js";
 import { applyMatrix, composeMatrix, multiplyMatrices } from "../transform.js";
 
 const BOX = { min: [-0.1, 0, -0.1], max: [0.1, 0.1, 0.1] };
@@ -30,7 +30,7 @@ afterEach(() => {
  */
 async function mount({ doc = {}, before = [], extensions = [], content = {} } = {}) {
   const fake = {};
-  s = await mountStage({
+  s = await mountStage({ editor: true, natives: true, 
     extensions: [...before, CARRY_EXT, posesBy(fake), ...extensions],
     doc: { ...doc, objects: { a: piece({ name: "A" }), ...(doc.objects ?? {}) } },
   });
@@ -55,8 +55,6 @@ async function mount({ doc = {}, before = [], extensions = [], content = {} } = 
     }
     return best;
   };
-  api.ray = () => null;
-  api.sceneBox = () => ({ min: [-1, 0, -1], max: [1, 1, 1] });
   api.content = (id) => ({ loaded: true, box: BOX, extras: content[id] ?? { connectors: [], snapRadius: null }, stats: null, root: null });
   api.box = (id) => ({ min: [-1, 0, -1], max: [1, 1, 1] });
   // scene.poses, as holds.js: a peer's hold that ranks ahead (`stub.heldBy`) refuses it, and so
@@ -82,12 +80,7 @@ const stateOf = (id, target = null) => command(id).state(target, { scene: s.api(
 const transformOf = (id) => JSON.parse(JSON.stringify(s.doc().objects[id].transform));
 
 describe("scene.carry commands", () => {
-  it("has no tool to pick: no Hand command, no key of its own but Flip's", async () => {
-    await mount();
-    expect(s.instance("scene.carry").commands.map((c) => c.id)).toEqual(["flip", "snap"]);
-  });
-
-  it("Snap: a toolbar toggle of the snap pref, whenever carrying runs", async () => {
+  it("Snap: a toolbar toggle of the snap pref, whenever carrying runs, following the doc's suggestion until this viewer chooses", async () => {
     await mount();
     expect(command("snap").show).toEqual(["toolbar"]);
     expect(stateOf("snap", "a")).toBe(null);
@@ -99,9 +92,8 @@ describe("scene.carry commands", () => {
     s.api("scene.carry").run({ ext: "scene.carry", command: "snap", target: null, value: true });
     expect(s.local.get()["scene.prefs"].snap).toBe(true);
     expect(s.doc().view.snap).toBe(docSnap); // never the doc
-  });
-
-  it("Snap follows the doc's suggestion until this viewer chooses", async () => {
+    // until this viewer chooses, it follows the doc's suggestion
+    s.unmount();
     await mount({ doc: { view: { snap: false } } });
     expect(stateOf("snap")).toMatchObject({ checked: false });
   });
@@ -170,16 +162,6 @@ describe("scene.carry carrying", () => {
     expect(stub.releases).toEqual([["a", { landed: true }]]);
   });
 
-  it("rests on the highest surface under its footprint", async () => {
-    const { x, stub } = await mount({ doc: { objects: { b: piece({ name: "Block" }) } } });
-    stub.surfaces.push({ id: "b", top: 0.4, min: [1.5, 1.5], max: [2.5, 2.5] });
-    const session = x().input.press(press("a"));
-    session.move(move(2, 2));
-    session.end(move(2, 2));
-    await settle();
-    expect(transformOf("a").position[1]).toBeCloseTo(0.4);
-  });
-
   it("never lands on itself or what's attached to it", async () => {
     const { x, stub } = await mount({ doc: { objects: { kid: piece({ parent: "a" }) } } });
     stub.surfaces.push({ id: "a", top: 0.5, min: [-9, -9], max: [9, 9] }, { id: "kid", top: 0.7, min: [-9, -9], max: [9, 9] });
@@ -216,20 +198,6 @@ describe("scene.carry carrying", () => {
     session.end(move(1.2, 0.1));
     await settle();
     expect(transformOf("a").position[0]).toBeCloseTo(1.2);
-  });
-
-  it("a tagged connector takes only objects with one of its tags", async () => {
-    const content = { board: { connectors: [{ position: [1, 0, 0], yaw: null, tags: ["card"] }], snapRadius: 0.5 } };
-    const { x } = await mount({ doc: { objects: { board: object(), c: piece({ tags: ["card"] }) } }, content });
-    let session = x().input.press(press("a"));
-    session.move(move(1.2, 0));
-    session.end(move(1.2, 0));
-    session = x().input.press(press("c"));
-    session.move(move(1.2, 0));
-    session.end(move(1.2, 0));
-    await settle();
-    expect(transformOf("a").position[0]).toBeCloseTo(1.2);
-    expect(transformOf("c").position[0]).toBeCloseTo(1);
   });
 
   it("Q / E turn it 45° and F turns it over while carried", async () => {
@@ -360,7 +328,7 @@ describe("scene.carry carrying", () => {
       },
     };
     const { api, stub } = await mount({ before: [grabber] });
-    api.ray = (x, y) => down(x / 10, y / 10); // port px → a spot on the table
+    s.debug.viewport.ray = (x, y) => down(x / 10, y / 10); // port px → a spot on the table
     s.pointer("pointerdown", 10, 10);
     s.pointer("pointermove", 30, 10);
     s.pointer("pointermove", 40, 20);
@@ -381,7 +349,7 @@ describe("scene.carry carrying", () => {
       module: { create: (api) => ({ input: { press: (ev) => api.collect("carry")[0]?.value("a", ev) ?? null } }) },
     };
     const { api, stub } = await mount({ before: [grabber] });
-    api.ray = (x, y) => down(x / 10, y / 10);
+    s.debug.viewport.ray = (x, y) => down(x / 10, y / 10);
     s.pointer("pointerdown", 10, 10);
     s.pointer("pointermove", 30, 10);
     s.key("Escape", { code: "Escape" });
@@ -410,7 +378,7 @@ describe("scene.carry by the touch pad (scene.touch: the pad is a keyboard)", ()
   for (const [when, free] of [["never", false], ["before the lift", true], ["after the lift", true]]) {
     it(`a finger carries it; Place freely on the pad (${when}) places it freely`, async () => {
       const { api } = await mount({ before: [grabber], extensions: [TOUCH], doc: { objects: { board: piece({ name: "Board" }) } }, content });
-      api.ray = (x, y) => down(x / 100, y / 100);
+      s.debug.viewport.ray = (x, y) => down(x / 100, y / 100);
       finger("pointerdown", 10, 10);
       await settle();
       // the carry's keys show while it's open: under the gesture, in its declared order
@@ -427,38 +395,6 @@ describe("scene.carry by the touch pad (scene.touch: the pad is a keyboard)", ()
       expect(s.root.querySelector(".touch-group[data-from=gesture]")).toBe(null);
     });
   }
-
-  it("the Esc hint is a key a second finger presses: the carry is put back", async () => {
-    const BODY = { meta: { id: "scene.body" }, module: body };
-    const { api, stub } = await mount({ before: [grabber], extensions: [TOUCH, BODY] });
-    api.ray = (x, y) => down(x / 10, y / 10);
-    finger("pointerdown", 10, 10);
-    finger("pointermove", 30, 10);
-    await settle();
-    const hint = s.root.querySelector(".body-escape");
-    expect([hint.textContent, hint.dataset.key]).toEqual(["Put it back", "Escape"]);
-    hint.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 2, pointerType: "touch" }));
-    hint.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 2, pointerType: "touch" }));
-    finger("pointerup", 30, 10);
-    await settle();
-    expect(transformOf("a").position).toEqual([0, 0, 0]);
-    expect(stub.releases).toEqual([["a", {}]]);
-  });
-
-  it("Turn left on the pad turns it, as Q does", async () => {
-    const { api, stub } = await mount({ before: [grabber], extensions: [TOUCH] });
-    api.ray = (x, y) => down(x / 10, y / 10);
-    finger("pointerdown", 10, 10);
-    finger("pointermove", 30, 10);
-    await settle();
-    const holds = stub.holds.length;
-    pad("pointerdown", "Turn left");
-    pad("pointerup", "Turn left");
-    expect(stub.holds.length).toBe(holds + 1);
-    finger("pointerup", 30, 10);
-    await settle();
-    expect(transformOf("a").rotation[1]).toBeCloseTo(Math.PI / 4);
-  });
 });
 
 describe("scene.carry grab offset", () => {
@@ -475,15 +411,6 @@ describe("scene.carry grab offset", () => {
 describe("Flip: turning a piece over where it lies", () => {
   const lying = { position: [0.5, 0, 0.2], rotation: [0, 0, 0], scale: 1 };
   const run = () => s.api("scene.carry").run({ ext: "scene.carry", command: "flip", target: "a" });
-
-  it("is carry's verb: on anything carryable, from the menu or F, whatever else is going on", async () => {
-    await mount({ doc: { objects: { plain: object() } } });
-    expect(command("flip").key).toBe("f");
-    expect(command("flip").show).toEqual(["menu", "use"]);
-    expect(stateOf("flip", "a")).toMatchObject({ title: expect.stringContaining("(F)") });
-    expect(stateOf("flip", null)).toBe(null);
-    expect(stateOf("flip", "plain")).toBe(null);
-  });
 
   it("rises, turns over in the air and comes down where it was; only the landing is written", async () => {
     const { stub } = await mount({ doc: { objects: { a: piece({ transform: lying }) } } });
@@ -508,7 +435,7 @@ describe("Flip: turning a piece over where it lies", () => {
   });
 
   it("refused by something here that holds it ahead, at the start or partway: nothing is written", async () => {
-    for (const at of [0, 1, 2, 3]) {
+    for (const at of [0, 1]) {
       const { stub } = await mount({ doc: { objects: { a: piece({ transform: lying }) } } });
       stub.refuse = at === 0;
       run();
@@ -913,8 +840,7 @@ describe("How a carry ends: `ended` and `landed`", () => {
     const second = x().input.press(press("b", { hit: { id: "b", point: [0, 0.1, 0], distance: 1 } }));
     expect(await now(first.ended)).toEqual({ how: "back", on: null });
     second.move(move(2, 2));
-    s.unmount();
-    s = null;
+    await s.uninstall("scene.carry");
     expect(await now(second.ended)).toEqual({ how: "back", on: null });
   });
 

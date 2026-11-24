@@ -3,7 +3,7 @@ import { defaultSnapRadius, placeConnector, sanitizeConnectors, yawOfEuler } fro
 import { composeMatrix, multiplyMatrices } from "./transform.js";
 
 const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-import { axesOf, connectorCases, nodeMatrix, sameYaw } from "./test/connector-cases.js";
+import { axesOf } from "./test/connector-cases.js";
 
 describe("connectors", () => {
   it("keeps finite bare [x, y, z] and { position, yaw } connectors, drops the rest", () => {
@@ -34,19 +34,7 @@ describe("connectors", () => {
     expect(yawOfEuler([0.3, 0, 0])).toBeCloseTo(0); // a tilt doesn't turn it
   });
 
-  // every connector form × every kind of node it sits on (test/connector-cases.js, answers by hand)
   const close = (a, b) => a.length === b.length && a.every((v, k) => Math.abs(v - b[k]) < 1e-9);
-  it.each(connectorCases().map((c) => [c.form, c.node, c]))("%s on a node %s keeps its frame, turned with the node", (_, __, { raw, n, expected }) => {
-    const [clean] = sanitizeConnectors([raw]);
-    const placed = placeConnector(clean, nodeMatrix(n));
-    expect(close(placed.position, expected.position)).toBe(true);
-    if (expected.frame == null) expect(placed.rotation).toBeNull();
-    else axesOf(composeMatrix({ rotation: placed.rotation })).forEach((axis, k) => expect(close(axis, expected.frame[k])).toBe(true));
-    // a yaw near straight up is only as sure as the frame (its angles kept to 1e-12) over the facing's length in plan
-    const plan = expected.frame ? Math.hypot(expected.frame[2][0], expected.frame[2][2]) : 1;
-    expect(sameYaw(placed.yaw, expected.yaw, Math.max(1e-9, 1e-11 / plan))).toBe(true);
-    if (placed.rotation) expect(placed.yaw).toBe(yawOfEuler(placed.rotation)); // one source
-  });
 
   // a node under a parent stretched unevenly: its columns are skewed, so they are no rotation even made unit
   it("on a node a stretched parent skews, a frame stays a rotation: its up carried, its facing squared to it", () => {

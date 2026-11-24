@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // The stage's content loop, mounted with the model's add and inspector (its
 // tree too) (no WebGL): render docs built through the stage, the sync
 // settle window, the inspector's build controls (its params, Rebuild through
@@ -49,7 +50,7 @@ endsolid part
 `;
 const STL2 = STL.replace("vertex 10 0 0", "vertex 30 0 0");
 
-// the stage's time, stepped (content runs on it: STAGE.md, "`api`")
+// the stage's time, stepped (content runs on it: API.md, "`api`")
 let clock;
 const wait = (ms) => clock.advance(Math.max(ms, 1));
 
@@ -128,94 +129,6 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
 
   // ─── fixed versions (`at`) ───
 
-  it("a URL with heads adds the object fixed at that version, built from it", async () => {
-    await mount();
-    const h1 = file.heads();
-    file.change((d) => (d.content = STL2));
-    await addByUrl(`${file.url}#${h1[0]}`);
-    const [id] = Object.keys(s.doc().objects);
-    const o = s.doc().objects[id];
-    expect(o.sourceUrl).toBe(file.url);
-    expect(o.at).toEqual({ heads: h1 });
-    await wait(20);
-    await settle();
-    const render = (await repo.find(o.renderUrl)).doc();
-    expect(render.builtFrom.heads).toEqual(h1);
-    expect(render.bounds.max[0]).toBeCloseTo(0.01); // 10 mm: the old triangle, not the 30 mm one
-    expect($(`.object-row[data-id="${id}"] .fixed-mark`)).toBeTruthy();
-    expect(versionText()).toMatch(/^Fixed at /);
-    // the build's summary is the stage's: fixed, so not out of date
-    expect($(".inspector .build-summary").textContent).toMatch(/^Built .* · fixed version$/);
-  });
-
-  it("inspector: Fix at this version freezes what is built; Follow latest catches up", async () => {
-    await mount();
-    await addByUrl(file.url);
-    await wait(20);
-    await settle();
-    const [id] = Object.keys(s.doc().objects);
-    const renderUrl = s.doc().objects[id].renderUrl;
-    const built = (await repo.find(renderUrl)).doc();
-    expect(versionText()).toBe("Latest");
-    expect(button("fix-version").disabled).toBe(false);
-    expect(button("follow-latest").disabled).toBe(true);
-    expect($(".fixed-mark")).toBeNull();
-
-    const created = repo.created.length;
-    button("fix-version").click();
-    await settle();
-    expect(s.doc().objects[id].at).toEqual({ heads: built.builtFrom.heads });
-    expect(versionText()).toMatch(/^Fixed at .* · built /);
-    expect(button("fix-version").disabled).toBe(true);
-    expect(button("follow-latest").disabled).toBe(false);
-    expect($(`.object-row[data-id="${id}"] .fixed-mark`)).toBeTruthy();
-
-    // edits to the source no longer rebuild it, and the GLB never changed
-    file.change((d) => (d.content = STL2));
-    await wait(2000);
-    await settle();
-    const after = (await repo.find(renderUrl)).doc();
-    expect(after.glbUrl).toBe(built.glbUrl);
-    expect(after.builtAt).toBe(built.builtAt);
-    expect(repo.created.length).toBe(created);
-    expect($(".inspector .build-summary").textContent).toMatch(/· fixed version$/);
-
-    button("follow-latest").click();
-    await settle();
-    expect("at" in s.doc().objects[id]).toBe(false);
-    expect(versionText()).toBe("Latest");
-    expect($(".fixed-mark")).toBeNull();
-    await wait(2000);
-    await settle();
-    const latest = (await repo.find(renderUrl)).doc();
-    expect(latest.builtFrom.heads).toEqual(file.heads());
-    expect(latest.glbUrl).not.toBe(built.glbUrl);
-  });
-
-  it("a dragged row carries its render doc for other tools, and the stage itself ignores that", async () => {
-    await mount();
-    await addByUrl(file.url);
-    await wait(20);
-    const [id] = Object.keys(s.doc().objects);
-    const renderUrl = s.doc().objects[id].renderUrl;
-    const data = {};
-    const start = new Event("dragstart", { bubbles: true });
-    start.dataTransfer = { setData: (t, v) => (data[t] = v), effectAllowed: "" };
-    $(`.object-row[data-id="${id}"] .row-main`).dispatchEvent(start);
-    expect(JSON.parse(data["text/x-patchwork-urls"])).toEqual([renderUrl]);
-    expect(data["text/plain"]).toBe(renderUrl);
-    expect(JSON.parse(data["text/x-patchwork-dnd"]).items[0]).toMatchObject({ url: renderUrl, type: "scene-render" });
-
-    // the same drag released over the viewport adds nothing
-    const before = Object.keys(s.doc().objects).length;
-    const drop = new Event("drop", { bubbles: true, cancelable: true });
-    Object.defineProperty(drop, "dataTransfer", { value: { types: Object.keys(data), files: [], getData: (t) => data[t] ?? "" } });
-    s.canvas.dispatchEvent(drop);
-    await flush();
-    await flush();
-    expect(Object.keys(s.doc().objects).length).toBe(before);
-    expect(drop.defaultPrevented).toBe(false);
-  });
 });
 
 // ─── routing at sync: by the kind of content the object's provider makes ────
@@ -241,19 +154,38 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
   const tracked = () => s.debug.manager.ids();
   const api = () => s.facet("scene.add");
 
-  it("a GLB file object goes to the queue and a render-doc object to the manager, and loadState says which", async () => {
+  it("each object by the kind its provider makes: a file to the queue, a render doc to the manager, a source that builds with no render doc nowhere (and nothing said); loadState says which", async () => {
     const glb = glbFile();
+    const gltf = glbFile("part.gltf", "gltf");
     const stl = repo.add({ "@patchwork": { type: "file" }, name: "x.stl", extension: "stl", content: STL });
     const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "x", parent: stl.url, providerId: "file-stl", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
-    s = await mountStage({ repo, extensions: EXTS, doc: { objects: { a: object({ sourceUrl: glb.url }), b: object({ sourceUrl: stl.url, providerId: "file-stl", renderUrl: render.url }), g: { kind: "group", name: "G", visible: true, group: null } } } });
+    const objects = {
+      a: object({ sourceUrl: glb.url }),
+      c: object({ sourceUrl: gltf.url, providerId: "t-gltf" }), // another package's file source
+      b: object({ sourceUrl: stl.url, providerId: "file-stl", renderUrl: render.url }),
+      y: object({ sourceUrl: stl.url, providerId: "file-stl" }),
+      g: { kind: "group", name: "G", visible: true, group: null },
+    };
+    s = await mountStage({ repo, extensions: EXTS, doc: { objects } });
+    getRegistry("scene:source").register(gltfSource());
     await settle();
-    expect(queued()).toEqual(["a"]);
-    expect(tracked()).toEqual(["b"]);
-    expect(api().loadState("a").content).toBe("file");
-    expect(api().loadState("b").content).toBe("built");
-    expect(api().loadState("g")).toBeNull();
-    expect(api().loadState("nope")).toBeNull();
+    // [object, queued, tracked by the manager, loadState]
+    const ROWS = [
+      ["a", true, false, { content: "file" }],
+      ["c", true, false, { content: "file" }],
+      ["b", false, true, { content: "built" }],
+      ["y", false, false, { content: null }],
+      ["g", false, false, null],
+      ["nope", false, false, null],
+    ];
+    for (const [id, inQueue, inManager, load] of ROWS) {
+      const got = api().loadState(id);
+      expect([id, queued().includes(id), tracked().includes(id), got && { content: got.content }]).toEqual([id, inQueue, inManager, load]);
+    }
+    expect(api().loadState("y")).toEqual({ content: null, state: null });
+    expect(s.local.get().status.y).toBeUndefined();
   });
+
 
   it("an object whose provider isn't here loads nothing and says so; it loads once a source of that id arrives, by the kind it makes", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -280,29 +212,6 @@ describe("content is routed at sync by its provider's kind (STAGE.md, “Views, 
     await settle();
     expect(queued()).toEqual([]);
     expect(api().loadState("x")).toEqual({ content: null, state: { state: "no-provider", providerId: "t-gltf" } });
-  });
-
-  it("a source that builds, for an object with no render doc: nothing to load, and nothing to say", async () => {
-    const stl = repo.add({ "@patchwork": { type: "file" }, name: "x.stl", extension: "stl", content: STL });
-    s = await mountStage({ repo, extensions: EXTS, doc: { objects: { y: object({ sourceUrl: stl.url, providerId: "file-stl" }) } } });
-    await settle();
-    expect(queued()).toEqual([]);
-    expect(tracked()).toEqual([]);
-    expect(api().loadState("y")).toEqual({ content: null, state: null });
-    expect(s.local.get().status.y).toBeUndefined();
-  });
-
-  it("addObject through another package's file source makes no render doc and shows the file", async () => {
-    s = await mountStage({ repo, extensions: EXTS });
-    getRegistry("scene:source").register(gltfSource());
-    await settle();
-    const file = glbFile("part.gltf", "gltf");
-    expect((await api().providersFor(file.url, file.doc())).map((p) => p.id)).toEqual(["t-gltf"]);
-    const id = await addObject(api(), file.url);
-    await settle();
-    expect(s.doc().objects[id]).toMatchObject({ sourceUrl: file.url, providerId: "t-gltf", renderUrl: null });
-    expect(queued()).toEqual([id]);
-    expect(api().loadState(id).content).toBe("file");
   });
 
   it("a source that declares no content kind is never offered, and is warned about once", async () => {

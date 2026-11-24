@@ -12,7 +12,7 @@ const A = "automerge:2zt6LbnDAzvNj9WDNDA4ew21R85F";
 const B = "automerge:3aB6LbnDAzvNj9WDNDA4ew21R85G";
 const HEAD = "H".repeat(48);
 const HEAD2 = "J".repeat(48);
-const HTTPS = "https://tools.example.com/sailing/";
+const HTTPS = "https://tools.example.com/widgets/";
 
 const newScene = (extra = {}) => {
   const d = {};
@@ -36,14 +36,14 @@ describe("the URL rule (packageUrl)", () => {
 
   it("https on a public host is itself, without its fragment", () => {
     expect(packageUrl(HTTPS)).toBe(HTTPS);
-    expect(packageUrl("https://tools.example.com/sailing/index.js#v2")).toBe("https://tools.example.com/sailing/index.js");
+    expect(packageUrl("https://tools.example.com/widgets/index.js#v2")).toBe("https://tools.example.com/widgets/index.js");
     expect(packageUrl("https://tools.example.com:8443/a?b=c")).toBe("https://tools.example.com:8443/a?b=c");
     expect(packageUrl("https://8.8.8.8/tool/")).toBe("https://8.8.8.8/tool/");
   });
 
   it("every other scheme names nothing", () => {
     for (const bad of [
-      "http://tools.example.com/sailing/", // plain http: a dev server, or code anyone on the way could swap
+      "http://tools.example.com/widgets/", // plain http: a dev server, or code anyone on the way could swap
       "http://localhost:5173/",
       "blob:https://tools.example.com/1234",
       "data:text/javascript,export const plugins=[]",
@@ -52,7 +52,7 @@ describe("the URL rule (packageUrl)", () => {
       "ws://tools.example.com/",
       "./dist/index.js",
       "/dist/index.js",
-      "tools.example.com/sailing",
+      "tools.example.com/widgets",
       "",
       "   ",
     ])
@@ -82,7 +82,6 @@ describe("the list (listedPackages)", () => {
   it("entries that name nothing loadable aren't there", () => {
     expect(listedPackages({ packages: [null, 5, "automerge:x", {}, { url: null }, { url: "http://localhost:5173/" }, { url: "javascript:alert(1)" }, { url: B, heads: [HEAD] }] })).toEqual([B]);
   });
-
 });
 
 describe("what the doc calls for (neededPlugins)", () => {
@@ -93,7 +92,7 @@ describe("what the doc calls for (neededPlugins)", () => {
     sceneTrait: { apply: (d) => (d.traits["t.scene"] = {}), need: { type: "scene:extension", trait: "t.scene" } },
   };
   // where the doc starts people is no mark of its own: its place's trait is (a spawn point's)
-  const START = (d) => (d.view.start = { body: "walk", place: "a" });
+  const START = (d) => (d.view.start = { body: "mover", place: "a" });
   const names = Object.keys(MARKS);
 
   it("finds exactly the marks that are there: all 8 combinations, with and without a view.start", () => {
@@ -125,7 +124,7 @@ describe("what the doc calls for (neededPlugins)", () => {
 
   it("the providers render docs ask for count too; a view calls for nothing", () => {
     expect(neededPlugins(newScene(), { providerIds: ["p.render", "p.render", null, ""] })).toEqual([{ type: "scene:source", id: "p.render" }]);
-    for (const view of [{ start: { body: "walk" } }, { grid: false }]) expect(neededPlugins(newScene({ view }))).toEqual([]);
+    for (const view of [{ start: { body: "mover" } }, { grid: false }]) expect(neededPlugins(newScene({ view }))).toEqual([]);
     for (const doc of [null, undefined, {}, { objects: null, traits: null, view: null }]) expect(neededPlugins(doc)).toEqual([]);
   });
 });
@@ -494,30 +493,29 @@ describe("reconcile's fixed point (packagesToList and packagesToPrune together)"
     // from an empty list: the newer lists it, and the older leaves it
     expect(settleViews({ ...doc, packages: [] }, [older, newer])).toEqual({ settled: true, writes: [[1, [P], []]], listed: [P] });
   });
-
 });
 
 describe("a retired package and the one that took its plugins over, both installed (the Lost Cities table)", () => {
-  // The retired card-table package and tabletop both register the
-  // "card-table" extension (trait card-table.kept) and the secure-deck
-  // datatype and tool. Patchwork's registry keeps the later registration of
-  // each id. A viewer with both installed listed card-table's URL beside
-  // tabletop's: only the package whose plugin runs belongs on the list.
-  const CARD_TABLE = "automerge:4cC6LbnDAzvNj9WDNDA4ew21R85H";
-  const TABLETOP = B;
+  // A retired package and its successor both register the "keeper"
+  // extension (trait keeper.kept) and the locked-box datatype and tool.
+  // Patchwork's registry keeps the later registration of each id. A viewer
+  // with both installed listed the retired package's URL beside the
+  // successor's: only the package whose plugin runs belongs on the list.
+  const RETIRED = "automerge:4cC6LbnDAzvNj9WDNDA4ew21R85H";
+  const SUCCESSOR = B;
   const SCENE = A;
   const plugins = (url) => ({
-    "scene:extension": [{ id: "card-table", traits: ["card-table.kept"], importUrl: url }],
-    "patchwork:datatype": [{ id: "secure-deck", importUrl: url }],
-    "patchwork:tool": [{ id: "secure-deck", importUrl: url }],
+    "scene:extension": [{ id: "keeper", traits: ["keeper.kept"], importUrl: url }],
+    "patchwork:datatype": [{ id: "locked-box", importUrl: url }],
+    "patchwork:tool": [{ id: "locked-box", importUrl: url }],
   });
   /** One registry as registered in this order (a package's plugins after the one before's, as the module watcher does). */
   const registered = (...urls) => {
-    const out = { "patchwork:datatype": [{ id: "scene", importUrl: SCENE }], "scene:extension": [{ id: "tabletop", traits: ["tabletop.card"], importUrl: TABLETOP }] };
+    const out = { "patchwork:datatype": [{ id: "scene", importUrl: SCENE }], "scene:extension": [{ id: "successor", traits: ["successor.card"], importUrl: SUCCESSOR }] };
     for (const url of urls) for (const [type, list] of Object.entries(plugins(url))) out[type] = [...(out[type] ?? []), ...list];
     return out;
   };
-  const table = (packages) => newScene({ objects: { c: { traits: { "card-table.kept": {}, "tabletop.card": {} } } }, packages: packages.map((url) => ({ url })), "@patchwork": { suggestedImportUrl: SCENE } });
+  const table = (packages) => newScene({ objects: { c: { traits: { "keeper.kept": {}, "successor.card": {} } } }, packages: packages.map((url) => ({ url })), "@patchwork": { suggestedImportUrl: SCENE } });
   const pass = (doc, registries) => {
     const plan = reconcileList({ doc, registries });
     const after = structuredClone(doc);
@@ -527,37 +525,37 @@ describe("a retired package and the one that took its plugins over, both install
 
   it("two answering one need, registered in either order: only the later's package is appended, and the earlier's, listed, is taken off", () => {
     for (const [first, later] of [
-      [CARD_TABLE, TABLETOP],
-      [TABLETOP, CARD_TABLE],
+      [RETIRED, SUCCESSOR],
+      [SUCCESSOR, RETIRED],
     ]) {
       const registries = registered(first, later);
-      const runs = answeringPlugins(table([]), registries).find((p) => p.id === "card-table").importUrl;
+      const runs = answeringPlugins(table([]), registries).find((p) => p.id === "keeper").importUrl;
       expect(runs).toBe(later);
       // from a list naming neither: the one that runs, never the other
       const fresh = pass(table([SCENE]), registries);
-      expect([first, fresh.listed.includes(first), fresh.listed.includes(later)]).toEqual([first, first === TABLETOP, true]); // (tabletop answers tabletop.card too)
-      // the polluted list heals: card-table is taken off when tabletop's runs; when card-table's runs, it's what runs
-      const healed = pass(table([SCENE, TABLETOP, CARD_TABLE]), registries);
-      expect([first, healed.listed]).toEqual([first, later === TABLETOP ? [SCENE, TABLETOP] : [SCENE, TABLETOP, CARD_TABLE]]);
+      expect([first, fresh.listed.includes(first), fresh.listed.includes(later)]).toEqual([first, first === SUCCESSOR, true]); // (the successor answers successor.card too)
+      // the polluted list heals: the retired package is taken off when the successor's runs; when the retired one's runs, it's what runs
+      const healed = pass(table([SCENE, SUCCESSOR, RETIRED]), registries);
+      expect([first, healed.listed]).toEqual([first, later === SUCCESSOR ? [SCENE, SUCCESSOR] : [SCENE, SUCCESSOR, RETIRED]]);
       // and that is a fixed point
       expect(reconcileList({ doc: table(healed.listed), registries })).toEqual({ add: [], prune: [] });
     }
   });
 
-  it("one uninstalled: the retired package, listed, goes once tabletop answers every need; it stays while a need goes unanswered, a render doc is unheard, or a need is answered only from a dev server", () => {
-    const polluted = table([SCENE, TABLETOP, CARD_TABLE]);
-    expect(pass(polluted, registered(TABLETOP)).listed).toEqual([SCENE, TABLETOP]);
+  it("one uninstalled: the retired package, listed, goes once the successor answers every need; it stays while a need goes unanswered, a render doc is unheard, or a need is answered only from a dev server", () => {
+    const polluted = table([SCENE, SUCCESSOR, RETIRED]);
+    expect(pass(polluted, registered(SUCCESSOR)).listed).toEqual([SCENE, SUCCESSOR]);
     // a need nothing here answers: it may be what answers that elsewhere
     const stray = { ...polluted, traits: { "nobody.has": {} } };
-    expect(reconcileList({ doc: stray, registries: registered(TABLETOP) }).prune).toEqual([]);
+    expect(reconcileList({ doc: stray, registries: registered(SUCCESSOR) }).prune).toEqual([]);
     // a render doc not yet heard from may name its source
-    expect(reconcileList({ doc: polluted, registries: registered(TABLETOP), rendersKnown: false }).prune).toEqual([]);
-    // tabletop from a dev server: the listed one may be the same package, published
+    expect(reconcileList({ doc: polluted, registries: registered(SUCCESSOR), rendersKnown: false }).prune).toEqual([]);
+    // the successor from a dev server: the listed one may be the same package, published
     const dev = "http://localhost:5173/";
     expect(reconcileList({ doc: polluted, registries: registered(dev) }).prune).toEqual([]);
     // the scene package, missing here (a viewer on a dev copy of the scene), is the suggested import: it stays
-    const devScene = { ...registered(TABLETOP), "patchwork:datatype": [{ id: "scene", importUrl: dev }, { id: "secure-deck", importUrl: TABLETOP }] };
-    expect(reconcileList({ doc: polluted, registries: devScene }).prune).toEqual([CARD_TABLE]);
+    const devScene = { ...registered(SUCCESSOR), "patchwork:datatype": [{ id: "scene", importUrl: dev }, { id: "locked-box", importUrl: SUCCESSOR }] };
+    expect(reconcileList({ doc: polluted, registries: devScene }).prune).toEqual([RETIRED]);
     // nothing installed answers: nothing is taken off
     expect(reconcileList({ doc: polluted, registries: { "patchwork:datatype": [{ id: "scene", importUrl: SCENE }] } }).prune).toEqual([]);
   });
@@ -693,8 +691,8 @@ describe("what this viewer doesn't have", () => {
 
 describe("naming a package for a person", () => {
   it("packageTitle: its title, else its name, from an object or JSON text", () => {
-    expect(packageTitle({ title: "Sailing", name: "@x/sailing" })).toBe("Sailing");
-    expect(packageTitle('{"name":"@x/sailing"}')).toBe("@x/sailing");
+    expect(packageTitle({ title: "Widgets", name: "@x/widgets" })).toBe("Widgets");
+    expect(packageTitle('{"name":"@x/widgets"}')).toBe("@x/widgets");
     expect(packageTitle({ name: "  " })).toBeNull();
     expect(packageTitle({ name: "x".repeat(200) })).toHaveLength(80);
     for (const bad of ["not json", "", null, undefined, 5, { name: 5 }]) expect(packageTitle(bad)).toBeNull();

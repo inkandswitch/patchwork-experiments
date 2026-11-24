@@ -37,8 +37,8 @@ describe("the packages card (cardOf, pure)", () => {
   });
 
   it("each row carries its URL in full and short, its name if it has one, and its error", () => {
-    expect(cardOf({ ask: [e(A, { name: "@tiny/sailing" })], failed: [e(B, { error: "boom" })] }).rows).toEqual([
-      { url: A, name: "@tiny/sailing", short: "automerge:2zt6Lbn…R85F", state: "ask" },
+    expect(cardOf({ ask: [e(A, { name: "@example/thing" })], failed: [e(B, { error: "boom" })] }).rows).toEqual([
+      { url: A, name: "@example/thing", short: "automerge:2zt6Lbn…R85F", state: "ask" },
       { url: B, name: null, short: "automerge:3aB6Lbn…R85G", state: "failed", error: "boom" },
     ]);
     for (const none of [null, undefined, {}, { ask: [], loading: [], failed: [] }]) expect(cardOf(none)).toBeNull();

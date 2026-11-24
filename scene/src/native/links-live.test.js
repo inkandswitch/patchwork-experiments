@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Links, open and live (STAGE.md build step 12): a live link's doc
 // gets a stage of its own in the view, which runs that doc's extensions in
 // its own frame, on its own channel. Checked here without WebGL: the frame
@@ -6,9 +7,9 @@
 // (every write and send through an api goes to its own stage's handle), and
 // adding a scene doc as a link.
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { NATIVES, mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
+import { NATIVES, mountStage, object, settle, wallAt } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import { FakeRepo, fakeHead } from "../test/fake-repo.js";
 import { LINK } from "./link-graph.js";
@@ -64,7 +65,7 @@ const WRITER = {
 async function mountLinked({ log = [] } = {}) {
   const repo = new FakeRepo();
   const game = repo.add(emptyScene({ title: "G", objects: { card: object({ name: "Card", traits: { "t.card": {} } }) }, order: ["card"], traits: { "t.game": {} } }));
-  const s = await mountStage({
+  const s = await mountStage({ editor: true, natives: true, 
     repo,
     extensions: gameExtensions(log),
     doc: { objects: { table: object({ name: "Table", traits: { "t.host": {} } }), L: object({ name: "Game", sourceUrl: game.url, providerId: LINK, renderUrl: null, parent: "table", transform: LINKED_AT }) }, order: ["table", "L"] },
@@ -75,6 +76,16 @@ async function mountLinked({ log = [] } = {}) {
 }
 
 let s = null;
+// Arrival polls on the page's timers (its retries until ARRIVE_WAIT_MS): faked, and moved on while a test waits
+beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] }));
+afterEach(() => vi.useRealTimers());
+/** Until fn() holds, the fake timers moving on 25 ms a step. */
+const until = async (fn, ms = 1000) => {
+  for (let waited = 0; !fn(); waited += 25) {
+    if (waited > ms) throw new Error("timed out");
+    await vi.advanceTimersByTimeAsync(25);
+  }
+};
 afterEach(() => {
   s?.unmount();
   s = null;
@@ -88,7 +99,7 @@ describe("I1: one doc per extension", () => {
     // another doc the repo holds: nothing may touch it
     const other = repo.add({ objects: { a: object() }, order: ["a"] });
     const otherLog = spy(other);
-    s = await mountStage({ repo, extensions: [WRITER], doc: { objects: { a: object(), b: object() }, order: ["a", "b"], traits: { "t.writer": {} } } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: [WRITER], doc: { objects: { a: object(), b: object() }, order: ["a", "b"], traits: { "t.writer": {} } } });
     await until(() => s.instance("t.writer"));
     const ownLog = spy(s.handle);
     s.instance("t.writer").go();
@@ -107,7 +118,7 @@ describe("a live link opens a stage for its doc", () => {
     const repo = new FakeRepo();
     const game = repo.add(emptyScene({ title: "Lost Cities" }));
     const EXT = { meta: { id: "t.any" }, module: { create: () => ({}) } };
-    s = await mountStage({ repo, extensions: [EXT], doc: { objects: {}, order: [] } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: [EXT], doc: { objects: {}, order: [] } });
     const api = s.api("t.any");
     const id = await add(api, game.url, { hint: { bounds: { min: [-0.4, 0, -0.3], max: [0.4, 0.1, 0.3] } } });
     await settle();
@@ -214,7 +225,7 @@ describe("a live link opens a stage for its doc", () => {
     expect(s.doc().objects.card).toBeUndefined();
   });
 
-  it("a link removed closes its stage; a link to a doc that can't be opened is closed, unavailable, and drawn as its hint", async () => {
+  it("a link removed closes its stage; a link to a doc that can't be opened is closed, unavailable", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const m = await mountLinked();
     s = m.s;
@@ -238,7 +249,7 @@ describe("arriving through a link", () => {
     const repo = new FakeRepo();
     const SEATISH = { meta: { id: "t.seatish", traits: ["t.game"] }, module: { create: () => ({ bodies: [{ id: "t.sit", label: "Sitting", enter: () => ({ input: {} }) }] }) } };
     const game = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": {} } }));
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       repo,
       extensions: [SEATISH],
       doc: { objects: { L: object({ name: "Game", sourceUrl: game.url, providerId: LINK, renderUrl: null }) }, order: ["L"], view: { start: { body: "t.sit" } } },
@@ -257,7 +268,7 @@ describe("arriving through a link", () => {
     const repo = new FakeRepo();
     const ga = repo.add(emptyScene({ title: "GA", objects: {}, order: [], traits: { "t.game": { name: "GA" } }, view: { start: { body: "t.sit" } } }));
     const gb = repo.add(emptyScene({ title: "GB", objects: {}, order: [], traits: { "t.game": { name: "GB" } }, view: { start: { body: "t.sit", place: "p2" } } }));
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       repo,
       extensions: [SEATISH],
       doc: {
@@ -287,7 +298,7 @@ describe("arriving through a link", () => {
       const repo = new FakeRepo();
       const ga = repo.add(emptyScene({ title: "GA", objects: {}, order: [], traits: { "t.game": {} } }));
       const gbDoc = repo.add(emptyScene({ title: "GB", objects: {}, order: [], traits: gb === "is still starting" ? { "t.gb": {} } : {}, view: { start: { body: "t.sit", place: "p2" } } }));
-      s = await mountStage({
+      s = await mountStage({ editor: true, natives: true, 
         repo,
         extensions: [
           { meta: { id: "t.seatish", traits: ["t.game"] }, module: seat },
@@ -330,7 +341,7 @@ describe("arriving through a link", () => {
       const objects =
         kind === "pinned" ? { m: link({ at: { heads: g.heads() } }) } : kind === "repeat" ? { a: link(), m: link() } : { m: link({ sourceUrl: "automerge:2j9knnaaaaaaaaaaaaaaaaaaaaaa" }) };
       // (in the repeat's case, link "a" comes first in path order: the doc acts there, and "m" is closed, a repeat)
-      s = await mountStage({ repo, extensions: [SEATISH], doc: { objects, order: Object.keys(objects), view: { start: { body: "t.sit", place: "m" } } } });
+      s = await mountStage({ editor: true, natives: true,  repo, extensions: [SEATISH], doc: { objects, order: Object.keys(objects), view: { start: { body: "t.sit", place: "m" } } } });
       await settle();
       await settle();
       expect(entered, kind).toEqual([]);
@@ -359,7 +370,7 @@ describe("arriving through a link", () => {
     const g = repo.add(emptyScene({ title: "G", objects: {}, order: [], traits: { "t.game": {} }, view: { start: { body: "t.sit" } } }));
     const taker = { meta: { id: "t.taker", type: "scene:view" }, module: { create: () => ({}) } };
     const objects = { x: object({ name: "X" }), m: object({ name: "G", sourceUrl: g.url, providerId: LINK, renderUrl: null }) };
-    s = await mountStage({ repo, extensions: [SEATISH, taker], doc: { objects, order: ["x", "m"], view: { start: { body: "t.sit", place: "m" } } } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: [SEATISH, taker], doc: { objects, order: ["x", "m"], view: { start: { body: "t.sit", place: "m" } } } });
     await until(() => s.instance("t.taker"));
     expect(!!s.api("t.taker").open(g, { under: [[], "x"] })).toBe(true);
     expect(s.debug.view.arriving()).toEqual({ pending: true });
@@ -393,7 +404,7 @@ describe("arriving through a link", () => {
         const doc = through
           ? { objects: { L: object({ name: "Game", sourceUrl: game.url, providerId: LINK, renderUrl: null }) }, order: ["L"], view: { start: { place: "L" } } }
           : { objects: {}, order: [], traits: { "t.game": {} }, view: { start: { body: "t.sit", place: "p1" } } };
-        s = await mountStage({ repo, extensions: [SEATISH], doc, time: wallAt(() => clockNow) });
+        s = await mountStage({ editor: true, natives: true,  repo, extensions: [SEATISH], doc, time: wallAt(() => clockNow) });
         if (refusals === "past the wait") {
           await until(() => s.debug.view.arriving() === null, 3000);
           expect(s.debug.view.atom.get().body.id).toBe("look");
@@ -428,7 +439,7 @@ describe("arriving through a link", () => {
       const late = first === "A" ? gb : ga;
       let open;
       gates.set(late.url, { promise: new Promise((r) => (open = r)) });
-      s = await mountStage({
+      s = await mountStage({ editor: true, natives: true, 
         repo,
         extensions: [SEATISH],
         doc: {

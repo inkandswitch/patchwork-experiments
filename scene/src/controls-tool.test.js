@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from "vitest";
 import { FakeRepo, flush } from "./test/fake-repo.js";
 import { manualTime } from "./stage/time.js";

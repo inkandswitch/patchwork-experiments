@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Telling the others what the doc bears out (scene.telling; NATIVE.md "Native services"):
 // a mounted stage on a manual clock, an extension that declares one message,
 // and a peer's sends put on the wire as presence carries them. Every case of
@@ -54,7 +55,7 @@ async function setup({ repo = new FakeRepo(), viewerId = "viewer:bob" } = {}) {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   const time = manualTime();
   const { ext, seen } = teller();
-  const s = await mountStage({ repo, viewerId, time, extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+  const s = await mountStage({ natives: true,  repo, viewerId, time, extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
   cleanups.push(() => s.unmount());
   await time.until(() => seen.api, { what: "the extension running" });
   await time.step(2);
@@ -77,8 +78,10 @@ describe("a peer's word, held to the doc", () => {
   //   after update : the second doc change inside the window gets it there
   //   after window : only a change past TELL_MS does
   const SAYS = ["never", "at once", "after update", "after window"];
-  const cases = [];
-  for (const valid of [false, true]) for (const says of SAYS) for (const times of [1, 2]) cases.push({ valid, says, times });
+  // an invalid word is never asked about, so `says` and repeats can't change its outcome: one row,
+  // the one that would be told at once if it were
+  const cases = [{ valid: false, says: "at once", times: 1 }];
+  for (const says of SAYS) for (const times of [1, 2]) cases.push({ valid: true, says, times });
 
   it.each(cases)("valid $valid, says text $says, delivered $times time(s)", async ({ valid, says, times }) => {
     const t = await setup();
@@ -193,7 +196,7 @@ describe("one's own tell, and what is still receive's", () => {
     const B = teller();
     let which = A;
     const ext = { meta: { id: "t.teller" }, module: { create: (api) => which.ext.module.create(api) } };
-    const a = await mountStage({ repo, viewerId: "viewer:ana", time, extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+    const a = await mountStage({ natives: true,  repo, viewerId: "viewer:ana", time, extensions: [ext], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     cleanups.push(() => a.unmount());
     await time.until(() => A.seen.api, { what: "A's extension" });
     which = B;

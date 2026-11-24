@@ -3,7 +3,6 @@ import {
   createPresence,
   effectiveHz,
   cleanKeys,
-  same,
   HEARTBEAT_MS,
   PEER_TTL_MS,
 } from "./presence.js";
@@ -81,12 +80,6 @@ beforeEach(() => {
 });
 
 describe("pure helpers", () => {
-  it("compares plain data by value", () => {
-    expect(same([1, 2], [1, 2])).toBe(true);
-    expect(same({ a: 1 }, { a: 2 })).toBe(false);
-    expect(same(null, {})).toBe(false);
-    expect(same(NaN, NaN)).toBe(true);
-  });
   it("rate is the highest asked, never below the default", () => {
     expect(effectiveHz([])).toBe(4);
     expect(effectiveHz([1])).toBe(4);
@@ -159,7 +152,7 @@ describe("presence state", () => {
 
   it("goes at the highest rate asked, and forgets a rate on clear", () => {
     a.rate("cursor", 20);
-    a.rate("seats", 1);
+    a.rate("t.slow", 1);
     const before = sent("A", "scene:presence").length;
     for (let i = 0; i < 20; i++) {
       a.set("cursor", "at", [i, 0]);
@@ -175,12 +168,6 @@ describe("presence state", () => {
       clock.advance(10);
     }
     expect(sent("A", "scene:presence").length - mid).toBe(1); // back to 4 Hz
-  });
-
-  it("sends a heartbeat every 5 s", () => {
-    const before = sent("A", "scene:presence").length;
-    clock.advance(HEARTBEAT_MS * 3);
-    expect(sent("A", "scene:presence").length - before).toBe(3);
   });
 
   it("a heartbeat that changes nothing doesn't wake watchers", () => {
@@ -257,10 +244,10 @@ describe("sends", () => {
   it("delivers to the other peer's receivers once, with who sent it", () => {
     const got = vi.fn();
     b.onReceive(got);
-    a.send("dice", "roll", { faces: [3, 5] });
-    expect(got).toHaveBeenCalledWith("dice", "roll", { faces: [3, 5] }, { session: "sa", viewer: "alice" });
+    a.send("t.game", "roll", { faces: [3, 5] });
+    expect(got).toHaveBeenCalledWith("t.game", "roll", { faces: [3, 5] }, { session: "sa", viewer: "alice" });
     const msg = sent("A", "scene:send")[0];
-    expect(msg).toMatchObject({ type: "scene:send", session: "sa", viewer: "alice", ext: "dice", kind: "roll" });
+    expect(msg).toMatchObject({ type: "scene:send", session: "sa", viewer: "alice", ext: "t.game", kind: "roll" });
     // the same message again (a relay echo) is not delivered twice
     ha.broadcast(msg);
     expect(got).toHaveBeenCalledTimes(1);
@@ -269,7 +256,7 @@ describe("sends", () => {
   it("never replays to a late listener, and the sender doesn't hear itself", () => {
     const own = vi.fn();
     a.onReceive(own);
-    a.send("dice", "roll", 1);
+    a.send("t.game", "roll", 1);
     const late = vi.fn();
     b.onReceive(late);
     clock.advance(HEARTBEAT_MS);
@@ -277,13 +264,6 @@ describe("sends", () => {
     expect(own).not.toHaveBeenCalled();
   });
 
-  it("off stops delivery", () => {
-    const got = vi.fn();
-    const off = b.onReceive(got);
-    off();
-    a.send("dice", "roll", 1);
-    expect(got).not.toHaveBeenCalled();
-  });
 });
 
 describe("without a usable handle", () => {

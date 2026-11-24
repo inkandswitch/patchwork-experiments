@@ -1,12 +1,13 @@
+// @vitest-environment happy-dom
 // Claims (scene.claims; NATIVE.md, "Native services"): doc fields naming who holds what, counted only
 // while their holder's session is in presence, settled by Automerge when two
 // views take one at once. Mounted with the stage harness, two views at a time:
 // on one shared handle (one doc, broadcasts delivered to both), or on two real
 // Automerge docs that merge when the test says (for concurrent writes).
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as Automerge from "@automerge/automerge";
-import { mountStage, object, settle, until, wallAt } from "../test/stage-harness.js";
+import { mountStage, object, settle, wallAt } from "../test/stage-harness.js";
 import { CLAIM_GRACE_MS } from "./claims.js";
 
 const CREW = { meta: { id: "t.crew" }, module: { create: () => ({}) } };
@@ -17,11 +18,21 @@ const EXTENSIONS = [CREW, OTHER];
 const claimsOf = (api) => Object.create(api.use("claims"), { session: { get: () => api.channel.session } });
 const held = (S) => S.instance("scene.claims").held();
 
+// Presence sends on the page's timers (a send slot, a hello's answer): faked, and moved on while a test waits
+beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] }));
 const mounted = [];
 afterEach(() => {
   while (mounted.length) mounted.pop().unmount();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
+/** Until fn() holds, the fake clock moving on 25 ms a step. */
+const until = async (fn, ms = 1000) => {
+  for (let waited = 0; !fn(); waited += 25) {
+    if (waited > ms) throw new Error("timed out");
+    await vi.advanceTimersByTimeAsync(25);
+  }
+};
 
 const objects = () => ({ ship: object({ name: "Ship" }), helm: object({ name: "Helm", parent: "ship" }) });
 
@@ -32,10 +43,10 @@ async function met(A, B) {
 
 /** Two views of one doc on one handle, each hearing the other's broadcasts. */
 async function twoViews(doc = {}, { time = null } = {}) {
-  const A = await mountStage({ extensions: EXTENSIONS, doc: { objects: objects(), order: ["ship", "helm"], ...doc }, viewerId: "viewer:alice", time });
+  const A = await mountStage({ natives: true,  extensions: EXTENSIONS, doc: { objects: objects(), order: ["ship", "helm"], ...doc }, viewerId: "viewer:alice", time });
   mounted.push(A);
   A.handle.broadcast = (message) => A.handle.emit("ephemeral-message", { message });
-  const B = await mountStage({ handle: A.handle, repo: A.repo, viewerId: "viewer:bob", time });
+  const B = await mountStage({ natives: true,  handle: A.handle, repo: A.repo, viewerId: "viewer:bob", time });
   mounted.push(B);
   await met(A, B);
   return { A, B, a: claimsOf(A.api("t.crew")), b: claimsOf(B.api("t.crew")) };
@@ -91,9 +102,9 @@ async function twoPeers(doc = {}) {
       throw new Error(`unavailable: ${url}`);
     },
   };
-  const A = await mountStage({ extensions: EXTENSIONS, repo, doc: { objects: objects(), order: ["ship", "helm"], ...doc }, viewerId: "viewer:alice" });
+  const A = await mountStage({ natives: true,  extensions: EXTENSIONS, repo, doc: { objects: objects(), order: ["ship", "helm"], ...doc }, viewerId: "viewer:alice" });
   mounted.push(A);
-  const B = await mountStage({ handle: pair.b, repo, viewerId: "viewer:bob" });
+  const B = await mountStage({ natives: true,  handle: pair.b, repo, viewerId: "viewer:bob" });
   mounted.push(B);
   await met(A, B);
   return { A, B, a: claimsOf(A.api("t.crew")), b: claimsOf(B.api("t.crew")), pair };

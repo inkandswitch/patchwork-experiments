@@ -75,7 +75,7 @@ export const retype = (ev, type) => copyWith(ev, "type", type);
 /**
  * Build an event value (STAGE.md, the `event` shape) from a DOM event. `hit`,
  * `widget` and `ray` are lazy, memoised getters: nothing is picked unless
- * someone reads them. Under pointer lock x, y and ndc are the canvas centre
+ * someone reads them. Under pointer lock x, y are the canvas centre
  * and the ray is the camera's forward ray.
  *
  * @param {string} type
@@ -107,23 +107,13 @@ export function buildEvent(type, e, ctx) {
   const known = clientX != null && clientY != null;
   const x = known ? clientX - portRect.left : null;
   const y = known ? clientY - portRect.top : null;
-  const ndc = locked
-    ? [0, 0]
-    : known
-      ? [cr.width ? ((clientX - cr.left) / cr.width) * 2 - 1 : 0, cr.height ? -(((clientY - cr.top) / cr.height) * 2 - 1) : 0]
-      : null;
   const fields = {
     type,
     x,
     y,
-    clientX,
-    clientY,
-    ndc,
     holder: null,
     button: e?.button ?? null,
     buttons: e?.buttons ?? 0,
-    pointerId: e?.pointerId ?? null,
-    pointerType: e?.pointerType ?? (e && "button" in e ? "mouse" : null),
     shift: !!e?.shiftKey || !!ctx.mods?.shift,
     alt: !!e?.altKey || !!ctx.mods?.alt,
     ctrl: !!e?.ctrlKey || !!ctx.mods?.ctrl,
@@ -604,8 +594,6 @@ export function createRouter(o) {
     kept = false;
     cancelHover();
     o.onHover?.(null);
-    call(top().owner ?? "scene", top().input, "leave");
-    for (const h of [...hands]) call(h.owner, h.input, "leave");
   }
 
   function onContextMenu(e) {

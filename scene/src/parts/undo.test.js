@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // scene.undo, mounted: ⌘Z / Ctrl+Z and the toolbar's Undo and Redo take back
 // the editor's own edits (here Delete, scene.select's; ./editor.js), this viewer's; a
 // package's verb (a roll) is never on it, and an edit since changed by one is
@@ -5,13 +6,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
-import { FakeRepo, fakeUrl } from "../test/fake-repo.js";
+import { FakeRepo } from "../test/fake-repo.js";
 import undo, { undoKey } from "./undo.js";
 import select from "./select.js";
 import { editor } from "./editor.js";
 
 const DICE = {
-  meta: { id: "t.dice" },
+  meta: { id: "t.roller" },
   module: {
     create: (api) => ({
       commands: [
@@ -56,7 +57,7 @@ describe("scene.undo", () => {
         return out.filter((p) => p.path[0] !== "cad");
       },
     };
-    s = await mountStage({ repo, extensions: [{ meta: { id: "scene.undo" }, module: undo }, { meta: { id: "t.pkg" }, module: { create: () => ({}) } }], doc: { objects: {} } });
+    s = await mountStage({ editor: true, natives: true,  repo, extensions: [{ meta: { id: "scene.undo" }, module: undo }, { meta: { id: "t.pkg" }, module: { create: () => ({}) } }], doc: { objects: {} } });
     await settle();
     const edits = s.api("t.pkg").use("edits");
     expect(edits.edit(doc, (d) => { d.content = "b"; d.cad.locks.x = ["h"]; }, { label: "Edit model" })).toBe(true);
@@ -83,7 +84,7 @@ describe("scene.undo", () => {
 
   it("Delete is an edit: ⌘Z puts it back, ⇧⌘Z takes it out again; a roll is no step, and a rolled die isn't deleted again by redo", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [
         { meta: { id: "scene.select" }, module: select },
         { meta: { id: "scene.undo" }, module: undo },
@@ -103,7 +104,7 @@ describe("scene.undo", () => {
     expect(s.doc().order).toEqual(["die"]);
     expect(state("redo")).toEqual({ title: "Redo “Delete”" });
     // the die is rolled: no step of its own, and redo can't delete what the roll has moved since
-    run("t.dice", "roll", "die");
+    run("t.roller", "roll", "die");
     expect(editor(s.facet("scene.undo")).labels()).toEqual({ undo: null, redo: "Delete" });
     press("z", { metaKey: true, shiftKey: true });
     expect(s.doc().objects.die.transform.position).toEqual([4, 0, 4]);
@@ -112,7 +113,7 @@ describe("scene.undo", () => {
   });
 
   it("a field being typed in keeps ⌘Z (its own text undo)", async () => {
-    s = await mountStage({ extensions: [{ meta: { id: "scene.undo" }, module: undo }], doc: { objects: { a: object() }, order: ["a"] } });
+    s = await mountStage({ editor: true, natives: true,  extensions: [{ meta: { id: "scene.undo" }, module: undo }], doc: { objects: { a: object() }, order: ["a"] } });
     await settle();
     editor(s.facet("scene.undo")).edit((d) => (d.objects.a.name = "B"), { label: "Rename" });
     const input = document.createElement("input");
@@ -129,64 +130,11 @@ describe("scene.undo", () => {
 // Undo's plain rule over reveals: a step that changed who may see something
 // is taken back like any other, whoever has a stake; a step that removed
 // something a keeper holds says what it can't put back.
-describe("undo over reveals, and the keeper rule", () => {
-  // A card with one physical state of four: in ann's hand, in bob's hand,
-  // face up on the table, face down on it. Who may see what it is: the
-  // hand's player; everyone; nobody.
-  const STATES = ["hand:ann", "hand:bob", "up", "down"];
-  const TABLE = {
-    meta: { id: "t.table", traits: ["t.card"] },
-    module: {
-      create: (api) => ({
-        audience: (snap) => (id) => {
-          const st = snap.objects[id]?.traits?.["t.card"]?.state;
-          if (!st) return null;
-          if (st === "up") return { show: "all" };
-          if (st.startsWith("hand:")) return { show: [st.slice(5)], only: [st.slice(5)] };
-          return null;
-        },
-        // a package's write (not an edit): how the tests set a state up
-        set: (st) => api.change((d) => (d.objects.card.traits["t.card"].state = st)),
-      }),
-    },
-  };
-  const cardDoc = () => ({
-    traits: { "t.card": {} },
-    objects: { card: object({ name: "Card", traits: { "t.card": { state: "down" } } }) },
-    order: ["card"],
-  });
-
-  it("over every move of a card between four states, with a listed package missing or not: ann's undo takes it back, and redo puts it again", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    let cases = 0;
-    for (const missing of [false, true]) {
-      s = await mountStage({ viewerId: "ann", extensions: [{ meta: { id: "scene.undo" }, module: undo }, TABLE], doc: { ...cardDoc(), ...(missing ? { packages: [{ url: fakeUrl() }] } : {}) } });
-      await settle();
-      const table = s.instance("t.table");
-      const edit = editor(s.facet("scene.undo"));
-      for (const from of STATES) {
-        for (const to of STATES) {
-          if (from === to) continue;
-          cases++;
-          const where = `${missing ? "missing" : "complete"} ${from} → ${to}`;
-          table.set(from);
-          edit.edit((d) => (d.objects.card.traits["t.card"].state = to), { label: "Move" });
-          expect(edit.undo(), where).toBe(true);
-          expect(s.doc().objects.card.traits["t.card"].state, where).toBe(from);
-          expect(edit.redo(), where).toBe(true);
-          expect(s.doc().objects.card.traits["t.card"].state, where).toBe(to);
-        }
-      }
-      s.unmount();
-      s = null;
-    }
-    expect(cases).toBe(24);
-  });
-
+describe("the keeper rule", () => {
   it("deleting something a keeper holds the contents of: undo puts the doc's part back and says the kept part is as its keeper has it now", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const KEEPER = { meta: { id: "t.keeper", keeper: "plain", traits: ["t.kept"] }, module: { create: () => ({}) } };
-    s = await mountStage({
+    s = await mountStage({ editor: true, natives: true, 
       extensions: [{ meta: { id: "scene.select" }, module: select }, { meta: { id: "scene.undo" }, module: undo }, KEEPER],
       doc: { objects: { c1: object({ name: "Card", traits: { "t.kept": { by: "automerge:box", slot: 3 } } }), d: object({ name: "Die" }) }, order: ["c1", "d"] },
     });

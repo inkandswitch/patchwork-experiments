@@ -55,9 +55,9 @@ describe("parsePatchworkDrop", () => {
   });
   it("reads the structured payload", () => {
     const items = parsePatchworkDrop(
-      dt({ "text/x-patchwork-dnd": JSON.stringify({ source: "sideboard", items: [{ url: `automerge:${ID}`, name: "Hull", type: "camber-hull" }] }) }),
+      dt({ "text/x-patchwork-dnd": JSON.stringify({ source: "sideboard", items: [{ url: `automerge:${ID}`, name: "Hull", type: "shape" }] }) }),
     );
-    expect(items).toEqual([{ url: `automerge:${ID}`, name: "Hull", type: "camber-hull" }]);
+    expect(items).toEqual([{ url: `automerge:${ID}`, name: "Hull", type: "shape" }]);
   });
   it("falls back to the url list, then plain text", () => {
     expect(parsePatchworkDrop(dt({ "text/x-patchwork-urls": JSON.stringify([`automerge:${ID}`]) }))[0].url).toBe(`automerge:${ID}`);

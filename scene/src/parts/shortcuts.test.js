@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // Shortcuts (./shortcuts.js; PLANS.md §5): a command's ⌘ key, matched on a Mac
 // and off one, labelled for each, and run by scene.keys on attention's target;
 // one another part does (the clipboard's) is only shown.
@@ -62,7 +63,7 @@ describe("shortcuts on the stage", () => {
 
   it("⌘G groups the selection and ⇧⌘G ungroups it; ⌘C is the browser's (the clipboard's), not run here; the menu shows each", async () => {
     // (the harness's navigator is no Mac: Ctrl is Mod)
-    s = await mountStage({ extensions: [{ meta: { id: "scene.keys" }, module: keys }, { meta: { id: "scene.inspector" }, module: inspector }, { meta: { id: "scene.transfer" }, module: transfer }], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
+    s = await mountStage({ editor: true,  extensions: [{ meta: { id: "scene.keys" }, module: keys }, { meta: { id: "scene.inspector" }, module: inspector }, { meta: { id: "scene.transfer" }, module: transfer }], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
     const press = (key, mods) => s.key(key, { code: `Key${key.toUpperCase()}`, ctrlKey: true, ...mods });
@@ -78,8 +79,8 @@ describe("shortcuts on the stage", () => {
     const copied = press("c");
     expect(copied.defaultPrevented).toBe(false);
     // the menu's rows say each one's shortcut
-    const f = s.facet("scene.inspector");
-    const { forObject } = menuEntries(s.api("scene.inspector").collect("commands"), "a", f.context(null));
+    const reader = s.api("scene.inspector").path({ focus: true })[0];
+    const { forObject } = menuEntries(s.api("scene.inspector").collect("commands"), "a", reader.context(null));
     const shown = Object.fromEntries(forObject.filter((e) => e.command.shortcut).map((e) => [e.command.id, shortcutLabel(shortcutsOf(e.command)[0], false)]));
     expect(shown).toMatchObject({ group: "Ctrl+G", extract: "Ctrl+E", copy: "Ctrl+C" });
   });

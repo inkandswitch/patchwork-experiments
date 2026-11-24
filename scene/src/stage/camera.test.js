@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi } from "vitest";
 import { Box3, Matrix4, PerspectiveCamera, Vector3 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -69,20 +70,12 @@ describe("the camera rig", () => {
     expect(r.heldDepth).toBe(null);
   });
 
-  it("sets position, target, quaternion and fov; fov changes are watched", () => {
+  it("sets position, target, quaternion and fov", () => {
     const { camera, r } = rig();
-    const watch = vi.fn();
-    const off = r.watch(watch);
     r.set({ position: [0, 5, 0.0001], target: [0, 0, 0] });
     expect(r6(r.get().target)).toEqual([0, 0, 0]);
-    expect(watch).not.toHaveBeenCalled();
     r.set({ fov: 60 });
     expect(camera.fov).toBe(60);
-    expect(watch).toHaveBeenCalledOnce();
-    expect(watch.mock.calls[0][0].fov).toBe(60);
-    off();
-    r.set({ fov: 30 });
-    expect(watch).toHaveBeenCalledOnce();
     // a quaternion alone, orbiting: the target moves in front, as far as it was
     r.set({ position: [0, 0, 4], target: [0, 0, 0] });
     r.set({ quaternion: [0, Math.sin(Math.PI / 4), 0, Math.cos(Math.PI / 4)] });

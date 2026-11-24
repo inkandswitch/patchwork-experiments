@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
@@ -63,16 +64,6 @@ function commandsExt(log) {
 }
 
 describe("menuEntries (pure)", () => {
-  it("lists the object's commands, then the scene's that ask for a menu", () => {
-    const log = [];
-    const collected = [{ id: "t", value: commandsExt(log).create().commands }];
-    const ctx = { scene: { objects: { a: {} } }, local: {} };
-    const { forObject, forScene } = menuEntries(collected, "a", ctx);
-    expect(forObject.map((e) => e.command.id)).toEqual(["poke", "lock"]);
-    expect(forScene.map((e) => e.command.id)).toEqual(["paste", "color"]);
-    expect(menuEntries(collected, null, ctx).forObject).toEqual([]);
-  });
-
   it("Select (scene.select's) comes first for an object, wherever its extension runs", () => {
     const sel = { id: "select", name: "Select", show: ["menu"], state: (t) => (t ? {} : null), run() {} };
     const other = { id: "select", name: "Not the selection's", show: ["menu"], state: (t) => (t ? {} : null), run() {} };
@@ -142,7 +133,7 @@ describe("scene.menu", () => {
       });
     });
 
-    it("moves with the arrows, picks with Enter's click, closes on Escape or a click outside", () => {
+    it("moves with the arrows, wrapping round, and closes on Escape or a click outside", () => {
       open();
       const items = [...el().querySelectorAll(".menu-item")];
       const key = (k) =>
@@ -163,25 +154,6 @@ describe("scene.menu", () => {
       open();
       document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
       expect(el()).toBeNull();
-    });
-
-    it("opens from a right-click on the canvas (no WebGL: nothing is hit)", async () => {
-      s.pointer("pointerdown", 20, 20, { button: 2, buttons: 2 });
-      s.pointer("pointerup", 20, 20, { button: 2 });
-      expect(el()).toBeTruthy();
-      expect(labels()).toEqual(["Paste", "Red", "Blue"]);
-    });
-
-    // A right-click with no hover before it (a probe's, a touch's long press,
-    // or within one frame of moving there): the press is where the look is,
-    // so the menu is the object's under it, not the scene's.
-    it("a right-click on an object with no hover before it opens that object's menu", async () => {
-      s.debug.viewport.pick = () => ({ id: "a", point: [0, 1, 0], normal: [0, 1, 0], distance: 3 });
-      expect(s.local.get().hovered ?? null).toBe(null);
-      s.pointer("pointerdown", 20, 20, { button: 2, buttons: 2 });
-      s.pointer("pointerup", 20, 20, { button: 2 });
-      expect(el()?.querySelector(".menu-title")?.textContent).toBe("Hull");
-      expect(labels()).toEqual(["Poke", "Locked", "Paste", "Red", "Blue"]);
     });
 
     it("closes when what it was opened on is removed", async () => {
@@ -226,7 +198,7 @@ describe("scene.menu", () => {
       it(name, async () => {
         log = [];
         s = await mountStage({
-          extensions: [{ meta: { id: "scene.menu" }, module: menu }, { meta: { id: "t.walk" }, module: walker }],
+          extensions: [{ meta: { id: "scene.menu" }, module: menu }, { meta: { id: "t.lockbody" }, module: walker }],
           // (not holding the editor, which wants the pointer free)
           doc: { objects: { a: object({ name: "Hull" }), b: object({ name: "Mast" }) }, order: ["a", "b"], view: { start: {} } },
         });
@@ -239,7 +211,7 @@ describe("scene.menu", () => {
         // the input is said by a press first (a finger never locks)
         s.pointer("pointerdown", 300, 300, { pointerType: type, pointerId: 9 });
         s.pointer("pointerup", 300, 300, { pointerType: type, pointerId: 9 });
-        if (body !== "look") expect(s.api("t.walk").body.enter("walk")).toBe(true);
+        if (body !== "look") expect(s.api("t.lockbody").body.enter("walk")).toBe(true);
         if (how === "refused") document.dispatchEvent(new Event("pointerlockerror"));
         if (how === "locked") {
           Object.defineProperty(document, "pointerLockElement", { configurable: true, get: () => s.canvas });

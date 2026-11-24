@@ -28,7 +28,7 @@ import {
   summaryTypes,
 } from "./transfer.js";
 import { seededRenderDoc } from "./datatype.js";
-import { composeMatrix, decomposeMatrix, invertMatrix as invert, multiplyMatrices } from "./transform.js";
+import { composeMatrix, invertMatrix as invert, multiplyMatrices } from "./transform.js";
 import { worldMatrix } from "./hierarchy.js";
 import { intoSnap } from "./carry-rules.js";
 
@@ -118,10 +118,10 @@ describe("what's copied", () => {
   });
 
   it("renderSeed and seededRenderDoc: params by the same provider; the build too when it's the same source", () => {
-    const r = { providerId: "camber", parent: "automerge:src", params: { beam: 3.2 }, glbUrl: "automerge:glb", builtFrom: { heads: ["h"], paramsKey: "{}" }, builtAt: 5, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, status: "building", error: "x", pinned: true };
+    const r = { providerId: "shape-maker", parent: "automerge:src", params: { beam: 3.2 }, glbUrl: "automerge:glb", builtFrom: { heads: ["h"], paramsKey: "{}" }, builtAt: 5, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, status: "building", error: "x", pinned: true };
     const seed = renderSeed(r);
-    expect(seed).toEqual({ providerId: "camber", parent: "automerge:src", params: { beam: 3.2 }, glbUrl: "automerge:glb", builtFrom: { heads: ["h"], paramsKey: "{}" }, builtAt: 5, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, pinned: true });
-    const fresh = { "@patchwork": { type: "scene-render" }, title: "Hull", parent: "automerge:src", providerId: "camber", params: { beam: 3 }, glbUrl: null, builtFrom: null, builtAt: null, bounds: null, status: "idle", error: null, pinned: false };
+    expect(seed).toEqual({ providerId: "shape-maker", parent: "automerge:src", params: { beam: 3.2 }, glbUrl: "automerge:glb", builtFrom: { heads: ["h"], paramsKey: "{}" }, builtAt: 5, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, pinned: true });
+    const fresh = { "@patchwork": { type: "scene-render" }, title: "Hull", parent: "automerge:src", providerId: "shape-maker", params: { beam: 3 }, glbUrl: null, builtFrom: null, builtAt: null, bounds: null, status: "idle", error: null, pinned: false };
     const doc = seededRenderDoc(fresh, seed);
     expect(doc).toMatchObject({ params: { beam: 3.2 }, glbUrl: "automerge:glb", builtFrom: { heads: ["h"] }, builtAt: 5, status: "idle", error: null, pinned: true, title: "Hull" });
     expect(doc.params).not.toBe(seed.params);
@@ -141,17 +141,6 @@ describe("where it goes", () => {
     expect(r.yaw).toBeCloseTo(0.5, 9);
     const two = referenceOf([composeMatrix(T([0, 1, 0])), composeMatrix(T([4, 3, 2]))]);
     expect(two).toEqual({ point: [2, 1, 1], yaw: 0 });
-  });
-
-  it("moveBy: puts the reference at the point, turned to the yaw (or not)", () => {
-    const m = moveBy({ point: [1, 0, 0], yaw: 0.25 }, [10, 2, 5], 1.25);
-    const w = multiplyMatrices(m, composeMatrix(T([1, 0, 0], [0, 0.25, 0])));
-    const t = decomposeMatrix(w);
-    close(t.position, [10, 2, 5]);
-    expect(Math.atan2(w[8], w[10])).toBeCloseTo(1.25, 9);
-    const keep = decomposeMatrix(multiplyMatrices(moveBy({ point: [1, 0, 0], yaw: 0.25 }, [3, 0, 0], null), composeMatrix(T([1, 0, 0], [0, 0.25, 0]))));
-    close(keep.rotation, [0, 0.25, 0]);
-    close(keep.position, [3, 0, 0]);
   });
 
   // a rack's place: X up, Y (face) toward +Z, length along +X; a flat tray's: turned a quarter
@@ -303,13 +292,6 @@ describe("references in traits", () => {
   ]);
   const refs = refsOf(describes);
 
-  it("refsOf: object and entry fields, and fields marked copy: drop", () => {
-    expect(refs.get("t.lever")).toEqual([{ key: "target", kind: "object", of: undefined, label: "Target", drop: false }]);
-    expect(refs.get("t.zone")[0]).toMatchObject({ key: "seat", kind: "entry", of: "t.seats" });
-    expect(refs.get("t.hidden")[0]).toMatchObject({ key: "by", drop: true });
-    expect(refs.has("t.seats")).toBe(false);
-  });
-
   it("copyRefs: an object field naming a copied object follows it (null: the copy's root); naming something else, outside says (kept in its own scene, else cleared and reported)", () => {
     const map = new Map([["lever", "c1"], ["door", "c2"], ["deck", null]]);
     const into = { "t.lever": { target: "door", speed: 2 } };
@@ -357,7 +339,7 @@ describe("references in traits", () => {
 
   it("the notices: a missing scene trait by its name (no article for a plural), a missing entry", () => {
     expect(needsText({ name: "Private zone", needName: "Seats" })).toBe("This private zone needs seats: add Seats to the scene.");
-    expect(needsText({ name: "Lever", needName: "Arena" })).toBe("This lever needs an arena: add Arena to the scene.");
+    expect(needsText({ name: "Lever", needName: "Orchard" })).toBe("This lever needs an orchard: add Orchard to the scene.");
     expect(entryText({ name: "Private zone", label: "Seat", ofName: "Seats" })).toBe("This private zone's seat isn't one of this scene's seats: choose one in the inspector.");
   });
 });

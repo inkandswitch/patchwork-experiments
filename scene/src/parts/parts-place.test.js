@@ -2,7 +2,7 @@
 // connector, its parent or the viewer, in its parent's frame; snapping is the
 // hand's: the nearest connector that takes it, within the object's reach.
 import { describe, it, expect } from "vitest";
-import { connectorFor, facingEye, partLanding } from "./parts-place.js";
+import { partLanding } from "./parts-place.js";
 import { composeMatrix, multiplyMatrices } from "../transform.js";
 
 const near = (a, b, eps = 1e-9) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= eps);
@@ -16,6 +16,7 @@ describe("partLanding", () => {
     // +Z toward the eye (straight along +Z here)
     expect(land.yaw).toBeCloseTo(0);
     expect(partLanding({ point: [0, 0, 0], eye: [5, 5, 0] }).yaw).toBeCloseTo(Math.PI / 2);
+    expect(partLanding({ point: [0, 0, 0], eye: [0, 5, 0] }).yaw).toBe(0); // straight overhead
     expect(land.snapped).toBe(false);
   });
 
@@ -62,26 +63,6 @@ describe("partLanding", () => {
     expect(partLanding({ point: [0, 1, 1.5], parent: { id: "hull", matrix, connectors }, tags: ["mast"] }).snapped).toBe(false);
   });
 
-  it("a part without tags goes to an open connector only within reach, never to a tagged one", () => {
-    const matrix = composeMatrix({});
-    const connectors = [
-      { position: [0, 0.04, 0], tags: [] },
-      { position: [0.06, 0.04, 0], tags: [] },
-      { position: [0.2, 0.04, 0], tags: ["mast"] },
-    ];
-    const parent = { id: "board", matrix, connectors, snapRadius: 0.042 };
-    expect(partLanding({ point: [0.05, 0.04, 0.01], parent }).spot).toEqual([0.06, 0.04, 0]);
-    // too far from either open one; the tagged one doesn't take it
-    expect(partLanding({ point: [0.19, 0.04, 0], parent }).snapped).toBe(false);
-  });
-});
-
-describe("connectorFor", () => {
-  it("scales the reach with the object", () => {
-    const connectors = [{ position: [1, 0, 0] }];
-    expect(connectorFor({ matrix: composeMatrix({ scale: 1 }), connectors, snapRadius: 0.5 }, [1.8, 0, 0])).toBe(null);
-    expect(connectorFor({ matrix: composeMatrix({ scale: 2 }), connectors, snapRadius: 0.5 }, [2.8, 0, 0])?.world).toEqual([2, 0, 0]);
-  });
   it("a connector with a whole frame takes the part into it (a rack's place stands it on edge); a yaw-only one turns it upright", () => {
     // a rack turned a quarter about Y: its place's X up, its Y (face) toward +Z of the rack, its length along the rack's +X
     const matrix = composeMatrix({ position: [1, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 });
@@ -101,8 +82,5 @@ describe("connectorFor", () => {
     expect(yawOnly.rotation).toBe(null);
     expect(near([Y[4], Y[5], Y[6]], [0, 1, 0])).toBe(true);
     expect(near([Y[8], Y[9], Y[10]], [0, 0, -1])).toBe(true); // facing yaw π
-  });
-  it("facingEye: 0 straight overhead", () => {
-    expect(facingEye([0, 5, 0], [0, 0, 0])).toBe(0);
   });
 });

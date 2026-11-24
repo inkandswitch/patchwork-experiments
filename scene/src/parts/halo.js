@@ -37,12 +37,8 @@ import { frameConversions } from "../transform.js";
 import { worldBox } from "./carry-math.js";
 import { editor } from "./editor.js";
 import { perFocus } from "../per-focus.js";
+import { resolveCssColor } from "../stage/public.js";
 
-const AXIS_FALLBACK = [
-  [0.9, 0.25, 0.25],
-  [0.3, 0.8, 0.3],
-  [0.3, 0.45, 0.95],
-];
 /** How many frames the halo keeps drawing every frame after what it's on last moved. */
 const STILL_FRAMES = 30;
 
@@ -82,7 +78,7 @@ function haloAt(api, view) {
 
   /** Its box in the frame, or null while there's nothing to box. */
   function boxInFrame() {
-    if (target.kind === "group") return api.groupBox(target.id);
+    if (target.kind === "group") return api.box(target.id);
     const W = api.worldOf(target.id);
     const box = api.content(target.id)?.box;
     if (W && box) return worldBox(box, frame.matrixIn(W));
@@ -116,7 +112,8 @@ function haloAt(api, view) {
     const theme = api.view.get().theme ?? {};
     const rgb = (c, f) => new THREE.Color().setRGB(...(Array.isArray(c) ? c : f), THREE.SRGBColorSpace);
     return {
-      axis: [theme.axisX, theme.axisY, theme.axisZ].map((c, i) => rgb(c, AXIS_FALLBACK[i])),
+      // the axes' colour tokens (axes.css), as the view's CSS has them now
+      axis: ["x", "y", "z"].map((k) => rgb(resolveCssColor(view.root, `--scene-axis-${k}`))),
       accent: rgb(theme.accent, [0.2, 0.9, 0.75]),
     };
   }
@@ -167,7 +164,7 @@ function haloAt(api, view) {
     const theme = api.view.get().theme;
     const eye = p ? eyeIn() : null;
     const live = p ? p.handles.filter((h) => usable(h, eye)) : [];
-    const key = p ? JSON.stringify([P, live.map(handlePoints).map((ps) => [ps[0], ps[ps.length - 1]]), p.radius, theme?.accent, theme?.axisX]) : "";
+    const key = p ? JSON.stringify([P, live.map(handlePoints).map((ps) => [ps[0], ps[ps.length - 1]]), p.radius, theme]) : "";
     shown = p;
     if (key === drawnKey) return false;
     drawnKey = key;
@@ -245,7 +242,7 @@ function haloAt(api, view) {
 
   // ─── the drag ─────────────────────────────────────────────────────────────
 
-  const rayOf = (ev) => ev?.ray ?? (ev?.x != null && ev?.y != null ? api.ray(ev.x, ev.y) : null);
+  const rayOf = (ev) => ev?.ray ?? null;
   const project = (p) => api.project(frame.pointOut(p));
 
   /** The handle under the pointer, if any. */

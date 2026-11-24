@@ -18,6 +18,7 @@
 // until it's put down.
 
 import css from "./measure.css?inline";
+import { resolveCssColor } from "../stage/public.js";
 import { distance, makeAnchor } from "../anchors.js";
 import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
@@ -71,8 +72,6 @@ function measureAt(api, view, hint) {
   let holding = false; // set while it's held
   let a = null; // the first point's anchor
   let hover = null; // { world, snapped } under the pointer
-  let pending = null; // the latest pointer position waiting for a frame
-  let frame = null; // the cancel of the frame it waits for
 
   const units = () => view.use("prefs")?.get("units", "m") ?? "m";
   const worldOf = (id) => api.worldOf(id);
@@ -116,7 +115,8 @@ function measureAt(api, view, hint) {
       return;
     }
     const theme = api.view.get().theme ?? {};
-    const dimCol = color(theme.dim, 0xe68019);
+    // a dimension's colour token (dimensions.css: a measurement is a dimension not yet saved)
+    const dimCol = color(resolveCssColor(view.root, "--scene-dimension"));
     const accent = color(theme.accent, 0x33e6bf);
     const aw = a ? anchorWorld(a, api.scene().objects, worldOf) : null;
     const hw = hover?.world ?? null;
@@ -163,14 +163,7 @@ function measureAt(api, view, hint) {
     draw();
   }
 
-  function cancelFrame() {
-    frame?.();
-    frame = null;
-    pending = null;
-  }
-
   function reset() {
-    cancelFrame();
     a = null;
     hover = null;
   }
@@ -201,15 +194,7 @@ function measureAt(api, view, hint) {
   const handlers = {
     move(ev) {
       if (ev.locked || ev.buttons) return; // orbiting: keep the preview where it was
-      pending = { x: ev.x, y: ev.y };
-      if (frame) return;
-      frame = api.frame(() => {
-        frame = null;
-        const p = pending;
-        pending = null;
-        if (!holding || !p) return;
-        setHover(pickAt(p.x, p.y));
-      });
+      if (holding) setHover(pickAt(ev.x, ev.y));
     },
     click(ev) {
       const hit = pickAt(ev.x, ev.y);
@@ -221,9 +206,7 @@ function measureAt(api, view, hint) {
       // put down (M again, Escape, another tool picked up, or the stage): forget everything
       if (!holding) return;
       holding = false;
-      cancelFrame();
       reset();
-      view.cursor(null);
       draw();
     },
   };
@@ -232,7 +215,6 @@ function measureAt(api, view, hint) {
   function start() {
     reset();
     holding = true;
-    view.cursor("crosshair");
     draw();
     return handlers;
   }
@@ -240,7 +222,6 @@ function measureAt(api, view, hint) {
   /** the pointer left the view: no hover point */
   function left() {
     if (!holding) return;
-    cancelFrame();
     setHover(null);
   }
 
@@ -269,9 +250,7 @@ function measureAt(api, view, hint) {
       const moved = a?.objectId && scene !== prev?.scene;
       if (!was || moved || v["scene.prefs"] !== was["scene.prefs"] || v.theme !== was.theme) draw();
     },
-    dispose() {
-      cancelFrame();
-    },
+    dispose() {},
     // for tests
     get state() {
       return { held: holding, a, hover };

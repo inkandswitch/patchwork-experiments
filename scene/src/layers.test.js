@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Group, Object3D } from "three";
-import { sanitizeLayers, layerChoices, layerStates, layerShown, nodeLayer, layersKey } from "./layers.js";
+import { sanitizeLayers, layerStates, layerShown, nodeLayer, layersKey } from "./layers.js";
 
 const ids = (t) => t.map((e) => `${"  ".repeat(e.depth)}${e.id}`);
 
@@ -82,8 +82,8 @@ describe("layerStates", () => {
 
 describe("layerShown", () => {
   const states = layerStates(sanitizeLayers([{ id: "a", visible: false }]), {});
-  it("hides a mesh on a hidden layer", () => expect(layerShown(states, "a")).toBe(false));
-  it("always shows a mesh on no layer, or on one the table doesn't have", () => {
+  it("hides a mesh on a hidden layer; always shows one on no layer, or on one the table doesn't have", () => {
+    expect(layerShown(states, "a")).toBe(false);
     expect(layerShown(states, null)).toBe(true);
     expect(layerShown(states, "unknown")).toBe(true);
   });
@@ -111,10 +111,6 @@ describe("nodeLayer", () => {
 });
 
 describe("choices", () => {
-  it("keeps only boolean choices", () => {
-    expect(layerChoices({ a: true, b: false, c: "yes", d: null })).toEqual({ a: true, b: false });
-    for (const raw of [undefined, null, [], "x"]) expect(layerChoices(raw)).toEqual({});
-  });
   it("key changes iff the choices do, whatever order they were written in", () => {
     expect(layersKey({ b: false, a: true })).toBe(layersKey({ a: true, b: false }));
     expect(layersKey({ a: true })).not.toBe(layersKey({ a: false }));

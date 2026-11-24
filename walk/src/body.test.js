@@ -423,8 +423,8 @@ describe("the walk body", () => {
     const f = stage({ objects: groundObjects() });
     const s = walkBody(f.api).enter(null);
     f.frames(2);
-    const look = s.input.press({ button: 0, locked: false, clientX: 0, clientY: 0 });
-    look.move({ clientX: 100, clientY: 0 });
+    const look = s.input.press({ button: 0, locked: false, x: 0, y: 0 });
+    look.move({ x: 100, y: 0 });
     expect(s.state.yaw).not.toBe(0);
     expect(look.tap()).toBe(false);
     expect(s.input.press({ button: 0, locked: true })).toBe(null);

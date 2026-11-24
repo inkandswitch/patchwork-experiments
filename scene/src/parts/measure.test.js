@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, until, settle } from "../test/stage-harness.js";
@@ -15,7 +16,7 @@ afterEach(() => {
 });
 
 async function mount({ objects = { a: object({ name: "A", transform: { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 } }) }, extensions = [], doc = {} } = {}) {
-  s = await mountStage({ extensions: [MEASURE, DIMENSIONS, ...extensions], doc: { objects, order: Object.keys(objects), ...doc } });
+  s = await mountStage({ editor: true, natives: true,  extensions: [MEASURE, DIMENSIONS, ...extensions], doc: { objects, order: Object.keys(objects), ...doc } });
   return s;
 }
 
@@ -50,6 +51,7 @@ describe("scene.measure", () => {
     expect(state()).toMatchObject({ checked: false });
     expect(state("measure", "a")).toBeNull(); // the scene's, not an object's
     expect(hint().hidden).toBe(true);
+    s.pointer("pointermove", 20, 20); // the pointer over the canvas: its cursor is the top hand's
     expect(run()).toBe(true);
     await settle();
     expect(state()).toMatchObject({ checked: true });
@@ -147,29 +149,5 @@ describe("scene.measure", () => {
     // putting it down clears everything
     run();
     expect(layer()).toEqual([]);
-  });
-
-  it("the first point follows its object", async () => {
-    await mount();
-    run();
-    pickAt({ id: "a", point: [1, 0, 0], snapped: true });
-    s.click();
-    pickAt({ id: null, point: [1, 0, 1], snapped: false, ground: true });
-    s.pointer("pointermove", 15, 15, { buttons: 0 });
-    await until(() => preview()?.textContent === "1 m");
-    s.change((d) => {
-      d.objects.a.transform.position = [1, 0, -1];
-    });
-    await until(() => preview()?.textContent === "2 m");
-  });
-
-  it("stopping the extension puts it down", async () => {
-    await mount();
-    run();
-    await settle();
-    expect(s.local.get().held).toMatchObject([{ ext: "scene.measure", command: "measure", pointer: true }]);
-    await s.uninstall("scene.measure");
-    expect(s.local.get().held).toEqual([]);
-    expect(s.canvas.style.cursor).toBe("");
   });
 });

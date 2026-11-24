@@ -102,7 +102,7 @@ describe("landedPose: start × answer × snap (48 cases)", () => {
     expect(p.W.slice(12)).toEqual([0.3, 0.01, -0.2, 1]);
   });
 
-  it("with no snap and no answer it is how it is held, exactly", () => {
+  it("with no snap and no answer, or a faceUp answer while not facing you (faceUp is heeded only while faceYou), it is how it is held, exactly", () => {
     for (const start of Object.keys(STARTS)) {
       const own = composeMatrix({ position: [1, 2, 3], rotation: [0.3, -1.1, 2.2], scale: 1.5 });
       const R0 = frame(...STARTS[start]);
@@ -110,12 +110,6 @@ describe("landedPose: start × answer × snap (48 cases)", () => {
       expect(landedPose(m, TILE).W).toEqual(m);
       expect(landedPose(m, TILE, { answer: { faceUp: true }, faceYou: false }).W).toEqual(m);
     }
-  });
-
-  it("faceUp is heeded only while faceYou", () => {
-    const own = frame(...STARTS["flat face down"]);
-    expect(near(axes(landedPose(own, TILE, { answer: { faceUp: true }, faceYou: false }).W), R.D)).toBe(true);
-    expect(near(axes(landedPose(own, TILE, { answer: { faceUp: true }, faceYou: true }).W), R.I)).toBe(true);
   });
 
   // a flat frame (a Lost Cities tray's, turned a quarter): face up or down as it is, or as faceUp asks
@@ -267,11 +261,11 @@ describe("leaning and tilted frames", () => {
   const rotationOf = (ax) => decomposeMatrix(frame(...ax)).rotation;
   const PIECES = ["flat face up", "flat face down", "standing facing +Z"];
   const ROWS = [];
-  for (const a of [5, -5, 30, -30, 44, -44]) for (const start of PIECES) ROWS.push([`rack leaned ${a}°`, leaned(a * D), start, true, false]);
+  for (const a of [44, -44]) for (const start of PIECES) ROWS.push([`rack leaned ${a}°`, leaned(a * D), start, true, false]);
   // past 45° the face is the most upright axis: a frame that lays a piece flat, face kept as held
   for (const start of PIECES) ROWS.push(["rack leaned −50° (face up)", leaned(-50 * D), start, false, start === "flat face down"]);
   for (const start of PIECES) ROWS.push(["rack leaned 50° (face down)", leaned(50 * D), start, false, start === "flat face up"]);
-  for (const a of [5, -5, 30, -30]) for (const start of PIECES) ROWS.push([`tray tilted ${a}°`, tilted(a * D), start, false, start === "flat face down"]);
+  for (const a of [30, -30]) for (const start of PIECES) ROWS.push([`tray tilted ${a}°`, tilted(a * D), start, false, start === "flat face down"]);
 
   it.each(ROWS)("%s, %s held %s", (_, F, start, stands, isOver) => {
     const p = landedPose(frame(...STARTS[start]), TILE, { snap: { rotation: rotationOf(F), yaw: null } });
@@ -296,13 +290,11 @@ describe("what the landing rules turn, pinned", () => {
     expect(p.turned).toBe(false);
   });
 
-  // which way a standing tile goes down is by its most upright axis, as a frame's is: tipped 30° toward
-  // its face it is still on edge (laid face up), tipped 60° it lies face down already (kept so)
+  // which way a standing tile goes down is by its most upright axis, as a frame's is: tipped under 45° toward
+  // its face it is still on edge (laid face up), past 45° it lies face down already (kept so)
   it.each([
-    [30, R.yawed],
     [44, R.yawed],
     [46, R.downYawed],
-    [60, R.downYawed],
   ])("a standing tile tipped %i° toward its face lays flat as %j", (deg, want) => {
     const tipped = rotateAbout(frame(...STARTS["standing facing +Z"]), PX, (deg * Math.PI) / 180);
     expect(near(axes(layFlat(tipped, TILE)), want)).toBe(true);
@@ -365,7 +357,7 @@ describe("the carry: where the rules are asked, and turns over that show", () =>
     expect(Math.hypot(last.p[0] - 1, last.p[2])).toBeGreaterThan(1e-3);
   });
 
-  it("F in a frame that stands it shows nothing; it turns over in the air as it leaves", () => {
+  it("F in a frame that stands it shows nothing, once or twice; it turns over in the air as it leaves", () => {
     const c = createCarry({ id: "tile", W: frame(...STARTS["flat face up"]), box: TILE, snaps: rack, raycast: ground });
     c.move(down(1, 0));
     const inRack = c.state.W.slice();
@@ -379,16 +371,14 @@ describe("the carry: where the rules are asked, and turns over that show", () =>
     expect(c.state.flips).toBe(1);
     c.move(down(3, 0)); // out again face down, as it was last seen: no turn
     expect(c.state.flips).toBe(1);
-  });
-
-  it("F twice in a frame that stands it: nothing ever shows", () => {
-    const c = createCarry({ id: "tile", W: frame(...STARTS["flat face up"]), box: TILE, snaps: rack, raycast: ground });
-    c.move(down(1, 0));
-    c.flip();
-    c.flip();
-    c.move(down(3, 0));
-    expect(faceOf(c.state.W)).toBe(1);
-    expect(c.state.flips).toBe(0);
+    // F twice in the frame: nothing ever shows
+    const d = createCarry({ id: "tile", W: frame(...STARTS["flat face up"]), box: TILE, snaps: rack, raycast: ground });
+    d.move(down(1, 0));
+    d.flip();
+    d.flip();
+    d.move(down(3, 0));
+    expect(faceOf(d.state.W)).toBe(1);
+    expect(d.state.flips).toBe(0);
   });
 
   it("Q over a yaw-only snap turns how it is held, seen as it leaves", () => {

@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera } from "three";
 import { SHADOW_CAP, castShadows, fitShadow, ladderRadius, lightBasis, shadowFocus, shadowFrame } from "./shadows.js";

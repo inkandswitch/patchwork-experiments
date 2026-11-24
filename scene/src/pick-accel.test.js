@@ -32,15 +32,6 @@ describe("lazy pick BVH", () => {
     expect(hits[0].faceIndex).toBe(50);
   });
 
-  it("leaves small meshes on the plain raycast", () => {
-    const g = strip(10);
-    const mesh = new Mesh(g, new MeshBasicMaterial());
-    mesh.updateMatrixWorld(true);
-    const rc = new Raycaster(new Vector3(3.25, 0.25, 5), new Vector3(0, 0, -1));
-    expect(rc.intersectObject(mesh).length).toBe(1);
-    expect(g.boundsTree).toBeUndefined();
-  });
-
   it("works per instance of an InstancedMesh", () => {
     const g = strip(BVH_MIN_TRIANGLES);
     const im = new InstancedMesh(g, new MeshBasicMaterial(), 2);

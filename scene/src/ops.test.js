@@ -4,7 +4,7 @@
 // several-id removal and the refusals.
 import { describe, it, expect } from "vitest";
 import * as Automerge from "@automerge/automerge";
-import { attachTo, clearLayers, docOf, fileIn, moveRow, newGroup, orderedIds, removeObjects, repairCycles, REASONS, setField, setLayerShown, setTransform, setTransformPart, ungroup } from "./ops.js";
+import { attachTo, clearLayers, docOf, fileIn, moveRow, newGroup, orderedIds, removeObjects, REASONS, setField, setLayerShown, setTransform, setTransformPart, ungroup } from "./ops.js";
 import { resolveParents, worldMatrix } from "./hierarchy.js";
 import { placementFor } from "./tree-drop.js";
 import { outlineParents } from "./groups.js";
@@ -51,21 +51,6 @@ function vessel() {
 }
 
 describe("plan shapes", () => {
-  it("a plan is a change function with ok and what a surface wants to know", () => {
-    const plan = ungroup(vessel(), "body");
-    expect(typeof plan).toBe("function");
-    expect(plan.ok).toBe(true);
-    expect({ ...plan }).toMatchObject({ id: "body", into: "vessel" });
-  });
-
-  it("a refusal is a change function that writes nothing, with a reason", () => {
-    const doc = vessel();
-    const plan = fileIn(doc, "vessel", "body");
-    expect(plan.ok).toBe(false);
-    expect(plan.reason).toBe(REASONS.groupInItself);
-    expect(apply(doc, plan)).toEqual(doc);
-  });
-
   it("null when what it names isn't there", () => {
     const doc = vessel();
     expect(removeObjects(doc, "nope")).toBeNull();
@@ -117,17 +102,22 @@ describe("attachTo", () => {
     expect(attachTo(next, "a", "a").ok).toBe(false);
   });
 
-  // tool.test.js: "an attach clears the edge a merged cycle left behind …"
-  it("clears the edge a merged cycle left behind, so the loser doesn't jump later", () => {
-    const doc = docWith({
-      a: leaf("a", { parent: "b", x: 5 }), // as two concurrent attaches merge
-      b: leaf("b", { parent: "a" }),
-      c: leaf("c", { transform: T([0, 0, 7]) }),
-    });
-    const next = apply(doc, attachTo(doc, "b", "c"));
-    expect(next.objects.b.parent).toBe("c");
-    expect(next.objects.a.parent).toBeNull(); // not silently re-attached to b
-    expect(next.objects.a.transform.position).toEqual([5, 0, 0]);
+  // Two peers attached a under b and b under a at once (or filed two groups in
+  // each other); the loop is broken at a. Every structural plan clears a's
+  // stale edge first, so a stays where it is and nothing jumps later.
+  const PARENT_LOOP = () => docWith({ a: leaf("a", { parent: "b", x: 5 }), b: leaf("b", { parent: "a" }), c: leaf("c", { transform: T([0, 0, 7]) }) });
+  const GROUP_LOOP = () => docWith({ a: group("A", "b"), b: group("B", "a"), c: group("C"), x: leaf("x") });
+  it.each([
+    ["attachTo", PARENT_LOOP, (d) => attachTo(d, "b", "c"), "parent", (n) => expect(n.objects.b.parent).toBe("c")],
+    ["removeObjects", PARENT_LOOP, (d) => removeObjects(d, "c"), "parent", (n) => expect(n.objects.c).toBeUndefined()],
+    ["moveRow", PARENT_LOOP, (d) => moveRow(d, "b", { parent: null, before: "c" }), "parent", (n) => expect(n.objects.b.parent ?? null).toBeNull()],
+    ["fileIn", GROUP_LOOP, (d) => fileIn(d, "x", "c"), "group", (n) => expect([n.objects.b.group, n.objects.x.group]).toEqual(["a", "c"])],
+  ])("%s clears the edge a merged cycle left behind, so the loser doesn't jump later", (_, make, plan, edge, did) => {
+    const doc = make();
+    const next = apply(doc, plan(doc));
+    did(next);
+    expect(next.objects.a[edge] ?? null).toBeNull();
+    if (edge === "parent") expect(next.objects.a.transform.position).toEqual([5, 0, 0]);
   });
 
   it("detaches to the world pose; null when nothing would change", () => {
@@ -210,13 +200,6 @@ describe("removeObjects", () => {
     expect(Object.keys(next.objects)).toEqual(["flag"]);
     expect(next.objects.flag).toMatchObject({ parent: null, transform: { position: [2, 0, 0] } });
   });
-
-  it("repairs a merged cycle on the way", () => {
-    const doc = docWith({ a: leaf("a", { parent: "b", x: 5 }), b: leaf("b", { parent: "a" }), z: leaf("z") });
-    const next = apply(doc, removeObjects(doc, "z"));
-    expect(next.objects.a.parent).toBeNull();
-    expect(next.objects.a.transform.position).toEqual([5, 0, 0]);
-  });
 });
 
 describe("ungroup", () => {
@@ -291,13 +274,6 @@ describe("newGroup and fileIn", () => {
     expect(fileIn(doc, "battery", null)).toBeNull();
     expect(apply(doc, fileIn(doc, "hull", null)).objects.hull.group).toBeNull();
   });
-
-  it("clears a merged loop of groups first", () => {
-    const doc = docWith({ a: group("A", "b"), b: group("B", "a"), c: group("C"), x: leaf("x") });
-    const next = apply(doc, fileIn(doc, "x", "c"));
-    expect(next.objects.a.group).toBeNull(); // the loop's loser, cleared
-    expect(next.objects.b.group).toBe("a");
-  });
 });
 
 describe("moveRow", () => {
@@ -368,17 +344,6 @@ describe("moveRow", () => {
     plan(draft);
     expect(draft.order).toEqual(["s", "r"]);
     expect(draft.objects.s.transform).toBe(t); // not even rewritten
-  });
-
-  // Two peers attached a1 under b1 and b1 under a1 at once; resolveParents
-  // breaks it at a1, so a1 is a root at x=5 and b1 is under it. Moving b1 to
-  // the top level must not let a1's old edge come back and move a1.
-  it("clears a merged cycle first, so nothing else jumps", () => {
-    const doc = docWith({ a1: leaf("a1", { parent: "b1", x: 5 }), b1: leaf("b1", { parent: "a1", x: 3 }), c1: leaf("c1") });
-    const next = apply(doc, move(doc, "b1", "c1", "before"));
-    expect(next.objects.b1.parent ?? null).toBe(null);
-    expect(next.objects.a1.parent ?? null).toBe(null);
-    expect(next.objects.a1.transform.position).toEqual([5, 0, 0]);
   });
 });
 
@@ -459,14 +424,6 @@ describe("plain writes", () => {
     expect(setTransformPart(doc, "hull", "position", 3, 1)).toBeNull();
     expect(setTransformPart(doc, "hull", "position", 0, NaN)).toBeNull();
     expect(setTransformPart(doc, "body", "scale", 0, 2)).toBeNull();
-  });
-});
-
-describe("repairCycles", () => {
-  it("clears only what it's told, and skips what's gone", () => {
-    const d = { objects: { a: { parent: "b", group: "g" }, b: { parent: "a", group: "h" } } };
-    repairCycles(d, ["a", "gone"], ["b"]);
-    expect(d.objects).toEqual({ a: { parent: null, group: "g" }, b: { parent: "a", group: null } });
   });
 });
 

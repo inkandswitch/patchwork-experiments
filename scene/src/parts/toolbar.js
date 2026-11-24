@@ -56,7 +56,7 @@ export const groupOf = (command) => (GROUPS.includes(command?.group) ? command.g
 
 function create(api) {
   api.style(css);
-  const edge = api.edge("top");
+  const edge = api.overlay("top");
   const bar = document.createElement("div");
   bar.className = "toolbar";
   bar.setAttribute("role", "toolbar");

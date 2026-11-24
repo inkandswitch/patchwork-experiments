@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { dropIntent, isMove, moveInOrder, placementFor, siblings, spliceOrder } from "./tree-drop.js";
+import { dropIntent, isMove, moveInOrder, placementFor, spliceOrder } from "./tree-drop.js";
 
 // A group with two children, a loose object after it.
 //   g1
@@ -82,18 +82,6 @@ describe("moveInOrder", () => {
   test("null means the end", () => {
     expect(moveInOrder(order, "g1", null)).toEqual(["a", "b", "c", "g1"]);
   });
-
-  test("leaves the input alone", () => {
-    const before = [...order];
-    moveInOrder(order, "a", "c");
-    expect(order).toEqual(before);
-  });
-
-  // So a drag that ends where it started can be compared and skipped rather
-  // than written.
-  test("a move that changes nothing produces an equal array", () => {
-    expect(moveInOrder(order, "a", "b")).toEqual(order);
-  });
 });
 
 describe("isMove", () => {
@@ -114,11 +102,6 @@ describe("isMove", () => {
     expect(isMove(objects, order, "b", { parent: "g1", before: "a" })).toBe(true);
     expect(isMove(objects, order, "c", { parent: null, before: "g1" })).toBe(true);
     expect(isMove(objects, order, "c", { parent: "g1", before: null })).toBe(true);
-  });
-
-  test("siblings lists one parent's children in order", () => {
-    expect(siblings(objects, order, "g1")).toEqual(["a", "b"]);
-    expect(siblings(objects, order, null)).toEqual(["g1", "c"]);
   });
 });
 

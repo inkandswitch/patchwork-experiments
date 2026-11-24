@@ -150,8 +150,8 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
     expect(close(rc[1], [10, 0, 0], 1e-9)).toBe(true);
     expect(rc[3]).toBeCloseTo(6, 9);
     sc.camera.ride(null);
-    sc.worldLayer("seats");
-    expect(calls.filter((c) => c[0] === "ride" || c[0] === "layer")).toEqual([["ride", "L"], ["layer", keyOf(1, "seats"), "L"]]);
+    sc.worldLayer("t.ext");
+    expect(calls.filter((c) => c[0] === "ride" || c[0] === "layer")).toEqual([["ride", "L"], ["layer", keyOf(1, "t.ext"), "L"]]);
     expect(sc.rideSpec({ id: null, at: [0, 0, 0] })).toEqual({ id: "L", at: [0, 0, 0] });
     // the outermost has no root: riding its root rides nothing
     const top = scopeViewport(vp, { n: 0 });
@@ -168,7 +168,6 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
       poses: new Map(),
       worldOf: (k) => (k === keyOf(1, "deck") ? deck : null),
       objectBox: (k, o) => (within.push([k, o.within, o.inStage]), { isEmpty: () => false, min: { toArray: () => [0, 0, 0] }, max: { toArray: () => [1, 1, 1] } }),
-      groupBox: (k, o) => (within.push([k, o.within, o.inStage]), { isEmpty: () => false, min: { toArray: () => [0, 0, 0] }, max: { toArray: () => [1, 1, 1] } }),
     };
     const sc = scopeViewport(vp, { n: 1, root: "L", frame: () => F });
     expect(sc.objectBox("winch")).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
@@ -180,7 +179,7 @@ describe("I7: a stage's frame is a similarity, applied exactly", () => {
     expect(id(F, within[0][1])).toBe(true);
     expect(id(deck, within[1][1])).toBe(true);
     // shown as its own stage shows it: the host hiding the link it hangs in doesn't take a box away (I7)
-    expect(sc.groupBox("g")).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
+    expect(sc.objectBox("g")).toEqual({ min: [0, 0, 0], max: [1, 1, 1] });
     expect(within.map((w) => w[2])).toEqual([true, true, true]);
   });
 });

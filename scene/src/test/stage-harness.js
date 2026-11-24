@@ -12,10 +12,12 @@
 // no traits is a part of every doc (traits ["*"]), unless its meta says
 // `type: "scene:view"`. They are registered in that order, which is the
 // order the view plugins run in.
-// The editor's hand (scene.edit) is registered after them unless one of
-// them is it or `editor: false` (s.edit(on) picks it up or puts it down), and
-// the native services (claims, clock, telling, notices, prefs, drawer) last unless `natives: false`. The
-// scene's own datatypes and sources are registered too, `templates` are
+// Nothing else runs unless the test asks: `editor: true` registers the
+// editor's hand (scene.edit) after them (s.edit(on) picks it up or puts it
+// down), and `natives: true` the native services last (or a list of their
+// ids, NATIVES). A kernel test brings small plugins of its own instead
+// (src/test/links.js opens linked docs). The scene's own datatypes and
+// sources are registered too, `templates` are
 // [{ meta, module }] for scene:template plugins and `parts` the same for
 // scene:part plugins.
 
@@ -27,15 +29,21 @@ import { editing } from "../parts/editing.js";
 
 export { flush };
 
-export const settle = async (n = 6) => {
-  for (let i = 0; i < n; i++) await flush();
-};
+/**
+ * Let a stage's work land: a flush (fake-repo.js), which returns only once
+ * nothing is due now. A stage's flush is a microtask or its next frame, and
+ * what it sets off is a promise, a frame or a timer set for now, so once none
+ * is pending, what a change causes has landed. Time is stepped (manualTime),
+ * not waited for.
+ */
+export const settle = () => flush();
 
+/** Flush until fn() holds, failing after `ms` of the wall (performance.now: a test may fake Date and timers). */
 export async function until(fn, ms = 1000) {
-  const t0 = Date.now();
+  const t0 = performance.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 5));
+    if (performance.now() - t0 > ms) throw new Error("timed out");
+    await flush();
   }
 }
 
@@ -78,14 +86,27 @@ async function asRegistered(meta) {
 const VIEW_KEYS = new Set(["hovered", "selected", "body", "hands", "held", "gesture", "pointer", "escape", "theme", "focus"]);
 const PATHS = new Set(["hovered", "selected"]);
 
-/** The native services' ids (src/index.js): registered last unless `natives: false`. */
+/** The native services' ids (src/index.js): registered last when a test asks (`natives`). */
 export const NATIVES = ["scene.claims", "scene.poses", "scene.audience", "scene.clock", "scene.telling", "scene.notices", "scene.prefs", "scene.drawer", "scene.links"];
 
 /** A scene.poses in place of the native one, its facet `stub`'s hold, release and heldBy as they are when called (a test may swap them). */
 export const posesBy = (stub) => ({ meta: { id: "scene.poses" }, module: { create: () => ({ provides: { poses: () => ({ hold: (...a) => stub.hold(...a), release: (...a) => stub.release(...a), heldBy: (...a) => stub.heldBy(...a) }) } }) } });
 
-export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null, editor = true, natives = true } = {}) {
+/**
+ * Import the plugins every mount registers (the natives, the scene's sources
+ * and datatypes) once per test file, before the first: a dynamic import is a
+ * round trip to vitest's module server, real time a flush doesn't wait for.
+ * Loaded, a plugin's load() is microtasks.
+ */
+let preloaded = null;
+const preload = () =>
+  (preloaded ??= import("../index.js").then(({ plugins }) =>
+    Promise.all(plugins.filter((p) => NATIVES.includes(p.id) || p.type === "scene:source" || p.type === "patchwork:datatype").map((p) => Promise.resolve(p.load?.()).catch(() => null))),
+  ));
+
+export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId, packageSettleMs = 0, time = null, editor = false, natives = false } = {}) {
   repo ??= new FakeRepo();
+  await preload();
   if (!handle) {
     resetRegistries();
     const { plugins } = await import("../index.js");
@@ -96,7 +117,8 @@ export async function mountStage({ extensions = [], templates = [], parts = [], 
       getRegistry(type).register({ type, name: meta.id, ...meta, load: async () => module });
     }
     // the native services last: providers start first whatever the registry order (STAGE.md, "Activation")
-    for (const p of plugins) if (natives && NATIVES.includes(p.id) && !extensions.some((x) => x.meta.id === p.id)) getRegistry(p.type).register(p);
+    const wanted = natives === true ? NATIVES : Array.isArray(natives) ? natives : [];
+    for (const p of plugins) if (wanted.includes(p.id) && !extensions.some((x) => x.meta.id === p.id)) getRegistry(p.type).register(p);
     for (const { meta, module } of templates) getRegistry("scene:template").register({ type: "scene:template", name: meta.id, ...meta, load: async () => module });
     for (const { meta, module } of parts) getRegistry("scene:part").register({ type: "scene:part", name: meta.id, ...meta, load: async () => module });
     handle = repo.add(emptyScene(doc));

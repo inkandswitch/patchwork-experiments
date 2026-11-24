@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { Box3, BoxGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
 import { depthRange, nearestClear, sceneDepth } from "./clearance.js";
