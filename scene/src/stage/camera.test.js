@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { Box3, Matrix4, PerspectiveCamera, Vector3 } from "three";
-import { createCamera, reseatTarget } from "./camera.js";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { createCamera, reseatTarget, resetOrbitMotion } from "./camera.js";
 import { createRides } from "./ride.js";
 
 const r6 = (a) => a.map((v) => Math.round(v * 1e6) / 1e6 + 0);
@@ -19,6 +20,15 @@ describe("re-seating the orbit", () => {
     expect(reseatTarget([0, 0, 0], [1, 0, 0], 0)).toEqual([1, 0, 0]);
     expect(reseatTarget([0, 0, 0], [1, 0, 0], NaN)).toEqual([1, 0, 0]);
   });
+});
+
+// resetOrbitMotion clears OrbitControls' private fields; if three renames them it would do nothing, silently
+it("the private OrbitControls fields resetOrbitMotion clears are there, and it clears them", () => {
+  const c = new OrbitControls(new PerspectiveCamera(), document.createElement("div"));
+  c._panOffset.set(1, 2, 3);
+  resetOrbitMotion(c);
+  expect([typeof c._sphericalDelta?.set, c._panOffset.toArray(), c._scale, c._performCursorZoom]).toEqual(["function", [0, 0, 0], 1, false]);
+  c.dispose();
 });
 
 describe("the camera rig", () => {

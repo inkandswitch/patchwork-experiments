@@ -225,6 +225,19 @@ describe("objects", () => {
     release();
   });
 
+  it("a loading object's placeholder is in the theme's muted colour as the theme is read, and follows it", () => {
+    const vp = headless();
+    vp.theme = Object.freeze({ ...vp.theme, muted: [1, 0, 0] });
+    vp.setHint("h", { min: [0, 0, 0], max: [1, 1, 1] });
+    const look = vp.objects.get("h").placeholder.material;
+    expect(look.color.getHexString()).toBe("ff0000");
+    vp.readTheme = function () {
+      this.theme = Object.freeze({ ...this.theme, muted: [0, 0, 1] });
+    };
+    vp.applyTheme();
+    expect(look.color.getHexString()).toBe("0000ff");
+  });
+
   it("a loop added `first` goes ahead of every loop already there", () => {
     const vp = headless();
     const a = () => {};

@@ -133,6 +133,8 @@ export class LabelLayer {
         let leader = null;
         if (hidden) at = null;
         else if (entry.place) {
+          // measured shown: a hidden element has no size
+          entry.el.style.display = "";
           measure(entry);
           const p = entry.place({ project, w: entry.w || 0, h: entry.h || 0 });
           if (p) {

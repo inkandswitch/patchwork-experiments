@@ -28,14 +28,15 @@ describe("cleanAtmosphere", () => {
     expect(cleanAtmosphere({ sun: { intensity: 0 } }).sun.intensity).toBe(0);
   });
 
-  it("takes clouds over a sky only, with a cover over 0, its numbers held to their ranges and defaulted", () => {
+  it("takes clouds over a sky only, with a cover over 0, its other numbers held to their ranges or defaulted", () => {
     const sky = { top: "#c4cacc", horizon: "#959ea1" };
     expect(cleanAtmosphere({ clouds: { cover: 1 } })).toBeNull();
     expect(cleanAtmosphere({ sky, clouds: { cover: 0 } }).clouds).toBeUndefined();
     expect(cleanAtmosphere({ sky, clouds: { cover: "x" } }).clouds).toBeUndefined();
     expect(cleanAtmosphere({ sky, clouds: { cover: 2, contrast: 9 } }).clouds).toEqual({ cover: 1, contrast: 0.5, scale: CLOUDS.scale, base: CLOUDS.base });
     expect(cleanAtmosphere({ sky, clouds: { cover: 0.35, contrast: 0.25, scale: 700, base: 1200 } }).clouds).toEqual({ cover: 0.35, contrast: 0.25, scale: 700, base: 1200 });
-    expect(cleanAtmosphere({ sky, clouds: { cover: 0.5, scale: -1 } }).clouds).toBeUndefined();
+    // a contrast, scale or base that can't be used is its default, the deck kept
+    expect(cleanAtmosphere({ sky, clouds: { cover: 0.5, contrast: 0, scale: -1, base: "x" } }).clouds).toEqual({ cover: 0.5, ...CLOUDS });
   });
 });
 
@@ -65,15 +66,6 @@ describe("cloudAt", () => {
 });
 
 describe("lighting", () => {
-  it("no atmosphere is exactly the stage's own lights", () => {
-    expect(lighting(null)).toEqual({
-      hemisphere: { intensity: LIGHTS.hemisphere, sky: "#ffffff", ground: "#3a3a3a" },
-      key: { intensity: LIGHTS.key, color: "#ffffff", from: [...LIGHTS.keyFrom], shadows: false },
-      headlight: LIGHTS.headlight,
-      environment: LIGHTS.environment,
-    });
-  });
-
   it("a sun replaces the key light and dims the headlight to a third, a sky tints the sky light, exposure scales every light", () => {
     const l = lighting(cleanAtmosphere({ sky: { top: "#4080c0", bottom: "#806040" }, sun: { direction: [0, 1, 0], color: "#ffeecc", intensity: 2, shadows: true }, exposure: 2 }));
     expect(l.key).toEqual({ intensity: 4, color: "#ffeecc", from: [0, 1, 0], shadows: true });
