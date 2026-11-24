@@ -137,7 +137,7 @@ try {
     cam: (w) => dbgOf(w).viewport.getCamera(),
     /** the keys to A's view (its stage root), as a click on it would */
     focusA() { const r = hostA.querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
-    held: (w) => !dbgOf(w).viewport.controls.enabled,
+    held: (w) => dbgOf(w).viewport.held,
     locked: () => document.pointerLockElement === dbgA.viewport.canvas,
     lockElement: () => document.pointerLockElement?.tagName ?? null,
     text: (sel, w) => [...hostOf(w).querySelectorAll(sel)].map((e) => e.textContent.trim()),
