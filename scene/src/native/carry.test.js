@@ -79,26 +79,6 @@ const command = (id) => s.instance("scene.carry").commands.find((c) => c.id === 
 const stateOf = (id, target = null) => command(id).state(target, { scene: s.api("scene.carry").scene(), view: s.api("scene.carry").view.get() });
 const transformOf = (id) => JSON.parse(JSON.stringify(s.doc().objects[id].transform));
 
-describe("scene.carry commands", () => {
-  it("Snap: a toolbar toggle of the snap pref, whenever carrying runs, following the doc's suggestion until this viewer chooses", async () => {
-    await mount();
-    expect(command("snap").show).toEqual(["toolbar"]);
-    expect(stateOf("snap", "a")).toBe(null);
-    expect(stateOf("snap")).toMatchObject({ checked: true });
-    const docSnap = s.doc().view.snap;
-    s.api("scene.carry").run({ ext: "scene.carry", command: "snap", target: null });
-    expect(s.local.get()["scene.prefs"].snap).toBe(false);
-    expect(stateOf("snap")).toMatchObject({ checked: false });
-    s.api("scene.carry").run({ ext: "scene.carry", command: "snap", target: null, value: true });
-    expect(s.local.get()["scene.prefs"].snap).toBe(true);
-    expect(s.doc().view.snap).toBe(docSnap); // never the doc
-    // until this viewer chooses, it follows the doc's suggestion
-    s.unmount();
-    await mount({ doc: { view: { snap: false } } });
-    expect(stateOf("snap")).toMatchObject({ checked: false });
-  });
-});
-
 describe("scene.carry input", () => {
   // (the trait, a lock, a veto, a peer's hold and the holder over the hit: H11, below)
   it("claims a press on its holder only: not a group, not nothing, not a secondary button, not with a pointing tool held (a tool that only looks leaves it be)", async () => {

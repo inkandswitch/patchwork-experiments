@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { codeOfKey, keyHolder, keyLayers, labelOf, lookChain, reservedBy } from "../key-order.js";
 import { TOO_FAR, commandState, flatCommands } from "../stage/commands.js";
-import { attentionPath, hintFor, mapInvocation, resolveKey } from "./keymap.js";
+import { attentionPath, hintFor, mapInvocation, resolveKey, resolveShortcut, shortcutHintFor } from "./keymap.js";
+import { shortcutEvent } from "./shortcuts.js";
 import { keyContext, resolverState } from "./resolver.js";
 import { barEntries, keysOf } from "./toolbar-commands.js";
 import { promptEntries } from "./use.js";
@@ -239,6 +240,36 @@ describe("the key resolver (H3), exhaustively", () => {
     const verb = { ext: "t.boat", command: collected[1].value[0], target: null };
     const hint = (hit) => hintFor(verb, { collected, ctx: { scene, local: {} }, attention: { selected: null, hit } });
     expect([hint(null), hint({ id: "crate" }), hint({ id: "table" }), hint({ id: "card" })]).toEqual(["Enter", "Enter", "", ""]);
+  });
+
+  // H3 for ⌘ shortcuts: a surface shows a shortcut only where pressing it reaches that verb on that target.
+  // Every attention (nothing, the table, the card) × a body or hand declaring Z or not × the object's Mod+Z
+  // disabled or not: the hint is shown exactly when the resolver sends the press to it.
+  it("a shortcut is shown exactly where pressing it runs it: every attention × a reserver of Z × the nearer verb disabled (H3)", () => {
+    const collected = [
+      { id: "t.obj", value: [{ id: "undo-card", shortcut: "Mod+Z", state: on("card"), run() {} }] },
+      { id: "t.scene", value: [{ id: "undo", shortcut: "Mod+Z", run() {} }] },
+    ];
+    let n = 0;
+    for (const hit of [null, { id: "table" }, { id: "card" }]) {
+      for (const pad of [null, { keys: [{ code: "KeyZ" }] }]) {
+        for (const disabled of [false, true]) {
+          collected[0].value[0].state = (t) => (t === "card" ? (disabled ? { disabled: true } : {}) : null);
+          const state = { body: pad, collected, ctx: { scene, local: {} }, attention: { selected: null, hit } };
+          const r = resolveShortcut(shortcutEvent("Mod+Z", true), state, true)?.invocation ?? null;
+          for (const [ext, target] of [["t.obj", "card"], ["t.scene", null]]) {
+            const command = collected.find((c) => c.id === ext).value[0];
+            const shown = shortcutHintFor({ ext, command, target }, state, true) !== "";
+            const runs = !!r && r.ext === ext && r.target === target;
+            expect([hit?.id ?? null, !!pad, disabled, ext, shown]).toEqual([hit?.id ?? null, !!pad, disabled, ext, runs]);
+            n++;
+          }
+          // (no reserver takes a ⌘ key: the pad changes nothing)
+          expect(r?.ext).toBe(hit?.id === "card" ? "t.obj" : "t.scene");
+        }
+      }
+    }
+    expect(n).toBe(24);
   });
 
   it("Escape is no command's", () => {

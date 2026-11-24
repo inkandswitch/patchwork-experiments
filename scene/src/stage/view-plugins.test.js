@@ -180,3 +180,25 @@ describe("view plugins", () => {
     expect(at([[], "L3"])).toBe(true);
   });
 });
+
+describe("a view plugin's watches", () => {
+  // each keeps its own last value: one plugin's two watches each hear the change it selects
+  it("two watches of one plugin each hear their own change", async () => {
+    const heard = [];
+    const plugin = {
+      meta: { id: "t.watcher", type: "scene:view" },
+      module: {
+        create(api) {
+          api.view.watch(() => heard.push("hands"), (v) => v.hands);
+          api.view.watch(() => heard.push("selected"), (v) => v.selected);
+          return {};
+        },
+      },
+    };
+    s = await mountStage({ extensions: [plugin], doc: { objects: { a: object() }, order: ["a"] } });
+    const put = s.api("t.watcher").hand({ kind: "k", name: "k", input: {} });
+    s.local.swap((m) => ({ ...m, selected: "a" }));
+    put();
+    expect(heard).toEqual(["hands", "selected", "hands"]);
+  });
+});

@@ -16,7 +16,7 @@
 // (the objects carrying its traits, their values, the objects × verbs grid,
 // what it holds now, its services, what it last wrote). The X-ray draws them.
 
-import { chainOrder, commandState, flatCommands, hitChain, holdersFor } from "../stage/public.js";
+import { applicable, chainOrder, hitChain, holdersFor } from "../stage/public.js";
 
 /** The input events an `input` may take (STAGE.md, "The input chain"). */
 export const EVENTS = ["press", "click", "menu", "key", "keyup", "wheel", "widgetAt", "cursor"];
@@ -109,18 +109,11 @@ export function buildGears({ metas = [], scene, running = [], views = [], settle
     for (const ext of order) holds.push({ ext, object: id, via: hs.get(ext).id, depth: hs.get(ext).depth });
   }
 
-  // ── verbs: each command's state for each target, as every surface asks it
-  const flat = flatCommands(commands);
-  const verbs = [];
-  const want = targets ?? [null, ...ids];
-  for (const { ext, command } of flat) {
-    for (const target of want) {
-      if (target != null && !objects[target]) continue;
-      const st = verbState(commandState(command, target, context));
-      if (!st) continue;
-      verbs.push({ ext, command: String(command.id), name: String(command.name ?? command.id), target, keys: [command.key ?? []].flat().map(String), show: command.show === undefined ? null : [command.show].flat().map(String), ...st });
-    }
-  }
+  // ── verbs: each command's state for each target, by the walk every surface takes (the kernel's applicable)
+  const want = (targets ?? [null, ...ids]).filter((t) => t == null || objects[t]);
+  const verbs = want.flatMap((target) =>
+    applicable(commands, target, context).map(({ ext, command, state }) => ({ ext, command: String(command.id), name: String(command.name ?? command.id), target, keys: [command.key ?? []].flat().map(String), show: command.show === undefined ? null : [command.show].flat().map(String), ...verbState(state) })),
+  );
 
   // ── services: each name, who provides it (the first running provider serves) and who uses it
   const serviceNames = [...new Set(extensions.flatMap((e) => [...e.provides, ...e.uses]))].sort();

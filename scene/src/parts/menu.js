@@ -14,8 +14,8 @@
 import css from "./menu.css?inline";
 import { cleanChoices, controlKind, shownOn } from "./toolbar-commands.js";
 import { applicable } from "../stage/public.js";
-import { hintFor } from "./keymap.js";
-import { onMac, shortcutLabel, shortcutsOf } from "./shortcuts.js";
+import { hintFor, shortcutHintFor } from "./keymap.js";
+import { onMac } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
 
 /** The selection's verb, first in every target's menu. */
@@ -77,7 +77,7 @@ function create(api) {
     b.append(label);
     // the key is the key map's, decided in its context (resolver.js keyContext); the
     // row runs at the point the menu was opened on, so a row disabled there shows none
-    const key = state.disabled ? "" : (extra.key ?? (hintFor({ ext, command, target, stage }, keys) || shortcutLabel(shortcutsOf(command)[0], onMac())));
+    const key = state.disabled ? "" : (extra.key ?? (hintFor({ ext, command, target, stage }, keys) || shortcutHintFor({ ext, command, target, stage }, keys, onMac())));
     if (key) {
       const k = document.createElement("kbd");
       k.className = "menu-key";

@@ -6,8 +6,7 @@
 // otherwise every shown object gets a faint box and its sizes. Boxes are of
 // loaded geometry only (no hints), from api.box.
 
-import { EDIT } from "./editing.js";
-import { whileHolding } from "../stage/public.js";
+import { whileEditing } from "./editing.js";
 import { perFocus } from "../per-focus.js";
 import css from "./bounds.css?inline";
 import { formatLength } from "../units.js";
@@ -113,7 +112,7 @@ export default {
         },
       };
     }
-    const drawn = whileHolding(api, EDIT, bounds);
+    const drawn = whileEditing(api, bounds);
 
     return {
       commands: [

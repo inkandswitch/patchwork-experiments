@@ -15,12 +15,12 @@
 //     moving rows is the outline's.
 //     A copy that doesn't snap lands on its base, not its origin (the
 //     payload's `lift`): a crate whose origin is its middle sits on the floor.
-//   - Copy (⌘C / Ctrl+C, its shortcut, which the key map runs, with something
-//     selected and no text selected on the page; or the menu's Copy) puts
-//     the selection on the clipboard: the row payload, and its document link
-//     as text for anything else, both through a copy event of its own
-//     (execCommand: where the browser won't run one, only the link, and the
-//     copy reaches scenes on this page).
+//   - Copy (⌘C / Ctrl+C or the browser's Edit ▸ Copy: its copy event, heard
+//     through scene.drops, with something selected and no text selected on
+//     the page; or the menu's Copy, through a copy event of its own) puts the
+//     selection on the clipboard: the row payload, and its document link as
+//     text for anything else (where the browser won't run a copy event for
+//     the menu, only the link, and the copy reaches scenes on this page).
 //     Paste (⌘V / Ctrl+V: the browser's paste event, the one way to read the
 //     clipboard; or the menu's Paste) copies it in where the view is
 //     looking: under the object there only when it snaps to one of its
@@ -43,7 +43,7 @@
 import { isGroup } from "../groups.js";
 import { landings } from "./landing.js";
 import { parseAutomergeUrl } from "../dnd.js";
-import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
+import { ROW_MIME, copyObjects, rowDocument, currentDrag, fromScene, heldCopy, hold, isRowDrag, liftOf, objectCopyIn, reachOf, readRowPayload, rowPayload, sizeOf, subtreeOf } from "../transfer.js";
 import { atFocus, perFocus } from "../per-focus.js";
 import { isLink, atOf } from "../native/link-graph.js";
 import { bundleLink, extractObjects, extractable, traitRules } from "../extract.js";
@@ -186,6 +186,7 @@ function create(api) {
 
   // what scene.drops offers (./drops.js): a row from another scene, dragged over the port and dropped
   const dropping = {
+    wants: (dt) => isRowDrag(dt) && ownRow(dt) !== true,
     over(e) {
       const dt = e.dataTransfer;
       if (!isRowDrag(dt) || !inPort(e) || ownRow(dt) === true) return hideRing(), false;
@@ -269,17 +270,18 @@ function create(api) {
     });
   }
 
-  /** What scene.drops offers (./drops.js): a paste of a copied object (the row payload, or the text of this page's Copy). */
+  /** What scene.drops offers (./drops.js): a paste of a copied object (../transfer.js objectCopyIn). */
   const pasting = (e) => {
-    const cd = e.clipboardData;
-    let payload = readRowPayload(cd?.getData?.(ROW_MIME) ?? "");
-    if (!payload) {
-      const h = heldCopy();
-      const text = cd?.getData?.("text/plain") ?? "";
-      if (h && text && text === h.text) payload = h;
-    }
+    const payload = objectCopyIn(e.clipboardData);
     if (!payload) return false;
     void paste(payload);
+    return true;
+  };
+  /** What scene.drops offers: the browser's copy (⌘C, Edit ▸ Copy) of the selected object, unless text on the page is selected (the browser copies that). */
+  const copying = (e) => {
+    const sel = here.view.get().selected ?? null;
+    if (sel == null || !here.scene().objects[sel] || textSelected() || !e.clipboardData) return false;
+    for (const [t, v] of Object.entries(copy([sel]))) if (v) e.clipboardData.setData(t, v);
     return true;
   };
 
@@ -359,10 +361,11 @@ function create(api) {
       id: "copy",
       hand: "edit",
       name: "Copy",
+      // (⌘C is the browser's copy event, which this part hears through scene.drops: shown, not run by scene.keys)
       shortcut: "Mod+C",
+      shortcutBy: "clipboard",
       show: ["menu"],
-      // (with text selected on the page, ⌘C is the browser's: that text)
-      state: (target, { scene }) => (target != null && scene?.objects?.[target] && !textSelected() ? { title: "Copy this, to paste here or into another scene" } : null),
+      state: (target, { scene }) => (target != null && scene?.objects?.[target] ? { title: "Copy this, to paste here or into another scene" } : null),
       run(target) {
         const data = copy([target]);
         // both types, through a copy event of our own (a key press or a menu click may run one)
@@ -401,6 +404,7 @@ function create(api) {
     commands,
     dropping,
     pasting,
+    copying,
     dispose() {
       for (const stop of watched.values()) stop?.();
       watched.clear();

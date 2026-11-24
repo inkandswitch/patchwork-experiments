@@ -711,10 +711,9 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
 
   // A shut pane is drawn into by nothing (a scene that changes every frame
   // isn't redrawn into a tree nobody sees); it catches up as it opens.
-  // (putting the editor down disposes the pane: nothing is left to draw into)
   it.each([
     ["×", () => s.root.querySelector(".stage-drawer-tab-close").click(), toolbarOn, "A"],
-    ["putting the editor down", () => s.edit(false), () => (s.edit(true), toolbarOn()), null],
+    ["putting the editor down", () => s.edit(false), () => (s.edit(true), toolbarOn()), "A"],
   ])("shut by %s, the tree isn't drawn; opened again, it shows the scene as it is", async (_name, shut, reopen, whileShut) => {
     s = await mountStage({ editor: true, natives: true,  extensions: [INSPECTOR], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     await settle();

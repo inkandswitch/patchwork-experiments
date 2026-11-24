@@ -1297,3 +1297,16 @@ Paste stays the browser's event. `scene.drops` hears drops and pastes once and
 offers them to the parts' `dropping` and `pasting`. The outline's open rows
 are prefs. `making.js` holds what packages' modules make with the drop
 context, `editor.js` the recorded writes. Carry is native.
+
+### 2026-11-24 — The editor's review fixes
+
+`whileEditing(api, make)` is the editor's (`parts/editing.js`); the kernel
+keeps only each watch's own last value. ⌘ shortcuts match the layout's
+letter, a disabled or repeated one is claimed, Redo's Ctrl+Y is off a Mac
+only, and every shown shortcut comes from the resolver (H3). Copy is the
+browser's copy event again, offered through `scene.drops` (`copying`); a paste
+holding an object copy is the copy whatever runs first (`isObjectCopy`).
+`scene.drops` always listens to drops: outside Edit, or where the scene can't
+be written, a drop a part wants is refused with a notice. Drawer panels keep
+their state across holds; the Snap toggle is the editor's (`scene.units`);
+gears takes the one walk.

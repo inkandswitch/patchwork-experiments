@@ -35,6 +35,13 @@ describe("shortcuts: pure", () => {
     expect(shortcutMatches("Mod+G", ev("h", mods), mac)).toBe(false);
   });
 
+  // the layout's letter, not the physical key: on AZERTY the key labelled Z (code KeyW) is Z; Alt's symbol falls back to the code
+  it("match by the key's letter where it is one, else by the physical key: AZERTY's Z is Z, ⌥⌘Z (key Ω) is still Z", () => {
+    const at = (key, code, extra = {}) => ({ key, code, meta: true, ...extra });
+    expect([shortcutMatches("Mod+Z", at("z", "KeyW"), true), shortcutMatches("Mod+Z", at("w", "KeyZ"), true)]).toEqual([true, false]);
+    expect(shortcutMatches("Alt+Mod+Z", at("Ω", "KeyZ", { alt: true }), true)).toBe(true);
+  });
+
   it("label: ⇧⌘G on a Mac, Ctrl+Shift+G elsewhere", () => {
     expect([shortcutLabel("Mod+G", true), shortcutLabel("Shift+Mod+G", true), shortcutLabel("Alt+Mod+E", true)]).toEqual(["⌘G", "⇧⌘G", "⌥⌘E"]);
     expect([shortcutLabel("Mod+G", false), shortcutLabel("Shift+Mod+G", false)]).toEqual(["Ctrl+G", "Ctrl+Shift+G"]);
@@ -45,11 +52,12 @@ describe("shortcuts: pure", () => {
     const cmd = (id, shortcut, applies, extra = {}) => ({ id, shortcut, state: (t) => (applies(t) ? {} : null), run() {}, ...extra });
     const commands = [cmd("scene-g", "Mod+G", (t) => t == null), cmd("obj-g", "Mod+G", (t) => t === "a"), cmd("copy", "Mod+C", () => true, { shortcutBy: "clipboard" }), cmd("off", "Mod+O", () => true)];
     const press = (k, targets) => shortcutInvocation([{ id: "t", value: commands }], ev(k, { meta: true }), true, {}, targets);
-    expect(press("g", ["a", null])).toEqual({ ext: "t", command: "obj-g", target: "a" });
-    expect(press("g", ["b", null])).toEqual({ ext: "t", command: "scene-g", target: null });
+    expect(press("g", ["a", null])).toEqual({ ext: "t", command: "obj-g", target: "a", disabled: false });
+    expect(press("g", ["b", null])).toEqual({ ext: "t", command: "scene-g", target: null, disabled: false });
     expect(press("c", ["a", null])).toBe(null);
+    // disabled, it is still the key's: claimed, and nothing runs
     commands[3].state = () => ({ disabled: true });
-    expect(press("o", ["a", null])).toBe(null);
+    expect(press("o", ["a", null])).toEqual({ ext: "t", command: "off", target: "a", disabled: true });
   });
 });
 
@@ -60,7 +68,7 @@ describe("shortcuts on the stage", () => {
     s = null;
   });
 
-  it("⌘G groups the selection and ⇧⌘G ungroups it; ⌘C copies it (the key map runs Copy); ⌘V is the browser's paste event, not run here; the menu shows each", async () => {
+  it("⌘G groups the selection and ⇧⌘G ungroups it; ⌘C and ⌘V are the browser's copy and paste events, not run here; the menu shows each", async () => {
     // (the harness's navigator is no Mac: Ctrl is Mod)
     s = await mountStage({ editor: true,  extensions: [{ meta: { id: "scene.keys" }, module: keys }, { meta: { id: "scene.inspector" }, module: inspector }, { meta: { id: "scene.transfer" }, module: transfer }], doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });
     s.local.swap((m) => ({ ...m, selected: "a" }));
@@ -75,8 +83,7 @@ describe("shortcuts on the stage", () => {
     expect([s.doc().objects[gid], s.doc().objects.a.group ?? null]).toEqual([undefined, null]);
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
-    expect(press("c").defaultPrevented).toBe(true);
-    expect(press("v").defaultPrevented).toBe(false);
+    expect([press("c").defaultPrevented, press("v").defaultPrevented]).toEqual([false, false]);
     // the menu's rows say each one's shortcut
     const reader = s.api("scene.inspector").path({ focus: true })[0];
     const { forObject } = menuEntries(s.api("scene.inspector").collect("commands"), "a", reader.context(null));

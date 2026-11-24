@@ -24,8 +24,8 @@ import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.j
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
 import { editor } from "./editor.js";
-import { pointing, whileHolding } from "../stage/public.js";
-import { EDIT } from "./editing.js";
+import { pointing } from "../stage/public.js";
+import { whileEditing } from "./editing.js";
 import { MOVE, moving } from "./halo-math.js";
 import { perFocus } from "../per-focus.js";
 
@@ -403,7 +403,7 @@ export default {
       return { layer, labels: f.labels() };
     });
     // the knobs are the editor's: made in the focus as the Edit hand is picked up, gone as it goes
-    const knobs = whileHolding(api, EDIT, () => perFocus(api, (f) => handlesAt(f, api, drawing())));
+    const knobs = whileEditing(api, () => perFocus(api, (f) => handlesAt(f, api, drawing())));
     const at = () => knobs()?.() ?? null;
     return {
       // (its focus's: what the view offers is read as it offers it)

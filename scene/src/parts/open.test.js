@@ -32,6 +32,16 @@ describe("openFor: the target's Open", () => {
     expect(openFor([{ id: "t.a", value: [cmd("go", { open: true, state: () => { throw new Error("x"); } })] }, ...collected], "x", {})).toMatchObject({ ext: "t.a", command: { id: "go" } });
   });
 
+  // H14: an Open naming a kind of hand is the target's Open only while one is held (the next that applies otherwise)
+  it("an Open naming the Edit hand is the target's only while the Edit hand is held; else the next one that applies", () => {
+    const collected = [
+      { id: "t.model", value: [cmd("edit-model", { open: true, hand: "edit" })] },
+      { id: "t.links", value: [cmd("enter", { open: true })] },
+    ];
+    const at = (hands) => openFor(collected, "x", { view: { hands } })?.command.id ?? null;
+    expect([at([]), at([{ kind: "other" }]), at([{ kind: "edit" }])]).toEqual(["enter", "enter", "edit-model"]);
+  });
+
   it("is listed in the menu right after Select, ahead of the rest", () => {
     const collected = [
       { id: "t.a", value: [cmd("frame", { show: ["menu"] }), cmd("go", { open: true, show: ["menu"] })] },

@@ -2,8 +2,8 @@
 // the editor's own writes only (the halo's handles, the inspector, transfer,
 // add, remove: whatever wrote through ./editor.js), this viewer's, in the focus
 // doc, as inverse changes (src/undo.js); a die's roll, a shuffle, a pause or
-// a process's save is never on it. ⌘Z undoes, ⇧⌘Z or ⌘Y redoes (Ctrl off a
-// Mac): the commands' shortcuts, which the key map runs in the key order
+// a process's save is never on it. ⌘Z undoes, ⇧⌘Z redoes (Ctrl+Z, Ctrl+Shift+Z
+// or Ctrl+Y off a Mac): the commands' shortcuts, which the key map runs in the key order
 // (STAGE.md, "Keys": a field keeps its own text undo, a docked pane its own
 // keys); the toolbar has both, named for the step they'd take. A package's
 // own writes go on it through the "edits" service (EDITOR.md, "Undo"). Both are the
@@ -13,11 +13,13 @@
 // wrote: undo's compare-and-set).
 
 import { editor } from "./editor.js";
+import { onMac } from "./shortcuts.js";
 
-/** Each command's shortcuts (./shortcuts.js). */
-const SHORTCUTS = { undo: ["Mod+Z"], redo: ["Shift+Mod+Z", "Mod+Y"] };
+/** Each command's shortcuts (./shortcuts.js): ⌘Z, ⇧⌘Z; Ctrl+Y redoes too off a Mac (⌘Y is the browser's History there). */
+const shortcuts = (mac) => ({ undo: ["Mod+Z"], redo: ["Shift+Mod+Z", ...(mac ? [] : ["Mod+Y"])] });
 
 function create(api) {
+  const SHORTCUTS = shortcuts(onMac());
   const take = (which) => {
     const f = api.focus();
     return f ? editor(f)[which]() : false;

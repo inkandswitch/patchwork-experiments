@@ -26,12 +26,19 @@ export function parseShortcut(text) {
 /** A command's shortcuts, as declared (one or a list). */
 export const shortcutsOf = (command) => (Array.isArray(command?.shortcut) ? command.shortcut : command?.shortcut ? [command.shortcut] : []).filter((s) => typeof s === "string");
 
-/** The letter or name a key event means, without what Shift does to it ("G" → "g"; KeyG → "g"). */
+/**
+ * The letter or name a key event means, without what Shift does to it: its
+ * `key` when that is a letter or digit (the layout's: Undo is on the key
+ * labelled Z, on AZERTY too), else the physical key's (Alt on a Mac turns Z
+ * into Ω: KeyZ → "z"), else its `key`.
+ */
 function keyOf(ev) {
+  const key = String(ev?.key ?? "");
+  if (/^[a-z0-9]$/i.test(key)) return key.toLowerCase();
   const code = typeof ev?.code === "string" ? ev.code : "";
   if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
   if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-  return String(ev?.key ?? "").toLowerCase();
+  return key.toLowerCase();
 }
 
 /** Does this key event ({ key, code, meta, ctrl, shift, alt }) press this shortcut? ⌘ on a Mac, Ctrl elsewhere. */
@@ -52,10 +59,11 @@ export function shortcutLabel(text, mac) {
 }
 
 /**
- * Which command a ⌘ key runs: the first whose shortcut it presses (and that
+ * Which command a ⌘ key is: the first whose shortcut it presses (and that
  * isn't another's to do: `shortcutBy`) and that applies (the kernel's walk),
- * on attention's path, innermost first, then the scene. → { ext, command,
- * target } or null.
+ * on attention's path, innermost first, then the scene. A disabled one is
+ * still the key's (it is claimed, and does nothing). → { ext, command,
+ * target, disabled } or null.
  * @param {{ id: string, value: any }[]} collected  a stage's collect("commands")
  * @param {object} ctx  its context
  * @param {(string | null)[]} targets  attention's path, then null
@@ -63,8 +71,16 @@ export function shortcutLabel(text, mac) {
 export function shortcutInvocation(collected, ev, mac, ctx, targets) {
   const presses = ({ command }) => !command.shortcutBy && shortcutsOf(command).some((s) => shortcutMatches(s, ev, mac));
   for (const target of targets) {
-    const e = applicable(collected, target, ctx, presses).find(({ state }) => !state.disabled);
-    if (e) return { ext: e.ext, command: e.command.id, target };
+    const e = applicable(collected, target, ctx, presses)[0];
+    if (e) return { ext: e.ext, command: e.command.id, target, disabled: !!e.state.disabled };
   }
   return null;
+}
+
+/** The key event a shortcut's press is (what pressing it sends), on a Mac or not; null for no shortcut. */
+export function shortcutEvent(text, mac) {
+  const s = parseShortcut(text);
+  if (!s) return null;
+  const code = /^[a-z]$/.test(s.key) ? `Key${s.key.toUpperCase()}` : /^[0-9]$/.test(s.key) ? `Digit${s.key}` : s.key;
+  return { key: s.key, code, meta: !!mac, ctrl: !mac, shift: s.shift, alt: s.alt, repeat: false };
 }

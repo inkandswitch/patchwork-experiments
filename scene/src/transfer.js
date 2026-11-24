@@ -157,6 +157,30 @@ let held = null;
 export const hold = (info) => void (held = info ? Object.freeze({ ...info, ids: [...info.ids] }) : null);
 export const heldCopy = () => held;
 
+/**
+ * The object copy a paste's clipboard holds, or null: the row payload Copy
+ * wrote, else this page's Copy whose text the clipboard holds (the menu's
+ * Copy may only write text). The one test of "is this paste a copied
+ * object" (scene.transfer takes it; scene.add declines it, whatever runs first).
+ * @param {{ getData(type: string): string } | null | undefined} clipboardData
+ */
+export function objectCopyIn(clipboardData) {
+  let raw = "";
+  let text = "";
+  try {
+    raw = clipboardData?.getData?.(ROW_MIME) ?? "";
+    text = clipboardData?.getData?.("text/plain") ?? "";
+  } catch {
+    return null;
+  }
+  const payload = readRowPayload(raw);
+  if (payload) return payload;
+  return held && text && text === held.text ? held : null;
+}
+
+/** Does this paste's clipboard hold an object copy (objectCopyIn)? */
+export const isObjectCopy = (clipboardData) => objectCopyIn(clipboardData) != null;
+
 // ─── what a copy is made of (pure) ─────────────────────────────────────────
 
 /**
