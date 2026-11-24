@@ -62,6 +62,7 @@ import * as ops from "../shared/ops.js";
 import { createContent } from "../content/content.js";
 import { modelOf, snapshotOf } from "./model.js";
 import { createDisplay } from "./display.js";
+import { apiOf } from "./drawn.js";
 
 // the view's pure parts, where they have always been imported from
 export { ARRIVE_WAIT_MS, bestWidget, cleanCamera, initialCamera, startOf, widgetWins } from "./view.js";
@@ -640,9 +641,12 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const acquire = view.acquirer(live);
     // what the view lends it: chrome, frame hooks, timers (view.js viewParts),
     // its elements marked with this stage (several docs' extensions share one view's DOM)
-    const lent = view.viewParts({ id, key: ownerKey(id), own, live, stage: n });
+    const { overlay, popover, listen, ...lent } = view.viewParts({ id, key: ownerKey(id), own, live, stage: n });
 
-    const api = {
+    // What every stage's extension has, drawn or acting (STAGE.md, "Views, stages and links"): its doc and
+    // what it reads, its channel (silent where it may not speak), drawing into the world, time. Its doc's
+    // writes are here too: where it may not write, writable() is false and they refuse (I6).
+    const drawn = {
       // doc and identity
       id,
       repo,
@@ -672,13 +676,8 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
        * the selection and hover as this stage's elements of their paths.
        * select(target) selects this stage's target (null: nothing).
        */
-      view: Object.freeze({
-        get: viewValue,
-        select: (target) => {
-          if (live()) view.select(target == null ? null : [...path, target]);
-        },
-        // (entering, leaving and arriving are the view plugins': no stage learns where the focus goes)
-      }),
+      // (entering, leaving and arriving are the view plugins': no stage learns where the focus goes)
+      view: { get: viewValue },
       /**
        * The doc's ephemeral side (API.md, "`api`"): this view's
        * session (null in a pin: it has none), every peer, and this
@@ -722,19 +721,14 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       ray: (x, y) => scope.ray(x, y),
       raycast: (origin, dir, opts) => scope.raycast(origin, dir, opts),
       project: (p) => scope.project(p),
-      camera: Object.freeze({
+      camera: {
         // in this stage's frame (./scope.js): { position, target, fov, up }; the three.js camera is the view's, never an extension's
         get: () => scope.camera.get(),
-        set: (cam) => scope.camera.set(cam),
-        frame: (box) => scope.camera.frame(box),
-        hold: () => acquire(own.cameraHolds, () => viewport.hold()),
-        /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own; null rides this stage's root */
-        ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
         /** has the camera been placed for this viewer: moved by them or restored as they opened the view (nothing frames it on its own then)? */
         touched: () => viewport.touched() || view.cameraPlaced,
         /** someone finished moving the camera (an orbit, a zoom, a Frame); never while it's held */
         onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
-      }),
+      },
 
       // drawing
       THREE,
@@ -782,15 +776,40 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         requestFlush();
       },
 
-      // bodies, held tools, attention (STAGE.md, "The input chain"–§5)
-      body: Object.freeze({
+      /** the eye: { position, direction } in this stage's frame, or null */
+      body: { eye: () => bodyEye() },
+      /** the look: under lock the eye ray's hit, else the pointer's; { id, point, distance } or null */
+      look: () => look(),
+      // what this stage's extensions offer, each item tagged with its `stage`
+      collect: (name) => reader.collect(name),
+    };
+
+    // What only an acting stage's extension has: taking input (listeners), chrome in the view, moving the
+    // viewer's camera, selecting, bodies, held tools, running commands. A drawn stage's has each one's inert
+    // form instead (./drawn.js).
+    const acting = {
+      view: {
+        select: (target) => {
+          if (live()) view.select(target == null ? null : [...path, target]);
+        },
+      },
+      overlay,
+      popover,
+      listen,
+      camera: {
+        set: (cam) => scope.camera.set(cam),
+        frame: (box) => scope.camera.frame(box),
+        hold: () => acquire(own.cameraHolds, () => viewport.hold()),
+        /** carry the orbit camera with a moving object (STAGE.md): a base ride, the latest applying while the current body has no ride of its own; null rides this stage's root */
+        ride: (oid, opts) => acquire(own.offs, () => scope.camera.ride(oid ?? null, opts)),
+      },
+      // bodies, held tools (STAGE.md, "The input chain")
+      body: {
         /** enter body `id` (any running extension's; the stage's "look" leaves every body) at `place`: false if none offers it or it can't */
         enter: (bid, place) => (live() ? enterBody(bid, place) : false),
         /** leave the top body (never Look) */
         leave: () => (live() ? view.leaveBody() : false),
-        /** the eye: { position, direction } in this stage's frame, or null */
-        eye: () => bodyEye(),
-      }),
+      },
       /**
        * Hold a tool not picked up through a command (something taken in hand
        * by an extension's own input): its declaration { name, keys?: [{ code, label }], pointer? }
@@ -801,12 +820,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         if (!live() || !input || !tool || typeof tool.name !== "string") return noop;
         return holdTool(id, { command: null, name: tool.name, keys: tool.keys, pointer: tool.pointer }, input);
       },
-      /** the look: under lock the eye ray's hit, else the pointer's; { id, point, distance } or null */
-      look: () => look(),
-
-      // the others: what this stage's extensions offer, each item tagged with its `stage`; a command runs in the stage it names
-      collect: (name) => reader.collect(name),
-      // (in another stage only if it acts: a pin is never acted on)
+      // a command runs in the stage it names (in another stage only if it acts: a pin is never acted on)
       run: (inv) => (inv?.stage != null && inv.stage !== n ? (view.acting().find((s) => s.n === inv.stage)?.reader.run(inv) ?? false) : run(inv)),
     };
 
@@ -839,7 +853,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
       owned.delete(id);
     }
 
-    return { api: acts ? api : drawnApi(api), release };
+    return { api: apiOf(drawn, acting, acts), release };
   }
 
   /**
@@ -860,33 +874,6 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
     const layers = exts.flatMap((ext) => (owned.get(ext).layers ?? []).map((l) => Object.freeze({ ext, onTop: l.onTop, meshes: meshes(l.group) })));
     const labels = exts.flatMap((ext) => [...(owned.get(ext).labelItems?.values() ?? [])].flat().filter((i) => i?.key != null).map((i) => Object.freeze({ ext, key: String(i.key), text: i.text == null ? "" : String(i.text), on: typeof i.on === "string" ? i.on : null })));
     return Object.freeze({ layers: Object.freeze(layers), labels: Object.freeze(labels), display: Object.freeze(display.authors()) });
-  }
-
-  /**
-   * A drawn stage's api (STAGE.md, "Views, stages and links"): the acting api less everything
-   * that acts, all in this one place. A pin's extensions run
-   * and draw into the world (layers, labels, display, styles) and read all
-   * they like; what would take input, put chrome in the view, move the
-   * viewer's camera, select, use the view's services, enter a body, hold a tool,
-   * compute or run a command is inert here: a noop, an element kept out of
-   * the DOM, or the answer the acting api gives when it can't. Writes need
-   * nothing here: a drawn stage is read-only, so writable() is false and
-   * each write refuses on that, the handle and repo it holds refuse too
-   * (./readonly.js), and the view never asks it for a segment, a body or a
-   * widget (view.acting()).
-   */
-  function drawnApi(api) {
-    const facet = (base, over) => Object.freeze(Object.defineProperties({}, { ...Object.getOwnPropertyDescriptors(base), ...Object.getOwnPropertyDescriptors(over) }));
-    const loose = (className) => Object.assign(document.createElement("div"), { className });
-    return facet(api, {
-      view: facet(api.view, { select: noop }),
-      overlay: (side) => loose(side ? "stage-edge-part" : "stage-overlay"),
-      popover: () => noop,
-      camera: facet(api.camera, { set: noop, frame: noop, hold: () => noop, ride: () => noop }),
-      body: facet(api.body, { enter: () => false, leave: () => false }),
-      hold: () => noop,
-      run: () => false,
-    });
   }
 
   // ─── the host ─────────────────────────────────────────────────────────────

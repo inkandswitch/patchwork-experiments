@@ -227,7 +227,7 @@ describe("I6: a read-only stage writes nothing", () => {
   }
 
   for (const role of ["pinned"]) {
-    it(`${role}: drawn, never acted on: no segment, body, tool, command, widget, chrome, camera, selection, notice or pref; its extensions still collect from it`, async () => {
+    it(`${role}: drawn, never acted on: no segment, body, tool, command, widget, chrome, listener, camera, selection, notice or pref; its extensions still collect from it`, async () => {
       vi.spyOn(console, "warn").mockImplementation(() => {});
       vi.spyOn(console, "error").mockImplementation(() => {});
       const m = await mount(role);
@@ -260,6 +260,13 @@ describe("I6: a read-only stage writes nothing", () => {
       api.camera.set({ position: [9, 9, 9], target: [0, 0, 0] });
       ok("the camera is not its to move", typeof ride === "function" && view.viewport.held === false);
       // what it draws into the world, it may: its styles too
+      let heard = 0;
+      api.listen(document, "keydown", () => heard++);
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+      ok("a listener hears nothing", heard === 0);
+      // the same api as an acting stage's, member for member (each acting one in its inert form: stage/drawn.js)
+      const shape = (o, at = "") => Object.keys(o).flatMap((k) => { const v = Object.getOwnPropertyDescriptor(o, k).value; return v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype ? shape(v, `${at}${k}.`) : [`${at}${k}`]; }).sort();
+      ok("the api has the acting api's shape", JSON.stringify(shape(api)) === JSON.stringify(shape(s.debug.host.record("t.world").api)));
       ok("a style goes in", api.style(".x{}").isConnected);
       ok("its world layer is there", !!api.world());
       expect(steps.filter(([, v]) => !v).map(([w]) => w)).toEqual([]);
