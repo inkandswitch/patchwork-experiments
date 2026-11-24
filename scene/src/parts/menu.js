@@ -6,14 +6,15 @@
 // runs it; Escape (the stage's ladder: it is a popover), a click outside, or
 // picking closes it. Arrow keys move through it, Enter (or Space) picks.
 // Nothing applies: no menu, and the event goes on down the chain. Each
-// entry's key is the resolver's (../keymap.js hintFor): shown only when
+// entry's key is the resolver's (./keymap.js hintFor): shown only when
 // pressing it does that, so a verb whose key the body reserves shows none.
 // States are worked out in the context of the press (its hit, the body's
 // reach), as every surface's are.
 
 import css from "./menu.css?inline";
-import { applicable, cleanChoices, controlKind, flatCommands } from "./toolbar-commands.js";
-import { hintFor } from "../keymap.js";
+import { applicable, cleanChoices, controlKind } from "./toolbar-commands.js";
+import { flatCommands } from "../stage/commands.js";
+import { hintFor } from "./keymap.js";
 import { onMac, shortcutLabel, shortcutsOf } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
 

@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, posesBy } from "../test/stage-harness.js";
 import toolbar, { GROUPS, groupOf } from "./toolbar.js";
-import { keyMatches, keyLabel, commandState, shownOn, flatCommands, barEntries, onBar } from "./toolbar-commands.js";
+import { keyMatches, keyLabel, shownOn, barEntries, onBar } from "./toolbar-commands.js";
+import { commandState, flatCommands } from "../stage/commands.js";
 
 /** A stand-in extension with a button, a toggle (a pref), a picker and an object-only command. */
 function fakeTools(log) {
@@ -177,8 +178,8 @@ const ctxIn = (view) => ({ scene: { objects: {} }, local: {}, view });
 const segIn = (view, commands, stage) => ({ stage, collected: [{ id: "t.x", value: commands }], ctx: ctxIn(view) });
 
 describe("the bar of tools, exhaustively", () => {
-  // show × body × edit flag: which cluster a command (applying to the scene) lands in.
-  // Each string is (look, look+edit:true, edit, edit+edit:true, walk, walk+edit:true):
+  // show × body × the Edit hand named: which cluster a command (applying to the scene) lands in.
+  // Each string is (look, look+hand, edit, edit+hand, walk, walk+hand):
   // "w" the world's, "e" the editor's, "-" not on the bar.
   const SHOWS = [
     ["absent", undefined, "--ee--"],
@@ -198,16 +199,16 @@ describe("the bar of tools, exhaustively", () => {
     [WALK, true],
   ];
 
-  it("show × body × edit flag (42 rows): outside Edit only world commands; in Edit the editor's too; edit: true only in Edit", () => {
+  it("show × body × the Edit hand named (42 rows): outside Edit only world commands; in Edit the editor's too; hand: \"edit\" only in Edit", () => {
     let n = 0;
     for (const [name, show, expected] of SHOWS) {
       COLUMNS.forEach(([view, edit], i) => {
-        const command = { id: "c", name: "C", run() {}, ...(show === undefined ? {} : { show }), ...(edit ? { edit: true } : {}) };
+        const command = { id: "c", name: "C", run() {}, ...(show === undefined ? {} : { show }), ...(edit ? { hand: "edit" } : {}) };
         const { editor, world } = barEntries([segIn(view, [command])], view);
         const got = world.length ? "w" : editor.length ? "e" : "-";
         expect(editor.length + world.length, name).toBeLessThanOrEqual(1);
         expect(`${name} ${view.name}${edit ? " edit" : ""} ${got}`).toBe(`${name} ${view.name}${edit ? " edit" : ""} ${expected[i]}`);
-        // onBar is the surface's half, before state and edit: true (commandState's)
+        // onBar is the surface's half, before the hand and the state (commandState's)
         expect(onBar(command, view), name).toBe(expected[i - (i % 2)] !== "-");
         n++;
       });
@@ -245,7 +246,7 @@ describe("the bar of tools, exhaustively", () => {
     const state = (kind) => (t) => (t == null && kind === "applies" ? {} : null);
     for (const [view, ed, w, shown, eds, ws] of ROWS) {
       const commands = [
-        ...(ed !== "none" ? [{ id: "ed", name: "Snap", show: ["toolbar"], edit: true, state: state(ed), run() {} }] : []),
+        ...(ed !== "none" ? [{ id: "ed", name: "Snap", show: ["toolbar"], hand: "edit", state: state(ed), run() {} }] : []),
         ...(w !== "none" ? [{ id: "w", name: "Play", show: ["world", "menu"], state: state(w), run() {} }] : []),
       ];
       const entries = barEntries([segIn(view, commands)], view);
@@ -255,8 +256,8 @@ describe("the bar of tools, exhaustively", () => {
     expect(ROWS).toHaveLength(18);
   });
 
-  it("a world command that is the editor's (edit: true) keeps no bar outside Edit", () => {
-    const command = { id: "w", show: ["world"], edit: true, run() {} };
+  it("a world command that is the editor's (hand: \"edit\") keeps no bar outside Edit", () => {
+    const command = { id: "w", show: ["world"], hand: "edit", run() {} };
     expect(barEntries([segIn(LOOK, [command])], LOOK)).toEqual({ editor: [], world: [], shown: false });
     expect(barEntries([segIn(EDIT, [command])], EDIT).shown).toBe(true);
   });
@@ -280,7 +281,7 @@ function fakeGame(log) {
       return {
         commands: [
           { id: "play", name: "Play", show: ["world", "menu"], state: (t, { local }) => (t == null && !local.playing ? {} : null), run: () => (log.push("play"), api.local.swap((m) => ({ ...m, playing: true }))) },
-          { id: "snap", name: "Snap", show: ["toolbar"], edit: true, run: () => log.push("snap") },
+          { id: "snap", name: "Snap", show: ["toolbar"], hand: "edit", run: () => log.push("snap") },
         ],
         bodies: [{ id: "t.walk", label: "Walk", reach: 2, enter: () => ({ input: {}, leave() {} }) }],
       };
@@ -351,7 +352,7 @@ describe("the bar of tools in every body", () => {
 // order; an `icon` drawn as it, named by its label; settings behind the gear, in a popover.
 describe("scene.toolbar: groups, icons, settings", () => {
   let s = null;
-  const cmd = (id, group, extra = {}) => ({ id, name: id[0].toUpperCase() + id.slice(1), group, edit: true, show: ["toolbar"], state: (t) => (t == null ? {} : null), run: () => {}, ...extra });
+  const cmd = (id, group, extra = {}) => ({ id, name: id[0].toUpperCase() + id.slice(1), group, hand: "edit", show: ["toolbar"], state: (t) => (t == null ? {} : null), run: () => {}, ...extra });
   const GROUPED = {
     meta: { id: "t.grouped" },
     module: {

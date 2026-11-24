@@ -15,7 +15,7 @@
 import { IDENTITY_MATRIX, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
 import { groupChain, isGroup } from "../groups.js";
 import { closestOnLine } from "../handles.js";
-import { editing, pointing } from "../stage/bodies.js";
+import { pointing } from "../stage/bodies.js";
 
 /** How big a handle is, as a fraction of its distance from the eye: the same size on screen at any zoom. */
 export const HANDLE_SIZE = 0.02;
@@ -56,8 +56,9 @@ export function groupRoots(scene, gid) {
 
 /**
  * What the halo's handles are on: { kind: "object" | "group", id }, or null.
- * Handles are Move's: they show only while editing (../stage/bodies.js)
- * with Move held, for the selection where its doc may be written, while no
+ * Handles are Move's: they show only with Move held (an editor's tool, so
+ * only while editing: STAGE.md, "Commands", H14), for the selection where
+ * its doc may be written, while no
  * other pointing tool is held (its clicks are the world's: bodies.js
  * pointing), on an object that isn't locked or a group with something it can
  * move.
@@ -72,7 +73,7 @@ export const MOVE = Object.freeze({ ext: "scene.halo", command: "move" });
 export const moving = (view) => Array.isArray(view?.held) && view.held.some((t) => t?.ext === MOVE.ext && t?.command === MOVE.command);
 
 export function haloTarget(scene, view, writable = true) {
-  if (!editing(view) || !writable || !moving(view) || pointing(view, MOVE.ext)) return null;
+  if (!writable || !moving(view) || pointing(view, MOVE.ext)) return null;
   const id = view?.selected;
   const o = id != null ? scene?.objects?.[id] : null;
   if (!o) return null;

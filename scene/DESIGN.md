@@ -94,7 +94,9 @@ body's eye and reach measure every verb ("too far" is computed once).
 first, top first: tools (measure, a gun, a piece drawn from a bag, the
 X-ray), an open menu, and the editor. Each consumes an event or passes it
 on, acted on or not; picking up a tool puts it on top and puts nothing
-down, so several are held at once. **Editing is a hand.** Holding it a click selects, and the halo,
+down, so several are held at once. A command may name the kind of hand it
+belongs to; it exists only while one is held, and so does a tool picked up
+through it. **Editing is a hand.** Holding it a click selects, and the halo,
 inspector, grid and editor commands appear; put down, none of it shows. It
 is picked up, never imposed, and held in any body. Playing is the empty
 hand. Carrying needs no tool and no body: it is a trait.

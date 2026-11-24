@@ -1,6 +1,6 @@
 // Shortcuts (PLANS.md §5): a command's `shortcut`, a key with ⌘ (Ctrl off a
 // Mac) held: "Mod+G", "Shift+Mod+G". The key map's keys are plain keys, and a
-// key with ⌘ or Ctrl is the browser's (../keymap.js); a shortcut is the one
+// key with ⌘ or Ctrl is the browser's (./keys.js); a shortcut is the one
 // way a command takes one, run by scene.keys on attention's target (./keys.js).
 // `shortcutBy` names what already does it ("clipboard": ⌘C and ⌘V are the
 // browser's copy and paste events, which transfer.js hears): such a shortcut

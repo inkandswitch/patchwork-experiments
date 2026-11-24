@@ -1152,3 +1152,41 @@ styled from `--studio-surface`/`--studio-ink`, which Patchwork's dark theme
 doesn't move: it uses the scene's tokens now. Checked in Chrome with a dark
 theme's tokens: the root's scheme turns dark, the pill and selects with it.
 
+
+### 2026-11-24 — The kernel knows no plugin: layers, commands, view.start
+
+A design review found the kernel importing the editor: `stage/stage.js` ran
+commands through `parts/toolbar-commands.js` (which imported back from
+`stage/bodies.js`), so `api.run` enforced the editor's `edit: true`;
+`bodies.js` defined the Edit hand; `view.js` parsed `view.start.edit`; the
+key map lived in the kernel's `keymap.js`; natives imported `parts/`; the
+kernel took event names from the build-controls tool and its snap default
+from carry. Now:
+
+- **Layers**, one table in `src/native/boundary.test.js`: shared, kernel,
+  native, editor, entry; every module in one, imports only down, and the
+  layers above the kernel reach it only through the allowlist. The test
+  found every violation above, plus `parts/inspector.js` importing the
+  controls tool and the packages prompt's text in the kernel's
+  `packages.js` (moved to `parts/packages.js`).
+- **Commands**: what applies and running are the kernel's
+  (`stage/commands.js`: `flatCommands`, `commandState`, `inHand`); the
+  surfaces' half stays in `parts/toolbar-commands.js`. `edit: true` became
+  `hand: "edit"`: a command names the kind of hand it belongs to and applies
+  only while one is held, and a tool picked up through it is held for that
+  kind and goes down with the last such hand (H14, the router). Chosen over
+  "a hand carries its commands" because the editor's commands come from
+  eighteen plugins in four packages (weather, ink-studio, openscad), each
+  in its own stage and context, and one hand cannot carry them; the field is
+  plain data, so the bar can tell a command is there without asking its
+  state. The Edit hand is `parts/editing.js` (`EDIT`, `EDIT_HAND`,
+  `editing`), and putting it down no longer scans for its tools: the kernel
+  puts them down; Select reads `held[].hand`. H9 (reach) moved to STAGE.md.
+- **`view.start`** reaches plugins whole as `view.arrived.start` (frozen);
+  the kernel reads `body`, `place`, `home`; the editor reads its `edit`.
+- **Keys**: the kernel's key order is `src/key-order.js`; the key map's
+  resolver is `parts/keymap.js`.
+- The build controls' DOM events and class are `embed.js`'s; the viewport
+  gives a GLB's `snapRadius` as written and carry applies its default
+  (`carry-rules.js snapRadiusOf`); `per-focus.js` and `shallow.js` are
+  shared.

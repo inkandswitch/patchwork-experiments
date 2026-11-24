@@ -15,7 +15,7 @@
 //
 // Attention is the selection if any, else the look (api.attention). The
 // prompt is on the selection, or the first object along the look's chain
-// (../keymap.js attentionPath) with any verbs for it (looking at a spoke of
+// (./keymap.js attentionPath) with any verbs for it (looking at a spoke of
 // the wheel offers the helm's). Its verbs are the keyed commands that apply
 // to it, unless their `show` leaves "use" out, in running order, in the
 // context every surface passes (from, reach, hit), so a verb beyond the
@@ -33,7 +33,7 @@
 // pad's controls do) and lifting it lets the key up, so the verb goes the
 // key order and the key map, and a held verb ("hold E": winding a capstan)
 // lasts as long as the finger or the mouse button. Which key is asked as
-// it is pressed (keymap.js keyFor, the resolver hintFor asks), so a press
+// it is pressed (./keymap.js keyFor, the resolver hintFor asks), so a press
 // presses only a key that does that verb on that target then. A verb with
 // no key that does it (its key reserved: walking, D) is a click, run on its
 // target; a held one can't be held without its key, so it shows disabled.
@@ -47,8 +47,10 @@
 // document, so its pointer stays captured), until its key comes up.
 
 import css from "./use.css?inline";
-import { applicable, commandState, flatCommands, keysOf } from "./toolbar-commands.js";
-import { attentionPath, codeOfKey, hintFor, keyFor, segmentsOf } from "../keymap.js";
+import { applicable, keysOf } from "./toolbar-commands.js";
+import { commandState, flatCommands } from "../stage/commands.js";
+import { codeOfKey } from "../key-order.js";
+import { attentionPath, hintFor, keyFor, segmentsOf } from "./keymap.js";
 import { resolverState } from "./resolver.js";
 import { samePath } from "../stage/paths.js";
 import { looksFromEye } from "../stage/pointer.js";

@@ -292,7 +292,7 @@ Both ways are in Edit, in view, with no menu diving.
 - **Dial it in**: on the scene inspector, which stays on the scene when
   nothing is selected, the Weather behaviour shows every field. Every number
   is a bounded slider; visibility and cloud base use log sliders.
-- **Commands** (null target, `edit: true`, `show: ["toolbar", "menu"]`): on
+- **Commands** (null target, `hand: "edit"`, `show: ["toolbar", "menu"]`): on
   the toolbar, which is Edit's and always in view there, and in the scene's
   right-click menu. Not on the inspector: the scene inspector shows no scene
   commands (Decision 28). They are the world's weather's only: in a linked

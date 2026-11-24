@@ -57,8 +57,8 @@ import { createView, projectView } from "./view.js";
 import { EMPTY as NO_AMBIENTS, mergeAmbients } from "./ambients.js";
 import { scopeViewport, hitIn, rayIn } from "./scope.js";
 import { elementOf, keyOf, parseKey } from "./paths.js";
-import { lookChain } from "../keymap.js";
-import { commandState } from "../parts/toolbar-commands.js";
+import { lookChain } from "../key-order.js";
+import { commandState } from "./commands.js";
 import * as ops from "../ops.js";
 import { layersKey } from "../layers.js";
 import { createRenderManager } from "../render-manager.js";
@@ -989,15 +989,14 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   /**
-   * Run a command as a value: { ext, command, target, value, hit? }. A
-   * command whose state() says null (or disabled) for that target, in the
-   * context every surface passes (`from` and `reach` from the body: a
-   * `reach: true` command out of reach is disabled), doesn't run; one
-   * without state() only runs for the scene (target null). It runs as
-   * run(target, value, ctx), in the same context its state was asked in. A command that
-   * declares `tool` is held: its run returns the tool's input, which goes on
-   * top of the hands (running it again while held puts it down, from wherever
-   * it is in the stack; `value` true only picks up, false only puts down).
+   * Run a command as a value: { ext, command, target, value, hit? }. It
+   * runs only where it applies and isn't disabled (./commands.js
+   * commandState: its hand held, its state, its reach), in the context every
+   * surface passes, as run(target, value, ctx). A command that declares
+   * `tool` is held: its run returns the tool's input, which goes on top of
+   * the hands, held for the command's hand (running it again while held puts
+   * it down, from wherever it is in the stack; `value` true only picks up,
+   * false only puts down).
    * @returns {boolean} whether it ran
    */
   function run(invocation) {
@@ -1018,7 +1017,7 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
         }
         if (value === false) return true;
         const input = c.run(target, value, ctx);
-        if (input && typeof input === "object") holdTool(ext, { command: c.id, name: c.name ?? c.id, ...(typeof c.tool === "object" ? c.tool : {}) }, input);
+        if (input && typeof input === "object") holdTool(ext, { command: c.id, name: c.name ?? c.id, hand: typeof c.hand === "string" ? c.hand : null, ...(typeof c.tool === "object" ? c.tool : {}) }, input);
         return true;
       }
       c.run(target, value, ctx);
@@ -1086,8 +1085,9 @@ export function createStage({ handle: given, view, n, path = [], frame = () => n
   }
 
   /**
-   * Hold a tool: its declaration ({ command?, name, keys, pointer }: the
-   * command it was picked up through, if any) and the given input.
+   * Hold a tool: its declaration ({ command?, name, hand?, keys, pointer }:
+   * the command it was picked up through, if any, and the kind of hand that
+   * command names) and the given input.
    */
   function holdTool(ext, t, input) {
     const own = owned.get(ext);

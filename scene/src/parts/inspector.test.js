@@ -7,7 +7,7 @@ import { manualTime } from "../stage/time.js";
 import { applyMatrix } from "../transform.js";
 import { worldMatrix } from "../hierarchy.js";
 import inspector, { startBodies } from "./inspector.js";
-import { editing } from "../stage/bodies.js";
+import { editing } from "./editing.js";
 import add from "./add.js";
 import { openTabs } from "../test/tabs.js";
 import { aboutFor, attachOptions, commandsFor, groupOptions, lensNamed, statusParts } from "./inspector-model.js";
@@ -819,7 +819,8 @@ describe("scene.inspector: one pane, the tree and the fields together (EDITOR.md
     const ids = plugins.filter((p) => p.type === "scene:view").map((p) => p.id);
     expect(ids).toContain("scene.inspector");
     expect(ids).not.toContain("scene.outline");
-    const { flatCommands, shownOn } = await import("./toolbar-commands.js");
+    const { shownOn } = await import("./toolbar-commands.js");
+    const { flatCommands } = await import("../stage/commands.js");
     // every part of the package that offers a toolbar toggle for a drawer tab
     const owners = await Promise.all(["scene.inspector", "scene.parts", "scene.dimensions"].map(async (id) => ({ meta: { id }, module: await plugins.find((p) => p.id === id).load() })));
     s = await mountStage({ extensions: owners, doc: { objects: { a: object({ name: "A" }) }, order: ["a"] } });

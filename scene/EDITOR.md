@@ -21,18 +21,20 @@ drops, templates and parts. An **edit** is the editor's write
 ## The Edit hand
 
 `scene.edit`'s, an ordinary hand of kind `edit` (`api.hand`). The body chip's
-Edit runs its `edit` command, and `view.start.edit: true` (the outermost doc's;
-a new scene's) picks it up on arriving, else puts it down. While held a click
-selects at the focus (on nothing it clears, outside the focus it selects
-nothing and goes no further), offered first to a widget's owner under it
-(`api.offerWidget`); presses aren't its; it wants the pointer. Its `escape()`
-clears the selection, then leaves the entered link. It stays in hand across
-Enter and Leave, in any body; a tool can sit over it. A second click on the
-same thing within 500 ms and 6 px Opens the selection. **Editing** is
-`editing(view)` (`stage/bodies.js`): the editor's chrome (Move, inspector,
-toolbar's editor commands, grid, axes, bounds, dimensions, Measure, every
-`edit: true` command) shows exactly then (H13). Putting it down puts down every
-such tool, wherever it is in the hands, and the selection.
+Edit runs its `edit` command, and the outermost doc's `view.start.edit: true`
+(the start as `view.arrived` says it; a new scene's) picks it up on arriving,
+else puts it down. While held a click selects at the focus (on nothing it
+clears, outside the focus it selects nothing and goes no further), offered
+first to a widget's owner under it (`api.offerWidget`); presses aren't its; it
+wants the pointer. Its `escape()` clears the selection, then leaves the entered
+link. It stays in hand across Enter and Leave, in any body; a tool can sit over
+it. A second click on the same thing within 500 ms and 6 px Opens the
+selection. **Editing** is `editing(view)` (`src/parts/editing.js`: a hand of
+kind `edit` is held). The editor's commands say `hand: "edit"`, so they apply
+exactly then and a tool picked up through one (Move, Measure) goes down with it
+(STAGE.md, "Commands"); its chrome (the halo, inspector, toolbar's editor
+cluster, grid, axes, bounds, dimensions, drops and paste) asks `editing(view)`
+and shows exactly then (H13). Putting it down puts down the selection.
 
 ## A command
 
@@ -42,33 +44,30 @@ such tool, wherever it is in the hands, and the selection.
   show?: string | string[],   // "toolbar", "world", "menu", "use"; [] none
   shortcut?: string | string[], shortcutBy?: string,  // a ⌘ key (below)
   hold?: boolean,             // shown as "hold F"
-  reach?: true, edit?: true,
+  hand?: string, reach?: true, tool?: { keys?, pointer? },  // the kernel's (STAGE.md, "Commands")
   open?: true,                // the target's Open (below)
   group?: string, icon?: string, order?: number,  // where it sits on the bar (below)
-  tool?: { keys?, pointer? },
   state(target, ctx) → null | { title?, label?, checked?, value?, choices?, options?, disabled? },
   run(target, value?, ctx) → void | session | input }   // ctx: api.context(hit)
 ```
 
-An instance's `commands`, run by the kernel (`api.run`) in the context every
-surface passes. **Open** (`open: true`, `src/parts/open.js`) goes into a thing
-to edit what's inside, in place: a link's (scene.links'), a package's editor
-for its content; a target's Open is the first that applies, and the inspector,
-the menu (after Select), the outline (its → and a double-click) and a
-double-click in Edit run it; an Open's key is `Enter`. `state` null: not for this target; no `state`: the scene only.
-`label` names the verb for this target; `title` is the tooltip, and the reason
-when `disabled`; `options` become checkboxes under its menu row, what's ticked
-passed as `value`. `shortcut` is a ⌘ key (`"Mod+G"`, `"Shift+Mod+G"`;
-`src/parts/shortcuts.js`), run by the key map on attention's target and shown
-in the menu; `shortcutBy` names what does it already (the clipboard's ⌘C):
-shown, not run.
+An instance's `commands`. What applies and running it (`hand`, `reach`, `tool`,
+`state`, `run`) are the kernel's (STAGE.md, "Commands"); every surface asks its
+`commandState` in the context it passes, `api.context(hit)`. **Open** (`open:
+true`, `src/parts/open.js`) goes into a thing to edit what's inside, in place:
+a link's (scene.links'), a package's editor for its content; a target's Open is
+the first that applies, and the inspector, the menu (after Select), the outline
+(its → and a double-click) and a double-click in Edit run it; an Open's key is
+`Enter`. `label` names the verb for this target; `title` is the tooltip, and
+the reason when `disabled`; `options` become checkboxes under its menu row,
+what's ticked passed as `value`. `shortcut` is a ⌘ key (`"Mod+G"`,
+`"Shift+Mod+G"`; `src/parts/shortcuts.js`), run by the key map on attention's
+target and shown in the menu; `shortcutBy` names what does it already (the
+clipboard's ⌘C): shown, not run.
 **Surfaces**: absent `show` means every surface but `"world"`; keys work
-whatever `show` says. **`edit: true`**: only while editing (`inBody`).
-**`reach: true`**: beyond the body's reach it is "too far" and runs nowhere
-(H9). **`hold`**: a held verb, whose `run` returns `{ end(), cancel(),
-update?(dt) }`, kept while the key is down. **`tool:`**: `run` returns an
-input, held as the tool (STAGE.md, "Bodies", **Hands**); running it again puts
-it down.
+whatever `show` says. **`hand: "edit"`**: the editor's, only while editing.
+**`hold`**: a held verb, whose `run` returns `{ end(), cancel(), update?(dt) }`,
+kept while the key is down.
 
 ### Targets and refs
 
@@ -79,7 +78,7 @@ checks `scene.objects[target]`.
 
 ## The use prompt and key map
 
-**The key map** (`scene.keys`, the only `input.key`; `src/keymap.js`): a key the
+**The key map** (`scene.keys`, the only `input.key`; `src/parts/keymap.js`): a key the
 gesture, the hands and the body don't reserve runs the first command whose
 `key` matches and that applies to attention's path (the selection, else the
 look's hit and what it hangs on, nearest first), then the scene's; within one
@@ -99,7 +98,7 @@ what `change` returns, per person and per focus doc, in the focus stage's
 `local.edits`; a package's verb, a clock act or a process save is never one. A
 step restores only if the doc still holds all it wrote, else it is dropped and
 said; kept objects come back as their keeper has them now. Undo and Redo are
-`edit: true`. A package puts its own writes on it with the `edits` service
+`hand: "edit"`. A package puts its own writes on it with the `edits` service
 (`scene.undo`'s): `use("edits").edit(doc, fn, { label })` writes `fn` to `doc`
 (`{ url, doc(), change(fn) → patches }`; the patches are what the step takes
 back, so a doc leaves out writes that aren't the person's) as one step of this
@@ -224,6 +223,5 @@ field as its default.
 | | Invariant |
 |---|---|
 | H3 | A shown key works: hints come from the dispatching resolver; each key reaches at most one invocation; a shown touch control reaches its reserver. |
-| H9 | A `reach` command runs iff distance ≤ body.reach, else shows "too far". |
-| H13 | Editing ⇔ the Edit hand is held: its chrome shows exactly then, in any body; no body changes it; putting it down puts down the selection and every `edit: true` tool, wherever it is in the hands, and no other. |
+| H13 | Editing ⇔ the Edit hand is held: its chrome shows exactly then, in any body; no body changes it; putting it down puts down the selection and every tool held through a `hand: "edit"` command, wherever it is in the hands, and no other. |
 | I9 | Extract and bundle are each one host change; `bundle(extract(S, K), K)` restores every non-runtime field when S has no edge outside. |

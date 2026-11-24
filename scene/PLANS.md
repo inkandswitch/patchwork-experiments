@@ -72,7 +72,7 @@ From section 1 (the design investigation of 2026-11-17, condensed there).
   copy at its heads): not built.
 - **Bar of tools** (TOOLS D10): the empty row, or a declared world command
   shown disabled? World commands at the left, or joined to the clock bar,
-  and the surface's name; `show: "world"` or `edit: true` alone; a game's
+  and the surface's name; `show: "world"` or `hand: "edit"` alone; a game's
   world commands without entering it; a stable slot per command; one
   stage-drawn key legend; a big Play call to action?
 - **Entering a link moves the canvas** ~31 px as the trail appears: a

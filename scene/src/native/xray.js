@@ -22,7 +22,7 @@
 // an event the hand hears or a channel message, never while it isn't held.
 
 import css from "./xray.css?inline";
-import { perFocus } from "../parts/per-focus.js";
+import { perFocus } from "../per-focus.js";
 import { looksFromEye } from "../stage/pointer.js";
 import { parseKey } from "../stage/paths.js";
 import { writers } from "../stage/provenance.js";

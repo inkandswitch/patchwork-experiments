@@ -16,7 +16,7 @@
 // (the objects carrying its traits, their values, the objects × verbs grid,
 // what it holds now, its services, what it last wrote). The X-ray draws them.
 
-import { commandState, flatCommands } from "../parts/toolbar-commands.js";
+import { commandState, flatCommands } from "../stage/commands.js";
 import { chainOrder, hitChain, holdersFor } from "../stage/chain.js";
 
 /** The input events an `input` may take (STAGE.md, "The input chain"). */

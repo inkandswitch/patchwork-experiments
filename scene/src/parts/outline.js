@@ -37,7 +37,7 @@
 
 import { openFor, runOpen } from "./open.js";
 import css from "./outline.css?inline";
-import { atFocus, perFocus } from "./per-focus.js";
+import { atFocus, perFocus } from "../per-focus.js";
 import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../groups.js";
 import { treeOrder } from "../hierarchy.js";
 import { dropIntent, placementFor } from "../tree-drop.js";

@@ -35,6 +35,7 @@ import { looksFromEye } from "./pointer.js";
 import { escapeHint, restLayer } from "./ladder.js";
 import { LOOK } from "./bodies.js";
 import { collectFrom, createHost, updateAll } from "./host.js";
+import { frozenJSON } from "./ambients.js";
 import { providersFirst } from "./activation.js";
 import { focusSteps, selectionStep } from "../selection.js";
 import { realTime } from "./time.js";
@@ -68,19 +69,34 @@ export function cleanCamera(c) {
 }
 
 /**
- * Where the doc starts people (STAGE.md, "Arriving"): `view.start = { body, place,
- * home, edit }`, read once on arrival. `body` is a body's id (none, or
- * "look", is Look), `place` what its enter is given (a spawn point's object
- * id, a seat's id), `home` the camera, `edit: true` that they start holding
- * the editor. Pure.
- * @returns {{ body: string | null, place: string | null, home: object | null, edit: boolean }}
+ * Where the doc starts people (STAGE.md, "Arriving"): the kernel's keys of
+ * `view.start`, read on arrival. `body` is a body's id (none, or "look", is
+ * Look), `place` what its enter is given (a spawn point's object id, a
+ * seat's id), `home` the camera. Pure.
+ * @returns {{ body: string | null, place: string | null, home: object | null }}
  */
 export function startOf(doc) {
   const s = doc?.view?.start;
-  if (!s || typeof s !== "object") return { body: null, place: null, home: null, edit: false };
+  if (!s || typeof s !== "object") return { body: null, place: null, home: null };
   const body = typeof s.body === "string" && s.body ? s.body : null;
   const place = typeof s.place === "string" && s.place ? s.place : null;
-  return { body, place, home: cleanCamera(s.home), edit: s.edit === true };
+  return { body, place, home: cleanCamera(s.home) };
+}
+
+const NO_START = Object.freeze({});
+/**
+ * The doc's `view.start` whole, as written, a frozen plain copy ({} when it
+ * has none): what `view.arrived` says, for each plugin to read its own keys
+ * of (the kernel's are startOf's). Pure.
+ */
+export function wholeStart(doc) {
+  const s = doc?.view?.start;
+  if (!s || typeof s !== "object" || Array.isArray(s)) return NO_START;
+  try {
+    return frozenJSON(JSON.parse(JSON.stringify(s)));
+  } catch {
+    return NO_START;
+  }
 }
 
 /**
@@ -264,7 +280,7 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     focus: Object.freeze([]),
     // every open doc's packages this viewer doesn't have (unionPackages): the packages prompt's
     packages: unionPackages([]),
-    // how this viewer last arrived (arrive()): the outermost doc's start (startOf) as read, and a count
+    // how this viewer last arrived (arrive()): the outermost doc's start whole (wholeStart), and a count
     // (a template's arriving again says so even when the start is the same); null before the first
     arrived: null,
   });
@@ -623,10 +639,10 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
     viewport.bodyRide?.(s && r && typeof r === "object" ? s.stage.scope.rideSpec(r) : null);
   }
 
-  /** Hold a tool for an extension of a stage: its declaration ({ command?, name, keys, pointer }) and its input (already the stage's). → put, or null (no router, or a toggle that put it down) */
+  /** Hold a tool for an extension of a stage: its declaration ({ command?, name, hand?, keys, pointer }) and its input (already the stage's). → put, or null (no router, or a toggle that put it down) */
   function holdTool(owner, t, input) {
     if (!router) return null;
-    return router.hold(owner, { command: t.command ?? null, name: String(t.name ?? t.command ?? owner), input, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
+    return router.hold(owner, { command: t.command ?? null, name: String(t.name ?? t.command ?? owner), hand: t.hand ?? null, input, keys: Array.isArray(t.keys) ? t.keys : [], pointer: !!t.pointer });
   }
 
   // ─── arriving: view.start (STAGE.md, "Arriving") ───────────────────────────────────
@@ -644,8 +660,8 @@ export function createView(element, { url = "scene", openStage = null } = {}) {
   let arrivals = 0;
   function arrive() {
     if (!outermost()) return;
-    // what the start says beyond a body and a place (`edit`: the editor picks itself up) is the view plugins' to read
-    atom.swap((m) => ({ ...m, arrived: Object.freeze({ start: Object.freeze(startOf(outermost().doc())), n: ++arrivals }) }));
+    // the start whole: its keys beyond a body, a place and a home are the plugins' to read
+    atom.swap((m) => ({ ...m, arrived: Object.freeze({ start: wholeStart(outermost().doc()), n: ++arrivals }) }));
     arrival = { offered: null };
     tryArrive();
     requestFlush();

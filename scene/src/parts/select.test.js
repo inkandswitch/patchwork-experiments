@@ -3,7 +3,7 @@ vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js
 import { mountStage, object, until, settle } from "../test/stage-harness.js";
 import select from "./select.js";
 import others from "./others.js";
-import { commandState } from "./toolbar-commands.js";
+import { commandState } from "../stage/commands.js";
 import { peerColor, peerSelections, hashString } from "../peers.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { emptyScene } from "../test/empty-scene.js";
