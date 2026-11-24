@@ -31,11 +31,12 @@
 import css from "./add.css?inline";
 import { ROW_MIME, hasPatchworkDrop, ownDrag, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { fromEmbed } from "../embed.js";
-import { describeForHumans, describeSource, extensionOf, matchProviders, whileHolding } from "../stage/public.js";
+import { describeForHumans, describeSource, extensionOf, matchProviders } from "../stage/public.js";
 import { add as addObject } from "./editor.js";
+import { isObjectCopy } from "../transfer.js";
 import { drop, template } from "./making.js";
 import { atFocus } from "../per-focus.js";
-import { EDIT } from "./editing.js";
+import { whileEditing } from "./editing.js";
 import { createParamForm } from "../param-form.js";
 import { paramsBySpec } from "../params.js";
 
@@ -333,6 +334,7 @@ function create(api) {
   // it). The hint shows only while the drag is over the port.
   const inPort = (e) => e.target instanceof Node && port.contains(e.target);
   const dropping = {
+    wants: (dt) => accepts(dt),
     over(e) {
       if (!accepts(e.dataTransfer)) return showHint(false), false;
       showHint(inPort(e));
@@ -353,10 +355,10 @@ function create(api) {
       return true;
     },
   };
-  /** A pasted automerge URL is a document to add. */
+  /** A pasted automerge URL is a document to add; an object copy's link isn't (scene.transfer's: ../transfer.js isObjectCopy). */
   const pasting = (e) => {
     const text = e.clipboardData?.getData?.("text/plain");
-    if (!parseAutomergeUrl(text)) return false;
+    if (!parseAutomergeUrl(text) || isObjectCopy(e.clipboardData)) return false;
     void add(text);
     return true;
   };
@@ -366,7 +368,7 @@ function create(api) {
     const none = !scene.ids.length;
     if (empty.hidden !== !none) empty.hidden = !none;
   };
-  const startShown = whileHolding(api, EDIT, () => {
+  const startShown = whileEditing(api, () => {
     const scene = api.focus()?.scene();
     if (scene) startScreen(scene);
     return {

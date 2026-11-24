@@ -25,14 +25,14 @@
 // the focus doc's.
 
 import css from "./dimensions.css?inline";
-import { resolveCssColor, whileHolding } from "../stage/public.js";
+import { resolveCssColor } from "../stage/public.js";
 import { detachAnchor, distance } from "../anchors.js";
 import { applyMatrix, contentMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { editor } from "./editor.js";
-import { EDIT } from "./editing.js";
+import { whileEditing } from "./editing.js";
 import { perFocus } from "../per-focus.js";
 import { placeBetween } from "./segment-label.js";
 
@@ -514,26 +514,27 @@ export function create(api) {
   ];
 
   // a drawer tab the viewer opens (Dimensions in the toolbar): the editor's, made while the Edit hand is held
-  const tabNow = whileHolding(api, EDIT, () => drawerTab(api, { id: "dimensions", title: "Dimensions", mount: mountPanel }));
-  commands.push(tabToggle(tabNow, { id: "dimensions", name: "Dimensions", icon: "dimensions", title: "The dimensions saved in this scene, and Measure" }));
+  // (its panel lasts the plugin's life; docked is the editor's, shut as the Edit hand is put down)
+  const tab = drawerTab(api, { id: "dimensions", title: "Dimensions", mount: mountPanel });
+  whileEditing(api, () => () => tab.close());
+  commands.push(tabToggle(() => tab, { id: "dimensions", name: "Dimensions", icon: "dimensions", title: "The dimensions saved in this scene, and Measure" }));
 
   return {
     update(scene, local, prev, view) {
       const s = seen(local, view);
       update(scene, s, { scene: prev?.scene ?? null, local: prev?.scene ? lastSeen : null });
       lastSeen = s;
-      tabNow()?.update(scene, s);
+      tab.update(scene, s);
     },
     commands,
-    /** the tab, while editing (for tests and probes) */
-    get tab() {
-      return tabNow();
-    },
+    /** the tab (for tests and probes) */
+    tab,
     // (the focus stage's removal: the view's plugins are offered only there)
     beforeRemove(draft, ids) {
       detachEnds(draft, ids, F()?.scene().objects ?? {});
     },
     dispose() {
+      tab.dispose();
       panels.clear();
     },
   };

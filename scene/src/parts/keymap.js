@@ -16,6 +16,7 @@
 
 import { applicable, codeOfKey, flatCommands, labelOf, lookChain, reservedBy } from "../stage/public.js";
 import { keyMatches, keysOf } from "./toolbar-commands.js";
+import { shortcutEvent, shortcutInvocation, shortcutLabel, shortcutsOf } from "./shortcuts.js";
 
 /**
  * Attention's path: [the selection], or the look's chain, or [] (nothing
@@ -101,4 +102,35 @@ export function keyFor({ ext, command, target = null, stage = undefined }, state
     if (r?.layer === "map" && r.invocation.ext === ext && r.invocation.command === command.id && r.invocation.target === (target ?? null) && (stage === undefined || r.invocation.stage === stage)) return k;
   }
   return null;
+}
+
+/**
+ * Where a ⌘ key goes (STAGE.md, "Keys": no reserver takes a key with ctrl or
+ * meta held): the first command whose shortcut it presses and that applies
+ * on attention's path, a stage at a time, innermost first. → { invocation
+ * (with its stage), seg } or null; `invocation.disabled`: claimed, not run.
+ */
+export function resolveShortcut(ev, state, mac) {
+  for (const seg of segmentsOf(state)) {
+    const parents = seg.ctx?.scene?.parents;
+    const targets = [...attentionPath(seg.attention, parents).filter((t) => seg.attention?.selected != null || seg.ctx?.scene?.objects?.[t]), null];
+    const inv = shortcutInvocation(seg.collected, ev, mac, seg.ctx, targets);
+    if (inv) return { invocation: seg.stage === undefined ? inv : { ...inv, stage: seg.stage }, seg };
+  }
+  return null;
+}
+
+/**
+ * The ⌘ shortcut a surface shows for a verb (H3): its first whose press the
+ * resolver sends to exactly that verb, as a person reads it ("⌘Z"), else "".
+ * One another thing does (`shortcutBy`: the clipboard's ⌘V) is shown as it is.
+ */
+export function shortcutHintFor({ ext, command, target = null, stage = undefined }, state, mac) {
+  for (const text of shortcutsOf(command)) {
+    if (command.shortcutBy) return shortcutLabel(text, mac);
+    const ev = shortcutEvent(text, mac);
+    const r = ev && resolveShortcut(ev, state, mac)?.invocation;
+    if (r && r.ext === ext && r.command === command.id && r.target === (target ?? null) && (stage === undefined || r.stage === stage)) return shortcutLabel(text, mac);
+  }
+  return "";
 }

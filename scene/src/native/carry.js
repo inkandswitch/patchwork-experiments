@@ -457,23 +457,6 @@ export default {
         },
         run: (id) => flip(id),
       },
-      {
-        id: "snap",
-        hand: "edit",
-        name: "Snap",
-        group: "settings",
-        show: ["toolbar"],
-        state(target, { scene, view }) {
-          if (target != null) return null;
-          return {
-            checked: api.use("prefs")?.get("snap", true) !== false,
-            title: "Put pieces down on the nearest snap point (hold Alt to place freely)",
-          };
-        },
-        run(target, value) {
-          api.use("prefs")?.set("snap", typeof value === "boolean" ? value : api.use("prefs")?.get("snap", true) === false);
-        },
-      },
     ];
 
     return {

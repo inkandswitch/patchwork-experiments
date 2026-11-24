@@ -26,7 +26,12 @@ export function perFocus(api, make) {
       letGo = null;
       if (typeof made?.dispose === "function") {
         let done = false;
-        const once = (letGo = () => void (done || ((done = true), made.dispose())));
+        const once = (letGo = () => {
+          if (done) return;
+          done = true;
+          f.signal?.removeEventListener?.("abort", once);
+          made.dispose();
+        });
         f.signal?.addEventListener?.("abort", once, { once: true });
       }
     }

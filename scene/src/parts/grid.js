@@ -5,10 +5,10 @@
 // scene in the current units (units.js gridFor), and its plane is given to
 // the stage as an extent so the near plane never cuts it.
 
-import { EDIT } from "./editing.js";
+import { whileEditing } from "./editing.js";
 import { perFocus } from "../per-focus.js";
 import css from "./grid.css?inline";
-import { resolveCssColor, whileHolding } from "../stage/public.js";
+import { resolveCssColor } from "../stage/public.js";
 import { gridFor, roundForDisplay, toUnits } from "../units.js";
 
 /** How far the scene reaches from the origin, horizontally (or half its height): what the grid must cover. */
@@ -122,7 +122,7 @@ export default {
         },
       };
     }
-    const drawn = whileHolding(api, EDIT, grid);
+    const drawn = whileEditing(api, grid);
 
     return {
       commands: [

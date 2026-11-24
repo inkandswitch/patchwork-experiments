@@ -9,7 +9,6 @@ import { mountStage, object, settle, until } from "../test/stage-harness.js";
 import { emptyScene } from "../test/empty-scene.js";
 import transfer from "./transfer.js";
 import menuPart from "./menu.js";
-import keys from "./keys.js";
 import { ROW_MIME, endDrag, hold, rowPayload, startDrag, summaryTypes } from "../transfer.js";
 import { editor } from "./editor.js";
 
@@ -23,8 +22,7 @@ const SHIP = {
   },
   module: { create: () => ({}) },
 };
-// (the key map runs Copy's ⌘C)
-const EXTS = [{ meta: { id: "scene.transfer" }, module: transfer }, { meta: { id: "scene.keys" }, module: keys }, SHIP];
+const EXTS = [{ meta: { id: "scene.transfer" }, module: transfer }, SHIP];
 
 let s = null;
 beforeEach(() => {
@@ -62,27 +60,11 @@ function clipEvent(type, data = {}) {
   e.written = written;
   return e;
 }
-/**
- * ⌘C (Ctrl+C: the harness's navigator is no Mac), as the key map runs Copy:
- * whether the key was taken, and what Copy's own copy event wrote (the
- * browser's execCommand("copy"), which runs one, stood in for).
- */
+/** ⌘C: the browser's copy event, which scene.drops offers to scene.transfer: whether it was taken, and what it wrote. */
 function copyKey() {
-  const written = {};
-  const had = Object.getOwnPropertyDescriptor(document, "execCommand");
-  document.execCommand = (cmd) => {
-    if (cmd !== "copy") return false;
-    const c = clipEvent("copy");
-    document.dispatchEvent(c);
-    Object.assign(written, c.written);
-    return true;
-  };
-  try {
-    return { taken: s.key("c", { code: "KeyC", ctrlKey: true }).defaultPrevented, written };
-  } finally {
-    if (had) Object.defineProperty(document, "execCommand", had);
-    else delete document.execCommand;
-  }
+  const c = clipEvent("copy");
+  s.root.dispatchEvent(c);
+  return { taken: c.defaultPrevented, written: c.written };
 }
 
 /**

@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
-// whileHolding (STAGE.md, "Hands"): what a view plugin makes while a hand of
-// a kind is held is made as the first is picked up (at once if one is held
-// already) and disposed once as the last goes, however it goes.
+// whileEditing (EDITOR.md, "The Edit hand"): what a view plugin makes while
+// the Edit hand is held is made as the first is picked up (at once if one is
+// held already) and disposed once as the last goes, however it goes.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { mountStage, settle } from "../test/stage-harness.js";
-import { whileHolding } from "./holding.js";
+import { whileEditing } from "./editing.js";
 
 let s = null;
 afterEach(() => {
@@ -15,15 +15,16 @@ afterEach(() => {
   s = null;
 });
 
-/** A view plugin that picks up hands: `kind` "k" unless told, with no escape of its own (Escape puts it down). */
+/** A view plugin that picks up hands: of kind "edit" unless told, with no escape of its own (Escape puts it down). */
 const HANDS = { meta: { id: "t.hands", type: "scene:view" }, module: { create: () => ({}) } };
-/** A view plugin whose chrome is made while a hand of kind "k" is held: each make and dispose logged. */
-const chrome = (id, log) => ({
+/** A view plugin whose chrome is made while editing: each make and dispose logged. */
+const chrome = (id, log, make = () => {}) => ({
   meta: { id, type: "scene:view" },
   module: {
     create(api) {
-      whileHolding(api, "k", () => {
+      whileEditing(api, () => {
         log.push("make");
+        make(api);
         return () => log.push("dispose");
       });
       return {};
@@ -31,14 +32,13 @@ const chrome = (id, log) => ({
   },
 });
 
-async function mount(log) {
-  s = await mountStage({ extensions: [HANDS, chrome("t.chrome", log)] });
-  const pick = (kind = "k") => s.api("t.hands").hand({ kind, name: kind, input: {} });
-  return { pick };
+async function mount(log, make) {
+  s = await mountStage({ extensions: [HANDS, chrome("t.chrome", log, make)] });
+  return { pick: (kind = "edit") => s.api("t.hands").hand({ kind, name: kind, input: {} }) };
 }
 
-describe("whileHolding", () => {
-  it("made on the first pick-up of its kind, never for another kind; disposed once, on the last put-down", async () => {
+describe("whileEditing", () => {
+  it("made on the first pick-up of the Edit hand, never for another kind; disposed once, on the last put-down", async () => {
     const log = [];
     const { pick } = await mount(log);
     const other = pick("other");
@@ -55,27 +55,7 @@ describe("whileHolding", () => {
     expect(log).toEqual(["make", "dispose", "make", "dispose"]);
   });
 
-  it("one plugin's makers for two kinds each follow their own (each of its watches hears its change)", async () => {
-    const log = [];
-    const TWO = {
-      meta: { id: "t.two", type: "scene:view" },
-      module: {
-        create(api) {
-          for (const kind of ["k", "j"]) whileHolding(api, kind, () => (log.push(`make ${kind}`), () => log.push(`dispose ${kind}`)));
-          return {};
-        },
-      },
-    };
-    s = await mountStage({ extensions: [HANDS, TWO] });
-    const pick = (kind) => s.api("t.hands").hand({ kind, name: kind, input: {} });
-    const j = pick("j");
-    const k = pick("k");
-    j();
-    k();
-    expect(log).toEqual(["make j", "make k", "dispose j", "dispose k"]);
-  });
-
-  it("made at once by a plugin that starts while one is held", async () => {
+  it("made at once by a plugin that starts while it is held", async () => {
     const log = [];
     const { pick } = await mount([]);
     const put = pick();
@@ -84,6 +64,14 @@ describe("whileHolding", () => {
     expect(log).toEqual(["make"]);
     put();
     expect(log).toEqual(["make", "dispose"]);
+  });
+
+  it("what a make that puts the hand down as it runs made goes at once", async () => {
+    const log = [];
+    // (Escape, pressed as it makes: the hand, which has no escape of its own, is put down)
+    const { pick } = await mount(log, () => s.key("Escape", { code: "Escape" }));
+    pick();
+    expect([log, s.local.get().hands.length]).toEqual([["make", "dispose"], 0]);
   });
 
   // however the hand goes: Escape pops it, its plugin stops; and the maker's own plugin stopping

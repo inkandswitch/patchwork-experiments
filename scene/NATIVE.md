@@ -1,8 +1,10 @@
 # Native services
 
-The plugins the scene package ships below the editor (`src/native/`): what
-every scene has, and carrying. Each service is `provide`d by name, for others
-to `use` ([STAGE.md](STAGE.md), "Activation"); the kernel knows none of them by name, and they reach it only
+The plugins the scene package ships below the editor (`src/native/`): what a
+scene does without anyone editing it, each named by no other plugin and
+reached only through the services they `provide` by name, for others to `use`
+([STAGE.md](STAGE.md), "Activation"), or the traits and conventions they
+answer to (CONVENTIONS.md); the kernel knows none of them by name, and they reach it only
 through the public api (`src/native/boundary.test.js` checks the imports). What
 a facet hands a caller goes as the caller's signal aborts.
 

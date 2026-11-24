@@ -15,8 +15,8 @@ drops, templates and parts. An **edit** is the editor's write
 | `scene.toolbar`, `scene.body`, `scene.clock-chip`, `scene.packages` | the bar of tools; the body chip, Edit, who's here, the Esc hint; the clock chips; the packages prompt |
 | `scene.inspector` | the one pane: the outline (`outline.js`) and the selection's fields |
 | `scene.halo`, `scene.handles`, `scene.dimensions`, `scene.measure` | Move (`V`), a tool, and while it's held the selection's move, rotate and scale handles (in the parent's drawn frame, one write on release) and knobs; dimensions and their panel; Measure (`M`, the Dimensions panel's button) |
-| `scene.frame`, `scene.autoframe`, `scene.grid`, `scene.axes`, `scene.bounds`, `scene.units`, `scene.legends` | the view's aids |
-| `scene.drops`, `scene.add`, `scene.transfer`, `scene.parts`, `scene.undo` | what is dropped or pasted into the view, heard once; documents added; copy and paste; the parts bin; Undo and Redo |
+| `scene.frame`, `scene.autoframe`, `scene.grid`, `scene.axes`, `scene.bounds`, `scene.units`, `scene.legends` | the view's aids (`scene.units`: the settings' Units and Snap) |
+| `scene.drops`, `scene.add`, `scene.transfer`, `scene.parts`, `scene.undo` | what is dropped, pasted or copied in the view, heard once; documents added; copy and paste; the parts bin; Undo and Redo |
 
 **Colours**: a part that draws declares its CSS colour tokens, each with its
 one default, in its own stylesheet, and reads them (`resolveCssColor`,
@@ -39,11 +39,13 @@ it. A second click on the same thing within 500 ms and 6 px Opens the
 selection. **Editing** is holding a hand of kind `edit` (`src/parts/editing.js`).
 The editor's commands say `hand: "edit"`, so they apply exactly then and a tool
 picked up through one (Move, Measure) goes down with it (STAGE.md, "Commands");
-its chrome (the inspector, the toolbar's editor cluster, the grid, axes and
-bounds, the knobs, the drawer's tabs, the start screen, the listener for drops
-and pastes) is made with
-`whileHolding(api, "edit", make)` (STAGE.md, "Hands") as it is picked up and
-disposed as it is put down (H13), and no part asks whether it is editing.
+its chrome (the inspector's following, the toolbar's editor cluster, the
+grid, axes and bounds, the knobs, the drawer's tabs docked, the start screen,
+copy and paste) is made with `whileEditing(api, make)` (`src/parts/editing.js`)
+as it is picked up and disposed as it is put down (H13); a panel keeps its own
+state (a search, a scroll) across holds. Elsewhere the hand is read through
+what this makes (the bar's cluster is there, `scene.drops` refuses a drop)
+or through a command's `hand` (a dimension's label selects by its `select`).
 Putting it down puts down the selection.
 
 ## A command
@@ -95,10 +97,13 @@ checks `scene.objects[target]`.
 gesture, the hands and the body don't reserve runs the first command whose
 `key` matches and that applies to attention's path (the selection, else the
 look's hit and what it hangs on, nearest first), then the scene's; within one
-target in running order, then command order. With ctrl or meta held a key is the
-browser's; an auto-repeat is claimed but not run again; Escape is never a
-command's. **A shown key works** (H3): every surface asks `hintFor`, which
-resolves a key as it is dispatched. **The use prompt** (`scene.use`) shows
+target in running order, then command order. With ctrl or meta held a key is
+no reserver's (STAGE.md, "Keys") and runs the first command whose `shortcut`
+it presses, likewise (disabled, it is claimed and does nothing), else it is the
+browser's; an auto-repeat of a key or shortcut that matches is claimed but not
+run again; Escape is never a command's. **A shown key works** (H3): every
+surface asks `hintFor` and `shortcutHintFor`, which resolve a key as it is
+dispatched. **The use prompt** (`scene.use`) shows
 attention's keyed verbs (`show` including `"use"`, or none), up to three, under
 the crosshair under lock, else at the pointer; it shows, the key map does. **On
 touch** declared keys become pad controls (`src/touch-keys.js`); codes labelled
@@ -111,7 +116,8 @@ what `change` returns, per person and per focus doc, in the focus stage's
 `local.edits`; a package's verb, a clock act or a process save is never one. A
 step restores only if the doc still holds all it wrote, else it is dropped and
 said; kept objects come back as their keeper has them now. Undo and Redo are
-`hand: "edit"`, their shortcuts (⌘Z; ⇧⌘Z and ⌘Y) run by the key map. A package puts its own writes on it with the `edits` service
+`hand: "edit"`, their shortcuts (⌘Z; ⇧⌘Z, and Ctrl+Y off a Mac) run by the key map;
+with nothing to take back, the key is still theirs and does nothing. A package puts its own writes on it with the `edits` service
 (`scene.undo`'s): `use("edits").edit(doc, fn, { label })` writes `fn` to `doc`
 (`{ url, doc(), change(fn) → patches }`; the patches are what the step takes
 back, so a doc leaves out writes that aren't the person's) as one step of this
@@ -122,16 +128,22 @@ be written here.
 
 ### Drops
 
-**Into the view** (`scene.drops`, `src/parts/drops.js`): while the Edit hand
-is held, one listener each for drags, drops and pastes on the view's root
-offers each, in running order, to every instance's contribution until one
-says true: `dropping: { over(e) → boolean, leave?(), drop(e) → boolean }`
-(`over`: it would take a drop here, and shows where; `leave`: the drag left,
-ended, or another took it) and `pasting: (e) → boolean` (a paste outside a
-field). What an embedded document or something under the pointer took first
-never reaches them; what nobody takes is the browser's. The editor's:
-`scene.transfer` (a row from another scene, a copied object), `scene.add` (a
-document or file, a pasted document link), `scene.parts` (a part).
+**Into the view** (`scene.drops`, `src/parts/drops.js`): one listener each for
+drags, drops, pastes and copies on the view's root offers each, in running
+order, to every view plugin's contribution until one says true: `dropping: {
+wants(dt), over(e), leave?(), drop(e) }` (`wants`: a drag it would take, by
+its types; `over`: it would take a drop here, and shows where), `pasting(e)`
+and `copying(e)` (outside a field). These are the DOM event's level and the
+editor's own; a package takes a dropped document by its metadata's `drops`
+(below), never by these. Drops are offered while editing on a stage that can
+be written; otherwise a drag some part wants is refused with a notice saying
+to pick up Edit (or that the scene is view-only here), and the browser never
+opens it. Pastes and copies are heard only while editing. What an embedded
+document or something under the pointer took first never reaches them; what
+nobody takes is the browser's. The editor's: `scene.transfer` (a row from
+another scene, a copied object, the selection's copy), `scene.add` (a
+document or file, a pasted document link, never an object copy's),
+`scene.parts` (a part).
 
 A doc added by drop or paste (`src/parts/making.js`, as parts and templates
 are) goes to each extension whose metadata `drops`
@@ -251,6 +263,6 @@ field as its default.
 
 | | Invariant |
 |---|---|
-| H3 | A shown key works: hints come from the dispatching resolver; each key reaches at most one invocation; a shown touch control reaches its reserver. |
+| H3 | A shown key works: hints, keys and ⌘ shortcuts alike, come from the dispatching resolver; each key reaches at most one invocation; a shown touch control reaches its reserver. |
 | H13 | Editing ⇔ the Edit hand is held: its chrome shows exactly then, in any body; no body changes it; putting it down puts down the selection and every tool held through a `hand: "edit"` command, wherever it is in the hands, and no other. |
 | I9 | Extract and bundle are each one host change; `bundle(extract(S, K), K)` restores every non-runtime field when S has no edge outside. |

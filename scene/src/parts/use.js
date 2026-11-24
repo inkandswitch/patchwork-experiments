@@ -48,7 +48,7 @@
 
 import css from "./use.css?inline";
 import { keysOf, shownOn } from "./toolbar-commands.js";
-import { applicable, codeOfKey, commandState, looksFromEye, samePath } from "../stage/public.js";
+import { applicable, codeOfKey, looksFromEye, samePath } from "../stage/public.js";
 import { attentionPath, hintFor, keyFor, segmentsOf } from "./keymap.js";
 import { resolverState } from "./resolver.js";
 import { perFocus } from "../per-focus.js";
@@ -253,9 +253,8 @@ function create(api) {
       // a held verb lasts as long as its key: with none that does it, there's nothing to hold
       if (command.hold) return;
       const target = current?.target ?? null;
-      // (applies still: the stage's run asks again)
-      const reader = current?.reader ?? api;
-      if (commandState(command, target, reader.context(current?.hit ?? null))) api.run({ ...(current?.stage !== undefined ? { stage: current.stage } : {}), ext, command: command.id, target, hit: current?.hit ?? null });
+      // (the stage's run asks whether it still applies)
+      api.run({ ...(current?.stage !== undefined ? { stage: current.stage } : {}), ext, command: command.id, target, hit: current?.hit ?? null });
       api.root.focus?.({ preventScroll: true });
     });
     return b;

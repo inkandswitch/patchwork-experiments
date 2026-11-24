@@ -10,7 +10,7 @@
 // the tab is open; dispose as the tab goes.
 //
 // A tab is the editor's chrome: its owner makes it while the Edit hand is
-// held and disposes it as the hand goes (whileHolding, ../stage/public.js),
+// held and disposes it as the hand goes (whileEditing, ./editing.js),
 // which shuts it without telling onClosed (not the viewer closing it). The
 // parts that own tabs are view plugins, which don't move with the focus: a
 // tab open stays open across Enter and Leave, showing the focus doc

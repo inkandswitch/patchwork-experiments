@@ -20,4 +20,20 @@ describe("scene.units", () => {
     expect(api.run({ ext: "scene.units", command: "units", target: "a", value: "cm" })).toBe(false);
     s.unmount();
   });
+
+  it("Snap: a toggle of this viewer's snap pref, following the doc's suggestion until this viewer chooses; never the doc", async () => {
+    let s = await mount();
+    const api = s.api("scene.units");
+    const state = () => s.instance("scene.units").commands.find((c) => c.id === "snap").state(null);
+    expect(state()).toMatchObject({ checked: true });
+    const docSnap = s.doc().view?.snap;
+    api.run({ ext: "scene.units", command: "snap", target: null });
+    expect([s.local.get()["scene.prefs"].snap, state().checked]).toEqual([false, false]);
+    api.run({ ext: "scene.units", command: "snap", target: null, value: true });
+    expect([s.local.get()["scene.prefs"].snap, s.doc().view?.snap]).toEqual([true, docSnap]);
+    s.unmount();
+    s = await mount({ view: { snap: false } });
+    expect(s.instance("scene.units").commands.find((c) => c.id === "snap").state(null)).toMatchObject({ checked: false });
+    s.unmount();
+  });
 });

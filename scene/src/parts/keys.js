@@ -31,8 +31,8 @@
 
 import { controlKind } from "./toolbar-commands.js";
 import { applicable, samePath } from "../stage/public.js";
-import { attentionPath, mapInvocation, segmentsOf } from "./keymap.js";
-import { onMac, shortcutInvocation } from "./shortcuts.js";
+import { mapInvocation, resolveShortcut, segmentsOf } from "./keymap.js";
+import { onMac } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
 
 /** Does this look like a session (something a held verb returns)? */
@@ -152,17 +152,18 @@ function create(api) {
     return true;
   }
 
-  /** A ⌘ key that a command's shortcut names (./shortcuts.js): its invocation on attention's path, innermost first. */
+  /**
+   * A ⌘ key that a command's shortcut names (./shortcuts.js): its invocation
+   * on attention's path, innermost first (./keymap.js resolveShortcut). One
+   * that matches is claimed: run once, not again on its auto-repeat, and not
+   * at all while it is disabled.
+   */
   function onShortcut(ev) {
-    if (ev.repeat) return false;
-    const mac = onMac();
-    for (const seg of segmentsOf(resolverState(api, held.path ?? null))) {
-      const parents = seg.ctx?.scene?.parents;
-      const targets = [...attentionPath(seg.attention, parents).filter((t) => seg.attention?.selected != null || seg.ctx?.scene?.objects?.[t]), null];
-      const inv = shortcutInvocation(seg.collected, ev, mac, seg.ctx, targets);
-      if (inv) return invoke(inv, seg);
-    }
-    return false;
+    const r = resolveShortcut(ev, resolverState(api, held.path ?? null), onMac());
+    if (!r) return false;
+    if (ev.repeat || r.invocation.disabled) return true;
+    const { stage: _, disabled: __, ...inv } = r.invocation;
+    return invoke(inv, r.seg) || true;
   }
 
   function onKey(ev) {

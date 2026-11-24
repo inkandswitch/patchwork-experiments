@@ -5,10 +5,10 @@
 // turned with the camera; its X/Y/Z labels go on screen through api.labels.
 // Both are the editor's: made as the Edit hand is picked up, gone as it goes.
 
-import { EDIT } from "./editing.js";
+import { whileEditing } from "./editing.js";
 import { perFocus } from "../per-focus.js";
 import css from "./axes.css?inline";
-import { resolveCssColor, whileHolding } from "../stage/public.js";
+import { resolveCssColor } from "../stage/public.js";
 import { gridFor } from "../units.js";
 
 const TRIAD_PX = 96;
@@ -226,7 +226,7 @@ export default {
         },
       };
     }
-    const drawn = whileHolding(api, EDIT, axes);
+    const drawn = whileEditing(api, axes);
 
     return {
       commands: [

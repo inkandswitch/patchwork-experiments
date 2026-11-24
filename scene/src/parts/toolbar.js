@@ -45,12 +45,11 @@
 import css from "./toolbar.css?inline";
 import { barEntries, cleanChoices, controlKey, controlKind, tooltip } from "./toolbar-commands.js";
 import { localChanged } from "../shallow.js";
-import { hintFor } from "./keymap.js";
-import { onMac, shortcutLabel, shortcutsOf } from "./shortcuts.js";
+import { hintFor, shortcutHintFor } from "./keymap.js";
+import { onMac } from "./shortcuts.js";
 import { resolverState } from "./resolver.js";
 import { ICONS } from "../icons.js";
-import { whileHolding } from "../stage/public.js";
-import { EDIT } from "./editing.js";
+import { whileEditing } from "./editing.js";
 
 /** The editor's groups, in the order they sit (a command without a group is "other"). */
 export const GROUPS = Object.freeze(["history", "tools", "other", "panels", "view", "settings"]);
@@ -108,7 +107,7 @@ function create(api) {
     releasePop = api.popover?.(shut) ?? null;
   });
   // the editor's cluster is chrome: there (and its popover's outside click heard) while the Edit hand is held
-  const cluster = whileHolding(api, EDIT, () => {
+  const cluster = whileEditing(api, () => {
     const off = api.listen(document, "pointerdown", (e) => {
       if (!pop.hidden && !settings.contains(e.target)) shut();
     }, true);
@@ -222,8 +221,9 @@ function create(api) {
       const ks = [];
       const els = [];
       for (const it of items) {
-        // its key, else its ⌘ shortcut, as the menu shows them
-        const item = { ...it, key: hintFor({ ext: it.ext, command: it.command, target: null, stage: it.stage }, keys) || shortcutLabel(shortcutsOf(it.command)[0], onMac()) };
+        // its key, else its ⌘ shortcut, each shown only where pressing it does this (the resolver's: H3)
+        const verb = { ext: it.ext, command: it.command, target: null, stage: it.stage };
+        const item = { ...it, key: hintFor(verb, keys) || shortcutHintFor(verb, keys, onMac()) };
         const k = keyOf(item.ext, item.command.id, item.stage);
         seen.add(k);
         const kind = controlKind(item.state);

@@ -70,9 +70,9 @@ import { REBUILD_EVENT } from "../embed.js";
 import { providerOf } from "./handles.js";
 import { openFor, runOpen } from "./open.js";
 import { drawerTab } from "./tab.js";
-import { LOOK, whileHolding } from "../stage/public.js";
+import { LOOK } from "../stage/public.js";
 import { atKey, normalizeAt } from "../versions.js";
-import { EDIT } from "./editing.js";
+import { whileEditing } from "./editing.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, attachOptions, buildSummary, contentKind, documentsFor, groupOptions, inspectorDocuments, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 import { editor } from "./editor.js";
@@ -1059,75 +1059,67 @@ function create(api) {
   // the object tree, at the top of the pane (./outline.js): mounted with the
   // pane and drawn with its fields, only while it's docked; what to reveal is
   // noted on every flush, and revealed as it opens
-  const tree = createOutline(api, { shown: () => !!pane()?.tab.isOpen() });
+  const tree = createOutline(api, { shown: () => tab.isOpen() });
   /** Is the selection something this inspector shows (a scene object or group)? */
   const shows = (scene, id) => id != null && !!scene?.objects?.[id];
-  // The pane is the editor's: made as the Edit hand is picked up, where a
-  // selection opens it and it stays open (on the scene when nothing is
-  // selected) until its × or the toolbar shuts it; gone as the hand goes.
-  const pane = whileHolding(api, EDIT, () => {
-    let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
-    let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
-    let lastSel = null;
-    const tab = drawerTab(api, {
-      id: "inspector",
-      title: "Inspector",
-      mount(host) {
-        host.classList.add("inspector-pane");
-        const treeHost = el("div", { class: "inspector-tree" });
-        const fields = el("div", { class: "inspector-body" });
-        host.replaceChildren(treeHost, fields);
-        const treeView = tree.mount(treeHost);
-        body = fields;
-        view = null;
-        last = null;
-        showEmpty();
-        return {
-          opened: () => tree.opened(),
-          update(scene, local) {
-            refresh(scene, local); // (the value follow() passed: seen())
-            tree.draw();
-          },
-          dispose() {
-            teardown();
-            treeView.dispose();
-            if (body === fields) body = null;
-            host.replaceChildren();
-            last = null;
-          },
-        };
-      },
-      onClosed: () => {
-        asked = false;
-        dismissed = true;
-      },
-    });
-    function follow(scene, local) {
-      const sel = selectedOf(local);
-      if (sel !== lastSel) {
-        lastSel = sel;
-        dismissed = false;
-      }
-      const want = asked || (!dismissed && (shows(scene, sel) || tab.isOpen()));
-      // following the selection, it comes in behind a tab the viewer is using (the parts bin)
-      if (want) tab.open({ show: asked });
-      else tab.close();
-      tab.update(scene, local);
-    }
+  // the pane: its tab and what it shows last the plugin's life (the tree's scroll, the fields)
+  let asked = false; // the toolbar's Inspector opened it (on the scene, or whatever is selected)
+  let dismissed = false; // the viewer shut the tab (its ×, the toolbar): shut until the selection changes
+  let lastSel = null;
+  const tab = drawerTab(api, {
+    id: "inspector",
+    title: "Inspector",
+    mount(host) {
+      host.classList.add("inspector-pane");
+      const treeHost = el("div", { class: "inspector-tree" });
+      const fields = el("div", { class: "inspector-body" });
+      host.replaceChildren(treeHost, fields);
+      const treeView = tree.mount(treeHost);
+      body = fields;
+      view = null;
+      last = null;
+      showEmpty();
+      return {
+        opened: () => tree.opened(),
+        update(scene, local) {
+          refresh(scene, local); // (the value follow() passed: seen())
+          tree.draw();
+        },
+        dispose() {
+          teardown();
+          treeView.dispose();
+          if (body === fields) body = null;
+          host.replaceChildren();
+          last = null;
+        },
+      };
+    },
+    onClosed: () => {
+      asked = false;
+      dismissed = true;
+    },
+  });
+  // Docked is the editor's: following the selection while the Edit hand is
+  // held, where a selection opens it and it stays open (on the scene when
+  // nothing is selected) until its × or the toolbar shuts it; the hand put
+  // down shuts it, and the next pick-up follows afresh.
+  const following = whileEditing(api, () => {
+    asked = dismissed = false;
+    lastSel = null;
     return {
-      tab,
-      follow,
-      /** the toolbar's Inspector: open it (on whatever is selected), or shut it */
-      ask(open) {
-        asked = open;
-        dismissed = !open;
-        follow(here.scene(), now());
+      follow(scene, local) {
+        const sel = selectedOf(local);
+        if (sel !== lastSel) {
+          lastSel = sel;
+          dismissed = false;
+        }
+        const want = asked || (!dismissed && (shows(scene, sel) || tab.isOpen()));
+        // following the selection, it comes in behind a tab the viewer is using (the parts bin)
+        if (want) tab.open({ show: asked });
+        else tab.close();
+        tab.update(scene, local);
       },
-      dispose() {
-        tab.dispose();
-        teardown();
-        body = null;
-      },
+      dispose: () => tab.close(),
     };
   });
 
@@ -1138,24 +1130,26 @@ function create(api) {
     icon: "inspector",
     hand: "edit",
     show: ["toolbar"],
-    state: (target) => (target == null && pane() ? { checked: pane().tab.isOpen(), title: "Everything in the scene as a tree, and the selection's fields and behaviours (the scene's, with nothing selected)" } : null),
+    state: (target) => (target == null ? { checked: tab.isOpen(), title: "Everything in the scene as a tree, and the selection's fields and behaviours (the scene's, with nothing selected)" } : null),
     run(_target, value) {
-      pane()?.ask(value === undefined ? !pane().tab.isOpen() : !!value);
+      const open = value === undefined ? !tab.isOpen() : !!value;
+      asked = open;
+      dismissed = !open;
+      following()?.follow(here.scene(), now());
     },
   });
 
   return {
     commands,
     update(scene, local, prev, view) {
-      if (!pane()) return;
+      if (!following()) return;
       tree.note(prev, view);
-      pane().follow(scene, seen(local, view));
+      following().follow(scene, seen(local, view));
     },
-    /** for tests and probes: the tab, while editing (its element, and whether it's docked) */
-    get tab() {
-      return pane()?.tab ?? null;
-    },
+    /** for tests and probes: the tab (its element, and whether it's docked) */
+    tab,
     dispose() {
+      tab.dispose();
       tree.dispose();
       teardown();
       body = null;

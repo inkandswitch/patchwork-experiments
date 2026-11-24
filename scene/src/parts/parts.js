@@ -5,9 +5,9 @@
 // icon, category, description, tags, traits; nothing is loaded to offer
 // one), grouped by category, with a search once there are enough of them.
 // With no parts registered there is no tab, nor its toggle: what isn't
-// contributed doesn't exist. The tab and taking a dropped part are the
-// editor's: the tab made as the Edit hand is picked up and gone as it is put
-// down, a drop heard through scene.drops (./drops.js) while it is held.
+// contributed doesn't exist. The tab docked and taking a dropped part are
+// the editor's: the tab shut as the Edit hand is put down (its panel kept),
+// a drop heard through scene.drops (./drops.js) while it is held.
 //
 // Putting one in:
 //   - drag it into the view: it lands where the pointer hits. On an object it
@@ -33,8 +33,7 @@ import { partLanding } from "./parts-place.js";
 import { drawerTab, tabToggle } from "./tab.js";
 import { part } from "./making.js";
 import { atFocus, perFocus } from "../per-focus.js";
-import { whileHolding } from "../stage/public.js";
-import { EDIT } from "./editing.js";
+import { whileEditing } from "./editing.js";
 
 /** What a part's drag carries: JSON { part: id }. Only `types` is readable during dragover. */
 export const PART_MIME = "application/x-scene-part";
@@ -273,6 +272,7 @@ function create(api) {
 
   // what scene.drops offers (./drops.js): a part dragged over the port and dropped
   const dropping = {
+    wants: (dt) => isPartDrag(dt),
     over(e) {
       if (!isPartDrag(e.dataTransfer)) return false;
       if (!inPort(e)) return hideRing(), false;
@@ -373,27 +373,26 @@ function create(api) {
     return view;
   }
 
-  // the editor's chrome, made while the Edit hand is held: a drawer tab the
-  // viewer opens (Parts in the toolbar, while some package offers one)
-  const tab = whileHolding(api, EDIT, () =>
-    drawerTab(api, {
-      id: "parts",
-      title: "Parts",
-      mount(body) {
-        const v = mountView(body);
-        return { update: () => v.draw(), dispose: () => v.dispose() };
-      },
-    }),
-  );
+  // a drawer tab the viewer opens (Parts in the toolbar, while some package
+  // offers one): its panel (the search, the scroll) lasts the plugin's life;
+  // docked is the editor's, and putting the Edit hand down shuts it
+  const tab = drawerTab(api, {
+    id: "parts",
+    title: "Parts",
+    mount(body) {
+      const v = mountView(body);
+      return { update: () => v.draw(), dispose: () => v.dispose() };
+    },
+  });
+  whileEditing(api, () => () => tab.close());
 
   return {
     dropping,
-    commands: [tabToggle(tab, { id: "parts", name: "Parts", icon: "parts", title: "Parts to put into the scene: drag one in, or click to put it where you're looking", available: () => parts.length > 0 })],
-    update: (scene, local) => tab()?.update(scene, local),
-    /** the tab, while editing (for tests and probes) */
-    get tab() {
-      return tab();
-    },
+    commands: [tabToggle(() => tab, { id: "parts", name: "Parts", icon: "parts", title: "Parts to put into the scene: drag one in, or click to put it where you're looking", available: () => parts.length > 0 })],
+    update: (scene, local) => tab.update(scene, local),
+    /** the tab (for tests and probes) */
+    tab,
+    dispose: () => tab.dispose(),
     // for tests and probes
     landAt,
     landAhead,
