@@ -179,3 +179,20 @@ describe("glb queue", () => {
     for (const f of fs) expect(f.listenerCount("change")).toBe(0);
   });
 });
+
+describe("the yield between parses", () => {
+  // the default yield is the page's scheduling, not the stage's time (../stage/time.js yieldThread)
+  it("loading goes at the page's pace: on a manual time nobody steps, every file is found and parsed", async () => {
+    const repo = new FakeRepo();
+    const time = manualTime({ frameMs: 50 }); // never stepped
+    const t0 = time.now();
+    const parsed = [];
+    const queue = createGLBQueue({ find: (u) => repo.find(u), read: (h) => fileBytes(h.doc()), parse: async (id) => void parsed.push(id), time });
+    const ids = ["a", "b", "c", "d", "e", "f"];
+    for (const [i, id] of ids.entries()) queue.ensure(id, repo.add({ "@patchwork": { type: "file" }, name: `${id}.glb`, extension: "glb", content: bytes(i) }).url, 0);
+    for (let i = 0; i < 50 && parsed.length < ids.length; i++) await new Promise((r) => setImmediate(r));
+    expect(parsed.sort()).toEqual(ids);
+    expect(time.now()).toBe(t0); // (time never moved)
+    queue.dispose();
+  });
+});

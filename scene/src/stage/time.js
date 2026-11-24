@@ -32,7 +32,8 @@
 // builds, retries and who builds (../content/lock.js). A manual source moves
 // them only when stepped, so a probe or a test steps it to see a build. The
 // cost of a frame (`perf`) is measured on performance.now: it is CPU time,
-// not time in the scene.
+// not time in the scene. Yielding the thread (yieldThread, below) is not time
+// either: it is the page's scheduling, the same under either source.
 
 /** From this deep in timer callbacks, a timer waits at least 4 ms (HTML's timer nesting clamp). */
 const NESTING_CLAMP = 5;
@@ -72,8 +73,16 @@ export function realTime() {
   });
 }
 
-/** One event-loop turn: every microtask drained, and whatever I/O is ready delivered. */
-const turn = () =>
+/**
+ * Yield the thread for one turn of the page's event loop: every microtask
+ * drained, and whatever I/O is ready delivered. Scheduling, not time: it is
+ * the same under real and manual time, so a manual source nobody steps
+ * doesn't hold it up. Work that lets the page breathe between chunks (the
+ * GLB queue between parses) yields with this; whatever waits for time to
+ * pass waits on a source's `after`.
+ * @returns {Promise<void>}
+ */
+export const yieldThread = () =>
   new Promise((resolve) => {
     if (typeof MessageChannel === "function") {
       const c = new MessageChannel();
@@ -91,7 +100,7 @@ const turn = () =>
  *   `yieldTo`: what step() awaits between frames (one event-loop turn)
  * @returns {ManualTime}
  */
-export function manualTime({ start = MANUAL_EPOCH, frameMs = FRAME_MS, yieldTo = turn } = {}) {
+export function manualTime({ start = MANUAL_EPOCH, frameMs = FRAME_MS, yieldTo = yieldThread } = {}) {
   if (!(frameMs > 0)) throw new Error("manualTime: frameMs must be positive");
   let frames = 0; // ticks run
   let t = start; // now(): start + frames × frameMs between ticks; a timer's due time while it runs
