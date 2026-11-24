@@ -1345,3 +1345,21 @@ and write it after listening once more. Writing it by compare-and-set alone
 was tried first: the model found a woken holder's older build written
 concurrently with its successor's newer one, the merge keeping the older,
 so the fence kept its second condition.
+
+**The stage, decomposed (2026-11-24).** `stage.js`, one 1,455-line closure,
+became the composition of its parts. The derived model of a doc snapshot is
+`model.js`; when a flush runs is `flush.js` (what a pass does stays the
+stage's); what a stage draws and the display overrides are `display.js`;
+the segment, the offered bodies, the ambients, the statuses and a command's
+distance are pure functions beside their kin (`chain.js`, `bodies.js`,
+`ambients.js`, `content.js`, `commands.js`). The drawn api, built by
+subtracting from the acting one, became the api built from what a stage
+allows (`drawn.js`): an acting member with no inert form can't be built
+into a drawn stage, and a drawn stage's `listen` came to hear nothing.
+Reading the code found that a pin's or a read-only stage's extension could
+act on the outermost doc through `api.ambient(name).use`: claim, hold,
+veil, tell, pause the clock, start a process. That facet is made for a
+`readOnly` caller, which the native services let only read. The stage's
+`role` beside `acts` went, and with it an unread frame-cost log. A drawn
+stage that is live (not at fixed heads) still announces nothing: no plugin
+opens one, and the stage can't tell it from a pin until the view says.

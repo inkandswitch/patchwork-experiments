@@ -1,45 +1,36 @@
 // patchwork:tool "scene": a view (./view.js) and the stages it opens, one per
-// open doc (STAGE.md, "Views, stages and links"). This file is the stage: the doc, its
-// content (../content/content.js), what extensions display instead (api.display),
-// presence on its doc's channel, its extensions and the api each gets. It has no UI of its own and no opinion about what a click means:
-// everything a person sees or does beyond a rendered scene and an orbiting
-// camera comes from a `scene:extension`, which gets an api (makeApi below)
-// and is started and stopped by the host (host.js). The view holds what is
-// the viewer's: the mount, the viewport, the router, the body stack and the
-// hands, the selection and the camera.
+// open doc (STAGE.md, "Views, stages and links"). This file is the stage, the
+// composition of its parts: the doc and its derived model (./model.js), its
+// content (../content/content.js), what it draws and how extensions display
+// objects instead (./display.js), presence on its doc's channel
+// (./presence.js), its packages (./packages.js), its extensions (./host.js)
+// and the api each gets (makeApi below, ./drawn.js), and its update flush
+// (./flush.js says when; flush below, what). It has no UI of its own and no
+// opinion about what a click means: everything a person sees or does beyond a
+// rendered scene and an orbiting camera comes from a `scene:extension`. The
+// view holds what is the viewer's: the mount, the viewport, the router, the
+// body stack and the hands, the selection and the camera.
 //
 // A stage works in its own ids and its own root frame. Everything spatial
 // goes through its scope of the viewport (./scope.js), the one choke point
 // where its frame and its keys (./paths.js) meet the view's.
 //
-// A stage acts, or it is drawn (STAGE.md, "Views, stages and links"). One that acts is where
-// its doc is played: its extensions hear input, offer bodies, tools and
-// commands and speak on its channel. A pin (its doc at
-// fixed heads) is drawn: its extensions run, so it looks as the doc does, and
-// they draw into the world (layers, labels, display), but nothing
-// more: no input, bodies, tools, commands or DOM chrome, no camera, no
-// processes, and they hear their doc's channel without speaking on it (a
-// pin has none). A stage is read-only when it doesn't act or its handle is,
-// and is then given its doc and repo read-only (./readonly.js), so it writes
-// nothing whatever it calls (invariant I6).
+// A stage acts, or it is drawn (`acts`). One that acts is where its doc is
+// played: its extensions hear input, offer bodies, tools and commands and
+// speak on its channel. A drawn one's extensions run, so it looks as the doc
+// does, and draw into the world, nothing more: its api carries each acting
+// member's inert form (./drawn.js), and it has no channel. A stage is
+// read-only when it doesn't act or its handle is, and is then given its doc
+// and repo read-only (./readonly.js), so it writes nothing whatever it calls
+// (invariant I6).
 //
-// The parts, in the order they're wired:
-//   - local state (atom.js): the stage's own (running, status, packages,
-//     and extensions' keys); the view's is `api.view`.
-//   - content (../content/content.js): each object placed as the doc and
-//     the display say; its state → local.status.
-//   - presence on its doc's channel (./presence.js), and display: each
-//     extension's override of how an object is drawn, layered in running order.
-//   - the host, and the api each extension gets (everything it acquires is
-//     its own and is given back when it stops, in the STAGE.md order).
-//   - the view's plugins' facets (api.focus() while it is the focus): this
-//     api, made for the plugin; what it acquires through one goes when the
-//     focus leaves, the plugin stops or the stage closes.
-//   - what the view asks of it: its segment of the input chain, its inputs
-//     (hearing events in its frame), its bodies and widgets.
-//   - the doc loop: derive, the running set, display and content; then the
-//     update flush (once per UI pass): each instance's update(), scheduled
-//     work, ambients (./ambients.js).
+// The parts, in the order they're wired: local state (atom.js: running,
+// status, packages and extensions' keys; the view's is `api.view`); packages;
+// the model; content and display; presence; the page's events; the flush (a
+// pass: local.status, a redraw, each instance's update, the view's plugins,
+// scheduled work, ambients); the api and what each extension holds; the host;
+// the view's plugins' facets; what the view asks of it (its segment of the
+// input chain, inputs heard in its frame, bodies, widgets); the doc loop.
 
 import * as THREE from "three";
 import * as patchworkPlugins from "@inkandswitch/patchwork-plugins";
