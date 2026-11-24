@@ -330,7 +330,6 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       newId: (p) => `${p}${Math.random().toString(36).slice(2, 8)}`,
       registry: async (type) => registries[type] ?? null,
       body: {
-        current: () => localState.body ?? LOOK,
         enter(id, place = null) {
           const found = defs().find((d) => d.def.id === id);
           if (!found) return false;
