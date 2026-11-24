@@ -591,26 +591,26 @@ describe("held tools", () => {
     const putA = t.router.hold("x", { command: "a", input: a });
     t.router.hold("y", { command: "b", input: b });
     t.router.hold("z", { command: null, name: "Piece", input: c });
-    expect([a.put.mock.calls.length, t.router.held()]).toEqual([0, [{ owner: "x", command: "a", name: "a", serial: 2 }, { owner: "y", command: "b", name: "b", serial: 3 }, { owner: "z", command: null, name: "Piece", serial: 4 }]]);
+    expect([a.put.mock.calls.length, t.router.tools()]).toEqual([0, [{ owner: "x", command: "a", name: "a", serial: 2 }, { owner: "y", command: "b", name: "b", serial: 3 }, { owner: "z", command: null, name: "Piece", serial: 4 }]]);
     // b put down: b goes, from the middle; nothing else
     expect(t.router.putDown({ owner: "y", command: "b" })).toBe(true);
     expect([a.put.mock.calls.length, b.put.mock.calls.length, c.put.mock.calls.length]).toEqual([0, 1, 0]);
-    expect(t.router.held().map((h) => h.owner)).toEqual(["x", "z"]);
+    expect(t.router.tools().map((h) => h.owner)).toEqual(["x", "z"]);
     // a tool held directly (no command), held again: another goes on top
     t.router.hold("z", { command: null, name: "Piece", input: c });
-    expect(t.router.held().map((h) => h.owner)).toEqual(["x", "z", "z"]);
+    expect(t.router.tools().map((h) => h.owner)).toEqual(["x", "z", "z"]);
     // put(): its own, from the bottom
     putA();
     putA();
-    expect([a.put.mock.calls.length, t.router.held().map((h) => h.owner)]).toEqual([1, ["z", "z"]]);
+    expect([a.put.mock.calls.length, t.router.tools().map((h) => h.owner)]).toEqual([1, ["z", "z"]]);
     // putDown(): the one named (by its serial: a tool held directly has no command to name it by), else the topmost
     expect(t.router.putDown({ owner: "x", command: "a" })).toBe(false);
     expect(t.router.putDown({ owner: "z", command: null })).toBe(false);
-    const [under, over] = t.router.held();
+    const [under, over] = t.router.tools();
     expect(t.router.putDown({ serial: under.serial })).toBe(true);
-    expect(t.router.held()).toEqual([over]);
+    expect(t.router.tools()).toEqual([over]);
     expect(t.router.putDown()).toBe(true);
-    expect([c.put.mock.calls.length, t.router.held(), t.router.putDown()]).toEqual([2, [], false]);
+    expect([c.put.mock.calls.length, t.router.tools(), t.router.putDown()]).toEqual([2, [], false]);
   });
   // STAGE.md, "Keys": a key with ctrl or meta held is no reserver's, whatever declares it (a pad's Z is not ⌘Z)
   it("a reserved key with ctrl or meta held goes to the chain, not its reserver, for every reserver; without them, to its reserver", () => {
@@ -844,7 +844,7 @@ describe("H4, H5, H12: one stack of hands, wired", () => {
           }
           const top = m.stack.at(-1);
           const owners = (ks) => ks.map((x) => E[x].owner);
-          expect([seq, lockBody, t.router.hands().map((h) => h.owner), t.router.held().map((h) => h.owner), puts]).toEqual([seq, lockBody, owners(m.stack), owners(m.stack.filter((x) => E[x].tool)), m.puts]);
+          expect([seq, lockBody, t.router.hands().map((h) => h.owner), t.router.tools().map((h) => h.owner), puts]).toEqual([seq, lockBody, owners(m.stack), owners(m.stack.filter((x) => E[x].tool)), m.puts]);
           const st = t.router.state();
           expect([seq, lockBody, st.pointer.wanted, st.pointer.locked, lockEl === t.canvas, st.escape]).toEqual([seq, lockBody, wanted(), locked(), locked(), locked() ? "lock" : top ? (top === "P" ? "popover" : "hand") : null]);
           // a press and its release: after the browser's Escape, the first press on the world only relocks
@@ -1209,7 +1209,7 @@ describe("stopping an owner", () => {
     expect(tool.put).toHaveBeenCalledTimes(1);
     expect(close).not.toHaveBeenCalled();
     expect(t.router.body().id).toBe("look");
-    expect(t.router.held()).toEqual([]);
+    expect(t.router.tools()).toEqual([]);
     expect(t.router.state().escape).toBe(null);
     up(t, { x: 40 });
     expect(session.end).not.toHaveBeenCalled();

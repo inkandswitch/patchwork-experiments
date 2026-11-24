@@ -54,7 +54,7 @@ plain data for plugins (`drops`, `describes`: EDITOR.md).
 |---|---|
 | **The running set** | A pure function of metadata and the doc (`stage/activation.js`; H1). An extension runs for a trait: scope `scene` (a scene trait, or `"*"`) or `objects`; a trait covers what it sits on and what hangs or is filed under it. One instance per stage. |
 | **Order** | Providers (after those of what they `uses`), then the rest; each `scene`, then `objects`, in registry order (`local.running`), the only order anything combines in. Providers start in parallel, each waiting only for the providers of what it `uses`; the rest wait for all before them and the view's providers, so a create's `use` finds every service that runs. |
-| **Stopping** (H2) | Leaving the running set, an extension lingers `LINGER_MS` (2 s), and while it holds a body, tool or session or an instance's `busy(id)` says so; one loading or unregistered stops at once. Its `signal` aborts (services' gifts go), then what it acquired goes, `dispose()`. |
+| **Stopping** (H2) | Leaving the running set, an extension lingers `LINGER_MS` (2 s), and while it holds a body on the stack, a held tool or an open session (its input's, body's or tool's; `router.js` `holds`) or an instance's `busy(id)` says so; one loading or unregistered stops at once. Its `signal` aborts (services' gifts go), then what it acquired goes, `dispose()`. |
 | **Failing** | A failed one starts again only when its plugin registers from elsewhere (its package's next version). |
 
 ## Commands

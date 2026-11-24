@@ -1031,7 +1031,7 @@ export function createRouter(o) {
     hold,
     putDown,
     /** the held tools, bottom first: [{ owner, command, name, serial }] */
-    held: () => tools(hands).map((t) => ({ owner: t.owner, command: t.command, name: t.name, serial: t.serial })),
+    tools: () => tools(hands).map((t) => ({ owner: t.owner, command: t.command, name: t.name, serial: t.serial })),
     /** the hands, bottom first: [{ owner, kind, name }] */
     hands: () => hands.map((h) => ({ owner: h.owner, kind: h.kind, name: h.name })),
     /** the last ROUTES dispatched events' routes, oldest first (spell) */
