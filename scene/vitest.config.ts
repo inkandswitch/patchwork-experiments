@@ -11,6 +11,7 @@ export default defineConfig({
     // tests read happy-dom's on any Node (a no-op on Node 24)
     poolOptions: { forks: { execArgv: ["--no-experimental-webstorage"] }, threads: { execArgv: ["--no-experimental-webstorage"] } },
     globals: true,
+    setupFiles: ["src/test/setup.js"],
     passWithNoTests: true,
     include: ["src/**/*.test.js"],
   },
