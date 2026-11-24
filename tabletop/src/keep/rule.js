@@ -50,7 +50,7 @@ export function itemLook(item) {
 }
 
 /**
- * Shows each object as its look says (scene/STAGE.md, "Display"): `{ veil:
+ * Shows each object as its look says (scene/API.md, "Display"): `{ veil:
  * true }` as scene.audience's veil, an item's as its name and file. A look
  * naming a game's piece instead of a file is asked of `face(look)` (→ {
  * url } or { glb, kept }: table/faces.js draws it the first time), shown by

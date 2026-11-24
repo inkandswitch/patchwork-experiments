@@ -345,12 +345,10 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         swap(fn) {
           localState = Object.freeze(fn(localState));
         },
-        watch: () => () => {},
       },
       // (the view's keys and the stage's in one value here: a fake world has one stage)
       view: {
         get: () => localState,
-        watch: () => () => {},
         select: () => {},
       },
       // the stage's time (scene/src/stage/time.js): here the wall vitest's fake timers move
@@ -359,7 +357,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
         const h = setTimeout(fn, ms);
         return () => clearTimeout(h);
       },
-      // the doc's ephemeral side (STAGE.md, "`api`")
+      // the doc's ephemeral side (API.md, "`api`")
       channel: {
         viewer,
         session,
@@ -395,10 +393,9 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       labels: () => ({ set: (items) => (view.labels = items) }),
       overlay: () => (view.overlay = document.createElement("div")),
       style() {},
-      cursor() {},
       box: () => null,
       // the body's eye is the camera's here (the stage's Look: the orbit camera)
-      body: { eye: () => (view.camera?.position ? { position: [...view.camera.position], direction: null } : null), current: () => ({ id: "look", depth: 0 }) },
+      body: { eye: () => (view.camera?.position ? { position: [...view.camera.position], direction: null } : null) },
       camera: {
         set: (c) => (view.camera = c),
         get: () => view.camera,
@@ -420,7 +417,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       worldOf,
       ops,
       content: (id) => content[id] ?? null,
-      // the other extensions' fields (STAGE.md api.collect): what a test puts in view.collected, as one extension's
+      // the other extensions' fields (API.md api.collect): what a test puts in view.collected, as one extension's
       collect: (name) => (view.collected?.[name] === undefined ? [] : [{ id: "other", value: view.collected[name] }]),
       loop(fn) {
         view.loops.push(fn);
