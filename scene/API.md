@@ -17,7 +17,7 @@ What is a stage's (its doc, content, space, camera, bodies, presence, flush) it 
 | `url` | the outermost doc's |
 | `focus()` | the focus stage's `api`, made for it; what it acquires there goes as the focus leaves |
 | `path(o?)` | the input path's stages as readers, innermost first; `{ pointer: true }`, `{ focus: true }`, `{ at: path }` |
-| a reader | `{ stage, path, scene(), runs(ext), collect(name), context(hit), attention(), look(), pointed(), nameOf(id), writable(), use(name) }` |
+| a reader | `{ stage, path, scene(), runs(ext), collect(name), context(hit), attention(), look(), pointed(), nameOf(id), content(id), writable(), use(name) }` |
 | | `context(hit)`: what its commands are asked in, `{ scene, local, view, from, reach, hit, distance(target) }` |
 | `collect(name)`, `run(inv)` | every acting stage's offers, the input path's first, tagged `stage`; run in `inv.stage`, else the focus |
 | `use(name)` | a view plugin's service, else the focus stage's |
