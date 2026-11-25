@@ -122,6 +122,8 @@ async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promis
     id: settings.id,
     name: settings.name,
     slots: settings.slots,
+    // what any browser has; work that needs more is left for a machine that has it
+    has: ['browser'],
     executor,
     // the latest the page has said, which may have come while this was starting
     queues: stopping ? {} : queues,

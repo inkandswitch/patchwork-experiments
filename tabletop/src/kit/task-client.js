@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v10]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v11]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -20,6 +20,7 @@ import {
   LAPSE_MS,
   MAX_LOG_LINES,
   checkKey,
+  checkNeeds,
   delistTask,
   endingRun,
   entryAt,
@@ -30,6 +31,7 @@ import {
   mayRelist,
   named,
   recordsOf,
+  satisfies,
   stopTask,
   taskError,
   taskResult,
@@ -62,9 +64,12 @@ export const LOCAL_MESSAGES_CHANNEL = 'patchwork-tasks-messages';
  */
 
 /**
- * Said on a queue's channel by each pool serving it, every BEAT_MS. Advice
- * for people and askers: nothing is decided by it.
- * @typedef {{ type: 'serving', pool: string, name: string, slots: number, busy: number, from: string, seq: number }} ServingMessage
+ * Said on a queue's channel by each pool serving it, every BEAT_MS, and at
+ * once to a pool it hears there for the first time: who it is, how many
+ * slots it has and how many are busy, and what it has (see `satisfies`).
+ * Advice: no rule depends on it. People and askers read it to say why work
+ * waits; pools read it to hold back for the pool a task prefers.
+ * @typedef {{ type: 'serving', pool: string, name: string, slots: number, busy: number, has: string[], from: string, seq: number }} ServingMessage
  */
 
 /** @type {BroadcastChannel | undefined} */
@@ -244,6 +249,8 @@ export function inSamePackage(fromUrl, path) {
  * @property {string} importUrl  Where the task's code is: anything `import()` takes. A module whose default export is a function of `(input, ctx)`.
  * @property {unknown} [input]  What to hand it. Anything JSON can carry.
  * @property {string} [key]  What makes this the same task as another: asking twice under one key, while the first has not ended, is asking once. Left out, the task gets a key of its own.
+ * @property {string[]} [needs]  What a machine must have to run it: plain labels (`unix`, `node`, `browser`, `pool:<id>` for one machine in particular). Only a pool that has every one takes it; until one serves the queue, it waits.
+ * @property {string} [near]  The id of the pool the asker is next to: that pool takes it at once whenever it may, and the others hold back for it (see `preferred` in task-rules.js).
  */
 
 const copy = (/** @type {unknown} */ value) =>
@@ -256,15 +263,22 @@ const copy = (/** @type {unknown} */ value) =>
  * Two askers at once each list their own; the merge keeps one, and both find
  * the same task under the key from then on. Which is why the task this
  * returns is only where the key pointed when asked: follow the key (`watch`,
- * `run`), not the url.
+ * `run`), not the url. The task asked once keeps the needs it was asked with.
+ *
+ * Throws, writing nothing, for a key that cannot be one, for needs that are
+ * not a list of labels, and for a `near` that is not a pool's id.
  * @param {any} repo
  * @param {string} queueUrl
  * @param {Ask} ask
  * @returns {Promise<{ key: string, taskUrl: string }>}
  */
-export async function ask(repo, queueUrl, { importUrl, input, key }) {
+export async function ask(repo, queueUrl, { importUrl, input, key, needs, near }) {
   const jobKey = key ?? crypto.randomUUID();
   checkKey(jobKey);
+  checkNeeds(needs);
+  if (near !== undefined && near !== null && typeof near !== 'string') {
+    throw new Error("`near` names a pool by its id, a string.");
+  }
   const queue = await repo.find(queueUrl);
   const listed = entryAt(queue.doc(), jobKey);
   /** @type {string | undefined} */
@@ -282,14 +296,21 @@ export async function ask(repo, queueUrl, { importUrl, input, key }) {
     }
     over = listed.taskUrl;
   }
-  const task = repo.create({ importUrl, input: copy(input), key: jobKey, runs: [] });
+  // needs are written on the task only when there are some: a task without them needs nothing
+  const task = repo.create({
+    importUrl,
+    input: copy(input),
+    key: jobKey,
+    ...(needs && needs.length > 0 ? { needs: [...needs] } : {}),
+    runs: [],
+  });
   // Saved before the queue names it, so that a pool that sees the entry finds the task.
   await repo.flush([task.documentId]);
   queue.change((/** @type {Queue} */ doc) =>
     listTask(
       doc,
       jobKey,
-      { taskUrl: task.url, askedAt: Date.now(), package: packageOf(importUrl) },
+      { taskUrl: task.url, askedAt: Date.now(), package: packageOf(importUrl), needs: needs ?? [], near: near ?? undefined },
       over,
     ),
   );
@@ -409,7 +430,7 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
         const again = following;
         noneSince = null;
         queue.change((/** @type {Queue} */ q) =>
-          listTask(q, key, { taskUrl: again, askedAt: Date.now(), package: packageOf(doc.importUrl) }),
+          listTask(q, key, { taskUrl: again, askedAt: Date.now(), package: packageOf(doc.importUrl), needs: doc.needs }),
         );
       }
     }
@@ -581,8 +602,9 @@ export async function run(repo, queueUrl, request, onProgress, signal) {
 }
 
 /**
- * A pool heard serving a queue.
- * @typedef {{ pool: string, name: string, slots: number, busy: number }} Serving
+ * A pool heard serving a queue, as it last said: what it has is only ever
+ * labels, and none when it said something else.
+ * @typedef {{ pool: string, name: string, slots: number, busy: number, has: string[] }} Serving
  */
 
 /**
@@ -614,7 +636,7 @@ export function served(repo, queueUrl, onChange) {
       }
     }
     const list = [...pools.values()]
-      .map(({ pool, name, slots, busy }) => ({ pool, name, slots, busy }))
+      .map(({ pool, name, slots, busy, has }) => ({ pool, name, slots, busy, has }))
       .sort((a, b) => (a.pool < b.pool ? -1 : 1));
     const json = JSON.stringify(list);
     if (json !== reported) {
@@ -643,6 +665,7 @@ export function served(repo, queueUrl, onChange) {
             name: String(message.name ?? ''),
             slots: Number(message.slots) || 0,
             busy: Number(message.busy) || 0,
+            has: Array.isArray(message.has) ? message.has.filter((/** @type {unknown} */ label) => typeof label === 'string' && label !== '') : [],
             at: Date.now(),
           });
           report();
@@ -973,20 +996,32 @@ export async function findWhenThere(
 // Having work done, from a page
 //
 // A tool in a page that wants work done has it done by a task asked of the
-// person's own queue when a pool is heard serving that queue, and otherwise
-// here, by importing the same code and calling it in the page. Either way it
-// is the one module the import url names, called with (input, ctx). What
-// differs is what the person gets. Asked of their queue, the work goes on
-// when this page closes, is done once however many pages ask for it under
-// one key, and a stop ends it for good. Done here it is this page's alone,
-// as a tool's own work always was, and code that does not heed its signal
-// runs on. Nothing is made by asking: a person has a queue of their own only
-// once they have said so (`ownQueue`).
+// person's own queue, or here, by importing the same code and calling it in
+// the page. Either way it is the one module the import url names, called
+// with (input, ctx). What differs is what the person gets. Asked of their
+// queue, the work goes on when this page closes, is done once however many
+// pages ask for it under one key, and a stop ends it for good. Done here it
+// is this page's alone, as a tool's own work always was, and code that does
+// not heed its signal runs on. Nothing is made by asking: a person has a
+// queue of their own only once they have said so (`ownQueue`).
 //
+// Which it is, in this order:
+// 1. The person's own queue is asked when a pool heard serving it has what
+//    the work needs (with no needs, any pool heard).
+// 2. Otherwise, work that needs nothing a page lacks (its needs are among
+//    PAGE_HAS) is done here.
+// 3. Otherwise it is asked of the own queue all the same, and waits there
+//    for a device that has what it needs; with no own queue, it rejects with
+//    a sentence naming what was needed.
 // A queue is asked only for code that can travel: a file in a package kept
 // in automerge, or a `data:` URL. Any other url (http://localhost while a
 // tool is developed, a file: url) names code that only this machine can
-// reach, so that work is done here.
+// reach, so that work is done here, or, when it needs what a page lacks,
+// rejected.
+//
+// Work asked of the queue is near this browser's pool, when the page can
+// read which that is: that pool takes it at once if it may, and the others
+// hold back for it.
 //
 // What is known where. Work asked of the person's queue is seen by every page
 // of theirs: `watchWork` follows the key on that queue from any tab or
@@ -995,48 +1030,79 @@ export async function findWhenThere(
 // that started it: another tab, or another tool in the same page, neither
 // sees it nor can stop it, and no document says that it is going on.
 
+/** What a page has, as a pool's labels: work that needs only these can be done in it. */
+export const PAGE_HAS = ['browser'];
+
+/**
+ * Where a browser profile keeps its pool's id, in localStorage. The pool's
+ * host writes it; a page reads it to say which pool it is next to.
+ */
+export const POOL_ID_KEY = 'patchwork-tasks-pool-id';
+
+/**
+ * This browser profile's pool id, if this page can read one; null outside a
+ * browser, before any pool has started here, or where localStorage cannot be
+ * used.
+ * @returns {string | null}
+ */
+function browserPoolIdHere() {
+  try {
+    const id = /** @type {any} */ (globalThis).localStorage?.getItem(POOL_ID_KEY);
+    return typeof id === 'string' && id !== '' ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The pools heard serving the queues this page has had work done on, by Repo
- * and queue. Each queue is listened to from the first asking for as long as
- * the page lives, so that only the first asking waits to hear.
- * @type {WeakMap<object, Map<string, { pools: Serving[], first: Promise<void> }>>}
+ * and queue, with until when the first listening lasts and who waits on a
+ * change. Each queue is listened to from the first asking for as long as the
+ * page lives, so that only an asking within a beat of the first waits to hear.
+ * @type {WeakMap<object, Map<string, { pools: Serving[], until: number, changed: Set<() => void> }>>}
  */
 const heardServing = new WeakMap();
 
 /**
- * The pools heard serving a queue: at once if this page has listened to it
- * before, else after the first pool is heard or a beat and a little has passed.
+ * The pools heard serving a queue, as soon as one of them has what `needs`
+ * asks for, or else once this page has listened to the queue for a beat and
+ * a little: at once if it has already.
  * @param {any} repo
  * @param {string} queueUrl
+ * @param {string[]} needs
  * @returns {Promise<Serving[]>}
  */
-function poolsHeard(repo, queueUrl) {
+function poolsHeard(repo, queueUrl, needs) {
   let queues = heardServing.get(repo);
   if (!queues) {
     heardServing.set(repo, (queues = new Map()));
   }
   let state = queues.get(queueUrl);
   if (!state) {
-    let heardOne = () => {};
-    const made = {
-      pools: /** @type {Serving[]} */ ([]),
-      first: /** @type {Promise<void>} */ (
-        new Promise((resolve) => {
-          heardOne = resolve;
-          setTimeout(resolve, BEAT_MS + 500);
-        })
-      ),
-    };
+    const made = { pools: /** @type {Serving[]} */ ([]), until: Date.now() + BEAT_MS + 500, changed: new Set() };
     queues.set(queueUrl, (state = made));
     served(repo, queueUrl, (pools) => {
       made.pools = pools;
-      if (pools.length) {
-        heardOne();
+      for (const changed of [...made.changed]) {
+        changed();
       }
     });
   }
-  const { first } = state;
-  return first.then(() => /** @type {{ pools: Serving[] }} */ (state).pools);
+  const heard = state;
+  return new Promise((resolve) => {
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    const look = () => {
+      if (heard.pools.some((pool) => satisfies(pool.has, needs)) || Date.now() >= heard.until) {
+        heard.changed.delete(look);
+        clearTimeout(timer);
+        resolve(heard.pools);
+      }
+    };
+    heard.changed.add(look);
+    timer = setTimeout(look, Math.max(0, heard.until - Date.now()));
+    look();
+  });
 }
 
 /**
@@ -1058,14 +1124,15 @@ async function ownQueueNow(repo) {
 }
 
 /**
- * The person's own queue, if they have one and a pool is heard serving it;
- * null otherwise. Only reads.
+ * The person's own queue, if they have one, with the pools heard serving it
+ * (see `poolsHeard`); null when they have none. Only reads.
  * @param {any} repo
- * @returns {Promise<string | null>}
+ * @param {string[]} needs
+ * @returns {Promise<{ url: string, pools: Serving[] } | null>}
  */
-async function servedOwnQueue(repo) {
-  const own = await ownQueueNow(repo);
-  return own && (await poolsHeard(repo, own)).length > 0 ? own : null;
+async function ownQueueHeard(repo, needs) {
+  const url = await ownQueueNow(repo);
+  return url ? { url, pools: await poolsHeard(repo, url, needs) } : null;
 }
 
 /**
@@ -1076,13 +1143,28 @@ async function servedOwnQueue(repo) {
 const travels = (importUrl) => parseAutomergeImport(importUrl) !== null || /^data:/i.test(importUrl);
 
 /**
- * Has work done: asked of the person's own queue if a pool is heard serving
- * it (as `run`), and otherwise done here; code that cannot travel (see
- * above) is always done here. Resolves to what the code returned; rejects
- * with what it threw, or "The task was cancelled" once `signal` is aborted.
- * `onProgress` hears the same views either way (one for work done here has
- * no `taskUrl` and no `runs`). Aborted while it still listens for a pool, it
- * rejects at once and neither asks nor calls anything.
+ * What a person reads when work needs a device: "a device with unix and
+ * ollama"; a `pool:` need is one particular device.
+ * @param {string[]} needs
+ */
+function deviceWords(needs) {
+  const labels = needs.filter((need) => !need.startsWith('pool:'));
+  const listed = labels.length <= 1 ? labels.join('') : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
+  if (labels.length === needs.length) {
+    return `a device with ${listed}`;
+  }
+  return labels.length > 0 ? `one particular device, with ${listed}` : 'one particular device';
+}
+
+/**
+ * Has work done, as the comment above says: asked of the person's own queue
+ * (as `run`), or done here. Resolves to what the code returned; rejects with
+ * what it threw, or "The task was cancelled" once `signal` is aborted, or,
+ * for work that needs what neither this page nor any queue of theirs can
+ * give it, with a sentence saying what it needs. `onProgress` hears the same
+ * views either way (one for work done here has no `taskUrl` and no `runs`).
+ * Aborted while it still listens for a pool, it rejects at once and neither
+ * asks nor calls anything.
  * @param {any} repo  the Repo the page's account is in
  * @param {Ask} request
  * @param {{ onProgress?: (view: TaskView) => void, signal?: AbortSignal }} [options]
@@ -1092,27 +1174,43 @@ export async function doWork(repo, request, { onProgress, signal } = {}) {
   if (signal?.aborted) {
     throw new Error(CANCELLED);
   }
-  const queue = travels(request.importUrl) ? await servedOwnQueueUnlessStopped(repo, signal) : null;
-  return queue ? run(repo, queue, request, onProgress, signal) : workHere(repo, request, onProgress, signal);
+  const needs = request.needs ?? [];
+  checkNeeds(needs);
+  const travel = travels(request.importUrl);
+  const own = travel ? await unlessStopped(ownQueueHeard(repo, needs).catch(() => null), signal) : null;
+  const asked = { ...request, near: request.near ?? browserPoolIdHere() ?? undefined };
+  if (own && own.pools.some((pool) => satisfies(pool.has, needs))) {
+    return run(repo, own.url, asked, onProgress, signal);
+  }
+  if (satisfies(PAGE_HAS, needs)) {
+    return workHere(repo, request, onProgress, signal);
+  }
+  if (own) {
+    return run(repo, own.url, asked, onProgress, signal);
+  }
+  throw new Error(
+    travel
+      ? `This work needs ${deviceWords(needs)}, and you have no task queue for such a device to serve.`
+      : `This work needs ${deviceWords(needs)}, and its code is only on this machine, so no other device can run it.`,
+  );
 }
 
 /**
- * `servedOwnQueue`, rejecting with "The task was cancelled" as soon as
- * `signal` aborts rather than when the listening for a pool is over.
- * @param {any} repo
+ * What `promise` resolves to, or a rejection with "The task was cancelled"
+ * as soon as `signal` aborts, whichever comes first.
+ * @template T
+ * @param {Promise<T>} promise
  * @param {AbortSignal | undefined} signal
- * @returns {Promise<string | null>}
+ * @returns {Promise<T>}
  */
-function servedOwnQueueUnlessStopped(repo, signal) {
+function unlessStopped(promise, signal) {
   return new Promise((resolve, reject) => {
     const stop = () => reject(new Error(CANCELLED));
     signal?.addEventListener('abort', stop, { once: true });
-    servedOwnQueue(repo)
-      .catch(() => null)
-      .then((found) => {
-        signal?.removeEventListener('abort', stop);
-        resolve(found);
-      });
+    promise.then((found) => {
+      signal?.removeEventListener('abort', stop);
+      resolve(found);
+    });
   });
 }
 

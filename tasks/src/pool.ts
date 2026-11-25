@@ -2,8 +2,14 @@
 // serves and the tasks they list, takes a task when it has a free slot and
 // the rules say it may, runs it in a run worker it owns, says that the run is
 // going on, stops it when the rules say it must, and records how it went.
-// Every decision is a rule in rules.ts; this file only applies them to the
-// documents and to what has been heard.
+// Every decision is a rule in task-rules.js; this file only applies them to
+// the documents and to what has been heard.
+//
+// It takes only work it has what for (`has`, see `satisfies`), and of what it
+// may take, it holds back for the task's preferred pool: it hears the other
+// pools serving each queue (their `serving`, within the lapse), takes a task
+// at once when `preferred` names it, and otherwise only once it has seen the
+// task takeable for HOLD_MS. A pool that hears nobody else is always the one.
 //
 // It writes three things and nothing else: a run appended when it takes a
 // task, that run completed when it is over, and an entry deleted when its
@@ -28,12 +34,16 @@ import {
   gone,
   GRACE_MS,
   Hearing,
+  HOLD_MS,
+  LAPSE_MS,
   LOST_TOO_OFTEN,
   MAX_LOG_LINES,
   mayClaim,
   mayDelist,
   named,
   orphans,
+  preferred,
+  satisfies,
   stopReason,
   waitingWork,
 } from './task-rules.js';
@@ -137,6 +147,11 @@ export interface PoolOptions {
   /** For people. */
   name: string;
   slots: number;
+  /**
+   * What this machine has, as plain labels (`node`, `browser`, `unix`): it
+   * takes only work that needs nothing else. `pool:<id>` is added.
+   */
+  has: string[];
   executor: Executor;
   /** The queues it serves, and the code it runs from each. Changed later with `serve`. */
   queues?: Record<AutomergeUrl, Acceptance>;
@@ -169,6 +184,8 @@ interface Followed<T> {
   stop?: () => void;
   /** Stops listening for its arrival, while it is listened for (see `awaitArrival`). */
   unawait?: () => void;
+  /** Clears the timer that looks again once a hold for the preferred pool is over, while one is set. */
+  unhold?: () => void;
 }
 
 /** Lets go of a followed document: nothing it listens to calls the pool again. */
@@ -177,6 +194,7 @@ function letGo(followed: Followed<unknown>) {
   followed.stop = undefined;
   followed.unawait?.();
   followed.unawait = undefined;
+  followed.unhold?.();
 }
 
 /**
@@ -186,10 +204,22 @@ function letGo(followed: Followed<unknown>) {
  */
 interface FollowedTask extends Followed<Task> {
   hearing: Hearing;
+  /** When this pool first saw the task takeable, on its own clock, until it is no longer. */
+  takeableSince?: number;
+}
+
+/** Another pool heard serving a queue: what it last said of itself, and when, on this pool's clock. */
+interface HeardPool {
+  has: string[];
+  slots: number;
+  busy: number;
+  at: number;
 }
 
 interface Served extends Followed<Queue> {
   acceptance: Acceptance;
+  /** The other pools heard serving it, by id. */
+  heard: Map<string, HeardPool>;
 }
 
 interface Slot {
@@ -233,10 +263,13 @@ export class Pool {
   private again = false;
   private readonly tick: unknown;
   private readonly stamp = channel.stamper();
+  /** What this pool has: what it was told, and its own `pool:<id>`. */
+  readonly has: string[];
 
   constructor(private readonly options: PoolOptions) {
     this.clock = options.clock ?? realClock;
     this.ears = options.ears ?? realEars;
+    this.has = [...new Set([...options.has, `pool:${options.id}`])];
     // The beat: says the pool serves, and looks again, so that a run gone
     // unheard is noticed without anything changing.
     this.tick = this.clock.setInterval(() => {
@@ -276,7 +309,7 @@ export class Pool {
       if (queue) {
         queue.acceptance = acceptance;
       } else {
-        this.queues.set(url, { acceptance });
+        this.queues.set(url, { acceptance, heard: new Map() });
       }
     }
     this.review();
@@ -331,14 +364,14 @@ export class Pool {
     const now = this.clock.now();
 
     // What the served queues list, in the order to take it. A queue whose document is gone lists nothing.
-    const listed: { work: Work; queue: Handle<Queue>; acceptance: Acceptance }[] = [];
+    const listed: { work: Work; queue: Handle<Queue>; served: Served }[] = [];
     for (const [url, served] of this.queues) {
       if (!served.handle) {
         this.load(url, served, () => this.queues.get(url) === served, false);
         continue;
       }
       for (const work of waitingWork(served.handle.isDeleted?.() ? undefined : served.handle.doc())) {
-        listed.push({ work, queue: served.handle, acceptance: served.acceptance });
+        listed.push({ work, queue: served.handle, served });
       }
     }
     // waitingWork's order, across queues
@@ -394,9 +427,10 @@ export class Pool {
       }
     }
 
-    for (const { work, queue, acceptance } of listed) {
-      const handle = this.tasks.get(work.taskUrl as AutomergeUrl)?.handle;
-      if (!handle) {
+    for (const { work, queue, served } of listed) {
+      const followed = this.tasks.get(work.taskUrl as AutomergeUrl);
+      const handle = followed?.handle;
+      if (!followed || !handle) {
         continue;
       }
       attempt('looking at a task its queue lists', () => {
@@ -406,19 +440,63 @@ export class Pool {
         }
         const is = named(queue.doc(), work.key, work.taskUrl);
         const heard = this.heardOf(work.taskUrl as AutomergeUrl);
+        const { acceptance } = served;
         if (mayDelist(task, is)) {
           queue.change((doc) => delistTask(doc, work.key, work.taskUrl));
-        } else if (
+        }
+        // Whose code it is and what it needs are asked of the entry first
+        // and of the task last (see `mayClaim`). A task that has ended is not
+        // wanted, so `mayClaim` refuses one just let go above.
+        const takeable =
           !this.stopped &&
-          this.runs.size < slots &&
           acceptsPackage(acceptance, work.package) &&
+          satisfies(this.has, work.needs) &&
           mayClaim(task, id, is, heard) &&
-          accepts(acceptance, task.importUrl)
-        ) {
+          accepts(acceptance, task.importUrl) &&
+          satisfies(this.has, task.needs);
+        if (!takeable) {
+          followed.takeableSince = undefined;
+          followed.unhold?.();
+          return;
+        }
+        followed.takeableSince ??= now;
+        if (this.runs.size < slots && this.mayTakeNow(followed, work, served, task, now)) {
           this.claim(work, queue, handle, task);
         }
       });
     }
+  }
+
+  /**
+   * Whether to take a task this pool may take, now: at once if `preferred`
+   * names this pool among the pools heard serving the queue within the lapse
+   * that have what the task needs (this pool counted with its own free
+   * slots), and otherwise once it has been takeable for HOLD_MS, with a timer
+   * set to look again then. The task's own needs narrow the others; the
+   * entry's `near` is the asker's word for which pool it is next to.
+   */
+  private mayTakeNow(followed: FollowedTask, work: Work, served: Served, task: Task, now: number): boolean {
+    const { id, slots } = this.options;
+    const others = [...served.heard]
+      .filter(([, pool]) => now - pool.at < LAPSE_MS && satisfies(pool.has, task.needs))
+      .map(([pool, { slots, busy }]) => ({ pool, slots, busy }));
+    const choice = preferred(work.taskUrl, work.near ?? null, [{ pool: id, slots, busy: this.runs.size }, ...others]);
+    const waited = now - (followed.takeableSince ?? now);
+    if (choice === id || waited >= HOLD_MS) {
+      followed.unhold?.();
+      return true;
+    }
+    if (!followed.unhold) {
+      const timer = this.clock.setTimeout(() => {
+        followed.unhold = undefined;
+        this.review();
+      }, HOLD_MS - waited);
+      followed.unhold = () => {
+        this.clock.clearTimeout(timer);
+        followed.unhold = undefined;
+      };
+    }
+    return false;
   }
 
   /**
@@ -444,7 +522,7 @@ export class Pool {
         handle.on('delete', onChange);
         const unlisten = isTask
           ? this.ears.listen(handle, (message) => this.onTaskMessage(url, message))
-          : undefined;
+          : this.ears.listen(handle, (message) => this.onQueueMessage(followed as unknown as Served, handle as Handle<any>, message));
         followed.stop = () => {
           handle.off('change', onChange);
           handle.off('delete', onChange);
@@ -509,6 +587,33 @@ export class Pool {
       this.tasks.get(taskUrl)?.hearing.heardFrom(message.run);
       this.review();
     }
+  }
+
+  /**
+   * Another pool's word, on a queue's channel, that it serves the queue. One
+   * heard for the first time, or again after a lapse, is told at once that
+   * this pool serves it too, so that a pool just started knows whom to hold
+   * back for within a crossing rather than a beat.
+   */
+  private onQueueMessage(served: Served, handle: Handle<any>, message: Partial<ServingMessage> | null) {
+    if (message?.type !== 'serving' || typeof message.pool !== 'string' || message.pool === this.options.id) {
+      return;
+    }
+    if (this.queues.get(handle.url) !== served) {
+      return; // a queue no longer served
+    }
+    const now = this.clock.now();
+    const before = served.heard.get(message.pool);
+    served.heard.set(message.pool, {
+      has: Array.isArray(message.has) ? message.has.filter((label): label is string => typeof label === 'string') : [],
+      slots: Number(message.slots) || 0,
+      busy: Number(message.busy) || 0,
+      at: now,
+    });
+    if (!before || now - before.at >= LAPSE_MS) {
+      this.sayServing(handle);
+    }
+    this.review();
   }
 
   /** Why a run of this pool's must stop, or null. A task whose document is gone is wanted by nobody. */
@@ -761,7 +866,7 @@ export class Pool {
   private sayServing(handle: Handle<Queue> | undefined) {
     if (handle) {
       const { id: pool, name, slots } = this.options;
-      this.send(handle, { type: 'serving', pool, name, slots, busy: this.busy } satisfies Omit<ServingMessage, keyof Stamp>);
+      this.send(handle, { type: 'serving', pool, name, slots, busy: this.busy, has: this.has } satisfies Omit<ServingMessage, keyof Stamp>);
     }
   }
 

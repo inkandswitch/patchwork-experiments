@@ -29,6 +29,7 @@ import {
   BEAT_MS,
   GRACE_MS,
   Hearing,
+  HOLD_MS,
   LAPSE_MS,
   LOST_TOO_OFTEN,
   allHeard,
@@ -37,6 +38,7 @@ import {
   ending,
   gone,
   listTask,
+  preferred,
   stopTask,
   taskError,
   taskResult,
@@ -169,6 +171,14 @@ class Loopback {
   }
 }
 
+/** Ears that hear nothing a pool says of serving a queue: a pool with these hears no other pool, and is always preferred. */
+function deafToServing(ears: Ears): Ears {
+  return {
+    send: ears.send,
+    listen: (handle, onMessage) => ears.listen(handle, (message) => message?.type !== 'serving' && onMessage(message)),
+  };
+}
+
 class FakeWorker implements RunWorker {
   jobs: Job[] = [];
   aborts: { reason: StopReason; at: number }[] = [];
@@ -243,6 +253,7 @@ function world() {
       id,
       name: `pool ${id}`,
       slots: 1,
+      has: [],
       executor,
       queues: { [queue.url]: 'any' },
       ears,
@@ -340,9 +351,11 @@ describe('the design cases', () => {
         id,
         name: id,
         slots: 1,
+        has: [],
         executor,
         queues: { [queueA.url]: 'any' },
-        ears: net.ears(),
+        // not knowing of each other, neither holds back for the other
+        ears: deafToServing(net.ears()),
         clock,
       });
       return { pool, executor };
@@ -437,6 +450,7 @@ describe('the design cases', () => {
       id: 'A',
       name: 'A',
       slots: 1,
+      has: [],
       executor,
       queues: { [savedQueue.url]: 'any' },
       ears: w.net.ears(),
@@ -878,9 +892,10 @@ describe('the pool', () => {
     expect(runsOf(elsewhere)).toEqual([]);
     expect(runsOf(inline)).toEqual([]);
     expect(executor.workers.map((it) => it.job!.importUrl)).toEqual([codeIn(PKG)]);
-    // a pool that accepts any code takes them
+    // a pool that accepts any code takes them; where A is preferred, once the hold is over
     w.pool('B', { slots: 3 });
     await settle();
+    await w.clock.advance(HOLD_MS);
     expect(runsOf(elsewhere).map((run) => run.pool)).toEqual(['B']);
     expect(runsOf(inline).map((run) => run.pool)).toEqual(['B']);
   });
@@ -1062,16 +1077,16 @@ describe('the pool', () => {
     expect(b.executor.workers).toHaveLength(0);
   });
 
-  it('says it serves, on each queue it serves, every BEAT_MS', async () => {
+  it('says it serves, on each queue it serves, every BEAT_MS, with what it has: what it was told, once each, and pool:<its id>', async () => {
     const task = w.ask('k');
-    w.pool('A', { slots: 4 });
+    w.pool('A', { slots: 4, has: ['unix', 'node', 'unix'] });
     await settle();
     await w.clock.advance(BEAT_MS * 2);
     const serving = w.net.sent.filter((it) => it.message.type === 'serving');
     expect(serving.length).toBe(3);
     for (const { url, message } of serving) {
       expect(url).toBe(w.queue.url);
-      expect(message).toMatchObject({ pool: 'A', name: 'pool A', slots: 4 });
+      expect(message).toMatchObject({ pool: 'A', name: 'pool A', slots: 4, has: ['unix', 'node', 'pool:A'] });
     }
     // said first as the queue is found, before it has taken anything
     expect(serving.map((it) => it.message.busy)).toEqual([0, 1, 1]);
@@ -1364,6 +1379,310 @@ class ThrowingExecutor extends FakeExecutor {
     return worker;
   }
 }
+
+describe('what a pool has', () => {
+  /** A task with these needs, listed with these needs on its entry. */
+  const askNeeding = (key: string, taskNeeds: unknown, entryNeeds: unknown = taskNeeds) => {
+    const task = w.repo.create<Task>({ importUrl: CODE, input: null, key, needs: taskNeeds as string[], runs: [] });
+    w.queue.change((doc) => listTask(doc, key, { taskUrl: task.url, askedAt: 1, package: null, needs: entryNeeds }));
+    return task;
+  };
+
+  // Each row: what the task and its entry need, the labels the pool was given, and whether it takes it.
+  const cases: [string, unknown, unknown, string[], boolean][] = [
+    ['needs nothing', [], [], [], true],
+    ['needs what it has', ['unix'], ['unix'], ['unix', 'gpu'], true],
+    ['needs it by name', ['pool:A'], ['pool:A'], [], true],
+    ['needs another pool by name', ['pool:B'], ['pool:B'], [], false],
+    ['needs one thing it lacks', ['unix', 'gpu'], ['unix', 'gpu'], ['unix'], false],
+    ['the entry needs nothing, the task needs what it lacks', ['unix'], [], [], false],
+    ['the task needs nothing, the entry needs what it lacks', [], ['unix'], [], false],
+    ['needs that are not a list', 'unix', 'unix', ['unix'], false],
+    ['an empty label', [''], [''], [''], false],
+    ['a label that is not a string', [7], [7], ['7'], false],
+  ];
+  for (const [name, taskNeeds, entryNeeds, has, takes] of cases) {
+    it(`${name}: ${takes ? 'takes it' : 'leaves it listed, with no run, however long'}`, async () => {
+      const task = askNeeding('k', taskNeeds, entryNeeds);
+      const { executor } = w.pool('A', { has });
+      await settle();
+      await w.clock.advance(LAPSE_MS + HOLD_MS);
+      expect(runsOf(task).map((run) => run.pool)).toEqual(takes ? ['A'] : []);
+      expect(executor.workers).toHaveLength(takes ? 1 : 0);
+      expect(listed(w.queue, 'k')).toBe(task.url);
+    });
+  }
+
+  it('work only one pool has what it needs for is taken by that one, at once, whichever the hash prefers', async () => {
+    const task = askNeeding('k', ['unix']);
+    const a = w.pool('A');
+    const b = w.pool('B', { has: ['unix'] });
+    await settle();
+    expect(runsOf(task).map((run) => run.pool)).toEqual(['B']);
+    await w.clock.advance(LAPSE_MS * 2);
+    expect(runsOf(task).map((run) => run.pool)).toEqual(['B']);
+    expect(a.executor.workers).toHaveLength(0);
+    expect(b.executor.workers).toHaveLength(1);
+  });
+
+  it('work that leaves a pool for want of a need does not hold up what is behind it', async () => {
+    const first = askNeeding('first', ['unix']);
+    const second = w.ask('second', { askedAt: 2 });
+    w.pool('A');
+    await settle();
+    expect(runsOf(first)).toEqual([]);
+    expect(runsOf(second).map((run) => run.pool)).toEqual(['A']);
+  });
+});
+
+describe('the preferred pool', () => {
+  let askedAt = 1_000;
+  /** A task made and not yet listed, so that pools can be named after it before they see it. */
+  const made = (key: string, more: { importUrl?: string; needs?: string[] } = {}) =>
+    w.repo.create<Task>({ importUrl: more.importUrl ?? CODE, input: { key }, key, needs: more.needs ?? [], runs: [] });
+  /** Lists a task made by `made`, as `ask` would, with `near` if given. */
+  const list = (task: Handle<Task>, near?: string) =>
+    w.queue.change((doc) =>
+      listTask(doc, task.doc()!.key, { taskUrl: task.url, askedAt: ++askedAt, package: null, needs: task.doc()!.needs, near }),
+    );
+  /** Two pool ids for a task: the one `preferred` names when both have a free slot, then the other. */
+  const byPreference = (task: Handle<Task>): [string, string] => {
+    const ids = ['pool-1', 'pool-2'];
+    const first = preferred(task.url, null, ids.map((pool) => ({ pool, slots: 1, busy: 0 })));
+    return first === ids[0] ? [ids[0], ids[1]] : [ids[1], ids[0]];
+  };
+  const poolsOf = (task: Handle<Task>) => runsOf(task).map((run) => run.pool);
+
+  for (const preferredFirst of [true, false]) {
+    it(`two pools, one task, the preferred pool started ${preferredFirst ? 'first' : 'second'}: it takes the task at once, and the other appends nothing, ever`, async () => {
+      const task = made('k');
+      const [P, O] = byPreference(task);
+      const pools: Record<string, ReturnType<typeof w.pool>> = {};
+      for (const id of preferredFirst ? [P, O] : [O, P]) {
+        pools[id] = w.pool(id);
+        await settle();
+      }
+      await w.clock.advance(BEAT_MS);
+      const listedAt = w.clock.now();
+      list(task);
+      await settle();
+      expect(poolsOf(task)).toEqual([P]);
+      expect(lastRun(task).start).toBe(listedAt);
+
+      await w.clock.advance(LAPSE_MS * 2);
+      expect(poolsOf(task)).toEqual([P]);
+      pools[P].executor.of(lastRun(task).id).events.done('once');
+      await settle();
+      await w.clock.advance(LAPSE_MS);
+      expect(statuses(task)).toEqual(['succeeded']);
+      expect(pools[O].executor.workers).toHaveLength(0);
+      expect(listed(w.queue, 'k')).toBeUndefined();
+    });
+  }
+
+  it('a pool just started hears the pools already serving at once, not a beat later, and holds back for them', async () => {
+    const task = made('k');
+    const [P, O] = byPreference(task);
+    // P does not accept the code, so only O's holding back keeps O from taking it at once
+    w.pool(P, { queues: { [w.queue.url]: [PKG] satisfies Acceptance } });
+    await settle();
+    await w.clock.advance(BEAT_MS / 2);
+    w.pool(O);
+    await settle();
+    // P's next beat is half a beat away: O knows of P only because P answered O's first word
+    const seenAt = w.clock.now();
+    list(task);
+    await settle();
+    expect(runsOf(task)).toEqual([]);
+    await w.clock.advance(HOLD_MS);
+    expect(poolsOf(task)).toEqual([O]);
+    expect(lastRun(task).start).toBe(seenAt + HOLD_MS);
+  });
+
+  it('the preferred pool has no free slot, as heard: the other takes it at once', async () => {
+    const task = made('k');
+    const [P, O] = byPreference(task);
+    w.pool(P);
+    w.pool(O);
+    await settle();
+    // P is kept busy by work only it may take
+    const busy = made('busy', { needs: [`pool:${P}`] });
+    list(busy);
+    await settle();
+    expect(poolsOf(busy)).toEqual([P]);
+    // its next word says so
+    await w.clock.advance(BEAT_MS);
+    const listedAt = w.clock.now();
+    list(task);
+    await settle();
+    expect(poolsOf(task)).toEqual([O]);
+    expect(lastRun(task).start).toBe(listedAt);
+  });
+
+  it('the preferred pool does not accept the code: the other takes it HOLD_MS after first seeing it, not before', async () => {
+    const task = made('k');
+    const [P, O] = byPreference(task);
+    const p = w.pool(P, { queues: { [w.queue.url]: [PKG] satisfies Acceptance } });
+    const o = w.pool(O);
+    await settle();
+    const seenAt = w.clock.now();
+    list(task);
+    await settle();
+    expect(runsOf(task)).toEqual([]);
+    await w.clock.advance(HOLD_MS - 1);
+    expect(runsOf(task)).toEqual([]);
+    await w.clock.advance(1);
+    expect(poolsOf(task)).toEqual([O]);
+    expect(lastRun(task).start).toBe(seenAt + HOLD_MS);
+    expect(p.executor.workers).toHaveLength(0);
+    expect(o.executor.workers).toHaveLength(1);
+  });
+
+  it('a pool stopped while it holds back leaves no timer behind', async () => {
+    const task = made('k');
+    const [P, O] = byPreference(task);
+    const p = w.pool(P, { queues: { [w.queue.url]: [PKG] satisfies Acceptance } });
+    const o = w.pool(O);
+    await settle();
+    list(task);
+    await settle();
+    await w.clock.advance(HOLD_MS / 2);
+    await Promise.all([p.pool.stop(), o.pool.stop()]);
+    expect(w.clock.pending).toBe(0);
+    expect(runsOf(task)).toEqual([]);
+  });
+
+  it('the preferred pool stops right after it is heard: the other takes it HOLD_MS after first seeing it, not before', async () => {
+    const task = made('k');
+    const [P, O] = byPreference(task);
+    const p = w.pool(P);
+    w.pool(O);
+    await settle();
+    await p.pool.stop();
+    const seenAt = w.clock.now();
+    list(task);
+    await settle();
+    expect(runsOf(task)).toEqual([]);
+    await w.clock.advance(HOLD_MS - 1);
+    expect(runsOf(task)).toEqual([]);
+    await w.clock.advance(1);
+    expect(poolsOf(task)).toEqual([O]);
+    expect(lastRun(task).start).toBe(seenAt + HOLD_MS);
+  });
+
+  it('a pool last heard a lapse ago is not a candidate: listed a moment before the lapse, the other holds back; at the lapse, it takes it at once', async () => {
+    for (const [after, atOnce] of [
+      [LAPSE_MS - 1, false],
+      [LAPSE_MS, true],
+    ] as const) {
+      w = world();
+      const task = made('k');
+      const [P, O] = byPreference(task);
+      const p = w.pool(P);
+      w.pool(O);
+      await settle();
+      // nothing more is heard from P after this moment
+      await p.pool.stop();
+      await w.clock.advance(after);
+      list(task);
+      await settle();
+      expect(poolsOf(task), `listed ${after} ms after P was last heard`).toEqual(atOnce ? [O] : []);
+    }
+  });
+
+  it('near wins over the hash when that pool may take the task', async () => {
+    const task = made('k');
+    const [P, O] = byPreference(task);
+    const p = w.pool(P);
+    w.pool(O);
+    await settle();
+    list(task, O);
+    await settle();
+    expect(poolsOf(task)).toEqual([O]);
+    await w.clock.advance(LAPSE_MS * 2);
+    expect(poolsOf(task)).toEqual([O]);
+    expect(p.executor.workers).toHaveLength(0);
+  });
+
+  it('near is ignored when that pool is not a candidate: one nobody hears, one that lacks a need, one with no free slot as heard', async () => {
+    // not heard at all
+    {
+      const task = made('k');
+      const [P, O] = byPreference(task);
+      w.pool(P);
+      w.pool(O);
+      await settle();
+      list(task, 'a pool nobody hears');
+      await settle();
+      expect(poolsOf(task), 'near a pool nobody hears').toEqual([P]);
+    }
+    // heard, but lacking what the task needs
+    {
+      w = world();
+      const task = made('k', { needs: ['unix'] });
+      const [P, O] = byPreference(task);
+      w.pool(P, { has: ['unix'] });
+      w.pool(O);
+      await settle();
+      list(task, O);
+      await settle();
+      expect(poolsOf(task), 'near a pool that lacks a need').toEqual([P]);
+    }
+    // heard, with no free slot
+    {
+      w = world();
+      const task = made('k');
+      const [P, O] = byPreference(task);
+      w.pool(P);
+      w.pool(O);
+      await settle();
+      const busy = made('busy', { needs: [`pool:${O}`] });
+      list(busy);
+      await settle();
+      expect(poolsOf(busy)).toEqual([O]);
+      await w.clock.advance(BEAT_MS);
+      list(task, O);
+      await settle();
+      expect(poolsOf(task), 'near a pool with no free slot').toEqual([P]);
+    }
+  });
+
+  it('needs narrow the candidates before the choice: the pool the hash prefers lacks a need, and the other takes it at once', async () => {
+    const task = made('k', { needs: ['unix'] });
+    const [P, O] = byPreference(task);
+    const p = w.pool(P);
+    w.pool(O, { has: ['unix'] });
+    await settle();
+    const listedAt = w.clock.now();
+    list(task);
+    await settle();
+    expect(poolsOf(task)).toEqual([O]);
+    expect(lastRun(task).start).toBe(listedAt);
+    await w.clock.advance(LAPSE_MS);
+    expect(p.executor.workers).toHaveLength(0);
+  });
+
+  it('three pools agree on one: each of several tasks listed at once is taken once, at once, by the pool `preferred` names', async () => {
+    const ids = ['A', 'B', 'C'];
+    const pools = Object.fromEntries(ids.map((id) => [id, w.pool(id, { slots: 10 })]));
+    await settle();
+    await w.clock.advance(BEAT_MS);
+    const tasks = Array.from({ length: 9 }, (_, i) => made(`k${i}`));
+    for (const task of tasks) {
+      list(task);
+    }
+    await settle();
+    const choices = tasks.map((task) => preferred(task.url, null, ids.map((pool) => ({ pool, slots: 10, busy: 0 }))));
+    expect(tasks.map(poolsOf)).toEqual(choices.map((choice) => [choice]));
+    await w.clock.advance(LAPSE_MS * 2);
+    expect(tasks.map(poolsOf)).toEqual(choices.map((choice) => [choice]));
+    for (const id of ids) {
+      expect(pools[id].executor.workers.flatMap((worker) => worker.jobs.map((job) => job.taskUrl)).sort()).toEqual(
+        tasks.filter((_, i) => choices[i] === id).map((task) => task.url).sort(),
+      );
+    }
+  });
+});
 
 describe('the pool, when something it uses throws', () => {
   it('leaves no timer set once stop() resolves, whatever its runs were doing', async () => {

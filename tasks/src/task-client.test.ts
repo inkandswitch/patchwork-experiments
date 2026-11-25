@@ -17,6 +17,7 @@ import { pathToFileURL } from 'node:url';
 import {
   LOCAL_MESSAGES_CHANNEL,
   OWN_QUEUE_TITLE,
+  POOL_ID_KEY,
   PROVIDER_WAIT_MS,
   QUEUE_DATATYPE_ID,
   TASKS_STORAGE_ID,
@@ -161,7 +162,7 @@ const stopped = (id = 'stop') => ({ id, start: 0, end: 0, status: 'cancelled' as
 // Asking
 
 describe('ask', () => {
-  it('lists a new task: exactly {importUrl, input, key, runs: []}, the input copied as JSON, and the entry {taskUrl, askedAt, package}', async () => {
+  it('lists a new task: exactly {importUrl, input, key, runs: []}, the input copied as JSON, and the entry {taskUrl, askedAt, package, needs: []}', async () => {
     const { repo, queue } = world();
     const input = { n: 1, gone: undefined, when: new Date(0), list: [1, undefined] };
     const askedAt = Date.now();
@@ -175,7 +176,7 @@ describe('ask', () => {
       runs: [],
     });
     expect(Object.keys(task.doc()!).sort()).toEqual(['importUrl', 'input', 'key', 'runs']);
-    expect(queue.doc()!.jobs).toEqual({ k: { taskUrl: got.taskUrl, askedAt, package: PKG } });
+    expect(queue.doc()!.jobs).toEqual({ k: { taskUrl: got.taskUrl, askedAt, package: PKG, needs: [] } });
     input.n = 2;
     expect((task.doc()!.input as { n: number }).n).toBe(1);
 
@@ -183,6 +184,39 @@ describe('ask', () => {
     const bare = await ask(repo, queue.url, { importUrl: CODE, key: 'bare' });
     expect((await repo.find<Task>(bare.taskUrl as AutomergeUrl)).doc()!.input).toBeNull();
     expect(entryOf(queue, 'bare').package).toBeNull();
+  });
+
+  it('writes needs on the task and copies them onto the entry; near goes on the entry alone', async () => {
+    const { repo, queue } = world();
+    const needs = ['unix', 'pool:P'];
+    const got = await ask(repo, queue.url, { importUrl: CODE, key: 'k', needs, near: 'P' });
+    const task = await repo.find<Task>(got.taskUrl as AutomergeUrl);
+    expect(task.doc()!.needs).toEqual(['unix', 'pool:P']);
+    expect(entryOf(queue, 'k')).toMatchObject({ needs: ['unix', 'pool:P'], near: 'P' });
+    expect('near' in task.doc()!).toBe(false);
+    needs.push('gpu');
+    expect(task.doc()!.needs).toEqual(['unix', 'pool:P']);
+    expect(entryOf(queue, 'k').needs).toEqual(['unix', 'pool:P']);
+  });
+
+  it('asked again under a key whose task is wanted, the task keeps the needs it was first asked with', async () => {
+    const { repo, queue } = world();
+    const first = await ask(repo, queue.url, { importUrl: CODE, key: 'k', needs: ['unix'] });
+    const again = await ask(repo, queue.url, { importUrl: CODE, key: 'k', needs: ['gpu'], near: 'P' });
+    expect(again.taskUrl).toBe(first.taskUrl);
+    expect((await repo.find<Task>(first.taskUrl as AutomergeUrl)).doc()!.needs).toEqual(['unix']);
+    expect(entryOf(queue, 'k')).toEqual({ taskUrl: first.taskUrl, askedAt: expect.any(Number), package: null, needs: ['unix'] });
+  });
+
+  it('refuses needs that are not a list of labels, and a near that is not a string, writing nothing', async () => {
+    const { repo, queue } = world();
+    const handles = Object.keys(repo.handles).length;
+    for (const needs of ['unix', [''], [7], ['unix', null], { 0: 'unix' }]) {
+      await expect(ask(repo, queue.url, { importUrl: CODE, key: 'k', needs: needs as never }), JSON.stringify(needs)).rejects.toThrow(/list of labels/);
+    }
+    await expect(ask(repo, queue.url, { importUrl: CODE, key: 'k', near: 7 as never })).rejects.toThrow(/near/);
+    expect(queue.doc()!.jobs).toEqual({});
+    expect(Object.keys(repo.handles)).toHaveLength(handles);
   });
 
   it('saves the task before the queue names it', async () => {
@@ -754,10 +788,35 @@ describe('watch with keep', () => {
     await vi.advanceTimersByTimeAsync(1 + LAPSE_MS / 4);
     expect(entryOf(queue, 'k')).toMatchObject({ taskUrl, package: PKG });
     expect(entryOf(queue, 'k').askedAt).toBeGreaterThanOrEqual(goneAt + LAPSE_MS);
+    expect(entryOf(queue, 'k').needs).toEqual([]);
     expect(writes).toBe(1);
     await vi.advanceTimersByTimeAsync(LAPSE_MS * 3);
     expect(writes).toBe(1);
     expect(watcher.states()).not.toContain('missing');
+    watcher.stop();
+  });
+
+  it("lists it again with the needs its document holds, and without the first asking's near", async () => {
+    const { repo, queue } = world();
+    const { taskUrl } = await ask(repo, queue.url, { importUrl: CODE, key: 'k', needs: ['unix'], near: 'P' });
+    const watcher = follow(repo, queue.url, 'k', { keep: true });
+    await settle();
+    queue.change((doc) => delistTask(doc, 'k', taskUrl));
+    await settle();
+    await vi.advanceTimersByTimeAsync(LAPSE_MS + LAPSE_MS / 4);
+    expect(entryOf(queue, 'k')).toEqual({ taskUrl, askedAt: expect.any(Number), package: null, needs: ['unix'] });
+    watcher.stop();
+  });
+
+  it('lists again a task whose document holds needs that are not a list of labels with those needs, which no pool satisfies', async () => {
+    const { repo, queue } = world();
+    const task = listed(repo, queue, 'k', [], { importUrl: CODE, input: null, key: 'k', needs: 'unix', runs: [] });
+    const watcher = follow(repo, queue.url, 'k', { keep: true });
+    await settle();
+    queue.change((doc) => delistTask(doc, 'k', task.url));
+    await settle();
+    await vi.advanceTimersByTimeAsync(LAPSE_MS + LAPSE_MS / 4);
+    expect(entryOf(queue, 'k')).toMatchObject({ taskUrl: task.url, needs: 'unix' });
     watcher.stop();
   });
 
@@ -950,9 +1009,27 @@ describe('served', () => {
     const { reports, stop } = hear(repo, queue);
     await settle();
     serving(queue, 'B', { busy: 1 });
-    expect(reports.at(-1)).toEqual([{ pool: 'B', name: 'pool B', slots: 2, busy: 1 }]);
+    expect(reports.at(-1)).toEqual([{ pool: 'B', name: 'pool B', slots: 2, busy: 1, has: [] }]);
     serving(queue, 'A');
     expect(reports.at(-1)?.map((it) => it.pool)).toEqual(['A', 'B']);
+    stop();
+  });
+
+  it('reports what each pool has, as labels: none when it says something else, and only the non-empty strings of a list', async () => {
+    const { repo, queue } = world();
+    const { reports, stop } = hear(repo, queue);
+    await settle();
+    const cases: [unknown, string[]][] = [
+      [['node', 'unix', 'pool:A'], ['node', 'unix', 'pool:A']],
+      [undefined, []],
+      ['unix', []],
+      [{ 0: 'unix' }, []],
+      [['unix', 7, '', null, 'gpu'], ['unix', 'gpu']],
+    ];
+    for (const [has, labels] of cases) {
+      serving(queue, 'A', { has });
+      expect(reports.at(-1)?.[0].has, JSON.stringify(has)).toEqual(labels);
+    }
     stop();
   });
 
@@ -1876,14 +1953,14 @@ describe('doWork', () => {
   const everything = (repo: Repo) => Object.values(repo.handles).map((h: any) => [h.url, A.getHeads(h.doc())]);
 
   let servingSeq = 0;
-  const serving = (queue: DocHandle<Queue>, pool = 'P') =>
+  const serving = (queue: DocHandle<Queue>, pool = 'P', has: string[] = ['browser', `pool:${pool}`]) =>
     queue.emit('ephemeral-message', {
       handle: queue,
       senderId: pool as any,
-      message: { type: 'serving', pool, name: `pool ${pool}`, slots: 1, busy: 0, from: `stamp ${pool}`, seq: servingSeq++ },
+      message: { type: 'serving', pool, name: `pool ${pool}`, slots: 1, busy: 0, has, from: `stamp ${pool}`, seq: servingSeq++ },
     });
 
-  function doing(repo: Repo, request: { importUrl?: string; input?: unknown; key?: string } = {}, signal?: AbortSignal) {
+  function doing(repo: Repo, request: { importUrl?: string; input?: unknown; key?: string; needs?: string[]; near?: string } = {}, signal?: AbortSignal) {
     const views: TaskView[] = [];
     const settled: { value?: unknown; error?: Error } = {};
     const promise = doWork(repo, { importUrl: WORK, input: { n: 1 }, key: 'k', ...request }, { onProgress: (view) => views.push(view), signal }).then(
@@ -2143,6 +2220,156 @@ describe('doWork', () => {
     expect(Date.now()).toBe(started);
     expect(here.views.at(-1)).toMatchObject({ state: 'succeeded', taskUrl: null });
     expect(entryOf(queue, 'local')).toBeUndefined();
+  });
+
+  // What the work needs, and where it is done: each row is a setup, what the
+  // pools heard serving the own queue have (none heard: null), what the work
+  // needs, and where it goes: asked of the queue at once, asked once the
+  // listening for a pool is over (a beat and a little), done here at once or
+  // then, or rejected.
+  type Where = 'asked at once' | 'asked after the wait' | 'here at once' | 'here after the wait' | 'rejected at once' | 'rejected after the wait';
+  const NEED_CASES: [Setup, string[] | null, string[], Where][] = [
+    ['an own queue', ['browser'], ['browser'], 'asked at once'],
+    ['an own queue', ['node'], ['browser'], 'here after the wait'],
+    ['an own queue nobody is heard serving', null, ['browser'], 'here after the wait'],
+    ['an own queue', ['node', 'unix'], ['unix'], 'asked at once'],
+    ['an own queue', ['node', 'unix'], ['unix', 'node'], 'asked at once'],
+    ['an own queue', ['node'], ['unix'], 'asked after the wait'],
+    ['an own queue', ['browser'], ['unix'], 'asked after the wait'],
+    ['an own queue nobody is heard serving', null, ['unix'], 'asked after the wait'],
+    ['an own queue', ['browser', 'pool:P'], ['pool:P'], 'asked at once'],
+    ['an own queue', ['browser', 'pool:P'], ['pool:Q'], 'asked after the wait'],
+    ['no own queue', null, ['unix'], 'rejected at once'],
+    ['no storage', null, ['unix'], 'rejected at once'],
+    ['no account', null, ['unix'], 'rejected at once'],
+    ['no own queue', null, ['browser'], 'here at once'],
+  ];
+  for (const [setup, has, needs, where] of NEED_CASES) {
+    it(`needing ${JSON.stringify(needs)}, with ${setup}${has ? ` and a pool heard that has ${JSON.stringify(has)}` : ''}: ${where}`, async () => {
+      const { repo, queue } = page(setup);
+      g.__work = vi.fn(() => 'here');
+      const startedAt = Date.now();
+      const work = doing(repo, { needs });
+      await settle();
+      if (has) {
+        serving(queue!, 'P', has);
+      }
+      const decided = () => 'value' in work.settled || 'error' in work.settled || (!!queue && !!entryOf(queue, 'k'));
+      if (where.endsWith('after the wait')) {
+        await until(decided, BEAT_MS + 499);
+        expect(decided(), 'decided before the wait was over').toBe(false);
+        await until(decided, 1);
+      } else {
+        await until(decided);
+      }
+      expect(decided()).toBe(true);
+      expect(Date.now() - startedAt).toBe(where.endsWith('after the wait') ? BEAT_MS + 500 : 0);
+      if (where.startsWith('asked')) {
+        const task = await repo.find<Task>(entryOf(queue!, 'k').taskUrl as AutomergeUrl);
+        expect(task.doc()!.needs).toEqual(needs);
+        expect(entryOf(queue!, 'k').needs).toEqual(needs);
+        expect(g.__work).not.toHaveBeenCalled();
+        expect(work.settled).toEqual({});
+        expect(work.views.at(-1)?.state).toBe('waiting');
+      } else if (where.startsWith('here')) {
+        expect(work.settled).toEqual({ value: 'here' });
+        expect(queue ? queue.doc()!.jobs : {}).toEqual({});
+      } else {
+        expect(work.settled.error?.message).toBe('This work needs a device with unix, and you have no task queue for such a device to serve.');
+        expect(g.__work).not.toHaveBeenCalled();
+      }
+    });
+  }
+
+  it('needing what a page lacks, the first asking is made as soon as a pool that has it is heard, not when the wait is over', async () => {
+    const { repo, queue } = page('an own queue');
+    g.__work = vi.fn();
+    const work = doing(repo, { needs: ['unix'] });
+    await settle();
+    serving(queue!, 'B', ['browser']);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(entryOf(queue!, 'k')).toBeUndefined();
+    serving(queue!, 'N', ['node', 'unix']);
+    const heardAt = Date.now();
+    await until(() => !!entryOf(queue!, 'k'));
+    expect(Date.now()).toBe(heardAt);
+    expect(work.settled).toEqual({});
+  });
+
+  it('code that cannot travel, needing what a page lacks, is rejected at once, even with a pool heard that has it', async () => {
+    const { repo, queue } = await asked();
+    serving(queue, 'N', ['node', 'unix']);
+    const here = doing(repo, { importUrl: 'http://localhost:5173/src/task.js', key: 'dev', needs: ['unix'] });
+    await until(() => 'error' in here.settled);
+    expect(here.settled.error?.message).toBe('This work needs a device with unix, and its code is only on this machine, so no other device can run it.');
+    expect(entryOf(queue, 'dev')).toBeUndefined();
+  });
+
+  it('the sentence names every need, and a pool: need as one particular device', async () => {
+    const { repo } = page('no own queue');
+    const cases: [string[], string][] = [
+      [['unix', 'gpu'], 'a device with unix and gpu'],
+      [['unix', 'gpu', 'ollama'], 'a device with unix, gpu and ollama'],
+      [['pool:P'], 'one particular device'],
+      [['pool:P', 'unix'], 'one particular device, with unix'],
+    ];
+    for (const [needs, words] of cases) {
+      const work = doing(repo, { needs, key: needs.join() });
+      await until(() => 'error' in work.settled);
+      expect(work.settled.error?.message).toBe(`This work needs ${words}, and you have no task queue for such a device to serve.`);
+    }
+  });
+
+  it('needs that are not a list of labels are refused before anything is asked or called', async () => {
+    const { repo, queue } = await asked();
+    for (const needs of ['unix', [''], [7]]) {
+      const work = doing(repo, { needs: needs as never, key: 'bad' });
+      await until(() => 'error' in work.settled);
+      expect(work.settled.error?.message, JSON.stringify(needs)).toMatch(/list of labels/);
+    }
+    expect(entryOf(queue, 'bad')).toBeUndefined();
+    expect(g.__work).not.toHaveBeenCalled();
+  });
+
+  describe('near', () => {
+    afterEach(() => {
+      delete g.localStorage;
+    });
+    const storage = (items: Record<string, string>) => ({ getItem: (key: string) => items[key] ?? null });
+
+    it("is this browser's pool id, read from where the pool's host keeps it, when the page can read one", async () => {
+      g.localStorage = storage({ [POOL_ID_KEY]: 'this-browser' });
+      const { queue } = await asked();
+      expect(entryOf(queue, 'k').near).toBe('this-browser');
+    });
+
+    it('is left out where the page has no pool id, or cannot read localStorage', async () => {
+      g.localStorage = storage({});
+      const first = await asked();
+      expect('near' in entryOf(first.queue, 'k')).toBe(false);
+      // the Repo reads localStorage too; only the pool's key is refused, as blocked site data would refuse the page's own read
+      g.localStorage = {
+        getItem: (key: string) => {
+          if (key === POOL_ID_KEY) {
+            throw new Error('blocked');
+          }
+          return null;
+        },
+      };
+      const second = await asked();
+      expect('near' in entryOf(second.queue, 'k')).toBe(false);
+    });
+
+    it('is the one the tool gave, when it gave one', async () => {
+      g.localStorage = storage({ [POOL_ID_KEY]: 'this-browser' });
+      const { repo, queue } = page('an own queue');
+      g.__work = vi.fn();
+      doing(repo, { near: 'that-machine' });
+      await settle();
+      serving(queue!);
+      await until(() => !!entryOf(queue!, 'k'));
+      expect(entryOf(queue!, 'k').near).toBe('that-machine');
+    });
   });
 
   it('asked: asking twice under one key while its task is wanted is one task, and both resolve with its result', async () => {

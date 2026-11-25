@@ -1,13 +1,14 @@
-// The queue browser's view of what a queue lists: how each task stands, its
-// runs (which pool, this browser's marked, and how each went), and a way to
-// ask for one or stop one. Everything a tool can do
+// The queue browser's view of what a queue lists: how each task stands (and,
+// for one that waits because no pool heard serving the queue has what it
+// needs, what that is), its runs (which pool, this browser's marked, and how
+// each went), and a way to ask for one or stop one. Everything a tool can do
 // through task-client.js a person can do here. Also where an account says
 // whose code its browsers run from a queue (see acceptance.ts).
 
 import { createSignal, For, onCleanup, Show } from 'solid-js';
 import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
 import type { Queue, Run, TaskState } from './datatype';
-import { isFinished, waitingWork } from './task-rules.js';
+import { isFinished, satisfies, waitingWork } from './task-rules.js';
 import { ask, cancel, watch, type Ask, type Serving, type TaskView } from './task-client.js';
 import type { Acceptance } from './acceptance';
 import { inSamePackage } from './import-url';
@@ -44,7 +45,7 @@ const WAIT_TASK_URL =
   `data:text/javascript,${encodeURIComponent('export default async function (input) { return input?.value ?? null; }')}`;
 
 /** How a view names the pool with this id: as it is heard naming itself, else by the start of its id. */
-type PoolNames = { name(id: string): string; mine(id: string): boolean };
+export type PoolNames = { name(id: string): string; mine(id: string): boolean };
 
 export const JobsSection = (props: {
   handle: DocHandle<Queue>;
@@ -68,6 +69,8 @@ export const JobsSection = (props: {
   // opened and starting every row's watcher afresh.
   const shownKeys = () => shown().map((work) => work.key);
   const taskUrlOf = (key: string) => shown().find((work) => work.key === key)?.taskUrl as AutomergeUrl;
+  // read from the entry, which carries the task's needs, against the pools heard now
+  const waitsFor = (key: string) => unmetNeeds(shown().find((work) => work.key === key)?.needs, props.pools ?? [], names);
 
   return (
     <>
@@ -88,6 +91,7 @@ export const JobsSection = (props: {
                   taskUrl={taskUrlOf(key)}
                   queueUrl={props.handle.url}
                   names={names}
+                  waitsFor={waitsFor(key)}
                   onCancel={() => cancel(repo, props.handle.url, key)}
                 />
               )}
@@ -128,6 +132,8 @@ const Job = (props: {
   taskUrl: AutomergeUrl;
   queueUrl: AutomergeUrl;
   names: PoolNames;
+  /** Why it waits, when no pool heard serving the queue has what it needs. */
+  waitsFor: string | null;
   onCancel: () => void;
 }) => {
   const { view, stalledSince } = useTask(props.queueUrl, props.jobKey, props.taskUrl);
@@ -145,7 +151,7 @@ const Job = (props: {
                 {codeName(job().importUrl)}({show(job().input)})
               </code>
               <span class="tq-task-outcome">
-                <Outcome job={job()} stalledSince={stalledSince()} />
+                <Outcome job={job()} stalledSince={stalledSince()} waitsFor={props.waitsFor} />
               </span>
               <Show when={!isFinished(state())}>
                 <button
@@ -210,12 +216,12 @@ const RunLine = (props: { run: Run; names: PoolNames }) => (
 );
 
 /** How a task stands, in a few words: its progress while it runs, its result or what went wrong after. */
-const Outcome = (props: { job: TaskView; stalledSince: number | null }) => {
+const Outcome = (props: { job: TaskView; stalledSince: number | null; waitsFor: string | null }) => {
   const state = () => props.job.state;
   return (
     <>
       <Show when={state() === 'waiting'}>
-        <span class="tq-muted">waiting</span>
+        <span class="tq-muted tq-waits">{props.waitsFor ?? 'waiting'}</span>
       </Show>
       <Show when={state() === 'running'}>
         <span class="tq-busy">running {showProgress(props.job.progress)}</span>
@@ -422,6 +428,36 @@ export const AcceptanceChoice = (props: {
     </div>
   );
 };
+
+/**
+ * Why a task waits, as its row says it, when no pool heard
+ * serving its queue has every one of its needs; null when it needs nothing,
+ * or a pool heard has them all. A need for one pool names that pool as the
+ * queue's view names it; needs that are not a list of labels are said to be
+ * something no device can have, since no pool will ever take such a task.
+ */
+export function unmetNeeds(needs: unknown, pools: Serving[], names: PoolNames): string | null {
+  if (needs === undefined || needs === null || (Array.isArray(needs) && needs.length === 0)) {
+    return null;
+  }
+  if (!Array.isArray(needs) || !needs.every((need) => typeof need === 'string' && need !== '')) {
+    return 'waiting: what it needs is not something any device can have';
+  }
+  if (pools.some((pool) => satisfies(pool.has, needs))) {
+    return null;
+  }
+  const labels = (needs as string[]).filter((need) => !need.startsWith('pool:'));
+  const devices = (needs as string[]).filter((need) => need.startsWith('pool:')).map((need) => names.name(need.slice('pool:'.length)));
+  if (devices.length > 0) {
+    return `waiting for ${listed(devices)} to serve this queue${labels.length > 0 ? `, with ${listed(labels)}` : ''}`;
+  }
+  return `waiting: it needs ${listed(labels)}, and no device serving this queue has ${labels.length === 1 ? 'it' : 'them all'}`;
+}
+
+/** Words joined as a person lists them: "a", "a and b", "a, b and c". */
+function listed(words: string[]) {
+  return words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+}
 
 /** A value as it would be typed, cut short. */
 function show(value: unknown) {

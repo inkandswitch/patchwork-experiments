@@ -21,9 +21,9 @@ import { NOT_STARTED, watchPoolHost, type PoolHostStatus } from './browser/pool-
 import { poolWords } from './pool-words';
 
 // A queue, as a person sees it: what it lists, how each task stands, which
-// pools are heard serving it (this browser's marked), what this browser's
-// pool is doing in this page and why, whether this person's browsers serve
-// it, and whether it is their own queue.
+// pools are heard serving it (this browser's marked) and what each has, what
+// this browser's pool is doing in this page and why, whether this person's
+// browsers serve it, and whether it is their own queue.
 //
 // The site hands this tool a handle from its own Repo. Only the url is used:
 // everything here goes through this tab's tasks Repo instead (see
@@ -158,6 +158,9 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
                     <span class="tq-muted">
                       {pool.busy} of {pool.slots} slot{pool.slots === 1 ? '' : 's'} busy
                     </span>
+                    <Show when={labelsOf(pool).length > 0}>
+                      <span class="tq-muted tq-has">has {labelsOf(pool).join(', ')}</span>
+                    </Show>
                   </li>
                 )}
               </For>
@@ -206,6 +209,9 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
     </div>
   );
 };
+
+/** What a pool says it has, less its own `pool:<id>`: the list already names it. */
+const labelsOf = (pool: Serving) => pool.has.filter((label) => label !== `pool:${pool.pool}`);
 
 const Stat = (props: { value: number; label: string }) => (
   <div class="tq-stat">

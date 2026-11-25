@@ -1,5 +1,5 @@
 /**
- * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v4]
+ * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v5]
  *
  * What the documents are, and what may be read from them. Everything else (a
  * pool, an asker, a view) is these rules applied to documents and to what has
@@ -9,8 +9,9 @@
  * THREE THINGS
  *
  * A task is a document: where its code is (`importUrl`: anything `import()`
- * takes), what to hand it (`input`), the key it was asked for under, and the
- * runs it has had. Its code's default export is called with `(input, ctx)`.
+ * takes), what to hand it (`input`), what a machine must have to run it
+ * (`needs`: plain labels), the key it was asked for under, and the runs it
+ * has had. Its code's default export is called with `(input, ctx)`.
  *
  * A queue is a document: the tasks asked of it that have not ended, each
  * under its key. Whoever can write a queue can ask it for work and stop that
@@ -18,7 +19,9 @@
  *
  * A pool is the one set of workers a machine has. It serves the queues it has
  * been told to, runs only the code it accepts from each, and has a name that
- * outlives its restarts.
+ * outlives its restarts. It has labels (`has`): what kind of machine it is
+ * (`node`, `browser`), what the machine was said to have (`unix`), and
+ * `pool:<its name>`, so that work can need one machine in particular.
  *
  * WHAT IS WRITTEN
  *
@@ -32,8 +35,10 @@
  * these rules read one way.
  *
  * Everything about a task is read from its own document. A queue's entry
- * says which task a key names and that the task is wanted; it never says how
- * the task went. The two documents travel separately, so a rule that read
+ * says which task a key names and that the task is wanted, with copies of
+ * what a pool asks first (the package its code is in, its needs) and, as
+ * advice, the pool its asker is next to (`near`); it never says how the task
+ * went. The two documents travel separately, so a rule that read
  * "the entry is gone" as "the task is over" or "was stopped" would be wrong
  * whenever the queue's news arrived first.
  *
@@ -67,7 +72,15 @@
  *
  * - A pool may TAKE a task that is still wanted (no record has ended it),
  *   that its queue lists under the task's key, that nobody heard holds, and
- *   that the pool has no open run of already (`mayClaim`).
+ *   that the pool has no open run of already (`mayClaim`). Beside that it
+ *   asks whether it accepts the code and has every need (`satisfies`), of
+ *   the entry before it reads the task and of the task before it takes it.
+ *   Work that no pool has what it needs for waits; it never fails for want
+ *   of a machine.
+ * - Of the pools heard serving a queue that have what a task needs, one is
+ *   PREFERRED (`preferred`) and takes it at once; any other takes it only
+ *   once it has seen it takeable for HOLD_MS on its own clock. This is advice that no rule depends on:
+ *   two pools that both take a task resolve as below, the later giving way.
  * - It STOPS a run of its own (`stopReason`) as soon as the work is done
  *   elsewhere, a run before it ended the task, its key names another task,
  *   or an earlier run it can hear holds it, each of which makes it `yielded`,
@@ -95,7 +108,8 @@
  * is the one, and when the key names nothing, the last one it named. It
  * waits for that task's own document to say how it ended. If the key names
  * nothing and the task has neither ended nor been heard for LAPSE_MS, the
- * asker lists it again (`mayRelist`): it was asked for and is still wanted.
+ * asker lists it again (`mayRelist`), with the needs its document holds: it
+ * was asked for and is still wanted.
  * Asking under a key whose task has ended is asking afresh; whether work was
  * done already is for the asker to look up where the work's result lands.
  *
@@ -120,6 +134,7 @@
  * @property {string} importUrl  Where its code is: anything `import()` takes.
  * @property {any} input
  * @property {string} key  The key it was asked for under, in its queue's `jobs`.
+ * @property {string[]} [needs]  What a machine must have to run it: plain labels, every one of which a pool's `has` must hold (see `satisfies`). Written by `ask` only when there are some; none written, any pool may.
  * @property {Run[]} runs  What has happened to it, in order: every run a pool took, and any stop someone asked for. Appended to; a run is replaced, whole, once, when it is completed.
  */
 
@@ -159,6 +174,8 @@
  * @property {string} taskUrl  The task's `automerge:` url.
  * @property {number} askedAt  When it was asked for, by the asker's clock: only the order pools take work in.
  * @property {string | null} package  The package its code is in, or null for code that is in none.
+ * @property {string[]} [needs]  The task's `needs`, copied, so that a reader of the queue knows what its work needs without reading each task. `listTask` always writes it; an entry without it needs nothing.
+ * @property {string} [near]  The pool its asker is next to, preferred for it whenever that pool may take it (see `preferred`). Advice only.
  */
 
 // The numbers
@@ -180,6 +197,14 @@ export const MAX_RESULT_BYTES = 1_000_000;
 
 /** How many of a run's last log lines are kept with it. */
 export const MAX_LOG_LINES = 200;
+
+/**
+ * How long a pool that is not a task's preferred pool waits, from first
+ * seeing the task takeable, before taking it: two slow crossings of the sync
+ * server (750 ms each), the listing's to the preferred pool and its run's
+ * back, so that the preferred pool's run is normally here first.
+ */
+export const HOLD_MS = 1_500;
 
 // Hearing
 
@@ -491,6 +516,9 @@ export function waitingWork(queue) {
       taskUrl: entry.taskUrl,
       askedAt: entry.askedAt,
       package: entry.package ?? null,
+      // as written, so that needs that are not a list stay what nobody has
+      needs: entry.needs ?? [],
+      ...(typeof entry.near === 'string' ? { near: entry.near } : {}),
     }))
     .sort(
       (a, b) =>
@@ -507,8 +535,9 @@ export function waitingWork(queue) {
  * (A pool that finds an open run of its own that it is not running completes
  * it first; see `gone`.)
  *
- * Whether the pool accepts the task's code is a separate question, asked of
- * the entry before this and of the task's `importUrl` with it.
+ * Whether the pool accepts the task's code, and has what it needs, are
+ * separate questions (`accepts`, `satisfies`), asked of the entry before
+ * this and of the task with it.
  * @param {Pick<Task, 'runs'> | undefined} task
  * @param {string} pool
  * @param {Named} is
@@ -643,6 +672,97 @@ export function mayRelist(task, is, heard, noneSince, now) {
   );
 }
 
+// What a machine has
+
+/**
+ * Whether a pool that has `has` may run work that needs `needs`: every need
+ * is among what it has. Work that needs nothing (no list) may run anywhere.
+ * A need that is not a non-empty string, and needs that are not a list, are
+ * had by no pool: anyone can write a queue or a task, and a malformed one is
+ * then taken by nobody rather than by everybody.
+ * @param {unknown} has
+ * @param {unknown} needs
+ */
+export function satisfies(has, needs) {
+  if (needs === undefined || needs === null) {
+    return true;
+  }
+  if (!Array.isArray(needs)) {
+    return false;
+  }
+  const labels = Array.isArray(has) ? has : [];
+  return needs.every((need) => typeof need === 'string' && need !== '' && labels.includes(need));
+}
+
+// Which pool should take a task
+
+const UTF8 = new TextEncoder();
+
+/**
+ * FNV-1a, 32 bits, over the UTF-8 bytes of `text`, as an unsigned number.
+ * @param {string} text
+ */
+export function fnv1a(text) {
+  let hash = 0x811c9dc5;
+  for (const byte of UTF8.encode(text)) {
+    hash = Math.imul(hash ^ byte, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * A number for a task and a pool, the same on every device: FNV-1a over the
+ * task's url, a NUL and the pool's name, then MurmurHash3's 32-bit finaliser.
+ * FNV-1a alone favours one pool of three whose names differ from the others'
+ * early on; the finaliser spreads every bit, so each pool is preferred for
+ * its share of tasks. It uses only UTF-8 bytes, `Math.imul` and unsigned
+ * shifts, which every JavaScript engine computes alike.
+ * @param {string} taskUrl
+ * @param {string} pool
+ */
+export function preferenceHash(taskUrl, pool) {
+  let hash = fnv1a(`${taskUrl}\0${pool}`);
+  hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b);
+  hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35);
+  return (hash ^ (hash >>> 16)) >>> 0;
+}
+
+/**
+ * A pool heard serving a queue, with what it said of itself.
+ * @typedef {{ pool: string, has?: string[], slots: number, busy: number }} Candidate
+ */
+
+/**
+ * Which of `pools` should take the task: among those with a free slot (busy
+ * below slots), `near` if it is one of them, and otherwise the one whose
+ * `preferenceHash` with the task's url is highest, the smaller name where two
+ * are equal; null where none has a free slot. The caller passes only the
+ * pools that have what the task needs, itself among them with its own free
+ * slots, and leaves out any not heard for LAPSE_MS. The answer depends on
+ * the set alone, never on its order, so pools that have heard the same pools
+ * choose the same one.
+ * @param {string} taskUrl
+ * @param {string | null | undefined} near
+ * @param {Candidate[]} pools
+ * @returns {string | null}
+ */
+export function preferred(taskUrl, near, pools) {
+  const free = pools.filter((it) => typeof it?.pool === 'string' && Number(it.busy) < Number(it.slots));
+  if (typeof near === 'string' && free.some((it) => it.pool === near)) {
+    return near;
+  }
+  let best = null;
+  let bestHash = -1;
+  for (const { pool } of free) {
+    const hash = preferenceHash(taskUrl, pool);
+    if (hash > bestHash || (hash === bestHash && best !== null && pool < best)) {
+      best = pool;
+      bestHash = hash;
+    }
+  }
+  return best;
+}
+
 // Changes. Each is to be called inside a change to the document.
 
 /**
@@ -657,13 +777,31 @@ export function checkKey(key) {
 }
 
 /**
+ * Throws for needs an asker must not write: anything but a list of
+ * non-empty strings (none at all is fine).
+ * @param {unknown} needs
+ */
+export function checkNeeds(needs) {
+  if (needs === undefined || needs === null) {
+    return;
+  }
+  if (!Array.isArray(needs) || !needs.every((need) => typeof need === 'string' && need !== '')) {
+    throw new Error('What a task needs is a list of labels, each a word such as "unix".');
+  }
+}
+
+/**
  * Lists a task under `key`, unless one is listed already. `over` names a
  * task the caller knows has ended: an entry that still names it is replaced.
  * Two askers at once each list their own; the merge keeps one, and both find
  * the same task under the key from then on.
+ *
+ * The entry's needs are the task's, copied as they are: none written are
+ * written as none, and needs that are not a list of labels stay so, which no
+ * pool satisfies. `near` is written only when it names a pool.
  * @param {Queue} queue
  * @param {string} key
- * @param {Entry} entry
+ * @param {Omit<Entry, 'needs'> & { needs?: unknown }} entry
  * @param {string} [over]
  */
 export function listTask(queue, key, entry, over) {
@@ -677,6 +815,8 @@ export function listTask(queue, key, entry, over) {
       taskUrl: entry.taskUrl,
       askedAt: entry.askedAt,
       package: entry.package ?? null,
+      needs: entry.needs === undefined || entry.needs === null ? [] : JSON.parse(JSON.stringify(entry.needs)),
+      ...(typeof entry.near === 'string' && entry.near !== '' ? { near: entry.near } : {}),
     };
   }
 }

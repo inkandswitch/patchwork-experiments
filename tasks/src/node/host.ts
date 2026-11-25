@@ -6,7 +6,7 @@
 //                           [--workers 1] [--sync wss://…] [--new-queue "title"]
 //                           [--data-dir ~/.patchwork-tasks] [--name <host name>]
 //                           [--code-dir <dir>] [--local automerge:<package>=<dir>]…
-//                           [--max-heap-mb 4096] [--verbose]
+//                           [--has unix,ollama]… [--max-heap-mb 4096] [--verbose]
 //
 // It is an automerge peer, not a service: nothing listens on a port, so it
 // runs the same on a laptop or on a server anywhere. The pool (../pool.ts)
@@ -47,6 +47,13 @@
 // always does; this host answers from its own copy, whichever version the
 // task named. Naming a package this way accepts it.
 //
+// --has says what this machine has, as plain labels: a task that needs a
+// label (`unix`, `ollama`, `gpu`) is taken only by a pool that has it, and
+// waits until one serves its queue. Repeat it, or separate labels with
+// commas. A host always has `node`, and `pool:<its id>`, so that work can
+// need this machine in particular (the one that holds what an earlier run
+// left on its disk).
+//
 // --new-queue makes a queue, prints its url, and serves it: for a machine
 // that should have a queue of its own.
 //
@@ -82,6 +89,8 @@ interface Options {
   acceptAny: boolean;
   /** Packages to run from a directory here: `automerge:<package>` to an absolute path. */
   local: Record<string, string>;
+  /** What this machine has, as labels; `node` always. */
+  has: string[];
   workers: number;
   sync: string;
   newQueue: string | null;
@@ -98,6 +107,7 @@ function parseArgs(argv: string[]): Options {
     accept: [],
     acceptAny: false,
     local: {},
+    has: ['node'],
     workers: 1,
     sync: process.env.PATCHWORK_SYNC ?? DEFAULT_SYNC_SERVER_URL,
     newQueue: null,
@@ -139,6 +149,15 @@ function parseArgs(argv: string[]): Options {
         options.local[packageUrl] = resolve(given.slice(at + 1));
         break;
       }
+      case '--has':
+        for (const label of value().split(',')) {
+          const plain = label.trim();
+          if (!plain || /\s/.test(plain)) {
+            throw new Error(`--has wants plain labels, separated by commas, such as --has unix,ollama ("${label}" is not one)`);
+          }
+          options.has.push(plain);
+        }
+        break;
       case '--workers':
         options.workers = Number(value());
         break;
@@ -307,6 +326,7 @@ export async function main(argv = process.argv.slice(2)) {
     id: poolId,
     name: options.name,
     slots: options.workers,
+    has: options.has,
     executor,
     queues: Object.fromEntries(queues.map((url) => [url as AutomergeUrl, acceptance])),
   });
@@ -320,6 +340,7 @@ export async function main(argv = process.argv.slice(2)) {
   for (const url of queues) {
     console.log(`  queue ${url}`);
   }
+  console.log(`  has ${pool.has.join(', ')}`);
   if (!options.acceptAny) {
     for (const url of options.accept) {
       console.log(`  code from ${url}${options.local[url] ? ` (from ${options.local[url]})` : ''}`);

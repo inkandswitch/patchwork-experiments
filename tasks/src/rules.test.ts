@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// These tests attack the rules in task-rules.js (kit v3). The first half is a
+// These tests attack the rules in task-rules.js (kit v5). The first half is a
 // table of every task the rules can be asked about with up to three records,
 // and checks each promise the header makes against expectations written out
 // here from the header's words, not from the helpers the rules use. Then the
@@ -22,16 +22,19 @@ import { describe, expect, it } from 'vitest';
 import {
   allHeard,
   BEAT_MS,
+  checkNeeds,
   claimRun,
   delistTask,
   endRun,
   ending,
   endingRun,
   entryAt,
+  fnv1a,
   type FinalStatus,
   gone,
   type Heard,
   Hearing,
+  HOLD_MS,
   holder,
   isFinished,
   isHeard,
@@ -52,10 +55,13 @@ import {
   type Named,
   named,
   orphans,
+  preferenceHash,
+  preferred,
   type Queue,
   recordsOf,
   type Run,
   type RunStatus,
+  satisfies,
   stopReason,
   stopTask,
   type Task,
@@ -1697,18 +1703,56 @@ describe('stops', () => {
 // The changes
 
 describe('listTask', () => {
-  const entry = (name: string, askedAt = 1) => ({ taskUrl: url(name), askedAt, package: 'pkg' });
+  const entry = (name: string, askedAt = 1) => ({ taskUrl: url(name), askedAt, package: 'pkg', needs: [] as string[] });
 
   it('makes `jobs` if a queue has none, and lists under an empty key', () => {
     const queue = {} as Queue;
     listTask(queue, 'K', entry('T1'));
-    expect(queue.jobs).toEqual({ K: { taskUrl: url('T1'), askedAt: 1, package: 'pkg' } });
+    expect(queue.jobs).toEqual({ K: { taskUrl: url('T1'), askedAt: 1, package: 'pkg', needs: [] } });
   });
 
-  it('keeps only the three fields of an entry, and turns a missing package into null', () => {
+  it("keeps only an entry's fields, and turns a missing package into null and missing needs into none", () => {
     const queue: Queue = { jobs: {} };
     listTask(queue, 'K', { taskUrl: url('T1'), askedAt: 1, key: 'K', extra: 1 } as never);
-    expect(queue.jobs.K).toEqual({ taskUrl: url('T1'), askedAt: 1, package: null });
+    expect(queue.jobs.K).toEqual({ taskUrl: url('T1'), askedAt: 1, package: null, needs: [] });
+  });
+
+  it('writes the needs it is given as a copy, and needs that are not a list of labels as they are, so that no pool satisfies them', () => {
+    for (const needs of [[], ['unix'], ['unix', 'pool:P'], 'unix', [''], [7], { 0: 'unix' }]) {
+      const given = JSON.parse(JSON.stringify(needs));
+      const queue: Queue = { jobs: {} };
+      listTask(queue, 'K', { ...entry('T1'), needs: given });
+      expect(queue.jobs.K.needs, JSON.stringify(needs)).toEqual(needs);
+      expect(queue.jobs.K.needs === given && typeof given === 'object', JSON.stringify(needs)).toBe(false);
+      expect(satisfies(['unix', 'pool:P'], queue.jobs.K.needs), JSON.stringify(needs)).toBe(satisfies(['unix', 'pool:P'], needs));
+    }
+    const none: Queue = { jobs: {} };
+    listTask(none, 'K', { ...entry('T1'), needs: null as never });
+    expect(none.jobs.K.needs).toEqual([]);
+  });
+
+  it('writes `near` only when it names a pool: a non-empty string', () => {
+    for (const [near, written] of [
+      ['P', true],
+      ['', false],
+      [undefined, false],
+      [null, false],
+      [7, false],
+    ] as const) {
+      const queue: Queue = { jobs: {} };
+      listTask(queue, 'K', { ...entry('T1'), near: near as never });
+      expect('near' in queue.jobs.K, String(near)).toBe(written);
+      if (written) {
+        expect(queue.jobs.K.near).toBe(near);
+      }
+    }
+  });
+
+  it('writes needs and near through a real Automerge change, and they read back the same', () => {
+    let doc = A.from<Queue>({ jobs: {} });
+    doc = A.change(doc, (q) => listTask(q, 'K', { ...entry('T1'), needs: ['unix'], near: 'P' }));
+    expect(A.toJS(doc).jobs.K).toEqual({ taskUrl: url('T1'), askedAt: 1, package: 'pkg', needs: ['unix'], near: 'P' });
+    expect(waitingWork(doc)[0]).toMatchObject({ key: 'K', needs: ['unix'], near: 'P' });
   });
 
   it('leaves an entry already listed', () => {
@@ -2488,9 +2532,25 @@ describe('waitingWork', () => {
     const work = waitingWork({ jobs } as unknown as Queue);
     expect(work.map((it) => it.key)).toEqual(['e', 'c', 'a', 'b']);
     expect(work.find((it) => it.key === 'c')?.package).toBeNull();
-    expect(work.find((it) => it.key === 'b')).toEqual({ key: 'b', taskUrl: url('Tb'), askedAt: 5, package: 'pkg' });
+    expect(work.find((it) => it.key === 'b')).toEqual({ key: 'b', taskUrl: url('Tb'), askedAt: 5, package: 'pkg', needs: [] });
     expect(waitingWork(undefined)).toEqual([]);
     expect(waitingWork({} as Queue)).toEqual([]);
+  });
+
+  it('carries needs as written, none where none are, and near only where it is a string', () => {
+    const work = waitingWork({
+      jobs: {
+        a: { taskUrl: url('Ta'), askedAt: 1, package: null, needs: ['unix'], near: 'P' },
+        b: { taskUrl: url('Tb'), askedAt: 2, package: null },
+        c: { taskUrl: url('Tc'), askedAt: 3, package: null, needs: 'unix', near: 7 },
+      },
+    } as unknown as Queue);
+    expect(work).toEqual([
+      { key: 'a', taskUrl: url('Ta'), askedAt: 1, package: null, needs: ['unix'], near: 'P' },
+      { key: 'b', taskUrl: url('Tb'), askedAt: 2, package: null, needs: [] },
+      { key: 'c', taskUrl: url('Tc'), askedAt: 3, package: null, needs: 'unix' },
+    ]);
+    expect(work.map((it) => satisfies(['unix'], it.needs))).toEqual([true, true, false]);
   });
 
   it('gives the same order whatever order the keys were written in', () => {
@@ -2501,6 +2561,146 @@ describe('waitingWork', () => {
     for (const order of orders(keys)) {
       const shuffled = Object.fromEntries(order.map((key) => [key, jobs[key as keyof typeof jobs]]));
       expect(waitingWork({ jobs: shuffled } as unknown as Queue), order.join('')).toEqual(want);
+    }
+  });
+});
+
+describe('satisfies', () => {
+  // Every kind of `needs` against every kind of `has`, each answer written out from the header's words.
+  const needsKinds: [string, unknown][] = [
+    ['none written', undefined],
+    ['null', null],
+    ['an empty list', []],
+    ['[a]', ['a']],
+    ['[b]', ['b']],
+    ['[a, b]', ['a', 'b']],
+    ['[a, a]', ['a', 'a']],
+    ["['']", ['']],
+    ['[7]', [7]],
+    ['[a, null]', ['a', null]],
+    ["'a', not a list", 'a'],
+    ['a list-like object', { 0: 'a', length: 1 }],
+  ];
+  const hasKinds: [string, unknown, boolean[]][] = [
+    ['nothing', [], [true, true, true, false, false, false, false, false, false, false, false, false]],
+    ['[a]', ['a'], [true, true, true, true, false, false, true, false, false, false, false, false]],
+    ['[a, b]', ['a', 'b'], [true, true, true, true, true, true, true, false, false, false, false, false]],
+    ["['', 7], labels no need can name", ['', 7], [true, true, true, false, false, false, false, false, false, false, false, false]],
+    ['no list', undefined, [true, true, true, false, false, false, false, false, false, false, false, false]],
+    ["'ab', not a list", 'ab', [true, true, true, false, false, false, false, false, false, false, false, false]],
+  ];
+  for (const [hasName, has, answers] of hasKinds) {
+    it(`a pool that has ${hasName}`, () => {
+      expect(needsKinds.map(([, needs]) => satisfies(has, needs))).toEqual(answers);
+    });
+  }
+
+  it('checkNeeds lets an asker write none or a list of non-empty strings, and nothing else', () => {
+    for (const needs of [undefined, null, [], ['unix'], ['unix', 'pool:P']]) {
+      expect(() => checkNeeds(needs), JSON.stringify(needs)).not.toThrow();
+    }
+    for (const needs of ['unix', [''], [7], ['unix', null], { 0: 'unix' }]) {
+      expect(() => checkNeeds(needs), JSON.stringify(needs)).toThrow(/list of labels/);
+    }
+  });
+});
+
+describe('preferred', () => {
+  const TASK = 'automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P';
+  const free = (pool: string, slots = 1) => ({ pool, slots, busy: 0 });
+  const full = (pool: string) => ({ pool, slots: 1, busy: 1 });
+  /** The pool among `pools` with the highest preference hash, written out with a plain sort. */
+  const byHash = (taskUrl: string, pools: string[]) =>
+    [...pools].sort((a, b) => preferenceHash(taskUrl, b) - preferenceHash(taskUrl, a) || (a < b ? -1 : 1))[0];
+
+  it('HOLD_MS is two slow crossings of the sync server, and well inside the lapse', () => {
+    expect(HOLD_MS).toBe(1_500);
+    expect(HOLD_MS).toBeLessThan(LAPSE_MS);
+  });
+
+  it('FNV-1a gives the published vectors, over UTF-8 bytes', () => {
+    expect(fnv1a('')).toBe(0x811c9dc5);
+    expect(fnv1a('a')).toBe(0xe40c292c);
+    expect(fnv1a('foobar')).toBe(0xbf9cf968);
+    // two and four bytes in UTF-8; checked against an implementation in another language
+    expect(fnv1a('é')).toBe(0x1e9de8c1);
+    expect(fnv1a('\u{1F600}')).toBe(0x33a29608);
+  });
+
+  it('preferenceHash gives fixed numbers, the same on every device (checked against an implementation in another language)', () => {
+    expect(preferenceHash('automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P', 'A')).toBe(1729387820);
+    expect(preferenceHash('automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P', 'B')).toBe(3584981004);
+    expect(preferenceHash('automerge:4QvJwDgN9Wfnp9Eb1oNmhS8oWfRc', '8f5c2b5e-6a1e-4c7e-9a43-0d2b9e8c1f00')).toBe(1350321817);
+    expect(preferenceHash('automerge:4QvJwDgN9Wfnp9Eb1oNmhS8oWfRc', 'pool:é')).toBe(1978535569);
+  });
+
+  it('prefers each of three pools, whose names differ only at the end, for its share of tasks: a third, give or take', () => {
+    const pools = ['8f5c2b5e-6a1e-4c7e-9a43-0d2b9e8c1f01', '8f5c2b5e-6a1e-4c7e-9a43-0d2b9e8c1f02', '8f5c2b5e-6a1e-4c7e-9a43-0d2b9e8c1f03'];
+    const wins = new Map(pools.map((pool) => [pool, 0]));
+    for (let i = 0; i < 600; i++) {
+      const choice = preferred(`automerge:task${i}`, null, pools.map((pool) => free(pool)))!;
+      wins.set(choice, wins.get(choice)! + 1);
+    }
+    for (const [pool, count] of wins) {
+      expect(count, pool).toBeGreaterThan(150);
+      expect(count, pool).toBeLessThan(250);
+    }
+  });
+
+  it('is null with no pool, and with no pool that has a free slot', () => {
+    expect(preferred(TASK, null, [])).toBeNull();
+    expect(preferred(TASK, null, [full('A'), full('B')])).toBeNull();
+    expect(preferred(TASK, 'A', [full('A'), full('B')])).toBeNull();
+    expect(preferred(TASK, null, [{ pool: 'A', slots: 0, busy: 0 }])).toBeNull();
+  });
+
+  it('is the one pool with a free slot, whatever near says', () => {
+    for (const near of [null, undefined, 'A', 'B', 'C']) {
+      expect(preferred(TASK, near, [full('A'), free('B')]), String(near)).toBe('B');
+    }
+  });
+
+  it('is near when near has a free slot, whatever the hash says', () => {
+    for (const near of ['A', 'B', 'C']) {
+      expect(preferred(TASK, near, [free('A'), free('B'), free('C')])).toBe(near);
+    }
+  });
+
+  it('is the highest hash when near is absent, unheard, or has no free slot', () => {
+    const best = byHash(TASK, ['A', 'B', 'C']);
+    for (const near of [null, undefined, '', 'D']) {
+      expect(preferred(TASK, near, [free('A'), free('B'), free('C')]), String(near)).toBe(best);
+    }
+    const [busy, ...rest] = ['A', 'B', 'C'];
+    expect(preferred(TASK, busy, [full(busy), ...rest.map((pool) => free(pool))])).toBe(byHash(TASK, rest));
+  });
+
+  it('breaks a tie in the hash by the smaller name', () => {
+    // two names whose hashes with this url are equal, found by search
+    expect(preferenceHash('automerge:tie', 'p16384')).toBe(preferenceHash('automerge:tie', 'p613110'));
+    expect(preferred('automerge:tie', null, [free('p613110'), free('p16384')])).toBe('p16384');
+    expect(preferred('automerge:tie', null, [free('p16384'), free('p613110')])).toBe('p16384');
+  });
+
+  it('a pool with slots to spare counts the same as one with a single free slot', () => {
+    expect(preferred(TASK, null, [free('A', 8), free('B', 1)])).toBe(byHash(TASK, ['A', 'B']));
+  });
+
+  it('gives every pool that computes it over the same heard set the same answer, whatever the order of the list', () => {
+    const permutations = <T,>(items: T[]): T[][] =>
+      items.length <= 1 ? [items] : items.flatMap((item, i) => permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]));
+    const sets = [
+      [free('A'), free('B'), free('C'), free('D')],
+      [free('A'), full('B'), free('C'), full('D')],
+      [full('A'), full('B'), full('C'), free('D')],
+    ];
+    for (const taskUrl of [TASK, 'automerge:4QvJwDgN9Wfnp9Eb1oNmhS8oWfRc', 'automerge:tie']) {
+      for (const set of sets) {
+        for (const near of [null, 'A', 'B', 'E']) {
+          const answers = new Set(permutations(set).map((order) => preferred(taskUrl, near, order)));
+          expect(answers.size, `${taskUrl} ${JSON.stringify(set)} near ${near}`).toBe(1);
+        }
+      }
     }
   });
 });
