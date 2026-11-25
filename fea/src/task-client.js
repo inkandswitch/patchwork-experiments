@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v8]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v9]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -1045,14 +1045,27 @@ async function servedOwnQueue(repo) {
  * it (as `run`), and otherwise done here. Resolves to what the code
  * returned; rejects with what it threw, or "The task was cancelled" once
  * `signal` is aborted. `onProgress` hears the same views either way (one for
- * work done here has no `taskUrl` and no `runs`).
+ * work done here has no `taskUrl` and no `runs`). Aborted while it still
+ * listens for a pool, it rejects at once and neither asks nor calls anything.
  * @param {any} repo  the Repo the page's account is in
  * @param {Ask} request
  * @param {{ onProgress?: (view: TaskView) => void, signal?: AbortSignal }} [options]
  * @returns {Promise<unknown>}
  */
 export async function doWork(repo, request, { onProgress, signal } = {}) {
-  const queue = await servedOwnQueue(repo).catch(() => null);
+  if (signal?.aborted) {
+    throw new Error(CANCELLED);
+  }
+  const queue = await new Promise((resolve, reject) => {
+    const stop = () => reject(new Error(CANCELLED));
+    signal?.addEventListener('abort', stop, { once: true });
+    servedOwnQueue(repo)
+      .catch(() => null)
+      .then((found) => {
+        signal?.removeEventListener('abort', stop);
+        resolve(found);
+      });
+  });
   return queue ? run(repo, queue, request, onProgress, signal) : workHere(repo, request, onProgress, signal);
 }
 

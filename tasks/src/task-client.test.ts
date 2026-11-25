@@ -1994,6 +1994,39 @@ describe('doWork', () => {
     expect(g.__work).not.toHaveBeenCalled();
   });
 
+  it('aborted while it still waits to hear whether a pool serves the own queue: rejects at once, and neither asks nor calls anything, then or once a pool is heard', async () => {
+    const { repo, queue } = page('an own queue nobody is heard serving');
+    g.__work = vi.fn();
+    const controller = new AbortController();
+    const { settled } = doing(repo, {}, controller.signal);
+    await settle();
+    await vi.advanceTimersByTimeAsync(BEAT_MS);
+    expect(settled).toEqual({});
+    const stoppedAt = Date.now();
+    controller.abort();
+    await until(() => 'error' in settled);
+    expect(settled.error?.message).toBe('The task was cancelled');
+    expect(Date.now()).toBe(stoppedAt);
+    serving(queue!);
+    await until(() => false, BEAT_MS + 500);
+    expect(queue!.doc()!.jobs).toEqual({});
+    expect(g.__work).not.toHaveBeenCalled();
+  });
+
+  it('a signal aborted before it is called, with an own queue a pool is heard serving: rejects, and asks nothing', async () => {
+    const { repo, queue } = page('an own queue');
+    g.__work = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+    const { settled } = doing(repo, {}, controller.signal);
+    await settle();
+    serving(queue!);
+    await until(() => 'error' in settled, BEAT_MS + 500);
+    expect(settled.error?.message).toBe('The task was cancelled');
+    expect(queue!.doc()!.jobs).toEqual({});
+    expect(g.__work).not.toHaveBeenCalled();
+  });
+
   /** An own queue a pool is heard serving, and work asked of it. */
   async function asked(signal?: AbortSignal) {
     const { repo, queue } = page('an own queue');
