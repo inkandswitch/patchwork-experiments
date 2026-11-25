@@ -153,3 +153,35 @@ time, and prints the figures above; it runs the working tree's build
 (`pnpm build:node`), and publishes nothing. `probes/real-run.mjs`, which
 measured the browser, was written for the router-based system and waits to
 be rewritten for the browser's pool.
+
+## Deferred, with what each waits on
+
+Each of these was met while building the pool and left out on purpose. None is needed for a queue
+that one machine serves.
+
+- **Hold back for the preferred pool.** On a queue that several pools serve, each takes a listed
+  task at once and all but one give way within a sync delay (measured: one yielded run per task on
+  a two-host queue). A pool could wait a moment when it hears another pool serving that the task's
+  url hashes to: advice only, so a wrong guess costs what happens today. Wanted before work that
+  costs money to start (a model call) shares a queue between machines.
+- **What a task needs of the machine.** An entry could carry `needs` (plain labels), a pool say what
+  it has, and a pool take only what it satisfies, the way it already declines code it does not
+  accept. Affinity follows: every run records its pool, so a follow-up can need, or prefer, the pool
+  that ran its predecessor. Waits on the first queue served by two kinds of machine.
+- **A link in memory between a pool and its run workers.** A run worker's Repo has storage of its
+  own (a directory in Node, a database in a browser), so what a task writes through `ctx.repo`
+  reaches the page by the sync server. A message-channel link to the pool's Repo would carry it
+  directly and work offline. Waits on a network adapter that works with the Repo in use.
+- **A new worker for every run.** A worker is reused after a run that ended by itself, so code one
+  task leaves running shares a thread with the next. Confining task code (an opaque-origin worker in
+  a browser) requires fresh workers, and so does treating tasks as strangers to each other. Waits on
+  the link above, since a worker ended at once must first hand over what its task wrote.
+- **A queue of one's own, and finding queues.** A page with no document that names a queue has
+  nowhere to ask. The account's list of served queues could also hold queues that are only asked of.
+  Waits on the lead's decision about the account document.
+- **Secrets.** Nothing here holds one. Work that needs a key (model calls, agent sessions) stays
+  where it is until run workers are confined and there is a rule for which runs may spend what.
+- **The shim that resolves a task's bare imports is fetched from a CDN** each time a browser pool or
+  run worker starts, so a browser pool cannot start offline. Bundle it.
+- **Slots count threads, not kinds of work.** A run waiting on the network holds a slot a build
+  could use. Waits on the first long-waiting work moving here.
