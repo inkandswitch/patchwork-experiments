@@ -8,7 +8,8 @@
 // It takes only work it has what for (`has`, see `satisfies`), and of what it
 // may take, it holds back for the task's preferred pool: it hears the other
 // pools serving each queue (their `serving`, within the lapse), and judges
-// once, when it first sees a task takeable, whether `preferred` names it. If
+// once, when it first sees a task listed that it may take (as the entry
+// says, before the task's document is here), whether `preferred` names it. If
 // so, it takes the task as soon as it has a free slot within HOLD_MS of that
 // sight, or else a second HOLD_MS later, by when what another pool took at
 // the end of the hold has reached it; if not, it takes it only once HOLD_MS
@@ -215,8 +216,9 @@ function letGo(followed: Followed<unknown>) {
 interface FollowedTask extends Followed<Task> {
   hearing: Hearing;
   /**
-   * When this pool first saw the task takeable, on its own clock, and whether
-   * it was then the task's preferred pool; kept until the task is not takeable.
+   * When this pool first saw the task listed where it may take it, on its own
+   * clock, and whether it was then the task's preferred pool; kept until the
+   * task is found not takeable.
    */
   firstSight?: { at: number; preferred: boolean };
 }
@@ -449,38 +451,42 @@ export class Pool {
 
     for (const { work, queue, served } of listed) {
       const followed = this.tasks.get(work.taskUrl as AutomergeUrl);
-      const handle = followed?.handle;
-      if (!followed || !handle) {
+      if (!followed) {
         continue;
       }
       attempt('looking at a task its queue lists', () => {
-        const task = handle.isDeleted?.() ? undefined : handle.doc();
-        if (!task) {
+        const { acceptance } = served;
+        // Whose code it is and what it needs are asked of the entry first and
+        // of the task last (see `mayClaim`).
+        if (this.stopped || !acceptsPackage(acceptance, work.package) || !satisfies(this.has, work.needs)) {
+          followed.firstSight = undefined;
+          followed.unhold?.();
+          return;
+        }
+        // The pool judges whether it is preferred as soon as the entry says
+        // it may take the task, before the task's document is here: by the
+        // time that has been fetched, the preferred pool may have taken the
+        // task and said it is full, and a pool that judged then would read
+        // that as room left for it.
+        followed.firstSight ??= { at: now, preferred: this.isPreferred(work, served, now) };
+        const handle = followed.handle;
+        const task = !handle || handle.isDeleted?.() ? undefined : handle.doc();
+        if (!handle || !task) {
           return;
         }
         const is = named(queue.doc(), work.key, work.taskUrl);
         const heard = this.heardOf(work.taskUrl as AutomergeUrl);
-        const { acceptance } = served;
         if (mayDelist(task, is)) {
           queue.change((doc) => delistTask(doc, work.key, work.taskUrl));
         }
-        // Whose code it is and what it needs are asked of the entry first
-        // and of the task last (see `mayClaim`). A task that has ended is not
-        // wanted, so `mayClaim` refuses one just let go above.
-        const takeable =
-          !this.stopped &&
-          acceptsPackage(acceptance, work.package) &&
-          satisfies(this.has, work.needs) &&
-          mayClaim(task, id, is, heard) &&
-          accepts(acceptance, task.importUrl) &&
-          satisfies(this.has, task.needs);
+        // A task that has ended is not wanted, so `mayClaim` refuses one just let go above.
+        const takeable = mayClaim(task, id, is, heard) && accepts(acceptance, task.importUrl) && satisfies(this.has, task.needs);
         if (!takeable) {
           followed.firstSight = undefined;
           followed.unhold?.();
           return;
         }
-        followed.firstSight ??= { at: now, preferred: this.isPreferred(work, served, task, now) };
-        if (this.runs.size < slots && this.mayTakeNow(followed, served, task, now)) {
+        if (this.runs.size < slots && this.mayTakeNow(followed, served, work, now)) {
           this.claim(work, queue, handle, task);
         }
       });
@@ -489,22 +495,22 @@ export class Pool {
 
   /**
    * Whether `preferred` names this pool for a task, now: among the pools
-   * heard serving the queue within the lapse that have what the task needs,
-   * and this pool. The task's own needs narrow the others; the entry's `near`
-   * is the asker's word for which pool it is next to. This pool counts itself
+   * heard serving the queue within the lapse that have what the entry says
+   * the task needs, and this pool. The entry's `near` is the asker's word for
+   * which pool it is next to. This pool counts itself
    * as having a free slot: whether it has one decides when it takes the task,
    * not whether it is the one to, and a pool that judged itself out while its
    * slots were full would hold back as long as the others that saw it free.
    * A pool that has listened to the queue for less than LISTEN_MS may not
    * have heard the others yet, and is preferred for nothing.
    */
-  private isPreferred(work: Work, served: Served, task: Task, now: number): boolean {
+  private isPreferred(work: Work, served: Served, now: number): boolean {
     const { id, slots } = this.options;
     if (served.listeningSince === undefined || now - served.listeningSince < LISTEN_MS) {
       return false;
     }
     const others = [...served.heard]
-      .filter(([, pool]) => now - pool.at < LAPSE_MS && satisfies(pool.has, task.needs))
+      .filter(([, pool]) => now - pool.at < LAPSE_MS && satisfies(pool.has, work.needs))
       .map(([pool, { slots, busy }]) => ({ pool, slots, busy }));
     return preferred(work.taskUrl, work.near ?? null, [{ pool: id, slots, busy: 0 }, ...others]) === id;
   }
@@ -518,10 +524,10 @@ export class Pool {
    * this one first, unless it hears no other pool that could have taken it.
    * Where it may not yet, a timer is set to look again at the moment it may.
    */
-  private mayTakeNow(followed: FollowedTask, served: Served, task: Task, now: number): boolean {
+  private mayTakeNow(followed: FollowedTask, served: Served, work: Work, now: number): boolean {
     const sight = followed.firstSight!;
     const waited = now - sight.at;
-    const from = !sight.preferred ? HOLD_MS : waited < HOLD_MS || !this.othersCould(served, task, now) ? 0 : 2 * HOLD_MS;
+    const from = !sight.preferred ? HOLD_MS : waited < HOLD_MS || !this.othersCould(served, work, now) ? 0 : 2 * HOLD_MS;
     if (waited >= from) {
       followed.unhold?.();
       return true;
@@ -539,9 +545,9 @@ export class Pool {
     return false;
   }
 
-  /** Whether a pool heard serving the queue within the lapse, with slots, has what the task needs. */
-  private othersCould(served: Served, task: Task, now: number): boolean {
-    return [...served.heard.values()].some((pool) => now - pool.at < LAPSE_MS && pool.slots > 0 && satisfies(pool.has, task.needs));
+  /** Whether a pool heard serving the queue within the lapse, with slots, has what the entry says the task needs. */
+  private othersCould(served: Served, work: Work, now: number): boolean {
+    return [...served.heard.values()].some((pool) => now - pool.at < LAPSE_MS && pool.slots > 0 && satisfies(pool.has, work.needs));
   }
 
   /**

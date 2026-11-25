@@ -999,13 +999,16 @@ describe('the pool', () => {
   });
 
   it('tries a task it cannot find yet again a beat later, without an error', async () => {
-    const task = w.ask('k');
+    const task = w.make('k');
     let misses = 1;
     const docs: Docs = {
       find: (url) => (url === task.url && misses-- > 0 ? Promise.reject(new Error('unavailable')) : (w.repo.find(url) as any)),
       flush: (ids) => w.repo.flush(ids),
     };
     const { executor } = await w.started('A', { repo: docs });
+    // listed as a beat comes, so that the next beat is one beat after the refusal
+    await w.clock.advance(2 * BEAT_MS - LISTEN_MS);
+    w.list(task);
     await settle();
     expect(runsOf(task)).toEqual([]);
     await w.clock.advance(BEAT_MS);
@@ -1679,6 +1682,66 @@ describe('the preferred pool', () => {
       expect(p.executor.workers.flatMap((worker) => worker.jobs).map((job) => job.key)).toEqual(['busy']);
     });
   }
+
+  it('a pool judges as soon as the entry is listed, before the task document arrives: the preferred pool, heard full only by then with that very task, is still held back for', async () => {
+    // Two machines: O fetches the task's document a moment after it sees the
+    // listing, and its copy does not have P's run until the test merges it.
+    const repoP = new Repo({ network: [] } as any);
+    const repoO = new Repo({ network: [] } as any);
+    const works = [countingWork(repoP), countingWork(repoO)];
+    const settleBoth = async () => {
+      do {
+        await settle();
+      } while (works.some((it) => it.underWay > 0));
+    };
+    const queueP = repoP.create<Queue>({ title: 'q', jobs: {} });
+    const queueO = repoO.import<Queue>(A.save(queueP.doc()), { docId: queueP.documentId } as any);
+    const taskP = repoP.create<Task>({ importUrl: CODE, input: null, key: 'k', needs: [], runs: [] });
+    const taskO = repoO.import<Task>(A.save(taskP.doc()), { docId: taskP.documentId } as any);
+    let away = true;
+    const arrivals = new Set<(state: { state: string }) => void>();
+    const docsO: Docs = {
+      find: (url) => (url === taskO.url && away ? Promise.reject(new Error('unavailable')) : (repoO.find(url) as any)),
+      flush: (ids) => repoO.flush(ids),
+      findWithProgress: (url) => ({
+        peek: () => ({ state: url === taskO.url && away ? 'unavailable' : 'ready' }),
+        subscribe: (onState) => (arrivals.add(onState), () => void arrivals.delete(onState)),
+      }),
+    };
+    const start = (id: string, repo: Docs) => {
+      const executor = new FakeExecutor(w.clock);
+      new Pool({ repo, id, name: id, slots: 1, has: [], executor, queues: { [queueP.url]: 'any' }, ears: w.net.ears(), clock: w.clock });
+      return executor;
+    };
+    const p = start('P', repoP as Docs);
+    const o = start('O', docsO);
+    await settleBoth();
+    await w.clock.advance(LISTEN_MS);
+    const entry = { taskUrl: taskP.url, askedAt: 1, package: null, needs: [], near: 'P' };
+    // the listing reaches O first; then P, which takes it and says it is full
+    queueO.change((doc) => listTask(doc, 'k', entry));
+    await settleBoth();
+    queueP.change((doc) => listTask(doc, 'k', entry));
+    await settleBoth();
+    expect(runsOf(taskP).map((run) => run.pool)).toEqual(['P']);
+    expect(w.net.sent.filter((it) => it.message.type === 'serving' && it.message.pool === 'P').at(-1)?.message.busy).toBe(1);
+    // O's copy of the task arrives, without P's run
+    away = false;
+    for (const arrived of [...arrivals]) {
+      arrived({ state: 'ready' });
+    }
+    await settleBoth();
+    expect(runsOf(taskO)).toEqual([]);
+    await w.clock.advance(HOLD_MS / 2);
+    expect(runsOf(taskO)).toEqual([]);
+    // P's run reaches O within the hold
+    taskO.merge(taskP);
+    await settleBoth();
+    await w.clock.advance(LAPSE_MS);
+    expect(runsOf(taskO).map((run) => run.pool)).toEqual(['P']);
+    expect(o.workers).toHaveLength(0);
+    expect(p.workers).toHaveLength(1);
+  });
 
   it('a pool heard full when the other first sees a task is not preferred: the other takes it at once, and the full pool, freed later, does not', async () => {
     const task = made('k');
