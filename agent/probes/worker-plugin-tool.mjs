@@ -5,7 +5,7 @@
  * as-is) in headless Chrome: a page makes a workflow step's session placed on
  * a worker, connects the shared runner with runners/worker-client.js, and the runner
  * — in a module SharedWorker, with no importmap — runs the step. The model is
- * a script (providers/mock.js) that calls a real package's agent tools: it
+ * a script (fixtures/mock-provider.js) that calls a real package's agent tools: it
  * makes an assumptions register with `assumptions_create` and reads it back
  * with `assumptions_read`, then calls a tool whose code cannot load in a
  * worker. What the probe checks, from the session document alone:
@@ -183,7 +183,7 @@ const CTX = {
 
 const SCRIPT = `
 // ---- probe: a scripted model, registered for probes/worker-plugin-tool.mjs
-import { makeMock as __makeMock } from "./mock.js"
+import { makeMock as __makeMock } from "../fixtures/mock-provider.js"
 const __urls = (value) => JSON.stringify(value).match(/automerge:[1-9A-HJ-NP-Za-km-z]+/g) ?? []
 const __offered = (request) => (request.tools ?? []).map((t) => t.id ?? t.name ?? t.function?.name)
 register({
