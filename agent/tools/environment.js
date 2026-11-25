@@ -9,7 +9,8 @@
 
 import { hostImport } from "../host/import.js"
 import { truncate, bytes } from "../documents/format.js"
-import { contentToText, resolvePath, treeNode, treeEntries, treeEnter } from "./folders.js"
+import { resolvePath, treeNode, treeEntries, treeEnter } from "./folders.js"
+import { contentText } from "../documents/values.js"
 import { fetcher } from "../net/guard.js"
 
 /**
@@ -172,7 +173,7 @@ export const pluginSource = {
         if (pkgEntry) {
           const pkgDoc = (await ctx.repo.find(pkgEntry.url)).doc()
           try {
-            main = JSON.parse(contentToText(pkgDoc.content)).main ?? main
+            main = JSON.parse(contentText(pkgDoc.content)).main ?? main
           } catch {
             /* fall back to index.js */
           }
@@ -186,7 +187,7 @@ export const pluginSource = {
       } catch {
         throw new Error(`'${input.file}' not in package. Use list:true to see the files.`)
       }
-      const text = contentToText(node?.content)
+      const text = contentText(node?.content)
       return `${input.id}/${input.file} · ${bytes(text.length)}\n${truncate(text, 20000)}`
     }
 

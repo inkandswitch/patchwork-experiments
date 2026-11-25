@@ -34,7 +34,8 @@
  */
 
 import { AutomergeRepo } from "../host/modules.js"
-import { fsWrite, createFolder, contentToText, isFolder, treeNode, treeEntries, treeEnter } from "../tools/folders.js"
+import { fsWrite, createFolder, isFolder, treeNode, treeEntries, treeEnter } from "../tools/folders.js"
+import { contentText } from "../documents/values.js"
 import { notesFolder, noteFileName, looksLikeCredential } from "./notes.js"
 import { truncate } from "../documents/format.js"
 
@@ -221,7 +222,7 @@ async function readPins(ctx, folderUrl) {
   const entry = (folder?.docs ?? []).find((e) => e.name === PINS_FILE)
   if (!entry) return {}
   try {
-    return JSON.parse(contentToText((await ctx.repo.find(entry.url)).doc()?.content)) ?? {}
+    return JSON.parse(contentText((await ctx.repo.find(entry.url)).doc()?.content)) ?? {}
   } catch {
     return {}
   }
@@ -242,7 +243,7 @@ export async function listGuides(ctx) {
     if (entry.type === "folder" || !/\.md$/i.test(entry.name) || entry.name === README) continue
     let text = ""
     try {
-      text = contentToText((await ctx.repo.find(entry.url)).doc()?.content)
+      text = contentText((await ctx.repo.find(entry.url)).doc()?.content)
     } catch {
       /* unreadable: listed by name */
     }
@@ -349,10 +350,11 @@ export function lineDiff(before, after, maxLines = 60) {
   return { lines: shown, more: Math.max(0, out.length - shown.length), firstLine: out[0]?.at ?? null }
 }
 
-async function textAt(repo, url, heads) {
+/** A file's text as it stood at `heads` (as it is now, without them). */
+async function fileTextAtHeads(repo, url, heads) {
   const handle = await repo.find(bare(url))
   const doc = heads?.length ? handle.view([...heads]).doc() : handle.doc()
-  return contentToText(doc?.content)
+  return contentText(doc?.content)
 }
 
 /**
@@ -380,8 +382,8 @@ export async function describeChanges(ctx, guide, { heads = null, file = null, m
     lines.push("", `--- ${path}`)
     try {
       const entryUrl = await fileUrlOf(ctx.repo, guide.package, snapshot.heads, path)
-      const before = await textAt(ctx.repo, entryUrl, guide.pin.files[path])
-      const after = await textAt(ctx.repo, entryUrl, snapshot.files[path])
+      const before = await fileTextAtHeads(ctx.repo, entryUrl, guide.pin.files[path])
+      const after = await fileTextAtHeads(ctx.repo, entryUrl, snapshot.files[path])
       const diff = lineDiff(before, after, file ? maxLines * 10 : maxLines)
       lines.push(...(diff.lines.length ? diff.lines : ["(no text difference)"]))
       if (diff.more) lines.push(`… ${diff.more} more changed lines${file ? "" : `; guide_changes with file: "${path}" shows more`}`)

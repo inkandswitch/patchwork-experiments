@@ -18,7 +18,8 @@
  */
 
 import { BUILTIN_SKILLS } from "./builtin-skills.js"
-import { contentToText, isFolder } from "../tools/folders.js"
+import { isFolder } from "../tools/folders.js"
+import { contentText } from "../documents/values.js"
 import { truncate } from "../documents/format.js"
 
 /** Skills from a folder document: one subfolder per skill, each with SKILL.md. */
@@ -41,9 +42,9 @@ export async function folderSkills(repo, folderUrl) {
       let body = null
       if (isFolder(doc)) {
         const file = (doc.docs ?? []).find((d) => /^skill\.md$/i.test(d.name))
-        if (file) body = contentToText((await repo.find(file.url)).doc()?.content)
+        if (file) body = contentText((await repo.find(file.url)).doc()?.content)
       } else if (doc?.content != null) {
-        body = contentToText(doc.content)
+        body = contentText(doc.content)
       }
       if (!body) continue
 

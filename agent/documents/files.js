@@ -18,8 +18,15 @@
  */
 
 import { imageTypeOf } from "./images.js"
+import { isPdf as startsAsPdf } from "./media.js"
+import { isBytes, textOf, decodeIfText } from "./values.js"
 
-/** Types and extensions that are text, whatever bytes they arrive as. */
+/**
+ * Types and extensions that are text, whatever bytes they arrive as. Wider
+ * than documents/media.js's TEXT_TYPES, for a reason: here a type only lets
+ * bytes that already decode as UTF-8, with no NUL, be read as text, while
+ * there a type decides whether a response is decoded at all.
+ */
 const TEXT_TYPES = /^(text\/|application\/(json|xml|javascript|x-yaml|yaml|toml|x-sh|sql|csv|x-ndjson|ld\+json|geo\+json)|image\/svg\+xml)/i
 const TEXT_EXTENSIONS = new Set(
   "txt md markdown csv tsv json jsonl ndjson xml yaml yml toml ini cfg conf log js mjs cjs ts tsx jsx css scss html htm svg py rb rs go java c h cpp hpp cs sh bash zsh sql scad tex bib r jl lua swift kt php pl ipynb geojson".split(" ")
@@ -31,24 +38,9 @@ const OFFICE = {
 }
 
 const extensionOf = (doc) => String(doc?.extension ?? String(doc?.name ?? "").split(".").pop() ?? "").toLowerCase().replace(/^\./, "")
-const isBytes = (v) => v instanceof Uint8Array
-
-/** Bytes as UTF-8 text, or null when they are not text: invalid UTF-8, or a NUL in them. */
-export function decodeIfText(bytes) {
-  if (!isBytes(bytes)) return null
-  let text
-  try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
-  } catch {
-    return null
-  }
-  return text.includes("\u0000") ? null : text
-}
-
-/** Is this a PDF, by its bytes or what it says it is? */
-function isPdf(doc) {
-  const b = doc.content
-  if (isBytes(b) && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return true
+/** Is this file a PDF, by its bytes (documents/media.js) or what it says it is? */
+function isPdfFile(doc) {
+  if (isBytes(doc.content) && startsAsPdf(doc.content)) return true
   return /application\/pdf/i.test(String(doc.mimeType ?? "")) || extensionOf(doc) === "pdf"
 }
 
@@ -70,16 +62,17 @@ export function fileKind(doc) {
   if (!doc || !("content" in doc)) return null
   const content = doc.content
   const type = doc.mimeType ?? null
-  if (typeof content === "string" || content?.constructor?.name === "ImmutableString") return { kind: "text", text: String(content), type }
+  const text = textOf(content)
+  if (text != null) return { kind: "text", text, type }
   if (!isBytes(content)) return null
   const image = imageTypeOf(doc)
   if (image) return { kind: "image", type: image }
-  if (isPdf(doc)) return { kind: "pdf" }
+  if (isPdfFile(doc)) return { kind: "pdf" }
   const office = officeFormat(doc)
   if (office) return { kind: "office", format: office }
   const declaredText = TEXT_TYPES.test(String(type ?? "")) || TEXT_EXTENSIONS.has(extensionOf(doc))
-  const text = decodeIfText(content)
-  if (text != null && (declaredText || !type || type === "application/octet-stream")) return { kind: "text", text, type }
+  const decoded = decodeIfText(content)
+  if (decoded != null && (declaredText || !type || type === "application/octet-stream")) return { kind: "text", text: decoded, type }
   return { kind: "binary", type }
 }
 

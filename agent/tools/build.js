@@ -22,7 +22,8 @@
  */
 
 import { truncate, bytes } from "../documents/format.js"
-import { contentToText, isFile, treeNode, treeEntries, treeEnter, treeAdd, treeRepin } from "./folders.js"
+import { isFile, treeNode, treeEntries, treeEnter, treeAdd, treeRepin } from "./folders.js"
+import { contentText } from "../documents/values.js"
 
 /** Pinned, because a build that changes under you is not a build. */
 export const ESBUILD_VERSION = "0.21.5"
@@ -182,7 +183,7 @@ export function entryPointFor(files, explicit, outfile = "dist/index.js") {
 export function fileContents(content) {
   if (content instanceof Uint8Array) return content
   if (ArrayBuffer.isView(content)) return new Uint8Array(content.buffer, content.byteOffset, content.byteLength)
-  return contentToText(content)
+  return contentText(content)
 }
 
 export async function materialize(repo, folderUrl, { maxFiles = 400 } = {}) {

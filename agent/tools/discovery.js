@@ -12,7 +12,8 @@
  */
 
 import { previewJson, truncate } from "../documents/format.js"
-import { contentToText, isFolder, isFile, ROOT_DESCRIPTION } from "./folders.js"
+import { isFolder, isFile, ROOT_DESCRIPTION } from "./folders.js"
+import { contentText } from "../documents/values.js"
 
 const DEFAULT_MAX_VISITS = 300
 
@@ -151,7 +152,7 @@ export const docSearch = {
             filesRead++
             const doc = (await ctx.repo.find(entry.url)).doc()
             if (isFile(doc)) {
-              const text = contentToText(doc.content)
+              const text = contentText(doc.content)
               charsRead += text.length
               const line = text.split("\n").find((candidate) => pattern.test(candidate))
               if (line) {

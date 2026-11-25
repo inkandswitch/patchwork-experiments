@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { fileKind, decodeIfText, unzip, officeText, withFileData, MAX_FILE_BYTES } from "../documents/files.js"
+import { fileKind, unzip, officeText, withFileData, MAX_FILE_BYTES } from "../documents/files.js"
 import { initSession, CALL, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, callBlock, resultBlock, attachmentBlock } from "../session/blocks.js"
 import { toRequest } from "../session/request.js"
@@ -99,12 +99,6 @@ describe("what a file is", () => {
     for (const [doc, kind] of cases) expect(fileKind(doc)?.kind, doc.name).toBe(kind)
     expect(fileKind({ title: "not a file" })).toBe(null)
     expect(fileKind({ name: "x.docx", content: new Uint8Array(4) }).format).toBe("docx")
-  })
-
-  it("decodes UTF-8 text, and refuses what is not", () => {
-    expect(decodeIfText(enc("ångström 3.2 V"))).toBe("ångström 3.2 V")
-    expect(decodeIfText(new Uint8Array([0xc3]))).toBe(null)
-    expect(decodeIfText(enc("a\u0000b"))).toBe(null)
   })
 })
 

@@ -10,6 +10,7 @@
  */
 
 import { previewJson, truncate, bytes } from "../documents/format.js"
+import { contentText } from "../documents/values.js"
 import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, OpError, TEXT_OPS } from "../documents/ops.js"
 
 /**
@@ -17,18 +18,6 @@ import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, 
  * folder covers all three, and filing a kept source there (session/grants.js).
  */
 export const FILES_GROUP = { group: "files", groupCovers: "every file write, edit, delete and filing in this session" }
-
-/** File content arrives as a string, an ImmutableString, or raw bytes. */
-export function contentToText(content) {
-  if (content == null) return ""
-  if (typeof content === "string") return content
-  if (content instanceof Uint8Array || ArrayBuffer.isView(content)) {
-    return new TextDecoder("utf-8", { fatal: false }).decode(content)
-  }
-  // automerge's ImmutableString and friends stringify usefully
-  const text = String(content)
-  return text === "[object Object]" ? "" : text
-}
 
 /**
  * Is this path source code — something a package loads and runs?
@@ -360,7 +349,7 @@ export const fsRead = {
 
     if (!isFile(doc)) throw new Error(`${label} has no content field — it is not a file document.`)
 
-    const text = contentToText(doc.content)
+    const text = contentText(doc.content)
     const lines = text.split("\n")
     const offset = Math.max(1, input.offset ?? 1)
     const limit = input.limit ?? 400
@@ -439,7 +428,7 @@ export const fsGrep = {
       if (includeRe && !includeRe.test(prefix)) return
 
       filesSearched++
-      const lines = contentToText(doc.content).split("\n")
+      const lines = contentText(doc.content).split("\n")
       for (let i = 0; i < lines.length; i++) {
         if (re.test(lines[i])) {
           matches.push(`${prefix}:${i + 1}: ${truncate(lines[i].trim(), 200)}`)
@@ -640,7 +629,7 @@ export const fsWrite = {
       const handle = await ctx.repo.find(input.url)
       if (!isFile(handle.doc())) throw new Error(notAFile(input.url, handle.doc()))
       const content = String(input.content ?? "")
-      const before = contentToText(handle.doc()?.content)
+      const before = contentText(handle.doc()?.content)
       const changed = overwrite(handle, before, content, ctx.splice)
       return {
         text: [
@@ -673,7 +662,7 @@ export const fsWrite = {
       if (existing) {
         if (existing.type === "folder") throw new Error(`'${path}' is a folder, not a file.`)
         const { handle } = await treeEnter(ctx.repo, existing)
-        const before = contentToText(handle.doc()?.content)
+        const before = contentText(handle.doc()?.content)
         const changed = overwrite(handle, before, content, ctx.splice)
         if (changed !== "unchanged") {
           touched.push(parts)
@@ -833,7 +822,7 @@ export const fsEdit = {
     }
 
     const { handle, label, url, root, folder } = await fileFor(input, ctx)
-    const before = contentToText(handle.doc()?.content)
+    const before = contentText(handle.doc()?.content)
 
     // Work every edit out on the text first; the file is touched only when all
     // of them hold, in one change.

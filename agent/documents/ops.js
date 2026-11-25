@@ -51,6 +51,7 @@
  */
 
 import { Automerge } from "../host/modules.js"
+import { isImmutable, isBytes, isCounter, isMap, isContainer, textForm, decodeUtf8 } from "./values.js"
 
 const { ImmutableString, Counter } = Automerge
 
@@ -59,28 +60,6 @@ export class OpError extends Error {}
 export const OP_NAMES = ["set", "delete", "insert", "append", "prepend", "replace", "test"]
 
 // ---------------------------------------------------------------- kinds
-
-const IMMUTABLE = Symbol.for("_am_immutableString")
-
-/** An ImmutableString, from this automerge or the host's. */
-export const isImmutable = (value) =>
-  typeof value === "object" && value !== null && !Array.isArray(value) && value[IMMUTABLE] === true
-
-const isBytes = (value) => typeof value === "object" && value !== null && ArrayBuffer.isView(value)
-
-function isCounter(value) {
-  return value !== null && typeof value === "object" && typeof value.increment === "function" && typeof value.value === "number"
-}
-
-/**
- * Plain maps: automerge's map proxies and JSON objects. Not lists, counters,
- * dates, bytes or ImmutableStrings, which are objects too.
- */
-function isMap(value) {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false
-  const proto = Object.getPrototypeOf(value)
-  return proto === Object.prototype || proto === null
-}
 
 /** What a value is, in words, for messages. */
 export function kindOf(value) {
@@ -94,20 +73,6 @@ export function kindOf(value) {
   if (value instanceof Date) return "a date"
   if (typeof value === "object") return "a map"
   return `a ${typeof value}`
-}
-
-/**
- * The text a value holds, and the form it holds it in, or null when it holds
- * none. A list counts when every item is a string: what an op means by it is
- * said by the op (`text` rather than `value`), never guessed from the list.
- */
-export function asText(value) {
-  if (typeof value === "string") return { form: "string", text: value }
-  if (isImmutable(value)) return { form: "immutable", text: String(value) }
-  if (Array.isArray(value) && value.every((item) => typeof item === "string" || isImmutable(item))) {
-    return { form: "lines", text: value.map(String).join("") }
-  }
-  return null
 }
 
 /** Text as lines that keep their newlines, the way notebooks store source. join("") undoes it exactly. */
@@ -374,8 +339,6 @@ function keyFor(container, key, path) {
   return index
 }
 
-const isContainer = (node) => Array.isArray(node) || isMap(node)
-
 /**
  * The container holding the thing at `path`, and the key of the thing in it.
  * Every step before the last must exist; the error says where the path stops
@@ -395,8 +358,11 @@ export function parentOf(root, path) {
   return { parent: node, key: keyFor(node, path[path.length - 1], path) }
 }
 
-/** The value at `path`, or an OpError saying where the path stops. */
-export function valueAt(root, path) {
+/**
+ * The value at `path`, or an OpError saying where the path stops. The same
+ * walk as valueAt in documents/values.js, which answers undefined instead.
+ */
+export function valueAtOrThrow(root, path) {
   if (!path.length) return root
   const { parent, key } = parentOf(root, path)
   if (parent[key] === undefined) throw new OpError(notThere(path, parent))
@@ -618,26 +584,24 @@ function textOfOp(draft, op, read) {
     throw new OpError(`from ${where}: ${err.message}`)
   }
   if (isBytes(source)) {
-    try {
-      return new TextDecoder("utf-8", { fatal: true }).decode(source)
-    } catch {
-      throw new OpError(`from ${where}: those bytes are not UTF-8 text`)
-    }
+    const decoded = decodeUtf8(source)
+    if (decoded == null) throw new OpError(`from ${where}: those bytes are not UTF-8 text`)
+    return decoded
   }
-  const text = asText(source)
+  const text = textForm(source)
   if (!text) throw new OpError(`from ${where}: it is ${kindOf(source)}, not text`)
   return text.text
 }
 
 const readHere = (from, draft) => {
   if (from.url) throw new OpError("this edit cannot read other documents")
-  return valueAt(draft, from.path)
+  return valueAtOrThrow(draft, from.path)
 }
 
 function testOp(draft, path, value) {
   let current
   try {
-    current = valueAt(draft, path)
+    current = valueAtOrThrow(draft, path)
   } catch (err) {
     throw new OpError(`test failed: ${err.message}`)
   }
@@ -684,7 +648,7 @@ function textEdit(draft, path, op, { spliceText, read }) {
     return `${op.op} ${label(path)}: new text, ${count(adding.length, "char")} in ${count(splitLines(adding).length, "line")}`
   }
 
-  const held = asText(current)
+  const held = textForm(current)
   if (!held) {
     const hint = Array.isArray(current) ? " To add an item to a list, give `value` instead of `text`." : isBytes(current) ? " For a file, use fs_edit." : " To replace it with text, set it with `value`."
     throw new OpError(`${label(path)} is ${kindOf(current)}, not text.${hint}`)
@@ -738,7 +702,7 @@ function addItem(draft, path, op, value) {
     return `${op.op} ${label(path)}: new list, ${brief(value)}`
   }
   if (!Array.isArray(list)) {
-    const hint = asText(list) ? " To add text to it, give `text` instead of `value`." : ""
+    const hint = textForm(list) ? " To add text to it, give `text` instead of `value`." : ""
     throw new OpError(`${label(path)} is ${kindOf(list)}, not a list.${hint}`)
   }
   const at = op.op === "append" ? list.length : 0

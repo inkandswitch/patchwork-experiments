@@ -43,6 +43,7 @@
 import { hostImport } from "../host/import.js"
 import { preview, noDocumentError } from "../documents/format.js"
 import { editsBetween, editsOfPatches, matchEdit, touchesPath } from "../documents/history.js"
+import { valueAt } from "../documents/values.js"
 import { addedHeads } from "../kernel/own-changes.js"
 import { watchesWriter } from "../kernel/store.js"
 
@@ -97,15 +98,6 @@ export function splitTarget(url, path = []) {
 }
 
 const pathText = (path) => (path.length ? `/${path.join("/")}` : "the whole document")
-
-function valueAt(root, path) {
-  let node = root
-  for (const key of path) {
-    if (node == null) return undefined
-    node = node[key]
-  }
-  return node
-}
 
 /** Keep the edits at or under the watched path that match, each with its snippet. */
 export function selectEdits(edits, path, pattern) {

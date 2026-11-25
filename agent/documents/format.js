@@ -8,6 +8,8 @@
  * rather than silently assuming it saw everything.
  */
 
+import { isBytes, isImmutable } from "./values.js"
+
 export const DEFAULTS = {
   maxString: 2000,
   maxItems: 200,
@@ -21,23 +23,6 @@ export function truncate(text, max) {
   return `${str.slice(0, max)}… [+${str.length - max} more chars]`
 }
 
-/**
- * Automerge's ImmutableString, recognised by the symbol automerge registers
- * for it rather than by importing automerge: it is text, and walked as an
- * object it read as `{"val": "…"}` everywhere a document was shown.
- */
-const IMMUTABLE_STRING = Symbol.for("_am_immutableString")
-export const isImmutable = (value) => typeof value === "object" && value !== null && value[IMMUTABLE_STRING] === true
-
-function isBytes(value) {
-  return (
-    value instanceof Uint8Array ||
-    (typeof value === "object" &&
-      value !== null &&
-      ArrayBuffer.isView(value) &&
-      typeof value.byteLength === "number")
-  )
-}
 
 /**
  * A JSON-ish preview of any document value, with big things summarized.

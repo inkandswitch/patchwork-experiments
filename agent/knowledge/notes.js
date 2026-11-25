@@ -12,7 +12,8 @@
  * with history like any other, and editing one writes only what changed.
  */
 
-import { fsDelete, fsWrite, createFolder, contentToText, isFolder } from "../tools/folders.js"
+import { fsDelete, fsWrite, createFolder, isFolder } from "../tools/folders.js"
+import { contentText } from "../documents/values.js"
 import { truncate } from "../documents/format.js"
 
 export const NOTES_FOLDER_NAME = "Agent notes"
@@ -114,7 +115,7 @@ export async function listNotes(ctx) {
     if (entry.type === "folder" || !/\.md$/i.test(entry.name) || entry.name === README) continue
     let text = ""
     try {
-      text = contentToText((await ctx.repo.find(entry.url)).doc()?.content)
+      text = contentText((await ctx.repo.find(entry.url)).doc()?.content)
     } catch {
       /* unreadable: list it by name */
     }

@@ -65,6 +65,7 @@ const ON_DISK = Object.fromEntries(
     "tools/vendor/vitest-engine.js",
     "tools/build.js",
     "documents/format.js",
+    "documents/values.js",
     "tools/folders.js",
     "host/import.js",
     "runners/worker-client.js",
