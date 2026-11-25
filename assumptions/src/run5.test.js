@@ -27,7 +27,7 @@ const file = (name, value) => {
 
 beforeAll(async () => {
   repo = new Repo({ network: [] })
-  ctx = { repo, sessionUrl: "automerge:run" }
+  ctx = { repo, session: { url: "automerge:run", doc: () => ({}) } }
   folder = doc({ "@patchwork": { type: "folder" }, docs: [] })
   register = (await create.execute({ folder: folder.url, title: "Run 3, as Run 5 found it" }, ctx)).doc.url
 

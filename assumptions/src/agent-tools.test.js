@@ -23,7 +23,7 @@ function file(name, doc) {
 
 beforeEach(() => {
   repo = new Repo({ network: [] })
-  ctx = { repo, sessionUrl: "automerge:session" }
+  ctx = { repo, session: { url: "automerge:session", doc: () => ({}) } }
   folder = makeDoc({ "@patchwork": { type: "folder" }, title: "Task", docs: [] })
 })
 

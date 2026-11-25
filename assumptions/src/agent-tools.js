@@ -78,11 +78,14 @@ function pinnedUrl(handle) {
   return handle.url
 }
 
-const agentBy = (ctx) => ({ kind: "agent", session: ctx?.sessionUrl ?? null })
+/** The session a call is made in, as the agent's tool context gives it (`ctx.session`); none in a research step. */
+const sessionOf = (ctx) => ctx?.session?.url ?? null
+
+const agentBy = (ctx) => ({ kind: "agent", session: sessionOf(ctx) })
 
 /** The change message: who (the agent, which session) and why. */
 function message(ctx, why) {
-  return `agent${ctx?.sessionUrl ? ` ${ctx.sessionUrl}` : ""}: ${why}`
+  return `agent${sessionOf(ctx) ? ` ${sessionOf(ctx)}` : ""}: ${why}`
 }
 
 /** Write `want`'s fields onto an Automerge object, touching only what differs. */
