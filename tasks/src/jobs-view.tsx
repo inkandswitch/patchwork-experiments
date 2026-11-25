@@ -47,6 +47,12 @@ export const JobsSection = (props: { handle: DocHandle<Queue>; queue: Queue }) =
   // newest first
   const listed = () => waitingWork(props.queue).toReversed();
   const shown = () => listed().slice(0, MAX_JOBS_SHOWN);
+  // Rows are kept by key, which is a string and so the same from one reading
+  // of the queue to the next: each change to the queue makes new entries,
+  // and rows kept by those would be made again, closing what a person had
+  // opened and starting every row's watcher afresh.
+  const shownKeys = () => shown().map((work) => work.key);
+  const taskUrlOf = (key: string) => shown().find((work) => work.key === key)?.taskUrl as AutomergeUrl;
 
   return (
     <>
@@ -60,13 +66,13 @@ export const JobsSection = (props: { handle: DocHandle<Queue>; queue: Queue }) =
         </h2>
         <Show when={shown().length > 0} fallback={<p class="tq-empty">Nothing is waiting or running.</p>}>
           <div class="tq-tasks">
-            <For each={shown()}>
-              {(work) => (
+            <For each={shownKeys()}>
+              {(key) => (
                 <Job
-                  jobKey={work.key}
-                  taskUrl={work.taskUrl as AutomergeUrl}
+                  jobKey={key}
+                  taskUrl={taskUrlOf(key)}
                   queueUrl={props.handle.url}
-                  onCancel={() => cancel(repo, props.handle.url, work.key)}
+                  onCancel={() => cancel(repo, props.handle.url, key)}
                 />
               )}
             </For>
