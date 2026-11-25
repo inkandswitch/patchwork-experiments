@@ -184,7 +184,7 @@
       });
       return h.url;
     },
-    /** a run doc as the daemon has it mid-solve */
+    /** a run doc as the run's code has it mid-solve */
     async midRun(path) {
       const dump = await (await fetch(path)).json();
       const run = revive(dump.run);

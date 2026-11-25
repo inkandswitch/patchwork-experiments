@@ -8,7 +8,7 @@
 // multithreaded solver (-DUSE_MT, as Homebrew's formula and CalculiX's own
 // Makefile_MT build it) gave a wrong answer in 9 runs of 30 with the solver
 // on 8 threads: displacements off by up to 98%, and no error. With the solver
-// on one thread and the rest of ccx on 8: 0 of 30. So the daemon always runs
+// on one thread and the rest of ccx on 8: 0 of 30. So a run always runs
 // the solver on one thread (daemon/runner.mjs), daemon/install-calculix.sh
 // builds the serial solver only, and every static run is checked for adding
 // up (its strain energy against its loads' work).
@@ -54,7 +54,7 @@ console.log(`ccx ${ccxVersion} at ${ccx}: ${N} nodes, ${reps} runs each`);
 const rows = [];
 for (const [name, env] of Object.entries({
   [`everything on ${threads}`]: { OMP_NUM_THREADS: threads },
-  [`solver on 1, the rest on ${threads} (what the daemon does)`]: { OMP_NUM_THREADS: threads, CCX_NPROC_EQUATION_SOLVER: "1" },
+  [`solver on 1, the rest on ${threads} (what a run does)`]: { OMP_NUM_THREADS: threads, CCX_NPROC_EQUATION_SOLVER: "1" },
   [`solver on ${threads}, the rest on 1`]: { OMP_NUM_THREADS: "1", CCX_NPROC_EQUATION_SOLVER: threads },
 })) {
   let wrong = 0, worst = 0;
