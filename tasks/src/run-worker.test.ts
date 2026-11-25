@@ -494,6 +494,31 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     expect(said.at(-2)).toEqual({ type: 'log', message: notReached(1, 2) });
   });
 
+  it('leaves no timer or interval behind once it has said how a run ended, by a report or at the limit, and the next job waits afresh', async () => {
+    vi.useFakeTimers();
+    modules.w = writes(1);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(3); // the limit, looking again, asking again
+    theRepo.report(handle('doc1'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(endings()).toEqual([{ type: 'done', result: ['doc1'] }]);
+    expect(vi.getTimerCount()).toBe(0);
+
+    said = [];
+    tell({ type: 'job', job: { ...job('w'), runId: 'run-2' } });
+    await vi.advanceTimersByTimeAsync(REACH_LIMIT_MS);
+    expect(said).toEqual([
+      { type: 'log', message: notReached(1, 1) },
+      { type: 'done', result: ['doc2'] },
+    ]);
+    expect(vi.getTimerCount()).toBe(0);
+    // the one listener for the server's reports is the Repo's, kept for its life
+    expect(theRepo.listeners.get('subduction-remote-heads')?.size).toBe(1);
+  });
+
   it('when not connected to a server, waits for nothing and says once that it stays here', async () => {
     made.connected = [];
     modules.w = writes(3);
@@ -665,6 +690,36 @@ describe("the code's Repo", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(await result()).toEqual({ error: new Error('Document is unavailable') });
     expect(theRepo.finds).toBe(8);
+  });
+
+  it('rejects a url the Repo cannot read at its first asking', async () => {
+    vi.useFakeTimers();
+    const unreadable = new Error("Invalid AutomergeUrl: 'nonsense'");
+    const result = await withCode((repo) => {
+      theRepo.answers = [unreadable];
+      return repo.find('nonsense');
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await result()).toEqual({ error: unreadable });
+    expect(theRepo.finds).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops asking once the caller's own signal aborts, with its reason, between askings or before the first", async () => {
+    vi.useFakeTimers();
+    const stop = new AbortController();
+    const result = await withCode((repo) => repo.find('automerge:late', { signal: stop.signal }));
+    await vi.advanceTimersByTimeAsync(200); // the first asking was refused; the second is 500 ms after it
+    stop.abort('given up');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await result()).toEqual({ error: 'given up' });
+    expect(theRepo.finds).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+
+    const already = await withCode((repo) => repo.find('automerge:late', { signal: AbortSignal.abort('stopped before') }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await already()).toEqual({ error: 'stopped before' });
+    expect(theRepo.finds).toBe(1); // a worker, and a Repo, of its own
   });
 
   it('passes every other member through to the Repo itself, whose own workings keep its own find', async () => {

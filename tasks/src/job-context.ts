@@ -40,8 +40,9 @@ export interface TaskContext {
    * has not arrived yet (asking again for about half a minute, as
    * `findWhenThere` in task-client.js does) instead of rejecting at once,
    * because what a task is handed was often made a moment before it was
-   * asked, elsewhere. Everything else is the Repo's own, and the Repo's own
-   * workings still use its own `find`.
+   * asked, elsewhere. A url the Repo cannot read, and a `signal` passed to
+   * `find` aborting, end the asking at once. Everything else is the Repo's
+   * own, and the Repo's own workings still use its own `find`.
    *
    * What the code changes through it reaches the sync server before the run
    * is said to have ended: the run worker waits for the server to report

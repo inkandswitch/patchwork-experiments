@@ -183,6 +183,8 @@ export function serve(port: RunWorkerPort) {
 // goes on saying so until it comes. So the code's Repo finds as
 // `findWhenThere` does, asking again for about half a minute. Only the code
 // is handed this: the Repo itself, and its own calls to `find`, are untouched.
+// Two rejections are final, because asking again cannot change them: a url
+// the Repo cannot read, and the caller's own `signal` having aborted.
 
 /**
  * The Repo as the task's code sees it: `find` waits for a document that has
@@ -191,8 +193,23 @@ export function serve(port: RunWorkerPort) {
  */
 export function patient(repo: Repo): Repo {
   const bound = new Map<PropertyKey, unknown>();
-  const find = (id: Parameters<Repo['find']>[0], options?: Parameters<Repo['find']>[1]) =>
-    findWhenThere({ find: (url: string) => repo.find(url as typeof id, options) }, String(id));
+  const find = (id: Parameters<Repo['find']>[0], options?: Parameters<Repo['find']>[1]) => {
+    const signal = options?.signal;
+    let final: { error: unknown } | null = null;
+    const once = (url: string) =>
+      repo.find(url as typeof id, options).catch((error: unknown) => {
+        if (signal?.aborted) {
+          final = { error: signal.reason };
+        } else if (/^Invalid AutomergeUrl/.test(messageOf(error))) {
+          final = { error };
+        }
+        throw error;
+      });
+    // findWhenThere waits between askings with `sleep`, and a rejection there
+    // ends its asking: that is where a final rejection is given back.
+    const sleep = (ms: number) => (final ? Promise.reject(final.error) : pause(ms, signal));
+    return findWhenThere({ find: once }, String(id), { sleep });
+  };
   return new Proxy(repo, {
     get(target, name) {
       if (name === 'find') {
@@ -391,6 +408,25 @@ function reachServer(
 /** The document id an `automerge:` url names. */
 function documentIdOf(url: string): DocumentId {
   return url.slice('automerge:'.length).split('#')[0] as DocumentId;
+}
+
+/** Resolves after `ms`, or rejects with the signal's reason as soon as it aborts, leaving no timer or listener behind. */
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const aborted = () => {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', aborted);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', aborted, { once: true });
+  });
 }
 
 function messageOf(error: unknown): string {

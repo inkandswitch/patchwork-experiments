@@ -79,7 +79,8 @@ the task returns. `ctx` holds:
   outside its worker (a child process, a file lock) lets go of it here.
 - `repo`: the worker's own Repo, which already has the task's document. Its `find` waits for a
   document made elsewhere a moment ago (asking again for about half a minute, as `findWhenThere`
-  in `task-client.js` does), so an input the asker has just made is found, not refused. What the
+  in `task-client.js` does), so an input the asker has just made is found, not refused; a url it
+  cannot read, or a `signal` passed to `find` aborting, ends the asking at once. What the
   code writes through it reaches the sync server before the run's ending is said: write, and
   return (or throw); there is nothing to flush or wait for. A stopped run's writes (a run document
   set to "cancelled" when `signal` aborts) are sent the same way, within the five seconds.
