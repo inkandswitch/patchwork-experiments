@@ -227,11 +227,8 @@ describe('ask', () => {
     expect((await ask(repo, queue.url, { importUrl: CODE, key: 'k' })).taskUrl).toBe(got.taskUrl);
   });
 
-  it.fails("RULE HOLE: asking or cancelling under a key whose task's runs hold null rejects, every time, so the key is stuck", async () => {
-    // isTask is true for { importUrl, runs: [null] }, and isWanted then reads
-    // `.status` of null; see the RULE HOLE in rules.test.ts. Nobody can ask
-    // under the key again, cancel it, or (the pool's mayDelist throws in its
-    // guard) let its entry go.
+  it("asking or cancelling under a key whose task's runs hold something that is no record goes through: the key is not stuck", async () => {
+    // { importUrl, runs: [null] } is a task with no records (see recordsOf).
     const { repo, queue } = world();
     listed(repo, queue, 'k', [null as unknown as Task['runs'][number]]);
     const outcomes = await Promise.allSettled([ask(repo, queue.url, { importUrl: CODE, key: 'k' }), cancel(repo, queue.url, 'k')]);

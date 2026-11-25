@@ -1,5 +1,5 @@
 /**
- * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v3]
+ * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v4]
  *
  * What the documents are, and what may be read from them. Everything else (a
  * pool, an asker, a view) is these rules applied to documents and to what has
@@ -282,12 +282,14 @@ export function isTask(doc) {
 }
 
 /**
- * A task's records, or none for a document that has no list of them:
- * anyone can write a document, and no reading here may throw on one.
+ * A task's records: the entries of its list that are records at all, and
+ * none for a document that has no list. Anyone can write a document, and no
+ * reading here may throw on one.
  * @param {Pick<Task, 'runs'> | undefined | null} task
  * @returns {Run[]}
  */
-export const recordsOf = (task) => (Array.isArray(task?.runs) ? task.runs : []);
+export const recordsOf = (task) =>
+  Array.isArray(task?.runs) ? task.runs.filter((it) => !!it && typeof it === 'object') : [];
 
 /**
  * Whether a record is a stop: someone asked for the task to end. It was
@@ -516,7 +518,7 @@ export function mayClaim(task, pool, is, heard) {
   if (!isTask(task) || is !== 'this' || !isWanted(task)) {
     return false;
   }
-  if (task.runs.some((run) => isOpen(run) && run.pool === pool)) {
+  if (recordsOf(task).some((run) => isOpen(run) && run.pool === pool)) {
     return false;
   }
   return holder(task, heard) === null;
@@ -731,8 +733,9 @@ export function claimRun(task, run) {
  * @param {{ status: RunStatus, result?: any, logs?: LogLine[], end: number }} how
  */
 export function endRun(task, runId, how) {
-  const at = recordsOf(task).findIndex((it) => it.id === runId);
-  const run = recordsOf(task)[at];
+  // its place in the list itself, which may hold things that are not records
+  const at = Array.isArray(task?.runs) ? task.runs.findIndex((it) => it?.id === runId) : -1;
+  const run = at < 0 ? null : task.runs[at];
   if (!run || !isOpen(run)) {
     return;
   }

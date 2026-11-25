@@ -11,9 +11,10 @@
 // documents, because the rules lean on what a merge does to a list and to a
 // map key.
 //
-// A test named "RULE HOLE: ..." states a promise the header makes that the
-// rules, as written, do not keep. It is marked `it.fails`, so it passes while
-// the hole is there and fails loudly once someone closes it.
+// A test named "RULE HOLE: ..." would state a promise the header makes that
+// the rules, as written, do not keep, marked `it.fails` so that it passes
+// while the hole is there and fails loudly once someone closes it. There is
+// none at present.
 
 import * as A from '@automerge/automerge';
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
@@ -368,10 +369,11 @@ describe('every task with up to three records', () => {
     });
   });
 
-  it('recordsOf: the very list a task has, in order; lostCount: how many of them say lost', () => {
+  it('recordsOf: every record of the list a task has, in order; lostCount: how many of them say lost', () => {
     everyRow((row) => {
-      if (recordsOf(row.task) !== row.task.runs) {
-        return 'recordsOf is not the list';
+      const records = recordsOf(row.task);
+      if (records.length !== row.task.runs.length || records.some((record, at) => record !== row.task.runs[at])) {
+        return 'recordsOf is not the records of the list, in order';
       }
       return lostCount(row.task) === lostIn(row.specs) ? null : `lostCount ${lostCount(row.task)}`;
     });
@@ -1464,19 +1466,24 @@ describe('(3) a document under an entry that is not a task', () => {
     }
   });
 
-  it.fails('RULE HOLE: a list of runs that holds null (anyone can write one) is a task, and every reading that looks at a record throws on it', () => {
-    // Smallest history: a task [] in a queue; any writer of the task
-    // appends null to its runs. isTask is true, so this is not a malformed
-    // document to recordsOf, which passes the list on; isStop, isOpen and
-    // Hearing.saw then read `.status` or `.id` of null. A pool's readings are
-    // each inside a guard, but watch calls hearing.saw and taskState in its
-    // report, so a view following the key throws instead of reporting.
+  it('a list of runs that holds something that is no record (null; anyone can write one) reads as a task without it, and nothing throws', () => {
+    // The list is a list, so the document is a task; the entry that is no
+    // record is passed over by every reading, and by a listener's Hearing.
     const doc = A.change(A.from<Task>(makeTask(), actor('0')), (task) => {
       (task.runs as unknown as unknown[]).push(null);
     });
     expect(isTask(doc)).toBe(true);
+    expect(recordsOf(doc)).toEqual([]);
     expect(() => readings(doc)).not.toThrow();
     expect(() => new Hearing().saw(recordsOf(doc))).not.toThrow();
+    expect(taskState(doc, allHeard)).toBe('waiting');
+    // a run taken after it is found and completed in its own place in the list
+    const taken = A.change(doc, (task) => claimRun(task, { id: 'A', pool: 'P', start: 1 }));
+    expect(recordsOf(taken).map((run) => run.id)).toEqual(['A']);
+    const done = A.change(taken, (task) => endRun(task, 'A', { status: 'succeeded', result: 1, end: 2 }));
+    expect(done.runs[0]).toBeNull();
+    expect(done.runs[1]).toMatchObject({ id: 'A', status: 'succeeded', result: 1 });
+    expect(taskState(done, allHeard)).toBe('succeeded');
   });
 });
 
