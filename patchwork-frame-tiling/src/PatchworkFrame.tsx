@@ -219,9 +219,9 @@ const readLayoutParam = (): AutomergeUrl | undefined => {
 const writeLayoutParam = (url: AutomergeUrl): void => {
   try {
     const params = new URLSearchParams(window.location.hash.slice(1));
-    // Stored without the `automerge:` prefix to stay compact, matching `doc`.
+    // Stored without the `automerge:` prefix to stay compact.
     params.set(LAYOUT_PARAM, url.replace(/^automerge:/, ""));
-    const href = `${window.location.pathname}${window.location.search}#${params.toString()}`;
+    const href = `${window.location.pathname}${window.location.search}#${serializeHashParams(params)}`;
     // replaceState: minting a session shouldn't add a back-button entry, and
     // (unlike assigning `location.hash`) it won't fire a spurious `hashchange`.
     window.history.replaceState(window.history.state, "", href);
@@ -230,21 +230,36 @@ const writeLayoutParam = (url: AutomergeUrl): void => {
   }
 };
 
-// The host's hash router owns the `doc`/`tool` (and `heads`/`title`/`type`)
-// params: it writes them when an open bubbles up, and — crucially — re-dispatches
-// `patchwork:open-document` for the URL's `doc` on every `patchwork:mounted` and
-// `hashchange`. If that param ever names a doc we *don't* have open, the
-// re-dispatch resurrects it (the "closing a panel reopens it" bug). So the frame
-// keeps `doc`/`tool` pointed at the selected panel; the re-dispatch then always
-// lands on an open doc and is a harmless focus.
+// The host's hash router owns the `doc`/`tool` (and `title`/`type`) params: it
+// writes them when it hears an open on our hosting view, and — crucially —
+// re-dispatches `patchwork:open-document` for the URL's `doc` on every
+// `patchwork:mounted` and `hashchange`. If that param ever names a doc we
+// *don't* have open, the re-dispatch resurrects it (the "closing a panel
+// reopens it" bug). So the frame keeps `doc`/`tool` pointed at the selected
+// panel; the re-dispatch then always lands on an open doc and is a harmless
+// focus.
+//
+// `doc` is the full automerge URL, heads included, as the router reads and
+// writes it.
 const DOC_PARAM = "doc";
 
-const readDocParam = (): string | null => {
-  try {
-    return new URLSearchParams(window.location.hash.slice(1)).get(DOC_PARAM);
-  } catch {
-    return null;
+// The router's own serialization of the hash (`serializeHashParams` in the
+// host): `doc` and `draft` unencoded, its keys first in a fixed order. When it
+// hears an open we have already written to the URL, it writes the same hash,
+// which is no navigation only if our hash is byte-identical to its own.
+const RAW_HASH_KEYS = new Set(["doc", "draft"]);
+const HASH_KEY_ORDER = ["doc", "tool", "type", "title", "frame", "draft"];
+const serializeHashParams = (params: URLSearchParams): string => {
+  const parts: string[] = [];
+  const emitted = new Set<string>();
+  for (const key of [...HASH_KEY_ORDER, ...params.keys()]) {
+    if (emitted.has(key)) continue;
+    const value = params.get(key);
+    if (!value) continue;
+    emitted.add(key);
+    parts.push(`${key}=${RAW_HASH_KEYS.has(key) ? value : encodeURIComponent(value)}`);
   }
+  return parts.join("&");
 };
 
 // A link to a doc in this app (`#doc=…`, as the folder and markdown tools write
@@ -275,6 +290,23 @@ const docLinkView = (href: string): PanelView | null => {
 const readDeepLink = (): PanelView | null =>
   docLinkView(window.location.href);
 
+const readDeepLinkDocId = (): string | null => {
+  const url = readDeepLink()?.url;
+  return url ? parseAutomergeUrl(url).documentId : null;
+};
+
+/**
+ * The `<patchwork-view>` hosting the frame. In legacy mode the view hands its
+ * tool a content element inside itself, but the host's router dispatches the
+ * opens that come from the URL on the view, without bubbling, so a listener
+ * on the content element never hears them; and the router hears on the view
+ * the opens it writes to the URL.
+ */
+const hostingView = (element: HTMLElement | ShadowRoot): Element => {
+  const start = element instanceof ShadowRoot ? element.host : element;
+  return start.closest("patchwork-view") ?? start;
+};
+
 // **Navigation history.** Each open you make (a folder click, a link, Shift
 // or Alt, the top bar) is one browser history entry, and nothing else is:
 // focusing a panel, switching tabs, and opens that come *from* the URL (Back
@@ -297,17 +329,11 @@ const syncDocParam = (
   push = false,
 ): void => {
   try {
-    const params = new URLSearchParams(window.location.hash.slice(1));
-    const before = params.toString();
-    if (url) {
-      const { documentId, heads } = parseAutomergeUrl(url);
-      params.set(DOC_PARAM, documentId);
-      if (heads && heads.length) params.set("heads", heads.join("|"));
-      else params.delete("heads");
-    } else {
-      params.delete(DOC_PARAM);
-      params.delete("heads");
-    }
+    const before = window.location.hash.slice(1);
+    const params = new URLSearchParams(before);
+    params.delete("heads");
+    if (url) params.set(DOC_PARAM, url);
+    else params.delete(DOC_PARAM);
     if (toolId) params.set("tool", toolId);
     else params.delete("tool");
     // `title`/`type` belonged to whatever the host last routed; the host
@@ -315,9 +341,10 @@ const syncDocParam = (
     // `type` from being applied to a different document.
     params.delete("title");
     params.delete("type");
-    const unchanged = params.toString() === before;
+    const next = serializeHashParams(params);
+    const unchanged = next === before;
     if (unchanged && entryLeaf() === (leafId ?? undefined)) return;
-    const href = `${window.location.pathname}${window.location.search}#${params.toString()}`;
+    const href = `${window.location.pathname}${window.location.search}#${next}`;
     const prior: unknown = window.history.state;
     const state: Record<string, unknown> =
       prior && typeof prior === "object" ? { ...prior } : {};
@@ -1868,8 +1895,7 @@ export const PatchworkFrame = ({
   // Heard on our hosting view, which exists before the provider gate lets the
   // overlay layer render (see the open-document listener below).
   useEffect(() => {
-    const start = element instanceof ShadowRoot ? element.host : element;
-    const host = start.closest("patchwork-view") ?? start;
+    const host = hostingView(element);
     const onState: EventListener = (event) => {
       const id = (event.target as Element | null)
         ?.closest?.("[data-overlay-id]")
@@ -2102,7 +2128,8 @@ export const PatchworkFrame = ({
   //  - On first load we must not overwrite an inbound deep-link before the host
   //    has opened it. We hold off syncing until the URL's `doc` is actually the
   //    selected panel (or there was none); a timeout failsafe re-enables it.
-  const initialDocRef = useRef<string | null>(readDocParam());
+  //    The two are compared by document id, since a link may name heads.
+  const initialDocRef = useRef<string | null>(readDeepLinkDocId());
   const syncEnabledRef = useRef(false);
   useEffect(() => {
     if (syncEnabledRef.current) return;
@@ -2417,8 +2444,8 @@ export const PatchworkFrame = ({
   }, [focusLeaf, engage]);
 
   // Route a document-open request. `sourceId` is the panel the request came
-  // from (null for app chrome and for URL/deep-link opens, which arrive on the
-  // mount element).
+  // from (null for app chrome, `FROM_URL` for URL/deep-link opens, which
+  // arrive on our hosting view).
   //
   // An open that arrives before the layout has loaded is held in
   // `pendingOpenRef` and replayed once it has (see below), rather than dropped.
@@ -2568,8 +2595,7 @@ export const PatchworkFrame = ({
       }
       const leaf = syncUrlToSelection(true);
       if (!leaf?.view.url) return;
-      const host = element instanceof ShadowRoot ? element.host : element;
-      host.dispatchEvent(
+      hostingView(element).dispatchEvent(
         new CustomEvent("patchwork:open-document", {
           detail: { url: leaf.view.url, toolId: leaf.view.toolId },
         }),
@@ -2629,10 +2655,9 @@ export const PatchworkFrame = ({
       if (!url) return;
       const target = event.target as Element | null;
       // The host dispatches the opens that come from the URL (the address
-      // bar edited, back/forward, a plain `#doc=…` link, a deep link) on the
-      // mount element itself: those are links, followed from where you are.
-      const host = element instanceof ShadowRoot ? element.host : element;
-      if (target === host || (target as Node | null) === element) {
+      // bar edited, back/forward, a plain `#doc=…` link, a deep link) on our
+      // hosting view itself: those are links, followed from where you are.
+      if (target === hostingView(element) || (target as Node | null) === element) {
         openView({ url, toolId: event.detail.toolId }, FROM_URL, takeOpenIntent());
         return;
       }
@@ -2691,20 +2716,21 @@ export const PatchworkFrame = ({
   const handleOpenDocumentRef = useRef(handleOpenDocument);
   handleOpenDocumentRef.current = handleOpenDocument;
 
-  // Listen on the *mount element* (the host's frame `rootElement`). In legacy
-  // `patchwork-view` mode the tool is hosted on that element itself, so this is
-  // where the bootloader's hash router (a) dispatches inbound deep-link opens —
-  // a *non-bubbling* event a descendant listener would never see — and (b)
-  // listens (in the bubble phase) for outbound opens to update the URL.
+  // Listen on our hosting `<patchwork-view>` (the host's frame `rootElement`),
+  // not on `element`: in legacy mode the view hands its tool a content element
+  // *inside* itself. The view is where the host's hash router (a) dispatches
+  // inbound deep-link opens — a *non-bubbling* event that a listener on the
+  // content element never sees — and (b) listens (in the bubble phase) for
+  // outbound opens to update the URL.
   //
   // We attach in the *capture* phase so that for outbound events we run before
   // the host's bubble-phase listener and can suppress self-announcements before
-  // they churn the URL. Inbound deep-link opens are dispatched directly on this
-  // element, so they still reach us here. Using the stable mount element (not a
-  // gated `.tile-frame` ref) also means the listener attaches immediately,
-  // before the provider gate opens.
+  // they churn the URL. Inbound deep-link opens are dispatched directly on the
+  // view, and capture listeners still fire at the target. Using the stable
+  // view (not a gated `.tile-frame` ref) also means the listener attaches
+  // immediately, before the provider gate opens.
   useEffect(() => {
-    const el = element;
+    const el = hostingView(element);
     const listener: EventListener = (event) =>
       handleOpenDocumentRef.current(event as unknown as OpenDocumentEvent);
     el.addEventListener("patchwork:open-document", listener, true);

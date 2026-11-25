@@ -25,19 +25,24 @@
 //    the selected document's panel's, from the folder), and close a panel
 //    with its last tab.
 //
-// The host's hash router runs throughout, copied from the bootloader
-// (`installHashRouting`): every open that bubbles out is written to
-// `location.hash`, and the URL's `doc` is dispatched back on every
-// `hashchange` and every `patchwork:mounted`. So each step above also checks
-// that the replay lands on a document already open and changes nothing.
+// The host's hash router runs throughout, after the site's router
+// (`createRouter` in `@inkandswitch/patchwork`): every open that reaches the
+// root element is written to `location.hash`, `doc=` as the full automerge
+// URL, and the URL's `doc` is dispatched back on every `hashchange` and every
+// `patchwork:mounted`. So each step above also checks that the replay lands on
+// a document already open and changes nothing. `frame-host.test.tsx` mounts
+// the frame inside a `<patchwork-view>`, as the site does.
 
 import {
   initSubduction,
+  isValidAutomergeUrl,
+  isValidDocumentId,
   parseAutomergeUrl,
   Repo,
   stringifyAutomergeUrl,
   type AutomergeUrl,
   type DocHandle,
+  type DocumentId,
 } from "@automerge/automerge-repo";
 import { RepoContext } from "@automerge/automerge-repo-react-hooks";
 import { Suspense, act } from "react";
@@ -126,42 +131,60 @@ const open = async (
   await settle();
 };
 
+// From the site's router (`@inkandswitch/patchwork`, src/router.ts).
+const RAW_HASH_KEYS = new Set(["doc", "draft"]);
+const HASH_KEY_ORDER = ["doc", "tool", "type", "title", "frame", "draft"];
+
+function serializeHashParams(params: URLSearchParams): string {
+  const keys = [...HASH_KEY_ORDER, ...params.keys()];
+  const parts: string[] = [];
+  const emitted = new Set<string>();
+  for (const key of keys) {
+    if (emitted.has(key)) continue;
+    const value = params.get(key);
+    if (!value) continue;
+    emitted.add(key);
+    parts.push(`${key}=${RAW_HASH_KEYS.has(key) ? value : encodeURIComponent(value)}`);
+  }
+  return parts.join("&");
+}
+
+function docParamToUrl(docParam: string | null): AutomergeUrl | undefined {
+  if (!docParam) return undefined;
+  if (isValidAutomergeUrl(docParam as AutomergeUrl)) return docParam as AutomergeUrl;
+  const documentId = docParam.replace(/^automerge:/, "");
+  if (!isValidDocumentId(documentId)) return undefined;
+  return stringifyAutomergeUrl({ documentId: documentId as DocumentId });
+}
+
 /**
- * The bootloader's hash router (`installHashRouting` in
- * `@inkandswitch/patchwork-bootloader`), minus retitling and frame switching:
- * outbound opens set `location.hash` (a history entry and a `hashchange`), and
- * the URL's `doc` is dispatched on the root element on every `hashchange` and
+ * The site's hash router (`createRouter` in `@inkandswitch/patchwork`), minus
+ * retitling, older link shapes and frame switching: outbound opens set
+ * `location.hash` (a history entry and a `hashchange`), and the URL's `doc` is
+ * dispatched on the root element on every `hashchange` and
  * `patchwork:mounted`.
  */
 const routeLikeTheHost = (rootElement: HTMLElement) => {
   const onOpen = (event: Event) => {
     const params = new URLSearchParams(window.location.hash.slice(1));
     const { url, toolId, title, type } = (event as CustomEvent).detail;
-    const { documentId, heads } = parseAutomergeUrl(url);
-    params.set("doc", documentId);
-    if (heads) params.set("heads", heads.join("|"));
-    else params.delete("heads");
+    params.delete("heads");
+    params.set("doc", url);
     if (toolId) params.set("tool", toolId);
     else params.delete("tool");
     if (title) params.set("title", title);
     else params.delete("title");
     if (type) params.set("type", type);
     else params.delete("type");
-    hashHistory.push(params.toString());
+    hashHistory.push(serializeHashParams(params));
   };
   const handleHashChange = () => {
     const params = new URLSearchParams(window.location.hash.slice(1));
-    const documentId = params.get("doc");
-    if (!documentId) return;
+    const url = docParamToUrl(params.get("doc"));
+    if (!url) return;
     rootElement.dispatchEvent(
       new CustomEvent("patchwork:open-document", {
-        detail: {
-          url: stringifyAutomergeUrl({
-            documentId: documentId as never,
-            heads: params.get("heads")?.split("|") as never,
-          }),
-          toolId: params.get("tool"),
-        },
+        detail: { url, toolId: params.get("tool") },
       }),
     );
   };
@@ -229,8 +252,8 @@ const settleHash = () => act(() => sleep(50));
 /** Edit the address bar: the URL's `doc` becomes `name`. */
 const openFromUrl = async (name: string) => {
   const params = new URLSearchParams(window.location.hash.slice(1));
-  params.set("doc", parseAutomergeUrl(docs.get(name)!).documentId);
-  await act(async () => hashHistory.push(params.toString()));
+  params.set("doc", docs.get(name)!);
+  await act(async () => hashHistory.push(serializeHashParams(params)));
   await settleHash();
 };
 
@@ -619,14 +642,14 @@ describe("opening documents in the tiling frame", () => {
   const tabNumber = (n: number) => ({ code: `Digit${n}`, key: `${n}`, ...(mac ? { ctrlKey: true } : { altKey: true }) });
   const closeTabKey = { code: "KeyW", key: mac ? "∑" : "w", altKey: true };
   const urlDoc = () => new URLSearchParams(window.location.hash.slice(1)).get("doc");
-  const docId = (name: string) => parseAutomergeUrl(docs.get(name)!).documentId;
+  const docUrl = (name: string) => docs.get(name)!;
 
   it("Ctrl+Shift+] and [ step through the focused panel's tabs, adding no history", async () => {
     const before = hashHistory.depth;
     expect(panels()[0]).toBe("C [E] J* F");
     expect((await tabKey(nextTab)).defaultPrevented).toBe(true);
     expect(panels()[0]).toBe("C E [J*] F");
-    expect(urlDoc()).toBe(docId("J"));
+    expect(urlDoc()).toBe(docUrl("J"));
     await tabKey(prevTab);
     await tabKey(prevTab);
     expect(panels()[0]).toBe("[C] E J* F");
@@ -648,7 +671,7 @@ describe("opening documents in the tiling frame", () => {
     const event = await tabKey(closeTabKey);
     expect(event.defaultPrevented).toBe(true); // no ∑ typed
     expect(panels()).toEqual(["C E [J*]", "A [D*]", "[G*]"]);
-    expect(urlDoc()).toBe(docId("J"));
+    expect(urlDoc()).toBe(docUrl("J"));
   });
 
   it("a key a tool takes for itself stays the tool's", async () => {
