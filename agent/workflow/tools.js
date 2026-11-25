@@ -18,7 +18,6 @@ import {
   validateSteps,
   states,
   STATE,
-  PLAN,
   STEP,
   TIERS,
   DEFAULT_LIMITS,
@@ -34,6 +33,7 @@ import {
   reopenSteps,
   keepSteps,
   editSteps,
+  runAgain,
   requestErrors,
   EDITABLE,
 } from "./plan.js"
@@ -261,10 +261,7 @@ export const workflowAddSteps = {
     if (errors.length) throw new Error(`Those steps cannot be added:\n- ${errors.join("\n- ")}`)
     handle.change((d) => {
       for (const step of input.steps) d.steps.push(newStep(step))
-      d.status = PLAN.running
-      d.finishedAt = null
-      // Running again: its next end is news again.
-      d.reportedEnd = false
+      runAgain(d)
     })
     await drive(url, ctx)
     return describePlan(handle.doc(), url)
@@ -580,10 +577,8 @@ export const workflowDecide = {
         const why = `Step '${request.stepId}' found: ${request.why}${note ? `\n\nThe orchestrator adds: ${note}` : ""}`
         interrupt = reopenSteps(d, reopen, { note: why, cascade: input.cascade, by: `request from ${request.stepId}` }).interrupt
       }
-      d.status = PLAN.running
-      d.finishedAt = null
-      d.reportedEnd = false
       Object.assign(d.requests.find((r) => r.id === request.id), { status: "accepted", decidedAt: Date.now(), note })
+      runAgain(d)
     })
     const driver = await drive(url, ctx)
     if (interrupt.length) await driver.haltSessions(interrupt, "reopened: something it is built on changed")

@@ -131,7 +131,7 @@ describe("the lift, inline where the person is", () => {
     plan.change((d) => {
       initPlan(d, { title: "W", goal: "G", sessionUrl: orchestrator.url, limits: { cost: 1 }, steps: [step("a"), step("b", { after: ["a"] })] })
       d.usage = { in: 1, out: 1, cost: 1.2 }
-      d.paused = { reason: "budget", at: 5, spent: 1.2, limit: 1, reported: true }
+      d.paused = { reason: "budget", at: 5, spent: 1.2, limit: 1 }
       d.status = PLAN.stopped // so nothing starts driving it
     })
     const element = document.createElement("div")

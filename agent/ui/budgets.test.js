@@ -17,7 +17,7 @@ import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
 import { claimLease } from "../session/lease.js"
-import { initPlan, STEP, DEFAULT_STEP_BUDGETS, stepBudget, resumePlan } from "../workflow/plan.js"
+import { initPlan, STEP, DEFAULT_STEP_BUDGETS, stepBudget, resumePlan, told, pauseKey } from "../workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, _resetDrivers } from "../workflow/driver.js"
 import { workflowBudget } from "../workflow/tools.js"
 import { renderBudgetItem } from "./waiting.js"
@@ -133,11 +133,12 @@ describe("the workflow's budget", () => {
     const w = await workflow([step("a"), step("b")], { limits: { cost: 0.5, parallel: 1 }, behaviour: { a: { cost: 1 } } })
     await w.settle()
     expect(w.fake.started).toEqual(["a"])
-    expect(w.plan.doc().paused).toMatchObject({ reason: "budget", spent: 1, limit: 0.5, reported: true })
+    expect(w.plan.doc().paused).toMatchObject({ reason: "budget", spent: 1, limit: 0.5 })
+    expect(told(w.plan.doc(), pauseKey(w.plan.doc()))).toBe(true)
     expect(w.plan.doc().status).toBe("running")
-    const told = w.news.join("\n")
-    expect(told.match(/## Paused: the budget is spent/g)).toHaveLength(1)
-    expect(told).toMatch(/\$1\.00 of its \$0\.50 cap \(steps and your own turns together\), so 1 step will not start: Step b \(b\)/)
+    const news = w.news.join("\n")
+    expect(news.match(/## Paused: the budget is spent/g)).toHaveLength(1)
+    expect(news).toMatch(/\$1\.00 of its \$0\.50 cap \(steps and your own turns together\), so 1 step will not start: Step b \(b\)/)
 
     w.plan.change((d) => resumePlan(d, 5))
     await w.settle()

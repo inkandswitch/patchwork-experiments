@@ -6,7 +6,8 @@
  * and approve in — started on the tier's model and run by an ordinary runner.
  * The driver watches those sessions, writes each one's result back into the
  * plan when it finishes, starts whatever that made ready, and tells the
- * orchestrating session what came in.
+ * orchestrating session what came in. A tick reads the plan and its step
+ * sessions, decides what to do from those alone (decide.js), and does it.
  *
  * The driver holds a lease on the plan document, exactly as a runner holds one
  * on a session, so two tabs with the plan open cannot both start the same
@@ -29,7 +30,8 @@ import { liftBudget } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
-import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
+import { PLAN, PLAN_VERSION, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, stepBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "./plan.js"
+import { decide } from "./decide.js"
 import { scopeOf, webScope, sameScope } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
 import { documentIdOf } from "../documents/doc-urls.js"
@@ -42,9 +44,6 @@ const { stringifyAutomergeUrl } = AutomergeRepo
 
 /** How long a burst of changes is gathered before the tick it asks for. */
 export const SETTLE_MS = 150
-
-/** How much of a step's result the plan keeps. The whole thing is its session's last message. */
-export const RESULT_KEPT = 8000
 
 /**
  * Where a step's session stands, read off its document.
@@ -96,19 +95,6 @@ export function sessionOutcome(doc, { live = null } = {}) {
 
 /** A step that never said anything in words. */
 export const EMPTY_RESULT = "(the step finished without saying anything)"
-
-/** What a plan's step sessions cost, summed. */
-function sumUsage(usages) {
-  const sum = { in: 0, out: 0 }
-  for (const u of usages) {
-    sum.in += u?.in ?? 0
-    sum.out += u?.out ?? 0
-    // Cost only once some step has one, so an unknown is not shown as free.
-    if (typeof u?.cost === "number") sum.cost = (sum.cost ?? 0) + u.cost
-    if (u?.costEstimated) sum.costEstimated = true
-  }
-  return sum
-}
 
 /** One driver per plan per page. */
 const drivers = new Map()
@@ -169,6 +155,7 @@ export class WorkflowDriver {
     this.reasons = new Map() // sessionUrl -> why its runner stopped, from its events
     this.listening = new Set() // sessionUrls whose runner events we hear
     this.waiting = [] // what running steps wait on a person for, as of the last tick
+    this.outOfBudget = [] // which running steps are stopped for their own budgets, likewise
     this.channel = null
     this.ticking = null
     this.busy = false
@@ -275,122 +262,97 @@ export class WorkflowDriver {
     this.handle.change((d) => { d.lease.at = this.now() })
   }
 
+  /** Read what is there, decide what to do (decide.js), and do it. */
   async tick() {
-    if (this.stopped) return
+    if (this.stopped || !current(this.handle.doc())) return
     if (!this.hold()) return this.help()
-    let plan = this.handle.doc()
-    if (plan.status !== PLAN.running) {
-      this.report()
-      return
-    }
+    const plan = this.handle.doc()
+    const observations = plan.status === PLAN.running ? await this.observe(plan) : {}
+    await this.perform(decide(plan, observations, this.now()))
+  }
 
-    // 0. A research step runs confined or not at all. Its runner refuses an
-    // unconfined session too (kernel/scope.js); this ends the step in the plan.
-    await this.checkScopes()
-    plan = this.handle.doc()
-
-    // 1. What have the running steps done?
+  /**
+   * What decide() needs to know beyond the plan, read off the documents as
+   * plain values: each step session's state, and what the orchestrator has
+   * spent (read, not watched: its every streamed token would wake a tick).
+   */
+  async observe(plan) {
     const sessions = {}
-    const usages = []
-    const waiting = []
-    const outOfBudget = []
-    const asked = []
-    const known = new Set((plan.requests ?? []).map((r) => r.id))
     for (const step of plan.steps) {
       if (!step.sessionUrl) continue
-      const child = await this.session(step.sessionUrl)
-      const doc = child?.doc()
-      usages.push(doc?.usage)
-      sessions[step.sessionUrl] = doc ? statusOf(doc) : null
-      // What the step asked its orchestrator for: each workflow_request call
-      // that went through is one request, by its call's id, so reading it
-      // again adds nothing.
-      for (const call of requestCalls(doc)) if (!known.has(call.id)) asked.push(newRequest(step.id, call, this.now()))
-      if (step.status !== STEP.running) continue
-
-      const outcome = sessionOutcome(doc, { live: this.live })
-      if (outcome.state === "running") {
-        if (outcome.waiting) for (const item of waitingIn(doc)) waiting.push({ stepId: step.id, ...item })
-        if (outcome.outOfBudget) outOfBudget.push({ stepId: step.id, ...outcome.outOfBudget })
-        continue
+      const doc = (await this.session(step.sessionUrl))?.doc()
+      const seen = { status: doc ? statusOf(doc) : null, usage: doc?.usage ?? null, requests: requestCalls(doc).map((call) => ({ id: call.id, input: call.input ?? {} })) }
+      if (step.status === STEP.running) {
+        seen.outcome = sessionOutcome(doc, { live: this.live })
+        if (seen.outcome.waiting) seen.waiting = waitingIn(doc)
+        if (step.access === "web" && doc) seen.scopeOk = confinedAs(doc, webScope(this.handle.url, step.id))
       }
-      this.write((d) => {
-        const s = d.steps.find((x) => x.id === step.id)
-        if (s.status !== STEP.running) return
-        s.status = outcome.state === "done" ? STEP.done : STEP.failed
-        s.finishedAt = this.now()
-        if (outcome.state === "done") {
-          // A new result: whatever was built on the last one is out of date.
-          s.version = (s.version ?? 0) + 1
-          s.result = outcome.result.length > RESULT_KEPT ? `${outcome.result.slice(0, RESULT_KEPT)}\n…(cut; the rest is in the step's session)` : outcome.result
-        } else {
-          s.error = this.reasons.get(step.sessionUrl) ?? "Its session stopped with an error. Open it to see what happened."
-        }
-      })
+      sessions[step.sessionUrl] = seen
     }
-    if (asked.length) {
-      this.write((d) => {
-        if (!d.requests) d.requests = []
-        const have = new Set(d.requests.map((r) => r.id))
-        for (const r of asked) if (!have.has(r.id)) d.requests.push(r)
-      })
-    }
-    this.waiting = waiting
-    this.outOfBudget = outOfBudget
-    // The orchestrator's own spend since the workflow began counts toward the
-    // cap: it is the workflow's money too. Read, not watched: its every
-    // streamed token would wake a tick.
-    const usage = sumUsage(usages)
-    plan = this.handle.doc()
     const orchestrator = plan.sessionUrl ? await this.repo.find(plan.sessionUrl).then((h) => h.doc(), () => null) : null
-    const orchestratorCost = orchestrator?.usage?.cost
-    if (typeof orchestratorCost === "number") {
-      if (plan.orchestratorFrom == null) this.write((d) => { d.orchestratorFrom = orchestratorCost })
-      usage.orchestrator = orchestratorSpend(this.handle.doc(), orchestratorCost)
-    }
-    plan = this.handle.doc()
-    const was = plan.usage ?? {}
-    if (usage.in !== was.in || usage.out !== was.out || usage.cost !== was.cost || usage.orchestrator !== was.orchestrator || !!usage.costEstimated !== !!was.costEstimated) {
-      this.write((d) => { d.usage = usage })
-    }
+    return { sessions, orchestratorCost: orchestrator?.usage?.cost, reasons: Object.fromEntries(this.reasons) }
+  }
 
-    // 2. One job, one set of permissions.
-    await this.shareGrants()
-
-    // 2b. What the research steps kept, where the person can find it.
-    await this.fileSources()
-
-    // 3. Keep running steps running — after a reload their runners are gone.
-    plan = this.handle.doc()
-    for (const step of plan.steps) {
-      if (step.status === STEP.running && step.sessionUrl) await this.run(step.sessionUrl)
+  /** Do what decide() said, in order. Writes to the plan go through write(), which holds to the lease. */
+  async perform(actions) {
+    for (const action of actions) {
+      if (this.stopped) return
+      switch (action.type) {
+        case "cancel":
+          await this.stopSteps(action.stepIds, action.reason)
+          break
+        case "finish":
+          this.write((d) => finishStep(d, action.stepId, { result: action.result, now: action.at }))
+          break
+        case "fail":
+          this.write((d) => failStep(d, action.stepId, { error: action.error, now: action.at }))
+          break
+        case "requests":
+          this.write((d) => {
+            if (!d.requests) d.requests = []
+            const have = new Set(d.requests.map((r) => r.id))
+            for (const r of action.requests) if (!have.has(r.id)) d.requests.push(r)
+          })
+          break
+        case "waiting":
+          this.waiting = action.waiting
+          this.outOfBudget = action.outOfBudget
+          break
+        case "orchestratorFrom":
+          this.write((d) => { d.orchestratorFrom = action.cost })
+          break
+        case "usage":
+          this.write((d) => { d.usage = action.usage })
+          break
+        case "shareGrants":
+          await this.shareGrants()
+          break
+        case "fileSources":
+          await this.fileSources()
+          break
+        case "run":
+          await this.run(action.sessionUrl)
+          break
+        case "start":
+        case "continue": {
+          if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
+          const step = this.handle.doc().steps.find((s) => s.id === action.stepId)
+          if (step?.status !== STEP.pending) break
+          if (step.sessionUrl) await this.continueStep(step)
+          else await this.begin(step.id)
+          break
+        }
+        case "pause":
+          this.write((d) => pausePlan(d, { stopped: action.stopped, now: action.at }))
+          break
+        case "settle":
+          this.write((d) => settlePlan(d, action.at))
+          break
+        case "report":
+          this.report()
+          break
+      }
     }
-
-    // 4. Start what is ready.
-    for (const id of toStart(this.handle.doc(), sessions)) {
-      if (this.stopped || !holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
-      await this.begin(id)
-    }
-
-    // 4b. Out of budget, with work ready to start: pause and say so, rather
-    // than sit "running" with nothing happening.
-    plan = this.handle.doc()
-    if (shouldPause(plan, sessions, outOfBudget.map((b) => b.stepId))) {
-      const { spent, limit } = budgetOf(plan)
-      this.write((d) => {
-        d.paused = { reason: "budget", at: this.now(), spent, limit, reported: false, stopped: outOfBudget.map((b) => b.stepId) }
-      })
-    }
-
-    // 5. Finished?
-    plan = this.handle.doc()
-    if (plan.status === PLAN.running && isSettled(plan, sessions)) {
-      this.write((d) => {
-        d.status = PLAN.done
-        d.finishedAt = this.now()
-      })
-    }
-    this.report()
   }
 
   /**
@@ -400,7 +362,7 @@ export class WorkflowDriver {
    */
   async help() {
     const plan = this.handle.doc()
-    if (this.stopped || plan?.status !== PLAN.running) return
+    if (this.stopped || !current(plan) || plan.status !== PLAN.running) return
     for (const step of plan.steps ?? []) {
       if (step.status === STEP.running && step.sessionUrl) await this.run(step.sessionUrl)
     }
@@ -450,31 +412,6 @@ export class WorkflowDriver {
       }
       if (missing.length || this.unreleased(handle)) releaseNowPermitted({ store: handleStore(handle, null) })
     }
-  }
-
-  /**
-   * End every running research step whose session is not confined exactly as
-   * its plan says. A scope is written when the step starts and nothing in the
-   * agent may change it (kernel/kernel-repo.js), so a scope that is gone or
-   * different was changed by hand, and the step stops rather than run on with
-   * more than research should have.
-   */
-  async checkScopes() {
-    const plan = this.handle.doc()
-    const broken = []
-    for (const step of plan.steps) {
-      if (step.access !== "web" || step.status !== STEP.running || !step.sessionUrl) continue
-      const doc = (await this.session(step.sessionUrl))?.doc()
-      if (!doc) continue
-      let scope = null
-      try {
-        scope = scopeOf(doc)
-      } catch {
-        /* malformed is as good as gone */
-      }
-      if (!sameScope(scope, webScope(this.handle.url, step.id))) broken.push(step.id)
-    }
-    if (broken.length) await this.stopSteps(broken, "its research scope was removed")
   }
 
   /**
@@ -579,8 +516,7 @@ export class WorkflowDriver {
   async begin(stepId) {
     const plan = this.handle.doc()
     const step = plan.steps.find((s) => s.id === stepId)
-    if (!step || step.status !== STEP.pending) return
-    if (step.sessionUrl) return this.continueStep(step)
+    if (!step || step.status !== STEP.pending || step.sessionUrl) return
 
     // A step whose prompt names a tool it would not get is moved to the page
     // or failed now, said once, rather than left to find out by searching.
@@ -630,17 +566,7 @@ export class WorkflowDriver {
       d.turns.push(makeTurn("user", [textBlock(stepPrompt(plan, step))]))
     })
 
-    this.write((d) => {
-      const s = d.steps.find((x) => x.id === step.id)
-      if (s.status !== STEP.pending) return
-      s.status = STEP.running
-      s.sessionUrl = child.url
-      s.startedAt = this.now()
-      s.model = plan.tiers?.[step.tier] ?? null
-      // What it is built on, as versions: it is out of date once any changes.
-      s.inputs = inputsOf(d, s)
-      s.reopen = null
-    })
+    this.write((d) => beginStep(d, step.id, { session: { url: child.url, model: plan.tiers?.[step.tier] ?? null }, now: this.now() }))
     // Started only if the plan now names this session for the step — not
     // merely because the write was allowed.
     if (this.handle.doc().steps.find((x) => x.id === step.id)?.sessionUrl === child.url) await this.run(child.url)
@@ -669,9 +595,7 @@ export class WorkflowDriver {
         s.where = verdict.where
         s.moved = verdict.why
       } else {
-        s.status = STEP.failed
-        s.finishedAt = this.now()
-        s.error = verdict.fail
+        failStep(d, step.id, { error: verdict.fail, now: this.now() })
       }
     })
     if (verdict.where) this.kick()
@@ -697,14 +621,7 @@ export class WorkflowDriver {
       d.turns.push(makeTurn("user", [textBlock(message)]))
     })
     this.reasons.delete(step.sessionUrl)
-    this.write((d) => {
-      const s = d.steps.find((x) => x.id === step.id)
-      if (s.status !== STEP.pending) return
-      s.status = STEP.running
-      s.startedAt = this.now()
-      s.inputs = inputsOf(d, s)
-      s.reopen = null
-    })
+    this.write((d) => beginStep(d, step.id, { now: this.now() }))
     if (this.handle.doc().steps.find((x) => x.id === step.id)?.status === STEP.running) await this.run(step.sessionUrl)
   }
 
@@ -770,16 +687,8 @@ export class WorkflowDriver {
       reason ?? "cancelled by its workflow"
     )
     this.handle.change((d) => {
-      for (const s of d.steps) {
-        if (!targets.some((t) => t.id === s.id)) continue
-        s.status = STEP.cancelled
-        s.finishedAt = this.now()
-        if (reason) s.error = reason
-      }
-      if (!stepIds) {
-        d.status = PLAN.stopped
-        d.finishedAt = this.now()
-      }
+      for (const t of targets) cancelStep(d, t.id, { reason, now: this.now() })
+      if (!stepIds) stopPlan(d, this.now())
     })
   }
 
@@ -792,59 +701,73 @@ export class WorkflowDriver {
   report() {
     if (!this.notify) return
     // What has been told is recorded in the plan, not in this driver: a reload,
-    // or another tab's driver taking over, used to tell the orchestrator every
-    // finished step again — one real orchestrator got the same result three
-    // times, a paid turn each — and the end of a plan was "news" on every tick
-    // after it, for as long as anything was ticking.
-    const unreported = (plan) => plan.steps.filter((s) => [STEP.done, STEP.failed].includes(s.status) && !s.reported)
-    const unasked = (plan) => this.waiting.filter((w) => w.kind === "question" && !(plan.asked ?? []).includes(w.callId))
-    const endUnreported = (plan) => plan.status !== PLAN.running && !plan.reportedEnd
-    const pauseUnreported = (plan) => !!plan.paused && !plan.paused.reported
-    // A step out of budget is told once per time it stops.
-    const budgetsUnreported = (plan) => (this.outOfBudget ?? []).filter((b) => plan.steps.find((s) => s.id === b.stepId)?.budgetNoticed !== b.at)
-    // Out of date: told once for each set of changed inputs, so a step that
-    // goes stale again over something new is news again.
-    const staleUnreported = (plan) => staleSteps(plan).filter((s) => s.staleNoticed !== staleKey(plan, s))
-    const requestsUnreported = (plan) => openRequests(plan).filter((r) => !r.reported)
+    // or another tab's driver taking over, tells nothing twice.
     const plan = this.handle.doc()
-    if (!unreported(plan).length && !unasked(plan).length && !endUnreported(plan) && !pauseUnreported(plan) && !budgetsUnreported(plan).length && !staleUnreported(plan).length && !requestsUnreported(plan).length) return
+    if (!hasNews(untold(plan, this.waiting, this.outOfBudget))) return
     this.channel ??= this.notify(this.handle.url, plan.title)
     this.channel?.notify(() => {
       // Read at delivery: a question answered meanwhile is no longer news.
       const now = this.handle.doc()
-      const news = unreported(now)
-      const questions = unasked(now)
-      const end = endUnreported(now)
-      const paused = pauseUnreported(now)
-      const budgets = budgetsUnreported(now)
-      const stale = staleUnreported(now)
-      const requests = requestsUnreported(now)
-      if (!news.length && !questions.length && !end && !paused && !budgets.length && !stale.length && !requests.length) return ""
+      const news = untold(now, this.waiting, this.outOfBudget)
+      if (!hasNews(news)) return ""
       const recorded = this.write((d) => {
-        for (const s of d.steps) if (news.some((n) => n.id === s.id)) s.reported = true
-        if (questions.length) {
-          if (!d.asked) d.asked = []
-          for (const q of questions) d.asked.push(q.callId)
-        }
-        if (end) d.reportedEnd = true
-        if (paused && d.paused) d.paused.reported = true
-        for (const b of budgets) {
-          const s = d.steps.find((x) => x.id === b.stepId)
-          if (s) s.budgetNoticed = b.at
-        }
-        for (const st of stale) {
-          const s = d.steps.find((x) => x.id === st.id)
-          if (s) s.staleNoticed = staleKey(now, st)
-        }
-        for (const r of d.requests ?? []) if (requests.some((x) => x.id === r.id)) r.reported = true
+        for (const key of news.keys) tell(d, key)
       })
       // A driver that has lost the plan leaves the telling to the one holding it.
       if (!recorded) return ""
-      if (end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
-      return describeProgress(now, news, this.waiting, budgets, { stale, requests })
+      if (news.end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
+      return describeProgress(now, news.finished, this.waiting, news.budgets, { stale: news.stale, requests: news.requests })
     })
   }
 }
+
+/**
+ * Is a research step's session confined exactly as its plan says? A scope is
+ * written when the step starts and nothing in the agent may change it
+ * (kernel/kernel-repo.js), so one that is gone, malformed or different was
+ * changed by hand, and the step stops rather than run on with more than
+ * research should have.
+ */
+function confinedAs(doc, scope) {
+  try {
+    return sameScope(scopeOf(doc), scope)
+  } catch {
+    return false
+  }
+}
+
+/** A plan this driver reads: of this version. */
+const current = (plan) => !!plan && (plan.schemaVersion ?? 1) === PLAN_VERSION
+
+/**
+ * What the orchestrator has not been told, as of `plan`, `waiting` (what
+ * running steps wait on a person for) and `outOfBudget` (the steps stopped for
+ * their own budgets): each kind of news, and the keys that record all of it
+ * told (plan.js tell). A step waiting for a permission does not wake it —
+ * only the person can grant one, and they see it in the views — but the news
+ * it does get says so.
+ */
+export function untold(plan, waiting = [], outOfBudget = []) {
+  const finished = (plan.steps ?? []).filter((s) => [STEP.done, STEP.failed].includes(s.status) && !told(plan, finishedKey(s)))
+  const questions = waiting.filter((w) => w.kind === "question" && !told(plan, questionKey(w.callId)))
+  const end = plan.status !== PLAN.running && !told(plan, endKey(plan))
+  const paused = !!plan.paused && !told(plan, pauseKey(plan))
+  const budgets = (outOfBudget ?? []).filter((b) => !told(plan, budgetKey(plan, b.stepId, b.at)))
+  const stale = staleSteps(plan).filter((s) => !told(plan, staleKey(plan, s)))
+  const requests = openRequests(plan).filter((r) => !told(plan, requestKey(r)))
+  const keys = [
+    ...finished.map(finishedKey),
+    ...questions.map((q) => questionKey(q.callId)),
+    ...(end ? [endKey(plan)] : []),
+    ...(paused ? [pauseKey(plan)] : []),
+    ...budgets.map((b) => budgetKey(plan, b.stepId, b.at)),
+    ...stale.map((s) => staleKey(plan, s)),
+    ...requests.map(requestKey),
+  ]
+  return { finished, questions, end, paused, budgets, stale, requests, keys }
+}
+
+const hasNews = (news) => news.keys.length > 0
 
 /** The workflow_request calls in a step's session that went through: each is a request. */
 export function requestCalls(doc) {
@@ -861,14 +784,6 @@ export function requestCalls(doc) {
 export function staleSteps(plan) {
   const derived = states(plan)
   return (plan.steps ?? []).filter((s) => derived.get(s.id) === STATE.stale)
-}
-
-/** Which changes a stale step is out of date over, as a key: news again only when it differs. */
-function staleKey(plan, step) {
-  const byId = new Map(plan.steps.map((s) => [s.id, s]))
-  return staleInputs(plan, step, byId)
-    .map((id) => `${id}:${byId.get(id)?.status}:${byId.get(id)?.version ?? 0}`)
-    .join(",")
 }
 
 /** The news the orchestrator wakes to. */

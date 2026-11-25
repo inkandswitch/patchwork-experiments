@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initSession, STATUS, CALL, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, callBlock, resultBlock, noticeBlock } from "../session/blocks.js"
-import { initPlan, PLAN, STEP, budgetOf, canExtend, orchestratorSpend, shouldPause, resumePlan, askForBudget, stepPrompt, reopenPrompt, requestErrors, DEFAULT_LIMITS } from "../workflow/plan.js"
+import { initPlan, PLAN, STEP, budgetOf, canExtend, orchestratorSpend, shouldPause, resumePlan, askForBudget, stepPrompt, reopenPrompt, requestErrors, DEFAULT_LIMITS, told, tell, budgetKey } from "../workflow/plan.js"
 import { sessionOutcome, describeProgress, WorkflowDriver, _resetDrivers, EMPTY_RESULT } from "../workflow/driver.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { describeBudget } from "./waiting.js"
@@ -136,12 +136,14 @@ describe("a step out of budget, and the person", () => {
   })
 
   it("resuming makes the orchestrator hear of stopped steps again, and clears the pause", () => {
-    const doc = { limits: { cost: 10 }, usage: { cost: 8, orchestrator: 2 }, steps: [step("a", { budgetNoticed: 5 })] }
+    const doc = { limits: { cost: 10 }, usage: { cost: 8, orchestrator: 2 }, steps: [step("a")] }
+    tell(doc, budgetKey(doc, "a", 5))
     askForBudget(doc, doc.steps[0], 3, "x")
-    resumePlan(doc, 5)
+    resumePlan(doc, 5, 9)
     expect(doc.paused).toBe(null)
     expect(doc.limits.cost).toBe(15)
-    expect(doc.steps[0].budgetNoticed).toBeUndefined()
+    expect(doc.resumes).toEqual([{ add: 5, limit: 15, at: 9 }])
+    expect(told(doc, budgetKey(doc, "a", 5))).toBe(false)
   })
 
   it("tells the orchestrator to decide while there is room, and that the person was asked when there is none", () => {

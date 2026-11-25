@@ -4,6 +4,7 @@ import {
   initPlan, validateSteps, findCycle, states, toStart, isSettled, stepPrompt,
   overBudget, shouldPause, resumePlan, budgetOf, notStarted, reopenSteps, reopenPrompt,
   newStep, editSteps, editErrors, EDITABLE, MISSING_TOOL_GUIDANCE,
+  STEP_TRANSITIONS, PLAN_TRANSITIONS, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, runAgain, keepSteps, RESULT_KEPT,
 } from "./plan.js"
 
 const STATUSES = Object.values(STEP)
@@ -119,7 +120,7 @@ describe("the budget, over every small plan", () => {
     for (let n = 1; n <= 3; n++) {
       for (const p of every(n)) {
         for (const cost of [0, 19.99, 20, 31]) {
-          for (const paused of [null, { reason: "budget", at: 1, spent: cost, limit: 20, reported: false }]) {
+          for (const paused of [null, { reason: "budget", at: 1, spent: cost, limit: 20 }]) {
             yield { ...p, usage: { in: 9e9, out: 9e9, cost }, paused }
           }
         }
@@ -159,7 +160,7 @@ describe("the budget, over every small plan", () => {
       if (!p.paused) continue
       const unlimited = toStart(flush(p)).join(",")
       for (const add of [0.01, 5, 20]) {
-        // resumePlan writes only `limits` and `paused`.
+        // resumePlan writes only `limits`, `paused` and `resumes`.
         const d = { ...p, limits: { ...p.limits } }
         resumePlan(d, add)
         const broken =
@@ -425,5 +426,65 @@ describe("reopening, as a change to the plan", () => {
     expect(text).toMatch(/^\[Your step has been reopened\. It failed before/)
     expect(text).toContain("Try the other API.")
     expect(text).toContain("A v2")
+  })
+})
+
+describe("transitions", () => {
+  const STEP_FNS = {
+    begin: (d, id) => beginStep(d, id, { session: { url: "automerge:s", model: "m" }, now: 7 }),
+    finish: (d, id) => finishStep(d, id, { result: "r", now: 7 }),
+    fail: (d, id) => failStep(d, id, { error: "e", now: 7 }),
+    cancel: (d, id) => cancelStep(d, id, { reason: "why", now: 7 }),
+  }
+
+  it.each(Object.keys(STEP_FNS))("%s applies from exactly the statuses in its row, and otherwise changes nothing", (name) => {
+    for (const status of STATUSES) {
+      const p = plan([step("a", { status, version: 1 })])
+      const before = JSON.stringify(p)
+      const legal = STEP_TRANSITIONS[name].from.includes(status)
+      expect(STEP_FNS[name](p, "a"), `${name} from ${status}`).toBe(legal)
+      if (legal) expect(p.steps[0].status).toBe(STEP_TRANSITIONS[name].to)
+      else expect(JSON.stringify(p)).toBe(before)
+    }
+    expect(STEP_FNS[name](plan([]), "nope")).toBe(false)
+  })
+
+  it("a step begun records its session, model and inputs; finished, a new version and its result, cut to what is kept", () => {
+    const p = plan([step("a", { status: STEP.done, version: 3 }), step("b", { after: ["a"], reopen: { note: "x" } })])
+    beginStep(p, "b", { session: { url: "automerge:b", model: "m" }, now: 4 })
+    expect(p.steps[1]).toMatchObject({ status: STEP.running, sessionUrl: "automerge:b", model: "m", startedAt: 4, inputs: { a: 3 }, reopen: null })
+    finishStep(p, "b", { result: "x".repeat(RESULT_KEPT + 1), now: 5 })
+    expect(p.steps[1]).toMatchObject({ status: STEP.done, version: 1, finishedAt: 5 })
+    expect(p.steps[1].result).toMatch(/^x{8000}\n…\(cut; the rest is in the step's session\)$/)
+  })
+
+  // [plan status, settled?] for each plan transition.
+  const PLANS = []
+  for (const status of Object.values(PLAN)) for (const settled of [true, false]) PLANS.push([status, settled])
+  const planIn = (status, settled) => plan([step("a", { status: settled ? STEP.done : STEP.pending })], { status })
+
+  it.each(PLANS)("from %s, settled %s: settle, stop and run again apply exactly as their rows say", (status, settled) => {
+    const cases = [
+      ["settle", settlePlan, settled && PLAN_TRANSITIONS.settle.from.includes(status)],
+      ["stop", stopPlan, PLAN_TRANSITIONS.stop.from.includes(status)],
+      ["runAgain", runAgain, !settled && PLAN_TRANSITIONS.runAgain.from.includes(status)],
+    ]
+    for (const [name, fn, legal] of cases) {
+      const p = planIn(status, settled)
+      const before = JSON.stringify(p)
+      expect(fn(p, 9), `${name}`).toBe(legal)
+      if (legal) expect(p.status).toBe(PLAN_TRANSITIONS[name].to)
+      else expect(JSON.stringify(p)).toBe(before)
+    }
+  })
+
+  it("keeping a step runs a finished plan again when what waits on it can start, and leaves a stopped one stopped", () => {
+    const steps = () => [step("a", { status: STEP.done, version: 2 }), step("b", { status: STEP.done, after: ["a"], inputs: { a: 1 } }), step("c", { after: ["b"] })]
+    const done = plan(steps(), { status: PLAN.done, finishedAt: 3 })
+    keepSteps(done, ["b"])
+    expect([done.status, done.finishedAt]).toEqual([PLAN.running, null])
+    const stopped = plan(steps().map((s) => (s.id === "c" ? { ...s, status: STEP.cancelled } : s)), { status: PLAN.stopped, finishedAt: 3 })
+    keepSteps(stopped, ["b"])
+    expect([stopped.status, stopped.finishedAt]).toEqual([PLAN.stopped, 3])
   })
 })
