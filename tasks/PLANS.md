@@ -7,7 +7,8 @@ known, so it can be picked up without finding it out again.
 
 A task that does nothing, asked by a Node process of a Node host on the same Mac through the sync
 server (about 75 ms a round trip), takes about 750 ms from asking to the asker having the result:
-median 747–758 ms, worst 813–835 ms (`probes/node-run.mjs` check 1, 2026-11-25). The browser pool
+median 747–758 ms, worst 813–835 ms (`probes/node-run.mjs --only 1,16`, 2026-11-25); in two runs
+of the whole probe on a machine shared with other work, 798 / 978 and 893 / 1574. The browser pool
 on its stand-in page, asked from that page, takes 10.6 ms (worst 17.7 ms). Throughput, many quick
 tasks at once, has not been measured with the pool.
 
@@ -22,7 +23,7 @@ Every step traced on one clock, 20 tasks one at a time on a warm host (median / 
 | The pool finds the task's document | 138 / 204 | One round trip, and a forced write of what arrived |
 | The claim is saved | 53 / 61 | The rule: a run's start is saved before its code is called |
 | Hand-over, import, call, return | 4 / 8 | |
-| The thread saves what the code wrote | 47 / 56 | Measured with the thread saving the imported task document too; it now saves nothing for code that writes nothing |
+| The thread saves what the code wrote | 47 / 56 | Measured with the thread saving the imported task document too; the thread saves nothing for code that writes nothing |
 | The end is saved | 72 / 90 | The rule; it delays the start of the end's sync round |
 | The end reaches the asker | 256 / 306 | The end's own round, which starts only once the claim's has finished |
 | **Asked to taken / taken to ended / ended to the asker** | **366 / 107 / 258** | |
@@ -87,8 +88,10 @@ after the document was sent; looking again only at the next beat took 3.6 s. A R
   median than listening for the document, and a review per timer.
 - **Sending the ask or the result as a message ahead of the document** (the lead, 2026-11-25): a
   worker would act on something not yet saved, a way round the system and not a faster system.
-- **Starting threads ahead of time, or handing the job over while the claim is saved.** The first
-  is hidden once the pool's forced writes are gone; the second loosens "saved before its code is
+- **Starting threads ahead of time, or handing the job over while the claim is saved.** A run's end
+  waits for its claim's sync round, which hides most of what happens between taking a task and
+  ending it; a fresh host's first task, with its thread's start (65–98 ms), measured the same as a
+  warm one only with the pool's forced writes gone. The second loosens "saved before its code is
   called" for under 2 ms.
 - **The Repo's save throttle.** Not on the path: every step flushes.
 

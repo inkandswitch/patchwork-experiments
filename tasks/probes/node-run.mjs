@@ -182,7 +182,7 @@ try {
     }
     const of = (k) => ({ median: median(rows.map((r) => r[k])), worst: Math.max(...rows.map((r) => r[k])) });
     report.latency = { total: of("total"), toStart: of("toStart"), ran: of("ran"), inThread: of("inThread"), toAsker: of("toAsker") };
-    check(1, "a do-nothing task, ask to result, 10 in a row", rows.every((r) => r.ok), `median ${of("total").median} ms, worst ${of("total").worst} ms (asked to taken ${of("toStart").median}, taken to ended ${of("ran").median} of which in its thread ${of("inThread").median}, ended to the asker ${of("toAsker").median}; the router's was about 520 ms)`);
+    check(1, "a do-nothing task, ask to result, 10 in a row", rows.every((r) => r.ok), `median ${of("total").median} ms, worst ${of("total").worst} ms (asked to taken ${of("toStart").median}, taken to ended ${of("ran").median} of which in its thread ${of("inThread").median}, ended to the asker ${of("toAsker").median})`);
   }
 
   // 16. a task listed before its document can be fetched: the pool's first
