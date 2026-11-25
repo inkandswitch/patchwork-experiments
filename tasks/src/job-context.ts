@@ -8,38 +8,50 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
 
 export interface TaskContext {
-  /** A line for the run's log. Whoever is watching the task sees it at once; it is kept with the run. */
+  /** A line for the run's log. Whoever is watching the task hears it at once; the last lines are kept with the run. */
   log(...args: unknown[]): void;
   /**
    * How far along the task is, as anything that can be sent: a number, a
-   * sentence, `{ step, of }`. Whoever is watching sees the latest; it isn't kept.
+   * sentence, `{ step, of }`. Whoever is watching hears the latest; it isn't kept.
    */
   progress(value: unknown): void;
   /**
-   * Aborted when someone cancels the task. Code that takes a while should
-   * stop when it is: code that doesn't is left running and its result dropped.
+   * Aborted when the run must stop, with the reason as `signal.reason`:
+   * `'cancelled'` (someone stopped the task), `'yielded'` (another run has
+   * the task, or has ended it) or `'stopping'` (the machine's pool is shutting
+   * down, and the task will be taken again). GRACE_MS after the abort the
+   * code's worker is ended, whatever it is doing, so code that holds
+   * something outside its worker (a child process, a lock on a file) lets go
+   * of it when this aborts. What the code returns or throws after an abort
+   * is not counted.
    */
   signal: AbortSignal;
-  /** The worker's Repo, for a task whose work is on documents. */
+  /**
+   * The worker's Repo, for a task whose work is on documents. It has the
+   * task's document as the pool had it when it handed the run over, this
+   * run included, without waiting for the network.
+   */
   repo: Repo;
   /** The task's own document. */
   taskUrl: AutomergeUrl;
   /**
-   * This run: the name of the one hand-out of the task that started it, never
-   * used for another. A task runs at least once, so work that must not be
-   * done twice says which run is doing it in what it writes (a field naming
-   * its owner) and checks that before each effect: a second run finds the
-   * first one's name there, and knows it is the second.
+   * This run's id. It is in the task's `runs` before the code is called, with
+   * every earlier run of the task before it. A task runs at least once, not
+   * exactly once, so work that must not be done twice says which run is
+   * doing it in what it writes (a field naming its owner) and checks that
+   * before each effect: a second run finds the first one's name there, and
+   * knows it is the second.
    */
   run: string;
-  /** The key it was asked for under, if it was asked for by key. */
+  /** The key the task was asked for under, in its queue's `jobs`. */
   key: string | null;
 }
 
 /**
  * A task's function: does the work and resolves to its result, which must be
- * something that can go in a document. Throwing fails the run; a task is
- * tried a few times before it is given up on.
+ * something JSON can carry, of at most MAX_RESULT_BYTES. Throwing ends the
+ * task as failed, with the error as the run's last log line; it is not run
+ * again for that.
  */
 export type TaskFunction<Input = any, Result = any> = (
   this: TaskContext,
