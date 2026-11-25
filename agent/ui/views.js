@@ -1,13 +1,8 @@
 /**
  * A document, a package or a running tool, inline in the transcript.
  *
- * Everything a session makes or opens used to live somewhere other than the
- * conversation: a strip under the header listed what was made, a "workbench"
- * pane between the transcript and the composer showed what the agent had
- * mounted, and a chip on the result opened the document somewhere else. Three
- * places to look, none of them where the thing was talked about.
- *
- * Now there is one: a view beside the call. For the agent's own view_mount it
+ * Everything a session makes or opens is shown in one place, where it is
+ * talked about: a view beside the call. For the agent's own view_mount it
  * adopts the live mount, so watching the agent work is reading the transcript.
  * For a document or package a call produced it offers to show it in its tool —
  * installed or not, the loader is the same one view_mount uses — and a package

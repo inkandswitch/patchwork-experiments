@@ -1,11 +1,11 @@
 /**
  * What deserves the person's attention, across their sessions.
  *
- * Every signal a session gave used to live inside its own view: the status dot,
- * the hint under the composer, the question card. Nobody looking elsewhere saw
- * any of it, and a question the agent asked in prose rather than with ask_user
- * showed nothing at all — the session just looked finished. This follows the
- * person's recent sessions, and the workflow steps they started, and says:
+ * A session's own view shows its status dot, the hint under its composer and
+ * its question card, and nobody looking elsewhere sees any of them; a question
+ * the agent asks in prose rather than with ask_user shows nothing at all, and
+ * the session just looks finished. This follows the person's recent sessions,
+ * and the workflow steps they started, and says:
  *
  *   working   what each busy session is doing, for the pill
  *   needs     what is waiting on the person, answerable in the peek

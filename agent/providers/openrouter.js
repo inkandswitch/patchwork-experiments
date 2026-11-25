@@ -559,10 +559,9 @@ export async function* stream({
 
     // A model that cannot read images rejects the ENTIRE request, so one
     // screenshot in the transcript kills every turn after it — permanently,
-    // because the newest images are exactly the ones carried forward. Watched
-    // happen: a view_mount attached a picture, the next request 404'd with
-    // "No endpoints found that support image input", and the session could
-    // only be rescued by a person noticing and saying so.
+    // because the newest images are exactly the ones carried forward: a
+    // view_mount attaches a picture, the next request is refused with "No
+    // endpoints found that support image input", and so is every one after.
     //
     // Retry without them rather than failing. The catalogue says which models
     // take images, but it can be stale or unreachable, and this is the only

@@ -139,9 +139,9 @@ export function AgentTool(handle, element, options = {}) {
   }
 
   // What the session makes and opens lives IN the transcript, beside the call
-  // that made or opened it (ui/views.js). There used to be a strip of "things
-  // made here" under the header and a workbench pane for the agent's mounts;
-  // both were places to look other than where the thing was talked about.
+  // that made or opened it (ui/views.js), and nowhere else: a strip of things
+  // made, or a pane for the agent's mounts, would be a place to look other
+  // than where the thing is talked about.
   const transcript = el("div", "agent-transcript")
   const composer = el("div", "agent-composer")
   main.append(header, guides.panel, transcript, composer)
@@ -1073,11 +1073,11 @@ export function AgentTool(handle, element, options = {}) {
 
     // Header label: what this session IS, not what it is docked beside.
     //
-    // It used to show the subject's title, which in a sidebar is the document
-    // you are already looking at — so the one row of chrome the session gets
-    // was spent telling you something you could see. Once the agent names its
-    // own work, that name belongs here; the subject moves to the tooltip, which
-    // is where "and which document is this about" belongs.
+    // Not the subject's title: in a sidebar that is the document you are
+    // already looking at, and the one row of chrome the session gets would be
+    // spent telling you something you can see. Once the agent names its own
+    // work, that name belongs here; the subject is in the tooltip, which is
+    // where "and which document is this about" belongs.
     const named = sessionTitle(doc)
     if (named) {
       subjectLabel.textContent = named

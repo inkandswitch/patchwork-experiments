@@ -627,12 +627,11 @@ async function streamTurn(opts) {
 
   // A call whose arguments did not parse is a call that was cut off mid-JSON.
   //
-  // The provider records this and nothing used to read it, so the call was
-  // committed with `{}` for its input and the tool failed with something
-  // irrelevant — "Pass at least one op" for an edit whose ops never arrived.
-  // Measured with a 120-token budget against a real model: the turn's
+  // The provider records it. Committed anyway, such a call has `{}` for its
+  // input and its tool fails with something beside the point — "Pass at
+  // least one op" for an edit whose ops never arrived. The turn's
   // finish_reason is `tool_calls`, not `length`, because the call block did
-  // start. So this is the only signal there is.
+  // start, so this is the only signal there is.
   const broken = calls.filter((call) => call.parseError)
   if (broken.length) {
     return { calls: [], stopReason: "length", turnIndex, broken }
@@ -997,13 +996,10 @@ export function decide(store, callId, decision) {
 
     if (decision === "deny") {
       move(block, "deny")
-      // Record the refusal as the call's RESULT, the same as any other outcome.
-      //
-      // Without this the session simply stopped: status stayed
-      // awaiting-approval, the denied call was no longer pending, no runner saw
-      // work, and the model never learned it had been refused. The only way out
-      // was to type something — which is how this looked like "the agent keeps
-      // reporting a decline", because every nudge re-sent the refusal.
+      // The refusal is the call's result, the same as any other outcome. With
+      // no result, no runner sees work in the session and the model never
+      // learns it was refused; and a tool turn after the call is what makes
+      // the session work for a runner again (kernel/runner.js needsWork).
       if (!d.turns) d.turns = []
       d.turns.push(makeTurn("tool", [resultBlock(callId, DENIED_RESULT, { isError: true, summary: "declined" })]))
       return

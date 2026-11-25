@@ -1,11 +1,10 @@
 /**
  * Installing what the session built.
  *
- * A session that builds a tool used to end with the agent saying "add
- * automerge:294ckni359B9QkiTV4tW8W1taW4q to your module settings" — fifty
- * characters of base58 to select without missing a character, pasted into a
- * document you have to go and find. That is the last step of every
- * tool-building session and it was the worst part of it.
+ * The last step of a session that builds a tool is installing it. Left to
+ * the agent's words that is "add automerge:294ckni359B9QkiTV4tW8W1taW4q to
+ * your module settings": fifty characters of base58 to select without missing
+ * one, pasted into a document you have to go and find.
  *
  * This is deliberately a button in the view and not a tool. Installing adds code
  * that runs on every future load, which is why the module settings document is

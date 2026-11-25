@@ -1,11 +1,11 @@
 /**
  * What a tool call looks like when you open it.
  *
- * It used to be `JSON.stringify(input, null, 2)` followed by the output. That is
- * fine for `{ "path": ["title"] }` and catastrophic for the call that writes a
- * file: JSON escapes every newline, so 200 lines of source render as one endless
- * line of `\n` and you cannot read a word of it. The single most common thing
- * the agent does was the single least readable thing in the log.
+ * `JSON.stringify(input, null, 2)` followed by the output is fine for
+ * `{ "path": ["title"] }` and unreadable for the call that writes a file: JSON
+ * escapes every newline, so 200 lines of source render as one endless line of
+ * `\n`. Writing a file is the most common thing the agent does, so it must
+ * not be the least readable thing in the log.
  *
  * So: short scalars go in a compact field list, long or multi-line strings get
  * their own labelled code block with real newlines, and a handful of tools whose

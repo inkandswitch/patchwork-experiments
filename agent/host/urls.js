@@ -7,8 +7,8 @@
  * (which is what the `tasks` package does, and which puts a third-party origin
  * in the boot path of a local-first system), the page reads its own importmap
  * out of the DOM, resolves every specifier against `location`, and hands the
- * table to the worker. Measured working on the deployed shell — see
- * probes/worker-repo.mjs.
+ * table to the worker. probes/worker-repo.mjs checks it against the deployed
+ * shell.
  */
 let resolvedUrls = null
 

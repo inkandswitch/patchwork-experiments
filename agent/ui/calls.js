@@ -135,8 +135,7 @@ export const PRESENTATION = {
   fs_write: {
     verb: "write",
     detail: (i) => {
-      // `files` is a map of path to content. This used to expect an array and
-      // so rendered every multi-file write as "write undefined".
+      // `files` is a map of path to content, not an array.
       const paths = i.files && typeof i.files === "object" ? Object.keys(i.files) : []
       if (paths.length) {
         const names = paths.slice(0, 2).map(baseName)
