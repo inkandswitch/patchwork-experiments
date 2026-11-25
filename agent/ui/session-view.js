@@ -8,9 +8,6 @@
  * a container query.
  */
 
-import { STATUS, CALL } from "../session/schema.js"
-import { callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
-import { sessionTitle } from "../session/title.js"
 import { stopReconnecting } from "../session/recovery.js"
 import { handleStore } from "../kernel/store.js"
 import { decide, say, answerQuestion } from "../kernel/loop.js"
@@ -18,17 +15,13 @@ import { heldElsewhere, needsWork } from "../kernel/runner.js"
 import { attachView } from "../runners/registry.js"
 import { startTabRunner, accountContext, drivePlanHere } from "../runners/tab.js"
 import { getDriver } from "../workflow/driver.js"
-import { formatCost } from "../session/usage.js"
-import { unknownBlocks } from "../session/schema.js"
 import { watchWaiting, renderWaiting, renderWaitingItem } from "./waiting.js"
-import { waitingIn } from "../workflow/waiting.js"
 import { markCitations } from "./citations.js"
 import { attachmentTray, carriesAttachments, pastedImages } from "./attachments.js"
 import { workflowOf } from "../workflow/plan.js"
 import { watchStanding, renderStandingLine, gateOf, renderChoices, placeOf } from "./standing.js"
 import { askAside } from "../workflow/aside.js"
 import { connectWorkerRunner } from "../runners/worker-client.js"
-import { getProvider } from "../providers/index.js"
 import { readKey, writeKey, readRelay, writeRelay, SEARCH_KEY_ID, onKeyChange, connectAccountKeys } from "../providers/keys.js"
 import { loadCatalogue, modelInfo } from "../providers/catalogue.js"
 import { describeModel, describeDefaults } from "../providers/openrouter.js"
@@ -40,8 +33,9 @@ import { getMount, mountForPerson, parkMount } from "../tools/checking.js"
 import { applyInstall, applyUninstall } from "./install.js"
 import { watchWorkspace } from "./workspace.js"
 import { startDictation, composeDictation, voiceSupported } from "./voice.js"
-import { statusOf } from "../session/status.js"
 import { ensureStyles } from "./styles.js"
+import { sessionValue } from "./session-value.js"
+import { watchNames, myContactUrl } from "./names.js"
 
 const MIC_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>`
 
@@ -57,25 +51,6 @@ const el = (tag, className, text) => {
   if (className) node.className = className
   if (text != null) node.textContent = text
   return node
-}
-
-/** The current user's contact URL, for attributing what they say. */
-async function myContactUrl() {
-  try {
-    return globalThis.accountDocHandle?.doc()?.contactUrl ?? null
-  } catch {
-    return null
-  }
-}
-
-async function titleOf(repo, url) {
-  if (!url) return null
-  try {
-    const doc = (await repo.find(url)).doc()
-    return doc?.title ?? doc?.name ?? url.replace(/^automerge:/, "").slice(0, 8)
-  } catch {
-    return url.replace(/^automerge:/, "").slice(0, 8)
-  }
 }
 
 export function AgentTool(handle, element, options = {}) {
@@ -123,20 +98,6 @@ export function AgentTool(handle, element, options = {}) {
     event.preventDefault()
     if (workflowShown) onOpenDoc(workflowShown)
   })
-  /** Show the workflow link, or hide it; its title is fetched once per plan. */
-  function renderWorkflowLink(doc) {
-    const found = workflowOf(doc)
-    workflowButton.hidden = !found
-    if (!found || found.url === workflowShown) return
-    workflowShown = found.url
-    workflowButton.textContent = found.role === "step" ? "↑ Workflow" : "Workflow"
-    workflowButton.title = found.role === "step" ? "Open the workflow this is a step of" : "Open the workflow this session started"
-    titleOf(repo, found.url).then((title) => {
-      if (title && workflowShown === found.url) {
-        workflowButton.title = found.role === "step" ? `Step ${found.stepId ?? ""} of “${title}” — open the workflow` : `Open the workflow “${title}”`
-      }
-    })
-  }
 
   // What the session makes and opens lives IN the transcript, beside the call
   // that made or opened it (ui/views.js), and nowhere else: a strip of things
@@ -153,11 +114,8 @@ export function AgentTool(handle, element, options = {}) {
   waitingStrip.hidden = true
   main.insertBefore(waitingStrip, transcript)
   let waitingShown = ""
-  function renderStrip() {
+  function renderStrip(items) {
     if (!waiting) return
-    // A workflow's own spent budget is answered inline in this conversation
-    // (renderTranscript's `inline`); the strip is for what steps wait on.
-    const items = waiting.items().filter((item) => !(item.kind === "budget" && item.scope !== "session"))
     // Rebuilt only when what is waiting changes, so an answer half-typed in the
     // strip is not wiped by every other edit to the documents behind it.
     const signature = items.map((item) => item.callId).join(",")
@@ -165,7 +123,7 @@ export function AgentTool(handle, element, options = {}) {
     waitingShown = signature
     renderWaiting(waitingStrip, items, { onOpen: (url) => onOpenDoc(url), subject: handle.doc()?.subject ?? null })
   }
-  const waiting = repo ? watchWaiting(repo, handle, () => renderStrip()) : null
+  const waiting = repo ? watchWaiting(repo, handle, () => !disposed && handle.doc() && renderStrip(value(handle.doc()).strip)) : null
 
   // Where this session stands in its workflow, kept up with the plan: a
   // step's state, a workflow at a glance, or the step a side thread is about.
@@ -356,6 +314,7 @@ export function AgentTool(handle, element, options = {}) {
 
   // ---- state -----------------------------------------------------------
   const uiState = { open: new Set(), names: new Map(), subject: null, settings: null, heads: {} }
+  const names = watchNames({ repo, onChange: () => render() })
 
   // The inline views: what each call made or opened, live, beside the call.
   // A person's own mount goes through the same loader as the agent's, with a
@@ -993,48 +952,46 @@ export function AgentTool(handle, element, options = {}) {
   // ---- rendering -------------------------------------------------------
   let subjectViewUrl = null
 
-  // Who said each thing, once more than one person has spoken: a turn records
-  // its author's contact, and the name is in that contact's document.
-  const askedNames = new Set()
-  function nameAuthors(doc) {
-    if (!repo) return
-    const authors = new Set((doc.turns ?? []).map((turn) => turn.author).filter(Boolean))
-    if (authors.size < 2) return
-    for (const url of authors) {
-      if (askedNames.has(url)) continue
-      askedNames.add(url)
-      Promise.resolve()
-        .then(() => repo.find(url))
-        .then((contact) => {
-          const name = contact?.doc?.()?.name
-          if (!name || disposed) return
-          uiState.names.set(url, String(name))
-          render()
-        })
-        .catch(() => {})
-    }
+  /** What the view shows now (ui/session-value.js). */
+  function value(doc) {
+    return sessionValue(doc, {
+      mode,
+      hasKey: !!readKey(doc.config?.providerId ?? "openrouter"),
+      keysSettled,
+      runner: workerRunner ? "worker" : workerTried ? "tab" : "pending",
+      elsewhere: heldElsewhere(doc, runner?.runnerUrl, runner?.live),
+      voiceStatus,
+      place: standing?.current() ?? null,
+      waiting: waiting?.items() ?? [],
+      subjectTitle: names.title(doc.subject),
+      workflowTitle: names.title(workflowOf(doc)?.url),
+    })
   }
 
   function render() {
     if (disposed) return
     const doc = handle.doc()
     if (!doc) return
-    nameAuthors(doc)
 
-    const providerId = doc.config?.providerId ?? "openrouter"
-    const hasKey = !!readKey(providerId)
+    waiting?.refresh()
+    standing?.refresh(doc)
+    const v = value(doc)
 
-    root.dataset.runner = workerRunner ? "worker" : workerTried ? "tab" : "pending"
-    statusDot.dataset.status = statusOf(doc)
-    statusDot.title = statusOf(doc)
-    const spent = formatCost(doc.usage)
-    costLabel.textContent = spent ?? ""
-    costLabel.hidden = !spent
-    costLabel.title = spent
-      ? `${(doc.usage.in ?? 0).toLocaleString("en")} tokens in${doc.usage.cached ? ` (${doc.usage.cached.toLocaleString("en")} from cache)` : ""}, ${(doc.usage.out ?? 0).toLocaleString("en")} out over ${doc.usage.turns ?? 0} requests · ${doc.usage.costEstimated ? "partly estimated from list prices" : "as charged by OpenRouter"}`
-      : ""
-    const effort = doc.config?.params?.reasoning?.effort
-    modelButton.textContent = (doc.config?.model ?? "no model").split("/").pop() + (effort ? ` · ${effort}` : "")
+    root.dataset.runner = v.runner
+    statusDot.dataset.status = v.status
+    statusDot.title = v.status
+    subjectLabel.textContent = v.title.text
+    subjectLabel.title = v.title.tooltip
+    workflowButton.hidden = !v.workflow
+    workflowShown = v.workflow?.url ?? null
+    if (v.workflow) {
+      workflowButton.textContent = v.workflow.label
+      workflowButton.title = v.workflow.tooltip
+    }
+    costLabel.textContent = v.cost?.text ?? ""
+    costLabel.hidden = !v.cost
+    costLabel.title = v.cost?.tooltip ?? ""
+    modelButton.textContent = v.model
     // `doc` is the session document; the focused element lives on the DOM one.
     // Never overwrite the field while it is being typed in.
     const focused = modelInput.ownerDocument?.activeElement
@@ -1042,26 +999,22 @@ export function AgentTool(handle, element, options = {}) {
       modelInput.value = doc.config.model
     }
     renderDefaults()
-    waiting?.refresh()
-    renderStrip()
+    renderStrip(v.strip)
 
-    uiState.subject = doc.subject ?? null
-    renderWorkflowLink(doc)
-    standing?.refresh(doc)
-    const place = standing?.current() ?? null
-    renderStandingLine(standingLine, place, { openDoc: onOpenDoc })
-    const gate = gateOf(place)
-    input.placeholder = gate?.placeholder ?? "Ask for a change…"
+    renderStandingLine(standingLine, v.place, { openDoc: onOpenDoc })
+    input.placeholder = v.placeholder
     // The step started running again meanwhile: a message goes straight to it.
-    if (!gate) choices.hidden = true
+    if (!v.gate) choices.hidden = true
+    uiState.subject = doc.subject ?? null
+    uiState.names = names.authors(doc)
     renderTranscript(transcript, doc, uiState, {
       decide: onDecide,
       answer: onAnswer,
       openDoc: onOpenDoc,
       view: (block, result) => views.elementFor(block, result, uiState),
       inline: () => [
-        ...waitingIn(doc).filter((item) => item.kind === "budget").map((item) => renderWaitingItem({ ...item, handle }, { showStep: false })),
-        ...(waiting?.items() ?? []).filter((item) => item.kind === "budget" && item.scope !== "session").map((item) => renderWaitingItem(item, { showStep: false, onOpen: onOpenDoc })),
+        ...v.inline.session.map((item) => renderWaitingItem({ ...item, handle }, { showStep: false })),
+        ...v.inline.workflows.map((item) => renderWaitingItem(item, { showStep: false, onOpen: onOpenDoc })),
       ].map((card) => {
         card.classList.add("agent-inline-waiting")
         return card
@@ -1070,80 +1023,17 @@ export function AgentTool(handle, element, options = {}) {
     // Each citation's quote, looked up in the document it cites.
     markCitations(transcript, async (url) => (await repo.find(url))?.doc?.() ?? null)
 
-    // Header label: what this session IS, not what it is docked beside.
-    //
-    // Not the subject's title: in a sidebar that is the document you are
-    // already looking at, and the one row of chrome the session gets would be
-    // spent telling you something you can see. Once the agent names its own
-    // work, that name belongs here; the subject is in the tooltip, which is
-    // where "and which document is this about" belongs.
-    const named = sessionTitle(doc)
-    if (named) {
-      subjectLabel.textContent = named
-      subjectLabel.title = named
-      if (doc.subject) {
-        titleOf(repo, doc.subject).then((title) => {
-          if (!disposed && title) subjectLabel.title = `${named} — on ${title}`
-        })
-      }
-    } else if (doc.subject) {
-      titleOf(repo, doc.subject).then((title) => {
-        if (!disposed) {
-          subjectLabel.textContent = title ?? "Agent"
-          subjectLabel.title = title ? `on ${title}` : ""
-        }
-      })
-    } else {
-      subjectLabel.textContent = "Agent"
-      subjectLabel.title = ""
-    }
+    stopButton.style.display = v.canStop ? "" : "none"
+    sendButton.disabled = !v.canSend
+    hint.textContent = v.hint
 
-    const status = statusOf(doc)
-    const busy = status === STATUS.running
-    const reconnecting = status === STATUS.reconnecting
-    stopButton.style.display = busy || reconnecting ? "" : "none"
-    sendButton.disabled = !hasKey
+    if (v.openSettings && settings.style.display === "none") settings.style.display = "flex"
 
-    const pending = callsAwaitingApproval(doc).length
-    const asking = questionsAwaitingAnswer(doc).length
-    const elsewhere = heldElsewhere(doc, runner?.runnerUrl, runner?.live)
-    // Dictation's status wins while it is on: it is what you are doing now.
-    hint.textContent =
-      voiceStatus ??
-      (unknownBlocks(doc).length
-        ? "Something here needs a newer version of the agent: reload the page"
-        : !hasKey
-        ? elsewhere
-          ? "Running in another browser — this one has no API key"
-          : "Add an API key to start"
-        : asking
-          ? asking === 1
-            ? "Waiting on your answer"
-            : `Waiting on ${asking} answers`
-          : pending
-            ? `${pending} call${pending === 1 ? " needs" : "s need"} approval`
-            : elsewhere
-              ? "Another runner is working on this session"
-              : status === STATUS.parked
-                ? "Waiting for a tab to run a page tool"
-                : reconnecting
-                  ? `Waiting for the network — carries on when it is back (${doc.reconnecting?.reason ?? "no connection"})`
-                : busy
-                  ? "Working… Enter to steer, Stop to interrupt"
-                  : "")
-
-    // Not before the account has had its say: the key is usually there, and
-    // opening the panel only to have it found a moment later is just noise.
-    if (keysSettled && !hasKey && settings.style.display === "none" && !doc.turns?.length) {
-      settings.style.display = "flex"
-    }
-
-    // The pop-out's second pane shows the subject document.
-    if (mode === "full" && doc.subject && doc.subject !== subjectViewUrl) {
-      subjectViewUrl = doc.subject
+    if (v.side && v.side !== subjectViewUrl) {
+      subjectViewUrl = v.side
       subjectPane.replaceChildren()
       const view = document.createElement("patchwork-view")
-      view.setAttribute("doc-url", doc.subject)
+      view.setAttribute("doc-url", v.side)
       subjectPane.append(view)
     }
   }
@@ -1199,6 +1089,7 @@ export function AgentTool(handle, element, options = {}) {
     views.dispose()
     if (wantDictation) stopListening()
     workspace?.dispose()
+    names.dispose()
     waiting?.dispose()
     standing?.dispose()
     detachView?.()
