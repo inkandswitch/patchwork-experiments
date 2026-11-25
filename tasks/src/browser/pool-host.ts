@@ -9,10 +9,11 @@
 //   the runs the last one started and records those it lost.
 // - It serves the queues the account lists (`__servedQueues__`, see
 //   helpers.ts), and is told again whenever that list changes.
-// - On `pagehide` it ends its pool at once and lets the lock go, and on
-//   `pageshow` asks again. A page kept in the back/forward cache would
-//   otherwise hold the lock, frozen, for minutes, with its runs unheard. The
-//   runs it had are recorded lost by the next pool, and taken again.
+// - On `pagehide` or `freeze` it ends its pool at once and lets the lock go,
+//   and on `pageshow` or `resume` asks again. A page kept in the
+//   back/forward cache, or frozen in the background, would otherwise hold
+//   the lock, frozen, for minutes, with its runs unheard. The runs it had
+//   are recorded lost by the next pool, and taken again.
 //
 // A newer build. The tab holding the lock runs the build it loaded. Every
 // host says its build on BUILD_CHANNEL when it starts, and answers an
@@ -111,7 +112,7 @@ class BrowserPoolHost implements PoolHost {
   private following = false;
   private asking: AbortController | null = null;
   private held: Held | null = null;
-  /** Between `pagehide` and `pageshow`. */
+  /** Between `pagehide` and `pageshow`, or `freeze` and `resume`. */
   private hidden = false;
   /** A newer build is here: never run the pool again. */
   private standing = false;
@@ -132,21 +133,29 @@ class BrowserPoolHost implements PoolHost {
     };
     channel.postMessage({ build: BUILD });
 
-    window.addEventListener('pagehide', () => {
+    // A page that is frozen without being left (the browser freezes some
+    // background tabs to save power) freezes its workers too, the pool's
+    // among them, and a frozen holder keeps its lock: so it lets go on
+    // `freeze` as on `pagehide`, and asks again on `resume`.
+    const away = () => {
       this.hidden = true;
       this.asking?.abort();
       this.asking = null;
       if (this.held) {
         this.held.end();
-        this.set({ state: 'waiting', busy: 0 });
+        this.set({ state: this.standing ? 'stood down' : 'waiting', busy: 0 });
       }
-    });
-    window.addEventListener('pageshow', () => {
+    };
+    const back = () => {
       if (this.hidden) {
         this.hidden = false;
         this.ask();
       }
-    });
+    };
+    window.addEventListener('pagehide', away);
+    document.addEventListener('freeze', away);
+    window.addEventListener('pageshow', back);
+    document.addEventListener('resume', back);
     this.ask();
   }
 

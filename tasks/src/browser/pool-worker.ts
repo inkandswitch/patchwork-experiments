@@ -9,6 +9,14 @@
 //
 // The page tells it once how to start, and from then on which queues to
 // serve; it answers with its status when asked, and stops when told.
+//
+// Its Pool starts only once this worker holds WORKER_LOCK, which it keeps
+// for as long as it lives. The page lets go of the pool's lock as soon as it
+// has called `terminate()` on this worker, but a worker busy in synchronous
+// code goes on for up to 2 s after that; a worker's own locks pass only once
+// it has really ended. Without this, the next tab's pool, which has the same
+// id, could run beside this one for that moment, and each would record the
+// other's live runs as its own lost ones.
 
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
 import type { Acceptance } from '../acceptance';
@@ -18,6 +26,9 @@ import { getRepo, setUpImportMap } from '../webworker-lib';
 import { BrowserExecutor } from './executor';
 
 export type ServedQueues = Record<AutomergeUrl, Acceptance>;
+
+/** Held by the pool's worker for its whole life, so that one pool's worker has ended before the next one's Pool starts. */
+export const WORKER_LOCK = 'patchwork-tasks-pool-worker';
 
 /** What the page says to its pool's worker. */
 export type ToPoolWorker =
@@ -95,6 +106,7 @@ scope.onmessage = ({ data }) => {
 };
 
 async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promise<Pool> {
+  await holdForLife(WORKER_LOCK);
   await setUpImportMap(settings.importMap ?? {}, settings.baseURI);
   const repo = await getRepo(settings.repoConfig, `task-pool-${crypto.randomUUID()}`);
   const executor = new BrowserExecutor({
@@ -113,6 +125,26 @@ async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promis
     executor,
     // the latest the page has said, which may have come while this was starting
     queues: stopping ? {} : queues,
+  });
+}
+
+/**
+ * Resolves once this worker holds the lock `name`, which it then keeps until
+ * it ends. A worker with no Web Locks cannot start a pool: two could then run
+ * with one id.
+ */
+function holdForLife(name: string): Promise<void> {
+  const locks = (self as unknown as { navigator?: Navigator }).navigator?.locks;
+  if (!locks) {
+    return Promise.reject(new Error('its worker has no Web Locks'));
+  }
+  return new Promise<void>((granted, failed) => {
+    locks
+      .request(name, { mode: 'exclusive' }, () => {
+        granted();
+        return new Promise<never>(() => {});
+      })
+      .catch(failed);
   });
 }
 

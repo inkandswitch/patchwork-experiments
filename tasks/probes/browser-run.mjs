@@ -370,7 +370,7 @@ try {
     const pools = { A: liveWorkers(A, /pool-worker/).length, B: liveWorkers(B, /pool-worker/).length };
     check(
       "5 two tabs: exactly one holds the lock and runs tasks; the other's badge says it waits",
-      locks.held === 1 && locks.pending === 1 && (await A.js("probe.status().state")) === "running" && badge?.state === "waiting" && /another tab/.test(badge.text) && pools.A === 1 && pools.B === 0 && fromB.result === 1,
+      locks.held === 1 && locks.pending === 1 && locks.workerHeld === 1 && locks.workerPending === 0 && (await A.js("probe.status().state")) === "running" && badge?.state === "waiting" && /another tab/.test(badge.text) && pools.A === 1 && pools.B === 0 && fromB.result === 1,
       `locks ${J(locks)}; A ${await A.js("probe.status().state")}, B's badge ${J(badge?.text)} (${badge?.state}); pool workers A ${pools.A}, B ${pools.B}; a task asked from B ${fromB.result === 1 ? `ran in ${fromB.ms.toFixed(0)} ms` : J(fromB)}`,
     );
   }
@@ -418,7 +418,7 @@ try {
     const cache = restored ? `restored from the back/forward cache, where it now ${back === "waiting" ? "waits" : `reads ${back}`}` : `not restored from the cache (${(notCached.get(B.sessionId) ?? []).slice(0, 3).join(", ") || "no reason given"})`;
     check(
       "7 the holding tab navigated away mid-run: the lock passes at once, the run is lost and run again",
-      took < 5_000 && last.state === "succeeded" && J(runsOf(last)) === J(["lost", "succeeded"]) && (!restored || back === "waiting") && (await C.js("probe.status().state")) === "running" && locks.held === 1,
+      took < 5_000 && last.state === "succeeded" && J(runsOf(last)) === J(["lost", "succeeded"]) && (!restored || back === "waiting") && (await C.js("probe.status().state")) === "running" && locks.held === 1 && locks.workerHeld === 1,
       `C took the lock ${took} ms after the navigation; runs ${J(runsOf(last))}, ${last.state} ${J(last.result)}; going back, B's page was ${cache}; locks ${J(locks)}`,
     );
   }
@@ -499,6 +499,32 @@ try {
       "11 the queue browser marks this browser's pool, names a run's pool, and its Stop stops the task",
       seen.serving.some((line) => /Chrome on macOS \(\w{4}\)this browser/.test(line)) && /run by Chrome on macOS \(\w{4}\): openthis browser/.test(run) && pressed && last.state === "cancelled",
       `serving ${J(seen.serving)}; run line ${J(run)}; Stop pressed ${pressed}; then ${J(await E.js(`probe.states(${J(key)})`))}, runs ${J(runsOf(last))}`,
+    );
+  }
+
+  // 12. the holder frozen (as the browser freezes a background tab), not left:
+  // it lets go, another tab of its build takes over, and on resuming it waits
+  {
+    const F = await tab("F"); // the newer build, as D is, so that it does not stand down for D
+    await F.js("probe.mount('/dist-newer')");
+    await F.waitFor("probe.status()?.state === 'waiting'", 15_000);
+    const key = await F.js(`probe.ask(${J(SLEEP)}, { ms: 4000, value: 'twelve' })`);
+    await F.waitFor(stateIs(key, "running"), 20_000);
+    await sleep(1_000);
+    const t0 = Date.now();
+    await send("Page.setWebLifecycleState", { state: "frozen" }, D.sessionId);
+    await F.waitFor("probe.status()?.state === 'running'", 30_000, 10);
+    const took = (await F.js("probe.statusLog.find((s) => s.state === 'starting' || s.state === 'running')?.t")) - t0;
+    await F.waitFor(stateIs(key, "succeeded", "failed", "cancelled"), 30_000);
+    const last = await F.js(`probe.last(${J(key)})`);
+    const poolsWhileFrozen = { D: liveWorkers(D, /pool-worker/).length, F: liveWorkers(F, /pool-worker/).length };
+    await send("Page.setWebLifecycleState", { state: "active" }, D.sessionId);
+    const dBack = await D.waitFor("probe.status()?.state === 'waiting' && probe.status().state", 10_000);
+    const locks = await F.js("probe.locks()");
+    check(
+      "12 the holding tab frozen mid-run: it lets go at once, the other tab's pool (same id) records the run lost and runs it again; resumed, it waits",
+      took < 5_000 && last.state === "succeeded" && J(runsOf(last)) === J(["lost", "succeeded"]) && last.runs.every((run) => run.pool === poolId) && poolsWhileFrozen.D === 0 && poolsWhileFrozen.F === 1 && dBack === "waiting" && locks.held === 1 && locks.pending >= 1 && locks.workerHeld === 1,
+      `F took the lock ${took} ms after the freeze; runs ${J(runsOf(last))}, ${last.state} ${J(last.result)}; pool workers while frozen D ${poolsWhileFrozen.D}, F ${poolsWhileFrozen.F}; D resumed reads ${J(dBack)}; locks ${J(locks)}`,
     );
   }
 } catch (error) {

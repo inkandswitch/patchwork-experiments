@@ -113,8 +113,14 @@ const probe = {
 
   async locks() {
     const { held, pending } = await navigator.locks.query();
-    const pool = (list) => list.filter((lock) => lock.name === 'patchwork-tasks-pool').length;
-    return { held: pool(held), pending: pool(pending) };
+    const count = (list, name) => list.filter((lock) => lock.name === name).length;
+    return {
+      held: count(held, 'patchwork-tasks-pool'),
+      pending: count(pending, 'patchwork-tasks-pool'),
+      // the one each pool's worker holds for its life (pool-worker.ts)
+      workerHeld: count(held, 'patchwork-tasks-pool-worker'),
+      workerPending: count(pending, 'patchwork-tasks-pool-worker'),
+    };
   },
 
   /** Asks and waits; how long from asking to the result, in ms. */
