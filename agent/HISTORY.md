@@ -1616,3 +1616,33 @@ the views wrote to a plan of any version. Every write to a plan now goes
 through one gate, which leaves a plan of another version as it is and says
 why: the tools refuse with that message, the workflow view shows it in place
 of what it would offer, and the driver stands aside without a word.
+
+Nothing reads a tool's result text but the model. Two pieces of code had: the
+view beside a `view_mount` call took the mount's id out of a line of its
+report, and the usage-guide hook worked out which package a call was about
+from the tool's id and, for a registry listing, from the layout of the
+listing. A result now carries `facts`, plain data kept on the result block,
+and both read that. The same went for how a call looks: the row's verb and
+detail, the layout its input opens in and whether its result is prose are the
+tool's to say (`present`) and are kept on the call (`shown`), so the last two
+tables of tool ids in the view went, and a package's tool reads as well as a
+built-in.
+
+The tool context became a value. It had been a Proxy over the host's object,
+which let a tool keep a cache on it (the guides a session had been shown) and
+let the registry reach in to say where page tools mount. It is frozen; what
+changes under a run is a getter the host defines; and what was remembered on
+it is derived from the session instead: an after-call hook is shown what the
+session's results have said, and the guide hook records on the result which
+guides it added. So a session passed from the worker to a tab is shown a
+guide once, where each runner used to show it. The step starter and the
+session's URL, which had been in the context and blanked out again, are the
+runner's and the store's. TOOLS.md lists every field, and a test holds the
+code to the list.
+
+Whether a runner takes a session, six guards at the head of its tick, became
+one pure function with its cases written out. A plan made from Patchwork's
+menu had been written by a second initialiser that left out the version, and
+read as one from an earlier agent once every writer checked; it is made the
+way `workflow_start` makes one.
+
