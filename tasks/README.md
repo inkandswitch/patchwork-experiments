@@ -30,16 +30,23 @@ document that has not arrived yet, for about half a minute, instead of rejecting
 
 **Mostly once**: asked of a queue that several of a person's devices serve, a task runs on one of
 them, once, unless the device running it dies part way, or two devices cannot hear each other at
-the moment it is listed (a device that started serving in the last two and a half seconds may not
-have heard the others yet), and then it runs again, as at least once promises. The pools serving
-a queue hear each other and agree on one to prefer for each task, among those with a free slot
-(the one its asker is next to, or else the one a hash of the task's url and the pool's id picks).
-Each decides this once, when it first sees the task: the one preferred takes it at once, and the
-rest wait a second and a half from then before they may, so work beyond the preferred pool's
-slots starts that much later. A pool that has served a queue for less than two and a half
-seconds holds back for everything there, and one that stops says so, and is not waited for. A
-task never fails for want of a device: one that needs what no pool serving its queue has waits,
-and the queue browser says what it waits for.
+the moment it is listed, and then it runs again, as at least once promises. Each pool serving a
+queue says, every two seconds and whenever it changes, how many slots it has and how many are busy,
+and every pool ranks the pools for a task from those words alone, its own last word included: those
+with a free slot, first the one the task's asker is next to, then in the order a hash of the task's
+url and each pool's id gives. Each ranks once, when it first sees the task. Each ranked pool has a
+turn of a second and a half, the first from that moment, the second from a second and a half later,
+and so on, in which it takes the task as soon as it has a free slot; one whose slots stay full
+through its turn waits until every ranked pool has had one. So work beyond the first pool's slots
+starts that much later. A pool that has served a queue for less than two and a half seconds says it
+has no slots there and takes nothing, and one that stops says the same as its last word; neither is
+ranked, and a task held back for a pool that says so is ranked anew at once. A pool that has
+listened and hears no other with slots never waits. Two crossings can still start a task twice: a
+pool's word that its slots have filled, on its way to another pool as that one ranks a task, and a
+run one pool has taken, on its way to another that may take the task by then (its turn has begun,
+or every turn is over). The later of the two runs then gives way to the earlier, which goes on. A
+task never fails for want of a device: one that needs what no pool serving its queue has waits, and
+the queue browser says what it waits for.
 
 ## Asking for work
 
@@ -62,8 +69,9 @@ Node one of your own (`dist-node/task-client.mjs` is the same file built for Nod
   (`waiting`, `running`, `stalled`, `stopping`, `succeeded`, `failed`, `cancelled`), progress,
   log lines, result and error. It returns how to stop watching.
 - `cancel(repo, queueUrl, key)` stops the task under the key.
-- `served(repo, queueUrl, onChange)` hears which pools serve the queue now, with what each has;
-  an empty list, or none that has what a task needs, means that task waits.
+- `served(repo, queueUrl, onChange)` hears which pools serve the queue now, with what each has
+  (one that began serving it less than two and a half seconds ago is not taking yet, and not
+  listed); an empty list, or none that has what a task needs, means that task waits.
 - `ownQueue(repo, element)` gives a page the url of its person's own queue, served by their
   browsers for any code, making it the first time (see below).
 

@@ -390,8 +390,8 @@ try {
   }
   poolId = await A.js("localStorage.getItem('patchwork-tasks-pool-id')");
   log(`A runs pool ${poolId}, ${slots} slots`);
-  // A pool holds back for everything until it has listened to a queue for a
-  // beat and a little (LISTEN_MS), so the timed checks begin after that.
+  // A pool takes nothing until it has listened to a queue for a beat and a
+  // little (LISTEN_MS), so the timed checks begin after that.
   await sleep(LISTEN_MS);
 
   // 1. a do-nothing task, ask to result, ten in a row

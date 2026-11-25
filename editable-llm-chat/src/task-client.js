@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v12]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v13]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -16,8 +16,8 @@
  */
 
 import {
-  BEAT_MS,
   LAPSE_MS,
+  LISTEN_MS,
   MAX_LOG_LINES,
   checkKey,
   checkNeeds,
@@ -66,8 +66,9 @@ export const LOCAL_MESSAGES_CHANNEL = 'patchwork-tasks-messages';
 /**
  * Said on a queue's channel by each pool serving it, every BEAT_MS and
  * whenever how many of its slots are busy changes: who it is, how many slots
- * it has and how many are busy, and what it has (see `satisfies`). A pool
- * that stops, or stops serving the queue, says it last with no slots.
+ * it has and how many are busy, and what it has (see `satisfies`). No slots
+ * means it is not taking: a pool says so while it is still listening to the
+ * queue (its first LISTEN_MS there), and last, as it stops or stops serving it.
  * Advice: no rule depends on it. People and askers read it to say why work
  * waits; pools read it to hold back for the pool a task prefers.
  * @typedef {{ type: 'serving', pool: string, name: string, slots: number, busy: number, has: string[], from: string, seq: number }} ServingMessage
@@ -612,7 +613,8 @@ export async function run(repo, queueUrl, request, onProgress, signal) {
  * Calls `onChange` with the pools heard serving `queueUrl` within the lapse,
  * now and whenever that changes: an empty list means nobody is heard, so a
  * task asked of it would wait. A pool whose last word says it has no slots
- * has stopped serving it, and is not listed. Returns how to stop.
+ * is not taking (it has only begun to listen to the queue, or has stopped
+ * serving it), and is not listed. Returns how to stop.
  * @param {any} repo
  * @param {string} queueUrl
  * @param {(pools: Serving[]) => void} onChange
@@ -1071,9 +1073,17 @@ function browserPoolIdHere() {
 const heardServing = new WeakMap();
 
 /**
+ * How long a page listens to a queue for a pool before it decides without
+ * one: a pool says its slots only once it has listened to the queue for
+ * LISTEN_MS, so a pool that starts with the page is heard with them a
+ * crossing after that.
+ */
+const HEAR_MS = LISTEN_MS + 500;
+
+/**
  * The pools heard serving a queue, as soon as one of them has what `needs`
- * asks for, or else once this page has listened to the queue for a beat and
- * a little: at once if it has already.
+ * asks for, or else once this page has listened to the queue for HEAR_MS: at
+ * once if it has already.
  * @param {any} repo
  * @param {string} queueUrl
  * @param {string[]} needs
@@ -1086,7 +1096,7 @@ function poolsHeard(repo, queueUrl, needs) {
   }
   let state = queues.get(queueUrl);
   if (!state) {
-    const made = { pools: /** @type {Serving[]} */ ([]), until: Date.now() + BEAT_MS + 500, changed: new Set() };
+    const made = { pools: /** @type {Serving[]} */ ([]), until: Date.now() + HEAR_MS, changed: new Set() };
     queues.set(queueUrl, (state = made));
     served(repo, queueUrl, (pools) => {
       made.pools = pools;

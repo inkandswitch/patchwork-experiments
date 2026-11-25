@@ -112,19 +112,18 @@ that one machine serves.
 
 - **What is left of the preferred pool and of needs.** A pool asks an entry's package and needs
   before the task's, but still follows (fetches) every task its queues list, so a browser on a
-  queue full of work for other machines fetches each of those tasks. Following only what it
-  might take would save that, at the cost of its own runs of such tasks, after a restart with
-  fewer labels, waiting out the lapse instead of being recorded lost. The hold (HOLD_MS, 1.5 s)
-  is two crossings as measured on one Mac through the sync server; between devices on slower
-  links a crossing may take longer, and a hold too short costs one yielded run, as before. A task
-  listed again by its asker after a lapse keeps its needs, which its document holds, but not the
-  first asking's `near`, which only the entry did. A pool in its first LISTEN_MS on a queue says
-  it serves it, so the pools already there may prefer it for a task while it, not yet preferred
-  for anything, holds back for all of them: both take that task when the hold ends, and one run
-  yields. Its `serving` saying it is still listening (or saying nothing until it has listened)
-  would close this. With three or more pools, the ones not preferred all take a task the
-  preferred one never took at the same moment, the end of the hold, and all but one yield. Each
-  waits on a case that needs it.
+  queue full of work for other machines fetches each of those tasks. Following only what it might
+  take would save that, at the cost of its own runs of such tasks, after a restart with fewer
+  labels, waiting out the lapse instead of being recorded lost. The hold (HOLD_MS, 1.5 s) is two
+  crossings as measured on one Mac through the sync server; between devices on slower links a
+  crossing may take longer, and a hold too short costs one yielded run, as before. A task listed
+  again by its asker after a lapse keeps its needs, which its document holds, but not the first
+  asking's `near`, which only the entry did. Two crossings still start a task twice, and no advice
+  closes them: a pool's word that its slots have filled, still on its way as another ranks a task,
+  and a run still on its way to a pool that may take the task by then. The second is widest where
+  nobody is ranked (every pool heard full, or the only free one still listening): each then takes
+  the task the moment a slot frees past the hold, in no order. Ranking full pools after free ones
+  would narrow it to the time after every turn. Each waits on a case that needs it.
 - **A link in memory between a pool and its run workers.** A run worker's Repo has storage of its
   own (a directory in Node, a database in a browser), so what a task writes through `ctx.repo`
   reaches the page by the sync server, and a run's ending waits until the server has acknowledged

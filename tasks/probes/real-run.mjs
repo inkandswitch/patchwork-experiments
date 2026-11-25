@@ -305,7 +305,7 @@ try {
 
   // 1. a do-nothing task, ask to result: from this tab's tasks Repo, and from the site's own.
   await part("a do-nothing task, ten in a row, from this tab's tasks Repo", async () => {
-    // A pool holds back for everything until it has listened to the queue for LISTEN_MS.
+    // A pool takes nothing until it has listened to the queue for LISTEN_MS.
     await new Promise((r) => setTimeout(r, Math.max(0, poolRunningAt + LISTEN_MS - Date.now())));
     const NOOP = J(`data:text/javascript,${encodeURIComponent("export default () => 1;")}`);
     const times = await call(`

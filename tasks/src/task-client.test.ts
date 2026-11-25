@@ -45,7 +45,7 @@ import {
   type TaskView,
 } from './task-client.js';
 import { getAcceptance, getTaskQueues, isOnTaskQueue, joinTaskQueue, leaveTaskQueue, setAcceptance } from './helpers';
-import { BEAT_MS, LAPSE_MS, LOST_TOO_OFTEN, MAX_LOG_LINES, claimRun, delistTask, endRun, listTask, type Queue, type RunStatus, type Task } from './task-rules.js';
+import { BEAT_MS, LAPSE_MS, LISTEN_MS, LOST_TOO_OFTEN, MAX_LOG_LINES, claimRun, delistTask, endRun, listTask, type Queue, type RunStatus, type Task } from './task-rules.js';
 
 await initSubduction();
 
@@ -2003,7 +2003,7 @@ describe('doWork', () => {
     ['no account', 0],
     ['no storage', 0],
     ['no own queue', 0],
-    ['an own queue nobody is heard serving', BEAT_MS + 500],
+    ['an own queue nobody is heard serving', LISTEN_MS + 500],
   ];
   for (const [setup, wait] of HERE) {
     it(`with ${setup}: imports the code and calls it here with (input, ctx), and resolves with what it returned; it writes and makes nothing`, async () => {
@@ -2112,7 +2112,7 @@ describe('doWork', () => {
     expect(settled.error?.message).toBe('The task was cancelled');
     expect(Date.now()).toBe(stoppedAt);
     serving(queue!);
-    await until(() => false, BEAT_MS + 500);
+    await until(() => false, LISTEN_MS + 500);
     expect(queue!.doc()!.jobs).toEqual({});
     expect(g.__work).not.toHaveBeenCalled();
   });
@@ -2125,7 +2125,7 @@ describe('doWork', () => {
     const { settled } = doing(repo, {}, controller.signal);
     await settle();
     serving(queue!);
-    await until(() => 'error' in settled, BEAT_MS + 500);
+    await until(() => 'error' in settled, LISTEN_MS + 500);
     expect(settled.error?.message).toBe('The task was cancelled');
     expect(queue!.doc()!.jobs).toEqual({});
     expect(g.__work).not.toHaveBeenCalled();
@@ -2168,12 +2168,12 @@ describe('doWork', () => {
     expect(g.__work).not.toHaveBeenCalled();
   });
 
-  it('nobody heard: the first asking is done here after a beat and a little; a later one is done here at once', async () => {
+  it('nobody heard: the first asking is done here once it has listened for LISTEN_MS and a crossing; a later one is done here at once', async () => {
     const { repo, queue } = page('an own queue nobody is heard serving');
     g.__work = vi.fn(() => 'here');
     const first = doing(repo, { key: 'first' });
     await settle();
-    await vi.advanceTimersByTimeAsync(BEAT_MS + 499);
+    await vi.advanceTimersByTimeAsync(LISTEN_MS + 499);
     expect(g.__work).not.toHaveBeenCalled();
     await until(() => 'value' in first.settled, 1);
     expect(first.settled).toEqual({ value: 'here' });
@@ -2246,7 +2246,7 @@ describe('doWork', () => {
   // What the work needs, and where it is done: each row is a setup, what the
   // pools heard serving the own queue have (none heard: null), what the work
   // needs, and where it goes: asked of the queue at once, asked once the
-  // listening for a pool is over (a beat and a little), done here at once or
+  // listening for a pool is over (LISTEN_MS and a crossing), done here at once or
   // then, or rejected.
   type Where = 'asked at once' | 'asked after the wait' | 'here at once' | 'here after the wait' | 'rejected at once' | 'rejected after the wait';
   const NEED_CASES: [Setup, string[] | null, string[], Where][] = [
@@ -2277,14 +2277,14 @@ describe('doWork', () => {
       }
       const decided = () => 'value' in work.settled || 'error' in work.settled || (!!queue && !!entryOf(queue, 'k'));
       if (where.endsWith('after the wait')) {
-        await until(decided, BEAT_MS + 499);
+        await until(decided, LISTEN_MS + 499);
         expect(decided(), 'decided before the wait was over').toBe(false);
         await until(decided, 1);
       } else {
         await until(decided);
       }
       expect(decided()).toBe(true);
-      expect(Date.now() - startedAt).toBe(where.endsWith('after the wait') ? BEAT_MS + 500 : 0);
+      expect(Date.now() - startedAt).toBe(where.endsWith('after the wait') ? LISTEN_MS + 500 : 0);
       if (where.startsWith('asked')) {
         const task = await repo.find<Task>(entryOf(queue!, 'k').taskUrl as AutomergeUrl);
         expect(task.doc()!.needs).toEqual(needs);

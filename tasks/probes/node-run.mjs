@@ -9,8 +9,9 @@
 // Checks 9 and 17 to 20 are about a queue two hosts serve: each task runs
 // once, by the one host it prefers (the one its asker is near, or else the
 // highest hash), and work that needs a label goes only to a host that has it.
-// A host holds back for everything until it has listened to the queue for
-// LISTEN_MS, so the checks that time a host start after that.
+// A host takes nothing until it has listened to the queue for LISTEN_MS (it
+// says it has no slots until then), so the checks that time a host start
+// after that.
 //
 // The task code is in probes/ (solve-task.mjs, which runs a process) and in
 // data: URLs. Nothing is published: without a package url the hosts are
@@ -179,7 +180,7 @@ try {
 
   // 1. a do-nothing task, ask to result
   if (want(1)) {
-    // The first task starts a thread. Asked as A begins to listen, it is held back HOLD_MS.
+    // The first task starts a thread. Asked as A begins to listen, it is taken once A has listened for LISTEN_MS.
     const warmAsked = Date.now();
     let warmView;
     await within(60000, runKey(Q, { importUrl: NOOP, input: "warm" }, (v) => (warmView = v)), "the warm-up task");

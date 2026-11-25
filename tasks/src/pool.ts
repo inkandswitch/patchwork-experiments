@@ -6,20 +6,22 @@
 // the documents and to what has been heard.
 //
 // It takes only work it has what for (`has`, see `satisfies`), and of what it
-// may take, it holds back for the task's preferred pool: it hears the other
-// pools serving each queue (their `serving`, within the lapse), and judges
-// once, when it first sees a task listed that it may take (as the entry
-// says, before the task's document is here), whether `preferred` names it. If
-// so, it takes the task as soon as it has a free slot within HOLD_MS of that
-// sight, or else a second HOLD_MS later, by when what another pool took at
-// the end of the hold has reached it; if not, it takes it only once HOLD_MS
-// have passed since that sight. The judgment is kept while the task stays
-// takeable, so nothing is decided again when another pool's slots fill or
-// free. Until it has listened to a queue for LISTEN_MS it does not know who
-// else serves it, and judges itself preferred for nothing there. So that the
-// others choose from what is so, it says `serving` every beat and whenever
-// how many of its slots are busy changes, and as it stops (or stops serving
-// a queue) it says it has no slots, so that nobody holds back for it.
+// may take, it holds back for the pools ranked before it: it hears the other
+// pools serving each queue (their `serving`, within the lapse), and ranks
+// them once, when it first sees a task listed that it may take (as the entry
+// says, before the task's document is here), with itself as it last said it
+// was, never as it is this instant: every pool then ranks from the same
+// words. Ranked n-th from 0, it takes the task from n HOLD_MS after then, as
+// soon as it has a free slot; a HOLD_MS past its turn, only once every ranked
+// pool has had its turn, by when what another took has reached it. The
+// ranking is kept while the task stays takeable, so nothing is decided again
+// when another pool's slots fill or free; it is made anew only when a pool
+// ranked before this one says it has no slots, since that pool will not take
+// the task. Until it has listened to a queue for LISTEN_MS it does not know
+// who else serves it, and says it has no slots there (it is not taking), so
+// that nobody ranks it, itself included, and takes nothing there. It says `serving` every beat and whenever how many of
+// its slots are busy changes, and as it stops (or stops serving a queue) it
+// says it has no slots, so that nobody holds back for it.
 //
 // It writes three things and nothing else: a run appended when it takes a
 // task, that run completed when it is over, and an entry deleted when its
@@ -53,7 +55,7 @@ import {
   mayDelist,
   named,
   orphans,
-  preferred,
+  ranked,
   satisfies,
   stopReason,
   waitingWork,
@@ -195,7 +197,7 @@ interface Followed<T> {
   stop?: () => void;
   /** Stops listening for its arrival, while it is listened for (see `awaitArrival`). */
   unawait?: () => void;
-  /** Clears the timer that looks again once a hold for the preferred pool is over, while one is set. */
+  /** Clears the timer set to look again later (a hold's end; for a queue, the end of its listening), while one is set. */
   unhold?: () => void;
 }
 
@@ -215,12 +217,21 @@ function letGo(followed: Followed<unknown>) {
  */
 interface FollowedTask extends Followed<Task> {
   hearing: Hearing;
-  /**
-   * When this pool first saw the task listed where it may take it, on its own
-   * clock, and whether it was then the task's preferred pool; kept until the
-   * task is found not takeable.
-   */
-  firstSight?: { at: number; preferred: boolean };
+  /** How this pool ranked the pools for the task, and when; kept until the task is found not takeable, or a pool `ahead` says it has no slots. */
+  firstSight?: Sight;
+}
+
+/**
+ * A ranking made when a task was first seen takeable: when, on this pool's
+ * clock, on which queue, this pool's place (0 is preferred), how many were
+ * ranked, and the pools ranked before this one, which it holds back for.
+ */
+interface Sight {
+  at: number;
+  queue: AutomergeUrl;
+  rank: number;
+  of: number;
+  ahead: string[];
 }
 
 /** Another pool heard serving a queue: what it last said of itself, and when, on this pool's clock. */
@@ -237,6 +248,8 @@ interface Served extends Followed<Queue> {
   heard: Map<string, HeardPool>;
   /** When this pool began listening to the queue's channel, on its own clock. */
   listeningSince?: number;
+  /** What this pool last said of itself on the queue's channel: how it ranks itself, as the others rank it. */
+  said?: { slots: number; busy: number };
 }
 
 interface Slot {
@@ -291,7 +304,7 @@ export class Pool {
     // unheard is noticed without anything changing.
     this.tick = this.clock.setInterval(() => {
       for (const queue of this.queues.values()) {
-        this.sayServing(queue.handle);
+        this.sayServing(queue);
       }
       this.review();
     }, BEAT_MS);
@@ -317,7 +330,7 @@ export class Pool {
   serve(queues: Record<AutomergeUrl, Acceptance>) {
     for (const [url, queue] of this.queues) {
       if (!(url in queues)) {
-        this.sayServing(queue.handle, true);
+        this.sayServing(queue, true);
         letGo(queue);
         this.queues.delete(url);
       }
@@ -343,7 +356,7 @@ export class Pool {
       this.clock.clearInterval(this.tick);
       // its last word on each queue: no slots, so that nobody holds back for it
       for (const queue of this.queues.values()) {
-        this.sayServing(queue.handle, true);
+        this.sayServing(queue, true);
       }
       for (const run of this.runs.values()) {
         this.stopRun(run, 'stopping');
@@ -463,12 +476,11 @@ export class Pool {
           followed.unhold?.();
           return;
         }
-        // The pool judges whether it is preferred as soon as the entry says
-        // it may take the task, before the task's document is here: by the
-        // time that has been fetched, the preferred pool may have taken the
-        // task and said it is full, and a pool that judged then would read
-        // that as room left for it.
-        followed.firstSight ??= { at: now, preferred: this.isPreferred(work, served, now) };
+        // The pool ranks as soon as the entry says it may take the task,
+        // before the task's document is here: by the time that has been
+        // fetched, the preferred pool may have taken the task and said it is
+        // full, and a pool that ranked then would read that as room left for it.
+        followed.firstSight ??= this.rank(work, queue.url, served, now);
         const handle = followed.handle;
         const task = !handle || handle.isDeleted?.() ? undefined : handle.doc();
         if (!handle || !task) {
@@ -486,7 +498,8 @@ export class Pool {
           followed.unhold?.();
           return;
         }
-        if (this.runs.size < slots && this.mayTakeNow(followed, served, work, now)) {
+        // A pool still listening says it is not taking, and takes nothing: the listening's end looks again.
+        if (this.runs.size < slots && !this.listening(served, now) && this.mayTakeNow(followed, served, work, now)) {
           this.claim(work, queue, handle, task);
         }
       });
@@ -494,40 +507,42 @@ export class Pool {
   }
 
   /**
-   * Whether `preferred` names this pool for a task, now: among the pools
-   * heard serving the queue within the lapse that have what the entry says
-   * the task needs, and this pool. The entry's `near` is the asker's word for
-   * which pool it is next to. This pool counts itself
-   * as having a free slot: whether it has one decides when it takes the task,
-   * not whether it is the one to, and a pool that judged itself out while its
-   * slots were full would hold back as long as the others that saw it free.
-   * A pool that has listened to the queue for less than LISTEN_MS may not
-   * have heard the others yet, and is preferred for nothing.
+   * Ranks the pools for a task (`ranked`): those heard serving the queue
+   * within the lapse that have what the entry says the task needs, each as it
+   * last said, and this pool as it last said too, so that its place is the one
+   * the others give it. The entry's `near` is the asker's word for which pool
+   * it is next to. Where none is ranked, this pool is first if it said it has
+   * slots and hears no other that has: a pool alone never waits, full or not.
+   * A pool still listening said it has no slots, and so is ranked nowhere.
    */
-  private isPreferred(work: Work, served: Served, now: number): boolean {
-    const { id, slots } = this.options;
-    if (served.listeningSince === undefined || now - served.listeningSince < LISTEN_MS) {
-      return false;
-    }
+  private rank(work: Work, queue: AutomergeUrl, served: Served, now: number): Sight {
+    const { id } = this.options;
     const others = [...served.heard]
       .filter(([, pool]) => now - pool.at < LAPSE_MS && satisfies(pool.has, work.needs))
       .map(([pool, { slots, busy }]) => ({ pool, slots, busy }));
-    return preferred(work.taskUrl, work.near ?? null, [{ pool: id, slots, busy: 0 }, ...others]) === id;
+    const said = served.said ?? { slots: 0, busy: 0 };
+    let order = ranked(work.taskUrl, work.near ?? null, [{ pool: id, ...said }, ...others]);
+    if (order.length === 0 && said.slots > 0 && !this.othersCould(served, work, now)) {
+      order = [id];
+    }
+    const placed = order.indexOf(id);
+    const rank = placed >= 0 ? placed : Math.max(1, order.length);
+    return { at: now, queue, rank, of: order.length, ahead: order.slice(0, rank) };
   }
 
   /**
    * Whether to take a task this pool may take, now that it has a free slot.
-   * Not preferred at its first sight of the task: once HOLD_MS have passed
-   * since then. Preferred: at once within HOLD_MS of that sight, which is
-   * when the others take it; past that, only once a second HOLD_MS has
-   * passed, so that a run another pool took at the end of the hold reaches
-   * this one first, unless it hears no other pool that could have taken it.
-   * Where it may not yet, a timer is set to look again at the moment it may.
+   * Ranked n-th, from n HOLD_MS after it ranked, for a HOLD_MS, which is its
+   * turn; past that, only once every ranked pool has had its turn, so that a
+   * run another took in its turn reaches this one first, unless it hears no
+   * other pool that could have taken it. Where it may not yet, a timer is set
+   * to look again at the moment it may.
    */
   private mayTakeNow(followed: FollowedTask, served: Served, work: Work, now: number): boolean {
-    const sight = followed.firstSight!;
-    const waited = now - sight.at;
-    const from = !sight.preferred ? HOLD_MS : waited < HOLD_MS || !this.othersCould(served, work, now) ? 0 : 2 * HOLD_MS;
+    const { at, rank, of } = followed.firstSight!;
+    const waited = now - at;
+    const turn = rank * HOLD_MS;
+    const from = waited < turn + HOLD_MS || !this.othersCould(served, work, now) ? turn : Math.max(turn, of * HOLD_MS);
     if (waited >= from) {
       followed.unhold?.();
       return true;
@@ -580,8 +595,7 @@ export class Pool {
           unlisten?.();
         };
         if (!isTask) {
-          (followed as unknown as Served).listeningSince = this.clock.now();
-          this.sayServing(handle as Handle<any>);
+          this.startListening(followed as unknown as Served);
         }
         this.review();
       },
@@ -652,13 +666,47 @@ export class Pool {
     if (this.queues.get(handle.url) !== served) {
       return; // a queue no longer served
     }
+    const slots = Number(message.slots) || 0;
     served.heard.set(message.pool, {
       has: Array.isArray(message.has) ? message.has.filter((label): label is string => typeof label === 'string') : [],
-      slots: Number(message.slots) || 0,
+      slots,
       busy: Number(message.busy) || 0,
       at: this.clock.now(),
     });
+    if (slots <= 0) {
+      // A pool that says it is not taking will not take what this one holds back for it: those are ranked anew.
+      for (const task of this.tasks.values()) {
+        if (task.firstSight?.queue === handle.url && task.firstSight.ahead.includes(message.pool)) {
+          task.firstSight = undefined;
+          task.unhold?.();
+        }
+      }
+    }
     this.review();
+  }
+
+  /** Whether this pool has listened to the queue for less than LISTEN_MS, and so does not yet know who else serves it. */
+  private listening(served: Served, now: number) {
+    return served.listeningSince === undefined || now - served.listeningSince < LISTEN_MS;
+  }
+
+  /**
+   * Begins listening to a queue whose document has been found: says at once
+   * that it serves it with no slots, and at LISTEN_MS, having heard the
+   * others, says its slots and looks at the queue again.
+   */
+  private startListening(served: Served) {
+    served.listeningSince = this.clock.now();
+    this.sayServing(served);
+    const timer = this.clock.setTimeout(() => {
+      served.unhold = undefined;
+      this.sayServing(served);
+      this.review();
+    }, LISTEN_MS);
+    served.unhold = () => {
+      this.clock.clearTimeout(timer);
+      served.unhold = undefined;
+    };
   }
 
   /** Why a run of this pool's must stop, or null. A task whose document is gone is wanted by nobody. */
@@ -912,23 +960,29 @@ export class Pool {
 
   /**
    * Says it serves, on every queue it serves, as soon as how many of its
-   * slots are busy changes: the others choose a task's preferred pool among
-   * those with a free slot, and a count a beat old would have them hold back
-   * for a pool that cannot take the task.
+   * slots are busy changes: every pool, itself included, ranks pools by the
+   * free slots they last said they had, and a count a beat old would have
+   * them hold back for a pool that cannot take the task.
    */
   private sayBusy() {
     if (!this.stopped) {
       for (const queue of this.queues.values()) {
-        this.sayServing(queue.handle);
+        this.sayServing(queue);
       }
     }
   }
 
-  /** Says it serves the queue, with its slots, or, `leaving`, that it has none for it any more. */
-  private sayServing(handle: Handle<Queue> | undefined, leaving = false) {
+  /**
+   * Says it serves the queue, with its slots; with none while it is still
+   * listening to the queue, and none, `leaving`, as its last word there. What
+   * it says is what it ranks itself by.
+   */
+  private sayServing(served: Served, leaving = false) {
+    const handle = served.handle;
     if (handle) {
       const { id: pool, name } = this.options;
-      const slots = leaving ? 0 : this.options.slots;
+      const slots = leaving || this.listening(served, this.clock.now()) ? 0 : this.options.slots;
+      served.said = { slots, busy: this.busy };
       this.send(handle, { type: 'serving', pool, name, slots, busy: this.busy, has: this.has } satisfies Omit<ServingMessage, keyof Stamp>);
     }
   }

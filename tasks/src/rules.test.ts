@@ -57,6 +57,7 @@ import {
   orphans,
   preferenceHash,
   preferred,
+  ranked,
   type Queue,
   recordsOf,
   type Run,
@@ -2699,8 +2700,49 @@ describe('preferred', () => {
         for (const near of [null, 'A', 'B', 'E']) {
           const answers = new Set(permutations(set).map((order) => preferred(taskUrl, near, order)));
           expect(answers.size, `${taskUrl} ${JSON.stringify(set)} near ${near}`).toBe(1);
+          const rankings = new Set(permutations(set).map((order) => ranked(taskUrl, near, order).join()));
+          expect(rankings.size, `${taskUrl} ${JSON.stringify(set)} near ${near}`).toBe(1);
         }
       }
     }
+  });
+
+  it('ranks exactly the pools with a free slot (never one that says it has no slots), near first if it is one, then by the hash, highest first; preferred is the first', () => {
+    const pools = ['A', 'B', 'C', 'D'];
+    const byHashAll = (taskUrl: string, names: string[]) =>
+      [...names].sort((a, b) => preferenceHash(taskUrl, b) - preferenceHash(taskUrl, a) || (a < b ? -1 : 1));
+    for (const taskUrl of [TASK, 'automerge:4QvJwDgN9Wfnp9Eb1oNmhS8oWfRc']) {
+      // every way of each pool being free, full, or saying it has no slots
+      for (let states = 0; states < 3 ** pools.length; states++) {
+        const set = pools.map((pool, i) => {
+          const state = Math.floor(states / 3 ** i) % 3;
+          return state === 0 ? free(pool) : state === 1 ? full(pool) : { pool, slots: 0, busy: 0 };
+        });
+        const freeOnes = set.filter((it) => it.busy < it.slots).map((it) => it.pool);
+        for (const near of [null, 'A', 'D', 'E']) {
+          const order = ranked(taskUrl, near, set);
+          const rest = byHashAll(taskUrl, freeOnes.filter((pool) => pool !== near));
+          expect(order, `${JSON.stringify(set)} near ${near}`).toEqual(near !== null && freeOnes.includes(near) ? [near, ...rest] : rest);
+          expect(preferred(taskUrl, near, set)).toBe(order[0] ?? null);
+        }
+      }
+    }
+  });
+
+  it('leaving any one pool out of a ranking leaves the others in the same order, so a pool that ranks anew without one it held back for agrees with the rest', () => {
+    const set = [free('A'), free('B'), free('C'), free('D')];
+    for (const taskUrl of [TASK, 'automerge:4QvJwDgN9Wfnp9Eb1oNmhS8oWfRc', 'automerge:tie']) {
+      for (const near of [null, 'A', 'B', 'E']) {
+        const whole = ranked(taskUrl, near, set);
+        for (const gone of set) {
+          const without = ranked(taskUrl, near, set.filter((it) => it !== gone));
+          expect(without, `${taskUrl} near ${near} without ${gone.pool}`).toEqual(whole.filter((pool) => pool !== gone.pool));
+        }
+      }
+    }
+  });
+
+  it('ranks a pool named twice once', () => {
+    expect(ranked(TASK, null, [free('A'), free('A'), full('B')])).toEqual(['A']);
   });
 });

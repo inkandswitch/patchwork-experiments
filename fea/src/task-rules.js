@@ -1,5 +1,5 @@
 /**
- * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v6]
+ * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v7]
  *
  * What the documents are, and what may be read from them. Everything else (a
  * pool, an asker, a view) is these rules applied to documents and to what has
@@ -77,17 +77,17 @@
  *   the entry before it reads the task and of the task before it takes it.
  *   Work that no pool has what it needs for waits; it never fails for want
  *   of a machine.
- * - Of the pools heard serving a queue that have what a task needs and a free
- *   slot, and the judging pool itself, one is PREFERRED (`preferred`). A
- *   pool judges this once, when it first sees the task listed and its entry
- *   says it may take it, and keeps that judgment while the task stays
- *   takeable. If it was preferred, it takes the task as soon as it has a free
- *   slot within HOLD_MS of that sight, or else (when it hears another that
- *   could take it) a second HOLD_MS later; if not, only once HOLD_MS have
- *   passed since that sight, on its own clock. A pool that has listened to a
- *   queue for less than LISTEN_MS is preferred for nothing there, and one
- *   that stops says it has no slots. This is advice that no rule depends on:
- *   two pools that both take a task resolve as below, the later giving way.
+ * - A pool RANKS the pools heard serving a queue that have what a task needs
+ *   (`ranked`) by the free slots each last said it had there, its own last
+ *   word included. The first is preferred; where none is ranked, a pool that
+ *   said it has slots and hears no other that has is first. It ranks once,
+ *   when it first sees the task listed and its entry says it may take it, and
+ *   anew when a pool ranked before it says it has no slots. Ranked n-th from
+ *   0, it takes the task n HOLD_MS after it ranked, when it has a free slot,
+ *   but from a HOLD_MS later only once all ranked have had a turn or no other
+ *   has slots; unranked, after them all, a HOLD_MS at least. A pool says it has
+ *   no slots (not taking) until it has listened to a queue for LISTEN_MS, and
+ *   as its last word there. Advice: two pools that both take resolve as below.
  * - It STOPS a run of its own (`stopReason`) as soon as the work is done
  *   elsewhere, a run before it ended the task, its key names another task,
  *   or an earlier run it can hear holds it, each of which makes it `yielded`,
@@ -214,9 +214,10 @@ export const MAX_LOG_LINES = 200;
 export const HOLD_MS = 1_500;
 
 /**
- * How long a pool listens to a queue's channel before it may judge itself a
- * task's preferred pool there: a beat, in which every other pool serving the
- * queue says so, and a crossing more for the last of those words to arrive.
+ * How long a pool listens to a queue's channel before it says it has slots
+ * there, and so may be ranked for a task: a beat, in which every other pool
+ * serving the queue says so, and a crossing more for the last of those words
+ * to arrive.
  */
 export const LISTEN_MS = BEAT_MS + 500;
 
@@ -747,34 +748,39 @@ export function preferenceHash(taskUrl, pool) {
  */
 
 /**
- * Which of `pools` should take the task: among those with a free slot (busy
- * below slots), `near` if it is one of them, and otherwise the one whose
- * `preferenceHash` with the task's url is highest, the smaller name where two
- * are equal; null where none has a free slot. The caller passes only the
- * pools that have what the task needs, itself among them as having a free
- * slot, and leaves out any not heard for LAPSE_MS. The answer depends on
- * the set alone, never on its order, so pools that have heard the same pools
- * choose the same one.
+ * The order in which `pools` may take the task: those with a free slot (busy
+ * below slots; a pool that says it has no slots never has one), `near` first
+ * if it is one of them, then by `preferenceHash` with the task's url, highest
+ * first, the smaller name first where two are equal. The caller passes the
+ * pools that have what the task needs, as each last said of itself on the
+ * queue's channel (the caller too), and leaves out any not heard for
+ * LAPSE_MS. The order depends on the set alone, never on the list's order,
+ * and leaving a pool out leaves the others in the same order, so pools that
+ * have heard the same pools rank them the same.
+ * @param {string} taskUrl
+ * @param {string | null | undefined} near
+ * @param {Candidate[]} pools
+ * @returns {string[]}
+ */
+export function ranked(taskUrl, near, pools) {
+  const free = [...new Set(pools.filter((it) => typeof it?.pool === 'string' && Number(it.busy) < Number(it.slots)).map((it) => it.pool))];
+  const hashes = new Map(free.map((pool) => [pool, preferenceHash(taskUrl, pool)]));
+  return free.sort(
+    (a, b) =>
+      Number(b === near) - Number(a === near) || /** @type {number} */ (hashes.get(b)) - /** @type {number} */ (hashes.get(a)) || (a < b ? -1 : 1),
+  );
+}
+
+/**
+ * Which of `pools` should take the task: the first `ranked` names, or null
+ * where none has a free slot.
  * @param {string} taskUrl
  * @param {string | null | undefined} near
  * @param {Candidate[]} pools
  * @returns {string | null}
  */
 export function preferred(taskUrl, near, pools) {
-  const free = pools.filter((it) => typeof it?.pool === 'string' && Number(it.busy) < Number(it.slots));
-  if (typeof near === 'string' && free.some((it) => it.pool === near)) {
-    return near;
-  }
-  let best = null;
-  let bestHash = -1;
-  for (const { pool } of free) {
-    const hash = preferenceHash(taskUrl, pool);
-    if (hash > bestHash || (hash === bestHash && best !== null && pool < best)) {
-      best = pool;
-      bestHash = hash;
-    }
-  }
-  return best;
+  return ranked(taskUrl, near, pools)[0] ?? null;
 }
 
 // Changes. Each is to be called inside a change to the document.
