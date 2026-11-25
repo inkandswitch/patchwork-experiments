@@ -31,9 +31,15 @@ export const RIGHTS = Object.freeze({
 
 /**
  * Store fetched data (fetch-data.js fetchTerrainData's result) and point the Terrain doc at it.
- * @returns {Promise<{ dem: string, features: string }>} the file docs' urls
+ * With `when`, the doc is pointed at the data only if `when(doc)` holds, looked
+ * at before the file docs are made and again inside the change that points at
+ * them; otherwise nothing is written to the Terrain doc and this is null (file
+ * docs made between the two looks are left to nobody).
+ * @param {{ when?: (doc: object) => boolean }} [options]
+ * @returns {Promise<{ dem: string, features: string, layers: string | null, look: string | null } | null>} the file docs' urls
  */
-export async function storeTerrainData(repo, handle, fetched) {
+export async function storeTerrainData(repo, handle, fetched, { when = () => true } = {}) {
+  if (!when(handle.doc())) return null;
   const title = handle.doc()?.title || "Terrain";
   const layered = !!fetched.dem.record.layered;
   const demRights = layered ? { licence: "Mixed: see the Terrain doc's sources (CHS NONNA non-navigational; OGL – Canada; NOAA public domain)", attribution: fetched.attribution ?? "" } : RIGHTS.dem;
@@ -43,7 +49,10 @@ export async function storeTerrainData(repo, handle, fetched) {
     fetched.layers ? repo.create2(fileDoc(`${title} height sources and canopy.bin`, "bin", "application/octet-stream", fetched.layers.bytes, demRights)) : null,
     fetched.look ? repo.create2(fileDoc(`${title} OpenStreetMap buildings and land cover.json`, "json", "application/json", fetched.look.bytes, RIGHTS.features)) : null,
   ]);
+  let stored = false;
   handle.change((d) => {
+    if (!when(d)) return;
+    stored = true;
     d.data = {
       dem: { url: dem.url, ...plain(fetched.dem.record) },
       features: { url: features.url, ...plain(fetched.features.record) },
@@ -56,6 +65,7 @@ export async function storeTerrainData(repo, handle, fetched) {
     d.attribution = fetched.attribution ?? ATTRIBUTION;
     d.credit = fetched.credit ?? CREDIT;
   });
+  if (!stored) return null;
   return { dem: dem.url, features: features.url, layers: layers?.url ?? null, look: look?.url ?? null };
 }
 

@@ -2,16 +2,60 @@
 // the marks and the named places), its frame and extent, a Fetch data
 // button that caches the open data into the doc (the only network access in
 // this package besides the template), and every source with its licence.
+//
+// Fetch data is work done through the task system (fetch-task.js, asked with
+// doWork under a key naming this doc and what it asks for): on the person's
+// own queue when one of their machines serves it, so that it finishes when
+// this page closes and two pages asking are one fetch; otherwise in this
+// page. A fetch already under way for this doc and frame, asked from another
+// tab or before a reload, is shown rather than offered again.
 
 import css from "./tool.css?inline";
-import { fetchTerrainData, NCEI } from "./fetch-data.js";
-import { storeTerrainData, readTerrainData, dataFits } from "./store.js";
+import { NCEI } from "./fetch-data.js";
+import { readTerrainData, dataFits } from "./store.js";
+import fetchTerrainTask from "./fetch-task.js";
+import { fetchSpec, fetchKey } from "./fetch-spec.js";
+import { cancel, doWork, inSamePackage, ownQueueOf, storageUrlOf, watch } from "./task-client.js";
 import { shape, HEIGHT_SCALE } from "./build.js";
 import { hexAt } from "./colors.js";
 import { localFrame } from "./tmerc.js";
 import { kindOf } from "./structures.js";
 import { modelOf, buoyLook } from "./marks.js";
 import { QUALITY } from "./burn.js";
+
+// Vite sets this in the built package, whose fetch task is dist/fetch-task.js (vite.config.js)
+const BUILT = import.meta.env?.PROD === true;
+
+/**
+ * Where Fetch data's code is, as an import url both this page and a pool can
+ * import: the package's own file, named by the package's url and not this
+ * site's, when this module was loaded from a package in automerge; the file
+ * beside this one when it runs unbuilt from anywhere else (tests, a dev
+ * server); null when neither can be known, and the tool then calls it itself.
+ */
+export function fetchTaskUrl(here = import.meta.url, built = BUILT) {
+  const inPackage = inSamePackage(here, built ? "dist/fetch-task.js" : "src/fetch-task.js");
+  if (inPackage || built) return inPackage;
+  try {
+    return new URL("./fetch-task.js", here).href;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a fetch in this state is still under way, as far as a person can tell. */
+const underWay = (state) => state === "waiting" || state === "running" || state === "stalled" || state === "stopping";
+
+/** The person's own queue, read without making anything: null if they have none. */
+async function ownQueueUrl(repo) {
+  const storageUrl = storageUrlOf(globalThis.accountDocHandle?.doc?.());
+  if (!storageUrl || !repo) return null;
+  try {
+    return ownQueueOf((await repo.find(storageUrl)).doc());
+  } catch {
+    return null;
+  }
+}
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -34,7 +78,8 @@ export default function TerrainTool(handle, element) {
           <div class="panel flow">
             <h3>Data</h3>
             <div class="status"></div>
-            <button class="fetch">Fetch data</button>
+            <div class="actions"><button class="fetch">Fetch data</button> <button class="cancel" hidden>Cancel</button></div>
+            <div class="muted where" hidden></div>
             <pre class="log" hidden></pre>
           </div>
           <div class="panel flow">
@@ -67,7 +112,12 @@ export default function TerrainTool(handle, element) {
   const canvas = $("canvas");
   const ctx2d = canvas.getContext("2d");
   let dead = false;
-  let busy = false;
+  // the fetch this tool started: { controller, here } while it runs
+  let job = null;
+  // a fetch under way for this doc and frame that this tool did not start: { key, queue, view }
+  let elsewhere = null;
+  const repoOf = () => handle.repo ?? element.repo ?? globalThis.repo;
+  const busy = () => !!job || !!elsewhere;
   let shown = null; // the data key the map was drawn for
   let drawing = null;
 
@@ -92,33 +142,103 @@ export default function TerrainTool(handle, element) {
   });
 
   const logEl = $(".log");
+  const whereEl = $(".where");
   const log = (s, state = "") => {
     logEl.hidden = false;
     logEl.dataset.state = state;
     logEl.textContent = state === "error" ? s : logEl.textContent ? `${logEl.textContent}\n${s}` : s;
   };
+  /** Shows a fetch as its task's view has it: its log, and where and how far it is. */
+  const showView = (view) => {
+    if (dead) return;
+    const lines = view.logs.map((l) => l.message);
+    logEl.hidden = !lines.length;
+    logEl.dataset.state = "";
+    logEl.textContent = lines.join("\n");
+    const stage = view.state === "waiting" || view.state === "stalled" ? "Waiting for one of your machines to take it up…" : view.state === "stopping" ? "Stopping…" : typeof view.progress === "string" ? view.progress : "";
+    const where = view.taskUrl ? "Running on your own machines: it will finish even if you close this." : "Running in this page: closing it stops the fetch.";
+    whereEl.hidden = !underWay(view.state);
+    whereEl.textContent = [stage, where].filter(Boolean).join(" ");
+  };
 
   $(".fetch").addEventListener("click", async () => {
-    if (busy) return;
-    busy = true;
+    if (busy()) return;
+    const controller = new AbortController();
+    const mine = (job = { controller, here: true });
     logEl.textContent = "";
+    logEl.hidden = true;
+    whereEl.hidden = false;
+    whereEl.textContent = "Starting…";
     render();
     try {
-      const d = handle.doc();
-      // everything a fetch reads from the doc: a layered place's heights, its look, its provenance and credits too
-      const spec = { origin: d.origin, grid: d.grid, demToMWL: d.demToMWL ?? 0, datum: d.datum ?? null, osmDate: d.osmDate ?? null, heightScale: d.heightScale ?? null, heights: d.heights ?? null, look: d.look ?? null, provenance: d.provenance ?? null, attribution: d.heights ? d.attribution || null : null, credit: d.heights ? d.credit || null : null };
-      const fetched = await fetchTerrainData(JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(spec).filter(([, v]) => v != null)))), { fetch: (...a) => globalThis.fetch(...a), log: (s) => log(s) });
-      if (dead) return;
-      log("Storing…");
-      await storeTerrainData(handle.repo ?? element.repo ?? window.repo, handle, fetched);
-      log(`Done: ${fetched.summary.coastWays} coastline ways, ${fetched.summary.structures} structures, ${fetched.summary.marks} marks; heights ${fetched.summary.min.toFixed(1)} to ${fetched.summary.max.toFixed(1)} m (${fetched.dem.record.datum}).`);
+      const repo = repoOf();
+      const input = { terrain: handle.url };
+      const importUrl = fetchTaskUrl();
+      let result;
+      if (importUrl) {
+        const key = await fetchKey(handle.url, fetchSpec(handle.doc()));
+        result = await doWork(repo, { importUrl, input, key }, {
+          signal: controller.signal,
+          onProgress: (view) => {
+            mine.here = !view.taskUrl;
+            showView(view);
+          },
+        });
+      } else {
+        // nowhere a pool could import it from: done here, as a task done here would be
+        result = await fetchTerrainTask(input, { repo, signal: controller.signal, log: (s) => log(s), progress: (stage) => !dead && (whereEl.textContent = String(stage)) });
+      }
+      if (!dead && !result?.stored) log(result?.message ?? "Nothing was stored.", "error");
     } catch (err) {
-      log(String(err?.message ?? err), "error");
+      if (!dead) log(controller.signal.aborted ? "Stopped: nothing was stored." : String(err?.message ?? err), "error");
     } finally {
-      busy = false;
-      if (!dead) render();
+      if (job === mine) job = null;
+      if (!dead) {
+        whereEl.hidden = true;
+        render();
+      }
     }
   });
+
+  $(".cancel").addEventListener("click", () => {
+    if (job) job.controller.abort();
+    else if (elsewhere) void cancel(repoOf(), elsewhere.queue, elsewhere.key);
+  });
+
+  // Follows the fetch asked under this doc's key now, on the person's own
+  // queue, so that one already under way is shown and not asked again. The
+  // key follows the doc: a changed frame is another fetch.
+  let following = null; // { key, stop }
+  let looking = 0;
+  async function followKey() {
+    const ticket = ++looking;
+    const repo = repoOf();
+    const queue = await ownQueueUrl(repo);
+    const key = queue ? await fetchKey(handle.url, fetchSpec(handle.doc())) : null;
+    if (dead || ticket !== looking || following?.key === key) return;
+    following?.stop();
+    following = null;
+    if (elsewhere) {
+      elsewhere = null;
+      render();
+    }
+    if (!key) return;
+    const stop = watch(repo, queue, key, (view) => {
+      if (dead) return;
+      // a fetch this tool started shows itself
+      if (job) return;
+      if (underWay(view.state)) {
+        elsewhere = { key, queue, view };
+        showView(view);
+        render();
+      } else if (elsewhere) {
+        elsewhere = null;
+        showView(view);
+        render();
+      }
+    });
+    following = { key, stop };
+  }
 
   async function drawMap(d) {
     const key = `${d.data?.dem?.sha256}|${d.data?.features?.sha256}|${d.demToMWL}`;
@@ -221,8 +341,9 @@ export default function TerrainTool(handle, element) {
     status.dataset.state = d.data && !fits ? "stale" : "";
     status.textContent = !d.data ? "No data yet. Fetch data asks NOAA NCEI for the heights and OpenStreetMap for the shore, the docks and the marks, and keeps them in this doc." : fits ? `Fetched ${new Date(d.data.fetched).toLocaleString()} (OpenStreetMap as of ${d.data.summary?.osmBase ?? "?"}).` : "The place or the grid changed since the data was fetched: fetch it again.";
     const btn = $(".fetch");
-    btn.disabled = busy;
-    btn.textContent = busy ? "Fetching…" : d.data ? "Fetch again" : "Fetch data";
+    btn.disabled = busy();
+    btn.textContent = busy() ? "Fetching…" : d.data ? "Fetch again" : "Fetch data";
+    $(".cancel").hidden = !busy();
     const sources = d.sources?.length ? d.sources : [{ name: NCEI.name, licence: NCEI.licence, url: NCEI.metadata }];
     $(".sources").innerHTML = sources
       .map(
@@ -242,11 +363,19 @@ export default function TerrainTool(handle, element) {
     } else if (fits) drawMap(d);
   }
 
+  const changed = () => {
+    render();
+    void followKey();
+  };
   render();
-  handle.on("change", render);
+  void followKey();
+  handle.on("change", changed);
   return () => {
     dead = true;
-    handle.off("change", render);
+    // work done in this page ends with it; work on the person's queue goes on
+    if (job?.here) job.controller.abort();
+    following?.stop();
+    handle.off("change", changed);
     root.remove();
     style.remove();
   };

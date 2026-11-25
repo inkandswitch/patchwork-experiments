@@ -12,7 +12,9 @@
 // - Shoreline, harbour structures and marks: OpenStreetMap through the
 //   Overpass API (retried: it answers 502 now and then).
 //
-// `fetch` is passed in (the browser's, node's, or a probe's recording).
+// `fetch` is passed in (the browser's, node's, or a probe's recording), and
+// so is an optional `signal`: once it aborts, every request is given up and
+// no retry is waited for, so a stopped fetch ends promptly.
 
 import { localFrame } from "./tmerc.js";
 import { readTiff } from "./tiff.js";
@@ -160,7 +162,51 @@ out geom;`;
 }
 
 const USER_AGENT = "patchwork-terrain/0.1 (+https://www.inkandswitch.com/patchwork/)";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** What a fetch that was stopped rejects with. */
+export const STOPPED = "The fetch was stopped.";
+const stopped = () => new Error(STOPPED);
+
+/** Waits `ms`, or rejects at once when `signal` aborts. */
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(stopped());
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(stopped());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * `fetch` that hands `signal` to every request and rejects the moment it
+ * aborts, whether or not the request heeds it (a recording, a test's
+ * stand-in), so that nothing after a stop waits on the network.
+ */
+export function heeding(fetch, signal) {
+  if (!signal) return fetch;
+  return (input, init = {}) =>
+    new Promise((resolve, reject) => {
+      if (signal.aborted) return reject(stopped());
+      const onAbort = () => reject(stopped());
+      signal.addEventListener("abort", onAbort, { once: true });
+      Promise.resolve(fetch(input, { ...init, signal })).then(
+        (res) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(res);
+        },
+        (err) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(signal.aborted ? stopped() : err);
+        },
+      );
+    });
+}
 
 /**
  * POST the query to Overpass, retrying 429/5xx and network errors (it is
@@ -168,9 +214,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * (406) a request that doesn't say who it's from; a browser's own
  * User-Agent does, and elsewhere this one is sent (a browser drops it).
  */
-export async function fetchOverpass(query, { fetch, log = () => {}, waits = [3000, 10000, 20000, 40000, 60000] } = {}) {
+export async function fetchOverpass(query, { fetch, log = () => {}, waits = [3000, 10000, 20000, 40000, 60000], signal } = {}) {
   let last = null;
   for (let attempt = 0; attempt <= waits.length; attempt++) {
+    if (signal?.aborted) throw stopped();
     try {
       const res = await fetch(OVERPASS.service, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": USER_AGENT }, body: `data=${encodeURIComponent(query)}` });
       if (res.ok) {
@@ -182,12 +229,14 @@ export async function fetchOverpass(query, { fetch, log = () => {}, waits = [300
       last = new Error(`Overpass answered ${res.status}`);
       if (res.status !== 429 && res.status < 500) throw last;
     } catch (err) {
+      // a stopped fetch is not one to try again
+      if (signal?.aborted) throw stopped();
       last = err;
       if (/answered 4\d\d/.test(String(err?.message)) && !/429/.test(err.message)) throw err;
     }
     if (attempt < waits.length) {
       log(`${last?.message ?? last}; trying again in ${waits[attempt] / 1000} s`);
-      await sleep(waits[attempt]);
+      await sleep(waits[attempt], signal);
     }
   }
   throw last ?? new Error("Overpass didn't answer.");
@@ -217,10 +266,19 @@ export const DEM_SCALE = 0.02;
  * Refused: a coastline that can't tell land from water, and heights that
  * don't line up with it (build.js shape()).
  * @param {{ origin, grid, demToMWL?, datum?, osmDate? }} spec
- * @param {{ fetch: typeof fetch, log?: (s: string) => void, now?: () => Date }} io
+ * Aborting `signal` rejects it promptly with STOPPED.
+ * @param {{ fetch: typeof fetch, log?: (s: string) => void, now?: () => Date, signal?: AbortSignal }} io
  */
-export async function fetchTerrainData(spec, { fetch, log = () => {}, now = () => new Date() }) {
-  if (spec.heights?.kind === "layered") return fetchLayeredData(spec, { fetch, log, now });
+export async function fetchTerrainData(spec, { fetch: fetchIt, log = () => {}, now = () => new Date(), signal }) {
+  const fetch = heeding(fetchIt, signal);
+  const got = await (spec.heights?.kind === "layered" ? fetchLayeredData(spec, { fetch, log, now, signal }) : fetchPlainData(spec, { fetch, log, now, signal }));
+  // the work after the last answer cannot be interrupted; a stop that came during it still stands
+  if (signal?.aborted) throw stopped();
+  return got;
+}
+
+/** A place whose heights are NCEI's DEM: fetchTerrainData's answer for it. */
+async function fetchPlainData(spec, { fetch, log, now, signal }) {
   const frame = localFrame(spec.origin);
   const grid = spec.grid;
   if (!Number.isInteger(Math.log2(grid.n - 1))) throw new Error(`The grid has ${grid.n} nodes a side; it needs 2^k + 1.`);
@@ -231,9 +289,9 @@ export async function fetchTerrainData(spec, { fetch, log = () => {}, now = () =
     (async () => {
       const box = latLonBox(grid, frame, 600);
       log("Asking OpenStreetMap for the shoreline, structures and marks…");
-      return { box, ...(await fetchOverpass(overpassQuery(box, { date: spec.osmDate ?? null }), { fetch, log })) };
+      return { box, ...(await fetchOverpass(overpassQuery(box, { date: spec.osmDate ?? null }), { fetch, log, signal })) };
     })(),
-    spec.look ? fetchLook(spec, frame, { fetch, log }) : null,
+    spec.look ? fetchLook(spec, frame, { fetch, log, signal }) : null,
   ]);
   const demBytes = quantize(dem.values, DEM_SCALE);
   // pinned to a date, OSM is as of that date (Overpass's own osm_base is today's)
@@ -269,11 +327,11 @@ export async function fetchTerrainData(spec, { fetch, log = () => {}, now = () =
 const pick = (src) => JSON.parse(JSON.stringify(src));
 
 /** The look (buildings, ground cover) from OpenStreetMap, as of the place's date: { file: { bytes, record }, query, box, osmBase }. */
-async function fetchLook(spec, frame, { fetch, log }) {
+async function fetchLook(spec, frame, { fetch, log, signal }) {
   const box = latLonBox(spec.grid, frame, 600);
   const query = lookQuery(box, { date: spec.osmDate ?? null });
   log("Asking OpenStreetMap for the buildings and what covers the ground…");
-  const { json } = await fetchOverpass(query, { fetch, log });
+  const { json } = await fetchOverpass(query, { fetch, log, signal });
   const look = lookFromOsm(json, frame, { osmBase: spec.osmDate ?? undefined });
   const bytes = new TextEncoder().encode(JSON.stringify(look));
   const sha256 = await sha256Hex(bytes);
@@ -300,16 +358,16 @@ const lookSource = (look, box, spec, when) => ({
  * doc caches, as fetchTerrainData's, plus `layers` (the source layer and
  * the canopy) and `look`.
  */
-async function fetchLayeredData(spec, { fetch, log, now }) {
+async function fetchLayeredData(spec, { fetch, log, now, signal }) {
   const frame = localFrame(spec.origin);
   const grid = spec.grid;
   if (!Number.isInteger(Math.log2(grid.n - 1))) throw new Error(`The grid has ${grid.n} nodes a side; it needs 2^k + 1.`);
   const when = now().toISOString();
   const box = latLonBox(grid, frame, 600);
   log("Asking OpenStreetMap for the shoreline, structures and marks…");
-  const osm = await fetchOverpass(overpassQuery(box, { date: spec.osmDate ?? null }), { fetch, log });
+  const osm = await fetchOverpass(overpassQuery(box, { date: spec.osmDate ?? null }), { fetch, log, signal });
   const features = featuresFromOsm(osm.json, frame, { osmBase: spec.osmDate ?? undefined });
-  const look = spec.look ? await fetchLook(spec, frame, { fetch, log }) : null;
+  const look = spec.look ? await fetchLook(spec, frame, { fetch, log, signal }) : null;
   const urlOf = (id) => {
     const r = spec.heights.rasters[id];
     return r.crs === "frame" ? nceiUrl(grid, frame, r.ncei) : r.url;
