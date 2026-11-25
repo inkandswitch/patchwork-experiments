@@ -15,11 +15,10 @@
 // for each task and costs nothing when nothing has changed.
 //
 // What is written is the top-level directory the wanted file is in (`dist/`,
-// for `dist/tasks/wait.js`), without source maps. Code that imports by bare
-// name (`import … from "some-package"`) finds nothing here: a browser's
-// import map isn't Node's node_modules. Code for a process should import its
-// neighbours and Node's own modules, and take its Repo from the task's
-// context.
+// for `dist/tasks/wait.js`), without source maps, and no node_modules. Code
+// here imports its neighbours, Node's own modules, and by bare name only
+// Automerge and its Repo, which are the run thread's own (task-imports.ts);
+// any other bare name fails, as there is nothing here for it to be.
 
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';

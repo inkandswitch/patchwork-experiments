@@ -10,6 +10,7 @@ import type { RepoConfig } from '../repo-config';
 import type { PlaceSettings } from '../webworker-lib';
 import { parseAutomergeImport } from '../import-url';
 import { materialise } from './package-files';
+import { importTask } from './task-imports';
 
 /** Node resolves imports by itself. */
 export async function setUpImportMap(_importMap: unknown, _baseURI: string) {}
@@ -88,11 +89,13 @@ const cacheDir = (): string => place.codeDir ?? join(homedir(), '.patchwork-task
  * service worker URL names a file in a package kept in automerge, whatever
  * site it was made on: there is no service worker here, so the file and its
  * neighbours are fetched through this thread's Repo and imported from disk.
- * Nothing else can be imported from here.
+ * Nothing else can be imported from here. What the code imports by bare
+ * name is resolved as task-imports.ts says: Automerge and its Repo are this
+ * thread's own.
  */
 export async function importModule(importUrl: string): Promise<any> {
   if (importUrl.startsWith('data:')) {
-    return import(importUrl);
+    return importTask(importUrl, 'carried');
   }
   const found = parseAutomergeImport(importUrl);
   if (!found) {
@@ -102,13 +105,13 @@ export async function importModule(importUrl: string): Promise<any> {
   }
   const here = localCopy(found.packageUrl, found.path);
   if (here) {
-    return import(pathToFileURL(here).href);
+    return importTask(pathToFileURL(here).href, 'installed');
   }
   if (!threadRepo) {
     throw new Error("code kept in automerge is fetched through the worker's Repo, and it has none");
   }
   const file = await materialise(threadRepo as any, found, cacheDir());
-  return import(pathToFileURL(file).href);
+  return importTask(pathToFileURL(file).href, 'carried');
 }
 
 /**

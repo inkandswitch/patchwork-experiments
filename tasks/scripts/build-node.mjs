@@ -34,7 +34,10 @@ await build({
   target: "node22",
   sourcemap: true,
   logLevel: "info",
-  // the Repo and its storage come from node_modules at run time: they bring wasm and a socket library
+  // The Repo and its storage come from node_modules at run time: they bring
+  // wasm and a socket library. A task's code is handed that same Repo
+  // package and the Automerge it uses (src/node/task-imports.ts), which a
+  // copy bundled in here would not be.
   external: ["@automerge/automerge-repo-node", "@automerge/automerge-repo-storage-nodefs"],
   // a CommonJS dependency bundled into an ES module still asks for `require`
   banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' },
