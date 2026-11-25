@@ -29,12 +29,17 @@ that machine), and **what a task is handed can be found** (its `ctx.repo.find` w
 document that has not arrived yet, for about half a minute, instead of rejecting at once).
 
 **Mostly once**: asked of a queue that several of a person's devices serve, a task runs on one of
-them, once, unless the device running it dies part way or two devices cannot hear each other at
-the moment it is listed, and then it runs again, as at least once promises. The pools serving a
-queue hear each other and agree on one to prefer for each task (the one its asker is next to, or
-else the one a hash of the task's url and the pool's id picks): that one takes it at once, and the
-rest wait a second and a half before they may. A task never fails for want of a device: one that
-needs what no pool serving its queue has waits, and the queue browser says what it waits for.
+them, once, unless the device running it dies part way, or two devices cannot hear each other at
+the moment it is listed (a device that started serving in the last two and a half seconds may not
+have heard the others yet), and then it runs again, as at least once promises. The pools serving
+a queue hear each other and agree on one to prefer for each task, among those with a free slot
+(the one its asker is next to, or else the one a hash of the task's url and the pool's id picks).
+Each decides this once, when it first sees the task: the one preferred takes it at once, and the
+rest wait a second and a half from then before they may, so work beyond the preferred pool's
+slots starts that much later. A pool that has served a queue for less than two and a half
+seconds holds back for everything there, and one that stops says so, and is not waited for. A
+task never fails for want of a device: one that needs what no pool serving its queue has waits,
+and the queue browser says what it waits for.
 
 ## Asking for work
 
@@ -101,6 +106,22 @@ the task returns. `ctx` holds:
   return (or throw); there is nothing to flush or wait for. A stopped run's writes (a run document
   set to "cancelled" when `signal` aborts) are sent the same way, within the five seconds.
 - `taskUrl`, `key`, and `run`, this run's id.
+
+What a task's code may import depends on where it runs:
+
+- On a Node host: relative and absolute paths (its own neighbours), Node's built-in modules
+  (`node:fs`, `fs`), and by bare name only `@automerge/automerge`, `@automerge/automerge/slim`,
+  `@automerge/automerge-repo` and `@automerge/automerge-repo/slim`, which are the host's own
+  copies, the same module instances as `ctx.repo`'s. Any other bare name fails with an error
+  naming what it may import. Code of a package given with `--local` also imports the other
+  dependencies in its own `node_modules`.
+- In a browser's pool: relative paths and URLs, and every name in the page's import map. On the
+  site that includes `@automerge/automerge`, `@automerge/automerge-repo` and their `/slim` builds
+  (all mapped to the slim builds, the same modules the run worker's Repo uses), and Patchwork's
+  other externals.
+
+So code that imports Automerge by bare name (to append to a text with `splice`, say) runs
+unchanged on either; `probes/append-task.js` is such a task.
 
 What must not happen twice guards itself. A run's id is in the task's `runs` before its code is
 called, after every earlier run, so code can look there (and write its run's id beside its
@@ -257,20 +278,24 @@ only asks of) is in `PLANS.md`, each with what it waits on.
 processes and say what they saw, one line per check or measurement:
 
 - `probes/node-run.mjs` (after `pnpm build:node`; `--only 1,16` runs only the checks named):
-  Node hosts through the real sync server, 20 checks. 1, latency of ten do-nothing tasks; 2,
+  Node hosts through the real sync server, 20 checks. 1, latency of ten do-nothing tasks on a
+  host alone that has served the queue for two and a half seconds, none taken as late as the
+  hold (and how long the first task, asked as the host started, waited); 2,
   logs and progress heard while running and kept; 3, a throw fails once; 4, a spin cancelled,
   its thread ended within the grace; 5, a child process gone on cancel; 6, SIGTERM records the
   run lost and exits in time, a restart runs it again, and a guarded task fails rather than run
   twice; 7, kill -9 and a restart take it again; 8, two hosts fail over; 9, two hosts share four
-  tasks listed at once, one run each and none yielded; 10, `served()` lists a host and drops a
-  silent one; 11, a second host on one data directory refuses; 12, code a host does not accept
+  tasks listed at once, one run each and none yielded; 10, `served()` lists a host, and drops it
+  within a second of its stopping, on its last word that it has no slots; 11, a second host on one data directory refuses; 12, code a host does not accept
   is never taken; 13 to 15, 1 MB written by a task is found at the asker's first find, also from
   a host stopped the moment its run reads succeeded; 16, a task whose document reaches the
   server after its listing is taken within 1.5 s; 17, ten tasks needing a label only one of two
   hosts has all run there, once each; 18, a task needing a label no host has stays listed,
   untaken, until a third host with it starts and runs it; 19, a task asked `near` a host runs on
   that host; 20, four tasks asked at once near a host with two slots run two there and two on
-  the other host, each once.
+  the other host, each once and none yielded (when each run started is printed, not checked:
+  the other host takes its two at once if it heard the first full before it saw them, and
+  otherwise a hold later). Checks 9, 17 and 19 print when each run started, too.
 - `probes/write-path.mjs` (after `pnpm build:node`): measures, and checks nothing, how a
   document travels between a task on a Node host and its asker through the sync server, per
   size: written by the task (`out`), made by the asker for the task (`in`), twenty at once
@@ -278,22 +303,27 @@ processes and say what they saw, one line per check or measurement:
   the asker reads succeeded (`term`). `probes/write-path/browser.mjs` (after `pnpm build`, in
   the chrome slot) measures `out`, `in` and `ack` for a browser's run worker.
 - `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
-  stand-in page in a throwaway Chrome profile, with no sync server, 21 checks. The page mounts
+  stand-in page in a throwaway Chrome profile, with no sync server but for check 22, 22 checks. The page mounts
   what a frame does: the components the package tags `background`, found by tag in its plugin
   list (the page has no registry), and the titlebar tool. One pool per profile across tabs; a
   closed, navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning
   code, also code that read and wrote through `ctx.repo`; two run workers at once; a run that
   wrote with no server to reach says so; a pool worker that errors or dies; `served()` and the
-  queue browser; Make my queue and Join; with only the badge mounted no pool runs and the badge
-  and queue browser say why; the background component mounted later starts it, and let go lets
-  the lock go.
+  queue browser; Make my queue and Join, on an account that serves nothing and so starts no
+  pool; with only the badge mounted no pool runs and the badge and queue browser say why; the
+  background component mounted later starts it, and let go lets the lock go; and (22) a run
+  worker runs `probes/append-task.js` unchanged, through the page's import map and the real
+  sync server (`--sync`, `PATCHWORK_SYNC`, or Ink & Switch's), and the page sees the text it
+  appends to grow piece by piece.
 - `probes/real-run.mjs <automerge:package url>` (in the chrome slot): a published copy of the
   package (a staging package will do) in the real Patchwork, https://patchwork.inkandswitch.com/,
-  in a throwaway profile, 20 checks. It installs the package through the profile's module
+  in a throwaway profile, 22 checks, the last two that neither the page nor the task system's
+  workers logged an error of the task system's. It installs the package through the profile's module
   settings and records what the site's frame does with it; presses Make my queue on a badge with
   no tool-storage provider above it; mounts a `patchwork-tool-storage-provider` of its own on the
   account and, inside it, the background component and the badge, as a frame mounts them (it
-  does not rely on the site's frame to), and makes the profile's queue with that badge.
+  does not rely on the site's frame to), sees that serving nothing it starts no pool worker, and
+  makes the profile's queue with that badge.
   Then: the pool worker and the run workers load from the package through the site's service
   worker; ten do-nothing tasks are asked through this tab's tasks Repo and ten through the
   site's own (keyhive) Repo; the package's own task module, a throw, a spin cancelled and its
@@ -301,4 +331,12 @@ processes and say what they saw, one line per check or measurement:
   lines; documents tasks write reach the site's Repo, their run workers (one started for its
   run) having waited for the server's acknowledgement; `doWork`, `watchWork` and `stopWork` from
   the page.
-- `probes/solve-task.mjs`: a task that runs a child process, used by `node-run.mjs`.
+- `probes/append-run.mjs` (after `pnpm build:node`): a Node host, through the real sync server,
+  runs `probes/append-task.js` as a `--local` file and as a `data:` URL; the asker sees the text
+  grow piece by piece, and its history is one append at the end per piece.
+  `probes/append-check.js` is how this probe and browser-run's check 22 read the text.
+- `probes/solve-task.mjs`: a task that runs a child process, used by `node-run.mjs`
+  (`probes/solve-task-lib.mjs`, a neighbour it imports, shows that a task's code can be more
+  than one file).
+- `probes/cdp.mjs` and `probes/chrome-guard.mjs`: how the browser probes start, drive and always
+  close a throwaway Chrome.

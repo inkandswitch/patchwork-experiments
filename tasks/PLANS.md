@@ -118,7 +118,13 @@ that one machine serves.
   is two crossings as measured on one Mac through the sync server; between devices on slower
   links a crossing may take longer, and a hold too short costs one yielded run, as before. A task
   listed again by its asker after a lapse keeps its needs, which its document holds, but not the
-  first asking's `near`, which only the entry did. Each waits on a case that needs it.
+  first asking's `near`, which only the entry did. A pool in its first LISTEN_MS on a queue says
+  it serves it, so the pools already there may prefer it for a task while it, not yet preferred
+  for anything, holds back for all of them: both take that task when the hold ends, and one run
+  yields. Its `serving` saying it is still listening (or saying nothing until it has listened)
+  would close this. With three or more pools, the ones not preferred all take a task the
+  preferred one never took at the same moment, the end of the hold, and all but one yield. Each
+  waits on a case that needs it.
 - **A link in memory between a pool and its run workers.** A run worker's Repo has storage of its
   own (a directory in Node, a database in a browser), so what a task writes through `ctx.repo`
   reaches the page by the sync server, and a run's ending waits until the server has acknowledged
