@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { getTaskQueues, isOnTaskQueue, joinTaskQueue, leaveTaskQueue, setAcceptance, getAcceptance } from './helpers';
+import {
+  getAcceptance,
+  getTaskQueues,
+  isOnTaskQueue,
+  joinTaskQueue,
+  leaveTaskQueue,
+  SERVED_QUEUES_FIELD_NAME,
+  setAcceptance,
+} from './helpers';
 
 const one = 'automerge:one' as any;
 const other = 'automerge:other' as any;
@@ -27,6 +35,15 @@ describe("an account's task queues", () => {
     joinTaskQueue(account, one);
     joinTaskQueue(account, one);
     leaveTaskQueue(account, other);
+    expect(getTaskQueues(account)).toEqual({ [one]: true });
+  });
+
+  it("keeps its list in its own field, apart from the older framework's", () => {
+    const account: any = { __taskQueues__: { [other]: true } };
+    joinTaskQueue(account, one);
+    expect(SERVED_QUEUES_FIELD_NAME).toBe('__servedQueues__');
+    expect(account.__servedQueues__).toEqual({ [one]: true });
+    expect(account.__taskQueues__).toEqual({ [other]: true });
     expect(getTaskQueues(account)).toEqual({ [one]: true });
   });
 

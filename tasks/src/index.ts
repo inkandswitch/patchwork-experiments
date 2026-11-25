@@ -1,6 +1,5 @@
 import { Plugin } from '@inkandswitch/patchwork-plugins';
 import {
-  LEGACY_QUEUE_DATATYPE_ID,
   QUEUE_DATATYPE_ID,
   QUEUE_TOOL_ID,
   TITLEBAR_TOOL_ID,
@@ -22,7 +21,9 @@ export const plugins: Plugin<any>[] = [
     id: QUEUE_TOOL_ID,
     name: 'Task Queue Browser (experimental)',
     icon: 'CirclePlus',
-    supportedDatatypes: [QUEUE_DATATYPE_ID, LEGACY_QUEUE_DATATYPE_ID],
+    // Only this system's queues: one made by the older framework is served by
+    // that framework's own pool, and opening it here would offer to lend it this one.
+    supportedDatatypes: [QUEUE_DATATYPE_ID],
     load: async () => (await import('./task-queue-tool')).TaskQueueTool,
   },
   {

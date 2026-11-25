@@ -9,9 +9,6 @@
 /** The datatype of a queue made here. */
 export const QUEUE_DATATYPE_ID = 'task-queue-next';
 
-/** What queues made by the older copy are; this package's browser opens them too. */
-export const LEGACY_QUEUE_DATATYPE_ID = 'task-queue';
-
 export const QUEUE_TOOL_ID = 'task-queue-next-browser';
 export const TITLEBAR_TOOL_ID = 'task-titlebar-next';
 export const TRAY_COMPONENT_ID = 'task-tray-next';

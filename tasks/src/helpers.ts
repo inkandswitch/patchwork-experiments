@@ -1,7 +1,13 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
 import { acceptanceOf, type Acceptance, type QueueSetting } from './acceptance';
 
-export const TASK_QUEUE_URLS_FIELD_NAME = '__taskQueues__';
+/**
+ * The account document's field that lists the queues this account's browsers
+ * serve. It is this system's own: the older task framework keeps its list in
+ * `__taskQueues__`, and an account with both installed lends each only the
+ * queues listed for it.
+ */
+export const SERVED_QUEUES_FIELD_NAME = '__servedQueues__';
 
 // TODO: what's the right way to get this??
 export function getAccountDocUrl(): AutomergeUrl {
@@ -17,7 +23,7 @@ export type TaskQueues = { [taskQueueUrl: AutomergeUrl]: QueueSetting };
 
 /** The queues this account's browsers lend their workers to. An account with no list serves none. */
 export function getTaskQueues(account: any): TaskQueues {
-  return account?.[TASK_QUEUE_URLS_FIELD_NAME] ?? {};
+  return account?.[SERVED_QUEUES_FIELD_NAME] ?? {};
 }
 
 export function isOnTaskQueue(account: any, taskQueueUrl: AutomergeUrl) {
@@ -53,8 +59,8 @@ export function leaveTaskQueue(account: any, taskQueueUrl: AutomergeUrl) {
 
 /** The account's own list, made empty the first time it is needed. */
 function ownTaskQueues(account: any): TaskQueues {
-  if (!account[TASK_QUEUE_URLS_FIELD_NAME]) {
-    account[TASK_QUEUE_URLS_FIELD_NAME] = {};
+  if (!account[SERVED_QUEUES_FIELD_NAME]) {
+    account[SERVED_QUEUES_FIELD_NAME] = {};
   }
-  return account[TASK_QUEUE_URLS_FIELD_NAME];
+  return account[SERVED_QUEUES_FIELD_NAME];
 }
