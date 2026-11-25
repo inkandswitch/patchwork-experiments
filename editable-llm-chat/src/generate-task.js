@@ -29,9 +29,6 @@
 
 import { splice } from '@automerge/automerge-repo';
 
-/** What a stopped run throws. */
-export const STOPPED = 'The reply was stopped.';
-
 /** What it throws when the chat cannot be had. */
 export const UNREACHABLE = 'The chat could not be opened to write the reply.';
 
@@ -136,6 +133,16 @@ export async function* streamPieces(fetch, request, apiKey, signal) {
 }
 
 /**
+ * How a stopped run leaves the reply: `yielded` (another run holds the task)
+ * and `stopping` (this machine's pool is going away, and the task will be
+ * taken again) hand it to another run, which starts it afresh; any other
+ * stop is the person's, and the reply is stopped.
+ * @param {unknown} reason  the run's signal's reason
+ * @returns {'stopped' | 'taken'}
+ */
+const stoppedFor = (reason) => (reason === 'yielded' || reason === 'stopping' ? 'taken' : 'stopped');
+
+/**
  * @typedef {object} ReplyInput
  * @property {string} chat  the chat document's url
  * @property {string} message  the id of the reply to write
@@ -145,7 +152,7 @@ export async function* streamPieces(fetch, request, apiKey, signal) {
 
 /**
  * @typedef {object} Written  what a run returns: how the reply stands, and how much this run wrote
- * @property {'finished' | 'stopped' | 'failed' | 'taken' | 'gone'} ended  `taken`: another run writes the reply now; `gone`: the reply was deleted
+ * @property {'finished' | 'stopped' | 'failed' | 'taken' | 'gone'} ended  `taken`: another run writes the reply now, or will; `gone`: the reply was deleted
  * @property {number} pieces
  * @property {number} chars
  * @property {boolean} [already]  the reply had ended before this run began, and it wrote nothing
@@ -165,9 +172,12 @@ export async function generate(input, ctx, { fetch = (/** @type {any[]} */ ...a)
   }
   const run = ctx.run;
   const handle = await ctx.repo.find(chat, { signal: ctx.signal }).catch(() => {
-    throw new Error(ctx.signal.aborted ? STOPPED : UNREACHABLE);
+    if (!ctx.signal.aborted) throw new Error(UNREACHABLE);
   });
-  ctx.signal.throwIfAborted();
+  // stopped before it took the reply: nothing was written, and the work's ending says it stopped
+  if (!handle || ctx.signal.aborted) {
+    return { ended: stoppedFor(ctx.signal.reason), pieces: 0, chars: 0 };
+  }
 
   /** @type {Written | null} */
   let before = null;
@@ -232,12 +242,12 @@ export async function generate(input, ctx, { fetch = (/** @type {any[]} */ ...a)
     }
   } catch (error) {
     if (ctx.signal.aborted) {
-      // `yielded` and `stopping` hand the reply to another run, which starts it afresh
-      const reason = ctx.signal.reason;
-      if (reason !== 'yielded' && reason !== 'stopping') {
+      // A stop is not a failure, so it returns: how the run is recorded is its stop's reason either way.
+      const ended = stoppedFor(ctx.signal.reason);
+      if (ended === 'stopped') {
         write((_d, _i, m) => (m.ended = 'stopped'));
       }
-      throw new Error(STOPPED);
+      return { ended, pieces, chars };
     }
     const reason = /** @type {any} */ (error)?.message ?? String(error);
     write((_d, _i, m) => {

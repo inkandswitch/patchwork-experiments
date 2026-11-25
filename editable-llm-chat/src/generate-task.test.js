@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { initSubduction, Repo, splice } from '@automerge/automerge-repo';
 import * as A from '@automerge/automerge';
-import { generate, streamPieces, STOPPED } from './generate-task.js';
+import { generate, streamPieces } from './generate-task.js';
 import { provider } from './test/provider.js';
 
 await initSubduction();
@@ -129,7 +129,7 @@ describe('a reply written by a run', () => {
     const lost = generate(input, first.ctx, {
       fetch: provider(PIECES, { gate: (i) => (i === 3 ? (first.controller.abort('stopping'), new Promise(() => {})) : undefined) }).fetch,
     });
-    await expect(lost).rejects.toThrow(STOPPED);
+    expect(await lost).toEqual({ ended: 'taken', pieces: 3, chars: 12 });
     const left = PIECES.slice(0, 3).join('');
     expect(reply(handle)).toMatchObject({ content: left, run: 'run-1' });
     expect(reply(handle).ended).toBeUndefined();
@@ -181,18 +181,29 @@ describe('a reply written by a run', () => {
     const run = context(repo, 'run-1');
     let stoppedAt = 0;
     const p = provider(PIECES, { gate: (i) => (i === 4 ? ((stoppedAt = Date.now()), run.controller.abort('cancelled'), new Promise(() => {})) : undefined) });
-    await expect(generate(input, run.ctx, { fetch: p.fetch })).rejects.toThrow(STOPPED);
+    expect(await generate(input, run.ctx, { fetch: p.fetch })).toEqual({ ended: 'stopped', pieces: 4, chars: 18 });
     expect(Date.now() - stoppedAt).toBeLessThan(200);
     expect(p.calls[0].init.signal.aborted).toBe(true);
     expect(reply(handle)).toMatchObject({ content: PIECES.slice(0, 4).join(''), ended: 'stopped', run: 'run-1' });
     expect(history(handle).at(-1)).toEqual(set(['messages', 1, 'ended'], 'stopped'));
   });
 
+  it('a run stopped before it has the chat writes nothing', async () => {
+    const { repo, handle, input } = chat();
+    const run = context(repo, 'run-1');
+    run.controller.abort('cancelled');
+    const heads = handle.heads();
+    const p = provider(PIECES);
+    expect(await generate(input, run.ctx, { fetch: p.fetch })).toEqual({ ended: 'stopped', pieces: 0, chars: 0 });
+    expect(handle.heads()).toEqual(heads);
+    expect(p.calls.length).toBe(0);
+  });
+
   it('a run stopped because another holds its task (yielded) leaves the reply to that run', async () => {
     const { repo, handle, input } = chat();
     const run = context(repo, 'run-1');
     const p = provider(PIECES, { gate: (i) => (i === 2 ? (run.controller.abort('yielded'), new Promise(() => {})) : undefined) });
-    await expect(generate(input, run.ctx, { fetch: p.fetch })).rejects.toThrow(STOPPED);
+    expect(await generate(input, run.ctx, { fetch: p.fetch })).toEqual({ ended: 'taken', pieces: 2, chars: 10 });
     expect(reply(handle).ended).toBeUndefined();
   });
 
