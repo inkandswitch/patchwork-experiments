@@ -14,6 +14,7 @@
 import { uclueletDoc, WIND, HOME, GRID, OSM_DATE, EXPECTED, SKIES, ANCHORAGE, ORIGIN, OFFSET, WATER_COLOUR } from "./ucluelet.js";
 import { fetchTerrainData } from "./fetch-data.js";
 import { storeTerrainData } from "./store.js";
+import { fetchSpec } from "./fetch-spec.js";
 import { localFrame } from "./tmerc.js";
 import { bayWater, aboard, headTo, placeWeather, AT_ANCHOR, CREDIT, PLACE, WEATHER } from "./template.js";
 
@@ -82,7 +83,7 @@ export function placeDoc() {
 
 export async function newUclueletTerrain(repo) {
   // its credits from the start: they are the place's (the tool's Fetch data passes them on)
-  return repo.create2({ "@patchwork": { type: "terrain" }, ...placeDoc(), data: null, sources: [] });
+  return repo.create2({ "@patchwork": { type: "terrain" }, ...placeDoc(), data: null });
 }
 
 /**
@@ -141,11 +142,13 @@ export default {
   async create(ctx) {
     ctx.notify?.("Fetching Ucluelet: depths from CHS, land and forest from NRCan's lidar, the shore, docks and town from OpenStreetMap (about 66 MB; a minute or two)…", "info");
     const handle = await newUclueletTerrain(ctx.repo);
-    const fetched = await fetchTerrainData(placeDoc(), { fetch: (...a) => globalThis.fetch(...a) });
+    // what the new doc asks for, fetched and recorded as one, as the tool's Fetch data does
+    const spec = fetchSpec(handle.doc());
+    const fetched = await fetchTerrainData(spec, { fetch: (...a) => globalThis.fetch(...a) });
     const changed = differences(fetched);
     fetched.summary.matchesChecked = !changed.length;
     if (changed.length) ctx.notify?.(`The data has changed since this place was checked (2026-11-15): ${changed.join(", ")} came back different. Built from what came back.`, "warning");
-    await storeTerrainData(ctx.repo, handle, fetched);
+    await storeTerrainData(ctx.repo, handle, fetched, { spec });
     const { hull } = await layOut(ctx, handle.url);
     ctx.notify?.(
       hull

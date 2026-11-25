@@ -151,7 +151,7 @@ export function builtRings(doc, look, frame) {
 /**
  * Build the GLB.
  * @param {{ doc: object, dem: Int16Array, features: object, layers?: Uint8Array | null, look?: object | null, params?: object }} input
- *   doc: the Terrain doc's fields (origin, grid, heightScale, exaggeration, datum, demToMWL, places, sources, attribution, look, site, landmarks);
+ *   doc: the Terrain doc's fields as source.js's inputs() reads them (origin, grid, heightScale, exaggeration, datum, demToMWL, places, look, site, landmarks, and the stored data's sources, attribution and credit);
  *   layers: the layered heights' source layer and canopy (layered.js packLayers); look: the OSM buildings and land cover (look-osm.js)
  * @returns {{ glb: Uint8Array, meta: { bounds, notes }, stats: object, heights: Int16Array, cls: object }}
  */

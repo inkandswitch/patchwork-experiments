@@ -25,9 +25,10 @@ export const inputs = (doc) => ({
   datum: doc?.datum ?? null,
   demToMWL: doc?.demToMWL ?? 0,
   places: doc?.places ?? [],
-  sources: doc?.sources ?? [],
-  attribution: doc?.attribution ?? "",
-  credit: doc?.credit ?? "",
+  // the credits of the data, which are stored with it
+  sources: doc?.data?.sources ?? [],
+  attribution: doc?.data?.attribution ?? "",
+  credit: doc?.data?.credit ?? "",
   data: doc?.data ? { dem: record(doc.data.dem), features: record(doc.data.features), ...(doc.data.layers ? { layers: record(doc.data.layers) } : {}), ...(doc.data.look ? { look: record(doc.data.look) } : {}) } : null,
   // a place's look and its own structures (only when it has them, so a doc without them fingerprints as it did)
   ...(doc?.heightScale != null ? { heightScale: doc.heightScale } : {}),
@@ -57,7 +58,7 @@ export default {
   async build({ doc, repo, params }) {
     const d = JSON.parse(JSON.stringify(inputs(doc)));
     if (!doc?.data?.dem?.url || !doc?.data?.features?.url) throw new Error("This terrain has no data yet: open it and press Fetch data.");
-    if (!dataFits(doc)) throw new Error("This terrain's data was fetched for another place or grid: open it and press Fetch data again.");
+    if (!dataFits(doc)) throw new Error("This terrain's data was fetched for another place, grid or settings: open it and press Fetch data again.");
     const { dem, features, layers, look } = await readTerrainData(repo, doc);
     const { glb, meta } = buildTerrain({ doc: d, dem, features, layers, look, params });
     return { kind: "glb", glb, meta };

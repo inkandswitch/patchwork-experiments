@@ -93,8 +93,10 @@ describe("the fetch task", () => {
       const result = await fetchTerrain(input(), ctx, net.fetch);
       expect(result).toEqual({ stored: false, message: MOVED });
       expect(lines.at(-1)).toBe(MOVED);
-      expect(handle.doc().data).toBeNull();
-      expect(handle.doc().sources).toEqual(before.sources);
+      // nothing but the move itself changed the doc
+      const moved = structuredClone(before);
+      move(moved);
+      expect(handle.doc()).toEqual(moved);
       expect(repo.created).toEqual([]);
     });
   }
@@ -291,7 +293,6 @@ describe("the key a fetch is asked under", () => {
     places: (d) => (d.places = []),
     wind: (d) => (d.wind = { speed: 1, from: 0 }),
     data: (d) => (d.data = null),
-    sources: (d) => (d.sources = []),
     "attribution of a place that is not layered": (d) => (d.attribution = "someone"),
   };
   for (const [field, change] of Object.entries(unrelated)) {

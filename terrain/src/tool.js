@@ -7,15 +7,16 @@
 // doWork under a key naming this doc and what it asks for): on the person's
 // own queue when one of their machines serves it, so that it finishes when
 // this page closes and two pages asking are one fetch; otherwise in this
-// page. A fetch already under way for this doc and frame, asked from another
-// tab or before a reload, is shown rather than offered again.
+// page. A fetch already under way for this doc and frame on the person's own
+// queue, asked from another tab or before a reload, is shown (watchWork)
+// rather than offered again; one done in another page is not seen here.
 
 import css from "./tool.css?inline";
 import { NCEI } from "./fetch-data.js";
 import { readTerrainData, dataFits } from "./store.js";
 import fetchTerrainTask from "./fetch-task.js";
 import { fetchRequest } from "./fetch-spec.js";
-import { cancel, doWork, inSamePackage, ownQueueOf, storageUrlOf, watch } from "./task-client.js";
+import { doWork, inSamePackage, stopWork, watchWork } from "./task-client.js";
 import { shape, HEIGHT_SCALE } from "./build.js";
 import { hexAt } from "./colors.js";
 import { localFrame } from "./tmerc.js";
@@ -45,17 +46,6 @@ export function fetchTaskUrl(here = import.meta.url, built = BUILT) {
 
 /** Whether a fetch in this state is still under way, as far as a person can tell. */
 const underWay = (state) => state === "waiting" || state === "running" || state === "stalled" || state === "stopping";
-
-/** The person's own queue, read without making anything: null if they have none. */
-async function ownQueueUrl(repo) {
-  const storageUrl = storageUrlOf(globalThis.accountDocHandle?.doc?.());
-  if (!storageUrl || !repo) return null;
-  try {
-    return ownQueueOf((await repo.find(storageUrl)).doc());
-  } catch {
-    return null;
-  }
-}
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -114,7 +104,7 @@ export default function TerrainTool(handle, element) {
   let dead = false;
   // the fetch this tool started: { controller, here } while it runs
   let job = null;
-  // a fetch under way for this doc and frame that this tool did not start: { key, queue, view }
+  // a fetch under way for this doc and frame that this tool did not start: { key, view }
   let elsewhere = null;
   const repoOf = () => handle.repo ?? element.repo ?? globalThis.repo;
   const busy = () => !!job || !!elsewhere;
@@ -173,7 +163,7 @@ export default function TerrainTool(handle, element) {
     render();
     try {
       const repo = repoOf();
-      const { input, key } = await fetchRequest(handle.url, handle.doc());
+      const { input, key } = fetchRequest(handle.url, handle.doc());
       const importUrl = fetchTaskUrl();
       let result;
       if (importUrl) {
@@ -204,33 +194,27 @@ export default function TerrainTool(handle, element) {
 
   $(".cancel").addEventListener("click", () => {
     if (job) job.controller.abort();
-    else if (elsewhere) void cancel(repoOf(), elsewhere.queue, elsewhere.key);
+    else if (elsewhere) void stopWork(repoOf(), elsewhere.key);
   });
 
-  // Follows the fetch asked under this doc's key now, on the person's own
-  // queue, so that one already under way is shown and not asked again. The
-  // key follows the doc: a changed frame is another fetch.
+  // Follows the fetch asked under this doc's key now, so that one already
+  // under way is shown and not asked again. The key follows the doc: a
+  // changed frame is another fetch.
   let following = null; // { key, stop }
-  let looking = 0;
-  async function followKey() {
-    const ticket = ++looking;
-    const repo = repoOf();
-    const queue = await ownQueueUrl(repo);
-    const key = queue ? (await fetchRequest(handle.url, handle.doc())).key : null;
-    if (dead || ticket !== looking || following?.key === key) return;
+  function followKey() {
+    const { key } = fetchRequest(handle.url, handle.doc());
+    if (dead || following?.key === key) return;
     following?.stop();
-    following = null;
+    const mine = (following = { key, stop: () => {} });
     if (elsewhere) {
       elsewhere = null;
       render();
     }
-    if (!key) return;
-    const stop = watch(repo, queue, key, (view) => {
-      if (dead) return;
+    mine.stop = watchWork(repoOf(), key, (view) => {
       // a fetch this tool started shows itself
-      if (job) return;
+      if (dead || following !== mine || job) return;
       if (underWay(view.state)) {
-        elsewhere = { key, queue, view };
+        elsewhere = { key, view };
         showView(view);
         render();
       } else if (elsewhere) {
@@ -239,7 +223,6 @@ export default function TerrainTool(handle, element) {
         render();
       }
     });
-    following = { key, stop };
   }
 
   async function drawMap(d) {
@@ -341,19 +324,19 @@ export default function TerrainTool(handle, element) {
     const status = $(".status");
     const fits = dataFits(d);
     status.dataset.state = d.data && !fits ? "stale" : "";
-    status.textContent = !d.data ? "No data yet. Fetch data asks NOAA NCEI for the heights and OpenStreetMap for the shore, the docks and the marks, and keeps them in this doc." : fits ? `Fetched ${new Date(d.data.fetched).toLocaleString()} (OpenStreetMap as of ${d.data.summary?.osmBase ?? "?"}).` : "The place or the grid changed since the data was fetched: fetch it again.";
+    status.textContent = !d.data ? "No data yet. Fetch data asks NOAA NCEI for the heights and OpenStreetMap for the shore, the docks and the marks, and keeps them in this doc." : fits ? `Fetched ${new Date(d.data.fetched).toLocaleString()} (OpenStreetMap as of ${d.data.summary?.osmBase ?? "?"}).` : "The place, the grid or its settings changed since the data was fetched: fetch it again.";
     const btn = $(".fetch");
     btn.disabled = busy();
     btn.textContent = busy() ? "Fetching…" : d.data ? "Fetch again" : "Fetch data";
     $(".cancel").hidden = !busy();
-    const sources = d.sources?.length ? d.sources : [{ name: NCEI.name, licence: NCEI.licence, url: NCEI.metadata }];
+    const sources = d.data?.sources?.length ? d.data.sources : [{ name: NCEI.name, licence: NCEI.licence, url: NCEI.metadata }];
     $(".sources").innerHTML = sources
       .map(
         (s) =>
           `<li><strong>${esc(s.name)}</strong>${s.fetched ? `, fetched ${esc(String(s.fetched).slice(0, 10))}` : ""}${s.osmBase ? `, as of ${esc(s.osmBase)}` : ""}<br><span class="muted">${esc(s.licence)}</span>${s.metadata ? ` · <a href="${esc(s.metadata)}" target="_blank" rel="noopener">metadata</a>` : ""}${s.url ? ` · <a href="${esc(s.url)}" target="_blank" rel="noopener">request</a>` : ""}${s.accuracy ? `<br><span class="muted">${esc(s.accuracy)}</span>` : ""}${s.derivation ? `<br><span class="muted">${esc(s.derivation)}</span>` : ""}</li>`,
       )
       .join("");
-    $(".attribution").textContent = d.attribution || "";
+    $(".attribution").textContent = d.data?.attribution || "";
     const t = d.datum?.tide ?? {};
     $(".water").innerHTML = `Heights are above mean water level (${esc(d.datum?.station ?? "")}: ${d.datum?.mwlAboveChartDatum ?? "?"} m above chart datum). Tides about it: highest normal ${t.HHWLT ?? "?"} m, mean higher high ${t.MHHW ?? "?"} m, mean lower low ${t.MLLW ?? "?"} m, lowest normal ${t.LLWLT ?? "?"} m.${d.wind ? `<br>A typical breeze: ${d.wind.speed} m/s from ${d.wind.from}° (${esc(d.wind.source)}).` : ""}<br>Not for navigation.`;
     const empty = $(".empty");
@@ -367,10 +350,10 @@ export default function TerrainTool(handle, element) {
 
   const changed = () => {
     render();
-    void followKey();
+    followKey();
   };
   render();
-  void followKey();
+  followKey();
   handle.on("change", changed);
   return () => {
     dead = true;

@@ -7,7 +7,7 @@
 // fetched, what is checked before storing, and what the key names are the
 // same thing.
 
-import { sha256Hex } from "./hash.js";
+import { sha256HexNow } from "./hash.js";
 
 /** The spec a fetch of this Terrain doc asks for, as plain JSON: fields the doc leaves empty are left out. */
 export function fetchSpec(d) {
@@ -50,13 +50,21 @@ export function sameSpec(a, b) {
 }
 
 /**
- * The key a fetch of `terrainUrl` is asked under: the doc and the SHA-256 of
+ * The SHA-256 of what a spec asks for: what a fetch's key names, and what
+ * stored data records it was fetched for (store.js), so that whether the data
+ * fits what the doc asks for now is one comparison.
+ */
+export function specHash(spec) {
+  return sha256HexNow(new TextEncoder().encode(canonicalJson(spec)));
+}
+
+/**
+ * The key a fetch of `terrainUrl` is asked under: the doc and the hash of
  * what it asks for. Asking twice for the same place and grid is asking once;
  * a changed frame is another fetch.
  */
-export async function fetchKey(terrainUrl, spec) {
-  const hash = await sha256Hex(new TextEncoder().encode(canonicalJson(spec)));
-  return `terrain-fetch:${terrainUrl}:${hash}`;
+export function fetchKey(terrainUrl, spec) {
+  return `terrain-fetch:${terrainUrl}:${specHash(spec)}`;
 }
 
 /**
@@ -64,7 +72,7 @@ export async function fetchKey(terrainUrl, spec) {
  * and the spec) and the key it is asked under, both from one spec, so the
  * task fetches exactly what its key names.
  */
-export async function fetchRequest(terrainUrl, doc) {
+export function fetchRequest(terrainUrl, doc) {
   const spec = fetchSpec(doc);
-  return { input: { terrain: terrainUrl, spec }, key: await fetchKey(terrainUrl, spec) };
+  return { input: { terrain: terrainUrl, spec }, key: fetchKey(terrainUrl, spec) };
 }

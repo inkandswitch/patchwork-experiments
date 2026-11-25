@@ -1,9 +1,18 @@
-// Keeping a terrain's fetched data in docs: two immutable file docs (the DEM
-// as int16 bytes, the OSM features as JSON) and, on the Terrain doc, a
-// record of each (url, encoding, sha256) with the sources and their
-// licences. Reading it back checks the bytes against the record.
+// Keeping a terrain's fetched data in docs: immutable file docs (the DEM as
+// int16 bytes, the OSM features as JSON, and for some places the height
+// sources and the look) and, on the Terrain doc, one value, `data`: a record
+// of each file (url, encoding, sha256), the sources and their licences, the
+// credits, and the hash of what the fetch asked for (fetch-spec.js). Reading
+// it back checks the bytes against the record.
+//
+// `data` is written whole, in one assignment, so that two stores made at once
+// on two machines keep one of them whole, and never one's files with the
+// other's credits. What it was fetched for is in it for the same reason: a
+// machine that had not yet heard that the frame moved may store data for the
+// old frame after the move, and the record then says so (dataFits).
 
 import { ATTRIBUTION, CREDIT, NCEI } from "./fetch-data.js";
+import { fetchSpec, specHash } from "./fetch-spec.js";
 import { sha256Hex } from "./hash.js";
 import { bytesToInt16 } from "./terrain-sample.js";
 
@@ -30,15 +39,18 @@ export const RIGHTS = Object.freeze({
 });
 
 /**
- * Store fetched data (fetch-data.js fetchTerrainData's result) and point the Terrain doc at it.
- * With `when`, the doc is pointed at the data only if `when(doc)` holds, looked
- * at before the file docs are made and again inside the change that points at
- * them; otherwise nothing is written to the Terrain doc and this is null (file
- * docs made between the two looks are left to nobody).
- * @param {{ when?: (doc: object) => boolean }} [options]
+ * Store fetched data (fetch-data.js fetchTerrainData's result, for `spec`)
+ * and point the Terrain doc at it. With `when`, the doc is pointed at the data
+ * only if `when(doc)` holds, looked at before the file docs are made and again
+ * inside the change that points at them; otherwise nothing is written to the
+ * Terrain doc and this is null (file docs made between the two looks are left
+ * to nobody).
+ * @param {{ spec: object, when?: (doc: object) => boolean }} options  spec: what the fetch asked for (fetch-spec.js fetchSpec)
  * @returns {Promise<{ dem: string, features: string, layers: string | null, look: string | null } | null>} the file docs' urls
  */
-export async function storeTerrainData(repo, handle, fetched, { when = () => true } = {}) {
+export async function storeTerrainData(repo, handle, fetched, { spec, when = () => true }) {
+  if (!spec || typeof spec !== "object") throw new Error("storeTerrainData needs the spec the data was fetched for.");
+  const request = specHash(spec);
   if (!when(handle.doc())) return null;
   const title = handle.doc()?.title || "Terrain";
   const layered = !!fetched.dem.record.layered;
@@ -54,16 +66,17 @@ export async function storeTerrainData(repo, handle, fetched, { when = () => tru
     if (!when(d)) return;
     stored = true;
     d.data = {
+      request,
       dem: { url: dem.url, ...plain(fetched.dem.record) },
       features: { url: features.url, ...plain(fetched.features.record) },
       ...(layers ? { layers: { url: layers.url, ...plain(fetched.layers.record) } } : {}),
       ...(look ? { look: { url: look.url, ...plain(fetched.look.record) } } : {}),
       fetched: fetched.summary.fetched,
       summary: plain(fetched.summary),
+      sources: plain(fetched.sources),
+      attribution: fetched.attribution ?? ATTRIBUTION,
+      credit: fetched.credit ?? CREDIT,
     };
-    d.sources = plain(fetched.sources);
-    d.attribution = fetched.attribution ?? ATTRIBUTION;
-    d.credit = fetched.credit ?? CREDIT;
   });
   if (!stored) return null;
   return { dem: dem.url, features: features.url, layers: layers?.url ?? null, look: look?.url ?? null };
@@ -100,10 +113,12 @@ export async function readTerrainData(repo, doc) {
   return { dem: bytesToInt16(demBytes), features: JSON.parse(new TextDecoder().decode(featBytes)), layers: layers ?? null, look: look ? JSON.parse(new TextDecoder().decode(look)) : null };
 }
 
-/** Whether the doc's data was fetched for its current origin and grid. */
+/**
+ * Whether the doc's data was fetched for what the doc asks for now (its
+ * place, grid, OpenStreetMap date and the rest of fetchSpec). Data stored
+ * without saying what it was fetched for never fits.
+ */
 export function dataFits(doc) {
-  const r = doc?.data?.dem;
-  if (!r) return false;
-  const g = doc.grid ?? {};
-  return r.n === g.n && r.cell === g.cell && r.x0 === g.x0 && r.z0 === g.z0 && r.origin?.lat === doc.origin?.lat && r.origin?.lon === doc.origin?.lon;
+  const request = doc?.data?.request;
+  return typeof request === "string" && request === specHash(fetchSpec(doc));
 }

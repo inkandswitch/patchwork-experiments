@@ -86,7 +86,7 @@ process.on("exit", cleanup);
 function smallTerrain(east = 0) {
   const d = cadboroDoc();
   delete d.look;
-  return { "@patchwork": { type: "terrain" }, ...d, title: `Probe ${east}`, grid: { n: 65, cell: 8, x0: -256 + east, z0: -256 }, data: null, sources: [], attribution: "" };
+  return { "@patchwork": { type: "terrain" }, ...d, title: `Probe ${east}`, grid: { n: 65, cell: 8, x0: -256 + east, z0: -256 }, data: null };
 }
 
 let exitCode = 1;
@@ -101,7 +101,7 @@ try {
   const terrain = repo.create(smallTerrain());
   const other = repo.create(smallTerrain(64));
   await repo.flush();
-  const { input, key } = await fetchRequest(terrain.url, terrain.doc());
+  const { input, key } = fetchRequest(terrain.url, terrain.doc());
 
   // 1 and 2: the fetch, asked twice under its key while it runs
   const views = [];
@@ -132,7 +132,7 @@ try {
 
   // 3: a cancel mid-fetch
   const controller = new AbortController();
-  const { input: otherInput, key: otherKey } = await fetchRequest(other.url, other.doc());
+  const { input: otherInput, key: otherKey } = fetchRequest(other.url, other.doc());
   const otherViews = [];
   const t1 = Date.now();
   const cancelled = run(repo, Q, { importUrl: IMPORT_URL, input: otherInput, key: otherKey }, (v) => otherViews.push({ at: Date.now() - t1, state: v.state, progress: v.progress, taskUrl: v.taskUrl }), controller.signal).then(
@@ -152,7 +152,7 @@ try {
 
   // 4: a different frame is a different key, and another task
   terrain.change((d) => (d.grid.x0 += 8));
-  const { input: movedInput, key: movedKey } = await fetchRequest(terrain.url, terrain.doc());
+  const { input: movedInput, key: movedKey } = fetchRequest(terrain.url, terrain.doc());
   const moved = await ask(repo, Q, { importUrl: IMPORT_URL, input: movedInput, key: movedKey });
   await cancel(repo, Q, movedKey);
   check(4, "a different frame is a different key, and asking under it is another task", movedKey !== key && moved.taskUrl !== first, { key: key.slice(-12), movedKey: movedKey.slice(-12), first, moved: moved.taskUrl });

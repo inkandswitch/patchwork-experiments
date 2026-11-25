@@ -1,15 +1,16 @@
-// The Terrain tool's Fetch data, through the task system's doWork and watch
-// (stood in for: their own tests are the tasks package's), on a page with
-// the stand-in Repo: what it asks for and under which key, what a person sees
-// while it runs here or on their own machines, Cancel, a fetch already under
-// way being shown instead of offered again, and where the task's code is.
+// The Terrain tool's Fetch data, through the task system's doWork, watchWork
+// and stopWork (stood in for: their own tests are the tasks package's), on a
+// page with the stand-in Repo: what it asks for and under which key, what a
+// person sees while it runs here or on their own machines, Cancel, a fetch
+// already under way being shown instead of offered again, and where the
+// task's code is.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo } from "./test/fake-repo.js";
 import { terrainDoc } from "./test/fixture.js";
 import { fetchSpec, fetchKey } from "./fetch-spec.js";
 import { MOVED, STAGES } from "./fetch-task.js";
 
-const calls = vi.hoisted(() => ({ doWork: [], watch: [], cancel: [] }));
+const calls = vi.hoisted(() => ({ doWork: [], watch: [], stop: [] }));
 vi.mock("./task-client.js", async (importOriginal) => ({
   ...(await importOriginal()),
   doWork: (repo, request, options) =>
@@ -17,13 +18,13 @@ vi.mock("./task-client.js", async (importOriginal) => ({
       calls.doWork.push({ repo, request, options, resolve, reject });
       options.signal?.addEventListener("abort", () => reject(new Error("The task was cancelled")));
     }),
-  watch: (repo, queue, key, onChange) => {
-    const call = { repo, queue, key, onChange, stopped: false };
+  watchWork: (repo, key, onChange) => {
+    const call = { repo, key, onChange, stopped: false };
     calls.watch.push(call);
     return () => (call.stopped = true);
   },
-  cancel: async (repo, queue, key) => {
-    calls.cancel.push({ repo, queue, key });
+  stopWork: async (repo, key) => {
+    calls.stop.push({ repo, key });
     return true;
   },
 }));
@@ -37,33 +38,26 @@ const settle = async () => {
 };
 
 beforeEach(() => {
-  calls.doWork.length = calls.watch.length = calls.cancel.length = 0;
+  calls.doWork.length = calls.watch.length = calls.stop.length = 0;
   // the map is drawn on a canvas, which this page has no 2D context for
   HTMLCanvasElement.prototype.getContext = () => new Proxy({}, { get: () => () => ({ data: { set() {} } }) });
 });
 afterEach(() => {
-  delete globalThis.accountDocHandle;
   document.body.innerHTML = "";
 });
 
-/** The tool mounted on a Terrain doc with no data, in a page whose person has their own queue if `own`. */
-function mounted({ own = false } = {}) {
+/** The tool mounted on a Terrain doc with no data. */
+function mounted() {
   const repo = new FakeRepo();
   const doc = terrainDoc();
   doc.data = null;
   const handle = repo.add(doc);
-  let queue = null;
-  if (own) {
-    queue = repo.add({ title: "My tasks", jobs: {} }).url;
-    const storage = repo.add({ own: queue, [queue]: true });
-    globalThis.accountDocHandle = repo.add({ toolStorage: { "tasks-next": storage.url } });
-  }
   const element = document.createElement("div");
   element.repo = repo;
   document.body.append(element);
   const unmount = TerrainTool(handle, element);
   const $ = (s) => element.querySelector(s);
-  return { repo, handle, queue, element, unmount, $, fetchButton: $(".fetch"), cancelButton: $(".cancel") };
+  return { repo, handle, element, unmount, $, fetchButton: $(".fetch"), cancelButton: $(".cancel") };
 }
 
 describe("Fetch data", () => {
@@ -75,7 +69,7 @@ describe("Fetch data", () => {
     const { request, repo: asked } = calls.doWork[0];
     expect(asked).toBe(repo);
     const spec = fetchSpec(handle.doc());
-    expect(request).toEqual({ importUrl: fetchTaskUrl(), input: { terrain: handle.url, spec }, key: await fetchKey(handle.url, spec) });
+    expect(request).toEqual({ importUrl: fetchTaskUrl(), input: { terrain: handle.url, spec }, key: fetchKey(handle.url, spec) });
     expect(request.importUrl).toMatch(/\/src\/fetch-task\.js$/);
   });
 
@@ -179,18 +173,11 @@ describe("Fetch data", () => {
 });
 
 describe("a fetch already under way", () => {
-  it("with no queue of their own, nothing is followed", async () => {
-    mounted();
-    await settle();
-    expect(calls.watch).toEqual([]);
-  });
-
-  it("is followed under this doc's key on the person's own queue, shown instead of offered again, and Cancel stops it by its key", async () => {
-    const { repo, handle, queue, $, fetchButton, cancelButton } = mounted({ own: true });
-    await settle();
+  it("is followed under this doc's key with watchWork from the start, shown instead of offered again, and Cancel stops it by its key", async () => {
+    const { repo, handle, $, fetchButton, cancelButton } = mounted();
     expect(calls.watch).toHaveLength(1);
-    const key = await fetchKey(handle.url, fetchSpec(handle.doc()));
-    expect(calls.watch[0]).toMatchObject({ repo, queue, key });
+    const key = fetchKey(handle.url, fetchSpec(handle.doc()));
+    expect(calls.watch[0]).toMatchObject({ repo, key });
     calls.watch[0].onChange(view({ key, state: "missing", taskUrl: null }));
     expect(fetchButton.disabled).toBe(false);
     calls.watch[0].onChange(view({ key, taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P", progress: STAGES.fetching, logs: lines("Asking NCEI for 65 × 65 heights…") }));
@@ -199,14 +186,14 @@ describe("a fetch already under way", () => {
     expect($(".where").textContent).toBe(`${STAGES.fetching} On your own machines: closing this does not stop it.`);
     expect($(".log").textContent).toBe("Asking NCEI for 65 × 65 heights…");
     cancelButton.click();
-    expect(calls.cancel).toEqual([{ repo, queue, key }]);
+    expect(calls.stop).toEqual([{ repo, key }]);
     calls.watch[0].onChange(view({ key, state: "cancelled", taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P" }));
     expect(fetchButton.disabled).toBe(false);
     expect(cancelButton.hidden).toBe(true);
   });
 
   it("follows the key the doc names now: a changed frame is another fetch, and a change elsewhere in the doc is not", async () => {
-    const { handle } = mounted({ own: true });
+    const { handle } = mounted();
     await settle();
     handle.change((d) => (d.title = "Renamed"));
     await settle();
@@ -215,11 +202,11 @@ describe("a fetch already under way", () => {
     await settle();
     expect(calls.watch).toHaveLength(2);
     expect(calls.watch[0].stopped).toBe(true);
-    expect(calls.watch[1].key).toBe(await fetchKey(handle.url, fetchSpec(handle.doc())));
+    expect(calls.watch[1].key).toBe(fetchKey(handle.url, fetchSpec(handle.doc())));
   });
 
   it("a fetch this tool started is shown from its own progress, not twice", async () => {
-    const { $, fetchButton } = mounted({ own: true });
+    const { $, fetchButton } = mounted();
     await settle();
     fetchButton.click();
     await settle();
@@ -229,7 +216,7 @@ describe("a fetch already under way", () => {
   });
 
   it("closing the tool stops following", async () => {
-    const { unmount } = mounted({ own: true });
+    const { unmount } = mounted();
     await settle();
     unmount();
     expect(calls.watch[0].stopped).toBe(true);

@@ -11,13 +11,16 @@
 //   places: [{ name, kind, lat, lon }],
 //   wind: { speed, from, scale, source },   // a typical breeze here, for a scene's sea
 //   osmDate: null | "2026-11-09T20:32:33Z", // OpenStreetMap as of this moment (Overpass [date:…]), so a fetch is reproducible; null: now
-//   data: null | {                  // what Fetch data cached (store.js): two immutable file docs
+//   data: null | {                  // what Fetch data cached (store.js), written whole: immutable file docs and what they are
+//     request,                      // the hash of what the fetch asked for (fetch-spec.js specHash): the data fits the doc while it matches
 //     dem: { url, encoding: "int16le", scale, offset, datum, n, cell, x0, z0, origin, sha256 },
 //     features: { url, encoding: "json", origin, sha256 },
-//     fetched, summary },
-//   sources: [{ id, name, url, fetched, licence, attribution, sha256?, query?, requests?, accuracy?, derivation? }],
-//   attribution,                    // the full credit (the GLB's asset.copyright, extras.terrain.attribution)
-//   credit,                         // the short credit a scene shows at the foot of the view (credit.js)
+//     layers?, look?,               // a layered place's height sources and canopy; OSM's buildings and land cover
+//     fetched, summary,
+//     sources: [{ id, name, url, fetched, licence, attribution, sha256?, query?, requests?, accuracy?, derivation? }],
+//     attribution,                  // the full credit (the GLB's asset.copyright, extras.terrain.attribution)
+//     credit },                     // the short credit a scene shows at the foot of the view (credit.js)
+//   attribution?, credit?,          // a layered place's own credits, which a fetch asks to be passed on (fetch-spec.js)
 // }
 
 import { cadboroDoc } from "./cadboro.js";
@@ -29,8 +32,6 @@ export const TerrainDatatype = {
     doc.title = "Terrain";
     for (const [k, v] of Object.entries(preset)) if (k !== "title") doc[k] = v;
     doc.data = null;
-    doc.sources = [];
-    doc.attribution = "";
   },
   getTitle(doc) {
     return doc?.title || "Terrain";

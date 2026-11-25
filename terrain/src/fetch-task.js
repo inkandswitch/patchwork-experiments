@@ -70,7 +70,7 @@ export async function fetchTerrain(input, ctx, fetch = (...a) => globalThis.fetc
     ctx.progress(STAGES.storing);
     ctx.log("Storing…");
   }
-  const urls = await storeTerrainData(ctx.repo, handle, fetched, { when: wanted });
+  const urls = await storeTerrainData(ctx.repo, handle, fetched, { spec, when: wanted });
   if (!urls) {
     if (ctx.signal?.aborted) throw new Error(STOPPED);
     ctx.log(MOVED);

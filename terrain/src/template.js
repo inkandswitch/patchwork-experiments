@@ -17,6 +17,7 @@
 import { cadboroDoc, ORIGIN, OFFSET, WIND, SKY, HOME, GRID, OSM_DATE, EXPECTED } from "./cadboro.js";
 import { fetchTerrainData } from "./fetch-data.js";
 import { storeTerrainData } from "./store.js";
+import { fetchSpec } from "./fetch-spec.js";
 
 /** Where the sloop lies: the mooring field, the frame's origin. */
 export const MOORING = Object.freeze([0, 0, 0]);
@@ -123,7 +124,7 @@ export function aboard(objects, id) {
 export const headTo = (from) => (-from * Math.PI) / 180;
 
 export async function newCadboroTerrain(repo) {
-  return repo.create2({ "@patchwork": { type: "terrain" }, ...cadboroDoc(), data: null, sources: [], attribution: "" });
+  return repo.create2({ "@patchwork": { type: "terrain" }, ...cadboroDoc(), data: null });
 }
 
 /**
@@ -186,11 +187,13 @@ export default {
   async create(ctx) {
     ctx.notify?.("Fetching Cadboro Bay: heights from NOAA, the shore and the docks from OpenStreetMap (up to a minute)…", "info");
     const handle = await newCadboroTerrain(ctx.repo);
-    const fetched = await fetchTerrainData(cadboroDoc(), { fetch: (...a) => globalThis.fetch(...a) });
+    // what the new doc asks for, fetched and recorded as one, as the tool's Fetch data does
+    const spec = fetchSpec(handle.doc());
+    const fetched = await fetchTerrainData(spec, { fetch: (...a) => globalThis.fetch(...a) });
     const changed = differences(fetched);
     fetched.summary.matchesChecked = !changed.length;
     if (changed.length) ctx.notify?.(`The data has changed since this place was checked (2026-11-09): ${changed.join(" and ")} came back different. Built from what came back; the shore and depths may differ from the checked ones.`, "warning");
-    await storeTerrainData(ctx.repo, handle, fetched);
+    await storeTerrainData(ctx.repo, handle, fetched, { spec });
     const { hull } = await layOut(ctx, handle.url);
     ctx.notify?.(
       hull

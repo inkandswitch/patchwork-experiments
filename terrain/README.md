@@ -210,7 +210,8 @@ longitude, never mixing a value with a missing one):
 The scene's credit: "Terrain: © OpenStreetMap contributors (ODbL) · CHS
 NONNA · NRCan HRDEM · NOAA NCEI · ECCC · site: Bennett Land Surveying, Rising
 Tide Boat Works · not for navigation". Every source, its exact request(s),
-licence and how its numbers were derived is in the Terrain doc's `sources`.
+licence and how its numbers were derived is in the Terrain doc's
+`data.sources`.
 
 ### The boatyard (`src/ucluelet.js` SITE, drawn by `src/site.js`)
 
@@ -781,14 +782,22 @@ its key names. So:
 
 - When one of the person's machines serves their own queue, the fetch runs
   there: closing the page does not stop it, and two pages pressing Fetch for
-  the same place and grid are one fetch. The tool says so, and on opening
-  shows a fetch already under way under the
-  doc's key instead of offering another. Otherwise it runs in the page, and
-  the tool says that closing the page stops it.
+  the same place and grid are one fetch. The tool says so, and follows the
+  doc's key with the kit's `watchWork` from the moment it opens (also when
+  the person makes their queue while it is open), showing a fetch already
+  under way instead of offering another; Cancel stops it with `stopWork`.
+  Otherwise it runs in the page, and the tool says that closing the page
+  stops it; a fetch done in another page is not seen from this one.
 - It stores only if the doc still asks for what it was asked for, looked at
   when it starts and again in the change that stores: a frame moved
   meanwhile stores nothing, and the log says so. A changed frame is a new
   key, so a new fetch.
+- What it stores is one value on the doc, `data`: the files' records, the
+  sources, the credits and the hash of what was fetched (the hash its key is
+  made of). Two stores at once on two machines keep one of them whole. The
+  data fits the doc while that hash is the hash of what the doc asks for now
+  (`dataFits`), so data stored by a machine that had not heard the frame
+  move reads as stale, and the tool says to fetch again.
 - Cancel stops it wherever it runs; requests are given up and Overpass's
   retries are not waited out.
 - It returns the file docs' urls and a line, never the data.
@@ -904,9 +913,16 @@ land in the mesh is stretched; the heightfield stays true.
   during Overpass's retry wait rejects at once and stores nothing; NCEI's
   error is the message a person sees; the key changes with each field a
   fetch reads and with none of the others; the tool's button through a
-  stand-in `doWork` and `watch` (`tool-fetch.test.js`): here and on the
+  stand-in `doWork`, `watchWork` and `stopWork` (`tool-fetch.test.js`): here and on the
   person's queue, Cancel, a fetch already under way shown, where the task's
   code is;
+- what a store writes (`store.test.js`, on real automerge documents): one
+  value, `data`; two stores at once on two machines keep one whole, each way
+  round; a store made before the frame move was heard reads as stale; each
+  of frame, origin, OSM date and look makes stored data stale and fits again
+  when put back; data with no request never fits; a layered place's own
+  credits are left alone, so its key is the same after a store; the SHA-256
+  computed at once is WebCrypto's at every length to five blocks;
 - a whole layered fetch on a made-up place, every answer a fixture: what is
   asked for, from which source each node is, the bytes it makes (pinned
   SHA-256), and the land source flipped is refused;

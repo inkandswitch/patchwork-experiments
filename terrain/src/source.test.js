@@ -4,6 +4,7 @@ import source from "./source.js";
 import { storeTerrainData, readTerrainData, dataFits } from "./store.js";
 import { parseGLB } from "./glb.js";
 import { sha256Hex } from "./hash.js";
+import { fetchSpec } from "./fetch-spec.js";
 import { quantize } from "./fetch-data.js";
 import { FakeRepo } from "./test/fake-repo.js";
 import { features, demValues, terrainDoc } from "./test/fixture.js";
@@ -23,7 +24,7 @@ async function stored() {
     sources: [{ id: "test", name: "made up", licence: "none", attribution: "tests" }],
     summary: { fetched: "2026-11-09T00:00:00.000Z" },
   };
-  await storeTerrainData(repo, handle, fetched);
+  await storeTerrainData(repo, handle, fetched, { spec: fetchSpec(handle.doc()) });
   return { repo, handle };
 }
 
@@ -108,7 +109,7 @@ describe("the terrain-mesh source", () => {
     const feat = (await repo.find(d.data.features.url)).doc();
     expect(feat).toMatchObject({ licence: "ODbL-1.0", attribution: expect.stringContaining("© OpenStreetMap contributors") });
     expect((await repo.find(d.data.dem.url)).doc().licence).toMatch(/Public domain/);
-    expect(d.credit).toMatch(/OpenStreetMap/);
+    expect(d.data.credit).toMatch(/OpenStreetMap/);
   });
 
   it("keys a data file by its content, not its heads", async () => {
