@@ -19,10 +19,7 @@ import { attachmentTray, carriesAttachments, pastedImages } from "./attachments.
 import { workflowOf } from "../workflow/plan.js"
 import { watchStanding, renderStandingLine, gateOf, renderChoices, placeOf } from "./standing.js"
 import { askAside } from "../workflow/aside.js"
-import { readKey, writeKey, readRelay, writeRelay, SEARCH_KEY_ID, onKeyChange, connectAccountKeys } from "../providers/keys.js"
-import { loadCatalogue, modelInfo } from "../providers/catalogue.js"
-import { describeModel, describeDefaults } from "../providers/openrouter.js"
-import { DEFAULT_LIMITS, DEFAULT_TIER_MODELS, TIERS } from "../workflow/plan.js"
+import { readKey, onKeyChange, connectAccountKeys } from "../providers/keys.js"
 import { renderTranscript } from "./transcript.js"
 import { createGuidesButton } from "./guides.js"
 import { createInlineViews } from "./views.js"
@@ -33,6 +30,7 @@ import { createDictation } from "./dictation.js"
 import { ensureStyles } from "./styles.js"
 import { morph } from "./morph.js"
 import { sessionRunners } from "./session-runners.js"
+import { createSettingsPanel } from "./settings-panel.js"
 import { sessionValue } from "./session-value.js"
 import { watchNames, myContactUrl } from "./names.js"
 
@@ -48,6 +46,7 @@ const el = (tag, className, text) => {
 export function AgentTool(handle, element, options = {}) {
   const mode = options.mode ?? "full"
   const repo = options.repo ?? globalThis.repo
+  const store = handleStore(handle, options.splice ?? null)
 
   const root = el("div", "patchwork-agent")
   root.dataset.mode = mode
@@ -155,139 +154,9 @@ export function AgentTool(handle, element, options = {}) {
     tray.addFiles(images)
   })
 
-  // ---- settings panel --------------------------------------------------
-  const settings = el("div", "agent-setup")
-  settings.style.display = "none"
-  // Every model OpenRouter offers, not a hand-picked few. A datalist gives
-  // native filter-as-you-type over several hundred entries, and free text still
-  // works — so a model released this morning is usable before the catalogue
-  // refreshes.
-  const modelInput = document.createElement("input")
-  modelInput.type = "text"
-  modelInput.setAttribute("list", "agent-model-list")
-  modelInput.placeholder = "search models, or paste any slug"
-  modelInput.autocomplete = "off"
-  modelInput.spellcheck = false
-
-  const modelList = document.createElement("datalist")
-  modelList.id = "agent-model-list"
-
-  const modelStatus = el("p", null, "")
-  // What the chosen model runs at when the session sets nothing. The harness
-  // no longer hardcodes a temperature; this is where a person sees what the
-  // model's authors recommend, and what an override in config.params replaces.
-  const paramsNote = el("p", "agent-model-defaults", "")
-  const refreshModels = el("button", null, "Refresh model list")
-  // How hard the model thinks before it acts. Only the levels the chosen model
-  // takes are offered — the catalogue says which — and "model default" sends
-  // nothing, so the model runs at the effort its authors chose.
-  const effortSelect = document.createElement("select")
-  effortSelect.className = "agent-effort"
-  const effortNote = el("p", "agent-model-defaults", "")
-
-  // Workflows: off unless switched on here, because one is many sessions and
-  // real cost. The limits and the tier models are what workflow_start copies
-  // into each plan it makes.
-  const workflowsToggle = document.createElement("input")
-  workflowsToggle.type = "checkbox"
-  const workflowsLabel = el("label", "cluster")
-  workflowsLabel.append(workflowsToggle, el("span", null, "Let this session run workflows"))
-  const numberField = (label, key, fallback) => {
-    const input = document.createElement("input")
-    input.type = "number"
-    input.min = "1"
-    input.dataset.key = key
-    input.placeholder = String(fallback)
-    const field = el("label", "agent-wf-field")
-    field.append(el("span", null, label), input)
-    return { field, input }
-  }
-  const wfParallel = numberField("At once", "parallel", DEFAULT_LIMITS.parallel)
-  const wfSteps = numberField("Steps in all", "steps", DEFAULT_LIMITS.steps)
-  // Dollars, so cents are allowed.
-  const wfBudget = numberField("Budget ($)", "cost", DEFAULT_LIMITS.cost)
-  wfBudget.input.step = "any"
-  const tierInputs = TIERS.map((tier) => {
-    const input = document.createElement("input")
-    input.type = "text"
-    input.setAttribute("list", "agent-model-list")
-    input.placeholder = DEFAULT_TIER_MODELS[tier]
-    input.dataset.tier = tier
-    input.spellcheck = false
-    const field = el("label", "agent-wf-field")
-    field.append(el("span", null, tier), input)
-    return input
-  })
-  const workflowsBox = el("div", "agent-wf-settings")
-  workflowsBox.append(
-    workflowsLabel,
-    el("p", "agent-model-defaults", "The agent can split big jobs across several sessions, each on the model its tier names. Watch them in the workflow view."),
-    wfParallel.field,
-    wfSteps.field,
-    wfBudget.field,
-    ...tierInputs.map((input) => input.parentElement)
-  )
-  const keyInput = document.createElement("input")
-  keyInput.type = "password"
-  keyInput.placeholder = "OpenRouter API key (sk-or-…)"
-  keyInput.autocomplete = "off"
-  const saveKey = el("button", null, "Save")
-  saveKey.dataset.variant = "primary"
-  const keyNote = el(
-    "p",
-    null,
-    "Stored with your account's LLM settings, shared with your other LLM tools — never written to this session, so it is not synced to anyone you share it with."
-  )
-  // Without a relay, a browser keeps a reader's text of what it reads.
-  const relayInput = document.createElement("input")
-  relayInput.type = "url"
-  relayInput.placeholder = "https://relay.example (fetch-relay)"
-  relayInput.autocomplete = "off"
-  relayInput.spellcheck = false
-  const relayKeyInput = document.createElement("input")
-  relayKeyInput.type = "password"
-  relayKeyInput.placeholder = "Relay key, if it has one"
-  relayKeyInput.autocomplete = "off"
-  const relayNote = el(
-    "p",
-    null,
-    "Most sites will not let a browser page read them, so without a relay the agent keeps a reader's text of each page and a PDF only when the site allows. A relay fetches for it, and the PDF or page itself is kept as the source. Stored with your API key."
-  )
-  // web_search is Brave's Search API: it needs a key, and in a browser the relay.
-  const searchKeyInput = document.createElement("input")
-  searchKeyInput.type = "password"
-  searchKeyInput.autocomplete = "off"
-  const searchNote = el(
-    "p",
-    null,
-    "Searches go to Brave's Search API (api-dashboard.search.brave.com), which needs a key and, in a browser, the fetch relay above. Stored with your API key."
-  )
-
-  settings.append(
-    el("p", null, "Model"),
-    modelInput,
-    modelList,
-    modelStatus,
-    paramsNote,
-    refreshModels,
-    el("p", null, "Effort"),
-    effortSelect,
-    effortNote,
-    el("p", null, "Workflows"),
-    workflowsBox,
-    el("p", null, "API key"),
-    keyInput,
-    keyNote,
-    el("p", null, "Fetch relay"),
-    relayInput,
-    relayKeyInput,
-    relayNote,
-    el("p", null, "Web search"),
-    searchKeyInput,
-    searchNote,
-    saveKey
-  )
-  main.insertBefore(settings, transcript)
+  // The model, effort, workflows and keys (ui/settings-panel.js).
+  const settings = createSettingsPanel({ store, onKey: (key) => runners.setKey(key), onChange: () => render() })
+  main.insertBefore(settings.element, transcript)
 
   // ---- state -----------------------------------------------------------
   const uiState = { open: new Set(), names: new Map(), subject: null, settings: null, heads: {} }
@@ -305,7 +174,6 @@ export function AgentTool(handle, element, options = {}) {
     uninstall: (ref) => onUninstall(ref),
     rerender: () => render(),
   })
-  const store = handleStore(handle, options.splice ?? null)
   let disposed = false
   // Whether the account's LLM settings have answered, or failed to.
   let keysSettled = false
@@ -532,203 +400,7 @@ export function AgentTool(handle, element, options = {}) {
 
   modelButton.addEventListener("click", (event) => {
     event.preventDefault()
-    const showing = settings.style.display !== "none"
-    settings.style.display = showing ? "none" : "flex"
-    if (!showing) {
-      keyInput.focus()
-      if (!catalogueLoaded) loadModels()
-      // The relay's address, not its key: a key is never shown back.
-      relayInput.value = readRelay()?.url ?? ""
-      searchKeyInput.placeholder = readKey(SEARCH_KEY_ID) ? "Brave Search API key — saved; type to replace" : "Brave Search API key"
-    }
-  })
-
-  function commitModel() {
-    const chosen = modelInput.value.trim()
-    if (!chosen || chosen === handle.doc()?.config?.model) return
-    store.change((d) => {
-      if (!d.config) d.config = {}
-      d.config.model = chosen
-    })
-    render()
-  }
-
-  modelInput.addEventListener("change", commitModel)
-  modelInput.addEventListener("blur", commitModel)
-
-  effortSelect.addEventListener("change", () => {
-    const effort = effortSelect.value
-    store.change((d) => {
-      if (!d.config) d.config = {}
-      if (!d.config.params) d.config.params = {}
-      const params = d.config.params
-      if (effort) {
-        if (!params.reasoning) params.reasoning = {}
-        params.reasoning.effort = effort
-      } else if (params.reasoning) {
-        delete params.reasoning.effort
-        if (!Object.keys(params.reasoning).length) delete params.reasoning
-      }
-    })
-    render()
-  })
-
-  function writeWorkflows(fn) {
-    store.change((d) => {
-      if (!d.config) d.config = {}
-      if (!d.config.workflows) d.config.workflows = {}
-      fn(d.config.workflows)
-    })
-    render()
-  }
-
-  workflowsToggle.addEventListener("change", () => writeWorkflows((w) => { w.enabled = workflowsToggle.checked }))
-  for (const { input } of [wfParallel, wfSteps, wfBudget]) {
-    input.addEventListener("change", () => {
-      const value = input.dataset.key === "cost" ? Number.parseFloat(input.value) : Number.parseInt(input.value, 10)
-      writeWorkflows((w) => {
-        if (Number.isFinite(value) && value > 0) w[input.dataset.key] = value
-        else delete w[input.dataset.key]
-      })
-    })
-  }
-  for (const input of tierInputs) {
-    input.addEventListener("change", () => {
-      const model = input.value.trim()
-      writeWorkflows((w) => {
-        if (!w.tiers) w.tiers = {}
-        if (model) w.tiers[input.dataset.tier] = model
-        else delete w.tiers[input.dataset.tier]
-      })
-    })
-  }
-
-  function renderWorkflows() {
-    const w = handle.doc()?.config?.workflows ?? {}
-    workflowsToggle.checked = !!w.enabled
-    const focused = workflowsBox.ownerDocument?.activeElement
-    for (const { input } of [wfParallel, wfSteps, wfBudget]) {
-      if (focused !== input) input.value = w[input.dataset.key] ?? ""
-      input.disabled = !w.enabled
-    }
-    for (const input of tierInputs) {
-      if (focused !== input) input.value = w.tiers?.[input.dataset.tier] ?? ""
-      input.disabled = !w.enabled
-    }
-  }
-
-  function renderEffort() {
-    renderWorkflows()
-    const doc = handle.doc()
-    const info = catalogueModels.find((m) => m.id === doc?.config?.model)
-    const chosen = doc?.config?.params?.reasoning?.effort ?? ""
-    const efforts = info?.efforts ?? []
-    const options = [["", info?.defaultEffort ? `model default (${info.defaultEffort})` : "model default"]]
-    for (const effort of efforts) options.push([effort, effort])
-    // A level kept from a previous model stays visible rather than vanishing
-    // from the control; the request leaves it out while this model is in use.
-    if (chosen && !efforts.includes(chosen)) options.push([chosen, `${chosen} (not taken by this model)`])
-
-    const signature = JSON.stringify(options)
-    if (effortSelect.dataset.options !== signature) {
-      effortSelect.dataset.options = signature
-      effortSelect.replaceChildren(
-        ...options.map(([value, label]) => {
-          const option = document.createElement("option")
-          option.value = value
-          option.textContent = label
-          return option
-        })
-      )
-    }
-    if (effortSelect.value !== chosen) effortSelect.value = chosen
-    effortSelect.disabled = !info || (!efforts.length && !chosen)
-    effortNote.textContent = !info
-      ? "Open the model list to see which effort levels this model takes."
-      : efforts.length
-        ? "Higher thinks longer before acting: better on hard problems, slower and dearer."
-        : "This model has no effort setting."
-  }
-
-  let catalogueLoaded = false
-  let catalogueModels = []
-
-  function renderDefaults() {
-    renderEffort()
-    const doc = handle.doc()
-    const info = catalogueModels.find((m) => m.id === doc?.config?.model)
-    if (!info) {
-      paramsNote.textContent = ""
-      return
-    }
-    // maxTokens and effort have controls of their own.
-    const set = Object.entries(doc?.config?.params ?? {}).filter(([name]) => name !== "maxTokens" && name !== "reasoning")
-    const recommended = describeDefaults(info)
-    const ceiling = info.maxOutput ? `up to ${Math.round(info.maxOutput / 1000)}k output tokens` : ""
-    const parts = []
-    if (recommended) parts.push(`Runs at its authors' defaults: ${recommended}`)
-    if (ceiling) parts.push(ceiling)
-    if (set.length) parts.push(`This session overrides: ${set.map(([k, v]) => `${k} ${JSON.stringify(v)}`).join(", ")}`)
-    paramsNote.textContent = parts.join(" · ")
-  }
-
-  async function loadModels({ force = false } = {}) {
-    const providerId = handle.doc()?.config?.providerId ?? "openrouter"
-    modelStatus.textContent = force ? "Refreshing…" : "Loading models…"
-    try {
-      const { models, cached, error } = await loadCatalogue(providerId, {
-        force,
-        key: readKey(providerId),
-      })
-      catalogueLoaded = true
-      catalogueModels = models
-      renderDefaults()
-
-      modelList.replaceChildren()
-      for (const model of models) {
-        const option = document.createElement("option")
-        option.value = model.id
-        // The label is what the browser shows beside the id while filtering.
-        option.label = describeModel(model)
-        modelList.append(option)
-      }
-
-      const withTools = models.filter((m) => m.tools).length
-      modelStatus.textContent = error
-        ? `${models.length} models (cached — ${error})`
-        : `${models.length} models, ${withTools} support tool use${cached ? " (cached)" : ""}`
-    } catch (err) {
-      modelStatus.textContent = `Could not load the model list: ${err?.message ?? err}. Any slug still works.`
-    }
-  }
-
-  refreshModels.addEventListener("click", (event) => {
-    event.preventDefault()
-    loadModels({ force: true })
-  })
-
-  saveKey.addEventListener("click", (event) => {
-    event.preventDefault()
-    const value = keyInput.value.trim()
-    if (value) {
-      const providerId = handle.doc()?.config?.providerId ?? "openrouter"
-      writeKey(providerId, value)
-      // The worker cannot read this page's localStorage, so hand it over.
-      runners.setKey(value)
-      keyInput.value = ""
-    }
-    // The relay: saved as typed, cleared by emptying its address.
-    const relayUrl = relayInput.value.trim()
-    const current = readRelay()
-    if (relayUrl !== (current?.url ?? "") || (relayKeyInput.value && relayKeyInput.value !== current?.key)) {
-      writeRelay(relayUrl ? { url: relayUrl, key: relayKeyInput.value || current?.key || "" } : null)
-    }
-    relayKeyInput.value = ""
-    const searchKey = searchKeyInput.value.trim()
-    if (searchKey) writeKey(SEARCH_KEY_ID, searchKey)
-    searchKeyInput.value = ""
-    settings.style.display = "none"
-    render()
+    settings.toggle()
   })
 
   // ---- rendering -------------------------------------------------------
@@ -774,13 +446,7 @@ export function AgentTool(handle, element, options = {}) {
     costLabel.hidden = !v.cost
     costLabel.title = v.cost?.tooltip ?? ""
     modelButton.textContent = v.model
-    // `doc` is the session document; the focused element lives on the DOM one.
-    // Never overwrite the field while it is being typed in.
-    const focused = modelInput.ownerDocument?.activeElement
-    if (doc.config?.model && modelInput.value !== doc.config.model && focused !== modelInput) {
-      modelInput.value = doc.config.model
-    }
-    renderDefaults()
+    settings.render(doc)
     renderStrip(v.strip)
 
     renderStandingLine(standingLine, v.place)
@@ -809,7 +475,7 @@ export function AgentTool(handle, element, options = {}) {
     sendButton.disabled = !v.canSend
     hint.textContent = v.hint
 
-    if (v.openSettings && settings.style.display === "none") settings.style.display = "flex"
+    if (v.openSettings) settings.reveal()
 
     if (v.side && v.side !== subjectViewUrl) {
       subjectViewUrl = v.side
