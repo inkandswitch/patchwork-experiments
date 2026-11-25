@@ -699,7 +699,10 @@ try {
     const noticedIn = Date.now() - t0;
     const taken = await D.waitFor("probe.status()?.state === 'running'", 15_000, 50);
     const next = await D.js(`probe.timeRun(${J(NOOP)})`).catch((e) => ({ error: String(e.message ?? e) }));
-    const bound = 30_000 + 2 * 2_000 + 1_000;
+    // The first status request after the close starts the count (up to a
+    // beat later); the first one after 30 s of silence ends it (up to a beat
+    // more); and a little for timers and this harness's polling.
+    const bound = 30_000 + 2 * 2_000 + 3_000;
     check(
       "17 a pool's worker that dies is noticed by its silence; the lock passes to the waiting tab, whose pool runs the next task",
       /not answered/.test(problem || "") && noticedIn <= bound && !!taken && next.result === 1,

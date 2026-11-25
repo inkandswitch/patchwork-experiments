@@ -200,6 +200,34 @@ try {
     check("served() lists this browser's pool with its name and slots", !!mine && / \(\w{4}\)$/.test(mine.name) && mine.slots >= 1, pools);
     check("the queue browser marks this browser's pool", await b.waitFor("/this browser/.test(document.body.innerText)", 10_000, 250));
   }
+
+  // 7. a document a task writes through ctx.repo reaches the page. A browser's
+  // run worker keeps its documents in a database of its own, so this goes by
+  // the sync server, to this tab's tasks Repo and to the site's own alike
+  // (browser-run.mjs has no server, and cannot show it).
+  {
+    const WRITES = J(`data:text/javascript,${encodeURIComponent("export default async (input, ctx) => { const doc = ctx.repo.create({ wrote: input.tag }); doc.change((d) => { d.changed = true; }); await ctx.repo.flush(); return doc.url; };")}`);
+    const out = await call(`
+      const t0 = performance.now();
+      const url = await C.run(T, Q, { importUrl: ${WRITES}, input: { tag: "seven" } });
+      const ran = performance.now() - t0;
+      // How long after the task ended the document, as written, is had through \`repo\`; null if not within 30 s.
+      const arrives = async (repo) => {
+        const s = performance.now();
+        while (performance.now() - s < 30000) {
+          const doc = await Promise.race([repo.find(url).then((h) => h.doc(), () => null), new Promise((r) => setTimeout(() => r(null), 5000))]);
+          if (doc?.wrote === "seven" && doc.changed === true) return performance.now() - s;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+        return null;
+      };
+      return { url, ran, tasksRepo: await arrives(T), siteRepo: await arrives(site) };`, "a document a task writes", 120_000);
+    check(
+      "a document a task writes through ctx.repo reaches the page by the sync server: this tab's tasks Repo and the site's Repo both have it",
+      typeof out.url === "string" && out.url.startsWith("automerge:") && out.tasksRepo !== null && out.siteRepo !== null,
+      out,
+    );
+  }
 } catch (err) {
   check("probe ran", false, String(err?.stack ?? err));
 }
