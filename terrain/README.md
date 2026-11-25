@@ -769,6 +769,32 @@ Not for navigation.
 query pinned to the same moment, checked on 2026-11-15; no lidar is fetched
 there, so its trees stand in OSM's woods at an assumed canopy.)
 
+### How Fetch data runs (`src/fetch-task.js`)
+
+Fetch data is a task: `src/fetch-task.js`, whose input is the Terrain doc's
+url. The tool asks for it with the task kit's `doWork` (`src/task-client.js`
+and `src/task-rules.js`, copies of the tasks package's), under a key made of
+the doc's url and the SHA-256 of what the doc asks for (`src/fetch-spec.js`:
+the place, the grid, the datum, OSM's date, a layered place's heights and
+look). So:
+
+- When one of the person's machines serves their own queue, the fetch runs
+  there: it finishes if the page closes, and two pages pressing Fetch for the same place and grid are one fetch. The
+  tool says so, and on opening shows a fetch already under way under the
+  doc's key instead of offering another. Otherwise it runs in the page, and
+  the tool says that closing the page stops it.
+- It stores only if the doc still asks for what was fetched: a frame moved
+  meanwhile stores nothing, and the log says so. A changed frame is a new
+  key, so a new fetch.
+- Cancel stops it wherever it runs; requests are given up and Overpass's
+  retries are not waited out.
+- It returns the file docs' urls and a line, never the data.
+
+The build puts the task at `dist/fetch-task.js` (a second entry in
+`vite.config.js`, a name that does not change from build to build); the
+unbuilt package's is `src/fetch-task.js`. The templates fetch at creation
+in the page, with `fetchTerrainData` and `storeTerrainData`.
+
 ## How the ground is made (`src/build.js`)
 
 ```
@@ -869,6 +895,15 @@ land in the mesh is stretched; the heightfield stays true.
   land and water; a source's raw 0 as no value on water and a height on
   land, at two datum offsets (every case); the layers file round-tripping every code and canopy step;
   the harmonic fill bringing back a plane at every node;
+- Fetch data as a task on a made-up place (`fetch-task.test.js`): it stores
+  and returns only urls; a frame, origin, grid or OSM date moved while it
+  fetched (or while it made the files) stores nothing; a stop mid-request or
+  during Overpass's retry wait rejects at once and stores nothing; NCEI's
+  error is the message a person sees; the key changes with each field a
+  fetch reads and with none of the others; the tool's button through a
+  stand-in `doWork` and `watch` (`tool-fetch.test.js`): here and on the
+  person's queue, Cancel, a fetch already under way shown, where the task's
+  code is;
 - a whole layered fetch on a made-up place, every answer a fixture: what is
   asked for, from which source each node is, the bytes it makes (pinned
   SHA-256), and the land source flipped is refused;
@@ -1020,6 +1055,13 @@ node probes/fetch-cadboro.mjs [--cache <dir>] [--offline] [--out <dir>]
 #   (SHA-256); the DEM lines up with OSM (and flipped, mirrored or shifted it would be refused);
 #   every islet clears the land floor; 13 places known to be land or water; the mooring field
 #   deep enough for a 2 m keel at the lowest normal tide
+node probes/fetch-task-run.mjs [--sync wss://…] [--verbose]     # build ../tasks first: pnpm build:node there
+#   Fetch data as a task through the real sync server and the real sources (a 65 × 65 grid
+#   off Cadboro Bay): starts a tasks host (TASKS_HOST, default ../tasks/dist-node/host.mjs)
+#   on a new queue with this directory as a made-up package (--local), asks from a Repo of
+#   its own, and checks: the Terrain doc points at file docs whose bytes match their SHA-256;
+#   asking again under the key while it runs is the same task; a cancel mid-fetch ends the
+#   task cancelled and stores nothing; a moved frame is another key and another task
 node probes/publish-rvyc.mjs --dry-run --lock <dir>     # build scene/, sailing/, water/, weather/ and terrain/ first
 #   in headless Chrome, the BUILT scene, sailing and terrain plugins on an empty scene: the
 #   template from the start screen (its fetches answered from the recording), and checks the

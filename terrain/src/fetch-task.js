@@ -1,4 +1,4 @@
-// Fetch data as work: what the Terrain tool's Fetch data button has done,
+// Fetch data as work: what the Terrain tool's Fetch data button does,
 // wherever it runs. The tool asks for it through the task system's doWork
 // (task-client.js), so it runs on the person's own queue when one of their
 // machines serves it (in a browser's run worker, or a Node run thread), and

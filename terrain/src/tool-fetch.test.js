@@ -122,7 +122,7 @@ describe("Fetch data", () => {
     expect(cancelButton.hidden).toBe(true);
   });
 
-  it("a fetch that failed shows its message, as before", async () => {
+  it("a fetch that failed shows its message", async () => {
     const { $, fetchButton } = mounted();
     fetchButton.click();
     await settle();

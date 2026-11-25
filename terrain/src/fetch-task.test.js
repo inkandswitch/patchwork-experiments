@@ -171,7 +171,7 @@ describe("the fetch task", () => {
     expect(repo.created).toEqual([]);
   });
 
-  it("a source's error fails it with the message a person saw before (NCEI answered 500), and stores nothing", async () => {
+  it("a source's error fails it with the message a person sees (NCEI answered 500), and stores nothing", async () => {
     const { repo, handle, ctx } = world();
     const net = network((kind) => (kind === "dem" ? new Response("oops", { status: 500 }) : undefined));
     await expect(fetchTerrain({ terrain: handle.url }, ctx, net.fetch)).rejects.toThrow(/^NCEI answered 500$/);
