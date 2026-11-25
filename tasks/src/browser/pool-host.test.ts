@@ -178,6 +178,19 @@ describe("a page's pool host, by what the storage lists", () => {
     p.unwatch();
   });
 
+  it('an account that names no storage, then names one that lists a queue (Make my queue): starts the pool for it', async () => {
+    const p = await page(null);
+    expect(p.last().state).toBe('serves nothing');
+    p.change(STORAGE, { [QUEUE]: true });
+    p.change(ACCOUNT, { toolStorage: { 'tasks-next': STORAGE } });
+    await settle();
+    expect(locks.asked).toBe(1);
+    expect(StandInWorker.made).toHaveLength(1);
+    expect(StandInWorker.made[0].orders()).toEqual([{ type: 'start', queues: { [QUEUE]: 'any' } }]);
+    p.release();
+    p.unwatch();
+  });
+
   it('a queue joined later: asks for the lock and starts the pool for that queue', async () => {
     const p = await page({});
     await p.serve({ [QUEUE]: true });
