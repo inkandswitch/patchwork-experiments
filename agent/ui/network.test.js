@@ -27,6 +27,7 @@ import { relayFetch } from "../net/relay.js"
 import { webSearch } from "../tools/web.js"
 import { sessionOutcome } from "../workflow/driver.js"
 import { activityOf } from "./attention.js"
+import { settled } from "../fixtures/session.js"
 
 function toolset(tools) {
   const byId = new Map(tools.map((t) => [t.id, t]))
@@ -114,7 +115,7 @@ describe("the loop, when the network goes", () => {
     const store = session([makeTurn("user", [textBlock("hello")])])
     const result = await go(store, scripted([[offlineErr()]]))
     expect(result.outcome).toBe(OUTCOME.reconnecting)
-    expect(store.doc().status).toBe(STATUS.reconnecting)
+    expect(settled(store.doc())).toBe(STATUS.reconnecting)
     expect(store.doc().reconnecting).toMatchObject({ reason: "Could not reach OpenRouter (Failed to fetch)", attempts: 1 })
     expect(store.doc().turns).toHaveLength(1)
     expect(needsWork(store.doc())).toBe(true)
@@ -132,7 +133,7 @@ describe("the loop, when the network goes", () => {
 
     const result = await go(store, provider)
     expect(result.outcome).toBe(OUTCOME.idle)
-    expect(store.doc().status).toBe(STATUS.idle)
+    expect(settled(store.doc())).toBe(STATUS.idle)
     expect(store.doc().reconnecting).toBe(null)
     expect(blocks(store).map((b) => [b.role, b.type, b.text])).toEqual([
       ["user", "text", "hello"],
@@ -207,15 +208,15 @@ describe("the loop, when the network goes", () => {
     const store = session([makeTurn("user", [textBlock("hello")])])
     const result = await go(store, scripted([[new Error("OpenRouter 401: bad key")]]))
     expect(result.outcome).toBe(OUTCOME.error)
-    expect(store.doc().status).toBe(STATUS.error)
-    expect(blocks(store).at(-1).text).toMatch(/⚠ OpenRouter 401/)
+    expect(settled(store.doc())).toBe(STATUS.error)
+    expect(blocks(store).at(-1)).toMatchObject({ type: "notice", kind: "error", text: expect.stringMatching(/^OpenRouter 401/) })
   })
 
   it("stopped by the person while a call waits: the call is answered, the session says so once, and nothing is left to run", async () => {
     const store = session([makeTurn("user", [textBlock("fetch")])])
     const tools = [{ id: "web_fetch", where: "worker", risk: "read", execute: async () => { throw new Interruption("no relay") } }]
     await go(store, scripted([[{ type: "call", id: "c1", name: "web_fetch", input: {} }]]), tools)
-    expect(store.doc().status).toBe(STATUS.reconnecting)
+    expect(settled(store.doc())).toBe(STATUS.reconnecting)
 
     let stopped
     store.change((d) => (stopped = stopReconnecting(d)))
@@ -223,8 +224,8 @@ describe("the loop, when the network goes", () => {
     const doc = store.doc()
     expect(String(findResult(doc, "c1").block.output)).toBe(STOPPED_OFFLINE)
     expect(findCall(doc, "c1").block.status).toBe(CALL.error)
-    expect(blocks(store).at(-1).text).toMatch(/^⚠ Stopped while waiting for the network \(no relay\)/)
-    expect(doc.status).toBe(STATUS.idle)
+    expect(blocks(store).at(-1)).toMatchObject({ type: "notice", kind: "stopped", text: expect.stringMatching(/^Stopped while waiting for the network \(no relay\)/) })
+    expect(settled(doc)).toBe(STATUS.idle)
     expect(doc.reconnecting).toBe(null)
     expect(needsWork(doc)).toBe(false)
     // Only from reconnecting.
@@ -274,7 +275,7 @@ describe("the runner, waiting for the network", () => {
       // The network is back before that: at once.
       back()
       await vi.advanceTimersByTimeAsync(0)
-      await vi.waitFor(() => expect(store.doc().status).toBe(STATUS.idle))
+      await vi.waitFor(() => expect(settled(store.doc())).toBe(STATUS.idle))
       expect(provider.requests).toHaveLength(3)
       expect(store.doc().reconnecting).toBe(null)
       expect(runner.reconnects).toBe(0)
@@ -296,7 +297,7 @@ describe("the runner, waiting for the network", () => {
     const result = await runner.tick()
     runner.stop()
     expect(result.outcome).toBe(OUTCOME.reconnecting)
-    expect(store.doc().status).toBe(STATUS.reconnecting)
+    expect(settled(store.doc())).toBe(STATUS.reconnecting)
     expect(store.doc().turns).toHaveLength(1)
   })
 })

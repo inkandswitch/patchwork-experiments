@@ -9,6 +9,7 @@
 
 import { callsAwaitingApproval, questionsAwaitingAnswer, questionOptions } from "../session/calls.js"
 import { notStarted } from "./plan.js"
+import { STOP, stopOf } from "../session/status.js"
 
 /**
  *   { kind: "approval", callId, tool, input }
@@ -42,8 +43,9 @@ export function waitingIn(doc) {
   // person: its orchestrator set the budget and decides whether to extend it
   // out of the plan's remainder; the person is asked only when the plan's own
   // cap is reached (budgetWaiting).
-  if (doc.stopped?.reason === "budget" && !doc.workflow?.orchestratorUrl) {
-    return [{ kind: "budget", scope: "session", callId: `budget:${doc.stopped.at}`, spent: doc.stopped.spent, limit: doc.stopped.limit }]
+  const stop = stopOf(doc)
+  if (stop?.kind === STOP.budget && !doc.workflow?.orchestratorUrl) {
+    return [{ kind: "budget", scope: "session", callId: `budget:${stop.at}`, spent: stop.data?.spent ?? null, limit: stop.data?.limit ?? null }]
   }
   const approvals = callsAwaitingApproval(doc).map((call) => ({
     kind: "approval",

@@ -70,7 +70,7 @@ describe("a quiet driver", () => {
     const before = writes()
     const session = sessions[0]
     for (let i = 0; i < 50; i++) {
-      session.change((d) => { d.status = STATUS.running; d.turns.push(makeTurn("assistant", [textBlock(`chunk ${i}`)])) })
+      session.change((d) => { d.turns.push(makeTurn("assistant", [textBlock(`chunk ${i}`)])) })
       await sleep(2)
     }
     await sleep(100)

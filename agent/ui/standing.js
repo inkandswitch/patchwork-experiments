@@ -15,6 +15,7 @@
 import { workflowOf } from "../workflow/plan.js"
 import { stepStanding, planGlance, glanceText } from "../workflow/standing.js"
 import { asideOf } from "../workflow/aside.js"
+import { statusOf } from "../session/status.js"
 
 const el = (tag, cls, text) => {
   const node = document.createElement(tag)
@@ -73,7 +74,7 @@ export function watchStanding({ repo, handle, onChange }) {
       const p = plan?.doc()
       if (!place || !p) return null
       if (place.role === "orchestrator") return { ...place, title: p.title ?? "Workflow", glance: planGlance(p) }
-      const sessions = place.role === "step" ? { [handle.url]: doc?.status } : {}
+      const sessions = place.role === "step" ? { [handle.url]: doc ? statusOf(doc) : null } : {}
       const step = (p.steps ?? []).find((s) => s.id === place.stepId)
       return { ...place, title: p.title ?? "Workflow", stepTitle: step?.title ?? place.stepId, standing: stepStanding(p, place.stepId, sessions) }
     },

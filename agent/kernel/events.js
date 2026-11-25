@@ -31,6 +31,7 @@
  */
 
 import { STATUS } from "../session/schema.js"
+import { statusOf } from "../session/status.js"
 import { eventBlock, makeTurn } from "../session/blocks.js"
 import { needsWork } from "./runner.js"
 
@@ -43,7 +44,7 @@ const HOUR_MS = 60 * 60 * 1000
 
 /** A session can be woken when nothing is running, pending, or waiting on a person. */
 export function canWake(doc) {
-  return !!doc && doc.status === STATUS.idle && !needsWork(doc)
+  return !!doc && statusOf(doc) === STATUS.idle && !needsWork(doc)
 }
 
 export function createEvents(store, opts = {}) {
@@ -110,7 +111,6 @@ export function createEvents(store, opts = {}) {
 
     store.change((d) => {
       d.turns.push(makeTurn("user", blocks))
-      d.status = STATUS.idle
     })
     wakes.push(now())
   }

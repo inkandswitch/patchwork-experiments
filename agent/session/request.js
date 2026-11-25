@@ -3,7 +3,7 @@
  * form, with old results tapered and images and files limited.
  */
 
-import { describeContext, describeEvent } from "./blocks.js"
+import { describeContext, describeEvent, describeNotice } from "./blocks.js"
 import { CALL } from "./schema.js"
 import { isInterruptedResult } from "./recovery.js"
 
@@ -242,6 +242,8 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
         if (!confined) content.push({ type: "text", text: describeContext(block) })
       } else if (block.type === "event") {
         content.push({ type: "text", text: describeEvent(block) })
+      } else if (block.type === "notice") {
+        content.push({ type: "text", text: describeNotice(block, turn.role) })
       } else if (block.type === "attachment") {
         const what = [block.docType, block.mimeType].filter(Boolean).join(", ")
         const shown = block.image && keepImages.has(block.id)

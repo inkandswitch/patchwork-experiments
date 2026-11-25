@@ -15,13 +15,15 @@ import { run, OUTCOME, spentBudget } from "../kernel/loop.js"
 import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
-import { makeTurn, textBlock } from "../session/blocks.js"
+import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
 import { claimLease } from "../session/lease.js"
 import { initPlan, STEP, DEFAULT_STEP_BUDGETS, stepBudget, resumePlan } from "../workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, _resetDrivers } from "../workflow/driver.js"
 import { workflowBudget } from "../workflow/tools.js"
 import { renderBudgetItem } from "./waiting.js"
 import { budgetWaiting } from "../workflow/waiting.js"
+import { settled } from "../fixtures/session.js"
+import { STOP, stopOf } from "../session/status.js"
 
 await initSubduction()
 
@@ -46,9 +48,9 @@ describe("a session with a budget", () => {
     expect(result.outcome).toBe(OUTCOME.budgetExhausted)
     expect(provider.requests).toHaveLength(0)
     const doc = store.doc()
-    expect(doc.stopped).toMatchObject({ reason: "budget", spent: 1.2, limit: 1 })
+    expect(stopOf(doc)).toMatchObject({ kind: STOP.budget, data: { spent: 1.2, limit: 1 } })
     expect(doc.turns.at(-1).blocks[0].text).toMatch(/spent its \$1\.00 budget \(\$1\.20\)/)
-    expect(doc.status).toBe(STATUS.idle)
+    expect(settled(doc)).toBe(STATUS.idle)
   })
 
   it("runs as usual under its budget, or with none", async () => {
@@ -84,13 +86,11 @@ function runner(behaviour = {}) {
       handle.change((d) => {
         if (act.outOfBudget) {
           d.usage = { in: 10, out: 1, turns: 1, cost: d.config.budget }
-          d.stopped = { reason: "budget", spent: d.config.budget, limit: d.config.budget, at: 1234 }
-          d.turns.push(makeTurn("assistant", [textBlock("⚠ Stopped: spent")]))
+          d.turns.push(makeTurn("assistant", [noticeBlock(STOP.budget, "Stopped: spent", { spent: d.config.budget, limit: d.config.budget })], { at: 1234 }))
         } else {
           d.usage = { in: 10, out: 1, turns: 1, cost: act.cost }
           d.turns.push(makeTurn("assistant", [textBlock(`result of ${id}`)]))
         }
-        d.status = STATUS.idle
       })
     }
     return { runner: { interrupt() {} }, listen: () => {} }
@@ -180,7 +180,7 @@ describe("a step's budget", () => {
     const out = await workflowBudget.execute({ plan: w.plan.url, step: "a", add: 2, why: "half done" }, { workflows: { repo: w.repo } })
     expect(out).toMatch(/may now spend \$2\.50; it carries on from where it stopped/)
     const doc = (await w.repo.find(w.plan.doc().steps[0].sessionUrl)).doc()
-    expect([doc.config.budget, doc.stopped, doc.turns.at(-1).role]).toEqual([2.5, null, "user"])
+    expect([doc.config.budget, stopOf(doc), doc.turns.at(-1).role]).toEqual([2.5, null, "user"])
     expect(doc.turns.at(-1).blocks[0].text).toMatch(/budget is now \$2\.50\. Carry on/)
     expect(w.plan.doc().steps[0].budget).toBe(2.5)
   })

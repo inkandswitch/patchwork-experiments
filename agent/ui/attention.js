@@ -20,14 +20,16 @@ import { needsWork } from "../kernel/runner.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP } from "../workflow/plan.js"
 import { describeCall } from "./calls.js"
+import { statusOf } from "../session/status.js"
 
 /** A run this long is worth telling someone about when it ends. */
 export const LONG_RUN_MS = 60_000
 
 /** What a working session is doing right now, in a few words. */
 export function activityOf(doc) {
-  if (doc?.status === STATUS.reconnecting) return "Waiting for the network…"
-  if (!doc || doc.status !== STATUS.running) return null
+  const status = statusOf(doc)
+  if (status === STATUS.reconnecting) return "Waiting for the network…"
+  if (status !== STATUS.running) return null
   const turn = lastTurn(doc)
   const block = turn?.blocks?.at(-1)
   if (turn?.role === "assistant" && block?.type === "call") {
@@ -47,7 +49,7 @@ export function activityOf(doc) {
  * not costs a glance; missed costs the whole session sitting idle.
  */
 export function askedInText(doc) {
-  if (!doc || doc.status !== STATUS.idle || needsWork(doc)) return null
+  if (!doc || statusOf(doc) !== STATUS.idle || needsWork(doc)) return null
   if (callsAwaitingApproval(doc).length || questionsAwaitingAnswer(doc).length) return null
   const turn = lastTurn(doc)
   if (turn?.role !== "assistant") return null
@@ -118,7 +120,8 @@ export function watchAttention(repo, getSessionUrls, onChange, { now = () => Dat
   function observe(url) {
     const doc = docOf(url)
     if (!doc?.turns) return
-    if (doc.status === STATUS.running) {
+    const status = statusOf(doc)
+    if (status === STATUS.running) {
       if (!runningSince.has(url)) runningSince.set(url, now())
       return
     }
@@ -126,7 +129,7 @@ export function watchAttention(repo, getSessionUrls, onChange, { now = () => Dat
     if (since == null) return
     runningSince.delete(url)
     // Ended, not paused for a person: those show up as needing them instead.
-    if (doc.status !== STATUS.idle || now() - since < longRunMs) return
+    if (status !== STATUS.idle || now() - since < longRunMs) return
     finishedQueue.push({
       kind: "finished",
       key: `${url}:finished:${doc.turns.length}`,

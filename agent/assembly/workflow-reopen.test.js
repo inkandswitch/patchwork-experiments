@@ -21,11 +21,12 @@ import { SessionRunner, needsWork } from "../kernel/runner.js"
 import { handleStore } from "../kernel/store.js"
 import { buildToolset } from "./toolset.js"
 import { initSession, STATUS } from "../session/schema.js"
-import { makeTurn, textBlock } from "../session/blocks.js"
+import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
 import { PLAN, STEP, STATE, initPlan, states } from "../workflow/plan.js"
 import { ensureDriver, _resetDrivers, describeProgress } from "../workflow/driver.js"
 import { workflowReopen, workflowKeep, workflowEditSteps, workflowDecide, workflowAddSteps, workflowRequest } from "../workflow/tools.js"
 import { STEP_TOOL_IDS, SCOPED_TOOL_IDS } from "../fixtures/tool-ids.js"
+import { statusOf, stopOf, STOP } from "../session/status.js"
 
 await initSubduction()
 
@@ -138,7 +139,7 @@ describe("reopening", () => {
     release()
     expect(w.at("a").status).toBe(STEP.cancelled)
     const halted = await w.sessionOf("a")
-    expect(halted.halted?.reason).toMatch(/cancelled/)
+    expect(stopOf(halted)).toMatchObject({ kind: STOP.halted, text: expect.stringMatching(/cancelled/) })
     // Whatever landed after the stop, nothing is work for a runner now.
     await sleep(300)
     expect(needsWork(await w.sessionOf("a"))).toBe(false)
@@ -146,7 +147,7 @@ describe("reopening", () => {
     await w.run(workflowReopen, { steps: ["a"], note: "Carry on.", cascade: false })
     expect(await until(() => w.at("a").status === STEP.done)).toBe(true)
     expect(w.at("a").previous.map((p) => p.status)).toEqual([STEP.cancelled])
-    expect((await w.sessionOf("a")).halted).toBe(null)
+    expect(stopOf(await w.sessionOf("a"))).toBeNull()
   }, 20000)
 
   it("with cascade, revises everything built on it, in order", async () => {
@@ -283,8 +284,16 @@ describe("a halted session", () => {
     initSession(doc, {})
     doc.turns = [makeTurn("user", [textBlock("go")])]
     expect(needsWork(doc)).toBe(true)
-    doc.halted = { reason: "cancelled", at: 1 }
+    doc.turns.push(makeTurn("assistant", [noticeBlock(STOP.halted, "cancelled")]))
     expect(needsWork(doc)).toBe(false)
-    expect(doc.status).toBe(STATUS.idle)
+    expect(statusOf(doc)).toBe(STATUS.idle)
+    // Not a result that lands after the stop, nor news a tool delivers later.
+    doc.turns.push(makeTurn("tool", [{ type: "result", id: "r1", callId: "c1", output: "late", isError: false }]))
+    doc.turns.push(makeTurn("user", [{ type: "event", id: "e1", source: "doc_watch", label: null, text: "changed", count: 1, at: 2 }]))
+    expect(needsWork(doc)).toBe(false)
+    expect(stopOf(doc)?.kind).toBe(STOP.halted)
+    doc.turns.push(makeTurn("user", [textBlock("carry on")]))
+    expect(stopOf(doc)).toBeNull()
+    expect(needsWork(doc)).toBe(true)
   })
 })

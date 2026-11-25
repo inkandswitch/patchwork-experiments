@@ -98,13 +98,13 @@ describe("events", () => {
 
   it("waits while the session is busy, then delivers", () => {
     const store = idleSession()
-    store.change((d) => (d.status = STATUS.running))
+    store.change((d) => (d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }))
     const events = createEvents(store, time)
     events.forTool("t").open("k").notify(() => "news")
     time.advance(SETTLE_MS * 5)
     expect(eventTurns(store)).toHaveLength(0)
 
-    store.change((d) => (d.status = STATUS.idle))
+    store.change((d) => (d.lease = null))
     time.advance(SETTLE_MS)
     expect(eventTurns(store)).toHaveLength(1)
   })
@@ -116,7 +116,7 @@ describe("events", () => {
     expect(canWake(store.doc())).toBe(false)
     store.change((d) => {
       d.turns.pop()
-      d.status = STATUS.awaitingApproval
+      d.turns.push(makeTurn("assistant", [{ type: "call", id: "c1", tool: "http_request", input: {}, where: "worker", status: "pending" }]))
     })
     expect(canWake(store.doc())).toBe(false)
   })

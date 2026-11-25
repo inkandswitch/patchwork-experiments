@@ -148,7 +148,7 @@ describe("status", () => {
     const handle = fakeHandle()
     const { element, cleanup } = mount(handle)
     handle.change((d) => {
-      d.status = STATUS.running
+      d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
     })
     expect(element.querySelector(".agent-status").dataset.status).toBe("running")
     cleanup()
@@ -161,7 +161,7 @@ describe("status", () => {
     expect(stop.style.display).toBe("none")
 
     handle.change((d) => {
-      d.status = STATUS.running
+      d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
     })
     expect(stop.style.display).not.toBe("none")
     cleanup()

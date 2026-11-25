@@ -93,6 +93,26 @@ export function describeEvent(block) {
   return `[Event from ${block.source}${watching}. Not a message from the user: you asked to be woken when this happened.]\n${block.text ?? ""}`
 }
 
+/**
+ * Something the harness says, in a turn of its own: not the model's words and
+ * not a person's. What code later needs to know about one is its `kind` and
+ * `data`, never its wording.
+ *
+ * In an assistant-role turn a notice ends the run, and the session waits to
+ * be spoken to (status.js STOP has the kinds, and `stopOf` reads them back).
+ * In a user-role turn it asks the model to go on: "nudge" after a reply that
+ * was cut off, went in circles or said nothing, "budget" when a budget is
+ * lifted.
+ */
+export function noticeBlock(kind, text, data = null, opts = {}) {
+  return { type: "notice", id: opts.id ?? makeId("b"), kind: String(kind), text: String(text), data: data ?? null }
+}
+
+/** A notice as the model reads it: flagged, where it stands among the model's own turns. */
+export function describeNotice(block, role) {
+  return role === "assistant" ? `⚠ ${block.text ?? ""}` : (block.text ?? "")
+}
+
 export function reasoningBlock(text, opts = {}) {
   return { type: "reasoning", id: opts.id ?? makeId("b"), text }
 }

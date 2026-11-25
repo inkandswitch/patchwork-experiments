@@ -5,6 +5,7 @@ import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
+import { settled } from "../fixtures/session.js"
 
 function toolset(tools = []) {
   const byId = new Map(tools.map((t) => [t.id, t]))
@@ -114,7 +115,7 @@ describe("a model that goes round in circles", () => {
     const result = await run({ store, provider, toolset: toolset([editTool]), canRun: () => true, flushMs: 0 })
 
     expect(result.outcome).toBe(OUTCOME.repetition)
-    expect(store.doc().status).toBe(STATUS.error)
+    expect(settled(store.doc())).toBe(STATUS.error)
     expect(provider.turnsUsed).toBe(2)
     const last = transcript(store).at(-1)
     expect(last.role).toBe("assistant")

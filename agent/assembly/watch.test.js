@@ -167,7 +167,7 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     // The repo a runner hands this session's tools: every write noted as its own.
     const agentRepo = fullContext({ repo }, store).repo
     const id = idOf(await watch({ url: run.url, path: ["status"] }, { repo: agentRepo, store, events }))
-    store.change((d) => { d.status = STATUS.running })
+    store.change((d) => { d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() } })
 
     // The agent cancels the run, through its own tools' repo.
     ;(await agentRepo.find(run.url)).change((d) => { d.status = "cancelled" })
@@ -216,7 +216,7 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     const store = sessionStore(repo)
     const events = recordingEvents()
     const id = idOf(await watch({ url: run.url, path: ["status"] }, { repo, store, events }))
-    store.change((d) => { d.status = STATUS.running })
+    store.change((d) => { d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() } })
 
     // The daemon's edit, arriving as changes from elsewhere.
     const elsewhere = A.change(A.clone(run.doc()), (d) => { d.status = "failed" })

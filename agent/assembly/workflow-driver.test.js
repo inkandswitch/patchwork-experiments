@@ -5,10 +5,12 @@ import { WorkflowDriver, sessionOutcome, describeProgress, keptCounts, _resetDri
 import { scopedRepo } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
 import { initSession, STATUS, CALL } from "../session/schema.js"
-import { makeTurn, textBlock } from "../session/blocks.js"
+import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
 import { buildToolset } from "./toolset.js"
 import { BUILTIN_TOOLS } from "./builtin.js"
 import { WORKFLOW_TOOL_IDS } from "../fixtures/tool-ids.js"
+import { statusOf } from "../session/status.js"
+import { STOP } from "../session/status.js"
 
 await initSubduction()
 
@@ -30,15 +32,13 @@ function fakeRunner(behaviour = {}) {
       if (act === "answer") {
         handle.change((d) => {
           d.turns.push(makeTurn("assistant", [textBlock(`result of ${id}`)]))
-          d.status = STATUS.idle
           d.usage = { in: 100, out: 10, turns: 1 }
         })
       } else if (act === "fail") {
-        handle.change((d) => { d.status = STATUS.error })
+        handle.change((d) => { d.turns.push(makeTurn("assistant", [noticeBlock(STOP.error, "it broke")])) })
       } else if (act === "ask") {
         handle.change((d) => {
           d.turns.push(makeTurn("assistant", [{ type: "call", id: "c1", tool: "http_request", input: {}, status: CALL.pending }]))
-          d.status = STATUS.awaitingApproval
         })
       } // "hang": leave it running
     }
@@ -191,10 +191,10 @@ describe("sessionOutcome", () => {
   }
   it.each([
     ["just created", session({ turns: [makeTurn("user", [textBlock("go")])] }), "running"],
-    ["thinking", session({ status: STATUS.running, turns: [makeTurn("user", [textBlock("go")])] }), "running"],
-    ["waiting on a person", session({ status: STATUS.awaitingApproval, turns: [makeTurn("user", [textBlock("go")])] }), "running"],
+    ["thinking", session({ lease: { runner: "r", generation: 1, at: 1 }, turns: [makeTurn("user", [textBlock("go")])] }), "running"],
+    ["waiting on a person", session({ turns: [makeTurn("user", [textBlock("go")]), makeTurn("assistant", [{ type: "call", id: "c1", tool: "http_request", input: {}, status: CALL.pending }])] }), "running"],
     ["answered", session({ turns: [makeTurn("user", [textBlock("go")]), makeTurn("assistant", [textBlock("done it")])] }), "done"],
-    ["broke", session({ status: STATUS.error }), "failed"],
+    ["broke", session({ turns: [makeTurn("user", [textBlock("go")]), makeTurn("assistant", [noticeBlock(STOP.error, "it broke")])] }), "failed"],
   ])("%s → %s", (_name, doc, state) => {
     expect(sessionOutcome(doc).state).toBe(state)
   })

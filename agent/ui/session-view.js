@@ -50,6 +50,7 @@ import { getMount, mountForPerson, mountIdIn, parkMount } from "../tools/checkin
 import { applyInstall, applyUninstall } from "./install.js"
 import { watchWorkspace } from "./workspace.js"
 import { startDictation, composeDictation, voiceSupported } from "./voice.js"
+import { statusOf } from "../session/status.js"
 
 const MIC_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>`
 
@@ -812,7 +813,7 @@ export function AgentTool(handle, element, options = {}) {
     workerRunner?.interrupt()
     // Waiting for the network, no run is under way to interrupt: stopping is
     // a change to the session, so every runner stops trying.
-    if (store.doc()?.status === STATUS.reconnecting) store.change((d) => stopReconnecting(d))
+    if (store.doc()?.reconnecting) store.change((d) => stopReconnecting(d))
   })
 
   input.addEventListener("keydown", (event) => {
@@ -1036,8 +1037,8 @@ export function AgentTool(handle, element, options = {}) {
     const hasKey = !!readKey(providerId)
 
     root.dataset.runner = workerRunner ? "worker" : workerTried ? "tab" : "pending"
-    statusDot.dataset.status = doc.status ?? STATUS.idle
-    statusDot.title = doc.status ?? "idle"
+    statusDot.dataset.status = statusOf(doc)
+    statusDot.title = statusOf(doc)
     const spent = formatCost(doc.usage)
     costLabel.textContent = spent ?? ""
     costLabel.hidden = !spent
@@ -1113,9 +1114,9 @@ export function AgentTool(handle, element, options = {}) {
       subjectLabel.title = ""
     }
 
-    const busy = doc.status === STATUS.running
-    // Set while it waits for the network, and through each attempt to reach it.
-    const reconnecting = doc.status === STATUS.reconnecting || (busy && !!doc.reconnecting)
+    const status = statusOf(doc)
+    const busy = status === STATUS.running
+    const reconnecting = status === STATUS.reconnecting
     stopButton.style.display = busy || reconnecting ? "" : "none"
     sendButton.disabled = !hasKey
 
@@ -1139,7 +1140,7 @@ export function AgentTool(handle, element, options = {}) {
             ? `${pending} call${pending === 1 ? " needs" : "s need"} approval`
             : elsewhere
               ? "Another runner is working on this session"
-              : doc.status === STATUS.parked
+              : status === STATUS.parked
                 ? "Waiting for a tab to run a page tool"
                 : reconnecting
                   ? `Waiting for the network — carries on when it is back (${doc.reconnecting?.reason ?? "no connection"})`

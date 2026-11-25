@@ -17,7 +17,7 @@
  * is asked of the step as it now is.
  */
 
-import { CALL, STATUS } from "../session/schema.js"
+import { CALL } from "../session/schema.js"
 import { findCall, unansweredCalls } from "../session/calls.js"
 import { makeTurn, resultBlock, textBlock } from "../session/blocks.js"
 import { sessionTitle } from "../session/title.js"
@@ -55,8 +55,7 @@ export function makeAside(doc, { sessionUrl, now = Date.now() }) {
   delete doc.asides
   doc.title = `Question · ${sessionTitle(doc) ?? step.stepId ?? "step"}`
   doc.lease = null
-  doc.status = STATUS.idle
-  for (const key of ["halted", "reconnecting", "stopped"]) if (doc[key] != null) doc[key] = null
+  if (doc.reconnecting != null) doc.reconnecting = null
   if (doc.config) {
     delete doc.config.budget
     doc.config.workflows = { enabled: false }

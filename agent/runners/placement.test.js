@@ -26,6 +26,7 @@ import { findCall } from "../session/calls.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { SCOPED_TOOL_IDS, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, researchToolset, FULL_TOOLS } from "../fixtures/tool-ids.js"
+import { settled } from "../fixtures/session.js"
 
 await initSubduction()
 const repo = new Repo({ network: [] })
@@ -296,7 +297,7 @@ describe("a worker step calling a plugin the worker cannot load", () => {
     // The model was offered the plugin in the worker, and the call waits for a tab.
     expect(provider.requests[0].tools.map((t) => t.id ?? t.name)).toContain("assumptions_set")
     expect(callBlock(store).where).toBe("host")
-    expect(store.doc().status).toBe("parked")
+    expect(settled(store.doc())).toBe("parked")
     const tab = runner("tab", () => loadPluginTools({ registry }), (w) => w === "host", provider)
     await tab.tick()
     expect(ran).toEqual(["tab"])
@@ -334,7 +335,6 @@ describe("the driver, starting a step", () => {
         order.push(doc.workflow.stepId)
         session.change((d) => {
           d.turns.push(makeTurn("assistant", [textBlock(`result of ${d.workflow.stepId}`)]))
-          d.status = "idle"
         })
       }
       return { runner: { interrupt() {} }, listen() {} }

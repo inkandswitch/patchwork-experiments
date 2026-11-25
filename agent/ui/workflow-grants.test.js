@@ -13,6 +13,7 @@ import { renderWaitingItem } from "./waiting.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { WORKFLOW_TOOL_IDS } from "../fixtures/tool-ids.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
+import { statusOf, stopOf, STOP } from "../session/status.js"
 
 await initSubduction()
 
@@ -29,7 +30,6 @@ function fetching(handle, url = "https://dnv.com/rules", id = "f1") {
     const call = callBlock("web_fetch", { url }, { id })
     call.status = CALL.pending
     d.turns.push(makeTurn("assistant", [call]))
-    d.status = STATUS.awaitingApproval
   })
 }
 
@@ -45,7 +45,6 @@ function setup(steps, { behaviour = {} } = {}) {
     if (act === "answer" && handle.doc().turns.length === 1) {
       handle.change((d) => {
         d.turns.push(makeTurn("assistant", [textBlock(`result of ${d.workflow.stepId}`)]))
-        d.status = STATUS.idle
       })
     }
     return { runner: { interrupt: () => {} }, listen: () => {} }
@@ -166,7 +165,6 @@ describe("one job, one set of permissions", () => {
       const call = callBlock("doc_edit", { url: "automerge:settings", ops: [] }, { id: "e1" })
       call.status = CALL.pending
       d.turns.push(makeTurn("assistant", [call]))
-      d.status = STATUS.awaitingApproval
     })
     await settle(driver)
     expect(a.doc().turns.at(-1).blocks[0].status).toBe(CALL.pending)
@@ -219,11 +217,12 @@ describe("cancelling", () => {
     const a = await sessionOf(repo, plan, "a")
     a.change((d) => {
       claimLease(d, "tab-elsewhere", Date.now())
-      d.status = STATUS.running
     })
+    expect(statusOf(a.doc())).toBe(STATUS.running)
     await driver.cancel(["a"])
-    expect(a.doc().status).toBe(STATUS.idle)
-    expect(a.doc().lease.runner).not.toBe("tab-elsewhere")
+    expect(statusOf(a.doc())).toBe(STATUS.idle)
+    expect(a.doc().lease).toBeNull()
+    expect(stopOf(a.doc())?.kind).toBe(STOP.halted)
     expect(plan.doc().steps[0].status).toBe(STEP.cancelled)
   })
 })

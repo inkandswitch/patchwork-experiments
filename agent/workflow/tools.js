@@ -44,6 +44,7 @@ import { answerQuestion } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
 import { waitingIn } from "./waiting.js"
 import { sessionDoc } from "../tools/sources.js"
+import { STOP, stopOf } from "../session/status.js"
 
 const STEP_SCHEMA = {
   type: "object",
@@ -408,7 +409,7 @@ export const workflowBudget = {
     let resumed = false
     if (step.sessionUrl) {
       const session = await repo.find(step.sessionUrl)
-      resumed = session.doc()?.stopped?.reason === "budget"
+      resumed = stopOf(session.doc())?.kind === STOP.budget
       // More than it has already spent, whatever its budget said; a step
       // stopped for its budget carries on (session/usage.js liftBudget).
       session.change((d) => {

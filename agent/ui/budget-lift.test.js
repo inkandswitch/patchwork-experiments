@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initSession, _resetIds } from "../session/schema.js"
-import { makeTurn, textBlock } from "../session/blocks.js"
+import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
 import { liftBudget, liftAmounts } from "../session/usage.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { renderWaitingItem } from "./waiting.js"
@@ -21,6 +21,7 @@ import { WorkflowView } from "./workflow-view.js"
 import { initPlan, PLAN, STEP } from "../workflow/plan.js"
 import { _resetDrivers } from "../workflow/driver.js"
 import { _reset as resetRunners } from "../runners/registry.js"
+import { STOP, stopOf } from "../session/status.js"
 
 await initSubduction()
 
@@ -38,9 +39,8 @@ const settle = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms))
 function stoppedSession({ limit = 0.5, spent = 0.52 } = {}) {
   const doc = {}
   initSession(doc, { title: "Assembly", config: { budget: limit } })
-  doc.turns = [makeTurn("user", [textBlock("write it")]), makeTurn("assistant", [textBlock("⚠ Stopped: spent")])]
+  doc.turns = [makeTurn("user", [textBlock("write it")]), makeTurn("assistant", [noticeBlock(STOP.budget, "Stopped: spent", { spent, limit })], { at: 77 })]
   doc.usage = { in: 1, out: 1, turns: 1, cost: spent }
-  doc.stopped = { reason: "budget", spent, limit, at: 77 }
   return doc
 }
 
@@ -67,7 +67,7 @@ describe("lifting a spent budget", () => {
     ]) {
       const doc = stoppedSession({ limit, spent })
       expect(liftBudget(doc, add)).toBe(expected)
-      expect([doc.config.budget, doc.stopped, doc.turns.at(-1).role]).toEqual([expected, null, "user"])
+      expect([doc.config.budget, stopOf(doc), doc.turns.at(-1).role]).toEqual([expected, null, "user"])
       expect(doc.turns.at(-1).blocks[0].text).toBe(`[Your budget is now ${"$"}${expected.toFixed(2)}. Carry on from where you stopped.]`)
       expect(needsWork(doc)).toBe(true)
     }
@@ -75,7 +75,7 @@ describe("lifting a spent budget", () => {
 
   it("on a session that has not stopped, only raises the budget", () => {
     const doc = stoppedSession()
-    doc.stopped = null
+    doc.turns.pop()
     const turns = doc.turns.length
     liftBudget(doc, 1)
     expect(doc.turns).toHaveLength(turns)
@@ -100,7 +100,7 @@ describe("lifting a spent budget", () => {
     const buttons = [...card.querySelectorAll("button")]
     expect(buttons.map((b) => b.textContent)).toEqual(["Give $0.50 more", "Give $2.00 more"])
     buttons[1].click()
-    expect([doc.config.budget, doc.stopped]).toEqual([2.52, null])
+    expect([doc.config.budget, stopOf(doc)]).toEqual([2.52, null])
   })
 })
 
@@ -169,7 +169,7 @@ describe("the lift, inline where the person is", () => {
     const give = [...card.querySelectorAll("button")].find((b) => b.textContent === "Give $0.50 more")
     give.click()
     expect(stepSession.doc().config.budget).toBe(1.02)
-    expect(stepSession.doc().stopped).toBe(null)
+    expect(stopOf(stepSession.doc())).toBeNull()
     cleanup()
   })
 })

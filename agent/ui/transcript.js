@@ -369,6 +369,19 @@ export function renderTranscript(container, doc, state, handlers) {
       continue
     }
 
+    // The harness speaking (session/blocks.js noticeBlock): whichever role its
+    // turn rides in, nobody said it, so it looks like neither.
+    if (turn.blocks?.length && turn.blocks.every((b) => b.type === "notice")) {
+      const node = el("div", "agent-turn")
+      node.dataset.role = "notice"
+      for (const block of turn.blocks) {
+        node.dataset.kind = block.kind
+        node.append(prose(turn.role === "assistant" ? `⚠ ${block.text ?? ""}` : (block.text ?? "")))
+      }
+      container.append(node)
+      continue
+    }
+
     if (turn.role === "user") {
       const node = el("div", "agent-turn")
       node.dataset.role = "user"

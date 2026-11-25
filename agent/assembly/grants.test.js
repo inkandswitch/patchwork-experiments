@@ -8,6 +8,7 @@ import { decide, run } from "../kernel/loop.js"
 import { FULL_TOOLS as BUILTIN_TOOLS } from "../fixtures/tool-ids.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { memoryStore } from "../kernel/store.js"
+import { settled } from "../fixtures/session.js"
 
 const fresh = () => { const d = {}; initSession(d, {}); return d }
 // The real doc_edit says its url defaults to the session's subject; a fake
@@ -428,7 +429,7 @@ describe("one answer releases every call it covers", () => {
     decide(store, "c1", { grant: "web@https://docs.python.org/" }, null, { toolset: toolset([fetchTool]) })
     expect(callsAwaitingApproval(store.doc())).toHaveLength(0)
     // …and the session stops claiming to be waiting for someone.
-    expect(store.doc().status).toBe(STATUS.idle)
+    expect(settled(store.doc())).toBe(STATUS.idle)
 
     await run({ store, provider, toolset: toolset([fetchTool]), canRun: () => true, flushMs: 0 })
 
@@ -459,7 +460,7 @@ describe("one answer releases every call it covers", () => {
 
     // Only ever loosens: the other site is a different decision.
     expect(callsAwaitingApproval(store.doc()).map((c) => c.id)).toEqual(["c2"])
-    expect(store.doc().status).toBe(STATUS.awaitingApproval)
+    expect(settled(store.doc())).toBe(STATUS.awaitingApproval)
   })
 
   it("does nothing when no toolset is there to judge with", async () => {

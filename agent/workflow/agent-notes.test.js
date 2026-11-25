@@ -17,6 +17,7 @@ import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
 import { claimLease } from "../session/lease.js"
 import { sessionOutcome } from "./driver.js"
 import { domSnapshot } from "../tools/environment.js"
+import { settled } from "../fixtures/session.js"
 
 beforeEach(() => _resetIds())
 
@@ -55,7 +56,7 @@ describe("a turn with neither words nor a call", () => {
     const provider = makeMock([silent, silent])
     const result = await go(store, provider)
     expect(result.outcome).toBe(OUTCOME.silent)
-    expect(store.doc().status).toBe(STATUS.error)
+    expect(settled(store.doc())).toBe(STATUS.error)
     expect(sessionOutcome(store.doc())).toEqual({ state: "failed" })
   })
 

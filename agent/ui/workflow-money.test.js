@@ -13,12 +13,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initSession, STATUS, CALL, _resetIds } from "../session/schema.js"
-import { makeTurn, textBlock, callBlock, resultBlock } from "../session/blocks.js"
+import { makeTurn, textBlock, callBlock, resultBlock, noticeBlock } from "../session/blocks.js"
 import { initPlan, PLAN, STEP, budgetOf, canExtend, orchestratorSpend, shouldPause, resumePlan, askForBudget, stepPrompt, reopenPrompt, requestErrors, DEFAULT_LIMITS } from "../workflow/plan.js"
 import { sessionOutcome, describeProgress, WorkflowDriver, _resetDrivers, EMPTY_RESULT } from "../workflow/driver.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { describeBudget } from "./waiting.js"
 import { workflowBudget } from "../workflow/tools.js"
+import { STOP } from "../session/status.js"
 
 await initSubduction()
 beforeEach(_resetIds)
@@ -119,10 +120,10 @@ describe("extending a step's budget", () => {
 })
 
 describe("a step out of budget, and the person", () => {
-  const stopped = { reason: "budget", spent: 2, limit: 2, at: 5 }
+  const stopped = makeTurn("assistant", [noticeBlock(STOP.budget, "Stopped: spent", { spent: 2, limit: 2 })], { at: 5 })
 
   it("is not shown to the person while its orchestrator can decide, but is when it has none", () => {
-    const base = { turns: [], stopped }
+    const base = { turns: [stopped] }
     expect(waitingIn({ ...base, workflow: { planUrl: "p", stepId: "a", orchestratorUrl: "automerge:o" } })).toEqual([])
     expect(waitingIn(base)).toMatchObject([{ kind: "budget", scope: "session" }])
   })
@@ -160,7 +161,6 @@ describe("when a step is done", () => {
   const session = (turns, over = {}) => {
     const doc = {}
     initSession(doc, {})
-    doc.status = STATUS.idle
     doc.turns = turns
     return Object.assign(doc, over)
   }
@@ -202,10 +202,10 @@ describe("when a step is done", () => {
     expect(sessionOutcome(doc, { live: () => false }).state).toBe("done")
   })
 
-  it("a status other than idle keeps it running", () => {
-    for (const status of [STATUS.running, STATUS.parked, STATUS.reconnecting]) {
-      expect(sessionOutcome(session([user(), said("x")], { status })).state).toBe("running")
-    }
+  it("waiting for the network, or with a call cleared and not yet run, it is still running", () => {
+    expect(sessionOutcome(session([user(), said("x")], { reconnecting: { reason: "offline", since: 1, attempts: 1 } })).state).toBe("running")
+    const cleared = { type: "call", id: "c1", tool: "view_mount", input: {}, where: "host", status: "approved" }
+    expect(sessionOutcome(session([user(), makeTurn("assistant", [cleared])])).state).toBe("running")
   })
 })
 
@@ -213,7 +213,6 @@ describe("an empty last message", () => {
   const session = (turns) => {
     const doc = {}
     initSession(doc, {})
-    doc.status = STATUS.idle
     doc.turns = turns
     return doc
   }

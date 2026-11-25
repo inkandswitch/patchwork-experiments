@@ -5,8 +5,9 @@ import { memoryStore } from "./store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, CALL, _resetIds } from "../session/schema.js"
 import { claimLease } from "../session/lease.js"
-import { makeTurn, textBlock } from "../session/blocks.js"
+import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
 import { findCall, callsAwaitingApproval } from "../session/calls.js"
+import { settled } from "../fixtures/session.js"
 
 // A toolset double with the same surface as tools/buildToolset.
 function fakeToolset(tools) {
@@ -73,7 +74,7 @@ describe("a plain text turn", () => {
     })
 
     expect(result.outcome).toBe(OUTCOME.idle)
-    expect(store.doc().status).toBe(STATUS.idle)
+    expect(settled(store.doc())).toBe(STATUS.idle)
     const text = transcript(store).filter((b) => b.type === "text").map((b) => b.text)
     expect(text).toContain("Hi there.")
   })
@@ -243,7 +244,7 @@ describe("approvals", () => {
     })
 
     expect(result.outcome).toBe(OUTCOME.awaitingApproval)
-    expect(store.doc().status).toBe(STATUS.awaitingApproval)
+    expect(settled(store.doc())).toBe(STATUS.awaitingApproval)
     expect(ran).toBe(0)
     expect(callsAwaitingApproval(store.doc())).toHaveLength(1)
   })
@@ -319,11 +320,11 @@ describe("approvals", () => {
     const toolset = fakeToolset([writeTool()])
 
     await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
-    expect(store.doc().status).toBe(STATUS.awaitingApproval)
+    expect(settled(store.doc())).toBe(STATUS.awaitingApproval)
 
     decide(store, "c1", "deny")
 
-    expect(store.doc().status).toBe(STATUS.idle)
+    expect(settled(store.doc())).toBe(STATUS.idle)
     expect(needsWork(store.doc(), () => true)).toBe(true)
 
     // The refusal is in the document as the call's result, so the transcript
@@ -335,7 +336,7 @@ describe("approvals", () => {
 
     await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
     expect(transcript(store).map((b) => b.text).join(" ")).toContain("understood, leaving it")
-    expect(store.doc().status).toBe(STATUS.idle)
+    expect(settled(store.doc())).toBe(STATUS.idle)
   })
 
   it("does not re-announce an old denial on every later turn", async () => {
@@ -387,7 +388,7 @@ describe("tiers", () => {
     })
 
     expect(result.outcome).toBe(OUTCOME.parked)
-    expect(store.doc().status).toBe(STATUS.parked)
+    expect(settled(store.doc())).toBe(STATUS.parked)
     // the call is still approved and unclaimed, so a host runner can pick it up
     expect(findCall(store.doc(), "c1").block.status).toBe(CALL.approved)
   })
@@ -553,15 +554,16 @@ describe("interruption and budget", () => {
 })
 
 describe("say", () => {
-  it("appends a user turn and resets status", async () => {
+  it("appends a user turn, which ends a stop", async () => {
     const store = session()
-    store.change((d) => { d.status = STATUS.error })
+    store.change((d) => { d.turns.push(makeTurn("assistant", [noticeBlock("error", "it broke")])) })
+    expect(settled(store.doc())).toBe(STATUS.error)
     say(store, "try again", "automerge:contact")
 
     const turn = store.doc().turns.at(-1)
     expect(turn.role).toBe("user")
     expect(turn.blocks[0].text).toBe("try again")
     expect(turn.author).toBe("automerge:contact")
-    expect(store.doc().status).toBe(STATUS.idle)
+    expect(settled(store.doc())).toBe(STATUS.idle)
   })
 })

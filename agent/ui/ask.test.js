@@ -9,6 +9,7 @@ import { initSession, STATUS, CALL, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { findCall, questionsAwaitingAnswer, questionOptions, callsAwaitingApproval } from "../session/calls.js"
 import { claimLease } from "../session/lease.js"
+import { settled } from "../fixtures/session.js"
 
 function toolset(tools) {
   const byId = new Map(tools.map((t) => [t.id, t]))
@@ -50,7 +51,7 @@ describe("asking a question", () => {
     })
 
     expect(result.outcome).toBe(OUTCOME.awaitingAnswer)
-    expect(store.doc().status).toBe(STATUS.awaitingAnswer)
+    expect(settled(store.doc())).toBe(STATUS.awaitingAnswer)
 
     const asking = questionsAwaitingAnswer(store.doc())
     expect(asking).toHaveLength(1)
@@ -83,7 +84,7 @@ describe("asking a question", () => {
     expect(answerQuestion(store, callId, "Grid", "automerge:me")).toBe(true)
 
     const doc = store.doc()
-    expect(doc.status).toBe(STATUS.idle)
+    expect(settled(doc)).toBe(STATUS.idle)
     expect(findCall(doc, callId).block.status).toBe(CALL.done)
 
     const toolTurn = doc.turns.at(-1)
@@ -110,7 +111,7 @@ describe("asking a question", () => {
     const request = provider.requests.at(-1)
     const parts = request.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : []))
     expect(parts).toContainEqual(expect.objectContaining({ type: "result", callId: "q1", output: "Grid" }))
-    expect(store.doc().status).toBe(STATUS.idle)
+    expect(settled(store.doc())).toBe(STATUS.idle)
   })
 
   it("ignores an empty answer rather than recording a blank one", async () => {
@@ -119,7 +120,7 @@ describe("asking a question", () => {
     const callId = questionsAwaitingAnswer(store.doc())[0].id
 
     expect(answerQuestion(store, callId, "   ")).toBe(false)
-    expect(store.doc().status).toBe(STATUS.awaitingAnswer)
+    expect(settled(store.doc())).toBe(STATUS.awaitingAnswer)
   })
 
   it("cannot be answered twice", async () => {
@@ -143,7 +144,7 @@ describe("asking a question", () => {
       canRun: () => true,
     })
 
-    expect(store.doc().status).toBe(STATUS.awaitingAnswer)
+    expect(settled(store.doc())).toBe(STATUS.awaitingAnswer)
     expect(callsAwaitingApproval(store.doc())).toHaveLength(1) // still there, just not first
   })
 

@@ -16,11 +16,12 @@
  * host-tier call has nowhere to run, or the iteration budget runs out.
  */
 
-import { STATUS, CALL, WHERE } from "../session/schema.js"
+import { CALL, WHERE } from "../session/schema.js"
+import { STOP } from "../session/status.js"
 import { callTarget, grantKey, needsApproval } from "../session/grants.js"
 import { addUsage, costOf } from "../session/usage.js"
 import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTokens, DENIED_RESULT } from "../session/request.js"
-import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock } from "../session/blocks.js"
+import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock, noticeBlock } from "../session/blocks.js"
 import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult } from "../session/calls.js"
 import { recordArtifact } from "../session/made.js"
 import { holdsLease } from "../session/lease.js"
@@ -126,7 +127,7 @@ export async function run(opts) {
   // Stopped. Said in the session only while it is still this runner's: a
   // page going away gives its leases up first (runners/registry.js), and must leave
   // what it was in the middle of for the next runner, not mark it idle.
-  const stopped = () => (stillOurs() ? finish(store, STATUS.idle, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: "lease lost" })
+  const stopped = () => (stillOurs() ? finish(store, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: "lease lost" })
 
   // Defaults are applied above by destructuring, which does not write them back
   // onto `opts`. The helpers below read their settings from this normalized
@@ -195,7 +196,7 @@ export async function run(opts) {
     // A question comes first: if the agent has asked something, nothing else it
     // queued matters until there is an answer.
     const asking = questionsAwaitingAnswer(store.doc())
-    if (asking.length) return finish(store, STATUS.awaitingAnswer, OUTCOME.awaitingAnswer, emit)
+    if (asking.length) return finish(store, OUTCOME.awaitingAnswer, emit)
 
     // A grant given a moment ago may already cover other calls that are still
     // waiting. Approval is decided when a call is written, so three fetches of
@@ -205,7 +206,7 @@ export async function run(opts) {
     releaseNowPermitted(settings)
 
     const pending = callsAwaitingApproval(store.doc())
-    if (pending.length) return finish(store, STATUS.awaitingApproval, OUTCOME.awaitingApproval, emit)
+    if (pending.length) return finish(store, OUTCOME.awaitingApproval, emit)
 
     const runnable = runnableCalls(store.doc())
     if (runnable.length) {
@@ -224,7 +225,6 @@ export async function run(opts) {
     }
 
     // ---- 3. Ask the model.
-    setStatus(store, STATUS.running)
     let assistant
     try {
       assistant = await streamTurn(settings)
@@ -242,8 +242,8 @@ export async function run(opts) {
         dropTurn(store, err.turnId)
         return reconnect(store, err, emit)
       }
-      appendTurn(store, makeTurn("assistant", [textBlock(`⚠ ${String(err?.message ?? err)}`)]))
-      return finish(store, STATUS.error, OUTCOME.error, emit, String(err?.message ?? err))
+      appendTurn(store, makeTurn("assistant", [noticeBlock(STOP.error, String(err?.message ?? err))]))
+      return finish(store, OUTCOME.error, emit, String(err?.message ?? err))
     }
 
     if (signal?.aborted) return stopped()
@@ -295,7 +295,8 @@ export async function run(opts) {
         appendTurn(
           store,
           makeTurn("user", [
-            textBlock(
+            noticeBlock(
+              "nudge",
               assistant.broken?.length
                 ? `(Your ${assistant.broken.map((c) => c.name).join(" and ")} call was cut off before its ` +
                   "arguments finished, so it was not run.) Make the call again, and keep the arguments small — " +
@@ -311,15 +312,16 @@ export async function run(opts) {
       appendTurn(
         store,
         makeTurn("assistant", [
-          textBlock(
-            `⚠ Cut off by the model's output limit ${truncations} times. ` +
+          noticeBlock(
+            STOP.error,
+            `Cut off by the model's output limit ${truncations} times. ` +
               "It is spending its output budget on thinking before it acts. Raise `params.maxTokens` in this " +
               "session's config, cap the thinking with `params.reasoning` (e.g. { effort: \"low\" } or " +
               "{ max_tokens: 1024 }), or pick a model that reasons less."
           ),
         ])
       )
-      return finish(store, STATUS.error, OUTCOME.truncated, emit, "output limit")
+      return finish(store, OUTCOME.truncated, emit, "output limit")
     }
 
     // ---- 5. Was it going round in circles?
@@ -339,7 +341,8 @@ export async function run(opts) {
         appendTurn(
           store,
           makeTurn("user", [
-            textBlock(
+            noticeBlock(
+              "nudge",
               "(You were repeating yourself, so your turn was stopped.) Do not deliberate further. " +
                 "Take the simplest option that works and make the tool call now. If you are genuinely stuck, " +
                 "ask the user one question with ask_user instead."
@@ -352,14 +355,15 @@ export async function run(opts) {
       appendTurn(
         store,
         makeTurn("assistant", [
-          textBlock(
-            "⚠ Stopped: the model kept repeating itself while thinking. " +
+          noticeBlock(
+            STOP.error,
+            "Stopped: the model kept repeating itself while thinking. " +
               "Try another model, or set sampling parameters for this one in the session's config " +
               "(its authors' recommended `temperature`, `top_p` and `repetition_penalty` are shown in the model picker)."
           ),
         ])
       )
-      return finish(store, STATUS.error, OUTCOME.repetition, emit, "repetition")
+      return finish(store, OUTCOME.repetition, emit, "repetition")
     }
 
     if (!assistant.calls.length) {
@@ -376,7 +380,8 @@ export async function run(opts) {
           appendTurn(
             store,
             makeTurn("user", [
-              textBlock(
+              noticeBlock(
+                "nudge",
                 "(You stopped without saying anything or calling a tool.) If the work is finished, say what you " +
                   "did and where the results are. If it is not, carry on with the next tool call."
               ),
@@ -384,27 +389,27 @@ export async function run(opts) {
           )
           continue
         }
-        appendTurn(store, makeTurn("assistant", [textBlock("⚠ The model stopped twice without a word or a tool call, so this ended here. Try again, or pick another model.")]))
-        return finish(store, STATUS.error, OUTCOME.silent, emit, "said nothing")
+        appendTurn(store, makeTurn("assistant", [noticeBlock(STOP.error, "The model stopped twice without a word or a tool call, so this ended here. Try again, or pick another model.")]))
+        return finish(store, OUTCOME.silent, emit, "said nothing")
       }
-      return finish(store, STATUS.idle, OUTCOME.idle, emit)
+      return finish(store, OUTCOME.idle, emit)
     }
 
     // A question the model just asked outranks anything else it queued: the
     // answer may make the rest pointless, and being asked to approve work that
     // is about to be thrown away is a waste of the person's attention.
     if (questionsAwaitingAnswer(store.doc()).length) {
-      return finish(store, STATUS.awaitingAnswer, OUTCOME.awaitingAnswer, emit)
+      return finish(store, OUTCOME.awaitingAnswer, emit)
     }
 
     const nowPending = callsAwaitingApproval(store.doc())
-    if (nowPending.length) return finish(store, STATUS.awaitingApproval, OUTCOME.awaitingApproval, emit)
+    if (nowPending.length) return finish(store, OUTCOME.awaitingApproval, emit)
 
     const result = await executeCalls(settings)
     if (result) return result
   }
 
-  return finish(store, STATUS.idle, OUTCOME.budgetExhausted, emit)
+  return finish(store, OUTCOME.budgetExhausted, emit)
 }
 
 // ---------------------------------------------------------------- compaction
@@ -703,7 +708,7 @@ async function executeCalls(opts) {
   for (const call of runnable) {
     if (signal?.aborted) {
       commitResults(store, results)
-      return stillOurs() ? finish(store, STATUS.idle, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: "lease lost" }
+      return stillOurs() ? finish(store, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: "lease lost" }
     }
     if (!stillOurs()) {
       // What already ran, ran: record it. Its calls are marked done, and a
@@ -728,7 +733,7 @@ async function executeCalls(opts) {
           if (found) found.block.where = where
         })
       }
-      return finish(store, STATUS.parked, OUTCOME.parked, emit, `needs ${where}`)
+      return finish(store, OUTCOME.parked, emit, `needs ${where}`)
     }
 
     // Claim the call before running it. A runner that took over mid-flight
@@ -877,12 +882,6 @@ export function releaseNowPermitted({ store, toolset, subject, sensitive }) {
       const found = findCall(d, call.id)
       if (found && found.block.status === CALL.pending) found.block.status = CALL.approved
     }
-    // The status has to move with them. Leaving it at awaiting-approval when
-    // nothing is waiting shows a card with no buttons and tells needsWork there
-    // is nothing to do — the session looks stuck while being perfectly ready.
-    if (d.status === STATUS.awaitingApproval && !callsAwaitingApproval(d).length) {
-      d.status = STATUS.idle
-    }
   })
   return freed.length
 }
@@ -920,13 +919,6 @@ function appendTurn(store, turn) {
   store.change((d) => {
     if (!d.turns) d.turns = []
     d.turns.push(turn)
-  })
-}
-
-function setStatus(store, status) {
-  if (store.doc().status === status) return
-  store.change((d) => {
-    d.status = status
   })
 }
 
@@ -986,21 +978,19 @@ export function spentBudget(doc) {
 }
 
 /**
- * Stop for the budget: say so in the transcript, and record it, so whoever
- * gave the budget — a workflow's orchestrator — can decide what happens next.
- * Ending on the agent's word means no runner picks the session up again
- * until someone writes to it.
+ * Stop for the budget: say so in a notice, which records it too, so whoever
+ * gave the budget — a workflow's orchestrator — can decide what happens next
+ * (session/status.js stopOf). No runner picks the session up again until
+ * someone speaks to it.
  */
 function stopForBudget(store, { spent, limit }, emit) {
   store.change((d) => {
-    d.stopped = { reason: "budget", spent, limit, at: Date.now() }
-    d.turns.push(makeTurn("assistant", [textBlock(`⚠ Stopped: this session has spent its $${limit.toFixed(2)} budget ($${spent.toFixed(2)}). It carries on only if it is given more.`)]))
+    d.turns.push(makeTurn("assistant", [noticeBlock(STOP.budget, `Stopped: this session has spent its $${limit.toFixed(2)} budget ($${spent.toFixed(2)}). It carries on only if it is given more.`, { spent, limit })]))
   })
-  return finish(store, STATUS.idle, OUTCOME.budgetExhausted, emit, "budget")
+  return finish(store, OUTCOME.budgetExhausted, emit, "budget")
 }
 
-function finish(store, status, outcome, emit, reason = null) {
-  setStatus(store, status)
+function finish(store, outcome, emit, reason = null) {
   // Any end but the network's own says it is back, or no longer matters.
   if (store.doc().reconnecting) store.change((d) => (d.reconnecting = null))
   emit?.({ type: "finish", outcome, reason })
@@ -1041,7 +1031,6 @@ export function decide(store, callId, decision, subject = null, { toolset = null
       // reporting a decline", because every nudge re-sent the refusal.
       if (!d.turns) d.turns = []
       d.turns.push(makeTurn("tool", [resultBlock(callId, DENIED_RESULT, { isError: true, summary: "declined" })]))
-      d.status = STATUS.idle
       return
     }
     block.status = CALL.approved
@@ -1093,7 +1082,6 @@ export function answerQuestion(store, callId, answer, author = null) {
     d.turns.push(
       makeTurn("tool", [resultBlock(callId, text, { summary: `answered: ${text.slice(0, 40)}` })], { author })
     )
-    d.status = STATUS.idle
     recorded = true
   })
   return recorded
@@ -1116,10 +1104,9 @@ export function say(store, text, author = null, context = null, attachments = []
       // made: it is listed with the rest, so it can be found again.
       if (attachment.kept) recordArtifact(d, { url: attachment.url, name: attachment.name, kind: "file" })
     }
+    // Speaking to a session that was stopped is deciding it should carry on:
+    // a user turn after the stop is what ends it (session/status.js stopOf).
     d.turns.push(makeTurn("user", blocks, { author }))
-    d.status = STATUS.idle
-    // Speaking to a halted session is deciding it should carry on.
-    if (d.halted) d.halted = null
   })
 }
 

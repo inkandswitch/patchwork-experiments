@@ -18,13 +18,14 @@
  * handed explicit capabilities instead, and nothing else handed them.
  */
 
-import { STATUS, unknownBlocks } from "../session/schema.js"
+import { SCHEMA_VERSION, unknownBlocks } from "../session/schema.js"
+import { STOP, stopOf } from "../session/status.js"
 import { canClaim, claimLease, holdsLease, leaseIsLive, LeaseWatch } from "../session/lease.js"
-import { lastTurn, makeTurn, textBlock } from "../session/blocks.js"
+import { lastTurn, makeTurn, noticeBlock } from "../session/blocks.js"
 import { runnableCalls, callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
 import { orphanedCalls, resolveOrphans, interruptedTurns, dropInterruptedTurns, markReconnecting } from "../session/recovery.js"
 import { run, OUTCOME } from "./loop.js"
-import { scopeOf, assertScopeAgrees, confine, scopedToolset, ScopeRefusal } from "./scope.js"
+import { scopeOf, assertScopeAgrees, confine, scopedToolset } from "./scope.js"
 import { kernelRepo } from "./kernel-repo.js"
 import { urlsIn } from "../documents/doc-urls.js"
 import { rememberOwn } from "./own-changes.js"
@@ -84,17 +85,17 @@ export const DEFER_PER_BUSY_MS = 1000
  * down, the tab sees the host-tier call and takes it.
  *
  * Deliberately conservative otherwise: a session with a pending approval is not
- * work, and neither is one whose last word was the agent's. That is what stops
- * a runner spinning on an errored session — the loop writes its error as an
- * assistant turn, so the next check sees nothing to do until a human speaks.
+ * work, and neither is one whose last word was the agent's or the harness's.
+ * That is what stops a runner spinning on a failed session: the failure is
+ * said in a notice (session/blocks.js), an assistant-role turn, so the next
+ * check sees nothing to do until someone speaks.
  */
 export function needsWork(doc, canRun = () => true, live = null) {
   if (!doc) return false
   // Stopped from outside — a workflow cancelled or reopened its step. Nothing
-  // it holds is work until it is spoken to again: a call that finished after
-  // the stop, its result landing last, used to look like work, and a runner
-  // took the cancelled step up again once the stop's lease went stale.
-  if (doc.halted) return false
+  // it holds is work until it is spoken to again, not even a call that
+  // finished after the stop, its result landing last (session/status.js).
+  if (stopOf(doc)?.kind === STOP.halted) return false
   // A call or a reply whose runner died mid-flight — a page reloaded or
   // closed — has to be settled before anything else can happen, whatever else
   // the session is waiting on.
@@ -318,6 +319,13 @@ export class SessionRunner {
       this.onEvent({ type: "outdated", unknown })
       return
     }
+    // Or the whole session is in another version's shape: a newer agent's, or
+    // one from before a migration that has not reached it.
+    if (doc.schemaVersion != null && doc.schemaVersion !== SCHEMA_VERSION) {
+      this.wantedSince = null
+      this.onEvent({ type: "outdated", schemaVersion: doc.schemaVersion })
+      return
+    }
 
     if (!canClaim(doc, this.runnerUrl, { live: this.live })) {
       // Someone else is on it. The poll in start() looks again, and their
@@ -440,16 +448,15 @@ export class SessionRunner {
         return { outcome: OUTCOME.reconnecting, reason: interruption.message }
       }
       // Anything that escaped the loop (a provider that could not be
-      // constructed, a toolset that failed to build) lands here. Recording the
-      // error is best-effort: if the document itself is what failed, the write
-      // fails too, and losing the runner to that would be the worse outcome.
+      // constructed, a toolset that failed to build, a scope refused) lands
+      // here, and is said in the transcript as the loop says its own errors:
+      // the person sees why, and the session stops asking to be run until
+      // someone does something about it. Best-effort: if the document itself
+      // is what failed, the write fails too, and losing the runner to that
+      // would be the worse outcome.
       try {
         this.store.change((d) => {
-          d.status = STATUS.error
-          // A refused scope is said in the transcript, as the loop says its
-          // own errors: the person sees why, and the session stops asking to
-          // be run until someone does something about it.
-          if (err instanceof ScopeRefusal) d.turns.push(makeTurn("assistant", [textBlock(`⚠ ${err.message}`)]))
+          d.turns.push(makeTurn("assistant", [noticeBlock(STOP.error, String(err?.message ?? err))]))
         })
       } catch {
         /* the document is unwritable; the event below is all we can report */

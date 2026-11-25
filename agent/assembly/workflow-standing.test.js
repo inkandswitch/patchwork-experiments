@@ -21,6 +21,7 @@ import { askAside, asideOf, makeAside, reusableAside, NOT_IN_ASIDE, ASIDE_NOTE }
 import { sessionOutcome } from "../workflow/driver.js"
 import { webScope } from "../kernel/scope.js"
 import { SCOPED_TOOL_IDS, researchToolset } from "../fixtures/tool-ids.js"
+import { statusOf } from "../session/status.js"
 
 await initSubduction()
 
@@ -134,8 +135,7 @@ async function stepSession(repo, { scoped = false } = {}) {
     d.turns.push(makeTurn("user", [textBlock("Find the rig loads.")]))
     d.turns.push(makeTurn("assistant", [textBlock("Working."), callBlock("web_fetch", { url: "https://x" }, { id: "c1", status: CALL.running })]))
     d.lease = { runner: "tab-x", at: 1, generation: 3 }
-    d.status = STATUS.running
-    d.halted = { at: 1, reason: "cancelled" }
+    d.reconnecting = { reason: "offline", since: 1, attempts: 1 }
   })
   return handle
 }
@@ -160,7 +160,7 @@ describe("a question in a side thread", () => {
     expect(aside.tools).toEqual(step.doc().tools)
     // What was mid-flight is settled, and it starts with nothing spent and no step budget.
     expect(aside.lease).toBeNull()
-    expect(aside.halted ?? null).toBeNull()
+    expect(aside.reconnecting ?? null).toBeNull()
     expect(aside.config.budget).toBeUndefined()
     expect(aside.config.workflows).toEqual({ enabled: false })
     expect(aside.usage).toEqual({ in: 0, out: 0, turns: 0 })
@@ -169,7 +169,7 @@ describe("a question in a side thread", () => {
     // The question is the last word, so a runner takes it up.
     expect(aside.turns.at(-1)).toMatchObject({ role: "user" })
     expect(aside.turns.at(-1).blocks.map((b) => b.text)).toEqual([ASIDE_NOTE, "Why 12 kN?"])
-    expect(aside.status).toBe(STATUS.idle)
+    expect(statusOf(aside)).toBe(STATUS.idle)
   })
 
   it("is never read as the step's work: a finished side thread is not a step outcome the driver could take", async () => {

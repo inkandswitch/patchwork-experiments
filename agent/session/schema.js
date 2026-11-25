@@ -15,10 +15,7 @@
  *     subject: AutomergeUrl | null      the doc this session is about
  *     config:  { providerId, model, params }
  *     turns:   Turn[]
- *     status:  "idle" | "running" | "awaiting-approval" | "parked" | "reconnecting" | "error"
  *     reconnecting: { reason, since, attempts } | null   while the network is away (net/network.js)
- *     halted:  { reason, at } | null      stopped from outside (a workflow step cancelled or
- *                                         reopened): no runner takes it until it is spoken to
  *     lease:   { runner, at, generation } | null
  *     grants:  { [grantKey]: "session" | "always" }
  *     made:    Artifact[]                 documents this session created
@@ -31,6 +28,12 @@
  *         | { type: "call",      id, tool, input, where, status, runner, generation }
  *         | { type: "result",    id, callId, output, isError, image, doc }
  *         | { type: "event",     id, source, label, text, count, at }
+ *         | { type: "notice",    id, kind, text, data }
+ *
+ * What a session is doing is not in the document: status.js reads it off the
+ * turns, the lease and `reconnecting`. A notice block is the harness speaking
+ * (blocks.js noticeBlock): one in an assistant-role turn ends a run, and is
+ * how a session comes to be failed, out of budget or halted.
  *
  * An event block is news a tool delivered after its call was over (see
  * kernel/events.js). It rides in a "user" turn because that is what wakes a runner and
@@ -41,9 +44,14 @@
  * or `null` — never assigned undefined. See patchwork-skill §5.
  */
 
-const SCHEMA_VERSION = 1
+/**
+ * The shape a session document is in. A runner leaves alone a session that
+ * says another (kernel/runner.js): one a newer agent wrote, or one from
+ * before a migration (scripts/migrate.mjs).
+ */
+export const SCHEMA_VERSION = 2
 
-/** Session-level status. `parked` means a call needs a browser tab and none is open. */
+/** What a session is doing, as status.js reads it off the document. `parked` means a call needs a browser tab and none is open. */
 export const STATUS = {
   idle: "idle",
   running: "running",
@@ -129,7 +137,6 @@ export function initSession(doc, opts = {}) {
   doc.subject = opts.subject ?? null
   doc.config = { ...DEFAULT_CONFIG, ...(opts.config ?? {}) }
   doc.turns = []
-  doc.status = STATUS.idle
   doc.lease = null
   doc.grants = {}
   doc.made = []
@@ -143,7 +150,7 @@ export function initSession(doc, opts = {}) {
  * words of a message and never the image that came with it. So a runner that
  * meets a block it does not know leaves the session to one that does.
  */
-export const BLOCK_TYPES = ["text", "reasoning", "call", "result", "context", "event", "summary", "attachment"]
+export const BLOCK_TYPES = ["text", "reasoning", "call", "result", "context", "event", "summary", "attachment", "notice"]
 
 /** The kinds of block in a session this version does not know, if any. */
 export function unknownBlocks(doc) {

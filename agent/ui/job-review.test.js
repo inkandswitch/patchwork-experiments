@@ -110,7 +110,6 @@ describe("the workflow view shows what the orchestrator waits on", () => {
       initSession(d, { title: "Battery" })
       d.turns.push(makeTurn("user", [textBlock("design it")]))
       if (orchestratorWaits) d.turns.push(makeTurn("assistant", [callBlock("fs_write", { path: "x.scad", content: "cube(1);" }, { id: "o1", status: CALL.pending })]))
-      d.status = STATUS.idle
     })
     const step = repo.create({})
     step.change((d) => {
@@ -118,7 +117,6 @@ describe("the workflow view shows what the orchestrator waits on", () => {
       d.turns.push(makeTurn("user", [textBlock("assemble")]))
       if (stepWaits) d.turns.push(makeTurn("assistant", [callBlock("web_fetch", { url: "https://torque.test/" }, { id: "s1", status: CALL.pending })]))
       // The status that hid it.
-      d.status = STATUS.idle
     })
     const plan = repo.create({})
     plan.change((d) => {

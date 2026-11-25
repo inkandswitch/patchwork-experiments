@@ -6,6 +6,7 @@ import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { _resetDrivers, ensureDriver } from "../workflow/driver.js"
 import { AgentTool } from "./session-view.js"
 import { _reset as resetRunners } from "../runners/registry.js"
+import { makeTurn } from "../session/blocks.js"
 
 await initSubduction()
 
@@ -78,7 +79,7 @@ describe("the workflow view", () => {
   it("marks a step whose session is waiting on a person, and sends you to it", async () => {
     const { repo, plan } = await planWith([step("a")], { status: PLAN.stopped })
     const child = repo.create({})
-    child.change((d) => { initSession(d, {}); d.status = STATUS.awaitingApproval })
+    child.change((d) => { initSession(d, {}); d.turns.push(makeTurn("assistant", [{ type: "call", id: "c1", tool: "http_request", input: {}, where: "worker", status: "pending" }])) })
     plan.change((d) => Object.assign(d.steps[0], { status: STEP.running, sessionUrl: child.url }))
     const { element, cleanup } = mount(plan, repo)
     await tick()
@@ -248,7 +249,7 @@ describe("the workflow view keeps your place", () => {
   it("a step streaming leaves an opened result open, scrolled where you left it, and its buttons in place", async () => {
     const { repo, plan } = await planWith([step("a"), step("b")], { status: PLAN.stopped })
     const child = repo.create({})
-    child.change((d) => { initSession(d, {}); d.status = STATUS.running })
+    child.change((d) => { initSession(d, {}); d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() } })
     plan.change((d) => {
       Object.assign(d.steps[0], { status: STEP.done, result: "Found 3 problems\nmore detail" })
       Object.assign(d.steps[1], { status: STEP.running, sessionUrl: child.url })

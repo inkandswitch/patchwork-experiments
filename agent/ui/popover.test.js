@@ -80,17 +80,15 @@ function session(state, { title = "Battery pack" } = {}) {
     const call = callBlock("doc_edit", { url: "automerge:pack", ops: [] }, { id: "c1" })
     call.status = CALL.running
     doc.turns.push(makeTurn("assistant", [call]))
-    doc.status = STATUS.running
+    doc.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
   } else if (state === "asking") {
     const call = callBlock("ask_user", { question: "Target voltage?", options: ["400 V", "48 V"] }, { id: "q1" })
     call.status = CALL.asking
     doc.turns.push(makeTurn("assistant", [call]))
-    doc.status = STATUS.awaitingAnswer
   } else if (state === "approval") {
     const call = callBlock("web_fetch", { url: "https://dnv.com/rules" }, { id: "p1" })
     call.status = CALL.pending
     doc.turns.push(makeTurn("assistant", [call]))
-    doc.status = STATUS.awaitingApproval
   } else if (state === "asked-in-text") {
     doc.turns.push(makeTurn("assistant", [textBlock("The research is running.\n\nOne question: do you have a target voltage, **400 V or 48 V?**")]))
   } else if (state === "done") {
@@ -131,7 +129,7 @@ describe("what a session is doing", () => {
     expect(activityOf(session("working"))).toMatch(/…$/)
     expect(activityOf(session("working"))).not.toBe("Thinking…")
     const writing = session("idle")
-    writing.status = STATUS.running
+    writing.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
     writing.turns.push(makeTurn("assistant", [textBlock("Here is")]))
     expect(activityOf(writing)).toBe("Writing…")
     expect(activityOf(session("done"))).toBeNull()
@@ -167,7 +165,7 @@ describe("following sessions", () => {
     const watcher = watchAttention(repo, () => ["automerge:s1", "automerge:s2"], () => {}, { now: () => t })
     await tick()
     const finish = (url) => repo.handles.get(url).change((d) => {
-      d.status = STATUS.idle
+      d.lease = null
       d.turns.push(makeTurn("assistant", [textBlock("Pack designed.\nDetails follow.")]))
     })
 
@@ -188,7 +186,10 @@ describe("following sessions", () => {
     const watcher = watchAttention(repo, () => ["automerge:s1"], () => {}, { now: () => t })
     await tick()
     t = LONG_RUN_MS * 2
-    repo.handles.get("automerge:s1").change((d) => { d.status = STATUS.awaitingApproval })
+    repo.handles.get("automerge:s1").change((d) => {
+      d.lease = null
+      d.turns.push(makeTurn("assistant", [Object.assign(callBlock("web_fetch", { url: "https://dnv.com/rules" }, { id: "p9" }), { status: CALL.pending })]))
+    })
     expect(watcher.snapshot().finished).toEqual([])
     watcher.dispose()
   })

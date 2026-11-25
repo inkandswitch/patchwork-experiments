@@ -20,6 +20,7 @@ import { claimLease } from "../session/lease.js"
 import { interruptedTurns, dropInterruptedTurns, resolveOrphans, orphanedCalls, INTERRUPTED } from "../session/recovery.js"
 import { SessionRunner, needsWork, STALE_AFTER_MS } from "./runner.js"
 import { memoryStore } from "./store.js"
+import { statusOf } from "../session/status.js"
 
 beforeEach(() => _resetIds())
 
@@ -98,14 +99,14 @@ describe("a page that dies mid-reply", () => {
     const after = b.store.doc()
     expect(shape(after)).toEqual([["user", "hello"], ["assistant", "A whole reply."]])
     expect(after.turns.some((turn) => turn.streaming)).toBe(false)
-    expect(after.status).toBe(STATUS.idle)
+    expect(statusOf(after)).toBe(STATUS.idle)
     // The model was asked from the person's message, not from half a reply.
     expect(JSON.stringify(model.requests[0].messages)).not.toContain("Half a thou")
   })
 })
 
 describe("a page that says it is going", () => {
-  it("gives the lease up, and its stop writes nothing: the reply stays marked, the status as it was", async () => {
+  it("gives the lease up, and its stop writes nothing: the reply stays marked, for the next runner to settle", async () => {
     const { store, a, done } = await midReply()
     expect(a.release()).toBe(true)
     a.stop()
@@ -113,7 +114,7 @@ describe("a page that says it is going", () => {
     const doc = store.doc()
     expect(doc.lease).toBeNull()
     expect(doc.turns.at(-1).streaming).toEqual({ runner: "tab-A", generation: 1 })
-    expect(doc.status).toBe(STATUS.running)
+    expect(needsWork(doc)).toBe(true)
     expect(needsWork(doc)).toBe(true)
   })
 
@@ -144,7 +145,7 @@ describe("stopping a reply on purpose", () => {
     const doc = store.doc()
     expect(shape(doc)).toEqual([["user", "hello"], ["assistant", "Half a thou"]])
     expect(doc.turns.at(-1).streaming).toBeUndefined()
-    expect(doc.status).toBe(STATUS.idle)
+    expect(statusOf(doc)).toBe(STATUS.idle)
     expect(needsWork(doc)).toBe(false)
     a.stop()
   })
@@ -157,7 +158,6 @@ describe("a call cut off by a reload", () => {
     const call = callBlock(tool, {}, { id: "c1" })
     Object.assign(call, { status: CALL.running, runner: "tab-old", generation: doc.lease.generation })
     doc.turns.push(makeTurn("assistant", [call]))
-    doc.status = STATUS.running
     return doc
   }
 

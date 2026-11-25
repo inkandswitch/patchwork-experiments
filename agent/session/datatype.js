@@ -1,4 +1,4 @@
-import { initSession, STATUS } from "./schema.js"
+import { initSession } from "./schema.js"
 import { sessionTitle } from "./title.js"
 
 /**
@@ -34,7 +34,6 @@ export const AgentSessionDatatype = {
     // A copied session must not inherit a lease: the runner named in it is
     // working on the original, and would otherwise look live here too.
     doc.lease = null
-    doc.status = STATUS.idle
   },
 }
 

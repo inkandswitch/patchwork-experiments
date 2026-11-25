@@ -3,7 +3,8 @@
  * caps it.
  */
 
-import { makeTurn, textBlock } from "./blocks.js"
+import { makeTurn, noticeBlock } from "./blocks.js"
+import { STOP, stopOf } from "./status.js"
 
 /**
  * Accumulate usage so a session can show what it has cost.
@@ -61,10 +62,8 @@ export function liftBudget(doc, add) {
   const spent = doc.usage?.cost ?? 0
   const limit = Math.round((Math.max(doc.config.budget ?? 0, spent) + amount) * 100) / 100
   doc.config.budget = limit
-  if (doc.stopped?.reason === "budget") {
-    doc.stopped = null
-    if (!doc.turns) doc.turns = []
-    doc.turns.push(makeTurn("user", [textBlock(`[Your budget is now $${limit.toFixed(2)}. Carry on from where you stopped.]`)]))
+  if (stopOf(doc)?.kind === STOP.budget) {
+    doc.turns.push(makeTurn("user", [noticeBlock("budget", `[Your budget is now $${limit.toFixed(2)}. Carry on from where you stopped.]`, { limit })]))
   }
   return limit
 }

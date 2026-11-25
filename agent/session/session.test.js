@@ -6,6 +6,7 @@ import { callBlock, makeTurn, reasoningBlock, resultBlock, textBlock } from "./b
 import { callsAwaitingApproval, findCall, findResult, runnableCalls, unansweredCalls } from "./calls.js"
 import { canClaim, claimLease, holdsLease, leaseIsLive } from "./lease.js"
 import { needsApproval } from "./grants.js"
+import { statusOf } from "./status.js"
 
 const freshDoc = () => {
   const doc = {}
@@ -21,7 +22,7 @@ describe("initSession", () => {
     for (const [key, value] of Object.entries(doc)) {
       expect(value, `${key} must not be undefined — automerge cannot hold it`).not.toBeUndefined()
     }
-    expect(doc.status).toBe(STATUS.idle)
+    expect(statusOf(doc)).toBe(STATUS.idle)
     expect(doc.turns).toEqual([])
     expect(doc.lease).toBeNull()
   })

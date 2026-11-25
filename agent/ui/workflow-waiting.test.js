@@ -45,12 +45,10 @@ function waitingSession(repo, kind) {
       const call = callBlock("ask_user", { question: "Metric or imperial?", options: ["metric", "imperial"] }, { id: "q1" })
       call.status = CALL.asking
       d.turns.push(makeTurn("assistant", [call]))
-      d.status = STATUS.awaitingAnswer
     } else {
       const call = callBlock("web_fetch", { url: "https://iba-world.com/negroni" }, { id: "p1" })
       call.status = CALL.pending
       d.turns.push(makeTurn("assistant", [call]))
-      d.status = STATUS.awaitingApproval
     }
   })
   return h

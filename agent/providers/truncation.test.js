@@ -6,6 +6,7 @@ import { buildBody } from "./openrouter.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
+import { settled } from "../fixtures/session.js"
 
 function toolset(tools = []) {
   const byId = new Map(tools.map((t) => [t.id, t]))
@@ -91,7 +92,7 @@ describe("a model that runs out of output budget", () => {
     const result = await run({ store, provider, toolset: toolset(), canRun: () => true, flushMs: 0 })
 
     expect(result.outcome).toBe(OUTCOME.truncated)
-    expect(store.doc().status).toBe(STATUS.error)
+    expect(settled(store.doc())).toBe(STATUS.error)
 
     const explanation = transcript(store).at(-1).text
     expect(explanation).toMatch(/Cut off by the model's output limit/)

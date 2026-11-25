@@ -24,7 +24,6 @@ function interrupted({ leaseAt = 0 } = {}) {
   const call = callBlock("doc_edit", { ops: [] }, { id: "c1" })
   Object.assign(call, { status: CALL.running, runner: "tab-old", generation: doc.lease.generation })
   doc.turns.push(makeTurn("assistant", [call]))
-  doc.status = "running"
   return doc
 }
 

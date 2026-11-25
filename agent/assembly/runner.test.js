@@ -10,6 +10,7 @@ import { buildToolset } from "./toolset.js"
 import { NOTES_FOLDER_NAME } from "../knowledge/notes.js"
 import { webScope } from "../kernel/scope.js"
 import { AGENT } from "./agent.js"
+import { statusOf } from "../session/status.js"
 
 await initSubduction()
 
@@ -196,7 +197,7 @@ describe("I5: a research step's model is told nothing of the person's", () => {
 
 describe("I6: a session runs confined exactly when its scope says so, and its plan must agree", () => {
   const refused = (doc, pattern) => {
-    expect(doc.status).toBe(STATUS.error)
+    expect(statusOf(doc)).toBe(STATUS.error)
     expect(doc.turns.at(-1).role).toBe("assistant")
     expect(doc.turns.at(-1).blocks[0].text).toMatch(pattern)
   }

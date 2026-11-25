@@ -21,6 +21,7 @@ import { PLAN, STEP, DEFAULT_TIER_MODELS } from "../workflow/plan.js"
 import { _resetDrivers } from "../workflow/driver.js"
 import { guardedFetch } from "../net/guard.js"
 import { BUILTIN_TOOLS } from "./builtin.js"
+import { statusOf } from "../session/status.js"
 
 await initSubduction()
 
@@ -123,7 +124,7 @@ describe("a workflow, end to end", () => {
 
     // ...and the orchestrator is woken with the results and answers.
     const sawTheEnd = () => provider.requests.some((r) => JSON.stringify(r.messages).includes("The workflow is over"))
-    expect(await until(() => sawTheEnd() && orchestrator.doc().status === STATUS.idle)).toBe(true)
+    expect(await until(() => sawTheEnd() && statusOf(orchestrator.doc()) === STATUS.idle)).toBe(true)
     const woke = provider.requests.slice(2).map((r) => JSON.stringify(r.messages)).join("\n")
     expect(woke).toContain("Judged: both matter")
     expect(await until(() => orchestrator.doc().turns.at(-1)?.blocks?.map((b) => b.text).join("") === "Both problems matter.")).toBe(true)

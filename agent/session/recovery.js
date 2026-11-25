@@ -5,8 +5,9 @@
 
 import { livenessOf } from "./lease.js"
 import { findCall, runnableCalls, unansweredCalls } from "./calls.js"
-import { CALL, STATUS } from "./schema.js"
-import { makeTurn, resultBlock, textBlock } from "./blocks.js"
+import { CALL } from "./schema.js"
+import { makeTurn, resultBlock, noticeBlock } from "./blocks.js"
+import { STOP } from "./status.js"
 
 /**
  * Calls a runner claimed and never finished.
@@ -100,7 +101,6 @@ export function resolveOrphans(doc, opts = {}) {
 export function markReconnecting(doc, reason, now = Date.now()) {
   const was = doc.reconnecting
   doc.reconnecting = { reason: String(reason ?? "the network went away"), since: was?.since ?? now, attempts: (was?.attempts ?? 0) + 1 }
-  doc.status = STATUS.reconnecting
 }
 
 /** What a call put back for the network says, when a person stops the session instead. */
@@ -113,8 +113,8 @@ export const STOPPED_OFFLINE = "Not run: the network went away before it could, 
  * look would find work and try again. Returns whether there was anything to stop.
  */
 export function stopReconnecting(doc) {
-  if (doc.status !== STATUS.reconnecting) return false
-  const reason = doc.reconnecting?.reason ?? "the network went away"
+  if (!doc.reconnecting) return false
+  const reason = doc.reconnecting.reason ?? "the network went away"
   const waiting = runnableCalls(doc)
   for (const call of waiting) {
     const found = findCall(doc, call.id)
@@ -122,9 +122,8 @@ export function stopReconnecting(doc) {
   }
   if (!doc.turns) doc.turns = []
   if (waiting.length) doc.turns.push(makeTurn("tool", waiting.map((call) => resultBlock(call.id, STOPPED_OFFLINE, { isError: true, summary: "stopped" }))))
-  doc.turns.push(makeTurn("assistant", [textBlock(`⚠ Stopped while waiting for the network (${reason}).`)]))
+  doc.turns.push(makeTurn("assistant", [noticeBlock(STOP.stopped, `Stopped while waiting for the network (${reason}).`)]))
   doc.reconnecting = null
-  doc.status = STATUS.idle
   return true
 }
 

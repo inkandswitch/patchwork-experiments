@@ -22,8 +22,9 @@
  */
 
 import { claimLease, holdsLease, LeaseWatch } from "../session/lease.js"
-import { initSession, STATUS, CALL } from "../session/schema.js"
-import { makeTurn, textBlock, lastTurn } from "../session/blocks.js"
+import { initSession, CALL } from "../session/schema.js"
+import { STOP, stopOf, statusOf } from "../session/status.js"
+import { makeTurn, textBlock, noticeBlock, lastTurn } from "../session/blocks.js"
 import { liftBudget } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
@@ -67,16 +68,13 @@ export const RESULT_KEPT = 8000
  */
 export function sessionOutcome(doc, { live = null } = {}) {
   if (!doc) return { state: "running" }
-  if (doc.status === STATUS.error) return { state: "failed" }
+  const stop = stopOf(doc)
+  if (stop?.kind === STOP.error) return { state: "failed" }
   // Out of budget is not done: it stopped part-way, and the orchestrator
   // decides whether it goes on.
-  if (doc.stopped?.reason === "budget") return { state: "running", outOfBudget: { spent: doc.stopped.spent, limit: doc.stopped.limit, at: doc.stopped.at } }
-  // Waiting on a person is read off the calls themselves, not the status: a
-  // status reset to idle while a permission was still pending made a step
-  // look finished — "done", with nothing said and its document empty.
+  if (stop?.kind === STOP.budget) return { state: "running", outOfBudget: { spent: stop.data?.spent ?? null, limit: stop.data?.limit ?? null, at: stop.at } }
   if (waitingIn(doc).length) return { state: "running", waiting: true }
-  const waiting = doc.status === STATUS.awaitingApproval || doc.status === STATUS.awaitingAnswer
-  if (doc.status !== STATUS.idle || needsWork(doc)) return { state: "running", waiting }
+  if (doc.reconnecting || needsWork(doc)) return { state: "running" }
   if (unansweredCalls(doc).length || (doc.turns ?? []).some((t) => t.streaming)) return { state: "running" }
   if (doc.lease && live?.(doc.lease)) return { state: "running" }
   const last = lastTurn(doc)
@@ -307,7 +305,7 @@ export class WorkflowDriver {
       const child = await this.session(step.sessionUrl)
       const doc = child?.doc()
       usages.push(doc?.usage)
-      sessions[step.sessionUrl] = doc?.status ?? null
+      sessions[step.sessionUrl] = doc ? statusOf(doc) : null
       // What the step asked its orchestrator for: each workflow_request call
       // that went through is one request, by its call's id, so reading it
       // again adds nothing.
@@ -716,11 +714,10 @@ export class WorkflowDriver {
     if (!handle?.doc()) return
     const message = reopenPrompt(plan, step)
     handle.change((d) => {
-      if (d.lease?.runner?.endsWith?.("-cancel")) d.lease = null
-      d.halted = null
       d.reconnecting = null
-      if (d.status !== STATUS.idle) d.status = STATUS.idle
-      if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || d.stopped?.reason === "budget") liftBudget(d, stepBudget(step))
+      if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || stopOf(d)?.kind === STOP.budget) liftBudget(d, stepBudget(step))
+      // Its new instructions, which also end whatever stop it was under
+      // (session/status.js stopOf).
       d.turns.push(makeTurn("user", [textBlock(message)]))
     })
     this.reasons.delete(step.sessionUrl)
@@ -737,19 +734,19 @@ export class WorkflowDriver {
 
   /**
    * Stop these sessions from outside, and keep them stopped: their lease is
-   * taken, so any runner stands down at its next look, and they are marked
-   * halted, so none takes them up again when that lease goes stale — not even
-   * one whose last call landed after the stop (kernel/runner.js needsWork). Spoken
-   * to, or continued by a reopen, they carry on.
+   * taken away, so a runner on one stands down at its next look, and a notice
+   * says they are halted, so none takes one up again — not even one whose
+   * last call landed after the stop (kernel/runner.js needsWork). Spoken to,
+   * or continued by a reopen, they carry on.
    */
   async haltSessions(urls, reason) {
     for (const url of urls) {
       try {
         const session = await this.repo.find(url)
         session.change((d) => {
-          claimLease(d, `${this.runnerUrl}-cancel`, this.now())
-          if (d.status === STATUS.running || d.status === STATUS.parked || d.status === STATUS.reconnecting) d.status = STATUS.idle
-          d.halted = { reason: String(reason ?? "stopped by its workflow"), at: this.now() }
+          if (d.lease) d.lease = null
+          if (d.reconnecting != null) d.reconnecting = null
+          if (stopOf(d)?.kind !== STOP.halted) d.turns.push(makeTurn("assistant", [noticeBlock(STOP.halted, String(reason ?? "Stopped by its workflow."))]))
         })
         ;(await this.startSession(session))?.runner?.interrupt?.()
       } catch {

@@ -23,6 +23,7 @@ import { drivePlanHere } from "../runners/tab.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { renderWaitingItem } from "./waiting.js"
 import { morph } from "./morph.js"
+import { statusOf } from "../session/status.js"
 
 const STYLE_MARK = "data-patchwork-agent-styles"
 function ensureStyles() {
@@ -153,17 +154,18 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     const url = plan.sessionUrl
     const doc = sessionDoc(url)
     const waits = waitingIn(doc)
+    const status = doc ? statusOf(doc) : null
     const state = waits.length
       ? STATE.needsInput
-      : doc?.status === STATUS.running || doc?.status === STATUS.reconnecting
+      : status === STATUS.running || status === STATUS.reconnecting
         ? STATE.running
-        : doc?.status === STATUS.error
+        : status === STATUS.error
           ? STATE.failed
           : plan.status === PLAN.running
             ? STATE.waiting
             : STATE.done
     const label =
-      doc?.status === STATUS.reconnecting
+      status === STATUS.reconnecting
         ? "reconnecting"
         : { [STATE.needsInput]: "needs you", [STATE.running]: "working", [STATE.failed]: "stopped", [STATE.waiting]: "waiting for steps", [STATE.done]: "idle" }[state]
 
@@ -227,7 +229,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       const turns = session.turns?.length ?? 0
       const used = (session.usage?.in ?? 0) + (session.usage?.out ?? 0)
       const spent = formatCost(session.usage)
-      const status = session.status === STATUS.reconnecting ? "waiting for the network" : session.status
+      const status = statusOf(session) === STATUS.reconnecting ? "waiting for the network" : statusOf(session)
       card.append(el("p", "agent-wf-activity", `${status} · ${turns} turns · ${tokens(used)} tokens${spent ? ` · ${spent}` : ""}`))
     }
 
@@ -364,10 +366,9 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     }
     for (const step of plan.steps) watch(step.sessionUrl)
 
-    // Waiting on a person is read off the calls, not the status field: a
-    // status reset to idle hid a step's pending permissions from this view.
-    const statusOf = (doc) => (waitingIn(doc).length ? STATUS.awaitingApproval : doc?.status ?? null)
-    const statuses = Object.fromEntries(plan.steps.filter((s) => s.sessionUrl).map((s) => [s.sessionUrl, statusOf(sessionDoc(s.sessionUrl))]))
+    // A step out of its budget waits on someone too, which its status does not say.
+    const waitingOrStatus = (doc) => (waitingIn(doc).length ? STATUS.awaitingApproval : doc ? statusOf(doc) : null)
+    const statuses = Object.fromEntries(plan.steps.filter((s) => s.sessionUrl).map((s) => [s.sessionUrl, waitingOrStatus(sessionDoc(s.sessionUrl))]))
     if (plan.sessionUrl) watch(plan.sessionUrl)
     const derived = states(plan, statuses)
     const count = (state) => plan.steps.filter((s) => derived.get(s.id) === state).length

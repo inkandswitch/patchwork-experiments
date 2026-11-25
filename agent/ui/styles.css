@@ -234,6 +234,15 @@
   overflow-wrap: anywhere;
 }
 
+/* The harness speaking: a run stopped and why, or the model asked to go on. */
+.patchwork-agent .agent-turn[data-role="notice"] {
+  border-left: 2px solid var(--agent-muted);
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  font-size: 0.85rem;
+  color: var(--agent-muted);
+  overflow-wrap: anywhere;
+}
+
 .patchwork-agent .agent-turn[data-role="event"] {
   border-left: 2px solid var(--agent-muted);
   padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
