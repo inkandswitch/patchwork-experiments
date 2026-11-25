@@ -51,9 +51,18 @@ export const DEFAULT_LIMITS = { parallel: 3, hostParallel: 1, steps: 24, cost: 2
  */
 export const DEFAULT_STEP_BUDGETS = { deep: 5, standard: 2, fast: 0.5 }
 
-/** A step's budget in dollars: its own, or its tier's. */
-export function stepBudget(step) {
+/** What a step's session starts with, in dollars: the step's own budget, or its tier's. */
+export function startBudget(step) {
   return step?.budget ?? DEFAULT_STEP_BUDGETS[step?.tier] ?? DEFAULT_STEP_BUDGETS.standard
+}
+
+/**
+ * A step's budget in dollars. Once it has a session it is the session's
+ * (`config.budget`): that is what the session spends against and what is
+ * raised, by the orchestrator or a person. Until then, what it will start with.
+ */
+export function stepBudget(step, session = null) {
+  return session?.config?.budget ?? startBudget(step)
 }
 
 /** What a person can add to a spent budget in one click, in dollars. */
@@ -630,9 +639,10 @@ export const EDITABLE = ["title", "prompt", "why", "after", "where", "tier", "bu
 
 /**
  * Why these edits cannot be made; empty when they can. A step may be edited
- * while pending; one reopened and waiting to continue takes only `after` and
- * `budget`, since its session already has its prompt (say what changed in the
- * reopen note instead). The whole graph is checked as it would be after.
+ * while pending; one reopened and waiting to continue takes only `after`,
+ * since its session already has its prompt (say what changed in the reopen
+ * note instead) and its budget (raise it with workflow_budget). The whole
+ * graph is checked as it would be after.
  */
 export function editErrors(plan, edits) {
   if (!Array.isArray(edits) || !edits.length) return ["Give at least one edit."]
@@ -654,6 +664,7 @@ export function editErrors(plan, edits) {
     if (step.sessionUrl) {
       const fixed = fields.filter((k) => !["after", "budget"].includes(k))
       if (fixed.length) errors.push(`'${edit.id}' was reopened and continues its own session, which already has its ${fixed.join(", ")}; put what changed in the reopen note.`)
+      if (fields.includes("budget")) errors.push(`'${edit.id}' was reopened and continues its own session, whose budget is the session's; give it more with workflow_budget.`)
     }
     const merged = { ...step, ...Object.fromEntries(fields.filter((k) => EDITABLE.includes(k)).map((k) => [k, edit[k]])) }
     errors.push(...stepFieldErrors(merged, `'${edit.id}'`))

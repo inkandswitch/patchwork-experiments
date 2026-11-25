@@ -30,7 +30,7 @@ import { liftBudget } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
-import { PLAN, PLAN_VERSION, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, stepBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "./plan.js"
+import { PLAN, PLAN_VERSION, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "./plan.js"
 import { decide } from "./decide.js"
 import { scopeOf, webScope, sameScope, initLedger } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
@@ -567,7 +567,8 @@ export class WorkflowDriver {
           // Workflows do not nest: a step never orchestrates.
           workflows: { enabled: false },
           // What it may spend before it stops and waits on the orchestrator.
-          budget: stepBudget(step),
+          // From here on the session's is the step's budget (plan.js stepBudget).
+          budget: startBudget(step),
         },
       })
       d.workflow = { planUrl: this.handle.url, stepId: step.id, orchestratorUrl: plan.sessionUrl ?? null }
@@ -634,7 +635,7 @@ export class WorkflowDriver {
    * Carry on a reopened step in its own session: it is told why, and handed
    * what it depends on as that now stands (plan.js reopenPrompt). Whatever
    * stopped it is undone — failed, cancelled, out of its budget — since it has
-   * new work: a fresh allowance on top of what it has spent.
+   * new work: as much again as it started with, on top of what it has spent.
    */
   async continueStep(step) {
     const plan = this.handle.doc()
@@ -643,7 +644,7 @@ export class WorkflowDriver {
     const message = reopenPrompt(plan, step)
     handle.change((d) => {
       d.reconnecting = null
-      if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || stopOf(d)?.kind === STOP.budget) liftBudget(d, stepBudget(step))
+      if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || stopOf(d)?.kind === STOP.budget) liftBudget(d, startBudget(step))
       // Its new instructions, which also end whatever stop it was under
       // (session/status.js stopOf).
       d.turns.push(makeTurn("user", [textBlock(message)]))

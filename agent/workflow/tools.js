@@ -26,6 +26,7 @@ import {
   budgetOf,
   canExtend,
   askForBudget,
+  startBudget,
   stepBudget,
   staleInputs,
   openRequests,
@@ -132,15 +133,22 @@ function budgetLine(plan) {
   return `Budget: $${b.spent.toFixed(2)} of $${b.limit.toFixed(2)} spent${parts}${left}${plan.paused ? "; paused: only the person can raise the cap (they are offered Resume)" : ""}`
 }
 
-/** The plan at `url` as it now stands, with what its research steps kept, as describePlan says it. */
+/** The plan at `url` as it now stands, with what its research steps kept and its steps' sessions, as describePlan says it. */
 async function described(repo, url) {
   const plan = (await repo.find(url)).doc()
-  const ledger = plan.ledgerUrl ? await repo.find(plan.ledgerUrl).then((h) => h.doc(), () => null) : null
-  return describePlan(plan, url, ledger)
+  const read = (docUrl) => (docUrl ? repo.find(docUrl).then((h) => h.doc(), () => null) : null)
+  const ledger = await read(plan.ledgerUrl)
+  const sessions = {}
+  for (const step of plan.steps ?? []) if (step.sessionUrl) sessions[step.sessionUrl] = await read(step.sessionUrl)
+  return describePlan(plan, url, { ledger, sessions })
 }
 
-/** The step table every workflow tool answers with. `ledger` is the plan's ledger document, when it has one. */
-export function describePlan(plan, url, ledger = null) {
+/**
+ * The step table every workflow tool answers with. `ledger` is the plan's
+ * ledger document, when it has one; `sessions` its steps' session documents
+ * by URL, whose budgets are the steps'.
+ */
+export function describePlan(plan, url, { ledger = null, sessions = {} } = {}) {
   const derived = states(plan)
   const lines = [
     `${plan.title} — ${plan.status} (${url})`,
@@ -152,7 +160,7 @@ export function describePlan(plan, url, ledger = null) {
   lines.push("")
   for (const step of plan.steps ?? []) {
     const state = derived.get(step.id)
-    lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier} · $${stepBudget(step).toFixed(2)} budget${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
+    lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier} · $${stepBudget(step, sessions[step.sessionUrl]).toFixed(2)} budget${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
     if (step.subject) lines.push(`  document: ${step.subject}`)
     if (step.tools?.length) lines.push(`  needs: ${step.tools.join(", ")}`)
     if (step.moved) lines.push(`  ${step.moved}`)
@@ -411,7 +419,9 @@ export const workflowBudget = {
       return `Not given: $${add.toFixed(2)} is more than the $${b.remaining.toFixed(2)} left under the workflow's cap ($${b.spent.toFixed(2)} of $${b.limit.toFixed(2)} spent, you included). Only the person can go past the cap. They have been asked, with your reason; nothing more starts until they resume it. Tell them briefly what is blocked, and call workflow_budget again if the step is still waiting after they resume. A smaller add (at most $${b.remaining.toFixed(2)}) would go through now.`
     }
 
-    let limit = Math.round((stepBudget(step) + add) * 100) / 100
+    // A step's budget is its session's once it has one (plan.js stepBudget),
+    // and before that what it will start with.
+    let limit = Math.round((startBudget(step) + add) * 100) / 100
     let resumed = false
     if (step.sessionUrl) {
       const session = await repo.find(step.sessionUrl)
@@ -425,7 +435,7 @@ export const workflowBudget = {
     planHandle.change((d) => {
       const s = d.steps.find((x) => x.id === step.id)
       if (!s) return
-      s.budget = limit
+      if (!step.sessionUrl) s.budget = limit
       if (!s.budgetLog) s.budgetLog = []
       s.budgetLog.push({ add, limit, why: String(input.why), at: Date.now() })
     })
@@ -516,7 +526,7 @@ export const workflowEditSteps = {
   needs: ["workflows"],
   name: "Edit workflow steps",
   description:
-    "Change steps that have not started: what they depend on (`after`) — to wait on a step added since, say — or their prompt, title, tier, placement, budget, the tools they need or their main document. Give only what changes. A reopened step waiting to continue takes `after` and `budget` only: its session already has its prompt, so say what changed in the reopen note. To change a step that has started, reopen it.",
+    "Change steps that have not started: what they depend on (`after`) — to wait on a step added since, say — or their prompt, title, tier, placement, budget, the tools they need or their main document. Give only what changes. A reopened step waiting to continue takes `after` only: its session already has its prompt, so say what changed in the reopen note, and its budget, which workflow_budget raises. To change a step that has started, reopen it.",
   where: "worker",
   risk: "edit",
   input_schema: {

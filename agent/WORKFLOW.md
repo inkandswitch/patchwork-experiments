@@ -39,7 +39,8 @@ A step:
 | `after` | the ids of the steps it waits for |
 | `where` | `"worker"`: a repo is all it needs. `"host"`: it needs the page |
 | `access` | `"web"` for a research step: the web and what research steps kept, and none of the person's documents |
-| `tier`, `budget`, `tools` | which model; dollars it may spend; tools it must have |
+| `tier`, `budget`, `tools` | which model; dollars its session starts with (*Money*); tools it must have |
+| `budgetLog` | `[{ add, limit, why, at }]`: each time the orchestrator raised its budget |
 | `status` | `pending`, `running`, `done`, `failed` or `cancelled` |
 | `sessionUrl`, `result`, `error`, `startedAt`, `finishedAt` | its session, and how it went |
 | `version` | how many times it has finished |
@@ -138,7 +139,10 @@ they were waiting on. A research step neither gives nor receives.
 ## Money
 
 `limits.cost` caps what the steps and the orchestrator spend together. Each
-step has its own budget, by tier unless it says. A step that spends its budget
+step has its own budget, by tier unless it says. That is what its session
+starts with; from then on the session's `config.budget` is the step's budget,
+the one it spends against and the one raised, by the orchestrator or a
+person (`stepBudget` in `workflow/plan.js`). A step that spends its budget
 stops part-way with a `budget` notice ([SESSION.md](SESSION.md), *Stops*) and
 the orchestrator is told; it can give the step more out of what the plan has
 left. When the plan itself is at its cap with work waiting, it pauses and asks

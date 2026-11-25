@@ -1603,3 +1603,10 @@ ledger; the driver opens the ledger under the lease before the first research
 step starts, reads it to file it, and writes the plan only to mark what it
 filed; and the ledger is a kernel type, so no agent tool can write one. The
 one-off migration makes each plan's ledger from its `sources`.
+
+A step's budget had been stored on the plan step and on its session and kept
+in step by hand: `workflow_budget` copied the session's new limit back to the
+plan, while a person's Give more and a reopened step's fresh allowance changed
+only the session, so the step table could show a budget the session no longer
+had. The session's is now the step's budget once it has one; the plan step's
+`budget` is only what the session starts with, and is not written after.

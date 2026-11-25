@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { Repo, initSubduction, stringifyAutomergeUrl } from "@automerge/automerge-repo"
-import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, stepPrompt, WITHHELD, RESULT_IN_PROMPT } from "../workflow/plan.js"
+import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, DEFAULT_STEP_BUDGETS, stepPrompt, stepBudget, WITHHELD, RESULT_IN_PROMPT } from "../workflow/plan.js"
+import { workflowBudget, workflowStatus } from "../workflow/tools.js"
+import { liftBudget } from "../session/usage.js"
 import { WorkflowDriver, sessionOutcome, describeProgress, keptCounts, _resetDrivers } from "../workflow/driver.js"
 import { scopedRepo } from "../kernel/scope.js"
 import { KERNEL_TYPES, LEDGER_TYPE } from "../kernel/kernel-repo.js"
@@ -400,6 +402,33 @@ describe("one ledger per plan", () => {
     expect(folder.doc().docs.map((e) => e.name)).toEqual(["page.md"])
     expect(Object.keys(plan.doc().sourcesFiled)).toEqual([made.documentId])
     expect(without(plan.doc(), "sourcesFiled")).toBe(planBefore)
+  })
+})
+
+describe("a step's budget, wherever it is raised", () => {
+  // [who raises it, and when] → the budget the session spends against, which
+  // is the step's as every reader reads it: the plan's model and the
+  // orchestrator's step table. The plan's own `budget` is what it started with.
+  const fast = DEFAULT_STEP_BUDGETS.fast
+  const CASES = {
+    "never raised": { before: null, after: null, budget: fast, start: undefined },
+    "by the orchestrator, before it starts": { before: (w) => workflowBudget.execute({ plan: w.plan.url, step: "a", add: 1, why: "big" }, { workflows: { repo: w.repo } }), after: null, budget: fast + 1, start: fast + 1 },
+    "by the orchestrator, while it runs": { before: null, after: (w) => workflowBudget.execute({ plan: w.plan.url, step: "a", add: 2, why: "more" }, { workflows: { repo: w.repo } }), budget: fast + 2, start: undefined },
+    "by a person, on its session": { before: null, after: async (w, session) => session.change((d) => liftBudget(d, 1)), budget: fast + 1, start: undefined },
+  }
+
+  it.each(Object.keys(CASES))("%s", async (name) => {
+    const { before, after, budget, start } = CASES[name]
+    const w = await setup([step("a")], { behaviour: { a: "hang" } })
+    if (before) await before(w)
+    await settle(started(w.make()))
+    const session = await w.repo.find(w.plan.doc().steps[0].sessionUrl)
+    if (after) await after(w, session)
+    const planStep = w.plan.doc().steps[0]
+    expect(session.doc().config.budget).toBe(budget)
+    expect(stepBudget(planStep, session.doc())).toBe(budget)
+    expect(planStep.budget).toBe(start)
+    expect(await workflowStatus.execute({ plan: w.plan.url }, { workflows: { repo: w.repo } })).toContain(`$${budget.toFixed(2)} budget`)
   })
 })
 

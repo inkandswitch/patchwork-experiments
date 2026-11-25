@@ -183,7 +183,9 @@ describe("a step's budget", () => {
     const doc = (await w.repo.find(w.plan.doc().steps[0].sessionUrl)).doc()
     expect([doc.config.budget, stopOf(doc), doc.turns.at(-1).role]).toEqual([2.5, null, "user"])
     expect(doc.turns.at(-1).blocks[0].text).toMatch(/budget is now \$2\.50\. Carry on/)
-    expect(w.plan.doc().steps[0].budget).toBe(2.5)
+    // The session's is the step's budget; the plan keeps what it started with, and why it was raised.
+    expect(w.plan.doc().steps[0].budget).toBeUndefined()
+    expect(w.plan.doc().steps[0].budgetLog).toMatchObject([{ add: 2, limit: 2.5, why: "half done" }])
   })
 
   it("can be raised before a step starts, and not after it has finished", async () => {
