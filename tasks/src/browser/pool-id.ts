@@ -1,7 +1,8 @@
 // Which pool is this browser's, for the pool host and for views that mark it.
+// The key it is kept under is the kit's, since an asking page reads it there
+// to say which pool it is next to.
 
-/** Where a browser profile keeps its pool's id. */
-export const POOL_ID_KEY = 'patchwork-tasks-pool-id';
+import { POOL_ID_KEY } from '../task-client.js';
 
 let fallback: string | undefined;
 
