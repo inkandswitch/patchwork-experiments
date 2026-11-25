@@ -385,3 +385,122 @@ describe('where a view can see the pool from', () => {
     }
   });
 });
+
+describe('a hidden page, and a newer build heard', () => {
+  /** The build channel, with `hear` for a message from another tab. */
+  class HearingChannel {
+    static made: HearingChannel[] = [];
+    onmessage: ((event: { data: unknown }) => void) | null = null;
+    constructor() {
+      HearingChannel.made.push(this);
+    }
+    postMessage() {}
+    static hear(data: unknown) {
+      for (const channel of HearingChannel.made) channel.onmessage?.({ data });
+    }
+  }
+  const NEWER = { build: Number.MAX_SAFE_INTEGER };
+
+  beforeEach(() => {
+    HearingChannel.made = [];
+    vi.stubGlobal('BroadcastChannel', HearingChannel);
+  });
+
+  const hide = () => window.dispatchEvent(new Event('pagehide'));
+  const show = () => window.dispatchEvent(new Event('pageshow'));
+
+  it('hidden while running: the pool is ended at once and the lock let go; shown again, it asks anew', async () => {
+    const p = await page({ [QUEUE]: true });
+    const worker = StandInWorker.made[0];
+    worker.say({ type: 'ready' });
+    hide();
+    await settle();
+    expect(worker.ended).toBe(true);
+    expect(locks.held()).toBe(false);
+    show();
+    await settle();
+    expect(StandInWorker.made).toHaveLength(2);
+    expect(p.last().state).toBe('starting');
+    p.release();
+    hide();
+    p.unwatch();
+  });
+
+  // A frozen page keeps its lock, so a drain in one must end at once whatever
+  // it drains for: otherwise no other tab runs the pool until the page wakes.
+  for (const [why, cause] of [
+    ['let go', (p: Awaited<ReturnType<typeof page>>) => p.release()],
+    ['its last queue left', (p: Awaited<ReturnType<typeof page>>) => p.serve({})],
+    ['a newer build heard', () => HearingChannel.hear(NEWER)],
+  ] as const) {
+    it(`hidden while draining (${why}), a run still going: the pool is ended at once and the lock let go`, async () => {
+      const p = await page({ [QUEUE]: true });
+      const worker = StandInWorker.made[0];
+      worker.say({ type: 'ready' });
+      worker.say({ type: 'status', busy: 1 });
+      await cause(p);
+      await settle();
+      expect(worker.orders().filter((order) => order.type === 'stop')).toEqual([{ type: 'stop', drain: true }]);
+      expect(worker.ended).toBe(false);
+      hide();
+      await settle();
+      expect(worker.ended).toBe(true);
+      expect(locks.held()).toBe(false);
+      expect(p.last().busy).toBe(0);
+      p.release();
+      p.unwatch();
+    });
+  }
+
+  it('a newer build heard while running: hands over, then stands down for good, served or not', async () => {
+    const p = await page({ [QUEUE]: true });
+    const worker = StandInWorker.made[0];
+    worker.say({ type: 'ready' });
+    HearingChannel.hear(NEWER);
+    expect(p.last().state).toBe('handing over');
+    worker.say({ type: 'stopped' });
+    await settle();
+    expect(p.last().state).toBe('stood down');
+    expect(locks.held()).toBe(false);
+    await p.serve({});
+    await p.serve({ [QUEUE]: true });
+    hide();
+    show();
+    await settle();
+    expect(p.last().state).toBe('stood down');
+    expect(locks.asked).toBe(1);
+    expect(StandInWorker.made).toHaveLength(1);
+    p.release();
+    p.unwatch();
+  });
+
+  it('a newer build heard while waiting for another tab: stops asking, and says it stood down', async () => {
+    void locks.request('patchwork-tasks-pool', {}, () => new Promise<void>(() => {}));
+    const p = await page({ [QUEUE]: true });
+    expect(p.last().state).toBe('waiting');
+    HearingChannel.hear(NEWER);
+    await settle();
+    expect(locks.waiting()).toBe(0);
+    expect(p.last().state).toBe('stood down');
+    p.release();
+    p.unwatch();
+  });
+
+  it('the last queue left before the pool said it was ready: told to drain once, and asks anew only after it stopped', async () => {
+    const p = await page({ [QUEUE]: true });
+    const worker = StandInWorker.made[0];
+    expect(p.last().state).toBe('starting');
+    await p.serve({});
+    expect(p.last().state).toBe('winding down');
+    worker.say({ type: 'ready' });
+    expect(p.last().state).toBe('winding down');
+    await p.serve({ [QUEUE]: true });
+    worker.say({ type: 'stopped' });
+    await settle();
+    expect(worker.ended).toBe(true);
+    expect(StandInWorker.made).toHaveLength(2);
+    p.release();
+    hide();
+    p.unwatch();
+  });
+});

@@ -421,16 +421,21 @@ class BrowserPoolHost implements PoolHost {
     this.held?.worker.postMessage(message);
   }
 
-  /** Why this page should not run the pool now, or null when it should. */
+  /**
+   * Why this page should not run the pool now, or null when it should. A
+   * hidden page comes first, whatever else holds: a pool left to drain in a
+   * frozen page keeps the lock, with its runs unheard, until the page wakes,
+   * so it is ended at once instead.
+   */
   private unwanted(): Drain | 'hidden' | 'unread' | null {
+    if (this.hidden) {
+      return 'hidden';
+    }
     if (this.standing) {
       return 'newer build';
     }
     if (this.holds === 0) {
       return 'let go';
-    }
-    if (this.hidden) {
-      return 'hidden';
     }
     if (!this.known) {
       return 'unread';
