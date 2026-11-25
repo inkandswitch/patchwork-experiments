@@ -17,6 +17,8 @@ let modules: Record<string, unknown>;
 let flushFails: boolean;
 let repoFails: boolean;
 let imported: { docId: string; bytes: Uint8Array }[];
+/** What each save named: its documents, or 'all'. */
+let flushes: (string[] | 'all')[];
 let calls: string[];
 /** How the next Repo is made: whether it records every use, offers the server's reports, and which peers it is connected to. */
 let made: { recorded: boolean; event: boolean; connected: string[] };
@@ -88,8 +90,9 @@ class FakeRepo {
     imported.push({ docId: args.docId, bytes });
     this.byId[args.docId] = new FakeHandle(args.docId);
   }
-  async flush() {
+  async flush(ids?: string[]) {
     events.push('flush');
+    flushes.push(ids ? [...ids] : 'all');
     if (flushFails) {
       throw new Error('disk full');
     }
@@ -188,6 +191,7 @@ beforeEach(() => {
   flushFails = false;
   repoFails = false;
   imported = [];
+  flushes = [];
   calls = [];
   made = { recorded: false, event: true, connected: [SERVER] };
   afterFlush = () => {};
@@ -200,7 +204,7 @@ afterEach(() => {
 });
 
 describe('a run worker', () => {
-  it('calls the code with (input, ctx) and this = ctx, saves, then says done with the result', async () => {
+  it('calls the code with (input, ctx) and this = ctx, then says done with the result', async () => {
     let seen: any;
     modules.ok = {
       default(this: unknown, input: unknown, ctx: any) {
@@ -213,7 +217,7 @@ describe('a run worker', () => {
     tell({ type: 'job', job: job('ok') });
     await settle();
     expect(seen).toEqual({ self: true, input: { n: 1 }, run: 'run-1', key: 'k', taskUrl: job('ok').taskUrl });
-    expect(events).toEqual(['flush', 'done']);
+    expect(events).toEqual(['done']);
     expect(said).toEqual([{ type: 'done', result: { doubled: 2 } }]);
   });
 
@@ -229,24 +233,28 @@ describe('a run worker', () => {
     // `then` is the promise machinery asking whether the Repo is itself a
     // promise; `on` and the two methods beside it are looked at once, to hear
     // the server's reports for the Repo's whole life; `handles` gives the
-    // heads before and after the code ran.
+    // heads before and after the code ran. Code that wrote nothing has
+    // nothing saved.
     expect(new Set(calls)).toEqual(
-      new Set(['then', 'on', 'connectedSubductionPeerIds', 'resyncSubduction', 'import', 'handles', 'flush']),
+      new Set(['then', 'on', 'connectedSubductionPeerIds', 'resyncSubduction', 'import', 'handles']),
     );
     expect(theRepo.peersAsked).toBe(0);
   });
 
-  // Each way the code can fail ends in one `threw`, after a save, never in silence.
-  const failures: [string, unknown, RegExp][] = [
-    ['code that will not import', undefined, /cannot find/],
-    ['a module with no default export', { other: () => 1 }, /no default export/],
-    ['a default export that is not a function', { default: 42 }, /no default export/],
-    ['a synchronous throw', { default: () => { throw new Error('sync boom'); } }, /sync boom/],
-    ['a rejected promise', { default: async () => { throw new Error('async boom'); } }, /async boom/],
-    ['a thrown non-error', { default: () => { throw null; } }, /null/],
-    ['a result that cannot cross a thread', { default: () => () => 1 }, /could not be sent/],
+  // Each way the code can fail ends in one `threw`, never in silence, and
+  // after the save of what it may have written: everything, when the code
+  // was never called and so what changed cannot be told; nothing, when it
+  // was called and wrote nothing.
+  const failures: [string, unknown, RegExp, (string[] | 'all')[]][] = [
+    ['code that will not import', undefined, /cannot find/, ['all']],
+    ['a module with no default export', { other: () => 1 }, /no default export/, ['all']],
+    ['a default export that is not a function', { default: 42 }, /no default export/, ['all']],
+    ['a synchronous throw', { default: () => { throw new Error('sync boom'); } }, /sync boom/, []],
+    ['a rejected promise', { default: async () => { throw new Error('async boom'); } }, /async boom/, []],
+    ['a thrown non-error', { default: () => { throw null; } }, /null/, []],
+    ['a result that cannot cross a thread', { default: () => () => 1 }, /could not be sent/, []],
   ];
-  for (const [what, module, message] of failures) {
+  for (const [what, module, message, saved] of failures) {
     it(`says threw, once, for ${what}`, async () => {
       if (module !== undefined) {
         modules.it = module;
@@ -258,19 +266,10 @@ describe('a run worker', () => {
       expect(endings()).toHaveLength(1);
       expect(endings()[0].type).toBe('threw');
       expect((endings()[0] as { message: string }).message).toMatch(message);
-      expect(events.indexOf('flush')).toBeLessThan(events.indexOf('threw'));
+      expect(flushes).toEqual(saved);
+      expect(events.filter((it) => it === 'flush' || it === 'threw')).toEqual([...saved.map(() => 'flush'), 'threw']);
     });
   }
-
-  it('says threw when what the code wrote cannot be saved, though it returned', async () => {
-    modules.ok = { default: () => 1 };
-    flushFails = true;
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('ok') });
-    await settle();
-    expect(endings()).toEqual([{ type: 'threw', message: expect.stringMatching(/could not be saved: disk full/) }]);
-  });
 
   it('says threw when it has no Repo, or was never told its settings', async () => {
     modules.ok = { default: () => 1 };
@@ -626,17 +625,104 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     expect(said).toEqual([{ type: 'done', result: 'idle' }]);
   });
 
-  it('a run that changes nothing says done in the same tick as its save, asking nothing of the server', async () => {
-    modules.ok = { default: () => 'nothing written' };
-    afterFlush = () => {
-      setTimeout(() => events.push('next tick'), 0);
+  it('a run that changes nothing saves nothing and says done in the same tick its code returns, asking nothing of the server', async () => {
+    modules.ok = {
+      default: () => {
+        setTimeout(() => events.push('next tick'), 0);
+        return 'nothing written';
+      },
     };
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('ok') });
+    tell({ type: 'job', job: job('ok'), task: new Uint8Array([1]) });
     await settle();
-    expect(events).toEqual(['flush', 'done', 'next tick']);
+    expect(events).toEqual(['done', 'next tick']);
     expect(theRepo.peersAsked).toBe(0);
+  });
+});
+
+// What is saved
+//
+// Before a run says how it ended, what its code wrote is saved: every
+// document whose heads differ from when the code was called, and no other.
+// The cases: nothing changed; a document made; a document changed that
+// existed before; the task's own document changed; what changed cannot be
+// told (the code was never called); and a save that fails, both when the
+// changed documents are known and when everything is saved.
+
+describe('a run saves what its code changed, and only that', () => {
+  const own = '2KYqboWHPS5rvWsheoLnHgFvE7ou';
+  /** Runs `body(ctx.repo)` as the code of a job whose task is imported, the server acknowledging whatever changed. */
+  async function runCode(body: (repo: any) => unknown, runId = 'run-1') {
+    modules[runId] = { default: (_: unknown, ctx: any) => body(ctx.repo) };
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: { ...job(runId), runId }, task: new Uint8Array([1]) });
+    await settle();
+    for (const handle of Object.values(theRepo.byId)) {
+      theRepo.report(handle);
+    }
+    await settle();
+    return tell;
+  }
+
+  it('saves nothing when the code changed nothing, the imported task included', async () => {
+    await runCode(() => 'idle');
+    expect(flushes).toEqual([]);
+    expect(endings()).toEqual([{ type: 'done', result: 'idle' }]);
+  });
+
+  it('saves the document the code made, and nothing else', async () => {
+    await runCode((repo) => repo.create({ x: 1 }).documentId);
+    expect(endings()).toEqual([{ type: 'done', result: 'doc2' }]);
+    expect(flushes).toEqual([['doc2']]);
+    expect(events).toEqual(['flush', 'done']);
+  });
+
+  it('saves the existing document the code changed, and not the one beside it that it left alone', async () => {
+    const tell = await runCode((repo) => [repo.create({}).documentId, repo.create({}).documentId]);
+    expect(endings()).toEqual([{ type: 'done', result: ['doc2', 'doc3'] }]);
+    said = [];
+    flushes = [];
+    modules.second = { default: () => (theRepo.byId.doc3.change(), 'changed doc3') };
+    tell({ type: 'job', job: { ...job('second'), runId: 'run-2' } });
+    await settle();
+    theRepo.report(theRepo.byId.doc3);
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'changed doc3' }]);
+    expect(flushes).toEqual([['doc3']]);
+  });
+
+  it("saves the task's own document when the code wrote to it", async () => {
+    await runCode(() => (theRepo.byId[own].change(), 'own'));
+    expect(endings()).toEqual([{ type: 'done', result: 'own' }]);
+    expect(flushes).toEqual([[own]]);
+  });
+
+  it('saves everything when what changed cannot be told', async () => {
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('not there'), task: new Uint8Array([1]) });
+    await settle();
+    expect(flushes).toEqual(['all']);
+    expect(events).toEqual(['flush', 'threw']);
+  });
+
+  it('says threw when what the code wrote cannot be saved, though it returned', async () => {
+    flushFails = true;
+    await runCode((repo) => repo.create({ x: 1 }).documentId);
+    expect(flushes).toEqual([['doc2']]);
+    expect(endings()).toEqual([{ type: 'threw', message: expect.stringMatching(/could not be saved: disk full/) }]);
+  });
+
+  it('says threw when saving everything fails', async () => {
+    flushFails = true;
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('not there') });
+    await settle();
+    expect(flushes).toEqual(['all']);
+    expect(endings()).toEqual([{ type: 'threw', message: expect.stringMatching(/could not be saved: disk full/) }]);
   });
 });
 

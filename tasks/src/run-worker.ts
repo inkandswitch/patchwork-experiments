@@ -156,7 +156,7 @@ export function serve(port: RunWorkerPort) {
     }
     if (docs) {
       try {
-        await docs.flush();
+        await saveChanged(docs, before);
       } catch (error) {
         // what it wrote is not safe yet, so it is not done
         outcome = { type: 'threw', message: `what its code wrote could not be saved: ${messageOf(error)}` };
@@ -325,6 +325,34 @@ function headsOfAll(repo: Repo): Map<string, string> {
   return heads;
 }
 
+/** The documents whose heads differ from `before`, each with its heads now: those made since, and those changed since. */
+function changedSince(repo: Repo, before: Map<string, string>): Map<string, string> {
+  const now = headsOfAll(repo);
+  for (const [id, heads] of now) {
+    if (heads === (before.get(id) ?? '')) {
+      now.delete(id);
+    }
+  }
+  return now;
+}
+
+/**
+ * Saves what the code changed before the run says how it ended, and only
+ * that: a save makes the storage write each document it names out to the
+ * disk at once, which for the task's own document, imported and never
+ * written, costs tens of milliseconds on every run for nothing. The task's
+ * own document is saved too when its heads changed, since code can write
+ * to it. Everything is saved when what changed cannot be told (`before` is
+ * null: the code was never called).
+ */
+function saveChanged(repo: Repo, before: Map<string, string> | null): Promise<void> {
+  if (!before) {
+    return repo.flush();
+  }
+  const changed = [...changedSince(repo, before).keys()] as DocumentId[];
+  return changed.length > 0 ? repo.flush(changed) : Promise.resolve();
+}
+
 /**
  * Waits until the sync server holds what the code changed, or REACH_LIMIT_MS
  * has passed. Null, at once, when there is nothing to wait for: the code
@@ -345,13 +373,8 @@ function reachServer(
 ): Promise<void> | null {
   /** The documents changed since `before`, each with its heads now. */
   const changed = () => {
-    const now = headsOfAll(repo);
+    const now = changedSince(repo, before);
     now.delete(own);
-    for (const [id, heads] of now) {
-      if (heads === (before.get(id) ?? '')) {
-        now.delete(id);
-      }
-    }
     return now;
   };
   if (changed().size === 0) {
