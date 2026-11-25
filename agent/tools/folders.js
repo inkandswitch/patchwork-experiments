@@ -11,7 +11,7 @@
 
 import { previewJson, truncate, bytes } from "../documents/format.js"
 import { contentText } from "../documents/values.js"
-import { isFile, treeNode, treeEntries, treeEnter, treeLink, treeRemove, treeRepin, resolvePath, ensurePath, findPath } from "../documents/tree.js"
+import { isFile, treeNode, treeEntries, treeEnter, treeLink, treeRemove, treeRepin, resolvePath, ensurePath, findPath, createFile } from "../documents/tree.js"
 import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, OpError, TEXT_OPS } from "../documents/ops.js"
 import { baseName } from "../documents/labels.js"
 
@@ -291,30 +291,6 @@ export const fsGrep = {
     const match = String(output ?? "").match(/^(\d+\+?) matches/)
     return `grep ${input?.pattern} · ${match ? match[1] : "0"} hits`
   },
-}
-
-const MIME_BY_EXTENSION = {
-  js: "text/javascript",
-  mjs: "text/javascript",
-  json: "application/json",
-  css: "text/css",
-  html: "text/html",
-  md: "text/markdown",
-  txt: "text/plain",
-}
-
-/** Make a file document. */
-async function createFile(repo, name, content) {
-  const extension = name.includes(".") ? name.split(".").pop() : ""
-  const handle = await repo.create2()
-  handle.change((doc) => {
-    doc.name = name
-    doc.extension = extension
-    doc.mimeType = MIME_BY_EXTENSION[extension] ?? "text/plain"
-    doc.content = content
-    doc["@patchwork"] = { type: "file" }
-  })
-  return handle
 }
 
 /**

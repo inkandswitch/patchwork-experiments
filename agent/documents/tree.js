@@ -170,6 +170,30 @@ export async function createFolder(repo, name) {
   return handle
 }
 
+const MIME_BY_EXTENSION = {
+  js: "text/javascript",
+  mjs: "text/javascript",
+  json: "application/json",
+  css: "text/css",
+  html: "text/html",
+  md: "text/markdown",
+  txt: "text/plain",
+}
+
+/** Make a file document, typed by its extension. */
+export async function createFile(repo, name, content) {
+  const extension = name.includes(".") ? name.split(".").pop() : ""
+  const handle = await repo.create2()
+  handle.change((doc) => {
+    doc.name = name
+    doc.extension = extension
+    doc.mimeType = MIME_BY_EXTENSION[extension] ?? "text/plain"
+    doc.content = content
+    doc["@patchwork"] = { type: "file" }
+  })
+  return handle
+}
+
 /** A child folder of a tree node, made if it does not exist. */
 export async function treeChild(repo, node, name) {
   const existing = treeEntries(node).find((entry) => entry.name === name)

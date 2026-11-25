@@ -22,7 +22,7 @@
  */
 
 import { truncate, bytes } from "../documents/format.js"
-import { isFile, treeNode, treeEntries, treeEnter, treeLink, treeRepin, ensurePath } from "../documents/tree.js"
+import { isFile, treeNode, treeEntries, treeEnter, treeLink, treeRepin, ensurePath, createFile } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 
 /** Pinned, because a build that changes under you is not a build. */
@@ -243,22 +243,9 @@ export async function absorb(repo, folderUrl, outputs, { makeFile }) {
   return written
 }
 
-/** The file constructor absorb takes, so callers do not have to supply one. Folders are documents/tree.js's. */
+/** The file constructor absorb takes, so callers do not have to supply one: a file as fs_write makes one. */
 export function makers(repo) {
-  return {
-    async makeFile(name, content) {
-      const handle = await repo.create2()
-      const extension = name.includes(".") ? name.split(".").pop() : ""
-      handle.change((doc) => {
-        doc.name = name
-        doc.extension = extension
-        doc.mimeType = extension === "js" ? "text/javascript" : "text/plain"
-        doc.content = content
-        doc["@patchwork"] = { type: "file" }
-      })
-      return handle
-    },
-  }
+  return { makeFile: (name, content) => createFile(repo, name, content) }
 }
 
 // ---------------------------------------------------------------- esbuild
