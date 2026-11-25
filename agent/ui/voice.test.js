@@ -16,6 +16,7 @@ vi.mock("./voice.js", async (importOriginal) => {
 
 import { composeDictation } from "./voice.js"
 import { AgentTool } from "./session-view.js"
+import { createDictation, isDictationShortcut } from "./dictation.js"
 import { AmbientAgent } from "./ambient.js"
 import { initSession } from "../session/schema.js"
 import { _reset as resetRunners } from "../runners/registry.js"
@@ -145,6 +146,62 @@ beforeEach(() => {
   localStorage.clear()
   resetRunners()
   document.body.replaceChildren()
+})
+
+describe("dictation on a field of its own", () => {
+  function bare() {
+    const root = document.createElement("div")
+    const field = document.createElement("textarea")
+    root.append(field)
+    document.body.append(root)
+    const changes = []
+    const dictation = createDictation({ field, root, onChange: () => changes.push(dictation.status()) })
+    root.append(dictation.button)
+    return { root, field, dictation, changes }
+  }
+
+  it("says what it is doing, splices what it hears into the field, and keeps it on stop", async () => {
+    const voice = scriptedEngine()
+    const { field, dictation, changes } = bare()
+    field.value = "Note:"
+    dictation.button.click()
+    expect([dictation.listening(), dictation.status()]).toEqual([true, "Starting the microphone…"])
+    await tick()
+    voice.handlers.onStatus(null)
+    expect([dictation.status(), dictation.button.dataset.state]).toEqual(["Listening…", "on"])
+    voice.handlers.onInterim("buy leeks")
+    dictation.stop()
+    expect([field.value, dictation.listening(), dictation.status(), voice.stopped]).toEqual(["Note: buy leeks", false, null, 1])
+    expect(changes).toEqual(["Starting the microphone…", "Starting the microphone…", "Listening…", null])
+  })
+
+  it("answers a host's dictate event: on, off, and a toggle", async () => {
+    const voice = scriptedEngine()
+    const { root, dictation } = bare()
+    const dictate = (on) => root.dispatchEvent(new CustomEvent("patchwork-agent:dictate", { detail: on === undefined ? {} : { on } }))
+    dictate(true)
+    await tick()
+    dictate(true)
+    expect(voice.starts).toBe(1)
+    dictate(false)
+    expect(dictation.listening()).toBe(false)
+    dictate()
+    expect(dictation.listening()).toBe(true)
+    // Gone before the microphone opened: it is closed as soon as it does.
+    dictation.dispose()
+    await tick()
+    expect([dictation.listening(), voice.stopped]).toEqual([false, 2])
+  })
+
+  it("knows its shortcut, and nothing like it", () => {
+    const key = (over) => ({ code: "Space", metaKey: false, ctrlKey: false, shiftKey: true, altKey: false, ...over })
+    expect(isDictationShortcut(key({ metaKey: true }))).toBe(true)
+    expect(isDictationShortcut(key({ ctrlKey: true }))).toBe(true)
+    expect(isDictationShortcut(key({}))).toBe(false)
+    expect(isDictationShortcut(key({ ctrlKey: true, altKey: true }))).toBe(false)
+    expect(isDictationShortcut(key({ ctrlKey: true, shiftKey: false }))).toBe(false)
+    expect(isDictationShortcut(key({ ctrlKey: true, code: "KeyD" }))).toBe(false)
+  })
 })
 
 describe("dictating into the composer", () => {
