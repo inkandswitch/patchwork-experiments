@@ -62,6 +62,7 @@ another's that isn't listed here or on those pages.
 | `patchwork:open-document` | DOM event | Patchwork | `{ url, toolId? }`, bubbling and composed: open a document | Patchwork |
 | `patchwork:subscribe` | DOM event | Patchwork | `{ selector, port }`, bubbling and composed: ask the providers above an element for a value, answered on the port | Patchwork |
 | `patchwork:tool-storage` | provider selector | Patchwork | `{ type, toolId }`, answered with the url of that tool's storage document on the account | Patchwork |
+| `background` | component tag | Patchwork's frames | a `patchwork:component` that shows nothing, mounted once inside the frame's providers for as long as the frame lives (the task pool) | patchwork-frame-tiling/README.md |
 
 ## Docs
 
