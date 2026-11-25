@@ -54,6 +54,7 @@ pnpm install
 pnpm test                                    # every unit and mount test, no network
 npx vitest run kernel/                       # one layer and what is under it
 node probes/worker-plugin-tool.mjs           # the SharedWorker runner in headless Chrome, served from disk
+node probes/session-view.mjs                 # the session view in headless Chrome: clicks, typing, redraws
 OPENROUTER_KEY_FILE=… node probes/patchwork-e2e.mjs    # the whole thing, in real Patchwork
 ```
 
