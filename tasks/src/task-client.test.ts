@@ -2410,6 +2410,116 @@ describe('watchWork', () => {
     await vi.advanceTimersByTimeAsync(LAPSE_MS * 2);
     expect(work.views).toEqual([]);
   });
+
+  it('own set later on a storage it already has: missing at once, then the work under the key on the queue it names', async () => {
+    const { repo, storage } = person('storage without own');
+    const queue = repo.create<Queue>({ title: 'q', jobs: {} });
+    const task = listed(repo, queue, 'k');
+    const work = followWork(repo);
+    await settle();
+    expect(work.views).toEqual([MISSING]);
+    storage!.change((doc) => (doc.own = queue.url));
+    await settle();
+    // watch says the same view again once it has the task's document as well as the queue's
+    expect([...new Set(work.states())]).toEqual(['missing', 'waiting']);
+    expect(work.last.taskUrl).toBe(task.url);
+    work.stop();
+  });
+
+  it('own taken out of the storage: missing at once, the queue is let go, and its work is heard no more', async () => {
+    const { repo, storage, queue } = person('an own queue');
+    const task = listed(repo, queue!, 'k', [opened('r')]);
+    await settle();
+    const held = () => [queue!.listenerCount('change'), task.listenerCount('change'), task.listenerCount('ephemeral-message')];
+    const before = held();
+    const work = followWork(repo);
+    await settle();
+    expect(work.last).toMatchObject({ state: 'running', taskUrl: task.url });
+    storage!.change((doc) => delete doc.own);
+    expect(work.last).toEqual(MISSING);
+    expect(held()).toEqual(before);
+    const seen = work.views.length;
+    beat(task, 'r', { progress: 'after' });
+    complete(task, 'r', 'succeeded');
+    await settle();
+    await vi.advanceTimersByTimeAsync(LAPSE_MS * 2);
+    expect(work.views).toHaveLength(seen);
+    work.stop();
+  });
+
+  it("the account's storage pointer moving to another storage: what the first said is withdrawn at once, the other's queue is followed, and nothing is held on the first", async () => {
+    const { repo, account, storage: first, queue: firstQueue } = person('an own queue');
+    const firstTask = listed(repo, firstQueue!, 'k');
+    const second = repo.create<any>({ '@patchwork': { type: 'patchwork:tool-storage' } });
+    const secondQueue = repo.create<Queue>({ title: 'q2', jobs: {} });
+    const secondTask = listed(repo, secondQueue, 'k', [opened('r2')]);
+    second.change((doc) => (doc.own = secondQueue.url));
+    await settle();
+    const held = () => [first!.listenerCount('change'), firstQueue!.listenerCount('change'), firstTask.listenerCount('change')];
+    const before = held();
+    const work = followWork(repo);
+    await settle();
+    expect(work.last).toMatchObject({ state: 'waiting', taskUrl: firstTask.url });
+    account!.change((doc) => (doc.toolStorage = { [TASKS_STORAGE_ID]: second.url }));
+    expect(work.last).toEqual(MISSING);
+    expect(held()).toEqual(before);
+    await settle();
+    beat(secondTask, 'r2', { progress: 'second' });
+    await settle();
+    expect(work.last).toMatchObject({ state: 'running', taskUrl: secondTask.url, progress: 'second' });
+    const seen = work.views.length;
+    first!.change((doc) => (doc.own = generateAutomergeUrl()));
+    firstQueue!.change((doc) => delistTask(doc, 'k', firstTask.url));
+    await settle();
+    expect(work.views).toHaveLength(seen);
+    work.stop();
+  });
+
+  it("own moving before the first queue's document has come: the queue it names now is followed, and the first arriving later is not heard, nor is a lapse reported", async () => {
+    const { repo, storage } = person('storage without own');
+    const elsewhere = newRepo();
+    const away = elsewhere.create<Queue>({ title: 'away', jobs: {} });
+    const awayTask = listed(elsewhere, away, 'k', [closed('r', 'failed')]);
+    storage!.change((doc) => (doc.own = away.url));
+    const here = repo.create<Queue>({ title: 'here', jobs: {} });
+    const hereTask = listed(repo, here, 'k');
+    await settle();
+    const work = followWork(repo);
+    await settle();
+    expect(work.views).toEqual([]);
+    storage!.change((doc) => (doc.own = here.url));
+    await settle();
+    expect(work.views.length).toBeGreaterThan(0);
+    for (const view of work.views) expect(view).toMatchObject({ state: 'waiting', taskUrl: hereTask.url });
+    const seen = work.views.length;
+    replicate(repo, awayTask);
+    replicate(repo, away);
+    await vi.advanceTimersByTimeAsync(LAPSE_MS * 2);
+    await settle();
+    expect(work.views).toHaveLength(seen);
+    work.stop();
+  });
+
+  it('stop() before the storage document has come: no timer, nothing reported, and its coming later changes nothing', async () => {
+    const { repo, account } = person('no storage');
+    const elsewhere = newRepo();
+    const storage = elsewhere.create<any>({});
+    account!.change((doc) => (doc.toolStorage = { [TASKS_STORAGE_ID]: storage.url }));
+    await settle();
+    const timers = vi.getTimerCount();
+    const accountHeld = account!.listenerCount('change');
+    const work = followWork(repo);
+    await settle();
+    work.stop();
+    expect(vi.getTimerCount()).toBe(timers);
+    expect(account!.listenerCount('change')).toBe(accountHeld);
+    const control = replicate(repo, elsewhere.create<any>({}));
+    const arrived = replicate(repo, storage);
+    await vi.advanceTimersByTimeAsync(LAPSE_MS * 2);
+    await settle();
+    expect(work.views).toEqual([]);
+    expect(arrived.listenerCount('change')).toBe(control.listenerCount('change'));
+  });
 });
 
 describe('stopWork', () => {
