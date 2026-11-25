@@ -258,8 +258,7 @@ export class Pool {
     }
     await Promise.all([...this.runs.values()].map((run) => run.finished));
     for (const slot of this.idle) {
-      slot.gone = true;
-      slot.worker.terminate();
+      this.endWorker(slot);
     }
     this.idle = [];
     for (const followed of [...this.queues.values(), ...this.tasks.values()]) {
@@ -286,18 +285,21 @@ export class Pool {
     }
   };
 
+  // Anyone can write a queue or a task, so each document, run and piece of
+  // work is looked at on its own (`attempt`): one that throws spoils only its
+  // own part of the pass.
   private reviewOnce() {
     const { id, slots } = this.options;
     const now = this.clock.now();
 
-    // What the served queues list, in the order to take it.
+    // What the served queues list, in the order to take it. A queue whose document is gone lists nothing.
     const listed: { work: Work; queue: Handle<Queue>; acceptance: Acceptance }[] = [];
     for (const [url, served] of this.queues) {
       if (!served.handle) {
         this.load(url, served, () => this.queues.get(url) === served, false);
         continue;
       }
-      for (const work of waitingWork(served.handle.doc())) {
+      for (const work of waitingWork(served.handle.isDeleted?.() ? undefined : served.handle.doc())) {
         listed.push({ work, queue: served.handle, acceptance: served.acceptance });
       }
     }
@@ -326,43 +328,53 @@ export class Pool {
         this.load(url, followed, () => this.tasks.get(url) === followed, true);
         continue;
       }
-      const task = followed.handle.isDeleted?.() ? undefined : followed.handle.doc();
-      this.hearing.saw(task?.runs);
-      // Its own past: an open run bearing this pool's id that it is not running was lost.
-      for (const run of task?.runs ?? []) {
-        if (run.pool === id && isOpen(run) && !this.runs.has(run.id)) {
-          followed.handle.change((doc) => endRun(doc, run.id, { status: 'lost', end: now }));
+      const handle = followed.handle;
+      attempt('reading a task', () => {
+        const task = handle.isDeleted?.() ? undefined : handle.doc();
+        this.hearing.saw(task?.runs);
+        // Its own past: an open run bearing this pool's id that it is not running was lost.
+        for (const run of task?.runs ?? []) {
+          if (run.pool === id && isOpen(run) && !this.runs.has(run.id)) {
+            handle.change((doc) => endRun(doc, run.id, { status: 'lost', end: now }));
+          }
         }
-      }
+      });
     }
 
     for (const run of this.runs.values()) {
       if (!run.stopping && !run.over) {
-        const reason = this.stopFor(run);
-        if (reason) {
-          this.stopRun(run, reason);
-        }
+        attempt('deciding whether to stop a run', () => {
+          const reason = this.stopFor(run);
+          if (reason) {
+            this.stopRun(run, reason);
+          }
+        });
       }
     }
 
     for (const { work, queue, acceptance } of listed) {
       const handle = this.tasks.get(work.taskUrl)?.handle;
-      const task = handle?.isDeleted?.() ? undefined : handle?.doc();
-      if (!handle || !task) {
+      if (!handle) {
         continue;
       }
-      const is = named(queue.doc(), work.key, work.taskUrl);
-      if (mayDelist(task, is)) {
-        queue.change((doc) => delistTask(doc, work.key, work.taskUrl));
-      } else if (
-        !this.stopped &&
-        this.runs.size < slots &&
-        acceptsPackage(acceptance, work.package) &&
-        accepts(acceptance, task.importUrl) &&
-        mayClaim(task, id, is, this.heard)
-      ) {
-        this.claim(work, queue, handle, task);
-      }
+      attempt('looking at a task its queue lists', () => {
+        const task = handle.isDeleted?.() ? undefined : handle.doc();
+        if (!task) {
+          return;
+        }
+        const is = named(queue.doc(), work.key, work.taskUrl);
+        if (mayDelist(task, is)) {
+          queue.change((doc) => delistTask(doc, work.key, work.taskUrl));
+        } else if (
+          !this.stopped &&
+          this.runs.size < slots &&
+          acceptsPackage(acceptance, work.package) &&
+          accepts(acceptance, task.importUrl) &&
+          mayClaim(task, id, is, this.heard)
+        ) {
+          this.claim(work, queue, handle, task);
+        }
+      });
     }
   }
 
@@ -440,8 +452,9 @@ export class Pool {
       finish: () => finish(),
     };
     const job: Job = { taskUrl: task.url, runId: run.id, importUrl: read.importUrl, input: read.input, key: work.key };
-    this.runs.set(run.id, run);
+    // The run is counted only once it is appended: a change that throws takes nothing.
     task.change((doc) => claimRun(doc, { id: run.id, pool: this.options.id, start: this.clock.now() }));
+    this.runs.set(run.id, run);
     this.options.repo.flush([task.documentId]).then(
       () => this.begin(run, job),
       (error) => {
@@ -470,7 +483,14 @@ export class Pool {
     run.slot = slot;
     this.say(run, true);
     run.beat = this.clock.setInterval(() => this.say(run, true), BEAT_MS);
-    slot.worker.run(job);
+    try {
+      slot.worker.run(job);
+    } catch (error) {
+      // A worker that cannot take its job is in a state nobody knows: it is ended, not kept.
+      this.log(run, `its worker could not be handed it: ${(error as Error)?.message ?? error}`);
+      this.kill(run);
+      this.complete(run, { status: 'failed' });
+    }
   }
 
   private startWorker(): Slot {
@@ -531,19 +551,26 @@ export class Pool {
     if (!run.slot) {
       return; // not started: `begin` records it once the start is saved
     }
-    run.slot.worker.abort(reason);
+    // The kill is set first, so that a worker that throws or answers at once from `abort` is still ended.
     run.kill = this.clock.setTimeout(() => {
       this.kill(run);
       this.complete(run, { status: statusOf(reason) });
     }, GRACE_MS);
+    const worker = run.slot.worker;
+    attempt('aborting a run', () => worker.abort(reason));
   }
 
   private kill(run: Running) {
-    const slot = run.slot;
-    if (slot && !slot.gone) {
+    if (run.slot) {
+      this.endWorker(run.slot);
+    }
+  }
+
+  private endWorker(slot: Slot) {
+    if (!slot.gone) {
       slot.gone = true;
       slot.run = null;
-      slot.worker.terminate();
+      attempt('ending a worker', () => slot.worker.terminate());
     }
   }
 
@@ -625,7 +652,17 @@ export class Pool {
   private send(handle: Handle<any>, message: { type: string }) {
     const seq = this.seq.get(handle.url) ?? 0;
     this.seq.set(handle.url, seq + 1);
-    this.ears.send(handle, { ...message, from: this.from, seq });
+    // What is said is advice to listeners; a listener that throws must not stop the pool.
+    attempt('saying something', () => this.ears.send(handle, { ...message, from: this.from, seq }));
+  }
+}
+
+/** Does one part of the pool's work, so that what throws there is reported and spoils nothing else. */
+function attempt(what: string, fn: () => void) {
+  try {
+    fn();
+  } catch (error) {
+    console.error(`pool: ${what} failed`, error);
   }
 }
 

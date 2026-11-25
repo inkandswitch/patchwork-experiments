@@ -63,6 +63,10 @@ class ManualClock implements Clock {
   private remove(id: unknown) {
     this.timers = this.timers.filter((timer) => timer.id !== id);
   }
+  /** How many timers are set and not yet cleared or fired. */
+  get pending() {
+    return this.timers.length;
+  }
   /** Moves time on by `ms`, firing each timer due on the way at its own time, in order. */
   async advance(ms: number) {
     const until = this.t + ms;
@@ -946,5 +950,196 @@ describe('the pool', () => {
     expect(rest).toEqual({ importUrl: CODE, input: { key: 'k' }, key: 'k' });
     expect(Object.keys(runs[0]).sort()).toEqual(['id', 'pool', 'start']);
     expect(w.queue.doc()).toEqual(queueBefore);
+  });
+});
+
+// What a document, a worker or a listener that misbehaves can do to a pool:
+// each spoils only its own part, and never leaves a run open or a slot busy
+// for ever.
+
+/** A fake executor whose workers throw from the named method. */
+class ThrowingExecutor extends FakeExecutor {
+  constructor(
+    clock: Clock,
+    private readonly method: 'run' | 'abort' | 'terminate',
+  ) {
+    super(clock);
+  }
+  start(events: WorkerEvents) {
+    const worker = super.start(events);
+    const original = worker[this.method].bind(worker) as (arg?: any) => void;
+    worker[this.method] = (arg?: any) => {
+      original(arg);
+      throw new Error(`${this.method} broke`);
+    };
+    return worker;
+  }
+}
+
+describe('the pool, when something it uses throws', () => {
+  it('leaves no timer set once stop() resolves, whatever its runs were doing', async () => {
+    // One run with a log line waiting to be said, one being cancelled (its
+    // kill is set), one that ignores the stop, and one whose start is still
+    // being saved when the pool stops.
+    const talking = w.ask('talking');
+    const cancelling = w.ask('cancelling');
+    const ignoring = w.ask('ignoring');
+    const { pool, executor } = w.pool('A', { slots: 3 });
+    await settle();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const saving = w.ask('saving');
+    const docs: Docs = {
+      find: (url) => w.repo.find(url) as any,
+      flush: (ids) => (ids?.includes(saving.documentId) && runsOf(saving).length > 0 && !runsOf(saving)[0].status ? gate : w.repo.flush(ids)),
+    };
+    const second = w.pool('B', { slots: 1, repo: docs });
+    await settle();
+    expect(statuses(saving)).toEqual(['open']);
+
+    cancelling.change((doc) => void (doc.cancelled = true));
+    await settle();
+    let stopped = 0;
+    void pool.stop().then(() => stopped++);
+    void second.pool.stop().then(() => stopped++);
+    // its code logs a line, and returns before that line is said
+    const talker = executor.of(lastRun(talking).id);
+    talker.events.log('a line not said yet');
+    talker.events.done('returned anyway');
+    await settle();
+    release();
+    await w.clock.advance(GRACE_MS);
+    expect(stopped).toBe(2);
+    expect(w.clock.pending).toBe(0);
+    expect(statuses(talking)).toEqual(['lost']);
+    expect(statuses(cancelling)).toEqual(['cancelled']);
+    expect(statuses(ignoring)).toEqual(['lost']);
+    expect(statuses(saving)).toEqual(['lost']);
+    const sent = w.net.sent.length;
+    await w.clock.advance(BEAT_MS * 5);
+    expect(w.net.sent.length).toBe(sent);
+  });
+
+  it('a task document without runs (anyone can write one) does not keep it from taking the next task', async () => {
+    const broken = w.repo.create<any>({ importUrl: CODE, input: null, key: 'broken' });
+    w.queue.change((doc) => listTask(doc, 'broken', { taskUrl: broken.url, askedAt: 0, package: null }));
+    const good = w.ask('good');
+    const { pool } = w.pool('A');
+    await settle();
+    expect(statuses(good)).toEqual(['open']);
+    expect(pool.busy).toBe(1);
+  });
+
+  it('a claim whose change throws is not counted against the slots', async () => {
+    const stuck = w.ask('stuck');
+    const good = w.ask('good');
+    const docs: Docs = {
+      find: async (url) => {
+        const handle = await w.repo.find<any>(url);
+        if (url !== stuck.url) {
+          return handle as any;
+        }
+        return {
+          url: handle.url,
+          documentId: handle.documentId,
+          doc: () => handle.doc(),
+          change: () => {
+            throw new Error('this handle is read only');
+          },
+          on: (event: any, fn: any) => handle.on(event, fn),
+          off: (event: any, fn: any) => handle.off(event, fn),
+          isDeleted: () => handle.isDeleted(),
+        };
+      },
+      flush: (ids) => w.repo.flush(ids),
+    };
+    const { pool } = w.pool('A', { repo: docs });
+    await settle();
+    expect(runsOf(stuck)).toEqual([]);
+    expect(statuses(good)).toEqual(['open']);
+    expect(pool.busy).toBe(1);
+  });
+
+  it('a worker whose run() throws fails the run once, is ended, and frees its slot', async () => {
+    const task = w.ask('k');
+    const executor = new ThrowingExecutor(w.clock, 'run');
+    const { pool } = w.pool('A', { executor });
+    await settle();
+    expect(statuses(task)).toEqual(['failed']);
+    expect(taskError(task.doc())).toMatch(/run broke/);
+    expect(executor.workers[0].terminations).toHaveLength(1);
+    expect(pool.busy).toBe(0);
+    const said = w.net.sent.length;
+    await w.clock.advance(BEAT_MS * 3);
+    expect(w.net.sent.slice(said).filter((it) => it.message.type === 'task progress')).toEqual([]);
+  });
+
+  it('a worker whose abort() throws is still ended GRACE_MS later, and its run recorded', async () => {
+    const task = w.ask('k');
+    const executor = new ThrowingExecutor(w.clock, 'abort');
+    const { pool } = w.pool('A', { executor });
+    await settle();
+    const at = w.clock.now();
+    task.change((doc) => void (doc.cancelled = true));
+    await settle();
+    await w.clock.advance(GRACE_MS);
+    expect(executor.workers[0].terminations).toEqual([at + GRACE_MS]);
+    expect(statuses(task)).toEqual(['cancelled']);
+    expect(pool.busy).toBe(0);
+  });
+
+  it('a worker whose terminate() throws still has its run recorded and its slot freed', async () => {
+    const task = w.ask('k');
+    const executor = new ThrowingExecutor(w.clock, 'terminate');
+    const { pool } = w.pool('A', { executor });
+    await settle();
+    task.change((doc) => void (doc.cancelled = true));
+    await settle();
+    await w.clock.advance(GRACE_MS);
+    expect(statuses(task)).toEqual(['cancelled']);
+    expect(pool.busy).toBe(0);
+    // and it is not used again
+    w.ask('next');
+    await settle();
+    expect(executor.workers).toHaveLength(2);
+    expect(executor.workers[0].jobs).toHaveLength(1);
+  });
+
+  it('a send that throws (a listener that throws) keeps no run from starting, beating or ending', async () => {
+    const task = w.ask('k');
+    const ears = w.net.ears();
+    const throwing: Ears = {
+      listen: ears.listen,
+      send: (handle, message) => {
+        ears.send(handle, message);
+        throw new Error('a listener threw');
+      },
+    };
+    const { executor, pool } = w.pool('A', { ears: throwing });
+    await settle();
+    const worker = executor.of(lastRun(task).id);
+    expect(worker.jobs).toHaveLength(1);
+    const beats = () => w.net.sent.filter((it) => it.message.type === 'task progress').length;
+    const before = beats();
+    await w.clock.advance(BEAT_MS);
+    expect(beats()).toBe(before + 1);
+    worker.events.done(1);
+    await settle();
+    expect(statuses(task)).toEqual(['succeeded']);
+    expect(pool.busy).toBe(0);
+  });
+
+  it('takes nothing more from a queue whose document is gone', async () => {
+    const first = w.ask('first');
+    const second = w.ask('second');
+    const { executor } = w.pool('A');
+    await settle();
+    w.repo.delete(w.queue.url);
+    await settle();
+    executor.of(lastRun(first).id).events.done(1);
+    await settle();
+    await w.clock.advance(BEAT_MS);
+    expect(statuses(first)).toEqual(['succeeded']);
+    expect(runsOf(second)).toEqual([]);
   });
 });
