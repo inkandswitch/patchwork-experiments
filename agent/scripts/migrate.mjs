@@ -28,15 +28,20 @@
  *            reached is tried again alone, with longer, and listed if it
  *            still cannot be read: a session kept on such a document is not
  *            migrated (the sidebar starts a new one there, ui/panel.js).
- *   change   Each session and plan that needs it, in one write. A plan whose
- *            research steps kept things gets a ledger document holding them,
- *            made before the plan is changed to name it.
+ *            Each migration is also tried on a clone of the document as
+ *            automerge holds it, and must leave what it leaves on a plain
+ *            copy; if one does not, nothing is changed.
+ *   change   Each session and plan that needs it, in one write, a few to a
+ *            process. A plan whose research steps kept things gets a ledger
+ *            document holding them, made before the plan is changed to name
+ *            it.
  *   check    Read each one back, from a process of its own, and confirm it
  *            is in the current shape on the server.
  *
  * `--dry` stops after the first pass and says what the second would change.
  * Without `--force` nothing is changed while a session found has a runner on
- * it now.
+ * it now. `--no-follow` looks only at the documents named, for a list an
+ * earlier walk made.
  *
  * Delete this file, migrate-session.js and migrate-plan.js once it has been
  * run: the agent reads only the current shape (kernel/runner.js,
@@ -45,6 +50,9 @@
 
 import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
+import { isDeepStrictEqual } from "node:util"
+// The module the repo holds its documents with, so a document can be cloned.
+import { next as Automerge } from "@automerge/automerge/slim"
 import { Repo, initSubduction, setSubductionLogLevel, generateAutomergeUrl } from "@automerge/automerge-repo"
 import { migrateSession } from "./migrate-session.js"
 import { migratePlan, ledgerFor } from "./migrate-plan.js"
@@ -142,21 +150,45 @@ function links(doc) {
   return out.filter(([, url]) => typeof url === "string" && url.startsWith("automerge:")).map(([rank, url, name]) => [rank, bare(url), name ?? null])
 }
 
+const isRunning = (doc) => !!doc.lease && Date.now() - Number(doc.lease.at ?? 0) < RUNNING_MS
+
+/**
+ * Does a migration, run on the document as automerge holds it, leave what it
+ * leaves on a plain copy? The migrations are written and tested on plain
+ * values; a document is not one (a value already in it cannot be put in a
+ * second place, for one). Tried on a clone, so the document is not touched.
+ * True, or what went wrong.
+ */
+function faithful(doc, migrate) {
+  const plain = copy(doc)
+  migrate(plain)
+  try {
+    const changed = Automerge.change(Automerge.clone(doc), (d) => void migrate(d))
+    return isDeepStrictEqual(copy(changed), plain) || "it leaves the document other than it leaves a plain copy"
+  } catch (err) {
+    return String(err?.message ?? err)
+  }
+}
+
 /** What the walk needs to know of one document. */
 function describe(url, doc) {
   const type = typeOf(doc)
   const said = { url, ok: true, type, links: links(doc) }
   if (type === "agent-session") {
+    const now = Date.now()
     said.kind = "session"
     said.title = doc.title ?? "(untitled)"
-    said.migrate = migrateSession(copy(doc))
-    said.running = !!doc.lease && Date.now() - Number(doc.lease.at ?? 0) < RUNNING_MS
+    said.migrate = migrateSession(copy(doc), { now })
+    said.running = isRunning(doc)
+    if (said.migrate) said.faithful = faithful(doc, (d) => migrateSession(d, { now }))
   } else if (type === "agent-workflow") {
     const ledger = ledgerFor(copy(doc))
+    const ledgerUrl = ledger ? generateAutomergeUrl() : null
     said.kind = "plan"
     said.title = doc.title ?? "(untitled plan)"
-    said.migrate = migratePlan(copy(doc), { ledgerUrl: ledger ? generateAutomergeUrl() : null })
+    said.migrate = migratePlan(copy(doc), { ledgerUrl })
     said.kept = ledger ? Object.keys(ledger.sources).length : null
+    if (said.migrate) said.faithful = faithful(doc, (d) => migratePlan(d, { ledgerUrl }))
   } else if (Array.isArray(doc?.docs)) said.kind = "folder"
   else if (type === LEDGER_TYPE) said.kind = "ledger"
   return said
@@ -183,11 +215,42 @@ if (flag("read")) {
   process.exit(0)
 }
 
+// `--write url…`: migrate each session and plan, one at a time, say what was
+// done on a line of its own, stay connected long enough for the server to
+// take the changes, and end. A migration that throws leaves its document as
+// it was: a change is all or nothing.
+if (flag("write")) {
+  const repo = await connect()
+  const say = (line) => new Promise((resolve) => process.stdout.write(JSON.stringify(line) + "\n", resolve))
+  for (const url of roots) {
+    try {
+      const handle = await open(repo, url, RETRY_MS)
+      const doc = handle.doc()
+      let changed = false
+      let ledgerUrl = null
+      if (typeOf(doc) === "agent-session") {
+        if (isRunning(doc) && !FORCE) throw new Error("a runner is on it now")
+        handle.change((d) => void (changed = migrateSession(d)))
+      } else if (typeOf(doc) === "agent-workflow") {
+        const ledger = ledgerFor(copy(doc))
+        ledgerUrl = ledger ? repo.create(ledger).url : null
+        handle.change((d) => void (changed = migratePlan(d, { ledgerUrl })))
+      } else throw new Error("neither a session nor a plan")
+      await say({ url, ok: true, changed, ledgerUrl })
+    } catch (err) {
+      await say({ url, ok: false, why: String(err?.message ?? err) })
+    }
+  }
+  await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
+  process.exit(0)
+}
+
 /** Read `urls` in a process of its own; resolves to what it said of each, with those it never answered for marked so. */
-function read(urls, ms) {
+function read(urls, ms, mode = "read") {
   if (!urls.length) return Promise.resolve([])
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--read", String(ms), "--sync", SYNC, ...urls], { stdio: ["ignore", "pipe", "ignore"] })
+    const flags = mode === "write" ? ["--write", "--settle", String(SETTLE_MS), ...(FORCE ? ["--force"] : [])] : ["--read", String(ms)]
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...flags, "--sync", SYNC, ...urls], { stdio: ["ignore", "pipe", "ignore"] })
     const answers = new Map()
     let buffered = ""
     child.stdout.on("data", (chunk) => {
@@ -201,13 +264,17 @@ function read(urls, ms) {
         }
       }
     })
-    const timer = setTimeout(() => child.kill("SIGKILL"), ms + 30000)
+    const patience = mode === "write" ? urls.length * ms + SETTLE_MS + 30000 : ms + 30000
+    const timer = setTimeout(() => child.kill("SIGKILL"), patience)
     child.on("close", () => {
       clearTimeout(timer)
       resolve(urls.map((url) => answers.get(url) ?? { url, ok: false, why: "timed out" }))
     })
   })
 }
+
+/** Migrate `urls` in a process of its own; resolves to what it said of each. */
+const write = (urls) => read(urls, RETRY_MS, "write")
 
 // ---------------------------------------------------------------- find
 
@@ -230,6 +297,8 @@ function take(said) {
   if (said.kind === "session" || said.kind === "plan") found.push(said)
   else if (said.kind === "folder") counts.folders++
   else counts.documents++
+  // `--no-follow`: only the documents named, for a list a walk already made.
+  if (flag("no-follow")) return
   const from = paths.get(said.url)
   for (const [rank, url, name] of said.links) enqueue(rank, url, name ? `${from}/${name}` : `${from} → ${said.type ?? "document"}`)
 }
@@ -273,6 +342,15 @@ console.log(
     `${unreached.length} not reached (${late} too slow to arrive, ${unreached.length - late} not on the server), in ${Math.round((Date.now() - started) / 1000)} s.`
 )
 
+// The migrations as automerge runs them must do what they do to plain values
+// (`faithful`), for every document, before any is changed.
+const unfaithful = toMigrate.filter((item) => item.faithful !== true)
+for (const item of unfaithful) console.log(`  cannot migrate ${item.kind.padEnd(7)} ${item.url}  ${item.title}  (${item.faithful})`)
+if (unfaithful.length) {
+  console.log(`\nNothing was changed: the migration does not do to ${unfaithful.length} of these documents what it does to a plain copy of them.`)
+  process.exit(4)
+}
+
 if (DRY || !toMigrate.length) process.exit(unreached.length ? 1 : 0)
 if (running.length && !FORCE) {
   console.log(`\nNothing was changed: ${running.length} session${running.length === 1 ? " has" : "s have"} a runner on ${running.length === 1 ? "it" : "them"} now. Run again when ${running.length === 1 ? "it has" : "they have"} finished, or pass --force.`)
@@ -281,26 +359,18 @@ if (running.length && !FORCE) {
 
 // ---------------------------------------------------------------- change
 
-const repo = await connect()
 const changed = []
-for (const item of toMigrate) {
-  try {
-    const handle = await open(repo, item.url, RETRY_MS)
-    if (item.kind === "session") handle.change((d) => migrateSession(d))
-    else {
-      const ledger = ledgerFor(copy(handle.doc()))
-      const made = ledger ? repo.create(ledger) : null
-      handle.change((d) => migratePlan(d, { ledgerUrl: made?.url ?? null }))
-      item.ledgerUrl = made?.url ?? null
-    }
-    changed.push(item)
-    console.log(`  migrated      ${item.kind.padEnd(7)} ${item.url}  ${item.title}`)
-  } catch (err) {
-    console.log(`  NOT migrated  ${item.kind.padEnd(7)} ${item.url}  ${item.title}  (${err?.message ?? err})`)
+for (let at = 0; at < toMigrate.length; at += BATCH) {
+  const batch = toMigrate.slice(at, at + BATCH)
+  const done = await write(batch.map((item) => item.url))
+  for (const [i, item] of batch.entries()) {
+    if (done[i].ok && done[i].changed) {
+      item.ledgerUrl = done[i].ledgerUrl ?? null
+      changed.push(item)
+      console.log(`  migrated      ${item.kind.padEnd(7)} ${item.url}  ${item.title}`)
+    } else console.log(`  NOT migrated  ${item.kind.padEnd(7)} ${item.url}  ${item.title}  (${done[i].ok ? "already current" : done[i].why})`)
   }
 }
-console.log(`\nWaiting ${Math.round(SETTLE_MS / 1000)} s for the sync server to take the changes…`)
-await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
 
 // ---------------------------------------------------------------- check
 
