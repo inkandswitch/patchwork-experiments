@@ -83,7 +83,7 @@ after the document was sent; looking again only at the next beat took 3.6 s. A R
 ### Rejected
 
 - **Listing only once the server has the task.** About 143 ms more on every task, to prevent a
-  refusal the pool now recovers from in about 250 ms.
+  refusal the pool recovers from in about 250 ms.
 - **Asking again on a short timer after a refusal** (50, 100, 200 ms…). About 95 ms slower at the
   median than listening for the document, and a review per timer.
 - **Sending the ask or the result as a message ahead of the document** (the lead, 2026-11-25): a

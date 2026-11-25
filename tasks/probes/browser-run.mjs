@@ -378,7 +378,7 @@ try {
     check(
       "1 a do-nothing task, ten in a row",
       times.length === 10,
-      `first (starts a run worker) ${first.ms.toFixed(0)} ms; then median ${median(times).toFixed(1)} ms, worst ${Math.max(...times).toFixed(1)} ms (old system: about 47 ms)`,
+      `first (starts a run worker) ${first.ms.toFixed(0)} ms; then median ${median(times).toFixed(1)} ms, worst ${Math.max(...times).toFixed(1)} ms`,
     );
   }
 
