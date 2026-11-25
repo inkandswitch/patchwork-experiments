@@ -3,8 +3,8 @@
 // The import doc says what is asked (`request`, written by the page when a
 // mod is dropped) and how it ended (`imported`, written by the work, for the
 // request it did). Whether the work is going on is not in the doc: it is
-// the task under the request's key, followed with watch, when it was asked
-// of the person's queue, or this page's own run when it was done here. So
+// the task under the request's key, followed with watchWork, when it was
+// asked of the person's queue, or this page's own run when it was done here. So
 // what is shown is read from both, and nothing writes the doc to say that an
 // import is under way. A doc that asks for an import that has neither an
 // outcome nor work going on is shown as interrupted, and the drop zone is

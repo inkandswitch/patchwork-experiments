@@ -11,14 +11,15 @@
 // queue when one of their machines serves it, so that it finishes when this
 // page closes and two pages asking are one import; otherwise in this page.
 // What is shown is decided in one place (status.js) from the doc and from
-// whether that work is going on; an import asked from another tab or before
-// a reload is followed by its key and shown, not offered again.
+// whether that work is going on; an import asked of the person's queue from
+// another tab or before a reload is followed by its key (watchWork) and
+// shown, not offered again. One done in another page is not seen here.
 
 import css from "./styles.css?inline";
 import { DEFAULT_SETTINGS } from "./settings.js";
 import { importAsk, importRequest, canonicalJson } from "./request.js";
 import { shownStatus, underWay, workLines } from "./status.js";
-import { cancel, doWork, inSamePackage, ownQueueOf, storageUrlOf, watch } from "../kit/task-client.js";
+import { doWork, inSamePackage, stopWork, watchWork } from "../kit/task-client.js";
 
 const OPEN_EVENT = "patchwork:open-document";
 
@@ -83,17 +84,6 @@ export async function callHere(repo, input, key, { onProgress, signal }) {
   }
 }
 
-/** The person's own queue, read without making anything: null if they have none. */
-async function ownQueueUrl(repo) {
-  const storageUrl = storageUrlOf(globalThis.accountDocHandle?.doc?.());
-  if (!storageUrl || !repo) return null;
-  try {
-    return ownQueueOf((await repo.find(storageUrl)).doc());
-  } catch {
-    return null;
-  }
-}
-
 const el = (tag, props = {}, ...children) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -122,8 +112,8 @@ export default function TtsImportTool(handle, element) {
   let dropping = false;
   // this page's own import, the latest: { controller, view } (view: a Work, status.js), kept once it has ended
   let job = null;
-  // the import asked under the doc's request's key on the person's own queue, as followed:
-  // { request, view, queue, key, stop }, its view undefined while looking and null with no queue to look on
+  // the import under the doc's request's key, as watchWork has it: { request, key, view, stop },
+  // its view undefined until watchWork first reports (within the task system's lapse)
   let seen = null;
 
   const doc = () => handle.doc() ?? {};
@@ -138,7 +128,7 @@ export default function TtsImportTool(handle, element) {
     const id = doc().request?.id ?? null;
     const own = job && (job.view.request === null || job.view.request === id) ? job.view : null;
     if (own && underWay(own.state)) return own;
-    const watched = id && seen?.request === id ? (seen.view === undefined ? undefined : seen.view && seen.view.state !== "missing" ? { ...seen.view, request: id } : null) : undefined;
+    const watched = id && seen?.request === id ? (seen.view === undefined ? undefined : seen.view.state !== "missing" ? { ...seen.view, request: id } : null) : undefined;
     if (watched && underWay(watched.state)) return watched;
     return own ?? watched;
   }
@@ -146,27 +136,16 @@ export default function TtsImportTool(handle, element) {
   const shown = () => shownStatus(doc(), work());
   const busy = () => ["importing", "looking"].includes(shown().status);
 
-  // ─── following the doc's request on the person's own queue ────────────────
-  let looking = 0;
-  async function follow() {
+  // ─── following the doc's request ──────────────────────────────────────────
+  function follow() {
     const request = doc().request ?? null;
     const id = request?.id ?? null;
     if ((seen?.request ?? null) === id) return;
-    const ticket = ++looking;
-    seen?.stop?.();
-    seen = id ? { request: id, view: undefined } : null;
+    seen?.stop();
+    seen = null;
     if (!id) return;
-    const repo = repoOf();
-    const queue = await ownQueueUrl(repo);
-    if (dead || ticket !== looking) return;
-    if (!queue) {
-      seen = { request: id, view: null };
-      return void update();
-    }
-    const { key } = importAsk(handle.url, request);
-    const followed = { request: id, view: undefined, queue, key, stop: null };
-    seen = followed;
-    followed.stop = watch(repo, queue, key, (view) => {
+    const followed = (seen = { request: id, key: importAsk(handle.url, request).key, view: undefined, stop: () => {} });
+    followed.stop = watchWork(repoOf(), followed.key, (view) => {
       if (dead || seen !== followed) return;
       followed.view = view;
       update();
@@ -216,7 +195,7 @@ export default function TtsImportTool(handle, element) {
     const w = work();
     if (!w || !underWay(w.state)) return;
     if (job && job.view === w) job.controller.abort();
-    else if (seen?.queue) void cancel(repoOf(), seen.queue, seen.key);
+    else if (seen) void stopWork(repoOf(), seen.key);
   }
 
   const fromDrop = (dt) => {
@@ -418,7 +397,7 @@ export default function TtsImportTool(handle, element) {
   let rendered = null;
   function update() {
     if (dead) return;
-    void follow();
+    follow();
     const s = shown();
     const d = doc();
     const shape = canonicalJson({ status: s.status, line: s.line ?? null, gameUrl: s.gameUrl ?? null, report: !!s.report, title: d.title ?? null, settings: d.settings ?? null, request: d.request?.id ?? null, games: d.games?.length ?? 0 });
@@ -434,7 +413,7 @@ export default function TtsImportTool(handle, element) {
     dead = true;
     // work done in this page (or not yet asked of a queue) ends with it; work on the person's queue goes on
     if (job && underWay(job.view.state) && !job.view.taskUrl) job.controller.abort();
-    seen?.stop?.();
+    seen?.stop();
     handle.off("change", update);
     root.removeEventListener("dragover", onDragOver);
     root.removeEventListener("dragleave", onDragLeave);

@@ -1,5 +1,5 @@
-// The TTS import tool's drop, through the task system's doWork and watch
-// (stood in for: their own tests are the tasks package's), on a page with
+// The TTS import tool's drop, through the task system's doWork, watchWork
+// and stopWork (stood in for: their own tests are the tasks package's), on a page with
 // the stand-in Repo: what a drop keeps and asks for, under which key; what
 // a person sees while it runs here or on their own machines; Cancel; closing
 // the tool; an import asked from elsewhere followed and not offered again;
@@ -15,7 +15,7 @@ import { importAsk, importRequest } from "./request.js";
 import { DEFAULT_SETTINGS } from "./settings.js";
 import { LINES } from "./status.js";
 
-const calls = vi.hoisted(() => ({ doWork: [], watch: [], cancel: [] }));
+const calls = vi.hoisted(() => ({ doWork: [], watch: [], stop: [] }));
 vi.mock("../kit/task-client.js", async (importOriginal) => ({
   ...(await importOriginal()),
   doWork: (repo, request, options) =>
@@ -23,13 +23,13 @@ vi.mock("../kit/task-client.js", async (importOriginal) => ({
       calls.doWork.push({ repo, request, options, resolve, reject });
       options.signal?.addEventListener("abort", () => reject(new Error("The task was cancelled")));
     }),
-  watch: (repo, queue, key, onChange) => {
-    const call = { repo, queue, key, onChange, stopped: false };
+  watchWork: (repo, key, onChange) => {
+    const call = { repo, key, onChange, stopped: false };
     calls.watch.push(call);
     return () => (call.stopped = true);
   },
-  cancel: async (repo, queue, key) => {
-    calls.cancel.push({ repo, queue, key });
+  stopWork: async (repo, key) => {
+    calls.stop.push({ repo, key });
     return true;
   },
 }));
@@ -58,32 +58,25 @@ const settle = async () => {
 };
 
 beforeEach(() => {
-  calls.doWork.length = calls.watch.length = calls.cancel.length = 0;
+  calls.doWork.length = calls.watch.length = calls.stop.length = 0;
 });
 afterEach(() => {
-  delete globalThis.accountDocHandle;
   document.body.innerHTML = "";
 });
 
-/** The tool mounted on an import doc (with `seed`), in a page whose person has their own queue if `own`. */
-function mounted({ own = false, seed = {} } = {}) {
+/** The tool mounted on an import doc (with `seed`). */
+function mounted({ seed = {} } = {}) {
   const repo = new FakeRepo();
   const doc = { "@patchwork": { type: "tts-import" } };
   TtsImportDatatype.init(doc);
   const handle = repo.add({ ...doc, ...seed });
-  let queue = null;
-  if (own) {
-    queue = repo.add({ title: "My tasks", jobs: {} }).url;
-    const storage = repo.add({ own: queue, [queue]: true });
-    globalThis.accountDocHandle = repo.add({ toolStorage: { "tasks-next": storage.url } });
-  }
   const element = document.createElement("div");
   element.repo = repo;
   document.body.append(element);
   const unmount = TtsImportTool(handle, element);
   const $ = (s) => element.querySelector(s);
   const text = () => element.querySelector(".tts-import").textContent;
-  return { repo, handle, queue, element, unmount, $, text };
+  return { repo, handle, element, unmount, $, text };
 }
 
 /** The fixture mod dropped on the tool, as files with their folder paths. */
@@ -230,10 +223,11 @@ describe("an import asked earlier", () => {
     request = await importRequest([{ path: "Workshop/1.json", url: "automerge:f", size: 1 }], DEFAULT_SETTINGS);
   });
 
-  it("with no queue of the person's own and no outcome: interrupted, with the drop zone and Import again", async () => {
-    const { $ } = mounted({ seed: { request } });
+  it("with no outcome and no work known under its key (watchWork says missing): interrupted, with the drop zone and Import again", async () => {
+    const { handle, $ } = mounted({ seed: { request } });
+    expect(calls.watch).toHaveLength(1);
+    calls.watch[0].onChange(view({ key: importAsk(handle.url, request).key, state: "missing" }));
     await settle();
-    expect(calls.watch).toEqual([]);
     expect($(".pill").textContent).toBe("interrupted");
     expect($(".note").textContent).toBe(LINES.interrupted);
     expect($(".drop")).toBeTruthy();
@@ -245,36 +239,45 @@ describe("an import asked earlier", () => {
     expect(calls.doWork[0].request.input.request).toEqual(request);
   });
 
-  it("is followed under its key on the person's own queue: shown, not offered again, and Cancel stops it by its key", async () => {
-    const { repo, handle, queue, $ } = mounted({ own: true, seed: { request } });
-    // still finding out: neither offered nor said to be interrupted
+  it("is followed under its key with watchWork: shown, not offered again, and Cancel stops it by its key", async () => {
+    const { repo, handle, $ } = mounted({ seed: { request } });
+    // still finding out (watchWork reports within the lapse): neither offered nor said to be interrupted
     expect($(".pill").textContent).toBe("…");
     expect($(".drop")).toBeNull();
     await settle();
     expect(calls.watch).toHaveLength(1);
     const { key } = importAsk(handle.url, request);
-    expect(calls.watch[0]).toMatchObject({ repo, queue, key });
+    expect(calls.watch[0]).toMatchObject({ repo, key });
     calls.watch[0].onChange(view({ key, taskUrl: TASK, progress: { phase: "Finding assets", done: 2, total: 9 } }));
     expect($(".pill").textContent).toBe("importing");
     expect($(".drop")).toBeNull();
     expect($(".progress .phase").textContent).toBe("Finding assets: 2 of 9");
     expect($(".where").textContent).toBe("On your own machines: closing this does not stop it.");
     $("button.cancel").click();
-    expect(calls.cancel).toEqual([{ repo, queue, key }]);
+    expect(calls.stop).toEqual([{ repo, key }]);
     calls.watch[0].onChange(view({ key, state: "cancelled", taskUrl: TASK }));
     expect($(".pill").textContent).toBe("stopped");
     expect($(".drop")).toBeTruthy();
   });
 
+  it("work followed under its key that comes to be known no more (missing, as when the person's queue changes): interrupted, not the old view", async () => {
+    const { handle, $ } = mounted({ seed: { request } });
+    await settle();
+    calls.watch[0].onChange(view({ key: importAsk(handle.url, request).key, taskUrl: TASK }));
+    expect($(".pill").textContent).toBe("importing");
+    calls.watch[0].onChange(view({ key: importAsk(handle.url, request).key, state: "missing" }));
+    expect($(".pill").textContent).toBe("interrupted");
+  });
+
   it("whose key names no task on the person's queue: interrupted", async () => {
-    const { handle, $ } = mounted({ own: true, seed: { request } });
+    const { handle, $ } = mounted({ seed: { request } });
     await settle();
     calls.watch[0].onChange(view({ key: importAsk(handle.url, request).key, state: "missing" }));
     expect($(".pill").textContent).toBe("interrupted");
   });
 
   it("a drop made here is shown from its own progress, and the followed key changes with the request", async () => {
-    const { handle, element, $ } = mounted({ own: true });
+    const { handle, element, $ } = mounted();
     await settle();
     expect(calls.watch).toEqual([]);
     drop(element);
@@ -287,7 +290,7 @@ describe("an import asked earlier", () => {
   });
 
   it("closing the tool stops following", async () => {
-    const { unmount } = mounted({ own: true, seed: { request } });
+    const { unmount } = mounted({ seed: { request } });
     await settle();
     unmount();
     expect(calls.watch[0].stopped).toBe(true);

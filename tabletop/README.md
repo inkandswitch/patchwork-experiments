@@ -98,7 +98,9 @@ The launcher (`tool.js`, every step in `actions.js`, the data in `model.js`):
   it draws from the same description's `drawn` and `assets`.
 - **Import a TTS mod…** takes the mod's `.json` with any cached assets (or a
   `.zip`) through the importer at its default (assets by URL, fetched when
-  first drawn; **Fetch every asset now** for offline play) into Games.
+  first drawn; **Fetch every asset now** for offline play) into Games. It
+  runs in the page, not as a task as the TTS import tool's does: the game
+  is linked into Games by the page once the import returns.
 - **Add the built-in games** makes a description of each registered
   `tabletop:game` the library hasn't one of (`origin.builtIn` says which),
   then takes out each link after the first to the same game: idempotent,
@@ -339,7 +341,11 @@ and ends with it. It writes the outcome (`imported`: the game and the
 report, or why it failed) in one change, only while the doc still asks for
 that request; a second run of it finds the first one's game and returns it.
 Nothing writes that an import is under way: what a person sees is read from
-the doc and from the work, followed by its key (`src/tts/status.js`), and an
+the doc and from the work (`src/tts/status.js`): this page's own, or the
+work under the request's key on the person's own queue, followed with the
+kit's `watchWork` (which says within ten seconds, also when their queue is
+made while the tool is open or cannot be had) and stopped with `stopWork`.
+An import done in another page is not seen from this one. An
 asked import with neither an outcome nor work going on shows as interrupted,
 with the drop zone and **Import again** (the kept files, with the settings
 as they are now). The build puts the task at `dist/import-task.js`. On a
