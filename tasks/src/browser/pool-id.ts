@@ -30,6 +30,15 @@ export function browserPoolId(): string {
   return (fallback ??= crypto.randomUUID());
 }
 
+/** This browser profile's pool id if it has one yet, for marking its pool in a view; never makes one. */
+export function readBrowserPoolId(): string | null {
+  try {
+    return localStorage.getItem(POOL_ID_KEY) ?? fallback ?? null;
+  } catch {
+    return fallback ?? null;
+  }
+}
+
 /**
  * A name a person recognises for this browser among the pools serving a
  * queue: the browser and its system, and the start of the pool's id to tell

@@ -15,9 +15,11 @@ import {
 import type { Acceptance } from './acceptance';
 import { useHandle, useHandleDoc, useHandleDocWhenThere, useRepo, WithTasksRepo } from './use-doc';
 import { AcceptanceChoice, JobsSection } from './jobs-view';
+import { readBrowserPoolId } from './browser/pool-id';
 
 // A queue, as a person sees it: what it lists, how each task stands, which
-// pools are heard serving it, and whether this account's browsers serve it.
+// pools are heard serving it (this browser's marked), and whether this
+// account's browsers serve it.
 //
 // The site hands this tool a handle from its own Repo. Only the url is used:
 // everything here goes through this tab's tasks Repo instead (see
@@ -69,6 +71,7 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo }) =
   const membership = useMembership(props.handle.url, props.hostRepo);
   const [pools, setPools] = createSignal<Serving[]>([]);
   onCleanup(served(repo, props.handle.url, setPools));
+  const mine = readBrowserPoolId();
 
   return (
     <div class="tq">
@@ -89,11 +92,14 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo }) =
             when={pools().length > 0}
             fallback={<p class="tq-empty">No pool is heard serving this queue: what is asked of it waits.</p>}
           >
-            <ul class="tq-logs">
+            <ul class="tq-runs">
               <For each={pools()}>
                 {(pool) => (
-                  <li>
-                    {pool.name || pool.pool.slice(0, 8)}{' '}
+                  <li class="tq-run-line">
+                    {pool.name || pool.pool.slice(0, 8)}
+                    <Show when={pool.pool === mine}>
+                      <span class="tq-tag">this browser</span>
+                    </Show>
                     <span class="tq-muted">
                       {pool.busy} of {pool.slots} slot{pool.slots === 1 ? '' : 's'} busy
                     </span>
@@ -128,7 +134,7 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo }) =
           </Show>
         </Show>
 
-        <JobsSection handle={props.handle} queue={queue()} />
+        <JobsSection handle={props.handle} queue={queue()} pools={pools()} mine={mine} />
       </div>
     </div>
   );

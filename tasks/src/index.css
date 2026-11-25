@@ -77,10 +77,6 @@
   font-size: 0.8125rem;
 }
 
-.tq-placeholder {
-  color: var(--tq-muted);
-}
-
 /* header */
 
 .tq-header {
@@ -175,87 +171,6 @@
   outline-offset: 2px;
 }
 
-/* a status dot: on the router line and on each worker */
-
-.tq-dot {
-  flex: none;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--tq-muted);
-}
-
-.tq-router {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-}
-
-.tq-router > .tq-dot {
-  margin-top: 0.5rem;
-}
-
-.tq-router-body {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.125rem 0.5rem;
-  min-width: 0;
-}
-
-.tq-router--none {
-  color: var(--tq-muted);
-}
-
-.tq-router--none .tq-dot {
-  background: transparent;
-  border: 1px solid var(--tq-muted);
-}
-
-.tq-router--live .tq-dot {
-  background: var(--tq-ok);
-}
-
-.tq-router--quiet .tq-dot {
-  background: var(--tq-warn);
-}
-
-.tq-router-who {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.tq-router-note {
-  color: var(--tq-muted);
-}
-
-/* who a router or worker belongs to, then its own name */
-
-.tq-identity {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.tq-identity-name {
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tq patchwork-view[tool-id='contact-inline'] {
-  display: inline-block;
-  width: auto;
-}
-
-.tq patchwork-view[tool-id='contact-inline']:empty {
-  display: none;
-}
-
 /* sections */
 
 .tq-section {
@@ -304,66 +219,6 @@
   white-space: nowrap;
 }
 
-.tq-tag--warn {
-  color: color-mix(in oklch, var(--tq-warn) 65%, var(--tq-fg));
-}
-
-/* workers */
-
-.tq-workers {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
-  gap: 0.5rem;
-}
-
-.tq-worker {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--tq-border);
-  border-radius: var(--tq-radius);
-  background: var(--tq-wash);
-}
-
-.tq-worker--loading {
-  color: var(--tq-muted);
-}
-
-.tq-worker--busy {
-  border-color: color-mix(in oklch, var(--tq-busy) 55%, var(--tq-border));
-}
-
-.tq-worker--busy .tq-dot {
-  background: var(--tq-busy);
-  animation: tq-pulse 1.2s ease-in-out infinite;
-}
-
-.tq-worker--paused {
-  background: transparent;
-  border-style: dashed;
-}
-
-.tq-worker--paused .tq-dot {
-  background: transparent;
-  border: 1px solid var(--tq-muted);
-}
-
-.tq-worker-state {
-  margin-left: auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--tq-muted);
-  font-size: 0.8125rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tq-worker--busy .tq-worker-state {
-  color: var(--tq-fg);
-}
-
 @keyframes tq-pulse {
   50% {
     opacity: 0.25;
@@ -371,57 +226,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tq-worker--busy .tq-dot,
   .tq-task--running > .tq-task-row .tq-task-mark {
     animation: none;
   }
 }
 
-/* when this browser takes tasks */
-
-.tq-choice {
-  display: flex;
-  flex-wrap: wrap;
-  width: fit-content;
-  max-width: 100%;
-  padding: 0.1875rem;
-  gap: 0.125rem;
-  border: 1px solid var(--tq-border);
-  border-radius: var(--tq-radius);
-  background: var(--tq-wash);
-}
-
-.tq-choice-option {
-  padding: 0.3rem 0.75rem;
-  border: none;
-  border-radius: var(--tq-radius-sm);
-  background: transparent;
-  color: var(--tq-muted);
-  font: inherit;
-  font-size: 0.875rem;
-  cursor: var(--studio-cursor-pointer, pointer);
-}
-
-.tq-choice-option:hover:not(:disabled) {
-  color: var(--tq-fg);
-}
-
-.tq-choice-option--chosen {
-  background: var(--tq-bg);
-  box-shadow: 0 0 0 1px var(--tq-border);
-  color: var(--tq-fg);
-  font-weight: 600;
-}
-
-.tq-choice-option:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.tq-choice-option:focus-visible {
-  outline: 2px solid var(--tq-busy);
-  outline-offset: 2px;
-}
+/* whose code this browser runs from a queue */
 
 .tq-choice-note {
   margin: 0;
@@ -560,12 +370,6 @@
   border-top: 1px solid var(--tq-border);
 }
 
-.tq-task--loading {
-  padding: 0.45rem 0.75rem;
-  color: var(--tq-muted);
-  font-size: 0.875rem;
-}
-
 .tq-task-row {
   display: flex;
   align-items: center;
@@ -592,13 +396,11 @@
   text-align: center;
 }
 
-.tq-task--ok > .tq-task-row .tq-task-mark,
-.tq-run--succeeded .tq-task-mark {
+.tq-task--ok > .tq-task-row .tq-task-mark {
   color: var(--tq-ok);
 }
 
-.tq-task--failed > .tq-task-row .tq-task-mark,
-.tq-run--failed .tq-task-mark {
+.tq-task--failed > .tq-task-row .tq-task-mark {
   color: var(--tq-bad);
 }
 
@@ -616,14 +418,6 @@
   white-space: nowrap;
 }
 
-/* In a narrow pane the outcome matters more than how many tries it took,
-   which opening the row still shows. */
-@container (max-width: 24rem) {
-  .tq-task-row .tq-tag {
-    display: none;
-  }
-}
-
 .tq-task-outcome {
   flex: 1 1 0;
   min-width: 0;
@@ -631,13 +425,6 @@
   font-size: 0.875rem;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tq-task-time {
-  flex: none;
-  color: var(--tq-muted);
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
 }
 
 .tq-task-detail {
@@ -688,44 +475,6 @@
   white-space: pre-wrap;
 }
 
-/* message delivery */
-
-.tq-delivery {
-  color: var(--tq-muted);
-  font-size: 0.8125rem;
-}
-
-.tq-delivery > summary {
-  width: fit-content;
-  cursor: var(--studio-cursor-pointer, pointer);
-}
-
-.tq-delivery--trouble > summary {
-  color: color-mix(in oklch, var(--tq-warn) 65%, var(--tq-fg));
-}
-
-.tq-delivery-table {
-  margin-top: 0.5rem;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-.tq-delivery-table th,
-.tq-delivery-table td {
-  padding: 0.125rem 1rem 0.125rem 0;
-  font-weight: 400;
-  text-align: right;
-}
-
-.tq-delivery-table th:first-child,
-.tq-delivery-table td:first-child {
-  text-align: left;
-}
-
-.tq-delivery-table th {
-  border-bottom: 1px solid var(--tq-border);
-}
-
 /* ── the titlebar badge ────────────────────────────────────────────────── */
 
 .task-titlebar-list {
@@ -753,11 +502,6 @@
 
 .task-titlebar:hover {
   background: color-mix(in oklch, currentColor 8%, transparent);
-}
-
-.task-titlebar--broken {
-  border-style: dashed;
-  cursor: help;
 }
 
 .task-titlebar--none {

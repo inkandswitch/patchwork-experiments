@@ -1,5 +1,6 @@
 // The queue browser's view of what a queue lists: how each task stands, its
-// runs, and a way to ask for one or stop one. Everything a tool can do
+// runs (which pool, this browser's marked, and how each went), and a way to
+// ask for one or stop one. Everything a tool can do
 // through task-client.js a person can do here. Also where an account says
 // whose code its browsers run from a queue (see acceptance.ts).
 
@@ -7,7 +8,7 @@ import { createSignal, For, onCleanup, Show } from 'solid-js';
 import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
 import type { Queue, Run, TaskState } from './datatype';
 import { isFinished, waitingWork } from './task-rules.js';
-import { ask, cancel, watch, type Ask, type TaskView } from './task-client.js';
+import { ask, cancel, watch, type Ask, type Serving, type TaskView } from './task-client.js';
 import type { Acceptance } from './acceptance';
 import { inSamePackage } from './import-url';
 import { WAIT_TASK_PATH } from './ids';
@@ -42,8 +43,22 @@ const WAIT_TASK_URL =
   inSamePackage(import.meta.url, WAIT_TASK_PATH) ??
   `data:text/javascript,${encodeURIComponent('export default async function (input) { return input?.value ?? null; }')}`;
 
-export const JobsSection = (props: { handle: DocHandle<Queue>; queue: Queue }) => {
+/** How a view names the pool with this id: as it is heard naming itself, else by the start of its id. */
+type PoolNames = { name(id: string): string; mine(id: string): boolean };
+
+export const JobsSection = (props: {
+  handle: DocHandle<Queue>;
+  queue: Queue;
+  /** The pools heard serving the queue, for their names. */
+  pools?: Serving[];
+  /** This browser's pool id, if it has one. */
+  mine?: string | null;
+}) => {
   const repo = useRepo();
+  const names: PoolNames = {
+    name: (id) => props.pools?.find((pool) => pool.pool === id)?.name || id.slice(0, 8),
+    mine: (id) => !!props.mine && id === props.mine,
+  };
   // newest first
   const listed = () => waitingWork(props.queue).toReversed();
   const shown = () => listed().slice(0, MAX_JOBS_SHOWN);
@@ -72,6 +87,7 @@ export const JobsSection = (props: { handle: DocHandle<Queue>; queue: Queue }) =
                   jobKey={key}
                   taskUrl={taskUrlOf(key)}
                   queueUrl={props.handle.url}
+                  names={names}
                   onCancel={() => cancel(repo, props.handle.url, key)}
                 />
               )}
@@ -83,16 +99,38 @@ export const JobsSection = (props: { handle: DocHandle<Queue>; queue: Queue }) =
   );
 };
 
-/** The task under a key, kept current: its document as it changes, and its runs as they are heard. */
+/**
+ * The task under a key, kept current: its document as it changes, and its
+ * runs as they are heard. Also since when it has read `stalled`, on this
+ * view's clock: since this view first saw it so.
+ */
 function useTask(queueUrl: AutomergeUrl, key: string, taskUrl: AutomergeUrl) {
   const repo = useRepo();
   const [view, setView] = createSignal<TaskView | null>(null);
-  onCleanup(watch(repo, queueUrl, key, (next) => setView(() => next), { from: taskUrl }));
-  return view;
+  const [stalledSince, setStalledSince] = createSignal<number | null>(null);
+  onCleanup(
+    watch(
+      repo,
+      queueUrl,
+      key,
+      (next) => {
+        setStalledSince((since) => (next.state === 'stalled' ? (since ?? Date.now()) : null));
+        setView(() => next);
+      },
+      { from: taskUrl },
+    ),
+  );
+  return { view, stalledSince };
 }
 
-const Job = (props: { jobKey: string; taskUrl: AutomergeUrl; queueUrl: AutomergeUrl; onCancel: () => void }) => {
-  const view = useTask(props.queueUrl, props.jobKey, props.taskUrl);
+const Job = (props: {
+  jobKey: string;
+  taskUrl: AutomergeUrl;
+  queueUrl: AutomergeUrl;
+  names: PoolNames;
+  onCancel: () => void;
+}) => {
+  const { view, stalledSince } = useTask(props.queueUrl, props.jobKey, props.taskUrl);
   return (
     <Show when={view()?.state !== 'missing' ? view() : null}>
       {(job) => {
@@ -107,7 +145,7 @@ const Job = (props: { jobKey: string; taskUrl: AutomergeUrl; queueUrl: Automerge
                 {codeName(job().importUrl)}({show(job().input)})
               </code>
               <span class="tq-task-outcome">
-                <Outcome job={job()} />
+                <Outcome job={job()} stalledSince={stalledSince()} />
               </span>
               <Show when={!isFinished(state())}>
                 <button
@@ -127,8 +165,8 @@ const Job = (props: { jobKey: string; taskUrl: AutomergeUrl; queueUrl: Automerge
                 Asked for as <code class="tq-code">{props.jobKey}</code>
               </p>
               <Show when={job().runs.length > 0}>
-                <ul class="tq-logs">
-                  <For each={job().runs}>{(run) => <RunLine run={run} />}</For>
+                <ul class="tq-runs">
+                  <For each={job().runs}>{(run) => <RunLine run={run} names={props.names} />}</For>
                 </ul>
               </Show>
               <Show when={job().logs.length > 0}>
@@ -153,13 +191,18 @@ const Job = (props: { jobKey: string; taskUrl: AutomergeUrl; queueUrl: Automerge
 };
 
 /** One record of a task's list: a run (which pool took it, when, how it went or that it is open), or a stop someone asked for. */
-const RunLine = (props: { run: Run }) => (
-  <li>
-    <span class="tq-muted">{new Date(props.run.start).toLocaleTimeString()}</span>{' '}
+const RunLine = (props: { run: Run; names: PoolNames }) => (
+  <li class="tq-run-line">
+    <span class="tq-muted">{new Date(props.run.start).toLocaleTimeString()}</span>
     <Show when={props.run.pool} fallback="stopped by request">
       {(pool) => (
         <>
-          run by pool <code class="tq-code">{pool().slice(0, 8)}</code>: {props.run.status ?? 'open'}
+          <span>
+            run by {props.names.name(pool())}: {props.run.status ?? 'open'}
+          </span>
+          <Show when={props.names.mine(pool())}>
+            <span class="tq-tag">this browser</span>
+          </Show>
         </>
       )}
     </Show>
@@ -167,7 +210,7 @@ const RunLine = (props: { run: Run }) => (
 );
 
 /** How a task stands, in a few words: its progress while it runs, its result or what went wrong after. */
-const Outcome = (props: { job: TaskView }) => {
+const Outcome = (props: { job: TaskView; stalledSince: number | null }) => {
   const state = () => props.job.state;
   return (
     <>
@@ -178,7 +221,11 @@ const Outcome = (props: { job: TaskView }) => {
         <span class="tq-busy">running {showProgress(props.job.progress)}</span>
       </Show>
       <Show when={state() === 'stalled'}>
-        <span class="tq-muted">stalled: its pool is not heard</span>
+        <span class="tq-muted">
+          stalled
+          {props.stalledSince ? ` since ${new Date(props.stalledSince).toLocaleTimeString()}` : ''}: its pool is
+          not heard
+        </span>
       </Show>
       <Show when={state() === 'stopping'}>
         <span class="tq-busy">stopping</span>

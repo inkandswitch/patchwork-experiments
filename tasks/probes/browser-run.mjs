@@ -171,8 +171,11 @@ const pending = new Map();
 /** Every attached dedicated worker, by session: its url, the session it hangs from, and when it went. */
 const workers = new Map();
 const workerLogs = [];
+/** Why Chrome did not keep a page in its back/forward cache, by page session, when it said. */
+const notCached = new Map();
 ws.addEventListener("message", (ev) => {
   const m = JSON.parse(ev.data);
+  if (m.method === "Page.backForwardCacheNotUsed") notCached.set(m.sessionId, (m.params.notRestoredExplanations ?? []).map((e) => e.reason));
   if (m.id && pending.has(m.id)) {
     const { ok, no, method } = pending.get(m.id);
     pending.delete(m.id);
@@ -390,10 +393,11 @@ try {
     const took = (await C.js("probe.statusLog.find((s) => s.state === 'starting' || s.state === 'running')?.t")) - t0;
     await C.waitFor(stateIs(key, "succeeded", "failed", "cancelled"), 30_000);
     const last = await C.js(`probe.last(${J(key)})`);
+    const cache = notCached.has(B.sessionId) ? `not kept in the back/forward cache (${notCached.get(B.sessionId).slice(0, 4).join(", ")})` : "Chrome reported no reason not to cache it";
     check(
       "7 the holding tab navigated away mid-run: the lock passes at once, the run is lost and run again",
       took < 5_000 && last.state === "succeeded" && J(runsOf(last)) === J(["lost", "succeeded"]),
-      `C took the lock ${took} ms after the navigation; runs ${J(runsOf(last))}; ${last.state} ${J(last.result)}`,
+      `C took the lock ${took} ms after the navigation; B's page was ${cache}; runs ${J(runsOf(last))}; ${last.state} ${J(last.result)}`,
     );
   }
 
@@ -455,6 +459,24 @@ try {
       "10 served() in another tab lists this browser's pool with its name and slots",
       !!mine && /^Chrome on macOS \(\w{4}\)$/.test(mine.name) && mine.slots === slots,
       `${J(pools)}`,
+    );
+  }
+
+  // 11. the queue browser: the pools heard (this browser's marked), each task's runs, and a Stop that stops
+  {
+    const key = await E.js(`probe.ask(${J(SLEEP)}, { ms: 20000, value: 'eleven' })`);
+    await E.waitFor(stateIs(key, "running"), 20_000);
+    await E.js("probe.mountQueueView()");
+    await E.waitFor("probe.queueView()?.tasks.some((t) => t.runs.length > 0 && t.stop) && probe.queueView().serving.length > 0", 15_000);
+    const seen = await E.js("probe.queueView()");
+    const pressed = await E.js("probe.pressStop()");
+    await E.waitFor(stateIs(key, "cancelled", "failed", "succeeded"), GRACE_MS + 10_000);
+    const last = await E.js(`probe.last(${J(key)})`);
+    const run = seen.tasks.find((t) => t.runs.length > 0)?.runs[0] ?? "";
+    check(
+      "11 the queue browser marks this browser's pool, names a run's pool, and its Stop stops the task",
+      seen.serving.some((line) => /Chrome on macOS \(\w{4}\)this browser/.test(line)) && /run by Chrome on macOS \(\w{4}\): openthis browser/.test(run) && pressed && last.state === "cancelled",
+      `serving ${J(seen.serving)}; run line ${J(run)}; Stop pressed ${pressed}; then ${J(await E.js(`probe.states(${J(key)})`))}, runs ${J(runsOf(last))}`,
     );
   }
 } catch (error) {

@@ -65,6 +65,42 @@ const probe = {
     return true;
   },
 
+  /** Mounts the built package's queue browser on the probe's queue, as a frame would. */
+  async mountQueueView(dist = '/dist') {
+    const { plugins } = await import(`${dist}/index.js`);
+    const TaskQueueTool = await plugins.find((plugin) => plugin.id === 'task-queue-next-browser').load();
+    const element = document.createElement('div');
+    element.id = 'queue-view';
+    element.repo = repo;
+    document.body.append(element);
+    TaskQueueTool(await repo.find(queueUrl()), element);
+    return true;
+  },
+
+  /** What the queue browser shows: the pools heard serving, and each task row with its runs. */
+  queueView() {
+    const view = document.querySelector('#queue-view');
+    if (!view) return null;
+    for (const details of view.querySelectorAll('details.tq-task')) details.open = true;
+    const sections = [...view.querySelectorAll('.tq-section')];
+    const serving = sections.find((section) => /Serving it/.test(section.querySelector('h2')?.textContent ?? ''));
+    return {
+      serving: [...(serving?.querySelectorAll('li') ?? [])].map((li) => li.textContent),
+      tasks: [...view.querySelectorAll('details.tq-task')].map((details) => ({
+        row: details.querySelector('summary')?.textContent,
+        runs: [...details.querySelectorAll('.tq-runs li')].map((li) => li.textContent),
+        stop: !!details.querySelector('summary button'),
+      })),
+    };
+  },
+
+  /** Presses the Stop of the first task row that has one, as a person would. */
+  pressStop() {
+    const button = document.querySelector('#queue-view details.tq-task summary button:not([disabled])');
+    button?.click();
+    return !!button;
+  },
+
   status() {
     const hosts = Object.values(window.patchworkTasks?.poolHosts ?? {});
     return hosts.length ? hosts[0].status() : null;
