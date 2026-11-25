@@ -26,7 +26,7 @@ import { claimLease, holdsLease, LeaseWatch } from "../session/lease.js"
 import { initSession, CALL } from "../session/schema.js"
 import { STOP, stopOf, statusOf } from "../session/status.js"
 import { makeTurn, textBlock, noticeBlock, lastTurn } from "../session/blocks.js"
-import { liftBudget } from "../session/usage.js"
+import { liftBudget, dollars } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
@@ -831,7 +831,7 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = [], { s
     lines.push(
       "",
       "## Paused: the budget is spent",
-      `The workflow has spent $${plan.paused.spent.toFixed(2)} of its $${plan.paused.limit.toFixed(2)} cap (steps and your own turns together), so ${waitingSteps.length} step${waitingSteps.length === 1 ? "" : "s"} will not start: ${waitingSteps.map((s) => `${s.title} (${s.id})`).join(", ") || "none"}${plan.paused.stopped?.length ? `; stopped part-way for their own budgets: ${plan.paused.stopped.join(", ")}` : ""}.`,
+      `The workflow has spent ${dollars(plan.paused.spent)} of its ${dollars(plan.paused.limit)} cap (steps and your own turns together), so ${waitingSteps.length} step${waitingSteps.length === 1 ? "" : "s"} will not start: ${waitingSteps.map((s) => `${s.title} (${s.id})`).join(", ") || "none"}${plan.paused.stopped?.length ? `; stopped part-way for their own budgets: ${plan.paused.stopped.join(", ")}` : ""}.`,
       "Only the person can raise the cap: the workflow view and your session both offer them Resume. Tell them briefly where things stand — what is done, what is waiting — and do not start the waiting work yourself. When they resume, you are told about any step stopped part-way and decide it then."
     )
   }
@@ -850,10 +850,10 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = [], { s
     lines.push(
       "",
       `## Out of budget: ${title(b.stepId)} (${b.stepId})`,
-      `It has spent $${Number(b.spent).toFixed(2)} of its $${Number(b.limit).toFixed(2)} and stopped part-way; what it kept and wrote so far is still there. The person has not been asked: you set this budget, so the decision is yours. Look at its session: did it make progress, and what is left?`,
+      `It has spent ${dollars(b.spent)} of its ${dollars(b.limit)} and stopped part-way; what it kept and wrote so far is still there. The person has not been asked: you set this budget, so the decision is yours. Look at its session: did it make progress, and what is left?`,
       money.remaining > 0
-        ? `The workflow has $${money.remaining.toFixed(2)} left under its $${money.limit.toFixed(2)} cap ($${money.spent.toFixed(2)} spent, your own turns included). Extend it out of that with workflow_budget { step, add, why } — you need no one's leave while it fits — or stop it (workflow_stop; what depends on it will not run), or do the rest differently (workflow_add_steps). Always give a reason.`
-        : `The workflow's cap is reached ($${money.spent.toFixed(2)} of $${money.limit.toFixed(2)}, your own turns included), so the person is being asked to raise it; you are told once they do. Until then do not start work, and tell them briefly what is blocked.`
+        ? `The workflow has ${dollars(money.remaining)} left under its ${dollars(money.limit)} cap (${dollars(money.spent)} spent, your own turns included). Extend it out of that with workflow_budget { step, add, why } — you need no one's leave while it fits — or stop it (workflow_stop; what depends on it will not run), or do the rest differently (workflow_add_steps). Always give a reason.`
+        : `The workflow's cap is reached (${dollars(money.spent)} of ${dollars(money.limit)}, your own turns included), so the person is being asked to raise it; you are told once they do. Until then do not start work, and tell them briefly what is blocked.`
     )
   }
   for (const q of waiting.filter((w) => w.kind === "question")) {

@@ -14,7 +14,7 @@
 import { states, STATE, PLAN, DEFAULT_LIMITS, budgetOf, stepBudget, staleInputs, reopenSteps, isCurrent, versionNote, changePlan } from "../workflow/plan.js"
 import { budgetWaiting } from "../workflow/waiting.js"
 import { renderBudgetItem } from "./waiting.js"
-import { formatCost } from "../session/usage.js"
+import { formatCost, dollars } from "../session/usage.js"
 import { STATUS } from "../session/schema.js"
 import { sessionTitle } from "../session/title.js"
 import { activityOf } from "./attention.js"
@@ -62,7 +62,6 @@ export function stages(steps) {
 const shortModel = (model) => String(model ?? "").split("/").pop()
 
 /** Dollars as a card shows them. */
-const dollars = (n) => `$${(Number(n) || 0).toFixed(2)}`
 
 /**
  * What a node has spent, against its budget when it has one: on every card,
@@ -217,7 +216,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       }
     }
 
-    for (const g of step.budgetLog ?? []) card.append(el("p", "agent-wf-why", `Budget raised by $${Number(g.add).toFixed(2)} to $${Number(g.limit).toFixed(2)}: ${g.why}`))
+    for (const g of step.budgetLog ?? []) card.append(el("p", "agent-wf-why", `Budget raised by ${dollars(g.add)} to ${dollars(g.limit)}: ${g.why}`))
 
     if (step.reopen) card.append(el("p", "agent-wf-why", `Reopened: ${step.reopen.note}`))
     if (state === STATE.stale) {
@@ -376,7 +375,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       count(STATE.needsInput) ? `${count(STATE.needsInput)} need you` : null,
       count(STATE.failed) ? `${count(STATE.failed)} failed` : null,
       count(STATE.blocked) ? `${count(STATE.blocked)} blocked` : null,
-      `$${budget.spent.toFixed(2)} of $${budget.limit.toFixed(2)} budget${budget.orchestrator > 0 ? ` (steps $${budget.steps.toFixed(2)} + orchestrator $${budget.orchestrator.toFixed(2)})` : ""}${plan.usage?.costEstimated ? " (partly estimated)" : ""}`,
+      `${dollars(budget.spent)} of ${dollars(budget.limit)} budget${budget.orchestrator > 0 ? ` (steps ${dollars(budget.steps)} + orchestrator ${dollars(budget.orchestrator)})` : ""}${plan.usage?.costEstimated ? " (partly estimated)" : ""}`,
       `up to ${plan.limits?.parallel ?? DEFAULT_LIMITS.parallel} at once`,
     ]
       .filter(Boolean)

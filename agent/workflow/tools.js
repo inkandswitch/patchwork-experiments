@@ -40,7 +40,7 @@ import {
   writable,
   changePlan,
 } from "./plan.js"
-import { liftBudget } from "../session/usage.js"
+import { liftBudget, dollars } from "../session/usage.js"
 import { ensureDriver, getDriver, keptCounts } from "./driver.js"
 import { truncate } from "../documents/format.js"
 import { createFolder } from "../documents/tree.js"
@@ -130,9 +130,9 @@ async function planUrlFor(input, ctx) {
 /** The workflow's money: steps and orchestrator together against the cap. */
 function budgetLine(plan) {
   const b = budgetOf(plan)
-  const parts = b.orchestrator > 0 ? ` (steps $${b.steps.toFixed(2)} + you $${b.orchestrator.toFixed(2)})` : ""
-  const left = b.remaining > 0 ? ` — $${b.remaining.toFixed(2)} left to give steps` : " — the cap is reached"
-  return `Budget: $${b.spent.toFixed(2)} of $${b.limit.toFixed(2)} spent${parts}${left}${plan.paused ? "; paused: only the person can raise the cap (they are offered Resume)" : ""}`
+  const parts = b.orchestrator > 0 ? ` (steps ${dollars(b.steps)} + you ${dollars(b.orchestrator)})` : ""
+  const left = b.remaining > 0 ? ` — ${dollars(b.remaining)} left to give steps` : " — the cap is reached"
+  return `Budget: ${dollars(b.spent)} of ${dollars(b.limit)} spent${parts}${left}${plan.paused ? "; paused: only the person can raise the cap (they are offered Resume)" : ""}`
 }
 
 /** The plan at `url` as it now stands, with what its research steps kept and its steps' sessions, as describePlan says it. */
@@ -162,7 +162,7 @@ export function describePlan(plan, url, { ledger = null, sessions = {} } = {}) {
   lines.push("")
   for (const step of plan.steps ?? []) {
     const state = derived.get(step.id)
-    lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier} · $${stepBudget(step, sessions[step.sessionUrl]).toFixed(2)} budget${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
+    lines.push(`- [${state}] ${step.id} — ${step.title} · ${step.where}${step.access === "web" ? " (web only)" : ""} · ${step.tier} · ${dollars(stepBudget(step, sessions[step.sessionUrl]))} budget${step.after?.length ? ` · after ${step.after.join(", ")}` : ""}`)
     if (step.subject) lines.push(`  document: ${step.subject}`)
     if (step.tools?.length) lines.push(`  needs: ${step.tools.join(", ")}`)
     if (step.moved) lines.push(`  ${step.moved}`)
@@ -419,7 +419,7 @@ export const workflowBudget = {
     if (!canExtend(planHandle.doc(), add)) {
       const b = budgetOf(planHandle.doc())
       changePlan(planHandle, (d) => askForBudget(d, step, add, input.why))
-      return `Not given: $${add.toFixed(2)} is more than the $${b.remaining.toFixed(2)} left under the workflow's cap ($${b.spent.toFixed(2)} of $${b.limit.toFixed(2)} spent, you included). Only the person can go past the cap. They have been asked, with your reason; nothing more starts until they resume it. Tell them briefly what is blocked, and call workflow_budget again if the step is still waiting after they resume. A smaller add (at most $${b.remaining.toFixed(2)}) would go through now.`
+      return `Not given: ${dollars(add)} is more than the ${dollars(b.remaining)} left under the workflow's cap (${dollars(b.spent)} of ${dollars(b.limit)} spent, you included). Only the person can go past the cap. They have been asked, with your reason; nothing more starts until they resume it. Tell them briefly what is blocked, and call workflow_budget again if the step is still waiting after they resume. A smaller add (at most ${dollars(b.remaining)}) would go through now.`
     }
 
     // A step's budget is its session's once it has one (plan.js stepBudget),
@@ -443,7 +443,7 @@ export const workflowBudget = {
       s.budgetLog.push({ add, limit, why: String(input.why), at: Date.now() })
     })
     if (resumed) await drive(url, ctx)
-    return `Step '${input.step}' may now spend $${limit.toFixed(2)}${resumed ? "; it carries on from where it stopped" : ""}. ${budgetLine(planHandle.doc())}.`
+    return `Step '${input.step}' may now spend ${dollars(limit)}${resumed ? "; it carries on from where it stopped" : ""}. ${budgetLine(planHandle.doc())}.`
   },
   summarize(input) {
     return `gave ${input?.step ?? "a step"} ${input?.add ?? "?"} more`

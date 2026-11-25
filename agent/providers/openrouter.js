@@ -13,6 +13,7 @@
  */
 
 import { Interruption } from "../net/network.js"
+import { dollars } from "../session/usage.js"
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -662,7 +663,7 @@ export function describeModel(model) {
   const parts = [model.label]
   if (model.context) parts.push(`${Math.round(model.context / 1000)}k ctx`)
   if (model.promptPerM != null) {
-    parts.push(model.promptPerM === 0 ? "free" : `$${model.promptPerM.toFixed(2)}/M in`)
+    parts.push(model.promptPerM === 0 ? "free" : `${dollars(model.promptPerM)}/M in`)
   }
   if (!model.tools) parts.push("no tool use")
   if (model.images) parts.push("sees images")

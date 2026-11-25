@@ -19,7 +19,7 @@
 import { CALL, WHERE } from "../session/schema.js"
 import { STOP } from "../session/status.js"
 import { askOf, covered, needsApproval, ownGrant } from "../session/grants.js"
-import { addUsage, costOf } from "../session/usage.js"
+import { addUsage, costOf, dollars } from "../session/usage.js"
 import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTokens, DENIED_RESULT } from "../session/request.js"
 import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock, noticeBlock } from "../session/blocks.js"
 import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult, move, results as landed } from "../session/calls.js"
@@ -949,7 +949,7 @@ export function spentBudget(doc) {
  */
 function stopForBudget(store, { spent, limit }, emit) {
   store.change((d) => {
-    d.turns.push(makeTurn("assistant", [noticeBlock(STOP.budget, `Stopped: this session has spent its $${limit.toFixed(2)} budget ($${spent.toFixed(2)}). It carries on only if it is given more.`, { spent, limit })]))
+    d.turns.push(makeTurn("assistant", [noticeBlock(STOP.budget, `Stopped: this session has spent its ${dollars(limit)} budget (${dollars(spent)}). It carries on only if it is given more.`, { spent, limit })]))
   })
   return finish(store, OUTCOME.budgetExhausted, emit, "budget")
 }
