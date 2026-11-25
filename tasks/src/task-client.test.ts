@@ -10,6 +10,10 @@
 import * as A from '@automerge/automerge';
 import { generateAutomergeUrl, initSubduction, Repo, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   LOCAL_MESSAGES_CHANNEL,
   OWN_QUEUE_TITLE,
@@ -31,9 +35,11 @@ import {
   served,
   servedOf,
   stamper,
+  stopWork,
   storageUrlOf,
   tasksStorage,
   watch,
+  watchWork,
   type Serving,
   type TaskView,
 } from './task-client.js';
@@ -2105,6 +2111,40 @@ describe('doWork', () => {
     expect(entryOf(queue, 'k')).toBeUndefined();
   });
 
+  it('code in a package kept in automerge travels: with a pool heard, it is asked of the own queue and not called here', async () => {
+    const { repo, queue } = await asked();
+    doing(repo, { importUrl: codeIn(PKG), key: 'packaged' });
+    await until(() => !!entryOf(queue, 'packaged'));
+    expect(entryOf(queue, 'packaged').package).toBe(PKG);
+    expect(g.__work).not.toHaveBeenCalled();
+  });
+
+  it('code at an http: url (a dev server) is done here at once though a pool is heard: the import is tried here, and nothing is asked', async () => {
+    const { repo, queue } = await asked();
+    const started = Date.now();
+    const here = doing(repo, { importUrl: 'http://localhost:5173/src/task.js', key: 'dev' });
+    await until(() => 'error' in here.settled);
+    expect(Date.now()).toBe(started);
+    // Node cannot import http: urls, so what this page's import said is the failure
+    expect(here.views.at(-1)).toMatchObject({ state: 'failed', taskUrl: null, importUrl: 'http://localhost:5173/src/task.js' });
+    expect(entryOf(queue, 'dev')).toBeUndefined();
+  });
+
+  it('code at a file: url is done here at once though a pool is heard, and resolves with what it returned', async () => {
+    const { repo, queue } = await asked();
+    const dir = mkdtempSync(join(tmpdir(), 'task-client-'));
+    const file = join(dir, 'task.mjs');
+    writeFileSync(file, 'export default function (input, ctx) { return globalThis.__work(input, ctx, this); }');
+    g.__work = vi.fn((input: { n: number }) => input.n * 10);
+    const started = Date.now();
+    const here = doing(repo, { importUrl: pathToFileURL(file).href, key: 'local' });
+    await until(() => 'value' in here.settled || 'error' in here.settled);
+    expect(here.settled).toEqual({ value: 10 });
+    expect(Date.now()).toBe(started);
+    expect(here.views.at(-1)).toMatchObject({ state: 'succeeded', taskUrl: null });
+    expect(entryOf(queue, 'local')).toBeUndefined();
+  });
+
   it('asked: asking twice under one key while its task is wanted is one task, and both resolve with its result', async () => {
     const { repo, queue, settled } = await asked();
     const again = doing(repo);
@@ -2117,5 +2157,301 @@ describe('doWork', () => {
     complete(task, 'r', 'succeeded', { result: 'once' });
     await until(() => 'value' in settled && 'value' in again.settled);
     expect([settled.value, again.settled.value]).toEqual(['once', 'once']);
+  });
+});
+
+// A page's view of the person's own work
+
+/** A page whose person has got as far as `setup` towards a queue of their own. */
+type Setup = 'no account' | 'no storage' | 'storage without own' | 'an own queue';
+function person(setup: Setup) {
+  const g = globalThis as any;
+  const repo = newRepo();
+  let account: DocHandle<any> | undefined;
+  let storage: DocHandle<any> | undefined;
+  let queue: DocHandle<Queue> | undefined;
+  if (setup !== 'no account') {
+    account = repo.create<any>({});
+    g.accountDocHandle = account;
+    if (setup !== 'no storage') {
+      storage = repo.create<any>({ '@patchwork': { type: 'patchwork:tool-storage' } });
+      account.change((doc) => (doc.toolStorage = { [TASKS_STORAGE_ID]: storage!.url }));
+      if (setup === 'an own queue') {
+        queue = repo.create<Queue>({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} } as any);
+        storage.change((doc) => {
+          doc.own = queue!.url;
+          doc[queue!.url] = true;
+        });
+      }
+    }
+  }
+  return { repo, account, storage, queue };
+}
+
+/** What ownQueue and the frame's tool-storage provider write the first time, done by hand on an account with no storage yet. */
+function makeOwnQueue(repo: Repo, account: DocHandle<any>) {
+  const storage = repo.create<any>({ '@patchwork': { type: 'patchwork:tool-storage' } });
+  account.change((doc) => (doc.toolStorage = { [TASKS_STORAGE_ID]: storage.url }));
+  const queue = repo.create<Queue>({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} } as any);
+  storage.change((doc) => {
+    doc.own = queue.url;
+    doc[queue.url] = true;
+  });
+  return { storage, queue };
+}
+
+/** A watchWork that keeps every view it is given. */
+function followWork(repo: Repo, key = 'k') {
+  const views: TaskView[] = [];
+  const stop = watchWork(repo, key, (view) => views.push(view));
+  return {
+    views,
+    stop,
+    get last() {
+      return views.at(-1)!;
+    },
+    states: () => views.map((view) => view.state),
+  };
+}
+
+const MISSING: TaskView = { key: 'k', state: 'missing', taskUrl: null, importUrl: null, input: undefined, progress: null, logs: [], result: undefined, error: null, runs: [] };
+
+describe('watchWork', () => {
+  afterEach(() => {
+    delete (globalThis as any).accountDocHandle;
+  });
+
+  for (const setup of ['no account', 'no storage', 'storage without own'] as const) {
+    it(`with ${setup}: reports missing, once, without the clock moving`, async () => {
+      const { repo } = person(setup);
+      const started = Date.now();
+      const work = followWork(repo);
+      await settle();
+      expect(work.views).toEqual([MISSING]);
+      expect(Date.now()).toBe(started);
+      await vi.advanceTimersByTimeAsync(LAPSE_MS * 3);
+      expect(work.views).toHaveLength(1);
+      work.stop();
+    });
+  }
+
+  it("is watch's own view of the key on the own queue: missing when the key names nothing there", async () => {
+    const { repo, queue } = person('an own queue');
+    const work = followWork(repo);
+    const watched = follow(repo, queue!.url, 'k');
+    await settle();
+    expect(work.views).toEqual([MISSING]);
+    expect(work.last).toStrictEqual(watched.last);
+    work.stop();
+    watched.stop();
+  });
+
+  it('with a waiting task under the key: waiting, with its task', async () => {
+    const { repo, queue } = person('an own queue');
+    const task = listed(repo, queue!, 'k');
+    const work = followWork(repo);
+    await settle();
+    expect(work.last).toMatchObject({ state: 'waiting', taskUrl: task.url, importUrl: CODE });
+    work.stop();
+  });
+
+  it("with a running task, heard: running, with its pool's progress, and stalled when its beats stop for the lapse", async () => {
+    const { repo, queue } = person('an own queue');
+    const task = listed(repo, queue!, 'k', [opened('r')]);
+    const work = followWork(repo);
+    await settle();
+    beat(task, 'r', { progress: 'half' });
+    await settle();
+    expect(work.last).toMatchObject({ state: 'running', progress: 'half', taskUrl: task.url });
+    await vi.advanceTimersByTimeAsync(LAPSE_MS + 1);
+    expect(work.last.state).toBe('stalled');
+    work.stop();
+  });
+
+  it('with a task that has ended: its ending and result', async () => {
+    const { repo, queue } = person('an own queue');
+    const task = listed(repo, queue!, 'k', [closed('r', 'succeeded')]);
+    const work = followWork(repo);
+    await settle();
+    expect(work.last).toMatchObject({ state: 'succeeded', result: 'done', taskUrl: task.url });
+    work.stop();
+  });
+
+  it('the person makes their queue while it is watched (storage and all): it reports the work then asked of it', async () => {
+    const { repo, account } = person('no storage');
+    const work = followWork(repo);
+    await settle();
+    expect(work.states()).toEqual(['missing']);
+    const { queue } = makeOwnQueue(repo, account!);
+    await settle();
+    expect(work.states()).toEqual(['missing']);
+    const { taskUrl } = await ask(repo, queue.url, { importUrl: CODE, key: 'k' });
+    await settle();
+    expect(work.last).toMatchObject({ state: 'waiting', taskUrl });
+    work.stop();
+  });
+
+  it('own moving to another queue: what the first said is withdrawn at once, the second is followed, and nothing of the first is heard or held after', async () => {
+    const { repo, storage, queue: first } = person('an own queue');
+    const firstTask = listed(repo, first!, 'k', [opened('r1')]);
+    const second = repo.create<Queue>({ title: 'q2', jobs: {} });
+    const secondTask = listed(repo, second, 'k', [opened('r2')]);
+    await settle();
+    const held = () => [first!.listenerCount('change'), firstTask.listenerCount('change'), firstTask.listenerCount('ephemeral-message')];
+    const before = held();
+    const work = followWork(repo);
+    await settle();
+    beat(firstTask, 'r1', { progress: 'first' });
+    await settle();
+    expect(work.last).toMatchObject({ state: 'running', taskUrl: firstTask.url, progress: 'first' });
+    expect(held()).toEqual(before.map((n) => n + 1));
+
+    storage!.change((doc) => (doc.own = second.url));
+    expect(work.last).toEqual(MISSING);
+    await settle();
+    beat(secondTask, 'r2', { progress: 'second' });
+    await settle();
+    expect(work.last).toMatchObject({ state: 'running', taskUrl: secondTask.url, progress: 'second' });
+    expect(held()).toEqual(before);
+
+    const seen = work.views.length;
+    beat(firstTask, 'r1', { progress: 'stale' });
+    complete(firstTask, 'r1', 'failed');
+    first!.change((doc) => delistTask(doc, 'k', firstTask.url));
+    await settle();
+    expect(work.views.length).toBe(seen);
+    work.stop();
+  });
+
+  it("the queue's document never arriving: missing at the lapse, once; it goes on looking, and reports the work when the document comes", async () => {
+    const { repo, storage } = person('storage without own');
+    // the queue and its task exist on another machine only
+    const elsewhere = newRepo();
+    const queue = elsewhere.create<Queue>({ title: 'q', jobs: {} });
+    const task = listed(elsewhere, queue, 'k');
+    storage!.change((doc) => (doc.own = queue.url));
+    await settle();
+    const work = followWork(repo);
+    await settle();
+    await vi.advanceTimersByTimeAsync(LAPSE_MS - 1);
+    expect(work.views).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(work.views).toEqual([MISSING]);
+    await vi.advanceTimersByTimeAsync(LAPSE_MS * 3);
+    expect(work.views).toEqual([MISSING]);
+    replicate(repo, task);
+    replicate(repo, queue);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await settle();
+    expect(work.last).toMatchObject({ state: 'waiting', taskUrl: task.url });
+    expect(work.states().filter((state) => state === 'missing')).toHaveLength(1);
+    expect(work.states()[0]).toBe('missing');
+    work.stop();
+  });
+
+  it('a storage document that cannot be had is the same: missing at the lapse, once, and followed when it comes', async () => {
+    const { repo, account } = person('no storage');
+    const elsewhere = newRepo();
+    const storage = elsewhere.create<any>({});
+    const queue = elsewhere.create<Queue>({ title: 'q', jobs: {} });
+    const task = listed(elsewhere, queue, 'k');
+    storage.change((doc) => (doc.own = queue.url));
+    account!.change((doc) => (doc.toolStorage = { [TASKS_STORAGE_ID]: storage.url }));
+    const work = followWork(repo);
+    await settle();
+    await vi.advanceTimersByTimeAsync(LAPSE_MS - 1);
+    expect(work.views).toEqual([]);
+    await vi.advanceTimersByTimeAsync(LAPSE_MS * 2);
+    expect(work.views).toEqual([MISSING]);
+    for (const handle of [storage, queue, task] as DocHandle<any>[]) replicate(repo, handle);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await settle();
+    expect(work.states()[0]).toBe('missing');
+    expect(new Set(work.states().slice(1))).toEqual(new Set(['waiting']));
+    work.stop();
+  });
+
+  it('stop() leaves no timer and no listener: on the account, the storage, the queue, the task, or the local channel', async () => {
+    const { repo, account, storage, queue } = person('an own queue');
+    const task = listed(repo, queue!, 'k', [opened('r')]);
+    await settle();
+    const timers = vi.getTimerCount();
+    const count = () => [account!.listenerCount('change'), storage!.listenerCount('change'), queue!.listenerCount('change'), task.listenerCount('change'), task.listenerCount('ephemeral-message')];
+    const before = count();
+    const work = followWork(repo);
+    await settle();
+    expect(count()).toEqual(before.map((n) => n + 1));
+    expect(vi.getTimerCount()).toBeGreaterThan(timers);
+    work.stop();
+    expect(count()).toEqual(before);
+    expect(vi.getTimerCount()).toBe(timers);
+    const seen = work.views.length;
+    const local = new BroadcastChannel(LOCAL_MESSAGES_CHANNEL);
+    local.postMessage({ channel: task.url, message: { type: 'task progress', run: 'r', progress: 'after', from: 'neighbour', seq: 1 } });
+    beat(task, 'r');
+    complete(task, 'r', 'succeeded');
+    storage!.change((doc) => delete doc.own);
+    await delivered(() => false);
+    await vi.advanceTimersByTimeAsync(LAPSE_MS * 3);
+    expect(work.views.length).toBe(seen);
+    local.close();
+  });
+
+  it('stop() while it is still looking (a queue that has not come, its lapse and its retry pending) leaves no timer either, and reports nothing after', async () => {
+    const { repo, storage } = person('storage without own');
+    storage!.change((doc) => (doc.own = generateAutomergeUrl()));
+    await settle();
+    const timers = vi.getTimerCount();
+    const work = followWork(repo);
+    await settle();
+    expect(vi.getTimerCount()).toBeGreaterThan(timers);
+    work.stop();
+    expect(vi.getTimerCount()).toBe(timers);
+    await vi.advanceTimersByTimeAsync(LAPSE_MS * 2);
+    expect(work.views).toEqual([]);
+  });
+});
+
+describe('stopWork', () => {
+  afterEach(() => {
+    delete (globalThis as any).accountDocHandle;
+  });
+
+  for (const setup of ['no account', 'no storage', 'storage without own'] as const) {
+    it(`with ${setup}: false, and writes nothing`, async () => {
+      const { repo } = person(setup);
+      await settle();
+      const before = Object.values(repo.handles).map((h: any) => [h.url, A.getHeads(h.doc())]);
+      expect(await stopWork(repo, 'k')).toBe(false);
+      expect(Object.values(repo.handles).map((h: any) => [h.url, A.getHeads(h.doc())])).toEqual(before);
+    });
+  }
+
+  it('with nothing under the key on the own queue: false', async () => {
+    const { repo } = person('an own queue');
+    expect(await stopWork(repo, 'k')).toBe(false);
+  });
+
+  it('a waiting task: true; a stop is its only record, and its entry is gone', async () => {
+    const { repo, queue } = person('an own queue');
+    const task = listed(repo, queue!, 'k');
+    expect(await stopWork(repo, 'k')).toBe(true);
+    expect(task.doc()!.runs).toEqual([expect.objectContaining({ status: 'cancelled' })]);
+    expect(entryOf(queue!, 'k')).toBeUndefined();
+  });
+
+  it('a running task: true; the stop follows its open run, and its entry is gone', async () => {
+    const { repo, queue } = person('an own queue');
+    const task = listed(repo, queue!, 'k', [opened('r')]);
+    expect(await stopWork(repo, 'k')).toBe(true);
+    expect(task.doc()!.runs).toEqual([opened('r'), expect.objectContaining({ status: 'cancelled' })]);
+    expect(entryOf(queue!, 'k')).toBeUndefined();
+  });
+
+  it('a task that has ended: false, and its runs are as they were', async () => {
+    const { repo, queue } = person('an own queue');
+    const task = listed(repo, queue!, 'k', [closed('r', 'succeeded')]);
+    expect(await stopWork(repo, 'k')).toBe(false);
+    expect(task.doc()!.runs).toEqual([closed('r', 'succeeded')]);
   });
 });

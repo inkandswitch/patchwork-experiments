@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v9]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v10]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -11,7 +11,8 @@
  * It also holds how the task system's messages travel (`send`, `listen`),
  * because hearing them is half of following a task; and, for a page, where
  * a person's list of served queues and their own queue are kept
- * (`ownQueue`, `tasksStorage`), and how a tool there has work done (`doWork`).
+ * (`ownQueue`, `tasksStorage`), and how a tool there has work done and
+ * follows and stops it (`doWork`, `watchWork`, `stopWork`).
  */
 
 import {
@@ -353,6 +354,11 @@ export async function cancel(repo, queueUrl, key) {
  * With `keep`, the watcher is someone waiting for the task: if its key comes
  * to name nothing while the task is still wanted and unheard, it is listed
  * again (see `mayRelist`).
+ *
+ * It reports nothing until it has the queue's document, asking for it again
+ * every two seconds: what the key names can only be read there, and
+ * `missing` from here always means the queue said so. A page that must say
+ * something sooner about a person's own work follows it with `watchWork`.
  * @param {any} repo
  * @param {string} queueUrl
  * @param {string} key
@@ -976,6 +982,18 @@ export async function findWhenThere(
 // as a tool's own work always was, and code that does not heed its signal
 // runs on. Nothing is made by asking: a person has a queue of their own only
 // once they have said so (`ownQueue`).
+//
+// A queue is asked only for code that can travel: a file in a package kept
+// in automerge, or a `data:` URL. Any other url (http://localhost while a
+// tool is developed, a file: url) names code that only this machine can
+// reach, so that work is done here.
+//
+// What is known where. Work asked of the person's queue is seen by every page
+// of theirs: `watchWork` follows the key on that queue from any tab or
+// machine, and `stopWork` stops it from any of them. Work done in a page is
+// known to that page alone, through the `onProgress` of the `doWork` call
+// that started it: another tab, or another tool in the same page, neither
+// sees it nor can stop it, and no document says that it is going on.
 
 /**
  * The pools heard serving the queues this page has had work done on, by Repo
@@ -1022,31 +1040,49 @@ function poolsHeard(repo, queueUrl) {
 }
 
 /**
+ * The url of the person's own queue as their storage says now, or null: no
+ * account open, no storage, no queue of their own, or a storage document that
+ * cannot be had. Only reads.
+ * @param {any} repo
+ * @returns {Promise<string | null>}
+ */
+async function ownQueueNow(repo) {
+  const storageUrl = storageUrlOf(/** @type {any} */ (globalThis).accountDocHandle?.doc?.());
+  if (!storageUrl) {
+    return null;
+  }
+  return repo.find(storageUrl).then(
+    (/** @type {any} */ storage) => ownQueueOf(storage.doc()),
+    () => null,
+  );
+}
+
+/**
  * The person's own queue, if they have one and a pool is heard serving it;
  * null otherwise. Only reads.
  * @param {any} repo
  * @returns {Promise<string | null>}
  */
 async function servedOwnQueue(repo) {
-  const account = /** @type {any} */ (globalThis).accountDocHandle?.doc?.();
-  const storageUrl = storageUrlOf(account);
-  if (!storageUrl) {
-    return null;
-  }
-  const own = await repo.find(storageUrl).then(
-    (/** @type {any} */ storage) => ownQueueOf(storage.doc()),
-    () => null,
-  );
+  const own = await ownQueueNow(repo);
   return own && (await poolsHeard(repo, own)).length > 0 ? own : null;
 }
 
 /**
+ * Whether a pool on another machine can import this code: a file in a
+ * package kept in automerge, or a `data:` URL.
+ * @param {string} importUrl
+ */
+const travels = (importUrl) => parseAutomergeImport(importUrl) !== null || /^data:/i.test(importUrl);
+
+/**
  * Has work done: asked of the person's own queue if a pool is heard serving
- * it (as `run`), and otherwise done here. Resolves to what the code
- * returned; rejects with what it threw, or "The task was cancelled" once
- * `signal` is aborted. `onProgress` hears the same views either way (one for
- * work done here has no `taskUrl` and no `runs`). Aborted while it still
- * listens for a pool, it rejects at once and neither asks nor calls anything.
+ * it (as `run`), and otherwise done here; code that cannot travel (see
+ * above) is always done here. Resolves to what the code returned; rejects
+ * with what it threw, or "The task was cancelled" once `signal` is aborted.
+ * `onProgress` hears the same views either way (one for work done here has
+ * no `taskUrl` and no `runs`). Aborted while it still listens for a pool, it
+ * rejects at once and neither asks nor calls anything.
  * @param {any} repo  the Repo the page's account is in
  * @param {Ask} request
  * @param {{ onProgress?: (view: TaskView) => void, signal?: AbortSignal }} [options]
@@ -1056,7 +1092,19 @@ export async function doWork(repo, request, { onProgress, signal } = {}) {
   if (signal?.aborted) {
     throw new Error(CANCELLED);
   }
-  const queue = await new Promise((resolve, reject) => {
+  const queue = travels(request.importUrl) ? await servedOwnQueueUnlessStopped(repo, signal) : null;
+  return queue ? run(repo, queue, request, onProgress, signal) : workHere(repo, request, onProgress, signal);
+}
+
+/**
+ * `servedOwnQueue`, rejecting with "The task was cancelled" as soon as
+ * `signal` aborts rather than when the listening for a pool is over.
+ * @param {any} repo
+ * @param {AbortSignal | undefined} signal
+ * @returns {Promise<string | null>}
+ */
+function servedOwnQueueUnlessStopped(repo, signal) {
+  return new Promise((resolve, reject) => {
     const stop = () => reject(new Error(CANCELLED));
     signal?.addEventListener('abort', stop, { once: true });
     servedOwnQueue(repo)
@@ -1066,7 +1114,158 @@ export async function doWork(repo, request, { onProgress, signal } = {}) {
         resolve(found);
       });
   });
-  return queue ? run(repo, queue, request, onProgress, signal) : workHere(repo, request, onProgress, signal);
+}
+
+/**
+ * Calls `onChange` with the work under `key` as this page can know it, now
+ * and whenever that changes: the task under the key on the person's own
+ * queue, as `watch` gives it. The account's pointer to the task system's
+ * storage, that document and its `own` are followed as they change, since
+ * the person may make their queue, or lose it, while a tool is open.
+ *
+ * Its state is `missing` when no work under this key is known on a queue of
+ * this person's: no account is open, it has no storage, the storage names no
+ * queue of their own, the key names nothing there, or that queue's document
+ * has not been had. Work done in a page is never seen here (see above). It
+ * always reports promptly: what cannot be told at once (no account, no
+ * storage, no own queue) is reported at once, and a document not had within
+ * LAPSE_MS is reported `missing` and looked for still, its work reported when
+ * it comes. When the queue it watches changes, what was reported of the old
+ * one is replaced by `missing` at once.
+ *
+ * The account is the page's (`accountDocHandle`), read when watching starts.
+ * Returns how to stop; nothing is left behind once it is called.
+ * @param {any} repo  the Repo the page's account is in
+ * @param {string} key
+ * @param {(view: TaskView) => void} onChange
+ * @returns {() => void}
+ */
+export function watchWork(repo, key, onChange) {
+  let stopped = false;
+  const account = /** @type {any} */ (globalThis).accountDocHandle;
+  /** @type {string | null} */ let storageUrl = null;
+  /** @type {any} */ let storage;
+  /** @type {string | null} */ let queueUrl = null;
+  /** @type {(() => void) | undefined} */ let unwatch;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */ let retry;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */ let lapse;
+  // The queue being watched now (a fresh object for each watch), and the
+  // watch the last report came from: null before any report, NONE when it
+  // was a `missing` made here.
+  const NONE = {};
+  /** @type {object | null} */ let current = null;
+  /** @type {object | null} */ let said = null;
+  let lastMissing = false;
+
+  // Every `missing` view is the same, whoever made it, so one is reported
+  // until something else is.
+  /** @param {TaskView} view */
+  const report = (view) => {
+    clearTimeout(lapse);
+    lapse = undefined;
+    if (view.state === 'missing' && lastMissing) {
+      return;
+    }
+    lastMissing = view.state === 'missing';
+    onChange(view);
+  };
+
+  const missing = () => {
+    if (stopped) {
+      return;
+    }
+    said = NONE;
+    report({ key, state: 'missing', taskUrl: null, importUrl: null, input: undefined, progress: null, logs: [], result: undefined, error: null, runs: [] });
+  };
+
+  const look = () => {
+    if (stopped) {
+      return;
+    }
+    const nextStorage = storageUrlOf(account?.doc?.());
+    if (nextStorage !== storageUrl) {
+      storage?.off('change', look);
+      storage = undefined;
+      clearTimeout(retry);
+      storageUrl = nextStorage;
+      if (storageUrl) {
+        loadStorage(storageUrl);
+      }
+    }
+    const nextQueue = storage ? ownQueueOf(storage.doc()) : null;
+    if (nextQueue !== queueUrl) {
+      unwatch?.();
+      unwatch = undefined;
+      current = null;
+      queueUrl = nextQueue;
+      if (queueUrl) {
+        const source = (current = {});
+        unwatch = watch(repo, queueUrl, key, (view) => {
+          if (!stopped && current === source) {
+            said = source;
+            report(view);
+          }
+        });
+      }
+    }
+    if (!storageUrl || (storage && !queueUrl)) {
+      missing();
+    } else if (!storage || said !== current) {
+      // The storage or the queue is still being found. Before anything has
+      // been reported, that is waited for up to the lapse; after, what was
+      // reported came from a queue no longer watched, so it is withdrawn now.
+      if (said !== null) {
+        missing();
+      } else {
+        lapse ??= setTimeout(missing, LAPSE_MS);
+      }
+    }
+  };
+
+  /** @param {string} url */
+  const loadStorage = (url) => {
+    repo.find(url).then(
+      (/** @type {any} */ found) => {
+        if (stopped || storageUrl !== url || storage) {
+          return;
+        }
+        storage = found;
+        found.on('change', look);
+        look();
+      },
+      () => {
+        // not here yet, or not reachable now: asked again, as `watch` asks for a queue
+        if (!stopped && storageUrl === url) {
+          retry = setTimeout(() => loadStorage(url), 2_000);
+        }
+      },
+    );
+  };
+
+  account?.on?.('change', look);
+  look();
+
+  return () => {
+    stopped = true;
+    clearTimeout(retry);
+    clearTimeout(lapse);
+    account?.off?.('change', look);
+    storage?.off('change', look);
+    unwatch?.();
+  };
+}
+
+/**
+ * Stops the work under `key` on the person's own queue, as `cancel` does.
+ * False when there is none to stop: no queue of their own, nothing under the
+ * key, a task that had ended already, or a queue that cannot be had now.
+ * @param {any} repo  the Repo the page's account is in
+ * @param {string} key
+ * @returns {Promise<boolean>}
+ */
+export async function stopWork(repo, key) {
+  const queueUrl = await ownQueueNow(repo);
+  return queueUrl ? cancel(repo, queueUrl, key).catch(() => false) : false;
 }
 
 /**
