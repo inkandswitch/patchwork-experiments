@@ -244,13 +244,14 @@ try {
   out.folder = folder.url
 
   const { connectWorkerRunner } = await import("/agent/runners/worker-client.js")
+  const { statusOf } = await import("/agent/session/status.js")
   const worker = await connectWorkerRunner({ repo, sessionUrl: session.url, key: "probe-key", providerId: "probe", account: {}, onEvent: (e) => out.events.push(e?.type === "worker-error" ? "worker-error: " + e.error : e?.type) })
   out.connected = !!worker
   out.runnerUrl = worker?.runnerUrl ?? null
   const deadline = Date.now() + 60000
-  while (Date.now() < deadline && !["parked", "error"].includes(session.doc()?.status)) await new Promise((r) => setTimeout(r, 200))
+  while (Date.now() < deadline && !["parked", "error"].includes(statusOf(session.doc()))) await new Promise((r) => setTimeout(r, 200))
   const doc = session.doc()
-  out.status = doc.status
+  out.status = statusOf(doc)
   out.lease = doc.lease?.runner ?? null
   out.turns = doc.turns.map((t) => ({ role: t.role, blocks: t.blocks.map((b) => ({ type: b.type, id: b.id, text: b.text == null ? undefined : String(b.text), tool: b.tool, where: b.where, status: b.status, callId: b.callId, output: b.output == null ? undefined : String(b.output), isError: b.isError })) }))
   out.folderDocs = (await repo.find(folder.url)).doc().docs

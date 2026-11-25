@@ -33,6 +33,7 @@ import { createEvents } from "../kernel/events.js"
 import { AGENT } from "../assembly/agent.js"
 import { getProvider, modelInfo } from "../providers/index.js"
 import { STATUS } from "../session/schema.js"
+import { statusOf } from "../session/status.js"
 import { nodeFetch } from "../net/node-fetch.mjs"
 import { braveSearch } from "../tools/web.js"
 
@@ -51,7 +52,7 @@ const KEY = process.env.OPENROUTER_API_KEY
 const MODEL_PROVIDER = option("provider", "openrouter")
 
 if (!sessionUrls.length) {
-  console.error("Usage: node node-runner.mjs automerge:<sessionUrl> [...]")
+  console.error("Usage: node runners/node.mjs automerge:<sessionUrl> [...]")
   console.error("       --watch automerge:<folderUrl>   claim every session in a folder")
   process.exit(2)
 }
@@ -130,7 +131,7 @@ async function claim(sessionUrl) {
 
   const title = doc.title ?? "Agent"
   log(`claimed ${title} (${sessionUrl}) as ${runnerUrl}`)
-  if (doc.status === STATUS.parked) {
+  if (statusOf(doc) === STATUS.parked) {
     log("  note: this session is parked on a call that needs a browser tab")
   }
   return runner
@@ -169,7 +170,7 @@ setInterval(() => {
     const mine = doc.lease?.runner === runner.runnerUrl
     const elsewhere = heldElsewhere(doc, runner.runnerUrl, runner.live)
     lines.push(
-      `${doc.title ?? url.slice(0, 20)}: ${doc.status}${mine ? " (ours)" : elsewhere ? " (held elsewhere)" : ""}${needsWork(doc, runner.canRun, runner.live) ? " · work waiting" : ""}`
+      `${doc.title ?? url.slice(0, 20)}: ${statusOf(doc)}${mine ? " (ours)" : elsewhere ? " (held elsewhere)" : ""}${needsWork(doc, runner.canRun, runner.live) ? " · work waiting" : ""}`
     )
   }
   if (lines.length) log(lines.join(" | "))

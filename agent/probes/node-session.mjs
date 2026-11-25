@@ -17,6 +17,7 @@ import { SessionRunner } from "../kernel/runner.js"
 import { AGENT } from "../assembly/agent.js"
 import { getProvider } from "../providers/index.js"
 import { initSession, STATUS } from "../session/schema.js"
+import { statusOf } from "../session/status.js"
 import { say, decide } from "../kernel/loop.js"
 import { callsAwaitingApproval } from "../session/calls.js"
 import { nodeFetch } from "../net/node-fetch.mjs"
@@ -99,7 +100,7 @@ let approvals = 0
 for (let i = 0; i < 200; i++) {
   const doc = store.doc()
 
-  if (doc.status === STATUS.awaitingApproval && approvals < 8) {
+  if (statusOf(doc) === STATUS.awaitingApproval && approvals < 8) {
     for (const call of callsAwaitingApproval(doc)) {
       trail.push(`${Date.now() - started}ms  approving ${call.tool}`)
       decide(store, call.id, "session", subject.url)
@@ -110,8 +111,8 @@ for (let i = 0; i < 200; i++) {
 
   const last = doc.turns.at(-1)
   const settled =
-    doc.status === STATUS.idle && doc.turns.length > 1 && last?.role === "assistant" && !runner.running
-  if (settled || doc.status === STATUS.error) break
+    statusOf(doc) === STATUS.idle && doc.turns.length > 1 && last?.role === "assistant" && !runner.running
+  if (settled || statusOf(doc) === STATUS.error) break
 
   await sleep(250)
 }
@@ -141,7 +142,7 @@ const checks = [
   ["it called tools", calls.length > 0],
   ["no tool errored", errors.length === 0],
   ["the document was changed", subject.doc().title === "Braised Leeks"],
-  ["it finished idle", doc.status === STATUS.idle],
+  ["it finished idle", statusOf(doc) === STATUS.idle],
 ]
 log("\n=== verdict ===")
 for (const [label, ok] of checks) log(`${ok ? "PASS" : "FAIL"}  ${label}`)

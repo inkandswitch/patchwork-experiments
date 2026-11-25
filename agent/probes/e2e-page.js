@@ -13,6 +13,8 @@
  */
 
 window.__agentProbe = async function (opts) {
+  // A session's status is read off its document (session/status.js).
+  const { statusOf } = await import(opts.agentBase + "session/status.js")
   const started = Date.now()
   const steps = []
   const at = () => Date.now() - started
@@ -154,7 +156,7 @@ window.__agentProbe = async function (opts) {
     // session DOCUMENT, with no view attached to anything.
     if (opts.unmountAfterMs) {
       await sleep(opts.unmountAfterMs)
-      const before = { turns: session.doc().turns.length, status: session.doc().status }
+      const before = { turns: session.doc().turns.length, status: statusOf(session.doc()) }
       try {
         cleanup?.()
       } catch (err) {
@@ -181,7 +183,7 @@ window.__agentProbe = async function (opts) {
 
       out.afterUnmount = {
         turns: session.doc().turns.length,
-        status: session.doc().status,
+        status: statusOf(session.doc()),
         keptGoing: session.doc().turns.length > before.turns,
       }
       clearInterval(statusTimer)
@@ -197,7 +199,7 @@ window.__agentProbe = async function (opts) {
         runnersSeen: [...runnersSeen],
         atUnmount: out.atUnmount,
         afterUnmount: out.afterUnmount,
-        finalStatus: doc.status,
+        finalStatus: statusOf(doc),
         approved: 1,
         subject: { url: subject.url, doc: JSON.parse(JSON.stringify(subject.doc())) },
         session: {
@@ -224,7 +226,7 @@ window.__agentProbe = async function (opts) {
     const answersGiven = []
 
     const answerAny = async () => {
-      while (session.doc().status === "awaiting-answer" && answered < (opts.maxAnswers ?? 4)) {
+      while (statusOf(session.doc()) === "awaiting-answer" && answered < (opts.maxAnswers ?? 4)) {
         const card = host.querySelector(".agent-question")
         if (!card) throw new Error("The session is waiting on an answer but no question card rendered")
         const options = [...card.querySelectorAll(".agent-question-options button")]
@@ -245,7 +247,7 @@ window.__agentProbe = async function (opts) {
           card.querySelector(".agent-question-other button").click()
         }
         answered++
-        await waitFor("the answer to be picked up", () => session.doc().status !== "awaiting-answer", 60000)
+        await waitFor("the answer to be picked up", () => statusOf(session.doc()) !== "awaiting-answer", 60000)
         await waitFor("the agent to finish", settled, patience)
       }
     }
@@ -258,7 +260,7 @@ window.__agentProbe = async function (opts) {
     const deniedTools = []
 
     const approveOrDeny = async () => {
-      while (session.doc().status === "awaiting-approval" && approved + denied < (opts.maxApprovals ?? 6)) {
+      while (statusOf(session.doc()) === "awaiting-approval" && approved + denied < (opts.maxApprovals ?? 6)) {
         const card = host.querySelector(".agent-approval")
         const scopes = [...(card?.querySelectorAll(".agent-approval-scopes button") ?? [])]
       // Which standing grant to take. "narrow" is the tightest offer — a single
@@ -444,7 +446,7 @@ window.__agentProbe = async function (opts) {
       made: JSON.parse(JSON.stringify(doc.made ?? [])),
       rendered,
       savedDocs: blocks.filter((b) => b.type === "result" && b.doc).map((b) => b.doc),
-      finalStatus: doc.status,
+      finalStatus: statusOf(doc),
       subject: { url: subject.url, doc: JSON.parse(JSON.stringify(subject.doc())) },
       session: { url: session.url, turns: doc.turns.length, calls, results, text },
       transcriptRows,
