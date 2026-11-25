@@ -26,7 +26,7 @@ import {
   type Serving,
   type TaskView,
 } from './task-client.js';
-import { BEAT_MS, LAPSE_MS, MAX_LOG_LINES, claimRun, delistTask, endRun, listTask, type Queue, type RunStatus, type Task } from './task-rules.js';
+import { BEAT_MS, LAPSE_MS, LOST_TOO_OFTEN, MAX_LOG_LINES, claimRun, delistTask, endRun, listTask, type Queue, type RunStatus, type Task } from './task-rules.js';
 
 await initSubduction();
 
@@ -103,15 +103,25 @@ function follow(repo: Repo, queueUrl: AutomergeUrl, key: string, options?: { kee
 
 const entryOf = (queue: DocHandle<Queue>, key: string) => queue.doc()!.jobs[key];
 
-/** Lists a task as an asker that wrote the documents itself would, and returns its handle. */
-function listed(repo: Repo, queue: DocHandle<Queue>, key: string, runs: Task['runs'] = [], flagged = false) {
-  const task = repo.create<Task>({ importUrl: CODE, input: null, key, runs, ...(flagged ? { cancelled: true } : {}) } as Task);
-  queue.change((doc) => listTask(doc, key, { taskUrl: task.url, askedAt: Date.now(), package: null }));
+/** Lists a document under `key` as an asker that wrote the documents itself would, and returns its handle: a task with these runs, unless `doc` is given. */
+function listed(repo: Repo, queue: DocHandle<Queue>, key: string, runs: Task['runs'] = [], doc?: unknown) {
+  const task = repo.create<Task>((doc ?? { importUrl: CODE, input: null, key, runs }) as Task);
+  queue.change((it) => listTask(it, key, { taskUrl: task.url, askedAt: Date.now(), package: null }));
   return task;
 }
 
-const closed = (id: string, status: RunStatus) => ({ id, pool: 'P', start: 0, end: 1, status, result: status === 'succeeded' ? 'done' : null, logs: [] });
-const opened = (id: string) => ({ id, pool: 'P', start: 0 });
+const closed = (id: string, status: RunStatus, message?: string) => ({
+  id,
+  pool: 'P',
+  start: 0,
+  end: 1,
+  status,
+  result: status === 'succeeded' ? 'done' : null,
+  logs: message ? [line(message)] : [],
+});
+const opened = (id: string, pool = 'P') => ({ id, pool, start: 0 });
+/** A stop, as `cancel` appends it: a record with no pool that says cancelled. */
+const stopped = (id = 'stop') => ({ id, start: 0, end: 0, status: 'cancelled' as const });
 
 // Asking
 
@@ -155,18 +165,19 @@ describe('ask', () => {
     expect(order.slice(0, 3)).toEqual(['saving task', 'saved task', 'named']);
   });
 
-  it('asking again under a key whose task has not ended returns the same task and makes none', async () => {
-    const cases: [string, Task['runs'], boolean][] = [
-      ['waiting', [], false],
-      ['an open run', [opened('r')], false],
-      ['two lost runs', [closed('a', 'lost'), closed('b', 'lost')], false],
-      ['a yielded run', [closed('a', 'yielded')], false],
-      ['an open run, flagged', [opened('r')], true],
-      ['three lost runs and an open run', [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'lost'), opened('r')], false],
+  it('asking again under a key whose task is still wanted (no record has ended it) returns the same task and makes none', async () => {
+    const cases: [string, Task['runs']][] = [
+      ['waiting', []],
+      ['an open run', [opened('r')]],
+      ['two lost runs', [closed('a', 'lost'), closed('b', 'lost')]],
+      ['a yielded run', [closed('a', 'yielded')]],
+      // losses recorded at once by machines that each saw two: no record ends it, so it is wanted
+      ['three lost runs', [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'lost')]],
+      ['three lost runs and an open run', [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'lost'), opened('r')]],
     ];
-    for (const [name, runs, flagged] of cases) {
+    for (const [name, runs] of cases) {
       const { repo, queue } = world();
-      const task = listed(repo, queue, 'k', runs, flagged);
+      const task = listed(repo, queue, 'k', runs);
       const create = vi.spyOn(repo, 'create');
       const again = await ask(repo, queue.url, { importUrl: CODE, key: 'k' });
       expect(again, name).toEqual({ key: 'k', taskUrl: task.url });
@@ -175,35 +186,30 @@ describe('ask', () => {
     }
   });
 
-  it('asking under a key whose task has ended lists a new task over it: ended by a run, by three lost runs, or by the flag with no open run', async () => {
-    const cases: [string, Task['runs'], boolean][] = [
-      ['succeeded', [closed('a', 'succeeded')], false],
-      ['failed', [closed('a', 'failed')], false],
-      ['cancelled by a run', [closed('a', 'cancelled')], false],
-      ['a later run succeeded after one yielded', [closed('a', 'yielded'), closed('b', 'succeeded')], false],
-      ['three lost', [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'lost')], false],
-      ['flagged, no runs', [], true],
-      ['flagged, a yielded run', [closed('a', 'yielded')], true],
+  it('asking under a key whose document is not wanted lists a new task over it: a record ended it (open runs or not), or it is not a task at all', async () => {
+    const cases: [string, Task['runs'], unknown?][] = [
+      ['succeeded', [closed('a', 'succeeded')]],
+      ['failed', [closed('a', 'failed')]],
+      ['cancelled by a run', [closed('a', 'cancelled')]],
+      ['a later run succeeded after one yielded', [closed('a', 'yielded'), closed('b', 'succeeded')]],
+      ['its third loss recorded', [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'failed', LOST_TOO_OFTEN)]],
+      ['stopped, no runs', [stopped()]],
+      ['stopped, a yielded run', [closed('a', 'yielded'), stopped()]],
+      ['stopped, with an open run', [opened('r'), stopped()]],
+      ['a failure after an open run (which may yet rescue it)', [opened('r'), closed('b', 'failed')]],
+      ['a document with a title only', [], { title: 'not a task' }],
+      ['a document whose runs are not a list', [], { importUrl: CODE, runs: 'r' }],
+      ['a document with no importUrl', [], { runs: [] }],
     ];
-    for (const [name, runs, flagged] of cases) {
+    for (const [name, runs, doc] of cases) {
       const { repo, queue } = world();
-      const old = listed(repo, queue, 'k', runs, flagged);
+      const old = listed(repo, queue, 'k', runs, doc);
       const before = structuredClone(old.doc());
       const again = await ask(repo, queue.url, { importUrl: CODE, input: 2, key: 'k' });
       expect(again.taskUrl, name).not.toBe(old.url);
       expect(entryOf(queue, 'k').taskUrl, name).toBe(again.taskUrl);
       expect((await repo.find<Task>(again.taskUrl as AutomergeUrl)).doc()!.input, name).toBe(2);
       expect(old.doc(), name).toEqual(before);
-    }
-  });
-
-  it('a key whose task has an open run is never replaced, even when the task is flagged, or has lost three runs', async () => {
-    for (const runs of [[opened('r')], [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'lost'), opened('r')]]) {
-      for (const flagged of [false, true]) {
-        const { repo, queue } = world();
-        const task = listed(repo, queue, 'k', runs, flagged);
-        expect((await ask(repo, queue.url, { importUrl: CODE, key: 'k' })).taskUrl).toBe(task.url);
-      }
     }
   });
 
@@ -216,9 +222,15 @@ describe('ask', () => {
     expect(Object.keys(queue.doc()!.jobs).sort()).toEqual([one.key, two.key].sort());
   });
 
-  it("rejects '__proto__' as a key, and lists nothing", async () => {
+  it("rejects '__proto__' as a key before making any document, and lists nothing", async () => {
     const { repo, queue } = world();
+    const handles = Object.keys(repo.handles).length;
+    const create = vi.spyOn(repo, 'create');
+    const find = vi.spyOn(repo, 'find');
     await expect(ask(repo, queue.url, { importUrl: CODE, key: '__proto__' })).rejects.toThrow(/__proto__/);
+    expect(create).not.toHaveBeenCalled();
+    expect(find).not.toHaveBeenCalled();
+    expect(Object.keys(repo.handles)).toHaveLength(handles);
     expect(queue.doc()!.jobs).toEqual({});
     expect(Object.getPrototypeOf(queue.doc()!.jobs)).toBe(Object.prototype);
   });
@@ -261,44 +273,99 @@ describe('ask', () => {
 // Cancelling
 
 describe('cancel', () => {
-  it('flags the task and deletes its entry, and says so', async () => {
-    for (const runs of [[], [opened('r')]]) {
+  it('appends a stop, {id, start, end, status: cancelled} with no pool, after the runs there are, deletes the entry, and says so; the task gets no other field', async () => {
+    for (const runs of [[], [opened('r')], [closed('a', 'lost'), closed('b', 'yielded')]]) {
       const { repo, queue } = world();
       const task = listed(repo, queue, 'k', runs);
+      const at = Date.now();
       expect(await cancel(repo, queue.url, 'k')).toBe(true);
-      expect(task.doc()!.cancelled).toBe(true);
       expect(entryOf(queue, 'k')).toBeUndefined();
-      expect(task.doc()!.runs).toEqual(runs);
+      const after = task.doc()!.runs;
+      expect(after.slice(0, runs.length)).toEqual(runs);
+      expect(after).toHaveLength(runs.length + 1);
+      const stop = after.at(-1)!;
+      expect(Object.keys(stop).sort()).toEqual(['end', 'id', 'start', 'status']);
+      expect(stop).toEqual({ id: expect.any(String), start: at, end: at, status: 'cancelled' });
+      expect(runs.map((run) => run.id)).not.toContain(stop.id);
+      expect(Object.keys(task.doc()!).sort()).toEqual(['importUrl', 'input', 'key', 'runs']);
+      expect(task.doc()).not.toHaveProperty('cancelled');
     }
   });
 
   it('is false for a key that names nothing, and writes nothing', async () => {
     const { repo, queue } = world();
     const other = listed(repo, queue, 'other');
-    const heads = queue.heads();
+    const heads = [queue.heads(), other.heads()];
     for (const key of ['k', 'constructor', '__proto__']) {
       expect(await cancel(repo, queue.url, key), key).toBe(false);
     }
-    expect(queue.heads()).toEqual(heads);
-    expect(other.doc()!.cancelled).toBeUndefined();
+    expect([queue.heads(), other.heads()]).toEqual(heads);
   });
 
-  it('a task already ended by a run is not flagged; its stale entry is removed, and the answer is false', async () => {
-    for (const status of ['succeeded', 'failed', 'cancelled'] as const) {
+  it('a task some record has ended gets no stop; its stale entry is removed, and the answer is false', async () => {
+    const cases: [string, Task['runs']][] = [
+      ['succeeded', [closed('a', 'succeeded')]],
+      ['failed', [closed('a', 'failed')]],
+      ['cancelled by a run', [closed('a', 'cancelled')]],
+      ['stopped already', [stopped()]],
+      ['third loss', [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'failed', LOST_TOO_OFTEN)]],
+      ['a failure after an open run', [opened('r'), closed('b', 'failed')]],
+    ];
+    for (const [name, runs] of cases) {
       const { repo, queue } = world();
-      const task = listed(repo, queue, 'k', [closed('a', status)]);
-      expect(await cancel(repo, queue.url, 'k'), status).toBe(false);
-      expect(task.doc()!.cancelled, status).toBeUndefined();
-      expect(entryOf(queue, 'k'), status).toBeUndefined();
+      const task = listed(repo, queue, 'k', runs);
+      const heads = task.heads();
+      expect(await cancel(repo, queue.url, 'k'), name).toBe(false);
+      expect(task.heads(), name).toEqual(heads);
+      expect(task.doc()!.runs, name).toEqual(runs);
+      expect(entryOf(queue, 'k'), name).toBeUndefined();
     }
   });
 
-  it('cancelling twice: true, then false; the flag stays', async () => {
+  it('a document under the key that is not a task is not written to; its entry is removed, and the answer is false', async () => {
+    for (const doc of [{ title: 'not a task' }, { runs: [] }, { importUrl: CODE, runs: 'r' }, { importUrl: CODE }]) {
+      const { repo, queue } = world();
+      const notATask = listed(repo, queue, 'k', [], doc);
+      const heads = notATask.heads();
+      expect(await cancel(repo, queue.url, 'k'), JSON.stringify(doc)).toBe(false);
+      expect(notATask.heads()).toEqual(heads);
+      expect(notATask.doc()).toEqual(doc);
+      expect(entryOf(queue, 'k')).toBeUndefined();
+    }
+  });
+
+  it('cancelling twice: true, then false; one stop is recorded', async () => {
     const { repo, queue } = world();
     const task = listed(repo, queue, 'k');
     expect(await cancel(repo, queue.url, 'k')).toBe(true);
     expect(await cancel(repo, queue.url, 'k')).toBe(false);
-    expect(task.doc()!.cancelled).toBe(true);
+    expect(task.doc()!.runs.map((run) => run.status)).toEqual(['cancelled']);
+    // and twice while the key still names it (another replica listed it again meanwhile): still one stop
+    queue.change((doc) => listTask(doc, 'k', { taskUrl: task.url, askedAt: Date.now(), package: null }));
+    expect(await cancel(repo, queue.url, 'k')).toBe(false);
+    expect(task.doc()!.runs.map((run) => run.status)).toEqual(['cancelled']);
+    expect(entryOf(queue, 'k')).toBeUndefined();
+  });
+
+  it('two cancels on two replicas at once: two stops, and the first in list order is the ending on both', async () => {
+    const repoA = newRepo();
+    const repoB = newRepo();
+    const queueA = repoA.create<Queue>({ title: 'q', jobs: {} });
+    const taskA = listed(repoA, queueA, 'k');
+    const queueB = replicate(repoB, queueA);
+    const taskB = replicate(repoB, taskA);
+    expect(await cancel(repoA, queueA.url, 'k')).toBe(true);
+    expect(await cancel(repoB, queueB.url, 'k')).toBe(true);
+    taskA.merge(taskB);
+    taskB.merge(taskA);
+    expect(taskA.doc()!.runs).toEqual(taskB.doc()!.runs);
+    expect(taskA.doc()!.runs.map((run) => run.status)).toEqual(['cancelled', 'cancelled']);
+    for (const task of [taskA, taskB]) {
+      const watcher = follow(task === taskA ? repoA : repoB, (task === taskA ? queueA : queueB).url, 'k', { from: task.url });
+      await settle();
+      expect(watcher.last.state).toBe('cancelled');
+      watcher.stop();
+    }
   });
 });
 
@@ -332,6 +399,30 @@ describe('watch', () => {
     expect(watcher.views.length).toBeGreaterThan(0);
     expect(watcher.states()).not.toContain('missing');
     expect(watcher.last).toMatchObject({ state: 'waiting', taskUrl: task.url });
+    watcher.stop();
+  });
+
+  it("hears a new task afresh when the key moves to it: what was heard of the first task's runs does not count for the second, even under the same run names", async () => {
+    const { repo, queue } = world();
+    // the first task's run has gone unheard for longer than the lapse: stalled
+    const first = listed(repo, queue, 'k', [opened('r')]);
+    const watcher = follow(repo, queue.url, 'k');
+    await settle();
+    expect(watcher.last.state).toBe('running');
+    await vi.advanceTimersByTimeAsync(LAPSE_MS + LAPSE_MS / 4);
+    expect(watcher.last).toMatchObject({ state: 'stalled', taskUrl: first.url });
+    // a copy carrying the same run name takes the key: first sight of its run counts as heard
+    const second = repo.create<Task>({ importUrl: CODE, input: 'copy', key: 'k', runs: [opened('r')] });
+    queue.change((doc) => listTask(doc, 'k', { taskUrl: second.url, askedAt: Date.now(), package: null }, first.url));
+    await settle();
+    expect(watcher.last).toMatchObject({ state: 'running', taskUrl: second.url });
+    // and a beat on the first task's channel says nothing of the second's run of that name
+    beat(first, 'r');
+    await vi.advanceTimersByTimeAsync(LAPSE_MS - 1);
+    expect(watcher.last.state).toBe('running');
+    beat(first, 'r');
+    await vi.advanceTimersByTimeAsync(1 + LAPSE_MS / 4);
+    expect(watcher.last).toMatchObject({ state: 'stalled', taskUrl: second.url });
     watcher.stop();
   });
 
@@ -572,17 +663,18 @@ describe('watch with keep', () => {
     watcher.stop();
   });
 
-  const never: [string, Task['runs'], boolean, boolean][] = [
-    ['it has ended by a run', [closed('a', 'succeeded')], false, false],
-    ['it is flagged', [], true, false],
-    ['it is flagged, with an open run nobody hears', [opened('r')], true, false],
-    ['it lost three runs', [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'lost')], false, false],
-    ['an open run of it is heard', [opened('r')], false, true],
+  const never: [string, Task['runs'], boolean][] = [
+    ['it has ended by a run', [closed('a', 'succeeded')], false],
+    ['it is stopped', [stopped()], false],
+    ['it is stopped, with an open run nobody hears', [opened('r'), stopped()], false],
+    ['its third loss is recorded', [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'failed', LOST_TOO_OFTEN)], false],
+    ['a failure follows an open run that is heard', [opened('r'), closed('b', 'failed')], true],
+    ['an open run of it is heard', [opened('r')], true],
   ];
-  for (const [why, runs, flagged, beating] of never) {
+  for (const [why, runs, beating] of never) {
     it(`never lists the task again when ${why}`, async () => {
       const { repo, queue } = world();
-      const task = listed(repo, queue, 'k', runs, flagged);
+      const task = listed(repo, queue, 'k', runs);
       const watcher = follow(repo, queue.url, 'k', { keep: true });
       await settle();
       queue.change((doc) => delistTask(doc, 'k', task.url));
@@ -597,6 +689,19 @@ describe('watch with keep', () => {
       watcher.stop();
     });
   }
+
+  it('lists again a task that lost three runs with no record ending it (losses recorded at once by machines that each saw two)', async () => {
+    const { repo, queue } = world();
+    const task = listed(repo, queue, 'k', [closed('a', 'lost'), closed('b', 'lost'), closed('c', 'lost')]);
+    const watcher = follow(repo, queue.url, 'k', { keep: true });
+    await settle();
+    queue.change((doc) => delistTask(doc, 'k', task.url));
+    await settle();
+    await vi.advanceTimersByTimeAsync(LAPSE_MS + LAPSE_MS / 4);
+    expect(entryOf(queue, 'k')?.taskUrl).toBe(task.url);
+    expect(watcher.last.state).toBe('waiting');
+    watcher.stop();
+  });
 
   it('without keep, never lists it again', async () => {
     const { repo, queue } = world();
@@ -689,6 +794,35 @@ describe('run', () => {
     await promise;
     expect(settled).toEqual({ value: 'their result' });
   });
+
+  // A task some record has ended while an earlier open run still comes before
+  // that record is not wanted and has not ended, for as long as that run is
+  // heard. If the run's pool is gone for good, nothing will ever write to the
+  // task again; run() settles all the same, a lapse after the run was last
+  // heard, because it reads with ears, not with allHeard.
+  const behindADeadRun: [string, (task: DocHandle<Task>, repo: Repo, queueUrl: AutomergeUrl) => Promise<void>, string][] = [
+    ['stopped', async (_, repo, queueUrl) => void (await cancel(repo, queueUrl, 'k')), 'The task was cancelled'],
+    ['failed after it', async (task) => complete(task, 'later', 'failed', { logs: [line('Error: later broke')] }), 'Error: later broke'],
+  ];
+  for (const [how, end, message] of behindADeadRun) {
+    it(`is not left waiting on a task ${how} behind an open run whose pool is gone for good: it rejects a lapse after that run was last heard`, async () => {
+      const { repo, queue, task, settled, promise } = await started();
+      take(task, 'dead', 'gone for good');
+      take(task, 'later', 'Q');
+      beat(task, 'dead');
+      await settle();
+      await end(task, repo, queue.url);
+      await settle();
+      const lastWord = Date.now();
+      beat(task, 'dead');
+      await vi.advanceTimersByTimeAsync(LAPSE_MS - 1);
+      expect(settled).toEqual({});
+      await vi.advanceTimersByTimeAsync(1 + LAPSE_MS / 4);
+      await promise;
+      expect(settled.error?.message).toBe(message);
+      expect(Date.now() - lastWord).toBeLessThanOrEqual(LAPSE_MS + LAPSE_MS / 4);
+    });
+  }
 });
 
 describe('served', () => {
@@ -724,16 +858,25 @@ describe('served', () => {
     stop();
   });
 
-  it('drops a pool one lapse after its last message, not before', async () => {
+  it('drops a pool 1 ms after one lapse from its last message, each pool at its own lapse: the timer fires at the oldest pool lapse', async () => {
     const { repo, queue } = world();
     const { reports, stop } = hear(repo, queue);
     await settle();
     serving(queue, 'A');
     await vi.advanceTimersByTimeAsync(BEAT_MS);
     serving(queue, 'A');
-    await vi.advanceTimersByTimeAsync(LAPSE_MS - 1);
-    expect(reports.at(-1)?.map((it) => it.pool)).toEqual(['A']);
-    await vi.advanceTimersByTimeAsync(1 + LAPSE_MS / 4);
+    const lastA = Date.now();
+    await vi.advanceTimersByTimeAsync(3_000);
+    serving(queue, 'B');
+    const lastB = Date.now();
+    const pools = () => reports.at(-1)?.map((it) => it.pool);
+    await vi.advanceTimersByTimeAsync(lastA + LAPSE_MS - Date.now());
+    expect(pools()).toEqual(['A', 'B']);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(pools()).toEqual(['B']);
+    await vi.advanceTimersByTimeAsync(lastB + LAPSE_MS - Date.now());
+    expect(pools()).toEqual(['B']);
+    await vi.advanceTimersByTimeAsync(1);
     expect(reports.at(-1)).toEqual([]);
     stop();
   });
