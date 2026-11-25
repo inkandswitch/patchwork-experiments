@@ -84,7 +84,7 @@ const UNANSWERED_MS = 3 * LAPSE_MS;
  * - `not started`: nothing in this page has started the pool host, or nothing holds it any more.
  * - `waiting`: another tab of this browser runs its pool; this one takes over when that one goes.
  * - `starting`, `running`: this tab runs the pool.
- * - `letting go`: nothing in this page holds the pool any more; it takes nothing new and finishes what it has.
+ * - `letting go`: nothing in this page held the pool; it takes nothing new and finishes what it has (held again meanwhile, it asks for the lock anew once that is done).
  * - `handing over`: a newer build is in another tab; this one's pool takes nothing new and finishes what it has.
  * - `stood down`: it has handed over, and runs nothing from now on.
  * - `unavailable`: there is no pool here (`problem` says why; `retryAt`, when it tries again, if it will).

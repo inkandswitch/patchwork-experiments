@@ -21,7 +21,9 @@ export function poolWords(pool: PoolHostStatus): { short: string; long: string }
     case 'letting go':
       return {
         short: 'finishing up',
-        long: "Nothing on this page keeps this browser's pool here any more: it finishes what it is running, takes nothing new, and then another tab can take it over.",
+        // Said until the drain ends, even when something on this page has
+        // started the pool again meanwhile: it then asks for the pool anew.
+        long: "This page let go of this browser's pool: it finishes what it is running, takes nothing new, and then the pool goes to whichever tab asks for it next.",
       };
     case 'handing over':
       return {

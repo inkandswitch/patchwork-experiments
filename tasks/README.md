@@ -264,8 +264,9 @@ processes and say what they saw, one line per check or measurement:
   package (a staging package will do) in the real Patchwork, https://patchwork.inkandswitch.com/,
   in a throwaway profile, 20 checks. It installs the package through the profile's module
   settings and records what the site's frame does with it; presses Make my queue on a badge with
-  no tool-storage provider above it; mounts the background component and the badge inside the
-  site's tool-storage provider, as a frame does, and makes the profile's queue with that badge.
+  no tool-storage provider above it; mounts a `patchwork-tool-storage-provider` of its own on the
+  account and, inside it, the background component and the badge, as a frame mounts them (it
+  does not rely on the site's frame to), and makes the profile's queue with that badge.
   Then: the pool worker and the run workers load from the package through the site's service
   worker; ten do-nothing tasks are asked through this tab's tasks Repo and ten through the
   site's own (keyhive) Repo; the package's own task module, a throw, a spin cancelled and its

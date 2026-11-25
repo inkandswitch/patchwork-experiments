@@ -84,7 +84,7 @@ describe('the badge', () => {
 
     setStatus({ state: 'letting go' });
     expect(line()).toBe('2 listed · finishing up');
-    expect(badge().title).toMatch(/Nothing on this page keeps this browser's pool here any more/);
+    expect(badge().title).toMatch(/This page let go of this browser's pool/);
 
     setStatus({ state: 'unavailable', problem: 'this browser cannot keep its tabs to one pool (it has no Web Locks)' });
     expect(line()).toBe('2 listed · not running here');

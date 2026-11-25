@@ -809,12 +809,18 @@ try {
     const idle = await Z.waitFor("probe.status()?.state === 'not started' && probe.status()", 15_000);
     const locksAfter = await Z.js("probe.locks()");
     const badgeAfter = await Z.waitFor("probe.badge()?.state === 'not started' && probe.badge()", 10_000);
-    const poolWorkersAfter = await new Promise((r) => setTimeout(() => r(liveWorkers(Z, /pool-worker/).length), 500));
+    // The page ends the pool's worker before it says "not started", but
+    // DevTools reports the worker gone a moment later, so this waits for that
+    // report, up to a bound, and says how long it took.
+    const idleAt = Date.now();
+    while (liveWorkers(Z, /pool-worker/).length > 0 && Date.now() - idleAt < 5_000) await sleep(50);
+    const poolWorkersAfter = liveWorkers(Z, /pool-worker/).length;
+    const workerGoneMs = Date.now() - idleAt;
     check(
       "21 the background component mounted later starts the pool and the badge follows; let go, the pool lets the lock go and the badge says so",
       mounted === 1 && !!running && ran?.state === "succeeded" && badgeRunning?.state === "running" &&
         !!idle && locksAfter.held === 0 && locksAfter.workerHeld === 0 && poolWorkersAfter === 0 && /not running here/.test(badgeAfter?.text ?? ""),
-      `background components ${mounted}; running ${!!running}; the waiting task ${ran?.state}; badge ${J(badgeRunning?.text)}; after letting go: host ${J(idle?.state)}, locks ${J(locksAfter)}, pool workers ${poolWorkersAfter}, badge ${J(badgeAfter?.text)}`,
+      `background components ${mounted}; running ${!!running}; the waiting task ${ran?.state}; badge ${J(badgeRunning?.text)}; after letting go: host ${J(idle?.state)}, locks ${J(locksAfter)}, pool workers ${poolWorkersAfter} (looked for ${workerGoneMs} ms after the host said not started, bound 5000), badge ${J(badgeAfter?.text)}`,
     );
     await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
   }
