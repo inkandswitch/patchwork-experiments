@@ -110,8 +110,27 @@ pushwork sync
 pw-modules add "$MODULE_SETTINGS_DOC_URL" "$(pushwork url)"
 ```
 
-Consumers (e.g. threepane) then reach it only by the id string
-`"patchwork-isolation"`.
+Consumers then reach it only by the id string `"patchwork-isolation"`.
+
+## Threepane
+
+Threepane itself knows nothing about isolation. Its frame tool takes a
+`document-area-host` attribute naming a `patchwork:component`; when that's set,
+threepane renders its document area as
+`<patchwork-view component={host} root-component="threepane-document-area" doc-urls=…>`
+with a JSON props `<script>` child, rather than inline.
+
+This package supplies both ends (`src/threepane.ts`):
+
+- **`threepane-isolation`** (frame tool, unlisted): loads threepane's
+  `threepane` tool from the registry and runs it with
+  `document-area-host="threepane-isolation-host"`. Accounts whose `frameToolId`
+  is `threepane-isolation` need this package installed.
+- **`threepane-isolation-host`** (component): adds `shared-providers`,
+  `shared-tools` and `data-root-component-data` to that element, mirrors
+  `doc-urls` into `automerge-allowlist`, and mounts `patchwork-isolation` on it.
+  Inside the iframe, `threepane-document-area` resolves from the iframe's own
+  registry.
 
 ## Design doc
 

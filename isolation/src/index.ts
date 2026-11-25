@@ -26,4 +26,24 @@ export const plugins: Plugin<any>[] = [
     // happen later, when load() runs in a context that has the import map.
     load: async () => (await import("./component.js")).mountIsolation,
   },
+  // Threepane with its document area isolated (see ./threepane.ts). Same lazy
+  // load() reasoning as above.
+  {
+    type: "patchwork:tool",
+    id: "threepane-isolation",
+    tags: ["frame-tool"],
+    name: "Threepane (isolate)",
+    icon: "Window",
+    supportedDatatypes: ["account"],
+    unlisted: true,
+    load: async () =>
+      (await import("./threepane.js")).loadThreepaneIsolationTool(),
+  },
+  {
+    type: "patchwork:component",
+    id: "threepane-isolation-host",
+    name: "Threepane Isolation Host",
+    load: async () =>
+      (await import("./threepane.js")).mountThreepaneIsolationHost,
+  },
 ];
