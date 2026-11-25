@@ -2,46 +2,16 @@
  * The session document: its shape, its constants, and a new one.
  *
  * Everything in session/ is functions over plain objects: no repo, no handle,
- * no network. Two things come from automerge, both values rather than document
- * operations: ImmutableString (blocks.js), which says a field is a scalar
- * rather than collaborative text, and the document id parser (grants.js).
- * `kernel/store.js` applies these shapes to a real DocHandle; the loop reads
- * and writes through that.
+ * no network. One thing comes from automerge, a value rather than a document
+ * operation: ImmutableString (blocks.js), which says a field is a scalar
+ * rather than collaborative text. `kernel/store.js` applies these shapes to a
+ * real DocHandle; the loop reads and writes through that.
  *
- * A session document:
- *
- *   {
- *     title:   string
- *     subject: AutomergeUrl | null      the doc this session is about
- *     config:  { providerId, model, params }
- *     turns:   Turn[]
- *     reconnecting: { reason, since, attempts } | null   while the network is away (net/network.js)
- *     lease:   { runner, at, generation } | null
- *     grants:  { [key]: true }            what the person allowed (grants.js)
- *     made:    Artifact[]                 documents this session created
- *     watches: { [id]: Watch }            absent until doc_watch makes one (tools/watch.js)
- *   }
- *
- *   Turn  = { id, role: "user"|"assistant"|"tool", at, author, blocks: Block[] }
- *   Block = { type: "text",      id, text }
- *         | { type: "reasoning", id, text }
- *         | { type: "call",      id, tool, input, where, status, runner, generation, ask }
- *         | { type: "result",    id, callId, output, isError, image, doc, file, summary, placeholder }
- *         | { type: "event",     id, source, label, text, count, at }
- *         | { type: "notice",    id, kind, text, data }
- *
- * What a session is doing is not in the document: status.js reads it off the
- * turns, the lease and `reconnecting`. A notice block is the harness speaking
- * (blocks.js noticeBlock): one in an assistant-role turn ends a run, and is
- * how a session comes to be failed, out of budget or halted.
- *
- * An event block is news a tool delivered after its call was over (see
- * kernel/events.js). It rides in a "user" turn because that is what wakes a runner and
- * what every provider accepts after an assistant turn, but it is not the user
- * speaking, and both the model and the transcript are told so.
+ * The document's fields, its turns and blocks, a call's life, status, stops,
+ * the lease and approval are written out in SESSION.md, and only there.
  *
  * Automerge cannot hold `undefined`, so every optional field is either present
- * or `null` — never assigned undefined. See patchwork-skill §5.
+ * or `null`, never assigned undefined.
  */
 
 /**
