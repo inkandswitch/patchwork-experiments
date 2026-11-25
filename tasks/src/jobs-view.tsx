@@ -152,11 +152,17 @@ const Job = (props: { jobKey: string; taskUrl: AutomergeUrl; queueUrl: Automerge
   );
 };
 
-/** One run: which pool took it, when, and how it went (or that it is open). */
+/** One record of a task's list: a run (which pool took it, when, how it went or that it is open), or a stop someone asked for. */
 const RunLine = (props: { run: Run }) => (
   <li>
-    <span class="tq-muted">{new Date(props.run.start).toLocaleTimeString()}</span> run by pool{' '}
-    <code class="tq-code">{props.run.pool.slice(0, 8)}</code>: {props.run.status ?? 'open'}
+    <span class="tq-muted">{new Date(props.run.start).toLocaleTimeString()}</span>{' '}
+    <Show when={props.run.pool} fallback="stopped by request">
+      {(pool) => (
+        <>
+          run by pool <code class="tq-code">{pool().slice(0, 8)}</code>: {props.run.status ?? 'open'}
+        </>
+      )}
+    </Show>
   </li>
 );
 

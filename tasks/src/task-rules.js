@@ -1,5 +1,5 @@
 /**
- * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v1]
+ * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v2]
  *
  * What the documents are, and what may be read from them. Everything else (a
  * pool, an asker, a view) is these rules applied to documents and to what has
@@ -24,11 +24,12 @@
  *
  * A pool takes a task by appending a run to the task's `runs`, and that pool
  * alone later completes that run with how it went. An asker lists a task
- * under its key, and may flag the task `cancelled`. An entry is deleted when
- * its task has ended. Nothing else is written, and nothing that says "now":
- * no holder field, no heartbeat, no outcome field. So a copy of a task or a
- * queue is as true as the original, and two changes made apart always merge
- * to something these rules read one way.
+ * under its key, and stops one by appending a stop to the same list: a
+ * record that says `cancelled`. An entry is deleted when its task has ended.
+ * Nothing else is written, and nothing that says "now": no holder field, no
+ * heartbeat, no flag, no outcome field. So a copy of a task or a queue is as
+ * true as the original, and two changes made apart always merge to something
+ * these rules read one way.
  *
  * Everything about a task is read from its own document. A queue's entry
  * says which task a key names and that the task is wanted; it never says how
@@ -42,10 +43,10 @@
  * - A run is HEARD while its pool is saying so on the task's channel (see
  *   `isHeard`). Heard is each listener's own knowledge, never a document's.
  * - The task's HOLDER is its first open run, in list order, that is heard.
- * - The task's ENDING is the status of its first run, in list order, that
- *   ended it for good (`succeeded`, `failed`, `cancelled`). With no such run,
- *   and nobody holding it, it is `failed` once MAX_LOST of its runs were
- *   lost, and `cancelled` once it is flagged. Otherwise it has not ended.
+ * - The task's ENDING is the status of the first record in its list that
+ *   ends it for good (`succeeded`, `failed`, `cancelled`), once no heard open
+ *   run comes before that record. Until then it has not ended. Nothing else
+ *   ends a task: how it went is always a record, never a count or a flag.
  *
  * List order is the same for everyone who has the same runs, and a run
  * appended by someone who had seen another lands after it. So everyone who
@@ -53,35 +54,35 @@
  * because it could not hear the holder gives way when it can: a wrong "it is
  * gone" costs the later run its work, never the earlier one.
  *
- * A reading of "ended" changes afterwards in one circumstance only: a run
- * the reader could not hear (its pool was cut off, not gone) is completed
- * later. Then the first run in list order that ended the task is the ending,
- * for everyone.
+ * A reading of "ended" therefore changes afterwards in one circumstance
+ * only: a run earlier in the list that the reader could not hear (its pool
+ * was cut off, not gone) is completed later with a status that ends the
+ * task. Then that earlier record is the ending, for everyone.
  *
  * HOW A RUN GOES (a pool's side)
  *
- * - A pool may TAKE a task that is still wanted (no run has ended it, it is
- *   not flagged, and it has not lost MAX_LOST runs), that its queue lists
- *   under the task's key, that nobody heard holds, and that the pool has no
- *   open run of already (`mayClaim`).
- * - It STOPS a run of its own as soon as another run has ended the task, the
- *   task is flagged, its key names another task, or an earlier run it can
- *   hear holds it (`stopReason`). Only the flag makes the run `cancelled`,
- *   which ends the task; the others make it `yielded`, which ends nothing.
- *   Stopped code is told through its signal, and its worker is ended GRACE_MS
- *   later whatever it does.
+ * - A pool may TAKE a task that is still wanted (no record has ended it),
+ *   that its queue lists under the task's key, that nobody heard holds, and
+ *   that the pool has no open run of already (`mayClaim`).
+ * - It STOPS a run of its own (`stopReason`) as soon as the task has been
+ *   stopped, which makes the run `cancelled`; or the work is done elsewhere,
+ *   a record before it ended the task, its key names another task, or an
+ *   earlier run it can hear holds it, each of which makes it `yielded`, which
+ *   ends nothing. A failure after it in the list does not stop it: it may
+ *   yet do better. Stopped code is told through its signal, and its worker
+ *   is ended GRACE_MS later whatever it does.
  * - A run it started and no longer has (the pool stopped, or crashed and
  *   came back) it completes as what it would have been stopped for, or else
- *   as `lost` (`gone`). Only a run's own pool says so, which makes it a fact;
- *   nobody ever records a guess about someone else's run.
+ *   as `lost`; the task's third loss is recorded `failed`, which ends it
+ *   (`gone`). Only a run's own pool says so, which makes it a fact; nobody
+ *   ever records a guess about someone else's run.
  *
  * WHAT ENDS A TASK
  *
- * Its code returning, its code throwing, or someone stopping it; each once,
- * for good. The system starts a task's code again only when a run was lost
- * (MAX_LOST times at most: after that it is not taken again, and has failed
- * once nobody holds it) or its holder can no longer be heard; never because
- * it threw.
+ * Its code returning, its code throwing, someone stopping it, or its
+ * MAX_LOST-th run being lost; each once, for good, each a record in the list.
+ * The system starts a task's code again only when a run was lost or its
+ * holder can no longer be heard; never because it threw.
  *
  * WHAT AN ASKER DOES
  *
@@ -115,14 +116,13 @@
  * @property {string} importUrl  Where its code is: anything `import()` takes.
  * @property {any} input
  * @property {string} key  The key it was asked for under, in its queue's `jobs`.
- * @property {Run[]} runs  Every run it has had, in the order pools took it. Appended to; a run is replaced, whole, once, when it is completed.
- * @property {true} [cancelled]  Someone has asked for it to stop. Never unset.
+ * @property {Run[]} runs  What has happened to it, in order: every run a pool took, and any stop someone asked for. Appended to; a run is replaced, whole, once, when it is completed.
  */
 
 /**
  * @typedef {object} Run
  * @property {string} id  The run's name: made by the pool that took the task, never used again.
- * @property {string} pool  The pool that took it. The only one that ever writes this run again.
+ * @property {string} [pool]  The pool that took it, and the only one that ever writes this run again. A stop has none: it is a record that was never open, written by whoever asked.
  * @property {number} start  When it was taken, by that pool's clock. For people; no rule reads it.
  * @property {number} [end]  When it was completed. This and what follows are written together, once.
  * @property {RunStatus} [status]
@@ -185,8 +185,9 @@ export const MAX_LOG_LINES = 200;
  */
 
 /**
- * For a reader with no ears (one look at a document, nobody listening): every
- * open run counts as heard, so nothing is read as over that might be going on.
+ * For a reader that takes one look at a document with nobody listening:
+ * every open run counts as heard, so nothing is read as over that might
+ * still be going on.
  * @type {Heard}
  */
 export const allHeard = () => true;
@@ -294,7 +295,9 @@ export function holder(task, heard) {
 }
 
 /**
- * The run that ended the task for good: the first in list order that did.
+ * The first record in list order that ends the task for good, whether or
+ * not anything open comes before it. A document's word alone: where there
+ * is one, the task is no longer wanted.
  * @param {Pick<Task, 'runs'> | undefined} task
  * @returns {Run | null}
  */
@@ -306,43 +309,39 @@ export function endingRun(task) {
 export const lostCount = (task) => task?.runs?.filter((run) => run.status === 'lost').length ?? 0;
 
 /**
- * Whether the task is still to be run: no run has ended it, nobody has
- * flagged it, and it has not lost as many runs as a task may. A document's
- * word alone; pools go by it.
- * @param {Pick<Task, 'runs' | 'cancelled'> | undefined} task
+ * Whether the task is still to be run: it is a task, and no record has
+ * ended it. A document's word alone; pools and askers go by it.
+ * @param {unknown} task
  */
 export function isWanted(task) {
-  return !!task && !endingRun(task) && !task.cancelled && lostCount(task) < MAX_LOST;
+  return isTask(task) && !endingRun(task);
 }
 
 /**
- * How the task ended, or null if it has not. The first run that ended it
- * says. With no such run, a task somebody heard still holds has not ended;
- * one nobody holds is `failed` if it lost too many runs, and `cancelled` if
- * it is flagged.
- * @param {Pick<Task, 'runs' | 'cancelled'> | undefined} task
+ * How the task ended, or null if it has not: the status of the first record
+ * in its list that ends it, unless a heard open run comes before that
+ * record, which may yet end it differently.
+ * @param {Pick<Task, 'runs'> | undefined} task
  * @param {Heard} heard
  * @returns {FinalStatus | null}
  */
 export function ending(task, heard) {
-  const by = endingRun(task);
-  if (by) {
-    return /** @type {FinalStatus} */ (by.status);
+  for (const run of task?.runs ?? []) {
+    if (isFinal(run.status)) {
+      return run.status;
+    }
+    if (isOpen(run) && heard(run.id)) {
+      return null;
+    }
   }
-  if (!task || holder(task, heard)) {
-    return null;
-  }
-  if (lostCount(task) >= MAX_LOST) {
-    return 'failed';
-  }
-  return task.cancelled ? 'cancelled' : null;
+  return null;
 }
 
 /**
  * `waiting`: nobody has it; never taken, or every run of it is over without ending it.
  * `running`: a heard run has it.
  * `stalled`: runs of it are open and none is heard; its pool is gone or out of earshot, and another may take it.
- * `stopping`: flagged, and the run that has it hasn't stopped yet.
+ * `stopping`: someone has stopped it, and the run that has it hasn't stopped yet.
  * @typedef {'waiting' | 'running' | 'stalled' | 'stopping' | FinalStatus} TaskState
  */
 
@@ -353,7 +352,7 @@ export const isFinished = (state) =>
 /**
  * A task's state, from its own document and from which of its runs the
  * reader hears. A task that is not here yet is waiting.
- * @param {Pick<Task, 'runs' | 'cancelled'> | undefined} task
+ * @param {Pick<Task, 'runs'> | undefined} task
  * @param {Heard} heard
  * @returns {TaskState}
  */
@@ -363,13 +362,13 @@ export function taskState(task, heard) {
     return ended;
   }
   if (holder(task, heard)) {
-    return task?.cancelled ? 'stopping' : 'running';
+    return task?.runs?.some((run) => run.status === 'cancelled') ? 'stopping' : 'running';
   }
   return task?.runs?.some(isOpen) ? 'stalled' : 'waiting';
 }
 
 /**
- * The result of a task that succeeded: that of the run that ended it.
+ * The result of a task that succeeded: that of the record that ended it.
  * @param {Pick<Task, 'runs'> | undefined} task
  */
 export function taskResult(task) {
@@ -378,8 +377,9 @@ export function taskResult(task) {
 }
 
 /**
- * Why a task failed, for a person; null if it has not.
- * @param {Pick<Task, 'runs' | 'cancelled'> | undefined} task
+ * Why a task failed, for a person: the last line of the run that ended it;
+ * null if it has not failed.
+ * @param {Pick<Task, 'runs'> | undefined} task
  * @param {Heard} heard
  * @returns {string | null}
  */
@@ -387,12 +387,11 @@ export function taskError(task, heard) {
   if (ending(task, heard) !== 'failed') {
     return null;
   }
-  const by = endingRun(task);
-  if (by) {
-    return by.logs?.at(-1)?.message ?? 'failed';
-  }
-  return `the machine running it stopped ${MAX_LOST} times before it finished`;
+  return endingRun(task)?.logs?.at(-1)?.message ?? 'failed';
 }
+
+/** The last line of a run recorded `failed` because it was the task's MAX_LOST-th loss. */
+export const LOST_TOO_OFTEN = `it was lost ${MAX_LOST} times: each time, what was running it stopped before it finished`;
 
 // What is read from a queue
 
@@ -482,7 +481,7 @@ export function waitingWork(queue) {
  *
  * Whether the pool accepts the task's code is a separate question, asked of
  * the entry before this and of the task's `importUrl` with it.
- * @param {Pick<Task, 'runs' | 'cancelled'> | undefined} task
+ * @param {Pick<Task, 'runs'> | undefined} task
  * @param {string} pool
  * @param {Named} is
  * @param {Heard} heard
@@ -500,40 +499,43 @@ export function mayClaim(task, pool, is, heard) {
 /**
  * Why a pool must stop a run it has, or null to carry on.
  *
- * `cancelled`: the task is flagged. The run is recorded as stopped, which
- * ends the task: a fact about the task, in the task's own document.
+ * `cancelled`: the task has been stopped (some record says `cancelled`). The
+ * run is recorded as stopped too.
  *
- * `yielded`: another run has ended the task, its key now names another task,
- * or an earlier run that this pool hears has it. The run is recorded as
- * having given way, which ends nothing. Where a run that ended the task is
- * already known, no second ending is added to compete with it; and a task
- * that lost its key is not ended by the queue's say-so, because its asker,
- * reading the task before the queue, would take that for its answer.
+ * `yielded`: the work is done (some record says `succeeded`), or a record
+ * before this run in the list ended the task, or its key now names another
+ * task, or an earlier run that this pool hears has it. The run is recorded
+ * as having given way, which ends nothing: no second ending is added to
+ * compete with one that stands, and a task that lost its key is not ended
+ * by the queue's say-so, because its asker, reading the task before the
+ * queue, would take that for its answer.
  *
- * A key that names nothing stops nothing (see `Named`). Nor does the task
- * having lost MAX_LOST runs: that keeps it from being taken again, and a run
- * already going is not a start.
- * @param {Pick<Task, 'runs' | 'cancelled'>} task
+ * A record after this run that says `failed` stops nothing: this run was
+ * taken first, is still going, and if it succeeds, that is how the task
+ * ended. Nor does a key that names nothing (see `Named`).
+ * @param {Pick<Task, 'runs'>} task
  * @param {string} runId
  * @param {Named} is
  * @param {Heard} heard
  * @returns {'cancelled' | 'yielded' | null}
  */
 export function stopReason(task, runId, is, heard) {
-  const at = task?.runs?.findIndex((run) => run.id === runId) ?? -1;
-  if (at < 0 || !isOpen(task.runs[at])) {
+  const runs = task?.runs ?? [];
+  const at = runs.findIndex((run) => run.id === runId);
+  if (at < 0 || !isOpen(runs[at])) {
     return 'yielded'; // not this pool's to run any more
   }
-  if (endingRun(task)) {
-    return 'yielded';
-  }
-  if (task.cancelled) {
+  if (runs.some((run) => run.status === 'cancelled')) {
     return 'cancelled';
+  }
+  const before = runs.slice(0, at);
+  if (runs.some((run) => run.status === 'succeeded') || before.some((run) => isFinal(run.status))) {
+    return 'yielded';
   }
   if (is === 'other') {
     return 'yielded';
   }
-  if (task.runs.slice(0, at).some((run) => isOpen(run) && heard(run.id))) {
+  if (before.some((run) => isOpen(run) && heard(run.id))) {
     return 'yielded';
   }
   return null;
@@ -554,28 +556,39 @@ export function orphans(task, pool, has) {
 
 /**
  * What a pool records for an open run of its own that it is not running: it
- * stopped, or crashed and came back. If the task has ended, been flagged or
- * lost its key meanwhile, what the run would have been stopped for; otherwise
- * `lost`. Who else may hold the task is not asked: a pool that has only just
- * started has heard nobody yet, and a run that died is lost whoever came after.
- * @param {Pick<Task, 'runs' | 'cancelled'>} task
+ * stopped, or crashed and came back. If the task has been stopped, ended or
+ * lost its key meanwhile, what the run would have been stopped for.
+ * Otherwise the run was lost: `lost`, or, when the task has already lost
+ * MAX_LOST - 1 runs, `failed` (with LOST_TOO_OFTEN as its last line), which
+ * ends the task. Who else may hold the task is not asked: a pool that has
+ * only just started has heard nobody yet, and a run that died is lost
+ * whoever came after.
+ *
+ * Machines that lose runs of one task at the same moment each count the
+ * losses they have seen, so the task may be started once more than MAX_LOST
+ * times before one of them records the failure.
+ * @param {Pick<Task, 'runs'>} task
  * @param {string} runId
  * @param {Named} is
- * @returns {'cancelled' | 'yielded' | 'lost'}
+ * @returns {'cancelled' | 'yielded' | 'lost' | 'failed'}
  */
 export function gone(task, runId, is) {
-  return stopReason(task, runId, is, () => false) ?? 'lost';
+  const stop = stopReason(task, runId, is, () => false);
+  if (stop) {
+    return stop;
+  }
+  return lostCount(task) >= MAX_LOST - 1 ? 'failed' : 'lost';
 }
 
 /**
- * Whether an entry should be deleted: it names this task, and the task has
- * ended. Any pool may; the pool that ended the task does at once.
- * @param {Pick<Task, 'runs' | 'cancelled'> | undefined} task
+ * Whether an entry should be deleted: it names this task, and a record has
+ * ended the task (so nobody will take it again). Any pool may; the pool
+ * that ended the task does at once.
+ * @param {Pick<Task, 'runs'> | undefined} task
  * @param {Named} is
- * @param {Heard} heard
  */
-export function mayDelist(task, is, heard) {
-  return is === 'this' && ending(task, heard) !== null;
+export function mayDelist(task, is) {
+  return is === 'this' && !!endingRun(task);
 }
 
 /**
@@ -586,7 +599,7 @@ export function mayDelist(task, is, heard) {
  * The lapse is what lets the task's own news arrive first when the entry
  * went because the task ended. Listing a task that has in fact ended costs
  * at most a run that gives way as soon as its pool learns of the ending.
- * @param {Pick<Task, 'runs' | 'cancelled'> | undefined} task
+ * @param {Pick<Task, 'runs'> | undefined} task
  * @param {Named} is
  * @param {Heard} heard
  * @param {number} noneSince
@@ -604,6 +617,17 @@ export function mayRelist(task, is, heard, noneSince, now) {
 // Changes. Each is to be called inside a change to the document.
 
 /**
+ * Throws for a name that cannot be a key: an object's readers would not all
+ * find `__proto__` (see `entryAt`).
+ * @param {string} key
+ */
+export function checkKey(key) {
+  if (key === '__proto__') {
+    throw new Error('"__proto__" cannot be a key');
+  }
+}
+
+/**
  * Lists a task under `key`, unless one is listed already. `over` names a
  * task the caller knows has ended: an entry that still names it is replaced.
  * Two askers at once each list their own; the merge keeps one, and both find
@@ -614,10 +638,7 @@ export function mayRelist(task, is, heard, noneSince, now) {
  * @param {string} [over]
  */
 export function listTask(queue, key, entry, over) {
-  if (key === '__proto__') {
-    // an object's readers would not all find it (see `entryAt`)
-    throw new Error('"__proto__" cannot be a key');
-  }
+  checkKey(key);
   if (!queue.jobs) {
     queue.jobs = {};
   }
@@ -641,6 +662,21 @@ export function delistTask(queue, key, taskUrl) {
   if (named(queue, key, taskUrl) === 'this') {
     delete queue.jobs[key];
   }
+}
+
+/**
+ * Stops a task: appends a record that says `cancelled`, unless a record has
+ * ended the task already. True if it did. A task nobody has taken never
+ * starts; a run that has it is stopped by its pool.
+ * @param {Task} task
+ * @param {{ id: string, at: number }} stop  a name for the record, and the stopper's clock
+ */
+export function stopTask(task, stop) {
+  if (endingRun(task)) {
+    return false;
+  }
+  task.runs.push({ id: stop.id, start: stop.at, end: stop.at, status: 'cancelled' });
+  return true;
 }
 
 /**

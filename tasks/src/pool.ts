@@ -27,6 +27,7 @@ import {
   gone,
   GRACE_MS,
   Hearing,
+  LOST_TOO_OFTEN,
   MAX_LOG_LINES,
   mayClaim,
   mayDelist,
@@ -341,8 +342,12 @@ export class Pool {
         followed.hearing.saw(task?.runs);
         // Its own past: runs it started and no longer has. A task followed
         // without a run of this pool's is one a served queue lists.
-        for (const run of orphans(task, id, (runId) => this.runs.has(runId))) {
-          handle.change((doc) => endRun(doc, run.id, { status: gone(doc, run.id, 'this'), end: now }));
+        for (const run of orphans(task, id, (runId) => this.runs.get(runId)?.task.url === url)) {
+          handle.change((doc) => {
+            const status = gone(doc, run.id, 'this');
+            const logs = status === 'failed' ? [{ timestampMillis: now, message: LOST_TOO_OFTEN }] : [];
+            endRun(doc, run.id, { status, end: now, logs });
+          });
         }
       });
     }
@@ -370,7 +375,7 @@ export class Pool {
         }
         const is = named(queue.doc(), work.key, work.taskUrl);
         const heard = this.heardOf(work.taskUrl as AutomergeUrl);
-        if (mayDelist(task, is, heard)) {
+        if (mayDelist(task, is)) {
           queue.change((doc) => delistTask(doc, work.key, work.taskUrl));
         } else if (
           !this.stopped &&
@@ -440,17 +445,25 @@ export class Pool {
     return stopReason(task, run.id, named(queue, run.key, run.task.url), this.heardOf(run.task.url));
   }
 
-  /**
-   * What a stopped run is recorded as: its reason, and for a pool that is
-   * itself stopping, what `gone` says of a run its pool no longer has.
-   */
+  /** What a stopped run is recorded as: its reason, and for a pool that is itself stopping, a run it no longer has. */
   private statusOf(run: Running, reason: StopReason): RunStatus {
-    if (reason !== 'stopping') {
-      return reason;
-    }
+    return reason === 'stopping' ? this.lostAs(run) : reason;
+  }
+
+  /**
+   * What a run this pool no longer has is recorded as (see `gone`): the pool
+   * is stopping, or the run's worker died or could not be started. None of
+   * these is the task's doing, so the run is lost, not failed; when it is the
+   * last loss a task may have, its log says so.
+   */
+  private lostAs(run: Running): RunStatus {
     const task = run.task.isDeleted?.() ? undefined : run.task.doc();
     const queue = run.queue.isDeleted?.() ? undefined : run.queue.doc();
-    return task ? gone(task, run.id, named(queue, run.key, run.task.url)) : 'lost';
+    const status = task ? gone(task, run.id, named(queue, run.key, run.task.url)) : 'lost';
+    if (status === 'failed') {
+      this.log(run, LOST_TOO_OFTEN);
+    }
+    return status;
   }
 
   /**
@@ -499,7 +512,7 @@ export class Pool {
       slot = this.idle.pop() ?? this.startWorker();
     } catch (error) {
       this.log(run, `a worker could not be started: ${(error as Error)?.message ?? error}`);
-      this.complete(run, { status: 'failed' });
+      this.complete(run, { status: this.lostAs(run) });
       return;
     }
     slot.run = run;
@@ -512,7 +525,7 @@ export class Pool {
       // A worker that cannot take its job is in a state nobody knows: it is ended, not kept.
       this.log(run, `its worker could not be handed it: ${(error as Error)?.message ?? error}`);
       this.kill(run);
-      this.complete(run, { status: 'failed' });
+      this.complete(run, { status: this.lostAs(run) });
     }
   }
 
@@ -544,7 +557,8 @@ export class Pool {
         slot.gone = true;
         this.idle = this.idle.filter((it) => it !== slot);
         if (run) {
-          fail(run, 'its worker died');
+          this.log(run, 'its worker died');
+          this.ended(run, { status: this.lostAs(run) });
         }
       },
     });
@@ -619,7 +633,7 @@ export class Pool {
         try {
           const queue = run.queue.isDeleted?.() ? undefined : run.queue.doc();
           const is = named(queue, run.key, run.task.url);
-          if (mayDelist(run.task.doc(), is, this.heardOf(run.task.url))) {
+          if (mayDelist(run.task.doc(), is)) {
             run.queue.change((doc) => delistTask(doc, run.key, run.task.url));
           }
         } catch (error) {

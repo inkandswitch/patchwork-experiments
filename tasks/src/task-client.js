@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v1]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v2]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -15,16 +15,17 @@
 import {
   LAPSE_MS,
   MAX_LOG_LINES,
-  Hearing,
-  allHeard,
+  checkKey,
   delistTask,
-  ending,
   endingRun,
   entryAt,
+  Hearing,
   isFinished,
+  isWanted,
   listTask,
   mayRelist,
   named,
+  stopTask,
   taskError,
   taskResult,
   taskState,
@@ -257,19 +258,21 @@ const copy = (/** @type {unknown} */ value) =>
  * @returns {Promise<{ key: string, taskUrl: string }>}
  */
 export async function ask(repo, queueUrl, { importUrl, input, key }) {
-  const queue = await repo.find(queueUrl);
   const jobKey = key ?? crypto.randomUUID();
+  checkKey(jobKey);
+  const queue = await repo.find(queueUrl);
   const listed = entryAt(queue.doc(), jobKey);
   /** @type {string | undefined} */
   let over;
   if (listed) {
-    // One look, with nobody listening: a task with a run still open has not
-    // ended, and neither has one that is not here to be read yet.
-    const task = await repo.find(listed.taskUrl).then(
-      (/** @type {any} */ handle) => handle.doc(),
-      () => undefined,
+    // The task the key names is the one while it is still wanted. One that
+    // is not here to be read yet is taken to be; a document that is no task
+    // at all, or a task some record has ended, is listed over.
+    const found = await repo.find(listed.taskUrl).then(
+      (/** @type {any} */ handle) => ({ doc: handle.doc() }),
+      () => null,
     );
-    if (!task || ending(task, allHeard) === null) {
+    if (!found || isWanted(found.doc)) {
       return { key: jobKey, taskUrl: listed.taskUrl };
     }
     over = listed.taskUrl;
@@ -292,10 +295,10 @@ export async function ask(repo, queueUrl, { importUrl, input, key }) {
 }
 
 /**
- * Asks the task under `key` to stop: flags it and takes it off the queue. One
- * that is waiting never starts; one that is running has its signal aborted
- * and its worker ended soon after. False when the key names nothing, or its
- * task was already ended by a run.
+ * Asks the task under `key` to stop: appends a stop to its list and takes it
+ * off the queue. One that is waiting never starts; one that is running has
+ * its signal aborted and its worker ended soon after. False when the key
+ * names nothing, or its task had ended already.
  * @param {any} repo
  * @param {string} queueUrl
  * @param {string} key
@@ -308,17 +311,15 @@ export async function cancel(repo, queueUrl, key) {
     return false;
   }
   const task = await repo.find(listed.taskUrl);
-  const over = !!endingRun(task.doc());
-  if (!over) {
+  let stopped = false;
+  if (isWanted(task.doc())) {
     task.change((/** @type {Task} */ doc) => {
-      if (!doc.cancelled) {
-        doc.cancelled = true;
-      }
+      stopped = stopTask(doc, { id: crypto.randomUUID(), at: Date.now() });
     });
   }
   queue.change((/** @type {Queue} */ doc) => delistTask(doc, key, listed.taskUrl));
   await repo.flush([task.documentId, queue.documentId]).catch(() => {});
-  return !over;
+  return stopped;
 }
 
 // Following
@@ -364,7 +365,9 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
   /** @type {ReturnType<typeof setTimeout> | undefined} */ let retry;
   /** @type {ReturnType<typeof setTimeout> | undefined} */ let lapse;
   /** @type {number | null} */ let noneSince = null;
-  const hearing = new Hearing();
+  // What has been heard of the runs of the task followed. Each task has its
+  // own: a copy of a task carries the original's runs, names and all.
+  let hearing = new Hearing();
   /**
    * What has been heard from each run of the task followed, by run. Kept per
    * run because two runs can be heard at once (two pools took the task
@@ -434,6 +437,7 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
     unlisten = undefined;
     task = undefined;
     said = new Map();
+    hearing = new Hearing();
   };
 
   const follow = () => {
@@ -593,7 +597,9 @@ export function served(repo, queueUrl, onChange) {
       onChange(list);
     }
     if (pools.size > 0) {
-      timer = setTimeout(report, LAPSE_MS / 4);
+      // looked at again when the pool heard longest ago would lapse
+      const oldest = Math.min(...[...pools.values()].map((pool) => pool.at));
+      timer = setTimeout(report, Math.max(0, oldest + LAPSE_MS - now) + 1);
     }
   };
 
