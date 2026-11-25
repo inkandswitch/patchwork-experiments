@@ -494,9 +494,11 @@ export class Pool {
     this.options.repo.flush([task.documentId]).then(
       () => this.begin(run, job),
       (error) => {
-        // Its start is not saved, so its code is not called: a run this pool no longer has.
+        // Its start is not saved, so its code is not called: a run this pool
+        // no longer has, recorded as `gone` says, so that a pool that can
+        // never save ends the task on its third loss instead of taking it for ever.
         console.error('pool: saving a run before starting it failed', error);
-        this.complete(run, { status: 'lost' });
+        this.complete(run, { status: this.lostAs(run) });
       },
     );
   }
