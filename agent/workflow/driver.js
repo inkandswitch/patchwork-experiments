@@ -29,7 +29,7 @@ import { liftBudget } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
-import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
+import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, staleInputs, openRequests, newRequest, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan } from "./plan.js"
 import { scopeOf, webScope, sameScope } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
 import { documentIdOf } from "../documents/doc-urls.js"
@@ -42,9 +42,6 @@ const { stringifyAutomergeUrl } = AutomergeRepo
 
 /** How long a burst of changes is gathered before the tick it asks for. */
 export const SETTLE_MS = 150
-
-/** How much of a step's result the plan keeps. The whole thing is its session's last message. */
-export const RESULT_KEPT = 8000
 
 /**
  * Where a step's session stands, read off its document.
@@ -315,17 +312,8 @@ export class WorkflowDriver {
         continue
       }
       this.write((d) => {
-        const s = d.steps.find((x) => x.id === step.id)
-        if (s.status !== STEP.running) return
-        s.status = outcome.state === "done" ? STEP.done : STEP.failed
-        s.finishedAt = this.now()
-        if (outcome.state === "done") {
-          // A new result: whatever was built on the last one is out of date.
-          s.version = (s.version ?? 0) + 1
-          s.result = outcome.result.length > RESULT_KEPT ? `${outcome.result.slice(0, RESULT_KEPT)}\n…(cut; the rest is in the step's session)` : outcome.result
-        } else {
-          s.error = this.reasons.get(step.sessionUrl) ?? "Its session stopped with an error. Open it to see what happened."
-        }
+        if (outcome.state === "done") finishStep(d, step.id, { result: outcome.result, now: this.now() })
+        else failStep(d, step.id, { error: this.reasons.get(step.sessionUrl) ?? "Its session stopped with an error. Open it to see what happened.", now: this.now() })
       })
     }
     if (asked.length) {
@@ -384,12 +372,7 @@ export class WorkflowDriver {
 
     // 5. Finished?
     plan = this.handle.doc()
-    if (plan.status === PLAN.running && isSettled(plan, sessions)) {
-      this.write((d) => {
-        d.status = PLAN.done
-        d.finishedAt = this.now()
-      })
-    }
+    if (plan.status === PLAN.running && isSettled(plan, sessions)) this.write((d) => settlePlan(d, this.now()))
     this.report()
   }
 
@@ -630,17 +613,7 @@ export class WorkflowDriver {
       d.turns.push(makeTurn("user", [textBlock(stepPrompt(plan, step))]))
     })
 
-    this.write((d) => {
-      const s = d.steps.find((x) => x.id === step.id)
-      if (s.status !== STEP.pending) return
-      s.status = STEP.running
-      s.sessionUrl = child.url
-      s.startedAt = this.now()
-      s.model = plan.tiers?.[step.tier] ?? null
-      // What it is built on, as versions: it is out of date once any changes.
-      s.inputs = inputsOf(d, s)
-      s.reopen = null
-    })
+    this.write((d) => beginStep(d, step.id, { session: { url: child.url, model: plan.tiers?.[step.tier] ?? null }, now: this.now() }))
     // Started only if the plan now names this session for the step — not
     // merely because the write was allowed.
     if (this.handle.doc().steps.find((x) => x.id === step.id)?.sessionUrl === child.url) await this.run(child.url)
@@ -669,9 +642,7 @@ export class WorkflowDriver {
         s.where = verdict.where
         s.moved = verdict.why
       } else {
-        s.status = STEP.failed
-        s.finishedAt = this.now()
-        s.error = verdict.fail
+        failStep(d, step.id, { error: verdict.fail, now: this.now() })
       }
     })
     if (verdict.where) this.kick()
@@ -697,14 +668,7 @@ export class WorkflowDriver {
       d.turns.push(makeTurn("user", [textBlock(message)]))
     })
     this.reasons.delete(step.sessionUrl)
-    this.write((d) => {
-      const s = d.steps.find((x) => x.id === step.id)
-      if (s.status !== STEP.pending) return
-      s.status = STEP.running
-      s.startedAt = this.now()
-      s.inputs = inputsOf(d, s)
-      s.reopen = null
-    })
+    this.write((d) => beginStep(d, step.id, { now: this.now() }))
     if (this.handle.doc().steps.find((x) => x.id === step.id)?.status === STEP.running) await this.run(step.sessionUrl)
   }
 
@@ -770,16 +734,8 @@ export class WorkflowDriver {
       reason ?? "cancelled by its workflow"
     )
     this.handle.change((d) => {
-      for (const s of d.steps) {
-        if (!targets.some((t) => t.id === s.id)) continue
-        s.status = STEP.cancelled
-        s.finishedAt = this.now()
-        if (reason) s.error = reason
-      }
-      if (!stepIds) {
-        d.status = PLAN.stopped
-        d.finishedAt = this.now()
-      }
+      for (const t of targets) cancelStep(d, t.id, { reason, now: this.now() })
+      if (!stepIds) stopPlan(d, this.now())
     })
   }
 

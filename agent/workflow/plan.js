@@ -353,6 +353,128 @@ export function isSettled(plan, sessions = {}) {
   return [...derived.values()].every((s) => SETTLED.has(s))
 }
 
+// ---------------------------------------------------------------- transitions
+
+/**
+ * Every change of a step's status and of the plan's is one of these, by name.
+ * Each function below takes the plan document inside a change, applies its
+ * transition if it is legal from where things stand, and returns whether it
+ * did; nothing else writes a status.
+ *
+ *   step       from                          to          function
+ *   begin      pending                       running     beginStep
+ *   finish     running                       done        finishStep
+ *   fail       pending, running              failed      failStep
+ *   cancel     pending, running              cancelled   cancelStep
+ *   reopen     done, failed, cancelled,      pending     reopenSteps (a running one
+ *              running                                   only as a cascade reaches it)
+ *
+ *   plan       from                          to          function
+ *   settle     running, when settled         done        settlePlan
+ *   stop       running, done                 stopped     stopPlan
+ *   run again  done, stopped, when not       running     runAgain
+ *              settled
+ */
+export const STEP_TRANSITIONS = {
+  begin: { from: [STEP.pending], to: STEP.running },
+  finish: { from: [STEP.running], to: STEP.done },
+  fail: { from: [STEP.pending, STEP.running], to: STEP.failed },
+  cancel: { from: [STEP.pending, STEP.running], to: STEP.cancelled },
+  reopen: { from: [STEP.done, STEP.failed, STEP.cancelled, STEP.running], to: STEP.pending },
+}
+
+export const PLAN_TRANSITIONS = {
+  settle: { from: [PLAN.running], to: PLAN.done },
+  stop: { from: [PLAN.running, PLAN.done], to: PLAN.stopped },
+  runAgain: { from: [PLAN.done, PLAN.stopped], to: PLAN.running },
+}
+
+/** Apply `transition` to a step or a plan if it is legal from its status; whether it was. */
+function move(thing, transition) {
+  if (!thing || !transition.from.includes(thing.status)) return false
+  thing.status = transition.to
+  return true
+}
+
+const stepIn = (doc, id) => (doc.steps ?? []).find((s) => s.id === id) ?? null
+
+/**
+ * Start a pending step, inside a change: in a new session (`session`, with
+ * the model it runs on), or continuing the one it has. What it is built on is
+ * recorded as versions: it is out of date once any of them changes.
+ */
+export function beginStep(doc, id, { session = null, now = Date.now() } = {}) {
+  const step = stepIn(doc, id)
+  if (!move(step, STEP_TRANSITIONS.begin)) return false
+  if (session) {
+    step.sessionUrl = session.url
+    step.model = session.model ?? null
+  }
+  step.startedAt = now
+  step.inputs = inputsOf(doc, step)
+  step.reopen = null
+  return true
+}
+
+/** How much of a step's result the plan keeps. The whole thing is its session's last message. */
+export const RESULT_KEPT = 8000
+
+/** A running step finished with `result`, inside a change: a new version, so whatever was built on the last one is out of date. */
+export function finishStep(doc, id, { result, now = Date.now() }) {
+  const step = stepIn(doc, id)
+  if (!move(step, STEP_TRANSITIONS.finish)) return false
+  const text = String(result ?? "")
+  step.finishedAt = now
+  step.version = (step.version ?? 0) + 1
+  step.result = text.length > RESULT_KEPT ? `${text.slice(0, RESULT_KEPT)}\n…(cut; the rest is in the step's session)` : text
+  return true
+}
+
+/** A step that broke, or cannot start as written, inside a change. */
+export function failStep(doc, id, { error, now = Date.now() }) {
+  const step = stepIn(doc, id)
+  if (!move(step, STEP_TRANSITIONS.fail)) return false
+  step.finishedAt = now
+  step.error = String(error)
+  return true
+}
+
+/** Cancel a step that has not finished, inside a change; `reason`, when given, is kept for the views. */
+export function cancelStep(doc, id, { reason = null, now = Date.now() } = {}) {
+  const step = stepIn(doc, id)
+  if (!move(step, STEP_TRANSITIONS.cancel)) return false
+  step.finishedAt = now
+  if (reason) step.error = reason
+  return true
+}
+
+/** A running plan with nothing more to do is done, inside a change. */
+export function settlePlan(doc, now = Date.now()) {
+  if (!isSettled(doc) || !move(doc, PLAN_TRANSITIONS.settle)) return false
+  doc.finishedAt = now
+  return true
+}
+
+/** Stop the plan, inside a change: nothing more starts until someone gives it work again. */
+export function stopPlan(doc, now = Date.now()) {
+  if (!move(doc, PLAN_TRANSITIONS.stop)) return false
+  doc.finishedAt = now
+  return true
+}
+
+/**
+ * The plan runs again, inside a change: a plan that was done or stopped and
+ * has something in it that is not settled — a step added, reopened, kept or
+ * rewired so it can start, a request to decide. One that is still settled
+ * stays as it was: there is nothing for it to run.
+ */
+export function runAgain(doc) {
+  if (isSettled(doc) || !move(doc, PLAN_TRANSITIONS.runAgain)) return false
+  doc.finishedAt = null
+  doc.reportedEnd = false
+  return true
+}
+
 // ---------------------------------------------------------------- versions
 
 /** The versions of a step's dependencies as they stand: what it is built on, if it starts now. */
@@ -423,7 +545,7 @@ export function reopenSteps(doc, ids, { note, cascade = false, now = Date.now(),
       startedAt: step.startedAt ?? null,
       finishedAt: step.finishedAt ?? null,
     })
-    step.status = STEP.pending
+    move(step, STEP_TRANSITIONS.reopen)
     step.reopen = { note: text, at: now, by }
     step.result = null
     step.error = null
@@ -455,9 +577,7 @@ export function reopenSteps(doc, ids, { note, cascade = false, now = Date.now(),
     }
   }
 
-  doc.status = PLAN.running
-  doc.finishedAt = null
-  doc.reportedEnd = false
+  runAgain(doc)
   return { reopened, interrupt }
 }
 
@@ -488,19 +608,7 @@ export function keepSteps(doc, ids) {
     step.inputs = inputsOf(doc, step)
     step.staleNoticed = null
   }
-  wake(doc)
-}
-
-/**
- * A plan that had settled may have work again — a step kept or rewired is
- * ready now — so it runs, and its next end is news. A stopped one stays
- * stopped: only reopening or adding restarts it, by someone's choice.
- */
-function wake(doc) {
-  if (doc.status !== PLAN.done) return
-  doc.status = PLAN.running
-  doc.finishedAt = null
-  doc.reportedEnd = false
+  runAgain(doc)
 }
 
 // ---------------------------------------------------------------- editing
@@ -572,7 +680,7 @@ export function editSteps(doc, edits) {
       } else step[key] = edit[key]
     }
   }
-  wake(doc)
+  runAgain(doc)
 }
 
 // ---------------------------------------------------------------- requests
