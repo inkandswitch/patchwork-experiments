@@ -1,5 +1,5 @@
 // Finding a doc that may not have reached the sync server yet. A run's
-// layer docs are made by the daemon moments before it writes their links,
+// layer docs are made by its code moments before it writes their links,
 // and a peer that follows a link at once can be told the doc is
 // "unavailable" (repo.find rejects rather than waits). So: ask again, a few
 // times, before believing it.

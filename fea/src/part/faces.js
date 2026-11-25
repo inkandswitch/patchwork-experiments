@@ -3,7 +3,7 @@
 //
 // Pure functions over typed arrays, in the part's own frame (the scene's: Y
 // up, metres). The study tool runs them in the page when a part is read; the
-// daemon runs them again on the frozen part, so a face id means the same
+// runner runs them again on the frozen part, so a face id means the same
 // triangles on both sides.
 //
 // A FACE is a maximal patch a person would call one surface:

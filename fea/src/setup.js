@@ -16,7 +16,7 @@
 // (src/part/kept.js). Directions are in the part's own frame, the scene's: y
 // is up.
 //
-// Both the tool and the daemon read a setup through normalizeSetup, which
+// Both the tool and the run's code read a setup through normalizeSetup, which
 // fills what is missing and drops what it can't read; setupProblems lists
 // what that changed, and readiness says what still stands between a setup
 // and a run.

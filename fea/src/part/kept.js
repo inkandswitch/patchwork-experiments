@@ -6,7 +6,7 @@
 // as data: the welded surface as a binary STL (Float32) and, for each of its
 // triangles in order, the number of its face. A study opens from this alone
 // (nothing rebuilt, nothing re-split), a run freezes a copy of it, and the
-// daemon meshes exactly these triangles with exactly these face numbers. A
+// run meshes exactly these triangles with exactly these face numbers. A
 // newer version of the splitting rule changes nothing that was already kept.
 //
 // When the model changes and is read again, the faces are split afresh and

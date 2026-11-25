@@ -1,4 +1,4 @@
-// What goes into gmsh and what comes out, as text. Pure: the daemon writes
+// What goes into gmsh and what comes out, as text. Pure: the runner writes
 // these files, runs gmsh, and reads its answer back with parseMsh.
 //
 // The part's surface goes in as a mesh whose triangles carry their face's

@@ -10,7 +10,7 @@
 // │  comes though the doc did.
 // │  Hence: no doc holds more than SEGMENT_BYTES of bytes, readers fetch a
 // │  couple of segments at a time and check a digest, and a writer that can
-// │  wait (the daemon) confirms each segment reached the server: by its
+// │  wait (a run's code) confirms each segment reached the server: by its
 // │  acknowledgement, or failing that by a fresh peer fetching it.
 // │  If it is December 2026 or later, check whether openfoam still needs
 // │  it, and retire both together.

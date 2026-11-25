@@ -3,8 +3,8 @@
 Finite element analysis for parts in Patchwork, with
 [CalculiX](https://www.calculix.de) as the solver and [gmsh](https://gmsh.info)
 as the mesher. Link a part from any tool that makes geometry, say how it is
-held and what pushes on it by pointing at its faces, send it to a daemon
-running anywhere, and see where it is stressed and how it moves: on the part
+held and what pushes on it by pointing at its faces, send it to any machine
+with gmsh and CalculiX, and see where it is stressed and how it moves: on the part
 in the study, or in a scene.
 
 ```
@@ -19,9 +19,10 @@ pnpm install && pnpm build && pnpm test
      `~/.patchwork-fea/calculix` (a few minutes; it needs `brew install gcc`
      for gfortran, and cmake).
    - Debian or Ubuntu: `apt install gmsh calculix-ccx`.
-2. **The daemon**, on that machine: `daemon/start.sh` (from anywhere; it
-   finds node 22+ on PATH or in nvm, and installs its dependencies the first
-   time). It prints an **inbox** link.
+2. **The host**, on that machine: `daemon/start.sh --new-queue "FEA on my
+   Mac"`, with `TASKS_HOST` naming the tasks package's Node host and
+   `FEA_PACKAGE` this package's automerge url (below, *Where it runs*). It
+   prints a **queue** link; start it again with `--queue <that link>`.
 3. **A study.** New document → "FEA study". On the left its panel, on the
    right the part.
    - **Part**: drop a model on it or paste its link. It is measured and split
@@ -29,7 +30,7 @@ pnpm install && pnpm build && pnpm test
    - **Material**: one from the list, or your own numbers.
    - **Supports** and **Loads**: click a face on the part, then *Fix it* or
      *Push on it*; or add one and click the faces it is on.
-   - **Server**: paste the inbox link (the browser remembers the last one).
+   - **Server**: paste the queue link (the browser remembers the last one).
    - **Run**. The study turns to **Results**: the run's stages as they go,
      then its figures, and the part drawn moved and coloured by stress.
 4. **In a scene.** Right-click any object while editing → *Analyse (FEA)*: a
@@ -42,11 +43,9 @@ pnpm install && pnpm build && pnpm test
 |---|---|---|
 | `patchwork:datatype` | `fea-study` | "FEA study": a part link, a setup, a server, the runs it has made |
 | `patchwork:tool` | `fea-study` | the panel (setup, results) beside the part in 3D |
-| `patchwork:datatype` | `fea-run` (unlisted) | one analysis, frozen when asked for; the daemon writes its progress and results |
+| `patchwork:datatype` | `fea-run` (unlisted) | one analysis, frozen when asked for; the run's code writes its progress and results |
 | `patchwork:tool` | `fea-run` | how it went, what it found, what was asked |
 | `patchwork:datatype` | `fea-part` (unlisted) | the part as a study keeps it: its surface and its faces |
-| `patchwork:datatype` | `fea-server` (unlisted) | a daemon's inbox and status |
-| `patchwork:tool` | `fea-server` | is it up, what runs, what waits, what it did |
 | `scene:source` | `fea-results` | a study (or a run) as a GLB: the part moved and coloured, its supports and loads marked |
 | `scene:view` | `fea-scene-edit` | *Analyse (FEA)* on an object, and a study's *Open*: its panel over the scene, the part in place |
 | `agent:tool` | `fea_study`, `fea_setup`, `fea_run`, `fea_results`, `fea_stop` | the same study for an agent (below, *For agents*) |
@@ -82,7 +81,7 @@ them the same. A round face knows its radius.
 7", so what face 7 is must not move under it. The split is made once, when
 the part is linked or read again, and kept as data in a `fea-part` doc: the
 welded surface (binary STL, Float32) and each triangle's face. A study opens
-from that alone; a run freezes a copy; the daemon meshes exactly those
+from that alone; a run freezes a copy; the run meshes exactly those
 triangles under exactly those numbers. A later version of the rule changes
 nothing already kept.
 
@@ -114,7 +113,7 @@ value, so the quantity stays what it was.
 - **Analysis**: *static* (stress and deflection under the loads) or *modal*
   (the ways it rings, and their frequencies).
 
-Both the tool and the daemon read a setup through `normalizeSetup`;
+Both the tool and the run's code read a setup through `normalizeSetup`;
 `readiness` says what stands between a setup and a run, each a sentence
 saying what to do.
 
@@ -133,7 +132,7 @@ saying what to do.
    skin is matched back to the faces by position; the run says which
    happened. gmsh's surface mesher gives a slightly different mesh each time
    it runs (measured: node counts within 2%, the stress at a hole within 5%
-   on a medium mesh), so the daemon keeps every mesh it makes, under a
+   on a medium mesh), so each machine keeps every mesh it makes, under a
    digest of the surface, the script and gmsh's version, and a run of the
    same part at the same size takes the kept one: two load cases on one part
    are compared on one mesh, and a study run twice gives the same figures.
@@ -204,54 +203,74 @@ SPOOLES' multithreaded solver, as Homebrew's formula and CalculiX's own
 static job with the solver on 8 threads. Displacements were off by up to
 98%, with no error. With the solver on one thread and the rest of ccx on 8:
 0 of 30. So `daemon/install-calculix.sh` builds the serial solver only, the
-daemon sets `CCX_NPROC_EQUATION_SOLVER=1` whatever ccx it is given, and the
+runner sets `CCX_NPROC_EQUATION_SOLVER=1` whatever ccx it is given, and the
 energy check above stands behind both. Assembling the matrix and working out
 the stresses still use every core. Run the probe on a new machine before
 trusting more.
 
-## The daemon
+## Where it runs
 
-`daemon/fead.mjs` is an automerge peer, not a web service (the shape is
-openfoam's `foamd`). It syncs with the same server Patchwork does and owns
-one `fea-server` document, its inbox. Nothing listens on a port, so moving
-it to a big machine is a matter of running it there and pasting the new
-inbox link.
+A run is a task asked of a task queue (the tasks package's system): the
+study's **Server** field holds the queue's link, and a tasks host on a
+machine with gmsh and CalculiX serves it, running `daemon/run-task.mjs` from
+this package's directory for each run. Nothing listens on a port: the host
+is an automerge peer on the same sync server Patchwork uses, so moving the
+work to a bigger machine is a matter of starting the host there and pasting
+its queue link.
 
 ```
-daemon/start.sh [--sync wss://…] [--state ~/.patchwork-fea] [--cores N] [--jobs N] [--max-nodes N]
-                [--gmsh /path/to/gmsh] [--ccx /path/to/ccx] [--title "…"] [--new-server]
+TASKS_HOST=…/tasks/dist-node/host.mjs FEA_PACKAGE=automerge:<this package> \
+  daemon/start.sh --new-queue "FEA on …" | --queue automerge:…
+                  [--jobs N] [--cores N] [--max-nodes N] [--name "…"]
+                  [--gmsh …] [--ccx …] [--state ~/.patchwork-fea] [--sync wss://…]
 ```
 
-- **State** (`--state`): `config.json` (the inbox and the daemon's id, so a
-  restart keeps its inbox), `automerge/` (a local copy of its docs) and
+- **One host to a queue.** Each machine keeps its own meshes, so runs of one
+  part at one size share a mesh only when one machine runs them all.
+- **State** (`--state`): `host/` (the host's documents and its pool's id),
   `runs/<id>/`: each run's surface, mesh, solver input (`job.inp`) and
   CalculiX's own results (`job.frd`, which cgx and PrePoMax open), and
   `meshes/`, the meshes kept for reuse. About 10–30 MB a run; nothing
   clears either.
+- **gmsh and CalculiX** are looked for at the start of every run
+  (`daemon/tools.mjs` says where); a run on a machine without them fails at
+  once, saying which is missing.
 - **Largest mesh**: `--max-nodes` (250,000). CalculiX's direct solver holds
   the whole factorised matrix in memory. A run that would be far over is
   refused before meshing, with the size it would have been.
-- **Runs at once**: `--jobs` (1), oldest request first. A run interrupted by
-  a restart is marked failed, never run again behind your back.
-- **Cancel** kills whichever program is running.
+- **Runs at once**: `--jobs` (1), oldest first.
+- **Run is refused** while nobody is heard serving the study's queue (each
+  host says so on the queue every two seconds; the study shows who).
+- **Cancel** records a stop in the run's task: a run that waits never
+  starts; a running one has its program and every process under it killed
+  at once, and its run doc says cancelled.
+- **The host stopping** (SIGTERM, a restart) kills the program likewise; the
+  run doc says the machine stopped. The task is taken up again when the
+  host comes back, and its code then fails it without solving: a run is
+  never solved twice without anyone asking.
 - It holds off idle sleep on macOS while a run is active, and only then.
 
 ### The protocol
 
-`src/protocol.js`, shared by the tool and the daemon. Who writes what never
-overlaps:
+`src/protocol.js`, shared by the tool and the run's code. Who writes what
+never overlaps:
 
-| doc | people write | the daemon writes |
+| doc | people write | the run's code writes |
 |---|---|---|
 | study | everything | nothing |
 | part | whole, once, when it is read | nothing |
-| run | `control.cancel` | status, stages, mesh, summary, layers, recipe, notes, error |
-| server | `requests[id]` | `daemon` (heartbeat every 20 s), `handled[id]`, `active` |
+| run | `task` (once, when it is asked for) | status, stages, mesh, summary, layers, recipe, notes, error |
+
+What becomes of a run's task (waiting, running, stopped, failed before its
+code wrote anything) is read from the task, and the status a person sees is
+`shownRun(run doc, task)`; nobody writes the run doc to say it.
+`src/run-tasks.js` asks, cancels and reads the queue through `task-client.js`
+and `task-rules.js`, verbatim copies of the tasks package's kit.
 
 A run doc is made when you press Run, with the setup and the kept part
 frozen into it, so every run records exactly what was analysed. It also
 keeps the tool that asked, where and with what it ran (host, CalculiX and
-gmsh versions, the daemon's git commit), and its recipe: the gmsh script and
+gmsh versions, this package's git commit), and its recipe: the gmsh script and
 the solver's input with its long lists cut short, plus a digest of the whole.
 
 ## In a scene
@@ -300,10 +319,12 @@ names the agent session.
 
 **Waiting.** A run's state is the small top-level field `status` of its
 document: `queued` → `meshing` → `solving` → `post` → `done`, or `failed`, or
-`cancelled`; only the daemon writes it. `fea_run` returns the run and the
+`cancelled`; only the machine running it writes it. A run cancelled before
+it started, or whose machine never finished it, can stay `queued` there;
+`fea_results` says what became of it. `fea_run` returns the run and the
 exact watch, e.g. `doc_watch { url: "automerge:…", path: ["status"], match: "done|failed|cancelled" }`,
 then `fea_results { runs: [...] }`. It says about how many nodes the mesh will
-be; a run is refused, not queued, while the server's daemon isn't running.
+be; a run is refused, not queued, while nobody is heard serving the queue.
 
 `fea_study` is `where: "host"` (linking a part can take the page's geometry
 readers); the other four need only documents (`where: "worker"`).
@@ -316,8 +337,11 @@ how faces carry over; gmsh's input and output; the mesh (its skin closed,
 outward and on the right faces, for four- and ten-node tetrahedra); the
 loads (totals exact, nothing on a ten-node triangle's corners); the solver's
 input; CalculiX's output, from real files; the figures and their notes; the
-setup; the protocol; the drawing and the scene's GLB; the agent's tools over
-a fake repo.
+setup; the protocol, with the status a person sees for every run status
+against every task state; the run's task code (the guard, each stop reason,
+a late run doc, missing tools) and the runner told to stop, with its
+processes gone; asking and cancelling through the kit; the drawing and the
+scene's GLB; the agent's tools over a fake repo.
 
 Probes (need gmsh and CalculiX, or Chrome):
 
@@ -326,9 +350,12 @@ Probes (need gmsh and CalculiX, or Chrome):
 - `node probes/threads.mjs`: is this ccx right on several threads.
 - `node probes/local-run.mjs [--shape plate|beam|block|cylinder] [--analysis modal] [--dump run.json]`:
   one run through the real runner on an in-memory repo.
-- `node probes/net-run.mjs --inbox automerge:…`: a study made, set up and
-  run by the tool's own functions from a separate peer, through a real
-  `fead` and the real sync server; `--cancel-after-ms` cancels it mid-run.
+- `TASKS_HOST=… node probes/net-run.mjs`: a tasks host started on a new
+  queue by `daemon/start.sh`, and studies run by the tool's own functions
+  from a separate peer through the real sync server: one end to end, a
+  cancel mid-solve that leaves no process, a run that fails once, the host
+  stopped mid-solve and restarted without a second solve, and who is heard
+  serving the queue.
 - `pnpm build && node probes/ui-run.mjs --done run.json --modal modal.json`:
   the built tool in headless Chrome on a fake repo: link a part, click
   faces on it, run, a run mid-solve, results on the part, a modal run's
@@ -362,7 +389,7 @@ Probes (need gmsh and CalculiX, or Chrome):
   threaded solvers are the supported ones.
 - **In the browser.** CalculiX is Fortran; nobody has published a
   WebAssembly build of it. A small part could be solved in the page with no
-  daemon at all.
+  machine of its own at all.
 - **Comparing runs** side by side, and sweeping a load or a dimension.
 - **Results over the part itself in a scene.** A study stands beside its
   part; drawn in the part's place it would need the part hidden for
