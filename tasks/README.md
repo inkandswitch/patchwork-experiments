@@ -1,0 +1,153 @@
+# tasks
+
+Work done for you by another machine, or by your own browser in the background, kept in
+Automerge documents. There are three things:
+
+- A **task** is a document: where its code is (`importUrl`, anything `import()` takes: a package
+  file, a `data:` URL), its `input`, the `key` it was asked under, and `runs`, the list of what has
+  happened to it.
+- A **queue** is a document listing the tasks asked of it that have not ended, each under its key.
+  Whoever can write a queue can ask it for work and stop that work; whoever serves it runs that
+  work. Ask only queues whose servers you trust with the input.
+- A **pool** is the one set of workers a machine has: the tab of a browser profile that holds a
+  Web Lock, or a Node process. It serves the queues it is told to.
+
+Only records are written: an asker lists a task under a key, or appends a stop to its `runs`; a
+pool takes a task by appending a run, and later completes that run with how it went. Everything
+else (who holds a task, whether it has ended, how) is read from that list and from what is heard
+on the task's channel, where a pool says every two seconds that each of its runs is going on.
+The promise: **at least once** (a pool that falls silent for ten seconds has its task taken
+again), **a throw is final** (the task fails, once, and is not run again for it), and **a stop is
+hard** (five seconds after code is told to stop, its worker is ended whatever it is doing).
+
+## Asking for work
+
+Everything an asker needs is in `src/task-client.js`, with the rules it applies in
+`src/task-rules.js`. Each takes a Repo that can reach the queue: in a page the site's Repo, in
+Node one of your own (`dist-node/task-client.mjs` is the same file built for Node).
+
+- `run(repo, queueUrl, { importUrl, input, key })` asks and waits: it resolves to the result, and
+  rejects with the error when the task fails or is cancelled. An optional fourth argument hears
+  every change on the way.
+- `ask(repo, queueUrl, ask)` lists a task and returns `{ key, taskUrl }` without waiting. Asking
+  under a key whose task has not ended is asking once; a key whose task has ended is asked afresh.
+- `watch(repo, queueUrl, key, onChange)` follows the key and calls `onChange` with its state
+  (`waiting`, `running`, `stalled`, `stopping`, `succeeded`, `failed`, `cancelled`), progress,
+  log lines, result and error. It returns how to stop watching.
+- `cancel(repo, queueUrl, key)` stops the task under the key.
+- `served(repo, queueUrl, onChange)` hears which pools serve the queue now; an empty list means
+  what is asked of it waits.
+- `ownQueue(repo, element)` gives a page the url of its person's own queue, served by their
+  browsers for any code, making it the first time (see below).
+
+```js
+import { run, inSamePackage } from './task-client.js';
+
+const sum = await run(repo, queueUrl, {
+  importUrl: inSamePackage(import.meta.url, 'dist/sum-task.js'),
+  input: { numbers: [1, 2, 3] },
+  key: `sum:${docUrl}`,
+});
+```
+
+```js
+const stop = watch(repo, queueUrl, key, (view) => {
+  show(view.state, view.progress, view.logs.at(-1)?.message);
+});
+```
+
+A secret a task needs (an API key) goes in its input. Everyone who can read the queue can read it,
+for good, so ask such work only of queues whose audience may have it.
+
+## Writing a task
+
+A task's code is a module whose default export is `async (input, ctx) => result` (`ctx` is also
+`this`). The result is anything JSON can carry, up to 1 MB; more belongs in a document whose url
+the task returns. `ctx` holds:
+
+- `log(...)`: a line for the run's log, heard at once by watchers; the last 200 are kept.
+- `progress(value)`: how far along it is, heard by watchers, not kept.
+- `signal`: aborted when the run must stop, with `signal.reason` `'cancelled'` (someone stopped
+  the task), `'yielded'` (another run has the task, or has ended it) or `'stopping'` (the
+  machine's pool is shutting down, and the task will be taken again). Code holding something
+  outside its worker (a child process, a file lock) lets go of it here.
+- `repo`: the worker's own Repo, which already has the task's document.
+- `taskUrl`, `key`, and `run`, this run's id.
+
+What must not happen twice guards itself. A run's id is in the task's `runs` before its code is
+called, after every earlier run, so code can look there (and write its run's id beside its
+effects) to know whether it is the second to try. `earlier(task, runId)` in `task-runs.js` reads
+this for a long run kept in a document of its own. `src/tasks/wait.ts` is a small task to copy.
+
+## Serving a queue
+
+**In a browser.** Install the package through module settings (`pnpm build`, then `pnpm push` and
+`pnpm register`). Its titlebar tool, or the same thing as a system-tray component, starts the
+page's pool host; the one tab of the profile that holds the Web Lock `patchwork-tasks-pool` runs
+the pool, in a worker that runs tasks in run workers it can end, and the others wait to take over.
+Which queues it serves is kept in the account's tool storage for this package
+(`account.toolStorage['tasks-next']`, a document Patchwork's frame makes the first time it is
+needed). To serve a queue, open it in the Task Queue Browser and press Join queue; there you also
+choose whose code it runs (any, or named packages) and Leave. With no queue, the titlebar offers
+Make my queue.
+
+**On a machine.** `pnpm build:node`, then `node dist-node/host.mjs` with:
+
+- `--queue automerge:…` a queue to serve; repeat for more.
+- `--accept automerge:<package>` run code in that package, at any version; repeat for more.
+- `--accept-any` run whatever a queue's tasks bring, `data:` URLs included.
+- `--new-queue "title"` make a queue, print its url, and serve it.
+- `--local automerge:<package>=<dir>` run that package's code from this directory instead of
+  fetching it from automerge, whichever version a task names; it also accepts the package. For a
+  machine with the package checked out and installed beside the programs its code drives (a
+  solver).
+- `--workers 1` how many tasks run at once, each in a worker thread.
+- `--max-heap-mb 4096` the most each thread's heap may grow to; a task that needs more loses its
+  run, not the host.
+- `--data-dir ~/.patchwork-tasks` where everything is kept: the pool's documents (`pool/`),
+  each thread's (`slots/<n>/`), fetched code (`code/`), the pool's id (`pool-id`) and the pid
+  (`host.pid`). The id is what lets a restarted host record the runs it lost; one host to a
+  directory.
+- `--code-dir <dir>` where fetched code goes, if not under the data directory.
+- `--name <name>` what views call this pool (the machine's hostname).
+- `--sync wss://…` the sync server (`PATCHWORK_SYNC`, or Ink & Switch's).
+- `--verbose` say more.
+
+A host needs at least one `--queue` or `--new-queue`, and says whose code it runs: `--accept` or
+`--local` packages, or else `--accept-any`, never both. SIGINT or SIGTERM stops it: its runs are
+told `stopping`, their threads ended at most five seconds later, and each run recorded lost, to be
+taken again.
+
+## Using it from another package
+
+A package never imports this one. It carries copies of the kit files in its own `src/`:
+`task-rules.js` and `task-client.js` to ask for work, and `task-runs.js` too for a long run kept in
+a document of its own (openfoam and fea do). Each says `[kit: <name> v<N>]` in its header. The
+canonical copies are here; `node scripts/check-kit.mjs` at the repository root fails when a copy
+differs, and `--fix` copies the canonical ones over. Change a canonical file, bump its version,
+and commit the copies with it.
+
+## The rules, and what is not here
+
+The header of `src/task-rules.js` is the contract: what is written, what is read, when a pool
+takes, stops or gives way, and what ends a task. Its functions are the only place those rules are
+written down. What is deliberately not here yet (holding back for a preferred pool, what a task
+needs of a machine, confining code, a worker per run, queues one only asks of) is in `PLANS.md`,
+each with what it waits on.
+
+## Tests and probes
+
+`pnpm test` runs the unit tests (rules, client, pool, workers, views). The probes run real
+processes and say what they saw, one line per check:
+
+- `probes/node-run.mjs` (after `pnpm build:node`): Node hosts through the real sync server.
+  Latency; logs and progress heard; a throw fails once; cancel ends the thread in time and kills
+  a child process; SIGTERM and kill -9 lose the run and a restart takes it again; two hosts fail
+  over and share four tasks with one final run each; `served()`; a second host on one data
+  directory refuses; code a host does not accept is never taken.
+- `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
+  stand-in page in a throwaway Chrome profile. One pool per profile across tabs; a closed,
+  navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning code;
+  tasks writing through `ctx.repo`; a pool worker that errors or dies; Make my queue and Join.
+- `probes/real-run.mjs`: the same in the real Patchwork, from a published copy of the package.
+- `probes/solve-task.mjs`: a task that runs a child process, used by `node-run.mjs`.
