@@ -324,6 +324,29 @@ and shuffling its face-down decks at the start, off unless chosen. A setup
 done in plain Lua is left for later. Import a publisher's module only where they've shared it: the copies
 live in synced documents.
 
+### How an import runs (`src/tts/import-task.js`)
+
+Dropping is the page's part: the save and the dropped files it uses (only
+those, found by TTS's cache naming) are kept at once as `file` docs
+(`src/tts/dropped.js`), and the import doc's `request` names them with the
+settings (`src/tts/request.js`; its id is the SHA-256 of both). The import is
+a task: `src/tts/import-task.js`, whose input is the import doc and that
+request, asked with the task kit's `doWork` (`src/kit/task-client.js`,
+`task-rules.js`) under a key made from the same request. On the person's own
+queue, when one of their machines serves it, it finishes after the page
+closes and two pages asking are one import; otherwise it runs in the page
+and ends with it. It writes the outcome (`imported`: the game and the
+report, or why it failed) in one change, only while the doc still asks for
+that request; a second run of it finds the first one's game and returns it.
+Nothing writes that an import is under way: what a person sees is read from
+the doc and from the work, followed by its key (`src/tts/status.js`), and an
+asked import with neither an outcome nor work going on shows as interrupted,
+with the drop zone and **Import again** (the kept files, with the settings
+as they are now). The build puts the task at `dist/import-task.js`. On a
+machine without a canvas (a Node host) an image over the size limit is not
+made smaller and so is not kept: whatever uses it is drawn without it, and
+the report says so.
+
 ## Layout
 
 | path | what |
@@ -335,6 +358,7 @@ live in synced documents.
 | `src/dice/`, `src/bag/`, `src/keep/`, `src/tts/` | dice, cups and lots; bags; keepers; the importer |
 | `src/library/` | the game library and its launcher |
 | `src/kit/glb.js` | the scene's kit GLB encoder (a copy: `scripts/check-kit.mjs`), for dice and bags |
+| `src/kit/task-rules.js`, `task-client.js` | the task system's kit (copies: `scripts/check-kit.mjs`), for the TTS import |
 | `src/empty-scene.js`, `scene-package.js` | a fresh scene doc (a copy of the scene's init); a doc's suggested import |
 | `src/test/` | the stage stand-in (`fakes.js`), the telling copy, stand-ins for seats, fake repos, a PNG codec |
 | `GAME-FORMAT.md`, `contract/v2/` | the format: spec, schema, validator, the recipe (`recipe.js`), fixtures |
@@ -369,6 +393,13 @@ that table lays out with the browser's own image backend, one decode at a
 time against several. `publish-table.mjs`, `publish-office.mjs` and
 `publish-liars.mjs` publish examples to a sync server (`--dry-run` to only
 check). `chrome-guard.mjs` makes sure Chrome never outlives its driver.
+`tts-import-run.mjs` (Node, after `pnpm build` here and `pnpm build:node` in
+`../tasks`) runs the built import task on a tasks host serving a new queue,
+through the sync server, with nothing fetched from the internet: the fixture
+mod imports to the game the importer's tests expect; asked again once ended,
+the same game and no second; asked again while it runs, the same task; a
+cancel mid-import leaves no game; a host stopped mid-import and started again
+finishes it once (runs lost, then succeeded).
 
 ## Not yet
 
