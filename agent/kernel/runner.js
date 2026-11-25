@@ -120,6 +120,33 @@ export function needsWork(doc, canRun = () => true, live = null) {
   return last.role === "user" || last.role === "tool"
 }
 
+/**
+ * Should this runner take the session now? From the document and what the
+ * runner knows of itself, and nothing else. The first that holds:
+ *
+ *   {}                    nothing for it: it is retiring, there is no work it
+ *                         can do, or it has no key to call the model with
+ *   { wait: true }        it is backing off for the network, and keeps its
+ *                         place meanwhile
+ *   { outdated }          something here is another version's: blocks this
+ *                         one cannot read (`unknown`), or the whole session's
+ *                         shape (`schemaVersion`) — a newer agent's, or one a
+ *                         migration has not reached. Left to a runner that can
+ *                         read it, rather than sent to the model without it
+ *   {}                    another runner holds it, and is live
+ *   { take: true, ours }  take it; `ours` when the lease is already this
+ *                         runner's, so there is no claim to wait out
+ */
+export function turnFor(doc, { runnerUrl, canRun, live = null, hasKey = true, retired = false, backingOff = false }) {
+  if (retired || !needsWork(doc, canRun, live) || !hasKey) return {}
+  if (backingOff) return { wait: true }
+  const unknown = unknownBlocks(doc)
+  if (unknown.length) return { outdated: { unknown } }
+  if (doc.schemaVersion != null && doc.schemaVersion !== SCHEMA_VERSION) return { outdated: { schemaVersion: doc.schemaVersion } }
+  if (!canClaim(doc, runnerUrl, live ? { live } : {})) return {}
+  return { take: true, ours: doc.lease?.runner === runnerUrl }
+}
+
 export class SessionRunner {
   constructor(opts) {
     this.store = opts.store
@@ -304,42 +331,30 @@ export class SessionRunner {
     const doc = this.store.doc()
     // Sampled on every tick, work or none, so the watch sees each heartbeat.
     this.live(doc?.lease)
-    if (this.retired || !needsWork(doc, this.canRun, this.live) || !this.hasKey()) {
-      this.wantedSince = null
-      return
-    }
+    const turn = turnFor(doc, {
+      runnerUrl: this.runnerUrl,
+      canRun: this.canRun,
+      live: this.live,
+      hasKey: this.hasKey(),
+      retired: this.retired,
+      backingOff: this.resumeAt > this.now(),
+    })
     // Waiting out a backoff for the network: its timer, or the network coming
     // back, ticks again. Every other tick meanwhile — the poll, a change —
     // would only be another request into no network.
-    if (this.resumeAt > this.now()) return
-    // Something in the session this version cannot read: a newer version of
-    // the agent wrote it. Leave it to a runner that can, rather than send the
-    // model the session without it.
-    const unknown = unknownBlocks(doc)
-    if (unknown.length) {
+    if (turn.wait) return
+    if (!turn.take) {
+      // Not ours to take now. The poll in start() looks again; a holder's
+      // heartbeat going quiet, or someone speaking, brings us back.
       this.wantedSince = null
-      this.onEvent({ type: "outdated", unknown })
-      return
-    }
-    // Or the whole session is in another version's shape: a newer agent's, or
-    // one from before a migration that has not reached it.
-    if (doc.schemaVersion != null && doc.schemaVersion !== SCHEMA_VERSION) {
-      this.wantedSince = null
-      this.onEvent({ type: "outdated", schemaVersion: doc.schemaVersion })
-      return
-    }
-
-    if (!canClaim(doc, this.runnerUrl, { live: this.live })) {
-      // Someone else is on it. The poll in start() looks again, and their
-      // heartbeat going quiet brings us back.
-      this.wantedSince = null
+      if (turn.outdated) this.onEvent({ type: "outdated", ...turn.outdated })
       return
     }
 
     // Already ours: carry on. Otherwise a runner busy elsewhere gives an idler
     // one the first chance — that is how a workflow's steps spread over the
     // browsers that have it open.
-    const wasOurs = doc.lease?.runner === this.runnerUrl
+    const wasOurs = turn.ours
     if (!wasOurs) {
       const defer = this.deferMs()
       if (defer > 0) {
