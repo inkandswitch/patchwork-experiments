@@ -138,9 +138,9 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
     ...AGENT,
     store,
     runnerUrl: `worker-${Math.random().toString(36).slice(2, 10)}`,
-    // The account's documents come from the tab: a worker has no
-    // accountDocHandle. Without them discovery, notes and the sensitive-document
-    // check had nothing to go on here.
+    // What of the account a context carries comes from the tab (runners/tab.js
+    // accountContext): a worker has no account of its own, and discovery,
+    // notes and the sensitive-document check go by it.
     ctx: {
       repo,
       subject,
@@ -148,8 +148,6 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
       splice: automerge?.splice ?? null,
       events: createEvents(store),
       rootFolderUrl: account?.rootFolderUrl ?? null,
-      contactUrl: account?.contactUrl ?? null,
-      moduleSettingsUrl: account?.moduleSettingsUrl ?? null,
       sensitiveDocs: (account?.sensitiveDocs ?? []).filter(Boolean),
       // Which package a plugin came from, for usage guides (knowledge/guides.js),
       // from the index the page sends with its plugins.

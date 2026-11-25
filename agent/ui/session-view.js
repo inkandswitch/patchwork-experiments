@@ -456,7 +456,7 @@ export function AgentTool(handle, element, options = {}) {
         subject: subjectUrl(),
         key: readKey(handle.doc()?.config?.providerId ?? "openrouter"),
         providerId: handle.doc()?.config?.providerId ?? "openrouter",
-        account: (({ accountDocHandle, ...plain }) => plain)(accountContext()),
+        account: accountContext(),
         onEvent: () => render(),
       })
     } catch {

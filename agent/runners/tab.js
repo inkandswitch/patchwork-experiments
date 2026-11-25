@@ -35,15 +35,16 @@ export function tabFetch({ relay = () => readRelay() } = {}) {
   return guardedFetch({ fetch: relayFetch({ fetch: (url, init) => fetch(url, init), relay }), deny: [location.origin, ...SYNC_SERVERS] })
 }
 
-/** The account's documents, as every runner's context carries them. */
+/**
+ * What of the account a runner's context carries: where its documents are
+ * filed, and which of them always need an explicit yes, whatever touches
+ * them. Plain data, so a tab can hand it to the shared worker; the account's
+ * own handle is not in it, and no tool is given one.
+ */
 export function accountContext(account = globalThis.accountDocHandle) {
   const doc = account?.doc?.() ?? null
   return {
-    accountDocHandle: account ?? null,
     rootFolderUrl: doc?.rootFolderUrl ?? null,
-    contactUrl: doc?.contactUrl ?? null,
-    moduleSettingsUrl: doc?.moduleSettingsUrl ?? null,
-    // Documents that always require an explicit yes, whatever touches them.
     sensitiveDocs: [doc?.moduleSettingsUrl, account?.url].filter(Boolean),
   }
 }
