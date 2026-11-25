@@ -1850,6 +1850,9 @@ export const PatchworkFrame = ({
   // Overlays float above the panels (the ambient agent, say): mounted once,
   // in a layer that lets pointer events through to the tiles beneath.
   const overlays = useTaggedComponents("overlay");
+  // Background components show nothing and are mounted once, inside the
+  // providers, for as long as the frame lives (the task pool, say).
+  const background = useTaggedComponents("background");
   // Which overlays say they're open (`patchwork:overlay-state`), so their
   // top-bar buttons show pressed. Toggling is the overlay's business: the
   // button sends `patchwork:toggle-overlay` to the overlay's view.
@@ -2980,6 +2983,13 @@ export const PatchworkFrame = ({
       draftScope={selectedDraftScope}
     >
       <div className="tile-app" data-patchwork-frame="tiling">
+        {background.map((component) => (
+          <patchwork-view
+            key={component.id}
+            component={component.id}
+            style={{ display: "contents" }}
+          />
+        ))}
         <TopBar
           repo={repo}
           accountDocUrl={accountDocUrl}

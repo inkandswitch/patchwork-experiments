@@ -20,6 +20,10 @@ and resize freely.
   `patchwork:component` tagged `"system-tray"`, rendered as bare components (no
   document). There's nothing to configure — a component just declares the tag
   and shows up here, in threepane's tray too.
+- **Background** components are registry-driven the same way: every
+  `patchwork:component` tagged `"background"` is mounted once, inside the
+  frame's providers, with no chrome and nothing shown, for as long as the
+  frame lives (the task pool is one). Threepane mounts them too.
 - On open, the account's **root folder** is shown as a narrow **navigator**
   beside a (wide) **empty content frame**, so the folder never spans the full
   width and there's always a slot ready for the first document.
