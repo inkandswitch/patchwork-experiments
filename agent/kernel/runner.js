@@ -18,7 +18,7 @@
  * handed explicit capabilities instead, and nothing else handed them.
  */
 
-import { SCHEMA_VERSION, unknownBlocks } from "../session/schema.js"
+import { versionStanding, unknownBlocks } from "../session/schema.js"
 import { STOP, stopOf } from "../session/status.js"
 import { canClaim, claimLease, holdsLease, leaseIsLive, LeaseWatch } from "../session/lease.js"
 import { lastTurn, makeTurn, noticeBlock } from "../session/blocks.js"
@@ -142,7 +142,7 @@ export function turnFor(doc, { runnerUrl, canRun, live = null, hasKey = true, re
   if (backingOff) return { wait: true }
   const unknown = unknownBlocks(doc)
   if (unknown.length) return { outdated: { unknown } }
-  if (doc.schemaVersion != null && doc.schemaVersion !== SCHEMA_VERSION) return { outdated: { schemaVersion: doc.schemaVersion } }
+  if (versionStanding(doc) !== "current") return { outdated: { schemaVersion: doc.schemaVersion ?? 1 } }
   if (!canClaim(doc, runnerUrl, live ? { live } : {})) return {}
   return { take: true, ours: doc.lease?.runner === runnerUrl }
 }

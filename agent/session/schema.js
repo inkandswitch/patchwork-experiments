@@ -21,6 +21,19 @@
  */
 export const SCHEMA_VERSION = 2
 
+/**
+ * Where a session stands against this code: "current"; written by an
+ * "earlier" version of the agent (one with no version is from before they
+ * were stamped); or by a "newer" one. Only a current session is run. The
+ * others are left as they are, and said to be so (ui/session-value.js); the
+ * places that keep one session for a person start another in place of an
+ * earlier one (ui/panel.js, ui/ambient.js).
+ */
+export function versionStanding(doc) {
+  const version = doc?.schemaVersion ?? 1
+  return version === SCHEMA_VERSION ? "current" : version < SCHEMA_VERSION ? "earlier" : "newer"
+}
+
 /** What a session is doing, as status.js reads it off the document. `parked` means a call needs a browser tab and none is open. */
 export const STATUS = {
   idle: "idle",

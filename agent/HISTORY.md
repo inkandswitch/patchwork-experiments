@@ -1646,3 +1646,16 @@ menu had been written by a second initialiser that left out the version, and
 read as one from an earlier agent once every writer checked; it is made the
 way `workflow_start` makes one.
 
+The one-off migration, run against a real account, could not be relied on to
+reach every session. Sessions are kept in three places — filed in folders,
+on the document they are about, and in the floating box's list — and the
+script had walked only the first. Walking every document to find the second
+meant loading an account's largest files, whose requests timed out and took
+the connection with them, after which everything read as missing. The script
+came to look at sessions and plans first, let each document go once read,
+replace a connection that stops answering, try again what it missed, and
+read back what it changed. And since some sessions will still not be
+reached, one from another version says so in its view, and the sidebar and
+the floating box start a new session rather than keep one that will never
+run.
+

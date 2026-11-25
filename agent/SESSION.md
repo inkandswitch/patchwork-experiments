@@ -11,7 +11,7 @@ Automerge cannot hold `undefined`, so an optional field is present or `null`.
 
 | field | |
 |---|---|
-| `schemaVersion` | the shape the document is in (`session/schema.js`). A runner leaves a session of another version alone |
+| `schemaVersion` | the shape the document is in (`session/schema.js` `versionStanding`). A runner leaves a session of another version alone and its view says why; the sidebar and the floating box, which each keep one session, start a new one in place of one from an earlier version |
 | `title` | `string \| null`. Null until named: a view shows a title derived from the first message |
 | `subject` | the document the session is about, or null |
 | `config` | `{ providerId, model, params, workflows: { enabled }, budget?, skillsFolderUrl? }`. `budget` is dollars; most sessions have none, a workflow step always does |

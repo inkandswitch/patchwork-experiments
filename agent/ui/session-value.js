@@ -22,7 +22,7 @@
  *   }
  */
 
-import { STATUS, unknownBlocks } from "../session/schema.js"
+import { STATUS, unknownBlocks, versionStanding } from "../session/schema.js"
 import { callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
 import { sessionTitle } from "../session/title.js"
 import { formatCost } from "../session/usage.js"
@@ -42,7 +42,10 @@ export const PLACEHOLDER = "Ask for a change…"
 export const HINTS = [
   // Dictation's status wins while it is on: it is what you are doing now.
   { name: "voice", when: (f) => f.voice != null, says: (f) => f.voice },
-  { name: "outdated", when: (f) => f.outdated, says: () => "Waiting for a newer version of the agent: something in this session needs it" },
+  // No runner takes a session of another version (kernel/runner.js turnFor),
+  // so it must say why nothing happens in it.
+  { name: "earlier", when: (f) => f.version === "earlier", says: () => "This session is from an earlier version of the agent and does not run. Start a new one to carry on." },
+  { name: "outdated", when: (f) => f.outdated || f.version === "newer", says: () => "Waiting for a newer version of the agent: something in this session needs it" },
   { name: "no-key-elsewhere", when: (f) => !f.hasKey && f.elsewhere, says: () => "Running in another browser — this one has no API key" },
   { name: "no-key", when: (f) => !f.hasKey, says: () => "Add an API key to start" },
   { name: "asking", when: (f) => f.asking > 0, says: (f) => (f.asking === 1 ? "Waiting on your answer" : `Waiting on ${f.asking} answers`) },
@@ -61,6 +64,7 @@ export const HINTS = [
 export function hintFacts(doc, local) {
   return {
     voice: local.voiceStatus ?? null,
+    version: versionStanding(doc),
     outdated: unknownBlocks(doc).length > 0,
     hasKey: !!local.hasKey,
     elsewhere: !!local.elsewhere,

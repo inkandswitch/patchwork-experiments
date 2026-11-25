@@ -13,7 +13,7 @@
 
 import { AgentTool } from "./session-view.js"
 import { selectedDocUrl } from "../host/context.js"
-import { initSession } from "../session/schema.js"
+import { initSession, versionStanding } from "../session/schema.js"
 import { hostImport } from "../host/import.js"
 
 /**
@@ -25,7 +25,11 @@ export async function ensureSession(repo, docUrl) {
   const existing = subject.doc()?.["@patchwork"]?.agent
   if (existing) {
     try {
-      return await repo.find(existing)
+      const session = await repo.find(existing)
+      // One from an earlier version of the agent does not run. The document
+      // has one session here, so a new one takes its place; the earlier one
+      // is still a document, and still in this one's history.
+      if (versionStanding(session.doc()) !== "earlier") return session
     } catch {
       // A link to a document we can no longer load: fall through and make a
       // new one rather than leaving the panel permanently broken.

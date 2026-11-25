@@ -22,9 +22,10 @@ const value = (doc, local = {}) => sessionValue(doc, { ...LOCAL, ...local })
 
 describe("the hint line", () => {
   // Facts under which no row applies, and for each row what makes it apply.
-  const NONE = { voice: null, outdated: false, hasKey: true, elsewhere: false, asking: 0, pending: 0, status: STATUS.idle, reason: null }
+  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, elsewhere: false, asking: 0, pending: 0, status: STATUS.idle, reason: null }
   const ROWS = [
     ["voice", { voice: "Listening…" }, "Listening…"],
+    ["earlier", { version: "earlier" }, "This session is from an earlier version of the agent and does not run. Start a new one to carry on."],
     ["outdated", { outdated: true }, "Waiting for a newer version of the agent: something in this session needs it"],
     ["no-key-elsewhere", { hasKey: false, elsewhere: true }, "Running in another browser — this one has no API key"],
     ["no-key", { hasKey: false }, "Add an API key to start"],
@@ -60,11 +61,16 @@ describe("the hint line", () => {
           exclusive.push(`${first.name}+${second.name}`)
           continue
         }
-        const expected = first.name === "no-key" && second.name === "elsewhere" ? ROWS[2][2] : ROWS[i][2]
+        const expected = first.name === "no-key" && second.name === "elsewhere" ? ROWS[3][2] : ROWS[i][2]
         expect([first.name, second.name, hintOf(facts)]).toEqual([first.name, second.name, expected])
       }
     }
     expect(exclusive).toEqual(["parked+reconnecting", "parked+running", "reconnecting+running"])
+  })
+
+  it("a session a newer agent wrote waits for one, whether it says so by its version or by a block this one cannot read", () => {
+    expect(hintOf({ ...NONE, version: "newer" })).toBe(ROWS[2][2])
+    expect(hintOf({ ...NONE, outdated: true })).toBe(ROWS[2][2])
   })
 
   it("counts answers and approvals", () => {
@@ -81,6 +87,7 @@ describe("the hint line", () => {
     })
     expect(hintFacts(doc, { ...LOCAL, voiceStatus: "Listening…", hasKey: false, elsewhere: true })).toEqual({
       voice: "Listening…",
+      version: "current",
       outdated: true,
       hasKey: false,
       elsewhere: true,

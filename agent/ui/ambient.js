@@ -20,7 +20,7 @@
 
 import { AgentTool } from "./session-view.js"
 import { isDictationShortcut } from "./dictation.js"
-import { initSession } from "../session/schema.js"
+import { initSession, versionStanding } from "../session/schema.js"
 import { sessionTitle } from "../session/title.js"
 import { documentIdOf } from "../documents/doc-urls.js"
 import { hostImport } from "../host/import.js"
@@ -109,7 +109,10 @@ export async function currentSession(storage, repo) {
   const url = storage.doc()?.sessionUrl
   if (url) {
     try {
-      return await repo.find(url)
+      const session = await repo.find(url)
+      // One from an earlier version of the agent does not run: a fresh one
+      // is current, and the earlier one stays in the list to be read.
+      if (versionStanding(session.doc()) !== "earlier") return session
     } catch {
       // Gone or unreachable: start a fresh one rather than staying broken.
     }

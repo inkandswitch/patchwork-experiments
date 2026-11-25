@@ -30,6 +30,7 @@ describe("whether a runner takes a session now", () => {
     ["it is backing off for the network", {}, { backingOff: true }, { wait: true }],
     ["a block is of a kind it cannot read", { unknown: true }, {}, { outdated: { unknown: ["hologram"] } }],
     ["the session is in another version's shape", { version: SCHEMA_VERSION + 1 }, {}, { outdated: { schemaVersion: SCHEMA_VERSION + 1 } }],
+    ["the session is from before versions were stamped", { version: null }, {}, { outdated: { schemaVersion: 1 } }],
     ["another runner holds it, and is live", { held: "other" }, { live: () => true }, {}],
   ])("not when %s", (name, session, self, expected) => {
     const doc = spokenTo((d) => {
@@ -37,6 +38,7 @@ describe("whether a runner takes a session now", () => {
       if (session.hostCall) d.turns.push(makeTurn("assistant", [{ type: "call", id: "c1", tool: "look", input: {}, where: "host", status: "approved", runner: null, generation: null }]))
       if (session.unknown) d.turns.push(makeTurn("user", [{ type: "hologram", id: "h1" }]))
       if (session.version) d.schemaVersion = session.version
+      if (session.version === null) delete d.schemaVersion
       if (session.held) d.lease = lease(session.held)
     })
     expect(turnFor(doc, { ...me, ...self })).toEqual(expected)
