@@ -8,6 +8,8 @@
 
 import * as A from '@automerge/automerge';
 import { initSubduction, Repo, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
+import type { Repo as NodeRepo } from '@automerge/automerge-repo-node';
+import type { Repo as SiteRepo } from 'site-automerge-repo';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Acceptance } from './acceptance';
 import {
@@ -18,6 +20,7 @@ import {
   type Executor,
   type Job,
   type PoolOptions,
+  type Query,
   type RunWorker,
   type StopReason,
   type WorkerEvents,
@@ -1499,5 +1502,249 @@ describe('the pool, when something it uses throws', () => {
     await w.clock.advance(BEAT_MS);
     expect(statuses(first)).toEqual(['succeeded']);
     expect(runsOf(second)).toEqual([]);
+  });
+});
+
+// A document that arrives after its listing
+//
+// Each followed document is, as far as hearing of its arrival goes, in one of
+// two states: not listened for, or listened for through one subscription to
+// the Repo's query for it. The tests below take every way into and out of the
+// second: a refusal (the first, and the ones after it), the query turning
+// ready (after the subscription, or before it), the document found by the
+// beat instead, and the three ways a document is let go (a task no longer
+// listed, a queue no longer served, stop()), with a refusal that comes after
+// it was let go.
+
+// The Repos a pool is handed answer findWithProgress as `Query` says. The
+// compiler checks this; the functions are never called.
+const repoQueries: ((url: AutomergeUrl) => Query)[] = [
+  (url) => (null as unknown as Repo).findWithProgress(url),
+  (url) => (null as unknown as NodeRepo).findWithProgress(url),
+  (url) => (null as unknown as SiteRepo).findWithProgress(url),
+];
+void repoQueries;
+
+/**
+ * Docs over the world's Repo in which some documents have not arrived: `find`
+ * refuses them as the Repo does, and `findWithProgress` says so, until
+ * `arrive` says they are there. Subscriptions are counted.
+ */
+function lateDocs(late: string[], { withProgress = true } = {}) {
+  const away = new Set(late);
+  const listeners = new Map<string, Set<(state: { state: string }) => void>>();
+  const counts = { subscribed: 0, unsubscribed: 0 };
+  /** Finds held back while `hold` is on, refused by `refuseHeld`. */
+  const held: (() => void)[] = [];
+  let holding = false;
+  const refusal = (url: string) => new Error(`Document ${url} is unavailable`);
+  const docs: Docs = {
+    find: (url) => {
+      if (!away.has(url)) {
+        return w.repo.find(url) as any;
+      }
+      if (holding) {
+        return new Promise((_, reject) => held.push(() => reject(refusal(url))));
+      }
+      return Promise.reject(refusal(url));
+    },
+    flush: (ids) => w.repo.flush(ids),
+  };
+  if (withProgress) {
+    docs.findWithProgress = (url) => ({
+      peek: () => ({ state: away.has(url) ? 'unavailable' : 'ready' }),
+      subscribe: (onState) => {
+        counts.subscribed++;
+        if (!listeners.has(url)) {
+          listeners.set(url, new Set());
+        }
+        const mine = (state: { state: string }) => onState(state);
+        listeners.get(url)!.add(mine);
+        return () => {
+          if (listeners.get(url)!.delete(mine)) {
+            counts.unsubscribed++;
+          }
+        };
+      },
+    });
+  }
+  return {
+    docs,
+    counts,
+    /** Subscriptions not yet ended. */
+    live: () => counts.subscribed - counts.unsubscribed,
+    /** The document is there; its query says so (loading, then ready) unless `silent`. */
+    arrive(url: string, { silent = false } = {}) {
+      away.delete(url);
+      if (!silent) {
+        for (const listener of [...(listeners.get(url) ?? [])]) {
+          listener({ state: 'loading' });
+          listener({ state: 'ready' });
+        }
+      }
+    },
+    hold: () => void (holding = true),
+    refuseHeld() {
+      holding = false;
+      for (const refuse of held.splice(0)) {
+        refuse();
+      }
+    },
+  };
+}
+
+describe('the pool, when a document arrives after its listing', () => {
+  it('takes a task whose document arrives after a refused find at once, without waiting a beat', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url]);
+    const { executor } = w.pool('A', { repo: late.docs });
+    await settle();
+    expect(runsOf(task)).toEqual([]);
+    expect(late.live()).toBe(1);
+    const t = w.clock.t;
+    late.arrive(task.url);
+    await settle();
+    expect(w.clock.t).toBe(t);
+    expect(runsOf(task)).toHaveLength(1);
+    expect(executor.workers).toHaveLength(1);
+    expect(late.live()).toBe(0);
+  });
+
+  it('takes it at once when it arrived between the refusal and the subscription', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url]);
+    const find = late.docs.find;
+    // The refusal is the last thing heard before the document is there: no state comes after it.
+    late.docs.find = (url) => {
+      const found = find(url);
+      late.arrive(url, { silent: true });
+      return found as any;
+    };
+    w.pool('A', { repo: late.docs });
+    await settle();
+    expect(runsOf(task)).toHaveLength(1);
+    expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
+  });
+
+  it('subscribes once however many times the find is refused', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url]);
+    w.pool('A', { repo: late.docs });
+    await settle();
+    await w.clock.advance(BEAT_MS * 3);
+    expect(runsOf(task)).toEqual([]);
+    expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 0 });
+    late.arrive(task.url);
+    await settle();
+    expect(runsOf(task)).toHaveLength(1);
+    expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
+  });
+
+  it('stops listening when the beat finds the document first', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url]);
+    w.pool('A', { repo: late.docs });
+    await settle();
+    late.arrive(task.url, { silent: true });
+    await w.clock.advance(BEAT_MS);
+    expect(runsOf(task)).toHaveLength(1);
+    expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
+  });
+
+  it('stops listening for a task no longer listed', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url]);
+    w.pool('A', { repo: late.docs });
+    await settle();
+    expect(late.live()).toBe(1);
+    w.queue.change((doc) => void delete doc.jobs.k);
+    await settle();
+    expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
+    late.arrive(task.url);
+    await settle();
+    expect(runsOf(task)).toEqual([]);
+  });
+
+  it('stops listening for a queue no longer served', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([w.queue.url]);
+    const { pool } = w.pool('A', { repo: late.docs });
+    await settle();
+    expect(late.live()).toBe(1);
+    pool.serve({});
+    expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
+    late.arrive(w.queue.url);
+    await settle();
+    expect(runsOf(task)).toEqual([]);
+  });
+
+  it('stops listening for everything on stop()', async () => {
+    const other = w.repo.create<Queue>({ title: 'other', jobs: {} });
+    const task = w.ask('k', { queue: other });
+    const late = lateDocs([w.queue.url, task.url]);
+    const { pool } = w.pool('A', { repo: late.docs, queues: { [w.queue.url]: 'any', [other.url]: 'any' } });
+    await settle();
+    expect(late.counts).toEqual({ subscribed: 2, unsubscribed: 0 });
+    await pool.stop();
+    expect(late.counts).toEqual({ subscribed: 2, unsubscribed: 2 });
+    late.arrive(task.url);
+    late.arrive(w.queue.url);
+    await settle();
+    expect(runsOf(task)).toEqual([]);
+  });
+
+  it('does not listen for a task let go while its find was under way', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url]);
+    late.hold();
+    w.pool('A', { repo: late.docs });
+    await settle();
+    w.queue.change((doc) => void delete doc.jobs.k);
+    await settle();
+    late.refuseHeld();
+    await settle();
+    expect(late.counts.subscribed).toBe(0);
+  });
+
+  it('does not listen for a document whose find was under way when the pool stopped', async () => {
+    w.ask('k');
+    const late = lateDocs([w.queue.url]);
+    late.hold();
+    const { pool } = w.pool('A', { repo: late.docs });
+    await settle();
+    await pool.stop();
+    late.refuseHeld();
+    await settle();
+    expect(late.counts.subscribed).toBe(0);
+  });
+
+  it('serves a queue whose document arrives late as soon as it arrives', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([w.queue.url]);
+    const { executor } = w.pool('A', { repo: late.docs });
+    await settle();
+    expect(runsOf(task)).toEqual([]);
+    const serving = () => w.net.sent.filter((it) => it.message.type === 'serving');
+    expect(serving()).toEqual([]);
+    const t = w.clock.t;
+    late.arrive(w.queue.url);
+    await settle();
+    expect(w.clock.t).toBe(t);
+    expect(serving()).toHaveLength(1);
+    expect(runsOf(task)).toHaveLength(1);
+    expect(executor.workers).toHaveLength(1);
+    expect(late.live()).toBe(0);
+  });
+
+  it('with a Repo that cannot say a document has arrived, looks again a beat after the refusal', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url], { withProgress: false });
+    w.pool('A', { repo: late.docs });
+    await settle();
+    late.arrive(task.url);
+    await w.clock.advance(BEAT_MS - 1);
+    expect(runsOf(task)).toEqual([]);
+    await w.clock.advance(1);
+    expect(runsOf(task)).toHaveLength(1);
   });
 });

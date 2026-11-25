@@ -11,7 +11,8 @@
 // (`task progress`), never written.
 //
 // It runs anywhere: the documents come from anything with `find` and
-// `flush`, messages go through `ears`, time comes from `clock`, and the code
+// `flush` (and `findWithProgress`, to hear at once that a document it could
+// not find has arrived), messages go through `ears`, time comes from `clock`, and the code
 // runs in whatever the executor starts (a worker thread in Node, a dedicated
 // worker in a browser).
 
@@ -93,10 +94,26 @@ export interface Handle<T> {
   isDeleted?(): boolean;
 }
 
+/**
+ * The part of a Repo's query for one document (what `findWithProgress`
+ * returns) that a pool uses: the state it is in now, and each state it moves
+ * to after `subscribe`, until the function `subscribe` returns is called.
+ */
+export interface Query {
+  peek(): { state: string };
+  subscribe(onState: (state: { state: string }) => void): () => void;
+}
+
 /** The part of a Repo a pool uses. */
 export interface Docs {
   find<T>(url: AutomergeUrl): Promise<Handle<T>>;
   flush(documents?: DocumentId[]): Promise<void>;
+  /**
+   * The Repo's query for a document, through which the pool hears that one
+   * it could not find has arrived. Without it, such a document is looked for
+   * again a beat later.
+   */
+  findWithProgress?(url: AutomergeUrl): Query;
 }
 
 /** How messages are sent and heard on a document's channel (task-client.js, unless a test hands its own). */
@@ -140,12 +157,26 @@ const realEars: Ears = { send: channel.send, listen: channel.listen };
 /** At the least, how long between two messages about a run's logs and progress. */
 const SAY_EVERY_MS = 100;
 
-/** A document followed: its handle once found. One that cannot be found yet is tried again a beat later. */
+/**
+ * A document followed: its handle once found. One that cannot be found yet is
+ * found again the moment the Repo says it has arrived, or else a beat later.
+ */
 interface Followed<T> {
   handle?: Handle<T>;
   loading?: boolean;
   retryAt?: number;
+  /** Stops listening to the document's handle and channel, once it is found. */
   stop?: () => void;
+  /** Stops listening for its arrival, while it is listened for (see `awaitArrival`). */
+  unawait?: () => void;
+}
+
+/** Lets go of a followed document: nothing it listens to calls the pool again. */
+function letGo(followed: Followed<unknown>) {
+  followed.stop?.();
+  followed.stop = undefined;
+  followed.unawait?.();
+  followed.unawait = undefined;
 }
 
 /**
@@ -236,7 +267,7 @@ export class Pool {
   serve(queues: Record<AutomergeUrl, Acceptance>) {
     for (const [url, queue] of this.queues) {
       if (!(url in queues)) {
-        queue.stop?.();
+        letGo(queue);
         this.queues.delete(url);
       }
     }
@@ -269,7 +300,7 @@ export class Pool {
     }
     this.idle = [];
     for (const followed of [...this.queues.values(), ...this.tasks.values()]) {
-      followed.stop?.();
+      letGo(followed);
     }
     await this.options.repo.flush().catch((error) => console.error('pool: saving on stop failed', error));
   }
@@ -328,7 +359,7 @@ export class Pool {
     }
     for (const [url, followed] of this.tasks) {
       if (!wanted.has(url)) {
-        followed.stop?.();
+        letGo(followed);
         this.tasks.delete(url);
         continue;
       }
@@ -390,7 +421,10 @@ export class Pool {
     }
   }
 
-  /** Finds a document, unless that is under way or failed less than a beat ago. */
+  /**
+   * Finds a document, unless that is under way, or it failed less than a beat
+   * ago and the Repo has not said since that it has arrived.
+   */
   private load<T>(url: AutomergeUrl, followed: Followed<T>, still: () => boolean, isTask: boolean) {
     if (this.stopped || followed.loading || this.clock.now() < (followed.retryAt ?? 0)) {
       return;
@@ -402,6 +436,8 @@ export class Pool {
         if (!still() || this.stopped) {
           return;
         }
+        followed.unawait?.();
+        followed.unawait = undefined;
         followed.handle = handle;
         const onChange = () => this.review();
         handle.on('change', onChange);
@@ -423,8 +459,48 @@ export class Pool {
         // not found yet: never an error, only something to try again
         followed.loading = false;
         followed.retryAt = this.clock.now() + BEAT_MS;
+        if (still() && !this.stopped) {
+          this.awaitArrival(url, followed);
+        }
       },
     );
+  }
+
+  /**
+   * Finds a document again the moment it arrives. A listing can reach the
+   * pool before the listed task's document can be fetched; the refused find
+   * has asked the sync server for it already, and the server sends it when it
+   * has it without being asked again, so the Repo's query for it turns ready
+   * by itself. The pool listens to that query, once per document, from its
+   * first refusal until it is found or let go; the beat stays as the fallback
+   * for a Repo that cannot say.
+   */
+  private awaitArrival<T>(url: AutomergeUrl, followed: Followed<T>) {
+    if (followed.unawait || !this.options.repo.findWithProgress) {
+      return;
+    }
+    let query: Query;
+    try {
+      query = this.options.repo.findWithProgress(url);
+    } catch {
+      // A url the Repo cannot read never arrives; the beat goes on refusing it, as find does.
+      return;
+    }
+    const arrived = () => {
+      followed.unawait?.();
+      followed.unawait = undefined;
+      followed.retryAt = 0;
+      this.review();
+    };
+    followed.unawait = query.subscribe((state) => {
+      if (state?.state === 'ready') {
+        arrived();
+      }
+    });
+    // It may have arrived between the refusal and now, and then no state comes after.
+    if (query.peek().state === 'ready') {
+      arrived();
+    }
   }
 
   /** A pool's word, on one task's channel, that a run of that task is going on. */
