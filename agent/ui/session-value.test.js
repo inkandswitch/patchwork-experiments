@@ -5,8 +5,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { HINTS, hintOf, hintFacts, sessionValue, PLACEHOLDER } from "./session-value.js"
 import { initSession, CALL, STATUS, _resetIds } from "../session/schema.js"
-import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
-import { noticeBlock } from "../session/blocks.js"
+import { makeTurn, textBlock, callBlock, noticeBlock } from "../session/blocks.js"
 import { STOP } from "../session/status.js"
 
 beforeEach(() => _resetIds())

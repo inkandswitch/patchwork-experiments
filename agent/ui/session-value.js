@@ -130,12 +130,30 @@ function modelLabel(config) {
   return (config?.model ?? "no model").split("/").pop() + (effort ? ` · ${effort}` : "")
 }
 
+/**
+ * What the view shows:
+ *
+ *   runner        which runner this tab has, for the root's data-runner
+ *   status        the session's status, for the dot and its tooltip
+ *   title         { text, tooltip } for the header
+ *   cost          { text, tooltip }, or null before anything is spent
+ *   model         the model button's label
+ *   workflow      { url, label, tooltip } of the workflow link, or null
+ *   place         where the session stands in its workflow, for the standing line
+ *   hint          the line beside the composer
+ *   placeholder   the composer's
+ *   gate          what a message to a step that is not running needs, or null
+ *   canSend, canStop
+ *   openSettings  the settings panel opens itself
+ *   strip         waiting items for the strip above the transcript
+ *   inline        { session, workflows }: spent budgets for the transcript's end
+ *   side          the document the pop-out's second pane shows, or null
+ */
 export function sessionValue(doc, local) {
   const status = statusOf(doc)
   const gate = gateOf(local.place ?? null)
   const waiting = local.waiting ?? []
   return {
-    mode: local.mode,
     runner: local.runner,
     status,
     title: titleLine(doc, local.subjectTitle ?? null),
