@@ -128,6 +128,14 @@ called, after every earlier run, so code can look there (and write its run's id 
 effects) to know whether it is the second to try. `earlier(task, runId)` in `task-runs.js` reads
 this for a long run kept in a document of its own. `src/tasks/wait.ts` is a small task to copy.
 
+A task that writes into a document over time first puts a value of its own there, naming its
+run (`ctx.run`), in one assignment, and from then on writes only inside that value, checking in
+each change that the value there still names its run. Two runs' values put in one place merge to
+one of them, whole, the same everywhere, and the other's writes stay in the value that lost; so a
+run taken over while cut off from the sync server, which goes on writing, cannot mix its writes
+with those of the run that replaced it. `editable-llm-chat/src/generate-task.js` is the worked
+example: a reply streamed by appends into a message the run made.
+
 ## Having work done from a page
 
 A tool in a page needs three functions from `task-client.js`, each handed the site's Repo, and
