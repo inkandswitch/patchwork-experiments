@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v2]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v3]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -25,6 +25,7 @@ import {
   listTask,
   mayRelist,
   named,
+  recordsOf,
   stopTask,
   taskError,
   taskResult,
@@ -265,14 +266,14 @@ export async function ask(repo, queueUrl, { importUrl, input, key }) {
   /** @type {string | undefined} */
   let over;
   if (listed) {
-    // The task the key names is the one while it is still wanted. One that
-    // is not here to be read yet is taken to be; a document that is no task
-    // at all, or a task some record has ended, is listed over.
-    const found = await repo.find(listed.taskUrl).then(
-      (/** @type {any} */ handle) => ({ doc: handle.doc() }),
-      () => null,
+    // The task the key names is the one while it is still wanted. A document
+    // that is no task at all, a task some record has ended, and one that
+    // cannot be found (nobody could run it either) are listed over.
+    const wanted = await repo.find(listed.taskUrl).then(
+      (/** @type {any} */ handle) => isWanted(handle.doc()),
+      () => false,
     );
-    if (!found || isWanted(found.doc)) {
+    if (wanted) {
       return { key: jobKey, taskUrl: listed.taskUrl };
     }
     over = listed.taskUrl;
@@ -310,15 +311,16 @@ export async function cancel(repo, queueUrl, key) {
   if (!listed) {
     return false;
   }
-  const task = await repo.find(listed.taskUrl);
+  // A task that cannot be found cannot be stopped, or run: its entry goes.
+  const task = await repo.find(listed.taskUrl).catch(() => null);
   let stopped = false;
-  if (isWanted(task.doc())) {
-    task.change((/** @type {Task} */ doc) => {
-      stopped = stopTask(doc, { id: crypto.randomUUID(), at: Date.now() });
-    });
-  }
+  task?.change((/** @type {Task} */ doc) => {
+    stopped = stopTask(doc, { id: crypto.randomUUID(), at: Date.now() });
+  });
   queue.change((/** @type {Queue} */ doc) => delistTask(doc, key, listed.taskUrl));
-  await repo.flush([task.documentId, queue.documentId]).catch(() => {});
+  await repo
+    .flush([...(task ? [task.documentId] : []), queue.documentId])
+    .catch(() => {});
   return stopped;
 }
 
@@ -386,7 +388,7 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
     clearTimeout(lapse);
     /** @type {Queue | undefined} */ const jobs = queue?.doc();
     /** @type {Task | undefined} */ const doc = task?.doc();
-    hearing.saw(doc?.runs);
+    hearing.saw(recordsOf(doc));
     const is = following ? named(jobs, key, following) : 'none';
     if (is !== 'none') {
       noneSince = null;
@@ -413,7 +415,7 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
     }
     reported = state;
     const by = endingRun(doc);
-    const has = doc?.runs?.find((run) => run.status == null && hearing.heard(run.id));
+    const has = recordsOf(doc).find((run) => run.status == null && hearing.heard(run.id));
     const live = has ? said.get(has.id) : undefined;
     onChange({
       key,
@@ -425,7 +427,7 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
       logs: by ? (by.logs ?? []) : live ? live.logs : [],
       result: state === 'succeeded' ? taskResult(doc) : undefined,
       error: taskError(doc, hearing.heard),
-      runs: doc?.runs ?? [],
+      runs: recordsOf(doc),
     });
   };
 
