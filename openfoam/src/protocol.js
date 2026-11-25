@@ -212,7 +212,8 @@ export function shownRun(run, task) {
     case "stalled":
       return { status, error: null, note: "the machine running it isn't heard from" };
     case "waiting":
-      return { status, error: null, note: status === "queued" ? null : "the machine running it stopped; it waits to be taken up again" };
+      // its machine stopped mid-run; taken up again, it is not solved again (NOT_RESTARTED)
+      return { status, error: null, note: status === "queued" ? null : "the machine running it stopped; it won't be solved again, so run it again" };
     default:
       return { status, error: null, note: null };
   }

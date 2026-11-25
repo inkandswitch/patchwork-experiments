@@ -7,7 +7,7 @@ const tri = Float64Array.from([0, 0, 0, 1, 0, 0, 0, 1, 0.1]);
 const run = (over = {}) => {
   const r = newRun({
     caseUrl: "automerge:case",
-    serverUrl: "automerge:inbox",
+    serverUrl: "automerge:queue",
     setup: normalizeSetup({ ...defaultSetup(), ...over.setup }),
     hull: {
       stl: new Uint8Array(4),

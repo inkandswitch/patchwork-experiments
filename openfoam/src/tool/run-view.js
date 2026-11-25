@@ -131,7 +131,14 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
     if (!handle) return;
     cancelAsked = true;
     render();
-    cancelRun(repo, handle.doc(), handle.url).catch(() => {});
+    const asked = handle;
+    // nothing was cancelled (its queue no longer lists it, or couldn't be reached): Cancel shows again
+    const notCancelled = () => {
+      if (handle !== asked) return;
+      cancelAsked = false;
+      render();
+    };
+    cancelRun(repo, asked.doc(), asked.url).then((ok) => ok || notCancelled(), notCancelled);
   });
 
   /** The run as a person sees it: its doc, with the status its task gives it (shownRun). */

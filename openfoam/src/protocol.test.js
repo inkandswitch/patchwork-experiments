@@ -94,7 +94,7 @@ describe("the status a person sees", () => {
     expect(table).toEqual({
       null: ["queued", "solving"],
       missing: ["queued", "solving"],
-      waiting: ["queued", "solving (the machine running it stopped; it waits to be taken up again)"],
+      waiting: ["queued", "solving (the machine running it stopped; it won't be solved again, so run it again)"],
       running: ["queued", "solving"],
       stalled: ["queued (the machine running it isn't heard from)", "solving (the machine running it isn't heard from)"],
       stopping: ["queued (cancelling…)", "solving (cancelling…)"],

@@ -207,6 +207,10 @@ export function makeRunTask({ runJob, machine, awake, peer, say = (m) => console
     let status;
     try {
       status = await runJob({ repo: ctx.repo, handle, env: facts.env, workDir: join(facts.state, "runs"), cores: facts.cores, daemon: facts.info, say, signal: ctx.signal, verify: checker.verify });
+    } catch (err) {
+      // runJob records its own failures; this is one it threw instead, which the run doc says too
+      if (!ctx.signal.aborted) fail(handle, String(err?.message ?? err));
+      throw err;
     } finally {
       handle.off("change", echo);
       ctx.signal.removeEventListener("abort", release);

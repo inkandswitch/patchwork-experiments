@@ -116,6 +116,14 @@ describe("how a run ends", () => {
     }
     expect(awake).toBe(3);
   });
+  it("a runJob that throws fails the run doc as well as the task", async () => {
+    const { ctx } = context(["r1"], "r1");
+    const t = task(async () => {
+      throw new Error("the run's setup can't be read");
+    });
+    await expect(t({ run: run.url }, ctx)).rejects.toThrow("the run's setup can't be read");
+    expect([run.doc().status, run.doc().error]).toEqual(["failed", "the run's setup can't be read"]);
+  });
   it("OpenFOAM that won't start fails the run doc and the task, and runs nothing", async () => {
     const { ctx } = context(["r1"], "r1");
     const t = task(async () => "done", {
