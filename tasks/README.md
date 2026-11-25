@@ -160,7 +160,11 @@ settings of one queue keep one whole, and two Make my queue presses keep one poi
 queue. `servedOf`, `ownQueueOf`, `setServed` and `ownQueue` in `src/task-client.js` are the only code that
 knows this. To serve a queue, open it in the Task Queue Browser and press Join queue; there you
 also choose whose code it runs (any, or named packages) and Leave. With no queue, the titlebar
-offers Make my queue.
+offers Make my queue. The tool storage comes from the frame's tool-storage provider
+(`patchwork-tool-storage-provider`, which threepane and the tiling frame mount), asked from the
+badge: where none is above it, the press waits five seconds for an answer ("Making your
+queue…"), then says "This page has nowhere to keep your task queues, so nothing was changed."
+and offers it again, having written nothing.
 
 What a person sees of it, each read from what is (this page's pool host, the storage document,
 the queue's document, what is heard on the queue's channel), and never starting anything:
@@ -256,6 +260,17 @@ processes and say what they saw, one line per check or measurement:
   queue browser; Make my queue and Join; with only the badge mounted no pool runs and the badge
   and queue browser say why; the background component mounted later starts it, and let go lets
   the lock go.
-- `probes/real-run.mjs`: the same in the real Patchwork, from a published copy of the package.
-  It has not been run: it needs a published copy.
+- `probes/real-run.mjs <automerge:package url>` (in the chrome slot): a published copy of the
+  package (a staging package will do) in the real Patchwork, https://patchwork.inkandswitch.com/,
+  in a throwaway profile, 20 checks. It installs the package through the profile's module
+  settings and records what the site's frame does with it; presses Make my queue on a badge with
+  no tool-storage provider above it; mounts the background component and the badge inside the
+  site's tool-storage provider, as a frame does, and makes the profile's queue with that badge.
+  Then: the pool worker and the run workers load from the package through the site's service
+  worker; ten do-nothing tasks are asked through this tab's tasks Repo and ten through the
+  site's own (keyhive) Repo; the package's own task module, a throw, a spin cancelled and its
+  run worker gone, serving only named packages, `served()`, and the queue browser's and badge's
+  lines; documents tasks write reach the site's Repo, their run workers (one started for its
+  run) having waited for the server's acknowledgement; `doWork`, `watchWork` and `stopWork` from
+  the page.
 - `probes/solve-task.mjs`: a task that runs a child process, used by `node-run.mjs`.

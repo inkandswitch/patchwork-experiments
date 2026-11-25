@@ -112,8 +112,11 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
   const pending = new Map();
   const waiters = new Map(); // CDP event → resolve, for once()
   const logs = [];
+  /** Who hears every CDP message, those of attached sessions (workers) too: on(). */
+  const listeners = new Set();
   ws.addEventListener("message", (ev) => {
     const m = JSON.parse(ev.data);
+    for (const listener of listeners) listener(m);
     if (m.id && pending.has(m.id)) {
       pending.get(m.id)(m);
       pending.delete(m.id);
@@ -125,11 +128,12 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
     if (m.method === "Runtime.consoleAPICalled") logs.push(`${m.params.type}: ${m.params.args.map((a) => a.value ?? a.description).join(" ")}`);
     if (m.method === "Runtime.exceptionThrown") logs.push(`exception: ${m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text}`);
   });
-  const send = (method, params = {}) =>
+  /** A CDP command, to the page, or to an attached session (a worker) by its id. */
+  const send = (method, params = {}, sessionId) =>
     new Promise((r, no) => {
       const i = ++seq;
       pending.set(i, (m) => (m.error ? no(new Error(`${method}: ${m.error.message}`)) : r(m.result)));
-      ws.send(JSON.stringify({ id: i, method, params }));
+      ws.send(JSON.stringify({ id: i, method, params, ...(sessionId ? { sessionId } : {}) }));
     });
   /** The next CDP event of this kind. */
   const once = (method, ms = 3000) =>
@@ -237,6 +241,11 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
 
   return {
     send,
+    /** Hear every CDP message; returns how to stop. */
+    on(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     js,
     logs,
     touch,
