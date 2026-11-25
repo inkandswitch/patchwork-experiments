@@ -1,40 +1,38 @@
-// The documents a study, its runs and a daemon share, and every write either
-// side makes to them. Pure functions over plain objects (an automerge doc
-// inside a change() is one), so the tool and the daemon run the same code
-// and the tests prove the protocol without a network. The shape is
+// The documents a study and its runs share, and every write anyone makes to
+// them. Pure functions over plain objects (an automerge doc inside a
+// change() is one), so the tool and the run's code (daemon/run-task.mjs) run
+// the same code and the tests prove it without a network. The shape is
 // openfoam's (its src/protocol.js), copied: packages never import each other.
 //
-// Four kinds of document:
+// Three kinds of document of this package's own:
 //
-//   fea-study    the person's: the part link, the setup, the server, the runs
-//                it has made. Only people write it.
+//   fea-study    the person's: the part link, the setup, the server (a task
+//                queue: see src/run-tasks.js), the runs it has made. Only
+//                people write it.
 //   fea-part     the part as the study keeps it (src/part/kept.js). Written
 //                whole when the part is read; never changed after.
-//   fea-run      one analysis: the setup and the part FROZEN at the moment it
-//                was asked for, then the daemon's progress and results.
-//                People write only `control` (cancel).
-//   fea-server   a daemon's inbox and status. People add `requests`; the
-//                daemon writes everything else.
+//   fea-run      one analysis: the setup and the part FROZEN at the moment
+//                it was asked for, then the run's progress and results. It
+//                is the record of the run; the task that asked a machine for
+//                it says only whether a machine has it.
 //
 // Who writes what never overlaps, so concurrent edits never conflict:
 //
 //   study     ← people
-//   run       ← people: control.cancel    daemon: status, daemon, stages,
-//                                          mesh, summary, layers, recipe,
-//                                          notes, error, startedAt, finishedAt
-//   server    ← people: requests[id]      daemon: daemon, handled[id], active[id]
+//   run       ← people: task (once, when    the run's code: status, daemon,
+//                        it is asked for)    stages, mesh, summary, layers,
+//                                            recipe, notes, error, startedAt,
+//                                            finishedAt
+//
+// Cancelling is not written here: it is a record in the run's task, and the
+// status a person sees is read from both (`shownRun`).
 
 import { ANALYSES } from "./setup.js";
 
 export const STUDY_TYPE = "fea-study";
 export const RUN_TYPE = "fea-run";
-export const SERVER_TYPE = "fea-server";
 export const LAYER_TYPE = "fea-layer";
 export const PROTOCOL_VERSION = 1;
-
-/** A daemon is online if it beat within this long. */
-export const HEARTBEAT_MS = 20_000;
-export const ONLINE_MS = 75_000;
 
 /** Run statuses. Terminal: done, failed, cancelled. */
 export const STATUSES = Object.freeze(["queued", "meshing", "solving", "post", "done", "failed", "cancelled"]);
@@ -50,8 +48,8 @@ export const STAGES = Object.freeze([
   { id: "results", label: "Read the results", status: "post" },
 ]);
 
-/** The id a run's request goes under in a server's inbox: its document id. */
-export const requestIdOf = (runUrl) => String(runUrl).replace(/^automerge:/, "");
+/** A run's id: its document id, which names its directory on the machine that ran it. */
+export const runIdOf = (runUrl) => String(runUrl).replace(/^automerge:/, "");
 
 // ---------------------------------------------------------------- study
 
@@ -71,17 +69,17 @@ export function initStudy(doc, setup) {
  * A new run doc's contents: the setup and the part frozen as they are now.
  * @param {object} o
  * @param {string} o.studyUrl
- * @param {string} o.serverUrl
+ * @param {string} o.serverUrl  the task queue it is asked of
  * @param {object} o.setup      normalised
  * @param {object} o.part       the kept part (src/part/kept.js encodePart; its bytes inline or as segment refs)
- * @param {string} [o.by]       who asked (a name, for the queue)
+ * @param {string} [o.by]       who asked (a name)
  * @param {number} o.now
  * @param {{ tool: string, version: string }} [o.made]   the tool that asked
  *
- * The daemon adds `daemon` (where and with what it ran), `mesh` (what gmsh
- * made), `recipe` (the solver's input, less its node and element lists, and a
- * digest of the whole), `summary` (the figures) and `layers` (links to the
- * drawn results).
+ * The asker adds `task` once it has asked. The run's code adds `daemon`
+ * (where and with what it ran), `mesh` (what gmsh made), `recipe` (the
+ * solver's input, less its node and element lists, and a digest of the
+ * whole), `summary` (the figures) and `layers` (links to the drawn results).
  */
 export function newRun({ studyUrl, serverUrl, setup, part, by = null, now, title, made = null }) {
   return {
@@ -97,7 +95,7 @@ export function newRun({ studyUrl, serverUrl, setup, part, by = null, now, title
     made,
     recipe: null,
     status: "queued",
-    control: { cancel: false },
+    task: null,
     daemon: null,
     stages: STAGES.map((s) => ({ id: s.id, label: s.label, status: "pending", startedAt: null, endedAt: null, note: null, tail: null })),
     mesh: null,
@@ -116,65 +114,80 @@ export function runTitle(setup, partTitle) {
   return `${partTitle ? `${partTitle} · ` : ""}${what} · ${setup.material.name} · ${size}`;
 }
 
-/** People: ask the daemon to stop this run. */
-export function requestStop(run) {
-  if (!run.control) run.control = { cancel: false };
-  run.control.cancel = true;
-}
+// ---------------------------------------------------------------- stopping
 
-// ---------------------------------------------------------------- server
+/** Why a run's code was told to stop (its task's signal): see daemon/run-task.mjs. */
+export const STOP_REASONS = Object.freeze(["cancelled", "stopping", "yielded"]);
 
-/** A fresh server doc (the daemon makes it). */
-export function newServer({ title, daemon }) {
-  return {
-    "@patchwork": { type: SERVER_TYPE },
-    title,
-    protocol: PROTOCOL_VERSION,
-    daemon,
-    requests: {},
-    handled: {},
-    active: {}, // request id → { run, since }: what runs now (up to the daemon's --jobs)
-  };
-}
+/** What a run doc says when the machine running it stopped mid-run. */
+export const MACHINE_STOPPED = "The machine running this stopped while it ran; run it again.";
+/** What a run doc says when its task is taken again after that: it is never solved twice unasked. */
+export const NOT_RESTARTED = "This run was interrupted (the machine running it stopped) and was not started again, so that it isn't solved twice without anyone asking; run it again.";
 
-/** People: put a run in a server's queue (inside a change on the server doc). */
-export function enqueue(server, runUrl, { now, by = null }) {
-  if (!server.requests) server.requests = {};
-  server.requests[requestIdOf(runUrl)] = { run: runUrl, at: now, by };
+/**
+ * The run's code, told to stop (inside a change on the run doc): `cancelled`
+ * says cancelled, `stopping` (its machine is shutting down) says failed with
+ * MACHINE_STOPPED, and the stage that was running says which. A run doc
+ * that already says how it ended keeps that. `yielded` writes nothing:
+ * another run of the task has it.
+ */
+export function markStopped(run, reason, now) {
+  if (reason === "yielded" || isTerminal(run.status)) return;
+  run.status = reason === "cancelled" ? "cancelled" : "failed";
+  run.error = reason === "cancelled" ? null : MACHINE_STOPPED;
+  run.finishedAt = now;
+  for (const s of run.stages ?? [])
+    if (s.status === "running") {
+      s.status = "failed";
+      s.endedAt = now;
+      s.note = reason === "cancelled" ? "cancelled" : "stopped";
+    }
 }
 
 /**
- * The requests a daemon has yet to take, oldest first. A request is taken
- * once it is in `handled`, so a daemon that restarts never runs one twice.
+ * A run taken up again after its first try was interrupted (inside a change
+ * on the run doc): not solved again. A run doc that already says how it
+ * ended keeps that.
  */
-export function pendingRequests(server) {
-  const handled = server?.handled ?? {};
-  return Object.entries(server?.requests ?? {})
-    .filter(([id, r]) => !handled[id] && typeof r?.run === "string")
-    .map(([id, r]) => ({ id, run: r.run, at: Number(r.at) || 0, by: r.by ?? null }))
-    .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+export function markInterrupted(run, now) {
+  if (isTerminal(run.status)) return;
+  run.status = "failed";
+  run.error = NOT_RESTARTED;
+  run.finishedAt = now;
+  for (const s of run.stages ?? []) if (s.status === "running") s.status = "failed";
 }
 
-/** What runs now: [{ id, run, since }]. */
-export function activeRuns(server) {
-  const a = server?.active;
-  if (!a || typeof a !== "object") return [];
-  return Object.entries(a)
-    .filter(([, v]) => typeof v?.run === "string")
-    .map(([id, v]) => ({ id, run: v.run, since: Number(v.since) || 0 }));
-}
-
-/** The queue as people see it: what runs, then what waits, oldest first. */
-export function queueView(server) {
-  const active = activeRuns(server);
-  const running = new Set(active.map((r) => r.id));
-  return { active, waiting: pendingRequests(server).filter((r) => !running.has(r.id)) };
-}
-
-/** Is the daemon behind this server doc alive? */
-export function daemonOnline(server, now) {
-  const hb = Number(server?.daemon?.heartbeat);
-  return Number.isFinite(hb) && now - hb < ONLINE_MS;
+/**
+ * The status a person sees for a run: its document's, unless its task says
+ * what the document can't. The run's code writes the run doc; but a run
+ * cancelled before its code started, or whose code never ran to the end (it
+ * would not load, its machine stopped for good, its thread was ended), has
+ * nobody to write it, and only its task knows.
+ *
+ * `note` is a few words beside the status, for what is under way and isn't
+ * a status of its own (cancelling, a machine not heard from).
+ * @param {{ status: string, error?: string | null }} run  the run doc
+ * @param {{ state: string, error?: string | null } | null} task  the task's state as its reader has it (task-client.js's watch, or taskState and taskError), or null while unknown
+ * @returns {{ status: string, error: string | null, note: string | null }}
+ */
+export function shownRun(run, task) {
+  const status = run?.status ?? "queued";
+  if (isTerminal(status) || !task) return { status, error: run?.error ?? null, note: null };
+  switch (task.state) {
+    case "cancelled":
+      return { status: "cancelled", error: null, note: status === "queued" ? "cancelled before it started" : null };
+    case "failed":
+      return { status: "failed", error: task.error ?? "it failed", note: null };
+    case "stopping":
+      return { status, error: null, note: "cancelling…" };
+    case "stalled":
+      return { status, error: null, note: "the machine running it isn't heard from" };
+    case "waiting":
+      // a run doc past queued whose task waits: its machine stopped mid-run, and taken up again it is not solved again (NOT_RESTARTED)
+      return { status, error: null, note: status === "queued" ? null : "the machine running it stopped; it won't be solved again, so run it again" };
+    default:
+      return { status, error: null, note: null };
+  }
 }
 
 // ---------------------------------------------------------------- layers

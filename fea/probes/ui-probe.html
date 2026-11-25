@@ -37,7 +37,9 @@
 <script type="module">
   import { FakeRepo } from "/probes/fake-repo.js";
   import { getRegistry } from "/probes/plugins-stub.js";
-  import { plugins } from "/dist/index.js";
+  // the build, served as Patchwork serves a package (under its automerge url), so that
+  // the study names its run's code the way it does there (src/run-tasks.js runCodeUrl)
+  import { plugins } from "/automerge%3AfeaProbePackageAbc/dist/index.js";
   import { encodeGLB, parseGLB } from "/src/glb.js";
   import * as shapes from "/src/test/shapes.js";
 
@@ -90,17 +92,15 @@
     theme(t) {
       document.documentElement.setAttribute("theme", t);
     },
-    /** an empty study, opened, and a server it could run on */
+    /** an empty study, opened, and a server it could run on: a task queue a machine says it serves (unless not online) */
     async setup({ online = true } = {}) {
-      server = repo.add({
-        "@patchwork": { type: "fea-server" },
-        title: "FEA on the probe",
-        protocol: 1,
-        daemon: { id: "d", host: "probe-host", platform: "darwin arm64", calculix: "2.23", gmsh: "4.15.2", cores: 8, jobs: 1, maxNodes: 250000, heartbeat: online ? Date.now() + 3600_000 : 1, startedAt: Date.now() - 60000 },
-        requests: {},
-        handled: {},
-        active: {},
-      });
+      server = repo.add({ title: "FEA on the probe", jobs: {} });
+      if (online) {
+        let seq = 0;
+        const beat = () => server.hear({ type: "serving", pool: "probe-pool", name: "FEA on probe-host", slots: 1, busy: 0, from: "probe-pool", seq: seq++ });
+        beat();
+        setInterval(beat, 500);
+      }
       const dt = await datatype("fea-study");
       const doc = { "@patchwork": { type: "fea-study" } };
       dt.init(doc);

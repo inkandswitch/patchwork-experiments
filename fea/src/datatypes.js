@@ -1,6 +1,6 @@
 // The datatypes. A study is made from the "new document" menu; its kept
-// part, its runs, their results and a daemon's inbox are made by the tool
-// and the daemon (unlisted).
+// part, its runs and their results are made by the study tool and the run's
+// code (unlisted).
 import { defaultSetup } from "./setup.js";
 import { initStudy } from "./protocol.js";
 
@@ -36,4 +36,3 @@ export const StudyDatatype = {
 
 export const RunDatatype = titled("FEA run");
 export const PartDatatype = titled("FEA part");
-export const ServerDatatype = titled("FEA server");

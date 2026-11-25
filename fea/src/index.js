@@ -62,26 +62,6 @@ export const plugins = [
     },
   },
   {
-    type: "patchwork:datatype",
-    id: "fea-server",
-    name: "FEA server",
-    icon: "Server",
-    unlisted: true,
-    async load() {
-      return (await import("./datatypes.js")).ServerDatatype;
-    },
-  },
-  {
-    type: "patchwork:tool",
-    id: "fea-server",
-    name: "FEA server",
-    icon: "Server",
-    supportedDatatypes: ["fea-server"],
-    async load() {
-      return (await import("./tool/server-tool.js")).default;
-    },
-  },
-  {
     type: "scene:source",
     id: "fea-results",
     content: "built",

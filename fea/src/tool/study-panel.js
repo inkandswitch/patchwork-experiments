@@ -9,6 +9,11 @@
 // being picked for, which tab is open and how results are drawn are this
 // viewer's alone.
 //
+// The server is a task queue: who serves it is heard (task-client.js's
+// `served`), not read. A run that hasn't ended has its task followed too
+// (`watch`): what its run doc can't say (cancelled before it started, a
+// machine that stopped) is read from both (shownRun).
+//
 //   stage = {
 //     view,                            a part view (../view/part-view.js)
 //     onPick(fn), onHover(fn),         a face clicked, a face under the pointer (or null)
@@ -24,7 +29,10 @@ import { describeFace } from "../part/faces.js";
 import { decodePart } from "../part/kept.js";
 import { placeOf, setupGlyphs } from "../draw/glyphs.js";
 import { resultGeometry, fieldChoices, modesOf } from "../draw/result.js";
-import { daemonOnline, queueView, isTerminal, decodeLayer, SERVER_TYPE } from "../protocol.js";
+import { isTerminal, decodeLayer, shownRun } from "../protocol.js";
+import { queueCounts, servedBy, aheadOf } from "../run-tasks.js";
+import { served, watch } from "../task-client.js";
+import { BEAT_MS } from "../task-rules.js";
 import { internalize } from "../segments.js";
 import { findWhenThere } from "../find.js";
 import { figures, inputs, headline, statusLine, duration } from "../results.js";
@@ -97,9 +105,14 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     reading: false,
     changed: null, // has the model changed since it was read
     said: null, // the last action's refusal or news, shown under the part
-    server: null, // the server's handle
+    server: null, // the server's handle (a task queue)
     serverFor: null,
+    serverSince: 0, // when this viewer began listening for who serves it
+    pools: [], // the machines heard serving it
+    unhear: null, // stops listening
     runs: new Map(), // url → handle
+    tasks: new Map(), // run url → its task as followed ({ state, error }), while the run hasn't ended
+    unwatch: new Map(), // run url → stops following its task
     results: new Map(), // run url → Promise<{ part, layer }>
     show: { field: null, deform: "auto", sway: false },
     spelled: new Set(), // loads whose direction is shown as its three numbers ("Other…")
@@ -113,10 +126,17 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
 
   const study = () => handle.doc() ?? {};
   const setupOf = () => normalizeSetup(study().setup);
+  /** A run as a person sees it: its doc, with the status its task gives it (shownRun) and a note beside it. */
+  const runOf = (url) => {
+    const raw = local.runs.get(url)?.doc() ?? null;
+    if (!raw) return null;
+    const s = shownRun(raw, local.tasks.get(url) ?? null);
+    return s.status === raw.status && s.error === (raw.error ?? null) && !s.note ? raw : { ...raw, status: s.status, error: s.error, note: s.note };
+  };
   const selectedRun = () => {
     const s = study();
     const url = s.selected && (s.runs ?? []).includes(s.selected) ? s.selected : (s.runs ?? []).at(-1);
-    return url ? { url, run: local.runs.get(url)?.doc() ?? null } : null;
+    return url ? { url, run: runOf(url) } : null;
   };
   const showingResults = () => local.tab === "results" && selectedRun()?.run?.status === "done";
 
@@ -151,9 +171,19 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     const url = study().server ?? null;
     if (url === local.serverFor) return;
     local.server?.off("change", render);
+    local.unhear?.();
+    local.unhear = null;
     local.serverFor = url;
     local.server = null;
+    local.pools = [];
+    local.serverSince = Date.now();
     if (!url) return;
+    // who serves it: heard, not read (each machine says so every couple of seconds)
+    local.unhear = served(repo, url, (pools) => {
+      if (local.serverFor !== url) return;
+      local.pools = pools;
+      render();
+    });
     findWhenThere(repo, url, { tries: 4 }).then(
       (h) => {
         if (local.serverFor !== url || local.disposed) return;
@@ -170,12 +200,33 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     );
   }
 
+  /** Follows a run's task while the run hasn't ended: what its run doc can't say is read from it. */
+  function followTask(url, run) {
+    if (local.unwatch.has(url) || !run?.server || isTerminal(run.status)) return;
+    local.unwatch.set(
+      url,
+      watch(
+        repo,
+        run.server,
+        url,
+        (view) => {
+          local.tasks.set(url, { state: view.state, error: view.error });
+          render();
+        },
+        run.task ? { from: run.task } : {},
+      ),
+    );
+  }
+
   function loadRuns() {
     const urls = new Set(study().runs ?? []);
     for (const [url, h] of local.runs)
       if (!urls.has(url)) {
         h.off("change", render);
         local.runs.delete(url);
+        local.unwatch.get(url)?.();
+        local.unwatch.delete(url);
+        local.tasks.delete(url);
       }
     for (const url of urls) {
       if (local.runs.has(url)) continue;
@@ -185,6 +236,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
           if (local.disposed || !(study().runs ?? []).includes(url)) return;
           local.runs.set(url, h);
           h.on("change", render);
+          followTask(url, h.doc());
           render();
         },
         () => {},
@@ -447,13 +499,11 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     const setup = setupOf();
     const preset = typeof setup.mesh.size === "string";
     const est = local.part?.solid ? meshEstimate(setup, local.part) : null;
-    const cap = local.server?.doc()?.daemon?.maxNodes;
-    const over = est && cap && est.nodes > cap;
     return `<h2>Mesh</h2>
       <label class="field"><span>Element size</span><select data-key="mesh-size" data-act="mesh-size">${MESH_PRESETS.map((p) => `<option value="${p}"${setup.mesh.size === p ? " selected" : ""}>${p[0].toUpperCase()}${p.slice(1)}</option>`).join("")}<option value="custom"${preset ? "" : " selected"}>A length…</option></select></label>
       ${preset ? "" : `<label class="field"><span>Length</span>${quantity(setup.mesh.size, "length", "mesh-length", { extra: 'min="0"' })}</label>`}
       <label class="field" title="Ten-node elements bend properly and are what stress should be read from. Four-node ones are stiff and rough: for a quick look only"><span>Elements</span><select data-key="mesh-order" data-act="mesh-order"><option value="2"${setup.mesh.order === 2 ? " selected" : ""}>Ten-node (accurate)</option><option value="1"${setup.mesh.order === 1 ? " selected" : ""}>Four-node (rough)</option></select></label>
-      ${est ? `<div class="${over ? "warn" : "hint"}">About ${est.nodes.toLocaleString("en")} nodes at ${pretty(est.size, "length")}${preset ? ` (${setup.mesh.size} for this part)` : ""}${over ? `: more than the server's ${cap.toLocaleString("en")}. Use a larger size.` : "."}</div>` : ""}`;
+      ${est ? `<div class="hint">About ${est.nodes.toLocaleString("en")} nodes at ${pretty(est.size, "length")}${preset ? ` (${setup.mesh.size} for this part)` : ""}.</div>` : ""}`;
   }
 
   function serverHtml() {
@@ -466,17 +516,19 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
       remembered = null;
     }
     if (!url)
-      return `<h2>Server</h2><div class="hint">Where it runs: a machine with CalculiX and this package's daemon (daemon/start.sh prints its link).</div>
-        <div class="cluster"><input type="text" data-key="server-url" data-act="server-url" placeholder="Paste the daemon's link">${remembered ? `<button data-act="server-last" title="The server this browser last used">Use the last one</button>` : ""}</div>`;
+      return `<h2>Server</h2><div class="hint">Where it runs: a machine with gmsh and CalculiX serving a queue (daemon/start.sh in this package starts it and prints the queue's link).</div>
+        <div class="cluster"><input type="text" data-key="server-url" data-act="server-url" placeholder="Paste the queue's link">${remembered ? `<button data-act="server-last" title="The server this browser last used">Use the last one</button>` : ""}</div>`;
     if (!doc) return `<h2>Server</h2><div class="hint">loading…</div><div class="cluster"><button data-act="server-forget">Change</button></div>`;
-    const online = daemonOnline(doc, Date.now());
-    const q = queueView(doc);
-    const d = doc.daemon ?? {};
+    const by = servedBy(local.pools);
+    const q = queueCounts(doc, local.pools);
     return `<h2>Server</h2>
-      <div class="chip"><span class="dot" data-state="${online ? "online" : "idle"}"></span><a href="#" data-act="open-server">${esc(doc.title ?? "FEA server")}</a><span class="hint">${online ? `CalculiX ${esc(d.calculix ?? "?")}, ${d.cores ?? "?"} cores${q.active.length ? `, running ${q.active.length}` : ""}${q.waiting.length ? `, ${q.waiting.length} waiting` : ""}` : "not running"}</span></div>
-      ${online ? "" : `<div class="warn">Its daemon isn't running. Start it (daemon/start.sh) on that machine.</div>`}
+      <div class="chip"><span class="dot" data-state="${by ? "online" : "idle"}"></span><a href="#" data-act="open-server">${esc(doc.title ?? "FEA server")}</a><span class="hint">${by ? `served by ${esc(by)}${q.running ? `, running ${q.running}` : ""}${q.waiting ? `, ${q.waiting} waiting` : ""}` : listening() ? "listening…" : "not running"}</span></div>
+      ${by || listening() ? "" : `<div class="warn">Nobody is serving it. Start it (daemon/start.sh) on its machine.</div>`}
       <div class="cluster"><button data-act="server-forget">Change</button></div>`;
   }
+
+  /** Whether it's too soon to say nobody serves the queue: a machine says so every couple of seconds. */
+  const listening = () => !local.pools.length && Date.now() - local.serverSince < BEAT_MS + 500;
 
   function runHtml() {
     const setup = setupOf();
@@ -485,7 +537,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     const blocking = [...ready.blocking];
     if (study().part && !local.part && !local.partError) blocking.length = 0;
     if (!study().server) blocking.push("choose a server");
-    else if (local.server && !daemonOnline(local.server.doc(), Date.now())) blocking.push("the server's daemon isn't running");
+    else if (local.server && !local.pools.length && !listening()) blocking.push("the server isn't running: nobody is heard serving its queue");
     const why = blocking.length ? `<ul class="why">${blocking.map((b) => `<li>${esc(b[0].toUpperCase() + b.slice(1))}.</li>`).join("")}</ul>` : "";
     const warnings = ready.warnings.map((w) => `<div class="hint">${esc(w[0].toUpperCase() + w.slice(1))}.</div>`).join("");
     const fixed = changed.length ? `<div class="warn">${changed.map((c) => esc(c[0].toUpperCase() + c.slice(1))).join(". ")}.</div>` : "";
@@ -499,17 +551,24 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     const now = Date.now();
     const rows = urls
       .map((url) => {
-        const run = local.runs.get(url)?.doc();
+        const run = runOf(url);
         const h = headline(run);
         const going = run && !isTerminal(run.status);
         const found = run?.status !== "done" ? "" : run.summary?.kind === "modal" ? ` · first mode ${h.frequency}` : ` · ${h.stress} · moves ${h.displacement}${h.safety === "–" ? "" : ` · safety ${h.safety}`}`;
         return `<li data-act="select-run" data-url="${url}" data-state="${run?.status ?? "loading"}" aria-selected="${url === sel}" tabindex="0" role="option">
           <span class="dot" data-state="${run?.status ?? "idle"}"></span>
-          <div class="run-name"><div class="run-title" title="${esc(run?.title ?? "")}">${esc(run?.title ?? "loading…")}</div><div class="hint">${run ? esc(statusLine(run, now) + found) : ""}</div></div>
+          <div class="run-name"><div class="run-title" title="${esc(run?.title ?? "")}">${esc(run?.title ?? "loading…")}</div><div class="hint">${run ? esc(statusLine(run, now) + found + (run.note ? ` · ${run.note}` : "") + waitingAhead(url, run)) : ""}</div></div>
           ${going ? `<button data-act="stop-run" data-url="${url}">Cancel</button>` : `<button class="x" data-act="forget-run" data-url="${url}" title="Take it off this list" aria-label="Take this run off the list">×</button>`}</li>`;
       })
       .join("");
     return `<h2>Runs</h2><ul class="runs" role="listbox" aria-label="Runs">${rows}</ul>`;
+  }
+
+  /** A run waiting in the queue: how many were asked for before it. */
+  function waitingAhead(url, run) {
+    if (run.status !== "queued" || run.note || !local.server || study().server !== run.server) return "";
+    const ahead = aheadOf(local.server.doc(), url);
+    return ahead ? ` · ${ahead} ahead of it` : "";
   }
 
   function showHtml() {
@@ -587,7 +646,10 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     if (document.activeElement !== title) title.value = s.title ?? "";
     for (const tab of root.querySelectorAll('[role="tab"]')) tab.setAttribute("aria-selected", String(tab.dataset.tab === local.tab));
     for (const p of root.querySelectorAll(".tab-panel")) p.hidden = p.dataset.tab !== local.tab;
-    const going = [...local.runs.values()].filter((h) => h.doc() && !isTerminal(h.doc().status)).length;
+    const going = [...local.runs.keys()].filter((url) => {
+      const run = runOf(url);
+      return run && !isTerminal(run.status);
+    }).length;
     $(".tab-sum").textContent = going ? `${going} running` : (s.runs ?? []).length ? String(s.runs.length) : "";
     // an item that has gone can't be picked for
     if (local.active && !(local.active.what === "support" ? setupOf().supports : setupOf().loads)[local.active.id]) local.active = null;
@@ -773,7 +835,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
       case "open-part":
         return open(study().part.url);
       case "open-server":
-        return open(study().server, "fea-server");
+        return open(study().server);
       case "open-run":
         return open(el.dataset.url, "fea-run");
       case "reread":
@@ -914,6 +976,8 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
       clearInterval(clock);
       handle.off("change", render);
       local.server?.off("change", render);
+      local.unhear?.();
+      for (const stop of local.unwatch.values()) stop();
       for (const h of local.runs.values()) h.off?.("change", render);
       stage.animate(null);
       stage.setHint?.("");

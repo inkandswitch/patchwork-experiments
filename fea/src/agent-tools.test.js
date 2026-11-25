@@ -1,5 +1,6 @@
 // The agent's tools over a fake repo: a box and a plate with a hole as GLB
-// file docs, a daemon's inbox, and the finite cases each tool decides: the
+// file docs, a task queue a fake machine says it serves, and the finite
+// cases each tool decides: the
 // face report, setting up on its face numbers, running, the results, stopping,
 // and every refusal (each says what is allowed and writes nothing).
 
@@ -7,7 +8,9 @@ import { readFileSync } from "node:fs";
 import { FakeRepo } from "./test/fake-repo.js";
 import { encodeGLB } from "./glb.js";
 import { box, plateWithHole } from "./test/shapes.js";
-import { newServer, newRun, STUDY_TYPE, RUN_TYPE } from "./protocol.js";
+import { newRun, STUDY_TYPE, RUN_TYPE } from "./protocol.js";
+import { setPackageUrl, RUN_CODE } from "./run-tasks.js";
+import { taskState, allHeard } from "./task-rules.js";
 import { normalizeSetup, MAX_MODES } from "./setup.js";
 import { unitsOf } from "./units.js";
 import { MATERIALS } from "./materials.js";
@@ -19,15 +22,27 @@ import { AGENT_TOOLS } from "./agent-meta.js";
 const SESSION = "automerge:session";
 const glbFile = (repo, name, tris) => repo.add({ "@patchwork": { type: "file" }, name: `${name}.glb`, extension: "glb", content: encodeGLB({ meshes: [{ name, positions: Float32Array.from(tris) }] }) });
 
-let repo, ctx, boxUrl, plateUrl, server, folder;
+const PACKAGE = "automerge:feaTestPackageAbc";
+let repo, ctx, boxUrl, plateUrl, server, folder, beating;
+/** A machine serving the queue says so every so often (task-client.js's `served` hears it). */
+function serveQueue({ name = "Test machine", slots = 1, busy = 0 } = {}) {
+  let seq = 0;
+  const beat = () => server.hear({ type: "serving", pool: "pool-1", name, slots, busy, from: "test-pool", seq: seq++ });
+  beat();
+  clearInterval(beating);
+  beating = setInterval(beat, 50);
+}
+afterEach(() => clearInterval(beating));
 beforeEach(() => {
+  setPackageUrl(PACKAGE);
   repo = new FakeRepo();
   ctx = { repo, sessionUrl: SESSION };
   // 100 × 20 × 10 mm, from the origin
   boxUrl = glbFile(repo, "box", box(0.1, 0.02, 0.01)).url;
   // 60 × 40 × 5 mm with a 10 mm hole through its thickness (z)
   plateUrl = glbFile(repo, "plate", plateWithHole(0.06, 0.04, 0.005, 0.005, 32)).url;
-  server = repo.add(newServer({ title: "Test FEA", daemon: { heartbeat: Date.now(), calculix: "2.22", cores: 4 } }));
+  server = repo.add({ title: "Test FEA", jobs: {} });
+  serveQueue();
   folder = repo.add({ "@patchwork": { type: "folder" }, title: "Work", docs: [] });
 });
 
@@ -139,7 +154,7 @@ describe("fea_study", () => {
     expect(t).toContain("Material: Aluminium 6061-T6: E 68.9 GPa, ν 0.33, density 2700 kg/m³, yield 276 MPa.");
     expect(t).toContain("Supports: none (nothing holds the part).");
     expect(t).toContain("Server: “Test FEA”");
-    expect(t).toContain("running, CalculiX 2.22, 4 cores");
+    expect(t).toContain("served by Test machine; nothing running.");
     expect(t).toMatch(/Not ready to run: Add a support: .*\. Add a load: /);
   });
   it("lists the curved faces, or those facing one way", async () => {
@@ -171,8 +186,9 @@ describe("fea_study", () => {
     await expect(studyTool.execute({ study: "nonsense" }, ctx)).rejects.toThrow(/`study` "nonsense" isn't an automerge: URL/);
     const h = await repo.find(r.doc.url);
     const before = snapshot(h);
-    await expect(studyTool.execute({ study: r.doc.url, server: boxUrl, title: "Renamed" }, ctx)).rejects.toThrow(/`server` automerge:\S+: that isn't an FEA server: paste the inbox link the FEA daemon printed when it started\./);
-    await expect(studyTool.execute({ study: r.doc.url, part: server.url }, ctx)).rejects.toThrow("Couldn't link " + server.url + ": That's one of this tool's own documents, not a part. Nothing was changed.");
+    await expect(studyTool.execute({ study: r.doc.url, server: boxUrl, title: "Renamed" }, ctx)).rejects.toThrow(/`server` automerge:\S+: that isn't an FEA server: paste the queue link the FEA host printed when it started \(daemon\/start\.sh in this package\)\./);
+    const own = repo.add(newRun({ studyUrl: r.doc.url, serverUrl: server.url, setup: normalizeSetup(null), part: {}, now: 0 }));
+    await expect(studyTool.execute({ study: r.doc.url, part: own.url }, ctx)).rejects.toThrow("Couldn't link " + own.url + ": That's one of this tool's own documents, not a part. Nothing was changed.");
     await expect(studyTool.execute({ study: r.doc.url, select_run: boxUrl }, ctx)).rejects.toThrow(/that run isn't one of this study's\. Its runs: none yet\./);
     expect(snapshot(h)).toBe(before);
   });
@@ -312,7 +328,7 @@ describe("fea_setup refuses, says what is allowed, and writes nothing", () => {
 // ---------------------------------------------------------------- running
 
 describe("fea_run", () => {
-  it("freezes the setup and the part into a queued run, puts it in the server's inbox, and says what to watch", async () => {
+  it("freezes the setup and the part into a queued run, asks the server's queue for it as a task keyed by the run, and says what to watch", async () => {
     const s = await readyStudy();
     const r = await runTool.execute({ study: s.url }, ctx);
     expect(r.made).toEqual([{ url: expect.any(String), name: "box · static · Aluminium 6061-T6 · coarse", kind: RUN_TYPE }]);
@@ -328,11 +344,17 @@ describe("fea_run", () => {
     expect(run.part.title).toBe("box");
     expect(s.handle.doc().runs).toEqual([runUrl]);
     expect(s.handle.doc().selected).toBe(runUrl);
-    expect(Object.values(server.doc().requests).map((q) => [q.run, q.by])).toEqual([[runUrl, "agent"]]);
+    // asked of the study's queue as a task keyed by the run, naming this package's run code
+    expect(Object.keys(server.doc().jobs)).toEqual([runUrl]);
+    const entry = server.doc().jobs[runUrl];
+    expect(entry.package).toBe(PACKAGE);
+    expect(run.task).toBe(entry.taskUrl);
+    const task = (await repo.find(entry.taskUrl)).doc();
+    expect(task).toEqual({ importUrl: `/${encodeURIComponent(PACKAGE)}/${RUN_CODE}`, input: { run: runUrl }, key: runUrl, runs: [] });
     expect(s.handle.messages.at(-1)).toBe(`agent ${SESSION}: run the study “box · FEA”`);
-    expect(server.messages).toEqual([`agent ${SESSION}: run the study “box · FEA”`]);
+    expect((await repo.find(runUrl)).messages).toEqual([`agent ${SESSION}: run the study “box · FEA”`]);
     expect(STATUS_PATH).toEqual(["status"]);
-    expect(r.text).toMatch(/^Asked “Test FEA” for a run: automerge:\S+ — “box · static · Aluminium 6061-T6 · coarse”, waiting for the server\./);
+    expect(r.text).toMatch(/^Asked “Test FEA” \(served by Test machine\) for a run: automerge:\S+ — “box · static · Aluminium 6061-T6 · coarse”, waiting for the server\./);
     expect(r.text).toMatch(/Its mesh will be about [\d,]+ nodes \([\d,]+ ten-node elements at [\d.]+ mm\)\./);
     expect(r.text).toContain(`doc_watch { url: "${runUrl}", path: ["status"], match: "done|failed|cancelled" }`);
   });
@@ -343,13 +365,29 @@ describe("fea_run", () => {
     await expect(runTool.execute({ study: s.url }, ctx)).rejects.toThrow("Can't run: not ready to run: add a support: with nothing holding it, the part would simply move away. Nothing was asked for");
     expect(snapshot(s.handle, server)).toBe(before);
   });
-  it("refuses while the server's daemon isn't running, and asks for nothing", async () => {
+  it("refuses while nobody is heard serving the server's queue, and asks for nothing", async () => {
     const s = await readyStudy();
-    server.change((d) => void (d.daemon.heartbeat = 0));
+    clearInterval(beating);
     const before = snapshot(s.handle, server);
-    await expect(runTool.execute({ study: s.url }, ctx)).rejects.toThrow("Can't run: the server “Test FEA” isn't running: start its daemon (daemon/start.sh), or choose another. Nothing was asked for");
+    await expect(runTool.execute({ study: s.url }, ctx)).rejects.toThrow("Can't run: the server “Test FEA” isn't running: start it (daemon/start.sh on its machine), or choose another. Nothing was asked for");
     expect(snapshot(s.handle, server)).toBe(before);
-    expect(text(await studyTool.execute({ study: s.url }, ctx))).toContain("Not ready to run: The server's daemon isn't running.");
+    expect(text(await studyTool.execute({ study: s.url }, ctx))).toContain("Not ready to run: The server isn't running: nobody is heard serving its queue.");
+  }, 15_000);
+  it("says how many runs are ahead, from the queue and what its machine says it is busy with", async () => {
+    const s = await readyStudy();
+    await runTool.execute({ study: s.url }, ctx);
+    await runTool.execute({ study: s.url }, ctx);
+    serveQueue({ busy: 1 });
+    const r = await runTool.execute({ study: s.url }, ctx);
+    expect(r.text).toMatch(/, waiting for the server, 2 ahead of it\./);
+    expect(text(await studyTool.execute({ study: s.url }, ctx))).toContain("served by Test machine; running 1, 2 waiting.");
+  });
+  it("can't name the run's code outside its package without being told, and asks for nothing", async () => {
+    const s = await readyStudy();
+    setPackageUrl(null);
+    const before = snapshot(s.handle, server);
+    await expect(runTool.execute({ study: s.url }, ctx)).rejects.toThrow(/Can't run: This copy of the FEA tool wasn't loaded from its package/);
+    expect(snapshot(s.handle, server)).toBe(before);
   });
   it("refuses with no server", async () => {
     const r = await studyTool.execute({ part: boxUrl }, ctx);
@@ -432,19 +470,41 @@ describe("fea_stop", () => {
     const runUrl = (await runTool.execute({ study: s.url }, ctx)).made[0].url;
     const run = await repo.find(runUrl);
     const done = repo.add(doneRun(s.url));
+    const task = await repo.find(run.doc().task);
+    const runDocBefore = JSON.stringify(run.doc());
     const t = await stopTool.execute({ runs: [runUrl, done.url] }, ctx);
-    expect(run.doc().control.cancel).toBe(true);
-    expect(run.messages).toEqual([`agent ${SESSION}: cancel the run ${runUrl}`]);
-    expect(done.doc().control.cancel).toBe(false);
-    expect(t).toContain(`${runUrl}: asked to cancel (it was queued).`);
+    // the stop is a record in the task, and the queue no longer lists it; the run doc isn't written
+    expect(task.doc().runs).toEqual([{ id: expect.any(String), start: expect.any(Number), end: expect.any(Number), status: "cancelled" }]);
+    expect(taskState(task.doc(), allHeard)).toBe("cancelled");
+    expect(server.doc().jobs).toEqual({});
+    expect(JSON.stringify(run.doc())).toBe(runDocBefore);
+    expect(t).toContain(`${runUrl}: cancelled. If it hadn't started it never will, and its status field stays "queued" (fea_results shows it cancelled)`);
     expect(t).toContain(`${done.url}: already done; nothing to cancel.`);
+    // read from both, it is cancelled: to the results and to stop
+    expect(await resultsTool.execute({ runs: [runUrl] }, ctx)).toContain(`1. ${runUrl} — “box · static · Aluminium 6061-T6 · coarse”: cancelled.`);
+    expect(await stopTool.execute({ runs: [runUrl] }, ctx)).toBe(`${runUrl}: already cancelled; nothing to cancel.`);
+  });
+  it("a run its queue no longer lists (it ended, as far as the queue knows) has nothing to cancel", async () => {
+    const s = await readyStudy();
+    const runUrl = (await runTool.execute({ study: s.url }, ctx)).made[0].url;
+    server.change((d) => delete d.jobs[runUrl]);
+    expect(await stopTool.execute({ runs: [runUrl] }, ctx)).toBe(`${runUrl}: its queue no longer lists that run, so there's nothing to cancel.`);
+  });
+  it("a run whose task failed (its code never wrote the run doc) reads failed, with the task's reason", async () => {
+    const s = await readyStudy();
+    const runUrl = (await runTool.execute({ study: s.url }, ctx)).made[0].url;
+    const task = await repo.find((await repo.find(runUrl)).doc().task);
+    task.change((d) => d.runs.push({ id: "r1", pool: "p", start: 1, end: 2, status: "failed", logs: [{ timestampMillis: 2, message: "its code would not load" }] }));
+    expect(await resultsTool.execute({ runs: [runUrl] }, ctx)).toContain("   Failed: its code would not load");
+    expect(await stopTool.execute({ runs: [runUrl] }, ctx)).toBe(`${runUrl}: already failed; nothing to cancel.`);
   });
   it("refuses what isn't a run, and cancels nothing", async () => {
     const s = await readyStudy();
     const runUrl = (await runTool.execute({ study: s.url }, ctx)).made[0].url;
     const run = await repo.find(runUrl);
     await expect(stopTool.execute({ runs: [runUrl, boxUrl] }, ctx)).rejects.toThrow(/is a file document, not an FEA run\. Nothing was cancelled\./);
-    expect(run.doc().control.cancel).toBe(false);
+    expect((await repo.find(run.doc().task)).doc().runs).toEqual([]);
+    expect(Object.keys(server.doc().jobs)).toEqual([runUrl]);
     await expect(stopTool.execute({ runs: [] }, ctx)).rejects.toThrow("`runs` is a list of run URLs to cancel.");
   });
 });

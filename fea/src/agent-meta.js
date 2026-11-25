@@ -89,7 +89,7 @@ export const AGENT_TOOLS = [
     where: "host",
     risk: "edit",
     description:
-      "Finite element analysis (CalculiX) of one solid part: how much it bends and how hard it is stressed under the loads you put on it, or how it vibrates. Make a study, or link or re-read its part, choose its server, and report it. With no `study`, makes one (filed in `folder` if given). `part` links the solid to analyse: an OpenSCAD or CAD model, a GLB or STL file document, or an object's render from a scene; null unlinks it. `reread` reads the linked model again after it changed (supports and loads move onto the faces that are still alike; the report says which lost faces). `server` is an FEA daemon's inbox (null: none). Every call reports the study: the part (its size x × y × z in the part's frame, where y is up; volume; mass in the current material; whether it is a closed solid, and if not why; whether the model changed since it was read), its FACES, each with its number and what it is (\"face 3: flat, 40 mm × 5 mm, facing −x; area …; centre (x, y, z)\"), the material, the supports and loads with their ids, the mesh and about how many nodes it will be, the server and whether its daemon is running, and what still blocks a run. Face numbers are what fea_setup takes; they hold until the part is read again. A part with more than 60 faces lists its largest 60: `faces: \"all\"` lists every one, `facing` lists only those facing one way. With only `study`, it just reports.",
+      "Finite element analysis (CalculiX) of one solid part: how much it bends and how hard it is stressed under the loads you put on it, or how it vibrates. Make a study, or link or re-read its part, choose its server, and report it. With no `study`, makes one (filed in `folder` if given). `part` links the solid to analyse: an OpenSCAD or CAD model, a GLB or STL file document, or an object's render from a scene; null unlinks it. `reread` reads the linked model again after it changed (supports and loads move onto the faces that are still alike; the report says which lost faces). `server` is a task queue an FEA host serves (null: none). Every call reports the study: the part (its size x × y × z in the part's frame, where y is up; volume; mass in the current material; whether it is a closed solid, and if not why; whether the model changed since it was read), its FACES, each with its number and what it is (\"face 3: flat, 40 mm × 5 mm, facing −x; area …; centre (x, y, z)\"), the material, the supports and loads with their ids, the mesh and about how many nodes it will be, the server and whether a machine is heard serving it, and what still blocks a run. Face numbers are what fea_setup takes; they hold until the part is read again. A part with more than 60 faces lists its largest 60: `faces: \"all\"` lists every one, `facing` lists only those facing one way. With only `study`, it just reports.",
     input_schema: {
       type: "object",
       properties: {
@@ -98,7 +98,7 @@ export const AGENT_TOOLS = [
         title: { type: "string", description: "The study's name." },
         part: { type: ["string", "null"], description: "automerge: URL of the solid to analyse (an OpenSCAD or CAD model, a GLB or STL file, a scene render), or null to unlink it." },
         reread: { type: "boolean", description: "Read the linked model again (after it changed): its faces are split afresh and numbered again." },
-        server: { type: ["string", "null"], description: "automerge: URL of an FEA daemon's inbox (the daemon prints it when it starts), or null for none." },
+        server: { type: ["string", "null"], description: "automerge: URL of a task queue an FEA host serves (the host prints it when it starts), or null for none." },
         select_run: { type: ["string", "null"], description: "automerge: URL of one of the study's runs: the one the study shows and a scene draws (null: none chosen). A new run is chosen when it is asked for." },
         forget_runs: { type: "array", items: { type: "string" }, description: "automerge: URLs of runs to take off the study's list (the run documents stay)." },
         faces: { type: "string", enum: ["largest", "all"], description: 'Which faces the report lists: "largest" (the default: the 60 largest by area, when there are more), or "all".' },
@@ -168,7 +168,7 @@ export const AGENT_TOOLS = [
     where: "worker",
     risk: "edit",
     description:
-      "Run the study as it is set up, on its server: a new run document freezes the setup and the part as they are now and goes in the server's queue. Refused, with what is missing, when something blocks it (fea_study lists what does) or the server's daemon isn't running. Returns the run's URL, about how big its mesh will be, and exactly what to watch to wait for it: its [\"status\"] field, with doc_watch, until it is done, failed or cancelled. Then fea_results.",
+      "Run the study as it is set up, on its server: a new run document freezes the setup and the part as they are now and is asked of the server's queue. Refused, with what is missing, when something blocks it (fea_study lists what does) or no machine is heard serving the queue. Returns the run's URL, about how big its mesh will be, and exactly what to watch to wait for it: its [\"status\"] field, with doc_watch, until it is done, failed or cancelled. Then fea_results.",
     input_schema: {
       type: "object",
       required: ["study"],
@@ -203,7 +203,7 @@ export const AGENT_TOOLS = [
     name: "Stop FEA runs",
     where: "worker",
     risk: "edit",
-    description: "Cancel runs that haven't finished: the server stops them and keeps nothing. The run's status says when it has (cancelled). A run that has already finished, failed or been cancelled is left as it is.",
+    description: "Cancel runs that haven't finished: one waiting never starts; one running is stopped by the machine running it, which keeps nothing, and its status then says cancelled. A run that has already finished, failed or been cancelled is left as it is.",
     input_schema: {
       type: "object",
       required: ["runs"],

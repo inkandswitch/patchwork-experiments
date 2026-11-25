@@ -18,7 +18,8 @@
 // Every write is a change whose message names the agent session and what it
 // did.
 
-import { STUDY_TYPE, RUN_TYPE, SERVER_TYPE, daemonOnline, queueView, isTerminal } from "./protocol.js";
+import { STUDY_TYPE, RUN_TYPE, isTerminal, shownRun } from "./protocol.js";
+import { isQueue, hearServing, queueCounts, servedBy, lookAtTask } from "./run-tasks.js";
 import { normalizeSetup, setupProblems, readiness, meshEstimate, listOf, describeLoad, readQuantity, MESH_PRESETS } from "./setup.js";
 import { MATERIALS } from "./materials.js";
 import { unitsOf, pretty, prettyUnit, format, num, toSI, DIMENSIONS } from "./units.js";
@@ -32,7 +33,7 @@ import * as model from "./study-model.js";
 
 /** The change message: who (the agent, which session) and what. */
 const message = (ctx, why) => `agent${ctx?.sessionUrl ? ` ${ctx.sessionUrl}` : ""}: ${why}`;
-/** Who asked, for a server's queue. */
+/** Who asked, for the run doc. */
 const BY = "agent";
 /** How many faces a report lists unless asked for all. */
 export const MAX_FACES = 60;
@@ -132,14 +133,16 @@ function quantity(input, dimension, what) {
 
 // ---------------------------------------------------------------- reading a study
 
+/** The study's server (a task queue), and the machines heard serving it. */
 async function openServer(ctx, url) {
-  if (!url) return { url: null, handle: null, doc: null, error: null };
+  if (!url) return { url: null, handle: null, doc: null, error: null, pools: [] };
   try {
     const handle = await ctx.repo.find(url);
     const doc = handle.doc();
-    return { url, handle, doc, error: typeOf(doc) === SERVER_TYPE ? null : "that link isn't an FEA server's inbox" };
+    if (!isQueue(doc)) return { url, handle, doc, error: "isn't a task queue (the FEA host prints one when it starts)", pools: [] };
+    return { url, handle, doc, error: null, pools: await hearServing(ctx.repo, url) };
   } catch (err) {
-    return { url, handle: null, doc: null, error: `couldn't load the inbox (${err?.message ?? err})` };
+    return { url, handle: null, doc: null, error: `couldn't be loaded (${err?.message ?? err})`, pools: [] };
   }
 }
 
@@ -255,21 +258,16 @@ function meshText(c) {
   const head = `Mesh: ${size}, ${s.order === 2 ? "ten-node (accurate)" : "four-node (rough)"} elements`;
   if (!c.part?.solid) return `${head}.`;
   const est = meshEstimate(c.setup, c.part);
-  const cap = c.server.doc?.daemon?.maxNodes;
-  const over = cap && est.nodes > cap ? `: more than the server's ${cap.toLocaleString("en")}; choose a larger size` : "";
-  return `${head}; about ${est.nodes.toLocaleString("en")} nodes (${est.elements.toLocaleString("en")} elements) at ${pretty(est.size, "length")}${over}.`;
+  return `${head}; about ${est.nodes.toLocaleString("en")} nodes (${est.elements.toLocaleString("en")} elements) at ${pretty(est.size, "length")}.`;
 }
 
 function serverText(sv) {
-  if (!sv.url) return "Server: none. Choose one with fea_study { study, server: <the FEA daemon's inbox link> }.";
+  if (!sv.url) return "Server: none. Choose one with fea_study { study, server: <the queue link the FEA host printed> }.";
   if (sv.error) return `Server: ${sv.url}: ${sv.error}.`;
-  const d = sv.doc.daemon ?? {};
-  const online = daemonOnline(sv.doc, Date.now());
-  const q = queueView(sv.doc);
-  const state = online
-    ? `running, CalculiX ${d.calculix ?? "?"}, ${d.cores ?? "?"} cores${d.maxNodes ? `, up to ${d.maxNodes.toLocaleString("en")} nodes` : ""}`
-    : `not running${d.heartbeat ? ` (last heard ${stamp(d.heartbeat)})` : ""}: start its daemon (daemon/start.sh) on its machine`;
-  return `Server: “${sv.doc.title ?? "FEA server"}” (${sv.url}): ${state}; ${q.active.length ? `running ${q.active.length}` : "nothing running"}${q.waiting.length ? `, ${q.waiting.length} waiting` : ""}.`;
+  const by = servedBy(sv.pools);
+  const q = queueCounts(sv.doc, sv.pools);
+  const state = by ? `served by ${by}` : "not running: nobody is heard serving its queue; start it (daemon/start.sh) on its machine";
+  return `Server: “${sv.doc.title ?? "FEA server"}” (${sv.url}): ${state}; ${q.running ? `running ${q.running}` : "nothing running"}${q.waiting ? `, ${q.waiting} waiting` : ""}.`;
 }
 
 /** What blocks a run and what to look out for, as the study tool's Run section says it. */
@@ -278,7 +276,7 @@ function readinessOf(c) {
   const blocking = [...ready.blocking];
   if (!c.server.url) blocking.push("choose a server");
   else if (c.server.error) blocking.push(`the server ${c.server.error}`);
-  else if (!daemonOnline(c.server.doc, Date.now())) blocking.push("the server's daemon isn't running");
+  else if (!c.server.pools.length) blocking.push("the server isn't running: nobody is heard serving its queue");
   return { blocking, warnings: ready.warnings };
 }
 
@@ -318,7 +316,7 @@ export const studyTool = {
     const facing = input.facing === undefined ? null : String(input.facing).replace("−", "-");
     if (facing !== null && !FACINGS.includes(facing)) throw new Error(`\`facing\` is one of ${FACINGS.map(quote).join(", ")}, not ${quote(input.facing)}.`);
     const partUrl = input.part === undefined ? undefined : input.part === null || input.part === "" ? null : urlOf(input.part, "part", "the solid to analyse");
-    const serverUrl = input.server === undefined ? undefined : input.server === null || input.server === "" ? null : urlOf(input.server, "server", "an FEA daemon's inbox");
+    const serverUrl = input.server === undefined ? undefined : input.server === null || input.server === "" ? null : urlOf(input.server, "server", "the queue link an FEA host printed");
     if (input.reread !== undefined && typeof input.reread !== "boolean") throw new Error("`reread` is true or false.");
     if (input.reread && partUrl === null) throw new Error("Give `part: null` (unlink) or `reread: true`, not both.");
     const title = input.title != null && String(input.title).trim() ? String(input.title).trim().slice(0, 200) : null;
@@ -606,13 +604,12 @@ export const runTool = {
     if (!r.ok) throw new Error(`Can't run: ${r.error}. Nothing was asked for (fea_study { study } reports the study).`);
     const run = (await ctx.repo.find(r.url)).doc();
     const sv = c.server.handle?.doc() ?? c.server.doc;
-    const q = queueView(sv);
-    const ahead = q.active.filter((x) => x.run !== r.url).length + q.waiting.filter((x) => x.run !== r.url).length;
+    const ahead = queueCounts(sv, r.pools).listed - 1;
     const est = c.part?.solid ? meshEstimate(c.setup, c.part) : null;
     const lines = [
-      `Asked “${sv.title ?? "FEA server"}” for a run: ${r.url} — “${run.title}”, ${statusLine(run)}${ahead ? `, ${ahead} ahead of it` : ""}.`,
+      `Asked “${sv.title ?? "FEA server"}” (served by ${servedBy(r.pools)}) for a run: ${r.url} — “${run.title}”, ${statusLine(run)}${ahead > 0 ? `, ${ahead} ahead of it` : ""}.`,
       est ? `Its mesh will be about ${est.nodes.toLocaleString("en")} nodes (${est.elements.toLocaleString("en")} ${c.setup.mesh.order === 2 ? "ten" : "four"}-node elements at ${pretty(est.size, "length")}).` : null,
-      `A run's state is the small field ${JSON.stringify(STATUS_PATH)} of its document: queued → meshing → solving → post → done, or failed, or cancelled; only the server writes it.`,
+      `A run's state is the small field ${JSON.stringify(STATUS_PATH)} of its document: queued → meshing → solving → post → done, or failed, or cancelled; only the machine running it writes it. A run cancelled before it started, or that its machine never finished, can stay "queued" there: fea_results says what became of it.`,
       `To wait, watch it: doc_watch { url: "${r.url}", path: ${JSON.stringify(STATUS_PATH)}, match: "${STATUS_END}" }. Then fea_results { runs: ["${r.url}"] }. fea_stop { runs: ["${r.url}"] } cancels it.`,
     ];
     return { text: lines.filter(Boolean).join("\n"), made: [{ url: r.url, name: run.title, kind: RUN_TYPE }] };
@@ -666,7 +663,7 @@ export const resultsTool = {
         try {
           const doc = (await ctx.repo.find(url)).doc();
           if (typeOf(doc) !== RUN_TYPE) return { url, run: null, error: `not an FEA run (${typeOf(doc) ?? "untyped"})` };
-          return { url, run: doc };
+          return { url, run: await shownDoc(ctx, doc) };
         } catch (err) {
           return { url, run: null, error: String(err?.message ?? err) };
         }
@@ -686,6 +683,13 @@ export const resultsTool = {
   },
 };
 
+/** A run as a person sees it: its doc, with the status its task gives it (shownRun), from one look at the task. */
+async function shownDoc(ctx, doc) {
+  if (isTerminal(doc.status)) return doc;
+  const s = shownRun(doc, await lookAtTask(ctx.repo, doc));
+  return s.status === doc.status && s.error === (doc.error ?? null) ? doc : { ...doc, status: s.status, error: s.error };
+}
+
 // ---------------------------------------------------------------- fea_stop
 
 export const stopTool = {
@@ -699,12 +703,19 @@ export const stopTool = {
     }
     const lines = [];
     for (const h of handles) {
-      if (isTerminal(h.doc().status)) {
-        lines.push(`${h.url}: already ${h.doc().status}; nothing to cancel.`);
+      const st = (await shownDoc(ctx, h.doc())).status;
+      if (isTerminal(st)) {
+        lines.push(`${h.url}: already ${st}; nothing to cancel.`);
         continue;
       }
       const r = await model.stopRun({ repo: ctx.repo, handle: null, message: message(ctx, `cancel the run ${h.url}`) }, h.url);
-      lines.push(r.ok ? `${h.url}: asked to cancel (it was ${h.doc().status}). Its status (${JSON.stringify(STATUS_PATH)}) says cancelled when the server has stopped it.` : `${h.url}: ${r.error}.`);
+      lines.push(
+        !r.ok
+          ? `${h.url}: ${r.error}.`
+          : st === "queued"
+            ? `${h.url}: cancelled. If it hadn't started it never will, and its status field stays "queued" (fea_results shows it cancelled); if it had, the field says cancelled within seconds.`
+            : `${h.url}: cancelled (it was ${st}): the solver is stopped within seconds, and its status (${JSON.stringify(STATUS_PATH)}) then says cancelled.`,
+      );
     }
     return lines.join("\n");
   },

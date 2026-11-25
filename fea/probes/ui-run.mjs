@@ -8,8 +8,8 @@
 // What a person does, done with the pointer and the form: link a part, see
 // it measured and split into faces, click a face on the part and fix it,
 // add a force and pick its face, see why Run can't go and then that it can,
-// press Run (a run doc with the part frozen in it, filed in the server's
-// inbox), read a finished run's figures and see it on the part, a modal
+// press Run (a run doc with the part frozen in it, asked of the server's
+// task queue), read a finished run's figures and see it on the part, a modal
 // run's modes, re-read a changed part and keep the faces that are still
 // alike. Screenshots at desktop and phone widths, light and dark.
 
@@ -35,7 +35,8 @@ if (MODAL) copyFileSync(MODAL, join(runs, "modal.json"));
 if (!existsSync(join(PKG, "dist/index.js"))) throw new Error("build first: pnpm build");
 
 const W = 1300, H = 900;
-const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4797, cdp: Number(process.env.PROBE_CDP) || 9797, page: "/probes/ui-probe.html", width: W, height: H, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/runs/": runs } });
+// the package is also served under a made-up automerge url, as Patchwork serves it (probes/ui-probe.html)
+const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4797, cdp: Number(process.env.PROBE_CDP) || 9797, page: "/probes/ui-probe.html", width: W, height: H, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/runs/": runs, "/automerge:feaProbePackageAbc/": PKG } });
 const P = (e) => b.js(`window.__p.${e}`);
 const until = (expr, ms = 20_000) => b.waitFor(expr, ms, 60);
 const list = checklist();
@@ -129,9 +130,9 @@ try {
   rb = await P("runButton()");
   check("with a support and a load, only the server is missing", rb.disabled && rb.why.length === 1 && /server/.test(rb.why[0]), rb);
   await P(`type('[data-key="server-url"]', ${JSON.stringify(made.server)})`);
-  await until(`/CalculiX 2.23/.test(document.querySelector('section[data-s="server"]')?.innerText ?? "")`, 8000);
+  await until(`/served by FEA on probe-host/.test(document.querySelector('section[data-s="server"]')?.innerText ?? "")`, 8000);
   const serverText = await P(`text('section[data-s="server"]')`);
-  check("the server shows running, with its solver and cores", /FEA on the probe/.test(serverText) && /CalculiX 2\.23, 8 cores/.test(serverText), serverText);
+  check("the server shows who is heard serving it", /FEA on the probe/.test(serverText) && /served by FEA on probe-host/.test(serverText), serverText);
   rb = await P("runButton()");
   check("Run is on", rb.disabled === false && rb.why.length === 0, rb);
   const estimate = await P(`text('section[data-s="mesh"]')`);
@@ -140,11 +141,11 @@ try {
   await P(`click(".fea .run")`);
   await until("window.__p.doc().runs.length === 1", 8000);
   const runDocs = await P("runDocs()");
-  const inbox = await P("serverState()");
+  const queue = await P("serverState()");
   const run = runDocs[0];
   report.run = { title: run?.title, status: run?.status, part: run?.part && { stl: run.part.stl, faceOf: run.part.faceOf, faces: run.part.faces.length }, made: run?.made };
   check("Run makes a run doc with the setup and the part frozen in it, queued", run?.status === "queued" && /bytes/.test(run.part.stl) && run.part.faces.length === 7 && Object.keys(run.setup.supports).length === 1 && run.made?.tool === "@tiny-patchwork/fea", report.run);
-  check("and files it in the server's inbox", Object.values(inbox.requests).length === 1 && Object.values(inbox.requests)[0].run === (await P("doc()")).runs[0], inbox.requests);
+  check("and asks the server's queue for it, keyed by the run", Object.keys(queue.jobs).join() === (await P("doc()")).runs[0] && run.task === Object.values(queue.jobs)[0].taskUrl, queue.jobs);
   check("the study turns to its results", (await P("panel()")).tab === "results");
   const waiting = await P(`texts(".fea ul.runs li")`);
   check("the run is listed under the part's name, waiting for the server", waiting.length === 1 && /^plate · static/.test(waiting[0]) && /waiting for the server/.test(waiting[0]), waiting);
@@ -186,8 +187,6 @@ try {
     const runPage = await P(`openTool("fea-run", window.__p.doc().selected)`);
     check("a run opened on its own shows how it went, what it found and what was asked", /How it went/i.test(runPage) && /Highest stress/.test(runPage) && /Fixed support/.test(runPage) && /\*STATIC/.test(runPage), runPage.slice(0, 300));
     await shot("6-run-page");
-    const serverPage = await P(`openTool("fea-server", ${JSON.stringify(made.server)})`);
-    check("the server's page shows what it is and what waits", /CalculiX 2\.23/.test(serverPage) && /250,000 nodes/.test(serverPage) && /Waiting/i.test(serverPage), serverPage.slice(0, 300));
     await P("reopen()");
     await until("window.__p.panel().part?.faces > 0", 10_000);
     check("reopened, the study is on its setup with the part there (read from what it kept)", (await P("panel()")).tab === "setup" && (await P("panel()")).showing === "part", await P("panel()"));

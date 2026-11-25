@@ -13,6 +13,9 @@ import { join } from "node:path";
 
 const PATHS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
 
+/** How long a killed program's processes have to stop on SIGTERM before SIGKILL: well inside the 5 s a stopped task's thread is given. */
+export const KILL_AFTER_MS = 3000;
+
 function onPath(name) {
   for (const dir of [...(process.env.PATH ?? "").split(":"), ...PATHS]) if (dir && existsSync(join(dir, name))) return join(dir, name);
   return null;
@@ -68,7 +71,8 @@ export function defaultCores() {
 
 /**
  * Run one program, its output to `logFile` and to `onLine` line by line.
- * @returns {{ done: Promise<{ code: number|null, signal: string|null }>, kill: () => void }}
+ * `kill` resolves once the last of its processes has been sent SIGKILL.
+ * @returns {{ done: Promise<{ code: number|null, signal: string|null }>, kill: () => Promise<void> }}
  */
 export function run(bin, args, { cwd, logFile, onLine, env = {} } = {}) {
   const child = spawn(bin, args, { cwd, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } });
@@ -97,9 +101,12 @@ export function run(bin, args, { cwd, logFile, onLine, env = {} } = {}) {
     // it and everything under it (ccx starts no children today; gmsh's threads are its own)
     const tree = descendants(child.pid);
     for (const pid of [child.pid, ...tree]) signal(pid, "SIGTERM");
-    setTimeout(() => {
-      for (const pid of [child.pid, ...tree, ...descendants(child.pid)]) signal(pid, "SIGKILL");
-    }, 3000).unref();
+    return new Promise((resolve) =>
+      setTimeout(() => {
+        for (const pid of [child.pid, ...tree, ...descendants(child.pid)]) signal(pid, "SIGKILL");
+        resolve();
+      }, KILL_AFTER_MS).unref(),
+    );
   };
   return { done, kill };
 }

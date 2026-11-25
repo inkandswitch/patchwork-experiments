@@ -17,12 +17,12 @@
 import { readRender, isRenderDoc, fileBytes, renderKey } from "../render-read.js";
 import { decodeGLB, glbTriangles } from "./mesh-read.js";
 import { loadGetRegistry } from "../registry.js";
-import { STUDY_TYPE, RUN_TYPE, SERVER_TYPE, LAYER_TYPE } from "../protocol.js";
+import { STUDY_TYPE, RUN_TYPE, LAYER_TYPE } from "../protocol.js";
 import { PART_TYPE } from "./kept.js";
 import { SEGMENT_TYPE } from "../segments.js";
 
 const GLB_MAGIC = 0x46546c67;
-const OWN = new Set([STUDY_TYPE, RUN_TYPE, SERVER_TYPE, LAYER_TYPE, PART_TYPE, SEGMENT_TYPE]);
+const OWN = new Set([STUDY_TYPE, RUN_TYPE, LAYER_TYPE, PART_TYPE, SEGMENT_TYPE]);
 
 function extensionOf(doc) {
   const ext = String(doc?.extension ?? "").replace(/^\./, "").toLowerCase();

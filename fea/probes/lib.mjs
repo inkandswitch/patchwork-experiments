@@ -41,9 +41,10 @@ export function faceFacing(part, direction) {
  * @param {object} [o.kept]                     a part as a study keeps it (src/part/kept.js): run as it is
  * @param {(part: object) => object} o.setup    the part → what differs from the default setup
  * @param {string} [o.title]
+ * @param {AbortSignal} [o.signal]              stops it, as a task's signal would (its reason says why)
  * @returns {Promise<{ run: object, part: object, layer: object|null, seconds: number, dir: string }>}
  */
-export async function localRun({ triangles = null, kept: given = null, setup, title = "probe", work = null, cores = null, maxNodes = 250_000, onChange = null, say = () => {} }) {
+export async function localRun({ triangles = null, kept: given = null, setup, title = "probe", work = null, cores = null, maxNodes = 250_000, onChange = null, say = () => {}, signal = null }) {
   const repo = await localRepo();
   const part = given ? decodePart(given) : readPart(triangles);
   const full = normalizeSetup({ ...defaultSetup(), ...setup(part) });
@@ -53,7 +54,7 @@ export async function localRun({ triangles = null, kept: given = null, setup, ti
   const workDir = work ?? join(tmpdir(), "fea-probe");
   mkdirSync(workDir, { recursive: true });
   const t0 = Date.now();
-  await runJob({ repo, handle, tools: tools(), workDir, cores: cores ?? defaultCores(), maxNodes, daemon: { id: "probe", host: "local" }, say });
+  await runJob({ repo, handle, tools: tools(), workDir, cores: cores ?? defaultCores(), maxNodes, daemon: { host: "local" }, say, signal });
   const run = handle.doc();
   let layer = null;
   if (run.layers?.skin) layer = decodeLayer(await internalize(repo, (await repo.find(run.layers.skin)).doc()));

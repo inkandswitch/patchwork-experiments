@@ -1,11 +1,21 @@
-// The runner: what it keeps of the solver's input, and (where gmsh and
-// CalculiX are installed) one real run, start to finish, against theory.
+// The runner: what it keeps of the solver's input, how it stops when told
+// to, and (where gmsh and CalculiX are installed) one real run, start to
+// finish, against theory.
 // Machines without the solvers skip the real run; probes/validate.mjs is the
 // full set.
 
-import { deckOutline } from "./runner.mjs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync, chmodSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { deckOutline, runJob } from "./runner.mjs";
 import { findGmsh, findCcx } from "./tools.mjs";
 import { box } from "../src/test/shapes.js";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { readPart } from "../src/part/faces.js";
+import { encodePart } from "../src/part/kept.js";
+import { newRun, MACHINE_STOPPED } from "../src/protocol.js";
+import { normalizeSetup } from "../src/setup.js";
 
 describe("deckOutline", () => {
   it("cuts a long list to its first lines and a count, and leaves short ones whole", () => {
@@ -63,4 +73,70 @@ describe.skipIf(!solvers)("a real run (gmsh and CalculiX are here)", () => {
     expect(Object.keys(r.layer.fields).sort()).toEqual(["ux", "uy", "uz", "vm"]);
     expect(r.run.recipe.deck).toMatch(/\*STATIC/);
   });
+});
+
+// A run told to stop by its task's signal, with a stand-in for gmsh that is a
+// shell with a sleeping child of its own: the program and everything under it
+// is gone before runJob returns, and the run doc says what the reason calls for.
+describe("a run told to stop", () => {
+  const running = (mark) =>
+    execFileSync("ps", ["-A", "-o", "pid=,args="], { encoding: "utf8" })
+      .split("\n")
+      .filter((l) => l.includes(mark) && !l.includes("ps -A"))
+      .map((l) => Number(l.trim().split(/\s+/)[0]));
+  const until = async (fn, ms = 5000) => {
+    const t0 = Date.now();
+    while (!fn()) {
+      if (Date.now() - t0 > ms) throw new Error("timed out");
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  };
+
+  async function stoppedMidMesh(reason, seconds) {
+    const repo = new FakeRepo();
+    const part = readPart(box(0.1, 0.01, 0.01));
+    const kept = encodePart(part, { url: "automerge:p", title: "bar", readAt: 1 });
+    const handle = repo.add(newRun({ studyUrl: "automerge:s", serverUrl: "automerge:q", setup: normalizeSetup(null), part: kept, now: 1 }));
+    const dir = mkdtempSync(join(tmpdir(), "fea-runner-test-"));
+    const mark = `sleep ${seconds}`;
+    const fake = join(dir, "fake-gmsh.sh");
+    writeFileSync(fake, `#!/bin/bash\n${mark} &\nwait\n`);
+    chmodSync(fake, 0o755);
+    const abort = new AbortController();
+    try {
+      const job = runJob({ repo, handle, tools: { gmsh: fake, ccx: fake, gmshVersion: "fake", ccxVersion: "fake" }, workDir: join(dir, "runs"), cores: 1, maxNodes: 250_000, daemon: { host: "test" }, signal: abort.signal });
+      await until(() => running(mark).length > 0 && handle.doc().stages[1].status === "running");
+      const t0 = Date.now();
+      abort.abort(reason);
+      const status = await job;
+      return { status, doc: handle.doc(), left: running(mark), took: Date.now() - t0, meshes: readdirSync(join(dir, "meshes")) };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("cancelled: its processes are gone, the run doc says cancelled, and no mesh is kept", async () => {
+    const r = await stoppedMidMesh("cancelled", 41.25);
+    expect(r.status).toBe("stopped");
+    expect(r.left).toEqual([]);
+    expect(r.took).toBeLessThan(4500); // inside the 5 s the host gives it
+    expect([r.doc.status, r.doc.error]).toEqual(["cancelled", null]);
+    expect(r.doc.stages.map((s) => s.status)).toEqual(["done", "failed", "pending", "pending", "pending"]);
+    expect(r.doc.stages[1].note).toBe("cancelled");
+    expect(r.meshes).toEqual([]);
+  }, 15_000);
+  it("stopping: its processes are gone, and the run doc says the machine stopped", async () => {
+    const r = await stoppedMidMesh("stopping", 42.25);
+    expect(r.status).toBe("stopped");
+    expect(r.left).toEqual([]);
+    expect([r.doc.status, r.doc.error]).toEqual(["failed", MACHINE_STOPPED]);
+    expect(r.doc.stages[1].note).toBe("stopped");
+  }, 15_000);
+  it("yielded: its processes are gone, and nothing more is written to the run doc", async () => {
+    const r = await stoppedMidMesh("yielded", 43.25);
+    expect(r.status).toBe("stopped");
+    expect(r.left).toEqual([]);
+    expect(r.doc.status).toBe("meshing");
+    expect(r.doc.stages[1].status).toBe("running");
+  }, 15_000);
 });

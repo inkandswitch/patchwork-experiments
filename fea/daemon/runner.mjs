@@ -1,7 +1,9 @@
 // One run, start to finish: read the frozen part, mesh it, write the
 // solver's input, solve, read the results back, and keep the run doc up to
-// date throughout. The run doc's `control.cancel` is watched the whole time:
-// it kills whichever program is running.
+// date throughout. `signal` stops it (daemon/run-task.mjs hands it the
+// task's): the running program and every process under it are killed at
+// once, and the run doc says why in the same moment (markStopped), since the
+// thread this runs in is ended a few seconds later.
 
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,7 +17,7 @@ import { applySetup } from "../src/solver/loads.js";
 import { writeDeck } from "../src/solver/deck.js";
 import { readFrd, readDat } from "../src/solver/frd.js";
 import { vonMises, summarizeStatic, summarizeModal, skinLayer, staticNotes } from "../src/solver/post.js";
-import { requestIdOf, isTerminal, STAGES, encodeLayer } from "../src/protocol.js";
+import { runIdOf, isTerminal, STAGES, encodeLayer, markStopped, STOP_REASONS } from "../src/protocol.js";
 import { getBytes, externalize, serverWatch, sha256 } from "../src/segments.js";
 import { pretty } from "../src/units.js";
 
@@ -26,7 +28,7 @@ const FLUSH_MS = 2000;
 
 class Stopped extends Error {
   constructor(kind) {
-    super(kind === "cancel" ? "cancelled" : "stopped");
+    super(kind);
     this.kind = kind;
   }
 }
@@ -63,9 +65,11 @@ export function deckOutline(text, keep = 6) {
  * @param {string} o.workDir      where run directories go
  * @param {number} o.cores        the default when the setup says 0
  * @param {number} o.maxNodes     the largest mesh this daemon will solve
- * @param {object} o.daemon       { id, host, … } written to the run
+ * @param {object} o.daemon       where and with what it runs ({ host, platform, calculix, gmsh, … }), written to the run
  * @param {(msg: string) => void} [o.say]
- * @returns {Promise<"done"|"failed"|"cancelled">}
+ * @param {AbortSignal} [o.signal] aborted with a reason in STOP_REASONS
+ * @param {(urls: string[]) => Promise<string[]>} [o.verify]  a second peer's check of docs the server didn't acknowledge (src/segments.js)
+ * @returns {Promise<"done"|"failed"|"cancelled"|"stopped">}  "stopped": told to stop by `signal` (the run doc says why, unless it yielded)
  */
 export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, daemon, say = () => {}, signal = null, verify = null }) {
   const run0 = handle.doc();
@@ -73,11 +77,15 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
   const setup = normalizeSetup(run0.setup);
   // which of the docs this job makes the sync server has (start it before making any)
   const onServer = serverWatch(repo);
-  const id = requestIdOf(handle.url);
+  const id = runIdOf(handle.url);
   const dir = join(workDir, id);
   const np = Math.max(1, setup.cores || cores);
   const now = () => Date.now();
-  const change = (fn) => handle.change(fn);
+  // once told to stop, nothing more is written: the stop wrote what is to be said
+  let stopKind = null;
+  const change = (fn) => {
+    if (!stopKind) handle.change(fn);
+  };
   const setStage = (sid, patch) =>
     change((d) => {
       const i = d.stages.findIndex((s) => s.id === sid);
@@ -94,24 +102,19 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
   };
   const done = (sid, note) => setStage(sid, { status: "done", endedAt: now(), note: note ?? null });
 
-  // ---- control: cancel
+  // ---- the signal
   let current = null; // the running program
-  let stopKind = null;
-  const watch = () => {
-    if (handle.doc()?.control?.cancel && !stopKind) {
-      stopKind = "cancel";
-      say(`run ${id}: cancel asked`);
-      current?.kill();
-    }
-  };
-  handle.on("change", watch);
-  // the daemon shutting down: stop, but don't call it the person's cancel
+  let killed = null; // the kill under way: done once every process under the program has been sent SIGKILL
   const onAbort = () => {
     if (stopKind) return;
-    stopKind = "shutdown";
-    current?.kill();
+    const reason = STOP_REASONS.includes(signal.reason) ? signal.reason : "stopping";
+    say(`run ${id}: ${reason}`);
+    killed = current?.kill() ?? null;
+    handle.change((d) => markStopped(d, reason, now()));
+    stopKind = reason;
   };
-  signal?.addEventListener("abort", onAbort);
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener("abort", onAbort);
 
   // ---- running a program as (part of) a stage, its last lines shown
   let flushTimer = null;
@@ -142,10 +145,7 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
     clearInterval(flushTimer);
     flush();
     current = null;
-    if (stopKind) {
-      setStage(sid, { status: "failed", endedAt: now(), note: stopKind === "cancel" ? "cancelled" : "stopped" });
-      throw new Stopped(stopKind);
-    }
+    if (stopKind) throw new Stopped(stopKind);
     return { code: code ?? sig, log: existsSync(logFile) ? readFileSync(logFile, "utf8") : "" };
   };
   const fail = (sid, message) => {
@@ -299,26 +299,13 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
       if (stage) Object.assign(stage, { status: "done", endedAt: now(), note: found });
     });
     say(`run ${id}: done${summary.kind === "static" ? `, ${pretty(summary.stress.max, "pressure")} and ${pretty(summary.displacement.max, "length")}` : `, first mode ${summary.modes[0]?.hz?.toFixed(1)} Hz`}`);
-    return "done";
+    return stopKind ? "stopped" : "done";
   } catch (err) {
     clearInterval(flushTimer);
-    if (stopKind === "shutdown") {
-      change((d) => {
-        d.status = "failed";
-        d.error = "the daemon was stopped while this ran; run it again";
-        d.finishedAt = now();
-        for (const s of d.stages) if (s.status === "running") s.status = "failed";
-      });
-      return "failed";
-    }
     if (err instanceof Stopped || stopKind) {
-      change((d) => {
-        d.status = "cancelled";
-        d.finishedAt = now();
-        for (const s of d.stages) if (s.status === "running") s.status = "failed";
-      });
-      say(`run ${id}: cancelled`);
-      return "cancelled";
+      // every process under the program is gone before this returns
+      await killed;
+      return "stopped";
     }
     say(`run ${id}: failed: ${err?.message ?? err}`);
     change((d) => {
@@ -330,7 +317,6 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
     return "failed";
   } finally {
     onServer.dispose();
-    handle.off("change", watch);
     signal?.removeEventListener("abort", onAbort);
     current?.kill();
   }

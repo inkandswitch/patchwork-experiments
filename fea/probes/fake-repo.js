@@ -1,5 +1,8 @@
 // A copy of scene/src/test/fake-repo.js (FakeHandle, FakeRepo), for the probe page: an
-// in-memory stand-in for an automerge Repo + DocHandle.
+// in-memory stand-in for an automerge Repo + DocHandle. Beside the original it has
+// what the task kit (src/task-client.js) calls: `create`, `flush`, a handle's
+// `documentId`, and `hear`, which delivers a message on a handle's channel as another
+// peer's broadcast would arrive.
 let counter = 0;
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -16,6 +19,7 @@ export function fakeUrl() {
 export class FakeHandle {
   constructor(url, doc) {
     this.url = url;
+    this.documentId = url.replace(/^automerge:/, "");
     this._doc = structuredClone(doc);
     this._heads = [`h${++counter}`];
     this._listeners = new Map();
@@ -48,6 +52,9 @@ export class FakeHandle {
   emit(ev, payload) {
     for (const fn of [...(this._listeners.get(ev) ?? [])]) fn(payload);
   }
+  hear(message) {
+    this.emit("ephemeral-message", { message });
+  }
   listenerCount(ev) {
     return this._listeners.get(ev)?.size ?? 0;
   }
@@ -66,6 +73,12 @@ export class FakeRepo {
     this.handles.set(url, h);
     return h;
   }
+  create(doc) {
+    const h = this.add(doc);
+    this.created.push(h);
+    return h;
+  }
+  async flush() {}
   async create2(doc) {
     const h = this.add(doc);
     this.created.push(h);

@@ -1,6 +1,6 @@
 // One analysis through the real runner, gmsh and CalculiX, on an in-memory
-// repo (no sync server): what the daemon does for a request, without the
-// network. Prints the stages as they go, then the figures.
+// repo (no sync server): what a run's task does, without the network or the
+// tasks host. Prints the stages as they go, then the figures.
 //
 //   node probes/local-run.mjs [--shape plate|beam|block|cylinder] [--analysis static|modal] [--mesh coarse|medium|fine]
 //                             [--order 1|2] [--cores N] [--cancel-after-ms N] [--dump run.json]
@@ -11,7 +11,6 @@
 import { writeFileSync } from "node:fs";
 import { box, plateWithHole, cylinder } from "../src/test/shapes.js";
 import { figures } from "../src/results.js";
-import { requestStop } from "../src/protocol.js";
 import { localRun, faceFacing } from "./lib.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
@@ -30,11 +29,14 @@ if (!S) throw new Error(`--shape is one of ${Object.keys(SHAPES).join(", ")}`);
 
 let last = "";
 const t0 = Date.now();
+// --cancel-after-ms stops it as cancelling its task would
+const abort = new AbortController();
 const r = await localRun({
   title: shape,
   triangles: S.triangles(),
   cores: args.cores ? Number(args.cores) : null,
   say: (m) => console.error(`  ${m}`),
+  signal: abort.signal,
   setup: (part) => ({
     analysis,
     modes: 6,
@@ -46,7 +48,7 @@ const r = await localRun({
     const stage = run.stages.find((s) => s.status === "running");
     const line = `${run.status}${stage ? ` · ${stage.label}` : ""}`;
     if (line !== last) console.error(`${((Date.now() - t0) / 1000).toFixed(1).padStart(6)} s  ${(last = line)}`);
-    if (args["cancel-after-ms"] && Date.now() - t0 > Number(args["cancel-after-ms"]) && !run.control.cancel) handle.change((d) => requestStop(d));
+    if (args["cancel-after-ms"] && Date.now() - t0 > Number(args["cancel-after-ms"]) && !abort.signal.aborted) abort.abort("cancelled");
   },
 });
 const run = r.run;

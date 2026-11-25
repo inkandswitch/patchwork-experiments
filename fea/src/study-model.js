@@ -6,7 +6,7 @@
 // Each takes a context `ctx`:
 //   { repo, handle,            the study's handle
 //     now?: () => number,      (Date.now)
-//     by?: string|null,        who is acting, for the queue and change messages
+//     by?: string|null,        who is acting, for the run and change messages
 //     getRegistry?,            the host's plugin registry (acquirePart finds it otherwise)
 //     message?: string }       the change message (an agent's names its session)
 // and answers `{ ok: true, … }` or `{ ok: false, error }`, the error a
@@ -23,7 +23,8 @@ import { isQuantity } from "./units.js";
 import { acquirePart, pathLabel } from "./part/acquire.js";
 import { readPart } from "./part/faces.js";
 import { encodePart, decodePart, carryFaces, carrySetup, PART_TYPE } from "./part/kept.js";
-import { newRun, enqueue, requestStop, daemonOnline, isTerminal, STUDY_TYPE, RUN_TYPE, SERVER_TYPE } from "./protocol.js";
+import { newRun, isTerminal, shownRun, STUDY_TYPE, RUN_TYPE } from "./protocol.js";
+import { askRun, cancelRun, hearServing, isQueue, lookAtTask, runCodeUrl } from "./run-tasks.js";
 import { externalize, internalize } from "./segments.js";
 import { findWhenThere } from "./find.js";
 import { renderKey, isRenderDoc } from "./render-read.js";
@@ -374,7 +375,7 @@ export function toggleFace(ctx, part, what, id, face) {
 
 // ---------------------------------------------------------------- the server and runs
 
-/** Point the study at a server (a daemon's inbox). Checks it is one. */
+/** Point the study at a server (a task queue an FEA host serves). Checks it is a queue. */
 export async function setServer(ctx, url) {
   if (!url) {
     write(ctx, (d) => {
@@ -388,7 +389,7 @@ export async function setServer(ctx, url) {
   } catch (err) {
     return refuse(`couldn't load that server (${err?.message ?? err})`);
   }
-  if (typeOf(doc) !== SERVER_TYPE) return refuse(typeOf(doc) === "openfoam-server" ? "that is an OpenFOAM server; an FEA study needs an FEA server (daemon/start.sh in this package prints its link)" : "that isn't an FEA server: paste the inbox link the FEA daemon printed when it started");
+  if (!isQueue(doc)) return refuse("that isn't an FEA server: paste the queue link the FEA host printed when it started (daemon/start.sh in this package)");
   write(ctx, (d) => {
     d.server = url;
   });
@@ -397,8 +398,11 @@ export async function setServer(ctx, url) {
 
 /**
  * Run the study as it is set up: freeze the setup and the part into a new run
- * and put it in the server's queue.
- * @returns {Promise<{ ok: true, url: string } | { ok: false, error: string, blocking?: string[] }>}
+ * and ask the server (a task queue) for it, as a task keyed by the run doc's
+ * url. Refused while no machine is heard serving the queue: a run asked then
+ * would sit in the queue with nothing to say why.
+ * `ctx.hear` (tests) stands in for listening to the queue (hearServing).
+ * @returns {Promise<{ ok: true, url: string, pools: object[] } | { ok: false, error: string, blocking?: string[] }>}
  */
 export async function runStudy(ctx) {
   const study = ctx.handle.doc();
@@ -411,16 +415,22 @@ export async function runStudy(ctx) {
   }
   const ready = readiness(setup, part);
   if (ready.blocking.length) return { ok: false, error: `not ready to run: ${ready.blocking.join("; ")}`, blocking: ready.blocking };
-  if (!study.server) return refuse("choose a server to run on: paste the inbox link an FEA daemon printed when it started");
+  if (!study.server) return refuse("choose a server to run on: paste the queue link an FEA host printed when it started");
   let server;
   try {
     server = await findWhenThere(ctx.repo, study.server, { tries: 3 });
   } catch (err) {
     return refuse(`couldn't reach the server's document (${err?.message ?? err})`);
   }
-  if (typeOf(server.doc()) !== SERVER_TYPE) return refuse("the study's server isn't an FEA server");
+  if (!isQueue(server.doc())) return refuse("the study's server isn't an FEA server");
+  try {
+    runCodeUrl();
+  } catch (err) {
+    return refuse(String(err.message).replace(/\.$/, ""));
+  }
+  const pools = await (ctx.hear ?? hearServing)(ctx.repo, study.server);
+  if (!pools.length) return refuse(`the server “${server.doc().title ?? "FEA server"}” isn't running: start it (daemon/start.sh on its machine), or choose another`);
   const now = nowOf(ctx);
-  if (!daemonOnline(server.doc(), now)) return refuse(`the server “${server.doc().title ?? "FEA server"}” isn't running: start its daemon (daemon/start.sh), or choose another`);
   // the kept part, as it is kept: its bytes inline or the same segment refs (they never change)
   const kept = (await ctx.repo.find(study.part.kept)).doc();
   const { ["@patchwork"]: _type, study: _study, ...frozen } = plain(kept);
@@ -431,11 +441,11 @@ export async function runStudy(ctx) {
     d.runs.push(run.url);
     d.selected = run.url;
   });
-  server.change((d) => enqueue(d, run.url, { now, by: ctx.by ?? null }), ctx.message ? { message: ctx.message } : undefined);
-  return { ok: true, url: run.url };
+  await askRun(ctx.repo, study.server, run, ctx.message ? { message: ctx.message } : undefined);
+  return { ok: true, url: run.url, pools };
 }
 
-/** Ask the daemon to stop a run that hasn't finished. */
+/** Cancel a run that hasn't finished: a stop recorded in its task (src/run-tasks.js). */
 export async function stopRun(ctx, runUrl) {
   let h;
   try {
@@ -444,8 +454,9 @@ export async function stopRun(ctx, runUrl) {
     return refuse(`couldn't load that run (${err?.message ?? err})`);
   }
   if (typeOf(h.doc()) !== RUN_TYPE) return refuse("that isn't an FEA run");
-  if (isTerminal(h.doc().status)) return refuse(`that run has already ${h.doc().status === "done" ? "finished" : h.doc().status}`);
-  h.change((d) => requestStop(d), ctx.message ? { message: ctx.message } : undefined);
+  const { status } = shownRun(h.doc(), await lookAtTask(ctx.repo, h.doc()));
+  if (isTerminal(status)) return refuse(`that run has already ${status === "done" ? "finished" : status}`);
+  if (!(await cancelRun(ctx.repo, h.doc(), runUrl))) return refuse("its queue no longer lists that run, so there's nothing to cancel");
   return { ok: true };
 }
 

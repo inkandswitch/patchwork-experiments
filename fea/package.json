@@ -4,15 +4,11 @@
   "type": "module",
   "private": true,
   "main": "./dist/index.js",
-  "description": "Finite element analysis with CalculiX: link a part from any CAD tool or scene, say how it is held and loaded, run it on a daemon anywhere, and see stress and deflection on the part, in the study or in a scene.",
-  "bin": {
-    "fead": "./daemon/fead.mjs"
-  },
+  "description": "Finite element analysis with CalculiX: link a part from any CAD tool or scene, say how it is held and loaded, run it on any machine with gmsh and CalculiX (a tasks host serving a task queue), and see stress and deflection on the part, in the study or in a scene.",
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
     "sync": "vite build && pushwork sync",
-    "daemon": "node daemon/fead.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
