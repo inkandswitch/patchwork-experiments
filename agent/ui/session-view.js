@@ -36,7 +36,7 @@ import { DEFAULT_LIMITS, DEFAULT_TIER_MODELS, TIERS } from "../workflow/plan.js"
 import { renderTranscript } from "./transcript.js"
 import { createGuidesButton } from "./guides.js"
 import { createInlineViews } from "./views.js"
-import { getMount, mountForPerson, mountIdIn, parkMount } from "../tools/checking.js"
+import { getMount, mountForPerson, parkMount } from "../tools/checking.js"
 import { applyInstall, applyUninstall } from "./install.js"
 import { watchWorkspace } from "./workspace.js"
 import { startDictation, composeDictation, voiceSupported } from "./voice.js"
@@ -362,7 +362,6 @@ export function AgentTool(handle, element, options = {}) {
   // context of its own — it needs a repo and a page, nothing of the runner's.
   const views = createInlineViews({
     getMount,
-    mountIdIn,
     parkMount,
     mountForPerson: (input) => mountForPerson(input, { repo, element: root }),
     openDoc: (url) => onOpenDoc(url),

@@ -570,6 +570,41 @@ describe("a call as it is written", () => {
   })
 })
 
+describe("what a call did, as data", () => {
+  const once = (tool, afterCall = []) => {
+    const store = session()
+    const provider = makeMock([[{ type: "call", id: "c1", name: "doc_read", input: {} }], [{ type: "text", delta: "done" }]])
+    return run({ store, provider, toolset: fakeToolset([tool]), afterCall, runnerUrl: "runner-a", generation: 1, flushMs: 0 }).then(() => ({ store, provider }))
+  }
+  const result = (store) => transcript(store).find((b) => b.type === "result")
+
+  it("is kept on the result beside the text, given to what runs after the call, and never sent to the model", async () => {
+    const seen = []
+    const facts = { mountId: "mount_ab12", plugins: [{ type: "patchwork:tool", id: "tally" }] }
+    const tool = { ...readTool(async () => ({ text: "Mounted.", facts })), summarize: (input, output, said) => `opened ${said.mountId}` }
+    const after = async (ctx, call, ran, outcome) => (seen.push({ call: call.id, tool: ran.id, facts: outcome.facts }), "A guide.")
+    const { store, provider } = await once(tool, [after])
+
+    expect(String(result(store).output)).toBe("Mounted.\n\nA guide.")
+    expect(result(store)).toMatchObject({ facts, summary: "opened mount_ab12" })
+    expect(seen).toEqual([{ call: "c1", tool: "doc_read", facts }])
+    expect(JSON.stringify(provider.requests[1].messages)).not.toContain("mount_ab12")
+  })
+
+  it("is null for a tool that says nothing, a plain string, or a failure", async () => {
+    for (const impl of [async () => "text", async () => ({ text: "text" }), async () => { throw new Error("no") }]) {
+      const { store } = await once(readTool(impl))
+      expect(result(store).facts).toBeNull()
+    }
+  })
+
+  it("is a copy: plain data, whatever the tool held on to", async () => {
+    const held = { plugins: [{ type: "patchwork:tool", id: "tally", load: () => {} }] }
+    const { store } = await once(readTool(async () => ({ text: "ok", facts: held })))
+    expect(result(store).facts).toEqual({ plugins: [{ type: "patchwork:tool", id: "tally" }] })
+  })
+})
+
 describe("say", () => {
   it("appends a user turn, which ends a stop", async () => {
     const store = session()

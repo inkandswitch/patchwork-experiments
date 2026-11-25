@@ -150,6 +150,17 @@ describe("a version 1 session", () => {
     expect(doc.turns.at(-1).blocks.map((b) => b.shown ?? null)).toEqual([{ verb: "read", detail: "this document" }, { verb: "write", detail: "tool.js" }, null])
   })
 
+  it("a view_mount result says which mount it opened; no other result is read for one", () => {
+    const call = (id, tool) => ({ type: "call", id, tool, input: {}, where: "host", status: "done", runner: null, generation: null })
+    const result = (callId, output) => ({ type: "result", callId, output, isError: false, summary: "ok" })
+    const text = "Mounted without throwing.\n\nmountId: mount_ab12cd — use view_interact / view_inspect with it, then view_unmount."
+    const doc = v1()
+    doc.turns.push(turn("assistant", [call("c1", "view_mount"), call("c2", "view_mount"), call("c3", "doc_read")]))
+    doc.turns.push(turn("tool", [result("c1", text), result("c2", "Error: load() threw"), result("c3", text)]))
+    migrateSession(doc)
+    expect(doc.turns.at(-1).blocks.map((b) => b.facts ?? null)).toEqual([{ mountId: "mount_ab12cd" }, null, null])
+  })
+
   it("a refused call that had no result gets one, where the model will read it", () => {
     const call = (id, status) => ({ type: "call", id, tool: "doc_edit", input: {}, where: "worker", status, runner: null, generation: null })
     const doc = v1()

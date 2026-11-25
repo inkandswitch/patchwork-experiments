@@ -98,7 +98,7 @@ package's word that its tool works through that context alone.
 
 ## What a tool returns
 
-A string, or `{ text, image?, file?, doc?, made? }`:
+A string, or `{ text, image?, file?, doc?, made?, facts? }`:
 
 | | |
 |---|---|
@@ -107,14 +107,20 @@ A string, or `{ text, image?, file?, doc?, made? }`:
 | `file` | `{ url, name, mimeType }`: a document the model reads itself (a PDF), loaded for each request |
 | `doc` | `{ url, name, kind, ... }`: the document the call made or kept, linked beside the call and recorded in the session's `made` |
 | `made` | every document it made, when there are several |
+| `facts` | what the call did, as plain data for code to read: a view beside the call, a hook after it, the tool's own summary. Kept on the result block. |
 
 - Throwing is how a tool fails: the model is shown `Error: <message>` and
   goes on. Say what to do instead.
 - Throwing an `Interruption` (`net/network.js`) says the network is away: the
   call had no effect, nothing is written, and it runs again when the network
   is back.
-- `summarize(input, output)` gives the one line the transcript shows for the
-  call. Without one it is `<id> ok`.
+- `summarize(input, output, facts)` gives the one line the transcript shows
+  for the call. Without one it is `<id> ok`.
+- `text` is for the model and nothing parses it. What code needs from a call
+  goes in `facts`: `mountId`, `mounted` (the view a call opened), `plugins` (the
+  `{ type, id }` of each plugin it used), `listed` (those it only listed),
+  `package` (a package folder it worked from). The last three are how a
+  call brings its package's usage guide (`knowledge/guides.js`).
 - Anything large belongs in a document the result points at, not in the
   result: a result travels with every later turn until it is tapered.
 

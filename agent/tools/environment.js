@@ -23,7 +23,8 @@ import { shortDoc, baseName } from "../documents/labels.js"
  * real session spent a dozen calls and much of its budget finding out what was
  * installed.
  */
-export function listRegistries(registries, { type = null, search = null, urls = false } = {}) {
+/** The plugins a listing is of, by registry: `[{ type, plugins }]`, each registry that has any. */
+export function matchingPlugins(registries, { type = null, search = null } = {}) {
   let pattern = null
   if (search) {
     try {
@@ -33,25 +34,32 @@ export function listRegistries(registries, { type = null, search = null, urls = 
     }
   }
   const sections = []
-  let count = 0
   for (const [registryType, registry] of registries) {
     if (type && registryType !== type) continue
-    const lines = []
-    for (const p of registry.all()) {
+    const plugins = registry.all().filter((p) => {
       const datatypes = Array.isArray(p.supportedDatatypes) ? p.supportedDatatypes : []
-      if (pattern && !pattern.test([p.id, p.name ?? "", registryType, ...datatypes].join(" "))) continue
+      return !pattern || pattern.test([p.id, p.name ?? "", registryType, ...datatypes].join(" "))
+    })
+    if (plugins.length) sections.push({ type: registryType, plugins })
+  }
+  return sections
+}
+
+export function listRegistries(registries, { type = null, search = null, urls = false } = {}) {
+  const sections = matchingPlugins(registries, { type, search })
+  const count = sections.reduce((n, section) => n + section.plugins.length, 0)
+  if (!count) return `0 plugins matched${search ? ` /${search}/` : ""}${type ? ` in ${type}` : ""}.`
+  const shown = sections.map((section) => {
+    const lines = section.plugins.map((p) => {
+      const datatypes = Array.isArray(p.supportedDatatypes) ? p.supportedDatatypes : []
       const name = p.name && p.name !== p.id ? ` — ${p.name}` : ""
       const views = datatypes.length ? ` (for ${datatypes.join(", ")})` : ""
       const hidden = p.unlisted ? " [unlisted]" : ""
-      lines.push(`  ${p.id}${name}${views}${hidden}${urls && p.importUrl ? `  ${p.importUrl}` : ""}`)
-    }
-    if (lines.length) {
-      count += lines.length
-      sections.push(`${registryType} (${lines.length})\n${lines.join("\n")}`)
-    }
-  }
-  if (!count) return `0 plugins matched${search ? ` /${search}/` : ""}${type ? ` in ${type}` : ""}.`
-  return `${count} plugin${count === 1 ? "" : "s"}${search ? ` matching /${search}/` : ""}:\n\n${sections.join("\n\n")}`
+      return `  ${p.id}${name}${views}${hidden}${urls && p.importUrl ? `  ${p.importUrl}` : ""}`
+    })
+    return `${section.type} (${lines.length})\n${lines.join("\n")}`
+  })
+  return `${count} plugin${count === 1 ? "" : "s"}${search ? ` matching /${search}/` : ""}:\n\n${shown.join("\n\n")}`
 }
 
 export const registryList = {
@@ -80,7 +88,10 @@ export const registryList = {
   },
   async execute(input) {
     const { getAllRegistries } = await hostImport("plugins")
-    return listRegistries(getAllRegistries(), input)
+    const registries = [...getAllRegistries()]
+    // Which plugins the listing names, for code that goes by them (knowledge/guides.js).
+    const listed = matchingPlugins(registries, input).flatMap((section) => section.plugins.map((p) => ({ type: section.type, id: p.id })))
+    return { text: listRegistries(registries, input), facts: { listed } }
   },
   summarize(input, output) {
     const match = String(output ?? "").match(/^(\d+) plugins?/)
@@ -144,6 +155,8 @@ export const pluginSource = {
 
     const importUrl = plugin.importUrl
     if (!importUrl) throw new Error(`Plugin '${input.id}' has no importUrl; its source is not reachable.`)
+    // Whose source this is, for code that goes by the plugin (knowledge/guides.js).
+    const facts = { plugins: [{ type: input.type ?? "patchwork:tool", id: input.id }] }
 
     const bare = packageDocOf(importUrl)
     if (bare) {
@@ -155,7 +168,7 @@ export const pluginSource = {
         // Every file, by path: a directory document keeps its whole tree in
         // one document, so the top level alone would hide src/ entirely.
         const names = (await treeFiles(ctx.repo, tree)).files.map(({ path }) => path)
-        if (input.list) return `${input.id} (${bare})\n${names.join("\n")}`
+        if (input.list) return { text: `${input.id} (${bare})\n${names.join("\n")}`, facts }
         // Default to the entry point named by package.json.
         let main = "index.js"
         const pkgEntry = treeEntries(tree).find((d) => d.name === "package.json")
@@ -177,7 +190,7 @@ export const pluginSource = {
         throw new Error(`'${input.file}' not in package. Use list:true to see the files.`)
       }
       const text = contentText(node?.content)
-      return `${input.id}/${input.file} · ${bytes(text.length)}\n${truncate(text, 20000)}`
+      return { text: `${input.id}/${input.file} · ${bytes(text.length)}\n${truncate(text, 20000)}`, facts }
     }
 
     // An http-hosted package is fetched like anything else, through the guard,
@@ -191,7 +204,7 @@ export const pluginSource = {
     const response = own && originOfUrl(url) === own ? await ctx.pageFetch(url) : await fetcher(ctx)(url)
     if (!response.ok) throw new Error(`Fetching ${url} returned ${response.status}.`)
     const text = await response.text()
-    return `${url} · ${bytes(text.length)}\n${truncate(text, 20000)}`
+    return { text: `${url} · ${bytes(text.length)}\n${truncate(text, 20000)}`, facts }
   },
   summarize(input, output) {
     const first = String(output ?? "").split("\n")[0] ?? ""

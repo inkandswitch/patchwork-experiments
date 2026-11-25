@@ -267,12 +267,10 @@ describe("a call's document, package or mount, inline in the transcript", () => 
   it("adopts the agent's live mount beside the call that opened it, expanded, and lets it go when it closes", () => {
     const container = document.createElement("div")
     let live = { container, toolId: "tally" }
-    const views = createInlineViews({
-      mountIdIn: (output) => String(output ?? "").match(/mountId: (mount_\w+)/)?.[1] ?? null,
-      getMount: (id) => (id === "mount_ab12" ? live : null),
-    })
+    const views = createInlineViews({ getMount: (id) => (id === "mount_ab12" ? live : null) })
     const st = state()
-    const result = { output: "Mounted without throwing.\nmountId: mount_ab12 — use view_interact" }
+    // The mount is the one the result says it opened; its text is not read.
+    const result = { output: "Mounted without throwing.", facts: { mountId: "mount_ab12" } }
     const node = views.elementFor({ id: "c1", tool: "view_mount" }, result, st)
     expect(node.dataset.kind).toBe("mount")
     expect(node.dataset.expanded).toBe("yes")
@@ -294,13 +292,12 @@ describe("a call's document, package or mount, inline in the transcript", () => 
     let cleaned = 0
     const agents = document.createElement("div")
     const views = createInlineViews({
-      mountIdIn: (output) => (/mount_x/.test(String(output ?? "")) ? "mount_x" : null),
       getMount: (id) => (id === "mount_x" ? { container: agents } : null),
       parkMount: (c) => parked.push(c),
       mountForPerson: async () => ({ container: document.createElement("div"), cleanup: () => cleaned++ }),
     })
     const st = state()
-    views.elementFor({ id: "c1" }, { output: "mountId: mount_x" }, st)
+    views.elementFor({ id: "c1" }, { output: "ok", facts: { mountId: "mount_x" } }, st)
     const person = views.elementFor({ id: "c2" }, { doc: ref }, st)
     person.querySelector(".agent-view-actions button").click()
     await new Promise((r) => setTimeout(r, 0))

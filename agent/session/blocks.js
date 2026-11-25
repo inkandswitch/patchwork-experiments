@@ -191,6 +191,9 @@ export function resultBlock(callId, output, opts = {}) {
     // raw output's first line is a poor substitute (a JSON result renders as
     // the single character "{").
     summary: opts.summary ?? null,
+    // What the call did, as plain data its tool gave for code to read
+    // (kernel/tool.js runTool): a view opened, the plugins it used.
+    facts: opts.facts ?? null,
     // True on the result a runner writes for a call it found cut off, whose
     // own result may still arrive (recovery.js): the request then sends that
     // one, of the two.

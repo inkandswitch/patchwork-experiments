@@ -406,11 +406,15 @@ export async function guideNotice(ctx, ref, { name = null, body = true } = {}) {
 /**
  * The packages a finished call is about. Each is `{ ref, name, body }`: `body`
  * false where a mention is only a lookup (a registry listing).
+ *
+ * A call says which, in its result's facts: `plugins`, the `{ type, id }` of
+ * each plugin it used; `listed`, those it only listed; `package`, the URL of
+ * a package folder it worked from. A package's own tool is about its package
+ * whatever it says.
  */
-export async function packagesOfCall(ctx, call, tool, output) {
+export async function packagesOfCall(ctx, tool, facts) {
   const found = []
-  const add = (ref, name, body = true) => ref && found.push({ ref, name, body })
-  const input = call.input ?? {}
+  const add = (ref, name, body = true) => ref && !found.some((f) => f.ref.url === ref.url) && found.push({ ref, name, body })
   const lookup = async (type, id) => {
     try {
       return (await ctx.packageOf?.(type, id)) ?? null
@@ -419,57 +423,18 @@ export async function packagesOfCall(ctx, call, tool, output) {
     }
   }
 
-  // A plugin's own tool: the package that provided it.
   if (tool?.source) add(packageRef(tool.source), tool.name ?? null)
-
-  switch (call.tool) {
-    case "view_mount": {
-      if (input.url) add(packageRef(input.url), null)
-      else if (input.toolId) add(await lookup("patchwork:tool", input.toolId), input.toolId)
-      else if (input.docUrl && ctx.repo) {
-        const type = await datatypeOf(ctx, input.docUrl)
-        if (type) add(await lookup("patchwork:datatype", type), type)
-      }
-      break
-    }
-    case "doc_create":
-      if (input.datatype) add(await lookup("patchwork:datatype", input.datatype), input.datatype)
-      break
-    case "plugin_source":
-      if (input.id) add(await lookup(input.type ?? "patchwork:tool", input.id), input.id)
-      break
-    case "registry_list": {
-      // A listing names many plugins: say which have guides, without their text.
-      let type = null
-      for (const line of String(output ?? "").split("\n")) {
-        const heading = line.match(/^(\S+) \(\d+\)$/)
-        if (heading) type = heading[1]
-        else if (type && /^ {2}\S/.test(line)) {
-          const id = line.trim().split(/\s/)[0]
-          const ref = await lookup(type, id)
-          if (ref && !found.some((f) => f.ref.url === ref.url)) add(ref, id, false)
-        }
-      }
-      break
-    }
-  }
+  if (facts?.package) add(packageRef(facts.package), null)
+  for (const plugin of facts?.plugins ?? []) add(await lookup(plugin.type, plugin.id), plugin.id)
+  for (const plugin of facts?.listed ?? []) add(await lookup(plugin.type, plugin.id), plugin.id, false)
   return found
 }
 
-async function datatypeOf(ctx, docUrl) {
-  try {
-    const doc = (await within(ctx.repo.find(bare(docUrl)), 2000, "the document")).doc()
-    return doc?.["@patchwork"]?.type ?? null
-  } catch {
-    return null
-  }
-}
-
 /** Everything to append to a call's result, or null. */
-export async function surfaceGuides(ctx, call, tool, output) {
+export async function surfaceGuides(ctx, call, tool, outcome) {
   if (!ctx?.repo || !ctx.rootFolderUrl) return null
   try {
-    const packages = await packagesOfCall(ctx, call, tool, output)
+    const packages = await packagesOfCall(ctx, tool, outcome?.facts ?? null)
     const notices = []
     for (const { ref, name, body } of packages) {
       const notice = await guideNotice(ctx, ref, { name, body })

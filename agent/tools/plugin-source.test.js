@@ -12,9 +12,12 @@ import { guardedFetch, Refused, pageOriginFetch } from "../net/guard.js"
 
 let plugins = []
 vi.mock("../host/import.js", () => ({
-  hostImport: async () => ({ getRegistry: () => ({ all: () => plugins }) }),
+  hostImport: async () => ({
+    getRegistry: () => ({ all: () => plugins }),
+    getAllRegistries: () => new Map([["patchwork:tool", { all: () => plugins }]]),
+  }),
 }))
-const { pluginSource, packageDocOf } = await import("./environment.js")
+const { pluginSource, registryList, packageDocOf } = await import("./environment.js")
 
 const PAGE = "https://patchwork.example.org"
 const HEAD = encodeHeads(["ab".repeat(32)])[0]
@@ -80,7 +83,10 @@ describe("plugin_source", () => {
   it("reads a package the page serves from its document, never from the page's origin", async () => {
     const w = world()
     plugins = [{ id: "p", importUrl: `${PAGE}/${encodeURIComponent(w.pkg)}/index.js` }]
-    expect(await pluginSource.execute({ id: "p", file: "index.js" }, w.ctx)).toContain("export const plugins = []")
+    const out = await pluginSource.execute({ id: "p", file: "index.js" }, w.ctx)
+    expect(out.text).toContain("export const plugins = []")
+    // Whose source it read, said as data.
+    expect(out.facts).toEqual({ plugins: [{ type: "patchwork:tool", id: "p" }] })
     expect(w.sent).toEqual([])
     expect(platform).toEqual([])
   })
@@ -97,7 +103,7 @@ describe("plugin_source", () => {
   it("fetches an http-hosted package through the guard", async () => {
     const w = world()
     plugins = [{ id: "p", importUrl: "https://cdn.example.com/pkg/index.js" }]
-    expect(await pluginSource.execute({ id: "p", file: "util.js" }, w.ctx)).toContain("// fetched")
+    expect((await pluginSource.execute({ id: "p", file: "util.js" }, w.ctx)).text).toContain("// fetched")
     expect(w.sent).toEqual(["https://cdn.example.com/pkg/util.js"])
     expect(platform).toEqual([])
   })
@@ -135,7 +141,7 @@ describe("plugin_source", () => {
     it("is read with the page's own fetch — the way to learn how a built-in tool is written", async () => {
       const w = withPageFetch()
       plugins = [{ id: "p", importUrl: `${PAGE}/plugins/index.js` }]
-      expect(await pluginSource.execute({ id: "p", file: "tool.js" }, w.ctx)).toContain("// from the page")
+      expect((await pluginSource.execute({ id: "p", file: "tool.js" }, w.ctx)).text).toContain("// from the page")
       expect(w.pageSent).toEqual([`${PAGE}/plugins/tool.js`])
       expect(w.sent).toEqual([])
     })
@@ -168,5 +174,15 @@ describe("plugin_source", () => {
     plugins = [{ id: "p", importUrl: "https://cdn.example.com/pkg/index.js" }]
     await expect(pluginSource.execute({ id: "p" }, { repo: null })).rejects.toThrow(/no guarded fetch/)
     expect(platform).toEqual([])
+  })
+})
+
+describe("registry_list", () => {
+  it("says which plugins it listed, as data beside the listing", async () => {
+    plugins = [{ id: "tally", name: "Tally", supportedDatatypes: ["count"] }, { id: "grid" }]
+    const out = await registryList.execute({ search: "tally|count" }, {})
+    expect(out.text).toBe("1 plugin matching /tally|count/:\n\npatchwork:tool (1)\n  tally — Tally (for count)")
+    expect(out.facts).toEqual({ listed: [{ type: "patchwork:tool", id: "tally" }] })
+    expect((await registryList.execute({ search: "nothing" }, {})).facts).toEqual({ listed: [] })
   })
 })

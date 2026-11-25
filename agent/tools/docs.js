@@ -479,6 +479,7 @@ export const docCreate = {
       // transcript and nowhere else — the shortest path to losing the thing the
       // user just asked for.
       doc: { url: handle.url, name: input.title || input.datatype, kind: input.datatype },
+      facts: { plugins: [{ type: "patchwork:datatype", id: input.datatype }] },
     }
   },
   summarize(input, output) {

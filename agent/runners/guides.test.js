@@ -145,65 +145,71 @@ describe("lineDiff", () => {
 
 describe("surfacing", () => {
   const call = (tool, input = {}) => ({ id: "c", tool, input })
+  /** A finished call, saying what it used (kernel/tool.js runTool). */
+  const did = (facts = null) => ({ output: "ok", facts })
+  const TOOL = { type: "patchwork:tool", id: "pkgtool" }
 
   it("a plugin tool call brings its package's guide, once", async () => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
     const ctx = w.ctx()
     const tool = { id: "pkg_do", name: "Pkg do", source: w.pkg.url }
-    const first = await surfaceGuides(ctx, call("pkg_do"), tool, "ok")
+    const first = await surfaceGuides(ctx, call("pkg_do"), tool, did())
     expect(first).toMatch(/Usage guide for Pkg[\s\S]*Up to date[\s\S]*pass `thing`/)
-    expect(await surfaceGuides(ctx, call("pkg_do"), tool, "ok")).toBeNull()
+    expect(await surfaceGuides(ctx, call("pkg_do"), tool, did())).toBeNull()
   })
 
   it("flags a stale guide on surfacing, and says what to do", async () => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
     w.index.change((d) => { d.content = "new\n" })
-    const text = await surfaceGuides(w.ctx(), call("pkg_do"), { id: "pkg_do", source: w.pkg.url }, "ok")
+    const text = await surfaceGuides(w.ctx(), call("pkg_do"), { id: "pkg_do", source: w.pkg.url }, did())
     expect(text).toMatch(/May be out of date/)
     expect(text).toMatch(/guide_changes/)
   })
 
+  // Which package a call is about is what its result says it used — never
+  // which tool it was, nor anything read out of its text.
   it.each([
-    ["view_mount of its tool", call("view_mount", { toolId: "pkgtool", docUrl: "automerge:x" })],
-    ["plugin_source of its id", call("plugin_source", { id: "pkgtool" })],
-    ["view_mount of its package folder", null],
-  ])("%s", async (name, c) => {
+    ["a plugin it used", () => ({ plugins: [TOOL] })],
+    ["the package folder it worked from", (w) => ({ package: w.pkg.url })],
+    ["a package folder and a plugin from it", (w) => ({ package: w.pkg.url, plugins: [TOOL] })],
+  ])("a call brings the guide of %s", async (name, facts) => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    const given = c ?? call("view_mount", { url: w.pkg.url })
-    expect(await surfaceGuides(w.ctx(), given, null, "ok")).toMatch(/Usage guide for Pkg/)
+    const text = await surfaceGuides(w.ctx(), call("anything"), null, did(facts(w)))
+    expect(text.match(/Usage guide for Pkg/g)).toHaveLength(1)
+    expect(text).toContain("pass `thing`")
   })
 
-  it("doc_create of its datatype", async () => {
+  it("a datatype it used is looked up as a datatype", async () => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
     const ctx = { ...w.ctx(), packageOf: async (type, id) => (type === "patchwork:datatype" && id === "pkgdata" ? { url: w.pkg.url, heads: null } : null) }
-    expect(await surfaceGuides(ctx, call("doc_create", { datatype: "pkgdata" }), null, "ok")).toMatch(/Usage guide for/)
+    expect(await surfaceGuides(ctx, call("anything"), null, did({ plugins: [{ type: "patchwork:datatype", id: "pkgdata" }] }))).toMatch(/Usage guide for/)
   })
 
-  it("a registry listing points to guides without their text", async () => {
+  it("plugins it only listed are pointed to, without their guides' text", async () => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    const out = "1 plugin:\n\npatchwork:tool (1)\n  pkgtool — Pkg tool\n"
-    const text = await surfaceGuides(w.ctx(), call("registry_list"), null, out)
+    const text = await surfaceGuides(w.ctx(), call("anything"), null, did({ listed: [TOOL, { type: "patchwork:tool", id: "unknown" }] }))
     expect(text).toMatch(/Usage guide for Pkg/)
     expect(text).not.toContain("pass `thing`")
   })
 
   it("with no guide, a use says so and offers to write one; a listing says nothing", async () => {
     const w = await world()
-    const ctx = w.ctx()
-    expect(await surfaceGuides(ctx, call("plugin_source", { id: "pkgtool" }), null, "ok")).toMatch(/No usage guide for Pkg tool yet[\s\S]*guide_write/)
-    const again = w.ctx()
-    expect(await surfaceGuides(again, call("registry_list"), null, "x\npatchwork:tool (1)\n  pkgtool\n")).toBeNull()
+    expect(await surfaceGuides(w.ctx(), call("anything"), null, did({ plugins: [TOOL] }))).toMatch(/No usage guide for Pkg tool yet[\s\S]*guide_write/)
+    expect(await surfaceGuides(w.ctx(), call("anything"), null, did({ listed: [TOOL] }))).toBeNull()
   })
 
-  it("a call about no package, or an account with no notes place, surfaces nothing", async () => {
+  it("a call that says nothing, or an account with no notes place, surfaces nothing", async () => {
     const w = await world()
-    expect(await surfaceGuides(w.ctx(), call("doc_read", { url: "automerge:x" }), { id: "doc_read" }, "ok")).toBeNull()
-    expect(await surfaceGuides({ repo: w.repo }, call("plugin_source", { id: "pkgtool" }), null, "ok")).toBeNull()
+    expect(await surfaceGuides(w.ctx(), call("doc_read", { url: "automerge:x" }), { id: "doc_read" }, did())).toBeNull()
+    // What a call was given is not what it used: only its result says.
+    expect(await surfaceGuides(w.ctx(), call("plugin_source", { id: "pkgtool" }), null, did())).toBeNull()
+    expect(await surfaceGuides(w.ctx(), call("registry_list"), null, { output: "1 plugin:\n\npatchwork:tool (1)\n  pkgtool — Pkg tool\n", facts: null })).toBeNull()
+    expect(await surfaceGuides({ repo: w.repo }, call("anything"), null, did({ plugins: [TOOL] }))).toBeNull()
   })
 })
 
@@ -251,13 +257,13 @@ describe("surfacing in the shared worker", () => {
   })
 
   it.each([
-    ["view_mount of its tool", call("view_mount", { toolId: "pkgtool", docUrl: "automerge:x" })],
-    ["doc_create of its datatype", call("doc_create", { datatype: "pkgdata" })],
-    ["plugin_source of its id", call("plugin_source", { id: "pkgtool" })],
-  ])("%s brings the guide in a worker session", async (name, c) => {
+    ["a tool", { type: "patchwork:tool", id: "pkgtool" }],
+    ["a datatype", { type: "patchwork:datatype", id: "pkgdata" }],
+    ["an agent tool", { type: "agent:tool", id: "pkg_do" }],
+  ])("a call that used %s brings the guide in a worker session", async (name, plugin) => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    expect(await surfaceGuides(await workerCtx(w), c, null, "ok")).toMatch(/Usage guide for Pkg/)
+    expect(await surfaceGuides(await workerCtx(w), call("anything"), null, { output: "ok", facts: { plugins: [plugin] } })).toMatch(/Usage guide for Pkg/)
   })
 
   it("guide_read finds a package by plugin id in the worker", async () => {

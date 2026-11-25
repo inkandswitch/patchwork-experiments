@@ -174,14 +174,14 @@ describe("the small pieces", () => {
 describe("a row says what happened, not what was asked twice", () => {
   // The verb and detail already carry the question. A summary that repeats them
   // gives you `click button:last-child · click button:last-child · ok`.
-  const noisy = (tool, input, output) => {
-    const { verb, detail, note } = describeCall(written({ tool, input, status: "done" }), { output, summary: summaryOf(tool, input, output) })
+  const noisy = (tool, input, output, facts = null) => {
+    const { verb, detail, note } = describeCall(written({ tool, input, status: "done" }), { output, summary: summaryOf(tool, input, output, facts) })
     return { verb, detail, note }
   }
 
-  function summaryOf(toolId, input, output) {
+  function summaryOf(toolId, input, output, facts) {
     const tool = BUILTIN_TOOLS.find((t) => t.id === toolId)
-    return tool?.summarize?.(input, output) ?? null
+    return tool?.summarize?.(input, output, facts) ?? null
   }
 
   it("does not repeat the selector in an interaction", () => {
@@ -198,13 +198,14 @@ describe("a row says what happened, not what was asked twice", () => {
   })
 
   it("describes a mount by what rendered, not by its random id", () => {
-    const row = noisy("view_mount", { toolId: "tally" }, "Mounted without throwing.\n12 elements, 2 button(s), 1 input(s).\n\nmountId: mount_ab12cd")
+    const row = noisy("view_mount", { toolId: "tally" }, "Mounted without throwing.\n12 elements, 2 button(s), 1 input(s).\n\nmountId: mount_ab12cd", { mountId: "mount_ab12cd", mounted: true })
     expect(row.note).toBe("12 elements, 2 buttons")
     expect(row.note).not.toContain("mount_")
   })
 
   it("says plainly when a mount failed", () => {
-    expect(noisy("view_mount", { toolId: "tally" }, "PROBLEM mounting threw: boom").note).toBe("could not mount")
+    // A mount that threw still has an id; what it says is that it did not render.
+    expect(noisy("view_mount", { toolId: "tally" }, "PROBLEM mounting threw: boom\n\nmountId: mount_ab12cd", { mountId: "mount_ab12cd", mounted: false }).note).toBe("could not mount")
   })
 })
 

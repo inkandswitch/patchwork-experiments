@@ -4,7 +4,7 @@
  * A tool definition:
  *
  *   { id, name, description, input_schema, where, risk, alwaysAsk?, askWhen?, target?,
- *     group?, groupCovers?, scoped?, needs?, present?, execute(input, ctx), summarize?(input, output) }
+ *     group?, groupCovers?, scoped?, needs?, present?, execute(input, ctx), summarize?(input, output, facts) }
  *
  * `where` is "worker" | "host" and decides who may run it (placement.js).
  * `scoped` and `needs` decide which sessions are offered it (toolset.js), and
@@ -159,12 +159,17 @@ export async function runTool(tool, input, ctx) {
     let file = null
     let doc = null
     let made = null
+    let facts = null
     let output
     if (
       result &&
       typeof result === "object" &&
       (typeof result.image === "string" || result.file || result.doc || result.made || typeof result.text === "string")
     ) {
+      // What the call did, as plain data for code to read: a view, a hook
+      // after the call, the tool's own summary. Nothing parses it back out
+      // of the text, which is for the model.
+      facts = result.facts && typeof result.facts === "object" ? JSON.parse(JSON.stringify(result.facts)) : null
       image = typeof result.image === "string" ? result.image : null
       // A file for the model to read itself — a PDF — by its document, never
       // its bytes: those are loaded when the request is made (documents/files.js).
@@ -179,11 +184,11 @@ export async function runTool(tool, input, ctx) {
     }
     let summary = null
     try {
-      summary = tool.summarize?.(input, output) ?? null
+      summary = tool.summarize?.(input, output, facts) ?? null
     } catch {
       summary = null // a broken summarizer must not fail the call
     }
-    return { output, image, file, doc, made, isError: false, summary: summary ?? `${tool.id} ok` }
+    return { output, image, file, doc, made, facts, isError: false, summary: summary ?? `${tool.id} ok` }
   } catch (err) {
     const message = String(err?.message ?? err)
     // Not a result at all: the call had no effect and runs again when the

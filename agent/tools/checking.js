@@ -659,12 +659,18 @@ export const viewMount = {
     notes.push(`mountId: ${mountId} — use view_interact / view_inspect with it, then view_unmount.`)
 
     const image = mount.mounted && input.screenshot !== false ? await captureMount(mount.container, doc) : null
-    return image ? { text: notes.join("\n"), image } : notes.join("\n")
+    // What a view beside the call adopts, and what the call used, for code
+    // that goes by it (knowledge/guides.js): the package folder it mounted
+    // from, else the installed tool the document opened in.
+    const used = input.url || !mount.toolId ? [] : [{ type: "patchwork:tool", id: mount.toolId }]
+    return { text: notes.join("\n"), ...(image ? { image } : {}), facts: { mountId, mounted: mount.mounted, package: input.url ?? null, plugins: used } }
   },
 
-  summarize(input, output) {
+  summarize(input, output, facts) {
     const text = String(output ?? "")
-    if (!/mountId:/.test(text)) return "could not mount"
+    // Whether it rendered is what the mount found, not how its report reads:
+    // one that threw is still given an id, to inspect what it left behind.
+    if (!facts?.mounted) return "could not mount"
     const elements = text.match(/(\d+) elements/)
     const buttons = text.match(/(\d+) button/)
     // What it looks like, not which random id it was given: the row already
@@ -974,11 +980,6 @@ export const toolCheck = {
 /** Look up a live mount, so other tools (screenshots) can act on one. */
 export function getMount(mountId) {
   return mounts.get(mountId) ?? null
-}
-
-/** The mountId a view_mount result named, if any. */
-export function mountIdIn(output) {
-  return String(output ?? "").match(/mountId: (mount_[a-z0-9]+)/)?.[1] ?? null
 }
 
 /**

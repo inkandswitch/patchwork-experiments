@@ -45,7 +45,6 @@ export function wantsInstall(refs, settings) {
  * The inline views for one transcript.
  *
  *   handlers.getMount(mountId)        → { container } | null   the agent's live mounts
- *   handlers.mountIdIn(output)        → mountId | null
  *   handlers.mountForPerson(ref)      → Promise<{ container, cleanup }>
  *   handlers.parkMount(container)     put an adopted mount back off-screen
  *   handlers.openDoc(url)             open elsewhere
@@ -74,7 +73,7 @@ export function createInlineViews(handlers = {}) {
   /** The element for a call, or null when there is nothing to show. */
   function elementFor(block, result, state) {
     const ref = result?.doc ?? null
-    const mountId = handlers.mountIdIn?.(String(result?.output ?? "")) ?? null
+    const mountId = result?.facts?.mountId ?? null
     const mount = mountId ? handlers.getMount?.(mountId) : null
     if (!ref && !mountId) return null
 

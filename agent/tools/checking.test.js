@@ -252,14 +252,23 @@ describe("driving a view with the granular tools", () => {
       { url },
       { repo, importModule: async () => makeModule((h, e) => renderImpl(live(h), e)) }
     )
-    const mountId = out.match(/mountId: (\S+)/)[1]
+    const mountId = out.facts.mountId
     return { mountId, out, repo }
   }
 
+  it("a mount that threw says so as data: it has an id, and did not render", async () => {
+    const { out } = await mount(() => { throw new Error("boom") })
+    expect(out.text).toMatch(/PROBLEM mounting threw: boom/)
+    expect(out.facts).toMatchObject({ mountId: expect.stringMatching(/^mount_/), mounted: false })
+    expect(viewMount.summarize({}, out.text, out.facts)).toBe("could not mount")
+  })
+
   it("returns a mountId and leaves the tool running", async () => {
     const { mountId, out } = await mount()
-    expect(out).toMatch(/Mounted without throwing/)
+    expect(out.text).toMatch(/Mounted without throwing/)
     expect(mountId).toMatch(/^mount_/)
+    // What it opened, said as data: nothing reads the id back out of the text.
+    expect(out.facts).toEqual({ mountId, mounted: true, package: "automerge:package", plugins: [] })
     const inspected = await viewInspect.execute({ mountId }, {})
     expect(inspected).toContain("count: 0")
   })
@@ -353,8 +362,8 @@ describe("a mounted tool gets the element Patchwork gives it", () => {
       return () => out.remove()
     }
     const out = await viewMount.execute({ url }, { repo, importModule: async () => makeModule(importer) })
-    const mountId = out.match(/mountId: (\S+)/)[1]
-    expect(out).toMatch(/Mounted without throwing/)
+    const mountId = out.facts.mountId
+    expect(out.text).toMatch(/Mounted without throwing/)
     expect(seen).toEqual({ docUrl: expect.stringMatching(/^automerge:new/), toolId: "widget", hasRepo: true })
     expect(await viewInspect.execute({ mountId, selector: ".bound" }, {})).toContain("length")
   })
@@ -376,7 +385,7 @@ describe("a document holding bytes", () => {
       { url },
       { repo, importModule: async () => makeModule(tool, { datatypeInit: (d) => { d.content = huge } }) }
     )
-    const mountId = out.match(/mountId: (\S+)/)[1]
+    const mountId = out.facts.mountId
     expect(await viewInspect.execute({ mountId }, {})).toContain("<40000000 bytes>")
     const driven = await viewInteract.execute({ mountId, action: "click" }, {})
     expect(driven.split("\n").slice(0, 2)).toEqual(["Interacted with click on button (\"rename\") — document changed in 1 place:", '  /name: (none) → "hull.3dm"'])
@@ -425,7 +434,7 @@ describe("view_inspect, when nothing matches", () => {
       return () => element.replaceChildren()
     }
     const out = await viewMount.execute({ url }, { repo, importModule: async () => makeModule(tool) })
-    const mountId = out.match(/mountId: (\S+)/)[1]
+    const mountId = out.facts.mountId
     const error = await viewInspect.execute({ mountId, selector: "body" }, {}).catch((e) => e)
     expect(error.message).toMatch(/Present: .*button\.pwnb-tool, svg\.icon/)
     expect(error.message).not.toMatch(/\[object/)

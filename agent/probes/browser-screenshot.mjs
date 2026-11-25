@@ -167,8 +167,8 @@ try {
           { url: ${JSON.stringify(TOOL_PACKAGE)}, datatype: ${JSON.stringify(DATATYPE)} },
           { repo: window.repo }
         )
-        const mountId = mountReport.match(/mountId: (\\S+)/)?.[1]
-        step("mounted the webgl tool", { mountId, mounted: /Mounted without throwing/.test(mountReport) })
+        const mountId = mountReport.facts.mountId
+        step("mounted the webgl tool", { mountId, mounted: /Mounted without throwing/.test(mountReport.text) })
 
         await new Promise((r) => setTimeout(r, 800))
 

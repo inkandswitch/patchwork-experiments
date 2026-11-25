@@ -21,6 +21,8 @@
  *
  *   results      the result a runner wrote for a call it found cut off says
  *                that it is one (`placeholder`), where it was told by its wording.
+ *                A view_mount's says which mount it opened (`facts`), where
+ *                the view beside the call read the id out of its text.
  *   calls        each says how it reads in the log (`shown`), as its tool
  *                describes it; the view no longer has a table to look it up in.
  *   denied calls a call a person refused has a result saying so, as every
@@ -90,9 +92,14 @@ export function migrateSession(doc, { now = Date.now() } = {}) {
     }
   }
 
+  const toolOf = new Map()
+  for (const turn of doc.turns ?? []) for (const block of turn.blocks ?? []) if (block.type === "call") toolOf.set(block.id, block.tool)
   for (const turn of doc.turns ?? []) {
     for (const block of turn.blocks ?? []) {
-      if (block.type === "result" && block.summary === "interrupted" && String(block.output ?? "") === INTERRUPTED) block.placeholder = true
+      if (block.type !== "result") continue
+      if (block.summary === "interrupted" && String(block.output ?? "") === INTERRUPTED) block.placeholder = true
+      const mountId = toolOf.get(block.callId) === "view_mount" ? String(block.output ?? "").match(/mountId: (mount_[a-z0-9]+)/)?.[1] : null
+      if (mountId && !block.facts) block.facts = { mountId }
     }
   }
 

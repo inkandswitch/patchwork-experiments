@@ -739,7 +739,7 @@ async function executeCalls(opts) {
     // where the agent is looking: the first use of a package brings its usage
     // guide along (knowledge/guides.js surfaceGuides).
     for (const after of opts.afterCall ?? []) {
-      const more = await after(ctx, call, tool, outcome.output)
+      const more = await after(ctx, call, tool, outcome)
       if (more) outcome.output = `${outcome.output}\n\n${more}`
     }
 
@@ -756,6 +756,7 @@ async function executeCalls(opts) {
         image: outcome.image ?? null,
         doc: outcome.doc ?? null,
         file: outcome.file ?? null,
+        facts: outcome.facts ?? null,
       })
     )
 

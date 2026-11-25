@@ -552,7 +552,8 @@ describe("what a call made or opened, inline", () => {
     const handle = fakeHandle()
     handle.change((d) => {
       d.turns.push(makeTurn("assistant", [callBlock("view_mount", input, { id: callId, status: CALL.done })]))
-      d.turns.push(makeTurn("tool", [resultBlock(callId, output, doc ? { doc } : {})]))
+      const said = typeof output === "string" ? { text: output } : output
+      d.turns.push(makeTurn("tool", [resultBlock(callId, said.text, { ...(doc ? { doc } : {}), facts: said.facts ?? null })]))
     })
     return handle
   }
@@ -562,7 +563,7 @@ describe("what a call made or opened, inline", () => {
   it("adopts the agent's live mount beside its call, keeps it across re-renders, and parks it on cleanup", async () => {
     const repo = packageRepo()
     const out = await viewMount.execute({ url: "automerge:package", screenshot: false }, { repo, importModule: async () => module })
-    const mountId = String(out).match(/mountId: (mount_\w+)/)[1]
+    const mountId = out.facts.mountId
     const container = document.body.querySelector(".agent-mount-holder .agent-mount")
     expect(container).toBeTruthy()
     expect(container.querySelector("button").textContent).toBe("roll")
