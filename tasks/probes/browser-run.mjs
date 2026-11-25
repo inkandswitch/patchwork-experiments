@@ -51,6 +51,7 @@ import { createServer } from "node:http";
 import { extname } from "node:path";
 import { sleep } from "./cdp.mjs";
 import { guardChrome, killChrome } from "./chrome-guard.mjs";
+import { LISTEN_MS } from "../src/task-rules.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = resolve(HERE, "..");
@@ -348,13 +349,10 @@ try {
   log(`Chrome ${version.Browser}${SHOW ? ", visible" : ", headless"}; build ${stamp}, newer copy ${stamp + 60_000}`);
   A = await tab("A");
   await A.js("probe.makeAccount()");
+  // The pool starts only once a queue is served, which check 18 brings about.
   await A.js("probe.mount()");
   const slots = await A.js("Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 2))");
-  if (!(await A.waitFor("probe.status()?.state === 'running'", 30_000))) {
-    throw new Error(`tab A's pool did not start: ${J(await A.js("probe.status()"))} ${J(workerLogs)}`);
-  }
-  const poolId = await A.js("localStorage.getItem('patchwork-tasks-pool-id')");
-  log(`A runs pool ${poolId}, ${slots} slots`);
+  let poolId;
 
   // 18 (first, while the account is fresh). An account that names no task
   // storage serves nothing, and its titlebar says so and offers a queue of
@@ -364,6 +362,7 @@ try {
   // ask, and a task asked of it before the join, which waited, runs.
   {
     const said = await A.waitFor("probe.titlebar()?.offer === 'make' && probe.titlebar()", 15_000);
+    const hostBefore = await A.js("probe.status()");
     const storageBefore = await A.js("probe.storage()");
     const waitingKey = await A.js(`probe.ask(${J(NOOP)})`);
     const heard = await A.js("probe.served(4000)");
@@ -379,13 +378,21 @@ try {
     const afterJoin = await A.js(`probe.last(${J(waitingKey)})`);
     check(
       "18 a fresh account serves nothing and says so; Make my queue makes and serves one, and a task asked of ownQueue() runs; Join serves the probe's queue and its waiting task runs",
-      !!said && /No task queues/.test(said.text) && storageBefore === null && heard.length === 0 && waited.state === "waiting" && waited.runs.length === 0 &&
+      !!said && /No task queues/.test(said.text) && hostBefore?.state === "serves nothing" && storageBefore === null && heard.length === 0 && waited.state === "waiting" && waited.runs.length === 0 &&
         pressed && typeof own === "string" && servedAfter?.[own] === true && J(Object.keys(servedAfter)) === J([own]) &&
         ownRun.url === own && ownRun.result === 1 && J(asked) === J(["tasks-next"]) && !!offerAfter &&
         joined.pressed && joined.served === true && afterJoin.state === "succeeded",
-      `before: titlebar ${J(said?.text)} offering ${J(said?.offer)}, task storage ${J(storageBefore)}, pools heard on the probe's queue ${J(heard)}, a task asked of it ${waited.state} with ${waited.runs.length} runs; pressed ${pressed}; after: own ${String(own).slice(0, 22)}…, served ${J(Object.keys(servedAfter ?? {}).map((u) => u.slice(0, 22)))}, the provider asked for ${J(asked)}; a task asked of ownQueue() ${ownRun.result === 1 ? `ran in ${ownRun.ms.toFixed(0)} ms on ${ownRun.url === own ? "that queue" : J(ownRun.url)}` : J(ownRun)}; titlebar then ${J(offerAfter?.text)}; Join pressed ${joined.pressed}, served ${J(joined.served)}; the waiting task ${afterJoin.state}`,
+      `before: titlebar ${J(said?.text)} offering ${J(said?.offer)}, host ${J(hostBefore?.state)}, task storage ${J(storageBefore)}, pools heard on the probe's queue ${J(heard)}, a task asked of it ${waited.state} with ${waited.runs.length} runs; pressed ${pressed}; after: own ${String(own).slice(0, 22)}…, served ${J(Object.keys(servedAfter ?? {}).map((u) => u.slice(0, 22)))}, the provider asked for ${J(asked)}; a task asked of ownQueue() ${ownRun.result === 1 ? `ran in ${ownRun.ms.toFixed(0)} ms on ${ownRun.url === own ? "that queue" : J(ownRun.url)}` : J(ownRun)}; titlebar then ${J(offerAfter?.text)}; Join pressed ${joined.pressed}, served ${J(joined.served)}; the waiting task ${afterJoin.state}`,
     );
   }
+  if (!(await A.waitFor("probe.status()?.state === 'running'", 30_000))) {
+    throw new Error(`tab A's pool did not start: ${J(await A.js("probe.status()"))} ${J(workerLogs)}`);
+  }
+  poolId = await A.js("localStorage.getItem('patchwork-tasks-pool-id')");
+  log(`A runs pool ${poolId}, ${slots} slots`);
+  // A pool holds back for everything until it has listened to a queue for a
+  // beat and a little (LISTEN_MS), so the timed checks begin after that.
+  await sleep(LISTEN_MS);
 
   // 1. a do-nothing task, ask to result, ten in a row
   {
