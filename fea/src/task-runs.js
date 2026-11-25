@@ -316,7 +316,7 @@ export function hearServing(repo, queueUrl, ms = BEAT_MS + 500) {
  * A queue as people see it: how many of what it lists are running (what the
  * machines heard serving it say they are busy with), how many wait, and how
  * many runs its machines take at once.
- * @param {Partial<Queue> | undefined} queueDoc
+ * @param {Pick<Queue, 'jobs'> | undefined} queueDoc
  * @param {{ slots?: number, busy?: number }[]} pools
  */
 export function queueCounts(queueDoc, pools) {
@@ -328,7 +328,7 @@ export function queueCounts(queueDoc, pools) {
 /**
  * How many runs a queue lists ahead of this one (asked earlier, not ended),
  * or null when it doesn't list it.
- * @param {Partial<Queue> | undefined} queueDoc
+ * @param {Pick<Queue, 'jobs'> | undefined} queueDoc
  * @param {string} runUrl
  */
 export function aheadOf(queueDoc, runUrl) {
