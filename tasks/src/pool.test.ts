@@ -1669,6 +1669,45 @@ describe('the preferred pool', () => {
     }
   });
 
+  it('a pool that hears another fill its last slot with a task, before the document shows that run, leaves the task to it', async () => {
+    // Two machines: each pool has its own Repo, and the task's document is
+    // never merged between them, so O learns of P's run only from what P says.
+    const repoP = new Repo({ network: [] } as any);
+    const repoO = new Repo({ network: [] } as any);
+    const works = [countingWork(repoP), countingWork(repoO)];
+    /** `settle`, for these two Repos as well. */
+    const settleBoth = async () => {
+      do {
+        await settle();
+      } while (works.some((it) => it.underWay > 0));
+    };
+    const queueP = repoP.create<Queue>({ title: 'q', jobs: {} });
+    const taskP = repoP.create<Task>({ importUrl: CODE, input: null, key: 'k', runs: [] });
+    const [P, O] = byPreference(taskP);
+    const start = (id: string, repo: Repo) => {
+      const executor = new FakeExecutor(w.clock);
+      new Pool({ repo: repo as Docs, id, name: id, slots: 1, has: [], executor, queues: { [queueP.url]: 'any' }, ears: w.net.ears(), clock: w.clock });
+      return executor;
+    };
+    start(P, repoP);
+    const o = start(O, repoO);
+    const queueO = repoO.import<Queue>(A.save(queueP.doc()), { docId: queueP.documentId } as any);
+    const taskO = repoO.import<Task>(A.save(taskP.doc()), { docId: taskP.documentId } as any);
+    await settleBoth();
+    // listed on both machines at the same moment
+    queueP.change((doc) => listTask(doc, 'k', { taskUrl: taskP.url, askedAt: 1, package: null, needs: [] }));
+    queueO.change((doc) => listTask(doc, 'k', { taskUrl: taskO.url, askedAt: 1, package: null, needs: [] }));
+    await settleBoth();
+    // P took it, and says it is full and runs it; O, preferred by the count alone, leaves it
+    expect(runsOf(taskP).map((run) => run.pool)).toEqual([P]);
+    const said = w.net.sent.filter((it) => it.message.type === 'serving' && it.message.pool === P).at(-1)!.message;
+    expect(said).toMatchObject({ busy: 1, running: [taskP.url] });
+    await w.clock.advance(LAPSE_MS * 2);
+    await settleBoth();
+    expect(runsOf(taskO)).toEqual([]);
+    expect(o.workers).toHaveLength(0);
+  });
+
   it('needs narrow the candidates before the choice: the pool the hash prefers lacks a need, and the other takes it at once', async () => {
     const task = made('k', { needs: ['unix'] });
     const [P, O] = byPreference(task);

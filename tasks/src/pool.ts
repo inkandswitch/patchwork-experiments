@@ -12,7 +12,10 @@
 // task takeable for HOLD_MS. A pool that hears nobody else is always the one.
 // So that the others choose from what is so, it says `serving` every beat,
 // whenever how many of its slots are busy changes, and at once to a pool it
-// hears for the first time.
+// hears for the first time; and it says which tasks it has runs of, so that
+// a pool that hears it full never reads that as room for a task it is
+// running already, and leaves alone what another says it runs before the
+// task's document shows that run.
 //
 // It writes three things and nothing else: a run appended when it takes a
 // task, that run completed when it is over, and an entry deleted when its
@@ -216,6 +219,8 @@ interface HeardPool {
   has: string[];
   slots: number;
   busy: number;
+  /** The tasks it said it has runs of. */
+  running: string[];
   at: number;
 }
 
@@ -449,14 +454,17 @@ export class Pool {
         }
         // Whose code it is and what it needs are asked of the entry first
         // and of the task last (see `mayClaim`). A task that has ended is not
-        // wanted, so `mayClaim` refuses one just let go above.
+        // wanted, so `mayClaim` refuses one just let go above. One that a
+        // pool heard within the lapse says it runs is left to it: its run is
+        // on its way, and the word of it is quicker than the document.
         const takeable =
           !this.stopped &&
           acceptsPackage(acceptance, work.package) &&
           satisfies(this.has, work.needs) &&
           mayClaim(task, id, is, heard) &&
           accepts(acceptance, task.importUrl) &&
-          satisfies(this.has, task.needs);
+          satisfies(this.has, task.needs) &&
+          !this.runElsewhere(served, work.taskUrl, now);
         if (!takeable) {
           followed.takeableSince = undefined;
           followed.unhold?.();
@@ -468,6 +476,16 @@ export class Pool {
         }
       });
     }
+  }
+
+  /** Whether a pool heard serving the queue within the lapse says it has a run of this task. */
+  private runElsewhere(served: Served, taskUrl: string, now: number): boolean {
+    for (const pool of served.heard.values()) {
+      if (now - pool.at < LAPSE_MS && pool.running.includes(taskUrl)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -611,6 +629,7 @@ export class Pool {
       has: Array.isArray(message.has) ? message.has.filter((label): label is string => typeof label === 'string') : [],
       slots: Number(message.slots) || 0,
       busy: Number(message.busy) || 0,
+      running: Array.isArray(message.running) ? message.running.filter((url): url is string => typeof url === 'string') : [],
       at: now,
     });
     if (!before || now - before.at >= LAPSE_MS) {
@@ -885,7 +904,8 @@ export class Pool {
   private sayServing(handle: Handle<Queue> | undefined) {
     if (handle) {
       const { id: pool, name, slots } = this.options;
-      this.send(handle, { type: 'serving', pool, name, slots, busy: this.busy, has: this.has } satisfies Omit<ServingMessage, keyof Stamp>);
+      const running = [...new Set([...this.runs.values()].map((run) => run.task.url))];
+      this.send(handle, { type: 'serving', pool, name, slots, busy: this.busy, has: this.has, running } satisfies Omit<ServingMessage, keyof Stamp>);
     }
   }
 

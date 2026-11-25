@@ -257,7 +257,7 @@ only asks of) is in `PLANS.md`, each with what it waits on.
 processes and say what they saw, one line per check or measurement:
 
 - `probes/node-run.mjs` (after `pnpm build:node`; `--only 1,16` runs only the checks named):
-  Node hosts through the real sync server, 19 checks. 1, latency of ten do-nothing tasks; 2,
+  Node hosts through the real sync server, 20 checks. 1, latency of ten do-nothing tasks; 2,
   logs and progress heard while running and kept; 3, a throw fails once; 4, a spin cancelled,
   its thread ended within the grace; 5, a child process gone on cancel; 6, SIGTERM records the
   run lost and exits in time, a restart runs it again, and a guarded task fails rather than run
@@ -269,7 +269,8 @@ processes and say what they saw, one line per check or measurement:
   server after its listing is taken within 1.5 s; 17, ten tasks needing a label only one of two
   hosts has all run there, once each; 18, a task needing a label no host has stays listed,
   untaken, until a third host with it starts and runs it; 19, a task asked `near` a host runs on
-  that host.
+  that host; 20, four tasks asked at once near a host with two slots run two there and two on
+  the other host, each once.
 - `probes/write-path.mjs` (after `pnpm build:node`): measures, and checks nothing, how a
   document travels between a task on a Node host and its asker through the sync server, per
   size: written by the task (`out`), made by the asker for the task (`in`), twenty at once

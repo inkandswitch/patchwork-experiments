@@ -6,7 +6,7 @@
 //
 //   (in tasks/) node probes/node-run.mjs [<automerge:package url>] [--only 1,16] [--sync wss://…] [--verbose]
 //
-// Checks 9 and 17 to 19 are about a queue two hosts serve: each task runs
+// Checks 9 and 17 to 20 are about a queue two hosts serve: each task runs
 // once, by the one host it prefers (the one its asker is near, or else the
 // highest hash), and work that needs a label goes only to a host that has it.
 //
@@ -315,8 +315,8 @@ try {
     check(7, "kill -9 mid-run, restart on the same data dir: the restarted pool records its dead run lost and takes the task again", result?.input === "kill9" && t.runs.map((r) => r.status).join() === "lost,succeeded" && t.runs.every((r) => r.pool === A.pool), { runs: t.runs.map((r) => `${r.pool.slice(0, 8)}:${r.status}`), restartToResultMs: Date.now() - tRestart });
   }
 
-  // 8–10 and 17–19 share a second host, B, which alone has the label probe-b.
-  if (want(8, 9, 10, 17, 18, 19)) {
+  // 8–10 and 17–20 share a second host, B, which alone has the label probe-b.
+  if (want(8, 9, 10, 17, 18, 19, 20)) {
     const dirB = freshDir("B");
     let B = await startHost("B", { queue: Q, dataDir: dirB, has: ["probe-b"] });
     await until(() => pools.length === 2, LAPSE_MS, "both pools heard serving").catch(() => {});
@@ -368,12 +368,14 @@ try {
     // 9. two hosts, four tasks listed at once: each runs once, by the host it prefers
     if (want(9)) {
       const keys = ["w", "x", "y", "z"].map((k) => `four-${k}`);
+      const asked = Date.now();
       const results = await within(90000, Promise.all(keys.map((key) => runKey(Q, { importUrl: SOLVE, input: { steps: 6, stepMs: 200, tag: key }, key }))), "four tasks at once");
       const tasks = await Promise.all(keys.map((k) => taskOf(k)));
       const runs = tasks.map((t) => t.runs.length);
       const yielded = tasks.map((t) => t.runs.filter((r) => r.status === "yielded").length);
-      const by = tasks.map((t) => hostOf(t.runs.find((it) => it.status === "succeeded")?.pool));
-      check(9, "two hosts, four tasks listed at once: each has exactly one run, and none yielded", results.every((r, i) => r?.input === keys[i]) && runs.every((n) => n === 1) && yielded.every((n) => n === 0), { runsPerTask: runs, yieldedRuns: yielded.reduce((a, b) => a + b, 0), finishedBy: by });
+      // each run: which host, how it went, and when it was taken and ended after the asking began (each host's clock)
+      const how = tasks.map((t) => t.runs.map((r) => `${hostOf(r.pool)}:${r.status}@${r.start - asked}-${r.end - asked}`).join(" "));
+      check(9, "two hosts, four tasks listed at once: each has exactly one run, and none yielded", results.every((r, i) => r?.input === keys[i]) && runs.every((n) => n === 1) && yielded.every((n) => n === 0), { runsPerTask: runs, yieldedRuns: yielded.reduce((a, b) => a + b, 0), runs: how });
     }
 
     // 17. work that needs a label only B has is run by B, every time, also while B's slots are full
@@ -415,6 +417,19 @@ try {
       }
       const right = rows.filter((r) => r.runs === `${r.near}:succeeded`).length;
       check(19, "a task asked near a host is run by that host, once", right === rows.length, { ranByTheHostNamed: `${right} of ${rows.length}`, rows });
+    }
+
+    // 20. four tasks asked at once near A, whose two slots then fill: A runs two, and B, hearing
+    // A full and which tasks A runs, takes the other two at once and leaves A's alone
+    if (want(20)) {
+      const keys = ["p", "q", "r", "s"].map((k) => `near-a-${k}`);
+      const asked = Date.now();
+      const results = await within(90000, Promise.all(keys.map((key) => runKey(Q, { importUrl: SOLVE, input: { steps: 6, stepMs: 200, tag: key }, key, near: A.pool }))), "four tasks near A");
+      const tasks = await Promise.all(keys.map((k) => taskOf(k)));
+      const how = tasks.map((t) => t.runs.map((r) => `${hostOf(r.pool)}:${r.status}@${r.start - asked}`).join(" "));
+      const once = tasks.every((t) => t.runs.length === 1 && t.runs[0].status === "succeeded");
+      const byA = tasks.filter((t) => t.runs[0]?.pool === A.pool).length;
+      check(20, "four tasks at once near a host with two slots: it runs two, the other host two, each once, none yielded", results.every((r, i) => r?.input === keys[i]) && once && byA === 2, { runs: how });
     }
 
     // 10. served(): lists a host while it is up, and not one lapse after it stops
