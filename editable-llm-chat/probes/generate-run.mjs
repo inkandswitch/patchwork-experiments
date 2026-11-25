@@ -15,14 +15,16 @@
 // text of the reply its own Repo sees, and reads the chat's history after.
 //
 // Checks, one line each, with what was seen:
-// 1. a reply is written once (one run, none yielded) with both hosts serving,
-//    grows by appends at the end of the reply, seen at several lengths on the
-//    way, and ends finished as the known text;
+// 1. a reply is written once (one run, none yielded) with both hosts serving:
+//    the run puts its own message in the reply's place once, then grows it by
+//    appends at the end, seen at several lengths on the way, and it ends
+//    finished as the known text;
 // 2. a stop mid-stream ends the task cancelled and the reply stopped, keeping
 //    what was streamed, and the provider's request is closed;
 // 3. the host writing a reply killed mid-stream: the other takes the task
-//    after the lapse, removes the lost text once, and the reply ends as one
-//    clean copy of the known text;
+//    after the lapse, and its take-over is one replace of the reply's message
+//    followed by appends, nothing deleted, so the reply ends as one clean copy
+//    of the known text;
 // 4. the hosts said nothing went wrong.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -137,7 +139,11 @@ process.on("exit", cleanup);
 
 /**
  * The reply's history as the asker has it: every change not made by this
- * Repo, each as its patches, read for how it touched the reply's text.
+ * Repo, each as its patches, in order, read for how it touched the reply. A
+ * replace is a run's beginning, a message put whole in the reply's place;
+ * after each, the appends that follow it are checked to land where the text
+ * that replace began had ended. `order` is the history in short: R for a
+ * replace, a run of appends as their count, E for an ending.
  */
 function howWritten(handle) {
   const doc = handle.doc();
@@ -145,22 +151,32 @@ function howWritten(handle) {
   const theirs = A.getAllChanges(doc)
     .map((c) => A.decodeChange(c))
     .filter((c) => c.actor !== mine)
-    .map((c) => ({ run: c.actor, patches: A.diff(doc, c.deps, [c.hash]) }));
-  const onText = (p) => p.path[0] === "messages" && p.path[2] === "content";
-  const appends = theirs.filter((c) => c.patches.some((p) => onText(p) && p.action === "splice"));
-  const deletes = theirs.filter((c) => c.patches.some((p) => onText(p) && p.action === "del"));
-  // within one run's appends, each splice lands where that run's text ended
+    .map((c) => ({ patches: A.diff(doc, c.deps, [c.hash]) }));
+  const isReplace = (c) => c.patches.some((p) => p.path[0] === "messages" && p.path.length === 2 && p.action === "put");
+  const onText = (p) => p.path[0] === "messages" && p.path.length === 4 && p.path[2] === "content";
+  const isAppend = (c) => !isReplace(c) && c.patches.some((p) => onText(p) && p.action === "splice");
+  const isEnding = (c) => c.patches.some((p) => p.path[0] === "messages" && p.path[2] === "ended" && p.action === "put");
+  const deletes = theirs.filter((c) => c.patches.some((p) => p.action === "del"));
   let atEnd = 0;
   let length = 0;
-  let lastRun = null;
-  for (const c of appends) {
-    const [p, ...more] = c.patches.filter(onText);
-    if (c.run !== lastRun) length = 0;
-    lastRun = c.run;
-    if (!more.length && p.action === "splice" && p.path[3] === length) atEnd++;
-    length += p.value?.length ?? 0;
+  const order = [];
+  for (const c of theirs) {
+    if (isReplace(c)) {
+      length = 0;
+      order.push("R");
+    } else if (isAppend(c)) {
+      const [p, ...more] = c.patches;
+      if (!more.length && onText(p) && p.action === "splice" && p.path[3] === length) atEnd++;
+      length += p.value?.length ?? 0;
+      if (typeof order.at(-1) === "number") order[order.length - 1]++;
+      else order.push(1);
+    } else if (isEnding(c)) {
+      order.push("E");
+    } else {
+      order.push("?");
+    }
   }
-  return { changes: theirs.length, appends: appends.length, atEnd, deletes: deletes.map((c) => c.patches.filter(onText).map((p) => p.length ?? 1)) };
+  return { changes: theirs.length, replaces: theirs.filter(isReplace).length, appends: theirs.filter(isAppend).length, atEnd, deletes: deletes.length, order: order.join(" ") };
 }
 
 /** A chat with a question and an empty reply, its id `reply`, made in the asker's Repo and on the server. */
@@ -229,8 +245,8 @@ try {
     const lengths = between(asked.texts);
     check(
       1,
-      "a reply with two hosts serving: written once, by appends at the end, seen growing, finished as the known text",
-      result?.ended === "finished" && message?.ended === "finished" && message.content === TEXT && runs.length === 1 && runs[0].status === "succeeded" && how.appends === PIECES.length && how.atEnd === PIECES.length && how.deletes.length === 0 && lengths.length >= 3 && allPrefixes(asked.texts) && provider.requests.length - before === 1,
+      "a reply with two hosts serving: written once, by one replace and then appends at the end, seen growing, finished as the known text",
+      result?.ended === "finished" && message?.ended === "finished" && message.content === TEXT && runs.length === 1 && runs[0].status === "succeeded" && how.order === `R ${PIECES.length} E` && how.atEnd === PIECES.length && how.deletes === 0 && lengths.length >= 3 && allPrefixes(asked.texts) && provider.requests.length - before === 1,
       { ms, result, error, ended: message?.ended, textIsKnown: message?.content === TEXT, runs: runs.map((r) => `${hostOf(r.pool)}:${r.status}`), yielded: runs.filter((r) => r.status === "yielded").length, providerRequests: provider.requests.length - before, history: how, pieces: PIECES.length, lengthsSeen: lengths.length, everySeenAPrefix: allPrefixes(asked.texts) },
     );
   }
@@ -273,11 +289,13 @@ try {
     const message = await until(async () => (asked.message()?.ended ? asked.message() : null), 30_000, "the reply ended").catch(() => asked.message());
     const after = await taskOf(repo, asked.views);
     const how = howWritten(chat);
+    // the lost run's replace and appends (as many as reached the server), then the take-over: one replace, every piece appended, the ending
+    const shape = new RegExp(`^R (\\d+ )?R ${PIECES.length} E$`).exec(how.order);
     check(
       3,
-      "the host writing a reply killed mid-stream: the other takes it after the lapse, removes the lost text once, and the reply is one clean copy",
-      result?.ended === "finished" && message?.ended === "finished" && message.content === TEXT && how.deletes.length === 1 && how.deletes[0].length === 1 && how.deletes[0][0] === lost.length && after.runs.some((r) => r.status === "succeeded" && r.pool === (victim === a ? b : a).pool) && provider.requests.length - before === 2,
-      { killed: victim.label, lostText: lost.length, result, error, ended: message?.ended, textIsKnown: message?.content === TEXT, deletes: how.deletes, appends: how.appends, runs: after.runs.map((r) => `${hostOf(r.pool)}:${r.status ?? "open"}`), providerRequests: provider.requests.length - before, killToEndMs: Date.now() - killedAt },
+      "the host writing a reply killed mid-stream: the other takes it after the lapse with one replace followed by appends, nothing deleted, and the reply is one clean copy",
+      result?.ended === "finished" && message?.ended === "finished" && message.content === TEXT && shape !== null && how.replaces === 2 && how.deletes === 0 && how.atEnd === how.appends && after.runs.some((r) => r.status === "succeeded" && r.pool === (victim === a ? b : a).pool) && provider.requests.length - before === 2,
+      { killed: victim.label, lostText: lost.length, result, error, ended: message?.ended, textIsKnown: message?.content === TEXT, history: how.order, replaces: how.replaces, deletes: how.deletes, appendsAtEnd: `${how.atEnd}/${how.appends}`, runs: after.runs.map((r) => `${hostOf(r.pool)}:${r.status ?? "open"}`), providerRequests: provider.requests.length - before, killToEndMs: Date.now() - killedAt },
     );
   }
 

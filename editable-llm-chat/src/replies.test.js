@@ -144,15 +144,45 @@ describe('Send', () => {
 });
 
 describe('Stop', () => {
-  it("stops this page's own work by its signal, and the reply shows stopped", async () => {
-    const { handle, replies } = chat();
-    const id = replies.send('One');
-    calls.doWork[0].options.onProgress(view({ state: 'running' }));
-    replies.stop(id);
-    expect(calls.doWork[0].options.signal.aborted).toBe(true);
-    await settle();
-    expect(calls.stop.length).toBe(0);
-    expect(replies.shown(message(handle, id))).toMatchObject({ status: 'stopped', editable: true });
+  it("stops this page's own work by its signal; then this page shows what the chat says, as every other page does", async () => {
+    // after a stop, what a page shows comes from the message, and from no work, since none goes on
+    const pages = (handle, repo, id) => {
+      const other = chatReplies(handle, repo, { apiKey: KEY });
+      // the other page's queue has nothing under the key: the work was this page's
+      watched(handle, id).forEach((w) => w.onChange(view({ state: 'missing', taskUrl: null })));
+      return other;
+    };
+
+    // stopped once its run had begun: the run marks its own message stopped
+    {
+      const { repo, handle, replies } = chat();
+      const id = replies.send('One');
+      calls.doWork[0].options.onProgress(view({ state: 'running' }));
+      handle.change((d) => {
+        const at = d.messages.findIndex((m) => m.id === id);
+        d.messages[at] = { id, role: 'assistant', content: 'Half', run: 'run-1' };
+      });
+      replies.stop(id);
+      expect(calls.doWork[0].options.signal.aborted).toBe(true);
+      handle.change((d) => (d.messages.find((m) => m.id === id).ended = 'stopped'));
+      await settle();
+      expect(calls.stop.length).toBe(0);
+      const other = pages(handle, repo, id);
+      expect(replies.shown(message(handle, id))).toEqual({ status: 'stopped', line: LINES.stopped, editable: true, stoppable: false, retry: true });
+      expect(other.shown(message(handle, id))).toEqual(replies.shown(message(handle, id)));
+    }
+
+    // stopped before any run began: nothing was written, so the reply is interrupted here as everywhere
+    {
+      const { repo, handle, replies } = chat();
+      const id = replies.send('One');
+      replies.stop(id);
+      await settle();
+      watched(handle, id).forEach((w) => w.onChange(view({ state: 'missing', taskUrl: null })));
+      const other = pages(handle, repo, id);
+      expect(replies.shown(message(handle, id))).toEqual({ status: 'interrupted', line: LINES.interrupted, editable: true, stoppable: false, retry: true });
+      expect(other.shown(message(handle, id))).toEqual(replies.shown(message(handle, id)));
+    }
   });
 
   it('stops work seen on the queue by its key, for a reply being written elsewhere', () => {
@@ -187,12 +217,45 @@ describe('Try again', () => {
     expect(replies.shown(message(handle, 'r')).status).toBe('streaming');
   });
 
+  it('puts a stopped or failed reply back as Send made it, in one change, and asks for it again', () => {
+    for (const ended of [{ ended: 'stopped' }, { ended: 'failed', error: "The provider's reply ended early, before it said it was complete." }]) {
+      calls.doWork.length = 0;
+      const { handle, replies } = chat([
+        { id: 'q1', role: 'user', content: 'And then?' },
+        { id: 'r', role: 'assistant', content: 'Half a', run: 'run-1', ...ended },
+      ]);
+      expect(replies.shown(message(handle, 'r')).retry).toBe(true);
+      const before = A.getAllChanges(handle.doc()).length;
+      replies.tryAgain('r');
+      expect(A.getAllChanges(handle.doc()).length).toBe(before + 1);
+      expect(message(handle, 'r')).toEqual({ id: 'r', role: 'assistant', content: '' });
+      expect(calls.doWork.length).toBe(1);
+      expect(calls.doWork[0].request.key).toBe(replyKey(handle.url, 'r'));
+      expect(calls.doWork[0].request.input.request.messages.map((m) => m.content)).toEqual([SYSTEM_PROMPT, 'Hi', 'Hello!', 'And then?']);
+      expect(replies.shown(message(handle, 'r'))).toMatchObject({ status: 'streaming', stoppable: true });
+    }
+  });
+
+  it('is offered for a reply no run began, with no work going on (the page closed between sending and asking)', () => {
+    const { handle, replies } = chat([
+      { id: 'q1', role: 'user', content: 'And then?' },
+      { id: 'r', role: 'assistant', content: '' },
+    ]);
+    expect(replies.shown(message(handle, 'r'))).toMatchObject({ status: 'looking', retry: false });
+    watched(handle, 'r')[0].onChange(view({ state: 'missing', taskUrl: null }));
+    expect(replies.shown(message(handle, 'r'))).toMatchObject({ status: 'interrupted', retry: true });
+    replies.tryAgain('r');
+    expect(calls.doWork.length).toBe(1);
+  });
+
   it('is not offered, and does nothing, for a reply that finished or one being written', () => {
     const { handle, replies } = chat([{ id: 'r', role: 'assistant', content: 'Part', run: 'run-1' }]);
+    const heads = handle.heads();
     replies.tryAgain('a0');
     watched(handle, 'r')[0].onChange(view({ state: 'running', taskUrl: 'automerge:task' }));
     replies.tryAgain('r');
     expect(calls.doWork.length).toBe(0);
+    expect(handle.heads()).toEqual(heads);
   });
 });
 

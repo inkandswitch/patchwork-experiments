@@ -14,10 +14,10 @@ export type EditableChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  /** A reply's: the run writing it, or that last wrote it (generate-task.js). */
+  /** A reply's: the run that made this message and writes into it (generate-task.js). */
   run?: string;
-  /** A reply's: how its writing ended. */
+  /** A reply's: how the run named by `run` ended it. */
   ended?: 'finished' | 'stopped' | 'failed';
-  /** A failed reply's: what the provider said. */
+  /** A failed reply's: what went wrong, the provider's words when it said any. */
   error?: string;
 };

@@ -12,25 +12,35 @@
 // sent to the provider, and the provider's key. The key it is asked under is
 // made from the chat and the message, so a reply is asked for once.
 //
-// Each piece of text the provider sends is spliced onto the end of the
-// reply's text in a change of its own; the whole text is never set, so a
-// person who edits the reply while it streams keeps their edit, and the next
-// piece still goes on the end. The reply is found by its id inside every
-// change, because people may insert, delete and edit messages meanwhile.
+// Tasks run at least once, and a model cannot carry on another run's
+// sentence, so every run begins by putting a message of its own in the
+// reply's place: the same id and role, empty text, and the run's id (`run`),
+// in one assignment to that place in the list. From then on it writes only
+// inside the message it made. Each piece of text the provider sends is
+// appended to the end of that message's text, in a change of its own that
+// first finds the reply by its id (people may insert, delete and edit
+// messages meanwhile) and checks that the message there still names this
+// run, and the run stops at once when it does not. How the reply ended is a
+// field of that same message, `ended` (`finished`, `stopped`, or `failed`
+// with `error`), so an ending belongs to the run that wrote it. A run that
+// finds the reply already ended does nothing.
 //
-// Tasks run at least once, and a model cannot carry on mid-sentence, so the
-// reply names the run writing it (`run`). A run that starts takes the reply
-// over and starts afresh, removing any text an earlier run left (the one
-// write that is not an append, and there is text to remove only after a
-// run was lost). Every append checks, in its own change, that the reply is
-// still this run's, so a run that has been taken over stops at once. A run
-// that finds the reply ended already does nothing. How the reply ended is
-// one field, `ended`: `finished`, `stopped` or `failed` (with `error`).
+// This is safe without any timing because a message is one value. Two runs
+// that each put their own message in the reply's place, on machines that have
+// not heard each other, merge to one of the two messages, whole, the same on
+// every machine. Everything the other run appended, and its ending, went into
+// the message that lost, which nothing points to any more. The stream itself
+// is appends, so a person who edits the reply while it streams keeps their
+// edit; the one replacement at the start of each run is what makes the
+// appends safe.
 
 import { splice } from '@automerge/automerge-repo';
 
 /** What it throws when the chat cannot be had. */
 export const UNREACHABLE = 'The chat could not be opened to write the reply.';
+
+/** What a reply that failed says when the provider's stream closed before its end marker. */
+export const ENDED_EARLY = "The provider's reply ended early, before it said it was complete.";
 
 /**
  * Where the reply with this id is in a chat now, or null when it is not there.
@@ -49,8 +59,10 @@ function find(doc, id) {
 /**
  * The provider's stream as pieces of text: the request is posted with
  * `stream: true`, and each server-sent event's `delta.content` is a piece.
- * Aborting `signal` ends it with the signal's reason, even when the
- * provider's body does not heed it.
+ * It ends at the provider's `[DONE]`; a body that closes before it throws
+ * ENDED_EARLY, because a connection that drops mid-reply closes cleanly too,
+ * and that reply is not whole. Aborting `signal` ends it with the signal's
+ * reason, even when the provider's body does not heed it.
  * @param {typeof globalThis.fetch} fetch
  * @param {{ endpoint: string, model: string, messages: { role: string, content: string }[] }} request
  * @param {string} apiKey
@@ -123,7 +135,7 @@ export async function* streamPieces(fetch, request, apiKey, signal) {
         }
       }
       if (done) {
-        return;
+        throw new Error(ENDED_EARLY);
       }
     }
   } finally {
@@ -135,8 +147,8 @@ export async function* streamPieces(fetch, request, apiKey, signal) {
 /**
  * How a stopped run leaves the reply: `yielded` (another run holds the task)
  * and `stopping` (this machine's pool is going away, and the task will be
- * taken again) hand it to another run, which starts it afresh; any other
- * stop is the person's, and the reply is stopped.
+ * taken again) hand it to another run, which puts a message of its own in its
+ * place; any other stop is the person's, and the reply is stopped.
  * @param {unknown} reason  the run's signal's reason
  * @returns {'stopped' | 'taken'}
  */
@@ -192,17 +204,16 @@ export async function generate(input, ctx, { fetch = (/** @type {any[]} */ ...a)
       before = { ended: m.ended, pieces: 0, chars: 0, already: true };
       return;
     }
-    if (m.content.length > 0) {
-      splice(d, ['messages', i, 'content'], 0, m.content.length);
-    }
-    m.run = run;
+    // One assignment, so the message is one value that a concurrent run's replaces whole or not at all.
+    d.messages[i] = { id, role: m.role, content: '', run };
   });
   if (before) {
     return before;
   }
 
   /**
-   * Changes the reply if it is still this run's and has not ended.
+   * Changes the reply if the message at its id is still the one this run
+   * made and it has not ended.
    * @param {(d: any, i: number, m: any) => void} change
    * @returns {'ok' | 'gone' | 'taken'}
    */

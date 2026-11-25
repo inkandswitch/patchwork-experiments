@@ -51,18 +51,24 @@ export function chatReplies(handle, repo, { apiKey, importUrl = generateTaskUrl(
   const messages = () => /** @type {any[]} */ ([...(handle.doc()?.messages ?? [])]);
   const byId = (/** @type {string} */ id) => messages().find((m) => m?.id === id);
 
-  /** The work this page knows of for a reply (reply-status.js's Work): its own, or the one followed. */
-  function work(/** @type {string} */ id) {
-    const mine = own.get(id)?.view ?? null;
+  /**
+   * The work going on now for a reply (reply-status.js's Work): this page's
+   * own, or the one followed on the queue; null when none is, and undefined
+   * while the queue has not yet said. Work that is over is never returned,
+   * because what it did is in the message.
+   */
+  function work(/** @type {any} */ message) {
+    const mine = own.get(message.id)?.view;
     if (mine && underWay(mine.state)) return mine;
-    const followed = seen.get(id);
-    const watched = !followed || followed.view === undefined ? undefined : followed.view.state === 'missing' ? null : followed.view;
-    if (watched && underWay(watched.state)) return watched;
-    return mine ?? watched;
+    // an ended reply is not followed (follow), so only this page's own work could be going on for it
+    if (message.ended) return null;
+    const followed = seen.get(message.id);
+    if (!followed || followed.view === undefined) return undefined;
+    return underWay(followed.view.state) ? followed.view : null;
   }
 
   /** What is shown of a message: null for one that is not a reply this tool can follow. */
-  const shown = (/** @type {any} */ message) => (message?.role === 'assistant' && typeof message.id === 'string' ? shownReply(message, work(message.id)) : null);
+  const shown = (/** @type {any} */ message) => (message?.role === 'assistant' && typeof message.id === 'string' ? shownReply(message, work(message)) : null);
 
   const beingWritten = (/** @type {string} */ id) => {
     const status = shown(byId(id))?.status;
@@ -105,6 +111,7 @@ export function chatReplies(handle, repo, { apiKey, importUrl = generateTaskUrl(
     changed();
     const { input, key } = replyAsk(handle.url, id, requestFor(handle.doc(), id, beingWritten), apiKey);
     const needs = needsOf(handle.doc());
+    let how = 'failed';
     try {
       await doWork(repo, { importUrl, input, key, ...(needs ? { needs } : {}) }, {
         signal: controller.signal,
@@ -114,10 +121,13 @@ export function chatReplies(handle, repo, { apiKey, importUrl = generateTaskUrl(
           changed();
         },
       });
-    } catch (err) {
-      // the views have said how the work ended; what ended before any did (a stop while deciding where) is said here
-      if (underWay(mine.view.state)) mine.view = { ...mine.view, state: controller.signal.aborted ? 'cancelled' : 'failed', error: String(/** @type {any} */ (err)?.message ?? err) };
+      how = 'succeeded';
+    } catch {
+      // how it went is in the message, if the run wrote it; the work is over either way
+      how = controller.signal.aborted ? 'cancelled' : 'failed';
     } finally {
+      // over, however the views left it, so that it no longer counts as going on
+      if (underWay(mine.view.state)) mine.view = { ...mine.view, state: how };
       changed();
     }
   }
@@ -142,16 +152,29 @@ export function chatReplies(handle, repo, { apiKey, importUrl = generateTaskUrl(
 
   /** Stops the reply's work: this page's own by its signal, work seen on the queue by its key. */
   function stop(/** @type {string} */ id) {
-    const w = work(id);
+    const message = byId(id);
+    if (!message) return;
+    const w = work(message);
     if (!w || !underWay(w.state)) return;
     const mine = own.get(id);
     if (mine && mine.view === w) mine.controller.abort();
     else void stopWork(repo, replyKey(handle.url, id));
   }
 
-  /** Asks again for a reply that was interrupted, under the same key. */
+  /**
+   * Asks again, under the same key, for a reply that did not finish and is
+   * not being written. The reply is first put back as Send made it (its id,
+   * its role, no text), in one change, because a run does nothing to a reply
+   * that has ended.
+   */
   function tryAgain(/** @type {string} */ id) {
-    if (shown(byId(id))?.retry) void start(id);
+    const message = byId(id);
+    if (!shown(message)?.retry) return;
+    handle.change((/** @type {any} */ d) => {
+      const i = d.messages.findIndex((/** @type {any} */ m) => m?.id === id);
+      if (i >= 0) d.messages[i] = { id, role: message.role, content: '' };
+    });
+    void start(id);
   }
 
   /** Replaces a reply's text with the person's edit, once its work has ended. */

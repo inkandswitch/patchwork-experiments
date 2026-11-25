@@ -1,12 +1,26 @@
 // What a person is shown of a reply: the one place it is decided.
 //
-// The reply says how it ended (`ended`, written by the work) and which run
-// began writing it (`run`). Whether work is going on is not in the chat: it
-// is the task under the reply's key, followed with watchWork, when it was
-// asked of the person's queue, or this page's own doWork when it runs here.
-// So what is shown is read from both, and nothing writes the chat to say a
-// reply is being written. A reply that has not ended, with no work going on
-// for it, is shown as interrupted and offered again.
+// The rule: what is shown is a function of the reply's message in the chat
+// and of the work going on for it now, and of nothing else. Work that is
+// over adds nothing: whatever it did that matters it wrote into the message,
+// which every page reads alike, so a page that started or stopped the work
+// shows what every other page shows. From that rule, every case follows:
+//
+// - A message that has ended shows how (`ended`, written by the run that
+//   wrote it): finished, stopped, or failed with what went wrong.
+// - A message that has not ended, with work going on for it now, is being
+//   written, and offers Stop.
+// - One that has not ended, while this page has not yet heard whether work
+//   is going on, is being looked for.
+// - One that has not ended, with no work going on, is interrupted: a run
+//   began and did not end it, or none began (the page closed between sending
+//   and asking).
+// - Try again is offered for every reply that did not finish and has no
+//   work going on; editing whenever no work is, or may be, writing it.
+//
+// Whether work is going on is not in the chat: it is the task under the
+// reply's key, followed with watchWork, when it was asked of the person's
+// queue, or this page's own doWork while it runs here (replies.js).
 
 /** A task's states in which its work is still going on, as far as a person can tell. */
 const GOING = new Set(['starting', 'waiting', 'running', 'stalled', 'stopping']);
@@ -47,26 +61,30 @@ export const LINES = Object.freeze({
 
 /**
  * What is shown of a reply, given the work this page knows of for it:
- * undefined while it is still finding out, null when it knows of none.
+ * undefined while it is still finding out, and work that is over counts as
+ * none, as the rule above says.
  * @param {{ ended?: string, error?: string }} message
  * @param {Work | null | undefined} work
  * @returns {Shown}
  */
 export function shownReply(message, work) {
-  const ended = (/** @type {Shown['status']} */ status, line) => ({ status, ...(line ? { line } : {}), editable: true, stoppable: false, retry: false });
-  if (message.ended === 'finished') return ended('finished');
-  if (message.ended === 'stopped') return ended('stopped', LINES.stopped);
-  if (message.ended === 'failed') return ended('failed', `Error: ${message.error ?? 'the reply failed'}`);
-  if (work && underWay(work.state)) return { status: 'streaming', work, editable: false, stoppable: true, retry: false };
-  if (work === undefined) return { status: 'looking', line: LINES.looking, editable: false, stoppable: false, retry: false };
-  const interrupted = (line = LINES.interrupted) => ({ status: /** @type {const} */ ('interrupted'), line, editable: true, stoppable: false, retry: true });
-  if (!work) return interrupted();
-  if (work.state === 'cancelled') return ended('stopped', LINES.stopped);
-  // what the run wrote reaches this page on its own; the run said it finished the reply
-  if (work.state === 'succeeded' && /** @type {any} */ (work.result)?.ended === 'finished') return ended('finished');
-  if (work.state === 'failed') return interrupted(`Error: ${work.error ?? 'the reply failed'}`);
-  // `missing`, or a run that ended without ending the reply (another run took it over)
-  return interrupted();
+  const going = work !== undefined && work !== null && underWay(work.state);
+  const retry = message.ended !== 'finished' && !going && work !== undefined;
+  /** @returns {Shown} */
+  const shown = (/** @type {Shown['status']} */ status, /** @type {string | undefined} */ line, more = {}) => ({
+    status,
+    ...(line ? { line } : {}),
+    editable: true,
+    stoppable: false,
+    retry,
+    ...more,
+  });
+  if (message.ended === 'finished') return shown('finished', undefined);
+  if (message.ended === 'stopped') return shown('stopped', LINES.stopped);
+  if (message.ended === 'failed') return shown('failed', `Error: ${message.error ?? 'the reply failed'}`);
+  if (going) return shown('streaming', undefined, { work, editable: false, stoppable: true });
+  if (work === undefined) return shown('looking', LINES.looking, { editable: false });
+  return shown('interrupted', LINES.interrupted);
 }
 
 /** What to say about work going on: how far it is, and where it runs. */
