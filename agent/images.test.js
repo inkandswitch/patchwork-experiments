@@ -6,7 +6,7 @@
  * resent it on every retry — stuck for good.
  */
 import { describe, it, expect } from "vitest"
-import { fitWithin, MAX_IMAGE_SIDE } from "./tools/screenshot.js"
+import { fitWithin, MAX_IMAGE_SIDE } from "./documents/images.js"
 import { stream } from "./providers/openrouter.js"
 import { initSession, _resetIds } from "./session/schema.js"
 import { makeTurn, textBlock, resultBlock } from "./session/blocks.js"
@@ -36,7 +36,7 @@ describe("shrinking a capture", () => {
     [[100, 100000], [4, 4000]],
     [[1, 1], [1, 1]],
   ])("%j fits as %j", ([w, h], expected) => {
-    const out = fitWithin(w, h)
+    const out = fitWithin(w, h, { maxWidth: 800 })
     expect([out.width, out.height]).toEqual(expected)
     expect(Math.max(out.width, out.height)).toBeLessThanOrEqual(MAX_IMAGE_SIDE)
   })

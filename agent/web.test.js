@@ -3,7 +3,7 @@ import { generateAutomergeUrl } from "@automerge/automerge-repo"
 import {
   parseBraveResults, braveSearch, braveSearchUrl, BRAVE_SEARCH, SNIPPET_MAX, readerUrl, readerSiteError, webFetch, webSearch, htmlToText,
 } from "./tools/web.js"
-import { MAX_PDF_BYTES, sha256Hex } from "./tools/sources.js"
+import { MAX_PDF_BYTES, sha256Hex } from "./documents/media.js"
 import { guardedFetch, Refused } from "./net/guard.js"
 import { httpRequest } from "./tools/http.js"
 import { bytes } from "./documents/format.js"

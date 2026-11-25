@@ -19,28 +19,20 @@
  */
 
 import { AutomergeRepo } from "../host/modules.js"
-import { repairDocUrl } from "../documents/doc-urls.js"
-import { readable, sessionDoc, keptSources, headingAt, outline, formatOf, readOn } from "./sources.js"
+import { repairDocUrl, documentIdOf } from "../documents/doc-urls.js"
+import { readable, headingAt, outline, formatOf } from "../documents/media.js"
+import { sessionDoc, keptSources, readOn } from "./sources.js"
 import { bytes } from "../documents/format.js"
 import { imageForModel } from "../documents/images.js"
 import { fileKind, officeText, MAX_FILE_BYTES } from "../documents/files.js"
 import { readPdf, pdfSummary } from "../documents/pdf-text.js"
 
-const { interpretAsDocumentId, isValidAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } = AutomergeRepo
+const { isValidAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } = AutomergeRepo
 
 export const READ_LIMIT = 8000
 export const MAX_READ = 20000
 export const MAX_MATCHES = 20
 const CONTEXT = 80
-
-/** The canonical id of anything that names a document, or null. */
-function canonical(source) {
-  try {
-    return interpretAsDocumentId(String(source ?? "").trim())
-  } catch {
-    return null
-  }
-}
 
 /**
  * One slice of a text: offset clamped into it, a limit of at least one
@@ -92,7 +84,7 @@ export function around(text, at, length) {
 export async function openDocument(source, repo) {
   // A run-on or quoted URL is mended (documents/doc-urls.js); the repo mends the rest.
   const name = repairDocUrl(String(source ?? "").trim()).url
-  const id = canonical(name)
+  const id = documentIdOf(name)
   if (!id) throw new Error(`'${name}' does not name a document. Pass the automerge: URL a fetch gave you.`)
   const heads = isValidAutomergeUrl(name) ? parseAutomergeUrl(name).heads : undefined
   const handle = await repo.find(stringifyAutomergeUrl({ documentId: id, heads }))

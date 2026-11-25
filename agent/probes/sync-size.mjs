@@ -2,7 +2,7 @@
  * Probe P7: do the size caps fit through the sync server?
  *
  * A snapshot holds up to 20 MB (the web-snapshot package's web-capture.js,
- * MAX_SNAPSHOT_BYTES) and a kept PDF up to 30 MB (tools/sources.js
+ * MAX_SNAPSHOT_BYTES) and a kept PDF up to 30 MB (documents/media.js
  * MAX_PDF_BYTES), each in one document written in one change. If the sync server refuses or drops a
  * message that size, a capture is kept on the machine that made it and
  * nowhere else, silently. This writes one document of each size from one

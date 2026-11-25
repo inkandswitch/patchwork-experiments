@@ -3,7 +3,8 @@
  * for a long tool call, and questions that are asked rather than mentioned.
  */
 import { describe, it, expect } from "vitest"
-import { buildBody, sessionKey, isClaude } from "./providers/openrouter.js"
+import { buildBody, isClaude } from "./providers/openrouter.js"
+import { sessionKey } from "./kernel/loop.js"
 import { listRegistries } from "./tools/environment.js"
 import { initSession, DEFAULT_CONFIG } from "./session/schema.js"
 import { addUsage } from "./session/usage.js"

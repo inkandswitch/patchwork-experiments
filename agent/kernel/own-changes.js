@@ -2,7 +2,7 @@
  * Which changes a session made: the change hashes its tools' writes produced.
  *
  * Every write a session's tools make goes through its guarded repo
- * (kernel/scope.js kernelRepo), which notes the heads the write added here. A watch
+ * (kernel/kernel-repo.js), which notes the heads the write added here. A watch
  * (tools/watch.js) compares the heads a change event adds with this set: all
  * of them the session's own, and the session is hearing about itself; any
  * other, and someone else wrote — a person in this same tab, a daemon, another

@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest"
 import { Repo, initSubduction, generateAutomergeUrl, isValidAutomergeUrl } from "@automerge/automerge-repo"
 import { repairDocUrl, urlsIn, editDistance, MistypedUrl } from "./documents/doc-urls.js"
-import { kernelRepo } from "./kernel/scope.js"
+import { kernelRepo } from "./kernel/kernel-repo.js"
 
 await initSubduction()
 

@@ -29,8 +29,9 @@ import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
 import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
-import { scopeOf, webScope, sameScope, KERNEL_TYPES, SCOPED_TOOL_IDS } from "../kernel/scope.js"
-import { documentIdOf } from "../session/grants.js"
+import { scopeOf, webScope, sameScope, SCOPED_TOOL_IDS } from "../kernel/scope.js"
+import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
+import { documentIdOf } from "../documents/doc-urls.js"
 import { releaseNowPermitted } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
 import { waitingIn } from "./waiting.js"
@@ -467,7 +468,7 @@ export class WorkflowDriver {
   /**
    * End every running research step whose session is not confined exactly as
    * its plan says. A scope is written when the step starts and nothing in the
-   * agent may change it (kernel/scope.js kernelRepo), so a scope that is gone or
+   * agent may change it (kernel/kernel-repo.js), so a scope that is gone or
    * different was changed by hand, and the step stops rather than run on with
    * more than research should have.
    */

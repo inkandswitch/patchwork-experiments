@@ -22,7 +22,7 @@
 
 import { materialize, loadEsbuild, packagePlugin, isExternal, loaderFor } from "./build.js"
 import { createRuntime, captureConsole } from "./vitest-runtime.js"
-import { resolveImportMap } from "../runners/worker-client.js"
+import { resolveImportMap } from "../host/urls.js"
 import { workerPreparation } from "../host/import.js"
 
 export { workerPreparation }

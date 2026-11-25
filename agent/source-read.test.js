@@ -3,7 +3,7 @@ import { ImmutableString } from "@automerge/automerge"
 import { Repo, initSubduction, generateAutomergeUrl, parseAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
 import { slice, findAll, sourceRead, sourceList, MAX_READ } from "./tools/read-source.js"
 import { sourceFile } from "./tools/file-source.js"
-import { headingAt } from "./tools/sources.js"
+import { headingAt } from "./documents/media.js"
 import { initPlan } from "./workflow/plan.js"
 import { scopedRepo, NOT_A_SOURCE } from "./kernel/scope.js"
 

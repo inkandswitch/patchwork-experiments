@@ -21,7 +21,7 @@
 import { AgentTool, isDictationShortcut } from "./session-view.js"
 import { initSession } from "../session/schema.js"
 import { sessionTitle } from "../session/title.js"
-import { documentIdOf } from "../session/grants.js"
+import { documentIdOf } from "../documents/doc-urls.js"
 import { hostImport } from "../host/import.js"
 import { subscribe, openDocument } from "../host/context.js"
 import { watchWorkspace } from "./workspace.js"

@@ -7,7 +7,7 @@
  * a document of the person's to the ledger. One that could make either could
  * do the same from scratch: a plan whose ledger lists the person's notes, run
  * by the driver as if it were real. Every session's tools get a repo
- * (kernel/scope.js kernelRepo) whose handles refuse both, however the document is
+ * (kernel/kernel-repo.js) whose handles refuse both, however the document is
  * named; the two modules that write them legitimately are handed explicit
  * capabilities instead, and nothing else is.
  */
@@ -25,7 +25,8 @@ import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 import { SessionRunner, fullContext } from "./kernel/runner.js"
 import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { kernelRepo, webScope, KERNEL_REFUSAL, KERNEL_TYPES } from "./kernel/scope.js"
+import { kernelRepo, KERNEL_REFUSAL, KERNEL_TYPES } from "./kernel/kernel-repo.js"
+import { webScope } from "./kernel/scope.js"
 
 await initSubduction()
 

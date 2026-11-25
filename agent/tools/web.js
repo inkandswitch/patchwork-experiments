@@ -20,10 +20,8 @@
  */
 
 import { bytes } from "../documents/format.js"
-import {
-  keepSource, sourceFooter, findKept, titleFrom, mediaType, isTextResponse, decodeText, isPdf, formatOf,
-  MAX_PDF_BYTES, readOn,
-} from "./sources.js"
+import { keepSource, sourceFooter, findKept, readOn } from "./sources.js"
+import { titleFrom, mediaType, isTextResponse, decodeText, isPdf, formatOf, MAX_PDF_BYTES } from "../documents/media.js"
 import { fetcher, assertTarget } from "../net/guard.js"
 import { Interruption, isInterruption, asInterruption } from "../net/network.js"
 import { readPdf, pdfSummary } from "../documents/pdf-text.js"

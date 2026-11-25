@@ -24,7 +24,8 @@
  */
 
 import { truncate, bytes } from "../documents/format.js"
-import { isTextResponse, describeBytes, decodeText, sourceFooter } from "./sources.js"
+import { isTextResponse, describeBytes, decodeText } from "../documents/media.js"
+import { sourceFooter } from "./sources.js"
 import { readBytes, keepResponse, htmlToText } from "./web.js"
 import { fetcher } from "../net/guard.js"
 

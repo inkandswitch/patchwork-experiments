@@ -16,29 +16,9 @@
  */
 
 import { hostImport, tryHostImport, workerPreparation } from "../host/import.js"
+import { resolveImportMap } from "../host/urls.js"
 
 const WORKER_NAME = "patchwork-agent-runner"
-
-/**
- * Resolve the page's importmap to absolute URLs.
- *
- * This is what lets worker code `import()` automerge without an importmap and
- * without a CDN-hosted shim.
- */
-export function resolveImportMap(doc = document) {
-  const script = doc.querySelector('script[type="importmap"]')
-  if (!script) return null
-  try {
-    const map = JSON.parse(script.textContent)
-    const urls = {}
-    for (const [specifier, target] of Object.entries(map.imports ?? {})) {
-      urls[specifier] = new URL(target, location.href).href
-    }
-    return urls
-  } catch {
-    return null
-  }
-}
 
 /** Where this package's files are served from, derived from our own URL. */
 export function workerUrl() {

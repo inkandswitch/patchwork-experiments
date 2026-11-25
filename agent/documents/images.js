@@ -9,7 +9,20 @@
  * doc_read, source_read and anything a person attaches to a message.
  */
 
-import { fitWithin, MAX_IMAGE_SIDE } from "../tools/screenshot.js"
+/**
+ * The longest a side may be, after shrinking. Providers refuse an image with a
+ * side over 8000 pixels and refuse the WHOLE request with it — and since the
+ * newest images ride along on every later turn, one tall capture (a long page,
+ * a notebook) stopped a session dead, every retry resending it. Width was
+ * capped; height never was.
+ */
+export const MAX_IMAGE_SIDE = 4000
+
+/** The size an image is drawn at: no wider than `maxWidth`, no side over `maxSide`, never enlarged. */
+export function fitWithin(width, height, { maxWidth = Infinity, maxSide = MAX_IMAGE_SIDE } = {}) {
+  const scale = Math.min(1, maxWidth / width, maxSide / width, maxSide / height)
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) }
+}
 
 /** The widest an image is sent at, as for screenshots. */
 export const IMAGE_MAX_WIDTH = 1600

@@ -14,7 +14,7 @@
  * text and says so; OCR is not attempted.
  */
 
-import { fewest, MAX_MARKS } from "../tools/sources.js"
+import { fewest, MAX_MARKS } from "./media.js"
 
 /** A page with fewer non-space characters than this has no text layer worth reading. */
 const EMPTY_PAGE = 8

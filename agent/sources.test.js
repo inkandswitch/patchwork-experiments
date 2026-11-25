@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { ImmutableString, isImmutableString } from "@automerge/automerge"
 import { generateAutomergeUrl } from "@automerge/automerge-repo"
-import {
-  keepSource, readable, sha256Hex, marksFromMarkdown, findKept, sourceName, sourceFooter, titleFrom,
-  isTextResponse, describeBytes, decodeText, outline, fewest, formatOf, MAGIC,
-} from "./tools/sources.js"
+import { keepSource, findKept, sourceFooter } from "./tools/sources.js"
+import { readable, sha256Hex, marksFromMarkdown, sourceName, titleFrom, isTextResponse, describeBytes, decodeText, outline, fewest, formatOf, MAGIC } from "./documents/media.js"
 import { httpRequest } from "./tools/http.js"
 import { webFetch } from "./tools/web.js"
 import { runTool } from "./kernel/tool.js"

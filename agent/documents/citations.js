@@ -17,7 +17,7 @@
  * figure matches. Nothing else is: a paraphrase is not a quote.
  */
 
-import { readable } from "../tools/sources.js"
+import { readable } from "./media.js"
 
 /** Shortest a quote may be, once normalised, to count as checking anything. */
 export const MIN_QUOTE = 12

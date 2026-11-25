@@ -147,3 +147,27 @@ export class MistypedUrl extends Error {
     this.suggestions = suggestions
   }
 }
+
+/**
+ * The document a reference names, in canonical form, or null when it names
+ * none.
+ *
+ * `automerge:X`, `automerge:X#heads`, `automerge:X/a/b`, the bare id `X` and
+ * the legacy UUID spelling of the same bytes are all one document, and the
+ * repo will open any of them. So this asks the repo's own parser
+ * (`interpretAsDocumentId`, which `repo.find` uses) rather than comparing
+ * strings, which let every spelling but the first past a check.
+ *
+ * Surrounding whitespace is dropped first, because the tools that open a
+ * reference trim it before they do; a check that did not would judge a
+ * different string from the one that gets opened.
+ */
+export function documentIdOf(url) {
+  const raw = String(url ?? "").trim()
+  if (!raw) return null
+  try {
+    return interpretAsDocumentId(raw)
+  } catch {
+    return null
+  }
+}

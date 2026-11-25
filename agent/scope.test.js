@@ -31,10 +31,8 @@ import { braveSearch } from "./tools/web.js"
 import { keepSource } from "./tools/sources.js"
 import { findingWrite } from "./tools/findings.js"
 import { sourceRead } from "./tools/read-source.js"
-import {
-  confine, scopedRepo, scopeOf, assertScopeAgrees, scopedToolset, webScope, sameScope,
-  SCOPED_TOOL_IDS, NOT_A_SOURCE, EDITED_OUTSIDE, ScopeRefusal, KERNEL_TYPES, KERNEL_REFUSAL,
-} from "./kernel/scope.js"
+import { confine, scopedRepo, scopeOf, assertScopeAgrees, scopedToolset, webScope, sameScope, SCOPED_TOOL_IDS, NOT_A_SOURCE, EDITED_OUTSIDE, ScopeRefusal } from "./kernel/scope.js"
+import { KERNEL_TYPES, KERNEL_REFUSAL } from "./kernel/kernel-repo.js"
 
 await initSubduction()
 

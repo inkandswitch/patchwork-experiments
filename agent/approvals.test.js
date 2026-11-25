@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { generateAutomergeUrl, parseAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
 import { initSession } from "./session/schema.js"
-import { needsApproval, documentIdOf, isSensitive } from "./session/grants.js"
+import { needsApproval, isSensitive } from "./session/grants.js"
+import { documentIdOf } from "./documents/doc-urls.js"
 import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 import { isCodePath } from "./tools/folders.js"
 

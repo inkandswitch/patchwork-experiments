@@ -291,7 +291,7 @@ describe("a research step's http_request", () => {
 describe("the modules a research step's tools are made of", () => {
   // Everything a scoped tool runs, and nothing in it that reaches past its
   // context: the page's globals, the platform's fetch, or the host's modules.
-  const MODULES = ["kernel/scope.js", "tools/web.js", "tools/http.js", "tools/read-source.js", "tools/findings.js", "tools/recall.js", "tools/sources.js", "net/guard.js", "documents/format.js"]
+  const MODULES = ["kernel/scope.js", "tools/web.js", "tools/http.js", "tools/read-source.js", "tools/findings.js", "tools/recall.js", "tools/sources.js", "documents/media.js", "net/guard.js", "documents/format.js"]
   it.each(MODULES)("%s uses no globalThis, no bare fetch( and no hostImport", (file) => {
     const code = readFileSync(join(import.meta.dirname, file), "utf8")
     expect(code).not.toMatch(/globalThis/)

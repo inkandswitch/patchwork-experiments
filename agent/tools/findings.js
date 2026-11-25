@@ -20,7 +20,7 @@
  */
 
 import { Automerge, AutomergeRepo } from "../host/modules.js"
-import { documentIdOf } from "../session/grants.js"
+import { documentIdOf } from "../documents/doc-urls.js"
 import { cleanTitle } from "../session/title.js"
 import { citationsIn, checkCitation } from "../documents/citations.js"
 

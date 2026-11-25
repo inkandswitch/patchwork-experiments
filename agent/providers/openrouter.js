@@ -38,22 +38,6 @@ export function isClaude(model) {
 }
 
 /**
- * A stable, opaque key for a session: FNV-1a over its URL, as hex. Enough to
- * keep one session's requests together, and nothing that opens the document.
- */
-export function sessionKey(url) {
-  if (!url) return null
-  let h1 = 0x811c9dc5
-  let h2 = 0x01000193
-  for (const ch of String(url)) {
-    const c = ch.codePointAt(0)
-    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0
-    h2 = Math.imul(h2 ^ c, 0x811c9dc5) >>> 0
-  }
-  return `pw-${h1.toString(16).padStart(8, "0")}${h2.toString(16).padStart(8, "0")}`
-}
-
-/**
  * Every effort level OpenRouter's gateway knows, highest first. A model whose
  * catalogue entry says `supported_efforts: null` accepts all of them.
  */
