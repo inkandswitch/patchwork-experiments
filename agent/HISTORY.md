@@ -1660,3 +1660,13 @@ reached, one from another version says so in its view, and the sidebar and
 the floating box start a new session rather than keep one that will never
 run.
 
+The migration was run on 2026-11-25 against the one account that used the
+agent: 125 sessions and 8 plans, six of the plans gaining a ledger, each
+change read back from the sync server. Before any document was changed the
+migration was run on a clone of each as automerge holds it and had to leave
+what it leaves on a plain copy, and the heads each document had were written
+down. The scripts were then removed from the package; they are in its git
+history at dc3e0f05. A document the walk could not read (the server did not
+have it) may still carry a session in the earlier shape, which says so and is
+replaced by a new one where it was kept.
+

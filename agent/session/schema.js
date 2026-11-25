@@ -17,7 +17,7 @@
 /**
  * The shape a session document is in. A runner leaves alone a session that
  * says another (kernel/runner.js): one a newer agent wrote, or one from
- * before a migration (scripts/migrate.mjs).
+ * before the shapes were brought to this one.
  */
 export const SCHEMA_VERSION = 2
 
