@@ -4,7 +4,7 @@
 // from a Repo of its own through dist-node/task-client.mjs, the way a tool on
 // another machine would ask.
 //
-//   (in tasks/) node probes/node-run.mjs [<automerge:package url>] [--sync wss://…] [--verbose]
+//   (in tasks/) node probes/node-run.mjs [<automerge:package url>] [--only 1,16] [--sync wss://…] [--verbose]
 //
 // The task code is in probes/ (solve-task.mjs, which runs a process) and in
 // data: URLs. Nothing is published: without a package url the hosts are
@@ -12,14 +12,15 @@
 // tasks name its files the way a browser names a package's. Given the url of
 // this package as published, the hosts fetch it from automerge instead.
 //
-// Each check prints one line with what was observed.
+// Each check prints one line with what was observed. --only runs only the
+// checks named (the hosts' errors are always checked).
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Repo, initSubduction } from "@automerge/automerge-repo-node";
-import { GRACE_MS, LAPSE_MS } from "../src/task-rules.js";
+import { GRACE_MS, LAPSE_MS, listTask } from "../src/task-rules.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -32,6 +33,8 @@ const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const PKG = given ?? `automerge:${Array.from({ length: 28 }, () => BASE58[Math.floor(Math.random() * 58)]).join("")}`;
 const SYNC = arg("--sync") ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 const VERBOSE = process.argv.includes("--verbose");
+const ONLY = arg("--only")?.split(",") ?? null;
+const want = (...checks) => !ONLY || checks.some((n) => ONLY.includes(String(n)));
 const { ask, cancel, run, watch, served } = await import(join(ROOT, "dist-node/task-client.mjs"));
 
 // where the task's code is, as a browser on some site would name it
@@ -154,7 +157,7 @@ try {
   report.package = PKG;
 
   // 11. a second host on the same data dir
-  {
+  if (want(11)) {
     const twin = await startHost("A-twin", { queue: Q, dataDir: dirA, wait: false });
     const { code } = await within(20000, twin.exited, "the second host on A's directory");
     const said = twin.lines.map((l) => l.text).join(" ");
@@ -162,7 +165,7 @@ try {
   }
 
   // 1. a do-nothing task, ask to result
-  {
+  if (want(1)) {
     await within(60000, runKey(Q, { importUrl: NOOP, input: "warm" }), "the warm-up task"); // the first one starts a thread
     const rows = [];
     for (let i = 0; i < 10; i++) {
@@ -182,8 +185,39 @@ try {
     check(1, "a do-nothing task, ask to result, 10 in a row", rows.every((r) => r.ok), `median ${of("total").median} ms, worst ${of("total").worst} ms (asked to taken ${of("toStart").median}, taken to ended ${of("ran").median} of which in its thread ${of("inThread").median}, ended to the asker ${of("toAsker").median}; the router's was about 520 ms)`);
   }
 
+  // 16. a task listed before its document can be fetched: the pool's first
+  // find of it is refused, and the pool takes it once the document arrives.
+  // The asker lists the task and makes its document reachable LATE_MS later
+  // (made in a Repo with no network, then imported into its own), as happens
+  // when a listing reaches a pool before the document it names.
+  if (want(16)) {
+    const LATE_MS = 300;
+    const offline = new Repo({ network: [] });
+    const rows = [];
+    for (let i = 0; i < 5; i++) {
+      const key = `late-${i}`;
+      const made = offline.create({ importUrl: NOOP, input: `late ${i}`, key, runs: [] });
+      const bytes = await offline.export(made.url);
+      const listed = Date.now();
+      queue.change((doc) => listTask(doc, key, { taskUrl: made.url, askedAt: listed, package: null }));
+      await repo.flush([queue.documentId]);
+      await sleep(LATE_MS);
+      const task = repo.import(bytes, { docId: made.documentId });
+      await repo.flush([task.documentId]);
+      const reachable = Date.now();
+      let stop = () => {};
+      const view = await within(30000, new Promise((resolve) => (stop = follow(key, (v) => v.state === "succeeded" && resolve(v)))), "a task listed before its document").finally(() => stop());
+      const done = Date.now();
+      const r = view.runs.find((it) => it.status === "succeeded");
+      rows.push({ ok: view.result === `late ${i}`, taken: r.start - listed, afterReachable: r.start - reachable, total: done - listed });
+    }
+    const of = (k) => ({ median: median(rows.map((r) => r[k])), worst: Math.max(...rows.map((r) => r[k])) });
+    report.late = { taken: of("taken"), afterReachable: of("afterReachable"), total: of("total") };
+    check(16, `a task whose document reaches the sync server ${LATE_MS} ms after its listing is taken within 1.5 s of the listing, 5 in a row`, rows.every((r) => r.ok) && of("taken").worst <= 1500, `taken ${of("taken").median} ms after its listing (worst ${of("taken").worst}), ${of("afterReachable").median} ms after its document was sent (worst ${of("afterReachable").worst}); the asker heard it succeeded ${of("total").median} ms after listing it (worst ${of("total").worst})`);
+  }
+
   // 2. logs and progress are heard while it runs, and the lines are kept with the run
-  {
+  if (want(2)) {
     const seen = [];
     const result = await within(60000, runKey(Q, { importUrl: SOLVE, input: { steps: 6, stepMs: 300, tag: "logs" }, key: "logs" }, (v) => seen.push({ state: v.state, step: v.progress?.step, logs: v.logs.length })), "the logging task");
     const steps = [...new Set(seen.filter((s) => s.state === "running" && s.step > 0).map((s) => s.step))];
@@ -193,7 +227,7 @@ try {
   }
 
   // 3. a throwing task fails, once
-  {
+  if (want(3)) {
     const error = await within(30000, runKey(Q, { importUrl: THROWS, key: "throws" }).then(() => null, (e) => e.message), "the throwing task");
     await sleep(3000); // time for a second run, were there to be one
     const task = await taskOf("throws");
@@ -202,7 +236,7 @@ try {
   }
 
   // 4. a spin, cancelled: stopping, then cancelled; its thread is ended; the next task runs
-  {
+  if (want(4)) {
     const states = [];
     const stop = follow("spin", (v) => states.at(-1) !== v.state && states.push(v.state));
     await ask(repo, Q, { importUrl: SPIN, key: "spin" });
@@ -220,7 +254,7 @@ try {
   }
 
   // 5. a task with a child process, cancelled: the code kills the child on abort
-  {
+  if (want(5)) {
     let pid = null;
     const states = [];
     const stop = follow("child", (v) => {
@@ -240,7 +274,7 @@ try {
   }
 
   // 6. SIGTERM mid-run: lost, a clean exit, and a restart runs it again; the guard refuses instead
-  {
+  if (want(6)) {
     const plain = runKey(Q, { importUrl: SOLVE, input: { steps: 30, stepMs: 200, tag: "sigterm" }, key: "sigterm" });
     const guarded = runKey(Q, { importUrl: SOLVE, input: { steps: 30, stepMs: 200, guard: true }, key: "guarded" });
     plain.catch(() => {});
@@ -263,7 +297,7 @@ try {
   }
 
   // 7. kill -9 mid-run, restart on the same data dir: the pool records its own dead run lost and runs it again
-  {
+  if (want(7)) {
     const asked = runKey(Q, { importUrl: SOLVE, input: { steps: 20, stepMs: 200, tag: "kill9" }, key: "kill9" });
     asked.catch(() => {});
     await until(async () => (await taskOf("kill9").catch(() => null))?.runs?.length, 30000, "running");
@@ -277,73 +311,77 @@ try {
     check(7, "kill -9 mid-run, restart on the same data dir: the restarted pool records its dead run lost and takes the task again", result?.input === "kill9" && t.runs.map((r) => r.status).join() === "lost,succeeded" && t.runs.every((r) => r.pool === A.pool), { runs: t.runs.map((r) => `${r.pool.slice(0, 8)}:${r.status}`), restartToResultMs: Date.now() - tRestart });
   }
 
-  // 8. two hosts on one queue, kill -9 the one running a task: the other takes it after the lapse
-  const dirB = freshDir("B");
-  let B = await startHost("B", { queue: Q, dataDir: dirB });
-  await until(() => pools.length === 2, LAPSE_MS, "both pools heard serving").catch(() => {});
-  const bothHeard = pools.map((p) => p.name).sort();
-  {
-    const states = [];
-    const asked = runKey(Q, { importUrl: SOLVE, input: { steps: 25, stepMs: 200, tag: "failover" }, key: "failover" }, (v) => states.at(-1) !== v.state && states.push(v.state));
-    asked.catch(() => {});
-    // The one open run left once any second claim has yielded. The other
-    // pool's claim can reach this process after the first one does, so a run
-    // counts only once it has been the one open run for two seconds: killing
-    // the pool of a run that is about to yield would test nothing.
-    let candidate = null;
-    let since = 0;
-    const open = await until(async () => {
-      const t = await taskOf("failover").catch(() => null);
-      const runs = t?.runs ?? [];
-      const opens = runs.filter((r) => !r.status);
-      const one = opens.length === 1 && states.includes("running") ? opens[0] : null;
-      if (one?.id !== candidate?.id) {
-        candidate = one;
-        since = Date.now();
-        return null;
-      }
-      return one && Date.now() - since >= 2000 ? one : null;
-    }, 30000, "one run holding");
-    await sleep(1000);
-    const victim = open.pool === A.pool ? A : B;
-    const other = victim === A ? B : A;
-    const tKill = killNine(victim);
-    const result = await within(90000, asked, "the task after one host died").catch((e) => e.message);
-    const t = await taskOf("failover");
-    const dead = t.runs.find((r) => r.id === open.id);
-    const finished = t.runs.find((r) => r.status === "succeeded");
-    const order = ["running", "stalled", "running", "succeeded"];
-    let at = 0;
-    for (const s of states) if (s === order[at]) at++;
-    check(8, "two hosts, kill -9 the one running it: the other takes it after the lapse and finishes; the dead run stays open; the asker saw running, stalled, running, succeeded", result?.input === "failover" && finished?.pool === other.pool && dead && !dead.status && at === order.length, { killed: victim.label, finishedBy: finished && (finished.pool === other.pool ? other.label : "?"), runs: t.runs.map((r) => `${r.pool === A.pool ? "A" : "B"}:${r.status ?? "open"}`), states, killToResultMs: Date.now() - tKill });
-    // back on its own directory, so that both are up for what follows
-    if (victim === A) A = await startHost("A", { queue: Q, dataDir: dirA });
-    else B = await startHost("B", { queue: Q, dataDir: dirB });
-    await until(() => pools.length === 2, LAPSE_MS, "both pools heard serving again").catch(() => {});
-  }
+  // 8–10 share a second host, B.
+  if (want(8, 9, 10)) {
+    const dirB = freshDir("B");
+    let B = await startHost("B", { queue: Q, dataDir: dirB });
+    await until(() => pools.length === 2, LAPSE_MS, "both pools heard serving").catch(() => {});
+    const bothHeard = pools.map((p) => p.name).sort();
 
-  // 9. two hosts, four tasks listed at once
-  {
-    const keys = ["w", "x", "y", "z"].map((k) => `four-${k}`);
-    const results = await within(90000, Promise.all(keys.map((key) => runKey(Q, { importUrl: SOLVE, input: { steps: 6, stepMs: 200, tag: key }, key }))), "four tasks at once");
-    const tasks = await Promise.all(keys.map((k) => taskOf(k)));
-    const finals = tasks.map((t) => t.runs.filter((r) => ["succeeded", "failed", "cancelled"].includes(r.status)).length);
-    const yielded = tasks.map((t) => t.runs.filter((r) => r.status === "yielded").length);
-    const by = tasks.map((t) => { const r = t.runs.find((it) => it.status === "succeeded"); return r?.pool === A.pool ? "A" : r?.pool === B.pool ? "B" : "?"; });
-    check(9, "two hosts, four tasks listed at once: each has exactly one final run", results.every((r, i) => r?.input === keys[i]) && finals.every((n) => n === 1), { finalRuns: finals, yieldedRuns: yielded.reduce((a, b) => a + b, 0), perTask: yielded, finishedBy: by });
-  }
+    // 8. two hosts on one queue, kill -9 the one running a task: the other takes it after the lapse
+    if (want(8)) {
+      const states = [];
+      const asked = runKey(Q, { importUrl: SOLVE, input: { steps: 25, stepMs: 200, tag: "failover" }, key: "failover" }, (v) => states.at(-1) !== v.state && states.push(v.state));
+      asked.catch(() => {});
+      // The one open run left once any second claim has yielded. The other
+      // pool's claim can reach this process after the first one does, so a run
+      // counts only once it has been the one open run for two seconds: killing
+      // the pool of a run that is about to yield would test nothing.
+      let candidate = null;
+      let since = 0;
+      const open = await until(async () => {
+        const t = await taskOf("failover").catch(() => null);
+        const runs = t?.runs ?? [];
+        const opens = runs.filter((r) => !r.status);
+        const one = opens.length === 1 && states.includes("running") ? opens[0] : null;
+        if (one?.id !== candidate?.id) {
+          candidate = one;
+          since = Date.now();
+          return null;
+        }
+        return one && Date.now() - since >= 2000 ? one : null;
+      }, 30000, "one run holding");
+      await sleep(1000);
+      const victim = open.pool === A.pool ? A : B;
+      const other = victim === A ? B : A;
+      const tKill = killNine(victim);
+      const result = await within(90000, asked, "the task after one host died").catch((e) => e.message);
+      const t = await taskOf("failover");
+      const dead = t.runs.find((r) => r.id === open.id);
+      const finished = t.runs.find((r) => r.status === "succeeded");
+      const order = ["running", "stalled", "running", "succeeded"];
+      let at = 0;
+      for (const s of states) if (s === order[at]) at++;
+      check(8, "two hosts, kill -9 the one running it: the other takes it after the lapse and finishes; the dead run stays open; the asker saw running, stalled, running, succeeded", result?.input === "failover" && finished?.pool === other.pool && dead && !dead.status && at === order.length, { killed: victim.label, finishedBy: finished && (finished.pool === other.pool ? other.label : "?"), runs: t.runs.map((r) => `${r.pool === A.pool ? "A" : "B"}:${r.status ?? "open"}`), states, killToResultMs: Date.now() - tKill });
+      // back on its own directory, so that both are up for what follows
+      if (victim === A) A = await startHost("A", { queue: Q, dataDir: dirA });
+      else B = await startHost("B", { queue: Q, dataDir: dirB });
+      await until(() => pools.length === 2, LAPSE_MS, "both pools heard serving again").catch(() => {});
+    }
 
-  // 10. served(): lists a host while it is up, and not one lapse after it stops
-  {
-    const tTerm = sigterm(B);
-    await within(2 * GRACE_MS + 5000, B.exited, "host B to stop");
-    const gone = await until(() => !pools.some((p) => p.pool === B.pool) && Date.now(), LAPSE_MS + LAPSE_MS / 4 + 5000, "B no longer served").catch(() => null);
-    const goneAfter = gone ? gone - tTerm : null;
-    check(10, "served() lists a host while it is up, and drops it once it has not been heard for a lapse", bothHeard.join() === "A,B" && goneAfter !== null && goneAfter <= LAPSE_MS + LAPSE_MS / 4 + 1000 && pools.some((p) => p.pool === A.pool), { whileUp: bothHeard, droppedAfterStopMs: goneAfter, stillServing: pools.map((p) => p.name) });
+    // 9. two hosts, four tasks listed at once
+    if (want(9)) {
+      const keys = ["w", "x", "y", "z"].map((k) => `four-${k}`);
+      const results = await within(90000, Promise.all(keys.map((key) => runKey(Q, { importUrl: SOLVE, input: { steps: 6, stepMs: 200, tag: key }, key }))), "four tasks at once");
+      const tasks = await Promise.all(keys.map((k) => taskOf(k)));
+      const finals = tasks.map((t) => t.runs.filter((r) => ["succeeded", "failed", "cancelled"].includes(r.status)).length);
+      const yielded = tasks.map((t) => t.runs.filter((r) => r.status === "yielded").length);
+      const by = tasks.map((t) => { const r = t.runs.find((it) => it.status === "succeeded"); return r?.pool === A.pool ? "A" : r?.pool === B.pool ? "B" : "?"; });
+      check(9, "two hosts, four tasks listed at once: each has exactly one final run", results.every((r, i) => r?.input === keys[i]) && finals.every((n) => n === 1), { finalRuns: finals, yieldedRuns: yielded.reduce((a, b) => a + b, 0), perTask: yielded, finishedBy: by });
+    }
+
+    // 10. served(): lists a host while it is up, and not one lapse after it stops
+    if (want(10)) {
+      const tTerm = sigterm(B);
+      await within(2 * GRACE_MS + 5000, B.exited, "host B to stop");
+      const gone = await until(() => !pools.some((p) => p.pool === B.pool) && Date.now(), LAPSE_MS + LAPSE_MS / 4 + 5000, "B no longer served").catch(() => null);
+      const goneAfter = gone ? gone - tTerm : null;
+      check(10, "served() lists a host while it is up, and drops it once it has not been heard for a lapse", bothHeard.join() === "A,B" && goneAfter !== null && goneAfter <= LAPSE_MS + LAPSE_MS / 4 + 1000 && pools.some((p) => p.pool === A.pool), { whileUp: bothHeard, droppedAfterStopMs: goneAfter, stillServing: pools.map((p) => p.name) });
+    }
   }
 
   // 12. code a host does not accept is never taken and holds nothing up
-  {
+  if (want(12)) {
     const strict = await newQueue("node probe queue, packages only");
     const C = await startHost("C", { queue: strict.url, dataDir: freshDir("C"), accept: PACKAGE_ONLY });
     const inline = await ask(repo, strict.url, { importUrl: NOOP, input: 1, key: "inline" });
@@ -359,7 +397,7 @@ try {
   // a run worker says how a run ended only once the sync server has
   // acknowledged what it wrote, so the asker's first find is not refused,
   // even when the host is stopped at once.
-  {
+  if (want(13, 14, 15)) {
     const writeRun = async (queueUrl, key) => {
       const t0 = Date.now();
       const made = await within(90000, runKey(queueUrl, { importUrl: WRITE, input: { size: MB }, key }), "the writing task");
