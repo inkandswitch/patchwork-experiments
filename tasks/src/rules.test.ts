@@ -1,11 +1,13 @@
 // @vitest-environment node
 //
-// These tests attack the rules in task-rules.js. The first half is a table of
-// every task the rules can be asked about with up to three runs, and checks
-// each promise the header makes against expectations written out here from
-// the header's words, not from the helpers the rules use. The second half
-// merges real Automerge documents, because the rules lean on what a merge does
-// to a list and to a map key.
+// These tests attack the rules in task-rules.js (kit v2). The first half is a
+// table of every task the rules can be asked about with up to three records,
+// and checks each promise the header makes against expectations written out
+// here from the header's words, not from the helpers the rules use. Then the
+// one promise everything rests on, that a reading of "ended" changes in one
+// circumstance only, is checked against every legal next change of every row.
+// The second half merges real Automerge documents, because the rules lean on
+// what a merge does to a list and to a map key.
 //
 // A test named "RULE HOLE: ..." states a promise the header makes that the
 // rules, as written, do not keep. It is marked `it.fails`, so it passes while
@@ -25,6 +27,7 @@ import {
   type FinalStatus,
   gone,
   type Heard,
+  Hearing,
   holder,
   isFinished,
   isHeard,
@@ -33,6 +36,7 @@ import {
   isWanted,
   LAPSE_MS,
   listTask,
+  LOST_TOO_OFTEN,
   MAX_LOG_LINES,
   MAX_LOST,
   MAX_RESULT_BYTES,
@@ -46,6 +50,7 @@ import {
   type Run,
   type RunStatus,
   stopReason,
+  stopTask,
   type Task,
   taskError,
   taskResult,
@@ -58,50 +63,62 @@ import {
 
 const url = (name: string) => `automerge:${name}` as AutomergeUrl;
 
-/** What a run in the table is, as one listener sees it. */
-type Kind = 'heard' | 'unheard' | 'succeeded' | 'failed' | 'cancelled' | 'lost' | 'yielded';
+/**
+ * What a record in the table is, as one listener sees it: an open run it
+ * hears or does not, a run its pool completed with one of the five statuses,
+ * or a stop (a record with no pool that says `cancelled`).
+ */
+type Kind = 'heard' | 'unheard' | 'succeeded' | 'failed' | 'cancelled' | 'lost' | 'yielded' | 'stop';
 type PoolName = 'P' | 'Q';
 interface Spec {
   kind: Kind;
-  pool: PoolName;
+  pool: PoolName | null;
 }
 
-const KINDS: Kind[] = ['heard', 'unheard', 'succeeded', 'failed', 'cancelled', 'lost', 'yielded'];
 const NAMED: Named[] = ['this', 'other', 'none'];
 const STATES: TaskState[] = ['waiting', 'running', 'stalled', 'stopping', 'succeeded', 'failed', 'cancelled'];
 const STATUSES: RunStatus[] = ['succeeded', 'failed', 'cancelled', 'lost', 'yielded'];
 const FINALS: FinalStatus[] = ['succeeded', 'failed', 'cancelled'];
 
 const openKind = (kind: Kind) => kind === 'heard' || kind === 'unheard';
-const finalKind = (kind: Kind): kind is FinalStatus =>
-  kind === 'succeeded' || kind === 'failed' || kind === 'cancelled';
+/** "A record in its list that ends it for good": a run completed so, or a stop. */
+const finalKind = (kind: Kind) => kind === 'succeeded' || kind === 'failed' || kind === 'cancelled' || kind === 'stop';
+const saysCancelled = (kind: Kind) => kind === 'cancelled' || kind === 'stop';
+const statusOfKind = (kind: Kind) => (kind === 'stop' ? 'cancelled' : kind) as FinalStatus;
 
 // A pool only matters for an open run (whose pool may still stop it or be
-// barred from claiming again). Closed runs are all P's, so the table also
-// shows that a closed run of P's never keeps P from claiming.
-const SPECS: Spec[] = KINDS.flatMap((kind): Spec[] =>
-  openKind(kind) ? [{ kind, pool: 'P' }, { kind, pool: 'Q' }] : [{ kind, pool: 'P' }],
-);
+// barred from claiming again). Runs a pool completed are all P's, so the
+// table also shows that a completed run of P's never keeps P from claiming.
+const SPECS: Spec[] = [
+  { kind: 'heard', pool: 'P' },
+  { kind: 'heard', pool: 'Q' },
+  { kind: 'unheard', pool: 'P' },
+  { kind: 'unheard', pool: 'Q' },
+  ...(['succeeded', 'failed', 'cancelled', 'lost', 'yielded'] as const).map((kind): Spec => ({ kind, pool: 'P' })),
+  { kind: 'stop', pool: null },
+];
 
 const runId = (index: number) => `r${index}`;
+/** The last line of a failed run in the table, so that taskError can be checked. */
+const failedLine = (id: string) => `${id} broke`;
 
 function makeRun(spec: Spec, index: number): Run {
-  const run: Run = { id: runId(index), pool: spec.pool, start: index };
+  const id = runId(index);
+  if (spec.kind === 'stop') {
+    return { id, start: index, end: index, status: 'cancelled' };
+  }
+  const run: Run = { id, pool: spec.pool ?? 'P', start: index };
   if (!openKind(spec.kind)) {
     run.end = 100 + index;
     run.status = spec.kind as RunStatus;
-    run.result = spec.kind === 'succeeded' ? { from: runId(index) } : null;
-    run.logs = [];
+    run.result = spec.kind === 'succeeded' ? { from: id } : null;
+    run.logs = spec.kind === 'failed' ? [{ timestampMillis: 0, message: failedLine(id) }] : [];
   }
   return run;
 }
 
-function makeTask(runs: Run[] = [], flagged = false): Task {
-  const task: Task = { importUrl: 'data:text/javascript,export default () => 1', input: null, key: 'K', runs };
-  if (flagged) {
-    task.cancelled = true;
-  }
-  return task;
+function makeTask(runs: Run[] = []): Task {
+  return { importUrl: 'data:text/javascript,export default () => 1', input: null, key: 'K', runs };
 }
 
 const copy = <T>(it: T): T => structuredClone(it);
@@ -117,7 +134,6 @@ const hearsNone: Heard = () => false;
 
 interface Row {
   specs: Spec[];
-  flagged: boolean;
   is: Named;
   task: Task;
   heard: Heard;
@@ -133,23 +149,21 @@ function runLists(length: number): Spec[][] {
 
 const ALL_RUN_LISTS = [0, 1, 2, 3].flatMap(runLists);
 
-/** Every run list given, times the flag, times what the key names. */
+const labelOf = (specs: Spec[]) => `[${specs.map((s) => (s.pool ? `${s.pool}:${s.kind}` : s.kind)).join(', ')}]`;
+
+/** Every list given, times what the key names. */
 const rowsFor = (lists: Spec[][]): Row[] =>
   lists.flatMap((specs) =>
-    [false, true].flatMap((flagged) =>
-      NAMED.map((is): Row => {
-        const task = makeTask(specs.map(makeRun), flagged);
-        const heardIds = specs.flatMap((spec, index) => (spec.kind === 'heard' ? [runId(index)] : []));
-        return {
-          specs,
-          flagged,
-          is,
-          task,
-          heard: hearing(...heardIds),
-          label: `[${specs.map((s) => `${s.pool}:${s.kind}`).join(', ')}]${flagged ? ' flagged' : ''}, key names ${is}`,
-        };
-      }),
-    ),
+    NAMED.map((is): Row => {
+      const heardIds = specs.flatMap((spec, index) => (spec.kind === 'heard' ? [runId(index)] : []));
+      return {
+        specs,
+        is,
+        task: makeTask(specs.map(makeRun)),
+        heard: hearing(...heardIds),
+        label: `${labelOf(specs)}, key names ${is}`,
+      };
+    }),
   );
 
 const ROWS: Row[] = rowsFor(ALL_RUN_LISTS);
@@ -170,106 +184,90 @@ function everyRow(check: (row: Row) => string | null | undefined, rows: Row[] = 
 
 const lostIn = (specs: Spec[]) => specs.filter((spec) => spec.kind === 'lost').length;
 const firstFinal = (specs: Spec[]) => specs.findIndex((spec) => finalKind(spec.kind));
-const endedByRun = (row: Row) => firstFinal(row.specs) >= 0;
-const isHeldIn = (row: Row) => row.specs.some((spec) => spec.kind === 'heard');
-const anyOpenIn = (row: Row) => row.specs.some((spec) => openKind(spec.kind));
+const anyFinal = (specs: Spec[]) => specs.some((spec) => finalKind(spec.kind));
+const isHeldIn = (specs: Spec[]) => specs.some((spec) => spec.kind === 'heard');
+const anyOpenIn = (specs: Spec[]) => specs.some((spec) => openKind(spec.kind));
 
 /** "The task's HOLDER is its first open run, in list order, that is heard." */
-function expectedHolder(row: Row): string | null {
-  const at = row.specs.findIndex((spec) => spec.kind === 'heard');
+function expectedHolder(specs: Spec[]): string | null {
+  const at = specs.findIndex((spec) => spec.kind === 'heard');
   return at < 0 ? null : runId(at);
 }
 
 /**
- * "The status of its first run, in list order, that ended it for good. With
- * no such run, and nobody holding it, it is `failed` once MAX_LOST of its runs
- * were lost, and `cancelled` once it is flagged. Otherwise it has not ended."
+ * "The status of the first record in its list that ends it for good, once no
+ * heard open run comes before that record. Until then it has not ended."
  */
-function expectedEnding(row: Row): FinalStatus | null {
-  if (endedByRun(row)) {
-    return row.specs[firstFinal(row.specs)].kind as FinalStatus;
-  }
-  if (isHeldIn(row)) {
+function expectedEnding(specs: Spec[]): FinalStatus | null {
+  const at = firstFinal(specs);
+  if (at < 0 || specs.slice(0, at).some((spec) => spec.kind === 'heard')) {
     return null;
   }
-  if (lostIn(row.specs) >= 3) {
-    return 'failed';
-  }
-  return row.flagged ? 'cancelled' : null;
+  return statusOfKind(specs[at].kind);
 }
 
 /**
- * The seven states as the TaskState type's comments put them, written in an
- * order of their own: a run that ended the task says; a held task is
- * `stopping` when flagged and `running` otherwise, however many runs it lost;
- * an unheld one has failed by lost runs or been cancelled by the flag; else
- * `stalled` with open runs and `waiting` without.
+ * The ending if there is one; else, held by a heard run, `stopping` when a
+ * record says cancelled and `running` otherwise; else `stalled` with runs
+ * open and `waiting` without.
  */
-function expectedState(row: Row): TaskState {
-  if (endedByRun(row)) {
-    return row.specs[firstFinal(row.specs)].kind as FinalStatus;
+function expectedState(specs: Spec[]): TaskState {
+  const ended = expectedEnding(specs);
+  if (ended) {
+    return ended;
   }
-  if (isHeldIn(row)) {
-    return row.flagged ? 'stopping' : 'running';
+  if (isHeldIn(specs)) {
+    return specs.some((spec) => saysCancelled(spec.kind)) ? 'stopping' : 'running';
   }
-  if (lostIn(row.specs) >= 3) {
-    return 'failed';
-  }
-  if (row.flagged) {
-    return 'cancelled';
-  }
-  return anyOpenIn(row) ? 'stalled' : 'waiting';
+  return anyOpenIn(specs) ? 'stalled' : 'waiting';
 }
 
-/** "No run has ended it, it is not flagged, and it has not lost MAX_LOST runs." */
-const expectedWanted = (row: Row) => !endedByRun(row) && !row.flagged && lostIn(row.specs) < 3;
+/** "Still wanted (no record has ended it)." */
+const expectedWanted = (specs: Spec[]) => !anyFinal(specs);
 
 /** "Still wanted, its queue lists it under the task's key, nobody heard holds it, and the pool has no open run of it." */
 function expectedClaim(row: Row, pool: PoolName): boolean {
   return (
     row.is === 'this' &&
-    expectedWanted(row) &&
-    !isHeldIn(row) &&
+    expectedWanted(row.specs) &&
+    !isHeldIn(row.specs) &&
     !row.specs.some((spec) => openKind(spec.kind) && spec.pool === pool)
   );
 }
 
 /**
- * "As soon as another run has ended the task, the task is flagged, its key
- * names another task, or an earlier run it can hear holds it. Only the flag
- * makes the run `cancelled`; the others make it `yielded`." A key naming
- * nothing, and lost runs, stop nothing.
+ * "`cancelled` if any record says cancelled; `yielded` if any record says
+ * succeeded, or a record before this run ended the task, or the key names
+ * another task, or an earlier run it can hear holds it." A failure after it,
+ * a key naming nothing, and lost runs stop nothing.
  */
-function expectedStop(row: Row, index: number): 'cancelled' | 'yielded' | null {
-  if (endedByRun(row)) {
-    return 'yielded';
-  }
-  if (row.flagged) {
+function expectedStop(specs: Spec[], is: Named, index: number, hears: (spec: Spec) => boolean): 'cancelled' | 'yielded' | null {
+  if (specs.some((spec) => saysCancelled(spec.kind))) {
     return 'cancelled';
   }
-  if (row.is === 'other') {
-    return 'yielded';
-  }
-  if (row.specs.slice(0, index).some((spec) => spec.kind === 'heard')) {
+  const before = specs.slice(0, index);
+  if (
+    specs.some((spec) => spec.kind === 'succeeded') ||
+    before.some((spec) => finalKind(spec.kind)) ||
+    is === 'other' ||
+    before.some((spec) => openKind(spec.kind) && hears(spec))
+  ) {
     return 'yielded';
   }
   return null;
 }
 
-/** "What it would have been stopped for, or else `lost`", with nobody heard. */
-function expectedGone(row: Row): 'cancelled' | 'yielded' | 'lost' {
-  if (endedByRun(row)) {
-    return 'yielded';
-  }
-  if (row.flagged) {
-    return 'cancelled';
-  }
-  return row.is === 'other' ? 'yielded' : 'lost';
+/** "What it would have been stopped for (nobody heard), else `lost`, or `failed` when the task has already lost MAX_LOST - 1 runs." */
+function expectedGone(specs: Spec[], is: Named, index: number): 'cancelled' | 'yielded' | 'lost' | 'failed' {
+  return expectedStop(specs, is, index, () => false) ?? (lostIn(specs) >= MAX_LOST - 1 ? 'failed' : 'lost');
 }
+
+const hearsKind = (spec: Spec) => spec.kind === 'heard';
 
 /** The indices of the open runs that a pool has in a row. */
 const openRunsOf = (row: Row, pool: PoolName) =>
   row.specs.flatMap((spec, index) => (openKind(spec.kind) && spec.pool === pool ? [index] : []));
+const openRuns = (row: Row) => row.specs.flatMap((spec, index) => (openKind(spec.kind) ? [index] : []));
 
 /** The same row as heard by a listener that hears every open run. */
 const hearingAll = (row: Row): Row => {
@@ -278,70 +276,67 @@ const hearingAll = (row: Row): Row => {
 };
 
 describe('the table', () => {
-  it('has every run list of length 0 to 3, times the flag, times what the key names', () => {
-    // 9 run specs (5 closed kinds, 2 open kinds times 2 pools), lists of 0..3.
-    expect(ALL_RUN_LISTS.length).toBe(1 + 9 + 81 + 729);
-    expect(ROWS.length).toBe((1 + 9 + 81 + 729) * 2 * 3);
+  it('has every record list of length 0 to 3, times what the key names', () => {
+    // 10 record specs (2 open kinds times 2 pools, 5 completed statuses, a stop), lists of 0..3.
+    expect(SPECS).toHaveLength(10);
+    expect(ALL_RUN_LISTS.length).toBe(1 + 10 + 100 + 1000);
+    expect(ROWS.length).toBe((1 + 10 + 100 + 1000) * 3);
     expect(new Set(ROWS.map((row) => row.label)).size).toBe(ROWS.length);
     expect(MAX_LOST).toBe(3);
   });
 });
 
-/**
- * Every promise the table checks, each as its own test, so that it can be
- * asked of other rows too.
- */
-function tableTests(rows: () => Row[]) {
+describe('every task with up to three records', () => {
   it('holder: the first open heard run, or null', () => {
     everyRow((row) => {
       const got = holder(row.task, row.heard)?.id ?? null;
-      const want = expectedHolder(row);
+      const want = expectedHolder(row.specs);
       return got === want ? null : `holder ${got}, expected ${want}`;
-    }, rows());
+    });
   });
 
-  it("ending: the first final run's status; else null while held; else failed with 3 lost; else cancelled if flagged; else null", () => {
+  it('ending: the first record that ends the task, unless a heard open run comes before it; no record, no ending', () => {
     everyRow((row) => {
       const got = ending(row.task, row.heard);
-      const want = expectedEnding(row);
+      const want = expectedEnding(row.specs);
       return got === want ? null : `ending ${got}, expected ${want}`;
-    }, rows());
+    });
   });
 
   it('ending with allHeard: what a listener that hears every open run reads', () => {
     everyRow((row) => {
       const got = ending(row.task, allHeard);
-      const want = expectedEnding(hearingAll(row));
+      const want = expectedEnding(hearingAll(row).specs);
       return got === want ? null : `ending ${got}, expected ${want}`;
-    }, rows());
+    });
   });
 
-  it('endingRun: the first run in list order with a final status', () => {
+  it('endingRun: the first record in list order with a final status, a stop included', () => {
     everyRow((row) => {
       const at = firstFinal(row.specs);
       const got = endingRun(row.task)?.id ?? null;
       const want = at < 0 ? null : runId(at);
       return got === want ? null : `endingRun ${got}, expected ${want}`;
-    }, rows());
+    });
   });
 
   it('taskState: exactly one of the seven states, the one the header gives', () => {
     everyRow((row) => {
       const got = taskState(row.task, row.heard);
-      const want = expectedState(row);
+      const want = expectedState(row.specs);
       if (!STATES.includes(got)) {
         return `state ${got}`;
       }
       return got === want ? null : `state ${got}, expected ${want}`;
-    }, rows());
+    });
   });
 
   it('taskState with allHeard', () => {
     everyRow((row) => {
       const got = taskState(row.task, allHeard);
-      const want = expectedState(hearingAll(row));
+      const want = expectedState(hearingAll(row).specs);
       return got === want ? null : `state ${got}, expected ${want}`;
-    }, rows());
+    });
   });
 
   it('isFinished(taskState) exactly when ending is not null', () => {
@@ -349,23 +344,23 @@ function tableTests(rows: () => Row[]) {
       const finished = isFinished(taskState(row.task, row.heard));
       const ended = ending(row.task, row.heard) !== null;
       return finished === ended ? null : `finished ${finished}, ended ${ended}`;
-    }, rows());
+    });
   });
 
-  it('isWanted: no run ended it, not flagged, fewer than 3 lost', () => {
+  it('isWanted: a task no record has ended; no flag, no count', () => {
     everyRow((row) => {
       const got = isWanted(row.task);
-      const want = expectedWanted(row);
+      const want = expectedWanted(row.specs);
       return got === want ? null : `isWanted ${got}, expected ${want}`;
-    }, rows());
+    });
   });
 
-  it('isWanted is what a listener that hears nobody reads as not ended', () => {
+  it('isWanted is exactly what a listener that hears nobody reads as not ended', () => {
     everyRow((row) => {
       const wanted = isWanted(row.task);
       const open = ending(row.task, hearsNone) === null;
       return wanted === open ? null : `isWanted ${wanted}, ending with nobody heard ${ending(row.task, hearsNone)}`;
-    }, rows());
+    });
   });
 
   it('a task that has ended, for any listener, is not wanted', () => {
@@ -376,7 +371,7 @@ function tableTests(rows: () => Row[]) {
         }
       }
       return null;
-    }, rows());
+    });
   });
 
   it('mayClaim for P and for Q: wanted, the key names this, nobody heard holds it, and that pool has no open run', () => {
@@ -389,54 +384,50 @@ function tableTests(rows: () => Row[]) {
         }
       }
       return null;
-    }, rows());
+    });
   });
 
-  it('stopReason for every open run of P and of Q', () => {
+  it('stopReason for every open run: cancelled on any cancelled record; yielded on any success, a final record before it, another key, or an earlier heard run; a failure after it stops nothing', () => {
     everyRow((row) => {
-      for (const pool of ['P', 'Q'] as const) {
-        for (const index of openRunsOf(row, pool)) {
-          const got = stopReason(row.task, runId(index), row.is, row.heard);
-          const want = expectedStop(row, index);
-          if (got !== want) {
-            return `stopReason(${runId(index)}) ${got}, expected ${want}`;
-          }
+      for (const index of openRuns(row)) {
+        const got = stopReason(row.task, runId(index), row.is, row.heard);
+        const want = expectedStop(row.specs, row.is, index, hearsKind);
+        if (got !== want) {
+          return `stopReason(${runId(index)}) ${got}, expected ${want}`;
         }
       }
       return null;
-    }, rows());
+    });
   });
 
-  it("stopReason is 'yielded' for a run that is not in the list or is already complete", () => {
+  it("stopReason is 'yielded' for a run that is not in the list, is already complete, or is a stop", () => {
     everyRow((row) => {
       if (stopReason(row.task, 'nobody', row.is, row.heard) !== 'yielded') {
         return 'an unknown run may carry on';
       }
       for (const [index, spec] of row.specs.entries()) {
         if (!openKind(spec.kind) && stopReason(row.task, runId(index), row.is, row.heard) !== 'yielded') {
-          return `completed run ${runId(index)} may carry on`;
+          return `completed record ${runId(index)} may carry on`;
         }
       }
       return null;
-    }, rows());
+    });
   });
 
-  it('gone for every open run: what it would be stopped for with nobody heard, else lost', () => {
+  it('gone for every open run: what it would be stopped for with nobody heard; else failed once two runs are lost, else lost', () => {
     everyRow((row) => {
-      for (const pool of ['P', 'Q'] as const) {
-        for (const index of openRunsOf(row, pool)) {
-          const got = gone(row.task, runId(index), row.is);
-          const want = expectedGone(row);
-          if (got !== want) {
-            return `gone(${runId(index)}) ${got}, expected ${want}`;
-          }
+      for (const index of openRuns(row)) {
+        const got = gone(row.task, runId(index), row.is);
+        const want = expectedGone(row.specs, row.is, index);
+        if (got !== want) {
+          return `gone(${runId(index)}) ${got}, expected ${want}`;
         }
       }
       return null;
-    }, rows());
+    });
   });
 
-  it('orphans: the open runs bearing the pool name that it does not have', () => {
+  it('orphans: the open runs bearing the pool name that it does not have; a stop is no one\'s', () => {
     everyRow((row) => {
       for (const pool of ['P', 'Q', 'R'] as const) {
         const mine = row.specs.flatMap((spec, index) => (openKind(spec.kind) && spec.pool === pool ? [runId(index)] : []));
@@ -450,15 +441,15 @@ function tableTests(rows: () => Row[]) {
         }
       }
       return null;
-    }, rows());
+    });
   });
 
-  it('mayDelist: the key names this, and the task has ended for this listener', () => {
+  it('mayDelist: the key names this, and some record has ended the task; no hearing asked', () => {
     everyRow((row) => {
-      const got = mayDelist(row.task, row.is, row.heard);
-      const want = row.is === 'this' && expectedEnding(row) !== null;
+      const got = mayDelist(row.task, row.is);
+      const want = row.is === 'this' && anyFinal(row.specs);
       return got === want ? null : `mayDelist ${got}, expected ${want}`;
-    }, rows());
+    });
   });
 
   it('mayRelist: the key names none, the task is wanted, nobody heard holds it, and the lapse has passed', () => {
@@ -466,73 +457,66 @@ function tableTests(rows: () => Row[]) {
     everyRow((row) => {
       for (const waited of [0, LAPSE_MS - 1, LAPSE_MS, LAPSE_MS + 1]) {
         const got = mayRelist(row.task, row.is, row.heard, noneSince, noneSince + waited);
-        const want = row.is === 'none' && expectedWanted(row) && !isHeldIn(row) && waited >= LAPSE_MS;
+        const want = row.is === 'none' && expectedWanted(row.specs) && !isHeldIn(row.specs) && waited >= LAPSE_MS;
         if (got !== want) {
           return `mayRelist after ${waited} ms ${got}, expected ${want}`;
         }
       }
       return null;
-    }, rows());
+    });
+  });
+
+  it('stopTask: appends {id, start, end, status: cancelled} with no pool exactly when no record has ended the task, and says whether it did', () => {
+    everyRow((row) => {
+      const after = copy(row.task);
+      const did = stopTask(after, { id: 'S', at: 7 });
+      const want = !anyFinal(row.specs);
+      if (did !== want) {
+        return `stopTask ${did}, expected ${want}`;
+      }
+      const added = want ? [{ id: 'S', start: 7, end: 7, status: 'cancelled' }] : [];
+      if (JSON.stringify(after.runs) !== JSON.stringify([...row.task.runs, ...added])) {
+        return `runs after: ${JSON.stringify(after.runs)}`;
+      }
+      // once stopped, the task is not wanted, and reads stopping while a heard run holds it, else cancelled
+      if (did) {
+        const state = taskState(after, row.heard);
+        if (isWanted(after) || state !== (isHeldIn(row.specs) ? 'stopping' : 'cancelled')) {
+          return `stopped and reads ${state}, wanted ${isWanted(after)}`;
+        }
+      }
+      return null;
+    });
+  });
+
+  it("taskResult: the result of the record that ended the task, when it succeeded; taskError: that record's last line, for a listener that reads failed", () => {
+    everyRow((row) => {
+      const at = firstFinal(row.specs);
+      const result = taskResult(row.task);
+      const wantResult = at >= 0 && row.specs[at].kind === 'succeeded' ? { from: runId(at) } : undefined;
+      if (JSON.stringify(result) !== JSON.stringify(wantResult)) {
+        return `taskResult ${JSON.stringify(result)}`;
+      }
+      const error = taskError(row.task, row.heard);
+      const wantError = expectedEnding(row.specs) === 'failed' ? failedLine(runId(at)) : null;
+      return error === wantError ? null : `taskError ${error}, expected ${wantError}`;
+    });
   });
 
   it('never leaves a pool both free to claim and carrying on a run of the task', () => {
     everyRow((row) => {
       for (const pool of ['P', 'Q'] as const) {
         const claim = mayClaim(row.task, pool, row.is, row.heard);
-        const carriesOn = openRunsOf(row, pool).some(
-          (index) => stopReason(row.task, runId(index), row.is, row.heard) === null,
-        );
+        const carriesOn = openRunsOf(row, pool).some((index) => stopReason(row.task, runId(index), row.is, row.heard) === null);
         if (claim && carriesOn) {
           return `${pool} may claim while one of its runs carries on`;
         }
       }
       return null;
-    }, rows());
+    });
   });
 
-  it('the neither-wanted-nor-ended tasks are exactly those held while flagged or with 3 lost and no run ending them', () => {
-    everyRow((row) => {
-      const neither = !isWanted(row.task) && ending(row.task, row.heard) === null;
-      const want = !endedByRun(row) && (row.flagged || lostIn(row.specs) >= 3) && isHeldIn(row);
-      if (neither !== want) {
-        return `neither ${neither}, expected ${want}`;
-      }
-      // what such a task reads as, and that no pool takes it again
-      if (neither) {
-        const state = taskState(row.task, row.heard);
-        if (state !== (row.flagged ? 'stopping' : 'running')) {
-          return `state ${state}`;
-        }
-        if (mayClaim(row.task, 'R', row.is, hearsNone) || mayRelist(row.task, 'none', hearsNone, 0, LAPSE_MS)) {
-          return 'taken or listed again';
-        }
-      }
-      return null;
-    }, rows());
-  });
-}
-
-describe('every task with up to three runs', () => {
-  tableTests(() => ROWS);
-
-  it('holder, ending and taskState of a task that is not here yet: null, null, waiting', () => {
-    expect(holder(undefined, allHeard)).toBeNull();
-    expect(ending(undefined, hearsNone)).toBeNull();
-    expect(taskState(undefined, allHeard)).toBe('waiting');
-    expect(isWanted(undefined)).toBe(false);
-    expect(mayClaim(undefined, 'P', 'this', hearsNone)).toBe(false);
-    expect(mayRelist(undefined, 'none', hearsNone, 0, LAPSE_MS * 2)).toBe(false);
-    expect(mayDelist(undefined, 'this', hearsNone)).toBe(false);
-    expect(orphans(undefined, 'P', () => false)).toEqual([]);
-  });
-
-  it('allHeard counts any run, named or not, as heard', () => {
-    expect(['r0', 'nobody', ''].every((id) => allHeard(id))).toBe(true);
-  });
-});
-
-describe('a claim never displaces a heard earlier run', () => {
-  it('Q may not claim while a run of P that carries on is heard', () => {
+  it('Q may not claim while a heard run of P carries on', () => {
     everyRow((row) => {
       for (const index of openRunsOf(row, 'P')) {
         const carriesOn = stopReason(row.task, runId(index), row.is, row.heard) === null;
@@ -544,223 +528,284 @@ describe('a claim never displaces a heard earlier run', () => {
     });
   });
 
-  it("when Q claims because it cannot hear P's run, P's run carries on and Q's yields as soon as Q hears P", () => {
-    let exercised = 0;
+  it('holder, ending and taskState of a task that is not here yet: null, null, waiting', () => {
+    expect(holder(undefined, allHeard)).toBeNull();
+    expect(ending(undefined, hearsNone)).toBeNull();
+    expect(taskState(undefined, allHeard)).toBe('waiting');
+    expect(isWanted(undefined)).toBe(false);
+    expect(mayClaim(undefined, 'P', 'this', hearsNone)).toBe(false);
+    expect(mayRelist(undefined, 'none', hearsNone, 0, LAPSE_MS * 2)).toBe(false);
+    expect(mayDelist(undefined, 'this')).toBe(false);
+    expect(orphans(undefined, 'P', () => false)).toEqual([]);
+  });
+
+  it('allHeard counts any run, named or not, as heard', () => {
+    expect(['r0', 'nobody', ''].every((id) => allHeard(id))).toBe(true);
+  });
+});
+
+// Neither wanted nor ended
+
+describe('the tasks that are neither wanted nor ended', () => {
+  // Some record has ended them, so no pool takes them and no asker lists them
+  // again; but a heard open run comes before that record, so a listener does
+  // not read them as ended. What will change them is that run's pool, or the
+  // run going unheard.
+  const NEITHER = ROWS.filter((row) => !isWanted(row.task) && ending(row.task, row.heard) === null);
+
+  it('are exactly the rows with a record that ends the task and a heard open run before the first such record', () => {
     everyRow((row) => {
-      for (const index of openRunsOf(row, 'P')) {
-        const p = runId(index);
-        if (stopReason(row.task, p, row.is, row.heard) !== null) {
-          continue;
-        }
-        const qHeard: Heard = (id) => id !== p && row.heard(id);
-        if (!mayClaim(row.task, 'Q', row.is, qHeard)) {
-          continue;
-        }
-        exercised++;
-        const after = copy(row.task);
-        claimRun(after, { id: 'rq', pool: 'Q', start: 99 });
-        const pHearsQ: Heard = (id) => id === 'rq' || row.heard(id);
-        const qHearsP: Heard = (id) => id === p || id === 'rq' || row.heard(id);
-        if (stopReason(after, p, row.is, pHearsQ) !== null) {
-          return `${p} stopped by Q's later claim`;
-        }
-        if (stopReason(after, 'rq', row.is, qHeard) !== null) {
-          return "Q's run stopped before Q hears P";
-        }
-        if (stopReason(after, 'rq', row.is, qHearsP) !== 'yielded') {
-          return `Q's run does not yield to ${p} once heard`;
-        }
-      }
-      return null;
+      const neither = NEITHER.includes(row);
+      const at = firstFinal(row.specs);
+      const want = at >= 0 && row.specs.slice(0, at).some((spec) => spec.kind === 'heard');
+      return neither === want ? null : `neither ${neither}, expected ${want}`;
     });
-    expect(exercised).toBeGreaterThan(0);
-  });
-});
-
-describe('bounded starts', () => {
-  it('a task with 3 lost runs is not wanted, so nobody may claim it, whatever is heard', () => {
-    const rows = ROWS.filter((row) => lostIn(row.specs) === 3);
-    expect(rows.length).toBe(2 * 3);
-    everyRow((row) => {
-      if (isWanted(row.task)) {
-        return 'wanted';
-      }
-      for (const pool of ['P', 'Q', 'R']) {
-        for (const heard of [row.heard, hearsNone, allHeard]) {
-          if (mayClaim(row.task, pool, row.is, heard)) {
-            return `${pool} may claim`;
-          }
-        }
-      }
-      return null;
-    }, rows);
-  });
-});
-
-// Lists of three runs cannot hold MAX_LOST lost runs beside anything else, so
-// the table above never asks about a task that lost three runs while a run of
-// it is still open, finished, or heard. These rows are every list of three
-// lost runs with one more run of any kind at any place. One more run is
-// enough: once three runs are lost, the ending, the state and every pool's and
-// asker's decision depend on no other run but the first one that ended the
-// task and the first one heard, and one extra run can put such a run before,
-// between or after the lost ones.
-
-const LOST: Spec = { kind: 'lost', pool: 'P' };
-
-const THREE_LOST_AND_ONE = [
-  ...new Map(
-    SPECS.flatMap((spec) =>
-      [0, 1, 2, 3].map((at): Spec[] => {
-        const specs = [LOST, LOST, LOST];
-        specs.splice(at, 0, spec);
-        return specs;
-      }),
-    ).map((specs) => [specs.map((s) => `${s.pool}:${s.kind}`).join(','), specs] as const),
-  ).values(),
-];
-
-const LOST_ROWS = rowsFor(THREE_LOST_AND_ONE);
-
-describe('every task with three runs lost and one more', () => {
-  it('has the four places for each of the eight other run specs, and the one list of four lost runs', () => {
-    expect(THREE_LOST_AND_ONE.length).toBe(8 * 4 + 1);
-    expect(LOST_ROWS.length).toBe((8 * 4 + 1) * 2 * 3);
+    // Counted by hand: records before the first final one are drawn from the 6 that are not final (heard,
+    // unheard, each of P or Q; lost; yielded), at least one of them heard (2 of the 6); then one of the 4
+    // final records; then anything. [h, F]: 2 * 4. [h, F, x]: 2 * 4 * 10. [a, b, F] with a heard among a, b:
+    // (6 * 6 - 4 * 4) * 4. Times the 3 things the key can name.
+    expect(NEITHER.length).toBe((2 * 4 + 2 * 4 * 10 + (6 * 6 - 4 * 4) * 4) * 3);
   });
 
-  tableTests(() => LOST_ROWS);
-
-  it('with a run heard and none ending it: running, or stopping if flagged; not ended, not delisted, and the heard run carries on unless flagged or its key names another', () => {
-    const rows = LOST_ROWS.filter((row) => isHeldIn(row) && !endedByRun(row));
-    // heard of P and of Q, at four places, times the flag, times what the key names
-    expect(rows.length).toBe(2 * 4 * 2 * 3);
+  it('read running, or stopping when a record says cancelled; nobody may take them or list them again; the entry may go', () => {
     everyRow((row) => {
       const state = taskState(row.task, row.heard);
-      if (state !== (row.flagged ? 'stopping' : 'running')) {
+      if (state !== (row.specs.some((spec) => saysCancelled(spec.kind)) ? 'stopping' : 'running')) {
         return `state ${state}`;
       }
-      if (ending(row.task, row.heard) !== null || mayDelist(row.task, row.is, row.heard)) {
-        return 'ended or delisted';
+      for (const heard of [row.heard, hearsNone, allHeard]) {
+        if (['P', 'Q', 'R'].some((pool) => mayClaim(row.task, pool, 'this', heard)) || mayRelist(row.task, 'none', heard, 0, LAPSE_MS)) {
+          return 'taken or listed again';
+        }
       }
-      const at = row.specs.findIndex((spec) => spec.kind === 'heard');
-      const want = row.flagged ? 'cancelled' : row.is === 'other' ? 'yielded' : null;
-      const got = stopReason(row.task, runId(at), row.is, row.heard);
-      return got === want ? null : `the heard run is told ${got}, expected ${want}`;
-    }, rows);
+      return mayDelist(row.task, row.is) === (row.is === 'this') ? null : 'the entry is kept';
+    }, NEITHER);
   });
 
-  it("with nobody heard and nothing ending it: 'failed', flagged or not", () => {
-    const rows = LOST_ROWS.filter((row) => !isHeldIn(row) && !endedByRun(row));
-    // unheard of P and of Q, and yielded, at four places, and four lost, times the flag, times the key
-    expect(rows.length).toBe((3 * 4 + 1) * 2 * 3);
-    everyRow((row) => (taskState(row.task, row.heard) === 'failed' ? null : `state ${taskState(row.task, row.heard)}`), rows);
+  it('the holder carries on (the rescue rule) exactly when every record that ends the task says failed and the key does not name another', () => {
+    let rescued = 0;
+    everyRow((row) => {
+      const at = row.specs.findIndex((spec) => spec.kind === 'heard');
+      const reason = stopReason(row.task, runId(at), row.is, row.heard);
+      const finals = row.specs.filter((spec) => finalKind(spec.kind));
+      const carries = finals.every((spec) => spec.kind === 'failed') && row.is !== 'other';
+      if (carries) {
+        rescued++;
+      }
+      if ((reason === null) !== carries) {
+        return `the holder is told ${reason}`;
+      }
+      // otherwise it is told why: cancelled on a cancelled record, else yielded
+      if (!carries && reason !== (finals.some((spec) => saysCancelled(spec.kind)) ? 'cancelled' : 'yielded')) {
+        return `the holder is told ${reason}`;
+      }
+      return null;
+    }, NEITHER);
+    expect(rescued).toBeGreaterThan(0);
+  });
+
+  it("what its holder's pool then writes ends the task as the list says: the holder's own status if final, else the first final record after it", () => {
+    everyRow((row) => {
+      const at = row.specs.findIndex((spec) => spec.kind === 'heard');
+      const id = runId(at);
+      const reason = stopReason(row.task, id, row.is, row.heard);
+      const statuses: RunStatus[] = reason ? [reason, gone(row.task, id, row.is)] : ['succeeded', 'failed', gone(row.task, id, row.is)];
+      for (const status of statuses) {
+        const after = copy(row.task);
+        endRun(after, id, { status, end: 999 });
+        const want = FINALS.includes(status as FinalStatus)
+          ? status
+          : expectedEnding(row.specs.map((spec, index): Spec => (index === at ? { kind: status as Kind, pool: spec.pool } : spec)));
+        if (ending(after, row.heard) !== want) {
+          return `${id} ${status}: ending ${ending(after, row.heard)}, expected ${want}`;
+        }
+      }
+      return null;
+    }, NEITHER);
+  });
+
+  it('a reader with no ears reads them as not ended for ever, if the holder\'s pool is gone for good; a listener reads the ending a lapse after its last word', () => {
+    // [A open by a pool gone for good, a stop] and [A open, a failure]
+    for (const [second, want] of [
+      [{ id: 'S', start: 1, end: 1, status: 'cancelled' } as Run, 'cancelled'],
+      [makeRun({ kind: 'failed', pool: 'Q' }, 1), 'failed'],
+    ] as const) {
+      const task = makeTask([{ id: 'A', pool: 'gone for good', start: 0 }, second]);
+      expect(isWanted(task)).toBe(false);
+      expect(ending(task, allHeard)).toBeNull();
+      const clock = { t: 0, now: () => clock.t };
+      const listener = new Hearing(clock);
+      listener.saw(task.runs);
+      listener.heardFrom('A');
+      clock.t = LAPSE_MS - 1;
+      expect(ending(task, listener.heard)).toBeNull();
+      clock.t = LAPSE_MS;
+      expect(ending(task, listener.heard)).toBe(want);
+      // and the pool, if it comes back, completes A as gone says, which every reader then reads alike
+      endRun(task, 'A', { status: gone(task, 'A', 'none'), end: 2 });
+      expect([ending(task, allHeard), ending(task, hearsNone)]).toEqual([want, want]);
+    }
   });
 });
 
 // What a reading of "ended" may do afterwards
 
-/** Every change a document may legally see next, with who may make it, on a task as a reader has it. */
-function legalChanges(task: Task): { label: string; apply: (task: Task) => void }[] {
-  const changes: { label: string; apply: (task: Task) => void }[] = [];
+interface Change {
+  label: string;
+  apply: (task: Task) => void;
+  /** Whether a pool that has read this very list could make it (true), or only one that has not read the latest of it. */
+  seen: boolean;
+  /** The open run it completes, if it completes one. */
+  completes?: number;
+  status?: RunStatus;
+}
+
+/**
+ * What the pool of the open run at `index` could write for it having read
+ * this list, whatever it hears and whatever its queue says: the reason it is
+ * stopped for, or, while it may carry on, how its code ends (returned,
+ * threw); and always what `gone` says, since the pool can stop or die at any
+ * moment.
+ */
+function statusesSeen(task: Task, index: number): Set<RunStatus> {
+  const id = runId(index);
+  const seen = new Set<RunStatus>();
+  for (const is of NAMED) {
+    seen.add(gone(task, id, is));
+    for (const heard of [hearsNone, allHeard, ...task.runs.map((run) => hearing(run.id))]) {
+      const reason = stopReason(task, id, is, heard);
+      if (reason) {
+        seen.add(reason);
+      } else {
+        seen.add('succeeded').add('failed');
+      }
+    }
+  }
+  return seen;
+}
+
+/** Every change a document may legally see next. */
+function legalChanges(row: Row): Change[] {
+  const changes: Change[] = [];
   // A pool appends a run only when it may take the task; one that hears
   // nobody and has no run of it is the most a pool can be allowed.
-  if (mayClaim(task, 'R', 'this', hearsNone)) {
-    changes.push({ label: 'append', apply: (it) => claimRun(it, { id: 'new', pool: 'R', start: 999 }) });
+  if (mayClaim(row.task, 'R', 'this', hearsNone)) {
+    changes.push({ label: 'append', seen: true, apply: (it) => claimRun(it, { id: 'new', pool: 'R', start: 999 }) });
   }
-  for (const run of task.runs.filter(isOpen)) {
+  // An asker stops it (stopTask writes only while no record has ended it).
+  changes.push({ label: 'stop', seen: true, apply: (it) => void stopTask(it, { id: 'S', at: 999 }) });
+  // Each open run is completed by its pool with any status at all: code can
+  // return before its pool has read why it should stop.
+  for (const index of openRuns(row)) {
+    const seen = statusesSeen(row.task, index);
     for (const status of STATUSES) {
       changes.push({
-        label: `complete ${run.id} ${status}`,
-        apply: (it) => endRun(it, run.id, { status, result: 'late', end: 999 }),
+        label: `complete ${runId(index)} ${status}`,
+        seen: seen.has(status),
+        completes: index,
+        status,
+        apply: (it) => endRun(it, runId(index), { status, result: 'late', end: 999 }),
       });
     }
   }
-  changes.push({
-    label: 'flag',
-    apply: (it) => {
-      it.cancelled = true;
-    },
-  });
   return changes;
 }
 
-describe('a reading of "ended", with every open run heard', () => {
-  // Each change is tried on every row read as ended by a listener that hears
-  // every open run (the row's own hearing where it hears them all, and
-  // allHeard on every row). Each change leaves every open run heard and gives
-  // a row of the table again (it completes a run, sets the flag, or appends to
-  // a task that, being ended, never takes an append), so a sequence of
-  // changes is a sequence of single steps checked here.
+const readingOf = (task: Task, heard: Heard) => `${ending(task, heard)} by ${ending(task, heard) ? endingRun(task)?.id : '-'}`;
+
+describe('a reading of "ended"', () => {
+  // Each change gives a row of the table again or a list of four, and leaves
+  // every run the reader heard heard, so a history of changes is a sequence
+  // of the single steps checked here.
   const readers: [string, Row[]][] = [
-    ['its own hearing, where it hears every open run', ROWS.filter((row) => !row.specs.some((spec) => spec.kind === 'unheard'))],
-    ['allHeard', ROWS.map((row) => ({ ...row, heard: allHeard }))],
+    ['its own hearing, on every row where it hears every open run', ROWS.filter((row) => !row.specs.some((spec) => spec.kind === 'unheard'))],
+    ['allHeard, on every row', ROWS.map((row) => ({ ...row, heard: allHeard }))],
   ];
 
   for (const [name, rows] of readers) {
-    it(`with ${name}: no legal change alters it, except completing an earlier open run with a final status after a later run ended the task`, () => {
+    it(`never changes, for a reader that hears every open run, whatever legal change comes next: ${name}`, () => {
       let exercised = 0;
-      let admitted = 0;
+      let unseen = 0;
       everyRow((row) => {
-        const was = ending(row.task, row.heard);
-        if (was === null) {
+        const was = readingOf(row.task, row.heard);
+        if (ending(row.task, row.heard) === null) {
           return null;
         }
-        for (const { label, apply } of legalChanges(row.task)) {
+        for (const change of legalChanges(row)) {
           exercised++;
+          if (!change.seen) {
+            unseen++;
+          }
           const after = copy(row.task);
-          apply(after);
-          const now = ending(after, row.heard);
-          if (now === was && endingRun(after)?.id === endingRun(row.task)?.id) {
-            continue;
+          change.apply(after);
+          const now = readingOf(after, row.heard);
+          if (now !== was) {
+            return `${change.label} (${change.seen ? 'by a pool that read the list' : 'by a pool that had not'}) turns ${was} into ${now}`;
           }
-          // the one admitted: an open run before the run that ended the task is completed with a final status
-          const by = firstFinal(row.specs);
-          const completed = after.runs.findIndex((run, index) => isOpen(row.task.runs[index] ?? { status: 'lost' }) && !isOpen(run));
-          if (by >= 0 && completed >= 0 && completed < by && FINALS.includes(after.runs[completed].status as FinalStatus)) {
-            admitted++;
-            continue;
-          }
-          return `${label} turns ${was} into ${now}`;
         }
         return null;
       }, rows);
       expect(exercised).toBeGreaterThan(0);
-      expect(admitted).toBeGreaterThan(0);
+      expect(unseen).toBeGreaterThan(0);
     });
   }
 
-  it('no ended task ever takes an append: ended for any listener means not wanted', () => {
+  it('changes, for a reader with its own hearing, in one way only: an open run before the first final record, which the reader does not hear, is completed with a final status', () => {
+    let admittedSeen = 0;
+    let admittedUnseen = 0;
     everyRow((row) => {
-      if (ending(row.task, allHeard) !== null && legalChanges(row.task).some((change) => change.label === 'append')) {
-        return 'an ended task may be taken';
+      if (ending(row.task, row.heard) === null) {
+        return null;
+      }
+      const by = firstFinal(row.specs);
+      for (const change of legalChanges(row)) {
+        const after = copy(row.task);
+        change.apply(after);
+        if (readingOf(after, row.heard) === readingOf(row.task, row.heard)) {
+          continue;
+        }
+        const admitted =
+          change.completes !== undefined &&
+          change.completes < by &&
+          row.specs[change.completes].kind === 'unheard' &&
+          FINALS.includes(change.status as FinalStatus);
+        if (!admitted) {
+          return `${change.label} turns ${readingOf(row.task, row.heard)} into ${readingOf(after, row.heard)}`;
+        }
+        if (change.seen) {
+          admittedSeen++;
+        } else {
+          admittedUnseen++;
+        }
       }
       return null;
     });
+    // both kinds of pool make it: one that read the list (the rescue: [A unheard, B failed], A succeeds) and one that had not
+    expect(admittedSeen).toBeGreaterThan(0);
+    expect(admittedUnseen).toBeGreaterThan(0);
   });
 
-  it('a pool that has seen the later ending never makes the admitted change: its earlier run yields, which ends nothing', () => {
+  it('the one way, by name: [A open and unheard, B succeeded] reads succeeded; A, its pool cut off and unaware of B, completes failed: now failed, for everyone', () => {
+    const task = makeTask([{ id: 'A', pool: 'P', start: 0 }, makeRun({ kind: 'succeeded', pool: 'P' }, 1)]);
+    expect(ending(task, hearsNone)).toBe('succeeded');
+    // a pool that had read B's success would have yielded
+    expect(statusesSeen(task, 0).has('failed')).toBe(false);
+    endRun(task, 'A', { status: 'failed', end: 2 });
+    expect([ending(task, hearsNone), ending(task, allHeard)]).toEqual(['failed', 'failed']);
+  });
+
+  it('a pool that has read a later success never changes the reading by completing its earlier run: it yields, or records cancelled where a stop is in the list', () => {
     let exercised = 0;
     everyRow((row) => {
-      const at = firstFinal(row.specs);
-      const was = ending(row.task, row.heard);
-      for (let earlier = 0; earlier < at; earlier++) {
-        if (!openKind(row.specs[earlier].kind)) {
-          continue;
-        }
+      if (!row.specs.some((spec) => spec.kind === 'succeeded')) {
+        return null;
+      }
+      for (const index of openRuns(row)) {
         exercised++;
-        for (const heard of [row.heard, allHeard, hearsNone]) {
-          const why = stopReason(row.task, runId(earlier), row.is, heard);
-          if (why !== 'yielded') {
-            return `earlier ${runId(earlier)} is told ${why}`;
-          }
-        }
-        if (gone(row.task, runId(earlier), row.is) !== 'yielded') {
-          return `earlier ${runId(earlier)} is recorded ${gone(row.task, runId(earlier), row.is)} by its pool after a restart`;
-        }
-        const after = copy(row.task);
-        endRun(after, runId(earlier), { status: 'yielded', end: 999 });
-        if (ending(after, row.heard) !== was) {
-          return `recording ${runId(earlier)} yielded changes the ending to ${ending(after, row.heard)}`;
+        const seen = statusesSeen(row.task, index);
+        const want = row.specs.some((spec) => saysCancelled(spec.kind)) ? ['cancelled'] : ['yielded'];
+        if (JSON.stringify([...seen]) !== JSON.stringify(want)) {
+          return `${runId(index)} may be recorded ${[...seen]}`;
         }
       }
       return null;
@@ -768,146 +813,450 @@ describe('a reading of "ended", with every open run heard', () => {
     expect(exercised).toBeGreaterThan(0);
   });
 
-  it('the admitted change, read by a listener who heard the earlier run all along: the later run ended it, then the earlier one did', () => {
-    // The header puts the only change of a reading on "a run the reader could
-    // not hear". This history changes a reading where the reader heard the
-    // earlier run throughout: its pool was heard here but had not yet
-    // received the later run's end when its code returned.
+  it('changes, with no record written, when an earlier run the reader could not hear is heard again: exactly the unheard open runs before the first final record', () => {
+    let changed = 0;
+    everyRow((row) => {
+      if (ending(row.task, row.heard) === null) {
+        return null;
+      }
+      const by = firstFinal(row.specs);
+      for (const [index, spec] of row.specs.entries()) {
+        if (spec.kind !== 'unheard') {
+          continue;
+        }
+        const again: Heard = (id) => id === runId(index) || row.heard(id);
+        const differs = ending(row.task, again) !== ending(row.task, row.heard);
+        if (differs !== index < by) {
+          return `${runId(index)} heard again: changed ${differs}`;
+        }
+        if (differs) {
+          changed++;
+          // to not ended: running, or stopping where a record says cancelled
+          if (taskState(row.task, again) !== (row.specs.some((it) => saysCancelled(it.kind)) ? 'stopping' : 'running')) {
+            return `reads ${taskState(row.task, again)}`;
+          }
+        }
+      }
+      return null;
+    });
+    expect(changed).toBeGreaterThan(0);
+  });
+
+  it('changes when a record made at the same time as later ones lands before them in the merge: a stop before the first final record becomes the ending; a claim there, heard from first sight, makes the task not ended', () => {
+    // A writer that had read the list only up to `at` (so the task was still
+    // wanted for it) appends; the merge can put its record at `at`, before
+    // records it never saw. Every such place is tried on every row read as ended.
+    let stops = 0;
+    let claims = 0;
+    everyRow((row) => {
+      const was = ending(row.task, row.heard);
+      if (was === null) {
+        return null;
+      }
+      for (let at = 0; at <= firstFinal(row.specs); at++) {
+        const stopped = copy(row.task);
+        stopped.runs.splice(at, 0, { id: 'S', start: 9, end: 9, status: 'cancelled' });
+        if (ending(stopped, row.heard) !== 'cancelled' || endingRun(stopped)?.id !== 'S') {
+          return `a stop at ${at} reads ${ending(stopped, row.heard)}`;
+        }
+        if (was !== 'cancelled') {
+          stops++;
+        }
+        const claimed = copy(row.task);
+        claimed.runs.splice(at, 0, { id: 'C', pool: 'R', start: 9 });
+        const hearsC: Heard = (id) => id === 'C' || row.heard(id);
+        if (ending(claimed, hearsC) !== null) {
+          return `a claim at ${at} reads ${ending(claimed, hearsC)}`;
+        }
+        claims++;
+      }
+      return null;
+    });
+    expect(stops).toBeGreaterThan(0);
+    expect(claims).toBeGreaterThan(0);
+  });
+
+  it.fails('RULE HOLE: a reading of "ended" changes with no run completed: [A open, its pool cut off, B succeeded] reads succeeded; A\'s pool is heard again before it learns of B, and the task reads running', () => {
+    // The header: "A reading of 'ended' therefore changes afterwards in one
+    // circumstance only: a run earlier in the list that the reader could not
+    // hear ... is completed later with a status that ends the task." Here
+    // nothing is completed: the earlier run is only heard again. The same
+    // happens when a run made at the same time as a stop arrives in front of
+    // it (first sight counts as heard). Read with run(), the asker has its
+    // answer already; a view shows succeeded, then running, then (A yields)
+    // succeeded again, or (B failed, A carries on and succeeds) failed, then
+    // running, then succeeded.
+    const clock = { t: 0, now: () => clock.t };
+    const reader = new Hearing(clock);
     const task = makeTask([{ id: 'A', pool: 'P', start: 0 }, makeRun({ kind: 'succeeded', pool: 'Q' }, 1)]);
-    const reader = hearing('A');
-    expect(holder(task, reader)?.id).toBe('A');
-    expect(ending(task, reader)).toBe('succeeded');
-    expect(taskState(task, reader)).toBe('succeeded');
-    endRun(task, 'A', { status: 'failed', end: 2 });
-    expect(ending(task, reader)).toBe('failed');
+    reader.saw(task.runs);
+    clock.t = LAPSE_MS;
+    expect(taskState(task, reader.heard)).toBe('succeeded');
+    reader.heardFrom('A');
+    expect(taskState(task, reader.heard)).toBe('succeeded');
   });
 });
 
-describe('the three old "finished state flips" histories, replayed', () => {
-  // (1) Runs [lost, lost, A open by P]. Q cannot hear A and claims B. P
-  // restarts and records A as `gone` says. Then B succeeds.
-  const historyOne = () => {
-    const task = makeTask([makeRun(LOST, 0), makeRun(LOST, 1), { id: 'A', pool: 'P', start: 2 }]);
-    expect(mayClaim(task, 'Q', 'this', hearsNone)).toBe(true);
-    claimRun(task, { id: 'B', pool: 'Q', start: 3 });
-    expect(gone(task, 'A', 'this')).toBe('lost');
-    endRun(task, 'A', { status: gone(task, 'A', 'this'), end: 4 });
-    return task;
+// The rescue rule
+
+describe('the rescue rule: a failure after a run stops nothing', () => {
+  const failedB = makeRun({ kind: 'failed', pool: 'Q' }, 1);
+  const rescue = () => makeTask([{ id: 'A', pool: 'P', start: 0 }, { ...failedB, id: 'B' }]);
+
+  it("[A open and heard, B failed]: running; A's pool carries on", () => {
+    const task = rescue();
+    expect(taskState(task, hearing('A'))).toBe('running');
+    expect(stopReason(task, 'A', 'this', hearing('A'))).toBeNull();
+    expect(stopReason(task, 'A', 'none', allHeard)).toBeNull();
+    // the entry goes all the same: a record has ended the task, and nobody takes it again
+    expect(mayDelist(task, 'this')).toBe(true);
+    expect(isWanted(task)).toBe(false);
+  });
+
+  it('A succeeds: succeeded, with its result, for everyone', () => {
+    const task = rescue();
+    endRun(task, 'A', { status: 'succeeded', result: 'A', end: 2 });
+    for (const heard of [hearing('A'), allHeard, hearsNone]) {
+      expect(taskState(task, heard)).toBe('succeeded');
+    }
+    expect(taskResult(task)).toBe('A');
+  });
+
+  it("A fails: failed, A's own failure", () => {
+    const task = rescue();
+    endRun(task, 'A', { status: 'failed', logs: [{ timestampMillis: 0, message: 'A broke too' }], end: 2 });
+    expect(endingRun(task)?.id).toBe('A');
+    expect(taskError(task, allHeard)).toBe('A broke too');
+  });
+
+  it("A's pool goes silent: failed, B's failure, once a listener has not heard A for the lapse", () => {
+    const task = rescue();
+    const clock = { t: 0, now: () => clock.t };
+    const listener = new Hearing(clock);
+    listener.saw(task.runs);
+    listener.heardFrom('A');
+    clock.t = LAPSE_MS - 1;
+    expect(taskState(task, listener.heard)).toBe('running');
+    clock.t = LAPSE_MS;
+    expect(taskState(task, listener.heard)).toBe('failed');
+    expect(taskError(task, listener.heard)).toBe(failedLine('r1'));
+  });
+
+  it('[A failed, B open]: B must yield', () => {
+    const task = makeTask([{ ...failedB, id: 'A' }, { id: 'B', pool: 'Q', start: 1 }]);
+    for (const heard of [hearing('B'), allHeard, hearsNone]) {
+      expect(stopReason(task, 'B', 'this', heard)).toBe('yielded');
+    }
+    expect(gone(task, 'B', 'this')).toBe('yielded');
+  });
+
+  it('[A open, B succeeded]: A must yield; until it has, a reader that hears A reads running, one that does not reads succeeded', () => {
+    const task = makeTask([{ id: 'A', pool: 'P', start: 0 }, makeRun({ kind: 'succeeded', pool: 'Q' }, 1)]);
+    for (const heard of [hearing('A'), allHeard, hearsNone]) {
+      expect(stopReason(task, 'A', 'this', heard)).toBe('yielded');
+    }
+    expect(taskState(task, hearing('A'))).toBe('running');
+    expect(taskState(task, hearsNone)).toBe('succeeded');
+    endRun(task, 'A', { status: 'yielded', end: 2 });
+    expect([taskState(task, hearing('A')), taskState(task, hearsNone)]).toEqual(['succeeded', 'succeeded']);
+  });
+
+  it('a third loss recorded after an earlier healthy run is a failure after it: the healthy run carries on, and its success is the ending', () => {
+    // [H open and heard, lost, lost, A open]: A's pool restarts and records A as gone says
+    const lost = (id: string, index: number) => ({ ...makeRun({ kind: 'lost', pool: 'P' }, index), id });
+    const task = makeTask([{ id: 'H', pool: 'Q', start: 0 }, lost('l1', 1), lost('l2', 2), { id: 'A', pool: 'P', start: 3 }]);
+    expect(gone(task, 'A', 'this')).toBe('failed');
+    endRun(task, 'A', { status: gone(task, 'A', 'this'), logs: [{ timestampMillis: 0, message: LOST_TOO_OFTEN }], end: 4 });
+    expect(taskState(task, hearing('H'))).toBe('running');
+    expect(stopReason(task, 'H', 'this', hearing('H'))).toBeNull();
+    // a reader that cannot hear H reads failed meanwhile (the admitted change, if H then succeeds)
+    expect(taskError(task, hearsNone)).toBe(LOST_TOO_OFTEN);
+    endRun(task, 'H', { status: 'succeeded', result: 'H', end: 5 });
+    expect([taskState(task, hearing('H')), taskState(task, hearsNone)]).toEqual(['succeeded', 'succeeded']);
+  });
+});
+
+describe('the guard the solver packages rely on', () => {
+  // A run's code can tell whether an earlier RUN (a record with a pool)
+  // precedes it in the list, so that work that must not happen twice is not
+  // started over one that may have done it. A stop is not a run.
+  const earlierRun = (task: Task, runIdHere: string) => {
+    const runs = task.runs;
+    const at = runs.findIndex((run) => run.id === runIdHere);
+    return runs.slice(0, at).some((r) => r.pool);
   };
 
-  it('(1) with B heard: running (three lost runs do not end a held task), then succeeded; never failed', () => {
-    const task = historyOne();
-    expect(task.runs.filter((run) => run.status === 'lost')).toHaveLength(3);
-    expect(taskState(task, hearing('B'))).toBe('running');
-    expect(stopReason(task, 'B', 'this', hearing('B'))).toBeNull();
-    endRun(task, 'B', { status: 'succeeded', result: 1, end: 5 });
-    expect(taskState(task, hearing('B'))).toBe('succeeded');
-  });
-
-  it('(1) with B not heard: failed, and B succeeding afterwards turns it to succeeded (the admitted flip)', () => {
-    const task = historyOne();
-    expect(taskState(task, hearsNone)).toBe('failed');
-    endRun(task, 'B', { status: 'succeeded', result: 1, end: 5 });
-    expect(taskState(task, hearsNone)).toBe('succeeded');
-  });
-
-  // (2) A flagged task whose one run A is open. Then A succeeds (its pool had
-  // not yet seen the flag).
-  const historyTwo = () => makeTask([{ id: 'A', pool: 'P', start: 0 }], true);
-
-  it('(2) with A heard: stopping, then succeeded; never cancelled', () => {
-    const task = historyTwo();
-    expect(taskState(task, hearing('A'))).toBe('stopping');
-    endRun(task, 'A', { status: 'succeeded', result: 1, end: 1 });
-    expect(taskState(task, hearing('A'))).toBe('succeeded');
-  });
-
-  it('(2) with A not heard: cancelled, then succeeded (the admitted flip)', () => {
-    const task = historyTwo();
-    expect(taskState(task, hearsNone)).toBe('cancelled');
-    endRun(task, 'A', { status: 'succeeded', result: 1, end: 1 });
-    expect(taskState(task, hearsNone)).toBe('succeeded');
-  });
-
-  // (3) A flagged task with two lost runs and A open. A's pool restarts.
-  const historyThree = () =>
-    makeTask([makeRun(LOST, 0), makeRun(LOST, 1), { id: 'A', pool: 'P', start: 2 }], true);
-
-  it("(3) A's pool, restarting, records A as cancelled (gone), so the reading stays cancelled for every listener", () => {
-    const task = historyThree();
-    expect(taskState(task, hearing('A'))).toBe('stopping');
-    expect(taskState(task, hearsNone)).toBe('cancelled');
-    expect(gone(task, 'A', 'this')).toBe('cancelled');
-    endRun(task, 'A', { status: gone(task, 'A', 'this'), end: 3 });
-    expect(taskState(task, hearing('A'))).toBe('cancelled');
-    expect(taskState(task, hearsNone)).toBe('cancelled');
-  });
-
-  it("(3) if A's pool recorded A lost before it saw the flag: with A heard, stopping then failed; with A not heard, cancelled then failed (the admitted flip)", () => {
-    const heard = historyThree();
-    expect(taskState(heard, hearing('A'))).toBe('stopping');
-    endRun(heard, 'A', { status: 'lost', end: 3 });
-    expect(taskState(heard, hearing('A'))).toBe('failed');
-
-    const unheard = historyThree();
-    expect(taskState(unheard, hearsNone)).toBe('cancelled');
-    endRun(unheard, 'A', { status: 'lost', end: 3 });
-    expect(taskState(unheard, hearsNone)).toBe('failed');
+  it('is true only for a record with a pool before this run, whatever its status, and never for a stop before or after it', () => {
+    const me: Run = { id: 'me', pool: 'P', start: 9 };
+    const stop: Run = { id: 'S', start: 1, end: 1, status: 'cancelled' };
+    expect(earlierRun(makeTask([me]), 'me')).toBe(false);
+    expect(earlierRun(makeTask([stop, me]), 'me')).toBe(false);
+    expect(earlierRun(makeTask([me, stop]), 'me')).toBe(false);
+    expect(earlierRun(makeTask([stop, stop, me]), 'me')).toBe(false);
+    for (const spec of SPECS.filter((it) => it.kind !== 'stop')) {
+      const other = { ...makeRun(spec, 0), id: 'other' };
+      expect(earlierRun(makeTask([other, me]), 'me'), spec.kind).toBe(true);
+      expect(earlierRun(makeTask([stop, other, me]), 'me'), spec.kind).toBe(true);
+      expect(earlierRun(makeTask([me, other]), 'me'), spec.kind).toBe(false);
+    }
   });
 });
 
-describe('two listeners that hear differently', () => {
-  it('read a flagged task with an open run as stopping and as cancelled, and agree once the run is completed as its pool would', () => {
-    for (const [status, want] of [
-      ['cancelled', 'cancelled'],
-      ['succeeded', 'succeeded'],
-      ['lost', 'cancelled'],
-      ['yielded', 'cancelled'],
-    ] as const) {
-      const task = makeTask([{ id: 'A', pool: 'P', start: 0 }], true);
-      expect(taskState(task, hearing('A'))).toBe('stopping');
-      expect(taskState(task, hearsNone)).toBe('cancelled');
-      endRun(task, 'A', { status, end: 1 });
-      expect([taskState(task, hearing('A')), taskState(task, hearsNone)], status).toEqual([want, want]);
+// Histories on real Automerge, with real concurrency
+
+/** An actor id made of one repeated hex digit, so that the actors sort as their digits do. */
+function actor(digit: string) {
+  return digit.repeat(32);
+}
+
+const replica = <T>(doc: A.Doc<T>, digit: string) => A.clone(doc, actor(digit));
+
+/** Merges each into a copy of the other: the two replicas after they sync. */
+function syncBoth<T>(x: A.Doc<T>, y: A.Doc<T>): [A.Doc<T>, A.Doc<T>] {
+  return [A.merge(A.clone(x), y), A.merge(A.clone(y), x)];
+}
+
+/** Merges every document into a copy of the first. */
+const mergeAll = <T>(first: A.Doc<T>, ...rest: A.Doc<T>[]) => rest.reduce((doc, other) => A.merge(doc, other), A.clone(first));
+
+const ids = (task: Task) => task.runs.map((run) => run.id);
+
+const ACTOR_ORDERS = [
+  ['a', 'b'],
+  ['b', 'a'],
+] as const;
+
+describe('(1) a stop crossing a claim whose code returns', () => {
+  // The asker appends a stop S to a task nobody has taken. At the same time a
+  // pool Q, which has not seen S, takes the task (run B), and B's code returns
+  // before Q sees S. Both writes are appends at the same place, so the merge
+  // orders them by actor: either order can happen.
+  const history = (askerDigit: string, poolDigit: string) => {
+    const base = A.from<Task>(makeTask(), actor('0'));
+    const asker = A.change(replica(base, askerDigit), (task) => {
+      expect(stopTask(task, { id: 'S', at: 1 })).toBe(true);
+    });
+    const claimed = A.change(replica(base, poolDigit), (task) => {
+      expect(mayClaim(task, 'Q', 'this', hearsNone)).toBe(true);
+      claimRun(task, { id: 'B', pool: 'Q', start: 1 });
+    });
+    const returned = A.change(A.clone(claimed), (task) => {
+      expect(stopReason(task, 'B', 'this', hearing('B'))).toBeNull();
+      endRun(task, 'B', { status: 'succeeded', result: 'B', end: 2 });
+    });
+    return { asker, claimed, returned };
+  };
+
+  it('both list orders happen, depending on the actors; the merge is the same on both replicas', () => {
+    const orders = ACTOR_ORDERS.map(([askerDigit, poolDigit]) => {
+      const { asker, returned } = history(askerDigit, poolDigit);
+      const [one, two] = syncBoth(asker, returned);
+      expect(ids(one)).toEqual(ids(two));
+      return ids(one).join();
+    });
+    expect(orders.sort()).toEqual(['B,S', 'S,B']);
+  });
+
+  for (const [askerDigit, poolDigit] of ACTOR_ORDERS) {
+    it(`what every reader reads at every step (asker actor ${askerDigit}, pool actor ${poolDigit})`, () => {
+      const { asker, claimed, returned } = history(askerDigit, poolDigit);
+      const order = ids(mergeAll(asker, returned)).join();
+      // Before anything syncs. Q's reader hears B (its own run); the asker's has no B.
+      expect(taskState(asker, allHeard)).toBe('cancelled');
+      expect(taskState(claimed, hearing('B'))).toBe('running');
+      expect(taskState(returned, hearing('B'))).toBe('succeeded');
+      // The claim reaches the asker before B returns: B is heard from first sight.
+      const askerSeesClaim = A.merge(A.clone(asker), claimed);
+      expect(taskState(askerSeesClaim, hearing('B'))).toBe(order === 'S,B' ? 'cancelled' : 'stopping');
+      expect(stopReason(askerSeesClaim, 'B', 'this', hearing('B'))).toBe('cancelled');
+      // Everything has synced: the first record in the list is the ending, for every reader.
+      for (const merged of syncBoth(asker, returned)) {
+        for (const heard of [allHeard, hearsNone, hearing('B')]) {
+          expect(taskState(merged, heard)).toBe(order === 'S,B' ? 'cancelled' : 'succeeded');
+        }
+      }
+      // So: with B first, the asker's reader goes cancelled -> succeeded (an earlier run it could not
+      // hear, completed: the admitted change); with S first, Q's reader goes succeeded -> cancelled.
+    });
+  }
+
+  it.fails("RULE HOLE: a stop made at the same time as a claim can land before the claimed run; that run's pool, which heard it all along and read it succeeded, then reads cancelled", () => {
+    // Smallest history: a task with no runs. The asker (actor b) appends a
+    // stop S; at the same moment pool Q (actor a), not having S, takes the
+    // task as B, and B's code returns. Merged: [S, B succeeded]. A reader on
+    // Q's replica heard B from start to end and read succeeded; it now reads
+    // cancelled, and the task's result is gone. S is a record that was never
+    // open, so "a run earlier in the list that the reader could not hear" does
+    // not cover it.
+    for (const [askerDigit, poolDigit] of ACTOR_ORDERS) {
+      const { asker, returned } = history(askerDigit, poolDigit);
+      const before = taskState(returned, hearing('B'));
+      const merged = A.merge(A.clone(returned), asker);
+      expect(taskState(merged, hearing('B')), `asker ${askerDigit}, pool ${poolDigit}`).toBe(before);
+    }
+  });
+});
+
+describe('(2) two lost, an unheard open run, a concurrent claim, and the restart that records the third loss', () => {
+  // [lost, lost, A open by P]. Q cannot hear A and takes the task as B. P
+  // restarts, finds A, and records it as gone says: the third loss, failed.
+  const history = (pDigit: string, qDigit: string) => {
+    const lost = (id: string, index: number) => ({ ...makeRun({ kind: 'lost', pool: 'P' }, index), id });
+    const base = A.from<Task>(makeTask([lost('l1', 0), lost('l2', 1), { id: 'A', pool: 'P', start: 2 }]), actor('0'));
+    const onQ = A.change(replica(base, qDigit), (task) => {
+      expect(mayClaim(task, 'Q', 'this', hearsNone)).toBe(true);
+      claimRun(task, { id: 'B', pool: 'Q', start: 3 });
+    });
+    const onP = A.change(replica(base, pDigit), (task) => {
+      expect(orphans(task, 'P', () => false).map((run) => run.id)).toEqual(['A']);
+      const status = gone(task, 'A', 'this');
+      expect(status).toBe('failed');
+      endRun(task, 'A', { status, logs: [{ timestampMillis: 0, message: LOST_TOO_OFTEN }], end: 4 });
+    });
+    return { base, onQ, onP };
+  };
+
+  for (const [pDigit, qDigit] of ACTOR_ORDERS) {
+    it(`no reading of "ended" changes for a reader that hears the runs, in either merge order (P actor ${pDigit}, Q actor ${qDigit})`, () => {
+      const { base, onQ, onP } = history(pDigit, qDigit);
+      // before: P's reader (it held A) and anyone hearing A read running; Q's reader hears B only, and reads running
+      expect(taskState(base, hearing('A'))).toBe('running');
+      expect(taskState(onQ, hearing('B'))).toBe('running');
+      expect(taskState(onP, allHeard)).toBe('failed');
+      expect(taskError(onP, allHeard)).toBe(LOST_TOO_OFTEN);
+      for (const merged of [A.merge(A.clone(onP), onQ), A.merge(A.clone(onQ), onP)]) {
+        // B was appended after A, so A's record is first: failed, for every reader
+        expect(ids(merged)).toEqual(['l1', 'l2', 'A', 'B']);
+        for (const heard of [allHeard, hearsNone, hearing('B')]) {
+          expect(taskState(merged, heard)).toBe('failed');
+        }
+        // B yields, and whatever B's pool records, the reading stays failed
+        expect(stopReason(merged, 'B', 'this', hearing('B'))).toBe('yielded');
+        for (const status of STATUSES) {
+          const after = A.change(A.clone(merged), (task) => endRun(task, 'B', { status, result: 'B', end: 5 }));
+          expect(taskState(after, allHeard), status).toBe('failed');
+        }
+      }
+    });
+  }
+
+  it('two pools recording their third loss at once: both write failed; the first in the list is the ending', () => {
+    const lost = (id: string, index: number) => ({ ...makeRun({ kind: 'lost', pool: 'P' }, index), id });
+    const base = A.from<Task>(
+      makeTask([lost('l1', 0), lost('l2', 1), { id: 'A', pool: 'P', start: 2 }, { id: 'B', pool: 'Q', start: 3 }]),
+      actor('0'),
+    );
+    const record = (id: string, digit: string) =>
+      A.change(replica(base, digit), (task) => endRun(task, id, { status: gone(task, id, 'this'), logs: [{ timestampMillis: 0, message: LOST_TOO_OFTEN }], end: 4 }));
+    for (const merged of syncBoth(record('A', 'a'), record('B', 'b'))) {
+      expect(merged.runs.map((run) => run.status)).toEqual(['lost', 'lost', 'failed', 'failed']);
+      expect(endingRun(merged)?.id).toBe('A');
+      expect(taskError(merged, allHeard)).toBe(LOST_TOO_OFTEN);
     }
   });
 
-  it('a pool that cannot hear an open run of another pool may delist a flagged task; nothing wanted is lost by it', () => {
-    const task = makeTask([{ id: 'A', pool: 'X', start: 0 }], true);
-    expect(mayDelist(task, 'this', hearsNone)).toBe(true);
-    expect(mayDelist(task, 'this', hearing('A'))).toBe(false);
-    expect(isWanted(task)).toBe(false);
-    // and nobody lists it again
-    expect(mayRelist(task, 'none', hearsNone, 0, LAPSE_MS * 10)).toBe(false);
-  });
-
-  it('a flagged task whose open run has a pool gone for good: a reader with no ears reads stopping for ever, a listener cancelled after the lapse', () => {
-    const task = makeTask([{ id: 'A', pool: 'gone for good', start: 0 }], true);
-    expect(taskState(task, allHeard)).toBe('stopping');
-    expect(taskState(task, hearsNone)).toBe('cancelled');
-    // and with three lost runs besides, running for ever and failed
-    const lostToo = makeTask([makeRun(LOST, 0), makeRun(LOST, 1), makeRun(LOST, 2), { id: 'A', pool: 'gone', start: 3 }]);
-    expect(taskState(lostToo, allHeard)).toBe('running');
-    expect(taskState(lostToo, hearsNone)).toBe('failed');
+  it('two pools each recording a second loss at once write lost, lost: three lost and no ending, so the task is taken again, and its next loss is its failure', () => {
+    const lost = (id: string, index: number) => ({ ...makeRun({ kind: 'lost', pool: 'P' }, index), id });
+    const base = A.from<Task>(makeTask([lost('l1', 0), { id: 'A', pool: 'P', start: 1 }, { id: 'B', pool: 'Q', start: 2 }]), actor('0'));
+    const record = (id: string, digit: string) => A.change(replica(base, digit), (task) => endRun(task, id, { status: gone(task, id, 'this'), end: 4 }));
+    for (const merged of syncBoth(record('A', 'a'), record('B', 'b'))) {
+      expect(merged.runs.map((run) => run.status)).toEqual(['lost', 'lost', 'lost']);
+      expect(ending(merged, allHeard)).toBeNull();
+      expect(isWanted(merged)).toBe(true);
+      expect(mayClaim(merged, 'R', 'this', hearsNone)).toBe(true);
+      const again = A.change(merged, (task) => claimRun(task, { id: 'C', pool: 'R', start: 5 }));
+      expect(gone(again, 'C', 'this')).toBe('failed');
+    }
   });
 });
 
-describe('gone, at a restart', () => {
-  it('records lost even with an earlier open run in the list, heard by others or not: who else holds the task is not asked', () => {
-    const task = makeTask([{ id: 'E', pool: 'X', start: 0 }, { id: 'M', pool: 'P', start: 1 }]);
-    expect(gone(task, 'M', 'this')).toBe('lost');
-    // while a pool that hears E would have told M to yield
-    expect(stopReason(task, 'M', 'this', hearing('E'))).toBe('yielded');
+describe('(3) a document under an entry that is not a task', () => {
+  const NOT_TASKS = [{ title: 'not a task' }, { importUrl: 'x' }, { runs: [] }, { importUrl: 'x', runs: 'r' }, { importUrl: 'x', runs: {} }] as unknown as Task[];
+
+  it('is not wanted, not taken, not listed again, and its entry is not let go by a pool (it has no record that ends it)', () => {
+    for (const notATask of NOT_TASKS) {
+      const label = JSON.stringify(notATask);
+      expect(isTask(notATask), label).toBe(false);
+      expect(isWanted(notATask), label).toBe(false);
+      for (const heard of [allHeard, hearsNone]) {
+        expect(mayClaim(notATask, 'P', 'this', heard), label).toBe(false);
+        expect(mayRelist(notATask, 'none', heard, 0, LAPSE_MS), label).toBe(false);
+      }
+    }
+    // one with no runs at all reads as a task nobody has taken, and is never delisted by a pool
+    const noRuns = { title: 'not a task' } as unknown as Task;
+    expect(holder(noRuns, allHeard)).toBeNull();
+    expect(ending(noRuns, allHeard)).toBeNull();
+    expect(taskState(noRuns, allHeard)).toBe('waiting');
+    expect(mayDelist(noRuns, 'this')).toBe(false);
   });
 
-  it('three lost runs with a fourth run going on that is then lost: running while it is heard, failed after', () => {
-    const task = makeTask([makeRun(LOST, 0), makeRun(LOST, 1), makeRun(LOST, 2), { id: 'D', pool: 'P', start: 3 }]);
-    expect(taskState(task, hearing('D'))).toBe('running');
-    expect(stopReason(task, 'D', 'this', hearing('D'))).toBeNull();
-    expect(gone(task, 'D', 'this')).toBe('lost');
-    endRun(task, 'D', { status: 'lost', end: 4 });
-    expect(taskState(task, hearing('D'))).toBe('failed');
-    expect(taskError(task, hearing('D'))).toContain('stopped 3 times');
+  it.fails('RULE HOLE: the readings throw on a document whose `runs` is not a list, though anyone can write one and name it under a key', () => {
+    // holder and endingRun call `runs.find`, and ending iterates `runs`; on
+    // `runs: {}` or `runs: 'r'` these throw. The pool reads inside a guard,
+    // and ask and cancel ask isWanted first, so neither is harmed; but watch
+    // calls taskState and taskError in its listeners, so a watcher (a view)
+    // whose key names such a document throws on every change instead of
+    // reporting.
+    for (const notATask of NOT_TASKS) {
+      expect(() => taskState(notATask, allHeard), JSON.stringify(notATask)).not.toThrow();
+      expect(() => taskError(notATask, allHeard), JSON.stringify(notATask)).not.toThrow();
+      expect(() => mayDelist(notATask, 'this'), JSON.stringify(notATask)).not.toThrow();
+    }
+  });
+});
+
+describe('stops', () => {
+  const baseTask = (runs: Run[] = []) => A.from<Task>(makeTask(runs), actor('0'));
+  const open = (id: string, pool: string): Run => ({ id, pool, start: 0 });
+
+  it('two stops at once: two records, both cancelled; the reading is cancelled either way', () => {
+    for (const runs of [[], [open('A', 'P')]]) {
+      const base = baseTask(runs);
+      const one = A.change(replica(base, 'a'), (task) => void stopTask(task, { id: 'S1', at: 1 }));
+      const two = A.change(replica(base, 'b'), (task) => void stopTask(task, { id: 'S2', at: 1 }));
+      for (const merged of syncBoth(one, two)) {
+        expect(merged.runs.filter((run) => !run.pool).map((run) => run.status)).toEqual(['cancelled', 'cancelled']);
+        expect(ending(merged, hearsNone)).toBe('cancelled');
+        expect(taskState(merged, allHeard)).toBe(runs.length ? 'stopping' : 'cancelled');
+      }
+    }
+  });
+
+  it("a stop appended while the run's pool completes it: the stop lands after the run, whose status is the ending, in either merge order", () => {
+    for (const status of STATUSES) {
+      const base = baseTask([open('A', 'P')]);
+      const asker = A.change(replica(base, 'a'), (task) => void stopTask(task, { id: 'S', at: 1 }));
+      const pool = A.change(replica(base, 'b'), (task) => endRun(task, 'A', { status, result: 'A', end: 1 }));
+      // before: the asker's reader reads stopping while it hears A, cancelled once it does not
+      expect([taskState(asker, hearing('A')), taskState(asker, hearsNone)]).toEqual(['stopping', 'cancelled']);
+      for (const merged of [mergeAll(asker, pool), mergeAll(pool, asker)]) {
+        expect(ids(merged)).toEqual(['A', 'S']);
+        const want = FINALS.includes(status as FinalStatus) ? status : 'cancelled';
+        expect([ending(merged, allHeard), ending(merged, hearsNone)], status).toEqual([want, want]);
+      }
+    }
+  });
+
+  it("a stop on a task whose only open run's pool is dead: allHeard reads stopping for ever, a listener cancelled after the lapse; that pool, coming back, records cancelled", () => {
+    const task = makeTask([{ id: 'A', pool: 'dead', start: 0 }]);
+    expect(stopTask(task, { id: 'S', at: 1 })).toBe(true);
+    expect(taskState(task, allHeard)).toBe('stopping');
+    expect(taskState(task, hearsNone)).toBe('cancelled');
+    expect(isWanted(task)).toBe(false);
+    expect(mayDelist(task, 'this')).toBe(true);
+    expect(gone(task, 'A', 'this')).toBe('cancelled');
+    endRun(task, 'A', { status: gone(task, 'A', 'this'), end: 2 });
+    expect(taskState(task, allHeard)).toBe('cancelled');
+  });
+
+  it('stopTask on a task some record has ended writes nothing and says so', () => {
+    for (const kind of ['succeeded', 'failed', 'cancelled', 'stop'] as const) {
+      const task = makeTask([makeRun({ kind, pool: 'P' }, 0)]);
+      const before = copy(task);
+      expect(stopTask(task, { id: 'S', at: 1 })).toBe(false);
+      expect(task).toEqual(before);
+    }
   });
 });
 
@@ -1094,29 +1443,6 @@ describe('isTask', () => {
     ]) {
       expect(isTask(it), JSON.stringify(it)).toBe(false);
     }
-  });
-
-  const NOT_TASKS = [{ title: 'not a task' }, { importUrl: 'x' }, { runs: [] }, { importUrl: 'x', runs: 'r' }] as unknown as Task[];
-
-  it.fails('RULE HOLE: isWanted calls a document that is not a task wanted, so an asker waiting on one lists it again (mayRelist), and no pool will ever delist it', () => {
-    for (const notATask of NOT_TASKS) {
-      const label = JSON.stringify(notATask);
-      expect(mayDelist(notATask, 'this', hearsNone), label).toBe(false);
-      expect(isWanted(notATask), label).toBe(false);
-      expect(mayRelist(notATask, 'none', hearsNone, 0, LAPSE_MS), label).toBe(false);
-    }
-  });
-
-  it('a pool never takes a document that is not a task; every reading of it answers without throwing', () => {
-    for (const notATask of NOT_TASKS) {
-      expect(mayClaim(notATask, 'P', 'this', hearsNone), JSON.stringify(notATask)).toBe(false);
-    }
-    // a document with no runs at all reads as a task nobody has taken
-    const noRuns = { title: 'not a task' } as unknown as Task;
-    expect(holder(noRuns, allHeard)).toBeNull();
-    expect(ending(noRuns, allHeard)).toBeNull();
-    expect(taskState(noRuns, allHeard)).toBe('waiting');
-    expect(mayDelist(noRuns, 'this', allHeard)).toBe(false);
   });
 });
 
@@ -1336,25 +1662,8 @@ describe('isHeard', () => {
 
 // Merges on real Automerge
 
-/** An actor id made of one repeated hex digit, so that the actors sort as their digits do. */
-function actor(digit: string) {
-  return digit.repeat(32);
-}
-
-const replica = <T>(doc: A.Doc<T>, digit: string) => A.clone(doc, actor(digit));
-
-/** Merges each into a copy of the other: the two replicas after they sync. */
-function syncBoth<T>(x: A.Doc<T>, y: A.Doc<T>): [A.Doc<T>, A.Doc<T>] {
-  return [A.merge(A.clone(x), y), A.merge(A.clone(y), x)];
-}
-
-/** Merges every document into a copy of the first. */
-const mergeAll = <T>(first: A.Doc<T>, ...rest: A.Doc<T>[]) => rest.reduce((doc, other) => A.merge(doc, other), A.clone(first));
-
-const ids = (task: Task) => task.runs.map((run) => run.id);
-
 describe('merges', () => {
-  const baseTask = (runs: Run[] = [], flagged = false) => A.from<Task>(makeTask(runs, flagged), actor('0'));
+  const baseTask = (runs: Run[] = []) => A.from<Task>(makeTask(runs), actor('0'));
   const open = (id: string, pool: string): Run => ({ id, pool, start: 0 });
 
   it('two pools claiming at once: both replicas list the two runs in the same order and agree on the holder', () => {
@@ -1488,31 +1797,31 @@ describe('merges', () => {
     }
   });
 
-  it("a cancel flag set at the same time as the run's success reads 'succeeded' on both replicas", () => {
+  it("a stop appended at the same time as the run's success reads 'succeeded' on both replicas: the stop lands after the run", () => {
     const base = baseTask([open('A', 'P')]);
-    const asker = A.change(replica(base, 'a'), (task) => {
-      task.cancelled = true;
-    });
+    const asker = A.change(replica(base, 'a'), (task) => void stopTask(task, { id: 'S', at: 1 }));
     const pool = A.change(replica(base, 'b'), (task) => endRun(task, 'A', { status: 'succeeded', result: 42, end: 1 }));
     for (const doc of syncBoth(asker, pool)) {
-      expect(doc.cancelled).toBe(true);
+      expect(ids(doc)).toEqual(['A', 'S']);
       expect(ending(doc, hearsNone)).toBe('succeeded');
       expect(taskState(doc, allHeard)).toBe('succeeded');
       expect(taskResult(doc)).toBe(42);
     }
   });
 
-  it("three lost runs recorded by three pools at once read 'failed' everywhere, with no run marked failed", () => {
+  it('three runs lost by three pools at once, each having seen none lost: three lost records, no ending, and the task is wanted; the fourth start is the last', () => {
     const base = baseTask([open('A', 'P'), open('B', 'Q'), open('C', 'R')]);
     const [a, b, c] = (['A', 'B', 'C'] as const).map((id, n) =>
-      A.change(replica(base, 'abc'[n]), (task) => endRun(task, id, { status: 'lost', end: 1 })),
+      A.change(replica(base, 'abc'[n]), (task) => endRun(task, id, { status: gone(task, id, 'this'), end: 1 })),
     );
     for (const doc of [mergeAll(a, b, c), mergeAll(b, c, a), mergeAll(c, a, b)]) {
-      expect(ending(doc, allHeard)).toBe('failed');
-      expect(taskState(doc, allHeard)).toBe('failed');
-      expect(doc.runs.some((run) => run.status === 'failed')).toBe(false);
-      expect(taskError(doc, allHeard)).toContain('stopped 3 times');
-      expect(mayClaim(doc, 'S', 'this', hearsNone)).toBe(false);
+      expect(doc.runs.map((run) => run.status)).toEqual(['lost', 'lost', 'lost']);
+      expect(ending(doc, allHeard)).toBeNull();
+      expect(taskState(doc, allHeard)).toBe('waiting');
+      expect(taskError(doc, allHeard)).toBeNull();
+      expect(mayClaim(doc, 'S', 'this', hearsNone)).toBe(true);
+      const fourth = A.change(doc, (task) => claimRun(task, { id: 'D', pool: 'S', start: 2 }));
+      expect(gone(fourth, 'D', 'this')).toBe('failed');
     }
   });
 
@@ -1625,15 +1934,13 @@ describe('merges', () => {
     }
   });
 
-  it('a flag crossing two runs: the first run in list order is the ending, whether it is the one stopped for the flag or the one that succeeded without seeing it', () => {
+  it('a stop crossing two runs: the first run in list order is the ending, whether it is the one stopped for the stop or the one that succeeded without seeing it', () => {
     for (const [statusA, statusB] of [
       ['succeeded', 'cancelled'],
       ['cancelled', 'succeeded'],
     ] as const) {
       const base = baseTask([open('A', 'P'), open('B', 'Q')]);
-      const asker = A.change(replica(base, 'c'), (task) => {
-        task.cancelled = true;
-      });
+      const asker = A.change(replica(base, 'c'), (task) => void stopTask(task, { id: 'S', at: 1 }));
       const complete = (id: string, digit: string, status: FinalStatus) => {
         const start = status === 'cancelled' ? A.merge(replica(base, digit), asker) : replica(base, digit);
         return A.change(start, (task) => {
@@ -1644,51 +1951,12 @@ describe('merges', () => {
       const p = complete('A', 'a', statusA);
       const q = complete('B', 'b', statusB);
       for (const doc of [mergeAll(asker, p, q), mergeAll(q, p, asker), mergeAll(p, asker, q)]) {
-        expect(ids(doc)).toEqual(['A', 'B']);
+        expect(ids(doc)).toEqual(['A', 'B', 'S']);
         expect(ending(doc, allHeard), `${statusA} then ${statusB}`).toBe(statusA);
         expect(taskState(doc, allHeard)).toBe(statusA);
         expect(taskResult(doc)).toBe(statusA === 'succeeded' ? 'A' : undefined);
       }
     }
-  });
-
-  // An ending that no run wrote (three lost runs, or the flag) is read off a
-  // replica that has not yet received a claim made at the same time, on a
-  // replica where the task was still wanted. When the claim arrives, the open
-  // run it adds is heard from first sight, and the reading changes. No run the
-  // reader could not hear was completed: the reader had not seen the run at
-  // all. Smallest histories below; the first is the old hole (1) with the
-  // other replica order.
-
-  it.fails("RULE HOLE: an ending by three lost runs read on the restarted pool's replica changes when a claim made at the same time arrives, for a reader that hears every run", () => {
-    const base = baseTask([makeRun(LOST, 0), makeRun(LOST, 1), open('A', 'P')]);
-    // Q cannot hear A, and takes the task
-    const onQ = A.change(replica(base, 'b'), (task) => {
-      expect(mayClaim(task, 'Q', 'this', hearsNone)).toBe(true);
-      claimRun(task, { id: 'B', pool: 'Q', start: 3 });
-    });
-    // P restarts, and records A as gone says, before it has Q's claim
-    const onP = A.change(replica(base, 'a'), (task) => endRun(task, 'A', { status: gone(task, 'A', 'this'), end: 4 }));
-    expect(taskState(onP, allHeard)).toBe('failed');
-    const merged = A.merge(A.clone(onP), onQ);
-    // what it reads now, with every run heard: B holds it, and it has not ended
-    expect(taskState(merged, allHeard)).toBe('failed');
-  });
-
-  it.fails("RULE HOLE: an ending by the flag read on the asker's replica changes when a claim made at the same time arrives, for a reader that hears every run, and can end up 'succeeded'", () => {
-    const base = baseTask();
-    const asker = A.change(replica(base, 'a'), (task) => {
-      task.cancelled = true;
-    });
-    expect(taskState(asker, allHeard)).toBe('cancelled');
-    const onQ = A.change(replica(base, 'b'), (task) => {
-      expect(mayClaim(task, 'Q', 'this', hearsNone)).toBe(true);
-      claimRun(task, { id: 'B', pool: 'Q', start: 1 });
-    });
-    // Q's code returns before Q has the flag
-    const done = A.change(onQ, (task) => endRun(task, 'B', { status: 'succeeded', result: 1, end: 2 }));
-    const merged = A.merge(A.clone(asker), done);
-    expect(taskState(merged, allHeard)).toBe('cancelled');
   });
 
   describe('a queue key over a longer history', () => {
@@ -1740,27 +2008,32 @@ describe('merges', () => {
 describe('taskResult and taskError', () => {
   const run = (kind: Kind, index: number) => makeRun({ kind, pool: 'P' }, index);
 
-  it('give a result only for a task that succeeded, from the run that ended it', () => {
+  it('give a result only for a task that succeeded, from the record that ended it', () => {
     expect(taskResult(makeTask([run('yielded', 0), run('succeeded', 1)]))).toEqual({ from: 'r1' });
     expect(taskResult(makeTask([run('failed', 0), run('succeeded', 1)]))).toBeUndefined();
+    expect(taskResult(makeTask([run('stop', 0), run('succeeded', 1)]))).toBeUndefined();
     expect(taskResult(makeTask([run('lost', 0), run('lost', 1), run('lost', 2)]))).toBeUndefined();
-    expect(taskResult(makeTask([], true))).toBeUndefined();
     expect(taskResult(makeTask([{ id: 'A', pool: 'P', start: 0 }]))).toBeUndefined();
     expect(taskResult(undefined)).toBeUndefined();
   });
 
-  it("give a reason only for a task that failed: the failing run's last line, 'failed' without one, or the lost runs once nobody holds it", () => {
+  it("give a reason only for a task that failed: the failing record's last line, 'failed' without one; nothing is read from a count", () => {
     const task = makeTask([{ id: 'A', pool: 'P', start: 0 }]);
     endRun(task, 'A', { status: 'failed', logs: [{ timestampMillis: 1, message: 'first' }, { timestampMillis: 2, message: 'boom' }], end: 3 });
     expect(taskError(task, allHeard)).toBe('boom');
-    expect(taskError(makeTask([run('failed', 0)]), allHeard)).toBe('failed');
-    expect(taskError(makeTask([run('lost', 0), run('lost', 1), run('lost', 2)]), allHeard)).toContain('3 times');
-    const held = makeTask([run('lost', 0), run('lost', 1), run('lost', 2), { id: 'D', pool: 'P', start: 3 }]);
+    expect(taskError(makeTask([{ id: 'A', pool: 'P', start: 0, end: 1, status: 'failed' }]), allHeard)).toBe('failed');
+    // three losses with no record of the third as a failure: not failed
+    expect(taskError(makeTask([run('lost', 0), run('lost', 1), run('lost', 2)]), allHeard)).toBeNull();
+    // the third loss, as its pool records it
+    const third = makeTask([run('lost', 0), run('lost', 1), { id: 'A', pool: 'P', start: 2 }]);
+    endRun(third, 'A', { status: gone(third, 'A', 'this'), logs: [{ timestampMillis: 0, message: LOST_TOO_OFTEN }], end: 3 });
+    expect(taskError(third, hearsNone)).toBe(LOST_TOO_OFTEN);
+    // a failure after a heard run is no answer yet to one who hears it
+    const held = makeTask([{ id: 'D', pool: 'P', start: 0 }, run('failed', 1)]);
     expect(taskError(held, hearing('D'))).toBeNull();
-    expect(taskError(held, hearsNone)).toContain('3 times');
+    expect(taskError(held, hearsNone)).toBe(failedLine('r1'));
     expect(taskError(makeTask([run('succeeded', 0), run('failed', 1)]), allHeard)).toBeNull();
-    expect(taskError(makeTask([], true), allHeard)).toBeNull();
-    expect(taskError(makeTask([run('lost', 0), run('lost', 1)]), allHeard)).toBeNull();
+    expect(taskError(makeTask([run('stop', 0)]), allHeard)).toBeNull();
     expect(taskError(undefined, allHeard)).toBeNull();
   });
 });
