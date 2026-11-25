@@ -1583,6 +1583,12 @@ function lateDocs(late: string[], { withProgress = true } = {}) {
         }
       }
     },
+    /** Its query moves to `state` without the document arriving. */
+    tell(url: string, state: string) {
+      for (const listener of [...(listeners.get(url) ?? [])]) {
+        listener({ state });
+      }
+    },
     hold: () => void (holding = true),
     refuseHeld() {
       holding = false;
@@ -1747,4 +1753,88 @@ describe('the pool, when a document arrives after its listing', () => {
     await w.clock.advance(1);
     expect(runsOf(task)).toHaveLength(1);
   });
+
+  it('with a Repo whose findWithProgress throws, looks again a beat after the refusal', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url]);
+    late.docs.findWithProgress = () => {
+      throw new Error('Invalid AutomergeUrl');
+    };
+    w.pool('A', { repo: late.docs });
+    await settle();
+    late.arrive(task.url);
+    await w.clock.advance(BEAT_MS - 1);
+    expect(runsOf(task)).toEqual([]);
+    await w.clock.advance(1);
+    expect(runsOf(task)).toHaveLength(1);
+  });
+
+  it('goes on listening, once, through states other than ready', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url]);
+    const finds = counted(late.docs);
+    w.pool('A', { repo: late.docs });
+    await settle();
+    const asked = finds.count;
+    for (const state of ['loading', 'unavailable', 'failed', 'unavailable']) {
+      late.tell(task.url, state);
+    }
+    await settle();
+    expect(finds.count).toBe(asked);
+    expect(runsOf(task)).toEqual([]);
+    expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 0 });
+    late.arrive(task.url);
+    await settle();
+    expect(runsOf(task)).toHaveLength(1);
+    expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
+  });
+
+  it('listens anew, and only anew, for a task let go and then listed again', async () => {
+    const task = w.ask('k');
+    const late = lateDocs([task.url]);
+    w.pool('A', { repo: late.docs });
+    await settle();
+    w.queue.change((doc) => void delete doc.jobs.k);
+    await settle();
+    expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
+    w.queue.change((doc) => listTask(doc, 'k', { taskUrl: task.url, askedAt: 99, package: null }));
+    await settle();
+    expect(late.counts).toEqual({ subscribed: 2, unsubscribed: 1 });
+    late.arrive(task.url);
+    await settle();
+    expect(runsOf(task)).toHaveLength(1);
+    expect(late.counts).toEqual({ subscribed: 2, unsubscribed: 2 });
+  });
+
+  it('takes nothing and finds nothing when a document arrives while stop() waits for a run', async () => {
+    w.ask('a-running');
+    const task = w.ask('b-late');
+    const late = lateDocs([task.url]);
+    const finds = counted(late.docs);
+    const { pool } = w.pool('A', { repo: late.docs });
+    await settle();
+    expect(late.live()).toBe(1);
+    const stopping = pool.stop();
+    await settle();
+    const asked = finds.count;
+    late.arrive(task.url);
+    await settle();
+    expect(finds.count).toBe(asked);
+    expect(runsOf(task)).toEqual([]);
+    await w.clock.advance(GRACE_MS);
+    await stopping;
+    expect(late.live()).toBe(0);
+    expect(runsOf(task)).toEqual([]);
+  });
 });
+
+/** Counts the calls of a Docs' find from now on. */
+function counted(docs: Docs) {
+  const it = { count: 0 };
+  const find = docs.find;
+  docs.find = (url) => {
+    it.count++;
+    return find(url);
+  };
+  return it;
+}
