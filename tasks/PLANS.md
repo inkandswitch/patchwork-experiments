@@ -119,7 +119,8 @@ that one machine serves.
   crossing may take longer, and a hold too short costs one yielded run, as before. A task listed
   again by its asker after a lapse keeps its needs, which its document holds, but not the first
   asking's `near`, which only the entry did. Two crossings still start a task twice, and no advice
-  closes them: a pool's word that its slots have filled, still on its way as another ranks a task,
+  closes them: a pool's word about its slots (filled, freed, or done listening), still on its way
+  as another ranks a task (freed or done listening, both rank themselves first and take at once),
   and a run still on its way to a pool that may take the task by then. The second is widest where
   nobody is ranked (every pool heard full, or the only free one still listening): each then takes
   the task the moment a slot frees past the hold, in no order. Ranking full pools after free ones

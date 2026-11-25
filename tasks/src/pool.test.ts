@@ -2000,7 +2000,8 @@ describe('the preferred pool', () => {
 
   // Pools on machines of their own, each with its own Repo: a document
   // written on one reaches another only when the test has it cross; what the
-  // pools say on a channel is heard at once.
+  // pools say on a channel is heard at once, unless the test makes a pool's
+  // ears deaf, as if what is said were still on its way to it.
   const machines = async (specs: [string, { slots?: number }?][]) => {
     const repos = specs.map(() => new Repo({ network: [] } as any));
     const works = repos.map((repo) => countingWork(repo));
@@ -2014,8 +2015,9 @@ describe('the preferred pool', () => {
     const copies: DocHandle<any>[][] = [queues];
     const pools = specs.map(([id, more], i) => {
       const executor = new FakeExecutor(w.clock);
-      const pool = new Pool({ repo: repos[i] as Docs, id, name: id, slots: more?.slots ?? 1, has: [], executor, queues: { [queue.url]: 'any' }, ears: w.net.ears(), clock: w.clock });
-      return { id, pool, executor };
+      const ears = w.net.ears();
+      const pool = new Pool({ repo: repos[i] as Docs, id, name: id, slots: more?.slots ?? 1, has: [], executor, queues: { [queue.url]: 'any' }, ears, clock: w.clock });
+      return { id, pool, executor, ears };
     });
     await settleAll();
     await w.clock.advance(LISTEN_MS);
@@ -2082,6 +2084,29 @@ describe('the preferred pool', () => {
     expect(poolsOf(onP)).toEqual(['O']);
     expect(p.executor.workers.flatMap((worker) => worker.jobs).map((job) => job.key)).toEqual(['busy']);
     expect(o.executor.workers).toHaveLength(1);
+  });
+
+  it("two machines, a pool's word that its slot has freed still on its way as a task near it is listed: each ranks itself first, so both take it at once; once the runs cross, the later gives way (the first crossing README names)", async () => {
+    const m = await machines([['P'], ['O']]);
+    const [p, o] = m.pools;
+    const [busy] = m.make('busy', ['pool:P']);
+    m.list(busy, 'P');
+    await m.cross();
+    expect(poolsOf(busy)).toEqual(['P']);
+    // O has heard P full; P's word that its slot has freed does not reach O yet
+    o.ears.deaf = true;
+    p.executor.of(lastRun(busy).id).events.done('busy');
+    await m.settleAll();
+    const [onP, onO] = m.make('task');
+    const listedAt = w.clock.now();
+    m.list(onP, 'P');
+    await m.cross(m.queue);
+    o.ears.deaf = false;
+    expect([poolsOf(onP), poolsOf(onO)]).toEqual([['P'], ['O']]);
+    expect([startsOf(onP), startsOf(onO)]).toEqual([[listedAt], [listedAt]]);
+    await m.cross();
+    const aborted = [p, o].flatMap(({ executor }) => executor.workers.flatMap((worker) => worker.aborts.map((it) => it.reason)));
+    expect(aborted).toEqual(['yielded']);
   });
 
   it('a pool held back for a pool that then stops: its last word, no slots, has the task ranked anew, and the other takes it the moment that word arrives', async () => {

@@ -42,8 +42,10 @@ starts that much later. A pool that has served a queue for less than two and a h
 has no slots there and takes nothing, and one that stops says the same as its last word; neither is
 ranked, and a task held back for a pool that says so is ranked anew at once. A pool that has
 listened and hears no other with slots never waits. Two crossings can still start a task twice: a
-pool's word that its slots have filled, on its way to another pool as that one ranks a task, and a
-run one pool has taken, on its way to another that may take the task by then (its turn has begun,
+pool's word about its slots (that they have filled, that one has freed, or that it has done
+listening), on its way to another pool as that one ranks a task, so that the two rank differently
+(a word that a slot has freed or that listening is done can have both take the task at once); and
+a run one pool has taken, on its way to another that may take the task by then (its turn has begun,
 or every turn is over). The later of the two runs then gives way to the earlier, which goes on. A
 task never fails for want of a device: one that needs what no pool serving its queue has waits, and
 the queue browser says what it waits for.
