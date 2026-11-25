@@ -26,7 +26,7 @@ import { findCall } from "../session/calls.js"
 
 beforeEach(_resetIds)
 
-const interrupted = () => resultBlock("c1", INTERRUPTED, { isError: true, summary: "interrupted" })
+const interrupted = () => resultBlock("c1", INTERRUPTED, { isError: true, summary: "interrupted", placeholder: true })
 const KINDS = {
   interrupted,
   found: () => resultBlock("c1", "25 hits for waterline", { summary: "grep waterline" }),

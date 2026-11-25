@@ -19,6 +19,8 @@
  *                tool is in ("web", "files"), where some were kept under the
  *                tool's own id.
  *
+ *   results      the result a runner wrote for a call it found cut off says
+ *                that it is one (`placeholder`), where it was told by its wording.
  *   denied calls a call a person refused has a result saying so, as every
  *                other outcome does. Some from long ago had none.
  *
@@ -28,6 +30,7 @@
  */
 
 import { DENIED_RESULT } from "../session/request.js"
+import { INTERRUPTED } from "../session/recovery.js"
 
 /** The group each tool's grants on a target are kept under, for those in one. */
 const GROUPS = { web_fetch: "web", web_search: "web", web_capture: "web", web_import: "web", http_request: "web", fs_write: "files", fs_edit: "files", fs_delete: "files", source_file: "files" }
@@ -76,6 +79,12 @@ export function migrateSession(doc, { now = Date.now() } = {}) {
     } else if (turn.role === "user") {
       const found = PROMPTS.find(([pattern]) => pattern.test(text))
       if (found) notice(block, found[1], text)
+    }
+  }
+
+  for (const turn of doc.turns ?? []) {
+    for (const block of turn.blocks ?? []) {
+      if (block.type === "result" && block.summary === "interrupted" && String(block.output ?? "") === INTERRUPTED) block.placeholder = true
     }
   }
 

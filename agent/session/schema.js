@@ -26,7 +26,7 @@
  *   Block = { type: "text",      id, text }
  *         | { type: "reasoning", id, text }
  *         | { type: "call",      id, tool, input, where, status, runner, generation, ask }
- *         | { type: "result",    id, callId, output, isError, image, doc }
+ *         | { type: "result",    id, callId, output, isError, image, doc, file, summary, placeholder }
  *         | { type: "event",     id, source, label, text, count, at }
  *         | { type: "notice",    id, kind, text, data }
  *

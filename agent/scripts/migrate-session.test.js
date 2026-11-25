@@ -11,6 +11,7 @@ import { needsWork } from "../kernel/runner.js"
 import { toRequest } from "../session/request.js"
 import { unknownBlocks } from "../session/schema.js"
 import { covered, grantOffers } from "../session/grants.js"
+import { INTERRUPTED } from "../session/recovery.js"
 
 const turn = (role, blocks, at = 1) => ({ id: `t${Math.random()}`, role, at, author: null, blocks })
 const text = (t) => ({ type: "text", id: `b${Math.random()}`, text: t })
@@ -125,6 +126,20 @@ describe("a version 1 session", () => {
     const doc = v1({ lease })
     migrateSession(doc)
     expect(doc.lease).toEqual(lease)
+  })
+
+  it("a takeover's result for a call it found cut off says that it is one, and the call's own result is the one sent", () => {
+    const doc = v1()
+    doc.turns.push(
+      turn("assistant", [{ type: "call", id: "c1", tool: "doc_edit", input: {}, where: "worker", status: "done", runner: null, generation: null }]),
+      turn("tool", [{ type: "result", id: "r1", callId: "c1", output: INTERRUPTED, isError: true, summary: "interrupted" }]),
+      turn("tool", [{ type: "result", id: "r2", callId: "c1", output: "edited", isError: false, summary: "edited" }]),
+    )
+    migrateSession(doc)
+    expect(doc.turns[2].blocks[0].placeholder).toBe(true)
+    expect(doc.turns[3].blocks[0].placeholder).toBeUndefined()
+    const sent = toRequest(doc).messages.flatMap((m) => m.content).filter((part) => part.type === "result")
+    expect(sent.map((part) => part.output)).toEqual(["edited"])
   })
 
   it("a refused call that had no result gets one, where the model will read it", () => {

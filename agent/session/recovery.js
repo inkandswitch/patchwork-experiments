@@ -84,7 +84,7 @@ export function resolveOrphans(doc, opts = {}) {
     else if (move(found.block, "abandon")) closed.push(call)
   }
   if (!doc.turns) doc.turns = []
-  if (closed.length) doc.turns.push(makeTurn("tool", closed.map((call) => resultBlock(call.id, INTERRUPTED, { isError: true, summary: "interrupted" }))))
+  if (closed.length) doc.turns.push(makeTurn("tool", closed.map((call) => resultBlock(call.id, INTERRUPTED, { isError: true, summary: "interrupted", placeholder: true }))))
   return orphans.length
 }
 
@@ -123,5 +123,5 @@ export function stopReconnecting(doc) {
 
 /** Is this the result a takeover writes for a call it found cut off? */
 export function isInterruptedResult(block) {
-  return block?.summary === "interrupted" && String(block.output ?? "") === INTERRUPTED
+  return block?.placeholder === true
 }

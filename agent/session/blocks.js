@@ -189,6 +189,10 @@ export function resultBlock(callId, output, opts = {}) {
     // raw output's first line is a poor substitute (a JSON result renders as
     // the single character "{").
     summary: opts.summary ?? null,
+    // True on the result a runner writes for a call it found cut off, whose
+    // own result may still arrive (recovery.js): the request then sends that
+    // one, of the two.
+    placeholder: opts.placeholder ?? false,
   }
 }
 
