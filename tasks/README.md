@@ -158,7 +158,9 @@ A host needs at least one `--queue` or `--new-queue`, and says whose code it run
 `--local` packages, or else `--accept-any`, never both. SIGINT or SIGTERM stops it: its runs are
 told `stopping`, their threads ended at most five seconds later, and each run recorded lost, to be
 taken again. What a run that has ended wrote is on the sync server already, so a host stopped
-the moment a run reads succeeded loses none of it.
+the moment a run reads succeeded loses none of it, unless that run's log says some of it had not
+reached the server in half a minute, or that it stayed on the machine (its thread was not
+connected to the server as the run ended).
 
 ## Using it from another package
 
