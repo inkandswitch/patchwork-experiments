@@ -276,11 +276,23 @@ try {
     const states = [];
     const asked = runKey(Q, { importUrl: SOLVE, input: { steps: 25, stepMs: 200, tag: "failover" }, key: "failover" }, (v) => states.at(-1) !== v.state && states.push(v.state));
     asked.catch(() => {});
-    // the one open run left once any second claim has yielded
+    // The one open run left once any second claim has yielded. The other
+    // pool's claim can reach this process after the first one does, so a run
+    // counts only once it has been the one open run for two seconds: killing
+    // the pool of a run that is about to yield would test nothing.
+    let candidate = null;
+    let since = 0;
     const open = await until(async () => {
       const t = await taskOf("failover").catch(() => null);
       const runs = t?.runs ?? [];
-      return runs.length && runs.filter((r) => !r.status).length === 1 && states.includes("running") ? runs.find((r) => !r.status) : null;
+      const opens = runs.filter((r) => !r.status);
+      const one = opens.length === 1 && states.includes("running") ? opens[0] : null;
+      if (one?.id !== candidate?.id) {
+        candidate = one;
+        since = Date.now();
+        return null;
+      }
+      return one && Date.now() - since >= 2000 ? one : null;
     }, 30000, "one run holding");
     await sleep(1000);
     const victim = open.pool === A.pool ? A : B;
