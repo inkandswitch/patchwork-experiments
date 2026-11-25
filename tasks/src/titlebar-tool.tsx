@@ -5,14 +5,17 @@ import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/sl
 import type { OpenDocumentEventDetail } from '@inkandswitch/patchwork-elements';
 import type { Queue } from './datatype';
 import { getAccountDocUrl, getTaskQueues } from './helpers';
+import { ownQueue, ownQueueOf, storageUrlOf, type TasksStorage } from './task-client.js';
 import { QUEUE_TOOL_ID } from './ids';
 import { useDoc, WithTasksRepo } from './use-doc';
 import { waitingWork } from './task-rules.js';
 import { startPoolHost, type PoolHostStatus } from './browser/pool-host';
 
-// The badge for each queue this account's browsers serve, and what starts
+// The badge for each queue this person's browsers serve, and what starts
 // this page's pool host (browser/pool-host.ts): wherever the badge is on
-// screen, this browser serves its queues. It's offered two ways because
+// screen, this browser serves its queues. Where the person has no queue of
+// their own being served, it offers one: to make it, or, if they left it, to
+// open it, where it can be joined again. It's offered two ways because
 // frames differ in where they put such things. Threepane has a title bar it
 // fills from a list on the account; the tiling frame has no title bar slots
 // but shows every system-tray component there is. Both may be mounted in one
@@ -56,11 +59,32 @@ function poolWords(pool: PoolHostStatus): [string, string] {
 }
 
 const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo; pool: PoolHostStatus }) => {
-  // The account is the site's document, so it comes from the site's Repo. The
-  // queues come from this tab's tasks Repo (see tasks-repo.ts).
-  const account = useDoc<any>(getAccountDocUrl, props.hostRepo);
-  const queueUrls = () =>
-    account() ? (Object.keys(getTaskQueues(account())) as AutomergeUrl[]) : [];
+  // The account and the task storage it names are the site's documents, so
+  // they come from the site's Repo. The queues come from this tab's tasks
+  // Repo (see tasks-repo.ts).
+  const account = useDoc<unknown>(getAccountDocUrl, props.hostRepo);
+  const storageUrl = () => storageUrlOf(account()) as AutomergeUrl | null;
+  const storage = useDoc<TasksStorage>(storageUrl, props.hostRepo);
+  /** Whether what is served is known: the account has loaded, and the storage it names, if any. */
+  const known = () => !!account() && (!storageUrl() || !!storage());
+  const queueUrls = () => Object.keys(getTaskQueues(storage())) as AutomergeUrl[];
+  const own = () => ownQueueOf(storage()) as AutomergeUrl | null;
+
+  const [making, setMaking] = createSignal(false);
+  const [problem, setProblem] = createSignal<string | null>(null);
+  const makeOwn = () => {
+    setMaking(true);
+    setProblem(null);
+    ownQueue(props.hostRepo, props.element).then(
+      () => setMaking(false),
+      (error: Error) => {
+        setMaking(false);
+        setProblem(error.message);
+      },
+    );
+  };
+  const open = (url: AutomergeUrl) =>
+    props.element.dispatchEvent(createOpenEvent({ url, toolId: QUEUE_TOOL_ID }));
 
   return (
     <div class="task-titlebar-list">
@@ -69,10 +93,10 @@ const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo; pool: PoolHos
           each={queueUrls()}
           fallback={
             // On no queue: say so, or the badge would just vanish.
-            <Show when={account()}>
+            <Show when={known()}>
               <span
                 class="task-titlebar task-titlebar--none"
-                title="This browser serves no task queue. Open one and choose Join queue."
+                title="This browser serves no task queue. Make one of your own, or open a queue and choose Join queue."
               >
                 No task queues
               </span>
@@ -84,6 +108,38 @@ const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo; pool: PoolHos
           )}
         </For>
       </WithTasksRepo>
+      <Show when={known() && !(own() && queueUrls().includes(own()!))}>
+        <Show
+          when={own()}
+          fallback={
+            <button
+              class="task-titlebar task-titlebar--offer"
+              data-offer="make"
+              disabled={making()}
+              title="Make a task queue of your own, which this browser serves for any code"
+              onClick={makeOwn}
+            >
+              {making() ? 'Making your queue…' : 'Make my queue'}
+            </button>
+          }
+        >
+          {(url) => (
+            <button
+              class="task-titlebar task-titlebar--offer"
+              data-offer="open"
+              title="Your own task queue is not served here. Open it to join it again."
+              onClick={() => open(url())}
+            >
+              My queue
+            </button>
+          )}
+        </Show>
+      </Show>
+      <Show when={problem()}>
+        <span class="task-titlebar task-titlebar--problem" role="alert">
+          {problem()}
+        </span>
+      </Show>
     </div>
   );
 };

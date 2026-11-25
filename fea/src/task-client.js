@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v3]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v4]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -9,7 +9,9 @@
  * in the tasks package.
  *
  * It also holds how the task system's messages travel (`send`, `listen`),
- * because hearing them is half of following a task.
+ * because hearing them is half of following a task; and, for a page, where
+ * a person's list of served queues and their own queue are kept
+ * (`ownQueue`, `tasksStorage`).
  */
 
 import {
@@ -641,4 +643,206 @@ export function served(repo, queueUrl, onChange) {
     clearTimeout(timer);
     unlisten?.();
   };
+}
+
+// A person's queues
+//
+// Which queues a person's browsers serve, and which queue is their own, are
+// kept in the task system's tool storage on their account: a document of its
+// own that the account names under `toolStorage[TASKS_STORAGE_ID]`. Patchwork's
+// frame makes that document the first time a tool asks its tool-storage
+// provider for it, and links it into the account; nothing here writes the
+// account. Reading goes straight off the account's map, so that only looking
+// makes nothing.
+
+/** The tool id the task system's storage is kept under on an account (`account.toolStorage[TASKS_STORAGE_ID]`). */
+export const TASKS_STORAGE_ID = 'tasks-next';
+
+/** The datatype of a queue made by the tasks package (and by `ownQueue`). */
+export const QUEUE_DATATYPE_ID = 'task-queue-next';
+
+/** The title of a queue of one's own: it is only ever shown to its owner. */
+export const OWN_QUEUE_TITLE = 'My tasks';
+
+/** How long a page waits for its frame's tool-storage provider to answer before saying there is none. */
+export const PROVIDER_WAIT_MS = 5_000;
+
+/**
+ * How a served queue is listed: `true` runs any code from it; `{ packages }`
+ * only code in those packages.
+ * @typedef {true | { packages: string[] }} QueueSetting
+ */
+
+/**
+ * The task system's storage document.
+ * @typedef {object} TasksStorage
+ * @property {{ [queueUrl: string]: QueueSetting }} [served]  The queues this person's browsers serve.
+ * @property {string} [own]  The queue of this person's own (see `ownQueue`).
+ */
+
+/**
+ * The url of the task system's storage document an account names, or null
+ * if it names none.
+ * @param {unknown} account
+ * @returns {string | null}
+ */
+export function storageUrlOf(account) {
+  const storage = /** @type {any} */ (account)?.toolStorage;
+  if (!storage || typeof storage !== 'object' || !Object.hasOwn(storage, TASKS_STORAGE_ID)) {
+    return null;
+  }
+  const url = storage[TASKS_STORAGE_ID];
+  return typeof url === 'string' && url.startsWith('automerge:') ? url : null;
+}
+
+/**
+ * The queues a storage document says to serve, each with its setting; none
+ * for a document that is not there or says nothing. Only the list's own keys
+ * count.
+ * @param {unknown} storage
+ * @returns {{ [queueUrl: string]: QueueSetting }}
+ */
+export function servedOf(storage) {
+  const served = /** @type {any} */ (storage)?.served;
+  if (!served || typeof served !== 'object' || Array.isArray(served)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(served));
+}
+
+/**
+ * The url of the queue a storage document says is this person's own, or null.
+ * @param {unknown} storage
+ * @returns {string | null}
+ */
+export function ownQueueOf(storage) {
+  const own = /** @type {any} */ (storage)?.own;
+  return typeof own === 'string' && own.startsWith('automerge:') ? own : null;
+}
+
+/**
+ * Asks the providers above `element` for one value of `selector`, by the
+ * `patchwork:subscribe` event and port that Patchwork's providers answer
+ * (patchwork-providers' `accept`): resolves to the first value sent back, or
+ * to undefined if nothing answers within `waitMs`. It unsubscribes either way.
+ * @param {any} element
+ * @param {{ type: string, [key: string]: unknown }} selector
+ * @param {number} waitMs
+ * @returns {Promise<unknown>}
+ */
+function askProvider(element, selector, waitMs) {
+  return new Promise((resolve) => {
+    const target = element.closest?.('patchwork-view') ?? element;
+    const channel = new MessageChannel();
+    const port = channel.port2;
+    let done = false;
+    const finish = (/** @type {unknown} */ value) => {
+      if (done) {
+        return;
+      }
+      done = true;
+      clearTimeout(timer);
+      try {
+        port.postMessage({ type: 'unsubscribe' });
+      } catch {
+        // the provider's end is closed already
+      }
+      port.close();
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(undefined), waitMs);
+    port.onmessage = (/** @type {MessageEvent} */ event) => {
+      if (event.data?.type === 'change') {
+        finish(event.data.value);
+      }
+    };
+    port.start?.();
+    target.dispatchEvent(
+      new CustomEvent('patchwork:subscribe', {
+        detail: { selector, port: channel.port1 },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  });
+}
+
+/**
+ * The handle on this person's task storage document, through `repo`, the
+ * Repo the page's account is in (the site's). If the account names none
+ * yet, the frame's tool-storage provider is asked for it from `element` (the
+ * element a tool was mounted on), which makes it and links it into the
+ * account. Rejects, having written nothing, where there is no account open
+ * (outside a page, in Node) or no provider answers within PROVIDER_WAIT_MS.
+ * @param {any} repo
+ * @param {any} element
+ * @returns {Promise<any>}  a DocHandle of {@link TasksStorage}
+ */
+export async function tasksStorage(repo, element) {
+  const account = /** @type {any} */ (globalThis).accountDocHandle;
+  if (!account || typeof element?.dispatchEvent !== 'function') {
+    throw new Error('Task queues can only be kept from a Patchwork page with your account open.');
+  }
+  let url = storageUrlOf(account.doc());
+  if (!url) {
+    const answer = await askProvider(
+      element,
+      { type: 'patchwork:tool-storage', toolId: TASKS_STORAGE_ID },
+      PROVIDER_WAIT_MS,
+    );
+    url = typeof answer === 'string' && answer.startsWith('automerge:') ? answer : null;
+  }
+  if (!url) {
+    throw new Error('This page has nowhere to keep your task queues, so nothing was changed.');
+  }
+  try {
+    return await repo.find(url);
+  } catch {
+    throw new Error('The list of your task queues could not be found, so nothing was changed.');
+  }
+}
+
+/**
+ * The url of this person's own queue, made the first time it is asked for:
+ * a queue whose audience is its owner, so it is served for any code. Making
+ * it is one change to the task storage (see `tasksStorage`, whose rejections
+ * this passes on): the pointer `own`, if it is still unset, and the queue on
+ * the served list. `repo` is the Repo the page's account is in; the queue is
+ * made there too.
+ *
+ * Two tabs or machines that make one at the same moment each make a queue
+ * and set `own`; the merge keeps one pointer, and both read that one from
+ * then on. If the served list was there before, the other queue stays on it,
+ * served and empty, since nothing is asked of a queue no pointer names. If
+ * each made the list in that same change, the merge keeps one list whole,
+ * the one made with the pointer that stands, and the other queue is on none.
+ * One made here while this tab waited for its own to save is named by
+ * nothing, and left.
+ * @param {any} repo
+ * @param {any} element
+ * @returns {Promise<string>}
+ */
+export async function ownQueue(repo, element) {
+  const storage = await tasksStorage(repo, element);
+  const already = ownQueueOf(storage.doc());
+  if (already) {
+    return already;
+  }
+  const queue = repo.create({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} });
+  // Saved before the storage names it, so that a pool told to serve it finds it.
+  await repo.flush([queue.documentId]);
+  storage.change((/** @type {TasksStorage} */ doc) => {
+    if (ownQueueOf(doc)) {
+      return;
+    }
+    doc.own = queue.url;
+    if (!doc.served || typeof doc.served !== 'object' || Array.isArray(doc.served)) {
+      doc.served = {};
+    }
+    doc.served[queue.url] = true;
+  });
+  await repo.flush([storage.documentId]).catch(() => {
+    // it is saved a moment later all the same
+  });
+  return /** @type {string} */ (ownQueueOf(storage.doc()));
 }

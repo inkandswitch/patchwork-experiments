@@ -7,8 +7,10 @@
 //
 // - The pool's id is this profile's (pool-id.ts), so the next tab's pool owns
 //   the runs the last one started and records those it lost.
-// - It serves the queues the account lists (`__servedQueues__`, see
-//   helpers.ts), and is told again whenever that list changes.
+// - It serves the queues listed in the task system's tool storage on the
+//   account (`account.toolStorage[TASKS_STORAGE_ID]`, see helpers.ts), and is
+//   told again whenever the account's pointer, that document or its list
+//   changes. An account that names no such document serves nothing.
 // - On `pagehide` or `freeze` it ends its pool at once and lets the lock go,
 //   and on `pageshow` or `resume` asks again. A page kept in the
 //   back/forward cache, or frozen in the background, would otherwise hold
@@ -33,6 +35,7 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
 import { acceptanceOf } from '../acceptance';
 import { getAccountDocUrl, getTaskQueues } from '../helpers';
+import { storageUrlOf } from '../task-client.js';
 import { getRepoConfig } from '../repo-config';
 import { BEAT_MS, LAPSE_MS } from '../task-rules.js';
 import { browserPoolId, browserPoolName } from './pool-id';
@@ -183,7 +186,11 @@ class BrowserPoolHost implements PoolHost {
     };
   }
 
-  /** Follows the account's list of queues, from the site's Repo. Only the first Repo given is used. */
+  /**
+   * Follows the queues to serve, from the site's Repo: the account, the
+   * storage document it names, and that document's list. Only the first
+   * Repo given is used.
+   */
   followAccount(repo: Repo) {
     if (this.following) {
       return;
@@ -198,14 +205,60 @@ class BrowserPoolHost implements PoolHost {
       return;
     }
     this.following = true;
+    const accountUrl = url;
+    // A document that is not here yet is never an error, only something to
+    // try again: both finds below retry until they have it, or until what
+    // they were finding is no longer wanted.
+    let storageUrl: AutomergeUrl | null = null;
+    let unfollowStorage = () => {};
+    const followStorage = (next: AutomergeUrl | null) => {
+      if (next === storageUrl) {
+        return;
+      }
+      unfollowStorage();
+      storageUrl = next;
+      if (!next) {
+        unfollowStorage = () => {};
+        this.setQueues({});
+        return;
+      }
+      // Until the newly named document is here, the list being served stays
+      // as it was: the pointer changes only when the document is first made
+      // (from none, when nothing was served) or when two makings merge.
+      let wanted = true;
+      let retry: ReturnType<typeof setTimeout> | undefined;
+      let stop = () => {};
+      const load = () =>
+        repo.find<unknown>(next).then(
+          (handle) => {
+            if (!wanted) {
+              return;
+            }
+            const show = () => this.setQueues(servedQueuesOf(handle.doc()));
+            handle.on('change', show);
+            stop = () => handle.off('change', show);
+            show();
+          },
+          () => {
+            if (wanted) {
+              retry = setTimeout(load, 2_000);
+            }
+          },
+        );
+      unfollowStorage = () => {
+        wanted = false;
+        clearTimeout(retry);
+        stop();
+      };
+      void load();
+    };
     const load = () =>
-      repo.find<unknown>(url).then(
+      repo.find<unknown>(accountUrl).then(
         (handle) => {
-          const show = () => this.setQueues(servedQueuesOf(handle.doc()));
+          const show = () => followStorage(storageUrlOf(handle.doc()) as AutomergeUrl | null);
           handle.on('change', show);
           show();
         },
-        // not here yet: never an error, only something to try again
         () => setTimeout(load, 2_000),
       );
     void load();
@@ -394,10 +447,10 @@ class BrowserPoolHost implements PoolHost {
   }
 }
 
-/** What an account's list says to serve: each queue with whose code to run from it. */
-function servedQueuesOf(account: unknown): ServedQueues {
+/** What the task storage document's list says to serve: each queue with whose code to run from it. */
+function servedQueuesOf(storage: unknown): ServedQueues {
   const queues: ServedQueues = {};
-  for (const [url, setting] of Object.entries(getTaskQueues(account))) {
+  for (const [url, setting] of Object.entries(getTaskQueues(storage))) {
     const acceptance = acceptanceOf(setting);
     if (acceptance !== undefined) {
       queues[url as AutomergeUrl] = acceptance;

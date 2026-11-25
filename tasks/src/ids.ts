@@ -6,8 +6,11 @@
 // winning from one page load to the next. With names of its own, this one
 // never meets the other.
 
-/** The datatype of a queue made here. */
-export const QUEUE_DATATYPE_ID = 'task-queue-next';
+// The datatype of a queue made here, and the tool id the task system's
+// storage is kept under on an account (`account.toolStorage[...]`). Both are
+// defined in the asker's client, which makes a person's own queue from any
+// package that carries it, and are the same names here.
+export { QUEUE_DATATYPE_ID, TASKS_STORAGE_ID } from './task-client.js';
 
 export const QUEUE_TOOL_ID = 'task-queue-next-browser';
 export const TITLEBAR_TOOL_ID = 'task-titlebar-next';

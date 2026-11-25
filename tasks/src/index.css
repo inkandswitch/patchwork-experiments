@@ -475,6 +475,14 @@
   white-space: pre-wrap;
 }
 
+/* the mark on a queue that is the person's own, beside its title */
+
+.tq-own {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  vertical-align: middle;
+}
+
 /* ── the titlebar badge ────────────────────────────────────────────────── */
 
 .task-titlebar-list {
@@ -508,6 +516,20 @@
   border-style: dashed;
   cursor: default;
   opacity: 0.7;
+}
+
+/* the offer to make, or open, the person's own queue */
+
+.task-titlebar--offer {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.task-titlebar--problem {
+  border-color: var(--tq-bad);
+  color: var(--tq-bad);
+  cursor: default;
+  white-space: normal;
 }
 
 .task-titlebar-dot {

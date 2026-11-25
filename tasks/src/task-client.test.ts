@@ -12,20 +12,30 @@ import { generateAutomergeUrl, initSubduction, Repo, type AutomergeUrl, type Doc
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LOCAL_MESSAGES_CHANNEL,
+  OWN_QUEUE_TITLE,
+  PROVIDER_WAIT_MS,
+  QUEUE_DATATYPE_ID,
+  TASKS_STORAGE_ID,
   ask,
   cancel,
   inSamePackage,
   listen,
+  ownQueue,
+  ownQueueOf,
   packageOf,
   parseAutomergeImport,
   run,
   send,
   served,
+  servedOf,
   stamper,
+  storageUrlOf,
+  tasksStorage,
   watch,
   type Serving,
   type TaskView,
 } from './task-client.js';
+import { joinTaskQueue, leaveTaskQueue } from './helpers';
 import { BEAT_MS, LAPSE_MS, LOST_TOO_OFTEN, MAX_LOG_LINES, claimRun, delistTask, endRun, listTask, type Queue, type RunStatus, type Task } from './task-rules.js';
 
 await initSubduction();
@@ -1062,5 +1072,277 @@ describe('import URLs', () => {
       expect(parseAutomergeImport(odd), odd).toBeNull();
       expect(packageOf(odd), odd).toBeNull();
     }
+  });
+});
+
+// A person's own queue
+
+/**
+ * A frame's tool-storage provider, as Patchwork's ToolStorageProvider answers
+ * through patchwork-providers' `accept()`: on a `patchwork:subscribe` event
+ * for `{ type: 'patchwork:tool-storage', toolId }` it stops the event, listens
+ * on the event's port for `{ type: 'unsubscribe' }`, and later posts
+ * `{ type: 'change', value: url }` there: the url the account names under
+ * `toolStorage[toolId]`, or of a document it makes and links there first.
+ */
+function toolStorageProvider(target: EventTarget, repo: Repo, account: DocHandle<any>) {
+  const asked: unknown[] = [];
+  const onSubscribe = (event: Event) => {
+    const { selector, port } = (event as CustomEvent).detail;
+    if (selector?.type !== 'patchwork:tool-storage' || typeof selector.toolId !== 'string' || !selector.toolId) {
+      return;
+    }
+    asked.push(selector);
+    const toolId: string = selector.toolId;
+    event.stopPropagation();
+    let alive = true;
+    port.onmessage = (message: MessageEvent) => {
+      if (message.data?.type === 'unsubscribe' && alive) {
+        alive = false;
+        port.close();
+      }
+    };
+    void Promise.resolve()
+      .then(() => {
+        const existing = account.doc().toolStorage?.[toolId];
+        if (existing) {
+          return existing;
+        }
+        const made = repo.create<any>({ '@patchwork': { type: 'patchwork:tool-storage' } });
+        account.change((doc) => {
+          if (!doc.toolStorage) doc.toolStorage = {};
+          if (!doc.toolStorage[toolId]) doc.toolStorage[toolId] = made.url;
+        });
+        return account.doc().toolStorage[toolId];
+      })
+      .then((url) => {
+        if (alive && url) port.postMessage({ type: 'change', value: url });
+      });
+  };
+  target.addEventListener('patchwork:subscribe', onSubscribe);
+  return { asked, stop: () => target.removeEventListener('patchwork:subscribe', onSubscribe) };
+}
+
+/** Waits for a promise while letting fake time, the Repo's work and port messages (which come on the real event loop) go on. */
+async function outcome<T>(promise: Promise<T>, advanceMs = 0): Promise<{ value?: T; error?: Error }> {
+  let result: { value?: T; error?: Error } | undefined;
+  promise.then(
+    (value) => (result = { value }),
+    (error) => (result = { error }),
+  );
+  if (advanceMs) {
+    await vi.advanceTimersByTimeAsync(advanceMs);
+  }
+  for (let i = 0; i < 200 && !result; i++) {
+    await vi.advanceTimersByTimeAsync(0);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  if (!result) {
+    throw new Error('it never settled');
+  }
+  return result;
+}
+
+describe('ownQueue', () => {
+  const g = globalThis as any;
+  afterEach(() => {
+    delete g.accountDocHandle;
+  });
+
+  /** A page: an account open on it, with its handle where the site puts it, and the element a tool was mounted on. */
+  function page(account: object = {}) {
+    const repo = newRepo();
+    const accountHandle = repo.create<any>(account);
+    g.accountDocHandle = accountHandle;
+    const element = new EventTarget();
+    return { repo, account: accountHandle, element };
+  }
+  const handleCount = (repo: Repo) => Object.keys(repo.handles).length;
+
+  it('returns the queue the storage already names, asking nobody and writing nothing', async () => {
+    const { repo, account, element } = page();
+    const storage = repo.create<any>({ own: 'automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P', served: {} });
+    account.change((doc) => (doc.toolStorage = { [TASKS_STORAGE_ID]: storage.url }));
+    const provider = toolStorageProvider(element, repo, account);
+    const heads = [A.getHeads(account.doc()), A.getHeads(storage.doc())];
+    const handles = handleCount(repo);
+    const got = await outcome(ownQueue(repo, element));
+    expect(got.value).toBe('automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P');
+    expect(provider.asked).toEqual([]);
+    expect([A.getHeads(account.doc()), A.getHeads(storage.doc())]).toEqual(heads);
+    expect(handleCount(repo)).toBe(handles);
+  });
+
+  it('on an account with no storage: asks the provider once, makes one queue of the datatype\'s shape, sets `own` and serves it for any code', async () => {
+    const { repo, account, element } = page();
+    const provider = toolStorageProvider(element, repo, account);
+    const got = await outcome(ownQueue(repo, element));
+    expect(got.error).toBeUndefined();
+    expect(provider.asked).toEqual([{ type: 'patchwork:tool-storage', toolId: TASKS_STORAGE_ID }]);
+    const storageUrl = storageUrlOf(account.doc())!;
+    expect(storageUrl).toMatch(/^automerge:/);
+    const storage = await repo.find<any>(storageUrl as AutomergeUrl);
+    expect(ownQueueOf(storage.doc())).toBe(got.value);
+    expect(servedOf(storage.doc())).toEqual({ [got.value!]: true });
+    const queue = await repo.find<any>(got.value as AutomergeUrl);
+    expect(queue.doc()).toEqual({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} });
+  });
+
+  it('is made once: asked again, it returns the same queue and makes and writes nothing', async () => {
+    const { repo, account, element } = page();
+    const provider = toolStorageProvider(element, repo, account);
+    const first = (await outcome(ownQueue(repo, element))).value;
+    const storage = await repo.find<any>(storageUrlOf(account.doc()) as AutomergeUrl);
+    const heads = [A.getHeads(account.doc()), A.getHeads(storage.doc())];
+    const handles = handleCount(repo);
+    const again = (await outcome(ownQueue(repo, element))).value;
+    expect(again).toBe(first);
+    expect(provider.asked).toHaveLength(1);
+    expect(handleCount(repo)).toBe(handles);
+    expect([A.getHeads(account.doc()), A.getHeads(storage.doc())]).toEqual(heads);
+  });
+
+  it('a person who left their own queue gets it back from ownQueue unserved: their leaving stands', async () => {
+    const { repo, account, element } = page();
+    toolStorageProvider(element, repo, account);
+    const own = (await outcome(ownQueue(repo, element))).value!;
+    const storage = await repo.find<any>(storageUrlOf(account.doc()) as AutomergeUrl);
+    storage.change((doc) => delete doc.served[own]);
+    expect((await outcome(ownQueue(repo, element))).value).toBe(own);
+    expect(servedOf(storage.doc())).toEqual({});
+  });
+
+  /** Two replicas of one account and its task storage, the storage holding `storage` to begin with. */
+  function twoReplicas(storage: object) {
+    const one = page();
+    const storageA = one.repo.create<any>({ '@patchwork': { type: 'patchwork:tool-storage' }, ...storage });
+    one.account.change((doc) => (doc.toolStorage = { [TASKS_STORAGE_ID]: storageA.url }));
+    const repoB = newRepo();
+    replicate(repoB, one.account);
+    const storageB = replicate(repoB, storageA);
+    return { one, repoB, storageA, storageB };
+  }
+
+  it('two replicas making one at once leave one pointer, which both follow after the merge; with no list before, the list that stands is the one made with that pointer', async () => {
+    const { one, repoB, storageA, storageB } = twoReplicas({});
+    const [a, b] = await Promise.all([outcome(ownQueue(one.repo, one.element)), outcome(ownQueue(repoB, one.element))]);
+    expect(a.value).toMatch(/^automerge:/);
+    expect(b.value).toMatch(/^automerge:/);
+    expect(a.value).not.toBe(b.value);
+    storageA.merge(storageB);
+    storageB.merge(storageA);
+    const winner = ownQueueOf(storageA.doc());
+    expect([a.value, b.value]).toContain(winner);
+    expect(ownQueueOf(storageB.doc())).toBe(winner);
+    // Both made the list in the same change as the pointer, so the same
+    // replica's list and pointer stand: the other queue is named by nothing.
+    expect(servedOf(storageA.doc())).toEqual({ [winner!]: true });
+    expect(servedOf(storageB.doc())).toEqual({ [winner!]: true });
+    const handles = [handleCount(one.repo), handleCount(repoB)];
+    expect((await outcome(ownQueue(one.repo, one.element))).value).toBe(winner);
+    expect((await outcome(ownQueue(repoB, one.element))).value).toBe(winner);
+    expect([handleCount(one.repo), handleCount(repoB)]).toEqual(handles);
+  });
+
+  it('two replicas making one at once where a list was there before: one pointer both follow; both queues stay served beside what was, the other one empty', async () => {
+    const before = 'automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P';
+    const { one, repoB, storageA, storageB } = twoReplicas({ served: { [before]: { packages: ['automerge:pkg'] } } });
+    const [a, b] = await Promise.all([outcome(ownQueue(one.repo, one.element)), outcome(ownQueue(repoB, one.element))]);
+    storageA.merge(storageB);
+    storageB.merge(storageA);
+    const winner = ownQueueOf(storageA.doc());
+    expect([a.value, b.value]).toContain(winner);
+    expect(ownQueueOf(storageB.doc())).toBe(winner);
+    const all = { [before]: { packages: ['automerge:pkg'] }, [a.value!]: true, [b.value!]: true };
+    expect(servedOf(storageA.doc())).toEqual(all);
+    expect(servedOf(storageB.doc())).toEqual(all);
+    expect((await outcome(ownQueue(repoB, one.element))).value).toBe(winner);
+  });
+
+  it('with no provider to answer: rejects plainly after PROVIDER_WAIT_MS, and has written and made nothing', async () => {
+    const { repo, account, element } = page();
+    const heads = A.getHeads(account.doc());
+    const handles = handleCount(repo);
+    const early = ownQueue(repo, element);
+    const before = await outcome(Promise.race([early, new Promise((resolve) => setTimeout(resolve, PROVIDER_WAIT_MS - 1, 'waiting'))]), PROVIDER_WAIT_MS - 1);
+    expect(before.value).toBe('waiting');
+    const got = await outcome(early, 1);
+    expect(got.error?.message).toBe('This page has nowhere to keep your task queues, so nothing was changed.');
+    expect(A.getHeads(account.doc())).toEqual(heads);
+    expect(account.doc().toolStorage).toBeUndefined();
+    expect(handleCount(repo)).toBe(handles);
+  });
+
+  it('a provider that answers something that is no url is no answer', async () => {
+    const { repo, account, element } = page();
+    element.addEventListener('patchwork:subscribe', (event) => {
+      event.stopPropagation();
+      (event as CustomEvent).detail.port.postMessage({ type: 'change', value: 42 });
+    });
+    const got = await outcome(ownQueue(repo, element), PROVIDER_WAIT_MS);
+    expect(got.error?.message).toBe('This page has nowhere to keep your task queues, so nothing was changed.');
+    expect(account.doc().toolStorage).toBeUndefined();
+  });
+
+  it('called from Node, with no account open and no element: rejects plainly and makes nothing', async () => {
+    const repo = newRepo();
+    const handles = handleCount(repo);
+    for (const element of [undefined, new EventTarget()]) {
+      const got = await outcome(ownQueue(repo, element));
+      expect(got.error?.message).toBe('Task queues can only be kept from a Patchwork page with your account open.');
+      expect((await outcome(tasksStorage(repo, element))).error?.message).toBe(got.error?.message);
+    }
+    expect(handleCount(repo)).toBe(handles);
+  });
+
+  it('with an account open but no element to ask from: rejects the same way, and writes nothing', async () => {
+    const { repo, account } = page();
+    const heads = A.getHeads(account.doc());
+    const got = await outcome(ownQueue(repo, undefined));
+    expect(got.error?.message).toBe('Task queues can only be kept from a Patchwork page with your account open.');
+    expect(A.getHeads(account.doc())).toEqual(heads);
+  });
+
+  it('a queue it makes can be asked for work under the usual rules', async () => {
+    const { repo, account, element } = page();
+    toolStorageProvider(element, repo, account);
+    const own = (await outcome(ownQueue(repo, element))).value as AutomergeUrl;
+    const asked = (await outcome(ask(repo, own, { importUrl: CODE, key: 'k' }))).value!;
+    const queue = await repo.find<Queue>(own);
+    expect(queue.doc()!.jobs.k.taskUrl).toBe(asked.taskUrl);
+  });
+});
+
+describe('the served list on two replicas (helpers.ts writers on real documents)', () => {
+  const Q1 = 'automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P' as AutomergeUrl;
+  const Q2 = 'automerge:3x7cLUJEpjP2EvgFz948PS6YhfhK' as AutomergeUrl;
+  const Q0 = 'automerge:bstquQmZKqNMFBRgzm57aYAKFgX' as AutomergeUrl;
+  const both = (start: object, a: (doc: any) => void, b: (doc: any) => void) => {
+    const repo = newRepo();
+    const one = repo.create<any>(start);
+    const other = replicate(newRepo(), one);
+    one.change(a);
+    other.change(b);
+    one.merge(other);
+    other.merge(one);
+    expect(servedOf(one.doc())).toEqual(servedOf(other.doc()));
+    return servedOf(one.doc());
+  };
+
+  it('two joins at once where the list was there: both stand', () => {
+    expect(both({ served: { [Q0]: true } }, (d) => joinTaskQueue(d, Q1), (d) => joinTaskQueue(d, Q2))).toEqual({
+      [Q0]: true,
+      [Q1]: true,
+      [Q2]: true,
+    });
+  });
+
+  it('two joins at once where neither had a list: one list stands whole, the other join is lost (and reads as not joined)', () => {
+    const served = both({}, (d) => joinTaskQueue(d, Q1), (d) => joinTaskQueue(d, Q2));
+    expect([JSON.stringify({ [Q1]: true }), JSON.stringify({ [Q2]: true })]).toContain(JSON.stringify(served));
+  });
+
+  it('a join and a leave of different queues at once: both stand', () => {
+    expect(both({ served: { [Q0]: true } }, (d) => joinTaskQueue(d, Q1), (d) => leaveTaskQueue(d, Q0))).toEqual({ [Q1]: true });
   });
 });
