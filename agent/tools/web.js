@@ -511,6 +511,7 @@ function readableOf(ref, { response, body }) {
  */
 export const webFetch = {
   id: "web_fetch",
+  scoped: true,
   name: "Read a web page",
   description: [
     "Fetch a web page and return the start of its readable text. Use it to read documentation, articles, papers, or anything you found with web_search.",
@@ -595,6 +596,7 @@ export const webFetch = {
 
 export const webSearch = {
   id: "web_search",
+  scoped: true,
   name: "Search the web",
   // A search is about no document and no site. Left to the default rule it was
   // keyed on the session's subject, and "any document" on its card wrote

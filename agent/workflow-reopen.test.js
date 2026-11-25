@@ -22,9 +22,10 @@ import { handleStore } from "./kernel/store.js"
 import { buildToolset } from "./assembly/toolset.js"
 import { initSession, STATUS } from "./session/schema.js"
 import { makeTurn, textBlock } from "./session/blocks.js"
-import { PLAN, STEP, STATE, initPlan, states, STEP_TOOL_IDS } from "./workflow/plan.js"
+import { PLAN, STEP, STATE, initPlan, states } from "./workflow/plan.js"
 import { ensureDriver, _resetDrivers, describeProgress } from "./workflow/driver.js"
 import { workflowReopen, workflowKeep, workflowEditSteps, workflowDecide, workflowAddSteps, workflowRequest } from "./workflow/tools.js"
+import { STEP_TOOL_IDS, SCOPED_TOOL_IDS } from "./fixtures/tool-ids.js"
 
 await initSubduction()
 
@@ -268,7 +269,6 @@ describe("a step's requests", () => {
     const ids = async (doc) => (await buildToolset(doc, { skipPlugins: true })).tools.map((t) => t.id)
     expect(await ids({ config: { workflows: { enabled: true } } })).not.toContain("workflow_request")
     expect(await ids({ config: {}, workflow: { planUrl: "automerge:x", stepId: "a" } })).toEqual(expect.arrayContaining(STEP_TOOL_IDS))
-    const { SCOPED_TOOL_IDS } = await import("./kernel/scope.js")
     expect(SCOPED_TOOL_IDS).toContain("workflow_request")
     await expect(workflowRequest.execute({ why: "" })).rejects.toThrow(/Say `why`/)
     await expect(workflowRequest.execute({ why: "x" })).rejects.toThrow(/`why` alone asks for nothing/)

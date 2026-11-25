@@ -229,7 +229,7 @@ try {
 
   const { initSession } = await import("/agent/session/schema.js")
   const { makeTurn, textBlock } = await import("/agent/session/blocks.js")
-  const { initPlan, WORKFLOW_TOOL_IDS } = await import("/agent/workflow/plan.js")
+  const { initPlan } = await import("/agent/workflow/plan.js")
   const folder = repo.create({ "@patchwork": { type: "folder" }, title: "Task", docs: [] })
   const plan = repo.create({})
   plan.change((d) => initPlan(d, { title: "Probe", goal: "g", steps: [{ id: "s", title: "Register", prompt: "p", why: "w", where: "worker", tier: "fast" }] }))
@@ -238,7 +238,7 @@ try {
   session.change((d) => {
     initSession(d, { title: "Probe · Register", config: { providerId: "probe", model: null } })
     d.workflow = { planUrl: plan.url, stepId: "s" }
-    d.tools = { where: "worker", disabled: WORKFLOW_TOOL_IDS }
+    d.tools = { where: "worker" }
     d.turns.push(makeTurn("user", [textBlock("Make an assumptions register for the task folder " + folder.url + " and read it back.")]))
   })
   out.folder = folder.url

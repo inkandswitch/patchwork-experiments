@@ -20,6 +20,7 @@ import { makeTurn, textBlock } from "./session/blocks.js"
 import { PLAN, STEP, DEFAULT_TIER_MODELS } from "./workflow/plan.js"
 import { _resetDrivers } from "./workflow/driver.js"
 import { guardedFetch } from "./net/guard.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 
 await initSubduction()
 
@@ -33,6 +34,7 @@ const STEPS = [
 function runSession(handle, { provider, toolset = { tools: [], schemas: [], get: () => null }, ctx = {} }) {
   const store = handleStore(handle, A.splice)
   const runner = new SessionRunner({
+    builtins: BUILTIN_TOOLS,
     store,
     ctx: { ...ctx, sessionUrl: handle.url },
     buildToolset: async (doc) => (typeof toolset === "function" ? toolset(doc) : toolset),

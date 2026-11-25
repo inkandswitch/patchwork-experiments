@@ -80,16 +80,16 @@ async function boot(urls, repoPort, prepare) {
 
   const { initAutomergeHere, tryHostImport } = await import("../host/import.js")
   await initAutomergeHere(prepare)
-  const [store, runner, events, tools, providers, guard, plugins] = await Promise.all([
+  const [store, runner, events, agent, providers, guard, plugins] = await Promise.all([
     import("../kernel/store.js"),
     import("../kernel/runner.js"),
     import("../kernel/events.js"),
-    import("../assembly/toolset.js"),
+    import("../assembly/agent.js"),
     import("../providers/index.js"),
     import("../net/guard.js"),
     import("./worker-plugins.js"),
   ])
-  lib = { ...store, ...runner, ...events, ...tools, ...providers, ...guard }
+  lib = { ...store, ...runner, ...events, ...agent, ...providers, ...guard }
   catalogue = plugins.createPluginCatalogue()
   // The registry module, for plugin tools as ctx.plugins, holding the page's
   // views and datatypes (runners/worker-plugins.js createRegistryMirror).
@@ -121,7 +121,7 @@ function broadcast(sessionUrl, message) {
 }
 
 async function startSession({ sessionUrl, subject, key, providerId, system, account }, port) {
-  const { handleStore, SessionRunner, createEvents, buildToolset, getProvider, modelInfo, guardedFetch, SYNC_SERVERS } = lib
+  const { handleStore, SessionRunner, createEvents, AGENT, getProvider, modelInfo, guardedFetch, SYNC_SERVERS } = lib
   const existing = runners.get(sessionUrl)
   if (existing) {
     existing.ports.add(port)
@@ -135,6 +135,7 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
 
   const entry = { ports: new Set([port]), key }
   const runner = new SessionRunner({
+    ...AGENT,
     store,
     runnerUrl: `worker-${Math.random().toString(36).slice(2, 10)}`,
     // The account's documents come from the tab: a worker has no
@@ -161,10 +162,8 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
       fetchImpl: guardedFetch({ fetch: (url, init) => fetch(url, init), deny: [self.location.origin, ...SYNC_SERVERS] }),
     },
     // The page registry's plugins, as the page last described them: the
-    // same tools a tab's session gets, loaded here where they can be.
-    buildToolset: (doc) => buildToolset(doc, { plugins: () => catalogue.tools() }),
-    // And for research steps, those of them that declare `scoped: true`
-    // (kernel/scope.js admitScoped), with the step's confined context.
+    // same tools a tab's session gets, loaded here where they can be. A
+    // research step is offered those that declare `scoped: true`.
     pluginTools: () => catalogue.tools(),
     getProvider: async () => getProvider(providerId ?? "openrouter"),
     // The key is passed in per session rather than read from storage: a worker

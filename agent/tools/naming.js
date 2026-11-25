@@ -24,6 +24,7 @@ import { cleanTitle, MAX_TITLE } from "../session/title.js"
 
 export const sessionTitleTool = {
   id: "session_title",
+  needs: ["session.write"],
   name: "Name this session",
   description: [
     "Set the title of this session, so it is findable later in the user's document list.",

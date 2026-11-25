@@ -14,7 +14,7 @@ import { splice } from "@automerge/automerge/slim"
 
 import { handleStore } from "../kernel/store.js"
 import { SessionRunner } from "../kernel/runner.js"
-import { buildToolset } from "../assembly/toolset.js"
+import { AGENT } from "../assembly/agent.js"
 import { getProvider } from "../providers/index.js"
 import { initSession, STATUS } from "../session/schema.js"
 import { say, decide } from "../kernel/loop.js"
@@ -72,16 +72,16 @@ const started = Date.now()
 const trail = []
 
 const runner = new SessionRunner({
+  ...AGENT,
   store,
   runnerUrl: `node-probe-${process.pid}`,
   ctx: {
     repo, splice, subject: subject.url, sessionUrl: session.url, direct: true,
     fetchImpl: nodeFetch({ sync: SYNC }),
   },
-  buildToolset: (doc) => buildToolset(doc),
   getProvider: async () => getProvider("openrouter"),
   getKey: () => KEY,
-  canRun: (where) => where === "worker" || where === "task",
+  canRun: (where) => where === "worker",
   onEvent: (event) => {
     const at = Date.now() - started
     if (event.type === "call-start") trail.push(`${at}ms  → ${event.tool}(${JSON.stringify(event.input).slice(0, 120)})`)

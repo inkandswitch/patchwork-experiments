@@ -28,18 +28,17 @@ import { liftBudget } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
-import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
-import { scopeOf, webScope, sameScope, SCOPED_TOOL_IDS } from "../kernel/scope.js"
+import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
+import { scopeOf, webScope, sameScope } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
 import { documentIdOf } from "../documents/doc-urls.js"
 import { releaseNowPermitted } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
 import { waitingIn } from "./waiting.js"
-import { checkStepTools } from "../kernel/placement.js"
+import { toolsetOf } from "../kernel/toolset.js"
+import { checkStepTools } from "./step-tools.js"
 
 const { stringifyAutomergeUrl } = AutomergeRepo
-
-export { WORKFLOW_TOOL_IDS } from "./plan.js"
 
 /** How long a burst of changes is gathered before the tick it asks for. */
 export const SETTLE_MS = 150
@@ -148,15 +147,16 @@ export function _resetDrivers() {
 }
 
 export class WorkflowDriver {
-  constructor({ repo, handle, startSession, notify = null, catalogue = null, toolset = null, sensitive = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
+  constructor({ repo, handle, startSession, notify = null, tools = null, sensitive = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
     this.repo = repo
     this.handle = handle
     this.startSession = startSession
     this.notify = notify
-    // Every tool this page knows, for checking a step's prompt before it
-    // starts (kernel/placement.js checkStepTools); this page's own by default.
-    this.catalogue = catalogue
-    this.toolset = toolset
+    // Every tool the runner that started this has, as `{ builtins, plugins }`:
+    // for checking a step's prompt before it starts (step-tools.js), and for
+    // judging a step's waiting calls against a grant (`toolset`). Without it
+    // neither is done.
+    this.tools = tools
     // Documents a grant never covers: the account and its module settings.
     this.sensitive = sensitive ?? (() => [globalThis.accountDocHandle?.doc?.()?.moduleSettingsUrl, globalThis.accountDocHandle?.url].filter(Boolean))
     this.now = now
@@ -454,10 +454,11 @@ export class WorkflowDriver {
           for (const key of missing) d.grants[key] = merged[key]
         })
       }
-      if (missing.length || this.unreleased(handle)) {
+      const toolset = missing.length || this.unreleased(handle) ? await this.toolset() : null
+      if (toolset) {
         releaseNowPermitted({
           store: handleStore(handle, null),
-          toolset: this.toolset ?? (await builtinToolset()),
+          toolset,
           subject: doc.subject ?? null,
           sensitive: this.sensitive(),
         })
@@ -632,8 +633,9 @@ export class WorkflowDriver {
         // A worker step gets every tool that runs without the page, built-in
         // or plugin, decided by whichever runner builds its toolset — so it
         // can run anywhere a repo is (kernel/placement.js). Neither kind can start a
-        // workflow of its own.
-        d.tools = step.where === "worker" ? { where: "worker", disabled: WORKFLOW_TOOL_IDS } : { disabled: WORKFLOW_TOOL_IDS }
+        // workflow of its own: a step is not offered the tools for it
+        // (session/capabilities.js).
+        if (step.where === "worker") d.tools = { where: "worker" }
         // What the person already allowed the orchestrator carries into its
         // steps; asking again for each one would put the same question in front
         // of them once per step.
@@ -659,7 +661,19 @@ export class WorkflowDriver {
   }
 
   /**
-   * Check a step's prompt against the tools it would get (kernel/placement.js), and
+   * The built-in tools a full-access session can have, as a toolset: what a
+   * step's waiting calls are judged against when a grant reaches it. Plugin
+   * tools are not in it: a call to one is left for its own session's runner
+   * to release. Null without `tools`.
+   */
+  async toolset() {
+    if (!this.tools) return null
+    const { builtins = [] } = (await this.tools()) ?? {}
+    return toolsetOf(builtins.filter((tool) => tool.scoped !== "only"))
+  }
+
+  /**
+   * Check a step's prompt against the tools it would get (step-tools.js), and
    * act on the answer: a worker step that needs the page is moved there, to
    * start when the page is free; one that cannot work as written fails with
    * the reason, which the orchestrator is told like any failure. True when
@@ -668,7 +682,8 @@ export class WorkflowDriver {
   async misplaced(step) {
     let verdict = null
     try {
-      verdict = checkStepTools(step, await (this.catalogue ?? defaultCatalogue)(), { scopedIds: SCOPED_TOOL_IDS, orchestratorIds: WORKFLOW_TOOL_IDS })
+      if (!this.tools) return false
+      verdict = checkStepTools(step, await this.tools())
     } catch {
       return false // no catalogue is no check, not no step
     }
@@ -863,7 +878,7 @@ export function requestCalls(doc) {
   const calls = []
   for (const turn of doc?.turns ?? []) {
     for (const block of turn.blocks ?? []) {
-      if (block.type === "call" && STEP_TOOL_IDS.includes(block.tool) && block.status === CALL.done) calls.push(block)
+      if (block.type === "call" && block.tool === REQUEST_TOOL_ID && block.status === CALL.done) calls.push(block)
     }
   }
   return calls
@@ -993,60 +1008,3 @@ function keptLine(plan, stepId = null) {
 
 /** The grant that lets a web-only step fetch anything. */
 export const WEB_GRANT = "web@*"
-
-/** The built-in toolset, loaded late: the toolset imports this module. */
-async function builtinToolset() {
-  return (await import("../assembly/builtin.js")).builtinToolset()
-}
-
-/**
- * Every tool this page knows, built-in and plugin, as kernel/placement.js reads
- * them: metadata only, nothing loaded. Loaded late: the toolset imports this
- * module.
- */
-async function defaultCatalogue() {
-  const { BUILTIN_TOOLS, SCOPED_ONLY_IDS } = await import("../assembly/builtin.js")
-  const { pluginDescriptions } = await import("../assembly/plugins.js")
-  const builtins = BUILTIN_TOOLS.filter((t) => !SCOPED_ONLY_IDS.includes(t.id)).map((t) => ({ id: t.id, where: t.where, builtin: true }))
-  const taken = new Set(BUILTIN_TOOLS.map((t) => t.id))
-  const plugins = (await pluginDescriptions()).filter((d) => !taken.has(d.id)).map((d) => ({ id: d.id, where: d.where ?? "worker", scoped: d.scoped === true }))
-  return [...builtins, ...plugins]
-}
-
-/**
- * Drive a plan from this page: steps run in this tab's runners, and news goes
- * to the orchestrating session through `events` — the workflow tool's own, or,
- * when the plan's view starts the driver after a reload, the orchestrator's
- * runner here.
- */
-export async function drivePlanHere(planUrl, { repo, events = null, startSession = null }) {
-  const existing = getDriver(planUrl)
-  if (existing) {
-    existing.kick()
-    return existing
-  }
-  const { startTabRunner } = await import("../runners/tab.js")
-  // A caller with its own way of running sessions (a test, a runner outside
-  // the browser) passes it; in a page, steps run in this tab.
-  const start =
-    startSession ??
-    (async (handle) => {
-      const entry = await startTabRunner(handle, { repo, subject: handle.doc()?.subject ?? null })
-      return { runner: entry?.runner ?? null, listen: (fn) => entry?.listeners?.add(fn) }
-    })
-
-  let channels = events
-  if (!channels) {
-    const plan = (await repo.find(planUrl)).doc()
-    if (plan?.sessionUrl) {
-      const entry = await startTabRunner(await repo.find(plan.sessionUrl), { repo, subject: plan.subject ?? null })
-      channels = entry?.ctx?.events?.forTool("workflow") ?? null
-    }
-  }
-
-  return ensureDriver(planUrl, {
-    repo,
-    startSession: start,
-    notify: channels ? (url, title) => channels.open(url, { label: `workflow: ${title}` }) : null,
-  })
-}

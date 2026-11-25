@@ -17,6 +17,8 @@
 
 import { hostImport, tryHostImport, workerPreparation } from "../host/import.js"
 import { resolveImportMap } from "../host/urls.js"
+import { pluginDescriptions } from "../assembly/plugins.js"
+import { packageIndex, PACKAGE_TYPES } from "./worker-plugins.js"
 
 const WORKER_NAME = "patchwork-agent-runner"
 
@@ -89,11 +91,8 @@ export async function connectWorkerRunner({
   // This page's agent:tool plugins, for the worker to list and load. Sent
   // again when the registry changes, so a package installed, removed or
   // edited reaches the worker's next run as it reaches this page's.
-  // Loaded late: the tool registry imports package_test, which imports this.
   // With them, where each tool, view and datatype came from (packageIndex), so
   // the worker can hand a session a package's usage guide as a tab would.
-  const { pluginDescriptions } = await import("../assembly/plugins.js")
-  const { packageIndex, PACKAGE_TYPES } = await import("./worker-plugins.js")
   const host = await tryHostImport("plugins")
   const getRegistry = (type) => host?.getRegistry?.(type) ?? null
   const registry = getRegistry("agent:tool")

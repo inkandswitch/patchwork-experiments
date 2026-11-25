@@ -27,19 +27,10 @@
 import { AutomergeRepo } from "../host/modules.js"
 import { documentIdOf } from "../documents/doc-urls.js"
 import { readable } from "../documents/media.js"
-import { declaredWhere } from "./placement.js"
-import { toSchema } from "./tool.js"
+import { declaresScoped, scopedTools, toolsetOf } from "./toolset.js"
 import { isKernel, refuse } from "./kernel-repo.js"
 
 const { isValidAutomergeUrl, stringifyAutomergeUrl } = AutomergeRepo
-
-/**
- * The built-in tools a research step gets, and only these. A plugin joins
- * them only by declaring `scoped: true` (`admitScoped`, below): a plugin is
- * someone else's code, and a step fetches anything without asking, so a
- * plugin is never there by default.
- */
-export const SCOPED_TOOL_IDS = ["web_search", "web_fetch", "http_request", "source_read", "source_list", "finding_write", "session_recall", "workflow_request"]
 
 export const NOT_A_SOURCE = "Not one of this workflow's sources."
 
@@ -300,73 +291,44 @@ export function scopedRepo(repo, ledger, { stepId }) {
   })
 }
 
-/** Does this plugin metadata declare a tool a research step may have? Scoped as exactly true, and declared a worker tool. */
-const declaresScoped = (meta) => meta?.scoped === true && declaredWhere(meta) === "worker"
-
 export const UNDECLARED_MID_RUN = "This plugin was registered again during the run without declaring `scoped: true`; a research step cannot run it."
 
 /**
- * The plugin tools a research step may have, out of `plugins` — what this
- * runner's own registry loaded (assembly/plugins.js loadPluginTools). Only a
- * plugin that declares `scoped: true` at the top level of its metadata, a
- * worker-tier tool, whose id is no built-in's: the declaration is the
- * package's word that its tool works only through the context it is handed,
- * and that context is the step's confined one (`confine`) and nothing more.
- * The first of two plugins with one id wins, as nothing else would be
- * certain to.
+ * A plugin tool as a research step runs it. A plugin is there only because
+ * it declares `scoped: true` (kernel/toolset.js scopedTools): the declaration
+ * is the package's word that its tool works only through the context it is
+ * handed, and that context is the step's confined one (`confine`) and nothing
+ * more. Installing a package that makes the declaration extends what research
+ * steps can do: that is the trust it asks for, and the README says so.
  *
  * The declaration is checked again at every call, on the plugin about to
  * run: the registry holds one plugin per id, and any package may register
  * an id again during a run, which replaces what was admitted. What runs is
  * then the new plugin, and only if it too declares.
- *
- * Installing a package that makes the declaration extends what research
- * steps can do: that is the trust it asks for, and the README says so.
  */
-export async function admitScoped(plugins = []) {
-  const { BUILTIN_TOOLS } = await import("../assembly/builtin.js")
-  const taken = new Set(BUILTIN_TOOLS.map((t) => t.id))
-  const admitted = []
-  for (const tool of plugins ?? []) {
-    // By what it declared: a runner that cannot load it here still lists it,
-    // and hands its calls to a tab, which admits it again (kernel/placement.js).
-    if (!declaresScoped(tool) || typeof tool.current !== "function") continue
-    if (typeof tool.id !== "string" || taken.has(tool.id)) continue
-    taken.add(tool.id)
-    admitted.push(
-      Object.freeze({
-        ...tool,
-        async execute(input, ctx) {
-          const now = await tool.current()
-          if (!declaresScoped(now)) throw new ScopeRefusal(UNDECLARED_MID_RUN)
-          return now.module.execute(input, ctx)
-        },
-      })
-    )
-  }
-  return admitted
+function admitted(tool) {
+  return Object.freeze({
+    ...tool,
+    async execute(input, ctx) {
+      const now = await tool.current()
+      if (!declaresScoped(now)) throw new ScopeRefusal(UNDECLARED_MID_RUN)
+      return now.module.execute(input, ctx)
+    },
+  })
 }
 
 /**
- * The toolset of a research step: exactly SCOPED_TOOL_IDS, each the built-in
- * itself or its scoped variant, then the plugins `admitScoped` admits out of
- * `plugins`; frozen. Whatever the session says about its tools is not
- * consulted — it is not the session's to say.
- *
- * Loaded late: the tool registry imports the workflow driver, which imports
- * the runner, which imports this.
+ * The toolset of a research step, frozen: the built-ins that declare
+ * `scoped`, each the built-in itself, then the plugins that do, out of
+ * `plugins` — what this runner's own registry loaded, or lists for a tab to
+ * run (kernel/placement.js). Whatever the session says about its tools is not
+ * consulted — it is not the session's to say — but whether it is a step is:
+ * a confined session that is not one, a side thread copied from a step
+ * (workflow/aside.js), has no orchestrator to ask for work.
  */
-export async function scopedToolset({ plugins = [], step = true } = {}) {
-  const { BUILTIN_TOOLS, SCOPED_VARIANTS, UNSCOPED_ONLY_IDS } = await import("../assembly/builtin.js")
-  const { STEP_TOOL_IDS } = await import("../workflow/plan.js")
-  const byId = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
-  // A confined session that is not a step — a side thread copied from one
-  // (workflow/aside.js) — keeps the step's confinement but has no orchestrator
-  // to ask for work, so it does not get the tools for asking.
-  const ids = SCOPED_TOOL_IDS.filter((id) => !UNSCOPED_ONLY_IDS.includes(id) && (step || !STEP_TOOL_IDS.includes(id)))
-  const builtins = ids.map((id) => SCOPED_VARIANTS[id] ?? byId.get(id))
-  if (builtins.some((t) => !t)) throw new Error("A research step's tool is missing from the registry.")
-  const frozen = Object.freeze([...builtins, ...(await admitScoped(plugins))])
-  const index = new Map(frozen.map((t) => [t.id, t]))
-  return Object.freeze({ tools: frozen, schemas: frozen.map(toSchema), get: (id) => index.get(id) ?? null })
+export function scopedToolset(doc, { builtins = [], plugins = [] } = {}) {
+  const own = new Set(builtins)
+  const tools = scopedTools(doc, { builtins, plugins: (plugins ?? []).filter((tool) => typeof tool.current === "function") })
+  const toolset = toolsetOf(Object.freeze(tools.map((tool) => (own.has(tool) ? tool : admitted(tool)))))
+  return Object.freeze({ ...toolset, schemas: Object.freeze(toolset.schemas) })
 }

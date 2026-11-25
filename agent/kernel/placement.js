@@ -6,7 +6,7 @@
  * plugin, the declaration is the only thing that decides. A workflow step on
  * a worker gets every tool declared "worker", whoever provides it, and none
  * declared "host"; its session says so with `tools.where = "worker"`, and the
- * toolset is filtered when a runner builds it (assembly/toolset.js buildToolset),
+ * toolset is filtered when a runner builds it (kernel/toolset.js fullTools),
  * so a package installed after the step began is in it, and no list of tool
  * ids is ever frozen into a session.
  *
@@ -17,8 +17,10 @@
  * (runners/worker-plugins.js, kernel/loop.js).
  */
 
-export const WORKER = "worker"
-export const HOST = "host"
+import { WHERE } from "../session/schema.js"
+
+export const WORKER = WHERE.worker
+export const HOST = WHERE.host
 
 /** What a tool declared, whatever this runner can do with it. */
 export function declaredWhere(tool) {
@@ -38,102 +40,4 @@ export function fitsPlacement(tool, placement) {
  */
 export function callNeeds(call, tool) {
   return call?.where === HOST || tool?.where === HOST ? HOST : (tool?.where ?? call?.where ?? WORKER)
-}
-
-// ------------------------------------------------------------ step checks
-
-const WORD = /[A-Za-z0-9_]/
-
-/**
- * The ids out of `ids` that `text` names, as whole words: `assumptions_set`
- * in "use assumptions_set for each value", not `doc_read` in `doc_reader`.
- */
-export function namedIn(text, ids) {
-  const s = String(text ?? "")
-  const found = []
-  for (const id of ids) {
-    let at = s.indexOf(id)
-    while (at >= 0) {
-      const before = at > 0 ? s[at - 1] : ""
-      const after = s[at + id.length] ?? ""
-      if (!WORD.test(before) && !WORD.test(after)) {
-        found.push(id)
-        break
-      }
-      at = s.indexOf(id, at + 1)
-    }
-  }
-  return found
-}
-
-/**
- * The tool ids a step would get, out of `catalogue` — every tool this page
- * knows, built-in and plugin, as `{ id, where, scoped, builtin }`.
- *
- *   research (access "web")  the research built-ins, and plugins declaring
- *                            `scoped: true` on a worker (kernel/scope.js)
- *   full, on a worker        every tool declared "worker"
- *   full, on the page        every tool
- *
- * Never the orchestrator's tools: workflows do not nest.
- */
-export function stepToolIds(step, catalogue, { scopedIds, orchestratorIds }) {
-  if (step?.access === "web") {
-    const plugins = catalogue.filter((t) => !t.builtin && t.scoped === true && declaredWhere(t) === WORKER).map((t) => t.id)
-    return new Set([...scopedIds, ...plugins])
-  }
-  const placement = step?.where === WORKER ? WORKER : null
-  return new Set(catalogue.filter((t) => !orchestratorIds.includes(t.id) && fitsPlacement(t, placement)).map((t) => t.id))
-}
-
-/**
- * Before a step starts: does it need a tool it would not get? What it needs
- * is the tools its `tools` field lists — the orchestrator's word — and those
- * its prompt names.
- *
- *   null                       no — start it
- *   { where: "host", why }     a worker step needing tools that need the
- *                              page: move it there; it starts when the page
- *                              is free
- *   { fail: why }              anything else — a listed tool no installed
- *                              package provides, a research step needing a
- *                              tool that reads the person's documents, a full
- *                              step needing a research step's own tool, a step
- *                              needing the orchestrator's tools. Said once, at
- *                              start, instead of found out by searching.
- *
- * The listed tools are checked first, against everything installed: a tool
- * listed and missing is a fact about this page, not a guess. In the prompt
- * only names of tools this page knows are recognised: a word is not a tool
- * because it looks like one (an assumptions entry is called `cell_capacity`).
- */
-export function checkStepTools(step, catalogue, ids) {
-  const known = catalogue.map((t) => t.id)
-  const listed = Array.isArray(step?.tools) ? [...new Set(step.tools)] : []
-  const installed = new Set([...known, ...(ids.scopedIds ?? [])])
-  const absent = listed.filter((id) => !installed.has(id))
-  if (absent.length) {
-    return { fail: `Not installed: ${absent.join(", ")}. No package installed here provides ${absent.length === 1 ? "that tool" : "those tools"}, so the step cannot do its work as written. Ask the person to install the package, or plan the work without ${absent.length === 1 ? "it" : "them"}.` }
-  }
-  const named = [...new Set([...listed, ...namedIn(step?.prompt, known)])]
-  if (!named.length) return null
-  const gets = stepToolIds(step, catalogue, ids)
-  const missing = named.filter((id) => !gets.has(id))
-  if (!missing.length) return null
-
-  const list = missing.join(", ")
-  const said = listed.length ? "It needs" : "Its prompt names"
-  if (step.access === "web") {
-    return { fail: `${said} ${list}, which a research step cannot have: it reaches only the web and what research steps kept. Make it a full step, or split the part that needs ${missing.length === 1 ? "that tool" : "those tools"} into one.` }
-  }
-  const orchestrating = missing.filter((id) => ids.orchestratorIds.includes(id))
-  if (orchestrating.length) {
-    return { fail: `${said} ${orchestrating.join(", ")}, which only the orchestrator has: a step cannot change the workflow. Ask with workflow_request instead.` }
-  }
-  const researchOnly = missing.filter((id) => !known.includes(id))
-  if (researchOnly.length) {
-    return { fail: `${said} ${researchOnly.join(", ")}, which only a research step (access: web) has.` }
-  }
-  // Everything else it lacks needs the page, and on the page it gets everything.
-  return { where: HOST, why: `Moved to the page: ${said.toLowerCase()} ${list}, which ${missing.length === 1 ? "needs" : "need"} the page.` }
 }

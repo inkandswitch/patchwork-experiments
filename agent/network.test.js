@@ -61,7 +61,7 @@ function session(turns) {
 }
 
 const go = (store, provider, tools = []) =>
-  run({ store, provider, toolset: toolset(tools), runnerUrl: "runner-a", generation: store.doc().lease.generation, flushMs: 0, notes: false, canRun: () => true })
+  run({ store, provider, toolset: toolset(tools), runnerUrl: "runner-a", generation: store.doc().lease.generation, flushMs: 0, canRun: () => true })
 
 const blocks = (store) => store.doc().turns.flatMap((t) => t.blocks.map((b) => ({ role: t.role, ...b })))
 const offlineErr = () => new Interruption("Could not reach OpenRouter (Failed to fetch)")

@@ -18,7 +18,7 @@ import * as A from "@automerge/automerge"
 import { Repo, initSubduction, parseAutomergeUrl } from "@automerge/automerge-repo"
 import { initSession } from "./session/schema.js"
 import { makeTurn, textBlock } from "./session/blocks.js"
-import { initPlan, WORKFLOW_TOOL_IDS } from "./workflow/plan.js"
+import { initPlan } from "./workflow/plan.js"
 import { runTool } from "./kernel/tool.js"
 import { buildToolset } from "./assembly/toolset.js"
 import { BUILTIN_TOOLS } from "./assembly/builtin.js"
@@ -27,6 +27,7 @@ import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
 import { kernelRepo, KERNEL_REFUSAL, KERNEL_TYPES } from "./kernel/kernel-repo.js"
 import { webScope } from "./kernel/scope.js"
+import { WORKFLOW_TOOL_IDS } from "./fixtures/tool-ids.js"
 
 await initSubduction()
 
@@ -425,6 +426,7 @@ describe("the legitimate writers", () => {
       load: async (id) => ({ id, module: { execute } }),
     }
     const runner = new SessionRunner({
+      builtins: BUILTIN_TOOLS,
       store,
       runnerUrl: "runner-test",
       ctx: { repo: w.repo, startStepSession, element: "a" },
@@ -454,7 +456,7 @@ describe("the legitimate writers", () => {
       const given = privileged(t)
       if (WORKFLOW_TOOL_IDS.includes(t.id)) {
         expect(Object.keys(given), t.id).toEqual(["workflows"])
-        expect(given.workflows).toEqual({ repo: w.repo, startSession: startStepSession })
+        expect(given.workflows).toEqual({ repo: w.repo, startSession: startStepSession, tools: expect.any(Function) })
       } else if (t.id === "session_title") {
         expect(Object.keys(given), t.id).toEqual(["session"])
         expect(given.session.change).toBeTypeOf("function")

@@ -13,11 +13,11 @@
 import { describe, it, expect } from "vitest"
 import { buildToolset } from "./assembly/toolset.js"
 import { loadPluginTools } from "./assembly/plugins.js"
-import { BUILTIN_TOOLS, SCOPED_ONLY_IDS } from "./assembly/builtin.js"
-import { scopedToolset, SCOPED_TOOL_IDS } from "./kernel/scope.js"
-import { WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, initPlan } from "./workflow/plan.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
+import { initPlan } from "./workflow/plan.js"
 import { createPluginCatalogue } from "./runners/worker-plugins.js"
-import { callNeeds, checkStepTools, declaredWhere, fitsPlacement, namedIn, stepToolIds } from "./kernel/placement.js"
+import { callNeeds, declaredWhere, fitsPlacement } from "./kernel/placement.js"
+import { checkStepTools, namedIn, stepToolIds } from "./workflow/step-tools.js"
 import { SessionRunner } from "./kernel/runner.js"
 import { memoryStore } from "./kernel/store.js"
 import { initSession } from "./session/schema.js"
@@ -25,6 +25,7 @@ import { makeTurn, textBlock } from "./session/blocks.js"
 import { findCall } from "./session/calls.js"
 import { makeMock } from "./providers/mock.js"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
+import { SCOPED_TOOL_IDS, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, researchToolset, FULL_TOOLS } from "./fixtures/tool-ids.js"
 
 await initSubduction()
 const repo = new Repo({ network: [] })
@@ -61,12 +62,12 @@ function catalogueOf(entries, broken = []) {
 
 const ids = (toolset) => toolset.tools.map((t) => t.id)
 const stepDoc = (tools) => ({ config: {}, workflow: { planUrl: "automerge:plan", stepId: "s" }, tools })
-const WORKER_STEP = stepDoc({ where: "worker", disabled: WORKFLOW_TOOL_IDS })
-const HOST_STEP = stepDoc({ disabled: WORKFLOW_TOOL_IDS })
+const WORKER_STEP = stepDoc({ where: "worker" })
+const HOST_STEP = stepDoc(undefined)
 
 /** The rule, written out over the built-ins and the plugins present. */
 function expected(placement, present) {
-  const builtins = BUILTIN_TOOLS.filter((t) => !SCOPED_ONLY_IDS.includes(t.id) && !WORKFLOW_TOOL_IDS.includes(t.id))
+  const builtins = FULL_TOOLS.filter((t) => !WORKFLOW_TOOL_IDS.includes(t.id))
     .filter((t) => placement !== "worker" || t.where === "worker")
     .map((t) => t.id)
   const plugins = present.filter((id) => placement !== "worker" || declared(id) === "worker")
@@ -122,19 +123,19 @@ describe("the toolset a research step gets", () => {
     ["the worker's catalogue, nothing loading", PLUGINS.map((p) => p.id)],
   ])("from %s: the research built-ins and scoped_tool alone", async (_, broken) => {
     const plugins = broken ? await catalogueOf(PLUGINS, broken).tools() : await loadPluginTools({ registry: registryOf(PLUGINS) })
-    const toolset = await scopedToolset({ plugins })
+    const toolset = await researchToolset({ plugins })
     expect(ids(toolset)).toEqual([...SCOPED_TOOL_IDS, "scoped_tool"])
   })
 
   it("a scoped plugin that cannot load in the worker is listed, and its calls go to a tab", async () => {
     const plugins = await catalogueOf(PLUGINS, ["scoped_tool"]).tools()
-    const tool = (await scopedToolset({ plugins })).get("scoped_tool")
+    const tool = (await researchToolset({ plugins })).get("scoped_tool")
     expect(tool.where).toBe("host")
     expect(callNeeds({ where: "worker" }, tool)).toBe("host")
   })
 
   it("one that loads runs in the worker", async () => {
-    const tool = (await scopedToolset({ plugins: await catalogueOf(PLUGINS).tools() })).get("scoped_tool")
+    const tool = (await researchToolset({ plugins: await catalogueOf(PLUGINS).tools() })).get("scoped_tool")
     expect(tool.where).toBe("worker")
     expect(await tool.execute({}, {})).toBe("ran scoped_tool in the worker")
   })
@@ -163,11 +164,9 @@ describe("where a call runs", () => {
 })
 
 describe("a step's prompt, checked before it starts", () => {
-  const catalogue = [
-    ...BUILTIN_TOOLS.filter((t) => !SCOPED_ONLY_IDS.includes(t.id)).map((t) => ({ id: t.id, where: t.where, builtin: true })),
-    ...PLUGINS.map((p) => ({ id: p.id, where: p.where ?? "worker", scoped: p.scoped === true })),
-  ]
-  const ctx = { scopedIds: SCOPED_TOOL_IDS, orchestratorIds: WORKFLOW_TOOL_IDS }
+  // Every tool this page knows, as the driver is handed them.
+  const installed = { builtins: BUILTIN_TOOLS, plugins: PLUGINS.map((p) => ({ id: p.id, where: p.where ?? "worker", scoped: p.scoped === true })) }
+  const whereOf = (id) => [...installed.builtins, ...installed.plugins].find((t) => t.id === id).where
   const step = (where, access, prompt) => ({ id: "s", where, ...(access ? { access } : {}), prompt })
 
   // [what the prompt names, worker step, host step, research step]
@@ -188,7 +187,7 @@ describe("a step's prompt, checked before it starts", () => {
   for (const [what, prompt, worker, host, web] of NAMES) {
     for (const [placement, access, want] of [["worker", null, worker], ["host", null, host], ["worker", "web", web]]) {
       it(`${access === "web" ? "a research step" : `a ${placement} step`} naming ${what} → ${want ?? "starts"}`, () => {
-        const verdict = checkStepTools(step(placement, access, prompt), catalogue, ctx)
+        const verdict = checkStepTools(step(placement, access, prompt), installed)
         if (want === null) expect(verdict).toBeNull()
         else if (want === "host") expect(verdict).toEqual({ where: "host", why: expect.stringMatching(/^Moved to the page: its prompt names .+/) })
         else expect(verdict).toEqual({ fail: expect.any(String) })
@@ -197,21 +196,21 @@ describe("a step's prompt, checked before it starts", () => {
   }
 
   it("says which tools, and why", () => {
-    expect(checkStepTools(step("worker", null, "view_mount, then view_interact"), catalogue, ctx).why).toBe("Moved to the page: its prompt names view_mount, view_interact, which need the page.")
-    expect(checkStepTools(step("worker", "web", "read it with doc_read"), catalogue, ctx).fail).toMatch(/names doc_read, which a research step cannot have/)
+    expect(checkStepTools(step("worker", null, "view_mount, then view_interact"), installed).why).toBe("Moved to the page: its prompt names view_mount, view_interact, which need the page.")
+    expect(checkStepTools(step("worker", "web", "read it with doc_read"), installed).fail).toMatch(/names doc_read, which a research step cannot have/)
   })
 
   it("a step that moved to the page then starts", () => {
     const moved = step("worker", null, "Open it with view_mount and page_tool.")
-    const verdict = checkStepTools(moved, catalogue, ctx)
-    expect(checkStepTools({ ...moved, where: verdict.where }, catalogue, ctx)).toBeNull()
+    const verdict = checkStepTools(moved, installed)
+    expect(checkStepTools({ ...moved, where: verdict.where }, installed)).toBeNull()
   })
 
   it("what each kind of step gets, by the same rule the runners use", () => {
-    const worker = stepToolIds(step("worker", null, ""), catalogue, ctx)
-    expect([...worker].every((id) => catalogue.find((t) => t.id === id).where === "worker")).toBe(true)
+    const worker = stepToolIds(step("worker", null, ""), installed)
+    expect([...worker].every((id) => whereOf(id) === "worker")).toBe(true)
     expect(worker.has("repo_tool") && !worker.has("page_tool") && !worker.has("workflow_start")).toBe(true)
-    const web = stepToolIds(step("worker", "web", ""), catalogue, ctx)
+    const web = stepToolIds(step("worker", "web", ""), installed)
     expect([...web].sort()).toEqual([...SCOPED_TOOL_IDS, "scoped_tool"].sort())
   })
 
@@ -237,7 +236,7 @@ describe("a step's prompt, checked before it starts", () => {
   for (const [what, tools, worker, host, web] of LISTED) {
     for (const [placement, access, want] of [["worker", null, worker], ["host", null, host], ["worker", "web", web]]) {
       it(`${access === "web" ? "a research step" : `a ${placement} step`} listing ${what} → ${want ?? "starts"}`, () => {
-        const verdict = checkStepTools({ ...step(placement, access, "Do the work."), tools }, catalogue, ctx)
+        const verdict = checkStepTools({ ...step(placement, access, "Do the work."), tools }, installed)
         if (want === null) expect(verdict).toBeNull()
         else if (want === "host") expect(verdict).toEqual({ where: "host", why: expect.stringMatching(/^Moved to the page: it needs .+/) })
         else expect(verdict).toEqual({ fail: expect.any(String) })
@@ -246,12 +245,12 @@ describe("a step's prompt, checked before it starts", () => {
   }
 
   it("a listed tool nothing provides is said first, as not installed", () => {
-    const verdict = checkStepTools({ ...step("worker", null, "Open it with view_mount."), tools: ["view_mount", "cad_export", "nope_tool"] }, catalogue, ctx)
+    const verdict = checkStepTools({ ...step("worker", null, "Open it with view_mount."), tools: ["view_mount", "cad_export", "nope_tool"] }, installed)
     expect(verdict.fail).toMatch(/^Not installed: cad_export, nope_tool\. /)
   })
 
   it("listed tools and prompt names count together", () => {
-    const verdict = checkStepTools({ ...step("worker", null, "Then draw it with page_tool."), tools: ["view_mount"] }, catalogue, ctx)
+    const verdict = checkStepTools({ ...step("worker", null, "Then draw it with page_tool."), tools: ["view_mount"] }, installed)
     expect(verdict).toEqual({ where: "host", why: "Moved to the page: it needs view_mount, page_tool, which need the page." })
   })
 
@@ -273,7 +272,7 @@ describe("a worker step calling a plugin the worker cannot load", () => {
     const doc = {}
     initSession(doc, {})
     doc.workflow = { planUrl: plan.url, stepId: "s" }
-    doc.tools = { where: "worker", disabled: WORKFLOW_TOOL_IDS }
+    doc.tools = { where: "worker" }
     doc.turns = [makeTurn("user", [textBlock("record the value")])]
     const store = memoryStore(doc)
     const ran = []
@@ -340,11 +339,8 @@ describe("the driver, starting a step", () => {
       }
       return { runner: { interrupt() {} }, listen() {} }
     }
-    const catalogue = async () => [
-      ...BUILTIN_TOOLS.filter((t) => !SCOPED_ONLY_IDS.includes(t.id)).map((t) => ({ id: t.id, where: t.where, builtin: true })),
-      ...plugins,
-    ]
-    const driver = new WorkflowDriver({ repo, handle, startSession, catalogue, heartbeatMs: 1e9, confirmMs: 0 })
+    const tools = async () => ({ builtins: BUILTIN_TOOLS, plugins })
+    const driver = new WorkflowDriver({ repo, handle, startSession, tools, heartbeatMs: 1e9, confirmMs: 0 })
     driver.start()
     for (let i = 0; i < 20; i++) await driver.kick()
     driver.stop()
@@ -356,7 +352,7 @@ describe("the driver, starting a step", () => {
 
   it("a worker step's session is placed, not handed a list", async () => {
     const { sessions } = await run([{ id: "w", prompt: "Record the values." }])
-    expect(sessions.w.tools).toEqual({ where: "worker", disabled: WORKFLOW_TOOL_IDS })
+    expect(sessions.w.tools).toEqual({ where: "worker" })
   })
 
   it("a worker step that names a tool needing the page moves there and runs, after the page is free", async () => {
@@ -366,7 +362,7 @@ describe("the driver, starting a step", () => {
     ])
     const w = plan.steps.find((s) => s.id === "w")
     expect([w.status, w.where, w.moved]).toEqual(["done", "host", "Moved to the page: its prompt names view_mount, which needs the page."])
-    expect(sessions.w.tools).toEqual({ disabled: WORKFLOW_TOOL_IDS })
+    expect(sessions.w.tools).toBeUndefined()
     expect(order).toEqual(["h", "w"])
   })
 
@@ -397,7 +393,7 @@ describe("the driver, starting a step", () => {
     const { plan, sessions } = await run([{ id: "p", tools: ["page_tool"], prompt: "Draw it." }], { plugins: [{ id: "page_tool", where: "host" }] })
     const p = plan.steps.find((s) => s.id === "p")
     expect([p.status, p.where, p.moved]).toEqual(["done", "host", "Moved to the page: it needs page_tool, which needs the page."])
-    expect(sessions.p.tools).toEqual({ disabled: WORKFLOW_TOOL_IDS })
+    expect(sessions.p.tools).toBeUndefined()
   })
 
   it("a research step naming a tool it cannot have fails at once, saying why, and gets no session", async () => {

@@ -9,6 +9,7 @@ import { initPlan } from "./workflow/plan.js"
 import { buildToolset } from "./assembly/toolset.js"
 import { NOTES_FOLDER_NAME } from "./knowledge/notes.js"
 import { webScope } from "./kernel/scope.js"
+import { AGENT } from "./assembly/agent.js"
 
 await initSubduction()
 
@@ -161,6 +162,7 @@ function sessionIn(w, { scope = null, workflow = null } = {}) {
 async function runOnce(w, handle) {
   const provider = makeMock([[{ type: "text", delta: "done" }]])
   const runner = new SessionRunner({
+    ...AGENT,
     store: handleStore(handle),
     ctx: w.ctx,
     buildToolset: (doc) => buildToolset(doc, { skipPlugins: true }),

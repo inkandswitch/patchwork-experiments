@@ -55,22 +55,8 @@
 
 export const TIERS = ["deep", "standard", "fast"]
 
-/** The tools that orchestrate. A step never gets them: workflows do not nest. */
-export const WORKFLOW_TOOL_IDS = [
-  "workflow_start",
-  "workflow_add_steps",
-  "workflow_edit_steps",
-  "workflow_status",
-  "workflow_stop",
-  "workflow_reopen",
-  "workflow_keep",
-  "workflow_decide",
-  "workflow_answer",
-  "workflow_budget",
-]
-
-/** The tools only a step has: asking its orchestrator for more work. Writes nothing; the call is the request. */
-export const STEP_TOOL_IDS = ["workflow_request"]
+/** The tool a step asks its orchestrator for more work with. It writes nothing: the call is the request. */
+export const REQUEST_TOOL_ID = "workflow_request"
 
 /** OpenRouter's aliases follow each family's newest release. */
 export const DEFAULT_TIER_MODELS = {

@@ -11,9 +11,10 @@ vi.mock("./host/import.js", () => ({
 
 const { Repo, initSubduction } = await import("@automerge/automerge-repo")
 await initSubduction()
-const { docWatch, restoreWatches, splitTarget, watchesWriter, KEPT_EDITS } = await import("./tools/watch.js")
+const { docWatch, restoreWatches, splitTarget, KEPT_EDITS } = await import("./tools/watch.js")
+const { AGENT } = await import("./assembly/agent.js")
 const { createEvents } = await import("./kernel/events.js")
-const { handleStore } = await import("./kernel/store.js")
+const { handleStore, watchesWriter } = await import("./kernel/store.js")
 const { initSession, STATUS } = await import("./session/schema.js")
 const { fullContext } = await import("./kernel/runner.js")
 
@@ -431,7 +432,7 @@ describe("doc_watch: a runner that starts listens again", () => {
     first.stopAll() // the tab that made it is gone
 
     const events = createEvents(store, { policy: { settleMs: 5, maxDelayMs: 20, minGapMs: 0 } })
-    const runner = new SessionRunner({ store, runnerUrl: "runner-watch", ctx: { repo, events }, buildToolset: () => null, getProvider: async () => null, canRun: () => true })
+    const runner = new SessionRunner({ onStart: AGENT.onStart, store, runnerUrl: "runner-watch", ctx: { repo, events }, buildToolset: () => null, getProvider: async () => null, canRun: () => true })
     runner.start()
     await vi.waitFor(() => expect(events.listening()).toBe(1), { timeout: 1000 })
 

@@ -12,6 +12,8 @@
  *   appendText(path, delta)   -> append to a string field, efficiently
  */
 
+import { isOwn } from "./own-changes.js"
+
 /** Store over a real automerge DocHandle. */
 export function handleStore(handle, splice = null) {
   return {
@@ -100,5 +102,23 @@ export function batchedAppender(store, flushMs = 120) {
       if (timer) clearTimeout(timer)
       flush()
     },
+  }
+}
+
+/**
+ * The session's watches, writable, and nothing else in it: what the runner
+ * hands doc_watch (runner.js privileges) and what a starting runner restores
+ * with (tools/watch.js). `doc()` reads the whole session, which every tool may.
+ */
+export function watchesWriter(store) {
+  return {
+    url: store.url,
+    doc: () => store.doc(),
+    isOwn: (hash) => isOwn(store.url, hash),
+    change: (fn) =>
+      store.change((d) => {
+        if (!d.watches) d.watches = {}
+        fn(d.watches)
+      }),
   }
 }

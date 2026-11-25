@@ -4,9 +4,12 @@
  * A tool definition:
  *
  *   { id, name, description, input_schema, where, risk, alwaysAsk?, askWhen?, target?,
- *     execute(input, ctx), summarize?(input, output) }
+ *     scoped?, needs?, execute(input, ctx), summarize?(input, output) }
  *
  * `where` is "worker" | "host" and decides who may run it (placement.js).
+ * `scoped` and `needs` decide which sessions are offered it (toolset.js), and
+ * `needs` what a built-in is handed beyond the context every tool gets
+ * (session/capabilities.js, runner.js privileges).
  * `risk` is "read" | "self" | "edit" | "write" | "external"; see
  * session/grants.js needsApproval. "self" touches only this conversation (its
  * document, a view it opened and is closing, or — for a research step — what
@@ -76,9 +79,9 @@ export function pluginTool(description, current, { impl = null, where = null } =
     risk: description.risk ?? "write",
     alwaysAsk: description.alwaysAsk ?? false,
     // The package's word that this tool works only through the context
-    // it is handed, which is what lets a research step have it (kernel/scope.js
-    // admitScoped). Read from the metadata, as plain JSON, and only as
-    // exactly true.
+    // it is handed, which is what lets a research step have it
+    // (kernel/toolset.js scopedTools). Read from the metadata, as plain JSON,
+    // and only as exactly true.
     scoped: description.scoped === true,
     // What a call is about, for approval scoping — see session.callScope.
     target: description.target,

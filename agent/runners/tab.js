@@ -12,8 +12,10 @@ import { handleStore } from "../kernel/store.js"
 import { SessionRunner, DEFER_PER_BUSY_MS } from "../kernel/runner.js"
 import { ensureRunner as ensureSharedRunner, busyCount } from "./registry.js"
 import { createEvents } from "../kernel/events.js"
-import { buildToolset } from "../assembly/toolset.js"
+import { AGENT } from "../assembly/agent.js"
+import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { loadPluginTools } from "../assembly/plugins.js"
+import { ensureDriver, getDriver } from "../workflow/driver.js"
 import { getProvider, readKey, readRelay, modelInfo, SEARCH_KEY_ID } from "../providers/index.js"
 import { relayFetch } from "../net/relay.js"
 import { hostImport } from "../host/import.js"
@@ -104,18 +106,21 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       // web_search: Brave with the account's key, read afresh so a key saved
       // in settings works at once. Tools get the search, never the key.
       search: braveSearch({ key: () => readKey(SEARCH_KEY_ID), fetchImpl }),
+      // How a workflow's steps are run from here: in this tab's runners. Only
+      // the workflow tools are handed it (kernel/runner.js privileges).
+      startStepSession: stepStarter(repo),
       // The page's own origin, for plugin_source alone (see pageOriginFetch).
       pageFetch: pageOriginFetch({ fetch: (url, init) => fetch(url, init), origin: location.origin }),
     }
 
     const providerId = () => handle.doc()?.config?.providerId ?? "openrouter"
     const made = new SessionRunner({
+      ...AGENT,
       store: liveStore,
       runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
       ctx,
-      buildToolset: (doc) => buildToolset(doc),
-      // This tab's plugin registry, for research steps: the plugins that
-      // declare `scoped: true` are admitted to them (kernel/scope.js admitScoped).
+      // This tab's plugin registry. A research step is offered only the
+      // plugins in it that declare `scoped: true` (kernel/toolset.js).
       pluginTools: () => loadPluginTools(),
       onToolset,
       getProvider: async () => getProvider(providerId()),
@@ -147,5 +152,43 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
         events.stop()
       },
     }
+  })
+}
+
+/** Runs a workflow step's session in this tab, as the driver asks (workflow/driver.js). */
+const stepStarter = (repo) => async (handle) => {
+  const entry = await startTabRunner(handle, { repo, subject: handle.doc()?.subject ?? null })
+  return { runner: entry?.runner ?? null, listen: (fn) => entry?.listeners?.add(fn) }
+}
+
+/** Every tool this page has, as a driver reads them (workflow/step-tools.js). */
+const pageTools = async () => ({ builtins: BUILTIN_TOOLS, plugins: await loadPluginTools().catch(() => []) })
+
+/**
+ * Drive a plan from this page, for a view: steps run in this tab's runners,
+ * and news goes to the orchestrating session through its runner here. The
+ * workflow tools start a driver themselves, with what their runner hands
+ * them (workflow/tools.js). `startSession` is for a caller with its own way
+ * of running sessions.
+ */
+export async function drivePlanHere(planUrl, { repo, events = null, startSession = null }) {
+  const existing = getDriver(planUrl)
+  if (existing) {
+    existing.kick()
+    return existing
+  }
+  let channels = events
+  if (!channels) {
+    const plan = (await repo.find(planUrl)).doc()
+    if (plan?.sessionUrl) {
+      const entry = await startTabRunner(await repo.find(plan.sessionUrl), { repo, subject: plan.subject ?? null })
+      channels = entry?.ctx?.events?.forTool("workflow") ?? null
+    }
+  }
+  return ensureDriver(planUrl, {
+    repo,
+    startSession: startSession ?? stepStarter(repo),
+    tools: pageTools,
+    notify: channels ? (url, title) => channels.open(url, { label: `workflow: ${title}` }) : null,
   })
 }

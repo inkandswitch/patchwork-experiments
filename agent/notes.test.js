@@ -242,7 +242,7 @@ describe("the prompt", () => {
     claimLease(doc, "local", Date.now())
     const provider = makeMock([[{ type: "text", delta: "hello" }]])
     const toolset = { tools: [], schemas: [], get: () => null }
-    await run({ store: memoryStore(doc), provider, toolset, ctx: ctx(), canRun: () => true, flushMs: 0, system: "BASE" })
+    await run({ store: memoryStore(doc), provider, toolset, ctx: ctx(), sections: [notesSection], canRun: () => true, flushMs: 0, system: "BASE" })
     expect(provider.requests[0].system).toMatch(/^BASE\n\n## Your notes/)
     expect(provider.requests[0].system).toContain("automerge-counters")
   })

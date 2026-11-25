@@ -5,8 +5,9 @@
  * and from nowhere else, whether the import is static or dynamic. The order
  * is LAYERS, lowest first; index.js, at the root, is above them all.
  *
- * KNOWN is what does not obey yet. It may only shrink: an import upward that
- * is not in it fails, and so does an entry that is no longer true.
+ * KNOWN is what does not obey, and is empty. Anything put there may only
+ * leave again: an import upward that is not in it fails, and so does an
+ * entry that is no longer true.
  */
 
 import { describe, it, expect } from "vitest"
@@ -28,19 +29,7 @@ export const LAYERS = [
   "ui", // views
 ]
 
-const KNOWN = [
-  "kernel/loop.js -> knowledge/guides.js",
-  "kernel/loop.js -> knowledge/notes.js",
-  "kernel/loop.js -> knowledge/skills.js",
-  "kernel/runner.js -> assembly/builtin.js",
-  "kernel/runner.js -> tools/watch.js",
-  "kernel/runner.js -> workflow/plan.js",
-  "kernel/scope.js -> assembly/builtin.js",
-  "kernel/scope.js -> workflow/plan.js",
-  "workflow/driver.js -> assembly/builtin.js",
-  "workflow/driver.js -> assembly/plugins.js",
-  "workflow/driver.js -> runners/tab.js",
-]
+const KNOWN = []
 
 const ROOT = process.cwd()
 const SKIP = new Set(["node_modules", "dist", "probes", "scripts", "vendor", "fixtures", ".pushwork"])

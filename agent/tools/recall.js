@@ -52,6 +52,7 @@ export function originalResult(turns, callId) {
 
 export const sessionRecall = {
   id: "session_recall",
+  scoped: true,
   name: "Recall an earlier result",
   description: [
     "Bring back the full output of an earlier tool call in this conversation, without running anything.",

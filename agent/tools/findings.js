@@ -8,7 +8,7 @@
  * sibling steps can read back with source_read, and that the person finds in
  * the workflow's Sources folder.
  *
- * Research steps only (SCOPED_ONLY_IDS): it writes through the scoped repo,
+ * Research steps only (`scoped: "only"`): it writes through the scoped repo,
  * which can create a document or change a finding in the ledger and nothing
  * else, so there is nothing here to ask anyone about. A finding a person has
  * edited is theirs: the repo refuses to write over it, and the step writes a
@@ -80,6 +80,7 @@ async function checkedCitations(text, members, repo) {
 
 export const findingWrite = {
   id: "finding_write",
+  scoped: "only",
   name: "Write down a finding",
   target: "none",
   description: [

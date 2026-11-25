@@ -4,8 +4,8 @@
  * scoped toolset whatever else the session says, and every other session gets
  * what its tool list allows, never a research step's own tools.
  *
- * A research step's scoped toolset is the built-ins in SCOPED_TOOL_IDS, then
- * the plugins of this runner's registry that declare `scoped: true`: the
+ * A research step's scoped toolset is the built-ins that declare `scoped`,
+ * then the plugins of this runner's registry that declare `scoped: true`: the
  * rule, over every kind of plugin a registry can hold, and what an admitted
  * plugin is handed when it runs — the confined context, exactly.
  */
@@ -18,15 +18,20 @@ import { memoryStore, handleStore } from "./kernel/store.js"
 import { initSession } from "./session/schema.js"
 import { makeTurn, textBlock } from "./session/blocks.js"
 import { makeMock } from "./providers/mock.js"
-import { initPlan, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS } from "./workflow/plan.js"
+import { initPlan } from "./workflow/plan.js"
 import { buildToolset } from "./assembly/toolset.js"
 import { loadPluginTools } from "./assembly/plugins.js"
-import { BUILTIN_TOOLS, SCOPED_VARIANTS } from "./assembly/builtin.js"
-import { SCOPED_TOOL_IDS, UNDECLARED_MID_RUN, scopedToolset, admitScoped, webScope } from "./kernel/scope.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
+import { scopedHttpRequest } from "./tools/http.js"
+import { UNDECLARED_MID_RUN, webScope } from "./kernel/scope.js"
+import { WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, SCOPED_TOOL_IDS, FULL_TOOLS, researchToolset } from "./fixtures/tool-ids.js"
 
 await initSubduction()
 
-const BUILTIN_IDS = BUILTIN_TOOLS.map((t) => t.id)
+/** What a full-access session can be offered of the built-ins. */
+const BUILTIN_IDS = FULL_TOOLS.map((t) => t.id)
+/** The built-in a research step is offered under an id: the tool itself, never a copy. */
+const scopedBuiltin = (id) => BUILTIN_TOOLS.find((t) => t.id === id && t.scoped)
 /** The two tools for one kind of session only, named here rather than taken from the registry's own lists. */
 const RESEARCH_ONLY = "finding_write"
 const FULL_ONLY = "source_file"
@@ -57,6 +62,39 @@ const repo = new Repo({ network: [] })
 const plan = repo.create({})
 plan.change((d) => initPlan(d, { title: "P", goal: "G", steps: [{ id: "r", title: "R", prompt: "p", why: "w", where: "worker", tier: "fast", access: "web" }] }))
 
+describe("the built-ins by kind, written out", () => {
+  // Each tool says for itself which sessions are offered it (kernel/toolset.js).
+  // These lists are the check on that: a declaration added, dropped or
+  // changed shows up here, in one place.
+  const sorted = (ids) => [...ids].sort()
+
+  it("a research step is offered exactly these", () => {
+    expect(sorted(SCOPED_TOOL_IDS)).toEqual(sorted(["web_search", "web_fetch", "http_request", "source_read", "source_list", "finding_write", "session_recall", "workflow_request"]))
+  })
+
+  it("two of them are a research step's alone: its own http_request, and finding_write", () => {
+    expect(sorted(BUILTIN_TOOLS.filter((t) => t.scoped === "only").map((t) => t.id))).toEqual(["finding_write", "http_request"])
+    expect(BUILTIN_TOOLS.filter((t) => t.id === "http_request")).toHaveLength(2)
+    expect(FULL_TOOLS.find((t) => t.id === "http_request")).not.toBe(scopedHttpRequest)
+  })
+
+  it("only a session that may orchestrate is offered these", () => {
+    expect(sorted(WORKFLOW_TOOL_IDS)).toEqual(sorted(["workflow_start", "workflow_add_steps", "workflow_edit_steps", "workflow_status", "workflow_stop", "workflow_reopen", "workflow_keep", "workflow_decide", "workflow_answer", "workflow_budget"]))
+  })
+
+  it("only a step is offered this", () => {
+    expect(STEP_TOOL_IDS).toEqual(["workflow_request"])
+  })
+
+  it("and these need a writer of their own session", () => {
+    const needing = (need) => BUILTIN_TOOLS.filter((t) => t.needs?.includes(need)).map((t) => t.id)
+    expect(needing("session.write")).toEqual(["session_title"])
+    expect(needing("watches")).toEqual(["doc_watch"])
+    const named = new Set(BUILTIN_TOOLS.flatMap((t) => t.needs ?? []))
+    expect(sorted(named)).toEqual(["session.write", "step", "watches", "workflows"])
+  })
+})
+
 describe("the toolset a session gets", () => {
   const cases = []
   for (const scoped of [false, true]) {
@@ -78,6 +116,7 @@ describe("the toolset a session gets", () => {
     }
     let built = 0
     const runner = new SessionRunner({
+      builtins: BUILTIN_TOOLS,
       store: memoryStore(doc),
       ctx: { repo },
       buildToolset: async (d) => (built++, buildToolset(d, { registry: registry(colliding) })),
@@ -87,10 +126,10 @@ describe("the toolset a session gets", () => {
     const ids = toolset.tools.map((t) => t.id)
 
     if (scoped) {
-      // Exactly the scoped set, each the built-in itself or its scoped
-      // variant, frozen, and plugins never consulted.
+      // Exactly the scoped set, each the built-in itself, frozen, and the
+      // session's own tool list never consulted.
       expect(ids).toEqual(SCOPED_TOOL_IDS)
-      for (const tool of toolset.tools) expect(tool).toBe(SCOPED_VARIANTS[tool.id] ?? BUILTIN_TOOLS.find((t) => t.id === tool.id))
+      for (const tool of toolset.tools) expect(tool).toBe(scopedBuiltin(tool.id))
       expect(Object.isFrozen(toolset.tools)).toBe(true)
       expect(built).toBe(0)
       expect(Object.keys(ctx).sort()).toEqual(CONFINED)
@@ -108,7 +147,7 @@ describe("the toolset a session gets", () => {
   it("the scoped set has the research-only tool and not the full-only one", async () => {
     expect(SCOPED_TOOL_IDS).toContain(RESEARCH_ONLY)
     expect(SCOPED_TOOL_IDS).not.toContain(FULL_ONLY)
-    expect((await scopedToolset()).tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
+    expect((await researchToolset()).tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
   })
 })
 
@@ -155,23 +194,24 @@ describe("the plugins a research step admits", () => {
 
   it.each(KINDS)("%s → admitted %s", async (_, meta, admitted) => {
     const plugins = await loadPluginTools({ registry: registryOf([meta]) })
-    const ids = (await scopedToolset({ plugins })).tools.map((t) => t.id)
+    const ids = (await researchToolset({ plugins })).tools.map((t) => t.id)
     expect(ids).toEqual(admitted ? [...SCOPED_TOOL_IDS, meta.id] : SCOPED_TOOL_IDS)
     // The built-ins are still the built-ins themselves, never a plugin by their name.
-    const toolset = await scopedToolset({ plugins })
-    for (const id of SCOPED_TOOL_IDS) expect(toolset.get(id)).toBe(SCOPED_VARIANTS[id] ?? BUILTIN_TOOLS.find((t) => t.id === id))
+    const toolset = await researchToolset({ plugins })
+    for (const id of SCOPED_TOOL_IDS) expect(toolset.get(id)).toBe(scopedBuiltin(id))
     expect(Object.isFrozen(toolset.tools)).toBe(true)
   })
 
   it("admits every declared plugin of a registry that holds all of them, and nothing else", async () => {
     const plugins = await loadPluginTools({ registry: registryOf(KINDS.map(([, meta]) => meta)) })
-    expect((await admitScoped(plugins)).map((t) => t.id)).toEqual(["declared_tool"])
+    const ids = researchToolset({ plugins }).tools.map((t) => t.id)
+    expect(ids.filter((id) => !SCOPED_TOOL_IDS.includes(id))).toEqual(["declared_tool"])
   })
 
   it("checks the declaration again at every call, on the plugin about to run", async () => {
     const seen = []
     const registry = registryOf([KINDS[0][1]], seen)
-    const tool = (await scopedToolset({ plugins: await loadPluginTools({ registry }) })).get("declared_tool")
+    const tool = (await researchToolset({ plugins: await loadPluginTools({ registry }) })).get("declared_tool")
     expect(await tool.execute({}, {})).toBe("ran declared_tool")
     // Another package registers the id during the run: what was admitted is
     // gone, and what is there now runs only if it declares too. Every kind
@@ -191,10 +231,10 @@ describe("the plugins a research step admits", () => {
     initSession(doc, {})
     doc.scope = webScope(plan.url, "r")
     doc.workflow = { planUrl: plan.url, stepId: "r" }
-    const runner = new SessionRunner({ store: memoryStore(doc), ctx: { repo }, buildToolset: async () => null, getProvider: async () => null })
+    const runner = new SessionRunner({ builtins: BUILTIN_TOOLS, store: memoryStore(doc), ctx: { repo }, buildToolset: async () => null, getProvider: async () => null })
     expect((await runner.prepare(doc)).toolset.tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
     // And a registry that fails to load is no plugins, not no run.
-    const failing = new SessionRunner({ store: memoryStore(doc), ctx: { repo }, pluginTools: async () => { throw new Error("no registry") }, buildToolset: async () => null, getProvider: async () => null })
+    const failing = new SessionRunner({ builtins: BUILTIN_TOOLS, store: memoryStore(doc), ctx: { repo }, pluginTools: async () => { throw new Error("no registry") }, buildToolset: async () => null, getProvider: async () => null })
     expect((await failing.prepare(doc)).toolset.tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
   })
 
@@ -206,6 +246,7 @@ describe("the plugins a research step admits", () => {
     let entries = [KINDS[1][1]]
     let asked = 0
     const runner = new SessionRunner({
+      builtins: BUILTIN_TOOLS,
       store: memoryStore(doc),
       ctx: { repo },
       pluginTools: () => (asked++, loadPluginTools({ registry: registryOf(entries) })),
@@ -233,6 +274,7 @@ describe("the plugins a research step admits", () => {
     const provider = makeMock([[{ type: "call", id: "c1", name: "declared_tool", input: {} }], [{ type: "text", delta: "done" }]])
     const fetchImpl = Object.assign(async () => null, { policy: { deny: [], direct: false, dns: false } })
     const runner = new SessionRunner({
+      builtins: BUILTIN_TOOLS,
       store: handleStore(handle),
       // A runner's context with things of the person's in it, none of which the plugin may see.
       ctx: { repo: sessionRepo, fetchImpl, reader: "https://reader.test/", direct: false, subject: "automerge:subject", rootFolderUrl: "automerge:root", sessionUrl: handle.url, element: {}, startStepSession: () => null },
@@ -256,7 +298,7 @@ describe("the plugins a research step admits", () => {
 })
 
 describe("a research step's http_request", () => {
-  const variant = SCOPED_VARIANTS.http_request
+  const variant = scopedHttpRequest
   // [method, body] → refused before any request? The rule: GET or HEAD, no body.
   const cases = []
   for (const method of [undefined, "GET", "get", "HEAD", "POST", "PUT", "DELETE"]) {

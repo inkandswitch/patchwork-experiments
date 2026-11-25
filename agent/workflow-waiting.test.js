@@ -19,6 +19,7 @@ import { workflowAnswer } from "./workflow/tools.js"
 import { watchWaiting, renderWaiting } from "./ui/waiting.js"
 import { WorkflowView } from "./ui/workflow-view.js"
 import { _reset as resetRunners } from "./runners/registry.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 
 await initSubduction()
 
@@ -195,6 +196,7 @@ describe("end to end: a step asks, the orchestrator answers", () => {
     const runners = []
     const run = (handle, provider, toolset, ctx = {}) => {
       const runner = new SessionRunner({
+        builtins: BUILTIN_TOOLS,
         store: handleStore(handle, A.splice),
         ctx: { ...ctx, sessionUrl: handle.url },
         buildToolset: toolset,

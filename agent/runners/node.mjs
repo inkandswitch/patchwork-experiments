@@ -30,7 +30,7 @@ import { splice } from "@automerge/automerge/slim"
 import { handleStore } from "../kernel/store.js"
 import { SessionRunner, needsWork, heldElsewhere } from "../kernel/runner.js"
 import { createEvents } from "../kernel/events.js"
-import { buildToolset } from "../assembly/toolset.js"
+import { AGENT } from "../assembly/agent.js"
 import { getProvider, modelInfo } from "../providers/index.js"
 import { STATUS } from "../session/schema.js"
 import { nodeFetch } from "../net/node-fetch.mjs"
@@ -99,20 +99,20 @@ async function claim(sessionUrl) {
   const runnerUrl = `node-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
 
   const runner = new SessionRunner({
+    ...AGENT,
     store,
     runnerUrl,
     // The runner decides from the session document what of this the tools
     // get (kernel/runner.js, kernel/scope.js): a research step gets none of the subject and
     // a repo that opens only its workflow's ledger.
     ctx: { ...baseCtx, sessionUrl, subject: doc.subject ?? null, events: createEvents(store) },
-    buildToolset: (sessionDoc) => buildToolset(sessionDoc),
-    // No pluginTools: node has no plugin registry, so research steps here get
-    // the built-ins alone.
+    // No pluginTools: node has no plugin registry, so sessions here get the
+    // built-ins alone.
     getProvider: async () => getProvider(doc.config?.providerId ?? MODEL_PROVIDER),
     getKey: () => KEY,
     getModelInfo: (model, providerId) => modelInfo(providerId ?? MODEL_PROVIDER, model, { key: KEY }),
     // No DOM, no registry. Host-tier calls park for a tab to pick up.
-    canRun: (where) => where === "worker" || where === "task",
+    canRun: (where) => where === "worker",
     onEvent: (event) => {
       if (event.type === "call-start") log(`  → ${event.tool}`)
       else if (event.type === "call-end") log(`  ← ${event.summary}`)

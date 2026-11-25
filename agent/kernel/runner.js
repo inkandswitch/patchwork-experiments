@@ -26,9 +26,10 @@ import { orphanedCalls, resolveOrphans, interruptedTurns, dropInterruptedTurns, 
 import { run, OUTCOME } from "./loop.js"
 import { scopeOf, assertScopeAgrees, confine, scopedToolset, ScopeRefusal } from "./scope.js"
 import { kernelRepo } from "./kernel-repo.js"
-import { WORKFLOW_TOOL_IDS } from "../workflow/plan.js"
 import { urlsIn } from "../documents/doc-urls.js"
 import { rememberOwn } from "./own-changes.js"
+import { watchesWriter } from "./store.js"
+import { fullTools, toolsetOf } from "./toolset.js"
 import { asInterruption, reconnectDelay, onOnline } from "../net/network.js"
 
 /**
@@ -127,14 +128,25 @@ export class SessionRunner {
     this.ctx = opts.ctx ?? {}
     this.fullCtx = fullContext(this.ctx, this.store)
     this.privileged = null
-    this.buildToolset = opts.buildToolset
-    // This runner's plugin tools, for a research step to admit the ones that
-    // declare `scoped: true` (kernel/scope.js admitScoped). Only a runner with a
-    // plugin registry — a tab — passes it; a worker or node runner has none,
-    // and its research steps get the built-ins alone.
+    // The built-in tools: what every toolset here starts from, and the only
+    // tools handed what they say they need (`privileges`).
+    this.builtins = opts.builtins ?? []
+    // This runner's plugin tools, looked up afresh for every run. A runner
+    // with no plugin registry (node) passes none, and its sessions get the
+    // built-ins alone.
     this.pluginTools = opts.pluginTools ?? null
+    // A full-access session's toolset: the built-ins and the plugins, as the
+    // session's document selects them (toolset.js). A host may build it its
+    // own way.
+    this.buildToolset = opts.buildToolset ?? (async (doc) => toolsetOf(fullTools(doc, { builtins: this.builtins, plugins: await this.plugins() })))
     // Told every toolset a run gets, scoped or not, so a view can ask it about calls.
     this.onToolset = opts.onToolset ?? null
+    // What the loop adds to the prompt and to results (kernel/loop.js): the
+    // agent's own are assembly/prompt.js. None unless given.
+    this.sections = opts.sections ?? []
+    this.afterCall = opts.afterCall ?? []
+    // Told when this runner starts on the session (`started`).
+    this.onStart = opts.onStart ?? []
     this.getProvider = opts.getProvider
     this.getKey = opts.getKey ?? (() => null)
     // A runner that cannot call the model must not take the session from one
@@ -187,7 +199,7 @@ export class SessionRunner {
     }, HEARTBEAT_MS)
     this.unlisten = this.onOnline(() => this.resume())
     this.tick()
-    this.restoreWatches()
+    this.started()
     return () => this.stop()
   }
 
@@ -215,20 +227,19 @@ export class SessionRunner {
   }
 
   /**
-   * Listen again to every watch the session has (tools/watch.js), reporting
-   * first what changed while no runner was. Only a runner that can wake the
-   * session does this. Loaded late, as privileges are: the tool registry
-   * imports modules that import this one.
+   * What the host wants done when a runner starts on a session (`onStart`):
+   * each is told the session's repo, events and store, and where to report.
+   * The agent's own listens again to the session's watches (assembly/agent.js).
+   * Only a runner that can wake the session does this.
    */
-  restoreWatches() {
+  started() {
     const events = this.ctx.events
-    if (!events || !this.store?.doc()?.watches) return
-    import("../tools/watch.js")
-      .then(({ restoreWatches }) => restoreWatches({ repo: this.fullCtx.repo, events, store: this.store }))
-      .then((results) => {
-        for (const r of results ?? []) if (!r.ok) this.onEvent({ type: "watch-error", id: r.id, error: r.error })
-      })
-      .catch(() => {})
+    if (!events) return
+    for (const hook of this.onStart) {
+      Promise.resolve()
+        .then(() => hook({ repo: this.fullCtx.repo, events, store: this.store, report: (event) => this.onEvent(event) }))
+        .catch(() => {})
+    }
   }
 
   stop() {
@@ -392,6 +403,8 @@ export class SessionRunner {
         modelInfo,
         ctx,
         privileged,
+        sections: this.sections,
+        afterCall: this.afterCall,
         // The session's own URL keeps its prompt cache on one provider. It is
         // the runner's to give, since a research step's context has no URL in it.
         sessionUrl: this.ctx.sessionUrl ?? null,
@@ -466,14 +479,14 @@ export class SessionRunner {
     const scope = scopeOf(doc)
     await assertScopeAgrees(doc, scope, this.ctx.repo)
     const prepared = scope
-      ? { toolset: await scopedToolset({ plugins: await this.scopedPlugins(), step: !!doc?.workflow?.planUrl }), ctx: await confine(this.ctx, scope), privileged: () => null }
-      : { toolset: await this.buildToolset(doc), ctx: this.fullCtx, privileged: (this.privileged ??= await privileges(this.ctx, this.store)) }
+      ? { toolset: scopedToolset(doc, { builtins: this.builtins, plugins: await this.plugins() }), ctx: await confine(this.ctx, scope), privileged: () => null }
+      : { toolset: await this.buildToolset(doc), ctx: this.fullCtx, privileged: (this.privileged ??= privileges(this.ctx, this.store, { builtins: this.builtins, plugins: () => this.plugins() })) }
     this.onToolset?.(prepared.toolset)
     return prepared
   }
 
   /** This runner's plugin tools, or none; a registry that fails to load is no plugins, not no run. */
-  async scopedPlugins() {
+  async plugins() {
     if (typeof this.pluginTools !== "function") return []
     try {
       return (await this.pluginTools()) ?? []
@@ -558,29 +571,37 @@ export function fullContext(base, store) {
 }
 
 /**
- * What only some of a full session's tools get beyond its context: the two
- * capabilities that write sessions and plans, each to the built-in tools of
- * its one module.
+ * What only some of a full session's tools get beyond its context: each
+ * thing a tool `needs` (session/capabilities.js) that stands for a value.
  *
- *   workflows  the real repo and the step-session starter, for the workflow
- *              tools, which write plans and drive step sessions
- *   session    this conversation's own document, writable, for session_title
- *   watches    only the `watches` map in it, writable, for doc_watch
+ *   workflows      the real repo, the step-session starter and every tool
+ *                  this runner has, for the tools that write plans and drive
+ *                  step sessions
+ *   session.write  this conversation's own document, writable
+ *   watches        only the `watches` map in it, writable
  *
- * By identity with the built-in, not by id: a plugin cannot take a built-in's
- * id, and a tool that is not the built-in gets nothing whatever it is called.
- * Loaded late, as scopedToolset is: the tool registry imports the workflow
- * driver, which imports this module.
+ * Only to the runner's built-ins, by identity: a plugin cannot take a
+ * built-in's id, and a tool that is not one of them gets nothing whatever it
+ * declares.
  */
-export async function privileges(base, store) {
-  const { BUILTIN_TOOLS } = await import("../assembly/builtin.js")
-  const builtin = (id) => BUILTIN_TOOLS.find((t) => t.id === id)
-  const workflows = { workflows: { repo: base.repo ?? null, startSession: base.startStepSession ?? null } }
-  const session = { session: { url: store?.url ?? null, doc: () => store.doc(), change: (fn) => store.change(fn) } }
-  const { watchesWriter } = await import("../tools/watch.js")
-  const watches = { watches: watchesWriter(store) }
-  const given = new Map([...WORKFLOW_TOOL_IDS.map((id) => [builtin(id), workflows]), [builtin("session_title"), session], [builtin("doc_watch"), watches]])
-  return (tool) => given.get(tool) ?? null
+export function privileges(base, store, { builtins = [], plugins = async () => [] } = {}) {
+  const own = new Set(builtins)
+  const values = {
+    workflows: {
+      workflows: {
+        repo: base.repo ?? null,
+        startSession: base.startStepSession ?? null,
+        tools: async () => ({ builtins, plugins: await plugins() }),
+      },
+    },
+    "session.write": { session: { url: store?.url ?? null, doc: () => store.doc(), change: (fn) => store.change(fn) } },
+    watches: { watches: watchesWriter(store) },
+  }
+  return (tool) => {
+    if (!own.has(tool)) return null
+    const given = Object.assign({}, ...(tool.needs ?? []).map((need) => values[need] ?? null))
+    return Object.keys(given).length ? given : null
+  }
 }
 
 /**

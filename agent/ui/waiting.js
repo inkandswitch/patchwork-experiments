@@ -17,6 +17,7 @@ import { describeCall } from "./calls.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
 import { liftBudget, liftAmounts } from "../session/usage.js"
+import { drivePlanHere } from "../runners/tab.js"
 
 /** Documents a grant never covers: the account and its module settings. */
 const sensitiveDocs = () =>
@@ -209,7 +210,6 @@ export function renderBudgetItem(item, { onOpen = null, showStep = true } = {}) 
       // A driver must be running for anything to start: the plan view starts
       // one, and so does this, for a person who never opened it.
       if (item.repo && item.planUrl) {
-        const { drivePlanHere } = await import("../workflow/driver.js")
         drivePlanHere(item.planUrl, { repo: item.repo }).catch(() => {})
       }
     })

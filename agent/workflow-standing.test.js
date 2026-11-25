@@ -19,7 +19,8 @@ import { STEP, STATE, PLAN, reopenErrors, reopenSteps, states } from "./workflow
 import { stepStanding, laterReopened, planGlance, glanceText } from "./workflow/standing.js"
 import { askAside, asideOf, makeAside, reusableAside, NOT_IN_ASIDE, ASIDE_NOTE } from "./workflow/aside.js"
 import { sessionOutcome } from "./workflow/driver.js"
-import { scopedToolset, SCOPED_TOOL_IDS, webScope } from "./kernel/scope.js"
+import { webScope } from "./kernel/scope.js"
+import { SCOPED_TOOL_IDS, researchToolset } from "./fixtures/tool-ids.js"
 
 await initSubduction()
 
@@ -208,8 +209,8 @@ describe("a question in a side thread", () => {
 
 describe("a confined session that is not a step", () => {
   it("has the research tools but not the ones for asking an orchestrator", async () => {
-    expect((await scopedToolset()).tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
-    const ids = (await scopedToolset({ step: false })).tools.map((t) => t.id)
+    expect((await researchToolset()).tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
+    const ids = (await researchToolset({ step: false })).tools.map((t) => t.id)
     expect(ids).toEqual(SCOPED_TOOL_IDS.filter((id) => id !== "workflow_request"))
   })
 })

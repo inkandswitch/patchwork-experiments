@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { Repo, initSubduction, stringifyAutomergeUrl } from "@automerge/automerge-repo"
-import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, WORKFLOW_TOOL_IDS, stepPrompt, WITHHELD, RESULT_IN_PROMPT } from "./workflow/plan.js"
+import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, stepPrompt, WITHHELD, RESULT_IN_PROMPT } from "./workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, describeProgress, keptCounts, _resetDrivers } from "./workflow/driver.js"
 import { scopedRepo } from "./kernel/scope.js"
 import { KERNEL_TYPES } from "./kernel/kernel-repo.js"
@@ -8,6 +8,7 @@ import { initSession, STATUS, CALL } from "./session/schema.js"
 import { makeTurn, textBlock } from "./session/blocks.js"
 import { buildToolset } from "./assembly/toolset.js"
 import { BUILTIN_TOOLS } from "./assembly/builtin.js"
+import { WORKFLOW_TOOL_IDS } from "./fixtures/tool-ids.js"
 
 await initSubduction()
 
@@ -95,8 +96,8 @@ describe("running a plan", () => {
     expect(w.config.model).toBe(DEFAULT_TIER_MODELS.deep)
     expect(h.config.model).toBe(DEFAULT_TIER_MODELS.standard)
     expect(w.config.params.maxTokens).toBe(4000)
-    expect(w.tools).toEqual({ where: "worker", disabled: WORKFLOW_TOOL_IDS })
-    expect(h.tools).toEqual({ disabled: WORKFLOW_TOOL_IDS })
+    expect(w.tools).toEqual({ where: "worker" })
+    expect(h.tools).toBeUndefined()
     expect(w.grants).toEqual({ "files@*": "session" })
     expect(w.subject).toBe("automerge:subj")
     expect(w.workflow).toEqual({ planUrl: plan.url, stepId: "w", orchestratorUrl: expect.any(String) })
@@ -213,11 +214,11 @@ describe("which tools a session gets", () => {
   })
 
   it("a step never gets them, even with the switch on", async () => {
-    expect(await ids({ config: { workflows: { enabled: true } }, tools: { disabled: WORKFLOW_TOOL_IDS } })).not.toContain("workflow_start")
+    expect(await ids({ config: { workflows: { enabled: true } }, workflow: { planUrl: "automerge:plan", stepId: "s" } })).not.toContain("workflow_start")
   })
 
   it("a worker step gets only tools that run without the page", async () => {
-    const got = await ids({ config: {}, tools: { where: "worker", disabled: WORKFLOW_TOOL_IDS } })
+    const got = await ids({ config: {}, workflow: { planUrl: "automerge:plan", stepId: "s" }, tools: { where: "worker" } })
     expect(got.every((id) => BUILTIN_TOOLS.find((t) => t.id === id).where === "worker")).toBe(true)
     expect(got).toContain("doc_edit")
     expect(got).not.toContain("view_mount")

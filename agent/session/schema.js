@@ -60,7 +60,7 @@ export const STATUS = {
 }
 
 /** Where a tool call can execute. See kernel/tool.js. */
-export const WHERE = { worker: "worker", host: "host", task: "task" }
+export const WHERE = { worker: "worker", host: "host" }
 
 /** Lifecycle of a single tool call. */
 export const CALL = {

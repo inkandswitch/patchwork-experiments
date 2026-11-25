@@ -123,6 +123,7 @@ export function pdfWithoutText(doc, url, name, mine) {
 
 export const sourceRead = {
   id: "source_read",
+  scoped: true,
   name: "Read a kept source",
   target: { fields: ["source"] },
   description: [
@@ -211,6 +212,7 @@ export const sourceRead = {
 
 export const sourceList = {
   id: "source_list",
+  scoped: true,
   name: "List kept sources",
   target: "none",
   description: [

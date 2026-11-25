@@ -163,6 +163,7 @@ export const httpRequest = {
  */
 export const scopedHttpRequest = {
   ...httpRequest,
+  scoped: "only",
   description: [
     "Fetch a URL with GET (or HEAD, for headers only) and keep the response: for JSON APIs, files, and a page's own source. web_fetch is for reading pages.",
     "",
@@ -189,4 +190,4 @@ export const scopedHttpRequest = {
   },
 }
 
-export default [httpRequest]
+export default [httpRequest, scopedHttpRequest]

@@ -5,7 +5,7 @@ import { makeTurn, textBlock, callBlock } from "./session/blocks.js"
 import { claimLease } from "./session/lease.js"
 import { callsAwaitingApproval, findCall } from "./session/calls.js"
 import { decide, run } from "./kernel/loop.js"
-import { BUILTIN_TOOLS } from "./assembly/builtin.js"
+import { FULL_TOOLS as BUILTIN_TOOLS } from "./fixtures/tool-ids.js"
 import { makeMock } from "./providers/mock.js"
 import { memoryStore } from "./kernel/store.js"
 

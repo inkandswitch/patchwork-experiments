@@ -4,13 +4,15 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { initPlan, PLAN, STEP, validateSteps, WORKFLOW_TOOL_IDS } from "./workflow/plan.js"
+import { initPlan, PLAN, STEP, validateSteps } from "./workflow/plan.js"
 import { WorkflowDriver, WEB_GRANT, _resetDrivers } from "./workflow/driver.js"
 import { initSession, CALL, STATUS, _resetIds } from "./session/schema.js"
 import { makeTurn, textBlock, callBlock } from "./session/blocks.js"
 import { claimLease } from "./session/lease.js"
 import { renderWaitingItem } from "./ui/waiting.js"
 import { waitingIn } from "./workflow/waiting.js"
+import { WORKFLOW_TOOL_IDS } from "./fixtures/tool-ids.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 
 await initSubduction()
 
@@ -51,6 +53,7 @@ function setup(steps, { behaviour = {} } = {}) {
   const make = () => {
     const driver = new WorkflowDriver({
       repo, handle: plan, startSession, heartbeatMs: 1e9, confirmMs: 0, settleMs: 5, sensitive: () => [],
+      tools: async () => ({ builtins: BUILTIN_TOOLS, plugins: [] }),
       notify: () => ({ notify: (render) => { const text = render(); if (text) news.push(text) }, close: () => {} }),
     })
     drivers.push(driver)
@@ -98,7 +101,7 @@ describe("web-only research steps", () => {
     await settle(driver)
     const session = (await sessionOf(repo, plan, "build")).doc()
     expect(session.scope).toBeUndefined()
-    expect(session.tools).toEqual({ where: "worker", disabled: WORKFLOW_TOOL_IDS })
+    expect(session.tools).toEqual({ where: "worker" })
     expect(session.grants[WEB_GRANT]).toBeUndefined()
   })
 })

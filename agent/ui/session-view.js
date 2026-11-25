@@ -17,7 +17,8 @@ import { handleStore } from "../kernel/store.js"
 import { decide, say, answerQuestion } from "../kernel/loop.js"
 import { heldElsewhere, needsWork } from "../kernel/runner.js"
 import { attachView } from "../runners/registry.js"
-import { startTabRunner, accountContext } from "../runners/tab.js"
+import { startTabRunner, accountContext, drivePlanHere } from "../runners/tab.js"
+import { getDriver } from "../workflow/driver.js"
 import { formatCost } from "../session/usage.js"
 import { unknownBlocks } from "../session/schema.js"
 import { watchWaiting, renderWaiting, renderWaitingItem } from "./waiting.js"
@@ -670,7 +671,6 @@ export function AgentTool(handle, element, options = {}) {
         input.value = ""
         onOpenDoc(await askAside(repo, handle, text || "(attached)", { author: await myContactUrl(), context, attachments }))
       } else {
-        const { getDriver, drivePlanHere } = await import("../workflow/driver.js")
         const driver = getDriver(now.planUrl) ?? (await drivePlanHere(now.planUrl, { repo }))
         await driver.reopen([now.stepId], { note: text, cascade: choice === "reopen-later", by: "person" })
         input.value = ""

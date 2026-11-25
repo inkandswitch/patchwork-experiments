@@ -31,7 +31,7 @@ function sessionWith(params = {}) {
 }
 
 const go = (store, provider, modelInfo = { efforts: null, maxOutput: 64000 }) =>
-  run({ store, provider, toolset, runnerUrl: "r", generation: 1, flushMs: 0, notes: false, modelInfo })
+  run({ store, provider, toolset, runnerUrl: "r", generation: 1, flushMs: 0, modelInfo })
 
 describe("a turn with neither words nor a call", () => {
   it("is told so, once, and goes on", async () => {

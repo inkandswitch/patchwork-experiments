@@ -31,8 +31,9 @@ import { braveSearch } from "./tools/web.js"
 import { keepSource } from "./tools/sources.js"
 import { findingWrite } from "./tools/findings.js"
 import { sourceRead } from "./tools/read-source.js"
-import { confine, scopedRepo, scopeOf, assertScopeAgrees, scopedToolset, webScope, sameScope, SCOPED_TOOL_IDS, NOT_A_SOURCE, EDITED_OUTSIDE, ScopeRefusal } from "./kernel/scope.js"
+import { confine, scopedRepo, scopeOf, assertScopeAgrees, webScope, sameScope, NOT_A_SOURCE, EDITED_OUTSIDE, ScopeRefusal } from "./kernel/scope.js"
 import { KERNEL_TYPES, KERNEL_REFUSAL } from "./kernel/kernel-repo.js"
+import { SCOPED_TOOL_IDS, researchToolset } from "./fixtures/tool-ids.js"
 
 await initSubduction()
 
@@ -238,7 +239,7 @@ describe("whatever a research step is handed, it reaches only the web and its wo
   const hosts = () => [globalThis, globalThis.window].filter((g, i, all) => g && all.indexOf(g) === i)
   beforeAll(async () => {
     w = await world()
-    tools = (await scopedToolset()).tools
+    tools = (await researchToolset()).tools
     for (const [i, g] of hosts().entries()) {
       originals[i] = g.fetch
       g.fetch = (url) => {
@@ -448,7 +449,7 @@ describe("web_fetch answers from the ledger", () => {
 
   const tools = {}
   beforeAll(async () => {
-    tools.webFetch = (await scopedToolset()).get("web_fetch")
+    tools.webFetch = (await researchToolset()).get("web_fetch")
   })
 })
 

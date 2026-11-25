@@ -43,7 +43,8 @@
 import { hostImport } from "../host/import.js"
 import { preview, noDocumentError } from "../documents/format.js"
 import { editsBetween, editsOfPatches, matchEdit, touchesPath } from "../documents/history.js"
-import { addedHeads, isOwn } from "../kernel/own-changes.js"
+import { addedHeads } from "../kernel/own-changes.js"
+import { watchesWriter } from "../kernel/store.js"
 
 export const MAX_WATCHES = 8
 /** Edits kept for one wake; older ones are counted, not shown. */
@@ -310,28 +311,11 @@ export async function restoreWatches({ repo, events, store }) {
   return results
 }
 
-/**
- * The session's watches, writable, and nothing else in it: what the runner
- * hands doc_watch (kernel/runner.js privileges) and what a starting runner restores
- * with. `doc()` reads the whole session, which every tool may.
- */
-export function watchesWriter(store) {
-  return {
-    url: store.url,
-    doc: () => store.doc(),
-    isOwn: (hash) => isOwn(store.url, hash),
-    change: (fn) =>
-      store.change((d) => {
-        if (!d.watches) d.watches = {}
-        fn(d.watches)
-      }),
-  }
-}
-
 const newId = () => `w${Math.random().toString(36).slice(2, 6)}`
 
 export const docWatch = {
   id: "doc_watch",
+  needs: ["watches"],
   name: "Watch a document",
   target: { fields: ["url"], fallback: "subject" },
   description: [

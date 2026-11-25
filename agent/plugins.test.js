@@ -3,11 +3,11 @@ import { loadPluginTools } from "./assembly/plugins.js"
 import { runTool } from "./kernel/tool.js"
 import { buildToolset } from "./assembly/toolset.js"
 import { BUILTIN_TOOLS } from "./assembly/builtin.js"
-import { SCOPED_TOOL_IDS, scopedToolset } from "./kernel/scope.js"
 import { needsApproval, grantGroup } from "./session/grants.js"
 import { initSession } from "./session/schema.js"
 import { recordArtifact } from "./session/made.js"
 import { keptSources } from "./tools/sources.js"
+import { SCOPED_TOOL_IDS, researchToolset, FULL_TOOLS } from "./fixtures/tool-ids.js"
 
 /** A registry that hands out whatever module is current, as Patchwork's does after a re-register. */
 function fakeRegistry(id) {
@@ -69,7 +69,7 @@ describe("what a session's tool list means", () => {
   const ids = async (tools) => (await buildToolset({ config: {}, tools }, { skipPlugins: true })).tools.map((t) => t.id)
   // Everything but the workflow tools (off unless switched on) and what only a
   // research step may have.
-  const everyBuiltin = BUILTIN_TOOLS.map((t) => t.id).filter((id) => !id.startsWith("workflow_") && id !== "finding_write")
+  const everyBuiltin = FULL_TOOLS.map((t) => t.id).filter((id) => !id.startsWith("workflow_") && id !== "finding_write")
 
   it.each([
     ["no list", undefined, everyBuiltin],
@@ -147,8 +147,8 @@ describe("the Web snapshot package's web_capture", () => {
 
   it("reaches a research step because it says it is scoped, and only then", async () => {
     const declared = await loadPluginTools({ registry })
-    expect((await scopedToolset({ plugins: declared })).tools.map((t) => t.id)).toEqual([...SCOPED_TOOL_IDS, "web_capture"])
+    expect((await researchToolset({ plugins: declared })).tools.map((t) => t.id)).toEqual([...SCOPED_TOOL_IDS, "web_capture"])
     const undeclared = await loadPluginTools({ registry: { ...registry, all: () => [{ ...WEB_CAPTURE, scoped: undefined }] } })
-    expect((await scopedToolset({ plugins: undeclared })).tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
+    expect((await researchToolset({ plugins: undeclared })).tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
   })
 })

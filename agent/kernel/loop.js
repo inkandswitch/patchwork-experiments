@@ -28,9 +28,6 @@ import { markReconnecting } from "../session/recovery.js"
 import { batchedAppender } from "./store.js"
 import { runTool } from "./tool.js"
 import { withFileData } from "../documents/files.js"
-import { notesSection } from "../knowledge/notes.js"
-import { packageSkillsSection } from "../knowledge/skills.js"
-import { guidesSection, surfaceGuides } from "../knowledge/guides.js"
 import { isInterruption } from "../net/network.js"
 import { callNeeds } from "./placement.js"
 
@@ -164,40 +161,20 @@ export async function run(opts) {
     prices: modelInfo ? { promptPerM: modelInfo.promptPerM ?? null, completionPerM: modelInfo.completionPerM ?? null } : null,
     repeatWindow: opts.repeatWindow ?? REPEAT_WINDOW,
     sessionUrl: opts.sessionUrl ?? null,
+    afterCall: opts.afterCall ?? [],
   }
 
-  // What earlier sessions learned. Read once per run, so a note written in one
-  // turn is in the next run's prompt; a failure to read them is not a reason
-  // to stop working.
-  if (opts.notes !== false) {
+  // What is added to the system prompt, in order: each section a function of
+  // the tools' context giving text or nothing (assembly/prompt.js has the
+  // agent's own). Read once per run, so what one turn wrote is in the next
+  // run's prompt; a section that fails is left out, which is no reason to
+  // stop working.
+  for (const section of opts.sections ?? []) {
     try {
-      const learned = await notesSection(ctx ?? {})
-      if (learned) settings.system = `${system}\n\n${learned}`
+      const text = await section(ctx ?? {})
+      if (text) settings.system = `${settings.system}\n\n${text}`
     } catch {
-      /* no notes this run */
-    }
-  }
-
-  // The package usage guides the agent keeps: listed here, and each one arrives
-  // with the result of the first call that uses its package (surfaceGuides).
-  if (opts.notes !== false) {
-    try {
-      const section = await guidesSection(ctx ?? {})
-      if (section) settings.system = `${settings.system ?? system}\n\n${section}`
-    } catch {
-      /* no guides this run */
-    }
-  }
-
-  // Skills installed packages bring: named here, because the built-ins are
-  // named in the prompt and these would otherwise be found only by a
-  // skill_list nobody had a reason to call.
-  if (opts.packageSkills !== false) {
-    try {
-      const section = await packageSkillsSection(ctx ?? {})
-      if (section) settings.system = `${settings.system ?? system}\n\n${section}`
-    } catch {
-      /* no package skills this run */
+      /* this run goes without it */
     }
   }
 
@@ -803,10 +780,13 @@ async function executeCalls(opts) {
     }
     emit({ type: "call-end", tool: call.tool, summary: outcome.summary, isError: outcome.isError })
 
-    // The first use of a package this session brings its usage guide along
-    // (knowledge/guides.js): the result is where the agent is looking.
-    const guide = await surfaceGuides(ctx, call, tool, outcome.output)
-    if (guide) outcome.output = `${outcome.output}\n\n${guide}`
+    // What a result has added to it before it is written, the result being
+    // where the agent is looking: the first use of a package brings its usage
+    // guide along (knowledge/guides.js surfaceGuides).
+    for (const after of opts.afterCall ?? []) {
+      const more = await after(ctx, call, tool, outcome.output)
+      if (more) outcome.output = `${outcome.output}\n\n${more}`
+    }
 
     // Only while the claim is still this run's: a runner that took the session
     // over meanwhile may have closed the call as interrupted, and that stands.
