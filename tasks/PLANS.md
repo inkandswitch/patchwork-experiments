@@ -5,147 +5,102 @@ known, so it can be picked up without finding it out again.
 
 ## Latency and throughput
 
-Set aside on 2026-11-25 in favour of getting the system's design right first.
-Everything below was measured that day on one Mac, in headless Chrome 158
-against patchwork.inkandswitch.com, with the fork as published then: the
-router-based system, now gone. Only two figures were measured again since,
-with the pool (marked so).
-
-### What a task costs
-
-A task that does nothing, asked for one at a time with both workers idle,
-from asking to the asker having the result (median of 30):
-
-| Asker and worker | Median | p90 |
-|---|---|---|
-| Same browser, asker on the tab's tasks Repo | 47 ms | 105 ms |
-| The same with the pool, on this machine's stand-in page (`probes/browser-run.mjs`, median and worst of 10) | 10.6 ms | 17.7 ms |
-| Same, code from a package rather than a `data:` URL | 50 ms | 86 ms |
-| Same browser, asker on the site's own Repo | 529 ms | 682 ms |
-| Node host, asker a separate peer on the same machine (router) | 525 ms | 584 ms |
-| The same with the pool (median and worst of 10) | 735–744 ms | 813–980 ms |
-
-With the pool, the Node figure splits as about 390 ms from asking to the
-pool's run being appended (the queue's change and then the task reach the
-pool's Repo through the sync server), 100 ms from that run to its end (about
-50 ms of it in the run worker's thread, the rest saving the run's start and
-handing over the task's document), and 255 ms from its end to the asker.
-`probes/node-run.mjs` prints these as its first check.
-
-The first run of a package's code adds about 80–170 ms in a browser (fetching
-the module) and about 400 ms in a Node host (fetching the files from
-automerge). For comparison, a bare worker on an empty page answers in
-0.014 ms once it is running, and in 2–3 ms if a new worker is made per call.
-
-The tab's tasks Repo and the workers' Repos share a database ("the family",
-see `src/ids.ts`). The site's own Repo is not in the family, so anything asked
-through it travels by the sync server both ways, as it does to a Node host.
-That is the half second.
+A task that does nothing, asked by a Node process of a Node host on the same Mac through the sync
+server (about 75 ms a round trip), takes about 750 ms from asking to the asker having the result:
+median 747–758 ms, worst 813–835 ms (`probes/node-run.mjs` check 1, 2026-11-25). The browser pool
+on its stand-in page, asked from that page, takes 10.6 ms (worst 17.7 ms). Throughput, many quick
+tasks at once, has not been measured with the pool.
 
 ### Where the time goes
 
-One task in the router-based system, each step timestamped where it
-happened (by a trace module that went with it), median time since asking:
+Every step traced on one clock, 20 tasks one at a time on a warm host (median / worst, ms):
 
-| ms | Step | Since the last |
+| Step | ms | What it waits on |
 |---|---|---|
-| 0.6 | task doc made | |
-| 2.7 | task doc saved | 2.1 |
-| 4.0 | listed in the queue | 1.3 |
-| 7.2 | listing saved | 3.2 |
-| 12.1 | router hands it out | 4.9 |
-| 12.5 | worker told | 0.4 |
-| 15.6 | worker has the task doc | 3.1 |
-| 16.3 | code loaded and run | 0.7 |
-| 16.6 | run recorded | 0.3 |
-| 24.5 | run saved | 7.9 |
-| 29.2 | asker has the result | 4.7 |
+| Asker makes the task, saves it, lists it, saves that | 9 / 19 | Local only |
+| The listing reaches the pool | 192 / 283 | The asker's sync round (about 1.5 round trips), the server's push, and the pool's forced write of what it received |
+| The pool finds the task's document | 138 / 204 | One round trip, and a forced write of what arrived |
+| The claim is saved | 53 / 61 | The rule: a run's start is saved before its code is called |
+| Hand-over, import, call, return | 4 / 8 | |
+| The thread saves what the code wrote | 47 / 56 | Measured with the thread saving the imported task document too; it now saves nothing for code that writes nothing |
+| The end is saved | 72 / 90 | The rule; it delays the start of the end's sync round |
+| The end reaches the asker | 256 / 306 | The end's own round, which starts only once the claim's has finished |
+| **Asked to taken / taken to ended / ended to the asker** | **366 / 107 / 258** | |
+| **Total** | **717 / 830** | |
 
-The work is under a millisecond. The rest is a document being saved by one
-Repo and loaded by another, six times: a Repo in the family hears of a change
-only when the Repo that made it has saved it, and then reads it from the
-database.
+A thread that saves nothing (check 1: 3–5 ms in the thread, against 54–56) does not shorten the
+total: the end then waits for the claim's round instead.
 
-### A run of quick tasks
+### The floor, and what stands above it
 
-Forty tasks of 20 ms asked for at once, on two workers, take about 2.8 s.
-With nothing in the way they would take 0.4 s. Each worker's hand-over from
-one task to the next, median:
+The least this design costs with this Repo and server is about **545 ms**: the listing crossing
+(160–200 ms), fetching the task's document (85–100), local work (about 20), the claim reaching the
+asker (about 160), and the end trailing the claim (85–100), since one document's sync rounds run
+one at a time. That is the figure with no forced writes in the pool's Repo (545 / 572 ms); two
+bare Repos agree (530–560 ms).
 
-| ms | Step |
-|---|---|
-| 1.3 | run recorded, worker says it is free (a change to its own doc) |
-| 70–75 | that change reaches the router |
-| 0.1 | router hands out the next |
-| 0.4 | worker told |
-| 9 | worker has the next task's doc |
+Between today's figure and the floor:
 
-So a worker does about twelve quick tasks a second, and nearly all of the
-wait is the worker's own doc reaching the router.
+- **Forced writes on the host.** On macOS an fsync is a full flush of the disk (F_FULLFSYNC, about
+  3.6 ms, one at a time), and the Repo waits for its storage before a received change reaches the
+  handle and before an outgoing change's round starts.
+  - Dropping all of them in the pool's Repo gains about 170 ms. A run's start then survives a
+    crashed process but not a power cut: a claim lost that way leaves code that may have written
+    to the server with no run for `earlier()` to see. That is the lead's call.
+  - Dropping only the writes no flush asked for (copies of what the server already holds) keeps
+    every rule exactly and gains about 100 ms (615 / 700 ms, measured together with the thread
+    saving only what its code changed). The forced writes sit in module-level helpers of the
+    NodeFS storage adapter, so doing it here means carrying a copy of the adapter (about 600
+    lines) that forces a write only while a `flush` is pending. Such a copy was measured
+    (`scratch/skeptic-tasks`) and is not in this package: when a write must reach the disk is the
+    Repo's storage adapter's to offer (an option such as `durability: 'flush'`), and a copy would
+    fall behind each Repo release. A Repo that applied what it receives before writing it would
+    make it unnecessary too.
+  - The rest, about 70 ms, is the claim's and the end's own forced writes: the rule itself.
+- **Below the floor is the Repo's.**
+  - Every change goes to the server as a whole sync round (fingerprints, the server's answer, the
+    data, the server's store, and only then its push to subscribers) where a push straight to the
+    subscribed server (`addCommit`) would do: about 160 ms, measured in a patched copy
+    (`scratch/repolens-overlay`, 697 → 539 ms). It belongs upstream as store, then push without
+    waiting for it, with the round kept as the repair; waiting for the push inside the save ties
+    every flush to the network.
+  - One document's rounds run one at a time, so a run's end waits for its claim's round: about
+    75–100 ms.
+- **Not explained:** the claim's save takes 53–57 ms where its six or so forced writes take about
+  22; the listing's crossing varies between 160 and 210 ms from one session to the next.
 
-### What was changed
+### A listing that arrives before its task
 
-- **Saved at once.** The asker's listing and the worker's run record are
-  flushed as they are made (now in `task-client.js` and `pool.ts`). Before this a task
-  took 217 ms, not 47: a Repo holds a document's changes for up to 100 ms
-  before saving them (its `subductionSaveThrottle`), and both the ask and the
-  result waited that out.
-- **Tracing**, and `--latency N` on both probes (see below).
+A listing can reach the pool before the task's document can be fetched (1 in 20 asks with a 1 MB
+input made just before asking; never in 120 do-nothing asks). The refused find has asked the
+server, which pushes the document when it has it, and the pool listens to the Repo's query for it
+(`findWithProgress`) and takes the task once it arrives. Check 16 of `node-run.mjs`, the
+document sent 300 ms after its listing: taken 509–538 ms after the listing (worst 562), 203–230 ms
+after the document was sent; looking again only at the next beat took 3.6 s. A Repo without
+`findWithProgress` gets the beat.
 
-### Tried and taken out
+### Rejected
 
-Setting `subductionSaveThrottle: 0` on the family's Repos, in place of the
-explicit flushes. Measured on its own, between two Repos sharing a database
-on the real site, it does what it should:
-
-| Pattern | Default (100 ms) | Zero |
-|---|---|---|
-| One change after a quiet spell | 6.6 ms | 5.5 ms |
-| The second of two changes 20 ms apart | 90 ms | 9.5 ms |
-| That pair, repeating every 45 ms | 63 ms | 8.6 ms |
-
-The third row is a worker taking a task on and finishing it, over and over,
-and 63 ms is the 70 ms in the hand-over above. But with the setting in the
-fork, a single task took the same 40-odd ms and the hand-over still took
-about 60. The built worker scripts did carry the setting. Why it made no
-difference there is not known, so it is not in the code.
-
-### Where to start
-
-1. **A slot's hand-over.** A pool frees its own slot when it has saved a
-   run's end, so the hand-over measured above is not what it costs now. Why
-   the zero throttle did not act in the workers is
-   still not known, and still worth finding out where a pool and its askers
-   share a database.
-2. **`flush` does more than save.** It also waits for storage to settle and
-   for compaction, which is most of the 7.9 ms between a run being recorded
-   and saved. The rest of the family needs only the save.
-3. **One document fewer per task.** A task is its own doc, which the asker
-   saves and the worker then loads: about 5 ms on the way out, more in a
-   run of tasks. Putting a small task in its queue entry would remove both.
-   That is a design question (what a task is) more than tuning.
-4. **Asking through the right Repo.** Half a second against 47 ms. Anything
-   in a tab that wants a quick answer should ask through the tab's tasks
-   Repo, which `src/task-client.js` does when handed it.
-5. **Capacity.** One run per run worker, and as many run workers as the
-   pool has slots, is a separate limit from all of the above.
-
-Not on the list, by decision (2026-11-25): sending the ask or the result as a
-message ahead of the document. A worker would be acting on something not yet
-saved, and it is a way round the system, not a faster system.
+- **Listing only once the server has the task.** About 143 ms more on every task, to prevent a
+  refusal the pool now recovers from in about 250 ms.
+- **Asking again on a short timer after a refusal** (50, 100, 200 ms…). About 95 ms slower at the
+  median than listening for the document, and a review per timer.
+- **Sending the ask or the result as a message ahead of the document** (the lead, 2026-11-25): a
+  worker would act on something not yet saved, a way round the system and not a faster system.
+- **Starting threads ahead of time, or handing the job over while the claim is saved.** The first
+  is hidden once the pool's forced writes are gone; the second loosens "saved before its code is
+  called" for under 2 ms.
+- **The Repo's save throttle.** Not on the path: every step flushes.
 
 ### Measuring it again
 
-```
-node probes/node-run.mjs
-```
-
-Its first check asks a Node host for ten tasks that do nothing, one at a
-time, and prints the figures above; it runs the working tree's build
-(`pnpm build:node`), and publishes nothing. `probes/browser-run.mjs` prints
-the browser pool's figure as its first check, against the built package on
-a stand-in page; `probes/real-run.mjs` runs the same pool in the real site
-and needs a published copy.
+`pnpm build:node`, then `node probes/node-run.mjs --only 1,16`: check 1 prints the total and its
+three parts (asked to taken, taken to ended with the time in the thread, ended to the asker),
+check 16 the late listing. `probes/browser-run.mjs` prints the browser pool's figure as its first
+check. Step-by-step tracing is in scratch copies under `/Users/pvh/dev/pwx-one/scratch/`
+(`skeptic-tasks`: trace points written to `$TASKS_TRACE` on the machine's clock, `probes/bb/lat.mjs`
+and its drivers `arms.sh` and `late.sh`, `analyze.mjs`; `repolens-overlay`: the patched Repo).
+They are not part of this package, switch experiments by environment variables, and may be gone.
 
 ## Deferred, with what each waits on
 
