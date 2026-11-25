@@ -6,6 +6,9 @@ import { describe, it, expect } from "vitest"
 import { relayFetch } from "../net/relay.js"
 import { guardedFetch, Refused } from "../net/guard.js"
 import { webFetch } from "./web.js"
+import { httpRequest } from "./http.js"
+import { isInterruption } from "../net/network.js"
+import { runTool } from "../kernel/tool.js"
 
 const RELAY = { url: "https://relay.test", key: "k" }
 const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a, 0xff, 0x00])
@@ -132,5 +135,30 @@ describe("a tab with a relay keeps originals", () => {
     expect(String(kept.content)).toBe(html)
     expect(String(kept.text)).toMatch(/Rated capacity 280Ah/)
     expect(String(kept.text)).not.toMatch(/x\(\)/)
+  })
+})
+
+describe("a relay that cannot be reached", () => {
+  // The relay is ours, so not reaching it is the network being away: the call
+  // had no effect and runs again when the network is back (net/network.js).
+  const unreachable = async () => {
+    throw new TypeError("Failed to fetch")
+  }
+  const ctx = () => ({ fetchImpl: guardedFetch({ fetch: relayFetch({ fetch: unreachable, relay: () => RELAY }) }), direct: true, repo: fakeRepo() })
+
+  it("is an interruption to http_request, not a failed request", async () => {
+    const attempt = httpRequest.execute({ url: "https://api.test/x" }, ctx())
+    await expect(attempt).rejects.toSatisfy(isInterruption)
+    expect(await runTool(httpRequest, { url: "https://api.test/x" }, ctx())).toMatchObject({ interrupted: true, isError: false })
+  })
+
+  it("while a request that fails at its target is still an error, with the CORS hint", async () => {
+    const failing = async () => {
+      throw new TypeError("Failed to fetch")
+    }
+    const direct = { fetchImpl: guardedFetch({ fetch: failing }), direct: false, repo: fakeRepo() }
+    const result = await runTool(httpRequest, { url: "https://api.test/x" }, direct)
+    expect(result).toMatchObject({ isError: true })
+    expect(result.output).toMatch(/Request failed: .*CORS/)
   })
 })

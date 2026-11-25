@@ -28,6 +28,7 @@ import { isTextResponse, describeBytes, decodeText } from "../documents/media.js
 import { sourceFooter } from "./sources.js"
 import { readBytes, keepResponse, htmlToText } from "./web.js"
 import { fetcher } from "../net/guard.js"
+import { isInterruption } from "../net/network.js"
 
 export const httpRequest = {
   id: "http_request",
@@ -91,7 +92,10 @@ export const httpRequest = {
         signal: ctx.signal,
       })
     } catch (err) {
-      if (err?.refused) throw err
+      // A target the guard refused, or a relay that could not be reached, is
+      // what it is: the second is the network being away, not this request
+      // failing (net/network.js).
+      if (err?.refused || isInterruption(err)) throw err
       throw new Error(
         `Request failed: ${err?.message ?? err}. If this is a CORS error, the API cannot be called from a browser — that needs a runner outside the browser.`
       )
