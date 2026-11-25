@@ -308,7 +308,7 @@ daemon/start.sh --new-queue "title" | --queue automerge:… [--jobs N] [--cores 
 
 - **State** (`--state`): `host/` (the host's documents) and `runs/<id>/`,
   each run's OpenFOAM case, kept for ParaView. The machine's settings reach
-  each run as `FOAMD_*` environment variables (`daemon/run-task.mjs` lists them).
+  each run as `OPENFOAM_*` environment variables (`daemon/run-task.mjs` lists them).
 - **Who serves it.** Each host says so on the queue every two seconds; the
   case tool shows who is heard ("served by …") and what runs and waits. Runs
   asked of a queue nobody serves wait in it.

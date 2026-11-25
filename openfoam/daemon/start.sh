@@ -43,12 +43,12 @@ while [ $# -gt 0 ]; do
     --queue) queue=(--queue "${2:?--queue needs a url}"); shift 2 ;;
     --new-queue) queue=(--new-queue "${2:?--new-queue needs a title}"); shift 2 ;;
     --jobs) jobs="${2:?--jobs needs a number}"; shift 2 ;;
-    --cores) export FOAMD_CORES="${2:?--cores needs a number}"; shift 2 ;;
+    --cores) export OPENFOAM_CORES="${2:?--cores needs a number}"; shift 2 ;;
     --name) name="${2:?--name needs a name}"; shift 2 ;;
-    --launcher) export FOAMD_LAUNCHER="${2:?--launcher needs a path}"; shift 2 ;;
-    --bashrc) export FOAMD_BASHRC="${2:?--bashrc needs a path}"; shift 2 ;;
-    --mpirun-args) export FOAMD_MPIRUN_ARGS="${2?--mpirun-args needs a value}"; shift 2 ;;
-    --state) export FOAMD_STATE="${2:?--state needs a directory}"; shift 2 ;;
+    --launcher) export OPENFOAM_LAUNCHER="${2:?--launcher needs a path}"; shift 2 ;;
+    --bashrc) export OPENFOAM_BASHRC="${2:?--bashrc needs a path}"; shift 2 ;;
+    --mpirun-args) export OPENFOAM_MPIRUN_ARGS="${2?--mpirun-args needs a value}"; shift 2 ;;
+    --state) export OPENFOAM_STATE="${2:?--state needs a directory}"; shift 2 ;;
     --sync) export PATCHWORK_SYNC="${2:?--sync needs a url}"; shift 2 ;;
     -h | --help) usage ;;
     *) echo "unknown option $1" >&2; usage ;;
@@ -74,6 +74,6 @@ if [ ! -d "$here/node_modules/@automerge/automerge-repo" ]; then
   (cd "$here" && { command -v pnpm >/dev/null && pnpm install --prod --frozen-lockfile || npm install --omit=dev; }) >&2
 fi
 
-data="${FOAMD_STATE:-$HOME/.patchwork-openfoam}/host"
+data="${OPENFOAM_STATE:-$HOME/.patchwork-openfoam}/host"
 mkdir -p "$data"
 exec "$NODE" "$TASKS_HOST" "${queue[@]}" --local "$OPENFOAM_PACKAGE=$here" --workers "$jobs" --data-dir "$data" --name "$name"

@@ -15,11 +15,11 @@
 //
 // The machine, from the environment the host was started in (start.sh sets it):
 //
-//   FOAMD_LAUNCHER     the OpenFOAM launcher (macOS: found by itself)
-//   FOAMD_BASHRC       or a Linux install's etc/bashrc
-//   FOAMD_MPIRUN_ARGS  extra mpirun arguments
-//   FOAMD_CORES        the cores each run gets (default: all but two, at most 8)
-//   FOAMD_STATE        where each run's case directory is kept, under runs/ (~/.patchwork-openfoam)
+//   OPENFOAM_LAUNCHER     the OpenFOAM launcher (macOS: found by itself)
+//   OPENFOAM_BASHRC       or a Linux install's etc/bashrc
+//   OPENFOAM_MPIRUN_ARGS  extra mpirun arguments
+//   OPENFOAM_CORES        the cores each run gets (default: all but two, at most 8)
+//   OPENFOAM_STATE        where each run's case directory is kept, under runs/ (~/.patchwork-openfoam)
 //   PATCHWORK_SYNC     the sync server, for the second peer that checks docs reached it
 //
 // Per run, too: on macOS, `caffeinate` holds idle sleep off while it runs
@@ -45,11 +45,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** The machine's facts, as the environment gives them. */
 export function machineSettings(env = process.env) {
   return {
-    launcher: env.FOAMD_LAUNCHER || undefined,
-    bashrc: env.FOAMD_BASHRC || undefined,
-    mpirunArgs: env.FOAMD_MPIRUN_ARGS ?? "",
-    cores: env.FOAMD_CORES ? Math.max(1, Number(env.FOAMD_CORES) | 0) : defaultCores(),
-    state: resolve(env.FOAMD_STATE || join(homedir(), ".patchwork-openfoam")),
+    launcher: env.OPENFOAM_LAUNCHER || undefined,
+    bashrc: env.OPENFOAM_BASHRC || undefined,
+    mpirunArgs: env.OPENFOAM_MPIRUN_ARGS ?? "",
+    cores: env.OPENFOAM_CORES ? Math.max(1, Number(env.OPENFOAM_CORES) | 0) : defaultCores(),
+    state: resolve(env.OPENFOAM_STATE || join(homedir(), ".patchwork-openfoam")),
     sync: env.PATCHWORK_SYNC || DEFAULT_SYNC,
   };
 }

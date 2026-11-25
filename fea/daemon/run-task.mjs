@@ -14,9 +14,9 @@
 //
 //   GMSH              the gmsh to use (else found: daemon/tools.mjs says where)
 //   CCX               the CalculiX ccx to use (else found likewise)
-//   FEAD_CORES        the cores each run gets (default: all but two, at most 8)
-//   FEAD_MAX_NODES    the largest mesh it solves (250,000 nodes)
-//   FEAD_STATE        where runs/<id>/ and the kept meshes (meshes/) go (~/.patchwork-fea)
+//   FEA_CORES        the cores each run gets (default: all but two, at most 8)
+//   FEA_MAX_NODES    the largest mesh it solves (250,000 nodes)
+//   FEA_STATE        where runs/<id>/ and the kept meshes (meshes/) go (~/.patchwork-fea)
 //   PATCHWORK_SYNC    the sync server, for the second peer that checks docs reached it
 //
 // gmsh and ccx are looked for and asked their versions at the start of every
@@ -51,9 +51,9 @@ export function machineSettings(env = process.env) {
   return {
     gmsh: env.GMSH || undefined,
     ccx: env.CCX || undefined,
-    cores: env.FEAD_CORES ? Math.max(1, Number(env.FEAD_CORES) | 0) : defaultCores(),
-    maxNodes: env.FEAD_MAX_NODES ? Math.max(1000, Number(env.FEAD_MAX_NODES) | 0) : 250_000,
-    state: resolve(env.FEAD_STATE || join(homedir(), ".patchwork-fea")),
+    cores: env.FEA_CORES ? Math.max(1, Number(env.FEA_CORES) | 0) : defaultCores(),
+    maxNodes: env.FEA_MAX_NODES ? Math.max(1000, Number(env.FEA_MAX_NODES) | 0) : 250_000,
+    state: resolve(env.FEA_STATE || join(homedir(), ".patchwork-fea")),
     sync: env.PATCHWORK_SYNC || DEFAULT_SYNC,
   };
 }

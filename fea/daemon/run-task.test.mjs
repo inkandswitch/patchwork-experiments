@@ -73,9 +73,9 @@ describe("the runner", () => {
 describe("the machine, from the environment", () => {
   it("reads its settings from the environment, with the defaults", () => {
     expect(machineSettings({})).toMatchObject({ gmsh: undefined, ccx: undefined, maxNodes: 250_000, state: join(homedir(), ".patchwork-fea"), sync: "wss://subduction.sync.inkandswitch.com" });
-    expect(machineSettings({ GMSH: "/g", CCX: "/c", FEAD_CORES: "3", FEAD_MAX_NODES: "5000", FEAD_STATE: "/s", PATCHWORK_SYNC: "wss://x" })).toEqual({ gmsh: "/g", ccx: "/c", cores: 3, maxNodes: 5000, state: "/s", sync: "wss://x" });
+    expect(machineSettings({ GMSH: "/g", CCX: "/c", FEA_CORES: "3", FEA_MAX_NODES: "5000", FEA_STATE: "/s", PATCHWORK_SYNC: "wss://x" })).toEqual({ gmsh: "/g", ccx: "/c", cores: 3, maxNodes: 5000, state: "/s", sync: "wss://x" });
     // a cap below a thousand nodes is a slip
-    expect(machineSettings({ FEAD_MAX_NODES: "10" }).maxNodes).toBe(1000);
+    expect(machineSettings({ FEA_MAX_NODES: "10" }).maxNodes).toBe(1000);
   });
   it("gmsh missing, CalculiX missing, or either not starting: a sentence saying which, on which machine", () => {
     expect(() => thisMachine({ GMSH: "/no/such/gmsh" })).toThrow(/^The machine serving this queue \(.+\) can't run it: no gmsh at \/no\/such\/gmsh\.$/);

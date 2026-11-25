@@ -47,12 +47,12 @@ while [ $# -gt 0 ]; do
     --queue) queue=(--queue "${2:?--queue needs a url}"); shift 2 ;;
     --new-queue) queue=(--new-queue "${2:?--new-queue needs a title}"); shift 2 ;;
     --jobs) jobs="${2:?--jobs needs a number}"; shift 2 ;;
-    --cores) export FEAD_CORES="${2:?--cores needs a number}"; shift 2 ;;
-    --max-nodes) export FEAD_MAX_NODES="${2:?--max-nodes needs a number}"; shift 2 ;;
+    --cores) export FEA_CORES="${2:?--cores needs a number}"; shift 2 ;;
+    --max-nodes) export FEA_MAX_NODES="${2:?--max-nodes needs a number}"; shift 2 ;;
     --name) name="${2:?--name needs a name}"; shift 2 ;;
     --gmsh) export GMSH="${2:?--gmsh needs a path}"; shift 2 ;;
     --ccx) export CCX="${2:?--ccx needs a path}"; shift 2 ;;
-    --state) export FEAD_STATE="${2:?--state needs a directory}"; shift 2 ;;
+    --state) export FEA_STATE="${2:?--state needs a directory}"; shift 2 ;;
     --sync) export PATCHWORK_SYNC="${2:?--sync needs a url}"; shift 2 ;;
     -h | --help) usage ;;
     *) echo "unknown option $1" >&2; usage ;;
@@ -78,6 +78,6 @@ if [ ! -d "$here/node_modules/@automerge/automerge-repo" ]; then
   (cd "$here" && { command -v pnpm >/dev/null && pnpm install --prod --frozen-lockfile || npm install --omit=dev; }) >&2
 fi
 
-data="${FEAD_STATE:-$HOME/.patchwork-fea}/host"
+data="${FEA_STATE:-$HOME/.patchwork-fea}/host"
 mkdir -p "$data"
 exec "$NODE" "$TASKS_HOST" "${queue[@]}" --local "$FEA_PACKAGE=$here" --workers "$jobs" --data-dir "$data" --name "$name"
