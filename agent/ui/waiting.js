@@ -10,13 +10,13 @@
  */
 
 import { decide, answerQuestion } from "../kernel/loop.js"
-import { grantOffers } from "../session/grants.js"
 import { handleStore } from "../kernel/store.js"
-import { describeCall } from "./calls.js"
+import { approvalOf, drawApproval } from "./approval.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP, RESUME_AMOUNTS, resumePlan, changePlan } from "../workflow/plan.js"
-import { liftBudget, liftAmounts } from "../session/usage.js"
+import { liftBudget, liftAmounts, dollars } from "../session/usage.js"
 import { drivePlanHere } from "../runners/tab.js"
+import { morph } from "./morph.js"
 
 
 function el(tag, className, text) {
@@ -100,45 +100,23 @@ export function watchWaiting(repo, sessionHandle, onChange) {
  *   onOpen   (url) => open the step's session
  */
 export function renderWaitingItem(item, { onOpen = null, subject = null, splice = null, showStep = true } = {}) {
+  if (item.kind === "budget" && item.scope === "session") return renderLiftItem(item, { onOpen, showStep, splice })
+  if (item.kind === "budget") return renderBudgetItem(item, { onOpen, showStep })
+
   const node = el("div", "agent-waiting-item")
   node.dataset.kind = item.kind
   const store = () => handleStore(item.handle, splice)
-
-  if (item.kind === "budget" && item.scope === "session") return renderLiftItem(item, { onOpen, showStep, splice })
-  if (item.kind === "budget") return renderBudgetItem(item, { onOpen, showStep })
   if (showStep) node.append(el("p", "agent-waiting-step", `${item.stepTitle}${item.planTitle ? ` · ${item.planTitle}` : ""}`))
 
-  const actions = el("div", "cluster")
+  let actions
   if (item.kind === "approval") {
-    const { verb, detail } = describeCall({ tool: item.tool, input: item.input, shown: item.shown }, null, { subject })
-    node.append(el("p", null, `Wants to ${verb}${detail ? ` ${detail}` : ""}`))
-    const allow = el("button", null, "Allow once")
-    allow.dataset.variant = "primary"
-    allow.addEventListener("click", (event) => {
-      event.preventDefault()
-      decide(store(), item.callId, "once")
-    })
-    const deny = el("button", null, "Deny")
-    deny.addEventListener("click", (event) => {
-      event.preventDefault()
-      decide(store(), item.callId, "deny")
-    })
-    actions.append(allow)
-    // The broader answers, as the call's own card offers them: this site, any
-    // site. A grant releases every other call in the session it covers, and a
-    // workflow spreads it to its other sessions (workflow/driver.js).
-    for (const offer of grantOffers(item).slice(-2)) {
-      const grant = el("button", null, `Allow ${offer.label}`)
-      grant.title = offer.detail
-      grant.addEventListener("click", (event) => {
-        event.preventDefault()
-        decide(store(), item.callId, { grant: offer.key })
-      })
-      actions.append(grant)
-    }
-    actions.append(deny)
+    // Asked in brief, as the call's own card asks in full (ui/approval.js).
+    const drawn = drawApproval(approvalOf(item, { brief: true, subject }), (decision) => decide(store(), item.callId, decision))
+    node.append(...drawn.nodes)
+    actions = drawn.actions
   } else {
     node.append(el("p", "agent-waiting-question", item.question))
+    actions = el("div", "cluster")
     for (const option of item.options ?? []) {
       const button = el("button", null, option.label)
       if (option.detail) button.title = option.detail
@@ -166,17 +144,20 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
       }
     })
     actions.append(input, send)
+    node.append(actions)
   }
-  if (onOpen && item.sessionUrl) {
-    const open = el("button", null, "Open session")
-    open.addEventListener("click", (event) => {
-      event.preventDefault()
-      onOpen(item.sessionUrl)
-    })
-    actions.append(open)
-  }
-  node.append(actions)
+  if (onOpen && item.sessionUrl) actions.append(opener("Open session", () => onOpen(item.sessionUrl)))
   return node
+}
+
+/** A button that opens something elsewhere. */
+function opener(label, open) {
+  const button = el("button", null, label)
+  button.addEventListener("click", (event) => {
+    event.preventDefault()
+    open()
+  })
+  return button
 }
 
 /**
@@ -210,14 +191,7 @@ export function renderBudgetItem(item, { onOpen = null, showStep = true } = {}) 
     })
     actions.append(resume)
   }
-  if (onOpen && item.planUrl) {
-    const open = el("button", null, "Open workflow")
-    open.addEventListener("click", (event) => {
-      event.preventDefault()
-      onOpen(item.planUrl)
-    })
-    actions.append(open)
-  }
+  if (onOpen && item.planUrl) actions.append(opener("Open workflow", () => onOpen(item.planUrl)))
   node.append(actions)
   return node
 }
@@ -233,7 +207,7 @@ export function renderLiftItem(item, { onOpen = null, showStep = true, splice = 
   node.append(el("p", null, describeBudget(item)))
   const actions = el("div", "cluster")
   liftAmounts(item.limit).forEach((amount, i) => {
-    const give = el("button", null, `Give $${amount.toFixed(2)} more`)
+    const give = el("button", null, `Give ${dollars(amount)} more`)
     if (i === 0) give.dataset.variant = "primary"
     give.addEventListener("click", (event) => {
       event.preventDefault()
@@ -241,36 +215,41 @@ export function renderLiftItem(item, { onOpen = null, showStep = true, splice = 
     })
     actions.append(give)
   })
-  if (onOpen && item.sessionUrl) {
-    const open = el("button", null, "Open session")
-    open.addEventListener("click", (event) => {
-      event.preventDefault()
-      onOpen(item.sessionUrl)
-    })
-    actions.append(open)
-  }
+  if (onOpen && item.sessionUrl) actions.append(opener("Open session", () => onOpen(item.sessionUrl)))
   node.append(actions)
   return node
 }
 
 /** One line on a spent budget: a session's, or a whole workflow's. */
 export function describeBudget({ spent, limit, notStarted, stopped = 0, ask: askFor = null, scope }) {
-  if (scope === "session") return `Spent its $${Number(limit).toFixed(2)} budget ($${Number(spent).toFixed(2)}) and stopped part-way. It carries on from there if it is given more.`
+  if (scope === "session") return `Spent its ${dollars(limit)} budget (${dollars(spent)}) and stopped part-way. It carries on from there if it is given more.`
 
-  const money = `$${Number(spent).toFixed(2)} of $${Number(limit).toFixed(2)}`
+  const money = `${dollars(spent)} of ${dollars(limit)}`
   const blocked = [
     notStarted ? `${notStarted} step${notStarted === 1 ? "" : "s"} waiting to start` : null,
     stopped ? `${stopped} stopped part-way` : null,
   ].filter(Boolean)
-  const ask = askFor ? ` The orchestrator wants to give ${askFor.stepTitle ?? askFor.stepId} $${Number(askFor.need).toFixed(2)} more${askFor.why ? `: ${askFor.why}` : ""}.` : ""
+  const ask = askFor ? ` The orchestrator wants to give ${askFor.stepTitle ?? askFor.stepId} ${dollars(askFor.need)} more${askFor.why ? `: ${askFor.why}` : ""}.` : ""
   return `The workflow has spent its whole budget (${money}, orchestrator included), so ${blocked.join(" and ") || "nothing more can run"}.${ask} Resume raises the budget to what has been spent plus the amount you pick; the orchestrator then decides how to spend it.`
 }
 
-/** The strip above the orchestrator's transcript. Empty, it is hidden. */
+/**
+ * The strip above the orchestrator's transcript. Empty, it is hidden.
+ *
+ * Morphed into `container` (ui/morph.js), each item keyed by its call and kept
+ * whole, since it brings its own listeners: an item whose markup has not
+ * changed is the same node, so an answer half-typed in it survives every
+ * other change to the documents behind the strip.
+ */
 export function renderWaiting(container, items, options = {}) {
-  container.replaceChildren()
   container.hidden = !items.length
-  if (!items.length) return
-  container.append(el("p", "agent-waiting-title", `Waiting on you in workflow steps (${items.length})`))
-  for (const item of items) container.append(renderWaitingItem(item, options))
+  const out = document.createDocumentFragment()
+  if (items.length) out.append(el("p", "agent-waiting-title", `Waiting on you in workflow steps (${items.length})`))
+  for (const item of items) {
+    const node = renderWaitingItem(item, options)
+    node.dataset.key = `waiting:${item.sessionUrl ?? item.planUrl ?? ""}:${item.callId}`
+    node.dataset.morph = "whole"
+    out.append(node)
+  }
+  morph(container, out)
 }

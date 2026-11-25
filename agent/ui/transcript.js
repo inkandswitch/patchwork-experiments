@@ -12,11 +12,11 @@
  */
 
 import { CALL } from "../session/schema.js"
-import { grantOffers } from "../session/grants.js"
 import { questionOptions } from "../session/calls.js"
 import { renderMarkdown } from "./markdown.js"
 import { describeCall } from "./calls.js"
 import { renderCallBody } from "./bodies.js"
+import { approvalOf, drawApproval } from "./approval.js"
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag)
@@ -145,56 +145,10 @@ function renderDocLink(ref, handlers) {
   return link
 }
 
+/** The call's own card, asking in full (ui/approval.js). */
 function renderApproval(block, handlers) {
   const card = el("div", "agent-approval")
-  // What the call is about, as it said when it was written (session/grants.js).
-  const target = block.ask?.target ?? null
-  card.append(el("div", "agent-approval-title", `Run ${block.tool}?`))
-  if (target) {
-    card.append(el("div", "agent-approval-detail", `on ${String(target).replace(/^automerge:/, "doc ")}`))
-  }
-
-  const detail = el("div", "agent-approval-detail")
-  detail.textContent = JSON.stringify(block.input ?? {}, null, 2).slice(0, 600)
-  card.append(detail)
-
-  const button = (label, decision, { variant, title } = {}) => {
-    const b = el("button", null, label)
-    if (variant) b.dataset.variant = variant
-    if (title) b.title = title
-    b.addEventListener("click", (event) => {
-      event.preventDefault()
-      handlers.decide(block.id, decision)
-    })
-    return b
-  }
-
-  const row = el("div", "cluster")
-  row.append(button("Allow once", "once", { variant: "primary" }), button("Deny", "deny", { variant: "danger" }))
-  card.append(row)
-
-  // Offering a standing grant for a call that will ask again anyway is worse
-  // than offering nothing: the grant would be kept and the call asked about
-  // all the same. Say so instead.
-  if (block.ask?.always) {
-    card.append(
-      el(
-        "div",
-        "agent-approval-note",
-        "This one asks every time — it can carry your credentials or change something at the other end."
-      )
-    )
-    return card
-  }
-
-  // The standing grants, from narrowest to broadest. Answering every fetch
-  // individually is what makes an agent tedious to work with, so the useful
-  // scopes are one click away: this page, this section, this whole site.
-  const scopes = el("div", "agent-approval-scopes")
-  scopes.append(el("span", "agent-approval-label", "Always allow:"))
-  const offers = grantOffers(block)
-  for (const offer of offers) scopes.append(button(offer.label, { grant: offer.key }, { title: offer.detail }))
-  if (offers.length) card.append(scopes)
+  card.append(...drawApproval(approvalOf(block), (decision) => handlers.decide(block.id, decision)).nodes)
   return card
 }
 

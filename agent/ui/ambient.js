@@ -18,7 +18,8 @@
  * it was sent (see ui/workspace.js and session/blocks.js `contextBlock`).
  */
 
-import { AgentTool, isDictationShortcut } from "./session-view.js"
+import { AgentTool } from "./session-view.js"
+import { isDictationShortcut } from "./dictation.js"
 import { initSession } from "../session/schema.js"
 import { sessionTitle } from "../session/title.js"
 import { documentIdOf } from "../documents/doc-urls.js"

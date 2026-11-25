@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
-import { liftBudget, liftAmounts } from "../session/usage.js"
+import { liftBudget, liftAmounts, dollars } from "../session/usage.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { renderWaitingItem } from "./waiting.js"
 import { needsWork } from "../kernel/runner.js"
@@ -57,6 +57,16 @@ function fakeHandle(doc) {
     off: (event, fn) => listeners.delete(fn),
   }
 }
+
+describe("money, as a person reads it", () => {
+  it.each([
+    [0.5, "$0.50"],
+    [12, "$12.00"],
+    ["2.5", "$2.50"],
+    [null, "$0.00"],
+    [Number.NaN, "$0.00"],
+  ])("%j is %s", (amount, text) => expect(dollars(amount)).toBe(text))
+})
 
 describe("lifting a spent budget", () => {
   it("gives more than whichever is higher, its budget or what it spent, and the session carries on", () => {

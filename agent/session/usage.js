@@ -40,6 +40,11 @@ export function costOf(usage, prices = null) {
   return { cost, estimated: true }
 }
 
+/** Dollars to the cent: "$0.50", "$12.00"; anything not a number is "$0.00". */
+export function dollars(amount) {
+  return `$${(Number(amount) || 0).toFixed(2)}`
+}
+
 /** "$0.42", "<$0.01", "$1,204", "~" in front when partly estimated; null when no cost is known. */
 export function formatCost(usage) {
   const cost = usage?.cost
@@ -47,7 +52,7 @@ export function formatCost(usage) {
   const mark = usage.costEstimated ? "~" : ""
   if (cost > 0 && cost < 0.01) return `${mark}<$0.01`
   if (cost >= 100) return `${mark}$${Math.round(cost).toLocaleString("en")}`
-  return `${mark}$${cost.toFixed(2)}`
+  return `${mark}${dollars(cost)}`
 }
 
 /**
@@ -63,7 +68,7 @@ export function liftBudget(doc, add) {
   const limit = Math.round((Math.max(doc.config.budget ?? 0, spent) + amount) * 100) / 100
   doc.config.budget = limit
   if (stopOf(doc)?.kind === STOP.budget) {
-    doc.turns.push(makeTurn("user", [noticeBlock("budget", `[Your budget is now $${limit.toFixed(2)}. Carry on from where you stopped.]`, { limit })]))
+    doc.turns.push(makeTurn("user", [noticeBlock("budget", `[Your budget is now ${dollars(limit)}. Carry on from where you stopped.]`, { limit })]))
   }
   return limit
 }

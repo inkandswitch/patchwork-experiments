@@ -16,6 +16,7 @@ import { workflowOf } from "../workflow/plan.js"
 import { stepStanding, planGlance, glanceText } from "../workflow/standing.js"
 import { asideOf } from "../workflow/aside.js"
 import { statusOf } from "../session/status.js"
+import { morph } from "./morph.js"
 
 const el = (tag, cls, text) => {
   const node = document.createElement(tag)
@@ -86,37 +87,37 @@ export function watchStanding({ repo, handle, onChange }) {
   }
 }
 
-/** Draw the line under the header. */
-export function renderStandingLine(line, now, { openDoc }) {
-  line.replaceChildren()
+/**
+ * Draw the line under the header, morphed into `line` (ui/morph.js): it holds
+ * no listeners. The link back to a side thread's step is a `data-doc-url`,
+ * which the view opens by delegation.
+ */
+export function renderStandingLine(line, now) {
   line.hidden = !now
-  if (!now) return
-  if (now.role === "orchestrator") {
+  const out = document.createDocumentFragment()
+  if (now?.role === "orchestrator") {
     line.dataset.state = now.glance.status
-    line.append(el("strong", null, `“${now.title}”`), el("span", null, glanceText(now.glance)))
-    return
+    out.append(el("strong", null, `“${now.title}”`), el("span", null, glanceText(now.glance)))
+  } else if (now) {
+    const s = now.standing
+    line.dataset.state = s.state ?? "removed"
+    if (now.role === "aside") {
+      const back = el("a", "agent-standing-link", "the step's own thread")
+      back.href = "#"
+      back.dataset.docUrl = now.stepSessionUrl
+      out.append(
+        el("span", "agent-standing-chip", "side thread"),
+        el("span", null, `A question about step “${now.stepTitle}” of “${now.title}”, which is now ${s.label}. Nothing here changes the step — `),
+        back
+      )
+    } else {
+      out.append(el("span", "agent-standing-chip", s.label), el("span", null, `Step “${now.stepTitle}” of “${now.title}”`))
+      if (s.run > 1) out.append(el("span", "agent-standing-run", `run ${s.run}`))
+      if (s.detail) out.append(el("span", "agent-standing-detail", s.detail))
+      if (s.plan) out.append(el("span", "agent-standing-plan", s.plan))
+    }
   }
-  const s = now.standing
-  line.dataset.state = s.state ?? "removed"
-  if (now.role === "aside") {
-    const back = el("a", "agent-standing-link", "the step's own thread")
-    back.href = "#"
-    back.dataset.docUrl = now.stepSessionUrl
-    back.addEventListener("click", (event) => {
-      event.preventDefault()
-      openDoc(now.stepSessionUrl)
-    })
-    line.append(
-      el("span", "agent-standing-chip", "side thread"),
-      el("span", null, `A question about step “${now.stepTitle}” of “${now.title}”, which is now ${s.label}. Nothing here changes the step — `),
-      back
-    )
-    return
-  }
-  line.append(el("span", "agent-standing-chip", s.label), el("span", null, `Step “${now.stepTitle}” of “${now.title}”`))
-  if (s.run > 1) line.append(el("span", "agent-standing-run", `run ${s.run}`))
-  if (s.detail) line.append(el("span", "agent-standing-detail", s.detail))
-  if (s.plan) line.append(el("span", "agent-standing-plan", s.plan))
+  morph(line, out)
 }
 
 /** The composer's hint and placeholder for a step that takes no messages directly, or null. */
@@ -127,31 +128,30 @@ export function gateOf(now) {
 }
 
 /**
- * The choice a message to a gated step needs, drawn into `row`. `pick` is
- * called with "ask", "reopen" or "reopen-later"; "cancel" puts things back.
+ * The choice a message to a gated step needs, morphed into `row`. Each button
+ * names its choice in `data-choice` — "ask", "reopen", "reopen-later" or
+ * "cancel" — for the composer to read by delegation.
  */
-export function renderChoices(row, gate, { pick, attachments = false }) {
-  row.replaceChildren()
+export function renderChoices(row, gate, { attachments = false } = {}) {
+  const out = document.createDocumentFragment()
   const button = (label, value, { primary = false, disabled = false, title = "" } = {}) => {
     const b = el("button", null, label)
     if (primary) b.dataset.variant = "primary"
     b.disabled = disabled
     if (title) b.title = title
-    b.addEventListener("click", (event) => {
-      event.preventDefault()
-      pick(value)
-    })
+    b.dataset.choice = value
     return b
   }
-  row.append(el("span", "agent-choices-say", `This step is ${gate.label}. Send this as:`))
-  row.append(button("A question, in a side thread", "ask", { primary: true, title: "Asked of a copy of this conversation. The step and its result stay as they are." }))
+  out.append(el("span", "agent-choices-say", `This step is ${gate.label}. Send this as:`))
+  out.append(button("A question, in a side thread", "ask", { primary: true, title: "Asked of a copy of this conversation. The step and its result stay as they are." }))
   if (gate.reopen) {
     const why = attachments ? "Attachments go with a question only" : ""
-    row.append(button("Reopen the step with it", "reopen", { disabled: attachments, title: why || "The step carries on in this conversation, told your message; its new result replaces the old one, and the steps that used it show as out of date." }))
+    out.append(button("Reopen the step with it", "reopen", { disabled: attachments, title: why || "The step carries on in this conversation, told your message; its new result replaces the old one, and the steps that used it show as out of date." }))
     if (gate.later.length) {
       const n = gate.later.length
-      row.append(button(`Reopen it and the ${n} step${n === 1 ? "" : "s"} after`, "reopen-later", { disabled: attachments, title: why || `Also reopens ${gate.later.join(", ")}, which are built on it.` }))
+      out.append(button(`Reopen it and the ${n} step${n === 1 ? "" : "s"} after`, "reopen-later", { disabled: attachments, title: why || `Also reopens ${gate.later.join(", ")}, which are built on it.` }))
     }
   }
-  row.append(button("Cancel", "cancel"))
+  out.append(button("Cancel", "cancel"))
+  morph(row, out)
 }

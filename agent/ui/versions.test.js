@@ -111,7 +111,8 @@ describe("an older runner hands over to a newer version", () => {
   })
 })
 
-describe("the view says to reload", () => {
+describe("the view says it waits for a newer version", () => {
+  // Patchwork brings new code without a reload, so the view never asks for one.
   it("when the session holds something this version cannot read", () => {
     const doc = {}
     initSession(doc, {})
@@ -121,7 +122,7 @@ describe("the view says to reload", () => {
     const element = document.createElement("div")
     document.body.append(element)
     const cleanup = AgentTool(handle, element, { repo: { find: async () => ({ doc: () => ({}) }) } })
-    expect(element.querySelector(".agent-hint").textContent).toBe("Something here needs a newer version of the agent: reload the page")
+    expect(element.querySelector(".agent-hint").textContent).toBe("Waiting for a newer version of the agent: something in this session needs it")
     cleanup()
   })
 })

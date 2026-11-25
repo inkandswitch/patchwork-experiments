@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { createInlineViews, iconFor, isPackage, wantsInstall } from "./views.js"
-import { installState, moduleUrlFor, splitModuleUrl, applyInstall, applyUninstall, shortHeads, pinIsBehind } from "./install.js"
+import { installState, moduleUrlFor, splitModuleUrl, applyInstall, applyUninstall, shortHeads, pinIsBehind, watchInstalls } from "./install.js"
 import { initSession } from "../session/schema.js"
 import { recordArtifact, MAX_ARTIFACTS } from "../session/made.js"
 
@@ -125,6 +125,86 @@ describe("the installed module list", () => {
   it("shortens a version for a label", () => {
     expect(shortHeads("abcdefghijklmn|other")).toBe("abcdefg")
     expect(shortHeads(null)).toBeNull()
+  })
+})
+
+describe("the install controls' view of the account", () => {
+  /** A repo holding a module-settings document and one package at heads h1. */
+  function world({ settingsReachable = true } = {}) {
+    const docs = new Map([["automerge:settings", { modules: [] }], ["automerge:pkg", {}]])
+    const listeners = new Set()
+    let packageHeads = ["h1"]
+    const finds = []
+    const repo = {
+      async find(url) {
+        finds.push(url)
+        if (url === "automerge:settings" && !settingsReachable) throw new Error("unavailable")
+        return {
+          doc: () => docs.get(url),
+          heads: () => (url === "automerge:pkg" ? packageHeads : []),
+          change(fn) {
+            fn(docs.get(url))
+            for (const l of [...listeners]) l()
+          },
+          on: (_e, fn) => listeners.add(fn),
+          off: (_e, fn) => listeners.delete(fn),
+        }
+      },
+    }
+    let changes = 0
+    const installs = watchInstalls({ repo, settingsUrl: () => "automerge:settings", onChange: () => changes++ })
+    const made = { made: [{ url: "automerge:pkg", kind: "package", name: "pkg" }] }
+    return { docs, repo, finds, installs, made, listeners, changes: () => changes, advance: (h) => (packageHeads = h) }
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it("reads nothing until the session has made something", async () => {
+    const w = world()
+    w.installs.refresh({ made: [] })
+    await settle()
+    expect([w.finds, w.installs.settings()]).toEqual([[], null])
+  })
+
+  it("then reads the settings and each package's heads, once each change", async () => {
+    const w = world()
+    w.installs.refresh(w.made)
+    await settle()
+    expect([w.installs.settings(), w.installs.heads()]).toEqual([{ modules: [] }, { "automerge:pkg": ["h1"] }])
+    w.installs.refresh(w.made)
+    await settle()
+    expect(w.finds.filter((url) => url === "automerge:settings")).toHaveLength(1)
+    w.advance(["h2"])
+    w.installs.refresh(w.made)
+    await settle()
+    expect(w.installs.heads()).toEqual({ "automerge:pkg": ["h2"] })
+  })
+
+  it("installs live, pins what the package is when clicked, and removes", async () => {
+    const w = world()
+    await w.installs.install({ url: "automerge:pkg" })
+    expect(w.docs.get("automerge:settings").modules).toEqual(["automerge:pkg"])
+    w.advance(["h3"])
+    await w.installs.install({ url: "automerge:pkg" }, { heads: "current" })
+    expect(w.installs.settings().modules).toEqual(["automerge:pkg#h3"])
+    await w.installs.uninstall({ url: "automerge:pkg" })
+    expect(w.installs.settings().modules).toEqual([])
+  })
+
+  it("follows a change made elsewhere, and stops when disposed", async () => {
+    const w = world()
+    w.installs.refresh(w.made)
+    await settle()
+    const settingsHandle = await w.repo.find("automerge:settings")
+    settingsHandle.change((d) => d.modules.push("automerge:other"))
+    expect(w.installs.settings().modules).toEqual(["automerge:other"])
+    w.installs.dispose()
+    expect(w.listeners.size).toBe(0)
+  })
+
+  it("does nothing without a settings document it can reach", async () => {
+    const w = world({ settingsReachable: false })
+    await w.installs.install({ url: "automerge:pkg" })
+    expect(w.installs.settings()).toBe(null)
   })
 })
 
