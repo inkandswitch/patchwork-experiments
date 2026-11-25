@@ -14,7 +14,7 @@ import { splice } from "@automerge/automerge/slim"
 
 import { handleStore } from "../kernel/store.js"
 import { SessionRunner } from "../kernel/runner.js"
-import { buildToolset } from "../tools/index.js"
+import { buildToolset } from "../assembly/toolset.js"
 import { getProvider } from "../providers/index.js"
 import { initSession, STATUS } from "../session/schema.js"
 import { say, decide } from "../kernel/loop.js"

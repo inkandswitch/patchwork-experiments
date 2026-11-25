@@ -38,6 +38,7 @@ import { Automerge as A, AutomergeRepo } from "../host/modules.js"
 import { repairDocUrl } from "../documents/doc-urls.js"
 import { readable } from "../tools/sources.js"
 import { declaredWhere } from "./placement.js"
+import { toSchema } from "./tool.js"
 
 const { interpretAsDocumentId, isValidAutomergeUrl, stringifyAutomergeUrl, decodeHeads, encodeHeads } = AutomergeRepo
 
@@ -329,7 +330,7 @@ export const UNDECLARED_MID_RUN = "This plugin was registered again during the r
 
 /**
  * The plugin tools a research step may have, out of `plugins` — what this
- * runner's own registry loaded (tools/index.js loadPluginTools). Only a
+ * runner's own registry loaded (assembly/plugins.js loadPluginTools). Only a
  * plugin that declares `scoped: true` at the top level of its metadata, a
  * worker-tier tool, whose id is no built-in's: the declaration is the
  * package's word that its tool works only through the context it is handed,
@@ -346,7 +347,7 @@ export const UNDECLARED_MID_RUN = "This plugin was registered again during the r
  * steps can do: that is the trust it asks for, and the README says so.
  */
 export async function admitScoped(plugins = []) {
-  const { BUILTIN_TOOLS } = await import("../tools/index.js")
+  const { BUILTIN_TOOLS } = await import("../assembly/builtin.js")
   const taken = new Set(BUILTIN_TOOLS.map((t) => t.id))
   const admitted = []
   for (const tool of plugins ?? []) {
@@ -379,7 +380,7 @@ export async function admitScoped(plugins = []) {
  * the runner, which imports this.
  */
 export async function scopedToolset({ plugins = [], step = true } = {}) {
-  const { BUILTIN_TOOLS, SCOPED_VARIANTS, UNSCOPED_ONLY_IDS, toSchema } = await import("../tools/index.js")
+  const { BUILTIN_TOOLS, SCOPED_VARIANTS, UNSCOPED_ONLY_IDS } = await import("../assembly/builtin.js")
   const { STEP_TOOL_IDS } = await import("../workflow/plan.js")
   const byId = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
   // A confined session that is not a step — a side thread copied from one

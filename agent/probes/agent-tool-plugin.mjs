@@ -9,7 +9,7 @@
  *
  * The answer is the `agent:tool` registry: a package declares an API surface
  * beside its UI, and the agent gets a real tool with a schema and a
- * description. The wiring for that has existed in tools/index.js since the
+ * description. The wiring for that has existed in assembly/plugins.js since the
  * beginning and had never once been run against a real Patchwork — which is
  * exactly the kind of thing that turns out not to work.
  *
@@ -255,7 +255,7 @@ try {
         const { getRegistry } = await import("@inkandswitch/patchwork-plugins")
         out.registered = (getRegistry("agent:tool").all() ?? []).map((p) => p.id)
 
-        const tools = await import(base + "tools/index.js")
+        const tools = await import(base + "assembly/toolset.js")
         const toolset = await tools.buildToolset({})
         out.toolCount = toolset.tools.length
         const found = toolset.get("wordcount_count")

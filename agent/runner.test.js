@@ -6,7 +6,7 @@ import { makeMock } from "./providers/mock.js"
 import { initSession, STATUS, _resetIds } from "./session/schema.js"
 import { makeTurn, textBlock, contextBlock } from "./session/blocks.js"
 import { initPlan } from "./workflow/plan.js"
-import { buildToolset } from "./tools/index.js"
+import { buildToolset } from "./assembly/toolset.js"
 import { NOTES_FOLDER_NAME } from "./knowledge/notes.js"
 import { webScope } from "./kernel/scope.js"
 

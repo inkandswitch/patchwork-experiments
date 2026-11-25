@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { renderCallBody, renderInput, isLong, languageOf, codeBlock } from "./ui/bodies.js"
-import { BUILTIN_TOOLS } from "./tools/index.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 
 const body = (tool, input, result = null) => renderCallBody({ tool, input }, result)
 const textOf = (node) => node.textContent

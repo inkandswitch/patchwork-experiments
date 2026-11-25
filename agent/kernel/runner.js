@@ -572,7 +572,7 @@ export function fullContext(base, store) {
  * driver, which imports this module.
  */
 export async function privileges(base, store) {
-  const { BUILTIN_TOOLS } = await import("../tools/index.js")
+  const { BUILTIN_TOOLS } = await import("../assembly/builtin.js")
   const builtin = (id) => BUILTIN_TOOLS.find((t) => t.id === id)
   const workflows = { workflows: { repo: base.repo ?? null, startSession: base.startStepSession ?? null } }
   const session = { session: { url: store?.url ?? null, doc: () => store.doc(), change: (fn) => store.change(fn) } }

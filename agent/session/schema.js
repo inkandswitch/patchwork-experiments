@@ -59,7 +59,7 @@ export const STATUS = {
   error: "error",
 }
 
-/** Where a tool call can execute. See tools/index.js. */
+/** Where a tool call can execute. See kernel/tool.js. */
 export const WHERE = { worker: "worker", host: "host", task: "task" }
 
 /** Lifecycle of a single tool call. */

@@ -1,7 +1,7 @@
 /**
  * The orchestrator's tools: start a workflow, extend it, read it, stop it.
  *
- * Only offered when the session's Workflows switch is on (tools/index.js):
+ * Only offered when the session's Workflows switch is on (assembly/toolset.js):
  * a workflow is many sessions and real cost, so it is something a person
  * turns on, not something the agent reaches for unasked.
  *

@@ -112,7 +112,7 @@ export async function connectWorkerRunner({
   // Loaded late: the tool registry imports package_test, which imports this.
   // With them, where each tool, view and datatype came from (packageIndex), so
   // the worker can hand a session a package's usage guide as a tab would.
-  const { pluginDescriptions } = await import("../tools/index.js")
+  const { pluginDescriptions } = await import("../assembly/plugins.js")
   const { packageIndex, PACKAGE_TYPES } = await import("./worker-plugins.js")
   const host = await tryHostImport("plugins")
   const getRegistry = (type) => host?.getRegistry?.(type) ?? null

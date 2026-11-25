@@ -30,7 +30,8 @@
  * memoised by id and URL, and a failed load is tried again on the next run.
  */
 
-import { BUILTIN_TOOLS, pluginTool, takesBuiltin } from "../tools/index.js"
+import { BUILTIN_TOOLS, takesBuiltin } from "../assembly/builtin.js"
+import { pluginTool } from "../kernel/tool.js"
 import { hostImport } from "../host/import.js"
 import { HOST, WORKER } from "../kernel/placement.js"
 import { packageOfPlugin } from "../knowledge/guides.js"
@@ -200,7 +201,7 @@ export function createPluginCatalogue({ importPlugin = importPluginHere, onError
             }
           }
           // The plugin as registered when the call runs, as the page's
-          // registry gives it (tools/index.js pluginTool).
+          // registry gives it (kernel/tool.js pluginTool).
           const current = async () => {
             const now = entries.get(id)
             if (!now) throw new Error(`The package that provided ${id} is no longer installed.`)

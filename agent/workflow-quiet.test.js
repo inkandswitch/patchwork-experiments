@@ -14,6 +14,11 @@ import { initPlan, STEP } from "./workflow/plan.js"
 import { WorkflowDriver, _resetDrivers } from "./workflow/driver.js"
 import { initSession, STATUS } from "./session/schema.js"
 import { makeTurn, textBlock } from "./session/blocks.js"
+// The driver loads the built-in list late, by dynamic import (boundary.test.js
+// lists it as a known upward import). Loaded here first, so a short wait is not
+// spent on a real module load.
+import "./assembly/builtin.js"
+import "./assembly/plugins.js"
 
 await initSubduction()
 

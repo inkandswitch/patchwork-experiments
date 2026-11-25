@@ -11,7 +11,7 @@
 
 import { decide, answerQuestion } from "../kernel/loop.js"
 import { grantOffers, callScope, asksEveryTime } from "../session/grants.js"
-import { builtinToolset } from "../tools/index.js"
+import { builtinToolset } from "../assembly/builtin.js"
 import { handleStore } from "../kernel/store.js"
 import { describeCall } from "./calls.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"

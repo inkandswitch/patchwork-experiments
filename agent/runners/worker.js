@@ -84,7 +84,7 @@ async function boot(urls, repoPort, prepare) {
     import("../kernel/store.js"),
     import("../kernel/runner.js"),
     import("../kernel/events.js"),
-    import("../tools/index.js"),
+    import("../assembly/toolset.js"),
     import("../providers/index.js"),
     import("../net/guard.js"),
     import("./worker-plugins.js"),

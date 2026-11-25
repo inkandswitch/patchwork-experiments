@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { describeCall, PRESENTATION, PRESENTED_PLUGINS, describeOps, shortDoc, pathLabel, hostOf, baseName } from "./ui/calls.js"
-import { BUILTIN_TOOLS } from "./tools/index.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 
 const call = (tool, input = {}, status = "done") => ({ tool, input, status })
 const show = (tool, input, result = null, subject = null) =>

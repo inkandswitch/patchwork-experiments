@@ -5,7 +5,8 @@ import { WorkflowDriver, sessionOutcome, describeProgress, keptCounts, _resetDri
 import { scopedRepo, KERNEL_TYPES } from "./kernel/scope.js"
 import { initSession, STATUS, CALL } from "./session/schema.js"
 import { makeTurn, textBlock } from "./session/blocks.js"
-import { buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
+import { buildToolset } from "./assembly/toolset.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 
 await initSubduction()
 

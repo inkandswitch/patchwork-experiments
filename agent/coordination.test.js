@@ -20,6 +20,11 @@ import { initSession, _resetIds } from "./session/schema.js"
 import { makeTurn, textBlock } from "./session/blocks.js"
 import { LeaseWatch, DEAD_ON_SIGHT_MS } from "./session/lease.js"
 import { makeMock } from "./providers/mock.js"
+// The runner loads the built-in list late, by dynamic import (boundary.test.js
+// lists it as a known upward import). Loaded here first, so a fake clock is not
+// left waiting on a real module load.
+import "./assembly/builtin.js"
+import "./assembly/plugins.js"
 
 afterEach(() => {
   vi.useRealTimers()

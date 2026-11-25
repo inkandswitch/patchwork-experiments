@@ -6,7 +6,7 @@
  * plugin, the declaration is the only thing that decides. A workflow step on
  * a worker gets every tool declared "worker", whoever provides it, and none
  * declared "host"; its session says so with `tools.where = "worker"`, and the
- * toolset is filtered when a runner builds it (tools/index.js buildToolset),
+ * toolset is filtered when a runner builds it (assembly/toolset.js buildToolset),
  * so a package installed after the step began is in it, and no list of tool
  * ids is ever frozen into a session.
  *

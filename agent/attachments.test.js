@@ -17,7 +17,7 @@ import { say } from "./kernel/loop.js"
 import { memoryStore } from "./kernel/store.js"
 import { toOpenAIMessages } from "./providers/openrouter.js"
 import { renderTranscript } from "./ui/transcript.js"
-import { BUILTIN_TOOLS } from "./tools/index.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 import { sourceRead } from "./tools/read-source.js"
 
 beforeEach(_resetIds)

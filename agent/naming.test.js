@@ -5,7 +5,7 @@ import { initSession } from "./session/schema.js"
 import { sessionTitle, derivedTitle, cleanTitle, MAX_TITLE } from "./session/title.js"
 import { needsApproval } from "./session/grants.js"
 import { makeTurn, textBlock } from "./session/blocks.js"
-import { BUILTIN_TOOLS } from "./tools/index.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 import { describeCall } from "./ui/calls.js"
 
 function fresh(turns = []) {

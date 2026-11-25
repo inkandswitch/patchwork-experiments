@@ -19,7 +19,9 @@ import { initSession } from "./session/schema.js"
 import { makeTurn, textBlock } from "./session/blocks.js"
 import { makeMock } from "./providers/mock.js"
 import { initPlan, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS } from "./workflow/plan.js"
-import { buildToolset, loadPluginTools, BUILTIN_TOOLS, SCOPED_VARIANTS } from "./tools/index.js"
+import { buildToolset } from "./assembly/toolset.js"
+import { loadPluginTools } from "./assembly/plugins.js"
+import { BUILTIN_TOOLS, SCOPED_VARIANTS } from "./assembly/builtin.js"
 import { SCOPED_TOOL_IDS, UNDECLARED_MID_RUN, scopedToolset, admitScoped, webScope } from "./kernel/scope.js"
 
 await initSubduction()

@@ -8,7 +8,7 @@ import { initSession, CALL, _resetIds } from "./session/schema.js"
 import { makeTurn, textBlock, callBlock, resultBlock, attachmentBlock } from "./session/blocks.js"
 import { toRequest } from "./session/request.js"
 import { toOpenAIMessages } from "./providers/openrouter.js"
-import { BUILTIN_TOOLS } from "./tools/index.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 import { sourceRead, sourceList } from "./tools/read-source.js"
 import { makePdf } from "./fixtures/pdf-fixture.js"
 

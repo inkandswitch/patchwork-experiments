@@ -7,7 +7,7 @@ import {
 } from "./tools/sources.js"
 import { httpRequest } from "./tools/http.js"
 import { webFetch } from "./tools/web.js"
-import { runTool } from "./tools/index.js"
+import { runTool } from "./kernel/tool.js"
 import { recordArtifact } from "./session/made.js"
 
 const SESSION = generateAutomergeUrl()

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { generateAutomergeUrl, parseAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
 import { initSession } from "./session/schema.js"
 import { needsApproval, documentIdOf, isSensitive } from "./session/grants.js"
-import { BUILTIN_TOOLS } from "./tools/index.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 import { isCodePath } from "./tools/folders.js"
 
 const tool = (id) => {

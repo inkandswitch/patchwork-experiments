@@ -21,7 +21,7 @@ import { needsApproval } from "./session/grants.js"
 import { sessionOutcome, _resetDrivers } from "./workflow/driver.js"
 import { initPlan, PLAN, STEP } from "./workflow/plan.js"
 import { WorkflowView } from "./ui/workflow-view.js"
-import { BUILTIN_TOOLS } from "./tools/index.js"
+import { BUILTIN_TOOLS } from "./assembly/builtin.js"
 
 await initSubduction()
 beforeEach(() => {

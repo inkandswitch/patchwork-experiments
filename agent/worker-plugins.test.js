@@ -5,7 +5,8 @@
  */
 import { describe, it, expect } from "vitest"
 import { createPluginCatalogue, importPluginHere, createRegistryMirror } from "./runners/worker-plugins.js"
-import { describePlugin, pluginDescriptions } from "./tools/index.js"
+import { describePlugin } from "./kernel/tool.js"
+import { pluginDescriptions } from "./assembly/plugins.js"
 
 const entry = (id, more = {}) => ({ id, name: id, description: `${id}.`, where: "worker", risk: "read", importUrl: `https://p.example/${id}@1/index.js`, ...more })
 

@@ -995,7 +995,7 @@ export const WEB_GRANT = "web@*"
 
 /** The built-in toolset, loaded late: the toolset imports this module. */
 async function builtinToolset() {
-  return (await import("../tools/index.js")).builtinToolset()
+  return (await import("../assembly/builtin.js")).builtinToolset()
 }
 
 /**
@@ -1004,7 +1004,8 @@ async function builtinToolset() {
  * module.
  */
 async function defaultCatalogue() {
-  const { BUILTIN_TOOLS, SCOPED_ONLY_IDS, pluginDescriptions } = await import("../tools/index.js")
+  const { BUILTIN_TOOLS, SCOPED_ONLY_IDS } = await import("../assembly/builtin.js")
+  const { pluginDescriptions } = await import("../assembly/plugins.js")
   const builtins = BUILTIN_TOOLS.filter((t) => !SCOPED_ONLY_IDS.includes(t.id)).map((t) => ({ id: t.id, where: t.where, builtin: true }))
   const taken = new Set(BUILTIN_TOOLS.map((t) => t.id))
   const plugins = (await pluginDescriptions()).filter((d) => !taken.has(d.id)).map((d) => ({ id: d.id, where: d.where ?? "worker", scoped: d.scoped === true }))

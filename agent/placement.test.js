@@ -11,7 +11,9 @@
  * whose code will not load is listed but runs in a tab.
  */
 import { describe, it, expect } from "vitest"
-import { buildToolset, loadPluginTools, BUILTIN_TOOLS, SCOPED_ONLY_IDS } from "./tools/index.js"
+import { buildToolset } from "./assembly/toolset.js"
+import { loadPluginTools } from "./assembly/plugins.js"
+import { BUILTIN_TOOLS, SCOPED_ONLY_IDS } from "./assembly/builtin.js"
 import { scopedToolset, SCOPED_TOOL_IDS } from "./kernel/scope.js"
 import { WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, initPlan } from "./workflow/plan.js"
 import { createPluginCatalogue } from "./runners/worker-plugins.js"
