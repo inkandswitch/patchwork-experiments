@@ -5,7 +5,7 @@
 // once, and the run doc says why in the same moment (markStopped), since the
 // thread this runs in is ended a few seconds later.
 
-import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, copyFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, copyFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { run as runTool } from "./tools.mjs";
@@ -208,7 +208,13 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
       try {
         const made = finishMesh(parseMsh(readFileSync(had ? kept : join(dir, out), "utf8")), { method: m, part });
         if (made.unplaced) throw new Error(`${made.unplaced} of the mesh's skin triangles are on no face of the part`);
-        if (!had) copyFileSync(join(dir, out), kept);
+        if (!had) {
+          // copied beside it and renamed into place, which is one step: a run stopped or killed
+          // mid-copy leaves no half a mesh under the name the next run of this part would take
+          const partial = `${kept}.${id}.part`;
+          copyFileSync(join(dir, out), partial);
+          renameSync(partial, kept);
+        }
         mesh = made;
         method = m;
         reused = had;
