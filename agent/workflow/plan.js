@@ -21,6 +21,10 @@
  *                                             the research steps' ledger (kernel/scope.js)
  *     sourcesFolderUrl,                       where the driver files the ledger for people
  *     sourcesFiled: { [documentId]: true },   what it has filed
+ *     schemaVersion,                          PLAN_VERSION; the driver leaves any other alone
+ *     runs,                                   how many times it has been set running
+ *     resumes: [{ add, limit, at }],          a person raising the cap, each time
+ *     told: { [key]: true },                  what the orchestrator has been told (tell, below)
  *     steps: [{
  *       id, title, prompt, after: [ids],
  *       where: "host" | "worker",             needs the page, or only a repo
@@ -129,6 +133,9 @@ export const STATE = {
 
 export const PLAN = { running: "running", done: "done", stopped: "stopped" }
 
+/** The shape of plan this code reads and writes. One without a version is version 1. */
+export const PLAN_VERSION = 2
+
 const TERMINAL = new Set([STEP.done, STEP.failed, STEP.cancelled])
 /** Derived states that need nothing more from the driver: over, or waiting on the orchestrator. */
 const SETTLED = new Set([STATE.done, STATE.stale, STATE.failed, STATE.cancelled, STATE.blocked])
@@ -139,11 +146,13 @@ const TOOL_ID = /^[A-Za-z][A-Za-z0-9_:.-]{0,79}$/
 /** Seed a plan document. Runs inside a change. Steps must already be valid. */
 export function initPlan(doc, { title, goal, subject = null, sessionUrl = null, tiers = {}, limits = {}, steps = [], sourcesFolderUrl = null }) {
   doc["@patchwork"] = { type: "agent-workflow" }
+  doc.schemaVersion = PLAN_VERSION
   doc.title = title
   doc.goal = goal
   doc.subject = subject
   doc.sessionUrl = sessionUrl
   doc.status = PLAN.running
+  doc.runs = 1
   doc.tiers = { ...DEFAULT_TIER_MODELS, ...tiers }
   doc.limits = { ...DEFAULT_LIMITS, ...limits }
   doc.usage = { in: 0, out: 0 }
@@ -152,6 +161,7 @@ export function initPlan(doc, { title, goal, subject = null, sessionUrl = null, 
   doc.sources = {}
   doc.sourcesFolderUrl = sourcesFolderUrl
   doc.sourcesFiled = {}
+  doc.told = {}
 }
 
 /** A step as stored, from a step as given. */
@@ -471,8 +481,51 @@ export function stopPlan(doc, now = Date.now()) {
 export function runAgain(doc) {
   if (isSettled(doc) || !move(doc, PLAN_TRANSITIONS.runAgain)) return false
   doc.finishedAt = null
-  doc.reportedEnd = false
+  doc.runs = (doc.runs ?? 1) + 1
   return true
+}
+
+// ---------------------------------------------------------------- told once
+
+/**
+ * What the orchestrator has been told, by occurrence. A key names one thing
+ * that happened, not a kind of thing, so a thing that happens again has a
+ * new key and nothing is ever reset:
+ *
+ *   finishedKey   a step finishing (done or failed), in this run of it
+ *   endKey        the plan ending, in this run of it
+ *   pauseKey      the plan pausing for its budget, until a person resumes it
+ *   budgetKey     a step stopping for its own budget, under this cap
+ *   staleKey      a step out of date over these versions of its inputs
+ *   questionKey   a question a step asked
+ *   requestKey    a request a step made
+ */
+export const told = (plan, key) => plan?.told?.[key] === true
+
+/** Record, inside a change, that the orchestrator has been told `key`. */
+export function tell(doc, key) {
+  if (!doc.told) doc.told = {}
+  doc.told[key] = true
+}
+
+/** Which run of a step this is: each reopening starts another. */
+const attempt = (step) => step?.previous?.length ?? 0
+
+export const finishedKey = (step) => `finished:${step.id}:${attempt(step)}`
+export const endKey = (plan) => `end:${plan.runs ?? 1}`
+export const pauseKey = (plan) => `pause:${plan.resumes?.length ?? 0}`
+export const budgetKey = (plan, stepId, at) => `budget:${stepId}:${at}:${plan.resumes?.length ?? 0}`
+export const questionKey = (callId) => `question:${callId}`
+export const requestKey = (request) => `request:${request.id}`
+
+/** The versions of its inputs a stale step is out of date over, as a key: a new key whenever any of them moves on. */
+export function staleKey(plan, step) {
+  const byId = new Map((plan.steps ?? []).map((s) => [s.id, s]))
+  const over = staleInputs(plan, step, byId).map((id) => {
+    const dep = byId.get(id)
+    return `${id}@${dep?.status}.${dep?.version ?? 0}.${attempt(dep)}`
+  })
+  return `stale:${step.id}:${attempt(step)}:${over.join(",")}`
 }
 
 // ---------------------------------------------------------------- versions
@@ -550,8 +603,6 @@ export function reopenSteps(doc, ids, { note, cascade = false, now = Date.now(),
     step.result = null
     step.error = null
     step.finishedAt = null
-    // Its next end is news again.
-    step.reported = false
     reopened.push(step.id)
   }
 
@@ -606,7 +657,6 @@ export function keepSteps(doc, ids) {
   for (const id of ids) {
     const step = doc.steps.find((s) => s.id === id)
     step.inputs = inputsOf(doc, step)
-    step.staleNoticed = null
   }
   runAgain(doc)
 }
@@ -716,7 +766,6 @@ export function newRequest(stepId, call, now = Date.now()) {
     at: now,
     decidedAt: null,
     note: null,
-    reported: false,
   }
 }
 
@@ -747,14 +796,29 @@ export function canExtend(plan, add) {
 }
 
 /**
+ * The plan has spent its budget, with work ready or steps stopped for their
+ * own (`stopped`, their ids): pause it, inside a change, until a person
+ * resumes it. Only a running plan that is not paused already pauses.
+ */
+export function pausePlan(doc, { stopped = [], now = Date.now() } = {}) {
+  if (doc.status !== PLAN.running || doc.paused) return false
+  const { spent, limit } = budgetOf(doc)
+  doc.paused = { reason: "budget", at: now, spent, limit, stopped: [...stopped] }
+  return true
+}
+
+/**
  * The plan has run into its cap with a step waiting on more money: ask the
  * person, inside a change. The one place a step's budget becomes a person's
- * request. `need` is what the step asked for.
+ * request. `need` is what the step asked for. The orchestrator asked, so a
+ * pause this begins is not news to it.
  */
 export function askForBudget(doc, step, need, why, now = Date.now()) {
   const { spent, limit } = budgetOf(doc)
+  const fresh = !doc.paused
   const stopped = [...new Set([...(doc.paused?.stopped ?? []), step.id])]
-  doc.paused = { reason: "budget", at: now, spent, limit, reported: doc.paused?.reported ?? true, stopped, ask: { stepId: step.id, stepTitle: step.title, need: Math.round(need * 100) / 100, why: String(why ?? "") } }
+  doc.paused = { reason: "budget", at: now, spent, limit, stopped, ask: { stepId: step.id, stepTitle: step.title, need: Math.round(need * 100) / 100, why: String(why ?? "") } }
+  if (fresh) tell(doc, pauseKey(doc))
 }
 
 /** Has the budget been spent? */
@@ -790,18 +854,19 @@ export function notStarted(plan) {
 
 /**
  * Resume a paused plan with `add` dollars more than it has spent, inside a
- * change. A person's decision: no agent tool calls this.
+ * change. A person's decision: no agent tool calls this. Steps stopped for
+ * their own budgets are the orchestrator's to decide now there is room, so it
+ * is told of them again: a resume is part of what names that news (budgetKey).
  */
-export function resumePlan(doc, add) {
+export function resumePlan(doc, add, now = Date.now()) {
   const amount = Number(add)
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("Resume with a positive amount.")
   const { spent } = budgetOf(doc)
   if (!doc.limits) doc.limits = { ...DEFAULT_LIMITS }
   doc.limits.cost = Math.round((spent + amount) * 100) / 100
   doc.paused = null
-  // Steps that stopped for their own budgets are the orchestrator's to decide
-  // now there is room: it is told of them again.
-  for (const step of doc.steps ?? []) delete step.budgetNoticed
+  if (!doc.resumes) doc.resumes = []
+  doc.resumes.push({ add: amount, limit: doc.limits.cost, at: now })
 }
 
 /** How much of a dependency's result a step is handed. The rest is in its session. */

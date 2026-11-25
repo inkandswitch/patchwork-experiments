@@ -120,7 +120,7 @@ describe("the budget, over every small plan", () => {
     for (let n = 1; n <= 3; n++) {
       for (const p of every(n)) {
         for (const cost of [0, 19.99, 20, 31]) {
-          for (const paused of [null, { reason: "budget", at: 1, spent: cost, limit: 20, reported: false }]) {
+          for (const paused of [null, { reason: "budget", at: 1, spent: cost, limit: 20 }]) {
             yield { ...p, usage: { in: 9e9, out: 9e9, cost }, paused }
           }
         }
@@ -160,7 +160,7 @@ describe("the budget, over every small plan", () => {
       if (!p.paused) continue
       const unlimited = toStart(flush(p)).join(",")
       for (const add of [0.01, 5, 20]) {
-        // resumePlan writes only `limits` and `paused`.
+        // resumePlan writes only `limits`, `paused` and `resumes`.
         const d = { ...p, limits: { ...p.limits } }
         resumePlan(d, add)
         const broken =

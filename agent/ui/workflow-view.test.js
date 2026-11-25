@@ -143,8 +143,8 @@ describe("the workflow view", () => {
       Object.assign(d.steps[0], { status: STEP.done, result: "A v2", version: 2, previous: [{ status: STEP.done, result: "A v1", error: null, startedAt: 1, finishedAt: 2 }] })
       Object.assign(d.steps[1], { status: STEP.done, result: "B on A v1", inputs: { a: 1 }, version: 1 })
       d.requests = [
-        { id: "r1", stepId: "b", why: "A's figure looks off.", add: null, reopen: ["a"], status: "open", at: 3, decidedAt: null, note: null, reported: false },
-        { id: "r2", stepId: "b", why: "Another source.", add: [step("c")], reopen: null, status: "declined", at: 4, decidedAt: 5, note: null, reported: true },
+        { id: "r1", stepId: "b", why: "A's figure looks off.", add: null, reopen: ["a"], status: "open", at: 3, decidedAt: null, note: null },
+        { id: "r2", stepId: "b", why: "Another source.", add: [step("c")], reopen: null, status: "declined", at: 4, decidedAt: 5, note: null },
       ]
     })
     const { element, cleanup } = mount(plan, repo)

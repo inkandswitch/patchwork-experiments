@@ -29,7 +29,7 @@ import { liftBudget } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
-import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, staleInputs, openRequests, newRequest, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan } from "./plan.js"
+import { PLAN, PLAN_VERSION, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, staleInputs, openRequests, newRequest, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "./plan.js"
 import { scopeOf, webScope, sameScope } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
 import { documentIdOf } from "../documents/doc-urls.js"
@@ -273,7 +273,7 @@ export class WorkflowDriver {
   }
 
   async tick() {
-    if (this.stopped) return
+    if (this.stopped || !current(this.handle.doc())) return
     if (!this.hold()) return this.help()
     let plan = this.handle.doc()
     if (plan.status !== PLAN.running) {
@@ -364,10 +364,7 @@ export class WorkflowDriver {
     // than sit "running" with nothing happening.
     plan = this.handle.doc()
     if (shouldPause(plan, sessions, outOfBudget.map((b) => b.stepId))) {
-      const { spent, limit } = budgetOf(plan)
-      this.write((d) => {
-        d.paused = { reason: "budget", at: this.now(), spent, limit, reported: false, stopped: outOfBudget.map((b) => b.stepId) }
-      })
+      this.write((d) => pausePlan(d, { stopped: outOfBudget.map((b) => b.stepId), now: this.now() }))
     }
 
     // 5. Finished?
@@ -383,7 +380,7 @@ export class WorkflowDriver {
    */
   async help() {
     const plan = this.handle.doc()
-    if (this.stopped || plan?.status !== PLAN.running) return
+    if (this.stopped || !current(plan) || plan.status !== PLAN.running) return
     for (const step of plan.steps ?? []) {
       if (step.status === STEP.running && step.sessionUrl) await this.run(step.sessionUrl)
     }
@@ -748,59 +745,58 @@ export class WorkflowDriver {
   report() {
     if (!this.notify) return
     // What has been told is recorded in the plan, not in this driver: a reload,
-    // or another tab's driver taking over, used to tell the orchestrator every
-    // finished step again — one real orchestrator got the same result three
-    // times, a paid turn each — and the end of a plan was "news" on every tick
-    // after it, for as long as anything was ticking.
-    const unreported = (plan) => plan.steps.filter((s) => [STEP.done, STEP.failed].includes(s.status) && !s.reported)
-    const unasked = (plan) => this.waiting.filter((w) => w.kind === "question" && !(plan.asked ?? []).includes(w.callId))
-    const endUnreported = (plan) => plan.status !== PLAN.running && !plan.reportedEnd
-    const pauseUnreported = (plan) => !!plan.paused && !plan.paused.reported
-    // A step out of budget is told once per time it stops.
-    const budgetsUnreported = (plan) => (this.outOfBudget ?? []).filter((b) => plan.steps.find((s) => s.id === b.stepId)?.budgetNoticed !== b.at)
-    // Out of date: told once for each set of changed inputs, so a step that
-    // goes stale again over something new is news again.
-    const staleUnreported = (plan) => staleSteps(plan).filter((s) => s.staleNoticed !== staleKey(plan, s))
-    const requestsUnreported = (plan) => openRequests(plan).filter((r) => !r.reported)
+    // or another tab's driver taking over, tells nothing twice.
     const plan = this.handle.doc()
-    if (!unreported(plan).length && !unasked(plan).length && !endUnreported(plan) && !pauseUnreported(plan) && !budgetsUnreported(plan).length && !staleUnreported(plan).length && !requestsUnreported(plan).length) return
+    if (!hasNews(untold(plan, this.waiting, this.outOfBudget))) return
     this.channel ??= this.notify(this.handle.url, plan.title)
     this.channel?.notify(() => {
       // Read at delivery: a question answered meanwhile is no longer news.
       const now = this.handle.doc()
-      const news = unreported(now)
-      const questions = unasked(now)
-      const end = endUnreported(now)
-      const paused = pauseUnreported(now)
-      const budgets = budgetsUnreported(now)
-      const stale = staleUnreported(now)
-      const requests = requestsUnreported(now)
-      if (!news.length && !questions.length && !end && !paused && !budgets.length && !stale.length && !requests.length) return ""
+      const news = untold(now, this.waiting, this.outOfBudget)
+      if (!hasNews(news)) return ""
       const recorded = this.write((d) => {
-        for (const s of d.steps) if (news.some((n) => n.id === s.id)) s.reported = true
-        if (questions.length) {
-          if (!d.asked) d.asked = []
-          for (const q of questions) d.asked.push(q.callId)
-        }
-        if (end) d.reportedEnd = true
-        if (paused && d.paused) d.paused.reported = true
-        for (const b of budgets) {
-          const s = d.steps.find((x) => x.id === b.stepId)
-          if (s) s.budgetNoticed = b.at
-        }
-        for (const st of stale) {
-          const s = d.steps.find((x) => x.id === st.id)
-          if (s) s.staleNoticed = staleKey(now, st)
-        }
-        for (const r of d.requests ?? []) if (requests.some((x) => x.id === r.id)) r.reported = true
+        for (const key of news.keys) tell(d, key)
       })
       // A driver that has lost the plan leaves the telling to the one holding it.
       if (!recorded) return ""
-      if (end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
-      return describeProgress(now, news, this.waiting, budgets, { stale, requests })
+      if (news.end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
+      return describeProgress(now, news.finished, this.waiting, news.budgets, { stale: news.stale, requests: news.requests })
     })
   }
 }
+
+/** A plan this driver reads: of this version. */
+const current = (plan) => !!plan && (plan.schemaVersion ?? 1) === PLAN_VERSION
+
+/**
+ * What the orchestrator has not been told, as of `plan`, `waiting` (what
+ * running steps wait on a person for) and `outOfBudget` (the steps stopped for
+ * their own budgets): each kind of news, and the keys that record all of it
+ * told (plan.js tell). A step waiting for a permission does not wake it —
+ * only the person can grant one, and they see it in the views — but the news
+ * it does get says so.
+ */
+export function untold(plan, waiting = [], outOfBudget = []) {
+  const finished = (plan.steps ?? []).filter((s) => [STEP.done, STEP.failed].includes(s.status) && !told(plan, finishedKey(s)))
+  const questions = waiting.filter((w) => w.kind === "question" && !told(plan, questionKey(w.callId)))
+  const end = plan.status !== PLAN.running && !told(plan, endKey(plan))
+  const paused = !!plan.paused && !told(plan, pauseKey(plan))
+  const budgets = (outOfBudget ?? []).filter((b) => !told(plan, budgetKey(plan, b.stepId, b.at)))
+  const stale = staleSteps(plan).filter((s) => !told(plan, staleKey(plan, s)))
+  const requests = openRequests(plan).filter((r) => !told(plan, requestKey(r)))
+  const keys = [
+    ...finished.map(finishedKey),
+    ...questions.map((q) => questionKey(q.callId)),
+    ...(end ? [endKey(plan)] : []),
+    ...(paused ? [pauseKey(plan)] : []),
+    ...budgets.map((b) => budgetKey(plan, b.stepId, b.at)),
+    ...stale.map((s) => staleKey(plan, s)),
+    ...requests.map(requestKey),
+  ]
+  return { finished, questions, end, paused, budgets, stale, requests, keys }
+}
+
+const hasNews = (news) => news.keys.length > 0
 
 /** The workflow_request calls in a step's session that went through: each is a request. */
 export function requestCalls(doc) {
@@ -817,14 +813,6 @@ export function requestCalls(doc) {
 export function staleSteps(plan) {
   const derived = states(plan)
   return (plan.steps ?? []).filter((s) => derived.get(s.id) === STATE.stale)
-}
-
-/** Which changes a stale step is out of date over, as a key: news again only when it differs. */
-function staleKey(plan, step) {
-  const byId = new Map(plan.steps.map((s) => [s.id, s]))
-  return staleInputs(plan, step, byId)
-    .map((id) => `${id}:${byId.get(id)?.status}:${byId.get(id)?.version ?? 0}`)
-    .join(",")
 }
 
 /** The news the orchestrator wakes to. */

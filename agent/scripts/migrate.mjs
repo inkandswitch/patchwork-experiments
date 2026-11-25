@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Bring existing sessions up to the shape the agent now reads, once.
+ * Bring existing sessions and workflow plans up to the shape the agent now
+ * reads, once.
  *
  *   node scripts/migrate.mjs [--dry] [--sync wss://…] automerge:<url> [more…]
  *
@@ -14,12 +15,14 @@
  * document is changed in one write, and the script waits for the sync server
  * to have had time to take them before it exits.
  *
- * Delete this file and migrate-session.js once it has been run: the agent
- * reads only the current shape (kernel/runner.js).
+ * Delete this file, migrate-session.js and migrate-plan.js once it has been
+ * run: the agent reads only the current shape (kernel/runner.js,
+ * workflow/driver.js).
  */
 
 import { Repo, initSubduction, setSubductionLogLevel } from "@automerge/automerge-repo"
 import { migrateSession } from "./migrate-session.js"
+import { migratePlan } from "./migrate-plan.js"
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com"
 const args = process.argv.slice(2)
@@ -52,7 +55,7 @@ const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] })
 const typeOf = (doc) => doc?.["@patchwork"]?.type ?? null
 const bare = (url) => String(url).split("#")[0]
 const seen = new Set()
-const counts = { sessions: 0, migrated: 0, current: 0, plans: 0, folders: 0, unreachable: 0 }
+const counts = { sessions: 0, migrated: 0, current: 0, plans: 0, plansMigrated: 0, folders: 0, unreachable: 0 }
 
 async function open(url) {
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timed out")), FIND_MS))
@@ -87,11 +90,11 @@ async function visit(url, path) {
   }
   const doc = handle.doc()
   const type = typeOf(doc)
+  // On a copy first, so a dry run says exactly what a real one would do.
+  const copy = () => JSON.parse(JSON.stringify(doc, (_key, value) => (value instanceof Uint8Array ? null : value)))
   if (type === "agent-session") {
     counts.sessions++
-    // On a copy first, so a dry run says exactly what a real one would do.
-    const copy = JSON.parse(JSON.stringify(doc, (_key, value) => (value instanceof Uint8Array ? null : value)))
-    if (migrateSession(copy)) {
+    if (migrateSession(copy())) {
       counts.migrated++
       console.log(`  ${DRY ? "would migrate" : "migrated     "} ${key}  ${doc.title ?? "(untitled)"}`)
       if (!DRY) handle.change((d) => migrateSession(d))
@@ -100,6 +103,11 @@ async function visit(url, path) {
     }
   } else if (type === "agent-workflow") {
     counts.plans++
+    if (migratePlan(copy())) {
+      counts.plansMigrated++
+      console.log(`  ${DRY ? "would migrate" : "migrated     "} ${key}  ${doc.title ?? "(untitled plan)"}`)
+      if (!DRY) handle.change((d) => migratePlan(d))
+    }
   } else if (Array.isArray(doc?.docs)) {
     counts.folders++
     for (const entry of doc.docs) if (entry?.url) await visit(entry.url, `${path}/${entry.name ?? "?"}`)
@@ -114,9 +122,9 @@ for (const root of roots) await visit(root, bare(root))
 
 console.log(
   `\n${counts.sessions} sessions (${counts.migrated} ${DRY ? "to migrate" : "migrated"}, ${counts.current} already current), ` +
-    `${counts.plans} plans, ${counts.folders} folders, ${counts.unreachable} unreachable.`,
+    `${counts.plans} plans (${counts.plansMigrated} ${DRY ? "to migrate" : "migrated"}), ${counts.folders} folders, ${counts.unreachable} unreachable.`,
 )
-if (!DRY && counts.migrated) {
+if (!DRY && (counts.migrated || counts.plansMigrated)) {
   console.log(`Waiting ${Math.round(SETTLE_MS / 1000)} s for the sync server to take the changes…`)
   await new Promise((resolve) => setTimeout(resolve, SETTLE_MS))
 }
