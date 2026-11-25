@@ -20,7 +20,8 @@
 // A copy of dist/ stamped as a newer build is served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
-// any failed. Chrome is driven over one browser-level CDP connection, with
+// any failed. The files are served here (not by cdp.mjs, see below); Chrome
+// is launched and guarded as cdp.mjs does it, and driven over one browser-level CDP connection, with
 // every page's dedicated workers (and theirs) attached, so that a run worker
 // can be seen to go.
 import { spawn } from "node:child_process";
@@ -29,7 +30,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { serve, sleep } from "./cdp.mjs";
+import { createReadStream, statSync } from "node:fs";
+import { createServer } from "node:http";
+import { extname } from "node:path";
+import { sleep } from "./cdp.mjs";
 import { guardChrome, killChrome } from "./chrome-guard.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -130,7 +134,17 @@ if (!stamp) throw new Error("the build stamp was not found in dist: has pool-hos
 
 // ── Chrome, and its tabs and workers over one CDP connection ──
 
-const { server } = await serve(root, PORT);
+// Served like cdp.mjs's server, but `no-cache` where that one says
+// `no-store`: Chrome keeps no page served `no-store` in its back/forward
+// cache, and check 7 is about a page that it does keep there.
+const MIME = { ".js": "text/javascript", ".html": "text/html", ".wasm": "application/wasm", ".map": "application/json" };
+const server = createServer((req, res) => {
+  const path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname));
+  if (!path.startsWith(root) || !existsSync(path) || statSync(path).isDirectory()) return void res.writeHead(404).end();
+  res.writeHead(200, { "content-type": MIME[extname(path)] ?? "application/octet-stream", "cache-control": "no-cache" });
+  createReadStream(path).pipe(res);
+});
+await new Promise((r) => server.listen(PORT, "127.0.0.1", r));
 const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "tasks-browser-run-profile-"));
 const chrome = spawn(
   CHROME,
@@ -393,11 +407,19 @@ try {
     const took = (await C.js("probe.statusLog.find((s) => s.state === 'starting' || s.state === 'running')?.t")) - t0;
     await C.waitFor(stateIs(key, "succeeded", "failed", "cancelled"), 30_000);
     const last = await C.js(`probe.last(${J(key)})`);
-    const cache = notCached.has(B.sessionId) ? `not kept in the back/forward cache (${notCached.get(B.sessionId).slice(0, 4).join(", ")})` : "Chrome reported no reason not to cache it";
+    // Back again: a page restored from the back/forward cache asks for the lock again (pageshow) and waits behind C.
+    notCached.delete(B.sessionId);
+    await B.js("history.back(), true");
+    await B.waitFor("document.readyState === 'complete' && !!window.probe", 15_000);
+    await sleep(1_000);
+    const restored = (await B.js("window.probe?.statusLog?.length ?? 0")) > 0;
+    const back = restored ? await B.js("probe.status()?.state") : null;
+    const locks = await C.js("probe.locks()");
+    const cache = restored ? `restored from the back/forward cache, where it now ${back === "waiting" ? "waits" : `reads ${back}`}` : `not restored from the cache (${(notCached.get(B.sessionId) ?? []).slice(0, 3).join(", ") || "no reason given"})`;
     check(
       "7 the holding tab navigated away mid-run: the lock passes at once, the run is lost and run again",
-      took < 5_000 && last.state === "succeeded" && J(runsOf(last)) === J(["lost", "succeeded"]),
-      `C took the lock ${took} ms after the navigation; B's page was ${cache}; runs ${J(runsOf(last))}; ${last.state} ${J(last.result)}`,
+      took < 5_000 && last.state === "succeeded" && J(runsOf(last)) === J(["lost", "succeeded"]) && (!restored || back === "waiting") && (await C.js("probe.status().state")) === "running" && locks.held === 1,
+      `C took the lock ${took} ms after the navigation; runs ${J(runsOf(last))}, ${last.state} ${J(last.result)}; going back, B's page was ${cache}; locks ${J(locks)}`,
     );
   }
 
