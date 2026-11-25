@@ -13,7 +13,7 @@
 
 import css from "./tool.css?inline";
 import { NCEI } from "./fetch-data.js";
-import { readTerrainData, dataFits } from "./store.js";
+import { readTerrainData, dataFits, hasData } from "./store.js";
 import fetchTerrainTask from "./fetch-task.js";
 import { fetchRequest } from "./fetch-spec.js";
 import { doWork, inSamePackage, stopWork, watchWork } from "./task-client.js";
@@ -322,12 +322,13 @@ export default function TerrainTool(handle, element) {
     $(".summary").textContent = `${d.origin?.lat?.toFixed?.(5)}, ${d.origin?.lon?.toFixed?.(5)} · ${((g.n - 1) * g.cell) / 1000} km square`;
     $(".frame").textContent = "Frame: transverse Mercator about the origin (WGS84, scale 1). Metres; x east, y up, z south; y = 0 mean water level. The grid runs x0…x0 + (n−1)·cell east and z0…z0 + (n−1)·cell south.";
     const status = $(".status");
+    const has = hasData(d);
     const fits = dataFits(d);
-    status.dataset.state = d.data && !fits ? "stale" : "";
-    status.textContent = !d.data ? "No data yet. Fetch data asks NOAA NCEI for the heights and OpenStreetMap for the shore, the docks and the marks, and keeps them in this doc." : fits ? `Fetched ${new Date(d.data.fetched).toLocaleString()} (OpenStreetMap as of ${d.data.summary?.osmBase ?? "?"}).` : "The place, the grid or its settings changed since the data was fetched: fetch it again.";
+    status.dataset.state = has && !fits ? "stale" : "";
+    status.textContent = !has ? "No data yet. Fetch data asks NOAA NCEI for the heights and OpenStreetMap for the shore, the docks and the marks, and keeps them in this doc." : fits ? `Fetched ${new Date(d.data.fetched).toLocaleString()} (OpenStreetMap as of ${d.data.summary?.osmBase ?? "?"}).` : "The place, the grid or its settings changed since the data was fetched: fetch it again.";
     const btn = $(".fetch");
     btn.disabled = busy();
-    btn.textContent = busy() ? "Fetching…" : d.data ? "Fetch again" : "Fetch data";
+    btn.textContent = busy() ? "Fetching…" : has ? "Fetch again" : "Fetch data";
     $(".cancel").hidden = !busy();
     const sources = d.data?.sources?.length ? d.data.sources : [{ name: NCEI.name, licence: NCEI.licence, url: NCEI.metadata }];
     $(".sources").innerHTML = sources
@@ -340,7 +341,7 @@ export default function TerrainTool(handle, element) {
     const t = d.datum?.tide ?? {};
     $(".water").innerHTML = `Heights are above mean water level (${esc(d.datum?.station ?? "")}: ${d.datum?.mwlAboveChartDatum ?? "?"} m above chart datum). Tides about it: highest normal ${t.HHWLT ?? "?"} m, mean higher high ${t.MHHW ?? "?"} m, mean lower low ${t.MLLW ?? "?"} m, lowest normal ${t.LLWLT ?? "?"} m.${d.wind ? `<br>A typical breeze: ${d.wind.speed} m/s from ${d.wind.from}° (${esc(d.wind.source)}).` : ""}<br>Not for navigation.`;
     const empty = $(".empty");
-    if (!d.data) {
+    if (!has) {
       empty.hidden = false;
       empty.textContent = "Fetch data to see the place.";
       ctx2d.clearRect(0, 0, canvas.width, canvas.height);

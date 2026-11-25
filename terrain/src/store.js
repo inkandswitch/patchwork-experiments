@@ -114,11 +114,19 @@ export async function readTerrainData(repo, doc) {
 }
 
 /**
+ * Whether the doc has data stored for some request. A `data` value that does
+ * not say what it was fetched for cannot be checked against the doc, so it is
+ * read as no data at all: the tool offers Fetch data, and the source asks for it.
+ */
+export function hasData(doc) {
+  return typeof doc?.data?.request === "string";
+}
+
+/**
  * Whether the doc's data was fetched for what the doc asks for now (its
- * place, grid, OpenStreetMap date and the rest of fetchSpec). Data stored
- * without saying what it was fetched for never fits.
+ * place, grid, OpenStreetMap date and the rest of fetchSpec). Without data
+ * (see hasData) nothing fits.
  */
 export function dataFits(doc) {
-  const request = doc?.data?.request;
-  return typeof request === "string" && request === specHash(fetchSpec(doc));
+  return hasData(doc) && doc.data.request === specHash(fetchSpec(doc));
 }

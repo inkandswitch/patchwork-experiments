@@ -5,7 +5,7 @@
 // once, into those file docs.
 
 import { buildTerrain } from "./build.js";
-import { readTerrainData, dataFits, asBytes } from "./store.js";
+import { readTerrainData, dataFits, hasData, asBytes } from "./store.js";
 import { quickHash } from "./hash.js";
 
 // a data file's record without its url: the sha256 names the bytes (and
@@ -57,7 +57,7 @@ const hashes = new WeakMap();
 export default {
   async build({ doc, repo, params }) {
     const d = JSON.parse(JSON.stringify(inputs(doc)));
-    if (!doc?.data?.dem?.url || !doc?.data?.features?.url) throw new Error("This terrain has no data yet: open it and press Fetch data.");
+    if (!hasData(doc) || !doc.data.dem?.url || !doc.data.features?.url) throw new Error("This terrain has no data yet: open it and press Fetch data.");
     if (!dataFits(doc)) throw new Error("This terrain's data was fetched for another place, grid or settings: open it and press Fetch data again.");
     const { dem, features, layers, look } = await readTerrainData(repo, doc);
     const { glb, meta } = buildTerrain({ doc: d, dem, features, layers, look, params });

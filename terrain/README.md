@@ -797,7 +797,9 @@ its key names. So:
   made of). Two stores at once on two machines keep one of them whole. The
   data fits the doc while that hash is the hash of what the doc asks for now
   (`dataFits`), so data stored by a machine that had not heard the frame
-  move reads as stale, and the tool says to fetch again.
+  move reads as stale, and the tool says to fetch again. A `data` that does
+  not say what it was fetched for reads as no data (`hasData`): the tool
+  offers Fetch data and the source asks for it.
 - Cancel stops it wherever it runs; requests are given up and Overpass's
   retries are not waited out.
 - It returns the file docs' urls and a line, never the data.
@@ -915,7 +917,8 @@ land in the mesh is stretched; the heightfield stays true.
   fetch reads and with none of the others; the tool's button through a
   stand-in `doWork`, `watchWork` and `stopWork` (`tool-fetch.test.js`): here and on the
   person's queue, Cancel, a fetch already under way shown, where the task's
-  code is;
+  code is, a doc whose data does not say what it was fetched for shown as
+  having none (and refused by the source as having none, `source.test.js`);
 - what a store writes (`store.test.js`, on real automerge documents): one
   value, `data`; two stores at once on two machines keep one whole, each way
   round; a store made before the frame move was heard reads as stale; each

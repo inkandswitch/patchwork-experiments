@@ -58,6 +58,13 @@ describe("the terrain-mesh source", () => {
     await expect(source.build({ doc: handle.doc(), repo, params: {} })).rejects.toThrow(/another place/);
   });
 
+  it("asks for data when the doc's data does not say what it was fetched for: it reads as none, with its files there", async () => {
+    const { repo, handle } = await stored();
+    handle.change((d) => delete d.data.request);
+    expect(handle.doc().data.dem.url).toBeTruthy();
+    await expect(source.build({ doc: handle.doc(), repo, params: {} })).rejects.toThrow(/has no data yet/);
+  });
+
   it("fingerprints what build() reads: a rename doesn't rebuild, an exaggeration does", async () => {
     const { handle } = await stored();
     const a = source.fingerprint(handle.doc());

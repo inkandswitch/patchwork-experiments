@@ -215,6 +215,25 @@ describe("a fetch already under way", () => {
     expect($(".log").textContent).toBe("mine");
   });
 
+  it("a doc whose data does not say what it was fetched for, with credits at its root, reads as having no data", async () => {
+    const repo = new FakeRepo();
+    const doc = terrainDoc();
+    expect(doc.data.request).toBeUndefined();
+    expect(doc.sources).toBeTruthy();
+    const handle = repo.add(doc);
+    const element = document.createElement("div");
+    element.repo = repo;
+    document.body.append(element);
+    const unmount = TerrainTool(handle, element);
+    const $ = (s) => element.querySelector(s);
+    expect($(".status").textContent).toMatch(/^No data yet\./);
+    expect($(".status").dataset.state).toBe("");
+    expect($(".fetch").textContent).toBe("Fetch data");
+    expect($(".empty").hidden).toBe(false);
+    expect($(".attribution").textContent).toBe("");
+    unmount();
+  });
+
   it("closing the tool stops following", async () => {
     const { unmount } = mounted();
     await settle();
