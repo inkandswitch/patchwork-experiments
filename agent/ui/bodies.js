@@ -17,7 +17,7 @@
  */
 
 import { renderMarkdown } from "./markdown.js"
-import { pathLabel, baseName } from "./calls.js"
+import { pathLabel, baseName } from "../documents/labels.js"
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag)

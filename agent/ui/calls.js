@@ -1,77 +1,28 @@
 /**
  * What a tool call looks like in the log.
  *
- * A transcript is mostly tool calls, and for a long time they read as the raw
- * tool id beside whichever input field happened to be present — `view_interact`
- * next to a CSS selector, `package_build` next to a 50-character automerge URL.
- * That is a dump of the arguments, not a description of what happened.
+ * A transcript is mostly tool calls. Shown as the raw tool id beside whichever
+ * input field happens to be present — `view_interact` next to a CSS selector,
+ * `package_build` next to a 50-character automerge URL — a line is a dump of
+ * the arguments, not a description of what happened. So a call is shown as a
+ * verb a person would use, and a detail drawn from the field that says what
+ * the call was about.
  *
- * So every tool gets an entry here: a verb a person would use, and a detail
- * drawn from the field that actually says what the call was *about*. Pure
- * functions of (input, result) — the view has the session document and nothing
- * else, so presentation cannot live on the tool definitions, which are in
- * another realm entirely.
+ * A call says this of itself when its tool does (`shown` on the call block,
+ * kernel/tool.js presentCall). For one that does not, the table here
+ * describes the built-in tools, and anything else falls back to its id and
+ * its most plausible input: a tool with no entry must not produce a broken
+ * line.
  *
- * Three rules the entries follow:
+ * Two rules the entries follow:
  *
  *   - Never show a bare automerge URL. Fifty characters of base58 tell a reader
  *     nothing; "this document" or a file name tells them everything.
  *   - Say what was touched *within* the thing, not the thing. `doc_edit` is
  *     interesting because of which fields it changed.
- *   - A tool with no entry still renders: it falls back to its id and its
- *     most plausible input. Adding a tool must not produce a broken line.
  */
 
-/** A document URL, for callers who want to decide how to show it. */
-const AUTOMERGE = /^automerge:/
-
-export function isDocUrl(value) {
-  return typeof value === "string" && AUTOMERGE.test(value)
-}
-
-/** A short, readable stand-in for a document URL. */
-export function shortDoc(url, subject = null) {
-  if (!isDocUrl(url)) return String(url ?? "")
-  if (subject && url === subject) return "this document"
-  return `doc ${url.replace(AUTOMERGE, "").slice(0, 6)}`
-}
-
-/** `["items", 0, "text"]` -> `/items/0/text`, and `[]` -> the whole document. */
-export function pathLabel(path) {
-  if (!Array.isArray(path) || !path.length) return null
-  return `/${path.join("/")}`
-}
-
-/** A host name, or the raw string when it will not parse. */
-export function hostOf(url) {
-  try {
-    return new URL(String(url)).host
-  } catch {
-    return String(url ?? "")
-  }
-}
-
-/** The last segment of a slash-separated path — usually the interesting part. */
-export function baseName(path) {
-  const parts = String(path ?? "").split("/").filter(Boolean)
-  return parts.at(-1) ?? String(path ?? "")
-}
-
-/** Describe an edit by the fields it touches, which is the part worth reading. */
-export function describeOps(ops) {
-  if (!Array.isArray(ops) || !ops.length) return "no changes"
-  const names = []
-  for (const op of ops.slice(0, 3)) {
-    const where = pathLabel(op?.path) ?? "document"
-    const anchor = [op?.find, op?.after, op?.before].find((text) => typeof text === "string")
-    if (anchor !== undefined) {
-      const snippet = anchor.replace(/\s+/g, " ").trim()
-      names.push(`${where} “${snippet.length > 18 ? `${snippet.slice(0, 17)}…` : snippet}”`)
-    } else names.push(where)
-  }
-  const more = ops.length - names.length
-  return names.join(", ") + (more > 0 ? ` +${more} more` : "")
-}
+import { baseName, describeOps, hostOf, isDocUrl, pathLabel, shortDoc } from "../documents/labels.js"
 
 /**
  * Per-tool presentation.
