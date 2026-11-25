@@ -41,7 +41,8 @@
  * `--dry` stops after the first pass and says what the second would change.
  * Without `--force` nothing is changed while a session found has a runner on
  * it now. `--no-follow` looks only at the documents named, for a list an
- * earlier walk made.
+ * earlier walk made. `--record <file>` writes down the heads each document
+ * had before it was changed.
  *
  * Delete this file, migrate-session.js and migrate-plan.js once it has been
  * run: the agent reads only the current shape (kernel/runner.js,
@@ -49,6 +50,7 @@
  */
 
 import { spawn } from "node:child_process"
+import { writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { isDeepStrictEqual } from "node:util"
 // The module the repo holds its documents with, so a document can be cloned.
@@ -205,8 +207,9 @@ if (flag("read")) {
   await Promise.all(
     roots.map(async (url) => {
       try {
-        const doc = (await open(repo, url, ms)).doc()
-        await say({ ...describe(url, doc), schemaVersion: doc?.schemaVersion ?? null, ledgerUrl: doc?.ledgerUrl ?? null })
+        const handle = await open(repo, url, ms)
+        const doc = handle.doc()
+        await say({ ...describe(url, doc), schemaVersion: doc?.schemaVersion ?? null, ledgerUrl: doc?.ledgerUrl ?? null, heads: handle.heads() })
       } catch (err) {
         await say({ url, ok: false, why: /timed out/.test(String(err?.message)) ? "timed out" : "unavailable" })
       }
@@ -358,6 +361,10 @@ if (running.length && !FORCE) {
 }
 
 // ---------------------------------------------------------------- change
+
+// `--record <file>`: where each document stood before it was changed, as its
+// heads, which is all it takes to read it as it was (`handle.view(heads)`).
+if (option("record", null)) writeFileSync(option("record", null), JSON.stringify(toMigrate.map(({ url, kind, title, heads }) => ({ url, kind, title, heads })), null, 1))
 
 const changed = []
 for (let at = 0; at < toMigrate.length; at += BATCH) {
