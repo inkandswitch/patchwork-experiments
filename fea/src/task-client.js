@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v5]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v6]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -654,6 +654,17 @@ export function served(repo, queueUrl, onChange) {
 // provider for it, and links it into the account; nothing here writes the
 // account. Reading goes straight off the account's map, so that only looking
 // makes nothing.
+//
+// The storage document's root is the list. A served queue is a root key that
+// is the queue's url, whose value is its setting; `own` is a root key holding
+// a url. Nothing in it is a container a writer has to make first: the root is
+// there from the moment the provider makes the document. So writes to
+// different queues never meet, whatever the order or timing; writes to one
+// queue's key keep one value, whole (Automerge keeps a value written
+// alongside a delete it did not see, so a join or a new setting outlasts a
+// leave made at the same moment); and two pointers written at once keep one,
+// while both queues they name stay served. Keys that are not queue urls (the
+// provider's `@patchwork`, `own`) are never read as queues.
 
 /** The tool id the task system's storage is kept under on an account (`account.toolStorage[TASKS_STORAGE_ID]`). */
 export const TASKS_STORAGE_ID = 'tasks-next';
@@ -674,11 +685,14 @@ export const PROVIDER_WAIT_MS = 5_000;
  */
 
 /**
- * The task system's storage document.
- * @typedef {object} TasksStorage
- * @property {{ [queueUrl: string]: QueueSetting }} [served]  The queues this person's browsers serve.
- * @property {string} [own]  The queue of this person's own (see `ownQueue`).
+ * The task system's storage document: each served queue's url as a key of
+ * its own, holding its setting, and `own`. Write it only through `setServed`
+ * and `ownQueue`; read it through `servedOf` and `ownQueueOf`.
+ * @typedef {{ own?: string, [key: string]: unknown }} TasksStorage
  */
+
+/** Whether a key of the storage document names a queue: only an automerge url does. */
+const isQueueKey = (/** @type {unknown} */ key) => typeof key === 'string' && key.startsWith('automerge:');
 
 /**
  * The url of the task system's storage document an account names, or null
@@ -696,18 +710,18 @@ export function storageUrlOf(account) {
 }
 
 /**
- * The queues a storage document says to serve, each with its setting; none
- * for a document that is not there or says nothing. Only the list's own keys
- * count.
+ * The queues a storage document says to serve, each with its setting as it
+ * is written (acceptance.ts says what a setting amounts to); none for a
+ * document that is not there. Only the document's own keys that are queue
+ * urls count.
  * @param {unknown} storage
- * @returns {{ [queueUrl: string]: QueueSetting }}
+ * @returns {{ [queueUrl: string]: unknown }}
  */
 export function servedOf(storage) {
-  const served = /** @type {any} */ (storage)?.served;
-  if (!served || typeof served !== 'object' || Array.isArray(served)) {
+  if (!storage || typeof storage !== 'object') {
     return {};
   }
-  return Object.fromEntries(Object.entries(served));
+  return Object.fromEntries(Object.entries(storage).filter(([key]) => isQueueKey(key)));
 }
 
 /**
@@ -716,8 +730,40 @@ export function servedOf(storage) {
  * @returns {string | null}
  */
 export function ownQueueOf(storage) {
-  const own = /** @type {any} */ (storage)?.own;
-  return typeof own === 'string' && own.startsWith('automerge:') ? own : null;
+  const own = storage && typeof storage === 'object' && Object.hasOwn(storage, 'own') ? /** @type {any} */ (storage).own : null;
+  return isQueueKey(own) ? own : null;
+}
+
+/**
+ * Serves a queue with `setting`, or, given null, stops serving it: one write
+ * of the queue's own root key. Call it inside a change to the storage
+ * document. A setting is written as a fresh value each time, never edited in
+ * place, so two settings made at once keep one of the two, whole. Throws on a
+ * url that is no queue's, or a setting that is neither `true` nor a list of
+ * packages, so that nothing but a queue's setting is ever written as one.
+ * @param {TasksStorage} storage
+ * @param {string} queueUrl
+ * @param {QueueSetting | null} setting
+ */
+export function setServed(storage, queueUrl, setting) {
+  if (!isQueueKey(queueUrl)) {
+    throw new Error(`${String(queueUrl)} is not a queue's automerge: url`);
+  }
+  if (setting === null) {
+    if (Object.hasOwn(storage, queueUrl)) {
+      delete storage[queueUrl];
+    }
+    return;
+  }
+  if (setting === true) {
+    storage[queueUrl] = true;
+    return;
+  }
+  const packages = /** @type {any} */ (setting)?.packages;
+  if (!Array.isArray(packages) || !packages.every((url) => typeof url === 'string')) {
+    throw new Error('A queue is served for any code (true) or for a list of packages ({ packages }).');
+  }
+  storage[queueUrl] = { packages: [...packages] };
 }
 
 /**
@@ -806,22 +852,22 @@ export async function tasksStorage(repo, element) {
  * The url of this person's own queue, made the first time it is asked for:
  * a queue whose audience is its owner, so it is served for any code. Making
  * it is one change to the task storage (see `tasksStorage`, whose rejections
- * this passes on): the pointer `own`, if it is still unset, and the queue on
- * the served list. `repo` is the Repo the page's account is in; the queue is
- * made there too.
+ * this passes on): the pointer `own`, if it is still unset, and the queue's
+ * own key, serving it. `repo` is the Repo the page's account is in; the
+ * queue is made there too.
  *
- * Two tabs or machines that make one at the same moment, from the same
- * storage document, each make a queue and set `own`; the merge keeps one
- * pointer, and both read that one from then on. If the served list was there
- * before, the other queue stays on it, served and empty, since nothing is
- * asked of a queue no pointer names. If each made the list in that same
- * change, the merge keeps one list whole, the one made with the pointer that
- * stands, and the other queue is on none. Where the two started from
- * different documents (one had changes the other had not seen), a list
- * either of them made then can win over the other's, and the pointer that
- * stands may name a queue that is not served: the titlebar then offers to
- * open it, where it can be joined. One made here while this tab waited for
- * its own to save is named by nothing, and left.
+ * Two tabs or machines that make one at the same moment each make a queue,
+ * serve it and set `own`. The merge keeps one pointer, the same everywhere,
+ * and both queues stay served, so the pointer always names a served queue.
+ * The other queue is served and empty, and nobody else has its url: its
+ * maker, if it sees the other pointer before this call returns, takes it
+ * back out of the list. Seen only after a later sync, it is left served and
+ * empty, which costs nothing, since no task is ever asked of it. The maker
+ * never takes out the queue the pointer names: the pointer it reads is the
+ * one that stands among those it has seen, so the pointer that stands
+ * everywhere is never beaten in its own maker's eyes. One made here while
+ * this tab waited for its own to save, when another pointer arrived first,
+ * is named and served by nothing, and left.
  * @param {any} repo
  * @param {any} element
  * @returns {Promise<string>}
@@ -839,19 +885,19 @@ export async function ownQueue(repo, element) {
     if (ownQueueOf(doc)) {
       return;
     }
-    // The list first and the pointer last. A url is stored as text, one
-    // operation a character, so whatever came after the pointer would be
-    // numbered by the url's length. In this order two replicas that start
-    // from the same document number the list and the pointer alike, and the
-    // merge keeps both from the same replica.
-    if (!doc.served || typeof doc.served !== 'object' || Array.isArray(doc.served)) {
-      doc.served = {};
-    }
-    doc.served[queue.url] = true;
     doc.own = queue.url;
+    setServed(doc, queue.url, true);
   });
   await repo.flush([storage.documentId]).catch(() => {
     // it is saved a moment later all the same
   });
-  return /** @type {string} */ (ownQueueOf(storage.doc()));
+  const own = /** @type {string} */ (ownQueueOf(storage.doc()));
+  if (own !== queue.url && Object.hasOwn(storage.doc(), queue.url)) {
+    storage.change((/** @type {TasksStorage} */ doc) => {
+      if (ownQueueOf(doc) !== queue.url) {
+        setServed(doc, queue.url, null);
+      }
+    });
+  }
+  return own;
 }

@@ -330,6 +330,10 @@ const NewJobForm = (props: { onAsk: (request: Ask) => Promise<unknown> }) => {
 export const AcceptanceChoice = (props: {
   acceptance: Acceptance | undefined;
   onChange: (acceptance: Acceptance) => void;
+  /** A change this control asked for is being made. */
+  working?: boolean;
+  /** Nothing can be changed just now (a change is being made). */
+  disabled?: boolean;
 }) => {
   const packages = () => (Array.isArray(props.acceptance) ? (props.acceptance as string[]) : []);
   const [editing, setEditing] = createSignal<string | null>(null);
@@ -371,7 +375,7 @@ export const AcceptanceChoice = (props: {
               />
             </label>
             <div class="tq-new-actions">
-              <button class="tq-button" onClick={save}>
+              <button class="tq-button" disabled={props.disabled} onClick={save}>
                 Save
               </button>
               <button class="tq-link" onClick={() => (setEditing(null), setError(null))}>
@@ -394,10 +398,10 @@ export const AcceptanceChoice = (props: {
                   ? 'no package at all'
                   : `${packages().length} package${packages().length === 1 ? '' : 's'}`}
                 .{' '}
-                <button class="tq-link" onClick={() => setEditing(packages().join('\n'))}>
+                <button class="tq-link" disabled={props.disabled} onClick={() => setEditing(packages().join('\n'))}>
                   Change
                 </button>{' '}
-                <button class="tq-link" onClick={() => props.onChange('any')}>
+                <button class="tq-link" disabled={props.disabled} onClick={() => props.onChange('any')}>
                   Run any code
                 </button>
               </>
@@ -405,9 +409,13 @@ export const AcceptanceChoice = (props: {
           >
             From this queue your browsers run any code its tasks bring: whatever anyone who can
             write the queue puts in it.{' '}
-            <button class="tq-link" onClick={() => setEditing('')}>
+            <button class="tq-link" disabled={props.disabled} onClick={() => setEditing('')}>
               Only named packages…
             </button>
+          </Show>
+          <Show when={props.working}>
+            {' '}
+            <span class="tq-muted">Saving…</span>
           </Show>
         </p>
       </Show>

@@ -20,7 +20,7 @@ vi.mock('./task-client.js', async (importOriginal) => ({
   },
 }));
 
-const { JobsSection } = await import('./jobs-view');
+const { AcceptanceChoice, JobsSection } = await import('./jobs-view');
 
 const entry = (n: number) => ({ taskUrl: `automerge:task${n}`, askedAt: n, package: null });
 
@@ -42,5 +42,34 @@ describe('the queue view', () => {
     expect(unwatched).toEqual(['a']);
     dispose();
     expect(unwatched).toEqual(['a', 'b']);
+  });
+});
+
+describe('whose code a queue runs', () => {
+  const buttons = (element: HTMLElement) => [...element.querySelectorAll('button')];
+
+  it('says it is saving while a change it asked for is made, and takes no other change until then', () => {
+    const [state, setState] = createSignal({ working: false, disabled: false });
+    const changes: unknown[] = [];
+    const element = document.createElement('div');
+    const dispose = render(
+      () => (
+        <AcceptanceChoice acceptance="any" onChange={(a) => changes.push(a)} working={state().working} disabled={state().disabled} />
+      ),
+      element,
+    );
+    expect(element.textContent).not.toContain('Saving…');
+    expect(buttons(element).every((button) => !button.disabled)).toBe(true);
+
+    setState({ working: true, disabled: true });
+    expect(element.textContent).toContain('Saving…');
+    expect(buttons(element).length).toBeGreaterThan(0);
+    expect(buttons(element).every((button) => button.disabled)).toBe(true);
+
+    setState({ working: false, disabled: false });
+    expect(element.textContent).not.toContain('Saving…');
+    expect(buttons(element).every((button) => !button.disabled)).toBe(true);
+    expect(changes).toEqual([]);
+    dispose();
   });
 });

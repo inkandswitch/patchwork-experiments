@@ -9,8 +9,7 @@
 //   the runs the last one started and records those it lost.
 // - It serves the queues listed in the task system's tool storage on the
 //   account (`account.toolStorage[TASKS_STORAGE_ID]`, see helpers.ts), and is
-//   told again whenever the account's pointer, that document or its list
-//   changes. An account that names no such document serves nothing.
+//   told again whenever the account's pointer or that document changes. An account that names no such document serves nothing.
 // - On `pagehide` or `freeze` it ends its pool at once and lets the lock go,
 //   and on `pageshow` or `resume` asks again. A page kept in the
 //   back/forward cache, or frozen in the background, would otherwise hold
@@ -187,8 +186,8 @@ class BrowserPoolHost implements PoolHost {
   }
 
   /**
-   * Follows the queues to serve, from the site's Repo: the account, the
-   * storage document it names, and that document's list. Only the first
+   * Follows the queues to serve, from the site's Repo: the account, and the
+   * storage document it names, which lists them. Only the first
    * Repo given is used.
    */
   followAccount(repo: Repo) {
@@ -447,7 +446,7 @@ class BrowserPoolHost implements PoolHost {
   }
 }
 
-/** What the task storage document's list says to serve: each queue with whose code to run from it. */
+/** What the task storage document says to serve: each queue with whose code to run from it. */
 function servedQueuesOf(storage: unknown): ServedQueues {
   const queues: ServedQueues = {};
   for (const [url, setting] of Object.entries(getTaskQueues(storage))) {

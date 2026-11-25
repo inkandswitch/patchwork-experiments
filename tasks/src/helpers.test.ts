@@ -1,6 +1,8 @@
-// The served list and one's own queue, in the task system's tool storage
-// document: the readers in task-client.js and the writers in helpers.ts. Each
-// writer is called as it would be inside a change to that document.
+// The served queues and one's own queue, in the task system's tool storage
+// document: the readers and the one writer in task-client.js, and helpers.ts
+// on top of them. Each writer is called on a plain object, as it would be
+// inside a change to that document; task-client.test.ts has them on real
+// documents changed at once on two replicas.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -13,7 +15,7 @@ import {
   setAcceptance,
 } from './helpers';
 import { QUEUE_DATATYPE_ID, TASKS_STORAGE_ID } from './ids';
-import { ownQueueOf, servedOf, storageUrlOf } from './task-client.js';
+import { ownQueueOf, servedOf, setServed, storageUrlOf } from './task-client.js';
 
 const one = 'automerge:one' as any;
 const other = 'automerge:other' as any;
@@ -45,46 +47,71 @@ describe("where an account's task storage is", () => {
 });
 
 describe('the served list', () => {
-  it('serves nothing without a storage document, or one that lists nothing', () => {
-    for (const storage of [undefined, null, {}, { served: null }, { served: [] }, { served: 'x' }]) {
+  it('serves nothing without a storage document, or one that names no queue', () => {
+    for (const storage of [undefined, null, 'x', 7, {}, [], { '@patchwork': { type: 'patchwork:tool-storage' } }]) {
       expect(getTaskQueues(storage)).toEqual({});
       expect(servedOf(storage)).toEqual({});
       expect(isOnTaskQueue(storage, one)).toBe(false);
     }
   });
 
+  it('keys on the document that are not queue urls are never read as served, whatever they hold', () => {
+    // `__proto__` as a key of the document's own, as a document read from JSON can have it
+    const storage = Object.assign(JSON.parse('{"__proto__": true}'), {
+      '@patchwork': { type: 'patchwork:tool-storage' },
+      own: one,
+      served: { [other]: true },
+      other: true,
+      'Automerge:x': true,
+      ' automerge:x': true,
+      [one]: true,
+    });
+    expect(Object.hasOwn(storage, '__proto__')).toBe(true);
+    expect(servedOf(storage)).toEqual({ [one]: true });
+    expect(getTaskQueues(storage)).toEqual({ [one]: true });
+    expect(isOnTaskQueue(storage, other)).toBe(false);
+    expect(isOnTaskQueue(storage, 'own' as any)).toBe(false);
+  });
+
+  it("counts only the document's own keys", () => {
+    const storage = Object.create({ [one]: true });
+    expect(servedOf(storage)).toEqual({});
+    expect(isOnTaskQueue(storage, one)).toBe(false);
+  });
+
   it('a queue whose setting is neither true nor a package list is not served', () => {
-    const storage = { served: { [one]: false, [other]: { packages: 'x' } } };
+    const storage = { [one]: false, [other]: { packages: 'x' } };
     expect(isOnTaskQueue(storage, one)).toBe(false);
     expect(isOnTaskQueue(storage, other)).toBe(false);
     expect(getAcceptance(storage, one)).toBeUndefined();
+    expect(getTaskQueues(storage)).toEqual({});
   });
 
-  it('joining makes the list the first time, and lists the queue for any code', () => {
-    const storage: any = {};
+  it("joining writes the queue's own key, for any code, and nothing else", () => {
+    const storage: any = { '@patchwork': { type: 'patchwork:tool-storage' } };
     joinTaskQueue(storage, one);
-    expect(storage).toEqual({ served: { [one]: true } });
+    expect(storage).toEqual({ '@patchwork': { type: 'patchwork:tool-storage' }, [one]: true });
     expect(isOnTaskQueue(storage, one)).toBe(true);
     expect(getAcceptance(storage, one)).toBe('any');
   });
 
-  it('joins and leaves without disturbing the rest of the list, or `own`', () => {
+  it('joins and leaves without disturbing the other queues, or `own`', () => {
     const storage: any = { own: other };
     joinTaskQueue(storage, one);
     joinTaskQueue(storage, other);
     leaveTaskQueue(storage, one);
-    expect(storage).toEqual({ own: other, served: { [other]: true } });
+    expect(storage).toEqual({ own: other, [other]: true });
     expect(ownQueueOf(storage)).toBe(other);
   });
 
-  it('makes nothing of joining twice, of leaving a queue it does not serve, or of leaving with no list', () => {
+  it('makes nothing of joining twice, or of leaving a queue it does not serve', () => {
     const storage: any = {};
     leaveTaskQueue(storage, one);
     expect(storage).toEqual({});
     joinTaskQueue(storage, one);
     joinTaskQueue(storage, one);
     leaveTaskQueue(storage, other);
-    expect(storage).toEqual({ served: { [one]: true } });
+    expect(storage).toEqual({ [one]: true });
   });
 
   it('joining a queue already served for named packages keeps that narrowing', () => {
@@ -94,36 +121,45 @@ describe('the served list', () => {
     expect(getAcceptance(storage, one)).toEqual(['automerge:pkg']);
   });
 
-  it('keeps whose code it runs from each queue, and setting it serves the queue', () => {
+  it('keeps whose code it runs from each queue, written whole as a fresh value, and setting it serves the queue', () => {
     const storage: any = {};
-    setAcceptance(storage, one, ['automerge:pkg']);
-    expect(storage.served[one]).toEqual({ packages: ['automerge:pkg'] });
+    const packages = ['automerge:pkg'];
+    setAcceptance(storage, one, packages);
+    expect(storage[one]).toEqual({ packages: ['automerge:pkg'] });
+    expect(storage[one].packages).not.toBe(packages);
     expect(isOnTaskQueue(storage, one)).toBe(true);
     setAcceptance(storage, one, 'any');
-    expect(storage.served[one]).toBe(true);
+    expect(storage[one]).toBe(true);
     expect(getAcceptance(storage, one)).toBe('any');
     expect(getAcceptance(storage, other)).toBeUndefined();
   });
 
-  it('a list that is not a map is replaced by one when written', () => {
-    const storage: any = { served: ['junk'] };
-    joinTaskQueue(storage, one);
-    expect(storage.served).toEqual({ [one]: true });
-  });
-
-  it("counts only the list's own keys", () => {
-    const served = Object.create({ [one]: true });
-    expect(isOnTaskQueue({ served }, one)).toBe(false);
-    expect(getTaskQueues({ served })).toEqual({});
+  it('never writes a key that is not a queue url, or a setting that is not one', () => {
+    for (const key of ['own', '@patchwork', 'served', '__proto__', '', 'https://example.com']) {
+      const storage: any = { own: one };
+      expect(() => setServed(storage, key, true)).toThrow();
+      expect(() => joinTaskQueue(storage, key as any)).toThrow();
+      expect(() => leaveTaskQueue(storage, key as any)).toThrow();
+      expect(storage).toEqual({ own: one });
+    }
+    for (const setting of [false, 'any', {}, { packages: 'x' }, { packages: [7] }]) {
+      const storage: any = {};
+      expect(() => setServed(storage, one, setting as any)).toThrow();
+      expect(storage).toEqual({});
+    }
   });
 });
 
-describe('one\'s own queue', () => {
+describe("one's own queue", () => {
   it('is what `own` names, when that is an automerge url', () => {
     expect(ownQueueOf({ own: one })).toBe(one);
-    for (const storage of [undefined, null, {}, { own: null }, { own: 7 }, { own: 'elsewhere' }]) {
+    for (const storage of [undefined, null, {}, { own: null }, { own: 7 }, { own: 'elsewhere' }, Object.create({ own: one })]) {
       expect(ownQueueOf(storage)).toBeNull();
     }
+  });
+
+  it('is not a served queue for being named: only its own key serves it', () => {
+    expect(servedOf({ own: one })).toEqual({});
   });
 });
 

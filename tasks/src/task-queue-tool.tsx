@@ -58,11 +58,25 @@ function useMembership(queueUrl: AutomergeUrl, hostRepo: Repo, element: HTMLElem
   const storageUrl = () => storageUrlOf(account()) as AutomergeUrl | null;
   const storage = useDoc<TasksStorage>(storageUrl, hostRepo);
   const [problem, setProblem] = createSignal<string | null>(null);
-  const change = (fn: (doc: TasksStorage) => void) => {
+  // A change waits on the frame's provider when the account names no storage
+  // yet (up to PROVIDER_WAIT_MS), so the control that asked for it says it is
+  // working until it is made, and the others wait their turn.
+  const [working, setWorking] = createSignal<Work | null>(null);
+  const change = (work: Work, fn: (doc: TasksStorage) => void) => {
+    if (working()) {
+      return;
+    }
     setProblem(null);
+    setWorking(work);
     tasksStorage(hostRepo, element).then(
-      (handle) => handle.change(fn),
-      (error: Error) => setProblem(error.message),
+      (handle) => {
+        handle.change(fn);
+        setWorking(null);
+      },
+      (error: Error) => {
+        setWorking(null);
+        setProblem(error.message);
+      },
     );
   };
   return {
@@ -71,15 +85,20 @@ function useMembership(queueUrl: AutomergeUrl, hostRepo: Repo, element: HTMLElem
     joined: () => isOnTaskQueue(storage(), queueUrl),
     /** Whether this is the person's own queue (see `ownQueue` in task-client.js). */
     own: () => ownQueueOf(storage()) === queueUrl,
-    join: () => change((doc) => joinTaskQueue(doc, queueUrl)),
-    leave: () => change((doc) => leaveTaskQueue(doc, queueUrl)),
+    join: () => change('join', (doc) => joinTaskQueue(doc, queueUrl)),
+    leave: () => change('leave', (doc) => leaveTaskQueue(doc, queueUrl)),
     /** Whose code this person's browsers run from the queue (see acceptance.ts). */
     acceptance: () => getAcceptance(storage(), queueUrl),
-    accept: (acceptance: Acceptance) => change((doc) => setAcceptance(doc, queueUrl, acceptance)),
+    accept: (acceptance: Acceptance) => change('accept', (doc) => setAcceptance(doc, queueUrl, acceptance)),
+    /** Which change is being made, while one is. */
+    working,
     /** Why the last change could not be made, for the person. */
     problem,
   };
 }
+
+/** The changes a person can make to whether, and how, this browser serves a queue. */
+type Work = 'join' | 'leave' | 'accept';
 
 const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; element: HTMLElement }) => {
   const repo = useRepo();
@@ -145,16 +164,21 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
                   <strong>This browser doesn't serve this queue.</strong>
                   <span>Joining lends the queue this browser's pool.</span>
                 </div>
-                <button class="tq-button" onClick={membership.join}>
-                  Join queue
+                <button class="tq-button" disabled={!!membership.working()} onClick={membership.join}>
+                  {membership.working() === 'join' ? 'Joining…' : 'Join queue'}
                 </button>
               </div>
             }
           >
-            <AcceptanceChoice acceptance={membership.acceptance()} onChange={membership.accept} />
+            <AcceptanceChoice
+              acceptance={membership.acceptance()}
+              onChange={membership.accept}
+              working={membership.working() === 'accept'}
+              disabled={!!membership.working()}
+            />
             <p class="tq-choice-note">
-              <button class="tq-link" onClick={membership.leave}>
-                Leave this queue
+              <button class="tq-link" disabled={!!membership.working()} onClick={membership.leave}>
+                {membership.working() === 'leave' ? 'Leaving…' : 'Leave this queue'}
               </button>
             </p>
           </Show>
