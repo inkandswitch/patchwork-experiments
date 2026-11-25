@@ -27,6 +27,7 @@ parentPort.on('message', (m) => {
     if (what === 'spin') for (;;) {}
     if (what === 'crash') setTimeout(() => { throw new Error('escaped'); });
     if (what === 'exit') process.exit(3);
+    if (what === 'grow') { const kept = []; for (;;) kept.push(new Array(1e5).fill(Math.random())); }
   } else if (m.type === 'abort') {
     parentPort.postMessage({ type: 'log', message: 'aborted ' + m.reason });
   }
@@ -48,9 +49,10 @@ const job = (importUrl: string): Job => ({
   key: 'k',
 });
 
-function executor(scriptUrl = standIn) {
+function executor(scriptUrl = standIn, maxHeapMb?: number) {
   return new NodeExecutor({
     script: scriptUrl,
+    maxHeapMb,
     dataDir: dir,
     settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' }, place: {} },
     taskBytes: async () => new Uint8Array([1, 2, 3]),
@@ -140,6 +142,26 @@ describe('the Node executor', () => {
       expect(pool.threads).toBe(0);
     });
   }
+
+  it('ends only its own thread when a task outgrows the heap ceiling, and says exit once', async () => {
+    const pool = executor(standIn, 64);
+    const r = recorder();
+    const worker = pool.start(r.events);
+    worker.run(job('grow'));
+    await r.gone;
+    await aMoment();
+    expect(r.exits()).toBe(1);
+    expect(r.said.some((line) => /^log its worker crashed: .*memory/i.test(line))).toBe(true);
+    expect(r.said.at(-1)).toBe('exit');
+    expect(pool.threads).toBe(0);
+    // this process is still here, and a thread started after it works
+    const again = recorder();
+    const next = pool.start(again.events);
+    next.run(job('return'));
+    await until(() => again.said.includes('done 3'));
+    next.terminate();
+    await again.gone;
+  }, 30_000);
 
   it('says exit once for a thread whose script throws before it is up, or is not there', async () => {
     for (const url of [throwsAtStart, pathToFileURL(join(dir, 'missing.mjs'))]) {

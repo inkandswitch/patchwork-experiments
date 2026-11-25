@@ -8,6 +8,10 @@
 // directory is free again only when its 'exit' has fired, and the new one
 // takes the lowest number nobody holds. So there can be a few more
 // directories than slots, and never two live threads on one.
+//
+// Each thread's heap has a ceiling (`maxHeapMb`). A task that reaches it ends
+// its own thread, which the pool records as a lost run; without one, it would
+// take the whole process down, the pool and every other run with it.
 
 import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
@@ -25,7 +29,12 @@ export interface NodeExecutorOptions {
   taskBytes(taskUrl: Job['taskUrl']): Promise<Uint8Array | undefined>;
   /** For a person watching: a line for each thread started and ended and each run handed over and over. */
   say?(line: string): void;
+  /** The most each thread's heap may grow to, in megabytes. */
+  maxHeapMb?: number;
 }
+
+/** A thread's heap ceiling unless the host is told otherwise: what V8 allows a process by default on a 64-bit machine. */
+export const DEFAULT_MAX_HEAP_MB = 4096;
 
 export class NodeExecutor implements Executor {
   private readonly held = new Set<number>();
@@ -38,14 +47,17 @@ export class NodeExecutor implements Executor {
   }
 
   start(events: WorkerEvents): RunWorker {
-    const { script, dataDir, settings, taskBytes, say } = this.options;
+    const { script, dataDir, settings, taskBytes, say, maxHeapMb = DEFAULT_MAX_HEAP_MB } = this.options;
     let n = 0;
     while (this.held.has(n)) {
       n++;
     }
     // Held once there is a thread, so that one that could not be made (the
     // pool fails its run) does not hold a number that no 'exit' will free.
-    const worker = new Worker(script, { name: `task-run-${n}` });
+    const worker = new Worker(script, {
+      name: `task-run-${n}`,
+      resourceLimits: { maxOldGenerationSizeMb: maxHeapMb },
+    });
     this.held.add(n);
     say?.(`thread ${n} started (${this.held.size} alive)`);
     let job: Job | null = null;

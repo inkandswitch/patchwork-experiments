@@ -4,6 +4,9 @@
 // input. It is called with this context as `this` (as tasks always were, for
 // `this.log`) and again as a second argument, for functions that would rather
 // not use `this`.
+//
+// A worker may run several tasks one after another, so code should not leave
+// timers or unawaited work behind when it returns.
 
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
 

@@ -6,13 +6,15 @@
 //                           [--workers 1] [--sync wss://…] [--new-queue "title"]
 //                           [--data-dir ~/.patchwork-tasks] [--name <host name>]
 //                           [--code-dir <dir>] [--local automerge:<package>=<dir>]…
-//                           [--verbose]
+//                           [--max-heap-mb 4096] [--verbose]
 //
 // It is an automerge peer, not a service: nothing listens on a port, so it
 // runs the same on a laptop or on a server anywhere. The pool (../pool.ts)
 // runs in this process's main thread with a Repo of its own, and each task's
 // code runs in a worker thread it can end whatever the code is doing (see
-// executor.ts). --workers is how many run at once.
+// executor.ts). --workers is how many run at once. --max-heap-mb is the
+// most each thread's heap may grow to: a task that needs more ends its own
+// thread, and its run is recorded lost, instead of ending this process.
 //
 // Everything is kept in --data-dir: the pool's documents (pool/), each
 // thread's (slots/<n>/), code fetched from automerge (code/, unless
@@ -66,7 +68,7 @@ import { GRACE_MS } from '../task-rules.js';
 import type { Acceptance } from '../acceptance';
 import type { Queue } from '../datatype';
 import { QUEUE_DATATYPE_ID } from '../ids';
-import { NodeExecutor } from './executor';
+import { DEFAULT_MAX_HEAP_MB, NodeExecutor } from './executor';
 
 const DEFAULT_SYNC_SERVER_URL = 'wss://subduction.sync.inkandswitch.com';
 const AUTOMERGE_URL = /^automerge:[1-9A-HJ-NP-Za-km-z]{16,64}$/;
@@ -86,6 +88,7 @@ interface Options {
   dataDir: string;
   codeDir: string | null;
   name: string;
+  maxHeapMb: number;
   verbose: boolean;
 }
 
@@ -101,6 +104,7 @@ function parseArgs(argv: string[]): Options {
     dataDir: join(homedir(), '.patchwork-tasks'),
     codeDir: null,
     name: hostname(),
+    maxHeapMb: DEFAULT_MAX_HEAP_MB,
     verbose: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -153,6 +157,9 @@ function parseArgs(argv: string[]): Options {
       case '--name':
         options.name = value();
         break;
+      case '--max-heap-mb':
+        options.maxHeapMb = Number(value());
+        break;
       case '--verbose':
         options.verbose = true;
         break;
@@ -167,6 +174,9 @@ function parseArgs(argv: string[]): Options {
   }
   if (!Number.isInteger(options.workers) || options.workers < 1) {
     throw new Error('--workers wants a whole number, 1 or more');
+  }
+  if (!Number.isInteger(options.maxHeapMb) || options.maxHeapMb < 16) {
+    throw new Error('--max-heap-mb wants a whole number of megabytes, 16 or more');
   }
   if (options.queues.length === 0 && !options.newQueue) {
     throw new Error('say which queue to work on: --queue automerge:…, or --new-queue "a title"');
@@ -289,6 +299,7 @@ export async function main(argv = process.argv.slice(2)) {
     },
     taskBytes: (taskUrl) => repo.export(taskUrl),
     say,
+    maxHeapMb: options.maxHeapMb,
   });
   const acceptance: Acceptance = options.acceptAny ? 'any' : options.accept;
   const pool = new Pool({
