@@ -4,6 +4,7 @@ import './index.css';
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
 import type { Queue } from './datatype';
 import { served, type Serving } from './task-client.js';
+import { waitingWork } from './task-rules.js';
 import {
   getAccountDocUrl,
   getAcceptance,
@@ -79,7 +80,7 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo }) =
         <header class="tq-header">
           <h1 class="tq-title">{queue().title ?? 'Task queue'}</h1>
           <div class="tq-stats">
-            <Stat value={Object.keys(queue().jobs ?? {}).length} label="listed" />
+            <Stat value={waitingWork(queue()).length} label="listed" />
             <Stat value={pools().length} label={pools().length === 1 ? 'pool' : 'pools'} />
           </div>
         </header>
