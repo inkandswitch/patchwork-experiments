@@ -316,7 +316,7 @@ export class Pool {
     );
 
     // Follow every task listed and every task this pool has a run of; let go of the rest.
-    const wanted = new Set<AutomergeUrl>(listed.map(({ work }) => work.taskUrl));
+    const wanted = new Set<AutomergeUrl>(listed.map(({ work }) => work.taskUrl as AutomergeUrl));
     for (const run of this.runs.values()) {
       wanted.add(run.task.url);
     }
@@ -359,7 +359,7 @@ export class Pool {
     }
 
     for (const { work, queue, acceptance } of listed) {
-      const handle = this.tasks.get(work.taskUrl)?.handle;
+      const handle = this.tasks.get(work.taskUrl as AutomergeUrl)?.handle;
       if (!handle) {
         continue;
       }
@@ -369,7 +369,7 @@ export class Pool {
           return;
         }
         const is = named(queue.doc(), work.key, work.taskUrl);
-        const heard = this.heardOf(work.taskUrl);
+        const heard = this.heardOf(work.taskUrl as AutomergeUrl);
         if (mayDelist(task, is, heard)) {
           queue.change((doc) => delistTask(doc, work.key, work.taskUrl));
         } else if (
@@ -673,7 +673,7 @@ export class Pool {
     }
   }
 
-  private send(handle: Handle<any>, message: { type: string }) {
+  private send(handle: Handle<any>, message: { type: string; [field: string]: unknown }) {
     // What is said is advice to listeners; a listener that throws must not stop the pool.
     attempt('saying something', () => this.ears.send(handle, { ...message, ...this.stamp(handle.url) }));
   }
