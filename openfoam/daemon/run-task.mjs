@@ -149,4 +149,11 @@ export function solve({ runJob = realRunJob, peer = checkerPeer } = {}) {
   };
 }
 
-export default makeRunTask({ type: RUN_TYPE, what: "an OpenFOAM run", machine: thisMachine, runJob: solve(), progressOf, interrupted: markInterrupted, awake: stayAwake, stopWait: STOP_WAIT_MS });
+/**
+ * What this package's task code is made of. The default export is made from
+ * it, and the tests make the same with a fake machine, runner and sleep in
+ * their places, so what they check is what runs.
+ */
+export const RUN_TASK = Object.freeze({ type: RUN_TYPE, what: "an OpenFOAM run", machine: thisMachine, runJob: solve(), progressOf, interrupted: markInterrupted, awake: stayAwake, stopWait: STOP_WAIT_MS });
+
+export default makeRunTask(RUN_TASK);

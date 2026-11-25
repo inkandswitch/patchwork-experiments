@@ -6,11 +6,12 @@
 // a run doc that arrives late, each way a run ends) is the kit's makeRunTask,
 // tested in the tasks package (src/task-runs.test.ts).
 import { describe, it, expect, beforeEach } from "vitest";
-import { solve, progressOf } from "./run-task.mjs";
+import { solve, progressOf, RUN_TASK } from "./run-task.mjs";
 import { FakeRepo } from "../probes/fake-repo.js";
-import { newRun, markInterrupted, RUN_TYPE } from "../src/protocol.js";
+import { newRun } from "../src/protocol.js";
 import { defaultSetup } from "../src/setup.js";
 import { makeRunTask, findWhenThere, NOT_RESTARTED } from "../src/task-runs.js";
+import { GRACE_MS } from "../src/task-rules.js";
 
 let repo, run;
 const MACHINE = { env: { describe: "fake" }, cores: 4, state: "/tmp/openfoam-state", sync: "wss://example.invalid", info: { host: "here", openfoam: "v2606" } };
@@ -27,11 +28,14 @@ function context(runs, me) {
   return { said, ctx: { repo, taskUrl: task.url, run: me, key: run.url, signal: new AbortController().signal, log: (m) => said.logs.push(m), progress: (p) => said.progress.push(p) } };
 }
 
-/** This package's task code, as the default export makes it, with a fake runner and machine. */
+/** This package's task code, as the default export makes it, with a fake runner and machine, and no hold on sleep. */
 const task = (runJob, more = {}) =>
-  makeRunTask({ type: RUN_TYPE, what: "an OpenFOAM run", machine: async () => MACHINE, runJob, progressOf, interrupted: markInterrupted, say: () => {}, find: (r, url) => findWhenThere(r, url, { tries: 2, sleep: async () => {} }), ...more });
+  makeRunTask({ ...RUN_TASK, machine: async () => MACHINE, runJob, awake: () => () => {}, say: () => {}, find: (r, url) => findWhenThere(r, url, { tries: 2, sleep: async () => {} }), ...more });
 
 describe("the runner", () => {
+  it("told to stop, is given its command's kill and a little over, inside the host's grace", () => {
+    expect(RUN_TASK.stopWait).toBeLessThan(GRACE_MS);
+  });
   it("is handed this machine's OpenFOAM, cores and directories, and a second peer that is closed when it ends", async () => {
     const calls = [];
     let closed = 0;
