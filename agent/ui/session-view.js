@@ -34,6 +34,7 @@ import { applyInstall, applyUninstall } from "./install.js"
 import { watchWorkspace } from "./workspace.js"
 import { startDictation, composeDictation, voiceSupported } from "./voice.js"
 import { ensureStyles } from "./styles.js"
+import { morph } from "./morph.js"
 import { sessionValue } from "./session-value.js"
 import { watchNames, myContactUrl } from "./names.js"
 
@@ -93,11 +94,6 @@ export function AgentTool(handle, element, options = {}) {
   const guides = createGuidesButton({ repo, rootFolderUrl: accountContext().rootFolderUrl, openDoc: (url) => onOpenDoc(url) })
   header.append(statusDot, subjectLabel, workflowButton, guides.button, costLabel, modelButton)
   guides.refresh()
-  let workflowShown = null
-  workflowButton.addEventListener("click", (event) => {
-    event.preventDefault()
-    if (workflowShown) onOpenDoc(workflowShown)
-  })
 
   // What the session makes and opens lives IN the transcript, beside the call
   // that made or opened it (ui/views.js), and nowhere else: a strip of things
@@ -113,15 +109,8 @@ export function AgentTool(handle, element, options = {}) {
   const waitingStrip = el("div", "agent-waiting")
   waitingStrip.hidden = true
   main.insertBefore(waitingStrip, transcript)
-  let waitingShown = ""
   function renderStrip(items) {
-    if (!waiting) return
-    // Rebuilt only when what is waiting changes, so an answer half-typed in the
-    // strip is not wiped by every other edit to the documents behind it.
-    const signature = items.map((item) => item.callId).join(",")
-    if (signature === waitingShown) return
-    waitingShown = signature
-    renderWaiting(waitingStrip, items, { onOpen: (url) => onOpenDoc(url), subject: handle.doc()?.subject ?? null })
+    if (waiting) renderWaiting(waitingStrip, items, { onOpen: (url) => onOpenDoc(url), subject: handle.doc()?.subject ?? null })
   }
   const waiting = repo ? watchWaiting(repo, handle, () => !disposed && handle.doc() && renderStrip(value(handle.doc()).strip)) : null
 
@@ -554,6 +543,21 @@ export function AgentTool(handle, element, options = {}) {
     else toggleDictation()
   })
 
+  // The place a gated message's choice was offered for, and what the choice
+  // row says when it is not offering one.
+  let gatedAt = null
+  const choicesSay = (text) => {
+    const out = document.createDocumentFragment()
+    out.append(el("span", "agent-choices-say", text))
+    morph(choices, out)
+  }
+  choices.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-choice]")
+    if (!button || button.disabled) return
+    event.preventDefault()
+    sendAs(button.dataset.choice, gatedAt)
+  })
+
   async function send() {
     if (wantDictation) stopListening()
     const text = input.value.trim()
@@ -562,13 +566,14 @@ export function AgentTool(handle, element, options = {}) {
     // Until its plan has loaded, nothing is sent: the message waits in the box.
     const now = standing?.current() ?? null
     if (placeOf(handle.doc())?.role === "step" && !now) {
-      choices.replaceChildren(el("span", "agent-choices-say", "Loading this step's workflow… send again in a moment."))
+      choicesSay("Loading this step's workflow… send again in a moment.")
       choices.hidden = false
       return
     }
     const gate = gateOf(now)
     if (gate) {
-      renderChoices(choices, gate, { pick: (choice) => sendAs(choice, now), attachments: tray.size() > 0 })
+      gatedAt = now
+      renderChoices(choices, gate, { attachments: tray.size() > 0 })
       choices.hidden = false
       return
     }
@@ -605,7 +610,7 @@ export function AgentTool(handle, element, options = {}) {
       // Said where the choice was made, which stays up while the step still
       // takes no message straight; the message is still in the box.
       render()
-      choices.replaceChildren(el("span", "agent-choices-say", `Could not send: ${err?.message ?? err}`))
+      choicesSay(`Could not send: ${err?.message ?? err}`)
       choices.hidden = false
       return
     }
@@ -717,11 +722,13 @@ export function AgentTool(handle, element, options = {}) {
     )
   }
 
-  // Document links inside rendered markdown navigate too. Delegated from the
-  // transcript, so re-rendering never leaves a dead link behind.
-  transcript.addEventListener("click", (event) => {
+  // Anything naming a document in `data-doc-url` opens it: links in rendered
+  // markdown, attachments, the standing line's link back to a step, the
+  // workflow button. Delegated from the root, so re-rendering never leaves a
+  // dead link behind.
+  root.addEventListener("click", (event) => {
     const link = event.target.closest?.("[data-doc-url]")
-    if (!link) return
+    if (!link || !root.contains(link)) return
     event.preventDefault()
     onOpenDoc(link.dataset.docUrl)
   })
@@ -983,8 +990,8 @@ export function AgentTool(handle, element, options = {}) {
     subjectLabel.textContent = v.title.text
     subjectLabel.title = v.title.tooltip
     workflowButton.hidden = !v.workflow
-    workflowShown = v.workflow?.url ?? null
     if (v.workflow) {
+      workflowButton.dataset.docUrl = v.workflow.url
       workflowButton.textContent = v.workflow.label
       workflowButton.title = v.workflow.tooltip
     }
@@ -1001,7 +1008,7 @@ export function AgentTool(handle, element, options = {}) {
     renderDefaults()
     renderStrip(v.strip)
 
-    renderStandingLine(standingLine, v.place, { openDoc: onOpenDoc })
+    renderStandingLine(standingLine, v.place)
     input.placeholder = v.placeholder
     // The step started running again meanwhile: a message goes straight to it.
     if (!v.gate) choices.hidden = true

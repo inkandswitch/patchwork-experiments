@@ -17,6 +17,7 @@ import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
 import { liftBudget, liftAmounts } from "../session/usage.js"
 import { drivePlanHere } from "../runners/tab.js"
+import { morph } from "./morph.js"
 
 
 function el(tag, className, text) {
@@ -260,11 +261,23 @@ export function describeBudget({ spent, limit, notStarted, stopped = 0, ask: ask
   return `The workflow has spent its whole budget (${money}, orchestrator included), so ${blocked.join(" and ") || "nothing more can run"}.${ask} Resume raises the budget to what has been spent plus the amount you pick; the orchestrator then decides how to spend it.`
 }
 
-/** The strip above the orchestrator's transcript. Empty, it is hidden. */
+/**
+ * The strip above the orchestrator's transcript. Empty, it is hidden.
+ *
+ * Morphed into `container` (ui/morph.js), each item keyed by its call and kept
+ * whole, since it brings its own listeners: an item whose markup has not
+ * changed is the same node, so an answer half-typed in it survives every
+ * other change to the documents behind the strip.
+ */
 export function renderWaiting(container, items, options = {}) {
-  container.replaceChildren()
   container.hidden = !items.length
-  if (!items.length) return
-  container.append(el("p", "agent-waiting-title", `Waiting on you in workflow steps (${items.length})`))
-  for (const item of items) container.append(renderWaitingItem(item, options))
+  const out = document.createDocumentFragment()
+  if (items.length) out.append(el("p", "agent-waiting-title", `Waiting on you in workflow steps (${items.length})`))
+  for (const item of items) {
+    const node = renderWaitingItem(item, options)
+    node.dataset.key = `waiting:${item.sessionUrl ?? item.planUrl ?? ""}:${item.callId}`
+    node.dataset.morph = "whole"
+    out.append(node)
+  }
+  morph(container, out)
 }

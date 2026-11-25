@@ -149,7 +149,7 @@ describe("in the orchestrator's view", () => {
     stops.push(() => watcher.dispose())
     await until(() => watcher.items().length > 0)
     draw()
-    return { container, child }
+    return { container, child, draw }
   }
 
   it("lists a step waiting for permission, and Allow once grants it in the step's session", async () => {
@@ -167,6 +167,18 @@ describe("in the orchestrator's view", () => {
     expect(container.textContent).toContain("Metric or imperial?")
     ;[...container.querySelectorAll("button")].find((b) => b.textContent === "imperial").click()
     expect(waitingIn(child.doc())).toEqual([])
+  })
+
+  it("keeps an answer half-typed, and where it was typed, across a redraw", async () => {
+    const { container, draw } = await strip("question")
+    const field = container.querySelector(".agent-waiting-item input[type=text]")
+    field.value = "metric, but"
+    field.focus()
+    draw()
+    expect(container.querySelector(".agent-waiting-item input[type=text]")).toBe(field)
+    expect([field.value, document.activeElement === field]).toEqual(["metric, but", true])
+    renderWaiting(container, [], { onOpen: () => {} })
+    expect([container.hidden, container.children.length]).toEqual([true, 0])
   })
 })
 
