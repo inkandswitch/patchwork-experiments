@@ -8,11 +8,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { solve, machineSettings, thisMachine, progressOf } from "./run-task.mjs";
+import { solve, machineSettings, thisMachine, progressOf, RUN_TASK } from "./run-task.mjs";
 import { FakeRepo } from "../src/test/fake-repo.js";
-import { newRun, RUN_TYPE } from "../src/protocol.js";
+import { newRun } from "../src/protocol.js";
 import { normalizeSetup } from "../src/setup.js";
 import { makeRunTask, findWhenThere } from "../src/task-runs.js";
+import { GRACE_MS } from "../src/task-rules.js";
 
 let repo, run;
 const MACHINE = { tools: { gmsh: "/x/gmsh", ccx: "/x/ccx", gmshVersion: "4.15", ccxVersion: "2.23" }, cores: 4, maxNodes: 100_000, state: "/tmp/fea-state", sync: "wss://example.invalid", info: { host: "here", calculix: "2.23", gmsh: "4.15" } };
@@ -29,11 +30,14 @@ function context() {
   return { said, ctx: { repo, taskUrl: task.url, run: "r1", key: run.url, signal: new AbortController().signal, log: (m) => said.logs.push(m), progress: (p) => said.progress.push(p) } };
 }
 
-/** This package's task code, as the default export makes it, with a fake runner and machine. */
+/** This package's task code, as the default export makes it, with a fake runner and machine, and no hold on sleep. */
 const task = (runJob) =>
-  makeRunTask({ type: RUN_TYPE, what: "an FEA run", machine: () => MACHINE, runJob, progressOf, say: () => {}, find: (r, url) => findWhenThere(r, url, { tries: 2, sleep: async () => {} }) });
+  makeRunTask({ ...RUN_TASK, machine: () => MACHINE, runJob, awake: () => () => {}, say: () => {}, find: (r, url) => findWhenThere(r, url, { tries: 2, sleep: async () => {} }) });
 
 describe("the runner", () => {
+  it("told to stop, is given its program's kill and a little over, inside the host's grace", () => {
+    expect(RUN_TASK.stopWait).toBeLessThan(GRACE_MS);
+  });
   it("is handed this machine's tools, cores, mesh cap and directories, and a second peer that is closed when it ends", async () => {
     const calls = [];
     let closed = 0;
