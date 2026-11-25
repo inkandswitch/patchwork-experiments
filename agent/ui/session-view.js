@@ -9,16 +9,13 @@
  */
 
 import { handleStore } from "../kernel/store.js"
-import { decide, say, answerQuestion } from "../kernel/loop.js"
+import { decide, answerQuestion } from "../kernel/loop.js"
 import { needsWork } from "../kernel/runner.js"
-import { accountContext, drivePlanHere } from "../runners/tab.js"
-import { getDriver } from "../workflow/driver.js"
+import { accountContext } from "../runners/tab.js"
 import { watchWaiting, renderWaiting, renderWaitingItem } from "./waiting.js"
 import { markCitations } from "./citations.js"
-import { attachmentTray, carriesAttachments, pastedImages } from "./attachments.js"
 import { workflowOf } from "../workflow/plan.js"
-import { watchStanding, renderStandingLine, gateOf, renderChoices, placeOf } from "./standing.js"
-import { askAside } from "../workflow/aside.js"
+import { watchStanding, renderStandingLine } from "./standing.js"
 import { readKey, onKeyChange, connectAccountKeys } from "../providers/keys.js"
 import { renderTranscript } from "./transcript.js"
 import { createGuidesButton } from "./guides.js"
@@ -26,9 +23,8 @@ import { createInlineViews } from "./views.js"
 import { getMount, mountForPerson, parkMount } from "../tools/checking.js"
 import { applyInstall, applyUninstall } from "./install.js"
 import { watchWorkspace } from "./workspace.js"
-import { createDictation } from "./dictation.js"
+import { createComposer } from "./composer.js"
 import { ensureStyles } from "./styles.js"
-import { morph } from "./morph.js"
 import { sessionRunners } from "./session-runners.js"
 import { createSettingsPanel } from "./settings-panel.js"
 import { sessionValue } from "./session-value.js"
@@ -90,8 +86,7 @@ export function AgentTool(handle, element, options = {}) {
   // made, or a pane for the agent's mounts, would be a place to look other
   // than where the thing is talked about.
   const transcript = el("div", "agent-transcript")
-  const composer = el("div", "agent-composer")
-  main.append(header, guides.panel, transcript, composer)
+  main.append(header, guides.panel, transcript)
 
   // Workflow steps run in sessions nobody has open; what they wait on a person
   // for — a permission, a question — is shown here, above the transcript, and
@@ -110,49 +105,6 @@ export function AgentTool(handle, element, options = {}) {
   standingLine.hidden = true
   header.after(standingLine)
   const standing = repo ? watchStanding({ repo, handle, onChange: () => render() }) : null
-
-  // ---- composer --------------------------------------------------------
-  const input = document.createElement("textarea")
-  input.placeholder = "Ask for a change…"
-  input.rows = 2
-  const sendButton = el("button", null, "Send")
-  sendButton.dataset.variant = "primary"
-  const stopButton = el("button", null, "Stop")
-  stopButton.dataset.variant = "danger"
-  stopButton.style.display = "none"
-  const hint = el("span", "agent-hint", "")
-  // Speech into the box (ui/dictation.js).
-  const dictation = createDictation({ field: input, root, onChange: () => render() })
-  const row = el("div", "agent-composer-row")
-  row.append(hint, dictation.button, stopButton, sendButton)
-  // What is waiting to go with the next message: documents dragged in,
-  // files dropped, images pasted (ui/attachments.js).
-  const tray = attachmentTray({ repo, onChange: () => render() })
-  // A message to a step that is not running needs a choice before it goes:
-  // a question in a side thread, or reopening the step (ui/standing.js).
-  const choices = el("div", "agent-send-choices")
-  choices.hidden = true
-  composer.append(tray.element, input, choices, row)
-  composer.addEventListener("dragover", (event) => {
-    if (!carriesAttachments(event.dataTransfer)) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = "copy"
-    composer.dataset.dropping = "true"
-  })
-  composer.addEventListener("dragleave", () => delete composer.dataset.dropping)
-  composer.addEventListener("drop", (event) => {
-    delete composer.dataset.dropping
-    if (!carriesAttachments(event.dataTransfer)) return
-    event.preventDefault()
-    event.stopPropagation()
-    if (tray.addDrop(event.dataTransfer)) input.focus()
-  })
-  input.addEventListener("paste", (event) => {
-    const images = pastedImages(event.clipboardData)
-    if (!images.length) return
-    event.preventDefault()
-    tray.addFiles(images)
-  })
 
   // The model, effort, workflows and keys (ui/settings-panel.js).
   const settings = createSettingsPanel({ store, onKey: (key) => runners.setKey(key), onChange: () => render() })
@@ -190,79 +142,20 @@ export function AgentTool(handle, element, options = {}) {
   const runners = sessionRunners({ handle, store, repo, element: root, subject: subjectUrl, onEvent: () => render() })
   const kick = () => runners.kick()
 
-  // The place a gated message's choice was offered for, and what the choice
-  // row says when it is not offering one.
-  let gatedAt = null
-  const choicesSay = (text) => {
-    const out = document.createDocumentFragment()
-    out.append(el("span", "agent-choices-say", text))
-    morph(choices, out)
-  }
-  choices.addEventListener("click", (event) => {
-    const button = event.target.closest?.("[data-choice]")
-    if (!button || button.disabled) return
-    event.preventDefault()
-    sendAs(button.dataset.choice, gatedAt)
+  // What a person writes to the session, and sending it (ui/composer.js).
+  const composer = createComposer({
+    handle,
+    store,
+    repo,
+    root,
+    place: () => standing?.current() ?? null,
+    contextFor,
+    openDoc: (url) => onOpenDoc(url),
+    onSent: kick,
+    onStop: () => runners.stop(),
+    onChange: () => render(),
   })
-
-  async function send() {
-    if (dictation.listening()) dictation.stop()
-    const text = input.value.trim()
-    if (!text && !tray.size()) return
-    // A step's session takes a message straight only while its step runs.
-    // Until its plan has loaded, nothing is sent: the message waits in the box.
-    const now = standing?.current() ?? null
-    if (placeOf(handle.doc())?.role === "step" && !now) {
-      choicesSay("Loading this step's workflow… send again in a moment.")
-      choices.hidden = false
-      return
-    }
-    const gate = gateOf(now)
-    if (gate) {
-      gatedAt = now
-      renderChoices(choices, gate, { attachments: tray.size() > 0 })
-      choices.hidden = false
-      return
-    }
-    input.value = ""
-    // An attachment still being read or kept is waited for, briefly: it was
-    // dropped to go with this message.
-    for (let waited = 0; tray.pending() && waited < 10_000; waited += 100) await new Promise((resolve) => setTimeout(resolve, 100))
-    const attachments = tray.take()
-    // What was open when this was sent, for a session with no subject.
-    const context = (await contextFor?.().catch(() => null)) ?? null
-    say(store, text || "(attached)", await myContactUrl(), context, attachments)
-    render()
-    kick()
-  }
-
-  /** Send what is in the box as the choice made for a gated step. */
-  async function sendAs(choice, now) {
-    choices.hidden = true
-    if (choice === "cancel") return input.focus()
-    const text = input.value.trim()
-    try {
-      if (choice === "ask") {
-        for (let waited = 0; tray.pending() && waited < 10_000; waited += 100) await new Promise((resolve) => setTimeout(resolve, 100))
-        const attachments = tray.take()
-        const context = (await contextFor?.().catch(() => null)) ?? null
-        input.value = ""
-        onOpenDoc(await askAside(repo, handle, text || "(attached)", { author: await myContactUrl(), context, attachments }))
-      } else {
-        const driver = getDriver(now.planUrl) ?? (await drivePlanHere(now.planUrl, { repo }))
-        await driver.reopen([now.stepId], { note: text, cascade: choice === "reopen-later", by: "person" })
-        input.value = ""
-      }
-    } catch (err) {
-      // Said where the choice was made, which stays up while the step still
-      // takes no message straight; the message is still in the box.
-      render()
-      choicesSay(`Could not send: ${err?.message ?? err}`)
-      choices.hidden = false
-      return
-    }
-    render()
-  }
+  main.append(composer.element)
 
   function onDecide(callId, decision) {
     // One "yes" answers every waiting call the grant covers, not one per call.
@@ -380,24 +273,6 @@ export function AgentTool(handle, element, options = {}) {
     onOpenDoc(link.dataset.docUrl)
   })
 
-  sendButton.addEventListener("click", (event) => {
-    event.preventDefault()
-    send()
-  })
-
-  stopButton.addEventListener("click", (event) => {
-    event.preventDefault()
-    runners.stop()
-  })
-
-  input.addEventListener("keydown", (event) => {
-    // Enter sends; Shift-Enter and the modifier chords insert a newline.
-    if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
-      event.preventDefault()
-      send()
-    }
-  })
-
   modelButton.addEventListener("click", (event) => {
     event.preventDefault()
     settings.toggle()
@@ -414,7 +289,7 @@ export function AgentTool(handle, element, options = {}) {
       keysSettled,
       runner: runners.kind(),
       elsewhere: runners.elsewhere(doc),
-      voiceStatus: dictation.status(),
+      voiceStatus: composer.dictation.status(),
       place: standing?.current() ?? null,
       waiting: waiting?.items() ?? [],
       subjectTitle: names.title(doc.subject),
@@ -450,9 +325,6 @@ export function AgentTool(handle, element, options = {}) {
     renderStrip(v.strip)
 
     renderStandingLine(standingLine, v.place)
-    input.placeholder = v.placeholder
-    // The step started running again meanwhile: a message goes straight to it.
-    if (!v.gate) choices.hidden = true
     uiState.subject = doc.subject ?? null
     uiState.names = names.authors(doc)
     renderTranscript(transcript, doc, uiState, {
@@ -471,9 +343,7 @@ export function AgentTool(handle, element, options = {}) {
     // Each citation's quote, looked up in the document it cites.
     markCitations(transcript, async (url) => (await repo.find(url))?.doc?.() ?? null)
 
-    stopButton.style.display = v.canStop ? "" : "none"
-    sendButton.disabled = !v.canSend
-    hint.textContent = v.hint
+    composer.render(v)
 
     if (v.openSettings) settings.reveal()
 
@@ -526,7 +396,7 @@ export function AgentTool(handle, element, options = {}) {
     handle.off("change", onChange)
     offKeys()
     views.dispose()
-    dictation.dispose()
+    composer.dispose()
     workspace?.dispose()
     names.dispose()
     waiting?.dispose()
