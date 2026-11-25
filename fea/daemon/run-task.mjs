@@ -47,13 +47,15 @@ import { readFileSync } from "node:fs";
 import { homedir, hostname, platform, arch } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findGmsh, findCcx, gmshVersion, ccxVersion, defaultCores } from "./tools.mjs";
+import { findGmsh, findCcx, gmshVersion, ccxVersion, defaultCores, KILL_AFTER_MS } from "./tools.mjs";
 import { runJob as realRunJob } from "./runner.mjs";
 import { freshPeer } from "../src/segments.js";
 import { findWhenThere } from "../src/find.js";
 import { RUN_TYPE, isTerminal, markInterrupted, NOT_RESTARTED } from "../src/protocol.js";
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com";
+/** How long a runner told to stop is given to return: its program's kill, and a little over, inside the host's GRACE_MS of 5 s. */
+const STOP_WAIT_MS = KILL_AFTER_MS + 500;
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The machine's facts, as the environment gives them. */
@@ -174,8 +176,9 @@ export function progressOf(run) {
  * @param {(sync: string) => { verify: Function, close: () => Promise<void> }} o.peer
  * @param {(message: string) => void} [o.say]  the host's log
  * @param {(repo: object, url: string) => Promise<object>} [o.find]  finds the run doc, which travels apart from its task and can reach the sync server after it (src/find.js asks again for about half a minute)
+ * @param {number} [o.stopWait]  how long after an abort the runner is given to return
  */
-export function makeRunTask({ runJob, machine, awake, peer, say = (m) => console.log(`${stamp()} ${m}`), find = findWhenThere }) {
+export function makeRunTask({ runJob, machine, awake, peer, say = (m) => console.log(`${stamp()} ${m}`), find = findWhenThere, stopWait = STOP_WAIT_MS }) {
   return async function runTask(input, ctx) {
     const runUrl = input?.run;
     if (typeof runUrl !== "string" || !runUrl.startsWith("automerge:")) throw new Error("The task names no run: its input is { run: <an FEA run's url> }.");
@@ -219,14 +222,32 @@ export function makeRunTask({ runJob, machine, awake, peer, say = (m) => console
     ctx.signal.addEventListener("abort", release, { once: true });
     const checker = peer(facts.sync);
     say(`run ${runUrl}: ${handle.doc().title ?? ""}`);
+    // Told to stop, the runner writes the stop to the run doc at once, kills its program and
+    // returns when the program's processes are gone. Some of its waits watch no signal, though
+    // (a part's bytes arriving, the sync server acknowledging the results), and what this code
+    // wrote is saved only once it returns, while the host ends this thread GRACE_MS after the
+    // abort. So the runner is given stopWait after an abort, and no longer.
+    let giveUp = null;
+    const stopped = new Promise((resolve) => {
+      giveUp = () => setTimeout(() => resolve("stopped"), stopWait);
+    });
+    let gaveUp = null;
+    const onStop = () => (gaveUp = giveUp());
+    if (ctx.signal.aborted) onStop();
+    else ctx.signal.addEventListener("abort", onStop, { once: true });
     let status;
     try {
-      status = await runJob({ repo: ctx.repo, handle, tools: facts.tools, workDir: join(facts.state, "runs"), cores: facts.cores, maxNodes: facts.maxNodes, daemon: facts.info, say, signal: ctx.signal, verify: checker.verify });
+      status = await Promise.race([
+        runJob({ repo: ctx.repo, handle, tools: facts.tools, workDir: join(facts.state, "runs"), cores: facts.cores, maxNodes: facts.maxNodes, daemon: facts.info, say, signal: ctx.signal, verify: checker.verify }),
+        stopped,
+      ]);
     } catch (err) {
       // runJob records its own failures; this is one it threw instead, which the run doc says too
       if (!ctx.signal.aborted) fail(handle, String(err?.message ?? err));
       throw err;
     } finally {
+      clearTimeout(gaveUp);
+      ctx.signal.removeEventListener("abort", onStop);
       handle.off("change", echo);
       ctx.signal.removeEventListener("abort", release);
       release();

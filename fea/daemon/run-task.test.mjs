@@ -156,6 +156,44 @@ describe("how a run ends", () => {
     abort.abort("cancelled");
     await expect(going).rejects.toThrow("stopped (cancelled)");
   });
+  it("told to stop, a runner stuck in a wait that watches no signal: the task throws after stopWait, so what was written is saved before the thread is ended", async () => {
+    const abort = new AbortController();
+    const { ctx } = context([taken("r1")], "r1", { signal: abort.signal });
+    const t = makeRunTask({
+      find: findNow,
+      runJob: ({ handle, signal }) => {
+        // the runner's own stop record, then a wait that never ends
+        signal.addEventListener("abort", () => handle.change((d) => markStopped(d, signal.reason, 9)));
+        return new Promise(() => {});
+      },
+      machine: () => MACHINE,
+      awake: () => () => {},
+      peer: () => ({ verify: async () => [], close: async () => {} }),
+      say: () => {},
+      stopWait: 20,
+    });
+    const going = t({ run: run.url }, ctx);
+    await new Promise((r) => setTimeout(r, 10));
+    abort.abort("cancelled");
+    await expect(going).rejects.toThrow("stopped (cancelled)");
+    expect(run.doc().status).toBe("cancelled");
+  });
+  it("a runner that ends by itself is never cut short: with no abort, stopWait never starts", async () => {
+    const { ctx } = context([taken("r1")], "r1");
+    const t = makeRunTask({
+      find: findNow,
+      runJob: async (o) => {
+        await new Promise((r) => setTimeout(r, 40));
+        return finishes(o);
+      },
+      machine: () => MACHINE,
+      awake: () => () => {},
+      peer: () => ({ verify: async () => [], close: async () => {} }),
+      say: () => {},
+      stopWait: 1,
+    });
+    expect(await t({ run: run.url }, ctx)).toEqual({ status: "done" });
+  });
   it("a runJob that throws fails the run doc as well as the task", async () => {
     const { ctx } = context([taken("r1")], "r1");
     const t = task(async () => {
