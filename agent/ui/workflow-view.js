@@ -23,23 +23,9 @@ import { drivePlanHere } from "../runners/tab.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { renderWaitingItem } from "./waiting.js"
 import { morph } from "./morph.js"
+import { ensureStyles } from "./styles.js"
 import { statusOf } from "../session/status.js"
 
-const STYLE_MARK = "data-patchwork-agent-styles"
-function ensureStyles() {
-  if (typeof document === "undefined") return
-  try {
-    const href = new URL("./styles.css", import.meta.url).href
-    if ([...document.querySelectorAll(`link[${STYLE_MARK}]`)].some((link) => link.href === href)) return
-    const link = document.createElement("link")
-    link.setAttribute(STYLE_MARK, "")
-    link.rel = "stylesheet"
-    link.href = href
-    document.head.appendChild(link)
-  } catch {
-    /* tests: no external stylesheets */
-  }
-}
 
 const STATE_LABEL = {
   [STATE.waiting]: "waiting",

@@ -144,6 +144,30 @@ describe("the composer", () => {
   })
 })
 
+describe("who said what", () => {
+  const contacts = { "automerge:ana": { name: "Ana" }, "automerge:ben": { name: "Ben" } }
+  const repo = { find: async (url) => ({ doc: () => contacts[url] ?? {} }) }
+  const said = (author, text) => makeTurn("user", [textBlock(text)], { author })
+  const authors = (element) => [...element.querySelectorAll('.agent-turn[data-role="user"] .agent-author')].map((node) => node.textContent)
+
+  it("names each speaker once more than one person has spoken", async () => {
+    const handle = fakeHandle()
+    handle.change((d) => d.turns.push(said("automerge:ana", "start here"), said("automerge:ben", "and then this")))
+    const { element, cleanup } = mount(handle, { repo })
+    await vi.waitFor(() => expect(authors(element)).toEqual(["Ana", "Ben"]))
+    cleanup()
+  })
+
+  it("names nobody while only one person has", async () => {
+    const handle = fakeHandle()
+    handle.change((d) => d.turns.push(said("automerge:ana", "start here"), said("automerge:ana", "and then this")))
+    const { element, cleanup } = mount(handle, { repo })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(authors(element)).toEqual([])
+    cleanup()
+  })
+})
+
 describe("status", () => {
   it("shows the session status on the dot", () => {
     const handle = fakeHandle()

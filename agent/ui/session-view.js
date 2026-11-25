@@ -41,6 +41,7 @@ import { applyInstall, applyUninstall } from "./install.js"
 import { watchWorkspace } from "./workspace.js"
 import { startDictation, composeDictation, voiceSupported } from "./voice.js"
 import { statusOf } from "../session/status.js"
+import { ensureStyles } from "./styles.js"
 
 const MIC_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>`
 
@@ -49,27 +50,7 @@ export function isDictationShortcut(event) {
   return (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.code === "Space"
 }
 
-// Keyed by URL, not by a fixed id: a module url carries its version, and two
-// versions of this package can be loaded in one page (an older install beside
-// a newer one). With a fixed id, whichever loaded first kept its stylesheet and
-// the other version's new rules never arrived.
-const STYLE_MARK = "data-patchwork-agent-styles"
-if (typeof document !== "undefined") {
-  try {
-    const href = new URL("./styles.css", import.meta.url).href
-    const loaded = [...document.querySelectorAll(`link[${STYLE_MARK}]`)].some((link) => link.href === href)
-    if (!loaded) {
-      const link = document.createElement("link")
-      link.setAttribute(STYLE_MARK, "")
-      link.rel = "stylesheet"
-      link.href = href
-      document.head.appendChild(link)
-    }
-  } catch {
-    // happy-dom refuses external stylesheets in tests; styling is not what
-    // those assert on, so a failure to load CSS must not fail the mount.
-  }
-}
+ensureStyles()
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag)
@@ -1013,10 +994,33 @@ export function AgentTool(handle, element, options = {}) {
   // ---- rendering -------------------------------------------------------
   let subjectViewUrl = null
 
+  // Who said each thing, once more than one person has spoken: a turn records
+  // its author's contact, and the name is in that contact's document.
+  const askedNames = new Set()
+  function nameAuthors(doc) {
+    if (!repo) return
+    const authors = new Set((doc.turns ?? []).map((turn) => turn.author).filter(Boolean))
+    if (authors.size < 2) return
+    for (const url of authors) {
+      if (askedNames.has(url)) continue
+      askedNames.add(url)
+      Promise.resolve()
+        .then(() => repo.find(url))
+        .then((contact) => {
+          const name = contact?.doc?.()?.name
+          if (!name || disposed) return
+          uiState.names.set(url, String(name))
+          render()
+        })
+        .catch(() => {})
+    }
+  }
+
   function render() {
     if (disposed) return
     const doc = handle.doc()
     if (!doc) return
+    nameAuthors(doc)
 
     const providerId = doc.config?.providerId ?? "openrouter"
     const hasKey = !!readKey(providerId)

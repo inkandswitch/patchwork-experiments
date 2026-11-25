@@ -1145,10 +1145,6 @@
 
 .agent-pill-dot { animation: agent-pulse 1.4s ease-in-out infinite; }
 
-@keyframes agent-pulse {
-  50% { opacity: 0.35; }
-}
-
 .agent-pill-text {
   min-width: 0;
   overflow: hidden;
