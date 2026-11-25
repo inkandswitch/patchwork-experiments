@@ -87,9 +87,14 @@ page's pool host; the one tab of the profile that holds the Web Lock `patchwork-
 the pool, in a worker that runs tasks in run workers it can end, and the others wait to take over.
 Which queues it serves is kept in the account's tool storage for this package
 (`account.toolStorage['tasks-next']`, a document Patchwork's frame makes the first time it is
-needed). To serve a queue, open it in the Task Queue Browser and press Join queue; there you also
-choose whose code it runs (any, or named packages) and Leave. With no queue, the titlebar offers
-Make my queue.
+needed). Its root is the list: each served queue is a key of its own, the queue's url, holding
+`true` (any code) or `{ packages }`, and `own` names one's own queue. With nothing to make before
+writing, changes made at once on devices that have not synced all keep: two joins both stand, two
+settings of one queue keep one whole, and two Make my queue presses keep one pointer, to a served
+queue. `servedOf`, `ownQueueOf`, `setServed` and `ownQueue` in `src/task-client.js` are the only code that
+knows this. To serve a queue, open it in the Task Queue Browser and press Join queue; there you
+also choose whose code it runs (any, or named packages) and Leave. With no queue, the titlebar
+offers Make my queue.
 
 **On a machine.** `pnpm build:node`, then `node dist-node/host.mjs` with:
 

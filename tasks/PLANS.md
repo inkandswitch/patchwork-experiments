@@ -171,13 +171,8 @@ that one machine serves.
   the link above, since a worker ended at once must first hand over what its task wrote.
 - **Finding queues.** A page with no document that names a queue asks its person's own queue
   (`ownQueue`). Queues one only asks of, and does not serve, have no place to be kept: the task
-  storage could list them beside `served`, and tools pick from that list. Waits on the first tool
-  that asks a queue it does not serve.
-- **One maker for the served list.** When two replicas each make the storage document's `served`
-  map at the same moment, the merge keeps one map whole and what was put in the other is lost (a
-  join then reads as not joined, and is offered again). Giving the map one maker closes it: a first
-  change that every replica makes identically, or the tool-storage provider seeding a tool's
-  document.
+  storage could keep them as root keys of their own whose setting serves nothing, and tools pick
+  from those. Waits on the first tool that asks a queue it does not serve.
 - **The shim that resolves a task's bare imports is fetched from a CDN** each time a browser pool or
   run worker starts, so a browser pool cannot start offline. Bundle it.
 - **Slots count threads, not kinds of work.** A run waiting on the network holds a slot a build
