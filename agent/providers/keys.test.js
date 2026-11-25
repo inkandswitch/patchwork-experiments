@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { readKey, writeKey, onKeyChange, connectAccountKeys, _resetAccountKeys } from "./index.js"
+import { readKey, writeKey, onKeyChange, connectAccountKeys, _resetAccountKeys } from "./keys.js"
 
 const SETTINGS = "automerge:llm-settings"
 const LOCAL = "patchwork-agent:key:openrouter"

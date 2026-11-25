@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { describeModel } from "./openrouter.js"
-import { readCatalogue, writeCatalogue, loadCatalogue, modelInfo, _resetModelInfo } from "./index.js"
+import { readCatalogue, writeCatalogue, loadCatalogue, modelInfo, _resetModelInfo } from "./catalogue.js"
 
 const MODELS = [
   { id: "anthropic/claude-opus-4.1", label: "Claude Opus 4.1", context: 200000, promptPerM: 15, tools: true },

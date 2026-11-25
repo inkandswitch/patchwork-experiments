@@ -80,16 +80,17 @@ async function boot(urls, repoPort, prepare) {
 
   const { initAutomergeHere, tryHostImport } = await import("../host/import.js")
   await initAutomergeHere(prepare)
-  const [store, runner, events, agent, providers, guard, plugins] = await Promise.all([
+  const [store, runner, events, agent, providers, models, guard, plugins] = await Promise.all([
     import("../kernel/store.js"),
     import("../kernel/runner.js"),
     import("../kernel/events.js"),
     import("../assembly/agent.js"),
     import("../providers/index.js"),
+    import("../providers/catalogue.js"),
     import("../net/guard.js"),
     import("./worker-plugins.js"),
   ])
-  lib = { ...store, ...runner, ...events, ...agent, ...providers, ...guard }
+  lib = { ...store, ...runner, ...events, ...agent, ...providers, ...models, ...guard }
   catalogue = plugins.createPluginCatalogue()
   // The registry module, for plugin tools as ctx.plugins, holding the page's
   // views and datatypes (runners/worker-plugins.js createRegistryMirror).

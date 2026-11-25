@@ -28,18 +28,9 @@ import { workflowOf } from "../workflow/plan.js"
 import { watchStanding, renderStandingLine, gateOf, renderChoices, placeOf } from "./standing.js"
 import { askAside } from "../workflow/aside.js"
 import { connectWorkerRunner } from "../runners/worker-client.js"
-import {
-  getProvider,
-  readKey,
-  writeKey,
-  readRelay,
-  writeRelay,
-  SEARCH_KEY_ID,
-  onKeyChange,
-  connectAccountKeys,
-  loadCatalogue,
-  modelInfo,
-} from "../providers/index.js"
+import { getProvider } from "../providers/index.js"
+import { readKey, writeKey, readRelay, writeRelay, SEARCH_KEY_ID, onKeyChange, connectAccountKeys } from "../providers/keys.js"
+import { loadCatalogue, modelInfo } from "../providers/catalogue.js"
 import { describeModel, describeDefaults } from "../providers/openrouter.js"
 import { DEFAULT_LIMITS, DEFAULT_TIER_MODELS, TIERS } from "../workflow/plan.js"
 import { renderTranscript } from "./transcript.js"
