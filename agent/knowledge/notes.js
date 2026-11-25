@@ -8,19 +8,17 @@
  * tree, so the user can read, correct or delete anything the agent believes,
  * and every later session starts with an index of them (`notesSection`).
  *
- * They are ordinary files written through fs_write, so a note is a document
- * with history like any other, and editing one writes only what changed.
+ * The folder is a markdown store (markdown-folder.js): each note is an
+ * ordinary file written the way fs_write writes, so a note is a document with
+ * history like any other, and editing one writes only what changed.
  */
 
-import { fsDelete, fsWrite } from "../tools/folders.js"
-import { createFolder, isTreeEntry, treeEntries, treeLink, treeNode } from "../documents/tree.js"
-import { contentText } from "../documents/values.js"
+import { markdownFolder } from "./markdown-folder.js"
 import { truncate } from "../documents/format.js"
 
 export const NOTES_FOLDER_NAME = "Agent notes"
 /** Set on the folder document itself, so a renamed folder is still found. */
 const MARKER = "agentNotes"
-const README = "README.md"
 const README_TEXT = `# Agent notes
 
 The agent keeps what it learns here: one markdown file per topic. Every new
@@ -66,71 +64,38 @@ export function noteFileName(name) {
 }
 
 /**
- * The notes folder: by marker, then by name, created when asked to. Null when
- * the account has no root folder (tests, a page outside Patchwork).
+ * The notes store: the folder the context names (`ctx.notesFolderUrl`), else
+ * one in the account's root folder, by name or marker. With no root folder
+ * (tests, a page outside Patchwork) there is nowhere to keep notes.
  */
-export async function notesFolder(ctx, { create = false } = {}) {
-  if (ctx.notesFolderUrl) return ctx.notesFolderUrl
-  const rootUrl = ctx.rootFolderUrl
-  if (!rootUrl || !ctx.repo) return null
+export const notesStore = markdownFolder({
+  name: NOTES_FOLDER_NAME,
+  parent: (ctx) => ctx.rootFolderUrl ?? null,
+  given: (ctx) => ctx.notesFolderUrl ?? null,
+  marker: MARKER,
+  readme: README_TEXT,
+})
 
-  const root = treeNode(await ctx.repo.find(rootUrl))
-  if (!root) return null
-
-  const folders = treeEntries(root).filter((entry) => entry.type === "folder" && entry.url)
-  const byName = folders.find((entry) => entry.name === NOTES_FOLDER_NAME)
-  let found = byName?.url ?? null
-  if (!found) {
-    for (const entry of folders) {
-      try {
-        if ((await ctx.repo.find(entry.url)).doc()?.[MARKER]) {
-          found = entry.url
-          break
-        }
-      } catch {
-        /* unreachable entry; not ours */
-      }
-    }
-  }
-
-  if (!found && create) {
-    const folder = await createFolder(ctx.repo, NOTES_FOLDER_NAME)
-    folder.change((d) => { d[MARKER] = true })
-    treeLink(root, { name: NOTES_FOLDER_NAME, type: "folder", url: folder.url })
-    found = folder.url
-    await fsWrite.execute({ root: found, path: README, content: README_TEXT }, ctx)
-  }
-
-  if (found) ctx.notesFolderUrl = found
-  return found
+/** The notes folder's URL, made when asked to; null when there is nowhere to keep notes. */
+export function notesFolder(ctx, options) {
+  return notesStore.folder(ctx, options)
 }
 
 /** Every note: file name, title, first line, url. README excluded. */
 export async function listNotes(ctx) {
-  const folderUrl = await notesFolder(ctx)
-  if (!folderUrl) return { folderUrl: null, notes: [] }
-  const folder = treeNode(await ctx.repo.find(folderUrl))
-  const notes = []
-  for (const entry of folder ? treeEntries(folder) : []) {
-    if (isTreeEntry(entry) || !/\.md$/i.test(entry.name) || entry.name === README) continue
-    let text = ""
-    try {
-      text = contentText((await ctx.repo.find(entry.url)).doc()?.content)
-    } catch {
-      /* unreadable: list it by name */
-    }
+  const { folderUrl, files } = await notesStore.list(ctx)
+  const notes = files.map(({ file, url, text }) => {
     const lines = text.split("\n").map((line) => line.trim())
     const heading = lines.find((line) => line.startsWith("# "))
     const firstLine = lines.find((line) => line && !line.startsWith("#")) ?? ""
-    notes.push({
-      file: entry.name,
-      title: heading ? heading.slice(2).trim() : entry.name.replace(/\.md$/i, ""),
+    return {
+      file,
+      title: heading ? heading.slice(2).trim() : file.replace(/\.md$/i, ""),
       summary: truncate(firstLine, 140),
-      url: entry.url,
+      url,
       text,
-    })
-  }
-  notes.sort((a, b) => a.file.localeCompare(b.file))
+    }
+  })
   return { folderUrl, notes }
 }
 
@@ -238,9 +203,8 @@ export const noteWrite = {
         `That would replace ${file} (${old.text.length} characters) with ${content.length}, dropping most of it. If that is not what you meant, use note_edit. If it is, note_delete ${file} first (it stays in the folder's history), then note_write the new one.`
       )
     }
-    const folderUrl = await notesFolder(ctx, { create: true })
+    const folderUrl = await notesStore.write(ctx, file, content)
     if (!folderUrl) throw new Error("This account has no root folder, so there is nowhere to keep notes.")
-    await fsWrite.execute({ root: folderUrl, path: file, content }, ctx)
     return old
       ? `Replaced ${file} in ${NOTES_FOLDER_NAME} (${folderUrl}): ${old.text.length} characters before, ${content.length} now. The earlier text is in the note's history.`
       : `Saved ${file} in ${NOTES_FOLDER_NAME} (${folderUrl}).`
@@ -299,7 +263,7 @@ export const noteEdit = {
       if (!text.trim()) throw new Error("That would leave the note empty. Use note_delete to remove a note.")
       did = "Replaced one passage in"
     }
-    await fsWrite.execute({ root: folderUrl, path: note.file, content: text }, ctx)
+    await notesStore.write(ctx, note.file, text)
     return `${did} ${note.file} (${note.text.length} → ${text.length} characters).`
   },
   summarize(input) {
@@ -351,7 +315,7 @@ export const noteDelete = {
     const { folderUrl, notes } = await listNotes(ctx)
     const note = folderUrl ? findNote(notes, input.name) : null
     if (!note) throw new Error(`No note called '${input.name}'.`)
-    await fsDelete.execute({ root: folderUrl, path: note.file }, ctx)
+    await notesStore.remove(ctx, note.file)
     return `Deleted ${note.file}.`
   },
   summarize(input) {

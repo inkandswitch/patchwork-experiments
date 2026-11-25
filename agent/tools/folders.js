@@ -311,6 +311,29 @@ async function createFile(repo, name, content) {
 }
 
 /**
+ * Write one file into a tree node, as fs_write does: the file there is
+ * overwritten by the smallest splice that makes it `content` (and its link
+ * re-pinned), or a file document is made and linked. `splice` is the
+ * runner's text splice (ctx.splice), when it has one. Returns
+ * `{ url, created, before, changed }`: `before` the text that was there (""
+ * for a new file), `changed` "unchanged", "created" or what changed.
+ */
+export async function writeFile(repo, folder, name, content, splice) {
+  const existing = treeEntries(folder).find((entry) => entry.name === name)
+  if (existing?.type === "folder") throw new Error(`'${name}' is a folder, not a file.`)
+  if (existing) {
+    const { handle } = await treeEnter(repo, existing)
+    const before = contentText(handle.doc()?.content)
+    const changed = overwrite(handle, before, content, splice)
+    if (changed !== "unchanged") treeRepin(folder, existing, handle)
+    return { url: existing.url, created: false, before, changed }
+  }
+  const created = await createFile(repo, name, content)
+  treeLink(folder, { name, url: created.url })
+  return { url: created.url, created: true, before: "", changed: "created" }
+}
+
+/**
  * Move the version of every package a write landed in.
  *
  * Patchwork loads a package at its folder document's heads, and every module
@@ -453,24 +476,15 @@ export const fsWrite = {
       const name = parts.pop()
 
       const folder = await ensurePath(ctx.repo, root, parts)
-      const existing = treeEntries(folder).find((entry) => entry.name === name)
+      if (treeEntries(folder).find((entry) => entry.name === name)?.type === "folder") throw new Error(`'${path}' is a folder, not a file.`)
+      const { url, created, before, changed } = await writeFile(ctx.repo, folder, name, content, ctx.splice)
 
-      if (existing) {
-        if (existing.type === "folder") throw new Error(`'${path}' is a folder, not a file.`)
-        const { handle } = await treeEnter(ctx.repo, existing)
-        const before = contentText(handle.doc()?.content)
-        const changed = overwrite(handle, before, content, ctx.splice)
-        if (changed !== "unchanged") {
-          touched.push(parts)
-          treeRepin(folder, existing, handle)
-        }
-        written.push(`${path} · updated ${before.split("\n").length} → ${content.split("\n").length} lines (${changed})`)
-      } else {
-        touched.push(parts)
-        const created = await createFile(ctx.repo, name, content)
-        treeLink(folder, { name, url: created.url })
+      if (changed !== "unchanged") touched.push(parts)
+      if (created) {
         if (DATA_FILE.test(name)) createdData.push({ path, parts: [...parts] })
-        written.push(`${path} · created ${content.split("\n").length} lines (${created.url})`)
+        written.push(`${path} · created ${content.split("\n").length} lines (${url})`)
+      } else {
+        written.push(`${path} · updated ${before.split("\n").length} → ${content.split("\n").length} lines (${changed})`)
       }
     }
 

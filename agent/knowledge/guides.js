@@ -34,17 +34,16 @@
  */
 
 import { AutomergeRepo } from "../host/modules.js"
-import { fsWrite } from "../tools/folders.js"
-import { createFolder, isTreeEntry, resolvePath, treeEntries, treeFiles, treeLink, treeNode } from "../documents/tree.js"
+import { resolvePath, treeFiles, treeNode } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
-import { notesFolder, noteFileName, looksLikeCredential } from "./notes.js"
+import { notesStore, noteFileName, looksLikeCredential } from "./notes.js"
+import { markdownFolder } from "./markdown-folder.js"
 import { truncate } from "../documents/format.js"
 
 const { parseAutomergeUrl } = AutomergeRepo
 
 export const GUIDES_FOLDER_NAME = "Tool guides"
 const PINS_FILE = "pins.json"
-const README = "README.md"
 const README_TEXT = `# Tool guides
 
 The agent keeps one guide per package here: how to use that package's tools,
@@ -189,31 +188,23 @@ const titleOf = (body, fallback) => {
   return heading ? heading.trim().slice(2).trim() : fallback
 }
 
-/** The guides folder inside the notes folder: found by name, made when asked. Null with nowhere to keep notes. */
-export async function guidesFolder(ctx, { create = false } = {}) {
-  if (ctx.guidesFolderUrl) return ctx.guidesFolderUrl
-  const notesUrl = await notesFolder(ctx, { create })
-  if (!notesUrl) return null
-  const notes = treeNode(await ctx.repo.find(notesUrl))
-  if (!notes) return null
-  const entry = treeEntries(notes).find((e) => e.type === "folder" && e.name === GUIDES_FOLDER_NAME)
-  let found = entry?.url ?? null
-  if (!found && create) {
-    const folder = await createFolder(ctx.repo, GUIDES_FOLDER_NAME)
-    treeLink(notes, { name: GUIDES_FOLDER_NAME, type: "folder", url: folder.url })
-    found = folder.url
-    await fsWrite.execute({ root: found, path: README, content: README_TEXT }, ctx)
-  }
-  if (found) ctx.guidesFolderUrl = found
-  return found
+/** The guides store: a folder inside the notes folder, found by name and made when asked. */
+export const guidesStore = markdownFolder({
+  name: GUIDES_FOLDER_NAME,
+  parent: (ctx, options) => notesStore.folder(ctx, options),
+  readme: README_TEXT,
+})
+
+/** The guides folder's URL, made when asked to; null with nowhere to keep notes. */
+export function guidesFolder(ctx, options) {
+  return guidesStore.folder(ctx, options)
 }
 
-async function readPins(ctx, folderUrl) {
-  const folder = treeNode(await ctx.repo.find(folderUrl))
-  const entry = folder && treeEntries(folder).find((e) => e.name === PINS_FILE)
-  if (!entry) return {}
+async function readPins(ctx) {
+  const text = await guidesStore.read(ctx, PINS_FILE)
+  if (text == null) return {}
   try {
-    return JSON.parse(contentText((await ctx.repo.find(entry.url)).doc()?.content)) ?? {}
+    return JSON.parse(text) ?? {}
   } catch {
     return {}
   }
@@ -225,33 +216,24 @@ async function readPins(ctx, folderUrl) {
  * none) and `pin` its pin (null when unpinned).
  */
 export async function listGuides(ctx) {
-  const folderUrl = await guidesFolder(ctx)
+  const { folderUrl, files } = await guidesStore.list(ctx)
   if (!folderUrl) return { folderUrl: null, guides: [] }
-  const folder = treeNode(await ctx.repo.find(folderUrl))
-  const pins = await readPins(ctx, folderUrl)
+  const pins = await readPins(ctx)
   const guides = []
-  for (const entry of folder ? treeEntries(folder) : []) {
-    if (isTreeEntry(entry) || !/\.md$/i.test(entry.name) || entry.name === README) continue
-    let text = ""
-    try {
-      text = contentText((await ctx.repo.find(entry.url)).doc()?.content)
-    } catch {
-      /* unreadable: listed by name */
-    }
+  for (const { file, url, text } of files) {
     const { meta, body } = parseGuide(text)
     const pkg = meta.package ? bare(meta.package) : null
     guides.push({
-      file: entry.name,
-      name: meta.name || titleOf(body, entry.name.replace(/\.md$/i, "")),
+      file,
+      name: meta.name || titleOf(body, file.replace(/\.md$/i, "")),
       summary: firstLineOf(body),
-      url: entry.url,
+      url,
       package: pkg,
       text,
       body,
       pin: pkg ? pins[pkg] ?? null : null,
     })
   }
-  guides.sort((a, b) => a.file.localeCompare(b.file))
   return { folderUrl, guides }
 }
 
@@ -553,15 +535,15 @@ async function resolvePackage(ctx, input) {
   throw new Error(`Could not find the package '${named}'. Pass its folder URL (plugin_source's list shows it).`)
 }
 
-async function writePin(ctx, folderUrl, packageUrl, snapshot, name) {
-  const pins = await readPins(ctx, folderUrl)
+async function writePin(ctx, packageUrl, snapshot, name) {
+  const pins = await readPins(ctx)
   pins[packageUrl] = {
     name: name ?? pins[packageUrl]?.name ?? null,
     reviewed: new Date().toISOString(),
     heads: snapshot.heads,
     files: snapshot.files,
   }
-  await fsWrite.execute({ root: folderUrl, path: PINS_FILE, content: JSON.stringify(pins, null, 1) + "\n" }, ctx)
+  await guidesStore.write(ctx, PINS_FILE, JSON.stringify(pins, null, 1) + "\n")
 }
 
 const PACKAGE_PROP = {
@@ -637,7 +619,7 @@ export const guidePin = {
     const guide = await guideFor(ctx, ref.url)
     if (!guide) throw new Error(`No guide for ${ref.url} to pin. Write one with guide_write.`)
     const snapshot = await packageSnapshot(ctx.repo, ref)
-    await writePin(ctx, await guidesFolder(ctx, { create: true }), ref.url, snapshot, name ?? guide.name)
+    await writePin(ctx, ref.url, snapshot, name ?? guide.name)
     return `Pinned the ${guide.name} guide to the package as it is now (${Object.keys(snapshot.files).length} files).`
   },
   summarize(input) {
@@ -696,8 +678,8 @@ export const guideWrite = {
     if (existing?.pin && !input.reviewed) {
       move = compareSnapshots(existing.pin, snapshot).same
     }
-    await fsWrite.execute({ root: folderUrl, path: file, content: guideText({ package: ref.url, name }, input.content) }, ctx)
-    if (move) await writePin(ctx, folderUrl, ref.url, snapshot, name)
+    await guidesStore.write(ctx, file, guideText({ package: ref.url, name }, input.content))
+    if (move) await writePin(ctx, ref.url, snapshot, name)
     return move
       ? `Saved the ${name} guide (${file}) and pinned it to the package as it is now.`
       : `Saved the ${name} guide (${file}). The package has changed since the guide was last checked, so it stays flagged as possibly out of date; once you have reviewed it against guide_changes, guide_pin (or guide_write with reviewed: true) records that.`
