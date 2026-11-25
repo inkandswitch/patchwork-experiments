@@ -1,35 +1,36 @@
-// The queue browser's view of the tasks a queue has been asked for by key
-// (see jobs.ts): how each is going, and a way to ask for one, stop one, or
-// forget one. Everything a tool can do through job-client.ts a person can do
-// here. Also where an account says whose code its browsers run from a queue
-// (see acceptance.ts).
+// The queue browser's view of what a queue lists: how each task stands, its
+// runs, and a way to ask for one or stop one. Everything a tool can do
+// through task-client.js a person can do here. Also where an account says
+// whose code its browsers run from a queue (see acceptance.ts).
 
 import { createSignal, For, onCleanup, Show } from 'solid-js';
 import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
-import type { JobEntry, TaskQueueDoc, WorkerDoc, TaskDoc } from './datatype';
-import { isFinished, isJobEntry, type TaskState } from './jobs';
-import { ask, cancel, forget, viewOf, watch, type Ask, type JobView } from './job-client';
+import type { Queue, Run, TaskState } from './datatype';
+import { isFinished, waitingWork } from './task-rules.js';
+import { ask, cancel, watch, type Ask, type TaskView } from './task-client.js';
 import type { Acceptance } from './acceptance';
 import { inSamePackage } from './import-url';
 import { WAIT_TASK_PATH } from './ids';
-import { useDoc, useRepo } from './use-doc';
+import { useRepo } from './use-doc';
 
-/** How many keyed tasks to show; a queue that keeps its answers can hold thousands. */
+/** How many listed tasks to show. */
 const MAX_JOBS_SHOWN = 20;
 
 const MARKS: Record<TaskState, string> = {
   waiting: '·',
   running: '●',
+  stalled: '○',
   stopping: '●',
   succeeded: '✓',
   failed: '✕',
   cancelled: '–',
 };
 
-/** The task-row look each state borrows: there are four, made for tasks. */
+/** The task-row look each state borrows: there are four. */
 const LOOKS: Record<TaskState, string> = {
   waiting: 'queued',
   running: 'running',
+  stalled: 'queued',
   stopping: 'running',
   succeeded: 'ok',
   failed: 'failed',
@@ -41,40 +42,31 @@ const WAIT_TASK_URL =
   inSamePackage(import.meta.url, WAIT_TASK_PATH) ??
   `data:text/javascript,${encodeURIComponent('export default async function (input) { return input?.value ?? null; }')}`;
 
-export const JobsSection = (props: { handle: DocHandle<TaskQueueDoc>; queue: TaskQueueDoc }) => {
+export const JobsSection = (props: { handle: DocHandle<Queue>; queue: Queue }) => {
   const repo = useRepo();
-  const jobs = () =>
-    Object.entries(props.queue.jobs ?? {})
-      .filter((pair): pair is [string, JobEntry] => isJobEntry(pair[1]))
-      .sort(([, a], [, b]) => (b.askedAt || 0) - (a.askedAt || 0));
-  const shown = () => jobs().slice(0, MAX_JOBS_SHOWN);
-  const unfinished = () => jobs().filter(([, job]) => !job.done).length;
+  // newest first
+  const listed = () => waitingWork(props.queue).toReversed();
+  const shown = () => listed().slice(0, MAX_JOBS_SHOWN);
 
   return (
     <>
       <NewJobForm onAsk={(request) => ask(repo, props.handle.url, request)} />
       <section class="tq-section">
         <h2 class="tq-section-title">
-          Asked for by key <span class="tq-count">{jobs().length.toLocaleString()}</span>
-          <Show when={unfinished() > 0}>
-            <span class="tq-section-note">{unfinished()} not finished</span>
-          </Show>
-          <Show when={jobs().length > shown().length}>
+          Listed <span class="tq-count">{listed().length.toLocaleString()}</span>
+          <Show when={listed().length > shown().length}>
             <span class="tq-section-note">latest {shown().length} shown</span>
           </Show>
         </h2>
-        <Show
-          when={shown().length > 0}
-          fallback={<p class="tq-empty">Nothing has been asked for by key yet.</p>}
-        >
+        <Show when={shown().length > 0} fallback={<p class="tq-empty">Nothing is waiting or running.</p>}>
           <div class="tq-tasks">
-            <For each={shown().map(([key]) => key)}>
-              {(key) => (
+            <For each={shown()}>
+              {(work) => (
                 <Job
-                  jobKey={key}
+                  jobKey={work.key}
+                  taskUrl={work.taskUrl as AutomergeUrl}
                   queueUrl={props.handle.url}
-                  onCancel={() => cancel(repo, props.handle.url, key)}
-                  onForget={() => forget(repo, props.handle.url, key)}
+                  onCancel={() => cancel(repo, props.handle.url, work.key)}
                 />
               )}
             </For>
@@ -85,108 +77,85 @@ export const JobsSection = (props: { handle: DocHandle<TaskQueueDoc>; queue: Tas
   );
 };
 
-/** The task under a key, kept current: its docs as they change, and its run as it's heard. */
-function useJob(queueUrl: AutomergeUrl, key: string) {
+/** The task under a key, kept current: its document as it changes, and its runs as they are heard. */
+function useTask(queueUrl: AutomergeUrl, key: string, taskUrl: AutomergeUrl) {
   const repo = useRepo();
-  const [job, setJob] = createSignal<JobView>(viewOf(key, undefined, undefined));
-  onCleanup(watch(repo, queueUrl, key, (view) => setJob(() => view)));
-  return job;
+  const [view, setView] = createSignal<TaskView | null>(null);
+  onCleanup(watch(repo, queueUrl, key, (next) => setView(() => next), { from: taskUrl }));
+  return view;
 }
 
-const Job = (props: {
-  jobKey: string;
-  queueUrl: AutomergeUrl;
-  onCancel: () => void;
-  onForget: () => void;
-}) => {
-  const job = useJob(props.queueUrl, props.jobKey);
-  const task = useDoc<TaskDoc<any, any>>(() => job().taskUrl);
-  const state = () => job().state as TaskState;
-  const failures = () => job().runs.filter((run) => run.status === 'failed').length;
-
+const Job = (props: { jobKey: string; taskUrl: AutomergeUrl; queueUrl: AutomergeUrl; onCancel: () => void }) => {
+  const view = useTask(props.queueUrl, props.jobKey, props.taskUrl);
   return (
-    <Show when={job().state !== 'missing'}>
-      <details class={`tq-task tq-task--${LOOKS[state()]}`}>
-        <summary class="tq-task-row">
-          <span class="tq-task-mark" aria-label={state()}>
-            {MARKS[state()]}
-          </span>
-          <code class="tq-code tq-task-input">
-            {codeName(job().importUrl)}({show(job().input)})
-          </code>
-          <span class="tq-task-outcome">
-            <Outcome job={job()} />
-          </span>
-          <Show when={failures() > 0 && state() !== 'failed'}>
-            <span class="tq-tag tq-tag--warn">
-              {failures()} failed {failures() === 1 ? 'try' : 'tries'}
-            </span>
-          </Show>
-          <Show
-            when={isFinished(state())}
-            fallback={
-              <button
-                class="tq-link"
-                disabled={state() === 'stopping'}
-                onClick={(event) => {
-                  event.preventDefault();
-                  props.onCancel();
-                }}
-              >
-                Stop
-              </button>
-            }
-          >
-            <button
-              class="tq-link"
-              title="Take this off the list, so that asking for it again runs it again"
-              onClick={(event) => {
-                event.preventDefault();
-                props.onForget();
-              }}
-            >
-              Forget
-            </button>
-          </Show>
-        </summary>
-        <div class="tq-task-detail">
-          <p class="tq-choice-note">
-            Asked for as <code class="tq-code">{props.jobKey}</code>
-            <Show when={task()?.current}>
-              {(current) => (
-                <>
-                  {' '}
-                  · running on <WorkerName docUrl={current().workerUrl} />
-                </>
-              )}
-            </Show>
-          </p>
-          <Show when={job().logs.length > 0}>
-            <ul class="tq-logs">
-              <For each={job().logs}>
-                {(line) => (
-                  <li>
-                    <span class="tq-muted">
-                      {new Date(line.timestampMillis).toLocaleTimeString()}
-                    </span>{' '}
-                    {line.message}
-                  </li>
-                )}
-              </For>
-            </ul>
-          </Show>
-          <Show when={job().runs.length > 1}>
-            <p class="tq-choice-note">{job().runs.length} runs so far.</p>
-          </Show>
-          <pre class="tq-source">{job().importUrl ?? '…'}</pre>
-        </div>
-      </details>
+    <Show when={view()?.state !== 'missing' ? view() : null}>
+      {(job) => {
+        const state = () => job().state as TaskState;
+        return (
+          <details class={`tq-task tq-task--${LOOKS[state()]}`}>
+            <summary class="tq-task-row">
+              <span class="tq-task-mark" aria-label={state()}>
+                {MARKS[state()]}
+              </span>
+              <code class="tq-code tq-task-input">
+                {codeName(job().importUrl)}({show(job().input)})
+              </code>
+              <span class="tq-task-outcome">
+                <Outcome job={job()} />
+              </span>
+              <Show when={!isFinished(state())}>
+                <button
+                  class="tq-link"
+                  disabled={state() === 'stopping'}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    props.onCancel();
+                  }}
+                >
+                  Stop
+                </button>
+              </Show>
+            </summary>
+            <div class="tq-task-detail">
+              <p class="tq-choice-note">
+                Asked for as <code class="tq-code">{props.jobKey}</code>
+              </p>
+              <Show when={job().runs.length > 0}>
+                <ul class="tq-logs">
+                  <For each={job().runs}>{(run) => <RunLine run={run} />}</For>
+                </ul>
+              </Show>
+              <Show when={job().logs.length > 0}>
+                <ul class="tq-logs">
+                  <For each={job().logs}>
+                    {(line) => (
+                      <li>
+                        <span class="tq-muted">{new Date(line.timestampMillis).toLocaleTimeString()}</span>{' '}
+                        {line.message}
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+              <pre class="tq-source">{job().importUrl ?? '…'}</pre>
+            </div>
+          </details>
+        );
+      }}
     </Show>
   );
 };
 
+/** One run: which pool took it, when, and how it went (or that it is open). */
+const RunLine = (props: { run: Run }) => (
+  <li>
+    <span class="tq-muted">{new Date(props.run.start).toLocaleTimeString()}</span> run by pool{' '}
+    <code class="tq-code">{props.run.pool.slice(0, 8)}</code>: {props.run.status ?? 'open'}
+  </li>
+);
+
 /** How a task stands, in a few words: its progress while it runs, its result or what went wrong after. */
-const Outcome = (props: { job: JobView }) => {
+const Outcome = (props: { job: TaskView }) => {
   const state = () => props.job.state;
   return (
     <>
@@ -195,6 +164,9 @@ const Outcome = (props: { job: JobView }) => {
       </Show>
       <Show when={state() === 'running'}>
         <span class="tq-busy">running {showProgress(props.job.progress)}</span>
+      </Show>
+      <Show when={state() === 'stalled'}>
+        <span class="tq-muted">stalled: its pool is not heard</span>
       </Show>
       <Show when={state() === 'stopping'}>
         <span class="tq-busy">stopping</span>
@@ -210,11 +182,6 @@ const Outcome = (props: { job: JobView }) => {
       </Show>
     </>
   );
-};
-
-const WorkerName = (props: { docUrl: AutomergeUrl }) => {
-  const worker = useDoc<WorkerDoc>(() => props.docUrl);
-  return <span>{worker()?.name ?? '…'}</span>;
 };
 
 const NewJobForm = (props: { onAsk: (request: Ask) => Promise<unknown> }) => {
@@ -275,8 +242,7 @@ const NewJobForm = (props: { onAsk: (request: Ask) => Promise<unknown> }) => {
         <label class="tq-field">
           <span class="tq-field-label">Key</span>
           <span class="tq-field-hint">
-            optional: asking twice under one key is asking once, and a finished task answers for
-            its key until it's forgotten
+            optional: asking twice under one key, while its task has not ended, is asking once
           </span>
           <input
             class="tq-textarea"
@@ -335,7 +301,7 @@ export const AcceptanceChoice = (props: {
               <span class="tq-field-label">Run only code from these packages</span>
               <span class="tq-field-hint">
                 one automerge: url a line; a task whose code is anywhere else, a data: URL
-                included, is left for other workers
+                included, is left for other pools
               </span>
               <textarea
                 class="tq-textarea"

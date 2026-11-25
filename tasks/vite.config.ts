@@ -12,12 +12,6 @@ const external = [...patchworkExternals];
 export default defineConfig({
   base: './',
 
-  // Stamps every build with when it was made, which is how two copies of this
-  // package tell which of them is the newer (see src/version.ts).
-  define: {
-    __TASKS_BUILD__: JSON.stringify(Date.now()),
-  },
-
   plugins: [
     topLevelAwait(),
     wasm(),
@@ -30,14 +24,12 @@ export default defineConfig({
     cssCodeSplit: true,
     rollupOptions: {
       external,
-      // index is the package's entry point. The other two are files that code
-      // elsewhere imports by URL, so each is built under a name that doesn't
-      // change from build to build: a task to try a queue out with, and the
-      // code for asking a queue for work (see src/ids.ts).
+      // index is the package's entry point. The other is a task that code
+      // elsewhere imports by URL, to try a queue out with, so it is built
+      // under a name that doesn't change from build to build (see src/ids.ts).
       input: {
         index: './src/index.ts',
         'tasks/wait': './src/tasks/wait.ts',
-        'job-client': './src/job-client.ts',
       },
       output: {
         format: 'es',

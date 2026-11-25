@@ -1,27 +1,30 @@
-// Builds the task framework for Node: the process that lends a queue its
-// workers from a machine with no browser (src/node/host.ts), and the jobs
-// client for a Node program that asks a queue for work.
+// Builds the task system for Node: the host that runs a machine's pool from a
+// process (src/node/host.ts), the run worker its threads run
+// (src/node/run-thread.ts), and the asker's client (src/task-client.js) for a
+// Node program that asks a queue for work.
 //
 //   node scripts/build-node.mjs      →  dist-node/
 //
-// The router, the pool and the worker are the browser's, unchanged. What
-// differs is the one file that says where a worker's Repo and its code come
-// from, and this puts Node's (src/node/webworker-lib.node.ts) in its place.
+// The run worker is the browser's, unchanged. What differs is the one file
+// that says where its Repo and its code come from, and this puts Node's
+// (src/node/webworker-lib.node.ts) in its place.
 import { build } from "esbuild";
+import { rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nodeLib = resolve(root, "src/node/webworker-lib.node.ts");
 
+// what an older build left behind would otherwise sit beside this one
+rmSync(resolve(root, "dist-node"), { recursive: true, force: true });
+
 await build({
   absWorkingDir: root,
   entryPoints: {
     host: "src/node/host.ts",
-    "thread-router": "src/node/thread-router.ts",
-    "thread-pool": "src/node/thread-pool.ts",
-    "thread-worker": "src/node/thread-worker.ts",
-    "job-client": "src/job-client.ts",
+    "run-thread": "src/node/run-thread.ts",
+    "task-client": "src/task-client.js",
   },
   outdir: "dist-node",
   outExtension: { ".js": ".mjs" },
@@ -31,9 +34,8 @@ await build({
   target: "node22",
   sourcemap: true,
   logLevel: "info",
-  // the Repo comes from node_modules at run time: it brings wasm and a socket library
-  external: ["@automerge/automerge-repo-node"],
-  define: { __TASKS_BUILD__: JSON.stringify(Date.now()) },
+  // the Repo and its storage come from node_modules at run time: they bring wasm and a socket library
+  external: ["@automerge/automerge-repo-node", "@automerge/automerge-repo-storage-nodefs"],
   // a CommonJS dependency bundled into an ES module still asks for `require`
   banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' },
   plugins: [

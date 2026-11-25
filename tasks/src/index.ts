@@ -37,7 +37,7 @@ export const plugins: Plugin<any>[] = [
   },
   {
     // The same badge for frames that have a system tray rather than title bar
-    // slots (see titlebar-tool.tsx). Either one starts the task workers.
+    // slots (see titlebar-tool.tsx).
     type: 'patchwork:component',
     id: TRAY_COMPONENT_ID,
     name: 'Tasks (experimental)',

@@ -39,7 +39,7 @@ export function WithTasksRepo(props: { fallback?: JSX.Element; children: JSX.Ele
  * The handle on the doc at `url`: undefined until it has loaded, and whenever
  * there is no url.
  *
- * A queue names its tasks, workers and router by url, and a url can get here
+ * A queue names its tasks by url, and a url can get here
  * before the doc it names does. Asking for it then fails with "unavailable",
  * which isn't an error so much as "not yet": this keeps asking, and whatever
  * shows the doc shows a placeholder in the meantime.

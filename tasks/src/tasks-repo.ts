@@ -5,12 +5,12 @@ import { getRepoConfig } from './repo-config';
 
 /**
  * This tab's member of the tasks Repo family (see ids.ts): an ordinary Repo on
- * the same database and save channel as the task workers' Repos.
+ * the same database and save channel as a browser pool's Repos.
  *
  * The queue browser reads and writes through it rather than through the site's
- * own Repo, and that is what makes the framework work with no network. A task
- * added here is in the shared database a moment later, where the router and
- * the workers find it; what they write back shows up here the same way. Going
+ * own Repo, and that is what makes the system work with no network. A task
+ * added here is in the shared database a moment later, where a pool in this
+ * browser finds it; what it writes back shows up here the same way. Going
  * through the site's Repo, every one of those steps would be a round trip to
  * the sync server.
  *
@@ -27,7 +27,7 @@ export function getTasksRepo(): Promise<Repo> {
 
 function createTasksRepo() {
   // The site has already started automerge and subduction on this page. Like
-  // the workers' Repos this one has no `signer`, so it is a peer of its own.
+  // a pool's Repos this one has no `signer`, so it is a peer of its own.
   return new Repo({
     storage: new IndexedDBStorageAdapter(TASKS_DATABASE),
     peerId: `task-tab-${Math.round(Math.random() * 1_000_000)}`,

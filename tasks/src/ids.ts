@@ -23,15 +23,7 @@ export const TRAY_COMPONENT_ID = 'task-tray-next';
  */
 export const WAIT_TASK_PATH = 'dist/tasks/wait.js';
 
-/** Where the code for asking a queue for work is (see src/job-client.ts), for other packages to import. */
-export const JOB_CLIENT_PATH = 'dist/job-client.js';
-
-/** Shared workers are found by name, so these are names to keep apart as well. */
-export const WORKER_POOL_NAME = 'task-next-worker-pool';
-export const ROUTER_NAME = 'task-next-router';
-export const workerName = (id: number) => `task-next-worker-${id}`;
-
-// The task framework's Repos, in the workers and in each tab, keep their
+// The task system's Repos, in the workers and in each tab, keep their
 // documents in a database of their own and tell each other what they've saved
 // on a channel of their own, rather than sharing the site's. That makes them
 // one family: what any of them saves, the rest have a moment later, with or

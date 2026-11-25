@@ -1,4 +1,4 @@
-// What code a worker will run.
+// What code a pool will run.
 //
 // A task says where its code is (import-url.ts), and whoever can write a
 // queue can put any task in it. So lending a queue your workers is a decision
@@ -10,13 +10,13 @@
 // - a list of packages: only code that is in one of those packages, at any
 //   version. A `data:` URL is in none, so it is never run.
 //
-// Each worker's own doc says what it takes from each queue, a router sends it
-// only that, and the worker checks again before it imports anything: the
-// router's word is routing, the worker's check is the rule.
+// A pool checks a queue entry's package before it opens the task, and the
+// task's own `importUrl` before it takes it; the run worker is handed the
+// string it checked.
 
 import { packageOf } from './import-url';
 
-/** What a worker runs from one queue. */
+/** What a pool runs from one queue. */
 export type Acceptance = 'any' | readonly string[];
 
 /**
@@ -49,7 +49,7 @@ export function accepts(acceptance: Acceptance | undefined, importUrl: string): 
   return from !== null && acceptance.includes(from);
 }
 
-/** The same question for a router, which knows a task's package (or that it has none) but not its URL. */
+/** The same question of a queue's entry, which names a task's package (or that it has none) but not its URL. */
 export function acceptsPackage(acceptance: Acceptance | undefined, packageUrl: string | null): boolean {
   if (acceptance === undefined) {
     return false;
