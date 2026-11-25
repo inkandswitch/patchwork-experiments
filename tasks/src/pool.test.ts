@@ -1739,6 +1739,23 @@ describe('the preferred pool', () => {
     expect(o.workers).toHaveLength(0);
   });
 
+  it('four tasks listed at once near a pool with two slots: it takes two, and the other, hearing it full, takes the other two at once', async () => {
+    const p = w.pool('P', { slots: 2 });
+    const o = w.pool('O', { slots: 2 });
+    await settle();
+    const tasks = ['a', 'b', 'c', 'd'].map((key) => made(key));
+    const listedAt = w.clock.now();
+    for (const task of tasks) {
+      list(task, 'P');
+    }
+    await settle();
+    expect(tasks.map(poolsOf)).toEqual([['P'], ['P'], ['O'], ['O']]);
+    expect(tasks.map((task) => lastRun(task).start)).toEqual(tasks.map(() => listedAt));
+    await w.clock.advance(LAPSE_MS * 2);
+    expect(tasks.map(poolsOf)).toEqual([['P'], ['P'], ['O'], ['O']]);
+    expect([p.executor.workers.length, o.executor.workers.length]).toEqual([2, 2]);
+  });
+
   it('needs narrow the candidates before the choice: the pool the hash prefers lacks a need, and the other takes it at once', async () => {
     const task = made('k', { needs: ['unix'] });
     const [P, O] = byPreference(task);
