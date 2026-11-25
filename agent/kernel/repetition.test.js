@@ -70,6 +70,16 @@ describe("repeatsItself", () => {
 })
 
 describe("a model that goes round in circles", () => {
+  it.each([
+    ["a tool that asks a person, by whatever name", [editTool, { id: "ask_someone", where: "worker", risk: "read", asksHuman: true, execute: async () => "" }], /If you are genuinely stuck, ask the user one question with ask_someone instead\.$/],
+    ["no such tool, as a research step has none", [editTool], /make the tool call now\.$/],
+  ])("is offered asking as a way out only with %s", async (name, tools, wording) => {
+    const store = session()
+    const provider = makeMock([[...circling(4)], [{ type: "text", delta: "Fixed." }]])
+    await run({ store, provider, toolset: toolset(tools), canRun: () => true, flushMs: 0 })
+    expect(transcript(store).find((b) => /repeating yourself/.test(b.text ?? "")).text).toMatch(wording)
+  })
+
   it("is stopped mid-turn and told to act, and then does", async () => {
     const store = session()
     const provider = makeMock([
@@ -99,7 +109,7 @@ describe("a model that goes round in circles", () => {
 
     const nudge = blocks.find((b) => b.role === "user" && /repeating yourself/.test(b.text ?? ""))
     expect(nudge).toBeTruthy()
-    expect(nudge.text).toMatch(/make the tool call now/)
+    expect(nudge.text).toMatch(/make the tool call now\.$/)
 
     // What it did stream stays in the transcript: it is what happened.
     const thought = blocks.find((b) => b.type === "reasoning")

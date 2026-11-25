@@ -307,11 +307,14 @@ export async function run(opts) {
       emit({ type: "repeating", turn: turnNumber, attempt: repetitions })
 
       if (repetitions <= maxRepetitions) {
+        // The way out it is offered is one it has: a research step has no
+        // tool that asks a person, and is not told to use one.
+        const asker = toolset.tools.find((tool) => tool.asksHuman)
         nudge(
           store,
           "(You were repeating yourself, so your turn was stopped.) Do not deliberate further. " +
-            "Take the simplest option that works and make the tool call now. If you are genuinely stuck, " +
-            "ask the user one question with ask_user instead."
+            "Take the simplest option that works and make the tool call now." +
+            (asker ? ` If you are genuinely stuck, ask the user one question with ${asker.id} instead.` : "")
         )
         continue
       }
