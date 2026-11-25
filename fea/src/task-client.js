@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v7]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v8]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -522,6 +522,9 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
   };
 }
 
+/** What waiting for a task rejects with when it was stopped. */
+const CANCELLED = 'The task was cancelled';
+
 /**
  * Asks for a task and waits for it: resolves to its result when it succeeds,
  * rejects when it fails or is cancelled. `onProgress` hears every change on
@@ -530,10 +533,13 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
  * @param {string} queueUrl
  * @param {Ask} request
  * @param {(view: TaskView) => void} [onProgress]
- * @param {AbortSignal} [signal]  aborting it stops the task (`cancel`), and this then rejects
+ * @param {AbortSignal} [signal]  aborting it stops the task (`cancel`), and this then rejects; aborted already, nothing is asked
  * @returns {Promise<unknown>}
  */
 export async function run(repo, queueUrl, request, onProgress, signal) {
+  if (signal?.aborted) {
+    throw new Error(CANCELLED);
+  }
   const { key, taskUrl } = await ask(repo, queueUrl, request);
   return new Promise((resolve, reject) => {
     const stopIt = () => void cancel(repo, queueUrl, key).catch(() => {});
@@ -553,7 +559,7 @@ export async function run(repo, queueUrl, request, onProgress, signal) {
         } else {
           reject(
             new Error(
-              view.state === 'cancelled' ? 'The task was cancelled' : (view.error ?? 'The task failed'),
+              view.state === 'cancelled' ? CANCELLED : (view.error ?? 'The task failed'),
             ),
           );
         }
@@ -1052,7 +1058,10 @@ export async function doWork(repo, request, { onProgress, signal } = {}) {
 
 /**
  * Does work in this page: imports the code and calls it with a context like
- * a pool's, but for `taskUrl`, since there is no task.
+ * a pool's, but for `taskUrl`, since there is no task. Aborting `signal`
+ * rejects at once, as a stop does for work asked of a queue; the code is
+ * told through its own signal, and anything it reports after that is not
+ * passed on, since the work has ended for whoever asked.
  * @param {any} repo
  * @param {Ask} request
  * @param {((view: TaskView) => void) | undefined} onProgress
@@ -1060,11 +1069,19 @@ export async function doWork(repo, request, { onProgress, signal } = {}) {
  * @returns {Promise<unknown>}
  */
 async function workHere(repo, { importUrl, input, key }, onProgress, signal) {
+  if (signal?.aborted) {
+    throw new Error(CANCELLED);
+  }
   /** @type {LogLine[]} */
   const logs = [];
   /** @type {unknown} */
   let progress = null;
-  const say = (/** @type {TaskState} */ state, /** @type {Partial<TaskView>} */ more = {}) =>
+  let over = false;
+  const say = (/** @type {TaskState} */ state, /** @type {Partial<TaskView>} */ more = {}) => {
+    if (over) {
+      return;
+    }
+    over = isFinished(state);
     onProgress?.({
       key: key ?? '',
       state,
@@ -1078,20 +1095,27 @@ async function workHere(repo, { importUrl, input, key }, onProgress, signal) {
       runs: [],
       ...more,
     });
+  };
   const stopped = new AbortController();
+  /** @type {Promise<never>} */
+  const cancelled = new Promise((_, reject) => {
+    stopped.signal.addEventListener('abort', () => reject(new Error(CANCELLED)), { once: true });
+  });
   const stopIt = () => stopped.abort('cancelled');
-  if (signal?.aborted) {
-    stopIt();
-  } else {
-    signal?.addEventListener('abort', stopIt, { once: true });
-  }
+  signal?.addEventListener('abort', stopIt, { once: true });
   const context = {
     log(/** @type {unknown[]} */ ...args) {
+      if (over) {
+        return;
+      }
       logs.push({ timestampMillis: Date.now(), message: args.map((arg) => '' + arg).join(' ') });
       logs.splice(0, logs.length - MAX_LOG_LINES);
       say('running');
     },
     progress(/** @type {unknown} */ value) {
+      if (over) {
+        return;
+      }
       progress = value;
       say('running');
     },
@@ -1102,21 +1126,23 @@ async function workHere(repo, { importUrl, input, key }, onProgress, signal) {
     run: crypto.randomUUID(),
   };
   say('running');
-  try {
+  const work = (async () => {
     const module = await import(/* @vite-ignore */ importUrl);
     if (typeof module?.default !== 'function') {
       throw new Error("the task's code has no default export to call");
     }
-    const result = copy(await module.default.call(context, copy(input), context));
-    if (stopped.signal.aborted) {
-      throw new Error('stopped');
-    }
+    return copy(await module.default.call(context, copy(input), context));
+  })();
+  // what the code does once it has been stopped is nobody's concern
+  work.catch(() => {});
+  try {
+    const result = await Promise.race([work, cancelled]);
     say('succeeded', { result });
     return result;
   } catch (error) {
     if (stopped.signal.aborted) {
       say('cancelled');
-      throw new Error('The task was cancelled');
+      throw new Error(CANCELLED);
     }
     const message = /** @type {any} */ (error)?.message ?? '' + error;
     logs.push({ timestampMillis: Date.now(), message });

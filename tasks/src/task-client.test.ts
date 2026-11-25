@@ -18,6 +18,8 @@ import {
   TASKS_STORAGE_ID,
   ask,
   cancel,
+  doWork,
+  findWhenThere,
   inSamePackage,
   listen,
   ownQueue,
@@ -1661,5 +1663,426 @@ describe('the served queues on two replicas at once (helpers.ts writers on real 
     expect(servedOf(doc)).toEqual({ [Q1]: true });
     expect(isOnTaskQueue(doc, Q0)).toBe(false);
     expect(isOnTaskQueue(doc, Q2)).toBe(false);
+  });
+});
+
+// Finding a document that may not have arrived, one try at a time
+
+describe('findWhenThere, each try', () => {
+  /** A Repo whose finds answer as `answers` says, in turn: 'never', a handle, or an error. */
+  function finds(...answers: ('never' | { late: number; value: any } | { value: any } | { error: string })[]) {
+    let i = 0;
+    const find = vi.fn(() => {
+      const answer = answers[Math.min(i++, answers.length - 1)];
+      if (answer === 'never') return new Promise<any>(() => {});
+      if ('error' in answer) return Promise.reject(new Error(answer.error));
+      if ('late' in answer) return new Promise<any>((resolve) => setTimeout(() => resolve(answer.value), answer.late));
+      return Promise.resolve(answer.value);
+    });
+    return { find };
+  }
+  const handle = (doc: unknown) => ({ doc: () => doc });
+  const watched = (promise: Promise<unknown>) => {
+    const got: { value?: any; error?: Error } = {};
+    promise.then(
+      (value) => void (got.value = value),
+      (error) => void (got.error = error),
+    );
+    return got;
+  };
+
+  it('gives up a find that never settles after `each`, and tries again after the wait', async () => {
+    const repo = finds('never', { value: handle({ ok: true }) });
+    const got = watched(findWhenThere(repo, 'u', { tries: 3, wait: 10, each: 100 }));
+    await vi.advanceTimersByTimeAsync(99);
+    expect(repo.find).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1 + 9);
+    expect(repo.find).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(repo.find).toHaveBeenCalledTimes(2);
+    await settle();
+    expect(got.value?.doc()).toEqual({ ok: true });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('is bounded: tries × each and the waits between, then it rejects with what the last try said, and leaves no timer', async () => {
+    const repo = finds('never');
+    const got = watched(findWhenThere(repo, 'u', { tries: 3, wait: 10, each: 100 }));
+    await vi.advanceTimersByTimeAsync(3 * 100 + 10 + 20 - 1);
+    expect(got).toEqual({});
+    await vi.advanceTimersByTimeAsync(1);
+    await settle();
+    expect(got.error?.message).toBe('u did not arrive in 100 ms');
+    expect(repo.find).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a find that answers within its try is not waited on further, and leaves no timer', async () => {
+    const repo = finds({ late: 50, value: handle({ ok: 1 }) });
+    const got = watched(findWhenThere(repo, 'u', { tries: 3, each: 100 }));
+    await vi.advanceTimersByTimeAsync(50);
+    await settle();
+    expect(got.value?.doc()).toEqual({ ok: 1 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a find that answers after its try was given up changes nothing: the next try is what counts', async () => {
+    const repo = finds({ late: 150, value: handle({ from: 'late' }) }, 'never', { value: handle({ from: 'third' }) });
+    const got = watched(findWhenThere(repo, 'u', { tries: 3, wait: 100, each: 100 }));
+    // the first try is given up at 100, its answer comes at 150 during the wait, the second try starts at 200 and is given up at 300
+    await vi.advanceTimersByTimeAsync(299);
+    expect(got).toEqual({});
+    expect(repo.find).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1 + 200);
+    await settle();
+    expect(got.value?.doc()).toEqual({ from: 'third' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('run with a signal', () => {
+  const asking = (repo: Repo, queue: DocHandle<Queue>, signal: AbortSignal, key = 'k') => {
+    const views: TaskView[] = [];
+    const settled: { value?: unknown; error?: Error } = {};
+    const promise = run(repo, queue.url, { importUrl: CODE, key }, (view) => views.push(view), signal).then(
+      (value) => void (settled.value = value),
+      (error: Error) => void (settled.error = error),
+    );
+    return { views, settled, promise };
+  };
+  const stopsOf = (task: DocHandle<Task>) => task.doc()!.runs.filter((r: any) => r.status === 'cancelled' && r.pool === undefined);
+
+  it('aborted before it is called: rejects at once, and makes and lists nothing', async () => {
+    const { repo, queue } = world();
+    await settle();
+    const handles = Object.keys(repo.handles).length;
+    const heads = A.getHeads(queue.doc()!);
+    const controller = new AbortController();
+    controller.abort();
+    const { settled, promise } = asking(repo, queue, controller.signal);
+    await promise;
+    expect(settled.error?.message).toBe('The task was cancelled');
+    expect(Object.keys(repo.handles)).toHaveLength(handles);
+    expect(A.getHeads(queue.doc()!)).toEqual(heads);
+  });
+
+  it('aborted while it asks, before the task is listed: the task it lists is stopped and delisted, and it rejects', async () => {
+    const { repo, queue } = world();
+    const controller = new AbortController();
+    const { settled, promise } = asking(repo, queue, controller.signal);
+    controller.abort();
+    await settle();
+    await promise;
+    expect(settled.error?.message).toBe('The task was cancelled');
+    expect(entryOf(queue, 'k')).toBeUndefined();
+    const made = Object.values(repo.handles).filter((h: any) => h.doc()?.key === 'k') as DocHandle<Task>[];
+    expect(made).toHaveLength(1);
+    expect(stopsOf(made[0])).toHaveLength(1);
+  });
+
+  it('aborted after the task is listed: appends a stop, delists it, and rejects', async () => {
+    const { repo, queue } = world();
+    const controller = new AbortController();
+    const { views, settled, promise } = asking(repo, queue, controller.signal);
+    await settle();
+    const task = await repo.find<Task>(entryOf(queue, 'k').taskUrl as AutomergeUrl);
+    expect(settled).toEqual({});
+    controller.abort();
+    await settle();
+    await promise;
+    expect(settled.error?.message).toBe('The task was cancelled');
+    expect(stopsOf(task)).toHaveLength(1);
+    expect(entryOf(queue, 'k')).toBeUndefined();
+    expect(views.at(-1)?.state).toBe('cancelled');
+  });
+
+  it('aborted while a pool runs it: the stop is appended, and it rejects once the pool records the run cancelled', async () => {
+    const { repo, queue } = world();
+    const controller = new AbortController();
+    const { settled, promise } = asking(repo, queue, controller.signal);
+    await settle();
+    const task = await repo.find<Task>(entryOf(queue, 'k').taskUrl as AutomergeUrl);
+    take(task, 'r');
+    beat(task, 'r');
+    await settle();
+    controller.abort();
+    await settle();
+    expect(stopsOf(task)).toHaveLength(1);
+    expect(settled).toEqual({});
+    complete(task, 'r', 'cancelled');
+    await settle();
+    await promise;
+    expect(settled.error?.message).toBe('The task was cancelled');
+  });
+
+  it('aborted after the task ended: nothing is written, and what it resolved to stands', async () => {
+    const { repo, queue } = world();
+    const controller = new AbortController();
+    const { settled, promise } = asking(repo, queue, controller.signal);
+    await settle();
+    const task = await repo.find<Task>(entryOf(queue, 'k').taskUrl as AutomergeUrl);
+    take(task, 'r');
+    complete(task, 'r', 'succeeded', { result: 'done' });
+    await settle();
+    await promise;
+    const heads = [A.getHeads(task.doc()!), A.getHeads(queue.doc()!)];
+    controller.abort();
+    await settle();
+    expect(settled).toEqual({ value: 'done' });
+    expect([A.getHeads(task.doc()!), A.getHeads(queue.doc()!)]).toEqual(heads);
+  });
+});
+
+// Having work done from a page
+
+describe('doWork', () => {
+  const g = globalThis as any;
+  /** The work every test here asks for: it hands its arguments to whatever the test put at globalThis.__work. */
+  const WORK = 'data:text/javascript,export default function (input, ctx) { return globalThis.__work(input, ctx, this); }';
+  afterEach(() => {
+    delete g.accountDocHandle;
+    delete g.__work;
+  });
+
+  type Setup = 'no account' | 'no storage' | 'no own queue' | 'an own queue nobody is heard serving' | 'an own queue';
+  /** A page in one of the setups, with the person's own queue if it has one. */
+  function page(setup: Setup) {
+    const repo = newRepo();
+    let queue: DocHandle<Queue> | undefined;
+    if (setup !== 'no account') {
+      const account = repo.create<any>({});
+      g.accountDocHandle = account;
+      if (setup !== 'no storage') {
+        const storage = repo.create<any>({ '@patchwork': { type: 'patchwork:tool-storage' } });
+        account.change((doc) => (doc.toolStorage = { [TASKS_STORAGE_ID]: storage.url }));
+        if (setup !== 'no own queue') {
+          queue = repo.create<Queue>({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} } as any);
+          storage.change((doc) => {
+            doc.own = queue!.url;
+            doc[queue!.url] = true;
+          });
+        }
+      }
+    }
+    return { repo, queue };
+  }
+  /** Every document a Repo has, and its heads: what doing work here must leave as it was. */
+  const everything = (repo: Repo) => Object.values(repo.handles).map((h: any) => [h.url, A.getHeads(h.doc())]);
+
+  let servingSeq = 0;
+  const serving = (queue: DocHandle<Queue>, pool = 'P') =>
+    queue.emit('ephemeral-message', {
+      handle: queue,
+      senderId: pool as any,
+      message: { type: 'serving', pool, name: `pool ${pool}`, slots: 1, busy: 0, from: `stamp ${pool}`, seq: servingSeq++ },
+    });
+
+  function doing(repo: Repo, request: { importUrl?: string; input?: unknown; key?: string } = {}, signal?: AbortSignal) {
+    const views: TaskView[] = [];
+    const settled: { value?: unknown; error?: Error } = {};
+    const promise = doWork(repo, { importUrl: WORK, input: { n: 1 }, key: 'k', ...request }, { onProgress: (view) => views.push(view), signal }).then(
+      (value) => void (settled.value = value),
+      (error: Error) => void (settled.error = error),
+    );
+    return { views, settled, promise };
+  }
+  /** Lets an import (which comes on the real event loop) and the Repo's work go on, moving fake time by `ms` first. */
+  async function until(done: () => boolean, ms = 0) {
+    if (ms) await vi.advanceTimersByTimeAsync(ms);
+    for (let i = 0; i < 400 && !done(); i++) {
+      await vi.advanceTimersByTimeAsync(0);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
+  const HERE: [Setup, number][] = [
+    ['no account', 0],
+    ['no storage', 0],
+    ['no own queue', 0],
+    ['an own queue nobody is heard serving', BEAT_MS + 500],
+  ];
+  for (const [setup, wait] of HERE) {
+    it(`with ${setup}: imports the code and calls it here with (input, ctx), and resolves with what it returned; it writes and makes nothing`, async () => {
+      const { repo } = page(setup);
+      await settle();
+      const before = everything(repo);
+      let seen: any;
+      g.__work = (input: any, ctx: any, self: any) => {
+        seen = { input, ctx, self };
+        ctx.log('a line', 1);
+        ctx.progress({ stage: 'half' });
+        return { n: input.n + 1 };
+      };
+      const input = { n: 1 };
+      const { views, settled } = doing(repo, { input });
+      if (wait) {
+        await vi.advanceTimersByTimeAsync(wait - 1);
+        expect(seen).toBeUndefined();
+      }
+      await until(() => 'value' in settled || 'error' in settled, wait ? 1 : 0);
+      expect(settled).toEqual({ value: { n: 2 } });
+      expect(seen.input).toEqual(input);
+      expect(seen.input).not.toBe(input);
+      expect(seen.self).toBe(seen.ctx);
+      expect(Object.keys(seen.ctx).sort()).toEqual(['key', 'log', 'progress', 'repo', 'run', 'signal', 'taskUrl']);
+      expect(seen.ctx.repo).toBe(repo);
+      expect(seen.ctx.key).toBe('k');
+      expect(seen.ctx.taskUrl).toBeNull();
+      expect(seen.ctx.run).toMatch(/^[0-9a-f-]{36}$/);
+      expect(seen.ctx.signal.aborted).toBe(false);
+      expect(views.map((view) => view.state)).toEqual(['running', 'running', 'running', 'succeeded']);
+      const last = views.at(-1)!;
+      expect(last).toMatchObject({ key: 'k', taskUrl: null, importUrl: WORK, progress: { stage: 'half' }, result: { n: 2 }, error: null, runs: [] });
+      expect(last.logs.map((l) => l.message)).toEqual(['a line 1']);
+      expect(everything(repo)).toEqual(before);
+    });
+  }
+
+  it('done here: a throw rejects with its message and is reported failed', async () => {
+    const { repo } = page('no account');
+    g.__work = () => {
+      throw new Error('boom');
+    };
+    const { views, settled } = doing(repo);
+    await until(() => 'error' in settled);
+    expect(settled.error?.message).toBe('boom');
+    expect(views.at(-1)).toMatchObject({ state: 'failed', error: 'boom' });
+    expect(views.at(-1)!.logs.at(-1)?.message).toBe('boom');
+  });
+
+  it('done here: code with no default function rejects plainly, and is reported failed', async () => {
+    const { repo } = page('no account');
+    const { views, settled } = doing(repo, { importUrl: 'data:text/javascript,export const notAFunction = 1' });
+    await until(() => 'error' in settled);
+    expect(settled.error?.message).toBe("the task's code has no default export to call");
+    expect(views.at(-1)?.state).toBe('failed');
+  });
+
+  it("done here: aborting the signal aborts ctx.signal with 'cancelled' and rejects at once, though the code goes on and then returns; nothing is heard after", async () => {
+    const { repo } = page('no account');
+    let ctx: any;
+    let finish = (_: unknown) => {};
+    g.__work = (_input: unknown, c: any) => {
+      ctx = c;
+      return new Promise((resolve) => (finish = resolve));
+    };
+    const controller = new AbortController();
+    const { views, settled } = doing(repo, {}, controller.signal);
+    await until(() => ctx !== undefined);
+    controller.abort();
+    await until(() => 'error' in settled);
+    expect(ctx.signal.aborted).toBe(true);
+    expect(ctx.signal.reason).toBe('cancelled');
+    expect(settled.error?.message).toBe('The task was cancelled');
+    expect(views.at(-1)?.state).toBe('cancelled');
+    const heard = views.length;
+    ctx.log('still going');
+    finish('a result after all');
+    await until(() => false);
+    expect(settled.error?.message).toBe('The task was cancelled');
+    expect(views).toHaveLength(heard);
+  });
+
+  it('done here: a signal aborted before it is called rejects, and the code is not called', async () => {
+    const { repo } = page('no account');
+    g.__work = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+    const { settled } = doing(repo, {}, controller.signal);
+    await until(() => 'error' in settled);
+    expect(settled.error?.message).toBe('The task was cancelled');
+    expect(g.__work).not.toHaveBeenCalled();
+  });
+
+  /** An own queue a pool is heard serving, and work asked of it. */
+  async function asked(signal?: AbortSignal) {
+    const { repo, queue } = page('an own queue');
+    g.__work = vi.fn();
+    const doingIt = doing(repo, {}, signal);
+    await settle();
+    serving(queue!);
+    await until(() => !!entryOf(queue!, 'k'));
+    return { repo, queue: queue!, ...doingIt };
+  }
+
+  it('with an own queue a pool is heard serving: lists a task under the key with the import url and input, and calls nothing here', async () => {
+    const { repo, queue, views } = await asked();
+    const task = await repo.find<Task>(entryOf(queue, 'k').taskUrl as AutomergeUrl);
+    expect(task.doc()).toEqual({ importUrl: WORK, input: { n: 1 }, key: 'k', runs: [] });
+    expect(g.__work).not.toHaveBeenCalled();
+    expect(views.at(-1)).toMatchObject({ state: 'waiting', taskUrl: task.url });
+  });
+
+  it('asked: the first asking waits to hear a pool only until one is heard; a later one does not wait at all', async () => {
+    const { repo, queue } = page('an own queue');
+    g.__work = vi.fn();
+    doing(repo, { key: 'first' });
+    await settle();
+    await vi.advanceTimersByTimeAsync(BEAT_MS);
+    expect(entryOf(queue!, 'first')).toBeUndefined();
+    serving(queue!);
+    await until(() => !!entryOf(queue!, 'first'));
+    expect(entryOf(queue!, 'first')).toBeDefined();
+    const started = Date.now();
+    doing(repo, { key: 'later' });
+    await until(() => !!entryOf(queue!, 'later'));
+    expect(entryOf(queue!, 'later')).toBeDefined();
+    expect(Date.now()).toBe(started);
+    expect(g.__work).not.toHaveBeenCalled();
+  });
+
+  it('nobody heard: the first asking is done here after a beat and a little; a later one is done here at once', async () => {
+    const { repo, queue } = page('an own queue nobody is heard serving');
+    g.__work = vi.fn(() => 'here');
+    const first = doing(repo, { key: 'first' });
+    await settle();
+    await vi.advanceTimersByTimeAsync(BEAT_MS + 499);
+    expect(g.__work).not.toHaveBeenCalled();
+    await until(() => 'value' in first.settled, 1);
+    expect(first.settled).toEqual({ value: 'here' });
+    const started = Date.now();
+    const later = doing(repo, { key: 'later' });
+    await until(() => 'value' in later.settled);
+    expect(later.settled).toEqual({ value: 'here' });
+    expect(Date.now()).toBe(started);
+    expect(queue!.doc()!.jobs).toEqual({});
+  });
+
+  it("asked: the result of the task's ending run resolves it", async () => {
+    const { repo, queue, settled, views } = await asked();
+    const task = await repo.find<Task>(entryOf(queue, 'k').taskUrl as AutomergeUrl);
+    take(task, 'r');
+    beat(task, 'r', { progress: 'half', logs: [line('going')] });
+    await settle();
+    expect(views.at(-1)).toMatchObject({ state: 'running', progress: 'half' });
+    complete(task, 'r', 'succeeded', { result: { n: 2 } });
+    await until(() => 'value' in settled);
+    expect(settled).toEqual({ value: { n: 2 } });
+    expect(views.at(-1)?.state).toBe('succeeded');
+  });
+
+  it('asked: aborting the signal appends a stop to the task and rejects', async () => {
+    const controller = new AbortController();
+    const { repo, queue, settled } = await asked(controller.signal);
+    const task = await repo.find<Task>(entryOf(queue, 'k').taskUrl as AutomergeUrl);
+    controller.abort();
+    await until(() => 'error' in settled);
+    expect(settled.error?.message).toBe('The task was cancelled');
+    expect(task.doc()!.runs).toEqual([expect.objectContaining({ status: 'cancelled' })]);
+    expect(entryOf(queue, 'k')).toBeUndefined();
+  });
+
+  it('asked: asking twice under one key while its task is wanted is one task, and both resolve with its result', async () => {
+    const { repo, queue, settled } = await asked();
+    const again = doing(repo);
+    await settle();
+    const tasks = Object.values(repo.handles).filter((h: any) => h.doc()?.key === 'k');
+    expect(tasks).toHaveLength(1);
+    const task = tasks[0] as DocHandle<Task>;
+    expect(entryOf(queue, 'k').taskUrl).toBe(task.url);
+    take(task, 'r');
+    complete(task, 'r', 'succeeded', { result: 'once' });
+    await until(() => 'value' in settled && 'value' in again.settled);
+    expect([settled.value, again.settled.value]).toEqual(['once', 'once']);
   });
 });
