@@ -105,6 +105,15 @@ export function serve(port: RunWorkerPort) {
   async function runJob(job: Job, task: Uint8Array | undefined, signal: AbortSignal) {
     let docs: Repo | null = null;
     let outcome: FromRunWorker;
+    // Code can go on after it has returned or thrown (a timer, a promise it
+    // did not wait for), and the worker may by then have the next job: what
+    // it says after its ending would be counted as that job's.
+    let over = false;
+    const sayWhileRunning = (message: FromRunWorker) => {
+      if (!over) {
+        say(message);
+      }
+    };
     try {
       if (!repo) {
         throw new Error('its worker was handed a job before it was set up');
@@ -119,8 +128,8 @@ export function serve(port: RunWorkerPort) {
         throw new Error("the task's code has no default export to call");
       }
       const ctx: TaskContext = {
-        log: (...args) => say({ type: 'log', message: args.map((arg) => String(arg)).join(' ') }),
-        progress: (value) => say({ type: 'progress', value: copy(value) }),
+        log: (...args) => sayWhileRunning({ type: 'log', message: args.map((arg) => String(arg)).join(' ') }),
+        progress: (value) => sayWhileRunning({ type: 'progress', value: copy(value) }),
         signal,
         repo: docs,
         taskUrl: job.taskUrl,
@@ -139,6 +148,7 @@ export function serve(port: RunWorkerPort) {
         outcome = { type: 'threw', message: `what its code wrote could not be saved: ${messageOf(error)}` };
       }
     }
+    over = true;
     say(outcome);
   }
 }
