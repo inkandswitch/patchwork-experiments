@@ -344,7 +344,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
       ${other ? `<div class="hint">${differs.size ? `${differs.size} input${differs.size === 1 ? " differs" : "s differ"}, marked.` : "No input differs."}${sameCase ? " Both wrote the same OpenFOAM case (one recipe digest)." : ""}</div>` : ""}
       <table class="figures inputs"><tr><th>Input</th><th>This run</th>${other ? `<th>${esc(otherName)}</th>` : ""}</tr>${rows}</table>
       ${res}
-      <div class="hint">A run keeps all of this, with its hull as a closed STL and, once it has started, every file of its OpenFOAM case (the recipe): it can be made again without this case or that daemon.</div>`;
+      <div class="hint">A run keeps all of this, with its hull as a closed STL and, once it has started, every file of its OpenFOAM case (the recipe): it can be made again without this case or the machine that ran it.</div>`;
     box.querySelector(".compare")?.addEventListener("change", (e) => {
       compareUrl = e.target.value || null;
       inputs(run);

@@ -47,12 +47,12 @@ try {
   await b.js(`${q(".openfoam .server-forget")}?.hidden === false && ${q(".openfoam .server-forget")}.click()`);
   await sleep(500);
   check("the queue link is accepted", await fill(".openfoam .server-url", queue));
-  let online = false;
-  for (let i = 0; i < 30 && !online; i++) {
+  let served = false;
+  for (let i = 0; i < 30 && !served; i++) {
     await sleep(1000);
-    online = /online/.test((await text(".openfoam .server-box")) ?? "");
+    served = /served by/.test((await text(".openfoam .server-box")) ?? "");
   }
-  check("the daemon shows online", online, await text(".openfoam .server-box"));
+  check("the queue shows a host serving it", served, await text(".openfoam .server-box"));
   await fill('.openfoam select[data-k="mode"]', "double-body");
   await fill('.openfoam select[data-k="speed-unit"]', "kn");
   await sleep(300);

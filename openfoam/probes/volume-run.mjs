@@ -1,5 +1,5 @@
-// Keep a finished case's flow volume through the real sync server, as the
-// daemon does after a run, then read some of it back into a fresh peer and
+// Keep a finished case's flow volume through the real sync server, as a
+// run's code does after a run, then read some of it back into a fresh peer and
 // check it against the files on disk.
 //
 //   node probes/volume-run.mjs keep --case ~/.patchwork-openfoam/runs/<id> [--sync wss://…]

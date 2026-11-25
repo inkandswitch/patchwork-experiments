@@ -190,7 +190,7 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
       d.daemon = { ...daemon, cores: np };
       d.startedAt = now();
       d.error = null;
-      // the stage order this daemon will follow (meshing splits first when it's parallel)
+      // the stage order this run follows (meshing splits first when it's parallel)
       d.stages = stagesFor(setup.mode, { parallel: par, volume: setup.keepVolume }).map((s) => ({ ...s, status: "pending", startedAt: null, endedAt: null, note: null, tail: null }));
     });
 

@@ -713,7 +713,7 @@ export function caseFiles(setup, info, { cores = 1 } = {}) {
 /**
  * A run's recipe: every file the run writes to make its OpenFOAM case
  * (the dictionaries and the initial fields), kept in the run doc so the case
- * can be made again without this daemon, and a digest over them and the hull
+ * can be made again without this machine, and a digest over them and the hull
  * STL, so two runs with the same digest were the same case (whatever their
  * titles or setups say). The STL is in the run already, so it isn't repeated.
  * @param {Record<string, string>} files  path → text

@@ -5,7 +5,7 @@
 // A run freezes everything it needs when it's asked for: the setup, the
 // hull as a closed STL in the analysis frame, where that hull came from (the
 // doc, its heads, the reader, the parts, the bow), and the version of this
-// tool. The daemon adds what it ran with (its host, its code's commit,
+// tool. The run's code adds what it ran with (its host, its code's commit,
 // OpenFOAM's version, the cores) and the case's recipe: every file it wrote,
 // with a digest over them and the STL. Two runs with one recipe digest were
 // the same OpenFOAM case.
