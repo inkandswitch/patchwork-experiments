@@ -93,27 +93,50 @@ this for a long run kept in a document of its own. `src/tasks/wait.ts` is a smal
 
 ## Having work done from a page
 
-A tool in a page has its work done with `doWork(repo, { importUrl, input, key }, { onProgress,
-signal })` from `task-client.js`, handed the site's Repo. When the person has a queue of their own
-and a pool is heard serving it, the work is asked of that queue as `run` would; otherwise the same
-module is imported and called in the page. Either way it resolves to what the code returned and
-rejects with what it threw, `onProgress` hears the same views, and aborting `signal` stops it.
+A tool in a page needs three functions from `task-client.js`, each handed the site's Repo, and
+never names a queue:
+
+- `doWork(repo, { importUrl, input, key }, { onProgress, signal })` has the work done. When the
+  person has a queue of their own and a pool is heard serving it, the work is asked of that queue
+  as `run` would; otherwise the same module is imported and called in the page. Either way it
+  resolves to what the code returned and rejects with what it threw, `onProgress` hears the same
+  views, and aborting `signal` stops it. Only code that can travel is asked of a queue: a file in
+  a package kept in automerge, or a `data:` URL; any other url (a dev server's `http://localhost`,
+  a `file:` url) is done in the page.
+- `watchWork(repo, key, onChange)` follows the work under the key on the person's own queue, so
+  that a page opened later, or another tab, shows work already going on instead of offering it
+  again. It follows the person's queue as it changes (made, or lost, while the tool is open), and
+  always says something within ten seconds: `missing` means no work under this key is known on a
+  queue of theirs (no queue, nothing under the key, or a queue that cannot be had now, which it
+  goes on looking for). It returns how to stop following.
+- `stopWork(repo, key)` stops the work under the key on the person's own queue; false when there
+  is none.
 
 ```js
-import { doWork, inSamePackage } from './task-client.js';
+import { doWork, watchWork, stopWork, inSamePackage } from './task-client.js';
+
+const key = `fetch:${docUrl}`;
+const unfollow = watchWork(repo, key, (view) => show(view.state, view.progress));
 
 const stop = new AbortController();
 const tiles = await doWork(
   repo,
-  { importUrl: inSamePackage(import.meta.url, 'dist/fetch-task.js'), input: { area }, key: `fetch:${docUrl}` },
-  { onProgress: (view) => show(view.progress), signal: stop.signal },
+  { importUrl: inSamePackage(import.meta.url, 'dist/fetch-task.js'), input: { area }, key },
+  { onProgress: (view) => show(view.state, view.progress), signal: stop.signal },
 );
+
+// Cancel: this page's own work by its signal, work seen on the queue by its key
+stop.abort();
+await stopWork(repo, key);
 ```
 
-Where it runs decides what the person gets. Asked of their queue, it goes on when the page closes,
-is done once however many pages ask under one key, and a stop ends it for good. Done in the page,
-it is that page's alone, ends with it, and code that does not heed `signal` runs on. `doWork` makes
-nothing: a person has a queue of their own only once they have made one (Make my queue).
+Where it runs decides what the person gets, and what is known where. Asked of their queue, it
+goes on when the page closes, is done once however many pages ask under one key, a stop ends it
+for good, and every page of theirs sees it (`watchWork`) and can stop it (`stopWork`). Done in
+the page, it is that page's alone: only the `onProgress` of the `doWork` call that started it
+hears of it, another tab neither sees it nor can stop it, it ends with the page, and code that
+does not heed `signal` runs on. `doWork` makes nothing: a person has a queue of their own only
+once they have made one (Make my queue).
 
 ## Serving a queue
 
