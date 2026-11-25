@@ -1,11 +1,13 @@
-// What a worker needs from wherever it is running (see ../webworker-lib.ts),
+// What a run worker needs from wherever it is running (see ../webworker-lib.ts),
 // for a Node process: the build puts this file in that one's place.
 
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Repo, initSubduction } from '@automerge/automerge-repo-node';
-import type { RepoConfig } from '../protocol';
+import { NodeFSStorageAdapter } from '@automerge/automerge-repo-storage-nodefs';
+import type { RepoConfig } from '../repo-config';
+import type { PlaceSettings } from '../webworker-lib';
 import { parseAutomergeImport } from '../import-url';
 import { materialise } from './package-files';
 
@@ -13,27 +15,31 @@ import { materialise } from './package-files';
 export async function setUpImportMap(_importMap: unknown, _baseURI: string) {}
 
 let subduction: Promise<unknown> | null = null;
+let place: PlaceSettings = {};
+let threadRepo: Repo | null = null;
 
 /**
  * A Repo for this thread: a Subduction node with a socket of its own to the
- * sync server, as each shared worker has in a browser. It keeps nothing on
- * disk: what it needs it fetches, and what it writes the server has.
+ * sync server, keeping its documents in `place.storageDir`, which no other
+ * live Repo uses. On disk, so that what a task's code wrote and saved before
+ * the process died is still here, and goes to the server, when the next run
+ * worker opens the same directory.
  */
-export async function getRepo(config: RepoConfig, peerId: string) {
+export async function getRepo(config: RepoConfig, peerId: string, given: PlaceSettings = {}) {
+  place = given;
   subduction ??= initSubduction();
   await subduction;
-  const repo = new Repo({
+  threadRepo = new Repo({
     network: [],
     subductionWebsocketEndpoints: [config.syncServerUrl],
     peerId: peerId as any,
+    ...(place.storageDir ? { storage: new NodeFSStorageAdapter(place.storageDir) } : {}),
   } as any);
-  (globalThis as any).repo = repo;
-  return repo as any;
+  return threadRepo as any;
 }
 
 /** Where code fetched from automerge is kept (see package-files.ts): what the process was started with, or a directory at home. */
-const cacheDir = (): string =>
-  (globalThis as any).__tasksCodeDir ?? join(homedir(), '.patchwork-tasks', 'code');
+const cacheDir = (): string => place.codeDir ?? join(homedir(), '.patchwork-tasks', 'code');
 
 /**
  * Imports a task's code from its import URL. A `data:` URL is the code. A
@@ -56,7 +62,10 @@ export async function importModule(importUrl: string): Promise<any> {
   if (here) {
     return import(pathToFileURL(here).href);
   }
-  const file = await materialise((globalThis as any).repo, found, cacheDir());
+  if (!threadRepo) {
+    throw new Error("code kept in automerge is fetched through the worker's Repo, and it has none");
+  }
+  const file = await materialise(threadRepo as any, found, cacheDir());
   return import(pathToFileURL(file).href);
 }
 
@@ -68,7 +77,7 @@ export async function importModule(importUrl: string): Promise<any> {
  * would leave the copy's directory is refused.
  */
 function localCopy(packageUrl: string, path: string): string | null {
-  const dir: string | undefined = (globalThis as any).__tasksLocalCode?.[packageUrl];
+  const dir = place.local?.[packageUrl];
   if (!dir) {
     return null;
   }

@@ -1,13 +1,26 @@
 import type { Repo } from '@automerge/automerge-repo/slim';
-import type { RepoConfig } from './protocol';
+import type { RepoConfig } from './repo-config';
 import { TASKS_DATABASE, TASKS_HEADS_CHANNEL } from './ids';
 import { onOrigin } from './import-url';
 
-// This file is what a worker needs from wherever it is running: a Repo, and a
-// way to load a task's code. This one is a browser's shared worker's. A
-// worker somewhere else (see src/node) brings its own in this file's place,
-// and the router, the pool and the worker themselves are the same code in
-// both.
+// This file is what a run worker (run-worker.ts) needs from wherever it is
+// running: a Repo, and a way to load a task's code. This one is a browser's.
+// A Node process brings its own in this file's place (see src/node), and the
+// run worker itself is the same code in both.
+
+/**
+ * What only a run worker in a Node process is told (see
+ * node/webworker-lib.node.ts). A browser's keeps its documents in the tasks
+ * database and has its code from the site, and ignores it.
+ */
+export interface PlaceSettings {
+  /** Where its Repo keeps documents: a directory no other live Repo uses. */
+  storageDir?: string;
+  /** Where code fetched from automerge is written (see node/package-files.ts). */
+  codeDir?: string;
+  /** Packages whose code is run from a directory here: `automerge:<package>` to a path. */
+  local?: Record<string, string>;
+}
 
 /**
  * Imports a task's code from its import URL, bare specifiers in it resolved
@@ -85,23 +98,16 @@ function resolveImportMap(importMap: any, baseURI: string) {
 }
 
 /**
- * A Repo for this shared worker: an ordinary Subduction node with a socket of
- * its own to the sync server.
- *
- * Patchwork used to hand workers a MessagePort to one Repo they all synced
- * through. That Repo is gone (every tab is its own node now), and with it the
- * relay that every ephemeral message between two workers had to pass through:
- * a broadcast now goes from this Repo to the server, and from there to every
- * Repo that has the document open, on this machine or any other.
+ * A Repo for this worker: an ordinary Subduction node with a socket of its
+ * own to the sync server, keeping its documents in the tasks database.
  *
  * No `signer`, on purpose: the Repo makes itself a new identity each time. The
  * tabs on an origin all sign as one peer, and a worker that did the same would
  * be relying on the server to pass a peer's ephemeral messages back to that
- * same peer's other connections, which is exactly the traffic the router, the
- * pool and the workers on one machine send each other. As peers of their own
- * they are to each other what two machines are.
+ * same peer's other connections. As a peer of its own it is to the pool what
+ * another machine would be.
  */
-export async function getRepo(config: RepoConfig, peerId: string) {
+export async function getRepo(config: RepoConfig, peerId: string, _place?: PlaceSettings) {
   if (!importMapReady) {
     throw new Error('Import map must be configured before creating a worker repo');
   }

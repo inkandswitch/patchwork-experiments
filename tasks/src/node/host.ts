@@ -1,16 +1,26 @@
-// A queue's workers on a machine with no browser.
+// A machine's pool, in a Node process: it serves task queues from a machine
+// with no browser.
 //
 //   node dist-node/host.mjs --queue automerge:… --accept automerge:<package>
 //                           [--queue automerge:…]… [--accept automerge:…]… | --accept-any
 //                           [--workers 1] [--sync wss://…] [--new-queue "title"]
-//                           [--code-dir <dir>] [--verbose]
+//                           [--data-dir ~/.patchwork-tasks] [--name <host name>]
+//                           [--code-dir <dir>] [--local automerge:<package>=<dir>]…
+//                           [--verbose]
 //
 // It is an automerge peer, not a service: nothing listens on a port, so it
-// runs the same on a laptop or on a server anywhere. It joins each queue it's
-// given the way a browser does, with a pool, a router and workers of its own
-// (the same code, each in a thread: see self-shim.ts), so a queue served only
-// by processes like this one routes itself, and two of them on one queue
-// share its tasks and take over from each other.
+// runs the same on a laptop or on a server anywhere. The pool (../pool.ts)
+// runs in this process's main thread with a Repo of its own, and each task's
+// code runs in a worker thread it can end whatever the code is doing (see
+// executor.ts). --workers is how many run at once.
+//
+// Everything is kept in --data-dir: the pool's documents (pool/), each
+// thread's (slots/<n>/), code fetched from automerge (code/, unless
+// --code-dir says), the pool's id (pool-id), and the running host's pid
+// (host.pid). The id is what makes the runs this pool started its own after
+// a restart: a host that comes back on the same directory records each run
+// it no longer has as lost, and the task is taken again. One host to a
+// directory; a second one refuses to start.
 //
 // A task says where its code is (see ../import-url.ts), and a process on a
 // machine can reach everything that machine can. So this must be told whose
@@ -21,10 +31,10 @@
 //   --accept-any                   whatever a queue's tasks bring, `data:`
 //                                  URLs included: for a queue only you write to
 //
-// Code kept in automerge is fetched through this process's own Repo and
-// imported from --code-dir (see package-files.ts; ~/.patchwork-tasks/code
-// unless said). It runs in Node: it can import its neighbours and Node's own
-// modules, not what a browser's import map would have given it.
+// Code kept in automerge is fetched through the thread's Repo and imported
+// from the code directory (see package-files.ts). It runs in Node: it can
+// import its neighbours and Node's own modules, not what a browser's import
+// map would have given it.
 //
 //   --local automerge:<package>=<dir>   run that package's code from this
 //                                       directory instead of fetching it
@@ -37,23 +47,32 @@
 //
 // --new-queue makes a queue, prints its url, and serves it: for a machine
 // that should have a queue of its own.
+//
+// SIGINT or SIGTERM stops it: it takes nothing more, tells each run's code to
+// stop ('stopping'), ends its thread GRACE_MS later if it has not, records
+// each run as lost so that it is taken again, saves, and exits. If that has
+// not happened within STOP_DEADLINE_MS the process exits anyway: a save that
+// never settles must not keep a machine from shutting down. A second signal
+// exits at once.
 
-import { Worker, MessageChannel, type MessagePort } from 'node:worker_threads';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Repo, initSubduction } from '@automerge/automerge-repo-node';
-import type {
-  MessageToRouter,
-  MessageToWorker,
-  MessageToWorkerPool,
-  RepoConfig,
-} from '../protocol';
-import type { TaskQueueDoc, TaskQueueSet } from '../datatype';
-import type { QueueSetting } from '../acceptance';
-import { QUEUE_DATATYPE_ID, ROUTER_NAME, WORKER_POOL_NAME, workerName } from '../ids';
+import { NodeFSStorageAdapter } from '@automerge/automerge-repo-storage-nodefs';
+import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
+import { Pool, type Docs } from '../pool';
+import { GRACE_MS } from '../task-rules.js';
+import type { Acceptance } from '../acceptance';
+import type { Queue } from '../datatype';
+import { QUEUE_DATATYPE_ID } from '../ids';
+import { NodeExecutor } from './executor';
 
 const DEFAULT_SYNC_SERVER_URL = 'wss://subduction.sync.inkandswitch.com';
 const AUTOMERGE_URL = /^automerge:[1-9A-HJ-NP-Za-km-z]{16,64}$/;
+
+/** Long enough for the pool to give stopped code its grace, end it, save, and send what it saved: twice the grace and a little over. */
+const STOP_DEADLINE_MS = 2 * GRACE_MS + 2_000;
 
 interface Options {
   queues: string[];
@@ -64,7 +83,9 @@ interface Options {
   workers: number;
   sync: string;
   newQueue: string | null;
-  codeDir: string;
+  dataDir: string;
+  codeDir: string | null;
+  name: string;
   verbose: boolean;
 }
 
@@ -77,7 +98,9 @@ function parseArgs(argv: string[]): Options {
     workers: 1,
     sync: process.env.PATCHWORK_SYNC ?? DEFAULT_SYNC_SERVER_URL,
     newQueue: null,
-    codeDir: join(homedir(), '.patchwork-tasks', 'code'),
+    dataDir: join(homedir(), '.patchwork-tasks'),
+    codeDir: null,
+    name: hostname(),
     verbose: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -121,8 +144,14 @@ function parseArgs(argv: string[]): Options {
       case '--new-queue':
         options.newQueue = value();
         break;
+      case '--data-dir':
+        options.dataDir = resolve(value());
+        break;
       case '--code-dir':
         options.codeDir = resolve(value());
+        break;
+      case '--name':
+        options.name = value();
         break;
       case '--verbose':
         options.verbose = true;
@@ -160,89 +189,156 @@ function parseArgs(argv: string[]): Options {
   return options;
 }
 
-/** Makes a queue on the sync server and resolves to its url once the server has it. */
-async function makeQueue(title: string, sync: string) {
-  await initSubduction();
-  const repo = new Repo({ network: [], subductionWebsocketEndpoints: [sync] } as any);
-  const handle = repo.create<TaskQueueDoc & { '@patchwork': { type: string } }>({
-    '@patchwork': { type: QUEUE_DATATYPE_ID },
-    title,
-    activeRouter: null,
-    pending: [],
-    done: [],
-    doneSet: {},
-    jobs: {},
-  });
-  await repo.flush?.();
-  // long enough for the server to have it; the threads' Repos find it there
-  await new Promise((r) => setTimeout(r, 3_000));
-  return handle.url as string;
+const isAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: there is a process, someone else's
+    return (error as NodeJS.ErrnoException)?.code === 'EPERM';
+  }
+};
+
+/**
+ * Makes this process the one host on `dataDir`, or says why not. A pid file
+ * left by a host that died is taken over. Returns how to let go.
+ */
+function holdDataDir(dataDir: string): () => void {
+  const file = join(dataDir, 'host.pid');
+  for (let tries = 0; ; tries++) {
+    try {
+      writeFileSync(file, `${process.pid}\n`, { flag: 'wx' });
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST') {
+        throw error;
+      }
+      if (tries > 0) {
+        throw new Error(`another host has just started on ${dataDir}`);
+      }
+    }
+    const pid = Number(readFileSync(file, 'utf8').trim());
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && isAlive(pid)) {
+      throw new Error(
+        `another host is running on ${dataDir} (pid ${pid}). Stop it first, or give this one a --data-dir of its own. If pid ${pid} is not a tasks host, delete ${file}.`,
+      );
+    }
+    rmSync(file, { force: true }); // its host is gone
+  }
+  return () => {
+    try {
+      if (readFileSync(file, 'utf8').trim() === String(process.pid)) {
+        rmSync(file, { force: true });
+      }
+    } catch {
+      // gone already
+    }
+  };
 }
 
-/** Starts one of the three scripts in a thread, and "connects" to it as a tab would. */
-function startThread(script: string, name: string, options: Options) {
-  const worker = new Worker(new URL(script, import.meta.url), {
-    workerData: { name, verbose: options.verbose, codeDir: options.codeDir, local: options.local },
-    name,
-  });
-  const { port1, port2 } = new MessageChannel();
-  worker.postMessage({ type: 'connect', port: port2 }, [port2]);
-  worker.on('error', (error) => console.error(`[${name}] crashed:`, error));
-  return { worker, port: port1 as MessagePort };
+/** The pool's id, made the first time this directory is used and the same ever after. */
+function poolIdOf(dataDir: string): string {
+  const file = join(dataDir, 'pool-id');
+  try {
+    const id = readFileSync(file, 'utf8').trim();
+    if (id) {
+      return id;
+    }
+  } catch {
+    // not made yet
+  }
+  const id = crypto.randomUUID();
+  writeFileSync(file, `${id}\n`);
+  return id;
 }
 
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
+  const { dataDir } = options;
+  mkdirSync(dataDir, { recursive: true });
+  const release = holdDataDir(dataDir);
+  process.on('exit', release);
+  const poolId = poolIdOf(dataDir);
+
+  await initSubduction();
+  const repo = new Repo({
+    network: [],
+    storage: new NodeFSStorageAdapter(join(dataDir, 'pool')),
+    subductionWebsocketEndpoints: [options.sync],
+  } as any);
 
   const queues = [...options.queues];
   if (options.newQueue) {
-    const url = await makeQueue(options.newQueue, options.sync);
-    queues.push(url);
-    console.log(`made the queue "${options.newQueue}": ${url}`);
+    const queue = repo.create<Queue & { '@patchwork': { type: string } }>({
+      '@patchwork': { type: QUEUE_DATATYPE_ID },
+      title: options.newQueue,
+      jobs: {},
+    });
+    await repo.flush([queue.documentId]);
+    queues.push(queue.url);
+    console.log(`made the queue "${options.newQueue}": ${queue.url}`);
   }
 
-  const repoConfig: RepoConfig = { syncServerUrl: options.sync };
-  // a browser's workers belong to a person, and say so with their contact; these belong to a machine
-  const init = { type: 'init' as const, repoConfig, contactUrl: null as any, importMap: {}, baseURI: '' };
-  const setting: QueueSetting = options.acceptAny ? true : { packages: options.accept };
-  const taskQueues: TaskQueueSet = Object.fromEntries(queues.map((url) => [url, setting]));
-  const working = { type: 'update task queue set' as const, taskQueues };
-
-  const pool = startThread('./thread-pool.mjs', WORKER_POOL_NAME, options);
-  pool.port.postMessage(init satisfies MessageToWorkerPool);
-
-  const workers = Array.from({ length: options.workers }, (_, id) => {
-    const thread = startThread('./thread-worker.mjs', workerName(id), options);
-    // a worker says it exists to whoever started it, for the pool: pass it on
-    thread.port.on('message', (message) => pool.port.postMessage(message));
-    thread.port.postMessage(init satisfies MessageToWorker);
-    thread.port.postMessage(working satisfies MessageToWorker);
-    return thread;
+  const say = options.verbose ? (line: string) => console.log(`${new Date().toISOString()} ${line}`) : undefined;
+  const executor = new NodeExecutor({
+    script: new URL('./run-thread.mjs', import.meta.url),
+    dataDir,
+    settings: {
+      repoConfig: { syncServerUrl: options.sync },
+      place: { codeDir: options.codeDir ?? join(dataDir, 'code'), local: options.local },
+    },
+    taskBytes: (taskUrl) => repo.export(taskUrl),
+    say,
   });
-
-  const router = startThread('./thread-router.mjs', ROUTER_NAME, options);
-  router.port.postMessage(init satisfies MessageToRouter);
-  router.port.postMessage(working satisfies MessageToRouter);
-  pool.port.postMessage(working satisfies MessageToWorkerPool);
+  const acceptance: Acceptance = options.acceptAny ? 'any' : options.accept;
+  const pool = new Pool({
+    repo: repo as unknown as Docs,
+    id: poolId,
+    name: options.name,
+    slots: options.workers,
+    executor,
+    queues: Object.fromEntries(queues.map((url) => [url as AutomergeUrl, acceptance])),
+  });
 
   const whose = options.acceptAny
     ? 'any code'
     : `code from ${options.accept.length} package${options.accept.length === 1 ? '' : 's'}`;
   console.log(
-    `${hostname()}: ${options.workers} worker${options.workers === 1 ? '' : 's'} on ${queues.length} queue${queues.length === 1 ? '' : 's'}, running ${whose}`,
+    `${options.name}: pool ${poolId}, ${options.workers} slot${options.workers === 1 ? '' : 's'} on ${queues.length} queue${queues.length === 1 ? '' : 's'}, running ${whose}`,
   );
   for (const url of queues) {
-    console.log(`  ${url}`);
+    console.log(`  queue ${url}`);
+  }
+  if (!options.acceptAny) {
+    for (const url of options.accept) {
+      console.log(`  code from ${url}${options.local[url] ? ` (from ${options.local[url]})` : ''}`);
+    }
   }
 
-  const stop = () => {
-    for (const thread of [router, pool, ...workers]) {
-      thread.worker.terminate();
+  let stopping = false;
+  const stop = async (signal: string) => {
+    if (stopping) {
+      console.error(`${signal} again: exiting now`);
+      process.exit(1);
     }
+    stopping = true;
+    console.log(`${signal}: stopping ${pool.busy} run${pool.busy === 1 ? '' : 's'}`);
+    setTimeout(() => {
+      console.error(`not stopped after ${STOP_DEADLINE_MS / 1000} s: exiting all the same`);
+      process.exit(1);
+    }, STOP_DEADLINE_MS).unref();
+    try {
+      await pool.stop();
+      // sends the server what was saved, the runs' ends among it
+      await repo.shutdown();
+    } catch (error) {
+      console.error('stopping:', error);
+    }
+    console.log('stopped');
     process.exit(0);
   };
-  process.on('SIGINT', stop);
-  process.on('SIGTERM', stop);
+  process.on('SIGINT', () => void stop('SIGINT'));
+  process.on('SIGTERM', () => void stop('SIGTERM'));
 }
 
 main().catch((error) => {

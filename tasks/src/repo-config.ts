@@ -1,4 +1,8 @@
-import type { RepoConfig } from './protocol';
+/** What a Repo of the task system needs to be built (see webworker-lib.ts and tasks-repo.ts). */
+export interface RepoConfig {
+  /** The Subduction sync server this site's tabs are connected to. */
+  syncServerUrl: string;
+}
 
 // Patchwork doesn't say at runtime which sync server a site was built for, so
 // this is the one its bootloader falls back to. A site on another server sets
