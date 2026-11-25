@@ -205,17 +205,31 @@ each with what it waits on.
 ## Tests and probes
 
 `pnpm test` runs the unit tests (rules, client, pool, workers, views). The probes run real
-processes and say what they saw, one line per check:
+processes and say what they saw, one line per check or measurement:
 
-- `probes/node-run.mjs` (after `pnpm build:node`): Node hosts through the real sync server.
-  Latency; logs and progress heard; a throw fails once; cancel ends the thread in time and kills
-  a child process; SIGTERM and kill -9 lose the run and a restart takes it again; two hosts fail
-  over and share four tasks with one final run each; `served()`; a second host on one data
-  directory refuses; code a host does not accept is never taken.
+- `probes/node-run.mjs` (after `pnpm build:node`; `--only 1,16` runs only the checks named):
+  Node hosts through the real sync server, 16 checks. 1, latency of ten do-nothing tasks; 2,
+  logs and progress heard while running and kept; 3, a throw fails once; 4, a spin cancelled,
+  its thread ended within the grace; 5, a child process gone on cancel; 6, SIGTERM records the
+  run lost and exits in time, a restart runs it again, and a guarded task fails rather than run
+  twice; 7, kill -9 and a restart take it again; 8, two hosts fail over; 9, two hosts share four
+  tasks, one final run each; 10, `served()` lists a host and drops a silent one; 11, a second
+  host on one data directory refuses; 12, code a host does not accept is never taken; 13 to 15,
+  1 MB written by a task is found at the asker's first find, also from a host stopped the
+  moment its run reads succeeded; 16, a task whose document reaches the server after its
+  listing is taken within 1.5 s.
+- `probes/write-path.mjs` (after `pnpm build:node`): measures, and checks nothing, how a
+  document travels between a task on a Node host and its asker through the sync server, per
+  size: written by the task (`out`), made by the asker for the task (`in`), twenty at once
+  (`many`), with the task waiting for the server (`ack`), and from a host stopped the moment
+  the asker reads succeeded (`term`). `probes/write-path/browser.mjs` (after `pnpm build`, in
+  the chrome slot) measures `out`, `in` and `ack` for a browser's run worker.
 - `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
-  stand-in page in a throwaway Chrome profile. One pool per profile across tabs; a closed,
-  navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning code;
-  tasks writing through `ctx.repo`, with no server to reach; a pool worker that errors or dies;
-  Make my queue and Join.
+  stand-in page in a throwaway Chrome profile, with no sync server, 19 checks. One pool per
+  profile across tabs; a closed, navigated, frozen or hidden holder tab; a newer build taking
+  over; cancel of spinning code, also code that read and wrote through `ctx.repo`; two run
+  workers at once; a run that wrote with no server to reach says so; a pool worker that errors
+  or dies; `served()` and the queue browser; Make my queue and Join.
 - `probes/real-run.mjs`: the same in the real Patchwork, from a published copy of the package.
+  It has not been run: it needs a published copy.
 - `probes/solve-task.mjs`: a task that runs a child process, used by `node-run.mjs`.
