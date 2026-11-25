@@ -5,10 +5,11 @@
 // plainly that nothing was changed; then what a frame mounts of it is mounted
 // inside the site's own tool-storage provider (a `patchwork-view` of
 // `patchwork-tool-storage-provider` on the account, as the frames mount it):
-// its background component, which starts the page's pool host, and its badge,
-// whose Make my queue makes the profile's own queue. That queue is then asked
-// for tasks through the client (src/task-client.js, bundled here and put on
-// the page), from this tab's tasks Repo and from the site's own.
+// its background component, which starts the page's pool host (and, with no
+// queue served yet, no pool worker), and its badge, whose Make my queue makes
+// the profile's own queue. That queue is then asked for tasks through the
+// client (src/task-client.js, bundled here and put on the page), from this
+// tab's tasks Repo and from the site's own.
 //
 // What only the real site has, and this checks: the site's Repo (a keyhive
 // one) beside the task system's plain ones; its import map; code kept in
@@ -22,6 +23,15 @@
 //
 // Nothing here is written anywhere a person would see: the account, its
 // module settings and the queue all belong to the throwaway profile.
+//
+// What counts as an error of the task system, any one of which fails the
+// run: in a worker, every uncaught exception and console error of a worker
+// loaded from the package (the pool worker, the run workers) or started by
+// one, whatever it says, since nothing else runs there; in the page, an
+// uncaught exception or console error with a stack frame in one of the
+// package's files or in this probe's copy of the client, or whose text begins
+// with "tasks:" or "pool:", which every line the package logs begins with.
+// The page's other errors are the site's, and only recorded.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -44,17 +54,20 @@ const J = JSON.stringify;
 const PKG_ID = pkg.slice("automerge:".length);
 
 // The asker's client, as one script that leaves it on `window.taskClient`.
-const client = (
-  await build({
-    entryPoints: [resolve(HERE, "../src/task-client.js")],
-    bundle: true,
-    write: false,
-    format: "iife",
-    globalName: "taskClient",
-    platform: "browser",
-    target: "es2022",
-  })
-).outputFiles[0].text;
+// Named, so that its frames in a stack say they are the task system's.
+const CLIENT_URL = "probe-task-client.js";
+const client =
+  (
+    await build({
+      entryPoints: [resolve(HERE, "../src/task-client.js")],
+      bundle: true,
+      write: false,
+      format: "iife",
+      globalName: "taskClient",
+      platform: "browser",
+      target: "es2022",
+    })
+  ).outputFiles[0].text + `\n//# sourceURL=${CLIENT_URL}`;
 
 const b = await browser({ root: HERE, port: Number(arg("--port", 4987)), cdp: Number(arg("--cdp", 9987)), page: "/cdp.mjs", timeout: (WAIT + 300) * 1000 });
 const list = checklist();
@@ -63,21 +76,53 @@ const within = (ms, p, what) => Promise.race([p, new Promise((_, no) => setTimeo
 const js = (expr, what = "the page", ms = 60_000) => within(ms, b.js(expr), what);
 const report = { package: pkg };
 
+/** Whether a script's url (or a text naming one) is one of the package's files, as the site serves them, or this probe's copy of the client. */
+const ofPackage = (url) => typeof url === "string" && (url.includes(`automerge%3A${PKG_ID}`) || url.includes(`automerge:${PKG_ID}`) || url.includes(CLIENT_URL));
+
 // Every dedicated worker the page starts, and the workers they start: where
-// each loaded from, and when it ended (its session detached).
+// each loaded from, which worker started it, and when it ended (its session
+// detached). The errors of the task system's workers, and of the page.
 const workers = new Map();
-const workerErrors = [];
+const workerErrors = []; // of the task system's workers
+const otherWorkerErrors = [];
+const pageErrors = []; // the task system's, in the page
+const otherPageErrors = [];
+/** Whether the worker of this session is the task system's: loaded from the package, or started by a worker that is. */
+const ofTaskSystem = (sessionId) => {
+  const w = workers.get(sessionId);
+  return !!w && (ofPackage(w.url) || (!!w.parent && ofTaskSystem(w.parent)));
+};
+/** An uncaught exception or console error: its text, and the urls of its stack's frames; null for any other message. */
+const errorOf = (m) => {
+  if (m.method === "Runtime.exceptionThrown") {
+    const d = m.params.exceptionDetails ?? {};
+    const text = d.exception?.description ?? d.text ?? "";
+    return { text, urls: [d.url, ...(d.stackTrace?.callFrames ?? []).map((f) => f.url)] };
+  }
+  if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") {
+    const text = m.params.args.map((a) => a.value ?? a.description).join(" ");
+    return { text, urls: (m.params.stackTrace?.callFrames ?? []).map((f) => f.url) };
+  }
+  return null;
+};
 b.on((m) => {
   if (m.method === "Target.attachedToTarget" && m.params.targetInfo.type === "worker") {
     const { sessionId, targetInfo } = m.params;
-    workers.set(sessionId, { url: targetInfo.url, at: Date.now(), gone: null });
+    workers.set(sessionId, { url: targetInfo.url, at: Date.now(), gone: null, parent: m.sessionId ?? null });
     b.send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId).catch(() => {});
     b.send("Runtime.enable", {}, sessionId).catch(() => {});
   }
   if (m.method === "Target.detachedFromTarget" && workers.has(m.params.sessionId)) workers.get(m.params.sessionId).gone = Date.now();
-  if (m.sessionId && workers.has(m.sessionId)) {
-    if (m.method === "Runtime.exceptionThrown") workerErrors.push(`${workers.get(m.sessionId).url.split("/").at(-1)}: ${m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text}`.slice(0, 300));
-    if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") workerErrors.push(`${workers.get(m.sessionId).url.split("/").at(-1)}: ${m.params.args.map((a) => a.value ?? a.description).join(" ")}`.slice(0, 300));
+  const error = errorOf(m);
+  if (!error) return;
+  if (m.sessionId) {
+    if (!workers.has(m.sessionId)) return;
+    const line = `${workers.get(m.sessionId).url.split("/").at(-1)}: ${error.text}`.slice(0, 300);
+    (ofTaskSystem(m.sessionId) ? workerErrors : otherWorkerErrors).push(line);
+  } else {
+    // A stack's frames, or the stack written out in an exception's text, or the package's own prefix.
+    const ours = error.urls.some(ofPackage) || ofPackage(error.text) || /^(tasks|pool): /.test(error.text);
+    (ours ? pageErrors : otherPageErrors).push(error.text.slice(0, 300));
   }
 });
 const kind = (url) => (/pool-worker-[\w-]+\.js/.test(url) ? "pool" : /run-worker-entry-[\w-]+\.js/.test(url) ? "run" : "other");
@@ -202,6 +247,20 @@ try {
     })()`);
     const offered = await b.waitFor(`!!document.querySelector('#probe-badge button[data-offer="make"]')`, 30_000, 250);
     const storageBefore = await js(`window.taskClient.storageUrlOf(window.accountDocHandle.doc())`);
+    // Before the queue is made the account serves nothing, so the background
+    // component, mounted, asks for no lock and starts no pool worker.
+    const idle = await b.waitFor("Object.values(window.patchworkTasks?.poolHosts ?? {})[0]?.status().state === 'serves nothing'", 15_000, 250);
+    const idleOut = {
+      host: await status(),
+      poolWorkers: live("pool").length,
+      lock: await js(`navigator.locks.query().then((q) => [...q.held, ...q.pending].filter((l) => l.name === "patchwork-tasks-pool").length)`),
+    };
+    report.servingNothing = idleOut;
+    check(
+      "serving nothing, the background component asks for no lock and starts no pool worker, and its host says it serves nothing",
+      !!idle && storageBefore === null && idleOut.poolWorkers === 0 && idleOut.lock === 0,
+      idleOut,
+    );
     await js(`document.querySelector('#probe-badge button[data-offer="make"]')?.click()`);
     const t0 = Date.now();
     const made = await b.waitFor(`(async () => { const C = window.taskClient; const s = C.storageUrlOf(window.accountDocHandle.doc()); if (!s) return false; return C.ownQueueOf((await window.repo.find(s)).doc()) ?? false; })()`, 30_000, 250);
@@ -434,9 +493,9 @@ try {
 } catch (err) {
   check("probe ran", false, String(err?.stack ?? err));
 }
-const pageErrors = b.logs.filter((l) => /^(error|exception)/i.test(l) && /task/i.test(l));
-check("no page errors from the task system", pageErrors.length === 0, pageErrors.slice(0, 10));
-report.workerErrors = workerErrors.slice(0, 20);
+check("no errors from the task system in the page", pageErrors.length === 0, pageErrors.slice(0, 10));
+check("no errors in the task system's workers (the pool worker, the run workers, and any they start)", workerErrors.length === 0, workerErrors.slice(0, 10));
+report.otherErrors = { page: otherPageErrors.slice(0, 20), workers: otherWorkerErrors.slice(0, 20) };
 report.workers = [...workers.values()].map((w) => ({ path: new URL(w.url).pathname.split("/").slice(-1)[0], kind: kind(w.url), lived: w.gone ? w.gone - w.at : null }));
 if (process.argv.includes("--debug")) report.pageLogs = b.logs.filter((l) => /task|pool|worker|module|error|exception/i.test(l)).slice(-80).map((l) => l.slice(0, 300));
 console.log(J({ ...report, checks: list.checks, details: list.details }, null, 2));
