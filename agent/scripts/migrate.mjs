@@ -5,11 +5,17 @@
  *
  *   node scripts/migrate.mjs [--dry] [--sync wss://…] automerge:<url> [more…]
  *
- * Each URL is a session, a workflow plan, or a folder. Folders are walked,
- * and from every session and plan found the others they name are followed:
- * a plan's orchestrator and steps, a session's plan, its side threads and
- * the documents it made. Point it at an account's root folder to reach
- * everything filed there.
+ * Each URL is an account, a folder, a session or a workflow plan. Point it at
+ * an account document to reach everything the agent keeps for that account:
+ *
+ *   - what is filed under its root folder, every folder walked;
+ *   - the session the sidebar keeps for a document, on the document itself
+ *     (`@patchwork.agent`, ui/panel.js), for every document met on the way;
+ *   - the floating box's list of sessions, in the account's tool storage
+ *     (ui/ambient.js);
+ *   - and from every session and plan found, the others they name: a plan's
+ *     orchestrator and steps, a session's plan, its side threads and the
+ *     documents it made.
  *
  * `--dry` changes nothing and says what it would change. Without it, each
  * document is changed in one write, and the script waits for the sync server
@@ -42,7 +48,7 @@ const FIND_MS = Number(option("timeout", 20000))
 const SETTLE_MS = Number(option("settle", 15000))
 
 if (!roots.length) {
-  console.error("Usage: node scripts/migrate.mjs [--dry] [--sync wss://…] automerge:<session, plan or folder> [more…]")
+  console.error("Usage: node scripts/migrate.mjs [--dry] [--sync wss://…] automerge:<account, folder, session or plan> [more…]")
   process.exit(2)
 }
 
@@ -57,7 +63,7 @@ const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] })
 const typeOf = (doc) => doc?.["@patchwork"]?.type ?? null
 const bare = (url) => String(url).split("#")[0]
 const seen = new Set()
-const counts = { sessions: 0, migrated: 0, current: 0, plans: 0, plansMigrated: 0, ledgers: 0, folders: 0, unreachable: 0 }
+const counts = { sessions: 0, migrated: 0, current: 0, plans: 0, plansMigrated: 0, ledgers: 0, folders: 0, documents: 0, unreachable: 0 }
 
 async function open(url) {
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timed out")), FIND_MS))
@@ -75,6 +81,18 @@ function named(doc) {
     urls.push(doc.sessionUrl, doc.sourcesFolderUrl)
     for (const step of doc.steps ?? []) urls.push(step.sessionUrl, ...(step.previous ?? []).map((p) => p?.sessionUrl))
   }
+  return urls.filter((url) => typeof url === "string" && url.startsWith("automerge:"))
+}
+
+/** The floating box's entry in an account's tool storage (ui/ambient.js STORAGE_TOOL_ID). */
+const AMBIENT_STORAGE = "agent-ambient"
+
+/** Where sessions are kept that no folder, session or plan names. */
+function attached(doc) {
+  // The sidebar's session for this document, whatever the document is.
+  const urls = [doc?.["@patchwork"]?.agent]
+  if (typeOf(doc) === "account") urls.push(doc.rootFolderUrl, doc.toolStorage?.[AMBIENT_STORAGE])
+  if (typeOf(doc) === "patchwork:tool-storage") urls.push(doc.sessionUrl, ...(Array.isArray(doc.sessions) ? doc.sessions : []))
   return urls.filter((url) => typeof url === "string" && url.startsWith("automerge:"))
 }
 
@@ -118,18 +136,17 @@ async function visit(url, path) {
   } else if (Array.isArray(doc?.docs)) {
     counts.folders++
     for (const entry of doc.docs) if (entry?.url) await visit(entry.url, `${path}/${entry.name ?? "?"}`)
-    return
   } else {
-    return
+    counts.documents++
   }
-  for (const next of named(doc)) await visit(next, `${path} → ${type}`)
+  for (const next of [...named(doc), ...attached(doc)]) await visit(next, `${path} → ${type ?? "document"}`)
 }
 
 for (const root of roots) await visit(root, bare(root))
 
 console.log(
   `\n${counts.sessions} sessions (${counts.migrated} ${DRY ? "to migrate" : "migrated"}, ${counts.current} already current), ` +
-    `${counts.plans} plans (${counts.plansMigrated} ${DRY ? "to migrate" : "migrated"}, ${counts.ledgers} with a ledger), ${counts.folders} folders, ${counts.unreachable} unreachable.`,
+    `${counts.plans} plans (${counts.plansMigrated} ${DRY ? "to migrate" : "migrated"}, ${counts.ledgers} with a ledger), ${counts.folders} folders, ${counts.documents} other documents, ${counts.unreachable} unreachable.`,
 )
 if (!DRY && (counts.migrated || counts.plansMigrated)) {
   console.log(`Waiting ${Math.round(SETTLE_MS / 1000)} s for the sync server to take the changes…`)
