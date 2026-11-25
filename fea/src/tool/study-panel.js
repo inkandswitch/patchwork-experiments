@@ -896,7 +896,9 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
       }
       case "run": {
         el.disabled = true;
-        return model.runStudy(ctx()).then((r) => {
+        // the machines this panel already hears serving the queue: listening afresh would hold the click up to a beat
+        const heard = local.pools.length && local.serverFor === study().server ? local.pools : null;
+        return model.runStudy({ ...ctx(), ...(heard ? { hear: async () => heard } : {}) }).then((r) => {
           if (r.ok) {
             local.tab = "results";
             local.active = null;
