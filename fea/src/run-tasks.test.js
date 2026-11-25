@@ -58,7 +58,7 @@ describe("stopping", () => {
     expect(taskState(task, allHeard)).toBe("cancelled");
     expect(queue.doc().jobs).toEqual({});
     expect(JSON.stringify(run.doc())).toBe(before);
-    expect(await lookAtTask(repo, run.doc())).toEqual({ state: "cancelled", error: null });
+    expect(await lookAtTask(repo, run.doc())).toEqual({ state: "cancelled", error: null, runs: task.runs });
   });
   it("a running run: the stop follows its run in the list, and the task reads stopping while that run is heard", async () => {
     const run = newRunDoc();
@@ -95,16 +95,16 @@ describe("stopping", () => {
 });
 
 describe("reading a run's task", () => {
-  it("one look, with every open run counted as going on", async () => {
+  it("one look, with every open run counted as going on, and the task's runs", async () => {
     const run = newRunDoc();
     expect(await lookAtTask(repo, run.doc())).toBeNull(); // names no task yet
     const taskUrl = await askRun(repo, queue.url, run);
-    expect(await lookAtTask(repo, run.doc())).toEqual({ state: "waiting", error: null });
+    expect(await lookAtTask(repo, run.doc())).toEqual({ state: "waiting", error: null, runs: [] });
     const task = await repo.find(taskUrl);
     task.change((d) => d.runs.push({ id: "r1", pool: "p", start: 1 }));
-    expect(await lookAtTask(repo, run.doc())).toEqual({ state: "running", error: null });
+    expect(await lookAtTask(repo, run.doc())).toEqual({ state: "running", error: null, runs: [{ id: "r1", pool: "p", start: 1 }] });
     task.change((d) => (d.runs[0] = { id: "r1", pool: "p", start: 1, end: 2, status: "failed", logs: [{ timestampMillis: 2, message: "why" }] }));
-    expect(await lookAtTask(repo, run.doc())).toEqual({ state: "failed", error: "why" });
+    expect(await lookAtTask(repo, run.doc())).toMatchObject({ state: "failed", error: "why" });
   });
   it("null for a task that can't be read here, or a document that isn't a task", async () => {
     const run = newRunDoc();

@@ -166,16 +166,32 @@ export function markInterrupted(run, now) {
  *
  * `note` is a few words beside the status, for what is under way and isn't
  * a status of its own (cancelling, a machine not heard from).
+ *
+ * Read from the task: its state, its error, and whether a machine ever took
+ * it (a record in its list with a pool; a stop someone appended has none).
+ * Whether it was taken is read from the task, not from the run doc's status,
+ * because the two documents travel separately: a run doc can say more than
+ * its task has yet, and a follower reads a task it hasn't loaded yet as
+ * waiting, with no runs.
+ * - cancelled: cancelled; "before it started" when no machine ever took it.
+ * - failed: failed, with the task's error.
+ * - stopping (cancelled, and a run still has it): the doc's, "cancelling…".
+ * - stalled (a run has it and isn't heard): the doc's, with a note saying so.
+ * - waiting, and a machine took it once: that machine stopped without it,
+ *   and a run taken up again is never solved (run-task.mjs's guard), so the
+ *   note says to run it again. Waiting and never taken: the doc's, no note.
+ * - running, succeeded (the doc's own ending is on its way), missing: the doc's.
  * @param {{ status: string, error?: string | null }} run  the run doc
- * @param {{ state: string, error?: string | null } | null} task  the task's state as its reader has it (task-client.js's watch, or taskState and taskError), or null while unknown
+ * @param {{ state: string, error?: string | null, runs?: { pool?: string }[] } | null} task  the task as its reader has it (task-client.js's watch view, or taskState, taskError and the task's runs), or null while unknown
  * @returns {{ status: string, error: string | null, note: string | null }}
  */
 export function shownRun(run, task) {
   const status = run?.status ?? "queued";
   if (isTerminal(status) || !task) return { status, error: run?.error ?? null, note: null };
+  const taken = (task.runs ?? []).some((r) => typeof r?.pool === "string");
   switch (task.state) {
     case "cancelled":
-      return { status: "cancelled", error: null, note: status === "queued" ? "cancelled before it started" : null };
+      return { status: "cancelled", error: null, note: taken ? null : "cancelled before it started" };
     case "failed":
       return { status: "failed", error: task.error ?? "it failed", note: null };
     case "stopping":
@@ -183,8 +199,7 @@ export function shownRun(run, task) {
     case "stalled":
       return { status, error: null, note: "the machine running it isn't heard from" };
     case "waiting":
-      // a run doc past queued whose task waits: its machine stopped mid-run, and taken up again it is not solved again (NOT_RESTARTED)
-      return { status, error: null, note: status === "queued" ? null : "the machine running it stopped; it won't be solved again, so run it again" };
+      return { status, error: null, note: taken ? "the machine running it stopped; it won't be solved again, so run it again" : null };
     default:
       return { status, error: null, note: null };
   }

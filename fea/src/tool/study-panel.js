@@ -210,7 +210,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
         run.server,
         url,
         (view) => {
-          local.tasks.set(url, { state: view.state, error: view.error });
+          local.tasks.set(url, { state: view.state, error: view.error, runs: view.runs });
           render();
         },
         run.task ? { from: run.task } : {},

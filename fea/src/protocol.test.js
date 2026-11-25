@@ -131,34 +131,49 @@ describe("markInterrupted: a run taken up again after its machine stopped mid-ru
 });
 
 // Every run status against every state a task can be read in (and none
-// known yet). Written out whole, row by row: what a person sees for each.
+// known yet), for a task a machine took once and for one no machine ever
+// took. Written out whole, row by row: what a person sees for each.
 describe("shownRun: the status a person sees, from the run doc and its task", () => {
-  const TASK_STATES = [null, "waiting", "running", "stalled", "stopping", "succeeded", "failed", "cancelled"];
+  const TASK_STATES = [null, "missing", "waiting", "running", "stalled", "stopping", "succeeded", "failed", "cancelled"];
+  // a run a machine took (and lost); a stop someone appended, which no machine took
+  const TAKEN = [{ id: "r1", pool: "p", start: 0, end: 1, status: "lost" }];
+  const STOP = { id: "s", start: 0, end: 0, status: "cancelled" };
   const doc = (status) => ({ status, error: status === "failed" ? "the run's own error" : null });
-  const task = (state) => (state === null ? null : { state, error: state === "failed" ? "the task's error" : null });
+  const task = (state, runs) => (state === null ? null : { state, error: state === "failed" ? "the task's error" : null, runs });
   const as = (status, error = null, note = null) => ({ status, error, note });
   const CANCELLING = "cancelling…";
   const UNHEARD = "the machine running it isn't heard from";
   const STOPPED = "the machine running it stopped; it won't be solved again, so run it again";
-  // [run status] → the shown value for each task state, in TASK_STATES' order
-  const TABLE = {
-    queued: [as("queued"), as("queued"), as("queued"), as("queued", null, UNHEARD), as("queued", null, CANCELLING), as("queued"), as("failed", "the task's error"), as("cancelled", null, "cancelled before it started")],
-    meshing: [as("meshing"), as("meshing", null, STOPPED), as("meshing"), as("meshing", null, UNHEARD), as("meshing", null, CANCELLING), as("meshing"), as("failed", "the task's error"), as("cancelled")],
-    solving: [as("solving"), as("solving", null, STOPPED), as("solving"), as("solving", null, UNHEARD), as("solving", null, CANCELLING), as("solving"), as("failed", "the task's error"), as("cancelled")],
-    post: [as("post"), as("post", null, STOPPED), as("post"), as("post", null, UNHEARD), as("post", null, CANCELLING), as("post"), as("failed", "the task's error"), as("cancelled")],
-    // a run doc that says how it ended is the answer, whatever its task says
+  const BEFORE = "cancelled before it started";
+  // a run doc that says how it ended is the answer, whatever its task says
+  const ended = {
     done: TASK_STATES.map(() => as("done")),
     failed: TASK_STATES.map(() => as("failed", "the run's own error")),
     cancelled: TASK_STATES.map(() => as("cancelled")),
   };
+  // [run status] → the shown value for each task state, in TASK_STATES' order
+  const going = (s, { waiting, cancelled }) => [as(s), as(s), waiting, as(s), as(s, null, UNHEARD), as(s, null, CANCELLING), as(s), as("failed", "the task's error"), cancelled];
+  const takenRow = (s) => going(s, { waiting: as(s, null, STOPPED), cancelled: as("cancelled") });
+  // never taken: waiting says nothing more (a run doc ahead of its task's news, or a task not loaded yet), and a cancel came before any start
+  const neverRow = (s) => going(s, { waiting: as(s), cancelled: as("cancelled", null, BEFORE) });
+  const TABLES = {
+    "a machine took it once": { runs: TAKEN, table: { queued: takenRow("queued"), meshing: takenRow("meshing"), solving: takenRow("solving"), post: takenRow("post"), ...ended } },
+    "no machine took it": { runs: [], table: { queued: neverRow("queued"), meshing: neverRow("meshing"), solving: neverRow("solving"), post: neverRow("post"), ...ended } },
+    "only a stop": { runs: [STOP], table: { queued: neverRow("queued"), meshing: neverRow("meshing"), solving: neverRow("solving"), post: neverRow("post"), ...ended } },
+  };
   it("covers every run status", () => {
-    expect(Object.keys(TABLE)).toEqual([...STATUSES]);
+    for (const { table } of Object.values(TABLES)) expect(Object.keys(table)).toEqual([...STATUSES]);
   });
-  for (const status of STATUSES)
-    for (const [i, state] of TASK_STATES.entries())
-      it(`a ${status} run doc, its task ${state ?? "not known yet"}`, () => {
-        expect(shownRun(doc(status), task(state))).toEqual(TABLE[status][i]);
-      });
+  for (const [taken, { runs, table }] of Object.entries(TABLES))
+    for (const status of STATUSES)
+      for (const [i, state] of TASK_STATES.entries())
+        it(`a ${status} run doc, its task ${state ?? "not known yet"}, ${taken}`, () => {
+          expect(shownRun(doc(status), task(state, runs))).toEqual(table[status][i]);
+        });
+  it("a machine's run before or after a stop counts as taken: cancelled, not 'before it started'", () => {
+    expect(shownRun(doc("queued"), task("cancelled", [{ id: "r1", pool: "p", start: 0 }, STOP]))).toEqual(as("cancelled"));
+    expect(shownRun(doc("queued"), task("cancelled", [STOP, { id: "r1", pool: "p", start: 0, end: 1, status: "cancelled" }]))).toEqual(as("cancelled"));
+  });
   it("a failed task with no reason says it failed; a run doc not here yet reads queued", () => {
     expect(shownRun(doc("solving"), { state: "failed" })).toEqual(as("failed", "it failed"));
     expect(shownRun(undefined, null)).toEqual(as("queued"));

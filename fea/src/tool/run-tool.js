@@ -30,7 +30,7 @@ export default function RunTool(handle, element) {
           first.server,
           handle.url,
           (view) => {
-            task = { state: view.state, error: view.error };
+            task = { state: view.state, error: view.error, runs: view.runs };
             render();
           },
           first.task ? { from: first.task } : {},
