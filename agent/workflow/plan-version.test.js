@@ -12,6 +12,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initPlan, newStep, STEP, PLAN_VERSION, PlanVersionError, versionNote, isCurrent } from "./plan.js"
+import { AgentWorkflowDatatype } from "./datatype.js"
 import { WorkflowDriver, _resetDrivers } from "./driver.js"
 import { workflowAddSteps, workflowEditSteps, workflowKeep, workflowDecide, workflowBudget, workflowReopen, workflowStop } from "./tools.js"
 import { initSession } from "../session/schema.js"
@@ -91,6 +92,18 @@ describe("a writer of a plan", () => {
       await attempt
     }
     expect(heads()).toEqual(before)
+  })
+})
+
+describe("a plan made from Patchwork's own menu", () => {
+  it("is the shape workflow_start makes, at this version, with nothing to run", () => {
+    const made = {}
+    AgentWorkflowDatatype.init(made)
+    const started = {}
+    initPlan(started, { title: "T", goal: "G" })
+    expect(Object.keys(made).sort()).toEqual(Object.keys(started).sort())
+    expect(isCurrent(made)).toBe(true)
+    expect(made).toMatchObject({ status: "done", steps: [], ledgerUrl: null, told: {}, runs: 1 })
   })
 })
 

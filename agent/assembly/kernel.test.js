@@ -436,6 +436,8 @@ describe("the legitimate writers", () => {
       runnerUrl: "runner-test",
       ctx: { repo: w.repo, element: "a" },
       startStepSession,
+      // One runner, nobody to race: no wait before believing a claim.
+      confirmMs: 0,
       buildToolset: (d) => buildToolset(d, { registry }),
       getProvider: async () => null,
       canRun: () => true,

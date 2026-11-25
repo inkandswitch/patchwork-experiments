@@ -113,6 +113,7 @@ describe("the session, once an image is refused", () => {
     ])
     const store = memoryStore(doc)
     await new SessionRunner({
+      confirmMs: 0,
       store,
       buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
       getProvider: async () => provider,

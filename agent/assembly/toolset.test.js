@@ -118,6 +118,7 @@ describe("the toolset a session gets", () => {
     }
     let built = 0
     const runner = new SessionRunner({
+      confirmMs: 0,
       builtins: BUILTIN_TOOLS,
       store: memoryStore(doc),
       ctx: { repo },
@@ -248,6 +249,7 @@ describe("the plugins a research step admits", () => {
     let entries = [KINDS[1][1]]
     let asked = 0
     const runner = new SessionRunner({
+      confirmMs: 0,
       builtins: BUILTIN_TOOLS,
       store: memoryStore(doc),
       ctx: { repo },
@@ -277,6 +279,7 @@ describe("the plugins a research step admits", () => {
     const provider = makeMock([[{ type: "call", id: "c1", name: "declared_tool", input: {} }], [{ type: "text", delta: "done" }]])
     const fetchImpl = Object.assign(async () => null, { policy: { deny: [], direct: false, dns: false } })
     const runner = new SessionRunner({
+      confirmMs: 0,
       builtins: BUILTIN_TOOLS,
       store: handleStore(handle),
       // A runner's context with things of the person's in it, none of which the plugin may see.

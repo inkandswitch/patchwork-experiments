@@ -41,6 +41,7 @@ describe("prompt caching", () => {
     const store = memoryStore(doc)
     const runner = new SessionRunner({
       store,
+      confirmMs: 0,
       buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
       getProvider: async () => provider,
       canRun: () => true,

@@ -55,6 +55,7 @@ describe("a call cut off by a reload", () => {
     const executed = []
     const provider = makeMock([[{ type: "text", delta: "It was interrupted; I checked and redid it." }]])
     const runner = new SessionRunner({
+      confirmMs: 0,
       store,
       runnerUrl: "tab-new",
       buildToolset: async () => ({ tools: [], schemas: [], get: () => ({ id: "doc_edit", where: "worker", risk: "edit", execute: async () => executed.push("ran") }) }),
@@ -112,6 +113,7 @@ describe("what a session has spent", () => {
     const store = memoryStore(doc)
     const provider = makeMock([[{ type: "text", delta: "hello" }, { type: "usage", in: 1_000_000, out: 0 }]])
     const runner = new SessionRunner({
+      confirmMs: 0,
       store,
       buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
       getProvider: async () => provider,

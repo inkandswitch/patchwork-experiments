@@ -50,6 +50,7 @@ function pending() {
 
 function runnerOver(store, extra = {}) {
   return new SessionRunner({
+    confirmMs: 0,
     store,
     runnerUrl: "runner-test",
     buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
@@ -165,6 +166,7 @@ function sessionIn(w, { scope = null, workflow = null } = {}) {
 async function runOnce(w, handle) {
   const provider = makeMock([[{ type: "text", delta: "done" }]])
   const runner = new SessionRunner({
+    confirmMs: 0,
     ...AGENT,
     store: handleStore(handle),
     ctx: w.ctx,
