@@ -22,7 +22,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { cadboroDoc } from "../src/cadboro.js";
-import { fetchSpec, fetchKey } from "../src/fetch-spec.js";
+import { fetchRequest } from "../src/fetch-spec.js";
 import { STAGES } from "../src/fetch-task.js";
 import { readTerrainData, dataFits } from "../src/store.js";
 
@@ -101,14 +101,14 @@ try {
   const terrain = repo.create(smallTerrain());
   const other = repo.create(smallTerrain(64));
   await repo.flush();
-  const key = await fetchKey(terrain.url, fetchSpec(terrain.doc()));
+  const { input, key } = await fetchRequest(terrain.url, terrain.doc());
 
   // 1 and 2: the fetch, asked twice under its key while it runs
   const views = [];
   const t0 = Date.now();
-  const running = run(repo, Q, { importUrl: IMPORT_URL, input: { terrain: terrain.url }, key }, (v) => views.push({ at: Date.now() - t0, state: v.state, progress: v.progress, taskUrl: v.taskUrl, line: v.logs.at(-1)?.message }));
+  const running = run(repo, Q, { importUrl: IMPORT_URL, input, key }, (v) => views.push({ at: Date.now() - t0, state: v.state, progress: v.progress, taskUrl: v.taskUrl, line: v.logs.at(-1)?.message }));
   const first = await until(async () => views.find((v) => v.state === "running")?.taskUrl, 60000, "the fetch running");
-  const again = await ask(repo, Q, { importUrl: IMPORT_URL, input: { terrain: terrain.url }, key });
+  const again = await ask(repo, Q, { importUrl: IMPORT_URL, input, key });
   const stillRunning = views.at(-1).state === "running";
   check(2, "asking again under the same key while it runs is the same task", again.taskUrl === first && stillRunning, { first, again: again.taskUrl, stillRunning });
   let result = null;
@@ -132,10 +132,10 @@ try {
 
   // 3: a cancel mid-fetch
   const controller = new AbortController();
-  const otherKey = await fetchKey(other.url, fetchSpec(other.doc()));
+  const { input: otherInput, key: otherKey } = await fetchRequest(other.url, other.doc());
   const otherViews = [];
   const t1 = Date.now();
-  const cancelled = run(repo, Q, { importUrl: IMPORT_URL, input: { terrain: other.url }, key: otherKey }, (v) => otherViews.push({ at: Date.now() - t1, state: v.state, progress: v.progress, taskUrl: v.taskUrl }), controller.signal).then(
+  const cancelled = run(repo, Q, { importUrl: IMPORT_URL, input: otherInput, key: otherKey }, (v) => otherViews.push({ at: Date.now() - t1, state: v.state, progress: v.progress, taskUrl: v.taskUrl }), controller.signal).then(
     () => "resolved",
     (err) => String(err?.message ?? err),
   );
@@ -152,8 +152,8 @@ try {
 
   // 4: a different frame is a different key, and another task
   terrain.change((d) => (d.grid.x0 += 8));
-  const movedKey = await fetchKey(terrain.url, fetchSpec(terrain.doc()));
-  const moved = await ask(repo, Q, { importUrl: IMPORT_URL, input: { terrain: terrain.url }, key: movedKey });
+  const { input: movedInput, key: movedKey } = await fetchRequest(terrain.url, terrain.doc());
+  const moved = await ask(repo, Q, { importUrl: IMPORT_URL, input: movedInput, key: movedKey });
   await cancel(repo, Q, movedKey);
   check(4, "a different frame is a different key, and asking under it is another task", movedKey !== key && moved.taskUrl !== first, { key: key.slice(-12), movedKey: movedKey.slice(-12), first, moved: moved.taskUrl });
 

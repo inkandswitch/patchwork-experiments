@@ -58,3 +58,13 @@ export async function fetchKey(terrainUrl, spec) {
   const hash = await sha256Hex(new TextEncoder().encode(canonicalJson(spec)));
   return `terrain-fetch:${terrainUrl}:${hash}`;
 }
+
+/**
+ * What Fetch data asks for this Terrain doc now: the task's input (the doc
+ * and the spec) and the key it is asked under, both from one spec, so the
+ * task fetches exactly what its key names.
+ */
+export async function fetchRequest(terrainUrl, doc) {
+  const spec = fetchSpec(doc);
+  return { input: { terrain: terrainUrl, spec }, key: await fetchKey(terrainUrl, spec) };
+}

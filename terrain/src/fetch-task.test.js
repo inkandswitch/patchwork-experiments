@@ -3,9 +3,9 @@
 // fixture, with a stand-in for the network and a ctx like a pool's: what it
 // stores and returns, the two guards (the frame moved meanwhile; a stop), a
 // fetch error as a person reads it, and the key a fetch is asked under.
-import { describe, it, expect } from "vitest";
-import { fetchTerrain, MOVED, STAGES } from "./fetch-task.js";
-import { fetchSpec, fetchKey, canonicalJson } from "./fetch-spec.js";
+import { describe, it, expect, vi } from "vitest";
+import { fetchTerrain, MOVED, STAGES, UNREACHABLE } from "./fetch-task.js";
+import { fetchSpec, fetchKey, fetchRequest, canonicalJson } from "./fetch-spec.js";
 import { nceiUrl, OVERPASS, STOPPED } from "./fetch-data.js";
 import { readTerrainData, dataFits } from "./store.js";
 import { FakeRepo } from "./test/fake-repo.js";
@@ -52,14 +52,16 @@ function world() {
   const stages = [];
   const controller = new AbortController();
   const ctx = { repo, log: (...a) => lines.push(a.join(" ")), progress: (v) => stages.push(v), signal: controller.signal, key: "k", taskUrl: null, run: "r" };
-  return { repo, handle, ctx, lines, stages, controller };
+  // the input Fetch data asks with: the doc and what it asks for now
+  const input = () => ({ terrain: handle.url, spec: fetchSpec(handle.doc()) });
+  return { repo, handle, ctx, lines, stages, controller, input };
 }
 
 describe("the fetch task", () => {
   it("fetches what the doc asks for, stores it in file docs the doc points at, and returns their urls and a line, never the data", async () => {
-    const { repo, handle, ctx, lines, stages } = world();
+    const { repo, handle, ctx, lines, stages, input } = world();
     const net = network();
-    const result = await fetchTerrain({ terrain: handle.url }, ctx, net.fetch);
+    const result = await fetchTerrain(input(), ctx, net.fetch);
     expect(result).toEqual({ stored: true, message: expect.stringMatching(/^Done: 2 coastline ways, \d+ structures, \d+ marks; heights /), dem: expect.any(String), features: expect.any(String), layers: null, look: expect.any(String) });
     expect(JSON.stringify(result).length).toBeLessThan(1000);
     const d = handle.doc();
@@ -85,10 +87,10 @@ describe("the fetch task", () => {
   ];
   for (const [what, move] of moves) {
     it(`stores nothing when ${what} changed while it fetched, and says so in its log and result`, async () => {
-      const { repo, handle, ctx, lines } = world();
+      const { repo, handle, ctx, lines, input } = world();
       const net = network((kind) => void (kind === "dem" && handle.change(move)));
       const before = handle.doc();
-      const result = await fetchTerrain({ terrain: handle.url }, ctx, net.fetch);
+      const result = await fetchTerrain(input(), ctx, net.fetch);
       expect(result).toEqual({ stored: false, message: MOVED });
       expect(lines.at(-1)).toBe(MOVED);
       expect(handle.doc().data).toBeNull();
@@ -98,32 +100,92 @@ describe("the fetch task", () => {
   }
 
   it("stores nothing when the frame moves while the file docs are being made: the doc is looked at again in the change that points at them", async () => {
-    const { repo, handle, ctx } = world();
+    const { repo, handle, ctx, input } = world();
     const create2 = repo.create2.bind(repo);
     repo.create2 = async (doc) => {
       handle.change((d) => (d.grid.z0 -= 8));
       return create2(doc);
     };
-    const result = await fetchTerrain({ terrain: handle.url }, ctx, network().fetch);
+    const result = await fetchTerrain(input(), ctx, network().fetch);
     expect(result).toEqual({ stored: false, message: MOVED });
     expect(handle.doc().data).toBeNull();
   });
 
+  it("asked for a frame the doc no longer asks for when it starts: fetches nothing and stores nothing", async () => {
+    const { repo, handle, ctx, lines, input } = world();
+    const asked = input();
+    handle.change((d) => (d.grid.x0 += 8));
+    const net = network();
+    const result = await fetchTerrain(asked, ctx, net.fetch);
+    expect(result).toEqual({ stored: false, message: MOVED });
+    expect(lines).toEqual([MOVED]);
+    expect(net.asked).toEqual([]);
+    expect(handle.doc().data).toBeNull();
+    expect(repo.created).toEqual([]);
+  });
+
+  for (const newEndsFirst of [false, true]) {
+    it(`two fetches of one doc under different keys, the ${newEndsFirst ? "later" : "earlier"} asking's ending first: the doc points at the data it asks for now, and the earlier asking's stores nothing`, async () => {
+      const { handle, ctx, input } = world();
+      const old = input();
+      // the earlier fetch is under way, held at NCEI, when the doc comes to ask for OSM as of another date
+      // (another date and not another frame, so that the stand-in NCEI answers both)
+      let release;
+      const held = new Promise((resolve) => (release = resolve));
+      let reached;
+      const atNcei = new Promise((resolve) => (reached = resolve));
+      const oldRun = fetchTerrain(old, ctx, network((kind) => kind === "dem" && (reached(), held.then(() => undefined))).fetch);
+      await atNcei;
+      handle.change((d) => (d.osmDate = "2026-01-01T00:00:00Z"));
+      const moved = input();
+      expect(await fetchKey(moved.terrain, moved.spec)).not.toBe(await fetchKey(old.terrain, old.spec));
+      let oldResult;
+      let newResult;
+      if (newEndsFirst) {
+        newResult = await fetchTerrain(moved, ctx, network().fetch);
+        release();
+        oldResult = await oldRun;
+      } else {
+        release();
+        oldResult = await oldRun;
+        newResult = await fetchTerrain(moved, ctx, network().fetch);
+      }
+      expect(oldResult).toEqual({ stored: false, message: MOVED });
+      expect(newResult.stored).toBe(true);
+      expect(handle.doc().data.dem.url).toBe(newResult.dem);
+      expect(handle.doc().data.summary.osmBase).toBe("2026-01-01T00:00:00Z");
+    });
+  }
+
+  it("a terrain that cannot be had fails with a line a person reads, naming no url", async () => {
+    const { ctx } = world();
+    const missing = { terrain: "automerge:3mv3rTpAcL5aUfYiQqb1RnQkQi3P", spec: { origin: { lat: 0, lon: 0 } } };
+    const nowhere = { ...ctx, repo: { find: async () => ({ doc: () => undefined }) } };
+    vi.useFakeTimers();
+    try {
+      const failing = expect(fetchTerrain(missing, nowhere, network().fetch)).rejects.toThrow(UNREACHABLE);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await failing;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("stores when only what a fetch does not read changed meanwhile (title, exaggeration, places, wind)", async () => {
-    const { handle, ctx } = world();
+    const { handle, ctx, input } = world();
     const net = network((kind) => void (kind === "dem" && handle.change((d) => {
       d.title = "Renamed";
       d.exaggeration = 2;
       d.places = [];
       d.wind = { speed: 9, from: 90 };
     })));
-    const result = await fetchTerrain({ terrain: handle.url }, ctx, net.fetch);
+    const result = await fetchTerrain(input(), ctx, net.fetch);
     expect(result.stored).toBe(true);
     expect(handle.doc().data.dem.url).toBe(result.dem);
   });
 
   it("stopped mid-fetch, by a request that never answers and ignores its signal: rejects at once and stores nothing", async () => {
-    const { repo, handle, ctx, controller } = world();
+    const { repo, handle, ctx, controller, input } = world();
     let asked;
     const heard = new Promise((resolve) => (asked = resolve));
     const net = network((kind) => {
@@ -131,7 +193,7 @@ describe("the fetch task", () => {
       asked();
       return new Promise(() => {});
     });
-    const running = fetchTerrain({ terrain: handle.url }, ctx, net.fetch);
+    const running = fetchTerrain(input(), ctx, net.fetch);
     await heard;
     const t0 = performance.now();
     controller.abort("cancelled");
@@ -142,7 +204,7 @@ describe("the fetch task", () => {
   });
 
   it("stopped while it waits to ask Overpass again: rejects at once, without waiting out the retry or asking again", async () => {
-    const { repo, handle, ctx, controller, lines } = world();
+    const { repo, handle, ctx, controller, lines, input } = world();
     let busy;
     const heard = new Promise((resolve) => (busy = resolve));
     const net = network((kind) => {
@@ -150,7 +212,7 @@ describe("the fetch task", () => {
       busy();
       return new Response("busy", { status: 504 });
     });
-    const running = fetchTerrain({ terrain: handle.url }, ctx, net.fetch);
+    const running = fetchTerrain(input(), ctx, net.fetch);
     await heard;
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(lines).toContain("Overpass answered 504; trying again in 3 s");
@@ -163,24 +225,24 @@ describe("the fetch task", () => {
   });
 
   it("stopped before it starts: asks nothing and stores nothing", async () => {
-    const { repo, handle, ctx, controller } = world();
+    const { repo, handle, ctx, controller, input } = world();
     const net = network();
     controller.abort("cancelled");
-    await expect(fetchTerrain({ terrain: handle.url }, ctx, net.fetch)).rejects.toThrow(STOPPED);
+    await expect(fetchTerrain(input(), ctx, net.fetch)).rejects.toThrow(STOPPED);
     expect(net.asked).toEqual([]);
     expect(repo.created).toEqual([]);
   });
 
   it("a source's error fails it with the message a person sees (NCEI answered 500), and stores nothing", async () => {
-    const { repo, handle, ctx } = world();
+    const { repo, handle, ctx, input } = world();
     const net = network((kind) => (kind === "dem" ? new Response("oops", { status: 500 }) : undefined));
-    await expect(fetchTerrain({ terrain: handle.url }, ctx, net.fetch)).rejects.toThrow(/^NCEI answered 500$/);
+    await expect(fetchTerrain(input(), ctx, net.fetch)).rejects.toThrow(/^NCEI answered 500$/);
     expect(handle.doc().data).toBeNull();
     expect(repo.created).toEqual([]);
   });
 
   it("an input that names no terrain fails plainly", async () => {
-    const { ctx } = world();
+    const { ctx, input } = world();
     await expect(fetchTerrain({}, ctx, network().fetch)).rejects.toThrow("No terrain was named to fetch data for.");
     expect(OVERPASS.service).toMatch(/^https:/);
   });

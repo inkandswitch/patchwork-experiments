@@ -772,18 +772,21 @@ there, so its trees stand in OSM's woods at an assumed canopy.)
 ### How Fetch data runs (`src/fetch-task.js`)
 
 Fetch data is a task: `src/fetch-task.js`, whose input is the Terrain doc's
-url. The tool asks for it with the task kit's `doWork` (`src/task-client.js`
-and `src/task-rules.js`, copies of the tasks package's), under a key made of
-the doc's url and the SHA-256 of what the doc asks for (`src/fetch-spec.js`:
-the place, the grid, the datum, OSM's date, a layered place's heights and
-look). So:
+url and what the doc asks for (`fetchRequest` in `src/fetch-spec.js`: the
+place, the grid, the datum, OSM's date, a layered place's heights and look).
+The tool asks for it with the task kit's `doWork` (`src/task-client.js` and
+`src/task-rules.js`, copies of the tasks package's), under a key made of the
+doc's url and the SHA-256 of that same spec, so a task fetches exactly what
+its key names. So:
 
 - When one of the person's machines serves their own queue, the fetch runs
-  there: it finishes if the page closes, and two pages pressing Fetch for the same place and grid are one fetch. The
-  tool says so, and on opening shows a fetch already under way under the
+  there: closing the page does not stop it, and two pages pressing Fetch for
+  the same place and grid are one fetch. The tool says so, and on opening
+  shows a fetch already under way under the
   doc's key instead of offering another. Otherwise it runs in the page, and
   the tool says that closing the page stops it.
-- It stores only if the doc still asks for what was fetched: a frame moved
+- It stores only if the doc still asks for what it was asked for, looked at
+  when it starts and again in the change that stores: a frame moved
   meanwhile stores nothing, and the log says so. A changed frame is a new
   key, so a new fetch.
 - Cancel stops it wherever it runs; requests are given up and Overpass's

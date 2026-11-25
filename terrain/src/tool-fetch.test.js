@@ -74,7 +74,8 @@ describe("Fetch data", () => {
     expect(calls.doWork).toHaveLength(1);
     const { request, repo: asked } = calls.doWork[0];
     expect(asked).toBe(repo);
-    expect(request).toEqual({ importUrl: fetchTaskUrl(), input: { terrain: handle.url }, key: await fetchKey(handle.url, fetchSpec(handle.doc())) });
+    const spec = fetchSpec(handle.doc());
+    expect(request).toEqual({ importUrl: fetchTaskUrl(), input: { terrain: handle.url, spec }, key: await fetchKey(handle.url, spec) });
     expect(request.importUrl).toMatch(/\/src\/fetch-task\.js$/);
   });
 
@@ -89,7 +90,7 @@ describe("Fetch data", () => {
     expect(fetchButton.textContent).toBe("Fetching…");
     expect(cancelButton.hidden).toBe(false);
     expect($(".where").hidden).toBe(false);
-    expect($(".where").textContent).toBe(`${STAGES.fetching} Running in this page: closing it stops the fetch.`);
+    expect($(".where").textContent).toBe(`${STAGES.fetching} In this page: closing it stops the fetch.`);
     expect($(".log").textContent).toBe("Asking NCEI for 65 × 65 heights…");
     options.onProgress(view({ state: "succeeded", logs: lines("Asking NCEI for 65 × 65 heights…", "Storing…", "Done: 2 coastline ways") }));
     resolve({ stored: true, message: "Done: 2 coastline ways" });
@@ -100,26 +101,36 @@ describe("Fetch data", () => {
     expect(fetchButton.disabled).toBe(false);
   });
 
-  it("asked of the person's own queue: says it will finish even if this is closed", async () => {
+  it("asked of the person's own queue: says closing this does not stop it", async () => {
     const { $, fetchButton } = mounted();
     fetchButton.click();
     await settle();
     calls.doWork[0].options.onProgress(view({ taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P", progress: STAGES.storing }));
-    expect($(".where").textContent).toBe(`${STAGES.storing} Running on your own machines: it will finish even if you close this.`);
+    expect($(".where").textContent).toBe(`${STAGES.storing} On your own machines: closing this does not stop it.`);
     calls.doWork[0].options.onProgress(view({ taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P", state: "waiting" }));
-    expect($(".where").textContent).toBe("Waiting for one of your machines to take it up… Running on your own machines: it will finish even if you close this.");
+    expect($(".where").textContent).toBe("Waiting for one of your machines to take it up… On your own machines: closing this does not stop it.");
   });
 
-  it("Cancel aborts the work's signal, and the tool says nothing was stored", async () => {
+  it("Cancel aborts the work's signal, and the tool says it stopped", async () => {
     const { $, fetchButton, cancelButton } = mounted();
     fetchButton.click();
     await settle();
     cancelButton.click();
     expect(calls.doWork[0].options.signal.aborted).toBe(true);
     await settle();
-    expect($(".log").textContent).toBe("Stopped: nothing was stored.");
+    expect($(".log").textContent).toBe("Stopped.");
     expect($(".log").dataset.state).toBe("error");
     expect(cancelButton.hidden).toBe(true);
+  });
+
+  it("stopped from another page (its task ended cancelled): says it stopped, in words a person reads", async () => {
+    const { $, fetchButton } = mounted();
+    fetchButton.click();
+    await settle();
+    calls.doWork[0].options.onProgress(view({ taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P", state: "cancelled" }));
+    calls.doWork[0].reject(new Error("The task was cancelled"));
+    await settle();
+    expect($(".log").textContent).toBe("Stopped.");
   });
 
   it("a fetch that failed shows its message", async () => {
@@ -185,7 +196,7 @@ describe("a fetch already under way", () => {
     calls.watch[0].onChange(view({ key, taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P", progress: STAGES.fetching, logs: lines("Asking NCEI for 65 × 65 heights…") }));
     expect(fetchButton.disabled).toBe(true);
     expect(cancelButton.hidden).toBe(false);
-    expect($(".where").textContent).toBe(`${STAGES.fetching} Running on your own machines: it will finish even if you close this.`);
+    expect($(".where").textContent).toBe(`${STAGES.fetching} On your own machines: closing this does not stop it.`);
     expect($(".log").textContent).toBe("Asking NCEI for 65 × 65 heights…");
     cancelButton.click();
     expect(calls.cancel).toEqual([{ repo, queue, key }]);

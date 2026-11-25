@@ -5,10 +5,12 @@
 // otherwise in the page. So it touches no DOM, and imports nothing a worker
 // could not: everything it needs is in this package.
 //
-// Its input is { terrain: <the Terrain doc's url> }. It reads the doc for what
-// to fetch, fetches it (fetch-data.js), and stores it (store.js) only if the
-// doc still asks for what was fetched: a person may move the frame while the
-// fetch goes on, and data for the old frame must not land on the new one.
+// Its input is { terrain: <the Terrain doc's url>, spec: <what it asks for> }
+// (fetchRequest in fetch-spec.js), and its key is the SHA-256 of that spec, so
+// a task fetches exactly what its key names. It fetches the spec
+// (fetch-data.js) and stores it (store.js) only if the doc still asks for it:
+// a person may move the frame while the task waits or fetches, and data for
+// the old frame must not land on the new one.
 // What it returns is small, the file docs' urls and a line for a person;
 // the data itself is in those docs.
 //
@@ -28,8 +30,11 @@ export const STAGES = Object.freeze({
   storing: "Storing the data…",
 });
 
-/** What it says, and returns, when the doc came to ask for something else while it fetched. */
-export const MOVED = "The place or its settings changed while the data was being fetched, so nothing was stored. Fetch again for the new place.";
+/** What it says, and returns, when the doc came to ask for something else after it was asked. */
+export const MOVED = "The place or its settings changed after the data was asked for, so nothing was stored. Fetch again for the new place.";
+
+/** What it fails with when the Terrain doc cannot be had. */
+export const UNREACHABLE = "The terrain could not be opened to fetch its data.";
 
 /** The line a person sees when it is done. */
 export function doneLine(fetched) {
@@ -46,14 +51,21 @@ export function doneLine(fetched) {
  */
 export async function fetchTerrain(input, ctx, fetch = (...a) => globalThis.fetch(...a)) {
   const url = input?.terrain;
-  if (typeof url !== "string" || !url.startsWith("automerge:")) throw new Error("No terrain was named to fetch data for.");
+  const spec = input?.spec;
+  if (typeof url !== "string" || !url.startsWith("automerge:") || !spec || typeof spec !== "object") throw new Error("No terrain was named to fetch data for.");
   ctx.progress(STAGES.finding);
-  const handle = await findWhenThere(ctx.repo, url);
-  const spec = fetchSpec(handle.doc());
+  // what findWhenThere throws names the doc by its url, which is no message for a person
+  const handle = await findWhenThere(ctx.repo, url).catch(() => {
+    throw new Error(UNREACHABLE);
+  });
+  // asked for still: not stopped, and the doc wants what was asked for
+  const wanted = (doc) => !ctx.signal?.aborted && sameSpec(fetchSpec(doc), spec);
+  if (!ctx.signal?.aborted && !wanted(handle.doc())) {
+    ctx.log(MOVED);
+    return { stored: false, message: MOVED };
+  }
   ctx.progress(STAGES.fetching);
   const fetched = await fetchTerrainData(spec, { fetch, log: (line) => ctx.log(line), signal: ctx.signal });
-  // asked for still: not stopped, and the doc wants what was fetched
-  const wanted = (doc) => !ctx.signal?.aborted && sameSpec(fetchSpec(doc), spec);
   if (wanted(handle.doc())) {
     ctx.progress(STAGES.storing);
     ctx.log("Storing…");

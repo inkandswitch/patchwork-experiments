@@ -14,7 +14,7 @@ import css from "./tool.css?inline";
 import { NCEI } from "./fetch-data.js";
 import { readTerrainData, dataFits } from "./store.js";
 import fetchTerrainTask from "./fetch-task.js";
-import { fetchSpec, fetchKey } from "./fetch-spec.js";
+import { fetchRequest } from "./fetch-spec.js";
 import { cancel, doWork, inSamePackage, ownQueueOf, storageUrlOf, watch } from "./task-client.js";
 import { shape, HEIGHT_SCALE } from "./build.js";
 import { hexAt } from "./colors.js";
@@ -156,7 +156,8 @@ export default function TerrainTool(handle, element) {
     logEl.dataset.state = "";
     logEl.textContent = lines.join("\n");
     const stage = view.state === "waiting" || view.state === "stalled" ? "Waiting for one of your machines to take it up…" : view.state === "stopping" ? "Stopping…" : typeof view.progress === "string" ? view.progress : "";
-    const where = view.taskUrl ? "Running on your own machines: it will finish even if you close this." : "Running in this page: closing it stops the fetch.";
+    // Asked of the person's queue, it is theirs to stop, not this page's; whether it finishes is up to their machines.
+    const where = view.taskUrl ? "On your own machines: closing this does not stop it." : "In this page: closing it stops the fetch.";
     whereEl.hidden = !underWay(view.state);
     whereEl.textContent = [stage, where].filter(Boolean).join(" ");
   };
@@ -172,15 +173,15 @@ export default function TerrainTool(handle, element) {
     render();
     try {
       const repo = repoOf();
-      const input = { terrain: handle.url };
+      const { input, key } = await fetchRequest(handle.url, handle.doc());
       const importUrl = fetchTaskUrl();
       let result;
       if (importUrl) {
-        const key = await fetchKey(handle.url, fetchSpec(handle.doc()));
         result = await doWork(repo, { importUrl, input, key }, {
           signal: controller.signal,
           onProgress: (view) => {
             mine.here = !view.taskUrl;
+            mine.state = view.state;
             showView(view);
           },
         });
@@ -190,7 +191,8 @@ export default function TerrainTool(handle, element) {
       }
       if (!dead && !result?.stored) log(result?.message ?? "Nothing was stored.", "error");
     } catch (err) {
-      if (!dead) log(controller.signal.aborted ? "Stopped: nothing was stored." : String(err?.message ?? err), "error");
+      // Stopped here or from another page. What was stored, if a stop came too late to prevent it, the status above says.
+      if (!dead) log(controller.signal.aborted || mine.state === "cancelled" ? "Stopped." : String(err?.message ?? err), "error");
     } finally {
       if (job === mine) job = null;
       if (!dead) {
@@ -214,7 +216,7 @@ export default function TerrainTool(handle, element) {
     const ticket = ++looking;
     const repo = repoOf();
     const queue = await ownQueueUrl(repo);
-    const key = queue ? await fetchKey(handle.url, fetchSpec(handle.doc())) : null;
+    const key = queue ? (await fetchRequest(handle.url, handle.doc())).key : null;
     if (dead || ticket !== looking || following?.key === key) return;
     following?.stop();
     following = null;
