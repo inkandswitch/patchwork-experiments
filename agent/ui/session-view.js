@@ -8,12 +8,10 @@
  * a container query.
  */
 
-import { stopReconnecting } from "../session/recovery.js"
 import { handleStore } from "../kernel/store.js"
 import { decide, say, answerQuestion } from "../kernel/loop.js"
-import { heldElsewhere, needsWork } from "../kernel/runner.js"
-import { attachView } from "../runners/registry.js"
-import { startTabRunner, accountContext, drivePlanHere } from "../runners/tab.js"
+import { needsWork } from "../kernel/runner.js"
+import { accountContext, drivePlanHere } from "../runners/tab.js"
 import { getDriver } from "../workflow/driver.js"
 import { watchWaiting, renderWaiting, renderWaitingItem } from "./waiting.js"
 import { markCitations } from "./citations.js"
@@ -21,7 +19,6 @@ import { attachmentTray, carriesAttachments, pastedImages } from "./attachments.
 import { workflowOf } from "../workflow/plan.js"
 import { watchStanding, renderStandingLine, gateOf, renderChoices, placeOf } from "./standing.js"
 import { askAside } from "../workflow/aside.js"
-import { connectWorkerRunner } from "../runners/worker-client.js"
 import { readKey, writeKey, readRelay, writeRelay, SEARCH_KEY_ID, onKeyChange, connectAccountKeys } from "../providers/keys.js"
 import { loadCatalogue, modelInfo } from "../providers/catalogue.js"
 import { describeModel, describeDefaults } from "../providers/openrouter.js"
@@ -35,6 +32,7 @@ import { watchWorkspace } from "./workspace.js"
 import { startDictation, composeDictation, voiceSupported } from "./voice.js"
 import { ensureStyles } from "./styles.js"
 import { morph } from "./morph.js"
+import { sessionRunners } from "./session-runners.js"
 import { sessionValue } from "./session-value.js"
 import { watchNames, myContactUrl } from "./names.js"
 
@@ -318,8 +316,6 @@ export function AgentTool(handle, element, options = {}) {
     rerender: () => render(),
   })
   const store = handleStore(handle, options.splice ?? null)
-  let runner = null
-  let detachView = null
   let disposed = false
   // Whether the account's LLM settings have answered, or failed to.
   let keysSettled = false
@@ -333,100 +329,8 @@ export function AgentTool(handle, element, options = {}) {
     !options.context && !subjectUrl() ? watchWorkspace(element, { repo, exclude: () => [handle.url] }) : null
   const contextFor = options.context ?? (workspace ? () => workspace.snapshot() : null)
 
-  // ---- runners ---------------------------------------------------------
-  //
-  // Two of them, and that is deliberate. The SharedWorker runs the session —
-  // one runner across every tab, surviving navigation. But a worker has no DOM
-  // and no plugin registry, so host-tier calls (dom_snapshot, doc_create,
-  // installing) park there; the in-tab runner exists to pick exactly those
-  // up. `needsWork` is runner-aware, so each one only claims the lease for work
-  // it can actually do, and the lease keeps them from colliding.
-  let workerRunner = null
-  let workerTried = false
-
-  /**
-   * Opt-in for now: `localStorage["patchwork-agent:worker"] = "on"`.
-   *
-   * The worker demonstrably boots, imports automerge, builds a repo over the
-   * donated port, and finds and writes the page's documents
-   * (probes/worker-repo.mjs, 8/8). What is not yet proven is *ongoing* sync:
-   * when the page writes an approval into the session, the worker's copy does
-   * not reliably see it, and the turn stalls. The page's `window.repo` is
-   * itself a client of Patchwork's own automerge worker, so attaching another
-   * network adapter to it may not relay changes the way a plain Repo would.
-   * Until that is understood, the in-tab runner stays the default.
-   */
-  function workerEnabled() {
-    try {
-      return globalThis.localStorage?.getItem("patchwork-agent:worker") === "on"
-    } catch {
-      return false
-    }
-  }
-
-  async function ensureWorkerRunner() {
-    if (workerRunner || workerTried || disposed) return workerRunner
-    workerTried = true
-    if (!workerEnabled()) return null
-    try {
-      workerRunner = await connectWorkerRunner({
-        repo,
-        sessionUrl: handle.url,
-        subject: subjectUrl(),
-        key: readKey(handle.doc()?.config?.providerId ?? "openrouter"),
-        providerId: handle.doc()?.config?.providerId ?? "openrouter",
-        account: accountContext(),
-        onEvent: () => render(),
-      })
-    } catch {
-      workerRunner = null // the tab runner covers everything it would have done
-    }
-    return workerRunner
-  }
-
-  /**
-   * The runner for this session — shared, and deliberately NOT owned by this
-   * view. Two views of one session share one runner, and closing a view does
-   * not stop it: navigating away should never abort work you asked for.
-   */
-  async function ensureRunner() {
-    if (runner || disposed) return runner
-
-    // Snapshot the worker's presence now and hold it for this runner's life.
-    const entry = await startTabRunner(handle, {
-      repo,
-      subject: subjectUrl(),
-      element: root,
-      canRun: workerRunner ? (where) => where === "host" : (where) => where === "worker" || where === "host",
-    })
-
-    runner = entry?.runner ?? null
-    detachView = attachView(handle.url, { element: root, onEvent: () => render() })
-    return runner
-  }
-
-  // ---- actions ---------------------------------------------------------
-
-  /**
-   * Nudge whoever should be working.
-   *
-   * The worker is preferred, so it gets first refusal; the tab is only woken
-   * for host-tier work it alone can do. Kicking both indiscriminately means the
-   * tab wins the race for the lease every time — it is already running, while
-   * the worker still has to boot, resolve the importmap and shake hands — and
-   * the SharedWorker would never actually be used.
-   */
-  async function kick() {
-    const worker = await ensureWorkerRunner()
-    if (worker) {
-      worker.tick()
-      if (needsWork(handle.doc(), (where) => where === "host")) {
-        ensureRunner().then((r) => r?.tick())
-      }
-      return
-    }
-    ensureRunner().then((r) => r?.tick())
-  }
+  const runners = sessionRunners({ handle, store, repo, element: root, subject: subjectUrl, onEvent: () => render() })
+  const kick = () => runners.kick()
 
   // ---- dictation -------------------------------------------------------
   //
@@ -740,11 +644,7 @@ export function AgentTool(handle, element, options = {}) {
 
   stopButton.addEventListener("click", (event) => {
     event.preventDefault()
-    runner?.interrupt()
-    workerRunner?.interrupt()
-    // Waiting for the network, no run is under way to interrupt: stopping is
-    // a change to the session, so every runner stops trying.
-    if (store.doc()?.reconnecting) store.change((d) => stopReconnecting(d))
+    runners.stop()
   })
 
   input.addEventListener("keydown", (event) => {
@@ -939,7 +839,7 @@ export function AgentTool(handle, element, options = {}) {
       const providerId = handle.doc()?.config?.providerId ?? "openrouter"
       writeKey(providerId, value)
       // The worker cannot read this page's localStorage, so hand it over.
-      workerRunner?.setKey(value)
+      runners.setKey(value)
       keyInput.value = ""
     }
     // The relay: saved as typed, cleared by emptying its address.
@@ -965,8 +865,8 @@ export function AgentTool(handle, element, options = {}) {
       mode,
       hasKey: !!readKey(doc.config?.providerId ?? "openrouter"),
       keysSettled,
-      runner: workerRunner ? "worker" : workerTried ? "tab" : "pending",
-      elsewhere: heldElsewhere(doc, runner?.runnerUrl, runner?.live),
+      runner: runners.kind(),
+      elsewhere: runners.elsewhere(doc),
       voiceStatus,
       place: standing?.current() ?? null,
       waiting: waiting?.items() ?? [],
@@ -1051,12 +951,7 @@ export function AgentTool(handle, element, options = {}) {
     ensureSettings()
     refreshHeads(handle.doc())
   }
-    // The worker parks host-tier calls; this is how the tab notices and takes
-    // them. Cheap — `needsWork` is a scan of the transcript, and `tick` is a
-    // no-op when this runner has nothing it can do.
-    if (needsWork(handle.doc(), (where) => where === "host")) {
-      ensureRunner().then((r) => r?.tick())
-    }
+    runners.wake()
   }
   handle.on("change", onChange)
 
@@ -1065,7 +960,7 @@ export function AgentTool(handle, element, options = {}) {
   // the account for itself, so it is handed each new one.
   const offKeys = onKeyChange(() => {
     if (disposed) return
-    workerRunner?.setKey(readKey(handle.doc()?.config?.providerId ?? "openrouter"))
+    runners.setKey(readKey(handle.doc()?.config?.providerId ?? "openrouter"))
     render()
   })
   connectAccountKeys(element, repo).then(() => {
@@ -1089,18 +984,13 @@ export function AgentTool(handle, element, options = {}) {
     disposed = true
     handle.off("change", onChange)
     offKeys()
-    // Detach this view; deliberately NOT runner.stop(). Navigating away from a
-    // session must not abort the work it is doing. The runner keeps its lease
-    // and keeps writing to the document, so reopening the session — here or in
-    // another tab — picks up whatever happened while you were gone.
     views.dispose()
     if (wantDictation) stopListening()
     workspace?.dispose()
     names.dispose()
     waiting?.dispose()
     standing?.dispose()
-    detachView?.()
-    workerRunner?.close()
+    runners.dispose()
     root.remove()
   }
 }
