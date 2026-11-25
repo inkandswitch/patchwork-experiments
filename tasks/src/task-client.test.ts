@@ -1421,6 +1421,84 @@ describe('ownQueue', () => {
     }
   });
 
+  it('two ownQueue calls at once on the same replica: both return the one queue that is named and served, and the other queue made is named and served by nothing', async () => {
+    const { repo, account, element } = page();
+    const provider = toolStorageProvider(element, repo, account);
+    const [a, b] = await Promise.all([outcome(ownQueue(repo, element)), outcome(ownQueue(repo, element))]);
+    expect(a.value).toMatch(/^automerge:/);
+    expect(b.value).toBe(a.value);
+    const storage = await repo.find<any>(storageUrlOf(account.doc()) as AutomergeUrl);
+    expect(ownQueueOf(storage.doc())).toBe(a.value);
+    expect(servedOf(storage.doc())).toEqual({ [a.value!]: true });
+    // each call asked the provider, which links one storage document into the account
+    expect(provider.asked.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('a leave of the own queue on one replica at the same time as ownQueue on one that never saw the pointer, in either actor order: one pointer; it names a served queue unless it names the queue that was left', async () => {
+    for (const seesItBeforeReturning of [false, true]) {
+      const outcomes = new Set<string>();
+      for (const actors of ACTOR_ORDERS) {
+        const { one, repoB, storageA, storageB } = twoReplicas(actors);
+        const a = (await outcome(ownQueue(one.repo, one.element))).value!;
+        storageA.change((doc) => leaveTaskQueue(doc, a as AutomergeUrl));
+        if (seesItBeforeReturning) {
+          arrivesOnSave(repoB, storageB, [storageA]);
+        }
+        const b = (await outcome(ownQueue(repoB, one.element))).value!;
+        mergeAll(storageA, storageB);
+        const own = ownQueueOf(storageA.doc());
+        expect(ownQueueOf(storageB.doc())).toBe(own);
+        expect(servedOf(storageB.doc())).toEqual(servedOf(storageA.doc()));
+        if (own === a) {
+          // the left queue's pointer stands: the leaving stands with it, as when it is made alone
+          expect(isOnTaskQueue(storageA.doc(), a as AutomergeUrl)).toBe(false);
+          // B's queue is served if B returned it, and taken back out if B saw A's pointer first
+          expect(b).toBe(seesItBeforeReturning ? a : b);
+          expect(Object.keys(getTaskQueues(storageA.doc()))).toEqual(seesItBeforeReturning ? [] : [b]);
+          outcomes.add('left queue named');
+        } else {
+          expect(own).toBe(b);
+          onePointerNamingAServedQueue(storageA, storageB);
+          outcomes.add('new queue named');
+        }
+      }
+      expect([...outcomes].sort(), `B sees A's pointer before returning: ${seesItBeforeReturning}`).toEqual(['left queue named', 'new queue named']);
+    }
+  });
+
+  it("a loser's taking its queue back out, at the same time as a third replica that saw its pointer sets that queue's code: the setting stands, and the pointer names a served queue", async () => {
+    const outcomes = new Set<string>();
+    for (const actors of permutations(ACTORS)) {
+      const { one, repoB, storageA, storageB } = twoReplicas([actors[0], actors[1]]);
+      const a = (await outcome(ownQueue(one.repo, one.element))).value!;
+      const repoC = newRepo();
+      let storageC: DocHandle<any> | undefined;
+      // As B saves its pointer, C syncs with B (and so reads B's queue as the own one), then A's pointer reaches B.
+      const flush = repoB.flush.bind(repoB);
+      let done = false;
+      repoB.flush = async (ids?: any[]) => {
+        if (!done && ids?.includes(storageB.documentId)) {
+          done = true;
+          storageC = replicate(repoC, storageB);
+          asActor(storageC, actors[2]);
+          storageB.merge(storageA);
+        }
+        return flush(ids);
+      };
+      const returned = (await outcome(ownQueue(repoB, one.element))).value!;
+      const b = madeIn(repoB);
+      expect(ownQueueOf(storageC!.doc())).toBe(b);
+      storageC!.change((doc) => setAcceptance(doc, b as AutomergeUrl, ['automerge:pkg']));
+      mergeAll(storageA, storageB, storageC!);
+      const own = onePointerNamingAServedQueue(storageA, storageB, storageC!);
+      expect(returned).toBe(own);
+      // C's setting was made without seeing B take the queue out, so it outlasts that
+      expect(getAcceptance(storageA.doc(), b as AutomergeUrl)).toEqual(['automerge:pkg']);
+      outcomes.add(own === a ? 'B lost' : 'B won');
+    }
+    expect([...outcomes].sort()).toEqual(['B lost', 'B won']);
+  });
+
   it('with no provider to answer: rejects plainly after PROVIDER_WAIT_MS, and has written and made nothing', async () => {
     const { repo, account, element } = page();
     const heads = A.getHeads(account.doc());

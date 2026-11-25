@@ -70,8 +70,15 @@ function useMembership(queueUrl: AutomergeUrl, hostRepo: Repo, element: HTMLElem
     setWorking(work);
     tasksStorage(hostRepo, element).then(
       (handle) => {
-        handle.change(fn);
-        setWorking(null);
+        // A change that throws is said like any other failure, and never
+        // leaves the controls waiting on it.
+        try {
+          handle.change(fn);
+        } catch (error) {
+          setProblem((error as Error).message);
+        } finally {
+          setWorking(null);
+        }
       },
       (error: Error) => {
         setWorking(null);
