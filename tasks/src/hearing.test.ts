@@ -71,6 +71,38 @@ describe('Hearing', () => {
     expect(hearing.heard('b')).toBe(true);
   });
 
+  it('shares nothing with another Hearing: a copy of a task, followed with its own, is not heard by what the original says', () => {
+    // One per task followed: a copy carries the original's run names.
+    const clock = clockAt(0);
+    const original = new Hearing(clock);
+    const copy = new Hearing(clock);
+    original.saw([{ id: 'r' }]);
+    clock.t = LAPSE_MS;
+    copy.saw([{ id: 'r' }]);
+    original.heardFrom('r');
+    clock.t = 2 * LAPSE_MS - 1;
+    expect(original.heard('r')).toBe(true);
+    expect(copy.heard('r')).toBe(true); // first seen by the copy's Hearing at LAPSE_MS
+    clock.t = 2 * LAPSE_MS;
+    original.heardFrom('r');
+    expect(original.heard('r')).toBe(true);
+    expect(copy.heard('r')).toBe(false);
+    // and what one forgets, or is asked first, the other does not
+    copy.forget('r');
+    expect(original.heard('r')).toBe(true);
+    expect(copy.heard('only asked of the copy')).toBe(true);
+    expect([...original.firstSeen.keys()]).toEqual(['r']);
+    expect(original.firstSeen).not.toBe(copy.firstSeen);
+    expect(original.lastHeard).not.toBe(copy.lastHeard);
+  });
+
+  it('reads the clock it was given, and Date by default', () => {
+    const hearing = new Hearing();
+    expect(hearing.clock).toBe(Date);
+    hearing.saw([{ id: 'r' }]);
+    expect(hearing.heard('r')).toBe(true);
+  });
+
   it('forgets a run: seen again, it starts afresh', () => {
     const clock = clockAt(0);
     const hearing = new Hearing(clock);
