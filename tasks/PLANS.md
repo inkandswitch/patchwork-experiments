@@ -110,15 +110,15 @@ They are not part of this package, switch experiments by environment variables, 
 Each of these was met while building the pool and left out on purpose. None is needed for a queue
 that one machine serves.
 
-- **Hold back for the preferred pool.** On a queue that several pools serve, each takes a listed
-  task at once and all but one give way within a sync delay (measured: one yielded run per task on
-  a two-host queue). A pool could wait a moment when it hears another pool serving that the task's
-  url hashes to: advice only, so a wrong guess costs what happens today. Wanted before work that
-  costs money to start (a model call) shares a queue between machines.
-- **What a task needs of the machine.** An entry could carry `needs` (plain labels), a pool say what
-  it has, and a pool take only what it satisfies, the way it already declines code it does not
-  accept. Affinity follows: every run records its pool, so a follow-up can need, or prefer, the pool
-  that ran its predecessor. Waits on the first queue served by two kinds of machine.
+- **What is left of the preferred pool and of needs.** A pool asks an entry's package and needs
+  before the task's, but still follows (fetches) every task its queues list, so a browser on a
+  queue full of work for other machines fetches each of those tasks. Following only what it
+  might take would save that, at the cost of its own runs of such tasks, after a restart with
+  fewer labels, waiting out the lapse instead of being recorded lost. The hold (HOLD_MS, 1.5 s)
+  is two crossings as measured on one Mac through the sync server; between devices on slower
+  links a crossing may take longer, and a hold too short costs one yielded run, as before. A task
+  listed again by its asker after a lapse keeps its needs, which its document holds, but not the
+  first asking's `near`, which only the entry did. Each waits on a case that needs it.
 - **A link in memory between a pool and its run workers.** A run worker's Repo has storage of its
   own (a directory in Node, a database in a browser), so what a task writes through `ctx.repo`
   reaches the page by the sync server, and a run's ending waits until the server has acknowledged

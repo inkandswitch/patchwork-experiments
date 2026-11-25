@@ -10,7 +10,9 @@ Automerge documents. There are three things:
   Whoever can write a queue can ask it for work and stop that work; whoever serves it runs that
   work. Ask only queues whose servers you trust with the input.
 - A **pool** is the one set of workers a machine has: the tab of a browser profile that holds a
-  Web Lock, or a Node process. It serves the queues it is told to.
+  Web Lock, or a Node process. It serves the queues it is told to, and has labels saying what
+  kind of machine it is (`browser`, `node`, what a Node host was told it has, and `pool:<its
+  id>`); it takes only a task whose `needs` it has every one of.
 
 Only records are written: an asker lists a task under a key, or appends a stop to its `runs`; a
 pool takes a task by appending a run, and later completes that run with how it went. Everything
@@ -26,23 +28,37 @@ says how many had not reached it; with no server to reach, the log says what was
 that machine), and **what a task is handed can be found** (its `ctx.repo.find` waits for a
 document that has not arrived yet, for about half a minute, instead of rejecting at once).
 
+**Mostly once**: asked of a queue that several of a person's devices serve, a task runs on one of
+them, once, unless the device running it dies part way or two devices cannot hear each other at
+the moment it is listed, and then it runs again, as at least once promises. The pools serving a
+queue hear each other and agree on one to prefer for each task (the one its asker is next to, or
+else the one a hash of the task's url and the pool's id picks): that one takes it at once, and the
+rest wait a second and a half before they may. A task never fails for want of a device: one that
+needs what no pool serving its queue has waits, and the queue browser says what it waits for.
+
 ## Asking for work
 
 Everything an asker needs is in `src/task-client.js`, with the rules it applies in
 `src/task-rules.js`. Each takes a Repo that can reach the queue: in a page the site's Repo, in
 Node one of your own (`dist-node/task-client.mjs` is the same file built for Node).
 
-- `run(repo, queueUrl, { importUrl, input, key })` asks and waits: it resolves to the result, and
-  rejects with the error when the task fails or is cancelled. An optional fourth argument hears
-  every change on the way.
+- `run(repo, queueUrl, { importUrl, input, key, needs, near })` asks and waits: it resolves to
+  the result, and rejects with the error when the task fails or is cancelled. An optional fourth
+  argument hears every change on the way.
 - `ask(repo, queueUrl, ask)` lists a task and returns `{ key, taskUrl }` without waiting. Asking
   under a key whose task has not ended is asking once; a key whose task has ended is asked afresh.
+  `needs` is a list of plain labels a pool must have every one of to take the task (`['unix']`,
+  `['ollama']`, `['pool:<id>']` for one machine in particular, such as the one that ran an
+  earlier task and holds what it left on its disk); until a pool that has them serves the queue,
+  the task waits. `near` is the id of a pool the asker would rather it ran on (its own browser's,
+  or the one that ran a predecessor): that pool takes it at once when it can, and the others hold
+  back for it. Both are copied onto the queue's entry.
 - `watch(repo, queueUrl, key, onChange)` follows the key and calls `onChange` with its state
   (`waiting`, `running`, `stalled`, `stopping`, `succeeded`, `failed`, `cancelled`), progress,
   log lines, result and error. It returns how to stop watching.
 - `cancel(repo, queueUrl, key)` stops the task under the key.
-- `served(repo, queueUrl, onChange)` hears which pools serve the queue now; an empty list means
-  what is asked of it waits.
+- `served(repo, queueUrl, onChange)` hears which pools serve the queue now, with what each has;
+  an empty list, or none that has what a task needs, means that task waits.
 - `ownQueue(repo, element)` gives a page the url of its person's own queue, served by their
   browsers for any code, making it the first time (see below).
 
@@ -96,13 +112,16 @@ this for a long run kept in a document of its own. `src/tasks/wait.ts` is a smal
 A tool in a page needs three functions from `task-client.js`, each handed the site's Repo, and
 never names a queue:
 
-- `doWork(repo, { importUrl, input, key }, { onProgress, signal })` has the work done. When the
-  person has a queue of their own and a pool is heard serving it, the work is asked of that queue
-  as `run` would; otherwise the same module is imported and called in the page. Either way it
-  resolves to what the code returned and rejects with what it threw, `onProgress` hears the same
-  views, and aborting `signal` stops it. Only code that can travel is asked of a queue: a file in
-  a package kept in automerge, or a `data:` URL; any other url (a dev server's `http://localhost`,
-  a `file:` url) is done in the page.
+- `doWork(repo, { importUrl, input, key, needs }, { onProgress, signal })` has the work done.
+  When the person has a queue of their own and a pool heard serving it has what the work needs,
+  the work is asked of that queue as `run` would, near this browser's pool; otherwise work that
+  needs nothing a page lacks (no needs, or only `browser`) is done in the page, by importing the
+  same module and calling it; and work that needs more is asked of their queue all the same,
+  where it waits for a device that has it (with no queue of their own, it rejects with a
+  sentence naming what it needs). Either way it resolves to what the code returned and rejects
+  with what it threw, `onProgress` hears the same views, and aborting `signal` stops it. Only
+  code that can travel is asked of a queue: a file in a package kept in automerge, or a `data:`
+  URL; any other url (a dev server's `http://localhost`, a `file:` url) is done in the page.
 - `watchWork(repo, key, onChange)` follows the work under the key on the person's own queue, so
   that a page opened later, or another tab, shows work already going on instead of offering it
   again. It follows the person's queue as it changes (made, or lost, while the tool is open), and
@@ -149,8 +168,9 @@ frame and threepane both do, and name no package to do it. Mounted, the componen
 page's pool host (one per page, however many mount it); let go, the last one lets the pool go
 (it takes nothing new, its runs end, and the lock passes on). Of the tabs taking part, the one
 that holds the Web Lock `patchwork-tasks-pool` runs the pool, in a worker that runs tasks in run
-workers it can end, and the others wait to take over. A frame that mounts no background
-components takes no part: its pages run nothing, whatever they show.
+workers it can end, and the others wait to take over. A browser's pool has `browser` and
+`pool:<its id>`, so a task that needs anything else is left for a machine that has it. A frame
+that mounts no background components takes no part: its pages run nothing, whatever they show.
 Which queues it serves is kept in the account's tool storage for this package
 (`account.toolStorage['tasks-next']`, a document Patchwork's frame makes the first time it is
 needed). Its root is the list: each served queue is a key of its own, the queue's url, holding
@@ -176,10 +196,11 @@ the queue's document, what is heard on the queue's channel), and never starting 
   this browser cannot keep its tabs to one pool; the pool could not start, with what it said and
   when it tries again). It opens the queue browser.
 - **The queue browser** (the Task Queue Browser tool) shows the pools heard serving the queue
-  (name, slots, busy; this browser's marked), a line saying what this browser's pool is doing in
-  this page and why, whether this person's browsers serve the queue, and each listed task: its
-  state (stalled, with since when this view has seen it so), its records (which pool took it,
-  when, how it went; a stop as a stop), its log, and a Stop while it has not ended.
+  (name, slots, busy, what each has; this browser's marked), a line saying what this browser's
+  pool is doing in this page and why, whether this person's browsers serve the queue, and each
+  listed task: its state (waiting, with what it needs when no pool heard has it; stalled, with
+  since when this view has seen it so), its records (which pool took it, when, how it went; a
+  stop as a stop), its log, and a Stop while it has not ended.
 
 **On a machine.** `pnpm build:node`, then `node dist-node/host.mjs` with:
 
@@ -200,6 +221,9 @@ the queue's document, what is heard on the queue's channel), and never starting 
   directory.
 - `--code-dir <dir>` where fetched code goes, if not under the data directory.
 - `--name <name>` what views call this pool (the machine's hostname).
+- `--has unix,ollama` what this machine has, as plain labels: a task that needs a label runs only
+  on a pool that has it. Repeat it, or separate labels with commas. A host always has `node` and
+  `pool:<its id>`, and prints what it has as it starts.
 - `--sync wss://…` the sync server (`PATCHWORK_SYNC`, or Ink & Switch's).
 - `--verbose` say more.
 
@@ -224,9 +248,8 @@ and commit the copies with it.
 
 The header of `src/task-rules.js` is the contract: what is written, what is read, when a pool
 takes, stops or gives way, and what ends a task. Its functions are the only place those rules are
-written down. What is deliberately not here yet (holding back for a preferred pool, what a task
-needs of a machine, confining code, a worker per run, queues one only asks of) is in `PLANS.md`,
-each with what it waits on.
+written down. What is deliberately not here yet (confining code, a worker per run, queues one
+only asks of) is in `PLANS.md`, each with what it waits on.
 
 ## Tests and probes
 
@@ -234,16 +257,19 @@ each with what it waits on.
 processes and say what they saw, one line per check or measurement:
 
 - `probes/node-run.mjs` (after `pnpm build:node`; `--only 1,16` runs only the checks named):
-  Node hosts through the real sync server, 16 checks. 1, latency of ten do-nothing tasks; 2,
+  Node hosts through the real sync server, 19 checks. 1, latency of ten do-nothing tasks; 2,
   logs and progress heard while running and kept; 3, a throw fails once; 4, a spin cancelled,
   its thread ended within the grace; 5, a child process gone on cancel; 6, SIGTERM records the
   run lost and exits in time, a restart runs it again, and a guarded task fails rather than run
   twice; 7, kill -9 and a restart take it again; 8, two hosts fail over; 9, two hosts share four
-  tasks, one final run each; 10, `served()` lists a host and drops a silent one; 11, a second
-  host on one data directory refuses; 12, code a host does not accept is never taken; 13 to 15,
-  1 MB written by a task is found at the asker's first find, also from a host stopped the
-  moment its run reads succeeded; 16, a task whose document reaches the server after its
-  listing is taken within 1.5 s.
+  tasks listed at once, one run each and none yielded; 10, `served()` lists a host and drops a
+  silent one; 11, a second host on one data directory refuses; 12, code a host does not accept
+  is never taken; 13 to 15, 1 MB written by a task is found at the asker's first find, also from
+  a host stopped the moment its run reads succeeded; 16, a task whose document reaches the
+  server after its listing is taken within 1.5 s; 17, ten tasks needing a label only one of two
+  hosts has all run there, once each; 18, a task needing a label no host has stays listed,
+  untaken, until a third host with it starts and runs it; 19, a task asked `near` a host runs on
+  that host.
 - `probes/write-path.mjs` (after `pnpm build:node`): measures, and checks nothing, how a
   document travels between a task on a Node host and its asker through the sync server, per
   size: written by the task (`out`), made by the asker for the task (`in`), twenty at once
