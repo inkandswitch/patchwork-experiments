@@ -18,8 +18,8 @@
 // Every write is a change whose message names the agent session and what it
 // did.
 
-import { STUDY_TYPE, RUN_TYPE, isTerminal, shownRun } from "./protocol.js";
-import { isQueue, hearServing, queueCounts, servedBy, lookAtTask } from "./run-tasks.js";
+import { STUDY_TYPE, RUN_TYPE, isTerminal } from "./protocol.js";
+import { isQueue, hearServing, queueCounts, servedBy, lookAtTask, shownRun } from "./task-runs.js";
 import { normalizeSetup, setupProblems, readiness, meshEstimate, listOf, describeLoad, readQuantity, MESH_PRESETS } from "./setup.js";
 import { MATERIALS } from "./materials.js";
 import { unitsOf, pretty, prettyUnit, format, num, toSI, DIMENSIONS } from "./units.js";

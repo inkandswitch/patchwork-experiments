@@ -247,7 +247,9 @@ TASKS_HOST=…/tasks/dist-node/host.mjs FEA_PACKAGE=automerge:<this package> \
 - **The host stopping** (SIGTERM, a restart) kills the program likewise; the
   run doc says the machine stopped. The task is taken up again when the
   host comes back, and its code then fails it without solving: a run is
-  never solved twice without anyone asking.
+  never solved twice without anyone asking. A run's code that finds an
+  earlier run still open (another machine may be running it) doesn't solve
+  either, and leaves the run doc to that run.
 - It holds off idle sleep on macOS while a run is active, and only then.
 
 ### The protocol
@@ -264,8 +266,10 @@ never overlaps:
 What becomes of a run's task (waiting, running, stopped, failed before its
 code wrote anything) is read from the task, and the status a person sees is
 `shownRun(run doc, task)`; nobody writes the run doc to say it.
-`src/run-tasks.js` asks, cancels and reads the queue through `task-client.js`
-and `task-rules.js`, verbatim copies of the tasks package's kit.
+`src/task-runs.js` asks, cancels and reads the queue through `task-client.js`
+and `task-rules.js`, and makes the run's task code around the runner; all
+three are verbatim copies of the tasks package's kit files (`node
+scripts/check-kit.mjs` at the experiments root checks them).
 
 A run doc is made when you press Run, with the setup and the kept part
 frozen into it, so every run records exactly what was analysed. It also

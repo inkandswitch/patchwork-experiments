@@ -9,7 +9,8 @@ import { FakeRepo } from "./test/fake-repo.js";
 import { encodeGLB } from "./glb.js";
 import { box, plateWithHole } from "./test/shapes.js";
 import { newRun, STUDY_TYPE, RUN_TYPE } from "./protocol.js";
-import { setPackageUrl, RUN_CODE } from "./run-tasks.js";
+import { setPackageUrl } from "./task-runs.js";
+import { RUN_CODE } from "./protocol.js";
 import { taskState, allHeard } from "./task-rules.js";
 import { normalizeSetup, MAX_MODES } from "./setup.js";
 import { unitsOf } from "./units.js";
@@ -386,7 +387,7 @@ describe("fea_run", () => {
     const s = await readyStudy();
     setPackageUrl(null);
     const before = snapshot(s.handle, server);
-    await expect(runTool.execute({ study: s.url }, ctx)).rejects.toThrow(/Can't run: This copy of the FEA tool wasn't loaded from its package/);
+    await expect(runTool.execute({ study: s.url }, ctx)).rejects.toThrow(/Can't run: This copy of the tool wasn't loaded from its package/);
     expect(snapshot(s.handle, server)).toBe(before);
   });
   it("refuses with no server", async () => {

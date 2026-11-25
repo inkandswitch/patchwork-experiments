@@ -23,10 +23,9 @@ import { isQuantity } from "./units.js";
 import { acquirePart, pathLabel } from "./part/acquire.js";
 import { readPart } from "./part/faces.js";
 import { encodePart, decodePart, carryFaces, carrySetup, PART_TYPE } from "./part/kept.js";
-import { newRun, isTerminal, shownRun, STUDY_TYPE, RUN_TYPE } from "./protocol.js";
-import { askRun, cancelRun, hearServing, isQueue, lookAtTask, runCodeUrl } from "./run-tasks.js";
+import { newRun, isTerminal, STUDY_TYPE, RUN_TYPE, RUN_CODE } from "./protocol.js";
+import { askRun, cancelRun, hearServing, isQueue, lookAtTask, codeUrl, shownRun, findWhenThere } from "./task-runs.js";
 import { externalize, internalize } from "./segments.js";
-import { findWhenThere } from "./find.js";
 import { renderKey, isRenderDoc } from "./render-read.js";
 
 export const TOOL = Object.freeze({ tool: "@tiny-patchwork/fea", version: "0.1.0" });
@@ -424,7 +423,7 @@ export async function runStudy(ctx) {
   }
   if (!isQueue(server.doc())) return refuse("the study's server isn't an FEA server");
   try {
-    runCodeUrl();
+    codeUrl(RUN_CODE);
   } catch (err) {
     return refuse(String(err.message).replace(/\.$/, ""));
   }
@@ -441,11 +440,11 @@ export async function runStudy(ctx) {
     d.runs.push(run.url);
     d.selected = run.url;
   });
-  await askRun(ctx.repo, study.server, run, ctx.message ? { message: ctx.message } : undefined);
+  await askRun(ctx.repo, study.server, run, RUN_CODE, ctx.message ? { message: ctx.message } : undefined);
   return { ok: true, url: run.url, pools };
 }
 
-/** Cancel a run that hasn't finished: a stop recorded in its task (src/run-tasks.js). */
+/** Cancel a run that hasn't finished: a stop recorded in its task (src/task-runs.js). */
 export async function stopRun(ctx, runUrl) {
   let h;
   try {

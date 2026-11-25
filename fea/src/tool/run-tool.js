@@ -5,9 +5,9 @@
 // (shownRun), and Cancel is said to it.
 
 import css from "./styles.css?inline";
-import { isTerminal, shownRun } from "../protocol.js";
+import { isTerminal } from "../protocol.js";
 import { figures, inputs, statusLine } from "../results.js";
-import { cancelRun } from "../run-tasks.js";
+import { cancelRun, shownRun } from "../task-runs.js";
 import { watch } from "../task-client.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);

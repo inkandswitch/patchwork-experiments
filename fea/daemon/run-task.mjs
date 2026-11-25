@@ -1,26 +1,14 @@
 // One FEA run, as a task's code. A study asks its task queue for a run
-// (src/run-tasks.js); a tasks host on a machine with gmsh and CalculiX
-// serves the queue (daemon/start.sh) and calls this module's default export
-// with the task's input, `{ run: <the run doc's url> }`, and its context.
+// (src/task-runs.js askRun); a tasks host on a machine with gmsh and
+// CalculiX serves the queue (daemon/start.sh) and calls this module's default
+// export with the task's input, `{ run: <the run doc's url> }`, and its context.
 //
-// It finds the run doc and runs it (runner.mjs): the run doc is where the
-// run's progress and results go, as the study shows them. What a generic
-// task view shows is a small echo of it: `ctx.progress` with the status and
-// the stage, and `ctx.log` at each stage.
-//
-// Never solved twice unasked. A task runs at least once, not exactly once:
-// if its machine stops mid-run, the task is taken again. So a run whose task
-// lists a run before this one (a record with a pool: a stop has none) does
-// not solve: it marks the run doc failed (NOT_RESTARTED) and throws, and the
-// task ends failed. On a queue one machine serves, an earlier run can only
-// be its own lost one.
-//
-// Stopping. `ctx.signal` aborts with a reason: `cancelled` (someone cancelled
-// the run), `stopping` (the host is shutting down) or `yielded` (another run
-// has the task). Each kills the program running and every process under it
-// at once; the run doc then says cancelled, says the machine stopped, or
-// (yielded) gets nothing more. The host ends this thread GRACE_MS after the
-// abort.
+// The kit's makeRunTask (src/task-runs.js) does what any run asked as a task
+// does: finds the run doc, never starts a run twice unasked, echoes progress
+// to the task's view, lets go of the machine when told to stop, and returns
+// within the host's grace whatever the runner is waiting on. What is this
+// package's: the run doc's type, gmsh and CalculiX on this machine, the
+// runner (runner.mjs), and the echo (`progressOf`: the status and the stage).
 //
 // The machine, from the environment the host was started in (start.sh sets it):
 //
@@ -50,8 +38,8 @@ import { fileURLToPath } from "node:url";
 import { findGmsh, findCcx, gmshVersion, ccxVersion, defaultCores, KILL_AFTER_MS } from "./tools.mjs";
 import { runJob as realRunJob } from "./runner.mjs";
 import { freshPeer } from "../src/segments.js";
-import { findWhenThere } from "../src/find.js";
-import { RUN_TYPE, isTerminal, markInterrupted, NOT_RESTARTED } from "../src/protocol.js";
+import { makeRunTask } from "../src/task-runs.js";
+import { RUN_TYPE } from "../src/protocol.js";
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com";
 /** How long a runner told to stop is given to return: its program's kill, and a little over, inside the host's GRACE_MS of 5 s. */
@@ -148,19 +136,6 @@ function checkerPeer(sync) {
   });
 }
 
-const stamp = () => new Date().toTimeString().slice(0, 8);
-
-/** Marks a run doc failed with `error`, unless it already says how it ended. */
-function fail(handle, error) {
-  handle.change((d) => {
-    if (isTerminal(d.status)) return;
-    d.status = "failed";
-    d.error = error;
-    d.finishedAt = Date.now();
-    for (const s of d.stages ?? []) if (s.status === "running") s.status = "failed";
-  });
-}
-
 /** What a generic task view is told: the run doc's status and the stage it is on. */
 export function progressOf(run) {
   const stage = run?.stages?.find((s) => s.status === "running") ?? null;
@@ -168,96 +143,20 @@ export function progressOf(run) {
 }
 
 /**
- * The task's code, made from what it needs (tests hand it fakes).
- * @param {object} o
- * @param {typeof realRunJob} o.runJob
- * @param {() => { tools: object, cores: number, maxNodes: number, state: string, sync: string, info: object }} o.machine  throws a plain sentence when gmsh or CalculiX is missing
- * @param {() => () => void} o.awake        holds sleep off; returns how to let go
- * @param {(sync: string) => { verify: Function, close: () => Promise<void> }} o.peer
- * @param {(message: string) => void} [o.say]  the host's log
- * @param {(repo: object, url: string) => Promise<object>} [o.find]  finds the run doc, which travels apart from its task and can reach the sync server after it (src/find.js asks again for about half a minute)
- * @param {number} [o.stopWait]  how long after an abort the runner is given to return
+ * The runner as the kit's makeRunTask calls it: runner.mjs with this
+ * machine's gmsh and CalculiX, cores, mesh cap and directories, and a second
+ * peer of its own that is closed when the run is over.
+ * @param {{ runJob?: typeof realRunJob, peer?: (sync: string) => { verify: Function, close: () => Promise<void> } }} [o]  tests hand it fakes
  */
-export function makeRunTask({ runJob, machine, awake, peer, say = (m) => console.log(`${stamp()} ${m}`), find = findWhenThere, stopWait = STOP_WAIT_MS }) {
-  return async function runTask(input, ctx) {
-    const runUrl = input?.run;
-    if (typeof runUrl !== "string" || !runUrl.startsWith("automerge:")) throw new Error("The task names no run: its input is { run: <an FEA run's url> }.");
-    const handle = await find(ctx.repo, runUrl);
-    if (handle.doc()?.["@patchwork"]?.type !== RUN_TYPE) throw new Error(`${runUrl} isn't an FEA run.`);
-
-    // the guard: a run (a record with a pool) before this one means this run was interrupted once already
-    const task = (await ctx.repo.find(ctx.taskUrl)).doc();
-    const at = task?.runs?.findIndex((r) => r.id === ctx.run) ?? -1;
-    if (at < 0) throw new Error("This run isn't in its task's document, so whether it ran before can't be told; it was not started.");
-    if (task.runs.slice(0, at).some((r) => r.pool)) {
-      handle.change((d) => markInterrupted(d, Date.now()));
-      ctx.log("interrupted before: not started again");
-      throw new Error(NOT_RESTARTED);
-    }
-
-    let facts;
-    try {
-      facts = await machine();
-    } catch (err) {
-      fail(handle, String(err?.message ?? err));
-      throw err;
-    }
-
-    // the echo for a generic task view
-    let last = "";
-    let lastStage = null;
-    const echo = () => {
-      const p = progressOf(handle.doc());
-      const key = JSON.stringify(p);
-      if (key === last) return;
-      last = key;
-      ctx.progress(p);
-      if (p.stage && p.stage !== lastStage) ctx.log(p.stage);
-      lastStage = p.stage;
-    };
-    handle.on("change", echo);
-    echo();
-
-    const release = awake();
-    ctx.signal.addEventListener("abort", release, { once: true });
+export function solve({ runJob = realRunJob, peer = checkerPeer } = {}) {
+  return async ({ repo, handle, facts, signal, say }) => {
     const checker = peer(facts.sync);
-    say(`run ${runUrl}: ${handle.doc().title ?? ""}`);
-    // Told to stop, the runner writes the stop to the run doc at once, kills its program and
-    // returns when the program's processes are gone. Some of its waits watch no signal, though
-    // (a part's bytes arriving, the sync server acknowledging the results), and what this code
-    // wrote is saved only once it returns, while the host ends this thread GRACE_MS after the
-    // abort. So the runner is given stopWait after an abort, and no longer.
-    let giveUp = null;
-    const stopped = new Promise((resolve) => {
-      giveUp = () => setTimeout(() => resolve("stopped"), stopWait);
-    });
-    let gaveUp = null;
-    const onStop = () => (gaveUp = giveUp());
-    if (ctx.signal.aborted) onStop();
-    else ctx.signal.addEventListener("abort", onStop, { once: true });
-    let status;
     try {
-      status = await Promise.race([
-        runJob({ repo: ctx.repo, handle, tools: facts.tools, workDir: join(facts.state, "runs"), cores: facts.cores, maxNodes: facts.maxNodes, daemon: facts.info, say, signal: ctx.signal, verify: checker.verify }),
-        stopped,
-      ]);
-    } catch (err) {
-      // runJob records its own failures; this is one it threw instead, which the run doc says too
-      if (!ctx.signal.aborted) fail(handle, String(err?.message ?? err));
-      throw err;
+      return await runJob({ repo, handle, tools: facts.tools, workDir: join(facts.state, "runs"), cores: facts.cores, maxNodes: facts.maxNodes, daemon: facts.info, say, signal, verify: checker.verify });
     } finally {
-      clearTimeout(gaveUp);
-      ctx.signal.removeEventListener("abort", onStop);
-      handle.off("change", echo);
-      ctx.signal.removeEventListener("abort", release);
-      release();
       await checker.close().catch(() => {});
     }
-    if (ctx.signal.aborted || status === "stopped") throw new Error(`stopped (${ctx.signal.reason ?? "stopping"})`);
-    if (status !== "done") throw new Error(handle.doc().error ?? `the run ${status}`);
-    ctx.log("done");
-    return { status };
   };
 }
 
-export default makeRunTask({ runJob: realRunJob, machine: () => thisMachine(), awake: stayAwake, peer: checkerPeer });
+export default makeRunTask({ type: RUN_TYPE, what: "an FEA run", machine: () => thisMachine(), runJob: solve(), progressOf, awake: stayAwake, stopWait: STOP_WAIT_MS });

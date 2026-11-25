@@ -37,12 +37,11 @@ import { spawn, execFileSync } from "node:child_process";
 import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { box, plateWithHole } from "../src/test/shapes.js";
 import { encodeGLB } from "../src/glb.js";
-import { newRun, isTerminal, decodeLayer, MACHINE_STOPPED, NOT_RESTARTED } from "../src/protocol.js";
-import { askRun, setPackageUrl, hearServing } from "../src/run-tasks.js";
+import { newRun, isTerminal, decodeLayer, RUN_CODE } from "../src/protocol.js";
+import { askRun, setPackageUrl, hearServing, findWhenThere, MACHINE_STOPPED, NOT_RESTARTED } from "../src/task-runs.js";
 import { served } from "../src/task-client.js";
 import { taskState, allHeard, LAPSE_MS } from "../src/task-rules.js";
 import { internalize } from "../src/segments.js";
-import { findWhenThere } from "../src/find.js";
 import { normalizeSetup } from "../src/setup.js";
 import * as model from "../src/study-model.js";
 
@@ -158,7 +157,7 @@ async function ask(title, shape, size, { tweak = null } = {}) {
     const { ["@patchwork"]: _type, study: _study, ...frozen } = plain((await repo.find(study.doc().part.kept)).doc());
     frozen.title = shape;
     run = await repo.create2(newRun({ studyUrl: study.url, serverUrl: queueUrl, setup: tweak(normalizeSetup(study.doc().setup)), part: frozen, by: "net probe", now: Date.now(), title: `net probe · ${title}` }));
-    await askRun(repo, queueUrl, run);
+    await askRun(repo, queueUrl, run, RUN_CODE);
   }
   await repo.flush?.();
   const taskUrl = run.doc().task;

@@ -17,7 +17,8 @@ import { applySetup } from "../src/solver/loads.js";
 import { writeDeck } from "../src/solver/deck.js";
 import { readFrd, readDat } from "../src/solver/frd.js";
 import { vonMises, summarizeStatic, summarizeModal, skinLayer, staticNotes } from "../src/solver/post.js";
-import { runIdOf, isTerminal, STAGES, encodeLayer, markStopped, STOP_REASONS } from "../src/protocol.js";
+import { runIdOf, isTerminal, STAGES, encodeLayer } from "../src/protocol.js";
+import { markStopped, STOP_REASONS } from "../src/task-runs.js";
 import { getBytes, externalize, serverWatch, sha256 } from "../src/segments.js";
 import { pretty } from "../src/units.js";
 
@@ -289,7 +290,7 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
     const { value, handles } = await externalize(repo, { ...encodeLayer({ name: "skin", ...layer }), title, run: handle.url }, { title });
     const layerHandle = await repo.create2(value);
     // the layer doc is new: let it reach the sync server before its link does
-    // (readers retry too, src/find.js; this keeps the first look from missing it)
+    // (readers retry too, src/task-runs.js findWhenThere; this keeps the first look from missing it)
     const there = await onServer.wait([...handles, layerHandle], { timeoutMs: 120_000, ackMs: 30_000, verify });
     if (there.ok === null) await new Promise((res) => setTimeout(res, 1500));
     else if (!there.ok) say(`run ${id}: the server hasn't acknowledged the results doc; readers will retry`);

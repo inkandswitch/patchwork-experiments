@@ -27,7 +27,7 @@
 // reader might want on its own (a field on one processor, a mesh file), and
 // this splits only what's still too big.
 
-import { findWhenThere } from "./find.js";
+import { findWhenThere } from "./task-runs.js";
 
 export const SEGMENT_TYPE = "fea-segment";
 /** No doc holds more bytes than this (see the workaround note above). */

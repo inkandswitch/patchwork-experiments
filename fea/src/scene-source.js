@@ -15,7 +15,7 @@ import { STUDY_TYPE, RUN_TYPE, decodeLayer } from "./protocol.js";
 import { decodePart, PART_TYPE } from "./part/kept.js";
 import { buildStudyGLB } from "./scene-build.js";
 import { normalizeSetup } from "./setup.js";
-import { findWhenThere } from "./find.js";
+import { findWhenThere } from "./task-runs.js";
 import { internalize } from "./segments.js";
 
 const typeOf = (doc) => doc?.["@patchwork"]?.type;

@@ -14,7 +14,8 @@ import { box } from "../src/test/shapes.js";
 import { FakeRepo } from "../src/test/fake-repo.js";
 import { readPart } from "../src/part/faces.js";
 import { encodePart } from "../src/part/kept.js";
-import { newRun, MACHINE_STOPPED } from "../src/protocol.js";
+import { newRun } from "../src/protocol.js";
+import { MACHINE_STOPPED } from "../src/task-runs.js";
 import { normalizeSetup } from "../src/setup.js";
 
 describe("deckOutline", () => {
