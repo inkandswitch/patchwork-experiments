@@ -5,6 +5,11 @@
  * and from nowhere else, whether the import is static or dynamic. The order
  * is LAYERS, lowest first; index.js, at the root, is above them all.
  *
+ * A test obeys the same rule, so the tests of a directory run on that layer
+ * and those below it and nothing else: what fixtures/ holds counts as
+ * whatever it imports. The tests at the root are about the package as a
+ * whole, and import none of it.
+ *
  * KNOWN is what does not obey, and is empty. Anything put there may only
  * leave again: an import upward that is not in it fails, and so does an
  * entry that is no longer true.
@@ -18,9 +23,9 @@ export const LAYERS = [
   "host", // the host's modules and context, wherever this is running
   "net", // where a request may go, and what an interruption is
   "documents", // what documents hold, read and written with no session in sight
-  "providers", // model providers
   "session", // the session document, as plain data
   "kernel", // running a session: the loop, the runner, tools as the loop sees them
+  "providers", // model providers, which turn the kernel's request into theirs
   "tools", // tool definitions
   "knowledge", // notes, guides and skills
   "workflow", // plans and the driver that runs them
@@ -45,9 +50,9 @@ function sources(dir = "") {
 
 const IMPORT = /(?:\bimport|\bexport)\s[^'"]*?\bfrom\s*["'](\.[^"']+)["']|\bimport\(\s*["'](\.[^"']+)["']\s*\)|\bimport\s*["'](\.[^"']+)["']/g
 
-/** Every import of one package module by another, as [from, to]. */
-function imports(files) {
-  const known = new Set(files)
+/** Every import of one package module by another, as [from, to]: of `targets` by `files`. */
+function imports(files, targets = files) {
+  const known = new Set(targets)
   const edges = []
   for (const from of files) {
     const text = readFileSync(join(ROOT, from), "utf8")
@@ -65,6 +70,16 @@ const rank = (path) => {
   return layer === null ? LAYERS.length : LAYERS.indexOf(layer)
 }
 
+/** Every test file, and every fixture, which is judged by what it imports. */
+function testFiles(dir = "") {
+  return readdirSync(join(ROOT, dir)).flatMap((name) => {
+    if (name === "node_modules" || name === "dist" || name === "probes" || name === "scripts" || name === "vendor" || name === ".pushwork") return []
+    const path = dir ? `${dir}/${name}` : name
+    if (statSync(join(ROOT, path)).isDirectory()) return testFiles(path)
+    return /\.test\.js$/.test(name) || (dir === "fixtures" && /\.js$/.test(name)) ? [path] : []
+  })
+}
+
 describe("layers", () => {
   const files = sources()
   const edges = imports(files)
@@ -77,6 +92,40 @@ describe("layers", () => {
   it("nothing imports upward, but what is known to", () => {
     const upward = [...new Set(edges.filter(([from, to]) => rank(to) > rank(from)).map(([from, to]) => `${from} -> ${to}`))].sort()
     expect(upward).toEqual([...KNOWN].sort())
+  })
+
+  it("only host/modules.js imports automerge by its bare name", () => {
+    // Everything else takes automerge from there: one bare `@automerge/...`
+    // import anywhere in the graph keeps the shared worker's runner from
+    // loading, since a worker has no importmap. A static import at a line's
+    // start, so prose quoting one in a skill or a tool description is not
+    // counted, or a dynamic one. The node runner (.mjs) is not in a worker's
+    // graph, and brings its own.
+    const BARE = /^\s*(?:import|export)\b[^;]*?\bfrom\s*["']@automerge\/|\bimport\s*\(\s*["']@automerge\//m
+    const offenders = files.filter((path) => path.endsWith(".js") && path !== "host/modules.js" && BARE.test(readFileSync(join(ROOT, path), "utf8")))
+    expect(offenders).toEqual([])
+  })
+
+  it("a test imports nothing above the directory it is in", () => {
+    const tests = testFiles()
+    const edges = imports(tests, [...files, ...tests])
+    const fixtures = new Map()
+    // The highest layer a file reaches: its own for a source file, and for a
+    // fixture the highest of what it imports.
+    const reach = (path, seen = new Set()) => {
+      if (!path.startsWith("fixtures/")) return rank(path)
+      if (fixtures.has(path)) return fixtures.get(path)
+      if (seen.has(path)) return -1
+      seen.add(path)
+      const highest = Math.max(-1, ...edges.filter(([from]) => from === path).map(([, to]) => reach(to, seen)))
+      fixtures.set(path, highest)
+      return highest
+    }
+    const above = edges
+      .filter(([from]) => !from.startsWith("fixtures/"))
+      .filter(([from, to]) => reach(to) > (layerOf(from) === null ? -1 : rank(from)))
+      .map(([from, to]) => `${from} -> ${to}`)
+    expect(above).toEqual([])
   })
 
   it("no module imports itself by way of others, once the known imports are set aside", () => {
