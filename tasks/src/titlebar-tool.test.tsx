@@ -3,7 +3,8 @@
 // with the reason, for every state of the page's pool host.
 
 import { describe, expect, it, vi } from 'vitest';
-import type { PoolHostStatus } from './browser/pool-host';
+import type { PoolHostState, PoolHostStatus } from './browser/pool-host';
+import { poolWords } from './pool-words';
 
 const QUEUE = 'automerge:2XzPUSj52GAd1wnWv1vR5JXH94VZ';
 const STORAGE = 'automerge:3WewSgnLmFK4FjUXUCzPa939hyNe';
@@ -79,8 +80,30 @@ describe('the badge', () => {
     expect(line()).toBe('2 listed · finishing up');
     expect(badge().title).toMatch(/A newer version of tasks is open in another tab/);
 
+    // It knows only that a newer version was heard, not whether it serves anything.
     setStatus({ state: 'stood down' });
-    expect(line()).toBe('2 listed · served by another tab');
+    expect(line()).toBe('2 listed · not running here');
+    expect(badge().title).toBe(
+      "My tasks: 2 listed. A newer version of tasks is open in another tab, so this tab stood down from this browser's pool. It runs nothing until this tab has the newer version too.",
+    );
+
+    setStatus({ state: 'reading' });
+    expect(line()).toBe('2 listed · not running here');
+    expect(badge().title).toMatch(/has not yet read which task queues this browser serves/);
+
+    setStatus({ state: 'serves nothing' });
+    expect(line()).toBe('2 listed · not running here');
+    expect(badge().title).toMatch(/This browser serves no task queue, so this page runs no pool\./);
+
+    setStatus({ state: 'winding down' });
+    expect(line()).toBe('2 listed · finishing up');
+    expect(badge().title).toMatch(/stopped serving its last task queue: this tab's pool finishes what it is running/);
+
+    setStatus({ state: 'out of sight' });
+    expect(line()).toBe("2 listed · can't see the pool from here");
+    expect(badge().title).toBe(
+      "My tasks: 2 listed. This view is in a frame walled off from the page around it, so it cannot see this browser's pool from here.",
+    );
 
     setStatus({ state: 'letting go' });
     expect(line()).toBe('2 listed · finishing up');
@@ -99,5 +122,44 @@ describe('the badge', () => {
     expect(started).toBe(0);
     dispose();
     expect(listeners.size).toBe(0);
+  });
+});
+
+describe('the words for the pool', () => {
+  // Every state, so that a state added without words of its own fails here.
+  const states: Record<PoolHostState, true> = {
+    'not started': true,
+    'out of sight': true,
+    reading: true,
+    'serves nothing': true,
+    waiting: true,
+    starting: true,
+    running: true,
+    'letting go': true,
+    'winding down': true,
+    'handing over': true,
+    'stood down': true,
+    unavailable: true,
+  };
+
+  it('say something for every state, and the reason differs between any two states not the same to a person', () => {
+    const said = (Object.keys(states) as PoolHostState[]).map((state) => ({
+      state,
+      ...poolWords({ state, busy: 0, slots: 2, id: null, name: 'Chrome on macOS (abcd)' }),
+    }));
+    for (const words of said) {
+      expect(words.short, words.state).toBeTruthy();
+      expect(words.long, words.state).toMatch(/\.$/);
+    }
+    // 'starting' and 'running' are one to a person: this tab runs the pool.
+    const reasons = new Set(said.filter((words) => words.state !== 'starting').map((words) => words.long));
+    expect(reasons.size).toBe(said.length - 1);
+  });
+
+  it('claim nothing about who serves the queues where the page cannot know it', () => {
+    for (const state of ['stood down', 'out of sight', 'reading'] as PoolHostState[]) {
+      const { short, long } = poolWords({ state, busy: 0, slots: 2, id: null, name: null });
+      expect(`${short} ${long}`, state).not.toMatch(/serves the queues|served by|runs its pool|nothing in this frame/);
+    }
   });
 });

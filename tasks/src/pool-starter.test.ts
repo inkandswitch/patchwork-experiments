@@ -1,6 +1,6 @@
 // The background component starts the page's pool host and lets go of it,
-// with the host stood in for; and the host itself, in a page with no Web
-// Locks, is watched without being started and let go when nothing holds it.
+// with the host stood in for; and the host itself is watched without being
+// started, is one per page, and is let go when nothing holds it.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,10 +41,9 @@ describe("a page's pool host", () => {
     vi.resetModules();
   });
 
-  it('is not started by watching it, and is let go when the last hold is', async () => {
-    // happy-dom has no Web Locks, so a held host says it cannot run a pool
-    // here, and says nothing of trying again: without locks it never will.
-    expect((navigator as any).locks).toBeFalsy();
+  it('is not started by watching it, is one per page however many start it, and is let go when the last hold is', async () => {
+    // With no Repo it never reads which queues are served, so it asks for
+    // no pool, and says so (browser/pool-host.test.ts has the rest).
     const { startPoolHost, watchPoolHost } = await import('./browser/pool-host');
     const seen: string[] = [];
     const stop = watchPoolHost((status) => seen.push(status.state));
@@ -54,27 +53,14 @@ describe("a page's pool host", () => {
     const first = startPoolHost(undefined);
     const second = startPoolHost(undefined);
     expect(Object.keys((window as any).patchworkTasks.poolHosts)).toHaveLength(1);
-    expect(seen.at(-1)).toBe('unavailable');
+    expect(seen.at(-1)).toBe('reading');
 
     first();
     first(); // letting go twice is letting go once
-    expect(seen.at(-1)).toBe('unavailable');
+    expect(seen.at(-1)).toBe('reading');
     second();
     expect(seen.at(-1)).toBe('not started');
 
-    stop();
-  });
-
-  it('is heard by a view mounted before it was started', async () => {
-    const { startPoolHost, watchPoolHost } = await import('./browser/pool-host');
-    const seen: { state: string; problem?: string; retryAt?: number }[] = [];
-    const stop = watchPoolHost((status) => seen.push(status));
-    const release = startPoolHost(undefined);
-    const states = seen.map((status) => status.state).filter((state, i, all) => state !== all[i - 1]);
-    expect(states).toEqual(['not started', 'waiting', 'unavailable']);
-    expect(seen.at(-1)?.problem).toMatch(/Web Locks/);
-    expect(seen.at(-1)?.retryAt).toBeUndefined();
-    release();
     stop();
   });
 });
