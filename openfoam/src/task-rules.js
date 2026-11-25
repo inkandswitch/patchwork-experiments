@@ -80,13 +80,14 @@
  * - Of the pools heard serving a queue that have what a task needs and a free
  *   slot, and the judging pool itself, one is PREFERRED (`preferred`). A
  *   pool judges this once, when it first sees the task takeable, and keeps
- *   that judgment while the task stays takeable: if it was preferred, it
- *   takes the task as soon as it has a free slot; if not, only once HOLD_MS
- *   have passed since that first sight, on its own clock. A pool that has
- *   listened to a queue for less than LISTEN_MS is preferred for nothing
- *   there, and one that stops says it has no slots. This is advice that no
- *   rule depends on: two pools that both take a task resolve as below, the
- *   later giving way.
+ *   that judgment while the task stays takeable. If it was preferred, it
+ *   takes the task as soon as it has a free slot within HOLD_MS of that
+ *   sight, or else (when it hears another that could take it) a second
+ *   HOLD_MS later; if not, only once HOLD_MS have passed since that sight,
+ *   on its own clock. A pool that has listened to a queue for less than
+ *   LISTEN_MS is preferred for nothing there, and one that stops says it has
+ *   no slots. This is advice that no rule depends on: two pools that both
+ *   take a task resolve as below, the later giving way.
  * - It STOPS a run of its own (`stopReason`) as soon as the work is done
  *   elsewhere, a run before it ended the task, its key names another task,
  *   or an earlier run it can hear holds it, each of which makes it `yielded`,

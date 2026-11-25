@@ -9,14 +9,16 @@
 // may take, it holds back for the task's preferred pool: it hears the other
 // pools serving each queue (their `serving`, within the lapse), and judges
 // once, when it first sees a task takeable, whether `preferred` names it. If
-// so it takes the task as soon as it has a free slot; if not, only once
-// HOLD_MS have passed since that first sight. The judgment is kept while the
-// task stays takeable, so nothing is decided again when another pool's slots
-// fill or free. Until it has listened to a queue for LISTEN_MS it does not
-// know who else serves it, and judges itself preferred for nothing there.
-// So that the others choose from what is so, it says `serving` every beat and
-// whenever how many of its slots are busy changes, and as it stops (or stops
-// serving a queue) it says it has no slots, so that nobody holds back for it.
+// so, it takes the task as soon as it has a free slot within HOLD_MS of that
+// sight, or else a second HOLD_MS later, by when what another pool took at
+// the end of the hold has reached it; if not, it takes it only once HOLD_MS
+// have passed since that sight. The judgment is kept while the task stays
+// takeable, so nothing is decided again when another pool's slots fill or
+// free. Until it has listened to a queue for LISTEN_MS it does not know who
+// else serves it, and judges itself preferred for nothing there. So that the
+// others choose from what is so, it says `serving` every beat and whenever
+// how many of its slots are busy changes, and as it stops (or stops serving
+// a queue) it says it has no slots, so that nobody holds back for it.
 //
 // It writes three things and nothing else: a run appended when it takes a
 // task, that run completed when it is over, and an entry deleted when its
@@ -478,7 +480,7 @@ export class Pool {
           return;
         }
         followed.firstSight ??= { at: now, preferred: this.isPreferred(work, served, task, now) };
-        if (this.runs.size < slots && this.mayTakeNow(followed, now)) {
+        if (this.runs.size < slots && this.mayTakeNow(followed, served, task, now)) {
           this.claim(work, queue, handle, task);
         }
       });
@@ -508,15 +510,19 @@ export class Pool {
   }
 
   /**
-   * Whether to take a task this pool may take, now that it has a free slot:
-   * at once if it was the preferred pool when it first saw the task takeable,
-   * and otherwise once HOLD_MS have passed since then, with a timer set to
-   * look again at that moment.
+   * Whether to take a task this pool may take, now that it has a free slot.
+   * Not preferred at its first sight of the task: once HOLD_MS have passed
+   * since then. Preferred: at once within HOLD_MS of that sight, which is
+   * when the others take it; past that, only once a second HOLD_MS has
+   * passed, so that a run another pool took at the end of the hold reaches
+   * this one first, unless it hears no other pool that could have taken it.
+   * Where it may not yet, a timer is set to look again at the moment it may.
    */
-  private mayTakeNow(followed: FollowedTask, now: number): boolean {
+  private mayTakeNow(followed: FollowedTask, served: Served, task: Task, now: number): boolean {
     const sight = followed.firstSight!;
     const waited = now - sight.at;
-    if (sight.preferred || waited >= HOLD_MS) {
+    const from = !sight.preferred ? HOLD_MS : waited < HOLD_MS || !this.othersCould(served, task, now) ? 0 : 2 * HOLD_MS;
+    if (waited >= from) {
       followed.unhold?.();
       return true;
     }
@@ -524,13 +530,18 @@ export class Pool {
       const timer = this.clock.setTimeout(() => {
         followed.unhold = undefined;
         this.review();
-      }, HOLD_MS - waited);
+      }, from - waited);
       followed.unhold = () => {
         this.clock.clearTimeout(timer);
         followed.unhold = undefined;
       };
     }
     return false;
+  }
+
+  /** Whether a pool heard serving the queue within the lapse, with slots, has what the task needs. */
+  private othersCould(served: Served, task: Task, now: number): boolean {
+    return [...served.heard.values()].some((pool) => now - pool.at < LAPSE_MS && pool.slots > 0 && satisfies(pool.has, task.needs));
   }
 
   /**

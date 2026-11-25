@@ -1597,6 +1597,89 @@ describe('the preferred pool', () => {
     expect(o.executor.workers).toHaveLength(0);
   });
 
+  // Two machines, each pool with its own Repo, the documents merged only when
+  // the test says: what one pool writes reaches the other a crossing later.
+  for (const other of [true, false]) {
+    it(`the preferred pool, full until just past the hold, ${other ? 'with another pool that could take the task: waits a second HOLD_MS, by when the run the other took has reached it, and never takes it' : 'alone: takes it the moment a slot frees'}`, async () => {
+      const repoP = new Repo({ network: [] } as any);
+      const repoO = new Repo({ network: [] } as any);
+      const works = [countingWork(repoP), countingWork(repoO)];
+      const settleBoth = async () => {
+        do {
+          await settle();
+        } while (works.some((it) => it.underWay > 0));
+      };
+      const queueP = repoP.create<Queue>({ title: 'q', jobs: {} });
+      const queueO = repoO.import<Queue>(A.save(queueP.doc()), { docId: queueP.documentId } as any);
+      const start = (id: string, repo: Repo) => {
+        const executor = new FakeExecutor(w.clock);
+        const ears = w.net.ears();
+        new Pool({ repo: repo as Docs, id, name: id, slots: 1, has: [], executor, queues: { [queueP.url]: 'any' }, ears, clock: w.clock });
+        return { executor, ears };
+      };
+      const p = start('P', repoP);
+      const o = other ? start('O', repoO) : null;
+      await settleBoth();
+      await w.clock.advance(LISTEN_MS);
+      // what each machine has, merged both ways
+      const handles: [DocHandle<any>, DocHandle<any>][] = [[queueP, queueO]];
+      const merge = () => {
+        for (const [a, b] of handles) {
+          a.merge(b);
+          b.merge(a);
+        }
+      };
+      const make = (key: string) => {
+        const onP = repoP.create<Task>({ importUrl: CODE, input: key, key, needs: [], runs: [] });
+        const onO = repoO.import<Task>(A.save(onP.doc()), { docId: onP.documentId } as any);
+        handles.push([onP, onO]);
+        return onP;
+      };
+      const [busy, task] = [make('busy'), make('task')];
+      if (o) {
+        // P's word that it is full has not reached O when O first sees the two
+        o.ears.deaf = true;
+      }
+      const listedAt = w.clock.now();
+      queueP.change((doc) => {
+        listTask(doc, 'busy', { taskUrl: busy.url, askedAt: 1, package: null, needs: [], near: 'P' });
+        listTask(doc, 'task', { taskUrl: task.url, askedAt: 2, package: null, needs: [], near: 'P' });
+      });
+      merge();
+      await settleBoth();
+      if (o) {
+        o.ears.deaf = false;
+      }
+      expect(runsOf(busy).map((run) => run.pool)).toEqual(['P']);
+      // P's run of `busy` crosses to O within the hold
+      merge();
+      await settleBoth();
+      await w.clock.advance(HOLD_MS);
+      if (o) {
+        // O took it at the end of the hold, on its own machine
+        expect(runsOf(handles[2][1]).map((run) => run.pool)).toEqual(['O']);
+      }
+      // P's slot frees a moment later, before O's run has reached it
+      await w.clock.advance(HOLD_MS / 10);
+      p.executor.of(lastRun(busy).id).events.done('busy');
+      await settleBoth();
+      if (!o) {
+        expect(runsOf(task).map((run) => run.pool)).toEqual(['P']);
+        expect(lastRun(task).start).toBe(listedAt + HOLD_MS + HOLD_MS / 10);
+        return;
+      }
+      expect(runsOf(task)).toEqual([]);
+      await w.clock.advance(HOLD_MS / 2);
+      merge();
+      await settleBoth();
+      await w.clock.advance(LAPSE_MS);
+      merge();
+      await settleBoth();
+      expect(runsOf(task).map((run) => run.pool)).toEqual(['O']);
+      expect(p.executor.workers.flatMap((worker) => worker.jobs).map((job) => job.key)).toEqual(['busy']);
+    });
+  }
+
   it('a pool heard full when the other first sees a task is not preferred: the other takes it at once, and the full pool, freed later, does not', async () => {
     const task = made('k');
     const [P, O] = byPreference(task);
