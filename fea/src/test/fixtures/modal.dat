@@ -1,0 +1,14 @@
+
+     E I G E N V A L U E   O U T P U T
+
+ MODE NO    EIGENVALUE                       FREQUENCY   
+                                     REAL PART            IMAGINARY PART
+                           (RAD/TIME)      (CYCLES/TIME     (RAD/TIME)
+
+      1   0.4062981E+08   0.6374152E+04   0.1014478E+04   0.0000000E+00
+      2   0.4401703E+08   0.6634533E+04   0.1055919E+04   0.0000000E+00
+
+     P A R T I C I P A T I O N   F A C T O R S
+
+MODE NO.   X-COMPONENT     Y-COMPONENT     Z-COMPONENT     X-ROTATION      Y-ROTATION      Z-ROTATION
+      1  -0.1068552E-05   0.7474871E-01   0.1223460E-01   0.4612408E-06   0.9238735E-03  -0.5645018E-02

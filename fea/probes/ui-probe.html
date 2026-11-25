@@ -1,0 +1,240 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>fea probe</title>
+<script type="importmap">
+  { "imports": { "@inkandswitch/patchwork-plugins": "/probes/plugins-stub.js" } }
+</script>
+<style>
+  /* just enough of a theme to see both ends of it */
+  [theme="light"] {
+    --editor-fill: #fbfbf9;
+    --editor-line: #1d1d1b;
+    --studio-primary: #35f7ca;
+    --studio-primary-line: #10201c;
+    --studio-danger: #d33;
+    --studio-added: #2a9d4b;
+  }
+  [theme="dark"] {
+    --editor-fill: #1b1c1e;
+    --editor-line: #e9e9e6;
+    --studio-primary: #35f7ca;
+    --studio-primary-line: #10201c;
+    --studio-danger: #ff6b6b;
+    --studio-added: #4cc46f;
+  }
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    background: var(--editor-fill);
+  }
+  #host {
+    height: 100vh;
+  }
+</style>
+<div id="host"></div>
+<script type="module">
+  import { FakeRepo } from "/probes/fake-repo.js";
+  import { getRegistry } from "/probes/plugins-stub.js";
+  import { plugins } from "/dist/index.js";
+  import { encodeGLB, parseGLB } from "/src/glb.js";
+  import * as shapes from "/src/test/shapes.js";
+
+  const errors = [];
+  window.addEventListener("error", (e) => errors.push(String(e.error?.stack ?? e.message)));
+  window.addEventListener("unhandledrejection", (e) => errors.push(String(e.reason?.stack ?? e.reason)));
+  document.documentElement.setAttribute("theme", "light");
+
+  const repo = new FakeRepo();
+  window.repo = repo;
+  for (const p of plugins) getRegistry(p.type).register(p);
+  // other packages' built plugins, named in ?plugins= (a CAD tool whose models are linked as parts)
+  for (const url of (new URLSearchParams(location.search).get("plugins") ?? "").split(",").filter(Boolean)) for (const p of (await import(url)).plugins) getRegistry(p.type).register(p);
+  const tool = async (id) => (await getRegistry("patchwork:tool").load(id)).module;
+  const datatype = async (id) => (await getRegistry("patchwork:datatype").load(id)).module;
+  const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const revive = (v) => {
+    if (v && typeof v === "object" && typeof v.$bytes === "string") return b64(v.$bytes);
+    if (Array.isArray(v)) return v.map(revive);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, revive(x)]));
+    return v;
+  };
+  const shown = (doc) => JSON.parse(JSON.stringify(doc ?? null, (k, v) => (v instanceof Uint8Array ? `<${v.byteLength} bytes>` : v)));
+  let study = null;
+  let server = null;
+  let unmountTool = null;
+  const host = document.querySelector("#host");
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => [...document.querySelectorAll(s)];
+  const fea = () => host.__fea;
+  const opened = [];
+  host.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
+
+  /** A file doc holding a GLB of a shape (as a model's file would be). */
+  function glbFile(name, triangles) {
+    const positions = Float32Array.from(triangles);
+    return repo.add({ "@patchwork": { type: "file" }, name: `${name}.glb`, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB({ meshes: [{ name, primitives: [{ positions }] }] }) });
+  }
+  const SHAPES = {
+    plate: () => shapes.plateWithHole(0.1, 0.04, 0.005, 0.004, 48),
+    beam: () => shapes.box(0.1, 0.01, 0.01),
+    longer: () => shapes.box(0.12, 0.01, 0.01),
+    // a box with its last face left off: not a closed solid
+    open: () => shapes.box(0.1, 0.01, 0.01).subarray(0, 90),
+  };
+
+  window.__p = {
+    errors,
+    opened,
+    theme(t) {
+      document.documentElement.setAttribute("theme", t);
+    },
+    /** an empty study, opened, and a server it could run on */
+    async setup({ online = true } = {}) {
+      server = repo.add({
+        "@patchwork": { type: "fea-server" },
+        title: "FEA on the probe",
+        protocol: 1,
+        daemon: { id: "d", host: "probe-host", platform: "darwin arm64", calculix: "2.23", gmsh: "4.15.2", cores: 8, jobs: 1, maxNodes: 250000, heartbeat: online ? Date.now() + 3600_000 : 1, startedAt: Date.now() - 60000 },
+        requests: {},
+        handled: {},
+        active: {},
+      });
+      const dt = await datatype("fea-study");
+      const doc = { "@patchwork": { type: "fea-study" } };
+      dt.init(doc);
+      study = repo.add(doc);
+      unmountTool = (await tool("fea-study"))(study, host);
+      return { study: study.url, server: server.url };
+    },
+    file(shape) {
+      return glbFile(shape, SHAPES[shape]()).url;
+    },
+    /** a document of another package's (an OpenSCAD model, say), as its own tool would have made it */
+    add(doc) {
+      return repo.add(doc).url;
+    },
+    changeDoc(url, code) {
+      repo.handles.get(url).change(new Function("d", code));
+    },
+    /** the kept part, bytes as base64: what a run would freeze */
+    kept() {
+      const text = (v) => {
+        let s = "";
+        for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode.apply(null, v.subarray(i, i + 0x8000));
+        return btoa(s);
+      };
+      const b64 = (v) => (v instanceof Uint8Array ? { $bytes: text(v) } : Array.isArray(v) ? v.map(b64) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, b64(x)])) : v);
+      return b64(repo.handles.get(study.doc().part?.kept)?.doc() ?? null);
+    },
+    /** type into a field as a person does: set it, then the change event */
+    type(sel, value) {
+      const el = $(sel);
+      if (!el) return false;
+      el.value = value;
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    },
+    click(sel) {
+      const el = $(sel);
+      el?.click();
+      return !!el;
+    },
+    text: (sel) => $(sel)?.innerText ?? null,
+    texts: (sel) => $$(sel).map((e) => e.innerText.replace(/\s+/g, " ").trim()),
+    rows: (sel) => $$(sel).map((tr) => [...tr.children].map((td) => td.innerText.replace(/\s+/g, " ").trim())),
+    panel: () => fea().panel.state(),
+    doc: () => shown(study.doc()),
+    change(code) {
+      study.change(new Function("d", code));
+    },
+    /** the kept part's faces, as the tool split them */
+    faces() {
+      const kept = repo.handles.get(study.doc().part?.kept)?.doc();
+      return kept?.faces?.map((f) => ({ id: f.id, flat: f.flat, normal: f.normal.map((v) => Number(v.toFixed(3))), centroid: [...f.centroid], radius: f.radius })) ?? [];
+    },
+    /** look square at a face, and say where its middle is on the page */
+    async aim(faceId) {
+      const f = this.faces().find((x) => x.id === faceId);
+      const n = f.normal.every((v) => v === 0) ? [0, 0, 1] : f.normal;
+      fea().viewport.lookAlong(n.map((v) => -v));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return fea().viewport.project(f.centroid);
+    },
+    look(direction) {
+      fea()?.viewport.lookAlong(direction);
+    },
+    runButton() {
+      const b = $(".fea .run");
+      return { disabled: b?.disabled, why: $$(".fea ul.why li").map((l) => l.innerText), said: $(".run-said")?.innerText ?? "" };
+    },
+    serverState: () => shown(server.doc()),
+    runDocs: () => (study.doc().runs ?? []).map((u) => shown(repo.handles.get(u)?.doc())),
+    /** a dumped finished run (probes/local-run.mjs --dump), made the study's selected run */
+    async loadRun(path) {
+      const dump = await (await fetch(path)).json();
+      for (const [url, doc] of Object.entries(dump.layers)) repo.add(revive(doc), url);
+      const run = revive(dump.run);
+      run.study = study.url;
+      const h = repo.add(run);
+      study.change((d) => {
+        d.runs.push(h.url);
+        d.selected = h.url;
+      });
+      return h.url;
+    },
+    /** a run doc as the daemon has it mid-solve */
+    async midRun(path) {
+      const dump = await (await fetch(path)).json();
+      const run = revive(dump.run);
+      Object.assign(run, { status: "solving", summary: null, layers: {}, notes: [], finishedAt: null, startedAt: Date.now() - 42_000 });
+      for (const s of run.stages) {
+        if (s.id === "solve") Object.assign(s, { status: "running", endedAt: null, note: null, tail: " Factoring the system of equations using the symmetric spooles solver\n Using up to 1 cpu(s) for spooles." });
+        if (s.id === "results") Object.assign(s, { status: "pending", startedAt: null, endedAt: null, note: null });
+      }
+      run.study = study.url;
+      const h = repo.add(run);
+      study.change((d) => {
+        d.runs.push(h.url);
+        d.selected = h.url;
+      });
+      return h.url;
+    },
+    legend: () => ({ shown: !$(".fea .legend")?.hidden, text: $(".fea .legend")?.innerText.replace(/\s+/g, " ").trim() ?? "" }),
+    async sceneBuild(params = {}, which = "study") {
+      const p = getRegistry("scene:source").get("fea-results");
+      const mod = (await getRegistry("scene:source").load("fea-results")).module;
+      const full = Object.fromEntries(p.params.map((s) => [s.key, s.default]));
+      const h = which === "study" ? study : repo.handles.get(study.doc().selected);
+      const r = await mod.build({ doc: h.doc(), handle: h, url: h.url, params: { ...full, ...params }, repo });
+      const { json } = parseGLB(r.glb);
+      return {
+        bytes: r.glb.byteLength,
+        meshes: json.meshes.map((m) => m.name),
+        colored: json.meshes.map((m) => m.primitives.some((q) => q.attributes.COLOR_0 != null)),
+        legends: json.meshes.map((m) => m.extras?.legend ?? null),
+        layers: json.scenes[0].extras?.layers?.map((l) => l.id),
+        notes: r.meta.notes,
+        bounds: r.meta.bounds,
+        deps: mod.dependencies(h.doc()).length,
+        fingerprint: mod.fingerprint(h.doc()),
+      };
+    },
+    async openTool(id, url) {
+      unmountTool?.();
+      unmountTool = (await tool(id))(repo.handles.get(url), host);
+      return host.innerText.replace(/\s+/g, " ").slice(0, 20000);
+    },
+    async reopen() {
+      unmountTool?.();
+      unmountTool = (await tool("fea-study"))(study, host);
+    },
+    unmount() {
+      unmountTool?.();
+      unmountTool = null;
+      return { left: host.children.length, listeners: study.listenerCount("change") };
+    },
+  };
+  window.__ready = true;
+</script>
