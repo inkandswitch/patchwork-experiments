@@ -1,9 +1,11 @@
 // Run a PUBLISHED copy of this package in the REAL Patchwork, the way a
 // person's browser runs it: a fresh profile (cdp.mjs) installs it from its
-// automerge url through module settings, puts one new queue of its own (and
-// no other) on the account's list, mounts the titlebar badge (which starts
-// the page's pool host), and asks that queue for tasks through the asker's
-// client (src/task-client.js, bundled here and put on the page).
+// automerge url through module settings, makes the profile's own queue with
+// the asker's client (`ownQueue`, which asks the site's own tool-storage
+// provider for the task storage and serves that queue alone), mounts the
+// titlebar badge (which starts the page's pool host), and asks that queue
+// for tasks through the client (src/task-client.js, bundled here and put on
+// the page).
 //
 // NOT RUN YET. It needs a published copy of the package, and only the
 // integrator publishes. probes/browser-run.mjs proves the same pool on this
@@ -65,19 +67,32 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 try {
   await b.send("Page.navigate", { url: SHELL });
   check("the shell booted", await b.waitFor("!!window.repo && !!window.accountDocHandle", 90_000, 500));
+  await js(client, "the client");
 
-  // A queue of this profile's own, the only one its account serves, and then the package.
+  // The profile's own queue, made by the client through the site's own
+  // tool-storage provider (asked from the provider's element, as a tool
+  // under it would ask), the only queue its account serves; then the package.
   const setup = await js(`(async () => {
+    const C = window.taskClient;
     const account = window.accountDocHandle;
-    const q = window.repo.create({ "@patchwork": { type: "task-queue-next" }, title: "probe queue", jobs: {} });
-    account.change((d) => { d.__servedQueues__ = { [q.url]: true }; });
+    const before = C.storageUrlOf(account.doc());
+    const element = document.querySelector('patchwork-view[component="patchwork-tool-storage-provider"]');
+    if (!element) return { error: "the frame has no tool-storage provider" };
+    const queueUrl = await C.ownQueue(window.repo, element);
+    const storageUrl = C.storageUrlOf(account.doc());
+    const storage = (await window.repo.find(storageUrl)).doc();
     const msUrl = account.doc().moduleSettingsUrl;
     const ms = msUrl ? await window.repo.find(msUrl) : null;
     ms?.change((d) => { if (!d.modules) d.modules = []; if (!d.modules.includes(${J(pkg)})) d.modules.push(${J(pkg)}); });
-    window.__probe = { queueUrl: q.url };
-    return { queueUrl: q.url, modules: ms?.doc().modules ?? null };
+    window.__probe = { queueUrl, storageUrl };
+    return { storageBefore: before, queueUrl, storageUrl, own: C.ownQueueOf(storage), served: C.servedOf(storage), modules: ms?.doc().modules ?? null };
   })()`);
   Object.assign(report, setup);
+  check(
+    "a fresh account names no task storage; ownQueue makes it through the site's provider, and it serves the new queue alone, as the account's own",
+    setup.storageBefore === null && /^automerge:/.test(setup.storageUrl ?? "") && setup.own === setup.queueUrl && J(setup.served) === J({ [setup.queueUrl]: true }),
+    setup,
+  );
   check("the package is in this profile's module settings", setup.modules?.includes(pkg), setup);
 
   // Open the queue (its browser is this package's tool), then put the badge up as a frame would.
@@ -101,7 +116,7 @@ try {
     report.reloadedToLoadPackage = true;
     await b.send("Page.reload");
     await b.waitFor("!!window.repo && !!window.accountDocHandle", 60_000, 500);
-    await js(`window.__probe = { queueUrl: ${J(setup.queueUrl)} }`);
+    await js(`window.__probe = { queueUrl: ${J(setup.queueUrl)}, storageUrl: ${J(setup.storageUrl)} }`);
     opened = await open();
   }
   check("the queue browser is this package's", opened);
@@ -175,18 +190,18 @@ try {
     check("a spinning task cancelled: stopping then cancelled; its slot is free again; the next task runs", out.states.includes("stopping") && out.states.at(-1) === "cancelled" && out.freeAfter <= GRACE_MS + 3_000 + 2_000 && out.next === 2, out);
   }
 
-  // 5. whose code this browser runs from the queue: only this package's, then any again
+  // 5. whose code this browser runs from the queue: only this package's, then any again (written to the task storage, as the queue browser's control writes it)
   {
     const out = await call(`
-      const account = window.accountDocHandle;
+      const storage = await site.find(window.__probe.storageUrl);
       const data = "data:text/javascript," + encodeURIComponent("export default () => 'ran'");
-      account.change((d) => { d.__servedQueues__[Q] = { packages: [${J(pkg)}] }; });
+      storage.change((d) => { d.served[Q] = { packages: [${J(pkg)}] }; });
       await new Promise((r) => setTimeout(r, 2000));
       const { key } = await C.ask(T, Q, { importUrl: data });
       const fromPackage = await C.run(T, Q, { importUrl: ${J(`/${encodeURIComponent(pkg)}/dist/tasks/wait.js`)}, input: { ms: 100, value: "accepted" } });
       await new Promise((r) => setTimeout(r, 3000));
       const waiting = (await T.find((await T.find(Q)).doc().jobs[key].taskUrl)).doc().runs.length;
-      account.change((d) => { d.__servedQueues__[Q] = true; });
+      storage.change((d) => { d.served[Q] = true; });
       const afterwards = await new Promise((r) => { const stop = C.watch(T, Q, key, (v) => { if (v.state === "succeeded") { stop(); r(v.result); } }); });
       return { fromPackage, runsWhileRefused: waiting, afterwards };`, "what the pool accepts", 90_000);
     check("told to run only this package's code, the pool leaves a data: URL waiting, and runs it once told it may", out.fromPackage === "accepted" && out.runsWhileRefused === 0 && out.afterwards === "ran", out);

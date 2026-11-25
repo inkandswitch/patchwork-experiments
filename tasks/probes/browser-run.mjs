@@ -18,8 +18,12 @@
 // What stands in for Patchwork: the site's modules (Repo, storage,
 // automerge, subduction, solid), bundled here from this package's own
 // node_modules and named in the page's import map as the site names them;
-// automerge.wasm and subduction.wasm at the root; an account document with a
-// queue on its list; and the page's tasks Repo, which the site would have.
+// automerge.wasm and subduction.wasm at the root; an account document, its
+// handle where the site sets it, and the frame's tool-storage provider
+// (page.js), which makes the account's task storage the first time a tool
+// asks; and the page's tasks Repo, which the site would have. The account
+// starts with no task storage (check 18); the probe's queue is then joined
+// through the queue browser's Join, and checks 1 to 17 ask it.
 // A copy of dist/ stamped as a newer build is served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
@@ -334,6 +338,37 @@ try {
   }
   const poolId = await A.js("localStorage.getItem('patchwork-tasks-pool-id')");
   log(`A runs pool ${poolId}, ${slots} slots`);
+
+  // 18 (first, while the account is fresh). An account that names no task
+  // storage serves nothing, and its titlebar says so and offers a queue of
+  // one's own; pressing that makes the storage (through the provider) and a
+  // queue, serves it, and a task asked of ownQueue() runs. Then the probe's
+  // queue is joined through the queue browser's Join, which checks 1 to 17
+  // ask, and a task asked of it before the join, which waited, runs.
+  {
+    const said = await A.waitFor("probe.titlebar()?.offer === 'make' && probe.titlebar()", 15_000);
+    const storageBefore = await A.js("probe.storage()");
+    const waitingKey = await A.js(`probe.ask(${J(NOOP)})`);
+    const heard = await A.js("probe.served(4000)");
+    const waited = await A.js(`probe.last(${J(waitingKey)})`);
+    const pressed = await A.js("probe.pressMakeOwn()");
+    const own = await A.waitFor("probe.storage().then((s) => s?.own ?? false)", 15_000);
+    const storageAfter = await A.js("probe.storage()");
+    const ownRun = await A.js(`probe.ownQueue().then((url) => probe.timeRun(${J(NOOP)}, null, url).then((r) => ({ url, ...r })))`, 30_000).catch((e) => ({ error: String(e.message ?? e) }));
+    const asked = await A.js("probe.providerAsked");
+    const offerAfter = await A.waitFor("probe.titlebar()?.offer === null && probe.titlebar()", 10_000);
+    const joined = await A.js("probe.join()");
+    await A.waitFor(stateIs(waitingKey, "succeeded", "failed", "cancelled"), 20_000);
+    const afterJoin = await A.js(`probe.last(${J(waitingKey)})`);
+    check(
+      "18 a fresh account serves nothing and says so; Make my queue makes and serves one, and a task asked of ownQueue() runs; Join serves the probe's queue and its waiting task runs",
+      !!said && /No task queues/.test(said.text) && storageBefore === null && heard.length === 0 && waited.state === "waiting" && waited.runs.length === 0 &&
+        pressed && typeof own === "string" && storageAfter?.served?.[own] === true && J(Object.keys(storageAfter.served)) === J([own]) &&
+        ownRun.url === own && ownRun.result === 1 && J(asked) === J(["tasks-next"]) && !!offerAfter &&
+        joined.pressed && joined.served === true && afterJoin.state === "succeeded",
+      `before: titlebar ${J(said?.text)} offering ${J(said?.offer)}, task storage ${J(storageBefore)}, pools heard on the probe's queue ${J(heard)}, a task asked of it ${waited.state} with ${waited.runs.length} runs; pressed ${pressed}; after: own ${String(own).slice(0, 22)}…, served ${J(Object.keys(storageAfter?.served ?? {}).map((u) => u.slice(0, 22)))}, the provider asked for ${J(asked)}; a task asked of ownQueue() ${ownRun.result === 1 ? `ran in ${ownRun.ms.toFixed(0)} ms on ${ownRun.url === own ? "that queue" : J(ownRun.url)}` : J(ownRun)}; titlebar then ${J(offerAfter?.text)}; Join pressed ${joined.pressed}, served ${J(joined.served)}; the waiting task ${afterJoin.state}`,
+    );
+  }
 
   // 1. a do-nothing task, ask to result, ten in a row
   {

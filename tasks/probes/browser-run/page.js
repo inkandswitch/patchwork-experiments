@@ -1,7 +1,8 @@
 // The probe page's side (see index.html): starts automerge as the site
-// would, makes this tab's tasks Repo, and offers the harness `window.probe`:
-// make the account and its queue, mount the real titlebar tool from the
-// built package, and ask, watch and stop tasks through the built task-client.
+// would, makes this tab's tasks Repo, stands in for the frame's tool-storage
+// provider, and offers the harness `window.probe`: make the account and a
+// queue, mount the real titlebar tool and queue browser from the built
+// package, and ask, watch and stop tasks through the built task-client.
 import { Repo, parseAutomergeUrl } from '@automerge/automerge-repo/slim';
 import { IndexedDBStorageAdapter } from '@automerge/automerge-repo-storage-indexeddb';
 import { initializeWasm } from '@automerge/automerge/slim';
@@ -32,24 +33,107 @@ const repo = new Repo({
 // The hook tasks-repo.ts leaves for a page that has a Repo of the family already.
 window.patchworkTasks = { repo: Promise.resolve(repo) };
 
+// The account's handle, where the site sets it, once the harness has made
+// the account (in this tab or an earlier one).
+const accountUrl = localStorage.getItem('tinyPatchworkAccountUrl');
+if (accountUrl) {
+  window.accountDocHandle = await repo.find(accountUrl);
+}
+
+// The frame's tool-storage provider, standing in as Patchwork's
+// ToolStorageProvider answers through patchwork-providers' accept(): it
+// takes a `patchwork:subscribe` for `{ type: 'patchwork:tool-storage',
+// toolId }`, stops it, listens on its port for `{ type: 'unsubscribe' }`,
+// and posts `{ type: 'change', value: url }`: the document the account names
+// under `toolStorage[toolId]`, made and linked there first if it names none.
+// Every tool on the page is under it, as every tool in a frame is.
+const providerAsked = [];
+document.addEventListener('patchwork:subscribe', (event) => {
+  const { selector, port } = event.detail ?? {};
+  if (selector?.type !== 'patchwork:tool-storage' || typeof selector.toolId !== 'string' || !selector.toolId) return;
+  event.stopPropagation();
+  let alive = true;
+  port.onmessage = (message) => {
+    if (message.data?.type === 'unsubscribe' && alive) {
+      alive = false;
+      port.close();
+    }
+  };
+  const account = window.accountDocHandle;
+  if (!account) return;
+  const { toolId } = selector;
+  providerAsked.push(toolId);
+  if (!account.doc()?.toolStorage?.[toolId]) {
+    const made = repo.create({ '@patchwork': { type: 'patchwork:tool-storage' } });
+    account.change((doc) => {
+      if (!doc.toolStorage) doc.toolStorage = {};
+      if (!doc.toolStorage[toolId]) doc.toolStorage[toolId] = made.url;
+    });
+  }
+  if (alive) port.postMessage({ type: 'change', value: account.doc().toolStorage[toolId] });
+});
+
 const queueUrl = () => localStorage.getItem('probeQueue');
 const statusLog = [];
 const views = {};
+let queueView = null;
 
 const probe = {
   repo,
   statusLog,
   views,
   queueUrl,
+  providerAsked,
 
-  /** The account document with one queue on its list, served for any code. */
+  /** A fresh account, which serves nothing (it names no task storage), and a queue it does not serve yet. */
   async makeAccount() {
     const queue = repo.create({ '@patchwork': { type: 'task-queue-next' }, title: 'Probe queue', jobs: {} });
-    const account = repo.create({ __servedQueues__: { [queue.url]: true } });
+    const account = repo.create({});
     await repo.flush();
     localStorage.setItem('probeQueue', queue.url);
     localStorage.setItem('tinyPatchworkAccountUrl', account.url);
+    window.accountDocHandle = account;
     return queue.url;
+  },
+
+  /** The task storage document the account names, as it is now, or null. */
+  async storage() {
+    const url = client.storageUrlOf(window.accountDocHandle?.doc());
+    return url ? (await repo.find(url)).doc() : null;
+  },
+
+  /** What the titlebar tool shows, as text, and which offer it makes (`make`, `open` or none). */
+  titlebar() {
+    const list = document.querySelector('#badge .task-titlebar-list');
+    return list ? { text: list.textContent, offer: list.querySelector('[data-offer]')?.dataset.offer ?? null } : null;
+  },
+
+  /** Presses the titlebar's offer to make one's own queue, as a person would. */
+  pressMakeOwn() {
+    const button = document.querySelector('#badge [data-offer="make"]:not([disabled])');
+    button?.click();
+    return !!button;
+  },
+
+  /** This person's own queue, through the built client, from the titlebar tool's element. */
+  ownQueue() {
+    return client.ownQueue(repo, document.querySelector('#badge'));
+  },
+
+  /** Opens the queue browser on the probe's queue, presses Join queue as a person would, and closes it again once the list says so. */
+  async join() {
+    await probe.mountQueueView();
+    const until = Date.now() + 15_000;
+    let button;
+    while (!(button = [...document.querySelectorAll('#queue-view button')].find((b) => b.textContent.trim() === 'Join queue')) && Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    button?.click();
+    while (!client.servedOf(await probe.storage())[queueUrl()] && Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    probe.unmountQueueView();
+    return { pressed: !!button, served: client.servedOf(await probe.storage())[queueUrl()] ?? null };
   },
 
   /** Mounts the built package's titlebar tool, as a frame would, with this Repo standing in for the site's. */
@@ -75,8 +159,14 @@ const probe = {
     element.id = 'queue-view';
     element.repo = repo;
     document.body.append(element);
-    TaskQueueTool(await repo.find(queueUrl()), element);
+    queueView = { element, dispose: TaskQueueTool(await repo.find(queueUrl()), element) };
     return true;
+  },
+
+  unmountQueueView() {
+    queueView?.dispose?.();
+    queueView?.element.remove();
+    queueView = null;
   },
 
   /** What the queue browser shows: the pools heard serving, and each task row with its runs. */
@@ -165,9 +255,9 @@ const probe = {
   },
 
   /** Asks and waits; how long from asking to the result, in ms. */
-  async timeRun(importUrl, input = null) {
+  async timeRun(importUrl, input = null, queue = queueUrl()) {
     const t0 = performance.now();
-    const result = await client.run(repo, queueUrl(), { importUrl, input });
+    const result = await client.run(repo, queue, { importUrl, input });
     return { ms: performance.now() - t0, result };
   },
 
@@ -178,11 +268,11 @@ const probe = {
     return key;
   },
 
-  watch(key, from) {
+  watch(key, from, queue = queueUrl()) {
     const seen = (views[key] = []);
     client.watch(
       repo,
-      queueUrl(),
+      queue,
       key,
       (view) =>
         seen.push({
