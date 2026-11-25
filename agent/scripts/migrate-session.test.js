@@ -147,7 +147,7 @@ describe("a version 1 session", () => {
     const doc = v1({ subject: "automerge:subject" })
     doc.turns.push(turn("assistant", [call("c1", "doc_read", { url: "automerge:subject" }), call("c2", "fs_write", { path: "tally/tool.js", content: "" }), call("c3", "some_package_tool", { n: 1 })]))
     migrateSession(doc)
-    expect(doc.turns.at(-1).blocks.map((b) => b.shown ?? null)).toEqual([{ verb: "read", detail: "this document" }, { verb: "write", detail: "tool.js" }, null])
+    expect(doc.turns.at(-1).blocks.map((b) => b.shown ?? null)).toEqual([{ verb: "read", detail: "this document" }, { verb: "write", detail: "tool.js", body: "files" }, null])
   })
 
   it("a view_mount result says which mount it opened; no other result is read for one", () => {

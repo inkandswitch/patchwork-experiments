@@ -42,7 +42,7 @@ holds the lease was cut off: the next runner takes it out and asks again.
 |---|---|---|
 | `text` | `text` | what the model or a person said |
 | `reasoning` | `text` | the model's thinking, when it shows it |
-| `call` | `tool, input, where, status, runner, generation, ask, shown` | a tool call. `shown` is how it reads in the log, `{ verb, detail }`, when its tool says |
+| `call` | `tool, input, where, status, runner, generation, ask, shown` | a tool call. `shown` is how it reads in the log and opens, `{ verb, detail, body?, format? }`, when its tool says |
 | `result` | `callId, output, isError, image, doc, file, facts, summary, placeholder, pinned?` | a call's answer, in a `tool` turn. `output` is for the model; `facts` is what the call did as plain data, for code (TOOLS.md). `placeholder` marks the one a runner wrote for a call it found cut off, whose own result may still arrive |
 | `context` | `focused, open` | what the person had focused and open when they spoke |
 | `attachment` | `url, name, docType, mimeType, image` | a document attached to a message |

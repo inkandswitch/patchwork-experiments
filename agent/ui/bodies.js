@@ -8,16 +8,16 @@
  * not be the least readable thing in the log.
  *
  * So: short scalars go in a compact field list, long or multi-line strings get
- * their own labelled code block with real newlines, and a handful of tools whose
- * shape is worth knowing — writing files, editing documents, asking a question —
- * get a rendering built for them.
+ * their own labelled code block with real newlines, and a few shapes worth
+ * knowing — files written, edits made, a question asked — have a layout built
+ * for them, which a tool asks for by name.
  *
  * DOM calls only, like everything else here. This is tool output and model
  * output; it is never parsed as markup.
  */
 
 import { renderMarkdown } from "./markdown.js"
-import { pathLabel, baseName } from "../documents/labels.js"
+import { pathLabel, baseName, languageOf } from "../documents/labels.js"
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag)
@@ -40,12 +40,6 @@ export function codeBlock(text, { language = null, className = "agent-code" } = 
   if (language) code.dataset.language = language
   pre.append(code)
   return pre
-}
-
-/** `src/tool.js` -> `js`, for a label. */
-export function languageOf(path) {
-  const extension = String(path ?? "").split(".").pop()?.toLowerCase()
-  return /^(js|jsx|ts|tsx|json|css|html|md|mjs)$/.test(extension ?? "") ? extension : null
 }
 
 /** One `label: value` row, for the short stuff. */
@@ -172,31 +166,30 @@ function askBody(input) {
 }
 
 /**
- * How each tool's call renders when opened.
- *
- * `input` builds the request side; `markdown` says the result is prose rather
- * than a report whose alignment matters.
+ * The layouts a call's input can open in, by the name its tool gives
+ * (`present.body`, kept on the call as `shown.body`). Each falls back to the
+ * field list when the input is not the shape it lays out.
  */
-const BODIES = {
-  fs_write: { input: writeBody },
-  doc_edit: { input: editBody },
-  ask_user: { input: askBody },
-  fs_read: { input: (i) => renderInput(i), language: (i) => languageOf(i.path) },
-  web_fetch: { markdown: true },
-  source_read: { markdown: true },
-  skill_read: { markdown: true },
-  plugin_source: { language: (i) => languageOf(i.file) },
+export const INPUT_LAYOUTS = {
+  files: writeBody,
+  edits: editBody,
+  question: askBody,
 }
 
 /**
  * Render the open body of a call: what was asked for, and what came back.
+ *
+ * How is the call's own to say (`shown`, kernel/tool.js presentCall): which
+ * layout its input opens in, and whether its result is prose (`format:
+ * "markdown"`) or text in some language. A call that says nothing is a field
+ * list and a monospace result, whose alignment a report depends on.
  */
 export function renderCallBody(block, result) {
   const body = el("div", "agent-call-body")
   const input = block?.input ?? {}
-  const spec = BODIES[block?.tool] ?? {}
+  const shown = block?.shown ?? {}
 
-  const requested = spec.input ? spec.input(input) : renderInput(input)
+  const requested = (INPUT_LAYOUTS[shown.body] ?? renderInput)(input)
   if (requested.length) {
     body.append(el("div", "agent-block-label", "call"))
     body.append(...requested)
@@ -205,13 +198,12 @@ export function renderCallBody(block, result) {
   if (result) {
     // A code result keeps its language; prose is rendered as prose. Errors are
     // always monospace — they carry stacks and file positions.
-    const markdown = !result.isError && !!spec.markdown
+    const markdown = !result.isError && shown.format === "markdown"
     const rendered = renderOutput(result.output, { markdown })
     if (rendered.length) {
       const [label, content] = rendered
       if (result.isError) content.classList.add("agent-output-error")
-      const language = spec.language?.(input)
-      if (language && !markdown) content.querySelector("code")?.setAttribute("data-language", language)
+      if (shown.format && !markdown) content.querySelector("code")?.setAttribute("data-language", shown.format)
       body.append(label, content)
     }
   }
@@ -219,6 +211,4 @@ export function renderCallBody(block, result) {
   return body
 }
 
-/** Exported for the tests: which tools have a bespoke body. */
-export const BESPOKE = Object.keys(BODIES)
-export { baseName }
+export { baseName, languageOf }

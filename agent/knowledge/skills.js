@@ -160,7 +160,7 @@ export const skillList = {
 
 export const skillRead = {
   id: "skill_read",
-  present: { verb: "read skill", detail: (i) => i.name ?? null },
+  present: { verb: "read skill", detail: (i) => i.name ?? null, format: "markdown" },
   name: "Read a skill",
   description:
     "Read one skill in full. Do this before writing a Patchwork tool, before your first edit to an unfamiliar document shape, and whenever a skill's description sounds like the thing you are about to attempt.",

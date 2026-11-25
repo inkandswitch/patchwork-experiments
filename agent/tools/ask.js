@@ -21,7 +21,7 @@
 
 export const askUser = {
   id: "ask_user",
-  present: { verb: "ask", detail: (i) => i.question ?? null },
+  present: { verb: "ask", detail: (i) => i.question ?? null, body: "question" },
   name: "Ask the user",
   description: [
     "Ask the person a question and wait for their answer.",

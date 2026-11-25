@@ -50,3 +50,9 @@ export function describeOps(ops) {
   const more = ops.length - names.length
   return names.join(", ") + (more > 0 ? ` +${more} more` : "")
 }
+
+/** `src/tool.js` -> `js`: the language a path's text is in, where a view can colour it. */
+export function languageOf(path) {
+  const extension = String(path ?? "").split(".").pop()?.toLowerCase()
+  return /^(js|jsx|ts|tsx|json|css|html|md|mjs)$/.test(extension ?? "") ? extension : null
+}

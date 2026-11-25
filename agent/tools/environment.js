@@ -12,7 +12,7 @@ import { truncate, bytes } from "../documents/format.js"
 import { resolvePath, treeNode, treeEntries, treeFiles } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 import { fetcher } from "../net/guard.js"
-import { shortDoc, baseName } from "../documents/labels.js"
+import { shortDoc, baseName, languageOf } from "../documents/labels.js"
 
 /**
  * The registry, one line per plugin, grouped by type.
@@ -130,7 +130,7 @@ export function packageDocOf(importUrl) {
 
 export const pluginSource = {
   id: "plugin_source",
-  present: { verb: "source", detail: (i) => (i.file ? `${i.id}/${baseName(i.file)}` : i.id ?? null) },
+  present: { verb: "source", detail: (i) => (i.file ? `${i.id}/${baseName(i.file)}` : i.id ?? null), format: (i) => languageOf(i.file) },
   name: "Read plugin source",
   description:
     "Read the source of an installed plugin, by plugin id. This is how you learn how an existing tool works before writing one like it. Automerge-hosted packages are read from their folder document; http-hosted ones are fetched.",

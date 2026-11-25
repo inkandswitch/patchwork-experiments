@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest"
-import { renderCallBody, renderInput, isLong, languageOf, codeBlock } from "./bodies.js"
+import { renderCallBody, renderInput, isLong, languageOf, codeBlock, INPUT_LAYOUTS } from "./bodies.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
+import { written } from "../fixtures/calls.js"
 
-const body = (tool, input, result = null) => renderCallBody({ tool, input }, result)
+/** A call as the loop writes it: it carries how it opens, as its tool says (kernel/tool.js presentCall). */
+const body = (tool, input, result = null) => renderCallBody(written({ tool, input }), result)
 const textOf = (node) => node.textContent
 
 describe("the thing this file exists to fix", () => {
@@ -102,7 +104,7 @@ describe("the generic rendering", () => {
   it("survives every builtin tool's input shape", () => {
     for (const tool of BUILTIN_TOOLS) {
       for (const input of [{}, { url: "automerge:a" }, { ops: null }, { files: "nope" }, { options: 3 }]) {
-        expect(() => renderCallBody({ tool: tool.id, input }, null), tool.id).not.toThrow()
+        expect(() => renderCallBody(written({ tool: tool.id, input }), null), tool.id).not.toThrow()
       }
     }
   })
@@ -140,6 +142,49 @@ describe("results", () => {
     })
     expect(node.textContent).toContain("both work")
     expect([...node.querySelectorAll("li")].map((l) => l.textContent)).toEqual(["Grid", "List — one per row"])
+  })
+})
+
+describe("a call opens as its tool says, whoever's tool it is", () => {
+  // The view has no table of tools: the call carries it (`shown`).
+  const call = (shown, input) => ({ tool: "some_package_tool", input, shown: { verb: "do", detail: "", ...shown } })
+
+  it("an input layout is asked for by name, and lays out any tool's input of that shape", () => {
+    expect(Object.keys(INPUT_LAYOUTS)).toEqual(["files", "edits", "question"])
+    const files = renderCallBody(call({ body: "files" }, { path: "a/b.js", content: "one\ntwo" }), null)
+    expect(files.querySelector(".agent-block-label + pre code").textContent).toBe("one\ntwo")
+    expect(files.querySelector("pre code").dataset.language).toBe("js")
+    const edits = renderCallBody(call({ body: "edits" }, { ops: [{ op: "delete", path: ["a"] }] }), null)
+    expect(edits.querySelector(".agent-op-delete")).toBeTruthy()
+    const question = renderCallBody(call({ body: "question" }, { options: ["A", "B"] }), null)
+    expect([...question.querySelectorAll("li")].map((l) => l.textContent)).toEqual(["A", "B"])
+  })
+
+  it.each([[{}], [{ body: "hologram" }], [null]])("a call that names no layout, or one this view lacks, is a field list: %j", (shown) => {
+    const node = renderCallBody({ tool: "some_package_tool", input: { path: "a/b.js", content: "one\ntwo" }, shown }, null)
+    expect([...node.querySelectorAll(".agent-field-label")].map((l) => l.textContent)).toEqual(["path"])
+    expect([...node.querySelectorAll(".agent-block-label")].map((l) => l.textContent)).toEqual(["call", "content"])
+  })
+
+  it("a result is prose, text in a language, or a monospace report, as the call says", () => {
+    const out = (shown, result = { output: "# Title\n\nbody" }) => renderCallBody(call(shown, {}), result).querySelector(".agent-output")
+    expect(out({ format: "markdown" }).querySelector("pre")).toBeNull()
+    expect(out({ format: "markdown" }).textContent).toContain("Title")
+    expect(out({ format: "js" }).querySelector("pre code").dataset.language).toBe("js")
+    expect(out({}).querySelector("pre code").dataset.language).toBeUndefined()
+    // An error is always monospace: it carries stacks and positions.
+    expect(out({ format: "markdown" }, { output: "Error: no", isError: true }).querySelector("pre")).toBeTruthy()
+  })
+
+  it("the built-in tools say theirs", () => {
+    const said = (tool, input) => { const { body, format } = written({ tool, input }).shown; return { body, format } }
+    expect(said("fs_write", { path: "a.js", content: "" })).toEqual({ body: "files", format: undefined })
+    expect(said("doc_edit", { ops: [] })).toEqual({ body: "edits", format: undefined })
+    expect(said("ask_user", { question: "?" })).toEqual({ body: "question", format: undefined })
+    expect(said("fs_read", { path: "a/tool.ts" })).toEqual({ body: undefined, format: "ts" })
+    expect(said("fs_read", { path: "a/engine.wasm" })).toEqual({ body: undefined, format: undefined })
+    expect(said("plugin_source", { id: "p", file: "index.js" })).toEqual({ body: undefined, format: "js" })
+    for (const tool of ["web_fetch", "source_read", "skill_read"]) expect(said(tool, { url: "https://a.test", source: "automerge:x", name: "n" }), tool).toEqual({ body: undefined, format: "markdown" })
   })
 })
 

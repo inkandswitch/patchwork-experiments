@@ -319,7 +319,7 @@ const MAX_REPORT = 6000
 
 export const docEdit = {
   id: "doc_edit",
-  present: { verb: "edit", detail: (i) => describeOps(i.ops) },
+  present: { verb: "edit", detail: (i) => describeOps(i.ops), body: "edits" },
   name: "Edit document",
   // The url defaults to the session's subject in execute(), so it does here.
   target: { fields: ["url"], fallback: "subject" },

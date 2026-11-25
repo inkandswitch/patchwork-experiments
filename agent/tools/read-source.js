@@ -126,6 +126,7 @@ export const sourceRead = {
   present: {
     verb: (i) => (i.find ? "search" : "read"),
     detail: (i) => (i.find ? `“${i.find}”` : i.offset ? `from ${i.offset}` : "kept source"),
+    format: "markdown",
   },
   scoped: true,
   name: "Read a kept source",

@@ -520,7 +520,7 @@ function readableOf(ref, { response, body }) {
  */
 export const webFetch = {
   id: "web_fetch",
-  present: { verb: "fetch", detail: (i) => hostOf(i.url) },
+  present: { verb: "fetch", detail: (i) => hostOf(i.url), format: "markdown" },
   ...WEB_GROUP,
   scoped: true,
   name: "Read a web page",

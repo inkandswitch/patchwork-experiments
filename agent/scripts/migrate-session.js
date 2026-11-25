@@ -23,8 +23,8 @@
  *                that it is one (`placeholder`), where it was told by its wording.
  *                A view_mount's says which mount it opened (`facts`), where
  *                the view beside the call read the id out of its text.
- *   calls        each says how it reads in the log (`shown`), as its tool
- *                describes it; the view no longer has a table to look it up in.
+ *   calls        each says how it reads in the log and opens (`shown`), as its
+ *                tool describes it; the view has no table to look it up in.
  *   denied calls a call a person refused has a result saying so, as every
  *                other outcome does. Some from long ago had none.
  *

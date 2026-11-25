@@ -39,6 +39,12 @@ const MAX_DETAIL = 64
  * function of the input (`detail` is also given the session's subject, to
  * say "this document"). Null for a tool that does not say, or whose way of
  * saying fails on this input; a view then makes its best guess.
+ *
+ * It may also say how the call opens: `body`, the name of a layout for its
+ * input ("files", "edits", "question"; a view that has no such layout lists
+ * the fields), and `format`, what its result's text is ("markdown", or a
+ * language such as "js"), as a string or a function of the input. Each is on
+ * the call only when the tool says it.
  */
 export function presentCall(tool, input, subject = null) {
   const entry = tool?.present
@@ -48,7 +54,13 @@ export function presentCall(tool, input, subject = null) {
     const said = typeof entry.detail === "function" ? entry.detail(input ?? {}, subject) : entry.detail
     if (!verb) return null
     const detail = said == null ? "" : String(said)
-    return { verb: String(verb), detail: detail.length > MAX_DETAIL ? `${detail.slice(0, MAX_DETAIL - 1)}…` : detail }
+    const format = typeof entry.format === "function" ? entry.format(input ?? {}) : entry.format
+    return {
+      verb: String(verb),
+      detail: detail.length > MAX_DETAIL ? `${detail.slice(0, MAX_DETAIL - 1)}…` : detail,
+      ...(entry.body ? { body: String(entry.body) } : {}),
+      ...(format ? { format: String(format) } : {}),
+    }
   } catch {
     return null
   }

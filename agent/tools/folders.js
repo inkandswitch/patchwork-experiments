@@ -13,7 +13,7 @@ import { previewJson, truncate, bytes } from "../documents/format.js"
 import { contentText } from "../documents/values.js"
 import { isFile, treeNode, treeEntries, treeEnter, treeLink, treeRemove, treeRepin, resolvePath, ensurePath, findPath, createFile } from "../documents/tree.js"
 import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, OpError, TEXT_OPS } from "../documents/ops.js"
-import { baseName } from "../documents/labels.js"
+import { baseName, languageOf } from "../documents/labels.js"
 
 /**
  * Writing files is one decision too: a grant to write, edit or delete under a
@@ -146,7 +146,7 @@ export const fsList = {
 
 export const fsRead = {
   id: "fs_read",
-  present: { verb: "read", detail: (i) => baseName(i.path) },
+  present: { verb: "read", detail: (i) => baseName(i.path), format: (i) => languageOf(i.path) },
   name: "Read file",
   description: [
     "Read a file document's text. Pass `path` to find it by name in a folder, or `url` to read one you already have.",
@@ -397,6 +397,7 @@ export const fsWrite = {
       }
       return i.path ? baseName(i.path) : i.url ? "file" : null
     },
+    body: "files",
   },
   ...FILES_GROUP,
   name: "Write files",

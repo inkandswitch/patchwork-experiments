@@ -34,7 +34,7 @@ decides anything about a tool.
 | `scoped` | `true`: a research step may have it too. `"only"`: a research step alone. Absent: full-access sessions alone |
 | `needs` | what it needs of the session, by name (`session/capabilities.js`) |
 | `asksHuman` | its call is a question to the person, answered and never approved |
-| `present` | `{ verb, detail }`, each a string or a function of the input: how a call reads in the log. It is worked out when the call is written and kept on the call, since a view has only the document. A package's tool exports `present` beside `execute` |
+| `present` | `{ verb, detail, body?, format? }`, each a string or a function of the input: how a call reads in the log, and how it opens — `body` names a layout for its input (`files`, `edits`, `question`), `format` says what its result's text is (`markdown`, or a language such as `js`). It is worked out when the call is written and kept on the call, since a view has only the document. A package's tool exports `present` beside `execute` |
 
 ### Which sessions are offered a tool
 
