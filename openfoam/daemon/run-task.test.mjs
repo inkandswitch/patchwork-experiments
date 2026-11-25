@@ -7,6 +7,7 @@ import { makeRunTask, progressOf } from "./run-task.mjs";
 import { FakeRepo } from "../probes/fake-repo.js";
 import { newRun, NOT_RESTARTED, MACHINE_STOPPED, markStopped } from "../src/protocol.js";
 import { defaultSetup } from "../src/setup.js";
+import { findWhenThere } from "../src/find.js";
 
 let repo, run, calls, awake, released;
 const MACHINE = { env: { describe: "fake" }, cores: 4, state: "/tmp/openfoam-state", sync: "wss://example.invalid", info: { host: "here", openfoam: "v2606" } };
@@ -26,8 +27,12 @@ function context(runIds, me, { signal = new AbortController().signal } = {}) {
   return { said, ctx: { repo, taskUrl: task.url, run: me, key: run.url, signal, log: (m) => said.logs.push(m), progress: (p) => said.progress.push(p) } };
 }
 
-function task(runJob, { machine = async () => MACHINE } = {}) {
+/** findWhenThere with no wait between tries. */
+const findNow = (r, url) => findWhenThere(r, url, { tries: 3, sleep: async () => {} });
+
+function task(runJob, { machine = async () => MACHINE, find = findNow } = {}) {
   return makeRunTask({
+    find,
     runJob: async (o) => {
       calls.push(o);
       return runJob(o);
@@ -139,6 +144,13 @@ describe("how a run ends", () => {
     const { ctx } = context(["r1"], "r1");
     await expect(task(async () => "done")({}, ctx)).rejects.toThrow(/names no run/);
     await expect(task(async () => "done")({ run: "automerge:nothing-here" }, ctx)).rejects.toThrow(/unavailable/);
+  });
+  it("waits for a run doc that reaches the machine after its task", async () => {
+    const { ctx } = context(["r1"], "r1");
+    let asked = 0;
+    const late = { find: async (url) => (++asked < 3 ? Promise.reject(new Error(`Document ${url} is unavailable`)) : repo.find(url)) };
+    const out = await task(async () => "done")({ run: run.url }, { ...ctx, repo: Object.assign(Object.create(repo), late) });
+    expect([out, asked, calls.length]).toEqual([{ status: "done" }, 4, 1]);
   });
 });
 

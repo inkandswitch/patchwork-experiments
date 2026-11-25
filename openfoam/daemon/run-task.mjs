@@ -43,6 +43,7 @@ import { fileURLToPath } from "node:url";
 import { foamEnvironment, foamVersion, defaultCores } from "./foam.mjs";
 import { runJob as realRunJob } from "./runner.mjs";
 import { freshPeer } from "../src/segments.js";
+import { findWhenThere } from "../src/find.js";
 import { RUN_TYPE, isTerminal, markInterrupted, NOT_RESTARTED } from "../src/protocol.js";
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com";
@@ -159,12 +160,13 @@ export function progressOf(run) {
  * @param {() => () => void} o.awake        holds sleep off; returns how to let go
  * @param {(sync: string) => { verify: Function, close: () => Promise<void> }} o.peer
  * @param {(message: string) => void} [o.say]  the host's log
+ * @param {(repo: object, url: string) => Promise<object>} [o.find]  finds the run doc, which travels apart from its task and can reach the sync server after it (src/find.js asks again for half a minute)
  */
-export function makeRunTask({ runJob, machine, awake, peer, say = (m) => console.log(`${stamp()} ${m}`) }) {
+export function makeRunTask({ runJob, machine, awake, peer, say = (m) => console.log(`${stamp()} ${m}`), find = findWhenThere }) {
   return async function runTask(input, ctx) {
     const runUrl = input?.run;
     if (typeof runUrl !== "string" || !runUrl.startsWith("automerge:")) throw new Error("The task names no run: its input is { run: <an OpenFOAM run's url> }.");
-    const handle = await ctx.repo.find(runUrl);
+    const handle = await find(ctx.repo, runUrl);
     if (handle.doc()?.["@patchwork"]?.type !== RUN_TYPE) throw new Error(`${runUrl} isn't an OpenFOAM run.`);
 
     // the guard: a run before this one means this run was interrupted once already
