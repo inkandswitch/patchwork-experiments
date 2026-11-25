@@ -71,7 +71,7 @@ beforeEach(() => {
     };
     return h;
   };
-  ctx = { repo, sessionUrl: SESSION };
+  ctx = { repo, session: { url: SESSION, doc: () => ({}) } };
   hullUrl = repo.add({ "@patchwork": { type: "file" }, name: "box.glb", extension: "glb", content: glb }).url;
   server = repo.add({ title: "Test queue", jobs: {} });
   serveQueue();

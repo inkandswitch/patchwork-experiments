@@ -6,8 +6,7 @@ import { accept } from "@inkandswitch/patchwork-providers"
 import initSubduction, { MemorySigner } from "@automerge/automerge-subduction/slim"
 import automergeWasm from "@automerge/automerge/automerge.wasm?url"
 import subductionWasm from "@automerge/automerge-subduction/wasm?url"
-import JupyterTool from "../src/tool"
-import { JupyterNotebookDatatype } from "../src/datatype"
+import { JupyterNotebookDatatype } from "../shared/datatype"
 
 /** Stands in for Patchwork: a tab Repo like createRepo()'s, without a server, showing one notebook. */
 async function main() {
@@ -25,34 +24,80 @@ async function main() {
   const url = new URLSearchParams(location.search).get("doc") as AutomergeUrl | null
   const handle = url ? await repo.find<any>(url) : repo.create<any>()
   if (!url) {
-    handle.change(doc => {
+    handle.change((doc: any) => {
       doc["@patchwork"] = { type: "jupyter-notebook" }
       JupyterNotebookDatatype.init(doc)
     })
-    history.replaceState(null, "", `?doc=${handle.url}`)
+    const params = new URLSearchParams(location.search)
+    params.set("doc", handle.url)
+    history.replaceState(null, "", `?${params}`)
   }
   const heads = new URLSearchParams(location.search).get("heads")
   const shown = overlay(heads ? handle.view(heads.split(",") as any) : handle)
-  const selectDraft = draftSelection(document.body)
-  Object.assign(window, { harness: { A, repo, handle, shown, selectDraft } })
-  JupyterTool(shown, document.getElementById("app")!)
+  const compare = compareView(document.body)
+  Object.assign(window, { harness: { A, repo, handle, shown, compare } })
+  const tool = (await import("../native/tool")).default
+  tool(shown, document.getElementById("app")!)
 }
 
-/** Like the drafts package's provider: answers `draft:selection` with whatever was last selected. */
-function draftSelection(element: HTMLElement): (draft: AutomergeUrl | null) => void {
-  let selection = { checkedOut: null as AutomergeUrl | null, at: null }
-  const subscribers = new Set<(value: typeof selection) => void>()
+type Names = { ours: string; theirs: string }
+
+/** What strand's panels answer `compare:view` with (packages/projects/src/compare.ts there). */
+type CompareView = {
+  mode: string | null
+  options: unknown
+  other: Uint8Array | null
+  missing: boolean
+  collapsed: boolean
+  editable: boolean
+  names: Names | null
+  merging: boolean
+}
+
+type CompareOptions = { mode?: string; collapsed?: boolean; merging?: boolean; names?: Names | null }
+
+const NOT_COMPARED: CompareView = {
+  mode: null,
+  options: null,
+  other: null,
+  missing: false,
+  collapsed: false,
+  editable: false,
+  names: null,
+  merging: false,
+}
+
+/**
+ * Like a strand panel comparing the checked-out draft with another: answers
+ * `compare:view` with the other draft's version of the notebook (saved), or
+ * `missing` when `other` is "missing", in the given mode; or with nothing
+ * compared when `other` is null.
+ */
+function compareView(element: HTMLElement): (other: DocHandle<any> | "missing" | null, options?: CompareOptions) => void {
+  let view = NOT_COMPARED
+  const subscribers = new Set<(value: CompareView) => void>()
   element.addEventListener("patchwork:subscribe", event => {
-    if (event.detail.selector.type !== "draft:selection") return
-    accept<typeof selection>(event, respond => {
-      respond(selection)
+    if (event.detail.selector.type !== "compare:view") return
+    accept<CompareView>(event, respond => {
+      respond(view)
       subscribers.add(respond)
       return () => subscribers.delete(respond)
     })
   })
-  return draft => {
-    selection = { checkedOut: draft, at: null }
-    for (const respond of subscribers) respond(selection)
+  return (other, options = {}) => {
+    view = other
+      ? {
+          mode: options.mode ?? "inline",
+          options: null,
+          other: other === "missing" ? null : A.save(other.doc()),
+          missing: other === "missing",
+          collapsed: !!options.collapsed,
+          editable: other !== "missing" && !options.merging,
+          names: options.names === undefined ? { ours: "Draft", theirs: "Main" } : options.names,
+          merging: !!options.merging,
+        }
+      : NOT_COMPARED
+    for (const respond of subscribers) respond(view)
   }
 }
 

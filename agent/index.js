@@ -1,0 +1,83 @@
+/**
+ * Plugin registration — metadata only.
+ *
+ * Patchwork evaluates this module inside a Web Worker with no importmap and
+ * structured-clones every plugin entry to the main thread, so nothing here may
+ * be a function except `load()`, and nothing in this file's static import graph
+ * may reference a bare specifier. Every implementation is behind a dynamic
+ * `import()` inside its own `load()`.
+ */
+
+export const plugins = [
+  {
+    type: "patchwork:datatype",
+    id: "agent-session",
+    name: "Agent Session",
+    icon: "Bot",
+    async load() {
+      return (await import("./session/datatype.js")).AgentSessionDatatype
+    },
+  },
+
+  {
+    // The full-window view: transcript beside a live view of the subject.
+    type: "patchwork:tool",
+    id: "agent-session",
+    name: "Agent",
+    icon: "Bot",
+    supportedDatatypes: ["agent-session"],
+    async load() {
+      const { AgentTool } = await import("./ui/session-view.js")
+      return (handle, element) => AgentTool(handle, element, { mode: "full" })
+    },
+  },
+
+  {
+    type: "patchwork:datatype",
+    id: "agent-workflow",
+    name: "Agent Workflow",
+    icon: "Workflow",
+    async load() {
+      return (await import("./workflow/datatype.js")).AgentWorkflowDatatype
+    },
+  },
+  {
+    // A workflow's plan and what each of its steps is doing.
+    type: "patchwork:tool",
+    id: "agent-workflow",
+    name: "Workflow",
+    icon: "Workflow",
+    supportedDatatypes: ["agent-workflow"],
+    async load() {
+      const { WorkflowView } = await import("./ui/workflow-view.js")
+      return (handle, element) => WorkflowView(handle, element)
+    },
+  },
+  {
+    // The sidebar panel: attaches to whatever document you are looking at.
+    type: "patchwork:component",
+    id: "agent-panel",
+    name: "Agent",
+    icon: "Bot",
+    tags: ["context-tool"],
+    async load() {
+      const { AgentPanel } = await import("./ui/panel.js")
+      return (element) => AgentPanel(element, { mode: "panel" })
+    },
+  },
+
+  {
+    // The ambient agent: a floating box, summoned with Cmd/Ctrl+J or the
+    // frame's button for it, about whatever you have open. A frame mounts
+    // components tagged "overlay" in a layer above its panels.
+    type: "patchwork:component",
+    id: "agent-ambient",
+    name: "Agent",
+    icon: "Bot",
+    tags: ["overlay"],
+    async load() {
+      const { AmbientAgent } = await import("./ui/ambient.js")
+      return (element) => AmbientAgent(element)
+    },
+  },
+]

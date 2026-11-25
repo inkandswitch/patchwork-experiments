@@ -1,12 +1,9 @@
-# local environment and caches
-/.venv/
+dist
+node_modules
+.pushwork
+# local caches and intermediate build output
 /.cache/
-/.jupyterlite.doit.db
-# build output
-/lite/static/
-/lite/.cache/
-/python/build/
-/python/*.egg-info/
+/shared/python/build/
+/shared/python/*.egg-info/
 *.tsbuildinfo
-/extension/lib/
-/extension/labextension/
+__pycache__/

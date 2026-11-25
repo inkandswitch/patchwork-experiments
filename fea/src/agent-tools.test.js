@@ -37,7 +37,7 @@ afterEach(() => clearInterval(beating));
 beforeEach(() => {
   setPackageUrl(PACKAGE);
   repo = new FakeRepo();
-  ctx = { repo, sessionUrl: SESSION };
+  ctx = { repo, session: { url: SESSION, doc: () => ({}) } };
   // 100 × 20 × 10 mm, from the origin
   boxUrl = glbFile(repo, "box", box(0.1, 0.02, 0.01)).url;
   // 60 × 40 × 5 mm with a 10 mm hole through its thickness (z)

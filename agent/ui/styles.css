@@ -1,0 +1,1581 @@
+/*
+ * Agent styling.
+ *
+ * Per the house rules: every host variable is mapped once, here, inside
+ * `@layer package`, and the rules below reference only `--agent-*` tokens so a
+ * theme change re-evaluates correctly. Fill, line and typography derive from
+ * `--editor-*` (this is a tool, painting on the document surface); accents come
+ * from `--studio-*`, which has no editor equivalent.
+ */
+
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --agent-bg: var(--editor-fill, white);
+    --agent-fg: var(--editor-line, black);
+    --agent-muted: var(--editor-line-offset-50, #767676);
+    --agent-faint: var(--editor-line-offset-30, #999);
+    --agent-border: var(--editor-fill-offset-20, #e0e0e0);
+    --agent-surface: var(--editor-fill-offset-10, #f6f6f6);
+    --agent-surface-2: var(--editor-fill-offset-20, #eee);
+    --agent-accent: var(--studio-primary, #35f7ca);
+    --agent-accent-line: var(--studio-primary-line, black);
+    --agent-accent-text: var(--editor-primary-text, var(--studio-primary, #0a7));
+    --agent-danger: var(--studio-danger, #d64545);
+    --agent-danger-text: var(--editor-danger-text, var(--studio-danger, #d64545));
+    --agent-warning: var(--studio-warning, #d68c45);
+    --agent-added: var(--studio-added, #3a8c3a);
+    --agent-family: var(--editor-family-sans, system-ui, sans-serif);
+    --agent-family-code: var(--editor-family-code, ui-monospace, monospace);
+    --agent-font-size: var(--editor-font-size, 15px);
+  }
+}
+
+/* ---- Composition ------------------------------------------------------- */
+
+.patchwork-agent .flow > * + * {
+  margin-top: var(--flow-space, var(--studio-space-sm, 0.5rem));
+}
+
+.patchwork-agent .cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  flex-wrap: wrap;
+}
+
+/* ---- Block: the session view ------------------------------------------ */
+
+.patchwork-agent {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--agent-bg);
+  color: var(--agent-fg);
+  font-family: var(--agent-family);
+  font-size: var(--agent-font-size);
+  line-height: 1.5;
+  container-type: inline-size;
+}
+
+/* ---- Header ------------------------------------------------------------ */
+
+.patchwork-agent .agent-header {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  border-bottom: 1px solid var(--agent-border);
+  flex: 0 0 auto;
+}
+
+.patchwork-agent .agent-status {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--studio-radius-round, 9999px);
+  background: var(--agent-faint);
+  flex: 0 0 auto;
+}
+
+.patchwork-agent .agent-status[data-status="running"] {
+  background: var(--agent-accent);
+  animation: agent-pulse 1.4s ease-in-out infinite;
+}
+
+.patchwork-agent .agent-status[data-status="awaiting-approval"] { background: var(--agent-warning); }
+.patchwork-agent .agent-status[data-status="awaiting-answer"] { background: var(--agent-accent); }
+.patchwork-agent .agent-status[data-status="parked"] { background: var(--agent-warning); }
+.patchwork-agent .agent-status[data-status="error"] { background: var(--agent-danger); }
+
+@keyframes agent-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .patchwork-agent .agent-status[data-status="running"] { animation: none; }
+}
+
+.patchwork-agent .agent-subject {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.patchwork-agent .agent-model {
+  font-family: var(--agent-family-code);
+  font-size: 0.72rem;
+  color: var(--agent-muted);
+  background: none;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 1px 5px;
+  cursor: pointer;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patchwork-agent .agent-model:hover { background: var(--agent-surface); }
+
+/* Usage guides the agent keeps, and where each stands. */
+.patchwork-agent .agent-guides-link {
+  font-size: 0.72rem;
+  color: var(--agent-accent-text);
+  background: none;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 1px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.patchwork-agent .agent-guides-link:hover { background: var(--agent-surface); }
+.patchwork-agent .agent-guides-link[hidden], .patchwork-agent .agent-guides-panel[hidden] { display: none; }
+.patchwork-agent .agent-guides-panel {
+  border-bottom: 1px solid var(--agent-border);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  max-height: 40%;
+  overflow: auto;
+}
+.patchwork-agent .agent-guides-item { padding: 4px 0; }
+.patchwork-agent .agent-guides-summary, .patchwork-agent .agent-guides-words, .patchwork-agent .agent-guides-empty { opacity: 0.75; }
+.patchwork-agent .agent-guides-stale .agent-guides-words,
+.patchwork-agent .agent-guides-gone .agent-guides-words { opacity: 1; font-weight: 600; }
+
+/* The workflow this session started or is a step of. */
+.patchwork-agent .agent-workflow-link {
+  font-size: 0.72rem;
+  color: var(--agent-accent-text);
+  background: none;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 1px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.patchwork-agent .agent-workflow-link:hover { background: var(--agent-surface); }
+.patchwork-agent .agent-workflow-link[hidden] { display: none; }
+
+/* Where this session stands in its workflow (ui/standing.js). */
+.patchwork-agent .agent-standing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--agent-muted);
+  border-bottom: 1px solid var(--agent-border);
+  background: var(--agent-surface);
+}
+.patchwork-agent .agent-standing[hidden] { display: none; }
+.patchwork-agent .agent-standing strong { color: var(--agent-fg); font-weight: 600; }
+.patchwork-agent .agent-standing-chip {
+  flex: none;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--agent-surface-2);
+  color: var(--agent-fg);
+}
+.patchwork-agent .agent-standing[data-state="running"] .agent-standing-chip { background: var(--agent-accent); color: var(--agent-accent-line); }
+.patchwork-agent .agent-standing[data-state="needs-input"] .agent-standing-chip { background: var(--agent-warning); color: var(--agent-bg); }
+.patchwork-agent .agent-standing[data-state="done"] .agent-standing-chip { color: var(--agent-added); }
+.patchwork-agent .agent-standing[data-state="stale"] .agent-standing-chip { color: var(--agent-warning); }
+.patchwork-agent .agent-standing[data-state="failed"] .agent-standing-chip { color: var(--agent-danger-text); }
+.patchwork-agent .agent-standing-run { color: var(--agent-faint); }
+.patchwork-agent .agent-standing-detail::before,
+.patchwork-agent .agent-standing-plan::before { content: "· "; }
+.patchwork-agent .agent-standing-plan { color: var(--agent-warning); }
+.patchwork-agent .agent-standing-link { color: var(--agent-accent-text); }
+
+/* The choice a message to a step that is not running needs before it goes. */
+.patchwork-agent .agent-send-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  font-size: 0.8rem;
+}
+.patchwork-agent .agent-send-choices[hidden] { display: none; }
+.patchwork-agent .agent-choices-say { color: var(--agent-muted); flex-basis: 100%; }
+
+/* ---- Transcript -------------------------------------------------------- */
+
+.patchwork-agent .agent-transcript {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--studio-space-sm, 0.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-sm, 0.5rem);
+}
+
+.patchwork-agent .agent-empty {
+  color: var(--agent-muted);
+  font-size: 0.85rem;
+  padding: var(--studio-space-md, 0.75rem);
+  text-align: center;
+}
+
+.patchwork-agent .agent-turn[data-role="user"] {
+  background: var(--agent-surface);
+  border-radius: var(--studio-radius-md, 8px);
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The harness speaking: a run stopped and why, or the model asked to go on. */
+.patchwork-agent .agent-turn[data-role="notice"] {
+  border-left: 2px solid var(--agent-muted);
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  font-size: 0.85rem;
+  color: var(--agent-muted);
+  overflow-wrap: anywhere;
+}
+
+.patchwork-agent .agent-turn[data-role="event"] {
+  border-left: 2px solid var(--agent-muted);
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  font-size: 0.85rem;
+  color: var(--agent-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.patchwork-agent .agent-author {
+  font-size: 0.7rem;
+  color: var(--agent-muted);
+  margin-bottom: 2px;
+}
+
+/* Prose is markdown now, so the container no longer preserves whitespace —
+   the renderer decides where the breaks go. */
+.patchwork-agent .agent-text {
+  overflow-wrap: anywhere;
+}
+
+/* Collapsed reasoning: a duration, not a wall of text. */
+.patchwork-agent .agent-reasoning {
+  font-size: 0.78rem;
+  color: var(--agent-muted);
+}
+
+.patchwork-agent .agent-reasoning > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.patchwork-agent .agent-reasoning > summary::-webkit-details-marker { display: none; }
+
+.patchwork-agent .agent-reasoning > summary::before {
+  content: "▸ ";
+  color: var(--agent-faint);
+}
+
+.patchwork-agent .agent-reasoning[open] > summary::before { content: "▾ "; }
+
+.patchwork-agent .agent-reasoning .agent-reasoning-body {
+  overflow-wrap: anywhere;
+  padding: var(--studio-space-2xs, 0.25rem) 0 0 var(--studio-space-sm, 0.5rem);
+  border-left: 2px solid var(--agent-border);
+  margin-top: var(--studio-space-2xs, 0.25rem);
+  color: var(--agent-faint);
+}
+
+/* ---- Tool calls: one line until asked ---------------------------------- */
+
+.patchwork-agent .agent-call {
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  overflow: hidden;
+  font-size: 0.82rem;
+}
+
+.patchwork-agent .agent-call > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  padding: 3px var(--studio-space-xs, 0.375rem);
+  display: flex;
+  align-items: baseline;
+  gap: var(--studio-space-xs, 0.375rem);
+  font-family: var(--agent-family-code);
+  font-size: 0.76rem;
+  color: var(--agent-muted);
+}
+
+.patchwork-agent .agent-call > summary::-webkit-details-marker { display: none; }
+.patchwork-agent .agent-call > summary:hover { background: var(--agent-surface); }
+
+.patchwork-agent .agent-call .agent-call-verb {
+  color: var(--agent-fg);
+  white-space: nowrap;
+}
+
+.patchwork-agent .agent-call .agent-call-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.patchwork-agent .agent-call[data-status="running"] > summary { color: var(--agent-accent-text); }
+.patchwork-agent .agent-call[data-status="error"] { border-color: var(--agent-danger); }
+.patchwork-agent .agent-call[data-status="error"] > summary { color: var(--agent-danger-text); }
+.patchwork-agent .agent-call[data-status="denied"] > summary { text-decoration: line-through; }
+
+/* ---- The body of an opened call -------------------------------------- */
+
+.patchwork-agent .agent-call-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-2xs, 0.25rem);
+  padding: var(--studio-space-xs, 0.375rem);
+  border-top: 1px solid var(--agent-border);
+  background: var(--agent-surface);
+  /* A failed write of four files opens itself and would otherwise be several
+     screens of source between you and the next thing that happened. */
+  max-height: 26rem;
+  overflow: auto;
+}
+
+/* Which part of the call you are looking at — "call", "result", a file path. */
+.patchwork-agent .agent-block-label {
+  font-family: var(--agent-family-code);
+  font-size: 0.68rem;
+  color: var(--agent-faint);
+  letter-spacing: 0.03em;
+}
+
+/* Short scalars, two to a row where they fit. */
+.patchwork-agent .agent-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--studio-space-sm, 0.5rem);
+}
+
+.patchwork-agent .agent-field {
+  display: flex;
+  gap: var(--studio-space-2xs, 0.25rem);
+  align-items: baseline;
+  font-size: 0.74rem;
+  min-width: 0;
+}
+
+.patchwork-agent .agent-field-label {
+  font-family: var(--agent-family-code);
+  color: var(--agent-faint);
+}
+
+.patchwork-agent .agent-field-value {
+  font-family: var(--agent-family-code);
+  overflow-wrap: anywhere;
+}
+
+/* Real newlines, at last. Code scrolls sideways inside its own box rather than
+   wrapping mid-token, which is what makes source readable. */
+.patchwork-agent .agent-code {
+  margin: 0;
+  padding: var(--studio-space-xs, 0.375rem);
+  background: var(--agent-bg);
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  font-family: var(--agent-family-code);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
+  max-height: 22rem;
+}
+
+/* Output is prose as often as it is code, so it wraps. */
+.patchwork-agent .agent-code-output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.patchwork-agent .agent-output-error,
+.patchwork-agent .agent-output-error .agent-code { color: var(--agent-danger-text); }
+
+.patchwork-agent .agent-output .agent-md { font-size: 0.8rem; }
+
+/* An edit, one change per line. */
+.patchwork-agent .agent-ops {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.patchwork-agent .agent-op {
+  display: flex;
+  gap: var(--studio-space-xs, 0.375rem);
+  font-family: var(--agent-family-code);
+  font-size: 0.72rem;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.patchwork-agent .agent-op-where { color: var(--agent-accent-text); white-space: nowrap; }
+.patchwork-agent .agent-op-delete { color: var(--agent-danger-text); }
+.patchwork-agent .agent-op-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Approval ---------------------------------------------------------- */
+
+.patchwork-agent .agent-approval {
+  border: 1px solid var(--agent-accent);
+  border-radius: var(--studio-radius-md, 8px);
+  padding: var(--studio-space-sm, 0.5rem);
+  background: color-mix(in oklch, var(--agent-accent), var(--agent-bg) 88%);
+}
+
+.patchwork-agent .agent-approval .agent-approval-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.patchwork-agent .agent-approval .agent-approval-detail {
+  font-family: var(--agent-family-code);
+  font-size: 0.72rem;
+  color: var(--agent-muted);
+  margin: var(--studio-space-2xs, 0.25rem) 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 10rem;
+  overflow: auto;
+}
+
+:is(.patchwork-agent, .agent-pop) button {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  border-radius: var(--studio-radius-sm, 4px);
+  border: 1px solid var(--agent-border);
+  background: var(--agent-bg);
+  color: var(--agent-fg);
+  cursor: pointer;
+}
+
+:is(.patchwork-agent, .agent-pop) button:hover { background: var(--agent-surface); }
+
+:is(.patchwork-agent, .agent-pop) button[data-variant="primary"] {
+  background: var(--agent-accent);
+  color: var(--agent-accent-line);
+  border-color: transparent;
+}
+
+:is(.patchwork-agent, .agent-pop) button[data-variant="danger"] { color: var(--agent-danger-text); }
+
+:is(.patchwork-agent, .agent-pop) button:focus-visible {
+  outline: 2px solid var(--agent-accent);
+  outline-offset: 1px;
+}
+
+:is(.patchwork-agent, .agent-pop) button:disabled { opacity: 0.5; cursor: default; }
+
+/* The pop-over's pill and peek live outside any session view, so the layout
+   helpers the view's own rules provide have to be given to them too — without
+   this the peek's buttons ran together as unstyled text. */
+.agent-pop .cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  flex-wrap: wrap;
+}
+
+/* ---- Composer ---------------------------------------------------------- */
+
+.patchwork-agent .agent-composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--agent-border);
+  padding: var(--studio-space-xs, 0.375rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-2xs, 0.25rem);
+}
+
+.patchwork-agent .agent-composer textarea {
+  font: inherit;
+  font-size: 0.88rem;
+  resize: none;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--agent-bg);
+  color: var(--agent-fg);
+  padding: var(--studio-space-xs, 0.375rem);
+  min-height: 2.4rem;
+  max-height: 9rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.patchwork-agent .agent-composer textarea:focus-visible {
+  outline: 2px solid var(--agent-accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+
+.patchwork-agent .agent-composer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+}
+
+.patchwork-agent .agent-hint {
+  font-size: 0.7rem;
+  color: var(--agent-faint);
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patchwork-agent .agent-error {
+  color: var(--agent-danger-text);
+  font-size: 0.78rem;
+}
+
+/* ---- Setup (no key yet) ------------------------------------------------ */
+
+.patchwork-agent .agent-setup {
+  padding: var(--studio-space-md, 0.75rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-sm, 0.5rem);
+  /* It scrolls on its own. Inside a box of fixed height it used to be cut
+     off, with the settings below the fold — the key's Save among them —
+     out of reach. It leaves room for the transcript underneath. */
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 75%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--agent-border);
+}
+
+.patchwork-agent .agent-setup input {
+  font: inherit;
+  font-family: var(--agent-family-code);
+  font-size: 0.78rem;
+  padding: var(--studio-space-xs, 0.375rem);
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--agent-bg);
+  color: var(--agent-fg);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.patchwork-agent .agent-setup p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--agent-muted);
+}
+
+/* ---- Wide mode: the pop-out gets a second pane -------------------------- */
+
+.patchwork-agent[data-mode="full"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 720px) {
+  .patchwork-agent[data-mode="full"] {
+    grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+  }
+
+  .patchwork-agent[data-mode="full"] .agent-main {
+    border-right: 1px solid var(--agent-border);
+  }
+
+  .patchwork-agent[data-mode="full"] .agent-subject-view { display: flex; }
+}
+
+.patchwork-agent .agent-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+/* The second pane: the subject document, in the pop-out only. */
+.patchwork-agent .agent-subject-view {
+  display: none;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  flex-direction: column;
+}
+
+.patchwork-agent .agent-subject-pane { display: block; height: 100%; min-height: 0; }
+
+.patchwork-agent .agent-subject-view patchwork-view {
+  display: block;
+  height: 100%;
+}
+
+/* ---- Markdown ---------------------------------------------------------- */
+
+/* Spacing between blocks, not on them: margins on headings and paragraphs
+   collapse unpredictably against each other, and the first and last child would
+   need clearing anyway. */
+.patchwork-agent .agent-md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-xs, 0.375rem);
+}
+
+.patchwork-agent .agent-md > * { margin: 0; }
+
+.patchwork-agent .agent-md h1,
+.patchwork-agent .agent-md h2,
+.patchwork-agent .agent-md h3,
+.patchwork-agent .agent-md h4,
+.patchwork-agent .agent-md h5,
+.patchwork-agent .agent-md h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: balance;
+  /* A transcript is already inside a conversation; headings that shout look
+     wrong in a narrow column, so the scale is compressed. */
+  margin-top: var(--studio-space-2xs, 0.25rem);
+}
+
+.patchwork-agent .agent-md h1 { font-size: 1.2rem; }
+.patchwork-agent .agent-md h2 { font-size: 1.1rem; }
+.patchwork-agent .agent-md h3 { font-size: 1rem; }
+.patchwork-agent .agent-md h4,
+.patchwork-agent .agent-md h5,
+.patchwork-agent .agent-md h6 {
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--agent-muted);
+}
+
+/* A heading needs air above it to read as a heading rather than as a bold
+   line; the flex gap alone is not enough separation. */
+.patchwork-agent .agent-md :is(h1, h2, h3) + * { margin-top: 0; }
+.patchwork-agent .agent-md > :is(h1, h2, h3):not(:first-child) {
+  margin-top: var(--studio-space-sm, 0.5rem);
+}
+
+/* NOT display:flex. A flex container makes every li a flex item, and a flex
+   item's marker no longer hangs in the padding — wrapped lines align under the
+   bullet instead of under the text, which looks broken and is. */
+.patchwork-agent .agent-md :is(ul, ol) {
+  padding-left: 1.4rem;
+}
+
+.patchwork-agent .agent-md li + li { margin-top: 3px; }
+.patchwork-agent .agent-md li :is(ul, ol) { margin-top: 3px; }
+.patchwork-agent .agent-md li { line-height: 1.45; }
+
+.patchwork-agent .agent-md code {
+  font-family: var(--agent-family-code);
+  font-size: 0.85em;
+  background: var(--agent-surface);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 0 3px;
+  overflow-wrap: anywhere;
+}
+
+.patchwork-agent .agent-md pre {
+  background: var(--agent-surface);
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: var(--studio-space-xs, 0.375rem);
+  /* Code scrolls inside its own box rather than widening the column. */
+  overflow-x: auto;
+  max-height: 24rem;
+  overflow-y: auto;
+}
+
+.patchwork-agent .agent-md pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.patchwork-agent .agent-md blockquote {
+  border-left: 2px solid var(--agent-border);
+  padding-left: var(--studio-space-sm, 0.5rem);
+  color: var(--agent-muted);
+}
+
+.patchwork-agent .agent-md hr {
+  border: 0;
+  border-top: 1px solid var(--agent-border);
+}
+
+.patchwork-agent .agent-md table {
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.patchwork-agent .agent-md :is(th, td) {
+  border: 1px solid var(--agent-border);
+  padding: 2px var(--studio-space-xs, 0.375rem);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.patchwork-agent .agent-md th {
+  background: var(--agent-surface);
+  font-weight: 600;
+}
+
+.patchwork-agent .agent-md a {
+  color: var(--agent-accent-text);
+  text-underline-offset: 2px;
+}
+
+.patchwork-agent .agent-md a[data-doc-url] { cursor: pointer; text-decoration: underline; }
+
+.patchwork-agent .agent-md .agent-md-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--studio-radius-sm, 4px);
+}
+
+/* ---- What the agent saw ------------------------------------------------ */
+
+/* A call and its attachments are one unit, so a screenshot stays with the call
+   that took it however the column reflows. */
+.patchwork-agent .agent-call-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-2xs, 0.25rem);
+}
+
+.patchwork-agent .agent-shot {
+  margin: 0;
+  cursor: zoom-in;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  overflow: hidden;
+  background: var(--agent-surface);
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.patchwork-agent .agent-shot img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Small enough that a session full of screenshots is still readable; one click
+   away from big enough to judge by. */
+.patchwork-agent .agent-shot[data-size="small"] img { max-height: 9rem; width: auto; }
+.patchwork-agent .agent-shot[data-size="large"] { cursor: zoom-out; align-self: stretch; }
+
+.patchwork-agent .agent-shot figcaption {
+  font-size: 0.68rem;
+  color: var(--agent-faint);
+  padding: 2px var(--studio-space-xs, 0.375rem);
+  border-top: 1px solid var(--agent-border);
+}
+
+/* ---- A document a tool wrote ------------------------------------------- */
+
+.patchwork-agent .agent-doc-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--studio-space-xs, 0.375rem);
+  align-self: flex-start;
+  max-width: 100%;
+  cursor: pointer;
+  padding: 2px var(--studio-space-xs, 0.375rem);
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--agent-surface);
+  font-size: 0.76rem;
+  color: var(--agent-fg);
+  text-decoration: none;
+}
+
+.patchwork-agent .agent-doc-chip::before { content: "📄"; }
+.patchwork-agent .agent-doc-chip[data-kind="package"]::before { content: "📦"; }
+.patchwork-agent .agent-doc-chip[data-kind="folder"]::before { content: "📁"; }
+.patchwork-agent .agent-doc-chip[data-kind="package"] .agent-doc-chip-name { font-weight: 600; }
+.patchwork-agent .agent-doc-chip:hover { border-color: var(--agent-accent); }
+
+.patchwork-agent .agent-doc-chip .agent-doc-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patchwork-agent .agent-doc-chip .agent-doc-chip-size {
+  color: var(--agent-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Standing grants --------------------------------------------------- */
+
+/* The second row of the approval card: how much authority to hand over, rather
+   than whether to allow this one call. */
+.patchwork-agent .agent-approval-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  margin-top: var(--studio-space-xs, 0.375rem);
+  padding-top: var(--studio-space-xs, 0.375rem);
+  border-top: 1px solid color-mix(in oklch, var(--agent-accent), transparent 70%);
+}
+
+.patchwork-agent .agent-approval-scopes .agent-approval-label {
+  font-size: 0.72rem;
+  color: var(--agent-muted);
+}
+
+.patchwork-agent .agent-approval-scopes button {
+  font-size: 0.72rem;
+  font-family: var(--agent-family-code);
+  padding: 1px 6px;
+}
+
+/* ---- A question the agent asked -------------------------------------- */
+
+/* Reads as a question, not as a permission prompt: approvals are bounded by an
+   accent border because they gate something, and a question is just a turn in
+   the conversation that happens to be waiting on you. */
+.patchwork-agent .agent-question {
+  border: 1px solid var(--agent-accent);
+  border-left-width: 3px;
+  border-radius: var(--studio-radius-md, 8px);
+  padding: var(--studio-space-sm, 0.5rem);
+  background: var(--agent-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-xs, 0.375rem);
+}
+
+.patchwork-agent .agent-question .agent-question-title {
+  font-weight: 600;
+}
+
+.patchwork-agent .agent-question .agent-question-context {
+  font-size: 0.82rem;
+  color: var(--agent-muted);
+}
+
+.patchwork-agent .agent-question .agent-question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--studio-space-xs, 0.375rem);
+}
+
+/* Options are the agent's guess at the answers, so they read as equals rather
+   than one of them being the recommended path. */
+.patchwork-agent .agent-question .agent-question-options button {
+  background: var(--agent-bg);
+  text-align: left;
+}
+
+.patchwork-agent .agent-question .agent-question-options button:hover {
+  border-color: var(--agent-accent);
+}
+
+.patchwork-agent .agent-question .agent-question-other {
+  display: flex;
+  gap: var(--studio-space-xs, 0.375rem);
+  align-items: center;
+}
+
+.patchwork-agent .agent-question .agent-question-other input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 3px 6px;
+  border-radius: var(--studio-radius-sm, 4px);
+  border: 1px solid var(--agent-border);
+  background: var(--agent-bg);
+  color: inherit;
+}
+
+/* A call waiting on a person should not look like one that is running. */
+.patchwork-agent .agent-call[data-status="asking"] > summary { color: var(--agent-accent-text); }
+
+/* A call that will ask again however much is granted. */
+.patchwork-agent .agent-approval-note {
+  font-size: 0.74rem;
+  color: var(--agent-muted);
+  margin-top: var(--studio-space-xs, 0.375rem);
+  padding-top: var(--studio-space-xs, 0.375rem);
+  border-top: 1px solid color-mix(in oklch, var(--agent-accent), transparent 70%);
+}
+
+.patchwork-agent .agent-setup .agent-model-defaults {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.patchwork-agent .agent-setup .agent-model-defaults:empty {
+  display: none;
+}
+
+/* ---- A document, package or tool, live in the transcript ---------------- */
+
+.patchwork-agent .agent-view {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--agent-surface);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.patchwork-agent .agent-view-header {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  flex-wrap: wrap;
+  padding: 2px var(--studio-space-xs, 0.375rem);
+  font-size: 0.76rem;
+}
+
+.patchwork-agent .agent-view-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--studio-space-xs, 0.375rem);
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--agent-fg);
+  cursor: pointer;
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+}
+.patchwork-agent .agent-view-name:disabled { cursor: default; }
+.patchwork-agent .agent-view-name:not(:disabled):hover .agent-view-title { text-decoration: underline; }
+.patchwork-agent .agent-view-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.patchwork-agent .agent-view[data-kind="package"] .agent-view-title { font-weight: 600; }
+
+.patchwork-agent .agent-view-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-2xs, 0.25rem);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.patchwork-agent .agent-view-actions button { font-size: 0.7rem; padding: 1px 6px; }
+
+.patchwork-agent .agent-view-state {
+  font-size: 0.7rem;
+  font-family: var(--agent-family-code);
+  color: var(--agent-accent-text);
+  white-space: nowrap;
+}
+.patchwork-agent .agent-view-error { font-size: 0.7rem; color: var(--agent-danger, #b3261e); }
+
+/* The running tool gets a real box with a real size, because a tool that
+   measures itself must see what it will see in front of a person. Resizable,
+   because a sidebar is narrow and a canvas wants room. */
+.patchwork-agent .agent-view-body { display: none; }
+.patchwork-agent .agent-view[data-expanded="yes"] .agent-view-body {
+  display: block;
+  height: 320px;
+  min-height: 120px;
+  resize: vertical;
+  overflow: auto;
+  border-top: 1px solid var(--agent-border);
+  background: var(--agent-bg);
+  position: relative;
+}
+.patchwork-agent .agent-view-body > .agent-mount { min-height: 100%; }
+
+/* ---- Block: the ambient pop-over (ui/ambient.js) -------------------------- */
+
+/*
+ * Bottom centre of the frame's overlay layer, which covers the frame and lets
+ * pointer events through; only the surfaces themselves take them. Everything
+ * grows up from the bottom edge: the pill, the peek, the open session.
+ */
+.agent-pop {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  font-family: var(--agent-family);
+  color: var(--agent-fg);
+}
+
+.agent-float {
+  width: 100%;
+  height: min(70vh, 640px);
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  overflow: hidden;
+  background: var(--agent-bg);
+  color: var(--agent-fg);
+  border: 1px solid var(--agent-border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.2), 0 2px 8px rgb(0 0 0 / 0.08);
+  animation: agent-rise 140ms ease-out;
+}
+
+.agent-float[hidden],
+.agent-pill[hidden],
+.agent-peek[hidden] { display: none; }
+
+@keyframes agent-rise {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-float,
+  .agent-peek,
+  .agent-pill { animation: none; }
+}
+
+.agent-float-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+  background: var(--agent-surface);
+  border-bottom: 1px solid var(--agent-border);
+  user-select: none;
+  font-size: 0.8125rem;
+}
+
+.agent-float-on {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agent-muted);
+}
+
+.agent-float-history {
+  max-width: 12rem;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.agent-float-bar button {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--agent-border);
+  border-radius: 6px;
+  background: var(--agent-bg);
+  color: inherit;
+  cursor: pointer;
+}
+
+.agent-float-bar .agent-float-bell[aria-pressed="false"] { opacity: 0.45; }
+
+.agent-float-bar .agent-float-close {
+  border-color: transparent;
+  background: transparent;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.agent-float-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The pill: the agent is working, and on what. */
+.agent-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: min(520px, 100%);
+  padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  border: 1px solid var(--agent-border);
+  border-radius: 999px;
+  background: var(--agent-bg);
+  color: var(--agent-fg);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.14);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  animation: agent-rise 140ms ease-out;
+}
+
+.agent-pill-dot,
+.agent-peek-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--agent-accent);
+}
+
+.agent-pill-dot { animation: agent-pulse 1.4s ease-in-out infinite; }
+
+.agent-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-pill-more,
+.agent-peek-more { color: var(--agent-muted); font-size: 0.75rem; }
+
+.agent-pill-key {
+  font-family: var(--agent-family-code);
+  font-size: 0.7rem;
+  color: var(--agent-faint);
+}
+
+/* The peek: something needs you, answered right here. */
+.agent-peek {
+  width: min(560px, 100%);
+  animation: agent-rise 160ms ease-out;
+}
+
+.agent-peek-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--agent-border);
+  border-left: 3px solid var(--agent-warning);
+  border-radius: 10px;
+  background: var(--agent-bg);
+  box-shadow: 0 10px 32px rgb(0 0 0 / 0.18);
+  font-size: 0.875rem;
+}
+
+.agent-peek-card[data-kind="finished"] { border-left-color: var(--agent-added); }
+.agent-peek-card[data-kind="finished"] .agent-peek-dot { background: var(--agent-added); }
+.agent-peek-card:not([data-kind="finished"]) .agent-peek-dot { background: var(--agent-warning); }
+
+.agent-peek-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.agent-peek-question {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.agent-peek-card .agent-waiting-item {
+  border-left: none;
+  padding: 0;
+}
+
+.agent-peek-card input[type="text"] {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.agent-peek-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+
+.patchwork-agent .agent-context {
+  font-size: 0.75rem;
+  color: var(--agent-muted);
+}
+
+/* ---- Dictation (ui/voice.js) ------------------------------------------- */
+
+.patchwork-agent .agent-mic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+}
+
+.patchwork-agent .agent-mic[hidden] { display: none; }
+
+.patchwork-agent .agent-mic[data-state="starting"] {
+  color: var(--agent-muted);
+  animation: agent-mic-pulse 1.2s ease-in-out infinite;
+}
+
+.patchwork-agent .agent-mic[data-state="on"] {
+  color: var(--agent-danger-text);
+  border-color: var(--agent-danger);
+  animation: agent-mic-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes agent-mic-pulse {
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .patchwork-agent .agent-mic { animation: none !important; }
+}
+
+/* ---- Block: a workflow ------------------------------------------------- */
+
+.agent-workflow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-md, 0.75rem);
+  padding: var(--studio-space-md, 0.75rem);
+  height: 100%;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.agent-wf-header h2 {
+  margin: 0;
+  font-size: 1.15em;
+}
+
+.agent-wf-goal,
+.agent-wf-summary {
+  margin: 0.25rem 0 0;
+  color: var(--agent-muted);
+}
+
+/* A long goal — a whole brief — folds to three lines, so the board is in view. */
+.agent-wf-goal[data-open="false"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.agent-wf-goal { white-space: pre-wrap; }
+.agent-wf-goal-toggle {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--agent-accent-text);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.agent-wf-header .cluster + .cluster,
+.agent-wf-summary + .cluster {
+  margin-top: var(--studio-space-sm, 0.5rem);
+}
+
+.agent-wf-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(15rem, 1fr);
+  gap: var(--studio-space-md, 0.75rem);
+  align-items: start;
+  overflow-x: auto;
+}
+
+.agent-wf-stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-sm, 0.5rem);
+}
+
+.agent-wf-stage h3 {
+  margin: 0;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--agent-faint);
+}
+
+.agent-wf-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: var(--studio-space-sm, 0.5rem);
+  border: 1px solid var(--agent-border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--agent-surface);
+}
+
+.agent-wf-step[data-state="running"] { border-left-color: var(--agent-accent); }
+.agent-wf-step[data-state="needs-input"] { border-left-color: var(--agent-warning); }
+.agent-wf-step[data-state="done"] { border-left-color: var(--agent-added); }
+.agent-wf-step[data-state="failed"] { border-left-color: var(--agent-danger); }
+.agent-wf-step[data-state="stale"] { border-left-color: var(--agent-warning); }
+.agent-wf-step[data-state="blocked"],
+.agent-wf-step[data-state="cancelled"] { opacity: 0.6; }
+
+.agent-wf-step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.agent-wf-chip {
+  flex: none;
+  font-size: 0.75em;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--agent-surface-2);
+  color: var(--agent-muted);
+}
+
+.agent-wf-chip[data-state="running"],
+.agent-wf-step[data-state="running"] .agent-wf-chip { background: var(--agent-accent); color: var(--agent-accent-line); }
+.agent-wf-step[data-state="needs-input"] .agent-wf-chip { background: var(--agent-warning); color: var(--agent-bg); }
+.agent-wf-chip[data-state="done"],
+.agent-wf-step[data-state="done"] .agent-wf-chip { color: var(--agent-added); }
+.agent-wf-step[data-state="failed"] .agent-wf-chip { color: var(--agent-danger-text); }
+
+.agent-wf-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  font-size: 0.8em;
+  color: var(--agent-muted);
+}
+
+.agent-wf-badge {
+  padding: 0 0.35rem;
+  border: 1px solid var(--agent-border);
+  border-radius: 4px;
+  font-family: var(--agent-family-code);
+}
+
+.agent-wf-step[data-state="stale"] .agent-wf-chip { color: var(--agent-warning); }
+
+.agent-wf-stale,
+.agent-wf-request {
+  margin: 0;
+  font-size: 0.85em;
+}
+.agent-wf-stale { color: var(--agent-warning); }
+.agent-wf-request .agent-wf-chip { margin-left: 0.4rem; }
+.agent-wf-request[data-status="declined"] { color: var(--agent-muted); }
+
+.agent-wf-why,
+.agent-wf-activity,
+.agent-wf-kept {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--agent-muted);
+}
+
+.agent-wf-error {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--agent-danger-text);
+}
+
+.agent-wf-result summary {
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.agent-wf-result pre {
+  white-space: pre-wrap;
+  font-size: 0.85em;
+  max-height: 20rem;
+  overflow: auto;
+}
+
+.agent-wf-open {
+  align-self: flex-start;
+  font-size: 0.85em;
+}
+
+.agent-wf-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.agent-wf-field {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9em;
+}
+
+/* ---- Block: steps waiting on you ---------------------------------------- */
+
+.agent-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: var(--studio-space-sm, 0.5rem);
+  border-bottom: 1px solid var(--agent-border);
+  background: var(--agent-surface);
+}
+
+.agent-waiting[hidden] {
+  display: none;
+}
+
+.agent-waiting-title {
+  margin: 0;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--agent-warning);
+}
+
+.agent-waiting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.4rem 0.5rem;
+  border-left: 3px solid var(--agent-warning);
+  border-radius: 4px;
+  background: var(--agent-bg);
+}
+
+.agent-waiting-item p {
+  margin: 0;
+}
+
+.agent-waiting-step {
+  font-size: 0.8em;
+  color: var(--agent-muted);
+}
+
+.agent-waiting-item input[type="text"] {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.patchwork-agent .agent-cost {
+  font-size: 0.8em;
+  color: var(--agent-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Citations (ui/markdown.js, ui/citations.js): a link carrying the passage it
+   rests on, marked once its document has been checked for the passage. */
+.patchwork-agent .agent-cite {
+  font-size: 0.8em;
+  vertical-align: super;
+  line-height: 0;
+  padding: 0 0.25em;
+  border-radius: 3px;
+  background: var(--agent-surface-2);
+  color: var(--agent-fg);
+  text-decoration: none;
+  cursor: pointer;
+}
+.patchwork-agent .agent-cite::after {
+  margin-left: 0.2em;
+}
+.patchwork-agent .agent-cite[data-check="found"]::after {
+  content: "✓";
+  color: var(--agent-added);
+}
+.patchwork-agent .agent-cite[data-check="missing"] {
+  background: none;
+  outline: 1px solid var(--agent-danger);
+  color: var(--agent-danger-text);
+}
+.patchwork-agent .agent-cite[data-check="missing"]::after {
+  content: "✗ not in source";
+}
+.patchwork-agent .agent-cite[data-check="short"]::after,
+.patchwork-agent .agent-cite[data-check="unreadable"]::after {
+  content: "?";
+  color: var(--agent-warning);
+}
+
+/* A fact the agent has no document for. */
+.patchwork-agent .agent-from-memory {
+  font-size: 0.8em;
+  padding: 0 0.35em;
+  border-radius: 3px;
+  border: 1px dashed var(--agent-muted);
+  color: var(--agent-muted);
+  white-space: nowrap;
+}
+
+/* Attachments: waiting above the composer, and on a sent message. */
+.patchwork-agent .agent-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+.patchwork-agent .agent-attachments[hidden] { display: none; }
+.patchwork-agent .agent-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 2px 6px 2px 2px;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--agent-surface);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.patchwork-agent .agent-attachment-thumb {
+  width: 2.2rem;
+  height: 2.2rem;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.patchwork-agent .agent-turn .agent-attachment-thumb { width: 6rem; height: auto; max-height: 6rem; object-fit: contain; }
+.patchwork-agent .agent-attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.patchwork-agent .agent-attachment-remove {
+  border: none;
+  background: none;
+  color: var(--agent-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 1rem;
+  line-height: 1;
+}
+.patchwork-agent .agent-composer[data-dropping="true"] {
+  outline: 2px dashed var(--agent-accent);
+  outline-offset: -2px;
+}
+
+/* What a node has spent, of its budget (ui/workflow-view.js moneyChip). */
+.agent-wf-money {
+  margin-left: auto;
+  font-size: 0.75em;
+  font-variant-numeric: tabular-nums;
+  color: var(--agent-muted);
+  white-space: nowrap;
+}
+.agent-wf-money[data-over="true"] { color: var(--agent-danger-text); }
+
+/* The orchestrating session, as the first node on a workflow board. */
+.agent-wf-orchestrator { background: var(--agent-surface); }

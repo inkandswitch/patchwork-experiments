@@ -1,0 +1,719 @@
+/* The native notebook. Colours come from Patchwork's theme, with fallbacks for outside it. */
+
+.pwnb-host {
+  --pwnb-fill: var(--editor-fill, Canvas);
+  --pwnb-line: var(--editor-line, CanvasText);
+  --pwnb-muted: var(--editor-line-offset-30, color-mix(in srgb, var(--pwnb-line) 55%, var(--pwnb-fill)));
+  --pwnb-subtle: var(--editor-fill-offset-10, color-mix(in srgb, var(--pwnb-line) 4%, var(--pwnb-fill)));
+  --pwnb-border: var(--editor-fill-offset-30, color-mix(in srgb, var(--pwnb-line) 15%, var(--pwnb-fill)));
+  --pwnb-accent: var(--studio-secondary, #2f80ed);
+  --pwnb-added: var(--studio-added, #22c55e);
+  --pwnb-deleted: var(--studio-deleted, #ef4444);
+  --pwnb-changed: var(--studio-warning, #f59e0b);
+  /* Comparing, the colours the panel showing the notebook gives (strand's --compare-*). */
+  --pwnb-c-inserted: var(--compare-inserted, #22bb22);
+  --pwnb-c-deleted: var(--compare-deleted, #ee4433);
+  --pwnb-c-modified: var(--compare-modified, #dba617);
+  --pwnb-c-ours: var(--compare-ours, #3b7dd8);
+  --pwnb-c-theirs: var(--compare-theirs, #9b5de5);
+  --pwnb-c-folded: var(--compare-folded, rgb(128 128 128 / 0.08));
+  --pwnb-sans: var(--editor-family-sans, system-ui, sans-serif);
+  --pwnb-mono: var(--editor-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  --pwnb-syntax-keyword: var(--editor-primary-text, #7c3aed);
+  --pwnb-syntax-string: var(--editor-success-text, #15803d);
+  --pwnb-syntax-number: var(--editor-warning-text, #b45309);
+  --pwnb-syntax-comment: var(--pwnb-muted);
+  --pwnb-syntax-function: var(--editor-secondary-text, #1d4ed8);
+  --pwnb-syntax-definition: var(--editor-info-text, #0e7490);
+
+  block-size: 100%;
+  overflow: auto;
+  background: var(--pwnb-fill);
+  color: var(--pwnb-line);
+  font-family: var(--pwnb-sans);
+  font-size: 14px;
+}
+
+.pwnb {
+  min-block-size: 100%;
+  outline: none;
+}
+
+.pwnb-toolbar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 12px;
+  border-block-end: 1px solid var(--pwnb-border);
+  background: var(--pwnb-fill);
+}
+
+/* Icon buttons, as Jupyter Notebook's toolbar has them. */
+.pwnb-tool {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--studio-radius-sm, 4px);
+  background: none;
+  color: var(--pwnb-line);
+  cursor: pointer;
+}
+
+.pwnb-tool svg {
+  display: block;
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.pwnb-tool .jp-icon3 {
+  fill: currentColor;
+}
+
+.pwnb-tool:hover:not(:disabled) {
+  background: var(--pwnb-subtle);
+  box-shadow: inset 0 0 0 1px var(--pwnb-border);
+}
+
+.pwnb-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pwnb-cell-type {
+  block-size: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--pwnb-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--pwnb-fill);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.pwnb-empty {
+  padding: 3px 9px;
+  border: 1px solid var(--pwnb-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--pwnb-subtle);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pwnb-empty:hover {
+  border-color: var(--pwnb-muted);
+}
+
+.pwnb-toolbar-gap {
+  inline-size: 1px;
+  block-size: 16px;
+  margin-inline: 4px;
+  background: var(--pwnb-border);
+}
+
+.pwnb-toolbar-spacer {
+  flex: 1;
+}
+
+.pwnb-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pwnb-muted);
+  font-size: 12px;
+}
+
+.pwnb-status-dot {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--pwnb-muted);
+}
+
+.pwnb-status[data-status="idle"] .pwnb-status-dot {
+  background: var(--pwnb-added);
+}
+
+.pwnb-status[data-status="busy"] .pwnb-status-dot,
+.pwnb-status[data-status="starting"] .pwnb-status-dot {
+  background: var(--pwnb-changed);
+}
+
+.pwnb-status[data-status="dead"] .pwnb-status-dot {
+  background: var(--pwnb-deleted);
+}
+
+.pwnb-cells {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-inline-size: 1100px;
+  margin-inline: auto;
+  padding: 12px 16px 40vh 8px;
+}
+
+.pwnb-cell {
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px 4px 0;
+  border-radius: var(--studio-radius-sm, 4px);
+  box-shadow: inset 3px 0 0 transparent;
+}
+
+.pwnb-cell[hidden] {
+  display: none;
+}
+
+.pwnb-cell.pwnb-active {
+  box-shadow: inset 3px 0 0 var(--pwnb-muted);
+  background: var(--pwnb-subtle);
+}
+
+.pwnb:focus .pwnb-cell.pwnb-active,
+.pwnb-cell.pwnb-editing {
+  box-shadow: inset 3px 0 0 var(--pwnb-accent);
+}
+
+.pwnb-prompt {
+  flex: 0 0 4.5em;
+  padding-block-start: 5px;
+  color: var(--pwnb-muted);
+  font-family: var(--pwnb-mono);
+  font-size: 12px;
+  text-align: end;
+  user-select: none;
+}
+
+.pwnb-body {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.pwnb-editor[hidden] {
+  display: none;
+}
+
+.pwnb-cell[data-cell-type="code"] .pwnb-editor,
+.pwnb-cell[data-cell-type="raw"] .pwnb-editor,
+.pwnb-cell[data-cell-type="markdown"].pwnb-editing .pwnb-editor {
+  border: 1px solid var(--pwnb-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--pwnb-fill);
+}
+
+.pwnb-editor .cm-editor {
+  font-size: 13px;
+}
+
+.pwnb-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.pwnb-editor .cm-scroller {
+  font-family: var(--pwnb-mono);
+  line-height: 1.45;
+}
+
+.pwnb-editor .cm-content {
+  padding: 5px 0;
+}
+
+.pwnb-editor .cm-line {
+  padding-inline: 8px;
+}
+
+.pwnb-cell[data-cell-type="markdown"] .pwnb-editor .cm-scroller {
+  font-family: var(--pwnb-sans);
+}
+
+.pwnb-markdown {
+  padding: 2px 8px;
+  cursor: default;
+}
+
+.pwnb-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px 2px;
+  overflow-x: auto;
+}
+
+.pwnb-output-unrenderable {
+  color: var(--pwnb-muted);
+  font-style: italic;
+}
+
+.pwnb-folded {
+  display: block;
+  inline-size: 100%;
+  margin: 2px 0;
+  padding: 5px 0 5px 5.5em;
+  border: 0;
+  background: var(--pwnb-c-folded);
+  color: var(--pwnb-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.pwnb-folded:hover {
+  color: var(--pwnb-line);
+}
+
+.pwnb-empty {
+  align-self: center;
+  margin-block-start: 24px;
+}
+
+/*
+ * Comparing (see src/compare/). Stacked and side by side: what this draft
+ * changed since the drafts parted, added in green, changed in amber, removed
+ * in red. Combined: this version and the other in the drafts' own colours;
+ * merging, the merge's result and the target before it, in green and red.
+ */
+
+.pwnb.pwnb-merging {
+  --pwnb-c-ours: var(--pwnb-c-inserted);
+  --pwnb-c-theirs: var(--pwnb-c-deleted);
+}
+
+.pwnb-cell.pwnb-diff-added {
+  box-shadow: inset 4px 0 0 var(--pwnb-c-inserted);
+  background: color-mix(in srgb, var(--pwnb-c-inserted) 8%, transparent);
+}
+
+.pwnb-cell.pwnb-diff-changed {
+  box-shadow: inset 4px 0 0 var(--pwnb-c-modified);
+}
+
+.pwnb-cell.pwnb-diff-outputs .pwnb-outputs {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--pwnb-c-modified) 60%, transparent);
+  background: color-mix(in srgb, var(--pwnb-c-modified) 6%, transparent);
+}
+
+.pwnb-cell.pwnb-ours {
+  box-shadow: inset 4px 0 0 var(--pwnb-c-ours);
+  background: color-mix(in srgb, var(--pwnb-c-ours) 8%, transparent);
+}
+
+.pwnb-outputs.pwnb-ours-outputs {
+  box-shadow: inset 3px 0 0 var(--pwnb-c-ours);
+  background: color-mix(in srgb, var(--pwnb-c-ours) 6%, transparent);
+}
+
+.pwnb-outputs.pwnb-theirs-outputs {
+  box-shadow: inset 3px 0 0 var(--pwnb-c-theirs);
+  background: color-mix(in srgb, var(--pwnb-c-theirs) 8%, transparent);
+}
+
+.pwnb-theirs-type,
+.pwnb-theirs-empty {
+  padding: 2px 8px;
+  color: var(--pwnb-c-theirs);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.pwnb-ghost {
+  display: flex;
+  gap: 6px;
+  margin: 2px 0;
+  padding-inline-end: 6px;
+  font-size: 13px;
+}
+
+.pwnb-ghost pre {
+  margin: 0;
+  padding: 4px 8px;
+  font-family: var(--pwnb-mono);
+  white-space: pre-wrap;
+}
+
+.pwnb-ghost pre.pwnb-ghost-empty {
+  font-family: var(--pwnb-sans);
+  font-style: italic;
+}
+
+.pwnb-ghost-removed .pwnb-body {
+  box-shadow: inset 4px 0 0 var(--pwnb-c-deleted);
+  background: color-mix(in srgb, var(--pwnb-c-deleted) 8%, transparent);
+}
+
+.pwnb-ghost-removed .pwnb-prompt {
+  color: var(--pwnb-c-deleted);
+}
+
+.pwnb-ghost-removed pre {
+  text-decoration: line-through color-mix(in srgb, var(--pwnb-c-deleted) 60%, transparent);
+  opacity: 0.8;
+}
+
+.pwnb-ghost-theirs .pwnb-body {
+  box-shadow: inset 4px 0 0 var(--pwnb-c-theirs);
+  background: color-mix(in srgb, var(--pwnb-c-theirs) 8%, transparent);
+}
+
+/* Side by side: a row per cell, this version's beside the other's. */
+
+.pwnb-row {
+  display: contents;
+}
+
+.pwnb-row[hidden] {
+  display: none;
+}
+
+.pwnb-cells.pwnb-side {
+  max-inline-size: none;
+}
+
+.pwnb-cells.pwnb-side .pwnb-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.pwnb-cells.pwnb-side .pwnb-row[hidden] {
+  display: none;
+}
+
+.pwnb-cells.pwnb-side .pwnb-prompt {
+  flex-basis: 3.5em;
+}
+
+.pwnb-side-headings {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin: 4px -12px -4px;
+  padding: 4px 16px 4px 8px;
+  border-block-start: 1px solid var(--compare-edge, var(--pwnb-border));
+  font-size: 12px;
+}
+
+.pwnb-side-headings > span {
+  padding-inline-start: 4em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pwnb-side-headings > span::before {
+  content: "";
+  display: inline-block;
+  inline-size: 7px;
+  block-size: 7px;
+  margin-inline-end: 5px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+
+.pwnb-cell.pwnb-side-added {
+  box-shadow: inset 4px 0 0 var(--pwnb-c-inserted);
+  background: color-mix(in srgb, var(--pwnb-c-inserted) 8%, transparent);
+}
+
+.pwnb-cell.pwnb-side-removed {
+  box-shadow: inset 4px 0 0 var(--pwnb-c-deleted);
+  background: color-mix(in srgb, var(--pwnb-c-deleted) 8%, transparent);
+}
+
+.pwnb-cell.pwnb-side-differs {
+  box-shadow: inset 4px 0 0 var(--pwnb-c-modified);
+}
+
+.pwnb-cell.pwnb-side-outputs .pwnb-outputs {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--pwnb-c-modified) 60%, transparent);
+  background: color-mix(in srgb, var(--pwnb-c-modified) 6%, transparent);
+}
+
+.pwnb-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-inline-end: 12px;
+  font-size: 12px;
+}
+
+.pwnb-legend > span::before {
+  content: "";
+  display: inline-block;
+  inline-size: 7px;
+  block-size: 7px;
+  margin-inline-end: 5px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+
+.pwnb-legend-ours::before,
+.pwnb-side-headings .pwnb-legend-ours::before {
+  background: var(--pwnb-c-ours);
+}
+
+.pwnb-legend-theirs::before,
+.pwnb-side-headings .pwnb-legend-theirs::before {
+  background: var(--pwnb-c-theirs);
+}
+
+/* What JupyterLab's renderers produce (@jupyterlab/rendermime), styled for Patchwork. */
+
+.pwnb-host .jp-RenderedText pre {
+  margin: 0;
+  font-family: var(--pwnb-mono);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pwnb-host .jp-RenderedText[data-mime-type="application/vnd.jupyter.stderr"] {
+  padding: 2px 6px;
+  border-radius: var(--studio-radius-xs, 2px);
+  background: color-mix(in srgb, var(--pwnb-deleted) 10%, transparent);
+}
+
+.pwnb-host .jp-RenderedImage img {
+  max-inline-size: 100%;
+  block-size: auto;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon {
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon > :first-child {
+  margin-block-start: 0;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon > :last-child {
+  margin-block-end: 0;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon h1 { font-size: 1.8em; margin: 0.6em 0 0.4em; }
+.pwnb-host .jp-RenderedHTMLCommon h2 { font-size: 1.45em; margin: 0.6em 0 0.4em; }
+.pwnb-host .jp-RenderedHTMLCommon h3 { font-size: 1.2em; margin: 0.6em 0 0.4em; }
+
+/* The anchor rendermime adds to headings, shown on hover as in JupyterLab. */
+.pwnb-host .jp-InternalAnchorLink {
+  visibility: hidden;
+  margin-inline-start: 8px;
+  color: var(--pwnb-muted);
+  text-decoration: none;
+}
+
+.pwnb-host :is(h1, h2, h3, h4, h5, h6):hover > .jp-InternalAnchorLink {
+  visibility: visible;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon code {
+  padding: 0 3px;
+  border-radius: var(--studio-radius-xs, 2px);
+  background: var(--pwnb-subtle);
+  font-family: var(--pwnb-mono);
+  font-size: 0.92em;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon pre {
+  padding: 6px 8px;
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--pwnb-subtle);
+  overflow-x: auto;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon pre code {
+  padding: 0;
+  background: none;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon blockquote {
+  margin-inline: 0;
+  padding-inline-start: 12px;
+  border-inline-start: 3px solid var(--pwnb-border);
+  color: var(--pwnb-muted);
+}
+
+.pwnb-host .jp-RenderedHTMLCommon img {
+  max-inline-size: 100%;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon a {
+  color: var(--editor-link-text, var(--pwnb-accent));
+}
+
+.pwnb-host .jp-RenderedHTMLCommon table {
+  border: none;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon th,
+.pwnb-host .jp-RenderedHTMLCommon td {
+  padding: 3px 8px;
+  border: none;
+  text-align: end;
+}
+
+.pwnb-host .jp-RenderedHTMLCommon thead {
+  border-block-end: 1px solid var(--pwnb-muted);
+}
+
+.pwnb-host .jp-RenderedHTMLCommon tbody tr:nth-child(odd) {
+  background: var(--pwnb-subtle);
+}
+
+/* ANSI colours in text output, as the classes JupyterLab's text renderer emits. */
+.pwnb-host .ansi-black-fg { color: #3e424d; }
+.pwnb-host .ansi-red-fg { color: #e75c58; }
+.pwnb-host .ansi-green-fg { color: #00a250; }
+.pwnb-host .ansi-yellow-fg { color: #b8860b; }
+.pwnb-host .ansi-blue-fg { color: #208ffb; }
+.pwnb-host .ansi-magenta-fg { color: #d160c4; }
+.pwnb-host .ansi-cyan-fg { color: #60c6c8; }
+.pwnb-host .ansi-white-fg { color: #c5c1b4; }
+.pwnb-host .ansi-black-intense-fg { color: #282c36; }
+.pwnb-host .ansi-red-intense-fg { color: #b22b31; }
+.pwnb-host .ansi-green-intense-fg { color: #007427; }
+.pwnb-host .ansi-yellow-intense-fg { color: #b27d12; }
+.pwnb-host .ansi-blue-intense-fg { color: #0065ca; }
+.pwnb-host .ansi-magenta-intense-fg { color: #a03196; }
+.pwnb-host .ansi-cyan-intense-fg { color: #258f8f; }
+.pwnb-host .ansi-white-intense-fg { color: #a1a6b2; }
+.pwnb-host .ansi-red-bg { background-color: #e75c58; }
+.pwnb-host .ansi-green-bg { background-color: #00a250; }
+.pwnb-host .ansi-yellow-bg { background-color: #ddb62b; }
+.pwnb-host .ansi-blue-bg { background-color: #208ffb; }
+.pwnb-host .ansi-bold { font-weight: bold; }
+.pwnb-host .ansi-underline { text-decoration: underline; }
+
+/* Imports and the last run, under the toolbar. */
+.pwnb-links {
+  display: grid;
+  gap: 4px;
+  padding: 6px 12px;
+  border-block-end: 1px solid var(--pwnb-border);
+  background: var(--pwnb-subtle);
+  font-size: 12px;
+}
+
+.pwnb-links-dragging {
+  outline: 2px dashed var(--pwnb-accent);
+  outline-offset: -3px;
+}
+
+.pwnb-imports,
+.pwnb-run {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.pwnb-links-label {
+  min-inline-size: 64px;
+  color: var(--pwnb-muted);
+  font-weight: 600;
+}
+
+.pwnb-import {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 4px 1px 6px;
+  border: 1px solid var(--pwnb-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--pwnb-fill);
+}
+
+.pwnb-import-name {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: 12px var(--pwnb-mono);
+  cursor: text;
+}
+
+.pwnb-import-name:disabled {
+  cursor: default;
+}
+
+.pwnb-import-rename {
+  inline-size: 12ch;
+  font: 12px var(--pwnb-mono);
+}
+
+.pwnb-import-title,
+.pwnb-run-import {
+  color: var(--pwnb-accent);
+  text-decoration: none;
+}
+
+.pwnb-import-title:hover,
+.pwnb-run-import:hover {
+  text-decoration: underline;
+}
+
+.pwnb-import-kind,
+.pwnb-links-hint,
+.pwnb-run-version {
+  color: var(--pwnb-muted);
+}
+
+.pwnb-import-remove {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: var(--pwnb-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pwnb-import-remove:hover {
+  color: var(--pwnb-line);
+}
+
+.pwnb-links-problem,
+.pwnb-run[data-status="error"] .pwnb-run-status {
+  color: var(--pwnb-deleted);
+}
+
+.pwnb-run-changed {
+  color: var(--pwnb-changed);
+}
+
+.pwnb-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  color: var(--pwnb-changed);
+}
+
+.pwnb-rerun {
+  padding: 1px 8px;
+  border: 1px solid var(--pwnb-changed);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--pwnb-fill);
+  color: var(--pwnb-line);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pwnb-rerun-setting {
+  margin-inline-start: auto;
+  color: var(--pwnb-muted);
+}

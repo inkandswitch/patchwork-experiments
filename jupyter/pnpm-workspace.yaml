@@ -1,5 +1,11 @@
+# pnpm 11 reads its settings from this file. There is no root workspace, so
+# every package carries the settings it needs rather than inheriting them.
+minimumReleaseAge: 0
+verifyDepsBeforeRun: false
 allowBuilds:
-  cbor-extract: false
+  "@swc/core": true
+  cbor-extract: true
+  core-js: true
   esbuild: true
 # patchwork-next's catalog, so the kernel worker runs what Patchwork runs
 overrides:
@@ -13,4 +19,4 @@ overrides:
   "@automerge/vanillajs": 2.6.0-subduction.49
 patchedDependencies:
   # the heads channel, so the kernel worker hears tabs' saves
-  '@automerge/automerge-repo@2.6.0-subduction.49': patches/@automerge__automerge-repo@2.6.0-subduction.49.patch
+  '@automerge/automerge-repo@2.6.0-subduction.49': shared/patches/@automerge__automerge-repo@2.6.0-subduction.49.patch

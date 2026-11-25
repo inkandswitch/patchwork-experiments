@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
+import solid from "vite-plugin-solid"
+import { pyodideKernelAssets } from "../native/vite-plugin"
 
 /**
  * Builds the harness into dist/ next to the tool's own chunks, so the tool's
@@ -8,6 +10,7 @@ import { defineConfig } from "vite"
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   base: "./",
+  plugins: [pyodideKernelAssets(), solid()],
   resolve: {
     alias: [
       // what Patchwork's importmap does
@@ -22,7 +25,11 @@ export default defineConfig({
     assetsDir: "",
     assetsInlineLimit: 0,
     rollupOptions: {
-      input: fileURLToPath(new URL("./harness.html", import.meta.url)),
+      input: {
+        harness: fileURLToPath(new URL("./harness.html", import.meta.url)),
+        kernel: fileURLToPath(new URL("./kernel.html", import.meta.url)),
+        probe: fileURLToPath(new URL("./probe.html", import.meta.url)),
+      },
       output: {
         entryFileNames: "harness-[hash].js",
         chunkFileNames: "harness-[name]-[hash].js",

@@ -1,0 +1,15 @@
+{
+  "name": "@tiny-patchwork/fetch-relay",
+  "type": "module",
+  "private": true,
+  "description": "Fetches a URL for a Patchwork agent in a browser, so it keeps the PDF or page itself rather than a reader's text of it. Runs as a Cloudflare Worker or a Node server.",
+  "scripts": {
+    "start": "node server.mjs",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}

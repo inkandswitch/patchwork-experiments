@@ -32,7 +32,9 @@ import * as model from "./study-model.js";
 // ---------------------------------------------------------------- helpers
 
 /** The change message: who (the agent, which session) and what. */
-const message = (ctx, why) => `agent${ctx?.sessionUrl ? ` ${ctx.sessionUrl}` : ""}: ${why}`;
+// The session is the agent's to name: its tool context gives it as
+// `ctx.session` ({ url, doc() }), and has no other field for it.
+const message = (ctx, why) => `agent${ctx?.session?.url ? ` ${ctx.session.url}` : ""}: ${why}`;
 /** Who asked, for the run doc. */
 const BY = "agent";
 /** How many faces a report lists unless asked for all. */

@@ -1,0 +1,30 @@
+{
+  "name": "@tiny-patchwork/agent",
+  "type": "module",
+  "private": true,
+  "main": "./index.js",
+  "description": "An agentic harness that lives inside Patchwork: a session document, a leased runner, and tools that read and write automerge documents.",
+  "scripts": {
+    "sync": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "runner": "node runners/node.mjs",
+    "vendor:vitest": "node scripts/vendor-vitest.mjs",
+    "vendor:pdfjs": "node scripts/vendor-pdfjs.mjs"
+  },
+  "devDependencies": {
+    "@vitest/expect": "3.2.7",
+    "@vitest/runner": "3.2.7",
+    "@vitest/spy": "3.2.7",
+    "chai": "5.3.3",
+    "esbuild": "0.28.2",
+    "happy-dom": "^15.11.7",
+    "pdfjs-dist": "6.5.438",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@automerge/automerge": "3.3.0-fragments.2",
+    "@automerge/automerge-repo": "2.6.0-subduction.43"
+  }
+}

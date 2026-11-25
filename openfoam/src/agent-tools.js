@@ -29,7 +29,9 @@ import { version as TOOL_VERSION } from "../package.json";
 // ---------------------------------------------------------------- helpers
 
 /** The change message: who (the agent, which session) and why. */
-const message = (ctx, why) => `agent${ctx?.sessionUrl ? ` ${ctx.sessionUrl}` : ""}: ${why}`;
+// The session is the agent's to name: its tool context gives it as
+// `ctx.session` ({ url, doc() }), and has no other field for it.
+const message = (ctx, why) => `agent${ctx?.session?.url ? ` ${ctx.session.url}` : ""}: ${why}`;
 const MADE = { tool: "openfoam", version: TOOL_VERSION };
 /** How many parts a report lists; more are counted. */
 export const MAX_PARTS = 40;
