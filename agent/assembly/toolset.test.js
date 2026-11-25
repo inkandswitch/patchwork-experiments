@@ -25,6 +25,7 @@ import { BUILTIN_TOOLS } from "./builtin.js"
 import { scopedHttpRequest } from "../tools/http.js"
 import { UNDECLARED_MID_RUN, webScope } from "../kernel/scope.js"
 import { WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, SCOPED_TOOL_IDS, FULL_TOOLS, researchToolset } from "../fixtures/tool-ids.js"
+import { withLedger } from "../fixtures/ledger.js"
 
 await initSubduction()
 
@@ -61,6 +62,7 @@ function expectedFull(enabled, disabled) {
 const repo = new Repo({ network: [] })
 const plan = repo.create({})
 plan.change((d) => initPlan(d, { title: "P", goal: "G", steps: [{ id: "r", title: "R", prompt: "p", why: "w", where: "worker", tier: "fast", access: "web" }] }))
+withLedger(repo, plan)
 
 describe("the built-ins by kind, written out", () => {
   // Each tool says for itself which sessions are offered it (kernel/toolset.js).
@@ -263,6 +265,7 @@ describe("the plugins a research step admits", () => {
     const sessionRepo = new Repo({ network: [] })
     const stepPlan = sessionRepo.create({})
     stepPlan.change((d) => initPlan(d, { title: "P", goal: "G", steps: [{ id: "r", title: "R", prompt: "p", why: "w", where: "worker", tier: "fast", access: "web" }] }))
+    withLedger(sessionRepo, stepPlan)
     const handle = sessionRepo.create({})
     handle.change((d) => {
       initSession(d, {})

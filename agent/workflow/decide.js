@@ -34,6 +34,7 @@
  *   { type: "shareGrants" }               one job, one set of permissions
  *   { type: "fileSources" }               what research steps kept, filed for people
  *   { type: "run", sessionUrl }           a running step's session has a runner
+ *   { type: "ledger" }                    open the plan's ledger: a research step is about to start, and there is none
  *   { type: "start", stepId }             a ready step begins, in a new session
  *   { type: "continue", stepId }          a reopened step carries on in its own
  *   { type: "pause", stopped, at }        out of budget with work waiting
@@ -135,9 +136,12 @@ export function decide(plan, observations = {}, now = Date.now()) {
   // Running steps keep a runner: after a reload theirs are gone.
   for (const step of next.steps) if (step.status === STEP.running && step.sessionUrl) actions.push({ type: "run", sessionUrl: step.sessionUrl })
 
-  // Start what is ready.
+  // Start what is ready. A research step keeps into the plan's ledger and
+  // reads only from it, so the ledger is opened first, once per plan.
   const statuses = Object.fromEntries(Object.entries(sessions).map(([url, s]) => [url, s?.status ?? null]))
-  for (const id of toStart(next, statuses)) {
+  const starting = toStart(next, statuses)
+  if (!next.ledgerUrl && starting.some((id) => next.steps.find((s) => s.id === id).access === "web")) actions.push({ type: "ledger" })
+  for (const id of starting) {
     const step = next.steps.find((s) => s.id === id)
     actions.push({ type: step.sessionUrl ? "continue" : "start", stepId: id })
     beginStep(next, id, { now })

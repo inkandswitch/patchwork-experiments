@@ -190,7 +190,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     if (runs > 1) meta.append(el("span", "agent-wf-badge", `run ${runs}`))
     card.append(meta)
     if (step.access === "web") {
-      const { sources, findings } = keptCounts(handle.doc(), step.id)
+      const { sources, findings } = keptCounts(sessionDoc(handle.doc()?.ledgerUrl), step.id)
       if (sources || findings) card.append(el("p", "agent-wf-kept", `kept ${sources} source${sources === 1 ? "" : "s"} · ${findings} finding${findings === 1 ? "" : "s"}`))
     }
     if (step.why) card.append(el("p", "agent-wf-why", step.why))
@@ -346,6 +346,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     const waitingOrStatus = (doc) => (waitingIn(doc).length ? STATUS.awaitingApproval : doc ? statusOf(doc) : null)
     const statuses = Object.fromEntries(plan.steps.filter((s) => s.sessionUrl).map((s) => [s.sessionUrl, waitingOrStatus(sessionDoc(s.sessionUrl))]))
     if (plan.sessionUrl) watch(plan.sessionUrl)
+    // What the research steps kept, counted off the plan's ledger.
+    if (plan.ledgerUrl) watch(plan.ledgerUrl)
     const derived = states(plan, statuses)
     const count = (state) => plan.steps.filter((s) => derived.get(s.id) === state).length
 
@@ -383,7 +385,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     if (plan.sourcesFolderUrl) {
       // What the research steps kept, filed for people. Shown once there is
       // something in it; the count is the ledger's, which the folder follows.
-      const { sources, findings } = keptCounts(plan)
+      const { sources, findings } = keptCounts(sessionDoc(plan.ledgerUrl))
       if (sources + findings) {
         const kept = el("button", "agent-wf-sources", `Sources (${sources + findings})`)
         kept.dataset.wfOpen = plan.sourcesFolderUrl

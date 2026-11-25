@@ -5,7 +5,11 @@
  */
 
 import { describe, it, expect } from "vitest"
-import { migratePlan } from "./migrate-plan.js"
+import { Repo, initSubduction } from "@automerge/automerge-repo"
+import { migratePlan, ledgerFor } from "./migrate-plan.js"
+import { migrateSession } from "./migrate-session.js"
+import { scopeOf, assertScopeAgrees, confine } from "../kernel/scope.js"
+import { LEDGER_TYPE } from "../kernel/kernel-repo.js"
 import { PLAN, STEP, PLAN_VERSION, told, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey, resumePlan } from "../workflow/plan.js"
 import { untold } from "../workflow/driver.js"
 
@@ -21,6 +25,8 @@ const v1 = (steps, over = {}) => ({
   ...over,
 })
 const question = (callId) => ({ kind: "question", callId, question: "?", options: [] })
+
+await initSubduction()
 
 describe("a version 1 plan", () => {
   it("says it is version 2, on its first run, with nothing told and no flags left", () => {
@@ -161,5 +167,65 @@ describe("a version 1 plan", () => {
     )
     migratePlan(doc)
     expect(untold(doc, [question("q1")], [{ stepId: "d", spent: 1, limit: 1, at: 9 }]).keys).toEqual([])
+  })
+})
+
+describe("a version 1 plan's ledger", () => {
+  const kept = { a: { url: "automerge:a", kind: "source", what: "extract", by: "r", at: 1, heads: ["h"] } }
+
+  // [has a research step] × [what `sources` holds] → does it get a ledger,
+  // and holding what. One with no research in it gets none: its driver opens
+  // one if a research step is ever added.
+  const CASES = []
+  for (const web of [false, true]) {
+    for (const [held, sources] of [["no field", undefined], ["nothing", {}], ["a kept source", kept]]) {
+      CASES.push([web, held, sources, web || held === "a kept source"])
+    }
+  }
+  it.each(CASES)("research step %s, sources %s → a ledger %s", (web, _held, sources, needs) => {
+    const doc = v1([step("a", web ? { access: "web" } : {})], sources === undefined ? {} : { sources })
+    const ledger = ledgerFor(doc)
+    if (!needs) {
+      expect(ledger).toBeNull()
+      expect(migratePlan(doc)).toBe(true)
+      expect(doc.ledgerUrl).toBeNull()
+    } else {
+      expect(ledger).toEqual({ "@patchwork": { type: LEDGER_TYPE }, sources: sources ?? {} })
+      expect(migratePlan(doc, { ledgerUrl: "automerge:ledger" })).toBe(true)
+      expect(doc.ledgerUrl).toBe("automerge:ledger")
+    }
+    expect("sources" in doc).toBe(false)
+  })
+
+  it("is not dropped: a plan that needs one is not migrated without it", () => {
+    const doc = v1([step("a", { access: "web" })], { sources: kept })
+    const before = JSON.stringify(doc)
+    expect(() => migratePlan(doc)).toThrow(/ledger/)
+    expect(JSON.stringify(doc)).toBe(before)
+  })
+
+  it("is nothing for a plan already at version 2, or for anything that is not a plan", () => {
+    expect(ledgerFor(v1([step("a", { access: "web" })], { schemaVersion: 2, sources: kept }))).toBeNull()
+    expect(ledgerFor({ "@patchwork": { type: "agent-session" }, sources: kept })).toBeNull()
+  })
+
+  it("is what the plan's research steps read once both are migrated: a running step reads what it kept", async () => {
+    const repo = new Repo({ network: [] })
+    const page = repo.create({ "@patchwork": { type: "file" }, name: "page.md", role: "extract", content: "words" })
+    const sources = { [page.documentId]: { url: page.url, kind: "source", what: "extract", type: "file", source: "https://x.test/", name: "page.md", engine: "raw", chars: 5, by: "r", at: 1, heads: page.heads() } }
+    const plan = repo.create(v1([step("r", { access: "web", status: STEP.running })], { sources }))
+    const session = repo.create({ "@patchwork": { type: "agent-session" }, turns: [], scope: { kind: "web", ledgerUrl: plan.url, stepId: "r" }, workflow: { planUrl: plan.url, stepId: "r" } })
+
+    // What migrate.mjs does: the ledger first, then the plan naming it, and the session.
+    const ledger = repo.create(ledgerFor(plan.doc()))
+    plan.change((d) => migratePlan(d, { ledgerUrl: ledger.url }))
+    session.change((d) => migrateSession(d))
+
+    const scope = scopeOf(session.doc())
+    expect(scope).toEqual({ kind: "web", planUrl: plan.url, stepId: "r" })
+    await assertScopeAgrees(session.doc(), scope, repo)
+    const ctx = await confine({ repo }, scope)
+    expect(ctx.repo.sources().map((e) => e.url)).toEqual([page.url])
+    expect((await ctx.repo.find(page.url)).doc().content).toBe("words")
   })
 })

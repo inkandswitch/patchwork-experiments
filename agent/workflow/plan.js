@@ -119,7 +119,8 @@ export function initPlan(doc, { title, goal, subject = null, sessionUrl = null, 
   doc.usage = { in: 0, out: 0 }
   doc.createdAt = Date.now()
   doc.steps = steps.map(newStep)
-  doc.sources = {}
+  // Opened by the driver before the first research step starts (driver.js).
+  doc.ledgerUrl = null
   doc.sourcesFolderUrl = sourcesFolderUrl
   doc.sourcesFiled = {}
   doc.told = {}

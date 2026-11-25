@@ -3,7 +3,8 @@ import { Repo, initSubduction, stringifyAutomergeUrl } from "@automerge/automerg
 import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, stepPrompt, WITHHELD, RESULT_IN_PROMPT } from "../workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, describeProgress, keptCounts, _resetDrivers } from "../workflow/driver.js"
 import { scopedRepo } from "../kernel/scope.js"
-import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
+import { KERNEL_TYPES, LEDGER_TYPE } from "../kernel/kernel-repo.js"
+import { withLedger } from "../fixtures/ledger.js"
 import { initSession, STATUS, CALL } from "../session/schema.js"
 import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
 import { buildToolset } from "./toolset.js"
@@ -241,7 +242,8 @@ describe("filing what research steps kept", () => {
     const folder = repo.create({ "@patchwork": { type: "folder" }, title: "Sources · W", docs: [] })
     const plan = repo.create({})
     plan.change((d) => initPlan(d, { title: "W", goal: "G", steps: [], sourcesFolderUrl: folder.url }))
-    const scoped = scopedRepo(repo, plan, { stepId: "r" })
+    const ledger = withLedger(repo, plan)
+    const scoped = scopedRepo(repo, ledger, { stepId: "r" })
     const links = []
     const unwritten = []
     const write = (made, i) => {
@@ -262,7 +264,7 @@ describe("filing what research steps kept", () => {
     const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => null, heartbeatMs: 1e9, confirmMs: 0 })
     drivers.push(driver)
     driver.hold()
-    return { plan, folder, driver, links, unwritten }
+    return { plan, ledger, folder, driver, links, unwritten }
   }
 
   const cases = []
@@ -273,12 +275,15 @@ describe("filing what research steps kept", () => {
   grow([])
 
   it.each(cases)("ledger %s: filing leaves the folder equal to what the ledger describes, and a second pass writes nothing", async (_name, states) => {
-    const { plan, folder, driver, links, unwritten } = await ledgerOf(states)
+    const { plan, ledger, folder, driver, links, unwritten } = await ledgerOf(states)
     const asSet = (docs) => docs.map((d) => `${d.name} ${d.type} ${d.url}`).sort()
-    const described = () => Object.entries(plan.doc().sources).filter(([, e]) => e.what != null).map(([id]) => id).sort()
+    const described = () => Object.entries(ledger.doc().sources).filter(([, e]) => e.what != null).map(([id]) => id).sort()
+    const ledgerBefore = ledger.heads()
     await driver.fileSources()
     expect(asSet(folder.doc().docs)).toEqual(asSet(links))
     expect(Object.keys(plan.doc().sourcesFiled).sort()).toEqual(described())
+    // The ledger is read, never written.
+    expect(ledger.heads()).toEqual(ledgerBefore)
 
     const before = [plan.heads(), folder.heads()]
     await driver.fileSources()
@@ -289,7 +294,7 @@ describe("filing what research steps kept", () => {
     const late = unwritten.map((describe) => describe())
     await driver.fileSources()
     expect(asSet(folder.doc().docs)).toEqual(asSet([...links, ...late]))
-    expect(Object.keys(plan.doc().sourcesFiled).sort()).toEqual(Object.keys(plan.doc().sources).sort())
+    expect(Object.keys(plan.doc().sourcesFiled).sort()).toEqual(Object.keys(ledger.doc().sources).sort())
   })
 
   // A document of a package's own datatype — a web-snapshot a research step
@@ -300,10 +305,10 @@ describe("filing what research steps kept", () => {
     ["file", { "@patchwork": { type: "file" }, name: "cells.md", role: "extract", source: "https://site.test/cells", content: "Cells" }, "extract", "cells.md"],
     ["untyped", { name: "cells.md", role: "extract", content: "Cells" }, "extract", "cells.md"],
   ])("files a %s as its own datatype", async (type, value, what, name) => {
-    const { plan, folder, driver } = await ledgerOf([])
-    const made = await scopedRepo(driver.repo, plan, { stepId: "r" }).create2()
+    const { ledger, folder, driver } = await ledgerOf([])
+    const made = await scopedRepo(driver.repo, ledger, { stepId: "r" }).create2()
     made.change((d) => Object.assign(d, value))
-    expect(plan.doc().sources[made.documentId]).toMatchObject({ kind: "source", what, type: type === "untyped" ? "file" : type, name })
+    expect(ledger.doc().sources[made.documentId]).toMatchObject({ kind: "source", what, type: type === "untyped" ? "file" : type, name })
     await driver.fileSources()
     expect(folder.doc().docs).toEqual([{ name, type: type === "untyped" ? "file" : type, url: stringifyAutomergeUrl({ documentId: made.documentId, heads: made.heads() }) }])
   })
@@ -311,8 +316,8 @@ describe("filing what research steps kept", () => {
   // A search's results page is the record of how a step found what it read,
   // not a source a reviewer checks a claim against: kept, never filed.
   it("keeps a search's results page out of the folder, and does not try again", async () => {
-    const { plan, folder, driver } = await ledgerOf([])
-    const scoped = scopedRepo(driver.repo, plan, { stepId: "r" })
+    const { plan, ledger, folder, driver } = await ledgerOf([])
+    const scoped = scopedRepo(driver.repo, ledger, { stepId: "r" })
     const search = await scoped.create2()
     search.change((d) => Object.assign(d, { "@patchwork": { type: "file" }, name: "Search: lfp cells.json", role: "extract", source: "https://search.brave.com/search?q=lfp", capture: { engine: "search" }, content: "results" }))
     const page = await scoped.create2()
@@ -325,12 +330,76 @@ describe("filing what research steps kept", () => {
   // A ledger is a shared document, and its entries say what each is; none
   // is ever filed as a session or a plan, whatever its entry says.
   it.each(KERNEL_TYPES)("never files an entry as an %s", async (type) => {
-    const { plan, folder, driver } = await ledgerOf([])
-    const made = await scopedRepo(driver.repo, plan, { stepId: "r" }).create2()
+    const { ledger, folder, driver } = await ledgerOf([])
+    const made = await scopedRepo(driver.repo, ledger, { stepId: "r" }).create2()
     made.change((d) => Object.assign(d, { name: "x.md", role: "extract", content: "x" }))
-    plan.change((d) => { d.sources[made.documentId].type = type })
+    ledger.change((d) => { d.sources[made.documentId].type = type })
     await driver.fileSources()
     expect(folder.doc().docs.map((entry) => entry.type)).toEqual(["file"])
+  })
+})
+
+describe("one ledger per plan", () => {
+  const ledgers = (repo) => Object.values(repo.handles).filter((h) => h.doc()?.["@patchwork"]?.type === LEDGER_TYPE)
+
+  // [the plan's steps] → how many ledgers there are once it has run. One for
+  // any number of research steps, side by side or in order; none for a plan
+  // with no research step.
+  it.each([
+    ["no research step", [step("a"), step("b", { after: ["a"] })], 0],
+    ["one research step", [step("r", { access: "web" })], 1],
+    ["two side by side", [step("r", { access: "web" }), step("s", { access: "web" })], 1],
+    ["two in order, behind a full step", [step("a"), step("r", { access: "web", after: ["a"] }), step("s", { access: "web", after: ["r"] })], 1],
+  ])("%s → %i", async (_name, steps, count) => {
+    const { repo, plan, make } = await setup(steps)
+    await settle(started(make()))
+    expect(plan.doc().status).toBe(PLAN.done)
+    expect(ledgers(repo)).toHaveLength(count)
+    if (count) expect(plan.doc().ledgerUrl).toBe(ledgers(repo)[0].url)
+    else expect(plan.doc().ledgerUrl).toBeNull()
+    expect("sources" in plan.doc()).toBe(false)
+    // Every research step's scope names the plan, and so reaches that ledger.
+    for (const s of plan.doc().steps.filter((x) => x.access === "web")) {
+      expect((await repo.find(s.sessionUrl)).doc().scope).toEqual({ kind: "web", planUrl: plan.url, stepId: s.id })
+    }
+  })
+
+  it("two drivers on one plan open one ledger between them, however their ticks interleave", async () => {
+    for (const order of [[0, 1], [1, 0], [0, 0, 1, 1], [1, 0, 1, 0]]) {
+      const { repo, plan, make } = await setup([step("r", { access: "web" }), step("s", { access: "web", after: ["r"] })], { behaviour: { r: "hang" } })
+      const pair = [make(), make()]
+      drivers.push(...pair)
+      for (const i of order) await pair[i].kick()
+      for (const i of order) await pair[i].kick()
+      expect(ledgers(repo), `order ${order}`).toHaveLength(1)
+      expect(plan.doc().ledgerUrl).toBe(ledgers(repo)[0].url)
+    }
+  })
+
+  it("a ledger change wakes the driver, and writes nothing to the plan but what it files", async () => {
+    const { repo, plan, make } = await setup([step("r", { access: "web" })], { behaviour: { r: "hang" } })
+    const folder = repo.create({ "@patchwork": { type: "folder" }, title: "Sources · W", docs: [] })
+    plan.change((d) => { d.sourcesFolderUrl = folder.url })
+    const driver = started(make())
+    await settle(driver)
+    const ledger = await repo.find(plan.doc().ledgerUrl)
+    const scoped = scopedRepo(repo, ledger, { stepId: "r" })
+    const without = (doc, ...keys) => JSON.stringify({ ...doc, ...Object.fromEntries(keys.map((k) => [k, null])) })
+
+    // Made, with nothing written into it yet: nothing to file, so no write.
+    const made = await scoped.create2()
+    const before = plan.heads()
+    await settle(driver)
+    expect(plan.heads()).toEqual(before)
+
+    // Written: it wakes the driver by itself, which files it and marks it so.
+    const planBefore = without(plan.doc(), "sourcesFiled")
+    made.change((d) => Object.assign(d, { name: "page.md", role: "extract", content: "words" }))
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    await driver.ticking
+    expect(folder.doc().docs.map((e) => e.name)).toEqual(["page.md"])
+    expect(Object.keys(plan.doc().sourcesFiled)).toEqual([made.documentId])
+    expect(without(plan.doc(), "sourcesFiled")).toBe(planBefore)
   })
 })
 
@@ -342,7 +411,8 @@ describe("a research step's scope", () => {
     removed: (d) => { delete d.scope },
     nulled: (d) => { d.scope = null },
     "kind changed": (d) => { d.scope.kind = "full" },
-    "ledger changed": (d) => { d.scope.ledgerUrl = "automerge:2j9knZ5d4NNxLrYGsbBHuYXu3Twz" },
+    "plan changed": (d) => { d.scope.planUrl = "automerge:2j9knZ5d4NNxLrYGsbBHuYXu3Twz" },
+    "a ledger named": (d) => { d.scope.ledgerUrl = "automerge:2j9knZ5d4NNxLrYGsbBHuYXu3Twz" },
     "step changed": (d) => { d.scope.stepId = "other" },
     "a field added": (d) => { d.scope.extra = true },
   }
@@ -389,11 +459,9 @@ describe("what a step's first message hands it", () => {
 })
 
 describe("the news about research steps", () => {
-  it("says what each kept and where to find it", () => {
-    const plan = {
-      title: "W",
-      status: PLAN.running,
-      sourcesFolderUrl: "automerge:folder",
+  it("says what each kept, as the plan's ledger has it, and where to find it", () => {
+    const ledger = {
+      "@patchwork": { type: LEDGER_TYPE },
       sources: {
         a: { kind: "source", what: "extract", by: "r" },
         b: { kind: "source", what: "pdf", by: "r" },
@@ -401,12 +469,21 @@ describe("the news about research steps", () => {
         d: { kind: "source", what: "file", by: "other" },
         e: { kind: "source", what: null, by: "r" }, // made, not yet written: not counted
       },
+    }
+    const plan = {
+      title: "W",
+      status: PLAN.running,
+      sourcesFolderUrl: "automerge:folder",
+      ledgerUrl: "automerge:ledger",
       steps: [{ ...step("r", { access: "web" }), status: STEP.done, result: "found", sessionUrl: "automerge:s" }],
     }
-    const text = describeProgress(plan, plan.steps)
+    const text = describeProgress(plan, plan.steps, [], [], { ledger })
     expect(text).toContain("It kept 2 sources and 1 finding — Sources: automerge:folder")
     expect(text).toContain("The research steps have kept 3 sources and 1 finding — Sources: automerge:folder")
-    expect(keptCounts(plan)).toEqual({ sources: 3, findings: 1 })
-    expect(keptCounts(plan, "r")).toEqual({ sources: 2, findings: 1 })
+    expect(keptCounts(ledger)).toEqual({ sources: 3, findings: 1 })
+    expect(keptCounts(ledger, "r")).toEqual({ sources: 2, findings: 1 })
+    // Without its ledger, nothing is said to be kept.
+    expect(describeProgress(plan, plan.steps)).toContain("It kept 0 sources and 0 findings")
+    expect(keptCounts(null)).toEqual({ sources: 0, findings: 0 })
   })
 })

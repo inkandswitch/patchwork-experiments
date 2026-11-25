@@ -1589,3 +1589,17 @@ fewer ways to answer each question.
   that packages are, which it could not before.
 - Existing sessions and plans were brought to the new shape by a one-off
   migration, and the code reads only that shape.
+
+The research ledger moved out of the plan into a document of its own
+(`agent-ledger`), which the plan names as `ledgerUrl`, and a research step's
+scope came to name its plan rather than the ledger. The plan had held two
+things written by different hands on different terms: the driver's control
+state, written under the plan's lease, and the read capability of every
+research step, written by each step's kernel from any runner at any time.
+Every source a step kept had woken everything watching the plan and grown its
+history, and a scope that named the ledger directly was a second way to say
+which ledger a step reads. Now authority runs one way, session to plan step to
+ledger; the driver opens the ledger under the lease before the first research
+step starts, reads it to file it, and writes the plan only to mark what it
+filed; and the ledger is a kernel type, so no agent tool can write one. The
+one-off migration makes each plan's ledger from its `sources`.

@@ -202,4 +202,16 @@ describe("a version 1 session", () => {
     migrateSession(doc)
     expect(doc.tools).toEqual(expected)
   })
+
+  // A research step's scope, and a side thread's copied from one: [its scope] → what it becomes.
+  it.each([
+    ["none", undefined, undefined],
+    ["null", null, null],
+    ["a research step's", { kind: "web", ledgerUrl: "automerge:plan", stepId: "r" }, { kind: "web", planUrl: "automerge:plan", stepId: "r" }],
+    ["one already naming its plan", { kind: "web", planUrl: "automerge:plan", stepId: "r" }, { kind: "web", planUrl: "automerge:plan", stepId: "r" }],
+  ])("scope %s → its plan named", (_name, scope, expected) => {
+    const doc = v1(scope === undefined ? {} : { scope })
+    migrateSession(doc)
+    expect(doc.scope).toEqual(expected)
+  })
 })

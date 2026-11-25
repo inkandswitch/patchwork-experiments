@@ -13,16 +13,18 @@
  *
  * `--dry` changes nothing and says what it would change. Without it, each
  * document is changed in one write, and the script waits for the sync server
- * to have had time to take them before it exits.
+ * to have had time to take them before it exits. A plan whose research steps
+ * kept things gets a ledger document holding them, made before the plan is
+ * changed to name it.
  *
  * Delete this file, migrate-session.js and migrate-plan.js once it has been
  * run: the agent reads only the current shape (kernel/runner.js,
  * workflow/driver.js).
  */
 
-import { Repo, initSubduction, setSubductionLogLevel } from "@automerge/automerge-repo"
+import { Repo, initSubduction, setSubductionLogLevel, generateAutomergeUrl } from "@automerge/automerge-repo"
 import { migrateSession } from "./migrate-session.js"
-import { migratePlan } from "./migrate-plan.js"
+import { migratePlan, ledgerFor } from "./migrate-plan.js"
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com"
 const args = process.argv.slice(2)
@@ -55,7 +57,7 @@ const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] })
 const typeOf = (doc) => doc?.["@patchwork"]?.type ?? null
 const bare = (url) => String(url).split("#")[0]
 const seen = new Set()
-const counts = { sessions: 0, migrated: 0, current: 0, plans: 0, plansMigrated: 0, folders: 0, unreachable: 0 }
+const counts = { sessions: 0, migrated: 0, current: 0, plans: 0, plansMigrated: 0, ledgers: 0, folders: 0, unreachable: 0 }
 
 async function open(url) {
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timed out")), FIND_MS))
@@ -103,10 +105,15 @@ async function visit(url, path) {
     }
   } else if (type === "agent-workflow") {
     counts.plans++
-    if (migratePlan(copy())) {
+    const ledger = ledgerFor(copy())
+    if (migratePlan(copy(), { ledgerUrl: ledger ? generateAutomergeUrl() : null })) {
       counts.plansMigrated++
-      console.log(`  ${DRY ? "would migrate" : "migrated     "} ${key}  ${doc.title ?? "(untitled plan)"}`)
-      if (!DRY) handle.change((d) => migratePlan(d))
+      if (ledger) counts.ledgers++
+      console.log(`  ${DRY ? "would migrate" : "migrated     "} ${key}  ${doc.title ?? "(untitled plan)"}${ledger ? `, with a ledger of ${Object.keys(ledger.sources).length} kept` : ""}`)
+      if (!DRY) {
+        const made = ledger ? repo.create(ledger) : null
+        handle.change((d) => migratePlan(d, { ledgerUrl: made?.url ?? null }))
+      }
     }
   } else if (Array.isArray(doc?.docs)) {
     counts.folders++
@@ -122,7 +129,7 @@ for (const root of roots) await visit(root, bare(root))
 
 console.log(
   `\n${counts.sessions} sessions (${counts.migrated} ${DRY ? "to migrate" : "migrated"}, ${counts.current} already current), ` +
-    `${counts.plans} plans (${counts.plansMigrated} ${DRY ? "to migrate" : "migrated"}), ${counts.folders} folders, ${counts.unreachable} unreachable.`,
+    `${counts.plans} plans (${counts.plansMigrated} ${DRY ? "to migrate" : "migrated"}, ${counts.ledgers} with a ledger), ${counts.folders} folders, ${counts.unreachable} unreachable.`,
 )
 if (!DRY && (counts.migrated || counts.plansMigrated)) {
   console.log(`Waiting ${Math.round(SETTLE_MS / 1000)} s for the sync server to take the changes…`)

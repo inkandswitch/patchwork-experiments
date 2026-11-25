@@ -2,9 +2,11 @@
  * The repo a full-access session's tools are handed.
  *
  * It works as the repo does, except that its handles refuse to change a
- * session or a plan, or to make a document into one, and it makes none itself.
- * So no agent tool — doc_edit, fs_write, a plugin — can rewrite a step's
- * scope, its grants, or the ledger, or forge a plan for the driver to run. The
+ * session, a plan or a research ledger, or to make a document into one, and
+ * it makes none itself. So no agent tool — doc_edit, fs_write, a plugin — can
+ * rewrite a step's scope or its grants, forge a plan for the driver to run,
+ * or add a document to a ledger, which would make it readable by a step that
+ * fetches freely from the web (kernel/scope.js). The
  * two modules that legitimately write those are handed explicit capabilities
  * instead (`ctx.workflows`, `ctx.session`; see kernel/runner.js `privileges`),
  * for their own calls only: no other tool, and no plugin, ever holds the real
@@ -20,10 +22,13 @@ import { repairDocUrl, documentIdOf } from "../documents/doc-urls.js"
 
 const { decodeHeads, encodeHeads } = AutomergeRepo
 
-/** The documents only the runtime writes: sessions and workflow plans. */
-export const KERNEL_TYPES = ["agent-session", "agent-workflow"]
+/** What research steps have kept, and so what they may read (kernel/scope.js). */
+export const LEDGER_TYPE = "agent-ledger"
 
-export const KERNEL_REFUSAL = "Sessions and workflow plans are written only by the agent runtime; no tool may change one."
+/** The documents only the runtime writes: sessions, workflow plans and research ledgers. */
+export const KERNEL_TYPES = ["agent-session", "agent-workflow", LEDGER_TYPE]
+
+export const KERNEL_REFUSAL = "Sessions, workflow plans and research ledgers are written only by the agent runtime; no tool may change one."
 
 export const isKernel = (doc) => KERNEL_TYPES.includes(doc?.["@patchwork"]?.type)
 
@@ -61,7 +66,7 @@ const unguarded = (value) => beneath.get(value) ?? value
 
 /**
  * A write through a sub-handle changes only what is at its path, so it can
- * make a document a session or a plan only from inside `@patchwork`. One
+ * make a document a session, a plan or a ledger only from inside `@patchwork`. One
  * whose path starts anywhere else is left to the document as it is; one that
  * starts there, or at a path that does not resolve, is refused.
  */
@@ -74,7 +79,7 @@ const isSub = (handle) => (handle.path?.length ?? 0) > 0 || !!handle.range
 
 /**
  * A whole-document write, done to a copy and kept only if the copy is still
- * not a session or a plan. Through `update`, which adopts what its callback
+ * not a session, a plan or a ledger. Through `update`, which adopts what its callback
  * returns and keeps the document as it was if the callback throws: the
  * document the handle holds is never touched by a write that is refused.
  * Copied under the same actor, so a write that is kept reads as this peer's.
@@ -226,7 +231,7 @@ const wrapped = (result, record) =>
 
 /**
  * The repo every other session's tools get: everything works, except that no
- * handle it gives out can change a session or a plan, however its id was
+ * handle it gives out can change a session, a plan or a ledger, however its id was
  * spelled, or make a document into one; and it makes none itself — not from
  * an initial value, a copy of one, or bytes. The repo's own ways around a
  * handle — deleting by id, importing over an

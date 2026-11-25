@@ -24,7 +24,7 @@ const running = (id, over = {}) => step(id, { status: STEP.running, sessionUrl: 
 const session = (over = {}) => ({ status: "idle", usage: null, requests: [], outcome: { state: "running" }, ...over })
 const types = (actions) => actions.map((a) => a.type)
 /** The actions that write to the plan. */
-const WRITES = new Set(["cancel", "finish", "fail", "requests", "orchestratorFrom", "usage", "start", "continue", "pause", "settle"])
+const WRITES = new Set(["cancel", "finish", "fail", "requests", "orchestratorFrom", "usage", "ledger", "start", "continue", "pause", "settle"])
 
 describe("decide", () => {
   it.each([PLAN.done, PLAN.stopped])("a %s plan only reports", (status) => {
@@ -42,6 +42,27 @@ describe("decide", () => {
       { type: "start", stepId: "b" },
       { type: "report" },
     ])
+  })
+
+  // [does the plan name a ledger] × [what is about to start] → is the ledger
+  // opened, and before that start? Only a research step needs one, and a plan
+  // that has one never gets another.
+  const LEDGER_CASES = []
+  for (const has of [false, true]) {
+    for (const [what, steps] of [
+      ["nothing", [step("a", { after: ["b"] }), running("b")]],
+      ["a full step", [step("a")]],
+      ["a research step", [step("a", { access: "web" })]],
+      ["a full and a research step", [step("a"), step("b", { access: "web" })]],
+      ["a reopened research step", [step("a", { access: "web", sessionUrl: "automerge:a", reopen: { note: "again" }, previous: [{ status: STEP.done }] })]],
+    ]) LEDGER_CASES.push([has, what, steps, !has && what.includes("research")])
+  }
+  it.each(LEDGER_CASES)("ledger named %s, starting %s → opened %s", (has, _what, steps, opened) => {
+    const plan = planOf(steps, has ? { ledgerUrl: "automerge:ledger" } : {})
+    const sessions = Object.fromEntries(steps.filter((s) => s.sessionUrl).map((s) => [s.sessionUrl, session({ outcome: undefined })]))
+    const kinds = types(decide(plan, { sessions }, 1))
+    expect(kinds.filter((t) => t === "ledger")).toHaveLength(opened ? 1 : 0)
+    if (opened) expect(kinds.indexOf("ledger")).toBeLessThan(Math.min(...["start", "continue"].map((t) => kinds.indexOf(t)).filter((i) => i >= 0)))
   })
 
   it("a reopened step continues in its own session", () => {

@@ -85,7 +85,7 @@ describe("web-only research steps", () => {
     const session = (await sessionOf(repo, plan, "research")).doc()
     // The scope is the whole of what decides its tools and its reach
     // (kernel/scope.js); there is no tool list to edit and no access flag beside it.
-    expect(session.scope).toEqual({ kind: "web", ledgerUrl: plan.url, stepId: "research" })
+    expect(session.scope).toEqual({ kind: "web", planUrl: plan.url, stepId: "research" })
     expect(session.tools).toBeUndefined()
     expect(session.workflow).toEqual({ planUrl: plan.url, stepId: "research", orchestratorUrl: plan.doc().sessionUrl })
     expect(session.subject).toBeNull()

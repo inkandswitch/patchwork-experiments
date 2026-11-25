@@ -27,7 +27,7 @@ and a step do to one.
 | `resumes` | `[{ add, limit, at }]`: each time a person did |
 | `runs` | how many times it has been set running |
 | `told` | `{ [key]: true }`: what the orchestrator has been told |
-| `sources` | the research steps' ledger of what they kept (`kernel/scope.js`) |
+| `ledgerUrl` | the research steps' ledger (*Research steps*), or null until the first one starts |
 | `sourcesFolderUrl`, `sourcesFiled` | where the driver files the ledger for people, and what it has filed |
 | `lease` | which driver is driving it, as a session's lease says which runner |
 
@@ -119,8 +119,8 @@ A tick is three parts:
    step whether it is still confined as the plan says.
 2. **Decide.** `decide(plan, observations, now)` in `workflow/decide.js` is
    pure. It returns the actions to take, in order, as plain data: cancel,
-   finish, fail, requests, usage, share grants, file sources, run, start,
-   continue, pause, settle, report. Each decision is made on the plan as the
+   finish, fail, requests, usage, share grants, file sources, run, open the
+   ledger, start, continue, pause, settle, report. Each decision is made on the plan as the
    actions before it leave it, so a step that finishes on a tick makes what
    waits on it ready on that tick.
 3. **Do.** The driver performs each action: plan.js's transitions for the
@@ -147,9 +147,20 @@ the person, and only a person raises the cap.
 ## Research steps
 
 A step with `access: "web"` fetches without asking, which is safe only because
-nothing of the person's can reach what it sends. Its session's `scope` confines
-it ([TOOLS.md](TOOLS.md)): its tools open only what is in the plan's `sources`
-ledger, at the heads recorded there. Everything it fetches and every finding it
-writes goes into the ledger, is shared with the plan's other research steps,
-and is filed by the driver in the plan's Sources folder for people. It is never
-handed the result of a step that had the person's documents.
+nothing of the person's can reach what it sends. Its session's `scope` names
+the plan and the step, and confines it ([TOOLS.md](TOOLS.md)): its tools open
+only what is in the plan's ledger, at the heads recorded there. Everything it
+fetches and every finding it writes goes into the ledger, is shared with the
+plan's other research steps, and is filed by the driver in the plan's Sources
+folder for people. It is never handed the result of a step that had the
+person's documents.
+
+The ledger is a document of its own, `{ "@patchwork": { type: "agent-ledger" },
+sources }`, one per plan. `sources` maps each kept document's id to `{ url,
+kind, what, type, source, name, engine, chars, by, at, heads }`: `kind` is
+`source` (read-only) or `finding` (writable by research steps), `by` the step
+that kept it, `heads` the version a step reads. The driver opens it, under the
+plan's lease, before the first research step starts. Research steps' kernels
+write it, from any runner, outside the lease; the driver only reads it, and
+wakes when it changes to file what is new. No agent tool writes a ledger, and
+a step whose plan names none, or names something else, does not run.

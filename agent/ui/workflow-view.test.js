@@ -7,6 +7,7 @@ import { _resetDrivers, ensureDriver } from "../workflow/driver.js"
 import { AgentTool } from "./session-view.js"
 import { _reset as resetRunners } from "../runners/registry.js"
 import { makeTurn } from "../session/blocks.js"
+import { withLedger } from "../fixtures/ledger.js"
 
 await initSubduction()
 
@@ -109,14 +110,19 @@ describe("the workflow view", () => {
     expect(element.querySelector(".agent-wf-sources")).toBeNull()
     expect(element.querySelector(".agent-wf-kept")).toBeNull()
 
-    plan.change((d) => {
-      d.sourcesFolderUrl = "automerge:sources-folder"
+    plan.change((d) => { d.sourcesFolderUrl = "automerge:sources-folder" })
+    const ledger = withLedger(repo, plan)
+    await tick()
+    expect(element.querySelector(".agent-wf-sources")).toBeNull()
+    // The counts are the ledger's, and follow it as research steps keep things.
+    ledger.change((d) => {
       d.sources = {
         a: { kind: "source", what: "extract", by: "r" },
         b: { kind: "finding", what: "finding", by: "r" },
         c: { kind: "source", what: null, by: "r" }, // made, not yet written
       }
     })
+    await tick()
     const opened = []
     element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail.url))
     const link = element.querySelector(".agent-wf-sources")

@@ -8,16 +8,22 @@
  * what a step's tools are handed, and one field of the session drives all of
  * it:
  *
- *   session.scope = { kind: "web", ledgerUrl: <the plan>, stepId }
+ *   session.scope = { kind: "web", planUrl, stepId }
  *
  * From that alone the runner — in a tab, a worker or node — builds the step's
- * toolset (`scopedToolset`) and its context (`confine`). The context has no
- * field that names the person's documents, and its repo (`scopedRepo`) opens
- * only what is in the plan's ledger of kept things, `plan.sources`, at the
- * heads recorded there. Membership is the read capability: a URL found in a
- * page, any spelling of any id, another step's session, the plan itself — none
- * is in the ledger, so none opens, and the refusal happens before the repo is
- * even asked, so a URL from a page never causes a sync request either.
+ * toolset (`scopedToolset`) and its context (`confine`). Authority runs one
+ * way: the session names a step of a plan, and the plan names its ledger
+ * (`plan.ledgerUrl`), a document of its own (`agent-ledger`) holding
+ * `sources`, what the plan's research steps have kept. Nothing in a session
+ * can point a step at another ledger, and no agent tool can write a ledger
+ * (kernel/kernel-repo.js).
+ *
+ * The context has no field that names the person's documents, and its repo
+ * (`scopedRepo`) opens only what is in the ledger, at the heads recorded
+ * there. Membership is the read capability: a URL found in a page, any
+ * spelling of any id, another step's session, the plan, the ledger itself —
+ * none is in the ledger, so none opens, and the refusal happens before the
+ * repo is even asked, so a URL from a page never causes a sync request either.
  *
  * What goes into the ledger comes only from the web and from what the
  * orchestrator chose to write into research prompts, so a research step can
@@ -28,7 +34,7 @@ import { AutomergeRepo } from "../host/modules.js"
 import { documentIdOf } from "../documents/doc-urls.js"
 import { readable } from "../documents/media.js"
 import { declaresScoped, scopedTools, toolsetOf } from "./toolset.js"
-import { isKernel, refuse } from "./kernel-repo.js"
+import { isKernel, refuse, LEDGER_TYPE } from "./kernel-repo.js"
 
 const { isValidAutomergeUrl, stringifyAutomergeUrl } = AutomergeRepo
 
@@ -36,18 +42,27 @@ export const NOT_A_SOURCE = "Not one of this workflow's sources."
 
 export const EDITED_OUTSIDE = "This finding changed outside the research steps; write a new one."
 
-/** Why a session will not run: its scope is malformed, or disagrees with its plan. */
+/** Why a session will not run: its scope is malformed, or disagrees with its plan, or its plan has no ledger. */
 export class ScopeRefusal extends Error {}
 
 /** The scope a web step of `planUrl` must carry, exactly. */
 export function webScope(planUrl, stepId) {
-  return { kind: "web", ledgerUrl: planUrl, stepId }
+  return { kind: "web", planUrl, stepId }
 }
 
 /** Two scopes are the same when every field is; null is the same only as null. */
 export function sameScope(a, b) {
   if (!a || !b) return !a && !b
-  return a.kind === b.kind && a.ledgerUrl === b.ledgerUrl && a.stepId === b.stepId
+  return a.kind === b.kind && a.planUrl === b.planUrl && a.stepId === b.stepId
+}
+
+/** A whole document's URL: not a part of one, not a version of one. */
+const wholeDocUrl = (url) => typeof url === "string" && isValidAutomergeUrl(url) && stringifyAutomergeUrl({ documentId: documentIdOf(url) }) === url
+
+/** Seed a ledger, inside a change: nothing kept yet. Only the workflow driver makes one. */
+export function initLedger(doc) {
+  doc["@patchwork"] = { type: LEDGER_TYPE }
+  doc.sources = {}
 }
 
 /**
@@ -60,21 +75,18 @@ export function scopeOf(doc) {
   const scope = doc?.scope
   if (scope === undefined || scope === null) return null
   const keys = scope && typeof scope === "object" ? Object.keys(scope).sort().join() : ""
-  const ledger = typeof scope?.ledgerUrl === "string" ? scope.ledgerUrl : ""
   const wellFormed =
-    keys === "kind,ledgerUrl,stepId" &&
+    keys === "kind,planUrl,stepId" &&
     scope.kind === "web" &&
-    isValidAutomergeUrl(ledger) &&
-    // The plan itself, not a part of it or a version of it.
-    stringifyAutomergeUrl({ documentId: documentIdOf(ledger) }) === ledger &&
+    wholeDocUrl(scope.planUrl) &&
     typeof scope.stepId === "string" &&
     scope.stepId.length > 0
   if (!wellFormed) throw new ScopeRefusal("This session's research scope is malformed, so it will not run.")
-  return webScope(ledger, scope.stepId)
+  return webScope(scope.planUrl, scope.stepId)
 }
 
-/** A plan's step, or null when the plan is not one or has no such step. */
-async function planStep(repo, planUrl, stepId) {
+/** A workflow plan, or null when the document is not one. */
+async function planAt(repo, planUrl) {
   if (!repo?.find) throw new ScopeRefusal("This runner has no repo, so it cannot check what this step may reach.")
   let plan
   try {
@@ -82,8 +94,12 @@ async function planStep(repo, planUrl, stepId) {
   } catch {
     throw new ScopeRefusal("This step's workflow plan could not be read, so what the step may reach cannot be checked.")
   }
-  if (plan?.["@patchwork"]?.type !== "agent-workflow") return null
-  return (plan.steps ?? []).find((s) => s.id === stepId) ?? null
+  return plan?.["@patchwork"]?.type === "agent-workflow" ? plan : null
+}
+
+/** A plan's step, or null when the plan is not one or has no such step. */
+async function planStep(repo, planUrl, stepId) {
+  return ((await planAt(repo, planUrl))?.steps ?? []).find((s) => s.id === stepId) ?? null
 }
 
 /**
@@ -103,9 +119,29 @@ export async function assertScopeAgrees(doc, scope, repo) {
     }
   }
   if (scope) {
-    const step = await planStep(repo, scope.ledgerUrl, scope.stepId)
+    const step = await planStep(repo, scope.planUrl, scope.stepId)
     if (step?.access !== "web") throw new ScopeRefusal("This session's research scope names no web-only step of that workflow, so it will not run.")
   }
+}
+
+/**
+ * The ledger a scope's plan names, opened. Throws, and the session does not
+ * run, when the plan names none, or names something that is not a ledger: a
+ * step never keeps into a ledger it made up, nor reads one that is not its
+ * plan's.
+ */
+async function ledgerOf(repo, scope) {
+  const plan = await planAt(repo, scope.planUrl)
+  if (!plan) throw new ScopeRefusal("This session's research scope names no workflow plan, so it will not run.")
+  if (!wholeDocUrl(plan.ledgerUrl)) throw new ScopeRefusal("This step's workflow has no ledger to keep what it finds in, so it will not run.")
+  let ledger
+  try {
+    ledger = await repo.find(plan.ledgerUrl)
+  } catch {
+    throw new ScopeRefusal("This step's ledger could not be read, so it will not run.")
+  }
+  if (ledger.doc()?.["@patchwork"]?.type !== LEDGER_TYPE) throw new ScopeRefusal("What this step's workflow names as its ledger is not one, so it will not run.")
+  return ledger
 }
 
 /**
@@ -118,11 +154,11 @@ export async function assertScopeAgrees(doc, scope, repo) {
  * the notes and the person's own skills are simply not in the prompt.
  *
  * `ctx.repo` here is the runner's own repo, and is used for nothing but
- * building the scoped one.
+ * finding the plan's ledger and building the scoped repo over it.
  */
 export async function confine(ctx, scope) {
   if (!ctx?.repo?.find) throw new ScopeRefusal("This runner has no repo, so a research step cannot keep anything here.")
-  const ledger = await ctx.repo.find(scope.ledgerUrl)
+  const ledger = await ledgerOf(ctx.repo, scope)
   return {
     signal: ctx.signal,
     events: ctx.events,
@@ -157,7 +193,8 @@ function whatOf(doc) {
 }
 
 /**
- * A repo whose read capability is ledger membership.
+ * A repo whose read capability is ledger membership. `ledger` is the handle
+ * of the plan's ledger, which only this writes.
  *
  *   find(x)      x names a document in `ledger.sources` (any spelling), or it
  *                throws before the repo is asked. A source is read-only and
@@ -223,8 +260,8 @@ export function scopedRepo(repo, ledger, { stepId }) {
         // A person may edit a finding; the step must not then build on text
         // it cannot see, nor have their edit silently merged under its own.
         if (!sameHeads(handle.heads(), required(id).heads)) throw new Error(EDITED_OUTSIDE)
-        // Nor make a session or a plan, which the driver would file into
-        // the person's Sources folder as one: a throw inside the change
+        // Nor make a session, a plan or a ledger, which the driver would file
+        // into the person's Sources folder as one: a throw inside the change
         // abandons it, as kernelRepo's do.
         handle.change((d) => {
           fn(d)
@@ -252,7 +289,6 @@ export function scopedRepo(repo, ledger, { stepId }) {
       // the ledger's from the start, so a crash leaves a document nobody can
       // read rather than one outside the ledger that someone could.
       ledger.change((d) => {
-        if (!d.sources) d.sources = {}
         d.sources[id] = {
           url: handle.url,
           kind: "source",

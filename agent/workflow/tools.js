@@ -132,15 +132,22 @@ function budgetLine(plan) {
   return `Budget: $${b.spent.toFixed(2)} of $${b.limit.toFixed(2)} spent${parts}${left}${plan.paused ? "; paused: only the person can raise the cap (they are offered Resume)" : ""}`
 }
 
-/** The step table every workflow tool answers with. */
-export function describePlan(plan, url) {
+/** The plan at `url` as it now stands, with what its research steps kept, as describePlan says it. */
+async function described(repo, url) {
+  const plan = (await repo.find(url)).doc()
+  const ledger = plan.ledgerUrl ? await repo.find(plan.ledgerUrl).then((h) => h.doc(), () => null) : null
+  return describePlan(plan, url, ledger)
+}
+
+/** The step table every workflow tool answers with. `ledger` is the plan's ledger document, when it has one. */
+export function describePlan(plan, url, ledger = null) {
   const derived = states(plan)
   const lines = [
     `${plan.title} — ${plan.status} (${url})`,
     `Goal: ${plan.goal}`,
     budgetLine(plan),
   ]
-  const kept = keptCounts(plan)
+  const kept = keptCounts(ledger)
   if (kept.sources + kept.findings) lines.push(`Research kept: ${kept.sources} sources, ${kept.findings} findings — Sources: ${plan.sourcesFolderUrl}`)
   lines.push("")
   for (const step of plan.steps ?? []) {
@@ -262,7 +269,7 @@ export const workflowAddSteps = {
       runAgain(d)
     })
     await drive(url, ctx)
-    return describePlan(handle.doc(), url)
+    return described(workflows(ctx).repo, url)
   },
   summarize(input) {
     return `added ${input?.steps?.length ?? 0} steps`
@@ -283,7 +290,7 @@ export const workflowStatus = {
   },
   async execute(input, ctx) {
     const url = await planUrlFor(input, ctx)
-    return describePlan((await workflows(ctx).repo.find(url)).doc(), url)
+    return described(workflows(ctx).repo, url)
   },
   summarize(input, output) {
     return `workflow ${String(output ?? "").split("\n")[0].split(" — ")[1]?.split(" ")[0] ?? ""}`
@@ -309,7 +316,7 @@ export const workflowStop = {
     const url = await planUrlFor(input, ctx)
     const driver = await drive(url, ctx)
     await driver.cancel(input.steps?.length ? input.steps : null)
-    return describePlan((await workflows(ctx).repo.find(url)).doc(), url)
+    return described(workflows(ctx).repo, url)
   },
   summarize(input) {
     return input?.steps?.length ? `cancelled ${input.steps.join(", ")}` : "stopped workflow"
@@ -461,7 +468,7 @@ export const workflowReopen = {
     if (errors.length) throw new Error(`Cannot reopen:\n- ${errors.join("\n- ")}`)
     const { reopened } = await (await drive(url, ctx)).reopen(input.steps, { note: input.note, cascade: input.cascade, by: "orchestrator" })
     const also = reopened.filter((id) => !input.steps.includes(id))
-    return `Reopened ${input.steps.join(", ")}${also.length ? `, and what is built on them: ${also.join(", ")}` : ""}.\n\n${describePlan((await workflows(ctx).repo.find(url)).doc(), url)}`
+    return `Reopened ${input.steps.join(", ")}${also.length ? `, and what is built on them: ${also.join(", ")}` : ""}.\n\n${await described(workflows(ctx).repo, url)}`
   },
   summarize(input) {
     return `reopened ${(input?.steps ?? []).join(", ")}${input?.cascade ? " and what follows" : ""}`
@@ -490,7 +497,7 @@ export const workflowKeep = {
     const handle = await workflows(ctx).repo.find(url)
     handle.change((d) => keepSteps(d, input.steps))
     ;(await drive(url, ctx))?.kick()
-    return describePlan(handle.doc(), url)
+    return described(workflows(ctx).repo, url)
   },
   summarize(input) {
     return `kept ${(input?.steps ?? []).join(", ")}`
@@ -525,7 +532,7 @@ export const workflowEditSteps = {
     const handle = await workflows(ctx).repo.find(url)
     handle.change((d) => editSteps(d, input.steps))
     ;(await drive(url, ctx))?.kick()
-    return describePlan(handle.doc(), url)
+    return described(workflows(ctx).repo, url)
   },
   summarize(input) {
     return `edited ${(input?.steps ?? []).map((s) => s?.id).join(", ")}`
@@ -567,7 +574,7 @@ export const workflowDecide = {
     if (input.accept !== true) {
       handle.change((d) => Object.assign(d.requests.find((r) => r.id === request.id), { status: "declined", decidedAt: Date.now(), note }))
       ;(await drive(url, ctx))?.kick()
-      return `Declined ${request.stepId}'s request.\n\n${describePlan(handle.doc(), url)}`
+      return `Declined ${request.stepId}'s request.\n\n${await described(workflows(ctx).repo, url)}`
     }
 
     const add = request.add ?? []
@@ -589,7 +596,7 @@ export const workflowDecide = {
     const driver = await drive(url, ctx)
     if (interrupt.length) await driver.haltSessions(interrupt, "reopened: something it is built on changed")
     await driver.kick()
-    return `Accepted ${request.stepId}'s request.\n\n${describePlan(handle.doc(), url)}`
+    return `Accepted ${request.stepId}'s request.\n\n${await described(workflows(ctx).repo, url)}`
   },
   summarize(input) {
     return `${input?.accept ? "accepted" : "declined"} request`

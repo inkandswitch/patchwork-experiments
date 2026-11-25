@@ -6,6 +6,7 @@ import { sourceFile } from "../tools/file-source.js"
 import { headingAt } from "../documents/media.js"
 import { initPlan } from "./plan.js"
 import { scopedRepo, NOT_A_SOURCE } from "../kernel/scope.js"
+import { withLedger } from "../fixtures/ledger.js"
 
 await initSubduction()
 
@@ -240,9 +241,10 @@ describe("source_read", () => {
       const repo = new Repo({ network: [] })
       const plan = repo.create({})
       plan.change((d) => initPlan(d, { title: "P", goal: "G", steps: [] }))
+      const ledger = withLedger(repo, plan)
       const asked = []
       const recording = { find: (url) => (asked.push(String(url)), repo.find(url)), create2: () => repo.create2() }
-      const scoped = scopedRepo(recording, plan, { stepId: "r" })
+      const scoped = scopedRepo(recording, ledger, { stepId: "r" })
       const page = await scoped.create2()
       page.change((d) => Object.assign(d, { "@patchwork": { type: "file" }, name: "Paper.md", role: "extract", source: "https://x.test/paper", content: new ImmutableString("# Paper\nwords") }))
       // A moment apart, so "newest first" has one answer.
@@ -252,11 +254,11 @@ describe("source_read", () => {
       const other = repo.create({ name: "Private.md", content: "not kept by any step" })
       const folder = repo.create({ title: "Research", docs: [] })
       asked.length = 0
-      return { ctx: { repo: scoped, scope: { stepId: "r" } }, asked, page: page.url, finding: finding.url, other: other.url, folder: folder.url, plan: plan.url }
+      return { ctx: { repo: scoped, scope: { stepId: "r" } }, asked, page: page.url, finding: finding.url, other: other.url, folder: folder.url, plan: plan.url, ledger: ledger.url }
     }
 
     // [which document, readable?] × every spelling of it.
-    for (const [which, readable] of [["page", true], ["finding", true], ["other", false], ["folder", false], ["plan", false]]) {
+    for (const [which, readable] of [["page", true], ["finding", true], ["other", false], ["folder", false], ["plan", false], ["ledger", false]]) {
       for (const form of ["url", "heads", "bare id", "legacy UUID"]) {
         it(`${which} spelled as its ${form} → ${readable}`, async () => {
           const w = await research()
