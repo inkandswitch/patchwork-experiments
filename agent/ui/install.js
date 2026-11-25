@@ -115,3 +115,112 @@ export function shortHeads(heads) {
   const first = String(heads).split("|")[0]
   return first.slice(0, 7)
 }
+
+/**
+ * The install controls' view of the account, for one session view.
+ *
+ *   watchInstalls({ repo, settingsUrl, onChange })
+ *     settings()      the module-settings document, or null (which hides the controls)
+ *     heads()         { [packageUrl]: heads } for what the session made
+ *     refresh(doc)    read both, once the session has made something
+ *     install(ref, { heads })   heads null for live, "current" to pin what it is now
+ *     uninstall(ref)
+ *     dispose()
+ *
+ * The module-settings document is read once and kept watched, so the controls
+ * show what is actually installed — including a change made in another tab.
+ * Only once there is something installable: reading it eagerly would fetch a
+ * document most sessions never touch.
+ */
+export function watchInstalls({ repo, settingsUrl = () => globalThis.accountDocHandle?.doc()?.moduleSettingsUrl, onChange = () => {} }) {
+  let found = null // Promise<handle | null>, once asked for
+  let settings = null
+  let off = () => {}
+  let disposed = false
+  const heads = {}
+
+  function ensureSettings() {
+    found ??= (async () => {
+      const url = settingsUrl()
+      if (!url || !repo) return null
+      try {
+        const handle = await repo.find(url)
+        const changed = () => {
+          settings = handle.doc() ?? null
+          if (!disposed) onChange()
+        }
+        handle.on("change", changed)
+        off = () => handle.off("change", changed)
+        changed()
+        return handle
+      } catch {
+        return null // no settings document reachable; the controls stay hidden
+      }
+    })()
+    // Asked again later, a settings document that was not there may be now.
+    return found.then((handle) => {
+      if (!handle) found = null
+      return handle
+    })
+  }
+
+  /**
+   * Current heads for each package this session made.
+   *
+   * Only so the install strip can say when a pinned version has fallen behind.
+   * Cheap — the documents are already in the repo — and refreshed whenever the
+   * session changes, which is whenever the agent has edited something.
+   */
+  async function refreshHeads(doc) {
+    const packages = (doc?.made ?? []).filter((a) => a.kind === "package")
+    if (!packages.length || !repo) return
+    let changed = false
+    for (const artifact of packages) {
+      try {
+        const now = (await repo.find(artifact.url)).heads?.() ?? []
+        if (heads[artifact.url]?.join("|") !== now.join("|")) {
+          heads[artifact.url] = now
+          changed = true
+        }
+      } catch {
+        /* an unreadable package simply has no version to compare */
+      }
+    }
+    if (changed && !disposed) onChange()
+  }
+
+  return {
+    settings: () => settings,
+    heads: () => heads,
+    refresh(doc) {
+      if (!doc?.made?.length) return
+      ensureSettings()
+      refreshHeads(doc)
+    },
+    async install(artifact, { heads: wanted = null } = {}) {
+      const handle = await ensureSettings()
+      if (!handle) return
+      // "current" means pin to whatever this package is right now, which has to
+      // be read at the moment of clicking — not when the artifact was recorded.
+      let pin = null
+      if (wanted === "current") {
+        pin = (await repo.find(artifact.url)).heads?.() ?? null
+        if (!pin?.length) return
+      }
+      applyInstall(handle, artifact.url, { heads: pin })
+      settings = handle.doc() ?? null
+      onChange()
+    },
+    async uninstall(artifact) {
+      const handle = await ensureSettings()
+      if (!handle) return
+      applyUninstall(handle, artifact.url)
+      settings = handle.doc() ?? null
+      onChange()
+    },
+    dispose() {
+      disposed = true
+      off()
+    },
+  }
+}

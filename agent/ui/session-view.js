@@ -21,7 +21,7 @@ import { renderTranscript } from "./transcript.js"
 import { createGuidesButton } from "./guides.js"
 import { createInlineViews } from "./views.js"
 import { getMount, mountForPerson, parkMount } from "../tools/checking.js"
-import { applyInstall, applyUninstall } from "./install.js"
+import { watchInstalls } from "./install.js"
 import { watchWorkspace } from "./workspace.js"
 import { createComposer } from "./composer.js"
 import { ensureStyles } from "./styles.js"
@@ -111,7 +111,10 @@ export function AgentTool(handle, element, options = {}) {
   main.insertBefore(settings.element, transcript)
 
   // ---- state -----------------------------------------------------------
-  const uiState = { open: new Set(), names: new Map(), subject: null, settings: null, heads: {} }
+  // What the person opened in the transcript, kept across renders.
+  const open = new Set()
+  // The install controls' view of the account (ui/install.js).
+  const installs = watchInstalls({ repo, onChange: () => render() })
   const names = watchNames({ repo, onChange: () => render() })
 
   // The inline views: what each call made or opened, live, beside the call.
@@ -122,8 +125,8 @@ export function AgentTool(handle, element, options = {}) {
     parkMount,
     mountForPerson: (input) => mountForPerson(input, { repo, element: root }),
     openDoc: (url) => onOpenDoc(url),
-    install: (ref, opts) => onInstall(ref, opts),
-    uninstall: (ref) => onUninstall(ref),
+    install: (ref, opts) => installs.install(ref, opts),
+    uninstall: (ref) => installs.uninstall(ref),
     rerender: () => render(),
   })
   let disposed = false
@@ -162,84 +165,6 @@ export function AgentTool(handle, element, options = {}) {
     decide(store, callId, decision)
     render()
     kick()
-  }
-
-  // ---- installing what the session built --------------------------------
-
-  /**
-   * The account's module-settings document.
-   *
-   * Read once and kept watched, so the install controls show what is actually
-   * installed — including a change made in another tab.
-   */
-  let settingsHandle = null
-  async function ensureSettings() {
-    if (settingsHandle) return settingsHandle
-    const url = globalThis.accountDocHandle?.doc()?.moduleSettingsUrl
-    if (!url || !repo) return null
-    try {
-      settingsHandle = await repo.find(url)
-      uiState.settings = settingsHandle.doc() ?? null
-      settingsHandle.on("change", () => {
-        uiState.settings = settingsHandle.doc() ?? null
-        render()
-      })
-      render()
-    } catch {
-      settingsHandle = null // no settings document reachable; hide the controls
-    }
-    return settingsHandle
-  }
-
-  /**
-   * Current heads for each package this session made.
-   *
-   * Only so the install strip can say when a pinned version has fallen behind.
-   * Cheap — the documents are already in the repo — and refreshed whenever the
-   * session changes, which is whenever the agent has edited something.
-   */
-  async function refreshHeads(doc) {
-    const packages = (doc?.made ?? []).filter((a) => a.kind === "package")
-    if (!packages.length || !repo) return
-    let changed = false
-    for (const artifact of packages) {
-      try {
-        const handle = await repo.find(artifact.url)
-        const heads = handle.heads?.() ?? []
-        const key = heads.join("|")
-        if (uiState.heads[artifact.url]?.join("|") !== key) {
-          uiState.heads[artifact.url] = heads
-          changed = true
-        }
-      } catch {
-        /* an unreadable package simply has no version to compare */
-      }
-    }
-    if (changed && !disposed) render()
-  }
-
-  async function onInstall(artifact, { heads = null } = {}) {
-    const settings = await ensureSettings()
-    if (!settings) return
-    // "current" means pin to whatever this package is right now, which has to
-    // be read at the moment of clicking — not when the artifact was recorded.
-    let pin = null
-    if (heads === "current") {
-      const pkg = await repo.find(artifact.url)
-      pin = pkg.heads?.() ?? null
-      if (!pin?.length) return
-    }
-    applyInstall(settings, artifact.url, { heads: pin })
-    uiState.settings = settings.doc() ?? null
-    render()
-  }
-
-  async function onUninstall(artifact) {
-    const settings = await ensureSettings()
-    if (!settings) return
-    applyUninstall(settings, artifact.url)
-    uiState.settings = settings.doc() ?? null
-    render()
   }
 
   async function onAnswer(callId, text) {
@@ -325,13 +250,12 @@ export function AgentTool(handle, element, options = {}) {
     renderStrip(v.strip)
 
     renderStandingLine(standingLine, v.place)
-    uiState.subject = doc.subject ?? null
-    uiState.names = names.authors(doc)
-    renderTranscript(transcript, doc, uiState, {
+    const state = { open, names: names.authors(doc), subject: doc.subject ?? null, settings: installs.settings(), heads: installs.heads() }
+    renderTranscript(transcript, doc, state, {
       decide: onDecide,
       answer: onAnswer,
       openDoc: onOpenDoc,
-      view: (block, result) => views.elementFor(block, result, uiState),
+      view: (block, result) => views.elementFor(block, result, state),
       inline: () => [
         ...v.inline.session.map((item) => renderWaitingItem({ ...item, handle }, { showStep: false })),
         ...v.inline.workflows.map((item) => renderWaitingItem(item, { showStep: false, onOpen: onOpenDoc })),
@@ -358,10 +282,7 @@ export function AgentTool(handle, element, options = {}) {
 
   const onChange = () => {
     render()
-    if (handle.doc()?.made?.length) {
-    ensureSettings()
-    refreshHeads(handle.doc())
-  }
+    installs.refresh(handle.doc())
     runners.wake()
   }
   handle.on("change", onChange)
@@ -380,12 +301,7 @@ export function AgentTool(handle, element, options = {}) {
   })
 
   render()
-  // Only needed once there is something installable; reading it eagerly would
-  // fetch a document most sessions never touch.
-  if (handle.doc()?.made?.length) {
-    ensureSettings()
-    refreshHeads(handle.doc())
-  }
+  installs.refresh(handle.doc())
 
   // A session that already has work (reloaded mid-turn, or handed over) starts
   // immediately rather than waiting for someone to type.
@@ -399,6 +315,7 @@ export function AgentTool(handle, element, options = {}) {
     composer.dispose()
     workspace?.dispose()
     names.dispose()
+    installs.dispose()
     waiting?.dispose()
     standing?.dispose()
     runners.dispose()
