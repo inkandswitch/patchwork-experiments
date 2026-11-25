@@ -1666,7 +1666,7 @@ change read back from the sync server. Before any document was changed the
 migration was run on a clone of each as automerge holds it and had to leave
 what it leaves on a plain copy, and the heads each document had were written
 down. The scripts were then removed from the package; they are in its git
-history at dc3e0f05. A document the walk could not read (the server did not
+history at e8ab89aa. A document the walk could not read (the server did not
 have it) may still carry a session in the earlier shape, which says so and is
 replaced by a new one where it was kept.
 

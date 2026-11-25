@@ -2,10 +2,14 @@
  * The Nootka Princess run's doc_edit calls that failed, or that only worked
  * through a workaround, replayed in today's shape on equivalent documents.
  *
- * fixtures/nootka-doc-edits.json holds the calls as the run's sessions
- * recorded them (old shape: path + range/find + value) with what each
- * returned. Each test translates them by the rules below and shows that the
- * translated call does what the old one was for, first time.
+ * fixtures/doc-edit-replay.json holds the calls in the shape the run's
+ * sessions recorded them (old shape: path + range/find + value) with what
+ * each returned. It is a stand-in for the recording: every call, path, range
+ * and length is the run's, and so are the tools' answers, but each text is
+ * filler of the same length and the documents named do not exist. What is
+ * replayed is the shape of each call, which is what went wrong. Each test
+ * translates them by the rules below and shows that the translated call does
+ * what the old one was for, first time.
  */
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
@@ -16,7 +20,7 @@ import { fsWrite } from "./folders.js"
 
 await initSubduction()
 
-const RUN = JSON.parse(readFileSync(`${process.cwd()}/fixtures/nootka-doc-edits.json`, "utf8"))
+const RUN = JSON.parse(readFileSync(`${process.cwd()}/fixtures/doc-edit-replay.json`, "utf8"))
 const PLACEHOLDER = /@@\w+@@/g
 
 const plainOf = (value) => JSON.parse(JSON.stringify(value))
