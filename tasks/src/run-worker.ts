@@ -187,6 +187,14 @@ export function serve(port: RunWorkerPort) {
 // the Repo cannot read, and the caller's own `signal` having aborted.
 
 /**
+ * How long one asking of the Repo is waited on. A Repo that says a document
+ * is unavailable is asked again for about half a minute; one that never
+ * answers at all (it does not, for a document it has deleted) is given this
+ * long each time, so that the code hears within two minutes either way.
+ */
+const FIND_EACH_MS = 10_000;
+
+/**
  * The Repo as the task's code sees it: `find` waits for a document that has
  * not arrived yet; everything else is the Repo's own, bound to the Repo
  * (its methods read private fields, which a Proxy as `this` does not have).
@@ -208,7 +216,7 @@ export function patient(repo: Repo): Repo {
     // findWhenThere waits between askings with `sleep`, and a rejection there
     // ends its asking: that is where a final rejection is given back.
     const sleep = (ms: number) => (final ? Promise.reject(final.error) : pause(ms, signal));
-    return findWhenThere({ find: once }, String(id), { sleep });
+    return findWhenThere({ find: once }, String(id), { sleep, each: FIND_EACH_MS });
   };
   return new Proxy(repo, {
     get(target, name) {
@@ -252,7 +260,7 @@ const LOOK_AGAIN_MS = 250;
 
 /** Said once in a run's log when what it wrote cannot be sent now. */
 export const STAYS_HERE =
-  'Not connected to the sync server: what this run wrote stays on this machine until it is connected.';
+  'Not connected to the sync server: what this run wrote stays on this machine, and is sent only if this worker is still running when it connects.';
 /** Said in a run's log when the server has not acknowledged everything by REACH_LIMIT_MS. */
 export const notReached = (left: number, of: number) =>
   `${left} of the ${of} documents this run wrote had not reached the sync server after ${REACH_LIMIT_MS / 1000} s.`;

@@ -187,6 +187,10 @@ that one machine serves.
   (`ownQueue`). Queues one only asks of, and does not serve, have no place to be kept: the task
   storage could keep them as root keys of their own whose setting serves nothing, and tools pick
   from those. Waits on the first tool that asks a queue it does not serve.
+- **Acknowledged means equal heads.** A run waits until the sync server reports exactly the heads
+  its documents have. A document that others keep changing while the run waits may match only after
+  the limit, which costs the wait and never a write. Knowing that the server's heads *include* the
+  run's would be enough, and needs a question the Repo does not yet answer cheaply.
 - **The shim that resolves a task's bare imports is fetched from a CDN** each time a browser pool or
   run worker starts, so a browser pool cannot start offline. Bundle it.
 - **Slots count threads, not kinds of work.** A run waiting on the network holds a slot a build
