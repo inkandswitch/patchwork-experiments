@@ -4,7 +4,9 @@
   the site as the tasks package needs, and nothing more. The harness serves
   the built package at /dist (and a copy stamped as a newer build at
   /dist-newer), and the site's modules, bundled from this package's own
-  node_modules, at /vendor, under the names the site's import map gives them.
+  node_modules, at /vendor, under the names the site's import map gives them
+  (the site gives `@automerge/automerge` and `@automerge/automerge-repo` their
+  slim builds too).
 -->
 <html>
   <head>
@@ -13,7 +15,9 @@
     <script type="importmap">
       {
         "imports": {
+          "@automerge/automerge": "/vendor/automerge-slim.js",
           "@automerge/automerge/slim": "/vendor/automerge-slim.js",
+          "@automerge/automerge-repo": "/vendor/automerge-repo-slim.js",
           "@automerge/automerge-repo/slim": "/vendor/automerge-repo-slim.js",
           "@automerge/automerge-repo-storage-indexeddb": "/vendor/automerge-repo-storage-indexeddb.js",
           "@automerge/automerge-subduction/slim": "/vendor/automerge-subduction-slim.js",

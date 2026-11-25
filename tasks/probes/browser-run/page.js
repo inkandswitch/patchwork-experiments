@@ -6,15 +6,16 @@
 // stop tasks through the built task-client.
 import { Repo, parseAutomergeUrl } from '@automerge/automerge-repo/slim';
 import { IndexedDBStorageAdapter } from '@automerge/automerge-repo-storage-indexeddb';
-import { initializeWasm } from '@automerge/automerge/slim';
+import { decodeChange, getActorId, getAllChanges, initializeWasm } from '@automerge/automerge/slim';
 import { initSync, SedimentreeId } from '@automerge/automerge-subduction/slim';
 import * as client from '/vendor/task-client.js';
 
 // Nothing listens here, and no document leaves this machine. This tab's Repo
 // and the pool's work from the shared database alone; each run worker's
 // Repo has a database of its own, so what a task writes through ctx.repo
-// never reaches this page here (see check 15).
-const SYNC = 'ws://127.0.0.1:9';
+// never reaches this page here (see check 15). A page opened with `?sync=`
+// works through that sync server instead, as a site does (check 22).
+const SYNC = new URLSearchParams(location.search).get('sync') ?? 'ws://127.0.0.1:9';
 
 const [automergeWasm, subductionWasm] = await Promise.all([
   fetch('/automerge.wasm').then((r) => r.arrayBuffer()),
@@ -303,6 +304,31 @@ const probe = {
   async has(url, ms = 2000) {
     const found = repo.find(url).then((handle) => !!handle.doc(), () => false);
     return Promise.race([found, new Promise((resolve) => setTimeout(() => resolve(false), ms))]);
+  },
+
+  /**
+   * Makes a document with an empty `text`, asks for the task at `importUrl`
+   * (probes/append-task.js) to append `pieces` to it, and keeps every text
+   * this tab's Repo shows while it runs. Then what probes/append-check.js
+   * reads of the document, with what the task returned and the text this tab
+   * had when it heard the run end.
+   */
+  async append(importUrl, pieces, everyMs) {
+    const handle = repo.create({ text: '' });
+    await repo.flush();
+    const seen = [];
+    let firstAt = null;
+    handle.on('change', ({ doc }) => {
+      seen.push(doc.text);
+      firstAt ??= doc.text.length > 0 ? performance.now() : null;
+    });
+    const t0 = performance.now();
+    const result = await client.run(repo, queueUrl(), { importUrl, input: { doc: handle.url, pieces, everyMs } }).catch((error) => ({ error: String(error?.message ?? error) }));
+    const atEnd = handle.doc().text;
+    const ms = performance.now() - t0;
+    const { appendedHow, appendedWell } = await import('/append-check.js');
+    const how = appendedHow(handle.doc(), pieces, seen, { decodeChange, getActorId, getAllChanges });
+    return { result, atEnd, ms, firstMs: firstAt === null ? null : firstAt - t0, well: appendedWell(how, pieces), ...how };
   },
 
   /** Asks and waits; how long from asking to the result, in ms. */

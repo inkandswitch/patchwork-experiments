@@ -5,11 +5,16 @@
 // in the package's plugin list, and its real titlebar tool) and asks through
 // the built task-client. Task
 // code comes from data: URLs and from a file served here; the queue accepts
-// any code. No sync server is reached: the pages' Repos and the pool's work
-// from the profile's shared database, and each run worker's from a database
-// of its own. So what a task writes through ctx.repo, which reaches the page
-// only by the sync server, is not seen here (check 15 says so; real-run.mjs
-// checks it), and a run that wrote something says so in its log (check 19).
+// any code. No sync server is reached but by check 22: the pages' Repos and
+// the pool's work from the profile's shared database, and each run worker's
+// from a database of its own. So what a task writes through ctx.repo, which
+// reaches the page only by the sync server, is not seen here (check 15 says
+// so; real-run.mjs checks it), and a run that wrote something says so in its
+// log (check 19). Check 22 runs probes/append-task.js, the task
+// append-run.mjs runs on a Node host, unchanged, in a browser context of its
+// own whose page and pool work through the real sync server (`--sync`, or
+// PATCHWORK_SYNC, or Ink & Switch's), and watches the text it appends to grow
+// in the page's Repo.
 //
 //   (in tasks/, after `pnpm build`)
 //   /Users/pvh/dev/pwx-one/tools/slot.sh chrome -- node probes/browser-run.mjs [--show]
@@ -77,6 +82,12 @@ const WRITES = dataUrl(
   "export default async (input, ctx) => { const doc = ctx.repo.create({ wrote: input.tag }); doc.change((d) => { d.changed = true; }); await ctx.repo.flush(); await new Promise((r) => setTimeout(r, input.ms)); return doc.url; };",
 );
 const SLEEP = `http://127.0.0.1:${PORT}/probe/tasks/sleep.js`;
+// the task append-run.mjs runs on a Node host, served as it is
+const APPEND = `http://127.0.0.1:${PORT}/append-task.js`;
+const SYNC_SERVER = (() => {
+  const at = process.argv.indexOf("--sync");
+  return (at > 0 && process.argv[at + 1]) || process.env.PATCHWORK_SYNC || "wss://subduction.sync.inkandswitch.com";
+})();
 
 // ── what is served ──
 
@@ -94,6 +105,8 @@ const siteRepo = realpathSync(join(modules, "site-automerge-repo"));
 const siteModules = resolve(siteRepo, "../..");
 symlinkSync(join(PKG, "dist"), join(root, "dist"));
 symlinkSync(join(HERE, "browser-run"), join(root, "probe"));
+symlinkSync(join(HERE, "append-task.js"), join(root, "append-task.js"));
+symlinkSync(join(HERE, "append-check.js"), join(root, "append-check.js"));
 symlinkSync(join(siteModules, "@automerge/automerge/dist/automerge.wasm"), join(root, "automerge.wasm"));
 symlinkSync(join(siteModules, "@automerge/automerge-subduction/dist/automerge-subduction.wasm"), join(root, "subduction.wasm"));
 
@@ -823,6 +836,34 @@ try {
       `background components ${mounted}; running ${!!running}; the waiting task ${ran?.state}; badge ${J(badgeRunning?.text)}; after letting go: host ${J(idle?.state)}, locks ${J(locksAfter)}, pool workers ${poolWorkersAfter} (looked for ${workerGoneMs} ms after the host said not started, bound 5000), badge ${J(badgeAfter?.text)}`,
     );
     await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
+  }
+
+  // 22. Text streamed into a document from a browser's run worker:
+  // probes/append-task.js, unchanged from the Node host's, imports
+  // Automerge's splice by bare name through the page's import map and
+  // appends each piece to the end of a text the page made. In a browser
+  // context of its own whose page, pool and run workers work through the
+  // real sync server, so that what the task writes reaches the page as it
+  // goes; read as append-run.mjs reads it (probes/append-check.js).
+  {
+    const pieces = ["Once ", "upon ", "a ", "time, ", "the ", "text ", "grew ", "by ", "appends."];
+    const sums = pieces.map((_, k) => pieces.slice(0, k + 1).join("").length).slice(0, -1);
+    const { browserContextId } = await send("Target.createBrowserContext", {});
+    try {
+      const S = await tab("S", `/probe/index.html?sync=${encodeURIComponent(SYNC_SERVER)}`, browserContextId);
+      await S.js("probe.makeAccount()");
+      const joined = await S.js("probe.join()");
+      await S.js("probe.mount()");
+      const running = await S.waitFor("probe.status()?.state === 'running'", 30_000);
+      const got = await S.js(`probe.append(${J(APPEND)}, ${J(pieces)}, 400)`, 120_000);
+      check(
+        `22 a browser's run worker runs append-task.js unchanged, through the page's import map, appending each piece to the end of a text the page sees grow (through ${SYNC_SERVER})`,
+        !!running && !!joined?.served && got.result === pieces.length && got.atEnd === pieces.join("") && got.well,
+        `pool running ${!!running}, joined ${J(joined)}; returned ${J(got.result)} in ${got.ms.toFixed(0)} ms, the first piece seen after ${got.firstMs === null ? "never" : `${got.firstMs.toFixed(0)} ms`}; text when the ending was heard ${J(got.atEnd)}; the task's changes ${got.changes} for ${pieces.length} pieces, ${got.endAppends} of them appends at the end${got.notAppend ? `, first not: ${J(got.notAppend)}` : ""}; every text seen a run of whole pieces from the start: ${got.prefixes}; lengths seen on the way ${J(got.between)} of ${J(sums)}`,
+      );
+    } finally {
+      await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
+    }
   }
 } catch (error) {
   console.error("probe stopped:", error?.stack ?? error);
