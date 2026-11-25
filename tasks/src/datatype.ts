@@ -69,10 +69,11 @@ export interface TaskDoc<Input, Result> {
   /** The run going on now, written as it starts and taken away as it ends. */
   current?: CurrentRun | null;
   /**
-   * How it ended for good, written with the run that ended it: it succeeded,
-   * was cancelled while running, or failed as often as a task may.
+   * How it ended for good, written with the run that ended it: its code
+   * returned (`succeeded`) or threw (`failed`), it was stopped (`cancelled`),
+   * or its workers went away as often as a task's may (`failed`).
    */
-  outcome?: RunStatus;
+  outcome?: 'succeeded' | 'failed' | 'cancelled';
 }
 
 /** A run in progress. How it is going is said on the task doc's channel (see `TaskProgressMessage`). */
@@ -90,9 +91,20 @@ export interface RunInfo<Result> {
   logs?: RunLogEntry[];
   startTimeMillis: number;
   endTimeMillis: number;
+  /**
+   * Which run this was: the hand-out that started it (see `assignmentId` in
+   * claims.ts). Missing from runs recorded before runs had names.
+   */
+  run?: string;
 }
 
-export type RunStatus = 'succeeded' | 'failed' | 'cancelled';
+/**
+ * How a run went. The first three are the run's own word: its code returned,
+ * threw, or was stopped. `lost` is someone else's: the run was started and
+ * never said how it ended, because its worker went away. Whoever starts the
+ * task next records it (see `lostRuns` in jobs.ts).
+ */
+export type RunStatus = 'succeeded' | 'failed' | 'cancelled' | 'lost';
 
 export interface RunLogEntry {
   timestampMillis: number;

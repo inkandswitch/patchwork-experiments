@@ -26,7 +26,7 @@ import { assignmentId } from './claims';
 import { listen, send } from './messages';
 import { retireForNewerBuild } from './retire';
 import { acceptanceOf, accepts } from './acceptance';
-import { endedBy, finishJob, isJobEntry } from './jobs';
+import { finishJob, isJobEntry, lostTooOften } from './jobs';
 import type { TaskContext } from './job-context';
 import { trace } from './trace';
 
@@ -336,15 +336,19 @@ function sendable(value: unknown): any {
  * Runs a task once and records how it went.
  *
  * `status` is the run's: `succeeded`, `failed` (its code couldn't be loaded,
- * or threw), `cancelled` (someone asked it to stop, before or during the run),
- * or `not mine`, when this worker doesn't run code from where the task's is
- * (see acceptance.ts) and nothing is recorded. `ended` says the task is
- * finished with: it has left its queue's waiting work.
+ * or threw, or the task had lost too many runs to be started again),
+ * `cancelled` (someone asked it to stop, before or during the run), or
+ * `not mine`, when this worker doesn't run code from where the task's is (see
+ * acceptance.ts) and nothing is recorded. `ended` says the task is finished
+ * with: it has left its queue's waiting work. Every run that is recorded ends
+ * its task (see jobs.ts).
  *
- * While it runs, the task doc's `current` is this run, and what its code
- * reports goes out on the task doc's channel (see `TaskProgressMessage`). A
- * second worker handed the same task (it can happen; see lab note 2) replaces
- * `current` with its own run, and this one then leaves it alone.
+ * While it runs, the task doc's `current` is this run, and the worker says so
+ * on the task doc's channel every SAY_AGAIN_EVERY_MS, with whatever the code
+ * reports (see `TaskProgressMessage`). A second worker handed the same task
+ * (it can happen; see lab note 2) records this run as lost and replaces
+ * `current` with its own; this one then leaves `current` alone, and when it
+ * finishes all the same, its record shows it was never lost.
  */
 async function run(
   taskHandle: DocHandle<TaskDoc<any, any>>,
@@ -397,14 +401,46 @@ async function run(
     return { status: 'not mine', ended: false };
   }
 
+  // Being handed a task that says a run of it is going on means that run's
+  // worker is taken to have gone away. This worker says so for it; and when
+  // the task has lost as many runs as it may, that is how it ends.
   const startTimeMillis = Date.now();
   trace('run starts', taskUrl);
+  let lost = false;
   taskHandle.change((doc) => {
+    const before = doc.current;
+    if (before && before.assignment !== assignment) {
+      doc.runs.push({
+        workerUrl: before.workerUrl,
+        status: 'lost',
+        result: null,
+        startTimeMillis: before.startTimeMillis,
+        endTimeMillis: startTimeMillis,
+        run: before.assignment,
+      });
+    }
+    if (lostTooOften(doc)) {
+      lost = true;
+      doc.current = null;
+      if (!doc.outcome) {
+        doc.outcome = 'failed';
+      }
+      return;
+    }
     doc.current = { workerUrl: workerHandle.url, assignment, startTimeMillis };
   });
+  if (lost) {
+    console.error('task lost too many runs to be started again', taskUrl);
+    delist();
+    saveNow(taskHandle, taskQueueHandle);
+    return { status: 'failed', ended: true };
+  }
 
-  // What the task's code reports, said on the task's channel: at most every
-  // SAY_EVERY_MS, and the latest progress again every so often.
+  // What is said of the run on the task's channel. That it is going on: now,
+  // and again every SAY_AGAIN_EVERY_MS, whatever its code does, because that
+  // word is the only thing that tells a reader the run is alive (see
+  // `taskState`). And what its code reports: at most every SAY_EVERY_MS, with
+  // the latest progress again each time it says it is going on.
   const logs: RunLogEntry[] = [];
   let logsSaid = 0;
   let progress: unknown;
@@ -413,14 +449,15 @@ async function run(
   const say = (again = false) => {
     sayTimer = null;
     const freshLogs = logs.slice(logsSaid);
-    if (!progressChanged && freshLogs.length === 0 && !(again && progress !== undefined)) {
+    if (!again && !progressChanged && freshLogs.length === 0) {
       return;
     }
+    const withProgress = progressChanged || (again && progress !== undefined);
     send(taskHandle, {
       type: 'task progress',
       ...sequencer.stamp(taskUrl),
       assignment,
-      ...(progressChanged || again ? { progress: sendable(progress) } : {}),
+      ...(withProgress ? { progress: sendable(progress) } : {}),
       ...(freshLogs.length > 0 ? { logs: freshLogs } : {}),
     } satisfies MessageToTaskChannel);
     logsSaid = logs.length;
@@ -429,13 +466,23 @@ async function run(
   const saySoon = () => {
     sayTimer ??= setTimeout(say, SAY_EVERY_MS);
   };
+  say(true);
   const sayAgainTimer = setInterval(() => say(true), SAY_AGAIN_EVERY_MS);
 
+  // Its code is asked to stop when the task is cancelled, and when the task
+  // has ended without it: another run of it, one this worker was handed the
+  // task in place of, finished after all.
   const controller = new AbortController();
   const stopIfCancelled = () => {
-    if (isCancelled() && !controller.signal.aborted) {
+    if (controller.signal.aborted) {
+      return;
+    }
+    if (isCancelled()) {
       console.log('task cancelled', taskUrl);
       controller.abort(new DOMException('The task was cancelled', 'AbortError'));
+    } else if (taskHandle.doc().outcome) {
+      console.log('task ended by another run', taskUrl);
+      controller.abort(new DOMException('The task has ended', 'AbortError'));
     }
   };
   taskHandle.on('change', stopIfCancelled);
@@ -462,10 +509,11 @@ async function run(
     signal: controller.signal,
     repo,
     taskUrl,
+    run: assignment,
     key: key ?? null,
   };
 
-  let status: RunStatus = 'succeeded';
+  let status: 'succeeded' | 'failed' | 'cancelled' = 'succeeded';
   let result: any;
   try {
     // Dynamic import of the task module, with import map support
@@ -498,15 +546,17 @@ async function run(
     taskQueueHandle.off('change', stopIfCancelled);
   }
   trace('code ran', taskUrl);
-  if (isCancelled()) {
-    // however its code ended: a result nobody wants any more isn't one
+  if (isCancelled() || (controller.signal.aborted && status !== 'succeeded')) {
+    // however its code ended: a result nobody wants any more isn't one, and
+    // code that was stopped and threw for it didn't fail
     status = 'cancelled';
   }
   say(); // whatever hasn't been said yet
 
-  // The run, and with it, in the same change, whether it ends the task: a
-  // reader of the task has both or neither (see `taskState`).
-  let endsTask = false;
+  // The run, and with it, in the same change, that it ends the task: a
+  // reader of the task has both or neither (see `taskState`). However the run
+  // went, the task is over (see jobs.ts): unless another run ended it first,
+  // in which case that one's word stands.
   taskHandle.change((doc) => {
     doc.runs.push({
       workerUrl: workerHandle.url,
@@ -515,27 +565,22 @@ async function run(
       startTimeMillis,
       endTimeMillis: Date.now(),
       logs: logs.map((entry) => ({ ...entry })),
+      run: assignment,
     });
     if (doc.current?.assignment === assignment) {
       doc.current = null;
     }
-    const outcome = endedBy(status, doc);
-    if (outcome) {
-      endsTask = true;
-      if (!doc.outcome) {
-        doc.outcome = outcome;
-      }
+    if (!doc.outcome) {
+      doc.outcome = status;
     }
   });
   trace('run recorded', taskUrl);
-  if (endsTask) {
-    delist();
-  }
+  delist();
   // Saved at once: whoever asked shares this worker's database, in a browser,
   // and hears of the result as it is saved, which left alone is a tenth of a
   // second from now (and the same again for the router to see the queue).
   saveNow(taskHandle, taskQueueHandle).then(() => trace('run saved', taskUrl));
-  return { status, ended: endsTask };
+  return { status, ended: true };
 }
 
 function saveNow(...handles: DocHandle<any>[]) {

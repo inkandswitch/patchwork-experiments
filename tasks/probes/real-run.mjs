@@ -77,10 +77,10 @@ const report = { package: pkg };
 // code from the package, whose first run has the module to fetch.
 // The same task again, with every step it takes timestamped where it happens (src/trace.ts): the
 // median time from each step to the next, in the order they come.
-async function steps(queueUrl, importUrl, n) {
+async function steps(queueUrl, importUrl, n, repoExpr = "await window.patchworkTasks.repo") {
   const rows = await within(240_000, b.js(`(async () => {
     const J = await import(${JSON.stringify(`/${encodeURIComponent(pkg)}/dist/job-client.js`)});
-    const R = await window.patchworkTasks.repo;
+    const R = ${repoExpr};
     const traces = [];
     const stop = J.tracing((t) => traces.push(t));
     await new Promise((r) => setTimeout(r, 300)); // the workers hear that someone is listening
@@ -134,6 +134,8 @@ async function latency(queueUrl, n) {
   const out = {};
   await run("await window.patchworkTasks.repo", NOOP, "1", 3, "warm-up");
   out.steps = await steps(queueUrl, NOOP, n);
+  // the same from the site's own Repo, which every ordinary view asks through
+  out.stepsFromTheSiteRepo = await steps(queueUrl, NOOP, n, "window.repo");
   out.sameDatabase = summary(await run("await window.patchworkTasks.repo", NOOP, "1", n, "local"));
   out.throughServer = summary(await run("window.repo", NOOP, "1", n, "server"));
   const fromPackage = await run("await window.patchworkTasks.repo", WAIT, `{ ms: 0 }`, n, "package");
@@ -241,12 +243,12 @@ async function jobs(queueUrl, pinnedPackage) {
     return { cancelled, stoppedAfterMs: Date.now() - t0, states: [...new Set(states)], runs: job.runs.map((r) => r.status), again: await J.cancel(T, Q, key) };`, "stopping a running task");
   check("a running task stops when asked, and says it was stopped", out.stop.cancelled === true && out.stop.stoppedAfterMs < 4000 && out.stop.runs.at(-1) === "cancelled" && out.stop.again === false, out.stop);
 
-  // 4. A task that fails is tried three times, then given up on.
+  // 4. A task whose code throws has failed: it is not run again.
   out.fail = await call(`
     let last;
     const error = await J.run(T, Q, { importUrl: ${WAIT}, input: { ms: 50, fail: true }, key: "probe-fail" }, (job) => (last = job)).then(() => null, (e) => e.message);
     return { error, state: last.state, runs: last.runs.map((r) => r.status) };`, "a task that fails");
-  check("a failing task is tried three times and then reads as failed", out.fail.error === "asked to fail" && out.fail.state === "failed" && out.fail.runs.join() === "failed,failed,failed", out.fail);
+  check("a task whose code throws has failed, once, and says why", out.fail.error === "asked to fail" && out.fail.state === "failed" && out.fail.runs.join() === "failed", out.fail);
 
   // 5. A finished task answers for its key until it's forgotten.
   out.again = await call(`

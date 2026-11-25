@@ -17,7 +17,9 @@ import type { MessageToTaskChannel } from './protocol';
 import {
   finishJob,
   forgetJob,
+  HEARD_WITHIN_MS,
   isFinished,
+  isHeard,
   isJobEntry,
   listJob,
   taskResult,
@@ -59,7 +61,7 @@ export interface JobView<Result = unknown> {
   logs: RunLogEntry[];
   /** Its result, once it has succeeded. */
   result: Result | undefined;
-  /** What the last failed run said, if the last run failed. */
+  /** Why it failed, once it has: what its code threw, or that its workers kept going away. */
   error: string | null;
   runs: RunInfo<Result>[];
 }
@@ -70,9 +72,11 @@ export interface Heard {
   assignment: string | null;
   progress: unknown;
   logs: RunLogEntry[];
+  /** When it was last heard, on the listener's own clock; null if never. */
+  at: number | null;
 }
 
-const nothingHeard = (): Heard => ({ assignment: null, progress: null, logs: [] });
+const nothingHeard = (): Heard => ({ assignment: null, progress: null, logs: [], at: null });
 
 const copy = <T>(value: T): T => (value === undefined ? value : JSON.parse(JSON.stringify(value)));
 
@@ -160,12 +164,17 @@ export async function forget(repo: Repo, queueUrl: AutomergeUrl, key: string) {
   queue.change((doc) => forgetJob(doc, key));
 }
 
-/** A keyed task as the queue, its own doc and what has been heard of its run say it is, as far as they're here. */
+/**
+ * A keyed task as the queue, its own doc and what has been heard of its run
+ * say it is, as far as they're here. `alive` says whether the run the doc
+ * says is going on is being heard (see `taskState`); `watch` keeps track.
+ */
 export function viewOf<Result = unknown>(
   key: string,
   queue: Pick<TaskQueueDoc, 'jobs'> | undefined,
   task: TaskDoc<any, Result> | undefined,
   heard: Heard = nothingHeard(),
+  alive = true,
 ): JobView<Result> {
   const listed = queue?.jobs?.[key];
   if (!isJobEntry(listed)) {
@@ -182,8 +191,8 @@ export function viewOf<Result = unknown>(
       runs: [],
     };
   }
-  const state = taskState(task);
-  const last = task?.runs?.at(-1);
+  const state = taskState(task, alive);
+  const last = task?.runs?.findLast((run) => run.status !== 'lost');
   // what was heard counts only for the run going on now
   const live = !!task?.current && heard.assignment === task.current.assignment;
   return {
@@ -195,13 +204,18 @@ export function viewOf<Result = unknown>(
     progress: live ? heard.progress : null,
     logs: task?.current ? (live ? heard.logs : []) : (last?.logs ?? []),
     result: state === 'succeeded' ? taskResult(task) : undefined,
-    error: last?.status === 'failed' ? (last.logs?.at(-1)?.message ?? 'failed') : null,
+    error:
+      state !== 'failed'
+        ? null
+        : last?.status === 'failed'
+          ? (last.logs?.at(-1)?.message ?? 'failed')
+          : 'its worker went away too often for it to be started again',
     runs: task?.runs ?? [],
   };
 }
 
-/** Adds one message from a task's channel to what has been heard of its run. */
-export function hear(heard: Heard, message: MessageToTaskChannel): Heard {
+/** Adds one message from a task's channel, heard at `now`, to what has been heard of its run. */
+export function hear(heard: Heard, message: MessageToTaskChannel, now = Date.now()): Heard {
   if (message.type !== 'task progress') {
     return heard;
   }
@@ -210,6 +224,7 @@ export function hear(heard: Heard, message: MessageToTaskChannel): Heard {
     assignment: message.assignment,
     progress: 'progress' in message ? message.progress : same ? heard.progress : null,
     logs: [...(same ? heard.logs : []), ...(message.logs ?? [])],
+    at: now,
   };
 }
 
@@ -231,11 +246,31 @@ export function watch<Result = unknown>(
   let heard = nothingHeard();
   let following: AutomergeUrl | null = null;
   let retry: ReturnType<typeof setTimeout> | undefined;
+  // The run the task's doc says is going on, and when this watcher first saw
+  // it say so: a run not heard from yet is given from then (see `isHeard`).
+  let seen: { assignment: string; at: number } | null = null;
+  let lapse: ReturnType<typeof setTimeout> | undefined;
 
   const report = () => {
-    if (!stopped) {
-      onChange(viewOf(key, queue?.doc(), task?.doc(), heard));
+    if (stopped) {
+      return;
     }
+    clearTimeout(lapse);
+    const current = task?.doc()?.current;
+    let alive = true;
+    if (current) {
+      const now = Date.now();
+      if (seen?.assignment !== current.assignment) {
+        seen = { assignment: current.assignment, at: now };
+      }
+      const lastHeardAt = heard.assignment === current.assignment ? heard.at : null;
+      alive = isHeard(lastHeardAt, seen.at, now);
+      if (alive) {
+        // looked at again when it would no longer count as heard
+        lapse = setTimeout(report, (lastHeardAt ?? seen.at) + HEARD_WITHIN_MS - now + 20);
+      }
+    }
+    onChange(viewOf(key, queue?.doc(), task?.doc(), heard, alive));
   };
 
   const unfollow = () => {
@@ -244,6 +279,8 @@ export function watch<Result = unknown>(
     stopListening = undefined;
     task = undefined;
     heard = nothingHeard();
+    seen = null;
+    clearTimeout(lapse);
   };
 
   const follow = () => {
@@ -296,6 +333,7 @@ export function watch<Result = unknown>(
   return () => {
     stopped = true;
     clearTimeout(retry);
+    clearTimeout(lapse);
     queue?.off('change', follow);
     unfollow();
   };

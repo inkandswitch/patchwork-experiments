@@ -24,6 +24,14 @@ export interface TaskContext {
   repo: Repo;
   /** The task's own document. */
   taskUrl: AutomergeUrl;
+  /**
+   * This run: the name of the one hand-out of the task that started it, never
+   * used for another. A task runs at least once, so work that must not be
+   * done twice says which run is doing it in what it writes (a field naming
+   * its owner) and checks that before each effect: a second run finds the
+   * first one's name there, and knows it is the second.
+   */
+  run: string;
   /** The key it was asked for under, if it was asked for by key. */
   key: string | null;
 }

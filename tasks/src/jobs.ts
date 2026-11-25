@@ -37,15 +37,32 @@
 // channel. A queue's entry is for routers: which task a key names, and
 // whether to stop handing it out.
 //
+// What ends a task: its code returning, its code throwing, or someone
+// stopping it. Each is final. A task whose code threw is not run again by the
+// system: whoever asked decides whether to ask again, and knows what it cost.
+// The one thing the system does again by itself is a run that never said how
+// it ended, because its worker went away: the next worker to start the task
+// records that run as `lost` and runs it afresh, up to MAX_LOST times, after
+// which the task has failed. So a task ends after a bounded number of starts,
+// whatever goes wrong.
+//
 // What it promises is the framework's promise: a task runs at least once, not
-// exactly once. Its code must be safe to run twice.
+// exactly once. Its code must be safe to run twice, or must guard itself: it
+// is handed the name of its run (see job-context.ts) for that.
 
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
 import type { JobEntry, RunStatus, TaskDoc, TaskQueueDoc, WorkerDoc } from './datatype';
 import { acceptanceOf, acceptsPackage, type Acceptance } from './acceptance';
 
-/** How many failed runs a task may have before it's finished with. */
-export const MAX_TRIES = 3;
+/** How many of a task's runs may be lost (see `lostRuns`) before the task has failed. */
+export const MAX_LOST = 3;
+
+/**
+ * How long a run may go unheard before a reader stops taking it for running.
+ * Its worker says it is on it every two seconds (worker.ts), so this is four
+ * of those missed and a little over.
+ */
+export const HEARD_WITHIN_MS = 10_000;
 
 // What a queue has waiting
 
@@ -207,20 +224,42 @@ export const isFinished = (state: TaskState) =>
   state === 'succeeded' || state === 'failed' || state === 'cancelled';
 
 /**
- * A task's state, from its own doc and nothing else: the run that ends a task
- * and the word that it has ended are one change to one document, so a reader
- * has both or neither.
+ * A task's state, from its own doc and from whether its run is being heard.
+ *
+ * How it ended, and that it was stopped, are read from the doc: the run that
+ * ends a task and the word that it has ended are one change to one document,
+ * so a reader has both or neither. That a run is going on is never taken on
+ * the doc's word alone. `current` says a run started; only the worker saying
+ * so, heard on the task's channel, says it is still going (`heard`: true
+ * while it is, see `isHeard`). A run whose worker has died therefore reads as
+ * waiting, which is what it is: waiting to be handed out again.
  */
 export function taskState(
   task: Pick<TaskDoc<any, any>, 'current' | 'cancelled' | 'outcome'> | undefined,
+  heard = true,
 ): TaskState {
-  if (task?.cancelled) {
-    return task.current ? 'stopping' : 'cancelled';
-  }
   if (task?.outcome) {
     return task.outcome;
   }
-  return task?.current ? 'running' : 'waiting';
+  const running = !!task?.current && heard;
+  if (task?.cancelled) {
+    return running ? 'stopping' : 'cancelled';
+  }
+  return running ? 'running' : 'waiting';
+}
+
+/**
+ * Whether a run is being heard, on the reader's own clock: its worker was
+ * last heard less than HEARD_WITHIN_MS ago, or has never been heard and the
+ * reader first saw the run less than that long ago (the word may be on its
+ * way). No clock but the reader's is consulted.
+ */
+export function isHeard(
+  lastHeardAt: number | null,
+  firstSeenAt: number,
+  now: number,
+): boolean {
+  return now - (lastHeardAt ?? firstSeenAt) < HEARD_WITHIN_MS;
 }
 
 /** The result of a task that succeeded: its last successful run's. */
@@ -228,18 +267,25 @@ export function taskResult<Result>(task: Pick<TaskDoc<any, Result>, 'runs'> | un
   return task?.runs?.findLast((run) => run.status === 'succeeded')?.result;
 }
 
-/** Whether a task has failed as often as it may. */
-export function failedTooOften(task: Pick<TaskDoc<any, any>, 'runs'>) {
-  return task.runs.filter(({ status }) => status === 'failed').length >= MAX_TRIES;
+/**
+ * The runs of a task that were started and never said how they ended, by
+ * name: each recorded `lost` by a later run, and with no record of its own.
+ * A run that was wrongly given up for lost, and then finished, has both, and
+ * is not counted: it was only slow to be heard. Nor is one counted twice
+ * because two later runs both said it was lost.
+ */
+export function lostRuns(task: Pick<TaskDoc<any, any>, 'runs'>): string[] {
+  const reported = new Set<string>();
+  const lost = new Set<string>();
+  for (const run of task.runs) {
+    if (run.run) {
+      (run.status === 'lost' ? lost : reported).add(run.run);
+    }
+  }
+  return [...lost].filter((run) => !reported.has(run));
 }
 
-/**
- * How a run that has just been added to `runs` ends its task, if it does: a
- * failure ends it only once there have been enough of them.
- */
-export function endedBy(
-  status: RunStatus,
-  task: Pick<TaskDoc<any, any>, 'runs'>,
-): RunStatus | null {
-  return status !== 'failed' || failedTooOften(task) ? status : null;
+/** Whether a task has lost as many runs as it may, and so has failed. */
+export function lostTooOften(task: Pick<TaskDoc<any, any>, 'runs'>) {
+  return lostRuns(task).length >= MAX_LOST;
 }

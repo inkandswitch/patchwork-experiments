@@ -3,13 +3,15 @@ import type { TaskQueueDoc } from './datatype';
 import {
   canRun,
   eachWaiting,
-  endedBy,
-  failedTooOften,
   finishJob,
   forgetJob,
   hasWaitingWork,
+  HEARD_WITHIN_MS,
+  isHeard,
   listJob,
-  MAX_TRIES,
+  lostRuns,
+  lostTooOften,
+  MAX_LOST,
   takingOf,
   taskResult,
   taskState,
@@ -25,12 +27,17 @@ const queue = (over: Partial<TaskQueueDoc> = {}): TaskQueueDoc => ({
   ...over,
 });
 const url = (name: string) => `automerge:${name}` as any;
-const run = (status: 'succeeded' | 'failed' | 'cancelled', result?: unknown) => ({
+const run = (
+  status: 'succeeded' | 'failed' | 'cancelled' | 'lost',
+  result?: unknown,
+  name?: string,
+) => ({
   workerUrl: url('w'),
   status,
   result,
   startTimeMillis: 0,
   endTimeMillis: 1,
+  ...(name ? { run: name } : {}),
 });
 const Q = url('queue');
 const PKG = 'automerge:2KYqboWHPS5rvWsheoLnHgFvE7ou';
@@ -168,49 +175,73 @@ describe('listing, finishing and forgetting', () => {
   });
 });
 
-describe("a task's state, from its own doc", () => {
+describe("a task's state, from its own doc and whether its run is heard", () => {
   const current = { workerUrl: url('w'), assignment: 'a', startTimeMillis: 0 };
   const outcomes = [undefined, 'succeeded', 'failed', 'cancelled'] as const;
 
-  // every combination of: cancelled or not, a run going on or not, and how it
-  // ended for good (not yet, or one of the three ways)
-  for (const cancelled of [false, true])
-    for (const running of [false, true])
-      for (const outcome of outcomes) {
-        const want = cancelled
-          ? running
-            ? 'stopping'
-            : 'cancelled'
-          : (outcome ?? (running ? 'running' : 'waiting'));
-        it(`cancelled=${cancelled} running=${running} ended=${outcome}: ${want}`, () => {
-          expect(
-            taskState({
-              current: running ? current : null,
-              ...(cancelled ? { cancelled: true as const } : {}),
-              ...(outcome ? { outcome } : {}),
-            }),
-          ).toBe(want);
-        });
-      }
+  // Every combination of: how it ended for good (not yet, or one of the three
+  // ways), cancelled or not, a run started or not, and that run heard or not.
+  // How it ended is the last word; before that, a run counts only while heard.
+  for (const outcome of outcomes)
+    for (const cancelled of [false, true])
+      for (const started of [false, true])
+        for (const heard of [false, true]) {
+          const running = started && heard;
+          const want =
+            outcome ??
+            (cancelled ? (running ? 'stopping' : 'cancelled') : running ? 'running' : 'waiting');
+          it(`ended=${outcome} cancelled=${cancelled} started=${started} heard=${heard}: ${want}`, () => {
+            expect(
+              taskState(
+                {
+                  current: started ? current : null,
+                  ...(cancelled ? { cancelled: true as const } : {}),
+                  ...(outcome ? { outcome } : {}),
+                },
+                heard,
+              ),
+            ).toBe(want);
+          });
+        }
 
   it('a task that is not here yet is waiting', () => {
     expect(taskState(undefined)).toBe('waiting');
   });
+
+  it('a run is heard for a while after its last word, or after it was first seen', () => {
+    expect(isHeard(1_000, 0, 1_000 + HEARD_WITHIN_MS - 1)).toBe(true);
+    expect(isHeard(1_000, 0, 1_000 + HEARD_WITHIN_MS)).toBe(false);
+    // never heard: given from when the reader first saw it
+    expect(isHeard(null, 5_000, 5_000 + HEARD_WITHIN_MS - 1)).toBe(true);
+    expect(isHeard(null, 5_000, 5_000 + HEARD_WITHIN_MS)).toBe(false);
+    // once heard, when it was first seen no longer matters
+    expect(isHeard(9_000, 0, 9_001)).toBe(true);
+  });
 });
 
-describe('how a run ends a task', () => {
-  const failed = (n: number) => Array.from({ length: n }, () => run('failed'));
+describe('runs that never said how they ended', () => {
+  const lost = (...names: string[]) => names.map((name) => run('lost', undefined, name));
 
-  it('a success or a cancel ends it; a failure only once there have been enough', () => {
-    expect(endedBy('succeeded', { runs: [run('succeeded')] })).toBe('succeeded');
-    expect(endedBy('cancelled', { runs: [run('cancelled')] })).toBe('cancelled');
-    expect(endedBy('failed', { runs: failed(MAX_TRIES - 1) })).toBeNull();
-    expect(endedBy('failed', { runs: failed(MAX_TRIES) })).toBe('failed');
+  it('are the ones recorded lost with no record of their own', () => {
+    expect(lostRuns({ runs: [] })).toEqual([]);
+    expect(lostRuns({ runs: lost('a', 'b') })).toEqual(['a', 'b']);
+    // given up for lost, then finished after all: it was only slow to be heard
+    expect(lostRuns({ runs: [...lost('a'), run('succeeded', 1, 'a')] })).toEqual([]);
+    expect(lostRuns({ runs: [run('failed', undefined, 'a'), ...lost('a', 'b')] })).toEqual(['b']);
   });
 
-  it('only failed runs count towards too many', () => {
-    expect(failedTooOften({ runs: [...failed(MAX_TRIES - 1), run('cancelled')] })).toBe(false);
-    expect(failedTooOften({ runs: failed(MAX_TRIES) })).toBe(true);
+  it('count once each, however many later runs said so', () => {
+    expect(lostRuns({ runs: lost('a', 'a', 'a') })).toEqual(['a']);
+  });
+
+  it('end the task when there have been as many as a task may lose, and not before', () => {
+    const names = Array.from({ length: MAX_LOST }, (_, i) => `r${i}`);
+    expect(lostTooOften({ runs: lost(...names.slice(1)) })).toBe(false);
+    expect(lostTooOften({ runs: lost(...names) })).toBe(true);
+    // runs that reported, however they went, are not losses
+    expect(
+      lostTooOften({ runs: [...lost(...names.slice(1)), run('failed', undefined, 'x'), run('cancelled', undefined, 'y')] }),
+    ).toBe(false);
   });
 
   it("a task's result is its last successful run's", () => {
@@ -233,9 +264,9 @@ describe('what someone following a keyed task sees', () => {
   });
 
   it('what is heard of a run adds up: the latest progress, every log line', () => {
-    let heard = hear({ assignment: null, progress: null, logs: [] }, progress('a1', { progress: 0.2 }));
-    heard = hear(heard, progress('a1', { logs: [{ timestampMillis: 1, message: 'one' }] }));
-    heard = hear(heard, progress('a1', { progress: 0.6, logs: [{ timestampMillis: 2, message: 'two' }] }));
+    let heard = hear({ assignment: null, progress: null, logs: [], at: null }, progress('a1', { progress: 0.2 }), 10);
+    heard = hear(heard, progress('a1', { logs: [{ timestampMillis: 1, message: 'one' }] }), 20);
+    heard = hear(heard, progress('a1', { progress: 0.6, logs: [{ timestampMillis: 2, message: 'two' }] }), 30);
     expect(heard).toEqual({
       assignment: 'a1',
       progress: 0.6,
@@ -243,6 +274,7 @@ describe('what someone following a keyed task sees', () => {
         { timestampMillis: 1, message: 'one' },
         { timestampMillis: 2, message: 'two' },
       ],
+      at: 30,
     });
     const view = viewOf('k', listed, task({ current }), heard);
     expect(view.state).toBe('running');
@@ -251,13 +283,17 @@ describe('what someone following a keyed task sees', () => {
   });
 
   it('news of another run starts again from nothing', () => {
-    let heard = hear({ assignment: null, progress: null, logs: [] }, progress('a1', { progress: 0.9, logs: [{ timestampMillis: 1, message: 'old' }] }));
-    heard = hear(heard, progress('a2', { logs: [{ timestampMillis: 2, message: 'new' }] }));
-    expect(heard).toEqual({ assignment: 'a2', progress: null, logs: [{ timestampMillis: 2, message: 'new' }] });
+    let heard = hear({ assignment: null, progress: null, logs: [], at: null }, progress('a1', { progress: 0.9, logs: [{ timestampMillis: 1, message: 'old' }] }), 10);
+    heard = hear(heard, progress('a2', { logs: [{ timestampMillis: 2, message: 'new' }] }), 20);
+    expect(heard).toEqual({ assignment: 'a2', progress: null, logs: [{ timestampMillis: 2, message: 'new' }], at: 20 });
+
+    // a word with nothing in it but that the run is going on keeps what was heard
+    heard = hear(heard, progress('a2', {}), 30);
+    expect(heard).toEqual({ assignment: 'a2', progress: null, logs: [{ timestampMillis: 2, message: 'new' }], at: 30 });
   });
 
   it("what was heard of an earlier run isn't shown for the one going on", () => {
-    const heard = { assignment: 'a0', progress: 0.9, logs: [{ timestampMillis: 1, message: 'old' }] };
+    const heard = { assignment: 'a0', progress: 0.9, logs: [{ timestampMillis: 1, message: 'old' }], at: 1 };
     const view = viewOf('k', listed, task({ current }), heard);
     expect(view.progress).toBeNull();
     expect(view.logs).toEqual([]);
@@ -269,5 +305,17 @@ describe('what someone following a keyed task sees', () => {
     expect(ok).toMatchObject({ state: 'succeeded', result: 42, error: null, logs });
     const bad = viewOf('k', listed, task({ runs: [{ ...run('failed'), logs: [{ timestampMillis: 1, message: 'boom' }] }], outcome: 'failed' }));
     expect(bad).toMatchObject({ state: 'failed', result: undefined, error: 'boom' });
+  });
+
+  it('a run that is no longer heard is not running: the task waits to be handed out again', () => {
+    const view = viewOf('k', listed, task({ current }), undefined, false);
+    expect(view.state).toBe('waiting');
+  });
+
+  it('a task that failed by losing its runs says so', () => {
+    const runs = ['a', 'b', 'c'].map((name) => run('lost', undefined, name));
+    const view = viewOf('k', listed, task({ runs, outcome: 'failed' }));
+    expect(view).toMatchObject({ state: 'failed', result: undefined });
+    expect(view.error).toMatch(/went away/);
   });
 });
