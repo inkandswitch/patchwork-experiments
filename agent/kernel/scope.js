@@ -299,7 +299,7 @@ export const UNDECLARED_MID_RUN = "This plugin was registered again during the r
  * is the package's word that its tool works only through the context it is
  * handed, and that context is the step's confined one (`confine`) and nothing
  * more. Installing a package that makes the declaration extends what research
- * steps can do: that is the trust it asks for, and the README says so.
+ * steps can do: that is the trust it asks for, and TOOLS.md says so.
  *
  * The declaration is checked again at every call, on the plugin about to
  * run: the registry holds one plugin per id, and any package may register

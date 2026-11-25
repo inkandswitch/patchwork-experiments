@@ -155,7 +155,7 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
       // from the index the page sends with its plugins.
       packageOf: (type, id) => catalogue.packageOf(type, id),
       // For plugin tools, as a tab gives them: the registry, and automerge
-      // initialised (README, "Writing an agent tool").
+      // initialised (TOOLS.md).
       plugins: pluginsModule,
       automerge,
       // The worker shares the page's origin, so it refuses the same places.

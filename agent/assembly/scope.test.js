@@ -1,7 +1,7 @@
 /**
  * A research step can keep what it finds and can reach nothing else.
  *
- * The claim (README, "Research steps keep things") is made of the session's
+ * The claim (TOOLS.md, a research step's confined context) is made of the session's
  * scope alone, so it is tested from the outside: a real repo full of the
  * person's documents, each carrying a sentinel, a research step's context
  * built by `confine` from a context that has every one of them, and every

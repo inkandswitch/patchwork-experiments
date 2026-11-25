@@ -83,7 +83,7 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       sessionUrl: handle.url,
       splice,
       // For plugin tools: the page's registry and its automerge, initialised
-      // (README, "Writing an agent tool").
+      // (TOOLS.md).
       plugins,
       automerge,
       events,
