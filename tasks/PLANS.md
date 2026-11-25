@@ -8,8 +8,8 @@ known, so it can be picked up without finding it out again.
 Set aside on 2026-11-25 in favour of getting the system's design right first.
 Everything below was measured that day on one Mac, in headless Chrome 158
 against patchwork.inkandswitch.com, with the fork as published then: the
-router-based system, now gone. Only the Node host's figures were measured
-again since, with the pool (marked so).
+router-based system, now gone. Only two figures were measured again since,
+with the pool (marked so).
 
 ### What a task costs
 
@@ -19,6 +19,7 @@ from asking to the asker having the result (median of 30):
 | Asker and worker | Median | p90 |
 |---|---|---|
 | Same browser, asker on the tab's tasks Repo | 47 ms | 105 ms |
+| The same with the pool, on this machine's stand-in page (`probes/browser-run.mjs`, median and worst of 10) | 10.6 ms | 17.7 ms |
 | Same, code from a package rather than a `data:` URL | 50 ms | 86 ms |
 | Same browser, asker on the site's own Repo | 529 ms | 682 ms |
 | Node host, asker a separate peer on the same machine (router) | 525 ms | 584 ms |
@@ -39,7 +40,7 @@ automerge). For comparison, a bare worker on an empty page answers in
 The tab's tasks Repo and the workers' Repos share a database ("the family",
 see `src/ids.ts`). The site's own Repo is not in the family, so anything asked
 through it travels by the sync server both ways, as it does to a Node host.
-That is the half second. `@awarth/tasklib` asks through the site's Repo.
+That is the half second.
 
 ### Where the time goes
 
@@ -89,15 +90,6 @@ wait is the worker's own doc reaching the router.
   took 217 ms, not 47: a Repo holds a document's changes for up to 100 ms
   before saving them (its `subductionSaveThrottle`), and both the ask and the
   result waited that out.
-- **A router stopped believing a stale heartbeat.** A pool's once-a-second
-  heartbeat repeats each worker's doc as the pool last had it. A heartbeat
-  that caught a worker mid-task kept it marked busy until the next one, a
-  second later. The forty-task run showed it: one worker idle for 1034 ms,
-  the other not given its first task for 870 ms. A worker's doc then counted
-  the tasks it had taken on, the heartbeat carried the count, and the router
-  went by whichever was later. The stalls went; the total did not drop,
-  because the next limit was the 70 ms above. (The router, its heartbeats
-  and worker docs are gone now; a pool takes work itself.)
 - **Tracing**, and `--latency N` on both probes (see below).
 
 ### Tried and taken out
@@ -120,9 +112,9 @@ difference there is not known, so it is not in the code.
 
 ### Where to start
 
-1. **The worker's "I'm free" reaching the router** was most of every
-   hand-over. There is no router now: a pool frees its own slot when it has
-   saved a run's end. Why the zero throttle did not act in the workers is
+1. **A slot's hand-over.** A pool frees its own slot when it has saved a
+   run's end, so the hand-over measured above is not what it costs now. Why
+   the zero throttle did not act in the workers is
    still not known, and still worth finding out where a pool and its askers
    share a database.
 2. **`flush` does more than save.** It also waits for storage to settle and
@@ -150,9 +142,10 @@ node probes/node-run.mjs
 
 Its first check asks a Node host for ten tasks that do nothing, one at a
 time, and prints the figures above; it runs the working tree's build
-(`pnpm build:node`), and publishes nothing. `probes/real-run.mjs`, which
-measured the browser, was written for the router-based system and waits to
-be rewritten for the browser's pool.
+(`pnpm build:node`), and publishes nothing. `probes/browser-run.mjs` prints
+the browser pool's figure as its first check, against the built package on
+a stand-in page; `probes/real-run.mjs` runs the same pool in the real site
+and needs a published copy.
 
 ## Deferred, with what each waits on
 
@@ -176,11 +169,15 @@ that one machine serves.
   task leaves running shares a thread with the next. Confining task code (an opaque-origin worker in
   a browser) requires fresh workers, and so does treating tasks as strangers to each other. Waits on
   the link above, since a worker ended at once must first hand over what its task wrote.
-- **A queue of one's own, and finding queues.** A page with no document that names a queue has
-  nowhere to ask. The account's list of served queues could also hold queues that are only asked of.
-  Waits on the lead's decision about the account document.
-- **Secrets.** Nothing here holds one. Work that needs a key (model calls, agent sessions) stays
-  where it is until run workers are confined and there is a rule for which runs may spend what.
+- **Finding queues.** A page with no document that names a queue asks its person's own queue
+  (`ownQueue`). Queues one only asks of, and does not serve, have no place to be kept: the task
+  storage could list them beside `served`, and tools pick from that list. Waits on the first tool
+  that asks a queue it does not serve.
+- **One maker for the served list.** When two replicas each make the storage document's `served`
+  map at the same moment, the merge keeps one map whole and what was put in the other is lost (a
+  join then reads as not joined, and is offered again). Giving the map one maker closes it: a first
+  change that every replica makes identically, or the tool-storage provider seeding a tool's
+  document.
 - **The shim that resolves a task's bare imports is fetched from a CDN** each time a browser pool or
   run worker starts, so a browser pool cannot start offline. Bundle it.
 - **Slots count threads, not kinds of work.** A run waiting on the network holds a slot a build

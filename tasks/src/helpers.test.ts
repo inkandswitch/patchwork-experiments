@@ -39,7 +39,7 @@ describe("where an account's task storage is", () => {
     expect(storageUrlOf({ toolStorage: Object.create({ [TASKS_STORAGE_ID]: STORAGE }) })).toBeNull();
   });
 
-  it('ignores the field an earlier version kept on the account itself', () => {
+  it('reads nothing off the account but its tool storage', () => {
     expect(storageUrlOf({ __servedQueues__: { [one]: true } })).toBeNull();
   });
 });

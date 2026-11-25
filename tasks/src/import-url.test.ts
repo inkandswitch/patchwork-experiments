@@ -109,7 +109,7 @@ describe('whose code a worker runs', () => {
       expect(accepts(acceptance, pinned)).toBe(want.pinned);
       expect(accepts(acceptance, data)).toBe(want.data);
       expect(accepts(acceptance, 'https://cdn.example/x.js')).toBe(want.cdn);
-      // a router, which has only the package, comes to the same answers
+      // a pool deciding from a queue's entry, which has only the package, comes to the same answers
       expect(acceptsPackage(acceptance, packageOf(pinned))).toBe(want.pinned);
       expect(acceptsPackage(acceptance, packageOf(data))).toBe(want.data);
     });
