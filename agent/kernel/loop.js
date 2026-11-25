@@ -242,8 +242,7 @@ export async function run(opts) {
         dropTurn(store, err.turnId)
         return reconnect(store, err, emit)
       }
-      appendTurn(store, makeTurn("assistant", [noticeBlock(STOP.error, String(err?.message ?? err))]))
-      return finish(store, OUTCOME.error, emit, String(err?.message ?? err))
+      return fail(store, String(err?.message ?? err), OUTCOME.error, emit)
     }
 
     if (signal?.aborted) return stopped()
@@ -292,36 +291,28 @@ export async function run(opts) {
           const current = settings.paramsOverride.reasoning ?? store.doc().config?.params?.reasoning ?? null
           settings.paramsOverride.reasoning = quieterReasoning(current, settings.capabilities, maxTokens)
         }
-        appendTurn(
+        nudge(
           store,
-          makeTurn("user", [
-            noticeBlock(
-              "nudge",
-              assistant.broken?.length
-                ? `(Your ${assistant.broken.map((c) => c.name).join(" and ")} call was cut off before its ` +
-                  "arguments finished, so it was not run.) Make the call again, and keep the arguments small — " +
-                  "several narrow calls are better than one that does not fit."
-                : "(Your previous message was cut off by the output limit before you finished.) " +
-                  "Continue from where you stopped. Do not restate the plan — make the tool calls."
-            ),
-          ])
+          assistant.broken?.length
+            ? `(Your ${assistant.broken.map((c) => c.name).join(" and ")} call was cut off before its ` +
+              "arguments finished, so it was not run.) Make the call again, and keep the arguments small — " +
+              "several narrow calls are better than one that does not fit."
+            : "(Your previous message was cut off by the output limit before you finished.) " +
+              "Continue from where you stopped. Do not restate the plan — make the tool calls."
         )
         continue
       }
 
-      appendTurn(
+      return fail(
         store,
-        makeTurn("assistant", [
-          noticeBlock(
-            STOP.error,
-            `Cut off by the model's output limit ${truncations} times. ` +
-              "It is spending its output budget on thinking before it acts. Raise `params.maxTokens` in this " +
-              "session's config, cap the thinking with `params.reasoning` (e.g. { effort: \"low\" } or " +
-              "{ max_tokens: 1024 }), or pick a model that reasons less."
-          ),
-        ])
+        `Cut off by the model's output limit ${truncations} times. ` +
+          "It is spending its output budget on thinking before it acts. Raise `params.maxTokens` in this " +
+          "session's config, cap the thinking with `params.reasoning` (e.g. { effort: \"low\" } or " +
+          "{ max_tokens: 1024 }), or pick a model that reasons less.",
+        OUTCOME.truncated,
+        emit,
+        "output limit"
       )
-      return finish(store, OUTCOME.truncated, emit, "output limit")
     }
 
     // ---- 5. Was it going round in circles?
@@ -338,32 +329,24 @@ export async function run(opts) {
       emit({ type: "repeating", turn: turnNumber, attempt: repetitions })
 
       if (repetitions <= maxRepetitions) {
-        appendTurn(
+        nudge(
           store,
-          makeTurn("user", [
-            noticeBlock(
-              "nudge",
-              "(You were repeating yourself, so your turn was stopped.) Do not deliberate further. " +
-                "Take the simplest option that works and make the tool call now. If you are genuinely stuck, " +
-                "ask the user one question with ask_user instead."
-            ),
-          ])
+          "(You were repeating yourself, so your turn was stopped.) Do not deliberate further. " +
+            "Take the simplest option that works and make the tool call now. If you are genuinely stuck, " +
+            "ask the user one question with ask_user instead."
         )
         continue
       }
 
-      appendTurn(
+      return fail(
         store,
-        makeTurn("assistant", [
-          noticeBlock(
-            STOP.error,
-            "Stopped: the model kept repeating itself while thinking. " +
-              "Try another model, or set sampling parameters for this one in the session's config " +
-              "(its authors' recommended `temperature`, `top_p` and `repetition_penalty` are shown in the model picker)."
-          ),
-        ])
+        "Stopped: the model kept repeating itself while thinking. " +
+          "Try another model, or set sampling parameters for this one in the session's config " +
+          "(its authors' recommended `temperature`, `top_p` and `repetition_penalty` are shown in the model picker).",
+        OUTCOME.repetition,
+        emit,
+        "repetition"
       )
-      return finish(store, OUTCOME.repetition, emit, "repetition")
     }
 
     if (!assistant.calls.length) {
@@ -377,20 +360,14 @@ export async function run(opts) {
         silences++
         emit({ type: "silent", turn: turnNumber, attempt: silences })
         if (silences <= 1) {
-          appendTurn(
+          nudge(
             store,
-            makeTurn("user", [
-              noticeBlock(
-                "nudge",
-                "(You stopped without saying anything or calling a tool.) If the work is finished, say what you " +
-                  "did and where the results are. If it is not, carry on with the next tool call."
-              ),
-            ])
+            "(You stopped without saying anything or calling a tool.) If the work is finished, say what you " +
+              "did and where the results are. If it is not, carry on with the next tool call."
           )
           continue
         }
-        appendTurn(store, makeTurn("assistant", [noticeBlock(STOP.error, "The model stopped twice without a word or a tool call, so this ended here. Try again, or pick another model.")]))
-        return finish(store, OUTCOME.silent, emit, "said nothing")
+        return fail(store, "The model stopped twice without a word or a tool call, so this ended here. Try again, or pick another model.", OUTCOME.silent, emit, "said nothing")
       }
       return finish(store, OUTCOME.idle, emit)
     }
@@ -897,6 +874,21 @@ function dropTrailingEmptyTurn(store) {
     const last = d.turns?.[d.turns.length - 1]
     if (last && last.role === "assistant" && (last.blocks ?? []).length === 0) d.turns.pop()
   })
+}
+
+/** Ask the model to go on, as the harness: a notice in a user-role turn (session/blocks.js). */
+function nudge(store, text) {
+  appendTurn(store, makeTurn("user", [noticeBlock("nudge", text)]))
+}
+
+/**
+ * End the run as failed, saying why. The notice is what makes the session's
+ * status an error, and what keeps a runner from taking it up again until
+ * someone speaks to it (session/status.js).
+ */
+function fail(store, text, outcome, emit, reason = text) {
+  appendTurn(store, makeTurn("assistant", [noticeBlock(STOP.error, text)]))
+  return finish(store, outcome, emit, reason)
 }
 
 function appendTurn(store, turn) {
