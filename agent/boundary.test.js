@@ -148,7 +148,7 @@ describe("layers", () => {
 describe("the contract pages", () => {
   // What the code promises is said in few words, in the present tense; how it
   // came to be is HISTORY.md's, which only grows.
-  it.each(["README.md", "SESSION.md", "TOOLS.md"])("%s is at most 200 lines", (page) => {
+  it.each(["README.md", "SESSION.md", "TOOLS.md", "WORKFLOW.md"])("%s is at most 200 lines", (page) => {
     expect(readFileSync(join(ROOT, page), "utf8").split("\n").length).toBeLessThanOrEqual(200)
   })
 })

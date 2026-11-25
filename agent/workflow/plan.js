@@ -8,53 +8,14 @@
  * while it runs — the orchestrator adds steps as results come in (one verify
  * step per finding, say).
  *
- *   {
- *     title, goal, subject, sessionUrl,       the orchestrator's session
- *     status: "running" | "done" | "stopped",
- *     tiers:  { deep, standard, fast },       model per tier
- *     limits: { parallel, hostParallel, steps, tokens },
- *     usage:  { in, out, cost, orchestrator }, summed over steps; `orchestrator` is the
- *                                             orchestrating session's own spend since the plan began
- *     orchestratorFrom,                       what that session had spent when the plan began
- *     sources: { [documentId]: { url, kind: "source" | "finding", what,
- *                source, name, engine, chars, by, at, heads } },
- *                                             the research steps' ledger (kernel/scope.js)
- *     sourcesFolderUrl,                       where the driver files the ledger for people
- *     sourcesFiled: { [documentId]: true },   what it has filed
- *     schemaVersion,                          PLAN_VERSION; the driver leaves any other alone
- *     runs,                                   how many times it has been set running
- *     resumes: [{ add, limit, at }],          a person raising the cap, each time
- *     told: { [key]: true },                  what the orchestrator has been told (tell, below)
- *     steps: [{
- *       id, title, prompt, after: [ids],
- *       where: "host" | "worker",             needs the page, or only a repo
- *       access?: "web",                       a research step (kernel/scope.js)
- *       tier, why,                            which model, and the reason
- *       status: "pending" | "running" | "done" | "failed" | "cancelled",
- *       sessionUrl, result, error, startedAt, finishedAt,
- *       version,                              how many times it has finished done
- *       inputs: { [depId]: version },         the versions of what it was built on
- *       reopen: { note, at, by } | null,      pending again: continues its session
- *       previous: [{ status, result, error, startedAt, finishedAt }],
- *     }],
- *     requests: [{ id, stepId, why, add, reopen, status: "open" | "accepted"
- *                | "declined", at, decidedAt, note }],
- *   }
+ * The plan's fields, a step's, the states derived from them, the transitions
+ * and what the orchestrator is told are written out in WORKFLOW.md, and only
+ * there.
  *
  * Only five step statuses are stored. Everything else a view shows — waiting,
  * ready, blocked behind a failure, waiting on a person, out of date — is
  * derived here from those and from the step's own session, so the document
  * cannot hold a state that contradicts itself.
- *
- * The graph changes as the work goes. Steps are added, and a pending step's
- * dependencies edited; any closed step — done, failed or cancelled — can be
- * reopened, and it continues in its own session, told why. A done step whose
- * inputs have since changed is out of date (`stale`): what it was built on is
- * recorded as versions, not times, so this is exact, whatever the clocks say.
- * Reopening with `cascade` reopens everything built on it as well; without,
- * what was built on it is out of date until reopened or kept. A step asks for
- * more work — steps to add, steps to reopen — with workflow_request, and only
- * the orchestrator decides (`requests`).
  */
 
 export const TIERS = ["deep", "standard", "fast"]

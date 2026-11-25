@@ -2,7 +2,8 @@
 
 How the agent came to be the way it is. Append-only: new entries go at the
 end, and nothing here is a promise. What the code promises is in
-[README.md](README.md), [SESSION.md](SESSION.md) and [TOOLS.md](TOOLS.md).
+[README.md](README.md), [SESSION.md](SESSION.md), [TOOLS.md](TOOLS.md) and
+[WORKFLOW.md](WORKFLOW.md).
 
 ---
 
@@ -1573,5 +1574,18 @@ fewer ways to answer each question.
   the scopes offered and the release of calls a new grant covers had each
   been recomputed from the tool's definition wherever a decision was made,
   with whichever toolset was at hand.
-- Existing sessions were brought to the new shape by a one-off migration, and
-  the code reads only that shape.
+- **The workflow driver decides, then does.** Its tick had been one procedure
+  of over a hundred lines that read, decided and wrote in turn. A step's and
+  a plan's status changed at seven places; they became named transitions in
+  the plan's model, written once as a table. Seven flags that each meant
+  "the orchestrator has been told this", every one reset by hand somewhere
+  else, became one map keyed by the occurrence, with nothing to reset. A
+  call's status, assigned at ten places, got the same treatment.
+- **Shared primitives.** "The text a value holds" had been written five ways
+  with five sets of rules, a folder tree was walked by eleven pieces of code
+  that bypassed the one abstraction for it, and notes and guides were two
+  copies of a store that wrote by calling the file tools. Each became one
+  module. One consequence: document search sees into the directory documents
+  that packages are, which it could not before.
+- Existing sessions and plans were brought to the new shape by a one-off
+  migration, and the code reads only that shape.

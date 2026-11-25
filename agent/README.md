@@ -10,12 +10,13 @@ browser open. The same session can move between them mid-flight.
 
 ## The contract
 
-Three pages say what the code promises. Each describes the code as it is.
+Four pages say what the code promises. Each describes the code as it is.
 
 | | |
 |---|---|
 | [SESSION.md](SESSION.md) | the session document: its fields, turns and blocks, a call's life, status, stops, the lease, approval |
 | [TOOLS.md](TOOLS.md) | a tool: what it declares, what it is handed, what it returns, and how a package contributes one |
+| [WORKFLOW.md](WORKFLOW.md) | the plan document: steps, their states and transitions, what the orchestrator is told, the driver, money, research steps |
 | [HISTORY.md](HISTORY.md) | how it came to be this way. Append-only; nothing in it is a promise |
 
 ## Layers are directories
