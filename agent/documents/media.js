@@ -3,9 +3,7 @@
  * for it, and the outline of its headings.
  */
 
-import { Automerge } from "../host/modules.js"
-
-const { isImmutableString } = Automerge
+import { textOf } from "./values.js"
 
 export const MIME_EXTENSIONS = {
   "text/markdown": "md",
@@ -36,7 +34,8 @@ export const MAX_PDF_BYTES = 30 * 1024 * 1024
  * Everything else is treated as bytes. That is the safe way round: decoding
  * bytes as UTF-8 silently replaces every invalid sequence with U+FFFD, which
  * destroys the data and leaves something that still looks like a successful
- * result. Encoding text as bytes loses nothing.
+ * result. Encoding text as bytes loses nothing. documents/files.js keeps a
+ * wider list for files, which it reads as text only when the bytes decode.
  */
 const TEXT_TYPES = /^text\/|^application\/(json|xml|javascript|ecmascript|x-ndjson|graphql)|\+json$|\+xml$/i
 
@@ -152,13 +151,6 @@ export function titleFrom(markdown) {
   return match ? match[1].trim() : null
 }
 
-/** A text value, written once (ImmutableString) or as a plain string; null for anything else. */
-function asText(value) {
-  if (typeof value === "string") return value
-  if (isImmutableString(value)) return String(value)
-  return null
-}
-
 /**
  * The text every reader of a kept source reads: `text` when there is one,
  * else the content when the content is text, else null (bytes and nothing
@@ -166,9 +158,9 @@ function asText(value) {
  */
 export function readable(doc) {
   if (!doc) return null
-  const text = asText(doc.text)
+  const text = textOf(doc.text)
   if (text != null) return text
-  return asText(doc.content)
+  return textOf(doc.content)
 }
 
 /** Hex SHA-256 of some bytes, for telling one kept response from another. */

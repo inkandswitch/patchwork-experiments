@@ -9,7 +9,8 @@
 
 import { hostImport } from "../host/import.js"
 import { truncate, bytes } from "../documents/format.js"
-import { contentToText, resolvePath, treeNode, treeEntries, treeEnter } from "./folders.js"
+import { resolvePath, treeNode, treeEntries, treeFiles } from "../documents/tree.js"
+import { contentText } from "../documents/values.js"
 import { fetcher } from "../net/guard.js"
 
 /**
@@ -150,21 +151,7 @@ export const pluginSource = {
       if (input.list || !input.file) {
         // Every file, by path: a directory document keeps its whole tree in
         // one document, so the top level alone would hide src/ entirely.
-        const names = []
-        const walk = async (node, prefix, depth) => {
-          for (const entry of treeEntries(node)) {
-            const path = prefix ? `${prefix}/${entry.name}` : entry.name
-            if (entry.type === "folder" && depth < 8) {
-              const { node: inside } = await treeEnter(ctx.repo, entry).catch(() => ({}))
-              if (inside) {
-                await walk(inside, path, depth + 1)
-                continue
-              }
-            }
-            names.push(path)
-          }
-        }
-        await walk(tree, "", 0)
+        const names = (await treeFiles(ctx.repo, tree)).files.map(({ path }) => path)
         if (input.list) return `${input.id} (${bare})\n${names.join("\n")}`
         // Default to the entry point named by package.json.
         let main = "index.js"
@@ -172,7 +159,7 @@ export const pluginSource = {
         if (pkgEntry) {
           const pkgDoc = (await ctx.repo.find(pkgEntry.url)).doc()
           try {
-            main = JSON.parse(contentToText(pkgDoc.content)).main ?? main
+            main = JSON.parse(contentText(pkgDoc.content)).main ?? main
           } catch {
             /* fall back to index.js */
           }
@@ -186,7 +173,7 @@ export const pluginSource = {
       } catch {
         throw new Error(`'${input.file}' not in package. Use list:true to see the files.`)
       }
-      const text = contentToText(node?.content)
+      const text = contentText(node?.content)
       return `${input.id}/${input.file} · ${bytes(text.length)}\n${truncate(text, 20000)}`
     }
 

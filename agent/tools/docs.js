@@ -10,17 +10,16 @@
  * what it is looking at.
  */
 
-import { Automerge } from "../host/modules.js"
 import { hostImport } from "../host/import.js"
-import { applyOps, opLabel, valueAt, OP_NAMES } from "../documents/ops.js"
+import { applyOps, opLabel, valueAtOrThrow, OP_NAMES } from "../documents/ops.js"
+import { isBytes, isLines, textForm, textOf, valueAt } from "../documents/values.js"
 import { previewJson, preview, shape, bytes, truncate, noDocumentError } from "../documents/format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "../documents/history.js"
-import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
+import { isCodePath } from "./folders.js"
+import { entriesOf, isDirectory, isFile, isFolder, treeNode, treeLink } from "../documents/tree.js"
 import { imageForModel } from "../documents/images.js"
 import { findAll, MAX_MATCHES, pdfOf, pdfWithoutText } from "./read-source.js"
 import { fileKind, officeText, describeFile } from "../documents/files.js"
-
-const { isImmutableString } = Automerge
 
 /** Resolve a url argument against the session's subject. */
 function targetUrl(input, ctx) {
@@ -38,32 +37,20 @@ async function findDoc(url, ctx) {
   return { handle, doc }
 }
 
-function valueAtPath(doc, path = []) {
-  let node = doc
-  for (const key of path) {
-    if (node == null) return undefined
-    node = node[key]
-  }
-  return node
-}
-
 /** How much of a string one ranged read returns by default. */
 export const RANGE_LIMIT = 8000
 
 /**
  * Text at a path, when it should be shown as itself: a string, an
- * ImmutableString, or a list of lines (every item but the last ending in a
- * newline, as notebooks keep source). `what` says which, for the header.
+ * ImmutableString, or a list shaped like lines (documents/values.js isLines),
+ * as notebooks keep source. A list of strings that is not shaped so (tags, say)
+ * is shown as a list. `what` says which, for the header.
  */
-export function textAt(value) {
-  if (typeof value === "string") return { text: value, what: "" }
-  if (isImmutableString(value)) return { text: String(value), what: "an ImmutableString, " }
-  const lines =
-    Array.isArray(value) &&
-    value.length > 1 &&
-    value.every((item, i) => (typeof item === "string" || isImmutableString(item)) && (i === value.length - 1 || String(item).endsWith("\n")))
-  if (lines) return { text: value.map(String).join(""), what: `a list of ${value.length} lines, joined: ` }
-  return null
+function shownText(value) {
+  const held = textForm(value)
+  if (!held) return null
+  if (held.form === "lines") return isLines(value) ? { text: held.text, what: `a list of ${value.length} lines, joined: ` } : null
+  return { text: held.text, what: held.form === "immutable" ? "an ImmutableString, " : "" }
 }
 
 /**
@@ -97,8 +84,8 @@ export function findInValue(value, path, find, max = MAX_MATCHES) {
   let strings = 0
   const walk = (node, at, depth) => {
     if (node == null || depth > 64) return
-    if (typeof node === "string" || isImmutableString(node)) {
-      const text = String(node)
+    const text = textOf(node)
+    if (text != null) {
       const found = findAll(text, find, Math.max(0, max - hits.length))
       if (!found.count) return
       strings++
@@ -106,7 +93,7 @@ export function findInValue(value, path, find, max = MAX_MATCHES) {
       for (const match of found.matches) hits.push({ path: at, at: match.at, text })
       return
     }
-    if (ArrayBuffer.isView(node) || typeof node !== "object") return
+    if (isBytes(node) || typeof node !== "object") return
     if (Array.isArray(node)) node.forEach((item, i) => walk(item, [...at, i], depth + 1))
     else for (const [key, item] of Object.entries(node)) walk(item, [...at, key], depth + 1)
   }
@@ -202,11 +189,11 @@ export const docRead = {
     const url = targetUrl(input, ctx)
     const { doc } = await findDoc(url, ctx)
     const path = input.path ?? []
-    const value = valueAtPath(doc, path)
+    const value = valueAt(doc, path)
 
     if (value === undefined) {
       const available = path.length
-        ? Object.keys(valueAtPath(doc, path.slice(0, -1)) ?? {}).join(", ")
+        ? Object.keys(valueAt(doc, path.slice(0, -1)) ?? {}).join(", ")
         : ""
       throw new Error(
         `No value at /${path.join("/")}.${available ? ` Available keys there: ${available}` : ""}`
@@ -217,7 +204,7 @@ export const docRead = {
     // of bytes: an image shown, a PDF's text read page by page (a scan handed over whole), an Office file's
     // text, text that arrived as bytes decoded.
     const wholeFile = path.length === 0 || (path.length === 1 && path[0] === "content")
-    const kind = wholeFile && doc.content instanceof Uint8Array ? fileKind(doc) : null
+    const kind = wholeFile && isBytes(doc.content) ? fileKind(doc) : null
 
     const find = String(input.find ?? "")
     if (find.trim()) {
@@ -271,7 +258,7 @@ export const docRead = {
     // only ever as its first 2000 characters. Text written once (a kept
     // source's content, a tool result) is an ImmutableString, which pages the
     // same way once it is a string.
-    const text = textAt(value)
+    const text = shownText(value)
     if (text) return readRange(text.text, input, url, path, text.what)
 
     return previewJson(value, {
@@ -301,8 +288,9 @@ export const docRead = {
  */
 function sourceCode(doc) {
   if (isFile(doc) && isCodePath(doc.name)) return `the source file ${doc.name}`
-  if (isFolder(doc) && doc.docs.some((entry) => entry?.name === "package.json")) return "a package folder"
-  if (isDirectory(doc) && "package.json" in doc) return "a package"
+  if (!entriesOf(doc)?.some((entry) => entry.name === "package.json")) return null
+  if (isFolder(doc)) return "a package folder"
+  if (isDirectory(doc)) return "a package"
   return null
 }
 
@@ -415,7 +403,7 @@ export const docEdit = {
         }
       }
     }
-    const read = (from, draft) => (from.url && from.url !== url ? valueAt(others.get(from.url), from.path) : valueAt(draft, from.path))
+    const read = (from, draft) => (from.url && from.url !== url ? valueAtOrThrow(others.get(from.url), from.path) : valueAtOrThrow(draft, from.path))
 
     // One change for all ops: a partly applied edit is worse than none, and a
     // throw inside the change abandons it.
@@ -499,14 +487,7 @@ export async function fileInFolder(repo, folderUrl, { name, type, url }) {
   const handle = await repo.find(String(folderUrl).trim())
   const node = treeNode(handle)
   if (!node) throw new Error(`${folderUrl} is not a folder; the document was made but not filed (${url}).`)
-  handle.change((d) => {
-    if (node.prefix === null) {
-      if (!d.docs) d.docs = []
-      d.docs.push({ name, type, url })
-    } else {
-      d[`${node.prefix}${name}`] = url
-    }
-  })
+  treeLink(node, { name, type, url })
   const doc = handle.doc()
   return `'${doc?.title ?? doc?.name ?? "folder"}' (${handle.url})`
 }

@@ -18,6 +18,7 @@
  */
 
 import { readable } from "./media.js"
+import { isBytes, textOf } from "./values.js"
 
 /** Shortest a quote may be, once normalised, to count as checking anything. */
 export const MIN_QUOTE = 12
@@ -136,10 +137,10 @@ export function quotableText(doc) {
   const strings = []
   const walk = (value, depth) => {
     if (depth > 12 || value == null) return
-    if (typeof value === "string") strings.push(value)
-    else if (typeof value?.toString === "function" && value.constructor?.name === "ImmutableString") strings.push(String(value))
+    const text = textOf(value)
+    if (text != null) strings.push(text)
     else if (Array.isArray(value)) for (const item of value) walk(item, depth + 1)
-    else if (typeof value === "object" && !(value instanceof Uint8Array)) for (const [key, item] of Object.entries(value)) if (!key.startsWith("@")) walk(item, depth + 1)
+    else if (typeof value === "object" && !isBytes(value)) for (const [key, item] of Object.entries(value)) if (!key.startsWith("@")) walk(item, depth + 1)
   }
   walk(doc, 0)
   return strings.length ? strings.join("\n") : null
@@ -224,13 +225,13 @@ export function citationsInDocument(doc) {
   const seenTables = new Set()
   const walk = (value, path, depth) => {
     if (depth > 14 || value == null) return
-    if (typeof value === "string" || value?.constructor?.name === "ImmutableString") {
-      const text = String(value)
+    const text = textOf(value)
+    if (text != null) {
       for (const cite of citationsIn(text)) citations.push({ ...cite, where: path.join(".") || "text" })
       fromMemory += (text.match(/\(from memory\)|\bfrom memory\b/gi) ?? []).length
       return
     }
-    if (value instanceof Uint8Array) return
+    if (isBytes(value)) return
     if (Array.isArray(value)) {
       const rows = tableCitations(value)
       if (rows.length && !seenTables.has(value)) {

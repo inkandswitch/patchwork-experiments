@@ -27,7 +27,8 @@
 import { hostImport } from "../host/import.js"
 import { truncate, preview, changesBetween } from "../documents/format.js"
 import { rasterize, shrink, canvasWithin, HOLDER_STYLE } from "./screenshot.js"
-import { contentToText, treeNode, treeEntries } from "./folders.js"
+import { treeNode, treeEntries } from "../documents/tree.js"
+import { contentText } from "../documents/values.js"
 
 /**
  * Live mounts, keyed by id.
@@ -193,7 +194,7 @@ async function loadPackage(input, ctx) {
   if (manifestLink) {
     try {
       const manifest = (await ctx.repo.find(manifestLink.url)).doc()
-      const main = JSON.parse(contentToText(manifest?.content)).main
+      const main = JSON.parse(contentText(manifest?.content)).main
       if (main) entry = String(main).replace(/^\.\//, "")
     } catch {
       /* fall back to index.js */

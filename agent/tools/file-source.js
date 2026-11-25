@@ -12,7 +12,8 @@
  * should go on holding what was fetched.
  */
 
-import { isFolder, FILES_GROUP } from "./folders.js"
+import { FILES_GROUP } from "./folders.js"
+import { treeNode, treeEntries, treeLink } from "../documents/tree.js"
 import { openDocument } from "./read-source.js"
 
 export const sourceFile = {
@@ -43,21 +44,20 @@ export const sourceFile = {
     if (!kept?.source) throw new Error(`${input.source} is not a kept source. Only what a fetch kept is filed this way; fs_write writes anything else.`)
 
     const folder = await ctx.repo.find(input.folder)
+    const node = treeNode(folder)
+    if (!node) throw new Error(`${input.folder} is not a folder document.`)
     const folderDoc = folder.doc()
-    if (!isFolder(folderDoc)) throw new Error(`${input.folder} is not a folder document.`)
 
     const name = String(input.name ?? "").trim() || kept.name || kept.title || "source"
     const url = sourceHandle.view(sourceHandle.heads()).url
     const title = folderDoc.title ?? input.folder
-    const existing = folderDoc.docs.find((entry) => entry?.name === name)
+    const existing = treeEntries(node).find((entry) => entry.name === name)
     if (existing?.url === url) return `'${name}' is already filed in ${title}.`
     if (existing) throw new Error(`${title} already has something called '${name}'. Pass a different name.`)
 
     // Filed as what it is: a web snapshot opens in its own view, a file in the File tool.
     const type = typeof kept["@patchwork"]?.type === "string" ? kept["@patchwork"].type : "file"
-    folder.change((doc) => {
-      doc.docs.push({ name, type, url })
-    })
+    treeLink(node, { name, type, url })
     return `Filed '${name}' in ${title}.`
   },
 

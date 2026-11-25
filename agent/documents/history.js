@@ -13,6 +13,8 @@
  * item 1.
  */
 
+import { searchText } from "./values.js"
+
 /**
  * A copy of `root` that patches can be applied to, copying only the containers
  * on the paths they touch. `root` is typically a read-only automerge view of a
@@ -173,17 +175,6 @@ export function editsOfChange(automerge, doc, meta) {
   return editsBetween(automerge, doc, meta.deps, [meta.hash])
 }
 
-/** Searchable text for a value, which may be an automerge proxy. */
-export function textOf(value) {
-  if (value === undefined) return ""
-  if (typeof value === "string") return value
-  try {
-    return JSON.stringify(value) ?? ""
-  } catch {
-    return String(value)
-  }
-}
-
 /**
  * Does this edit write or remove something matching `pattern`? Null if not;
  * otherwise the snippet around the match, or "" when the value is short enough
@@ -191,7 +182,7 @@ export function textOf(value) {
  */
 export function matchEdit(edit, pattern, { shown = 200 } = {}) {
   for (const field of ["was", "value"]) {
-    const text = textOf(edit[field])
+    const text = searchText(edit[field])
     const found = pattern.exec(text)
     if (!found) continue
     if (text.length <= shown) return ""
