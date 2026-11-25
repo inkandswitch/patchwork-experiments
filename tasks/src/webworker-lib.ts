@@ -115,8 +115,10 @@ function resolveImportMap(importMap: any, baseURI: string) {
  * even be saved. On its own database it holds up only itself. The cost: what
  * a task writes through `ctx.repo` reaches the page and the pool only by way
  * of the sync server (its run's record does not: the pool writes that, from
- * what the run worker says). The job carries the task's own document, so a
- * run worker never needs the shared database.
+ * what the run worker says), which is why a run worker says how a run ended
+ * only once the server has acknowledged what it wrote (run-worker.ts). The
+ * job carries the task's own document, so a run worker never needs the
+ * shared database.
  *
  * It uses that database only while it holds the Web Lock of the same name,
  * which it keeps for its whole life. A browser passes a worker's locks on only
@@ -146,7 +148,7 @@ export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSe
     await holdForLife(database);
   }
 
-  const { Repo, IndexedDBStorageAdapter, initializeWasm, initSubductionSync } =
+  const { Repo, WebSocketEndpoint, IndexedDBStorageAdapter, initializeWasm, initSubductionSync } =
     await getRepoModules();
 
   const [automergeWasm, subductionWasm] = await Promise.all([
@@ -158,17 +160,64 @@ export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSe
   await initializeWasm(new Uint8Array(automergeWasm));
   console.log('Automerge & Subduction WASM initialized');
 
+  // A Repo whose package does not offer endpoints is handed the url, and
+  // its first attempt counts as over from the start.
+  let ended = () => {};
+  const over = new Promise<void>((resolve) => (ended = resolve));
+  const endpoint = WebSocketEndpoint
+    ? watchedEndpoint(new WebSocketEndpoint(config.syncServerUrl), ended)
+    : (ended(), config.syncServerUrl);
+
   const repo: Repo = new Repo({
     storage: new IndexedDBStorageAdapter(database ?? TASKS_DATABASE),
     peerId: peerId as any,
-    subductionWebsocketEndpoints: [config.syncServerUrl],
+    subductionWebsocketEndpoints: [endpoint],
     ...(database ? {} : { headsChannel: TASKS_HEADS_CHANNEL }),
     enableRemoteHeadsGossiping: true,
   });
+  repo.on('subduction-connection' as any, ({ connected }: { connected: boolean }) => connected && ended());
+  attempts.set(repo, over);
 
   (globalThis as any).repo = repo;
 
   return repo;
+}
+
+/** By Repo made here, when its first attempt to reach the sync server ended. */
+const attempts = new WeakMap<object, Promise<void>>();
+
+/**
+ * Resolves once the Repo's first attempt to reach its sync server has ended,
+ * connected or not: a Repo that is not connected then is offline, not about
+ * to connect. At once for a Repo not made here.
+ */
+export function firstAttempt(repo: object): Promise<void> {
+  return attempts.get(repo) ?? Promise.resolve();
+}
+
+interface Endpoint {
+  url: string;
+  connect(): Promise<unknown>;
+}
+
+/**
+ * The sync server's endpoint, saying `ended` when the first attempt to
+ * connect through it has failed. The Repo says when it is connected; a
+ * second attempt means the first ended without a connection.
+ */
+function watchedEndpoint(endpoint: Endpoint, ended: () => void): Endpoint {
+  let tries = 0;
+  return {
+    url: endpoint.url,
+    connect() {
+      if (++tries > 1) {
+        ended();
+      }
+      const transport = endpoint.connect();
+      transport.catch(ended);
+      return transport;
+    },
+  };
 }
 
 /**
@@ -205,6 +254,7 @@ async function getRepoModules() {
 
       return {
         Repo: repo.Repo,
+        WebSocketEndpoint: repo.WebSocketEndpoint as (new (url: string) => Endpoint) | undefined,
         IndexedDBStorageAdapter: storage.IndexedDBStorageAdapter,
         initializeWasm: automerge.initializeWasm,
         initSubductionSync: subduction.initSync,

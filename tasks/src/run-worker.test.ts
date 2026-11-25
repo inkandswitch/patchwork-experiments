@@ -23,6 +23,9 @@ let made: { recorded: boolean; event: boolean; connected: string[] };
 let theRepo: FakeRepo;
 /** What `flush` does once it has saved (the same-tick case schedules a marker). */
 let afterFlush: () => void;
+/** When the Repo's first attempt to reach its server ends; `connectNow` ends it. */
+let firstAttemptOver: Promise<void>;
+let connectNow: () => void;
 
 const SERVER = 'server-peer';
 
@@ -62,7 +65,7 @@ class FakeRepo {
   declare connectedSubductionPeerIds?: () => Promise<string[]>;
   declare resyncSubduction?: (documentId: string) => void;
 
-  constructor(event: boolean, connected: string[]) {
+  constructor(event: boolean) {
     if (event) {
       this.on = (name, listener) => {
         if (!this.listeners.has(name)) {
@@ -73,7 +76,7 @@ class FakeRepo {
       this.off = (name, listener) => void this.listeners.get(name)?.delete(listener);
       this.connectedSubductionPeerIds = async () => {
         this.peersAsked++;
-        return connected;
+        return made.connected;
       };
       this.resyncSubduction = (documentId) => void this.resynced.push(documentId);
     }
@@ -122,11 +125,12 @@ class FakeRepo {
 
 vi.mock('./webworker-lib', () => ({
   setUpImportMap: async () => {},
+  firstAttempt: () => firstAttemptOver,
   getRepo: async () => {
     if (repoFails) {
       throw new Error('no repo here');
     }
-    theRepo = new FakeRepo(made.event, made.connected);
+    theRepo = new FakeRepo(made.event);
     if (!made.recorded) {
       return theRepo;
     }
@@ -187,6 +191,8 @@ beforeEach(() => {
   calls = [];
   made = { recorded: false, event: true, connected: [SERVER] };
   afterFlush = () => {};
+  firstAttemptOver = Promise.resolve();
+  connectNow = () => {};
 });
 
 afterEach(() => {
@@ -498,6 +504,57 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     expect(said).toEqual([
       { type: 'log', message: STAYS_HERE },
       { type: 'done', result: ['doc1', 'doc2', 'doc3'] },
+    ]);
+  });
+
+  it('when its first attempt to connect is still going, waits for it and then for the report', async () => {
+    made.connected = [];
+    firstAttemptOver = new Promise((resolve) => (connectNow = resolve));
+    modules.w = writes(1);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    expect(said).toEqual([]);
+    made.connected = [SERVER];
+    connectNow();
+    await settle();
+    expect(said).toEqual([]);
+    theRepo.report(handle('doc1'));
+    await settle();
+    expect(said).toEqual([{ type: 'done', result: ['doc1'] }]);
+  });
+
+  it('when its first attempt to connect ends without a connection, says once that it stays here', async () => {
+    made.connected = [];
+    firstAttemptOver = new Promise((resolve) => (connectNow = resolve));
+    modules.w = writes(1);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    connectNow();
+    await settle();
+    expect(said).toEqual([
+      { type: 'log', message: STAYS_HERE },
+      { type: 'done', result: ['doc1'] },
+    ]);
+  });
+
+  it('when its first attempt to connect never ends, says after REACH_LIMIT_MS that it stays here', async () => {
+    vi.useFakeTimers();
+    made.connected = [];
+    firstAttemptOver = new Promise(() => {});
+    modules.w = writes(1);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await vi.advanceTimersByTimeAsync(REACH_LIMIT_MS - 1);
+    expect(said).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(said).toEqual([
+      { type: 'log', message: STAYS_HERE },
+      { type: 'done', result: ['doc1'] },
     ]);
   });
 

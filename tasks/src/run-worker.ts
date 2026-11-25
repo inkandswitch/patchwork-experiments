@@ -19,7 +19,7 @@
 // `serve` its port (src/node/run-thread.ts in Node).
 
 import type { DocumentId, Repo } from '@automerge/automerge-repo/slim';
-import { getRepo, importModule, setUpImportMap, type PlaceSettings } from './webworker-lib';
+import { firstAttempt, getRepo, importModule, setUpImportMap, type PlaceSettings } from './webworker-lib';
 import { findWhenThere } from './task-client.js';
 import type { RepoConfig } from './repo-config';
 import type { Job, StopReason } from './pool';
@@ -303,8 +303,13 @@ function headsOfAll(repo: Repo): Map<string, string> {
 /**
  * Waits until the sync server holds what the code changed, or REACH_LIMIT_MS
  * has passed. Null, at once, when there is nothing to wait for: the code
- * changed nothing (and the log says nothing), or this Repo cannot send it now
- * (and the log says so).
+ * changed nothing (and the log says nothing), or this Repo cannot say what
+ * the server holds (and the log says what was written stays here).
+ *
+ * A Repo that is not connected is waited for only while its first attempt
+ * to reach its server is still going (a run worker made for this run), since
+ * that is a connection about to be made; one whose first attempt has ended
+ * without a connection is offline, and the log says so at once.
  */
 function reachServer(
   repo: Repo,
@@ -332,8 +337,19 @@ function reachServer(
     return null;
   }
   const server = repo as unknown as ServerRepo;
+  const giveUpAt = Date.now() + REACH_LIMIT_MS;
+  const connectedPeers = async () => new Set(await server.connectedSubductionPeerIds().catch(() => [] as string[]));
   return (async () => {
-    const peers = new Set(await server.connectedSubductionPeerIds().catch(() => [] as string[]));
+    let peers = await connectedPeers();
+    if (peers.size === 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        firstAttempt(repo),
+        new Promise<void>((resolve) => (timer = setTimeout(resolve, giveUpAt - Date.now()))),
+      ]);
+      clearTimeout(timer);
+      peers = await connectedPeers();
+    }
     if (peers.size === 0) {
       log(STAYS_HERE);
       return;
@@ -353,7 +369,7 @@ function reachServer(
       const limit = setTimeout(() => {
         log(notReached(left().length, changed().size));
         finish();
-      }, REACH_LIMIT_MS);
+      }, Math.max(0, giveUpAt - Date.now()));
       const stopListening = reports.listen(look);
       const lookAgain = setInterval(look, LOOK_AGAIN_MS);
       const resync = setInterval(() => {

@@ -40,6 +40,16 @@ const code = (source) => "data:text/javascript," + encodeURIComponent(source);
 const NOOP = code("export default async function (x) { return x; }");
 const THROWS = code("export default async function () { throw new Error('boom, on purpose'); }");
 const SPIN = code("export default function () { for (;;) {} }");
+// writes a document of `size` random bytes through ctx.repo, and returns its url and SHA-256
+const WRITE = code(`export default async function ({ size }, ctx) {
+  const content = new Uint8Array(size);
+  for (let at = 0; at < size; at += 65536) crypto.getRandomValues(content.subarray(at, Math.min(size, at + 65536)));
+  const handle = ctx.repo.create({ content });
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", content));
+  return { url: handle.url, sha256: [...digest].map((b) => b.toString(16).padStart(2, "0")).join("") };
+}`);
+const MB = 1024 * 1024;
+const sha256 = async (bytes) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
 const LOCAL = given ? [] : ["--local", `${PKG}=${ROOT}`];
 const ANY = ["--accept-any", ...LOCAL];
 const PACKAGE_ONLY = given ? ["--accept", PKG] : LOCAL;
@@ -343,6 +353,49 @@ try {
     check(12, "code a host does not accept (a data: URL, with --accept of one package) is never taken and holds nothing up", behind?.input === "behind" && t.runs.length === 0 && strict.doc().jobs.inline?.taskUrl === inline.taskUrl, { dataTaskRuns: t.runs.length, stillListed: !!strict.doc().jobs.inline, behind: behind?.input ?? behind });
     sigterm(C);
     await within(2 * GRACE_MS + 5000, C.exited, "host C to stop");
+  }
+
+  // 13–15. what a task writes can be found the moment its run reads succeeded:
+  // a run worker says how a run ended only once the sync server has
+  // acknowledged what it wrote, so the asker's first find is not refused,
+  // even when the host is stopped at once.
+  {
+    const writeRun = async (queueUrl, key) => {
+      const t0 = Date.now();
+      const made = await within(90000, runKey(queueUrl, { importUrl: WRITE, input: { size: MB }, key }), "the writing task");
+      return { ...made, askMs: Date.now() - t0 };
+    };
+    /** One find, the first this Repo makes of `url`: is the document there, whole? */
+    const firstFind = async ({ url, sha256: want }) => {
+      const t0 = Date.now();
+      try {
+        const handle = await within(60000, repo.find(url), "the first find");
+        const content = handle.doc()?.content;
+        return { found: content?.byteLength === MB && (await sha256(content)) === want, ms: Date.now() - t0 };
+      } catch (error) {
+        return { found: false, refused: String(error?.message ?? error).slice(0, 80), ms: Date.now() - t0 };
+      }
+    };
+    const runLogs = async (key) => (await taskOf(key)).runs.find((r) => r.status === "succeeded")?.logs?.map((l) => l.message) ?? [];
+
+    const made = await writeRun(Q, "writes");
+    const got = await firstFind(made);
+    check(13, "a task that writes 1 MB: the asker's first find after succeeded has it", got.found, { ...got, askMs: made.askMs, runLog: await runLogs("writes") });
+
+    // A host of its own, stopped the moment the asker reads succeeded: once
+    // after a do-nothing task (its thread connected), and once with the
+    // writing task as its thread's first job.
+    for (const [n, warm] of [[14, true], [15, false]]) {
+      const own = await newQueue(`node probe queue, stopped host ${n}`);
+      const D = await startHost(`D${n}`, { queue: own.url, dataDir: freshDir(`D${n}`), workers: 1 });
+      if (warm) await within(60000, runKey(own.url, { importUrl: NOOP, input: "warm" }), "the warm-up task");
+      const key = `writes-then-stop-${n}`;
+      const wrote = await within(90000, run(repo, own.url, { importUrl: WRITE, input: { size: MB }, key }, (v) => (lastTask[key] = v.taskUrl ?? lastTask[key])), "the writing task");
+      const tTerm = sigterm(D);
+      const found = await firstFind(wrote);
+      const { code } = await within(2 * GRACE_MS + 5000, D.exited, `host D${n} to stop`);
+      check(n, `a task that writes 1 MB on a host stopped the moment its run reads succeeded${warm ? "" : ", as its thread's first job"}: the asker's first find has it`, found.found, { ...found, hostExit: code, hostExitedAfterMs: D.exit.at - tTerm, runLog: await runLogs(key) });
+    }
   }
 
   stopServed();
