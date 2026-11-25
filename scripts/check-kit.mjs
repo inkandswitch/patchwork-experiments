@@ -4,7 +4,8 @@
  *
  * Tools here never import each other's source, so small shared modules are
  * copied instead (see scene/README.md, "The kit"). A kit file says so in its
- * header, `[kit: <name> v<N>]`, and the canonical copies live in scene/src/.
+ * header, `[kit: <name> v<N>]`, and the canonical copies live in scene/src/
+ * and, for the task system's rules and client, in tasks/src/.
  * A copy is any file elsewhere with the same kit name in its header, or (for
  * copies made before the marker existed) the same title line,
  * ` * <name> — …`. Every copy must be byte-identical to the canonical one:
@@ -19,7 +20,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const CANON_DIR = join(ROOT, "scene", "src");
+const CANON_DIRS = [join(ROOT, "scene", "src"), join(ROOT, "tasks", "src")];
 const SKIP = new Set(["node_modules", "dist", ".git", ".pushwork", ".claude", "static-dist", ".pnpm-store"]);
 const fix = process.argv.includes("--fix");
 
@@ -37,18 +38,20 @@ function* walk(dir) {
 }
 
 const canon = new Map(); // kit name → { path, text, version }
-for (const name of readdirSync(CANON_DIR)) {
-  const path = join(CANON_DIR, name);
-  if (!name.endsWith(".js") || statSync(path).isDirectory()) continue;
-  const text = readFileSync(path, "utf8");
-  const m = kitName(text);
-  if (m) canon.set(m[1], { path, text, version: Number(m[2]) });
+for (const dir of CANON_DIRS) {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (!name.endsWith(".js") || statSync(path).isDirectory()) continue;
+    const text = readFileSync(path, "utf8");
+    const m = kitName(text);
+    if (m) canon.set(m[1], { path, text, version: Number(m[2]) });
+  }
 }
 
 let bad = 0;
 let copies = 0;
 for (const path of walk(ROOT)) {
-  if (dirname(path) === CANON_DIR) continue;
+  if (CANON_DIRS.includes(dirname(path))) continue;
   const text = readFileSync(path, "utf8");
   const name = kitName(text)?.[1] ?? titleName(text);
   const c = name && canon.get(name);

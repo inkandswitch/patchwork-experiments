@@ -33,7 +33,7 @@ import {
   type Queue,
   type Run,
   type Task,
-} from './rules';
+} from './task-rules.js';
 
 await initSubduction();
 

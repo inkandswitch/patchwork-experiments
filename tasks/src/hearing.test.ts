@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Hearing } from './hearing';
-import { LAPSE_MS } from './rules';
+import { Hearing } from './task-rules.js';
+import { LAPSE_MS } from './task-rules.js';
 
 const clockAt = (start: number) => {
   const clock = { t: start, now: () => clock.t };

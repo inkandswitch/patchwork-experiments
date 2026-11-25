@@ -45,7 +45,7 @@ import {
   taskState,
   type TaskState,
   waitingWork,
-} from './rules';
+} from './task-rules.js';
 
 // Building tasks
 

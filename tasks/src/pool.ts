@@ -17,29 +17,28 @@
 
 import type { AutomergeUrl, DocumentId } from '@automerge/automerge-repo/slim';
 import { accepts, acceptsPackage, type Acceptance } from './acceptance';
-import type { Stamp } from './delivery-stats';
-import { Hearing } from './hearing';
-import * as messages from './messages';
-import type { RunProgressMessage, ServingMessage } from './protocol';
+import * as channel from './task-client.js';
+import type { RunProgressMessage, ServingMessage } from './task-client.js';
 import {
   BEAT_MS,
   claimRun,
   delistTask,
   endRun,
+  gone,
   GRACE_MS,
-  isOpen,
+  Hearing,
   MAX_LOG_LINES,
   mayClaim,
   mayDelist,
   named,
+  orphans,
   stopReason,
   waitingWork,
-  type LogLine,
-  type Queue,
-  type RunStatus,
-  type Task,
-  type Work,
-} from './rules';
+} from './task-rules.js';
+import type { Heard, LogLine, Queue, RunStatus, Task, Work } from './task-rules.js';
+
+/** Who sent a message and its number in that sender's series (see task-client.js). */
+type Stamp = { from: string; seq: number };
 
 /** Why a run's code is told to stop: the first two are rules.ts's, `stopping` is the pool shutting down. */
 export type StopReason = 'cancelled' | 'yielded' | 'stopping';
@@ -99,7 +98,7 @@ export interface Docs {
   flush(documents?: DocumentId[]): Promise<void>;
 }
 
-/** How messages are sent and heard on a document's channel (messages.ts, unless a test hands its own). */
+/** How messages are sent and heard on a document's channel (task-client.js, unless a test hands its own). */
 export interface Ears {
   send(handle: Handle<any>, message: Stamp & { type: string }): void;
   listen(handle: Handle<any>, onMessage: (message: any) => void): () => void;
@@ -135,10 +134,7 @@ const realClock: Clock = {
   clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
 };
 
-const realEars: Ears = {
-  send: (handle, message) => messages.send(handle as any, message),
-  listen: (handle, onMessage) => messages.listen(handle as any, onMessage),
-};
+const realEars: Ears = { send: channel.send, listen: channel.listen };
 
 /** At the least, how long between two messages about a run's logs and progress. */
 const SAY_EVERY_MS = 100;
@@ -149,6 +145,15 @@ interface Followed<T> {
   loading?: boolean;
   retryAt?: number;
   stop?: () => void;
+}
+
+/**
+ * A task followed, with what has been heard of its runs. Each task has its
+ * own: a copy of a task carries the original's runs, names and all, and what
+ * is heard of the original says nothing about the copy.
+ */
+interface FollowedTask extends Followed<Task> {
+  hearing: Hearing;
 }
 
 interface Served extends Followed<Queue> {
@@ -184,28 +189,22 @@ interface Running {
   finish: () => void;
 }
 
-const statusOf = (reason: StopReason): RunStatus => (reason === 'stopping' ? 'lost' : reason);
-
 export class Pool {
   private readonly clock: Clock;
   private readonly ears: Ears;
-  private readonly hearing: Hearing;
   private readonly queues = new Map<AutomergeUrl, Served>();
-  private readonly tasks = new Map<AutomergeUrl, Followed<Task>>();
+  private readonly tasks = new Map<AutomergeUrl, FollowedTask>();
   private readonly runs = new Map<string, Running>();
   private idle: Slot[] = [];
   private stopped = false;
   private reviewing = false;
   private again = false;
   private readonly tick: unknown;
-  // Stamps (see messages.ts): one series per channel, and a new sender for each start.
-  private readonly from = crypto.randomUUID();
-  private readonly seq = new Map<string, number>();
+  private readonly stamp = channel.stamper();
 
   constructor(private readonly options: PoolOptions) {
     this.clock = options.clock ?? realClock;
     this.ears = options.ears ?? realEars;
-    this.hearing = new Hearing(this.clock);
     // The beat: says the pool serves, and looks again, so that a run gone
     // unheard is noticed without anything changing.
     this.tick = this.clock.setInterval(() => {
@@ -222,8 +221,15 @@ export class Pool {
     return this.runs.size;
   }
 
-  /** Whether this pool counts a run as heard: its own runs always are. */
-  readonly heard = (runId: string) => this.runs.has(runId) || this.hearing.heard(runId);
+  /**
+   * Which runs of one task this pool counts as heard: its own run of that
+   * task always, and the rest as that task's channel has said.
+   */
+  heardOf(taskUrl: AutomergeUrl): Heard {
+    const hearing = this.tasks.get(taskUrl)?.hearing;
+    return (runId) =>
+      this.runs.get(runId)?.task.url === taskUrl || (hearing ? hearing.heard(runId) : true);
+  }
 
   /** Sets the queues served. A run from a queue no longer served goes on to its end. */
   serve(queues: Record<AutomergeUrl, Acceptance>) {
@@ -303,7 +309,11 @@ export class Pool {
         listed.push({ work, queue: served.handle, acceptance: served.acceptance });
       }
     }
-    listed.sort((a, b) => (a.work.askedAt || 0) - (b.work.askedAt || 0));
+    // waitingWork's order, across queues
+    listed.sort(
+      ({ work: a }, { work: b }) =>
+        (Number(a.askedAt) || 0) - (Number(b.askedAt) || 0) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+    );
 
     // Follow every task listed and every task this pool has a run of; let go of the rest.
     const wanted = new Set<AutomergeUrl>(listed.map(({ work }) => work.taskUrl));
@@ -312,15 +322,12 @@ export class Pool {
     }
     for (const url of wanted) {
       if (!this.tasks.has(url)) {
-        this.tasks.set(url, {});
+        this.tasks.set(url, { hearing: new Hearing(this.clock) });
       }
     }
     for (const [url, followed] of this.tasks) {
       if (!wanted.has(url)) {
         followed.stop?.();
-        for (const run of followed.handle?.doc()?.runs ?? []) {
-          this.hearing.forget(run.id);
-        }
         this.tasks.delete(url);
         continue;
       }
@@ -331,12 +338,11 @@ export class Pool {
       const handle = followed.handle;
       attempt('reading a task', () => {
         const task = handle.isDeleted?.() ? undefined : handle.doc();
-        this.hearing.saw(task?.runs);
-        // Its own past: an open run bearing this pool's id that it is not running was lost.
-        for (const run of task?.runs ?? []) {
-          if (run.pool === id && isOpen(run) && !this.runs.has(run.id)) {
-            handle.change((doc) => endRun(doc, run.id, { status: 'lost', end: now }));
-          }
+        followed.hearing.saw(task?.runs);
+        // Its own past: runs it started and no longer has. A task followed
+        // without a run of this pool's is one a served queue lists.
+        for (const run of orphans(task, id, (runId) => this.runs.has(runId))) {
+          handle.change((doc) => endRun(doc, run.id, { status: gone(doc, run.id, 'this'), end: now }));
         }
       });
     }
@@ -363,14 +369,15 @@ export class Pool {
           return;
         }
         const is = named(queue.doc(), work.key, work.taskUrl);
-        if (mayDelist(task, is)) {
+        const heard = this.heardOf(work.taskUrl);
+        if (mayDelist(task, is, heard)) {
           queue.change((doc) => delistTask(doc, work.key, work.taskUrl));
         } else if (
           !this.stopped &&
           this.runs.size < slots &&
           acceptsPackage(acceptance, work.package) &&
-          accepts(acceptance, task.importUrl) &&
-          mayClaim(task, id, is, this.heard)
+          mayClaim(task, id, is, heard) &&
+          accepts(acceptance, task.importUrl)
         ) {
           this.claim(work, queue, handle, task);
         }
@@ -394,7 +401,9 @@ export class Pool {
         const onChange = () => this.review();
         handle.on('change', onChange);
         handle.on('delete', onChange);
-        const unlisten = isTask ? this.ears.listen(handle, this.onTaskMessage) : undefined;
+        const unlisten = isTask
+          ? this.ears.listen(handle, (message) => this.onTaskMessage(url, message))
+          : undefined;
         followed.stop = () => {
           handle.off('change', onChange);
           handle.off('delete', onChange);
@@ -413,12 +422,13 @@ export class Pool {
     );
   }
 
-  private onTaskMessage = (message: Partial<RunProgressMessage> | null) => {
-    if (message?.type === 'task progress' && typeof message.run === 'string' && !this.runs.has(message.run)) {
-      this.hearing.heardFrom(message.run);
+  /** A pool's word, on one task's channel, that a run of that task is going on. */
+  private onTaskMessage(taskUrl: AutomergeUrl, message: Partial<RunProgressMessage> | null) {
+    if (message?.type === 'task progress' && typeof message.run === 'string') {
+      this.tasks.get(taskUrl)?.hearing.heardFrom(message.run);
       this.review();
     }
-  };
+  }
 
   /** Why a run of this pool's must stop, or null. A task whose document is gone is wanted by nobody. */
   private stopFor(run: Running): StopReason | null {
@@ -427,7 +437,20 @@ export class Pool {
       return 'cancelled';
     }
     const queue = run.queue.isDeleted?.() ? undefined : run.queue.doc();
-    return stopReason(task, run.id, named(queue, run.key, run.task.url), this.heard);
+    return stopReason(task, run.id, named(queue, run.key, run.task.url), this.heardOf(run.task.url));
+  }
+
+  /**
+   * What a stopped run is recorded as: its reason, and for a pool that is
+   * itself stopping, what `gone` says of a run its pool no longer has.
+   */
+  private statusOf(run: Running, reason: StopReason): RunStatus {
+    if (reason !== 'stopping') {
+      return reason;
+    }
+    const task = run.task.isDeleted?.() ? undefined : run.task.doc();
+    const queue = run.queue.isDeleted?.() ? undefined : run.queue.doc();
+    return task ? gone(task, run.id, named(queue, run.key, run.task.url)) : 'lost';
   }
 
   /**
@@ -468,7 +491,7 @@ export class Pool {
   private begin(run: Running, job: Job) {
     const reason = run.stopping ?? this.stopFor(run);
     if (reason) {
-      this.complete(run, { status: statusOf(reason) });
+      this.complete(run, { status: this.statusOf(run, reason) });
       return;
     }
     let slot: Slot;
@@ -532,7 +555,7 @@ export class Pool {
   private ended(run: Running, how: { status: RunStatus; result?: unknown }) {
     if (run.stopping) {
       this.kill(run);
-      this.complete(run, { status: statusOf(run.stopping) });
+      this.complete(run, { status: this.statusOf(run, run.stopping) });
       return;
     }
     const slot = run.slot!;
@@ -554,7 +577,7 @@ export class Pool {
     // The kill is set first, so that a worker that throws or answers at once from `abort` is still ended.
     run.kill = this.clock.setTimeout(() => {
       this.kill(run);
-      this.complete(run, { status: statusOf(reason) });
+      this.complete(run, { status: this.statusOf(run, reason) });
     }, GRACE_MS);
     const worker = run.slot.worker;
     attempt('aborting a run', () => worker.abort(reason));
@@ -595,7 +618,8 @@ export class Pool {
       .then(() => {
         try {
           const queue = run.queue.isDeleted?.() ? undefined : run.queue.doc();
-          if (mayDelist(run.task.doc(), named(queue, run.key, run.task.url))) {
+          const is = named(queue, run.key, run.task.url);
+          if (mayDelist(run.task.doc(), is, this.heardOf(run.task.url))) {
             run.queue.change((doc) => delistTask(doc, run.key, run.task.url));
           }
         } catch (error) {
@@ -650,10 +674,8 @@ export class Pool {
   }
 
   private send(handle: Handle<any>, message: { type: string }) {
-    const seq = this.seq.get(handle.url) ?? 0;
-    this.seq.set(handle.url, seq + 1);
     // What is said is advice to listeners; a listener that throws must not stop the pool.
-    attempt('saying something', () => this.ears.send(handle, { ...message, from: this.from, seq }));
+    attempt('saying something', () => this.ears.send(handle, { ...message, ...this.stamp(handle.url) }));
   }
 }
 
