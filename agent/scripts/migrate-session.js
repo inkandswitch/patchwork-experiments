@@ -19,10 +19,15 @@
  *                tool is in ("web", "files"), where some were kept under the
  *                tool's own id.
  *
+ *   denied calls a call a person refused has a result saying so, as every
+ *                other outcome does. Some from long ago had none.
+ *
  * A call that was waiting for approval keeps waiting, and can be allowed once
  * or denied. It does not say what it asks (a call block's `ask`, written with
  * the call from now on), so no grant is offered for it and none answers it.
  */
+
+import { DENIED_RESULT } from "../session/request.js"
 
 /** The group each tool's grants on a target are kept under, for those in one. */
 const GROUPS = { web_fetch: "web", web_search: "web", web_capture: "web", web_import: "web", http_request: "web", fs_write: "files", fs_edit: "files", fs_delete: "files", source_file: "files" }
@@ -72,6 +77,19 @@ export function migrateSession(doc, { now = Date.now() } = {}) {
       const found = PROMPTS.find(([pattern]) => pattern.test(text))
       if (found) notice(block, found[1], text)
     }
+  }
+
+  // A refused call with no result gets the one a refusal writes, in a tool
+  // turn right after the turn the call is in.
+  const answered = new Set()
+  for (const turn of doc.turns ?? []) for (const block of turn.blocks ?? []) if (block.type === "result") answered.add(block.callId)
+  for (let i = (doc.turns ?? []).length - 1; i >= 0; i--) {
+    const bare = (doc.turns[i].blocks ?? []).filter((block) => block.type === "call" && block.status === "denied" && !answered.has(block.id))
+    if (!bare.length) continue
+    const results = bare.map((call) => ({ type: "result", id: `r_migrated_${call.id}`, callId: call.id, output: DENIED_RESULT, isError: true, image: null, doc: null, file: null, summary: "declined" }))
+    const next = doc.turns[i + 1]
+    if (next?.role === "tool") next.blocks.push(...results)
+    else doc.turns.splice(i + 1, 0, { id: `t_migrated_${doc.turns[i].id}`, role: "tool", at: doc.turns[i].at ?? now, author: null, blocks: results })
   }
 
   // Halted, and not spoken to since: the notice goes last, where the stop it

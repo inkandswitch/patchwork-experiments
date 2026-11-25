@@ -127,6 +127,19 @@ describe("a version 1 session", () => {
     expect(doc.lease).toEqual(lease)
   })
 
+  it("a refused call that had no result gets one, where the model will read it", () => {
+    const call = (id, status) => ({ type: "call", id, tool: "doc_edit", input: {}, where: "worker", status, runner: null, generation: null })
+    const doc = v1()
+    doc.turns.push(turn("assistant", [call("c1", "denied"), call("c2", "done")]), turn("tool", [{ type: "result", id: "r2", callId: "c2", output: "ok", isError: false }]))
+    doc.turns.push(turn("assistant", [call("c3", "denied")]), turn("user", [text("never mind")]))
+    migrateSession(doc)
+    expect(doc.turns.map((t) => t.role)).toEqual(["user", "assistant", "tool", "assistant", "tool", "user"])
+    expect(doc.turns[2].blocks.map((b) => b.callId)).toEqual(["c2", "c1"])
+    expect(doc.turns[4].blocks).toEqual([expect.objectContaining({ type: "result", callId: "c3", isError: true, summary: "declined" })])
+    const sent = toRequest(doc).messages.flatMap((m) => m.content).filter((part) => part.type === "result")
+    expect(sent.map((part) => part.callId).sort()).toEqual(["c1", "c2", "c3"])
+  })
+
   it("grants have one value, and one on a target is under its tool's group", () => {
     const doc = v1({ grants: { "web_fetch@https://docs.python.org/": "session", "fs_write@*": "always", "files@automerge:pkg": "always", "doc_edit@automerge:a": "session", web_search: "always", "web@*": "session" } })
     migrateSession(doc)

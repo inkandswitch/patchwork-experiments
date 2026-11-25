@@ -4,7 +4,6 @@
  */
 
 import { describeContext, describeEvent, describeNotice } from "./blocks.js"
-import { CALL } from "./schema.js"
 import { isInterruptedResult } from "./recovery.js"
 
 /**
@@ -178,7 +177,6 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
   // have an answer at all.
   const withImages = []
   const results = []
-  const answered = new Set()
   const sent = theResultOfEachCall(turns)
   for (const turn of turns) {
     for (const block of turn.blocks ?? []) {
@@ -189,7 +187,6 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
         continue
       }
       if (block.type !== "result" || sent.get(block.callId) !== block.id) continue
-      answered.add(block.callId)
       results.push(block)
       if (block.image && !block.imageRejected) withImages.push(block.id)
     }
@@ -257,25 +254,10 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
           else content.push({ type: "text", text: "[That PDF is not re-sent: doc_read it to read it again.]" })
         }
       } else if (block.type === "call") {
+        // A denial needs nothing here: it is the call's result, written when
+        // the person said no (kernel/loop.js decide), and is sent as any other
+        // outcome is — once, in order, attached to the call it belongs to.
         content.push({ type: "call", id: block.id, name: block.tool, input: block.input ?? {} })
-        // A denial is the call's RESULT, in the place the call happened.
-        //
-        // It used to be skipped here and re-announced as a trailing user
-        // message instead — every denial in the conversation, re-sent on every
-        // turn, appended after everything else. So the last thing the model read
-        // before writing was "this was declined, ask what they would like
-        // instead", N times over, and it did exactly that: reported the decline
-        // again and again instead of getting on with the rest of the work.
-        //
-        // As a result it is stated once, in order, attached to the call it
-        // belongs to — the same shape as every other outcome the model already
-        // knows how to read.
-        // Denials are recorded as results when they happen. Sessions from
-        // before that still have bare denied calls, and a call with no result
-        // is a protocol error for most providers, so synthesize one.
-        if (block.status === CALL.denied && !answered.has(block.id)) {
-          content.push({ type: "result", callId: block.id, output: DENIED_RESULT, isError: true })
-        }
       } else if (block.type === "result") {
         // One result per call, whatever the document holds (theResultOfEachCall).
         if (sent.get(block.callId) !== block.id) continue
