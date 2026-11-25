@@ -43,8 +43,10 @@ export class NodeExecutor implements Executor {
     while (this.held.has(n)) {
       n++;
     }
-    this.held.add(n);
+    // Held once there is a thread, so that one that could not be made (the
+    // pool fails its run) does not hold a number that no 'exit' will free.
     const worker = new Worker(script, { name: `task-run-${n}` });
+    this.held.add(n);
     say?.(`thread ${n} started (${this.held.size} alive)`);
     let job: Job | null = null;
     const tell = (message: ToRunWorker) => worker.postMessage(message);
