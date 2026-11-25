@@ -173,6 +173,8 @@ function EditableChatView(props: { handle: DocHandle<EditableChatDoc>; repo: Rep
 function MessageView(props: { message: EditableChatMessage; replies: Replies; version: () => number }) {
   const [isEditing, setIsEditing] = createSignal(false);
   const [editValue, setEditValue] = createSignal('');
+  // the chat's heads the edited text was read at, so that saving changes that text and no later one
+  let editFrom: unknown;
   const isAssistant = () => props.message.role === 'assistant';
   const shown = () => (props.version(), props.message.content, props.message.ended, props.replies.shown(props.message));
   const canEdit = () => !!shown()?.editable;
@@ -180,12 +182,14 @@ function MessageView(props: { message: EditableChatMessage; replies: Replies; ve
 
   function startEdit() {
     if (!canEdit()) return;
-    setEditValue(props.message.content);
+    const { text, at } = props.replies.opened(props.message.id);
+    editFrom = at;
+    setEditValue(text);
     setIsEditing(true);
   }
 
   function commitEdit() {
-    props.replies.edit(props.message.id, editValue());
+    props.replies.edit(props.message.id, editValue(), editFrom);
     setIsEditing(false);
   }
 

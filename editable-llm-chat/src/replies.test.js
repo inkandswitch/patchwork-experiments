@@ -268,6 +268,30 @@ describe('Edit', () => {
     expect(message(handle, 'x').content).toBe('inserted');
   });
 
+  it("saved after another run's message took the reply's place, leaves that message whole: the edit goes into the message it was opened on", () => {
+    const { handle, replies } = chat([{ id: 'r', role: 'assistant', content: 'A0 A1 ', run: 'run-a', ended: 'stopped' }]);
+    const { text, at } = replies.opened('r');
+    expect(text).toBe('A0 A1 ');
+    // meanwhile, from another page: Try again, and run C writes the reply and finishes it
+    handle.change((d) => (d.messages[2] = { id: 'r', role: 'assistant', content: '' }));
+    handle.change((d) => (d.messages[2] = { id: 'r', role: 'assistant', content: '', run: 'run-c' }));
+    handle.change((d) => A.splice(d, ['messages', 2, 'content'], 0, 0, 'C0 C1 C2 '));
+    handle.change((d) => (d.messages[2].ended = 'finished'));
+    expect(replies.edit('r', `${text}and a fix`, at)).toBe(true);
+    expect(message(handle, 'r')).toEqual({ id: 'r', role: 'assistant', content: 'C0 C1 C2 ', run: 'run-c', ended: 'finished' });
+  });
+
+  it('saved after text was written into the message it was opened on, keeps that text beside the edit', () => {
+    const { handle, replies } = chat([{ id: 'r', role: 'assistant', content: 'A0 A1 ', run: 'run-a' }]);
+    // nothing this page can see is writing it, so it is interrupted and editable
+    watched(handle, 'r')[0].onChange(view({ state: 'missing' }));
+    const { text, at } = replies.opened('r');
+    // run A, in a page this one cannot see, appends a piece
+    handle.change((d) => A.splice(d, ['messages', 2, 'content'], 6, 0, 'A2 '));
+    expect(replies.edit('r', `Edited ${text}`, at)).toBe(true);
+    expect(message(handle, 'r')).toEqual({ id: 'r', role: 'assistant', content: 'Edited A0 A1 A2 ', run: 'run-a' });
+  });
+
   it('is refused while the reply is being written', () => {
     const { handle, replies } = chat();
     const id = replies.send('One');

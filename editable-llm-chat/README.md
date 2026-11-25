@@ -21,9 +21,10 @@ or failed with what went wrong (also when the provider's stream closes before it
 done). Because a message is one value, two runs that each put one in the reply's place, even on
 machines that could not hear each other, merge to one of the two, whole; what the other run
 appended, and how it ended, stays in the message that lost. So a reply run twice after a lost
-machine, or by a machine cut off from the sync server, ends as one clean copy. An edit you make
-to the reply while it streams stands, and the next pieces go after it; an edit made to a reply
-that another run then takes over is lost with the message it was made in.
+machine, or by a machine cut off from the sync server, ends as one clean copy. An edit is made
+as of when its editor was opened, to the text it showed, in the message it showed: pieces
+appended to that message since stand beside it, and an edit to a message that another run has
+put its own in place of, before or after, is lost with the message it was made in.
 
 What a reply shows is read from its message and from work going on for it now
 (`src/reply-status.js`), so every page shows the same: being written (with where, and Stop),

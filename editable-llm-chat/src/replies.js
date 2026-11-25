@@ -177,10 +177,17 @@ export function chatReplies(handle, repo, { apiKey, importUrl = generateTaskUrl(
     void start(id);
   }
 
-  /** Replaces a reply's text with the person's edit, once its work has ended. */
-  function edit(/** @type {string} */ id, /** @type {string} */ text) {
+  /**
+   * Puts the person's edit into the reply, once its work has ended. `at` is
+   * the chat's heads when the editor was opened (opened()), and the edit is
+   * made as of then: it changes the text the person saw, in the message they
+   * saw. Text written into that message since stays beside the edit, and a
+   * message another run has put in the reply's place since is left whole, as
+   * every other write to a message that was replaced is.
+   */
+  function edit(/** @type {string} */ id, /** @type {string} */ text, /** @type {any} */ at = handle.heads()) {
     if (!shown(byId(id))?.editable) return false;
-    handle.change((/** @type {any} */ d) => {
+    handle.changeAt(at, (/** @type {any} */ d) => {
       const i = d.messages.findIndex((/** @type {any} */ m) => m?.id === id);
       if (i >= 0) updateText(d, ['messages', i, 'content'], text);
     });
@@ -201,6 +208,8 @@ export function chatReplies(handle, repo, { apiKey, importUrl = generateTaskUrl(
     stop,
     tryAgain,
     edit,
+    /** What an editor opened now starts from: the reply's text, and the chat's heads it was read at (edit's `at`). */
+    opened: (/** @type {string} */ id) => ({ text: String(byId(id)?.content ?? ''), at: handle.heads() }),
     dispose() {
       dead = true;
       handle.off('change', update);
