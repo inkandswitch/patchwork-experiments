@@ -7,7 +7,9 @@ known, so it can be picked up without finding it out again.
 
 Set aside on 2026-11-25 in favour of getting the system's design right first.
 Everything below was measured that day on one Mac, in headless Chrome 158
-against patchwork.inkandswitch.com, with the fork as published then.
+against patchwork.inkandswitch.com, with the fork as published then: the
+router-based system, now gone. Only the Node host's figures were measured
+again since, with the pool (marked so).
 
 ### What a task costs
 
@@ -19,7 +21,15 @@ from asking to the asker having the result (median of 30):
 | Same browser, asker on the tab's tasks Repo | 47 ms | 105 ms |
 | Same, code from a package rather than a `data:` URL | 50 ms | 86 ms |
 | Same browser, asker on the site's own Repo | 529 ms | 682 ms |
-| Node host, asker a separate peer on the same machine | 525 ms | 584 ms |
+| Node host, asker a separate peer on the same machine (router) | 525 ms | 584 ms |
+| The same with the pool (median and worst of 10) | 735–744 ms | 813–980 ms |
+
+With the pool, the Node figure splits as about 390 ms from asking to the
+pool's run being appended (the queue's change and then the task reach the
+pool's Repo through the sync server), 100 ms from that run to its end (about
+50 ms of it in the run worker's thread, the rest saving the run's start and
+handing over the task's document), and 255 ms from its end to the asker.
+`probes/node-run.mjs` prints these as its first check.
 
 The first run of a package's code adds about 80–170 ms in a browser (fetching
 the module) and about 400 ms in a Node host (fetching the files from
@@ -33,8 +43,8 @@ That is the half second. `@awarth/tasklib` asks through the site's Repo.
 
 ### Where the time goes
 
-One task, each step timestamped where it happens (`src/trace.ts`), median
-time since asking:
+One task in the router-based system, each step timestamped where it
+happened (by a trace module that went with it), median time since asking:
 
 | ms | Step | Since the last |
 |---|---|---|
@@ -75,18 +85,19 @@ wait is the worker's own doc reaching the router.
 ### What was changed
 
 - **Saved at once.** The asker's listing and the worker's run record are
-  flushed as they are made (`job-client.ts`, `worker.ts`). Before this a task
+  flushed as they are made (now in `task-client.js` and `pool.ts`). Before this a task
   took 217 ms, not 47: a Repo holds a document's changes for up to 100 ms
   before saving them (its `subductionSaveThrottle`), and both the ask and the
   result waited that out.
-- **A router no longer believes a stale heartbeat.** A pool's once-a-second
+- **A router stopped believing a stale heartbeat.** A pool's once-a-second
   heartbeat repeats each worker's doc as the pool last had it. A heartbeat
   that caught a worker mid-task kept it marked busy until the next one, a
   second later. The forty-task run showed it: one worker idle for 1034 ms,
-  the other not given its first task for 870 ms. A worker's doc now counts
-  the tasks it has taken on, the heartbeat carries the count, and the router
-  goes by whichever is later (`heardRunning` in `claims.ts`). The stalls are
-  gone; the total did not drop, because the next limit is the 70 ms above.
+  the other not given its first task for 870 ms. A worker's doc then counted
+  the tasks it had taken on, the heartbeat carried the count, and the router
+  went by whichever was later. The stalls went; the total did not drop,
+  because the next limit was the 70 ms above. (The router, its heartbeats
+  and worker docs are gone now; a pool takes work itself.)
 - **Tracing**, and `--latency N` on both probes (see below).
 
 ### Tried and taken out
@@ -109,12 +120,11 @@ difference there is not known, so it is not in the code.
 
 ### Where to start
 
-1. **The worker's "I'm free" reaching the router.** Most of every hand-over.
-   Either find out why the zero throttle did not act in the workers (watch
-   the family's heads channel for when a worker's doc is announced as saved,
-   against the trace of when it changed), or flush the worker's own doc the
-   way the task doc is flushed. The isolated measure says about 9 ms is there
-   to be had, which would be roughly a fourfold gain on a run of quick tasks.
+1. **The worker's "I'm free" reaching the router** was most of every
+   hand-over. There is no router now: a pool frees its own slot when it has
+   saved a run's end. Why the zero throttle did not act in the workers is
+   still not known, and still worth finding out where a pool and its askers
+   share a database.
 2. **`flush` does more than save.** It also waits for storage to settle and
    for compaction, which is most of the 7.9 ms between a run being recorded
    and saved. The rest of the family needs only the save.
@@ -124,9 +134,9 @@ difference there is not known, so it is not in the code.
    That is a design question (what a task is) more than tuning.
 4. **Asking through the right Repo.** Half a second against 47 ms. Anything
    in a tab that wants a quick answer should ask through the tab's tasks
-   Repo, which `src/job-client.ts` does when handed it.
-5. **Capacity.** One task per worker, two workers per browser, is a separate
-   limit from all of the above.
+   Repo, which `src/task-client.js` does when handed it.
+5. **Capacity.** One run per run worker, and as many run workers as the
+   pool has slots, is a separate limit from all of the above.
 
 Not on the list, by decision (2026-11-25): sending the ask or the result as a
 message ahead of the document. A worker would be acting on something not yet
@@ -135,11 +145,11 @@ saved, and it is a way round the system, not a faster system.
 ### Measuring it again
 
 ```
-node probes/real-run.mjs <automerge:package url> --latency 30
-node probes/node-run.mjs <automerge:package url> --latency 30
+node probes/node-run.mjs
 ```
 
-The first prints the step table, the four figures for one task, and the
-forty-at-once run with each worker's hand-over. The second prints the figures
-through a Node host. Publish the build to a package of its own first (see the
-probes' headers): the probes run what is published, not the working tree.
+Its first check asks a Node host for ten tasks that do nothing, one at a
+time, and prints the figures above; it runs the working tree's build
+(`pnpm build:node`), and publishes nothing. `probes/real-run.mjs`, which
+measured the browser, was written for the router-based system and waits to
+be rewritten for the browser's pool.

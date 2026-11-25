@@ -1,7 +1,7 @@
 {
   "name": "@patchwork/tasks-next",
   "version": "0.1.0",
-  "description": "Task queues, workers and routers: the experimental line of the task framework",
+  "description": "Task queues and the pools that serve them: the experimental line of the task framework",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
