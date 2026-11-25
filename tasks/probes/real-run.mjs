@@ -36,6 +36,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { browser, checklist } from "./cdp.mjs";
+import { LISTEN_MS } from "../src/task-rules.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const [pkg] = process.argv.slice(2);
@@ -280,9 +281,11 @@ try {
     );
   });
   if (!report.queueUrl) throw new Error("no queue was made, so nothing can be asked");
+  let poolRunningAt = Date.now();
 
   await part("the background component starts this tab's pool, in a worker loaded from the package through the service worker", async () => {
     const started = await b.waitFor("Object.values(window.patchworkTasks?.poolHosts ?? {})[0]?.status().state === 'running'", 60_000, 250);
+    poolRunningAt = Date.now();
     report.pool = await status();
     report.poolWorkers = live("pool").map((w) => new URL(w.url).pathname);
     check(
@@ -302,6 +305,8 @@ try {
 
   // 1. a do-nothing task, ask to result: from this tab's tasks Repo, and from the site's own.
   await part("a do-nothing task, ten in a row, from this tab's tasks Repo", async () => {
+    // A pool holds back for everything until it has listened to the queue for LISTEN_MS.
+    await new Promise((r) => setTimeout(r, Math.max(0, poolRunningAt + LISTEN_MS - Date.now())));
     const NOOP = J(`data:text/javascript,${encodeURIComponent("export default () => 1;")}`);
     const times = await call(`
       const out = { tasks: [], site: [], errors: {} };
