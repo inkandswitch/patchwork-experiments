@@ -10,9 +10,8 @@
  */
 
 import { decide, answerQuestion } from "../kernel/loop.js"
-import { grantOffers } from "../session/grants.js"
 import { handleStore } from "../kernel/store.js"
-import { describeCall } from "./calls.js"
+import { approvalOf, drawApproval } from "./approval.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
 import { liftBudget, liftAmounts } from "../session/usage.js"
@@ -101,45 +100,23 @@ export function watchWaiting(repo, sessionHandle, onChange) {
  *   onOpen   (url) => open the step's session
  */
 export function renderWaitingItem(item, { onOpen = null, subject = null, splice = null, showStep = true } = {}) {
+  if (item.kind === "budget" && item.scope === "session") return renderLiftItem(item, { onOpen, showStep, splice })
+  if (item.kind === "budget") return renderBudgetItem(item, { onOpen, showStep })
+
   const node = el("div", "agent-waiting-item")
   node.dataset.kind = item.kind
   const store = () => handleStore(item.handle, splice)
-
-  if (item.kind === "budget" && item.scope === "session") return renderLiftItem(item, { onOpen, showStep, splice })
-  if (item.kind === "budget") return renderBudgetItem(item, { onOpen, showStep })
   if (showStep) node.append(el("p", "agent-waiting-step", `${item.stepTitle}${item.planTitle ? ` · ${item.planTitle}` : ""}`))
 
-  const actions = el("div", "cluster")
+  let actions
   if (item.kind === "approval") {
-    const { verb, detail } = describeCall({ tool: item.tool, input: item.input, shown: item.shown }, null, { subject })
-    node.append(el("p", null, `Wants to ${verb}${detail ? ` ${detail}` : ""}`))
-    const allow = el("button", null, "Allow once")
-    allow.dataset.variant = "primary"
-    allow.addEventListener("click", (event) => {
-      event.preventDefault()
-      decide(store(), item.callId, "once")
-    })
-    const deny = el("button", null, "Deny")
-    deny.addEventListener("click", (event) => {
-      event.preventDefault()
-      decide(store(), item.callId, "deny")
-    })
-    actions.append(allow)
-    // The broader answers, as the call's own card offers them: this site, any
-    // site. A grant releases every other call in the session it covers, and a
-    // workflow spreads it to its other sessions (workflow/driver.js).
-    for (const offer of grantOffers(item).slice(-2)) {
-      const grant = el("button", null, `Allow ${offer.label}`)
-      grant.title = offer.detail
-      grant.addEventListener("click", (event) => {
-        event.preventDefault()
-        decide(store(), item.callId, { grant: offer.key })
-      })
-      actions.append(grant)
-    }
-    actions.append(deny)
+    // Asked in brief, as the call's own card asks in full (ui/approval.js).
+    const drawn = drawApproval(approvalOf(item, { brief: true, subject }), (decision) => decide(store(), item.callId, decision))
+    node.append(...drawn.nodes)
+    actions = drawn.actions
   } else {
     node.append(el("p", "agent-waiting-question", item.question))
+    actions = el("div", "cluster")
     for (const option of item.options ?? []) {
       const button = el("button", null, option.label)
       if (option.detail) button.title = option.detail
@@ -167,17 +144,20 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
       }
     })
     actions.append(input, send)
+    node.append(actions)
   }
-  if (onOpen && item.sessionUrl) {
-    const open = el("button", null, "Open session")
-    open.addEventListener("click", (event) => {
-      event.preventDefault()
-      onOpen(item.sessionUrl)
-    })
-    actions.append(open)
-  }
-  node.append(actions)
+  if (onOpen && item.sessionUrl) actions.append(opener("Open session", () => onOpen(item.sessionUrl)))
   return node
+}
+
+/** A button that opens something elsewhere. */
+function opener(label, open) {
+  const button = el("button", null, label)
+  button.addEventListener("click", (event) => {
+    event.preventDefault()
+    open()
+  })
+  return button
 }
 
 /**
@@ -205,14 +185,7 @@ export function renderBudgetItem(item, { onOpen = null, showStep = true } = {}) 
     })
     actions.append(resume)
   }
-  if (onOpen && item.planUrl) {
-    const open = el("button", null, "Open workflow")
-    open.addEventListener("click", (event) => {
-      event.preventDefault()
-      onOpen(item.planUrl)
-    })
-    actions.append(open)
-  }
+  if (onOpen && item.planUrl) actions.append(opener("Open workflow", () => onOpen(item.planUrl)))
   node.append(actions)
   return node
 }
@@ -236,14 +209,7 @@ export function renderLiftItem(item, { onOpen = null, showStep = true, splice = 
     })
     actions.append(give)
   })
-  if (onOpen && item.sessionUrl) {
-    const open = el("button", null, "Open session")
-    open.addEventListener("click", (event) => {
-      event.preventDefault()
-      onOpen(item.sessionUrl)
-    })
-    actions.append(open)
-  }
+  if (onOpen && item.sessionUrl) actions.append(opener("Open session", () => onOpen(item.sessionUrl)))
   node.append(actions)
   return node
 }
