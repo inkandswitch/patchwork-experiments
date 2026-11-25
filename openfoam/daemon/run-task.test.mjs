@@ -20,9 +20,13 @@ beforeEach(() => {
   released = 0;
 });
 
-/** A task document with these runs, and a context for the run named `me`. */
-function context(runIds, me, { signal = new AbortController().signal } = {}) {
-  const task = repo.add({ importUrl: "/x/daemon/run-task.mjs", input: { run: run.url }, key: run.url, runs: runIds.map((id) => ({ id, pool: "p", start: 0 })) });
+/** A stop someone appended to a task's list: a record with no pool. */
+const STOP = { id: "s", start: 0, end: 0, status: "cancelled" };
+
+/** A task document with these records (a name is an open run of pool "p"), and a context for the run named `me`. */
+function context(records, me, { signal = new AbortController().signal } = {}) {
+  const runs = records.map((r) => (typeof r === "string" ? { id: r, pool: "p", start: 0 } : r));
+  const task = repo.add({ importUrl: "/x/daemon/run-task.mjs", input: { run: run.url }, key: run.url, runs });
   const said = { progress: [], logs: [] };
   return { said, ctx: { repo, taskUrl: task.url, run: me, key: run.url, signal, log: (m) => said.logs.push(m), progress: (p) => said.progress.push(p) } };
 }
@@ -67,6 +71,30 @@ describe("the guard", () => {
     await expect(task(async () => "done")({ run: run.url }, ctx)).rejects.toThrow(NOT_RESTARTED);
     expect(calls).toHaveLength(0);
     expect([run.doc().status, run.doc().error, run.doc().stages[1].status]).toEqual(["failed", NOT_RESTARTED, "failed"]);
+  });
+  it("a lost run before it, or a yielded run of another pool, is a run before it: it never solves", async () => {
+    for (const earlier of [
+      { id: "r0", pool: "p", start: 0, end: 1, status: "lost" },
+      { id: "r0", pool: "q", start: 0, end: 1, status: "yielded" },
+    ]) {
+      run.change((d) => (d.status = "queued"));
+      const { ctx } = context([earlier, "r1"], "r1");
+      await expect(task(async () => "done")({ run: run.url }, ctx)).rejects.toThrow(NOT_RESTARTED);
+      expect(calls).toHaveLength(0);
+      expect(run.doc().status).toBe("failed");
+    }
+  });
+  it("a stop is not a run: one before it or after it leaves the run to solve (its pool stops it for the stop)", async () => {
+    for (const records of [[STOP, "r1"], ["r1", STOP]]) {
+      run.change((d) => (d.status = "queued"));
+      const { ctx } = context(records, "r1");
+      const out = await task(async ({ handle }) => {
+        handle.change((d) => (d.status = "done"));
+        return "done";
+      })({ run: run.url }, ctx);
+      expect(out).toEqual({ status: "done" });
+    }
+    expect(calls).toHaveLength(2);
   });
   it("a run doc that already says its machine stopped keeps saying so", async () => {
     run.change((d) => markStopped(d, "stopping", 5));

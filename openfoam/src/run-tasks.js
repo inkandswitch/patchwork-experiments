@@ -49,7 +49,7 @@ export async function askRun(repo, queueUrl, runHandle, opts) {
 }
 
 /**
- * Cancels a run: flags its task and takes it off the queue. A run waiting
+ * Cancels a run: appends a stop to its task and takes it off the queue. A run waiting
  * never starts; one running is stopped within seconds and its run doc says
  * cancelled. False when its queue no longer lists it (it ended).
  */
@@ -60,16 +60,16 @@ export function cancelRun(repo, run, runUrl) {
 
 /**
  * A run's task as one look at its document reads it (nobody listening: an
- * open run counts as going on), or null when the run names no task or it
- * can't be read here.
- * @returns {Promise<{ state: string, error: string | null } | null>}
+ * open run counts as going on), with its runs (see `shownRun`), or null when
+ * the run names no task or it can't be read here.
+ * @returns {Promise<{ state: string, error: string | null, runs: object[] } | null>}
  */
 export async function lookAtTask(repo, run) {
   if (!run?.task) return null;
   try {
     const doc = (await repo.find(run.task)).doc();
     if (!isTask(doc)) return null;
-    return { state: taskState(doc, allHeard), error: taskError(doc, allHeard) };
+    return { state: taskState(doc, allHeard), error: taskError(doc, allHeard), runs: doc.runs };
   } catch {
     return null;
   }

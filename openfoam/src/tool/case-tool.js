@@ -705,7 +705,7 @@ export default function CaseTool(handle, element) {
           const on = () => {
             const r = h.doc();
             const t = runTasks.get(url);
-            const k = `${r.status}|${r.summary ? 1 : 0}|${r.progress?.iteration}|${t?.state}`;
+            const k = `${r.status}|${r.summary ? 1 : 0}|${r.progress?.iteration}|${t?.state}|${t?.runs?.length}`;
             if (k !== last) {
               last = k;
               renderRuns();
@@ -721,7 +721,7 @@ export default function CaseTool(handle, element) {
               r0.server,
               url,
               (view) => {
-                runTasks.set(url, { state: view.state, error: view.error });
+                runTasks.set(url, { state: view.state, error: view.error, runs: view.runs });
                 on();
               },
               r0.task ? { from: r0.task } : {},

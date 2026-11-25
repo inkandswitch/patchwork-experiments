@@ -330,7 +330,7 @@ daemon/start.sh --new-queue "title" | --queue automerge:… [--jobs N] [--cores 
 - **Sleep.** On macOS each run holds off idle sleep (`caffeinate -i`) while it
   goes, and only then: a Mac that idles to sleep stops the solver and drops
   the sync connection.
-- **Cancel** flags the run's task. A run that hasn't started never does; a
+- **Cancel** appends a stop to the run's task. A run that hasn't started never does; a
   running one has the command and everything under it killed at once (SIGTERM,
   then SIGKILL 3 s later), and its document says cancelled. Not its process
   group: OpenMPI's `prterun` makes its own, and gives every rank another, so a

@@ -196,7 +196,8 @@ try {
     check("cancel: the run doc says cancelled", d.status === "cancelled", { status: d.status, error: d.error });
     check("cancel: no solver process is left", before.length > 0 && gone, { before, after: foamProcesses(), seconds: goneAfter });
     const t = await taskWhen(taskUrl, 1, 30_000, "the task's run to end");
-    check("cancel: the task is cancelled", taskState(t, allHeard) === "cancelled" && t.runs[0].status === "cancelled", t.runs);
+    // the run its pool stopped, then the stop that was asked for (a record with no pool)
+    check("cancel: the task is cancelled: its run, then the stop", taskState(t, allHeard) === "cancelled" && t.runs.length === 2 && !!t.runs[0].pool && t.runs[0].status === "cancelled" && t.runs[1].pool === undefined && t.runs[1].status === "cancelled", t.runs);
     say(`  processes gone ${goneAfter.toFixed(1)} s after the cancel`);
   }
 

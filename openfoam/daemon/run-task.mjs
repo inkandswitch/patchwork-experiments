@@ -10,9 +10,11 @@
 //
 // Never solved twice unasked. Runs are long, and a task runs at least once,
 // not exactly once: if its machine stops mid-run, the task is taken again.
-// So a run whose task lists a run before this one does not solve: it marks
-// the run doc failed (NOT_RESTARTED) and throws, and the task ends failed.
-// (On a queue one machine serves, an earlier run can only be its own lost one.)
+// So a run whose task lists a run before this one (a record with a pool,
+// however it went) does not solve: it marks the run doc failed
+// (NOT_RESTARTED) and throws, and the task ends failed. A stop someone
+// appended is not a run. (On a queue one machine serves, an earlier run can
+// only be its own lost one.)
 //
 // Stopping. `ctx.signal` aborts with a reason: `cancelled` (someone cancelled
 // the run), `stopping` (the host is shutting down) or `yielded` (another run
@@ -169,11 +171,14 @@ export function makeRunTask({ runJob, machine, awake, peer, say = (m) => console
     const handle = await find(ctx.repo, runUrl);
     if (handle.doc()?.["@patchwork"]?.type !== RUN_TYPE) throw new Error(`${runUrl} isn't an OpenFOAM run.`);
 
-    // the guard: a run before this one means this run was interrupted once already
+    // The guard: a run before this one means this run was interrupted once
+    // already. A run is a record with a pool; a stop (someone cancelled the
+    // task) has none and was never a run, and the pool stops this run for it.
     const task = (await ctx.repo.find(ctx.taskUrl)).doc();
-    const at = task?.runs?.findIndex((r) => r.id === ctx.run) ?? -1;
+    const runs = task?.runs ?? [];
+    const at = runs.findIndex((r) => r.id === ctx.run);
     if (at < 0) throw new Error("This run isn't in its task's document, so whether it ran before can't be told; it was not started.");
-    if (at > 0) {
+    if (runs.slice(0, at).some((r) => typeof r.pool === "string")) {
       handle.change((d) => markInterrupted(d, Date.now()));
       ctx.log("interrupted before: not started again");
       throw new Error(NOT_RESTARTED);

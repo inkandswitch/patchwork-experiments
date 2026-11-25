@@ -166,7 +166,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
       run.server,
       h.url,
       (view) => {
-        task = { state: view.state, error: view.error };
+        task = { state: view.state, error: view.error, runs: view.runs };
         render();
       },
       run.task ? { from: run.task } : {},

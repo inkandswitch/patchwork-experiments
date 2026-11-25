@@ -506,8 +506,10 @@ describe("openfoam_stop", () => {
     expect(b.doc().control).toEqual({ finish: true });
     const taskA = await repo.find(a.doc().task);
     expect(await stopTool.execute({ runs: [a.url], keep: false }, ctx)).toMatch(/: cancelled\. If it hadn't started it never will/);
-    // the task is flagged and off the queue; the run doc isn't written
-    expect(taskA.doc().cancelled).toBe(true);
+    // the task has a stop in its list and is off the queue; the run doc isn't written
+    expect(taskA.doc().runs).toHaveLength(1);
+    expect(taskA.doc().runs[0]).toMatchObject({ status: "cancelled" });
+    expect(taskA.doc().runs[0].pool).toBeUndefined();
     expect(taskState(taskA.doc(), allHeard)).toBe("cancelled");
     expect(Object.keys(server.doc().jobs)).toEqual([b.url]);
     expect(a.doc().status).toBe("queued");

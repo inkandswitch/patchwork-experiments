@@ -137,7 +137,10 @@ describe("running from the case tool", () => {
     await until(() => !el.querySelector(".live-host .cancel").hidden);
     el.querySelector(".live-host .cancel").click();
     const task = repo.handles.get(repo.handles.get(runUrl).doc().task);
-    await until(() => task.doc().cancelled === true);
+    // the stop is a record in the task's list, with no pool: nobody ever took it
+    await until(() => task.doc().runs.length === 1);
+    expect(task.doc().runs[0]).toMatchObject({ status: "cancelled" });
+    expect(task.doc().runs[0].pool).toBeUndefined();
     expect(server.doc().jobs).toEqual({});
     expect(repo.handles.get(runUrl).doc().status).toBe("queued");
     // the views read it from the task: it is finished, cancelled before it started

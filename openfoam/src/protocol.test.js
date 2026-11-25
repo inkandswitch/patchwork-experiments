@@ -73,36 +73,50 @@ describe("a run told to stop", () => {
 });
 
 describe("the status a person sees", () => {
-  // every run doc status against every task state a reader can have
+  // every run doc status against every task state a reader can have, taken by a machine or never
   const RUN = ["queued", "meshing", "solving", "post", "done", "failed", "cancelled"];
   const TASK = [null, "missing", "waiting", "running", "stalled", "stopping", "succeeded", "failed", "cancelled"];
-  const shown = (status, state) => shownRun({ status, error: status === "failed" ? "the doc's error" : null }, state ? { state, error: state === "failed" ? "the task's error" : null } : null);
+  const TAKEN = [{ id: "r1", pool: "p", start: 0, end: 1, status: "lost" }];
+  const STOP = { id: "s", start: 0, end: 0, status: "cancelled" };
+  const shown = (status, state, runs = TAKEN) => shownRun({ status, error: status === "failed" ? "the doc's error" : null }, state ? { state, error: state === "failed" ? "the task's error" : null, runs } : null);
   it("is the run doc's once it has ended, whatever the task says", () => {
     for (const st of ["done", "failed", "cancelled"])
-      for (const t of TASK) expect(shown(st, t)).toEqual({ status: st, error: st === "failed" ? "the doc's error" : null, note: null });
+      for (const t of TASK)
+        for (const runs of [[], TAKEN]) expect(shown(st, t, runs)).toEqual({ status: st, error: st === "failed" ? "the doc's error" : null, note: null });
   });
   it("is the task's ending when the run doc can't say it (nobody wrote it)", () => {
     for (const st of ["queued", "meshing", "solving", "post"]) {
       expect(shown(st, "cancelled").status).toBe("cancelled");
       expect(shown(st, "failed")).toEqual({ status: "failed", error: "the task's error", note: null });
     }
-    expect(shown("queued", "cancelled").note).toBe("cancelled before it started");
-    expect(shown("solving", "cancelled").note).toBe(null);
+  });
+  it("cancelled before it started: a stop and no run, read from the task, whatever the doc says", () => {
+    expect(shown("queued", "cancelled", [STOP]).note).toBe("cancelled before it started");
+    expect(shown("queued", "cancelled", []).note).toBe("cancelled before it started");
+    // a machine took it (before the stop, or after it in a claim that crossed it): it started
+    expect(shown("queued", "cancelled", [{ id: "r1", pool: "p", start: 0 }, STOP]).note).toBe(null);
+    expect(shown("queued", "cancelled", [STOP, { id: "r1", pool: "p", start: 0, end: 1, status: "cancelled" }]).note).toBe(null);
+    expect(shown("solving", "cancelled", [STOP]).note).toBe("cancelled before it started");
   });
   it("is the run doc's while the task goes on, with a note when the task knows more", () => {
-    const table = Object.fromEntries(TASK.filter((t) => !["failed", "cancelled"].includes(t)).map((t) => [t ?? "null", [shown("queued", t), shown("solving", t)].map((s) => `${s.status}${s.note ? ` (${s.note})` : ""}`)]));
-    expect(table).toEqual({
+    const row = (runs) =>
+      Object.fromEntries(TASK.filter((t) => !["failed", "cancelled"].includes(t)).map((t) => [t ?? "null", [shown("queued", t, runs), shown("solving", t, runs)].map((s) => `${s.status}${s.note ? ` (${s.note})` : ""}`)]));
+    const going = {
       null: ["queued", "solving"],
       missing: ["queued", "solving"],
-      waiting: ["queued", "solving (the machine running it stopped; it won't be solved again, so run it again)"],
       running: ["queued", "solving"],
       stalled: ["queued (the machine running it isn't heard from)", "solving (the machine running it isn't heard from)"],
       stopping: ["queued (cancelling…)", "solving (cancelling…)"],
       succeeded: ["queued", "solving"],
-    });
+    };
+    // taken once and waiting again: its machine stopped without it, and taken up again it won't be solved
+    const again = "the machine running it stopped; it won't be solved again, so run it again";
+    expect(row(TAKEN)).toEqual({ ...going, waiting: [`queued (${again})`, `solving (${again})`] });
+    // never taken: a doc that says more is only ahead of its task's news
+    expect(row([])).toEqual({ ...going, waiting: ["queued", "solving"] });
   });
   it("covers every pair", () => {
-    for (const st of RUN) for (const t of TASK) expect(RUN).toContain(shown(st, t).status);
+    for (const st of RUN) for (const t of TASK) for (const runs of [[], [STOP], TAKEN]) expect(RUN).toContain(shown(st, t, runs).status);
   });
 });
 
