@@ -1,0 +1,639 @@
+// A pool: the one set of workers a machine has. It follows the queues it
+// serves and the tasks they list, takes a task when it has a free slot and
+// the rules say it may, runs it in a run worker it owns, says that the run is
+// going on, stops it when the rules say it must, and records how it went.
+// Every decision is a rule in rules.ts; this file only applies them to the
+// documents and to what has been heard.
+//
+// It writes three things and nothing else: a run appended when it takes a
+// task, that run completed when it is over, and an entry deleted when its
+// task has ended. Whether a run is going on is said on the task's channel
+// (`task progress`), never written.
+//
+// It runs anywhere: the documents come from anything with `find` and
+// `flush`, messages go through `ears`, time comes from `clock`, and the code
+// runs in whatever the executor starts (a worker thread in Node, a dedicated
+// worker in a browser).
+
+import type { AutomergeUrl, DocumentId } from '@automerge/automerge-repo/slim';
+import { accepts, acceptsPackage, type Acceptance } from './acceptance';
+import type { Stamp } from './delivery-stats';
+import { Hearing } from './hearing';
+import * as messages from './messages';
+import type { RunProgressMessage, ServingMessage } from './protocol';
+import {
+  BEAT_MS,
+  claimRun,
+  delistTask,
+  endRun,
+  GRACE_MS,
+  isOpen,
+  MAX_LOG_LINES,
+  mayClaim,
+  mayDelist,
+  named,
+  stopReason,
+  waitingWork,
+  type LogLine,
+  type Queue,
+  type RunStatus,
+  type Task,
+  type Work,
+} from './rules';
+
+/** Why a run's code is told to stop: the first two are rules.ts's, `stopping` is the pool shutting down. */
+export type StopReason = 'cancelled' | 'yielded' | 'stopping';
+
+/** What a run worker is handed: the code and input exactly as the pool read them when it took the task. */
+export interface Job {
+  taskUrl: AutomergeUrl;
+  runId: string;
+  importUrl: string;
+  input: unknown;
+  key: string;
+}
+
+/** What a run worker says, each delivered on the pool's thread. */
+export interface WorkerEvents {
+  /** A line its code logged. */
+  log(message: string): void;
+  /** How far along its code says it is. */
+  progress(value: unknown): void;
+  /** Its code returned this, and what the code wrote is saved. */
+  done(result: unknown): void;
+  /** Its code threw, or would not load. */
+  threw(message: string): void;
+  /** The worker is gone, expected or not. Said at most once. */
+  exit(): void;
+}
+
+export interface RunWorker {
+  /** Imports the job's code and calls it. Called only while the worker has no job. */
+  run(job: Job): void;
+  /** Aborts the code's signal with this reason. The code may still finish; the pool ignores what it says. */
+  abort(reason: StopReason): void;
+  /** Ends the worker at once, whatever its code is doing. It says nothing after this but, perhaps, `exit`. */
+  terminate(): void;
+}
+
+/** Starts run workers: a worker thread in Node, a dedicated worker in a browser. */
+export interface Executor {
+  /** Starts one run worker, which tells `events` what it says. It is given one job at a time. */
+  start(events: WorkerEvents): RunWorker;
+}
+
+/** The part of a DocHandle a pool uses. */
+export interface Handle<T> {
+  readonly url: AutomergeUrl;
+  readonly documentId: DocumentId;
+  doc(): T | undefined;
+  change(fn: (doc: T) => void): void;
+  on(event: 'change' | 'delete', fn: () => void): unknown;
+  off(event: 'change' | 'delete', fn: () => void): unknown;
+  isDeleted?(): boolean;
+}
+
+/** The part of a Repo a pool uses. */
+export interface Docs {
+  find<T>(url: AutomergeUrl): Promise<Handle<T>>;
+  flush(documents?: DocumentId[]): Promise<void>;
+}
+
+/** How messages are sent and heard on a document's channel (messages.ts, unless a test hands its own). */
+export interface Ears {
+  send(handle: Handle<any>, message: Stamp & { type: string }): void;
+  listen(handle: Handle<any>, onMessage: (message: any) => void): () => void;
+}
+
+export interface Clock {
+  now(): number;
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(timer: unknown): void;
+  setInterval(fn: () => void, ms: number): unknown;
+  clearInterval(timer: unknown): void;
+}
+
+export interface PoolOptions {
+  repo: Docs;
+  /** Outlives restarts: a pool owns every run bearing its id. */
+  id: string;
+  /** For people. */
+  name: string;
+  slots: number;
+  executor: Executor;
+  /** The queues it serves, and the code it runs from each. Changed later with `serve`. */
+  queues?: Record<AutomergeUrl, Acceptance>;
+  ears?: Ears;
+  clock?: Clock;
+}
+
+const realClock: Clock = {
+  now: () => Date.now(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  setInterval: (fn, ms) => setInterval(fn, ms),
+  clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
+};
+
+const realEars: Ears = {
+  send: (handle, message) => messages.send(handle as any, message),
+  listen: (handle, onMessage) => messages.listen(handle as any, onMessage),
+};
+
+/** At the least, how long between two messages about a run's logs and progress. */
+const SAY_EVERY_MS = 100;
+
+/** A document followed: its handle once found. One that cannot be found yet is tried again a beat later. */
+interface Followed<T> {
+  handle?: Handle<T>;
+  loading?: boolean;
+  retryAt?: number;
+  stop?: () => void;
+}
+
+interface Served extends Followed<Queue> {
+  acceptance: Acceptance;
+}
+
+interface Slot {
+  worker: RunWorker;
+  run: Running | null;
+  /** Terminated or exited: it says nothing more that counts, and is never handed a job. */
+  gone: boolean;
+}
+
+interface Running {
+  id: string;
+  key: string;
+  task: Handle<Task>;
+  queue: Handle<Queue>;
+  /** Null until the run's start is saved and its job handed over. */
+  slot: Slot | null;
+  /** Why it is being stopped, once that is decided; its status is this, whatever its code does. */
+  stopping: StopReason | null;
+  /** Its completion has been written: nothing more is done for it. */
+  over: boolean;
+  logs: LogLine[];
+  unsaid: LogLine[];
+  progress: unknown;
+  progressNew: boolean;
+  beat?: unknown;
+  sayTimer?: unknown;
+  kill?: unknown;
+  finished: Promise<void>;
+  finish: () => void;
+}
+
+const statusOf = (reason: StopReason): RunStatus => (reason === 'stopping' ? 'lost' : reason);
+
+export class Pool {
+  private readonly clock: Clock;
+  private readonly ears: Ears;
+  private readonly hearing: Hearing;
+  private readonly queues = new Map<AutomergeUrl, Served>();
+  private readonly tasks = new Map<AutomergeUrl, Followed<Task>>();
+  private readonly runs = new Map<string, Running>();
+  private idle: Slot[] = [];
+  private stopped = false;
+  private reviewing = false;
+  private again = false;
+  private readonly tick: unknown;
+  // Stamps (see messages.ts): one series per channel, and a new sender for each start.
+  private readonly from = crypto.randomUUID();
+  private readonly seq = new Map<string, number>();
+
+  constructor(private readonly options: PoolOptions) {
+    this.clock = options.clock ?? realClock;
+    this.ears = options.ears ?? realEars;
+    this.hearing = new Hearing(this.clock);
+    // The beat: says the pool serves, and looks again, so that a run gone
+    // unheard is noticed without anything changing.
+    this.tick = this.clock.setInterval(() => {
+      for (const queue of this.queues.values()) {
+        this.sayServing(queue.handle);
+      }
+      this.review();
+    }, BEAT_MS);
+    this.serve(options.queues ?? {});
+  }
+
+  /** How many slots have a run in them, from the moment it is taken until its end is saved. */
+  get busy() {
+    return this.runs.size;
+  }
+
+  /** Whether this pool counts a run as heard: its own runs always are. */
+  readonly heard = (runId: string) => this.runs.has(runId) || this.hearing.heard(runId);
+
+  /** Sets the queues served. A run from a queue no longer served goes on to its end. */
+  serve(queues: Record<AutomergeUrl, Acceptance>) {
+    for (const [url, queue] of this.queues) {
+      if (!(url in queues)) {
+        queue.stop?.();
+        this.queues.delete(url);
+      }
+    }
+    for (const [url, acceptance] of Object.entries(queues) as [AutomergeUrl, Acceptance][]) {
+      const queue = this.queues.get(url);
+      if (queue) {
+        queue.acceptance = acceptance;
+      } else {
+        this.queues.set(url, { acceptance });
+      }
+    }
+    this.review();
+  }
+
+  /**
+   * Takes nothing more, stops every run with `stopping`, which records it
+   * `lost` (killing its worker GRACE_MS later if need be), saves, and resolves.
+   */
+  async stop() {
+    if (!this.stopped) {
+      this.stopped = true;
+      this.clock.clearInterval(this.tick);
+      for (const run of this.runs.values()) {
+        this.stopRun(run, 'stopping');
+      }
+    }
+    await Promise.all([...this.runs.values()].map((run) => run.finished));
+    for (const slot of this.idle) {
+      slot.gone = true;
+      slot.worker.terminate();
+    }
+    this.idle = [];
+    for (const followed of [...this.queues.values(), ...this.tasks.values()]) {
+      followed.stop?.();
+    }
+    await this.options.repo.flush().catch((error) => console.error('pool: saving on stop failed', error));
+  }
+
+  /** Looks at everything again. Called whenever a document or what is heard changes, and every beat. */
+  private review = () => {
+    // A change this makes calls back here at once; it is looked at once this pass is done.
+    if (this.reviewing) {
+      this.again = true;
+      return;
+    }
+    this.reviewing = true;
+    try {
+      do {
+        this.again = false;
+        this.reviewOnce();
+      } while (this.again);
+    } finally {
+      this.reviewing = false;
+    }
+  };
+
+  private reviewOnce() {
+    const { id, slots } = this.options;
+    const now = this.clock.now();
+
+    // What the served queues list, in the order to take it.
+    const listed: { work: Work; queue: Handle<Queue>; acceptance: Acceptance }[] = [];
+    for (const [url, served] of this.queues) {
+      if (!served.handle) {
+        this.load(url, served, () => this.queues.get(url) === served, false);
+        continue;
+      }
+      for (const work of waitingWork(served.handle.doc())) {
+        listed.push({ work, queue: served.handle, acceptance: served.acceptance });
+      }
+    }
+    listed.sort((a, b) => (a.work.askedAt || 0) - (b.work.askedAt || 0));
+
+    // Follow every task listed and every task this pool has a run of; let go of the rest.
+    const wanted = new Set<AutomergeUrl>(listed.map(({ work }) => work.taskUrl));
+    for (const run of this.runs.values()) {
+      wanted.add(run.task.url);
+    }
+    for (const url of wanted) {
+      if (!this.tasks.has(url)) {
+        this.tasks.set(url, {});
+      }
+    }
+    for (const [url, followed] of this.tasks) {
+      if (!wanted.has(url)) {
+        followed.stop?.();
+        for (const run of followed.handle?.doc()?.runs ?? []) {
+          this.hearing.forget(run.id);
+        }
+        this.tasks.delete(url);
+        continue;
+      }
+      if (!followed.handle) {
+        this.load(url, followed, () => this.tasks.get(url) === followed, true);
+        continue;
+      }
+      const task = followed.handle.isDeleted?.() ? undefined : followed.handle.doc();
+      this.hearing.saw(task?.runs);
+      // Its own past: an open run bearing this pool's id that it is not running was lost.
+      for (const run of task?.runs ?? []) {
+        if (run.pool === id && isOpen(run) && !this.runs.has(run.id)) {
+          followed.handle.change((doc) => endRun(doc, run.id, { status: 'lost', end: now }));
+        }
+      }
+    }
+
+    for (const run of this.runs.values()) {
+      if (!run.stopping && !run.over) {
+        const reason = this.stopFor(run);
+        if (reason) {
+          this.stopRun(run, reason);
+        }
+      }
+    }
+
+    for (const { work, queue, acceptance } of listed) {
+      const handle = this.tasks.get(work.taskUrl)?.handle;
+      const task = handle?.isDeleted?.() ? undefined : handle?.doc();
+      if (!handle || !task) {
+        continue;
+      }
+      const is = named(queue.doc(), work.key, work.taskUrl);
+      if (mayDelist(task, is)) {
+        queue.change((doc) => delistTask(doc, work.key, work.taskUrl));
+      } else if (
+        !this.stopped &&
+        this.runs.size < slots &&
+        acceptsPackage(acceptance, work.package) &&
+        accepts(acceptance, task.importUrl) &&
+        mayClaim(task, id, is, this.heard)
+      ) {
+        this.claim(work, queue, handle, task);
+      }
+    }
+  }
+
+  /** Finds a document, unless that is under way or failed less than a beat ago. */
+  private load<T>(url: AutomergeUrl, followed: Followed<T>, still: () => boolean, isTask: boolean) {
+    if (this.stopped || followed.loading || this.clock.now() < (followed.retryAt ?? 0)) {
+      return;
+    }
+    followed.loading = true;
+    this.options.repo.find<T>(url).then(
+      (handle) => {
+        followed.loading = false;
+        if (!still() || this.stopped) {
+          return;
+        }
+        followed.handle = handle;
+        const onChange = () => this.review();
+        handle.on('change', onChange);
+        handle.on('delete', onChange);
+        const unlisten = isTask ? this.ears.listen(handle, this.onTaskMessage) : undefined;
+        followed.stop = () => {
+          handle.off('change', onChange);
+          handle.off('delete', onChange);
+          unlisten?.();
+        };
+        if (!isTask) {
+          this.sayServing(handle as Handle<any>);
+        }
+        this.review();
+      },
+      () => {
+        // not found yet: never an error, only something to try again
+        followed.loading = false;
+        followed.retryAt = this.clock.now() + BEAT_MS;
+      },
+    );
+  }
+
+  private onTaskMessage = (message: Partial<RunProgressMessage> | null) => {
+    if (message?.type === 'task progress' && typeof message.run === 'string' && !this.runs.has(message.run)) {
+      this.hearing.heardFrom(message.run);
+      this.review();
+    }
+  };
+
+  /** Why a run of this pool's must stop, or null. A task whose document is gone is wanted by nobody. */
+  private stopFor(run: Running): StopReason | null {
+    const task = run.task.isDeleted?.() ? undefined : run.task.doc();
+    if (!task) {
+      return 'cancelled';
+    }
+    const queue = run.queue.isDeleted?.() ? undefined : run.queue.doc();
+    return stopReason(task, run.id, named(queue, run.key, run.task.url), this.heard);
+  }
+
+  /**
+   * Takes a task: appends a run, saves it, and only then hands the job, as
+   * read now, to a run worker. The slot is the run's from this moment.
+   */
+  private claim(work: Work, queue: Handle<Queue>, task: Handle<Task>, read: Task) {
+    let finish!: () => void;
+    const run: Running = {
+      id: crypto.randomUUID(),
+      key: work.key,
+      task,
+      queue,
+      slot: null,
+      stopping: null,
+      over: false,
+      logs: [],
+      unsaid: [],
+      progress: undefined,
+      progressNew: false,
+      finished: new Promise<void>((resolve) => (finish = resolve)),
+      finish: () => finish(),
+    };
+    const job: Job = { taskUrl: task.url, runId: run.id, importUrl: read.importUrl, input: read.input, key: work.key };
+    this.runs.set(run.id, run);
+    task.change((doc) => claimRun(doc, { id: run.id, pool: this.options.id, start: this.clock.now() }));
+    this.options.repo.flush([task.documentId]).then(
+      () => this.begin(run, job),
+      (error) => {
+        // Its start is not saved, so its code is not called: a run this pool no longer has.
+        console.error('pool: saving a run before starting it failed', error);
+        this.complete(run, { status: 'lost' });
+      },
+    );
+  }
+
+  private begin(run: Running, job: Job) {
+    const reason = run.stopping ?? this.stopFor(run);
+    if (reason) {
+      this.complete(run, { status: statusOf(reason) });
+      return;
+    }
+    let slot: Slot;
+    try {
+      slot = this.idle.pop() ?? this.startWorker();
+    } catch (error) {
+      this.log(run, `a worker could not be started: ${(error as Error)?.message ?? error}`);
+      this.complete(run, { status: 'failed' });
+      return;
+    }
+    slot.run = run;
+    run.slot = slot;
+    this.say(run, true);
+    run.beat = this.clock.setInterval(() => this.say(run, true), BEAT_MS);
+    slot.worker.run(job);
+  }
+
+  private startWorker(): Slot {
+    const slot = { run: null, gone: false } as unknown as Slot;
+    // What a worker says counts only while it is handed a run and has not been ended.
+    const forRun =
+      <Args extends unknown[]>(fn: (run: Running, ...args: Args) => void) =>
+      (...args: Args) => {
+        if (!slot.gone && slot.run) {
+          fn(slot.run, ...args);
+        }
+      };
+    const fail = (run: Running, message: string) => {
+      this.log(run, message);
+      this.ended(run, { status: 'failed' });
+    };
+    slot.worker = this.options.executor.start({
+      log: forRun((run, message: string) => this.log(run, message)),
+      progress: forRun((run, value: unknown) => {
+        run.progress = value;
+        run.progressNew = true;
+        this.saySoon(run);
+      }),
+      done: forRun((run, result: unknown) => this.ended(run, { status: 'succeeded', result })),
+      threw: forRun(fail),
+      exit: () => {
+        const run = slot.gone ? null : slot.run;
+        slot.gone = true;
+        this.idle = this.idle.filter((it) => it !== slot);
+        if (run) {
+          fail(run, 'its worker died');
+        }
+      },
+    });
+    return slot;
+  }
+
+  /** Its code is over by itself. A run being stopped is recorded with its reason, and its worker is not kept. */
+  private ended(run: Running, how: { status: RunStatus; result?: unknown }) {
+    if (run.stopping) {
+      this.kill(run);
+      this.complete(run, { status: statusOf(run.stopping) });
+      return;
+    }
+    const slot = run.slot!;
+    slot.run = null;
+    if (!slot.gone) {
+      this.idle.push(slot);
+    }
+    this.complete(run, how);
+  }
+
+  private stopRun(run: Running, reason: StopReason) {
+    if (run.stopping || run.over) {
+      return;
+    }
+    run.stopping = reason;
+    if (!run.slot) {
+      return; // not started: `begin` records it once the start is saved
+    }
+    run.slot.worker.abort(reason);
+    run.kill = this.clock.setTimeout(() => {
+      this.kill(run);
+      this.complete(run, { status: statusOf(reason) });
+    }, GRACE_MS);
+  }
+
+  private kill(run: Running) {
+    const slot = run.slot;
+    if (slot && !slot.gone) {
+      slot.gone = true;
+      slot.run = null;
+      slot.worker.terminate();
+    }
+  }
+
+  /** Writes the run's end, once; saves it; then lets the entry go if the task has ended, and frees the slot. */
+  private complete(run: Running, how: { status: RunStatus; result?: unknown }) {
+    if (run.over) {
+      return;
+    }
+    run.over = true;
+    this.clock.clearInterval(run.beat);
+    this.clock.clearTimeout(run.sayTimer);
+    this.clock.clearTimeout(run.kill);
+    const end = this.clock.now();
+    try {
+      run.task.change((doc) => endRun(doc, run.id, { status: how.status, result: how.result, logs: run.logs, end }));
+    } catch (error) {
+      console.error('pool: recording the end of a run failed', error); // its document is gone
+    }
+    this.options.repo
+      .flush([run.task.documentId])
+      .catch((error) => console.error('pool: saving the end of a run failed', error))
+      .then(() => {
+        try {
+          const queue = run.queue.isDeleted?.() ? undefined : run.queue.doc();
+          if (mayDelist(run.task.doc(), named(queue, run.key, run.task.url))) {
+            run.queue.change((doc) => delistTask(doc, run.key, run.task.url));
+          }
+        } catch (error) {
+          console.error('pool: letting an entry go failed', error);
+        }
+        this.runs.delete(run.id);
+        run.finish();
+        this.review();
+      });
+  }
+
+  private log(run: Running, message: string) {
+    const line = { timestampMillis: this.clock.now(), message };
+    run.logs.push(line);
+    if (run.logs.length > 2 * MAX_LOG_LINES) {
+      run.logs.splice(0, run.logs.length - MAX_LOG_LINES);
+    }
+    run.unsaid.push(line);
+    this.saySoon(run);
+  }
+
+  private saySoon(run: Running) {
+    if (run.sayTimer === undefined && !run.over) {
+      run.sayTimer = this.clock.setTimeout(() => {
+        run.sayTimer = undefined;
+        this.say(run, false);
+      }, SAY_EVERY_MS);
+    }
+  }
+
+  /** Says the run is going on (`again`), or only that there is news of it, if there is. */
+  private say(run: Running, again: boolean) {
+    if (run.over || (!again && !run.progressNew && run.unsaid.length === 0)) {
+      return;
+    }
+    const withProgress = run.progressNew || (again && run.progress !== undefined);
+    this.send(run.task, {
+      type: 'task progress',
+      run: run.id,
+      ...(withProgress ? { progress: sendable(run.progress) } : {}),
+      ...(run.unsaid.length > 0 ? { logs: run.unsaid } : {}),
+    } satisfies Omit<RunProgressMessage, keyof Stamp>);
+    run.unsaid = [];
+    run.progressNew = false;
+  }
+
+  private sayServing(handle: Handle<Queue> | undefined) {
+    if (handle) {
+      const { id: pool, name, slots } = this.options;
+      this.send(handle, { type: 'serving', pool, name, slots, busy: this.busy } satisfies Omit<ServingMessage, keyof Stamp>);
+    }
+  }
+
+  private send(handle: Handle<any>, message: { type: string }) {
+    const seq = this.seq.get(handle.url) ?? 0;
+    this.seq.set(handle.url, seq + 1);
+    this.ears.send(handle, { ...message, from: this.from, seq });
+  }
+}
+
+/** A copy that can be sent in a message. */
+function sendable(value: unknown): unknown {
+  try {
+    return value === undefined ? null : (JSON.parse(JSON.stringify(value)) ?? null);
+  } catch {
+    return String(value);
+  }
+}

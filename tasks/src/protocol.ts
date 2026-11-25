@@ -149,3 +149,34 @@ export interface WorkOnTaskMessage extends Stamp {
   /** For a task asked for by key (see jobs.ts), the key. */
   key?: string;
 }
+
+/**
+ * That a run is going on, said by its pool on the task doc's channel at once
+ * when the run starts and every BEAT_MS after, with what its code has
+ * reported since (see rules.ts and pool.ts). The pool sends it, not the run's
+ * worker, so a run blocked in its own code is still heard.
+ */
+export interface RunProgressMessage extends Stamp {
+  type: 'task progress';
+  /** The run's name, as it is in the task's `runs`. */
+  run: string;
+  /** What the run's code last reported, when this message brings news of it or says it again. */
+  progress?: unknown;
+  /** Lines its code has logged since the last message. */
+  logs?: { timestampMillis: number; message: string }[];
+}
+
+/**
+ * That a pool serves a queue, said on the queue doc's channel every BEAT_MS.
+ * It is advice for views and askers: nothing decides anything by it.
+ */
+export interface ServingMessage extends Stamp {
+  type: 'serving';
+  /** The pool's id, which outlives its restarts. */
+  pool: string;
+  /** A name for people. */
+  name: string;
+  slots: number;
+  /** How many of its slots have a run in them. */
+  busy: number;
+}
