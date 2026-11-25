@@ -1,5 +1,5 @@
 /**
- * task-runs.js — a run document, asked of a machine as a task: asking, stopping, reading, and the run's side. [kit: task-runs.js v1]
+ * task-runs.js — a run document, asked of a machine as a task: asking, stopping, reading, and the run's side. [kit: task-runs.js v2]
  *
  * For a package whose work is a long run on another machine (a solver), kept
  * in a document of its own. The canonical copy is in the tasks package; a
@@ -56,7 +56,9 @@
  * `stopWait` of the abort, whatever its runner is still waiting on.
  */
 
-import { ask, cancel, inSamePackage, served } from './task-client.js';
+import { ask, cancel, findWhenThere, inSamePackage, served } from './task-client.js';
+
+export { findWhenThere };
 import { BEAT_MS, GRACE_MS, allHeard, isOpen, isTask, recordsOf, taskError, taskState, waitingWork } from './task-rules.js';
 
 /** @typedef {import('./task-rules.js').Task} Task */
@@ -426,40 +428,6 @@ export function earlier(task, runId) {
     return 'open';
   }
   return runs.length ? 'closed' : 'none';
-}
-
-/**
- * Finds a document that may not have reached this peer's sync server yet:
- * `repo.find` rejects one it can't get rather than waiting, and documents
- * travel separately (a run document can arrive after its task; a layer after
- * the link to it). So it asks again, a few times, before believing it.
- * @param {{ find(url: string): Promise<any> }} repo
- * @param {string} url
- * @param {{ tries?: number, wait?: number, sleep?: (ms: number) => Promise<void> }} [options]  tries: attempts in all; wait: ms before the first retry, doubling, at most 8 s
- * @returns {Promise<any>} the handle
- */
-export async function findWhenThere(
-  repo,
-  url,
-  { tries = 8, wait = 500, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {},
-) {
-  /** @type {unknown} */
-  let last;
-  for (let i = 0; i < tries; i++) {
-    try {
-      const handle = await repo.find(url);
-      if (handle?.doc?.()) {
-        return handle;
-      }
-      last = new Error(`${url} came back empty`);
-    } catch (err) {
-      last = err;
-    }
-    if (i + 1 < tries) {
-      await sleep(Math.min(8_000, wait * 2 ** i));
-    }
-  }
-  throw last;
 }
 
 /**

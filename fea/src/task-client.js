@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v6]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v7]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -11,10 +11,11 @@
  * It also holds how the task system's messages travel (`send`, `listen`),
  * because hearing them is half of following a task; and, for a page, where
  * a person's list of served queues and their own queue are kept
- * (`ownQueue`, `tasksStorage`).
+ * (`ownQueue`, `tasksStorage`), and how a tool there has work done (`doWork`).
  */
 
 import {
+  BEAT_MS,
   LAPSE_MS,
   MAX_LOG_LINES,
   checkKey,
@@ -529,11 +530,13 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
  * @param {string} queueUrl
  * @param {Ask} request
  * @param {(view: TaskView) => void} [onProgress]
+ * @param {AbortSignal} [signal]  aborting it stops the task (`cancel`), and this then rejects
  * @returns {Promise<unknown>}
  */
-export async function run(repo, queueUrl, request, onProgress) {
+export async function run(repo, queueUrl, request, onProgress, signal) {
   const { key, taskUrl } = await ask(repo, queueUrl, request);
   return new Promise((resolve, reject) => {
+    const stopIt = () => void cancel(repo, queueUrl, key).catch(() => {});
     const stop = watch(
       repo,
       queueUrl,
@@ -543,6 +546,7 @@ export async function run(repo, queueUrl, request, onProgress) {
         if (!isFinished(view.state)) {
           return;
         }
+        signal?.removeEventListener('abort', stopIt);
         stop();
         if (view.state === 'succeeded') {
           resolve(view.result);
@@ -556,6 +560,11 @@ export async function run(repo, queueUrl, request, onProgress) {
       },
       { keep: true, from: taskUrl },
     );
+    if (signal?.aborted) {
+      stopIt();
+    } else {
+      signal?.addEventListener('abort', stopIt, { once: true });
+    }
   });
 }
 
@@ -691,8 +700,10 @@ export const PROVIDER_WAIT_MS = 5_000;
  * @typedef {{ own?: string, [key: string]: unknown }} TasksStorage
  */
 
-/** Whether a key of the storage document names a queue: only an automerge url does. */
-const isQueueKey = (/** @type {unknown} */ key) => typeof key === 'string' && key.startsWith('automerge:');
+const DOCUMENT_URL = /^automerge:[1-9A-HJ-NP-Za-km-z]{16,64}$/;
+
+/** Whether a key of the storage document names a queue: only a document's automerge url does. */
+const isQueueKey = (/** @type {unknown} */ key) => typeof key === 'string' && DOCUMENT_URL.test(key);
 
 /**
  * The url of the task system's storage document an account names, or null
@@ -900,4 +911,218 @@ export async function ownQueue(repo, element) {
     });
   }
   return own;
+}
+
+// Finding a document that may not have arrived
+//
+// A document made a moment ago on another machine reaches this one by the
+// sync server. A Repo asked for it too early says it is unavailable, and
+// goes on saying so each time it is asked until the document comes.
+
+/**
+ * Finds a document, asking again while the Repo says it is unavailable or
+ * hands it back empty: about half a minute in all with the defaults. No one
+ * asking is waited on for longer than `each`. Throws what the last try threw.
+ * @param {{ find(url: string): Promise<any> }} repo
+ * @param {string} url
+ * @param {{ tries?: number, wait?: number, each?: number, sleep?: (ms: number) => Promise<unknown> }} [options]  tries: attempts in all; wait: ms before the first retry, doubling, at most 8 s
+ * @returns {Promise<any>} the document's handle
+ */
+export async function findWhenThere(
+  repo,
+  url,
+  { tries = 8, wait = 500, each = 30_000, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {},
+) {
+  /** @type {unknown} */
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const handle = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${url} did not arrive in ${each} ms`)), each);
+        repo.find(url).then(
+          (found) => (clearTimeout(timer), resolve(found)),
+          (error) => (clearTimeout(timer), reject(error)),
+        );
+      });
+      if (handle?.doc?.()) {
+        return handle;
+      }
+      last = new Error(`${url} came back empty`);
+    } catch (error) {
+      last = error;
+    }
+    if (i + 1 < tries) {
+      await sleep(Math.min(8_000, wait * 2 ** i));
+    }
+  }
+  throw last;
+}
+
+// Having work done, from a page
+//
+// A tool in a page that wants work done has it done by a task asked of the
+// person's own queue when a pool is heard serving that queue, and otherwise
+// here, by importing the same code and calling it in the page. Either way it
+// is the one module the import url names, called with (input, ctx). What
+// differs is what the person gets. Asked of their queue, the work goes on
+// when this page closes, is done once however many pages ask for it under
+// one key, and a stop ends it for good. Done here it is this page's alone,
+// as a tool's own work always was, and code that does not heed its signal
+// runs on. Nothing is made by asking: a person has a queue of their own only
+// once they have said so (`ownQueue`).
+
+/**
+ * The pools heard serving the queues this page has had work done on, by Repo
+ * and queue. Each queue is listened to from the first asking for as long as
+ * the page lives, so that only the first asking waits to hear.
+ * @type {WeakMap<object, Map<string, { pools: Serving[], first: Promise<void> }>>}
+ */
+const heardServing = new WeakMap();
+
+/**
+ * The pools heard serving a queue: at once if this page has listened to it
+ * before, else after the first pool is heard or a beat and a little has passed.
+ * @param {any} repo
+ * @param {string} queueUrl
+ * @returns {Promise<Serving[]>}
+ */
+function poolsHeard(repo, queueUrl) {
+  let queues = heardServing.get(repo);
+  if (!queues) {
+    heardServing.set(repo, (queues = new Map()));
+  }
+  let state = queues.get(queueUrl);
+  if (!state) {
+    let heardOne = () => {};
+    const made = {
+      pools: /** @type {Serving[]} */ ([]),
+      first: /** @type {Promise<void>} */ (
+        new Promise((resolve) => {
+          heardOne = resolve;
+          setTimeout(resolve, BEAT_MS + 500);
+        })
+      ),
+    };
+    queues.set(queueUrl, (state = made));
+    served(repo, queueUrl, (pools) => {
+      made.pools = pools;
+      if (pools.length) {
+        heardOne();
+      }
+    });
+  }
+  const { first } = state;
+  return first.then(() => /** @type {{ pools: Serving[] }} */ (state).pools);
+}
+
+/**
+ * The person's own queue, if they have one and a pool is heard serving it;
+ * null otherwise. Only reads.
+ * @param {any} repo
+ * @returns {Promise<string | null>}
+ */
+async function servedOwnQueue(repo) {
+  const account = /** @type {any} */ (globalThis).accountDocHandle?.doc?.();
+  const storageUrl = storageUrlOf(account);
+  if (!storageUrl) {
+    return null;
+  }
+  const own = await repo.find(storageUrl).then(
+    (/** @type {any} */ storage) => ownQueueOf(storage.doc()),
+    () => null,
+  );
+  return own && (await poolsHeard(repo, own)).length > 0 ? own : null;
+}
+
+/**
+ * Has work done: asked of the person's own queue if a pool is heard serving
+ * it (as `run`), and otherwise done here. Resolves to what the code
+ * returned; rejects with what it threw, or "The task was cancelled" once
+ * `signal` is aborted. `onProgress` hears the same views either way (one for
+ * work done here has no `taskUrl` and no `runs`).
+ * @param {any} repo  the Repo the page's account is in
+ * @param {Ask} request
+ * @param {{ onProgress?: (view: TaskView) => void, signal?: AbortSignal }} [options]
+ * @returns {Promise<unknown>}
+ */
+export async function doWork(repo, request, { onProgress, signal } = {}) {
+  const queue = await servedOwnQueue(repo).catch(() => null);
+  return queue ? run(repo, queue, request, onProgress, signal) : workHere(repo, request, onProgress, signal);
+}
+
+/**
+ * Does work in this page: imports the code and calls it with a context like
+ * a pool's, but for `taskUrl`, since there is no task.
+ * @param {any} repo
+ * @param {Ask} request
+ * @param {((view: TaskView) => void) | undefined} onProgress
+ * @param {AbortSignal | undefined} signal
+ * @returns {Promise<unknown>}
+ */
+async function workHere(repo, { importUrl, input, key }, onProgress, signal) {
+  /** @type {LogLine[]} */
+  const logs = [];
+  /** @type {unknown} */
+  let progress = null;
+  const say = (/** @type {TaskState} */ state, /** @type {Partial<TaskView>} */ more = {}) =>
+    onProgress?.({
+      key: key ?? '',
+      state,
+      taskUrl: null,
+      importUrl,
+      input,
+      progress,
+      logs: [...logs],
+      result: undefined,
+      error: null,
+      runs: [],
+      ...more,
+    });
+  const stopped = new AbortController();
+  const stopIt = () => stopped.abort('cancelled');
+  if (signal?.aborted) {
+    stopIt();
+  } else {
+    signal?.addEventListener('abort', stopIt, { once: true });
+  }
+  const context = {
+    log(/** @type {unknown[]} */ ...args) {
+      logs.push({ timestampMillis: Date.now(), message: args.map((arg) => '' + arg).join(' ') });
+      logs.splice(0, logs.length - MAX_LOG_LINES);
+      say('running');
+    },
+    progress(/** @type {unknown} */ value) {
+      progress = value;
+      say('running');
+    },
+    signal: stopped.signal,
+    repo,
+    taskUrl: null,
+    key: key ?? null,
+    run: crypto.randomUUID(),
+  };
+  say('running');
+  try {
+    const module = await import(/* @vite-ignore */ importUrl);
+    if (typeof module?.default !== 'function') {
+      throw new Error("the task's code has no default export to call");
+    }
+    const result = copy(await module.default.call(context, copy(input), context));
+    if (stopped.signal.aborted) {
+      throw new Error('stopped');
+    }
+    say('succeeded', { result });
+    return result;
+  } catch (error) {
+    if (stopped.signal.aborted) {
+      say('cancelled');
+      throw new Error('The task was cancelled');
+    }
+    const message = /** @type {any} */ (error)?.message ?? '' + error;
+    logs.push({ timestampMillis: Date.now(), message });
+    say('failed', { error: message });
+    throw new Error(message);
+  } finally {
+    signal?.removeEventListener('abort', stopIt);
+  }
 }

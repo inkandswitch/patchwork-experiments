@@ -17,8 +17,9 @@ import {
 import { QUEUE_DATATYPE_ID, TASKS_STORAGE_ID } from './ids';
 import { ownQueueOf, servedOf, setServed, storageUrlOf } from './task-client.js';
 
-const one = 'automerge:one' as any;
-const other = 'automerge:other' as any;
+// queues are named by documents' urls, and only a key of that shape is read as one
+const one = 'automerge:3Fm8QhPjBbiN2wZxkT6sUoYvLa1d' as any;
+const other = 'automerge:4Gn9RiQkCcjP3xAymU7tVpZwMb2e' as any;
 const STORAGE = 'automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P';
 
 describe("where an account's task storage is", () => {
