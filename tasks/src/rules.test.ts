@@ -1,13 +1,15 @@
 // @vitest-environment node
 //
-// These tests attack the rules in task-rules.js (kit v2). The first half is a
+// These tests attack the rules in task-rules.js (kit v3). The first half is a
 // table of every task the rules can be asked about with up to three records,
 // and checks each promise the header makes against expectations written out
 // here from the header's words, not from the helpers the rules use. Then the
-// one promise everything rests on, that a reading of "ended" changes in one
-// circumstance only, is checked against every legal next change of every row.
-// The second half merges real Automerge documents, because the rules lean on
-// what a merge does to a list and to a map key.
+// one promise everything rests on, that a reading of "ended" is final for a
+// reader that has every record and hears every open run, is checked against
+// every legal next change of every row and against a record of every kind
+// landing at every place in the list. The second half merges real Automerge
+// documents, because the rules lean on what a merge does to a list and to a
+// map key.
 //
 // A test named "RULE HOLE: ..." states a promise the header makes that the
 // rules, as written, do not keep. It is marked `it.fails`, so it passes while
@@ -18,6 +20,7 @@ import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
 import { describe, expect, it } from 'vitest';
 import {
   allHeard,
+  BEAT_MS,
   claimRun,
   delistTask,
   endRun,
@@ -32,10 +35,12 @@ import {
   isFinished,
   isHeard,
   isOpen,
+  isStop,
   isTask,
   isWanted,
   LAPSE_MS,
   listTask,
+  lostCount,
   LOST_TOO_OFTEN,
   MAX_LOG_LINES,
   MAX_LOST,
@@ -47,6 +52,7 @@ import {
   named,
   orphans,
   type Queue,
+  recordsOf,
   type Run,
   type RunStatus,
   stopReason,
@@ -81,8 +87,10 @@ const STATUSES: RunStatus[] = ['succeeded', 'failed', 'cancelled', 'lost', 'yiel
 const FINALS: FinalStatus[] = ['succeeded', 'failed', 'cancelled'];
 
 const openKind = (kind: Kind) => kind === 'heard' || kind === 'unheard';
-/** "A record in its list that ends it for good": a run completed so, or a stop. */
-const finalKind = (kind: Kind) => kind === 'succeeded' || kind === 'failed' || kind === 'cancelled' || kind === 'stop';
+/** "A run in its list that ended it for good": a run its pool completed with a final status. A stop is not a run. */
+const finalRunKind = (kind: Kind) => kind === 'succeeded' || kind === 'failed' || kind === 'cancelled';
+/** A record that ends the task for some reader: a final run, or a stop. Where there is one, the task is not wanted. */
+const finalKind = (kind: Kind) => finalRunKind(kind) || kind === 'stop';
 const saysCancelled = (kind: Kind) => kind === 'cancelled' || kind === 'stop';
 const statusOfKind = (kind: Kind) => (kind === 'stop' ? 'cancelled' : kind) as FinalStatus;
 
@@ -183,10 +191,30 @@ function everyRow(check: (row: Row) => string | null | undefined, rows: Row[] = 
 // What the header says, spelled out from the kinds alone.
 
 const lostIn = (specs: Spec[]) => specs.filter((spec) => spec.kind === 'lost').length;
-const firstFinal = (specs: Spec[]) => specs.findIndex((spec) => finalKind(spec.kind));
+const firstFinalRun = (specs: Spec[]) => specs.findIndex((spec) => finalRunKind(spec.kind));
 const anyFinal = (specs: Spec[]) => specs.some((spec) => finalKind(spec.kind));
+const anyStop = (specs: Spec[]) => specs.some((spec) => spec.kind === 'stop');
 const isHeldIn = (specs: Spec[]) => specs.some((spec) => spec.kind === 'heard');
 const anyOpenIn = (specs: Spec[]) => specs.some((spec) => openKind(spec.kind));
+
+/**
+ * The record `endingRun` names, from the header: "the first run that ended it
+ * for good, or, if no run did, the first stop".
+ */
+function expectedEndingRecord(specs: Spec[]): number {
+  const run = firstFinalRun(specs);
+  return run >= 0 ? run : specs.findIndex((spec) => spec.kind === 'stop');
+}
+
+/**
+ * Where in the list the ending is read, for a reader: at the first final run,
+ * or, when no run ended the task, after every record ("a stop is read last").
+ * A heard open run before this place keeps the task from having ended.
+ */
+const readAt = (specs: Spec[]) => {
+  const run = firstFinalRun(specs);
+  return run >= 0 ? run : specs.length;
+};
 
 /** "The task's HOLDER is its first open run, in list order, that is heard." */
 function expectedHolder(specs: Spec[]): string | null {
@@ -195,15 +223,20 @@ function expectedHolder(specs: Spec[]): string | null {
 }
 
 /**
- * "The status of the first record in its list that ends it for good, once no
- * heard open run comes before that record. Until then it has not ended."
+ * "The status of the first run in its list that ended it for good, once no
+ * heard open run comes before that run. A stop is read last: it ends a task
+ * that no run ended and no heard run still holds. Until then the task has not
+ * ended."
  */
 function expectedEnding(specs: Spec[]): FinalStatus | null {
-  const at = firstFinal(specs);
-  if (at < 0 || specs.slice(0, at).some((spec) => spec.kind === 'heard')) {
+  if (specs.slice(0, readAt(specs)).some((spec) => spec.kind === 'heard')) {
     return null;
   }
-  return statusOfKind(specs[at].kind);
+  const run = firstFinalRun(specs);
+  if (run >= 0) {
+    return statusOfKind(specs[run].kind);
+  }
+  return anyStop(specs) ? 'cancelled' : null;
 }
 
 /**
@@ -236,18 +269,22 @@ function expectedClaim(row: Row, pool: PoolName): boolean {
 }
 
 /**
- * "`cancelled` if any record says cancelled; `yielded` if any record says
- * succeeded, or a record before this run ended the task, or the key names
- * another task, or an earlier run it can hear holds it." A failure after it,
- * a key naming nothing, and lost runs stop nothing.
+ * In this order: "`yielded`, if the work is done (some run says `succeeded`)";
+ * "`cancelled`, if the task has been stopped (a stop, or a run recorded as
+ * stopped)"; "`yielded`, if a run before this one in the list ended the task,
+ * or its key now names another task, or an earlier run that this pool hears
+ * has it". A failure after it, a key naming nothing, and lost runs stop
+ * nothing.
  */
 function expectedStop(specs: Spec[], is: Named, index: number, hears: (spec: Spec) => boolean): 'cancelled' | 'yielded' | null {
+  if (specs.some((spec) => spec.kind === 'succeeded')) {
+    return 'yielded';
+  }
   if (specs.some((spec) => saysCancelled(spec.kind))) {
     return 'cancelled';
   }
   const before = specs.slice(0, index);
   if (
-    specs.some((spec) => spec.kind === 'succeeded') ||
     before.some((spec) => finalKind(spec.kind)) ||
     is === 'other' ||
     before.some((spec) => openKind(spec.kind) && hears(spec))
@@ -295,7 +332,7 @@ describe('every task with up to three records', () => {
     });
   });
 
-  it('ending: the first record that ends the task, unless a heard open run comes before it; no record, no ending', () => {
+  it('ending: the first final run, unless a heard open run comes before it; with no final run, cancelled on a stop anywhere unless a heard open run is anywhere; else none', () => {
     everyRow((row) => {
       const got = ending(row.task, row.heard);
       const want = expectedEnding(row.specs);
@@ -311,12 +348,32 @@ describe('every task with up to three records', () => {
     });
   });
 
-  it('endingRun: the first record in list order with a final status, a stop included', () => {
+  it('endingRun: the first run with a final status, else the first stop, else null; no hearing asked', () => {
     everyRow((row) => {
-      const at = firstFinal(row.specs);
+      const at = expectedEndingRecord(row.specs);
       const got = endingRun(row.task)?.id ?? null;
       const want = at < 0 ? null : runId(at);
       return got === want ? null : `endingRun ${got}, expected ${want}`;
+    });
+  });
+
+  it('isStop: exactly the records with no pool that say cancelled; a run its pool recorded cancelled is not one', () => {
+    everyRow((row) => {
+      for (const [index, spec] of row.specs.entries()) {
+        if (isStop(row.task.runs[index]) !== (spec.kind === 'stop')) {
+          return `isStop(${runId(index)}) ${isStop(row.task.runs[index])}`;
+        }
+      }
+      return null;
+    });
+  });
+
+  it('recordsOf: the very list a task has, in order; lostCount: how many of them say lost', () => {
+    everyRow((row) => {
+      if (recordsOf(row.task) !== row.task.runs) {
+        return 'recordsOf is not the list';
+      }
+      return lostCount(row.task) === lostIn(row.specs) ? null : `lostCount ${lostCount(row.task)}`;
     });
   });
 
@@ -387,7 +444,7 @@ describe('every task with up to three records', () => {
     });
   });
 
-  it('stopReason for every open run: cancelled on any cancelled record; yielded on any success, a final record before it, another key, or an earlier heard run; a failure after it stops nothing', () => {
+  it('stopReason for every open run: yielded on any success; else cancelled on any cancelled record (stop or run); else yielded on a final record before it, another key, or an earlier heard run; a failure after it stops nothing', () => {
     everyRow((row) => {
       for (const index of openRuns(row)) {
         const got = stopReason(row.task, runId(index), row.is, row.heard);
@@ -491,7 +548,7 @@ describe('every task with up to three records', () => {
 
   it("taskResult: the result of the record that ended the task, when it succeeded; taskError: that record's last line, for a listener that reads failed", () => {
     everyRow((row) => {
-      const at = firstFinal(row.specs);
+      const at = expectedEndingRecord(row.specs);
       const result = taskResult(row.task);
       const wantResult = at >= 0 && row.specs[at].kind === 'succeeded' ? { from: runId(at) } : undefined;
       if (JSON.stringify(result) !== JSON.stringify(wantResult)) {
@@ -553,18 +610,28 @@ describe('the tasks that are neither wanted nor ended', () => {
   // run going unheard.
   const NEITHER = ROWS.filter((row) => !isWanted(row.task) && ending(row.task, row.heard) === null);
 
-  it('are exactly the rows with a record that ends the task and a heard open run before the first such record', () => {
+  it('are exactly the rows with a final run and a heard open run before it, and the rows with no final run, a stop, and a heard open run anywhere', () => {
     everyRow((row) => {
       const neither = NEITHER.includes(row);
-      const at = firstFinal(row.specs);
-      const want = at >= 0 && row.specs.slice(0, at).some((spec) => spec.kind === 'heard');
+      const run = firstFinalRun(row.specs);
+      const want =
+        run >= 0
+          ? row.specs.slice(0, run).some((spec) => spec.kind === 'heard')
+          : anyStop(row.specs) && isHeldIn(row.specs);
       return neither === want ? null : `neither ${neither}, expected ${want}`;
     });
-    // Counted by hand: records before the first final one are drawn from the 6 that are not final (heard,
-    // unheard, each of P or Q; lost; yielded), at least one of them heard (2 of the 6); then one of the 4
-    // final records; then anything. [h, F]: 2 * 4. [h, F, x]: 2 * 4 * 10. [a, b, F] with a heard among a, b:
-    // (6 * 6 - 4 * 4) * 4. Times the 3 things the key can name.
-    expect(NEITHER.length).toBe((2 * 4 + 2 * 4 * 10 + (6 * 6 - 4 * 4) * 4) * 3);
+    // Counted by hand. Of the 10 specs, 2 are heard, 3 are final runs, and 7 are not final runs (heard and
+    // unheard of P or Q, lost, yielded, the stop).
+    // With a final run: what comes before the first one is drawn from the 7, at least one of them heard;
+    // then one of the 3 final runs; then anything. [h, R]: 2 * 3. [h, R, x]: 2 * 3 * 10. [a, b, R] with a
+    // heard among a, b: (7 * 7 - 5 * 5) * 3.
+    // With no final run: every record is one of the 7, with at least one stop and one heard. Length 2: the
+    // heard one first or second, 2 * 2. Length 3: 7^3 - 6^3 (no stop) - 5^3 (none heard) + 4^3 (neither).
+    // Times the 3 things the key can name.
+    const withRun = 2 * 3 + 2 * 3 * 10 + (7 * 7 - 5 * 5) * 3;
+    const withStop = 2 * 2 + (7 ** 3 - 6 ** 3 - 5 ** 3 + 4 ** 3);
+    expect([withRun, withStop]).toEqual([138, 70]);
+    expect(NEITHER.length).toBe((withRun + withStop) * 3);
   });
 
   it('read running, or stopping when a record says cancelled; nobody may take them or list them again; the entry may go', () => {
@@ -582,8 +649,9 @@ describe('the tasks that are neither wanted nor ended', () => {
     }, NEITHER);
   });
 
-  it('the holder carries on (the rescue rule) exactly when every record that ends the task says failed and the key does not name another', () => {
+  it('the holder carries on (the rescue rule) exactly when every record that ends the task says failed and the key does not name another; otherwise it yields to a success before it is cancelled', () => {
     let rescued = 0;
+    let successAndStop = 0;
     everyRow((row) => {
       const at = row.specs.findIndex((spec) => spec.kind === 'heard');
       const reason = stopReason(row.task, runId(at), row.is, row.heard);
@@ -595,16 +663,22 @@ describe('the tasks that are neither wanted nor ended', () => {
       if ((reason === null) !== carries) {
         return `the holder is told ${reason}`;
       }
-      // otherwise it is told why: cancelled on a cancelled record, else yielded
-      if (!carries && reason !== (finals.some((spec) => saysCancelled(spec.kind)) ? 'cancelled' : 'yielded')) {
+      // otherwise it is told why: yielded on a success, else cancelled on a cancelled record, else yielded
+      const succeeded = finals.some((spec) => spec.kind === 'succeeded');
+      const cancelled = finals.some((spec) => saysCancelled(spec.kind));
+      if (succeeded && cancelled) {
+        successAndStop++;
+      }
+      if (!carries && reason !== (!succeeded && cancelled ? 'cancelled' : 'yielded')) {
         return `the holder is told ${reason}`;
       }
       return null;
     }, NEITHER);
     expect(rescued).toBeGreaterThan(0);
+    expect(successAndStop).toBeGreaterThan(0);
   });
 
-  it("what its holder's pool then writes ends the task as the list says: the holder's own status if final, else the first final record after it", () => {
+  it("what its holder's pool then writes ends the task as the list says: the holder's own status if final (it is then the first final run), else as the rest of the list reads", () => {
     everyRow((row) => {
       const at = row.specs.findIndex((spec) => spec.kind === 'heard');
       const id = runId(at);
@@ -684,7 +758,7 @@ function statusesSeen(task: Task, index: number): Set<RunStatus> {
   return seen;
 }
 
-/** Every change a document may legally see next. */
+/** Every change a document may legally see appended or written next. */
 function legalChanges(row: Row): Change[] {
   const changes: Change[] = [];
   // A pool appends a run only when it may take the task; one that hears
@@ -711,19 +785,43 @@ function legalChanges(row: Row): Change[] {
   return changes;
 }
 
-const readingOf = (task: Task, heard: Heard) => `${ending(task, heard)} by ${ending(task, heard) ? endingRun(task)?.id : '-'}`;
+/**
+ * A reading of "ended", as an asker takes it: the ending, and for a success
+ * or a failure the record it was read from, which gives the result or the
+ * reason. Which record says `cancelled` gives the asker nothing more.
+ */
+const readingOf = (task: Task, heard: Heard) => {
+  const ended = ending(task, heard);
+  return ended === 'succeeded' || ended === 'failed' ? `${ended} by ${endingRun(task)?.id}` : String(ended);
+};
+
+/**
+ * The records that can land in a list without their writer having seen the
+ * ending: a run taken at the same time (open, which a reader that hears every
+ * open run hears from first sight, or already completed with any status), or
+ * a stop.
+ */
+const INSERTS: { kind: Kind; record: Run }[] = [
+  { kind: 'heard', record: { id: 'new', pool: 'R', start: 9 } },
+  ...STATUSES.map((status) => ({
+    kind: status as Kind,
+    record: { id: 'new', pool: 'R', start: 9, end: 9, status, result: status === 'succeeded' ? 'new' : null, logs: [] } as Run,
+  })),
+  { kind: 'stop', record: { id: 'new', start: 9, end: 9, status: 'cancelled' } },
+];
+
+/** The readers the header's promise is made to: they have every record and hear every open run. */
+const FULL_READERS: [string, Row[]][] = [
+  ['its own hearing, on every row where it hears every open run', ROWS.filter((row) => !row.specs.some((spec) => spec.kind === 'unheard'))],
+  ['allHeard, on every row', ROWS.map((row) => ({ ...row, heard: allHeard }))],
+];
 
 describe('a reading of "ended"', () => {
   // Each change gives a row of the table again or a list of four, and leaves
   // every run the reader heard heard, so a history of changes is a sequence
   // of the single steps checked here.
-  const readers: [string, Row[]][] = [
-    ['its own hearing, on every row where it hears every open run', ROWS.filter((row) => !row.specs.some((spec) => spec.kind === 'unheard'))],
-    ['allHeard, on every row', ROWS.map((row) => ({ ...row, heard: allHeard }))],
-  ];
-
-  for (const [name, rows] of readers) {
-    it(`never changes, for a reader that hears every open run, whatever legal change comes next: ${name}`, () => {
+  for (const [name, rows] of FULL_READERS) {
+    it(`is final for a reader that has every record and hears every open run: no legal next change alters it: ${name}`, () => {
       let exercised = 0;
       let unseen = 0;
       everyRow((row) => {
@@ -748,16 +846,98 @@ describe('a reading of "ended"', () => {
       expect(exercised).toBeGreaterThan(0);
       expect(unseen).toBeGreaterThan(0);
     });
+
+    it(`changes for that reader only by a record that lands before where the ending is read: an open run un-ends it, a final run's status replaces it, nothing else does: ${name}`, () => {
+      // A record made without knowledge of the ending can land anywhere at or
+      // after the last record its writer had, so every place is tried. The
+      // ending is read at the first final run, or after every record when a
+      // stop alone ended the task (a stop is read last).
+      const counts = { unEnded: 0, replaced: 0, kept: 0, afterKept: 0 };
+      everyRow((row) => {
+        if (ending(row.task, row.heard) === null) {
+          return null;
+        }
+        const was = readingOf(row.task, row.heard);
+        const before = readAt(row.specs);
+        for (let at = 0; at <= row.specs.length; at++) {
+          for (const { kind, record } of INSERTS) {
+            const after = copy(row.task);
+            after.runs.splice(at, 0, copy(record));
+            const hearsNew: Heard = (id) => id === 'new' || row.heard(id);
+            const now = readingOf(after, hearsNew);
+            let want = was;
+            if (at <= before && kind === 'heard') {
+              want = 'null';
+            } else if (at <= before && finalRunKind(kind)) {
+              want = kind === 'cancelled' ? 'cancelled' : `${kind} by new`;
+            }
+            if (now !== want) {
+              return `${kind} at ${at} reads ${now}, expected ${want}`;
+            }
+            if (at > before) {
+              counts.afterKept++;
+            } else if (want === 'null') {
+              counts.unEnded++;
+            } else if (want !== was) {
+              counts.replaced++;
+            } else {
+              counts.kept++;
+            }
+          }
+        }
+        return null;
+      }, rows);
+      for (const [what, count] of Object.entries(counts)) {
+        expect(count, what).toBeGreaterThan(0);
+      }
+    });
   }
 
-  it('changes, for a reader with its own hearing, in one way only: an open run before the first final record, which the reader does not hear, is completed with a final status', () => {
+  it('a stop never takes an ending away from a run that finished: a stop at any place in a list a run ended reads the same, for every reader', () => {
+    let tried = 0;
+    everyRow((row) => {
+      if (firstFinalRun(row.specs) < 0) {
+        return null;
+      }
+      for (const heard of [row.heard, allHeard, hearsNone]) {
+        const was = readingOf(row.task, heard);
+        for (let at = 0; at <= row.specs.length; at++) {
+          const after = copy(row.task);
+          after.runs.splice(at, 0, { id: 'S', start: 9, end: 9, status: 'cancelled' });
+          tried++;
+          if (readingOf(after, heard) !== was || JSON.stringify(taskResult(after)) !== JSON.stringify(taskResult(row.task))) {
+            return `a stop at ${at} turns ${was} into ${readingOf(after, heard)}`;
+          }
+        }
+      }
+      return null;
+    });
+    expect(tried).toBeGreaterThan(0);
+  });
+
+  it('a reading of cancelled by a stop alone is un-ended by a run taken without knowledge of the stop wherever that run lands, after the stop too: a stop is read last', () => {
+    // The header's words are "lands earlier in the list"; for a stop, which is
+    // read last, every place in the list is earlier than where it is read.
+    for (const runs of [[], [makeRun({ kind: 'lost', pool: 'P' }, 0)], [makeRun({ kind: 'yielded', pool: 'P' }, 0)]]) {
+      const stopped = makeTask([...runs, { id: 'S', start: 1, end: 1, status: 'cancelled' }]);
+      expect(ending(stopped, allHeard)).toBe('cancelled');
+      for (let at = 0; at <= stopped.runs.length; at++) {
+        const after = copy(stopped);
+        after.runs.splice(at, 0, { id: 'B', pool: 'Q', start: 2 });
+        expect(taskState(after, allHeard), `B at ${at}`).toBe('stopping');
+        expect(stopReason(after, 'B', 'this', allHeard)).toBe('cancelled');
+      }
+    }
+  });
+
+  it('changes, for a reader with its own hearing, only through something it did not have: an open run it does not hear, before where the ending is read, completed with a final status', () => {
     let admittedSeen = 0;
     let admittedUnseen = 0;
     everyRow((row) => {
       if (ending(row.task, row.heard) === null) {
         return null;
       }
-      const by = firstFinal(row.specs);
+      const before = readAt(row.specs);
       for (const change of legalChanges(row)) {
         const after = copy(row.task);
         change.apply(after);
@@ -766,7 +946,7 @@ describe('a reading of "ended"', () => {
         }
         const admitted =
           change.completes !== undefined &&
-          change.completes < by &&
+          change.completes < before &&
           row.specs[change.completes].kind === 'unheard' &&
           FINALS.includes(change.status as FinalStatus);
         if (!admitted) {
@@ -794,43 +974,51 @@ describe('a reading of "ended"', () => {
     expect([ending(task, hearsNone), ending(task, allHeard)]).toEqual(['failed', 'failed']);
   });
 
-  it('a pool that has read a later success never changes the reading by completing its earlier run: it yields, or records cancelled where a stop is in the list', () => {
+  it('a pool that has read a later success never changes the reading by completing its earlier run: it yields, whatever else the list holds, a stop included', () => {
     let exercised = 0;
+    let withStop = 0;
     everyRow((row) => {
       if (!row.specs.some((spec) => spec.kind === 'succeeded')) {
         return null;
       }
       for (const index of openRuns(row)) {
         exercised++;
+        if (anyStop(row.specs) || row.specs.some((spec) => spec.kind === 'cancelled')) {
+          withStop++;
+        }
         const seen = statusesSeen(row.task, index);
-        const want = row.specs.some((spec) => saysCancelled(spec.kind)) ? ['cancelled'] : ['yielded'];
-        if (JSON.stringify([...seen]) !== JSON.stringify(want)) {
+        if (JSON.stringify([...seen]) !== JSON.stringify(['yielded'])) {
           return `${runId(index)} may be recorded ${[...seen]}`;
         }
       }
       return null;
     });
     expect(exercised).toBeGreaterThan(0);
+    expect(withStop).toBeGreaterThan(0);
   });
 
-  it('changes, with no record written, when an earlier run the reader could not hear is heard again: exactly the unheard open runs before the first final record', () => {
+  it('changes, with no record written, when a run the reader could not hear is heard again (as the header admits): exactly the unheard open runs before where the ending is read', () => {
     let changed = 0;
+    let afterAStop = 0;
     everyRow((row) => {
       if (ending(row.task, row.heard) === null) {
         return null;
       }
-      const by = firstFinal(row.specs);
+      const before = readAt(row.specs);
       for (const [index, spec] of row.specs.entries()) {
         if (spec.kind !== 'unheard') {
           continue;
         }
         const again: Heard = (id) => id === runId(index) || row.heard(id);
         const differs = ending(row.task, again) !== ending(row.task, row.heard);
-        if (differs !== index < by) {
+        if (differs !== index < before) {
           return `${runId(index)} heard again: changed ${differs}`;
         }
         if (differs) {
           changed++;
+          if (row.specs.slice(0, index).some((it) => it.kind === 'stop')) {
+            afterAStop++;
+          }
           // to not ended: running, or stopping where a record says cancelled
           if (taskState(row.task, again) !== (row.specs.some((it) => saysCancelled(it.kind)) ? 'stopping' : 'running')) {
             return `reads ${taskState(row.task, again)}`;
@@ -840,52 +1028,12 @@ describe('a reading of "ended"', () => {
       return null;
     });
     expect(changed).toBeGreaterThan(0);
+    expect(afterAStop).toBeGreaterThan(0);
   });
 
-  it('changes when a record made at the same time as later ones lands before them in the merge: a stop before the first final record becomes the ending; a claim there, heard from first sight, makes the task not ended', () => {
-    // A writer that had read the list only up to `at` (so the task was still
-    // wanted for it) appends; the merge can put its record at `at`, before
-    // records it never saw. Every such place is tried on every row read as ended.
-    let stops = 0;
-    let claims = 0;
-    everyRow((row) => {
-      const was = ending(row.task, row.heard);
-      if (was === null) {
-        return null;
-      }
-      for (let at = 0; at <= firstFinal(row.specs); at++) {
-        const stopped = copy(row.task);
-        stopped.runs.splice(at, 0, { id: 'S', start: 9, end: 9, status: 'cancelled' });
-        if (ending(stopped, row.heard) !== 'cancelled' || endingRun(stopped)?.id !== 'S') {
-          return `a stop at ${at} reads ${ending(stopped, row.heard)}`;
-        }
-        if (was !== 'cancelled') {
-          stops++;
-        }
-        const claimed = copy(row.task);
-        claimed.runs.splice(at, 0, { id: 'C', pool: 'R', start: 9 });
-        const hearsC: Heard = (id) => id === 'C' || row.heard(id);
-        if (ending(claimed, hearsC) !== null) {
-          return `a claim at ${at} reads ${ending(claimed, hearsC)}`;
-        }
-        claims++;
-      }
-      return null;
-    });
-    expect(stops).toBeGreaterThan(0);
-    expect(claims).toBeGreaterThan(0);
-  });
-
-  it.fails('RULE HOLE: a reading of "ended" changes with no run completed: [A open, its pool cut off, B succeeded] reads succeeded; A\'s pool is heard again before it learns of B, and the task reads running', () => {
-    // The header: "A reading of 'ended' therefore changes afterwards in one
-    // circumstance only: a run earlier in the list that the reader could not
-    // hear ... is completed later with a status that ends the task." Here
-    // nothing is completed: the earlier run is only heard again. The same
-    // happens when a run made at the same time as a stop arrives in front of
-    // it (first sight counts as heard). Read with run(), the asker has its
-    // answer already; a view shows succeeded, then running, then (A yields)
-    // succeeded again, or (B failed, A carries on and succeeds) failed, then
-    // running, then succeeded.
+  it('heard again, by name: [A open, its pool cut off, B succeeded] reads succeeded; A is heard again before its pool learns of B, and reads running; A yields, and it reads succeeded again', () => {
+    // Inside the header's promise: A is "one the reader could not hear (its
+    // pool was cut off, not gone) being heard again".
     const clock = { t: 0, now: () => clock.t };
     const reader = new Hearing(clock);
     const task = makeTask([{ id: 'A', pool: 'P', start: 0 }, makeRun({ kind: 'succeeded', pool: 'Q' }, 1)]);
@@ -893,7 +1041,25 @@ describe('a reading of "ended"', () => {
     clock.t = LAPSE_MS;
     expect(taskState(task, reader.heard)).toBe('succeeded');
     reader.heardFrom('A');
+    expect(taskState(task, reader.heard)).toBe('running');
+    expect(stopReason(task, 'A', 'this', allHeard)).toBe('yielded');
+    endRun(task, 'A', { status: 'yielded', end: 2 });
     expect(taskState(task, reader.heard)).toBe('succeeded');
+    expect(taskResult(task)).toEqual({ from: 'r1' });
+  });
+
+  it('heard again, by name, the rescue: [A open, cut off, B failed] reads failed; A is heard again and reads running; A carries on and succeeds: succeeded', () => {
+    const clock = { t: 0, now: () => clock.t };
+    const reader = new Hearing(clock);
+    const task = makeTask([{ id: 'A', pool: 'P', start: 0 }, makeRun({ kind: 'failed', pool: 'Q' }, 1)]);
+    reader.saw(task.runs);
+    clock.t = LAPSE_MS;
+    expect(taskState(task, reader.heard)).toBe('failed');
+    reader.heardFrom('A');
+    expect(taskState(task, reader.heard)).toBe('running');
+    expect(stopReason(task, 'A', 'this', reader.heard)).toBeNull();
+    endRun(task, 'A', { status: 'succeeded', result: 'A', end: 2 });
+    expect([taskState(task, reader.heard), taskState(task, hearsNone)]).toEqual(['succeeded', 'succeeded']);
   });
 });
 
@@ -1030,7 +1196,8 @@ describe('(1) a stop crossing a claim whose code returns', () => {
   // The asker appends a stop S to a task nobody has taken. At the same time a
   // pool Q, which has not seen S, takes the task (run B), and B's code returns
   // before Q sees S. Both writes are appends at the same place, so the merge
-  // orders them by actor: either order can happen.
+  // orders them by actor: either order can happen. A stop is read last, so
+  // both orders read B's success.
   const history = (askerDigit: string, poolDigit: string) => {
     const base = A.from<Task>(makeTask(), actor('0'));
     const asker = A.change(replica(base, askerDigit), (task) => {
@@ -1047,6 +1214,18 @@ describe('(1) a stop crossing a claim whose code returns', () => {
     return { asker, claimed, returned };
   };
 
+  /** What one reader reads of each document it has in turn, with a Hearing of its own that B's pool's beats reach while B is open. */
+  const readerOver = (docs: Task[]) => {
+    const clock = { t: 0, now: () => clock.t };
+    const reader = new Hearing(clock);
+    return docs.map((doc) => {
+      reader.saw(doc.runs);
+      reader.heardFrom('B');
+      clock.t += BEAT_MS;
+      return taskState(doc, reader.heard);
+    });
+  };
+
   it('both list orders happen, depending on the actors; the merge is the same on both replicas', () => {
     const orders = ACTOR_ORDERS.map(([askerDigit, poolDigit]) => {
       const { asker, returned } = history(askerDigit, poolDigit);
@@ -1058,43 +1237,51 @@ describe('(1) a stop crossing a claim whose code returns', () => {
   });
 
   for (const [askerDigit, poolDigit] of ACTOR_ORDERS) {
-    it(`what every reader reads at every step (asker actor ${askerDigit}, pool actor ${poolDigit})`, () => {
-      const { asker, claimed, returned } = history(askerDigit, poolDigit);
-      const order = ids(mergeAll(asker, returned)).join();
-      // Before anything syncs. Q's reader hears B (its own run); the asker's has no B.
-      expect(taskState(asker, allHeard)).toBe('cancelled');
-      expect(taskState(claimed, hearing('B'))).toBe('running');
-      expect(taskState(returned, hearing('B'))).toBe('succeeded');
-      // The claim reaches the asker before B returns: B is heard from first sight.
-      const askerSeesClaim = A.merge(A.clone(asker), claimed);
-      expect(taskState(askerSeesClaim, hearing('B'))).toBe(order === 'S,B' ? 'cancelled' : 'stopping');
-      expect(stopReason(askerSeesClaim, 'B', 'this', hearing('B'))).toBe('cancelled');
-      // Everything has synced: the first record in the list is the ending, for every reader.
+    const actors = `asker actor ${askerDigit}, pool actor ${poolDigit}`;
+
+    it(`[S, B succeeded] and [B succeeded, S] both read succeeded, with B's result, for every reader on both replicas (${actors})`, () => {
+      const { asker, returned } = history(askerDigit, poolDigit);
       for (const merged of syncBoth(asker, returned)) {
-        for (const heard of [allHeard, hearsNone, hearing('B')]) {
-          expect(taskState(merged, heard)).toBe(order === 'S,B' ? 'cancelled' : 'succeeded');
+        for (const heard of [allHeard, hearsNone, hearing('B'), hearing('S')]) {
+          expect(taskState(merged, heard), ids(merged).join()).toBe('succeeded');
+        }
+        expect(endingRun(merged)?.id).toBe('B');
+        expect(taskResult(merged)).toBe('B');
+        // and the entry may go, and nobody takes the task again
+        expect(isWanted(merged)).toBe(false);
+        expect(mayDelist(merged, 'this')).toBe(true);
+      }
+    });
+
+    it(`Q's reader never leaves succeeded once it has read it: running, succeeded, succeeded (${actors})`, () => {
+      const { asker, claimed, returned } = history(askerDigit, poolDigit);
+      expect(readerOver([claimed, returned, mergeAll(returned, asker)])).toEqual(['running', 'succeeded', 'succeeded']);
+    });
+
+    it(`the asker's reader goes cancelled, then stopping when B arrives open, then succeeded when B's success arrives (${actors})`, () => {
+      const { asker, claimed, returned } = history(askerDigit, poolDigit);
+      const seesClaim = mergeAll(asker, claimed);
+      expect(readerOver([asker, seesClaim, mergeAll(seesClaim, returned)])).toEqual(['cancelled', 'stopping', 'succeeded']);
+      // B's pool, had it read the stop while B ran, would have stopped it
+      expect(stopReason(seesClaim, 'B', 'this', hearing('B'))).toBe('cancelled');
+    });
+
+    it(`or, when Q reads the stop before B's code returns, Q records B cancelled: the asker's reader goes cancelled, stopping, cancelled, and Q's running, cancelled (${actors})`, () => {
+      const { asker, claimed } = history(askerDigit, poolDigit);
+      const qSees = mergeAll(claimed, asker);
+      const reason = stopReason(qSees, 'B', 'this', hearing('B'));
+      expect(reason).toBe('cancelled');
+      const stoppedB = A.change(A.clone(qSees), (task) => endRun(task, 'B', { status: reason!, end: 2 }));
+      const seesClaim = mergeAll(asker, claimed);
+      expect(readerOver([asker, seesClaim, mergeAll(seesClaim, stoppedB)])).toEqual(['cancelled', 'stopping', 'cancelled']);
+      expect(readerOver([claimed, stoppedB])).toEqual(['running', 'cancelled']);
+      for (const merged of syncBoth(asker, stoppedB)) {
+        for (const heard of [allHeard, hearsNone]) {
+          expect(taskState(merged, heard)).toBe('cancelled');
         }
       }
-      // So: with B first, the asker's reader goes cancelled -> succeeded (an earlier run it could not
-      // hear, completed: the admitted change); with S first, Q's reader goes succeeded -> cancelled.
     });
   }
-
-  it.fails("RULE HOLE: a stop made at the same time as a claim can land before the claimed run; that run's pool, which heard it all along and read it succeeded, then reads cancelled", () => {
-    // Smallest history: a task with no runs. The asker (actor b) appends a
-    // stop S; at the same moment pool Q (actor a), not having S, takes the
-    // task as B, and B's code returns. Merged: [S, B succeeded]. A reader on
-    // Q's replica heard B from start to end and read succeeded; it now reads
-    // cancelled, and the task's result is gone. S is a record that was never
-    // open, so "a run earlier in the list that the reader could not hear" does
-    // not cover it.
-    for (const [askerDigit, poolDigit] of ACTOR_ORDERS) {
-      const { asker, returned } = history(askerDigit, poolDigit);
-      const before = taskState(returned, hearing('B'));
-      const merged = A.merge(A.clone(returned), asker);
-      expect(taskState(merged, hearing('B')), `asker ${askerDigit}, pool ${poolDigit}`).toBe(before);
-    }
-  });
 });
 
 describe('(2) two lost, an unheard open run, a concurrent claim, and the restart that records the third loss', () => {
@@ -1191,18 +1378,105 @@ describe('(3) a document under an entry that is not a task', () => {
     expect(mayDelist(noRuns, 'this')).toBe(false);
   });
 
-  it.fails('RULE HOLE: the readings throw on a document whose `runs` is not a list, though anyone can write one and name it under a key', () => {
-    // holder and endingRun call `runs.find`, and ending iterates `runs`; on
-    // `runs: {}` or `runs: 'r'` these throw. The pool reads inside a guard,
-    // and ask and cancel ask isWanted first, so neither is harmed; but watch
-    // calls taskState and taskError in its listeners, so a watcher (a view)
-    // whose key names such a document throws on every change instead of
-    // reporting.
-    for (const notATask of NOT_TASKS) {
-      expect(() => taskState(notATask, allHeard), JSON.stringify(notATask)).not.toThrow();
-      expect(() => taskError(notATask, allHeard), JSON.stringify(notATask)).not.toThrow();
-      expect(() => mayDelist(notATask, 'this'), JSON.stringify(notATask)).not.toThrow();
+  /** `runs` as anyone could write it: missing, null, a map, a number, a string. */
+  const MALFORMED: [string, unknown][] = [
+    ['missing', undefined],
+    ['null', null],
+    ['{}', {}],
+    ['{ r0: an open run }', { r0: { id: 'r0', pool: 'P', start: 0 } }],
+    ['5', 5],
+    ['a string', 'r0'],
+  ];
+  const malformed = (runs: unknown) => {
+    const doc: Record<string, unknown> = { importUrl: 'data:text/javascript,export default () => 1', input: null, key: 'K' };
+    if (runs !== undefined) {
+      doc.runs = runs;
     }
+    return doc as unknown as Task;
+  };
+
+  /** Every exported reading of a task, each as a person or a pool would ask it. */
+  const readings = (doc: Task) => ({
+    recordsOf: recordsOf(doc),
+    isTask: isTask(doc),
+    isWanted: isWanted(doc),
+    holder: [holder(doc, allHeard), holder(doc, hearsNone)],
+    endingRun: endingRun(doc),
+    lostCount: lostCount(doc),
+    ending: [ending(doc, allHeard), ending(doc, hearsNone)],
+    taskState: [taskState(doc, allHeard), taskState(doc, hearsNone)],
+    taskResult: taskResult(doc),
+    taskError: [taskError(doc, allHeard), taskError(doc, hearsNone)],
+    mayClaim: mayClaim(doc, 'P', 'this', hearsNone),
+    stopReason: stopReason(doc, 'r0', 'this', allHeard),
+    gone: gone(doc, 'r0', 'this'),
+    orphans: orphans(doc, 'P', () => false),
+    mayDelist: mayDelist(doc, 'this'),
+    mayRelist: mayRelist(doc, 'none', hearsNone, 0, LAPSE_MS),
+  });
+  /** What every reading gives for a document with no records that is not a task. */
+  const NO_RECORDS = {
+    recordsOf: [],
+    isTask: false,
+    isWanted: false,
+    holder: [null, null],
+    endingRun: null,
+    lostCount: 0,
+    ending: [null, null],
+    taskState: ['waiting', 'waiting'],
+    taskResult: undefined,
+    taskError: [null, null],
+    mayClaim: false,
+    stopReason: 'yielded',
+    gone: 'yielded',
+    orphans: [],
+    mayDelist: false,
+    mayRelist: false,
+  };
+
+  it('whose runs are missing, null, a map, a number or a string: every reading returns without throwing and reads no records', () => {
+    for (const [name, runs] of MALFORMED) {
+      const doc = malformed(runs);
+      expect(() => readings(doc), name).not.toThrow();
+      expect(readings(doc), name).toEqual(NO_RECORDS);
+    }
+  });
+
+  it('whose runs are malformed: stopTask refuses it and writes nothing; endRun writes nothing; Hearing.saw takes recordsOf without throwing', () => {
+    for (const [name, runs] of MALFORMED) {
+      const doc = malformed(runs);
+      const before = structuredClone(doc);
+      expect(stopTask(doc, { id: 'S', at: 1 }), name).toBe(false);
+      endRun(doc, 'r0', { status: 'succeeded', result: 1, end: 2 });
+      expect(doc, name).toEqual(before);
+      expect(() => new Hearing().saw(recordsOf(doc)), name).not.toThrow();
+    }
+  });
+
+  it('whose runs are malformed, on a real Automerge document: the same readings, and stopTask inside a change writes nothing', () => {
+    for (const [name, runs] of MALFORMED) {
+      const doc = A.from<Task>(malformed(runs) as any, actor('0'));
+      expect(readings(doc), name).toEqual(NO_RECORDS);
+      const after = A.change(doc, (task) => {
+        expect(stopTask(task, { id: 'S', at: 1 }), name).toBe(false);
+      });
+      expect(A.getHeads(after), name).toEqual(A.getHeads(doc));
+    }
+  });
+
+  it.fails('RULE HOLE: a list of runs that holds null (anyone can write one) is a task, and every reading that looks at a record throws on it', () => {
+    // Smallest history: a task [] in a queue; any writer of the task
+    // appends null to its runs. isTask is true, so this is not a malformed
+    // document to recordsOf, which passes the list on; isStop, isOpen and
+    // Hearing.saw then read `.status` or `.id` of null. A pool's readings are
+    // each inside a guard, but watch calls hearing.saw and taskState in its
+    // report, so a view following the key throws instead of reporting.
+    const doc = A.change(A.from<Task>(makeTask(), actor('0')), (task) => {
+      (task.runs as unknown as unknown[]).push(null);
+    });
+    expect(isTask(doc)).toBe(true);
+    expect(() => readings(doc)).not.toThrow();
+    expect(() => new Hearing().saw(recordsOf(doc))).not.toThrow();
   });
 });
 
@@ -1248,6 +1522,159 @@ describe('stops', () => {
     expect(gone(task, 'A', 'this')).toBe('cancelled');
     endRun(task, 'A', { status: gone(task, 'A', 'this'), end: 2 });
     expect(taskState(task, allHeard)).toBe('cancelled');
+  });
+
+  it('a stop and an open run whose pool is dead, in either order: a listener reads cancelled a lapse after it first saw the run; allHeard reads stopping for ever', () => {
+    // allHeard is used by one-look readers only: openfoam's and fea's
+    // lookAtTask (run-tasks.js), which a person's view and an agent tool call
+    // once and show, and their net-run probes, which read it after the run has
+    // been recorded. None waits on it, so none waits for ever here.
+    const dead: Run = { id: 'A', pool: 'dead', start: 0 };
+    const stop: Run = { id: 'S', start: 1, end: 1, status: 'cancelled' };
+    for (const runs of [
+      [dead, stop],
+      [stop, dead],
+    ]) {
+      const task = makeTask(runs);
+      const order = ids(task).join();
+      expect(isWanted(task), order).toBe(false);
+      const clock = { t: 0, now: () => clock.t };
+      const listener = new Hearing(clock);
+      listener.saw(task.runs);
+      for (const t of [0, LAPSE_MS - 1]) {
+        clock.t = t;
+        expect(taskState(task, listener.heard), `${order} at ${t}`).toBe('stopping');
+      }
+      clock.t = LAPSE_MS;
+      expect(taskState(task, listener.heard), order).toBe('cancelled');
+      for (const t of [LAPSE_MS, LAPSE_MS * 100]) {
+        clock.t = t;
+        expect(taskState(task, allHeard), `${order}: allHeard at ${t}`).toBe('stopping');
+      }
+      // the dead pool, if it ever comes back, records A as gone says: cancelled, and then every reader agrees
+      expect(gone(task, 'A', 'none'), order).toBe('cancelled');
+      endRun(task, 'A', { status: 'cancelled', end: 2 });
+      expect([taskState(task, allHeard), taskState(task, hearsNone)], order).toEqual(['cancelled', 'cancelled']);
+    }
+  });
+
+  it('a stop with only closed runs that end nothing (lost, yielded), at any place among them: cancelled, for every reader', () => {
+    let tried = 0;
+    for (const closed of [[], ['lost'], ['yielded'], ['lost', 'yielded'], ['yielded', 'lost'], ['lost', 'lost']] as const) {
+      for (let at = 0; at <= closed.length; at++) {
+        const specs: Spec[] = closed.map((kind): Spec => ({ kind, pool: 'P' }));
+        specs.splice(at, 0, { kind: 'stop', pool: null });
+        const task = makeTask(specs.map(makeRun));
+        for (const heard of [allHeard, hearsNone]) {
+          expect(taskState(task, heard), labelOf(specs)).toBe('cancelled');
+        }
+        expect(endingRun(task)?.status, labelOf(specs)).toBe('cancelled');
+        expect(isStop(endingRun(task)!)).toBe(true);
+        tried++;
+      }
+    }
+    expect(tried).toBe(1 + 2 + 2 + 3 + 3 + 3);
+  });
+
+  it('a stop with a failed run, in either order: failed, for every reader, with the failure as the reason; and with a succeeded run, succeeded', () => {
+    for (const kind of ['failed', 'succeeded'] as const) {
+      for (const specs of [
+        [{ kind: 'stop', pool: null }, { kind, pool: 'P' }],
+        [{ kind, pool: 'P' }, { kind: 'stop', pool: null }],
+      ] as Spec[][]) {
+        const task = makeTask(specs.map(makeRun));
+        const at = specs.findIndex((spec) => spec.kind === kind);
+        for (const heard of [allHeard, hearsNone]) {
+          expect(taskState(task, heard), labelOf(specs)).toBe(kind);
+        }
+        expect(endingRun(task)?.id).toBe(runId(at));
+        expect(taskError(task, allHeard)).toBe(kind === 'failed' ? failedLine(runId(at)) : null);
+        expect(taskResult(task)).toEqual(kind === 'succeeded' ? { from: runId(at) } : undefined);
+      }
+    }
+  });
+
+  describe('a run that sees both a success and a stop yields: its pool records yielded, and the ending stays the success', () => {
+    // [A open by P]. Q cannot hear A and takes the task as B, which succeeds;
+    // at the same time an asker stops it. Then P looks at A, having had all
+    // of that (fresh), or only some of it (stale).
+    const history = (askerDigit: string, qDigit: string) => {
+      const base = A.from<Task>(makeTask([{ id: 'A', pool: 'P', start: 0 }]), actor('0'));
+      const onQ = A.change(replica(base, qDigit), (task) => {
+        expect(mayClaim(task, 'Q', 'this', hearsNone)).toBe(true);
+        claimRun(task, { id: 'B', pool: 'Q', start: 1 });
+        endRun(task, 'B', { status: 'succeeded', result: 'B', end: 2 });
+      });
+      const asker = A.change(replica(base, askerDigit), (task) => void stopTask(task, { id: 'S', at: 1 }));
+      return { base, onQ, asker };
+    };
+    /** P completes A as stopReason tells it on what it has, and that reaches everyone. */
+    const pActs = (view: A.Doc<Task>, ...rest: A.Doc<Task>[]) => {
+      const reason = stopReason(view, 'A', 'this', hearing('A'));
+      const status = reason ?? 'succeeded';
+      const after = A.change(A.clone(view, actor('f')), (task) => endRun(task, 'A', { status, result: 'A', end: 3 }));
+      return { reason, merged: mergeAll(after, ...rest) };
+    };
+
+    for (const [askerDigit, qDigit] of ACTOR_ORDERS) {
+      const actors = `asker actor ${askerDigit}, Q actor ${qDigit}`;
+
+      it(`fresh: P has B's success and the stop, in either list order: yielded; succeeded by B for every reader (${actors})`, () => {
+        const { onQ, asker } = history(askerDigit, qDigit);
+        const fresh = mergeAll(onQ, asker);
+        expect(ids(fresh).slice(1).sort()).toEqual(['B', 'S']);
+        const { reason, merged } = pActs(fresh);
+        expect(reason).toBe('yielded');
+        for (const heard of [allHeard, hearsNone, hearing('A')]) {
+          expect(taskState(merged, heard)).toBe('succeeded');
+        }
+        expect(taskResult(merged)).toBe('B');
+      });
+
+      it(`stale, P has only the success: yielded; succeeded by B (${actors})`, () => {
+        const { onQ, asker } = history(askerDigit, qDigit);
+        const { reason, merged } = pActs(onQ, asker);
+        expect(reason).toBe('yielded');
+        expect([taskState(merged, allHeard), taskResult(merged)]).toEqual(['succeeded', 'B']);
+      });
+
+      it(`stale, P has only the stop: cancelled, and A is the first final run, so the task reads cancelled; a reader that could not hear A had read succeeded (the admitted change), one that heard A had read stopping (${actors})`, () => {
+        const { onQ, asker } = history(askerDigit, qDigit);
+        const before = mergeAll(onQ, asker);
+        expect([taskState(before, hearsNone), taskState(before, hearing('A'))]).toEqual(['succeeded', 'stopping']);
+        const { reason, merged } = pActs(asker, onQ);
+        expect(reason).toBe('cancelled');
+        for (const heard of [allHeard, hearsNone]) {
+          expect(taskState(merged, heard)).toBe('cancelled');
+        }
+        expect(endingRun(merged)?.id).toBe('A');
+      });
+
+      it(`stale, P has neither: A carries on, and its success is the ending, by A (${actors})`, () => {
+        const { base, onQ, asker } = history(askerDigit, qDigit);
+        const { reason, merged } = pActs(base, onQ, asker);
+        expect(reason).toBeNull();
+        expect([taskState(merged, hearsNone), taskResult(merged)]).toEqual(['succeeded', 'A']);
+      });
+    }
+  });
+
+  it('recordsOf counts an Automerge list as a list: inside a change (a proxy) and outside it, and a stop written through the proxy is read back', () => {
+    const doc = A.from<Task>(makeTask([{ id: 'A', pool: 'P', start: 0 }]), actor('0'));
+    expect(Array.isArray(doc.runs)).toBe(true);
+    expect(recordsOf(doc).map((run) => run.id)).toEqual(['A']);
+    const after = A.change(doc, (task) => {
+      expect(Array.isArray(task.runs)).toBe(true);
+      expect(recordsOf(task).map((run) => run.id)).toEqual(['A']);
+      expect(isTask(task)).toBe(true);
+      expect(isWanted(task)).toBe(true);
+      expect(stopTask(task, { id: 'S', at: 1 })).toBe(true);
+      expect(recordsOf(task).map((run) => run.id)).toEqual(['A', 'S']);
+      expect(taskState(task, allHeard)).toBe('stopping');
+    });
+    const loaded = A.load<Task>(A.save(after));
+    expect(recordsOf(loaded).map((run) => run.id)).toEqual(['A', 'S']);
+    expect(taskState(loaded, hearsNone)).toBe('cancelled');
   });
 
   it('stopTask on a task some record has ended writes nothing and says so', () => {
@@ -2011,7 +2438,10 @@ describe('taskResult and taskError', () => {
   it('give a result only for a task that succeeded, from the record that ended it', () => {
     expect(taskResult(makeTask([run('yielded', 0), run('succeeded', 1)]))).toEqual({ from: 'r1' });
     expect(taskResult(makeTask([run('failed', 0), run('succeeded', 1)]))).toBeUndefined();
-    expect(taskResult(makeTask([run('stop', 0), run('succeeded', 1)]))).toBeUndefined();
+    // a stop is read last: a stop before the success takes nothing from it
+    expect(taskResult(makeTask([run('stop', 0), run('succeeded', 1)]))).toEqual({ from: 'r1' });
+    expect(taskResult(makeTask([run('stop', 0), run('cancelled', 1), run('succeeded', 2)]))).toBeUndefined();
+    expect(taskResult(makeTask([run('stop', 0)]))).toBeUndefined();
     expect(taskResult(makeTask([run('lost', 0), run('lost', 1), run('lost', 2)]))).toBeUndefined();
     expect(taskResult(makeTask([{ id: 'A', pool: 'P', start: 0 }]))).toBeUndefined();
     expect(taskResult(undefined)).toBeUndefined();
