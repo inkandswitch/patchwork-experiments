@@ -11,16 +11,19 @@
 //
 // out   the task makes a document of S random bytes and returns its url; the
 //       asker, which has never seen it, finds it from the moment it reads
-//       the task succeeded, asking again whenever a find rejects.
+//       the task succeeded, asking again whenever a find rejects. The run
+//       worker says the run ended only once the sync server has acknowledged
+//       the document, so "ask" includes that wait, and a rejected first find
+//       is a broken promise.
 // in    the asker makes the document and at once asks a task to read it;
 //       the task finds it the same way and says how long it took.
 // many  the task writes 20 documents of 250 KB; the asker finds them all.
-// ack   out, with the task waiting until the sync server says it holds
-//       what was written before it returns (probes/write-path/task.js).
+// ack   out, with the task itself also waiting until the sync server says
+//       it holds what was written before it returns (probes/write-path/task.js).
 // term  out at 5 MB from a host of its own that is sent SIGTERM the moment
-//       the asker reads succeeded; then, if the document has not come, the
-//       host restarted on the same data directory, then asked for a task so
-//       that it opens its run thread's storage again.
+//       the asker reads succeeded: the document must still come. If it has
+//       not, the host is restarted on the same data directory, then asked for
+//       a task so that it opens its run thread's storage again.
 //
 // Each document may take 120 s to arrive; past that it counts as a failure,
 // with what was observed. Everything made is a throwaway document; nothing is

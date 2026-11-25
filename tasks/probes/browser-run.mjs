@@ -7,7 +7,7 @@
 // from the profile's shared database, and each run worker's from a database
 // of its own. So what a task writes through ctx.repo, which reaches the page
 // only by the sync server, is not seen here (check 15 says so; real-run.mjs
-// checks it).
+// checks it), and a run that wrote something says so in its log (check 19).
 //
 //   (in tasks/, after `pnpm build`)
 //   /Users/pvh/dev/pwx-one/tools/slot.sh chrome -- node probes/browser-run.mjs [--show]
@@ -379,6 +379,24 @@ try {
       "1 a do-nothing task, ten in a row",
       times.length === 10,
       `first (starts a run worker) ${first.ms.toFixed(0)} ms; then median ${median(times).toFixed(1)} ms, worst ${Math.max(...times).toFixed(1)} ms (old system: about 47 ms)`,
+    );
+  }
+
+  // 19. A task that writes a document through ctx.repo, with no sync server
+  // to reach (this harness's Repos point at ws://127.0.0.1:9): its run
+  // worker waits for nothing, and the run's log says that what it wrote
+  // stays on this machine. Timed as check 1 is.
+  {
+    const times = [];
+    for (let i = 0; i < 10; i++) times.push((await A.js(`probe.timeRun(${J(WRITES)}, ${J({ tag: `nineteen-${i}`, ms: 0 })})`)).ms);
+    const key = await A.js(`probe.ask(${J(WRITES)}, ${J({ tag: "nineteen", ms: 0 })})`);
+    await A.waitFor(stateIs(key, "succeeded", "failed", "cancelled"), 20_000);
+    const last = await A.js(`probe.last(${J(key)})`);
+    const kept = last.runs.at(-1)?.logs ?? [];
+    check(
+      "19 a task that writes a document through ctx.repo, with no sync server: it completes at once, and its run's log says what it wrote stays on this machine",
+      last.state === "succeeded" && kept.some((line) => /stays on this machine/.test(line)) && Math.max(...times) < 1_000,
+      `ten in a row: median ${median(times).toFixed(1)} ms, worst ${Math.max(...times).toFixed(1)} ms; then ${last.state}, its run's log ${J(kept)}`,
     );
   }
 
