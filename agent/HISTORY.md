@@ -1610,3 +1610,9 @@ plan, while a person's Give more and a reopened step's fresh allowance changed
 only the session, so the step table could show a budget the session no longer
 had. The session's is now the step's budget once it has one; the plan step's
 `budget` is only what the session starts with, and is not written after.
+
+Only the driver's tick had checked a plan's version; the workflow tools and
+the views wrote to a plan of any version. Every write to a plan now goes
+through one gate, which leaves a plan of another version as it is and says
+why: the tools refuse with that message, the workflow view shows it in place
+of what it would offer, and the driver stands aside without a word.

@@ -37,6 +37,8 @@ import {
   runAgain,
   requestErrors,
   EDITABLE,
+  writable,
+  changePlan,
 } from "./plan.js"
 import { liftBudget } from "../session/usage.js"
 import { ensureDriver, getDriver, keptCounts } from "./driver.js"
@@ -269,10 +271,10 @@ export const workflowAddSteps = {
   async execute(input, ctx) {
     const url = await planUrlFor(input, ctx)
     const handle = await workflows(ctx).repo.find(url)
-    const plan = handle.doc()
+    const plan = writable(handle.doc())
     const errors = validateSteps(plan, input.steps)
     if (errors.length) throw new Error(`Those steps cannot be added:\n- ${errors.join("\n- ")}`)
-    handle.change((d) => {
+    changePlan(handle, (d) => {
       for (const step of input.steps) d.steps.push(newStep(step))
       runAgain(d)
     })
@@ -407,7 +409,8 @@ export const workflowBudget = {
     const url = await planUrlFor(input, ctx)
     const { repo } = workflows(ctx)
     const planHandle = await repo.find(url)
-    const step = planHandle.doc().steps.find((s) => s.id === input.step)
+    // Before the step's session is touched: a plan of another version is left alone, and so are its steps.
+    const step = writable(planHandle.doc()).steps.find((s) => s.id === input.step)
     if (!step) throw new Error(`No step '${input.step}' in this workflow.`)
     if (step.status !== STEP.pending && step.status !== STEP.running) throw new Error(`Step '${input.step}' is ${step.status}; only a step still to run or running can be given more.`)
 
@@ -415,7 +418,7 @@ export const workflowBudget = {
     // a person's, and this is how they are asked.
     if (!canExtend(planHandle.doc(), add)) {
       const b = budgetOf(planHandle.doc())
-      planHandle.change((d) => askForBudget(d, step, add, input.why))
+      changePlan(planHandle, (d) => askForBudget(d, step, add, input.why))
       return `Not given: $${add.toFixed(2)} is more than the $${b.remaining.toFixed(2)} left under the workflow's cap ($${b.spent.toFixed(2)} of $${b.limit.toFixed(2)} spent, you included). Only the person can go past the cap. They have been asked, with your reason; nothing more starts until they resume it. Tell them briefly what is blocked, and call workflow_budget again if the step is still waiting after they resume. A smaller add (at most $${b.remaining.toFixed(2)}) would go through now.`
     }
 
@@ -432,7 +435,7 @@ export const workflowBudget = {
         limit = liftBudget(d, add)
       })
     }
-    planHandle.change((d) => {
+    changePlan(planHandle, (d) => {
       const s = d.steps.find((x) => x.id === step.id)
       if (!s) return
       if (!step.sessionUrl) s.budget = limit
@@ -473,7 +476,7 @@ export const workflowReopen = {
     if (typeof input.cascade !== "boolean") throw new Error("Say `cascade`: true to reopen what is built on these steps too, false to leave it and decide later.")
     if (!String(input.note ?? "").trim()) throw new Error("Give a `note`: why the step is reopened, as it will read it.")
     const url = await planUrlFor(input, ctx)
-    const plan = (await workflows(ctx).repo.find(url)).doc()
+    const plan = writable((await workflows(ctx).repo.find(url)).doc())
     const errors = reopenErrors(plan, input.steps)
     if (errors.length) throw new Error(`Cannot reopen:\n- ${errors.join("\n- ")}`)
     const { reopened } = await (await drive(url, ctx)).reopen(input.steps, { note: input.note, cascade: input.cascade, by: "orchestrator" })
@@ -505,7 +508,7 @@ export const workflowKeep = {
   async execute(input, ctx) {
     const url = await planUrlFor(input, ctx)
     const handle = await workflows(ctx).repo.find(url)
-    handle.change((d) => keepSteps(d, input.steps))
+    changePlan(handle, (d) => keepSteps(d, input.steps))
     ;(await drive(url, ctx))?.kick()
     return described(workflows(ctx).repo, url)
   },
@@ -540,7 +543,7 @@ export const workflowEditSteps = {
   async execute(input, ctx) {
     const url = await planUrlFor(input, ctx)
     const handle = await workflows(ctx).repo.find(url)
-    handle.change((d) => editSteps(d, input.steps))
+    changePlan(handle, (d) => editSteps(d, input.steps))
     ;(await drive(url, ctx))?.kick()
     return described(workflows(ctx).repo, url)
   },
@@ -575,14 +578,14 @@ export const workflowDecide = {
   async execute(input, ctx) {
     const url = await planUrlFor(input, ctx)
     const handle = await workflows(ctx).repo.find(url)
-    const plan = handle.doc()
+    const plan = writable(handle.doc())
     const request = (plan.requests ?? []).find((r) => r.id === input.request)
     if (!request) throw new Error(`No request '${input.request}' in this workflow.`)
     if (request.status !== "open") throw new Error(`Request '${input.request}' was already ${request.status}.`)
     const note = String(input.note ?? "").trim() || null
 
     if (input.accept !== true) {
-      handle.change((d) => Object.assign(d.requests.find((r) => r.id === request.id), { status: "declined", decidedAt: Date.now(), note }))
+      changePlan(handle, (d) => Object.assign(d.requests.find((r) => r.id === request.id), { status: "declined", decidedAt: Date.now(), note }))
       ;(await drive(url, ctx))?.kick()
       return `Declined ${request.stepId}'s request.\n\n${await described(workflows(ctx).repo, url)}`
     }
@@ -594,7 +597,7 @@ export const workflowDecide = {
     if (errors.length) throw new Error(`It no longer fits the plan:\n- ${errors.join("\n- ")}\nDecline it, and do what is right with workflow_add_steps or workflow_reopen.`)
 
     let interrupt = []
-    handle.change((d) => {
+    changePlan(handle, (d) => {
       for (const step of add) d.steps.push(newStep(step))
       if (reopen.length) {
         const why = `Step '${request.stepId}' found: ${request.why}${note ? `\n\nThe orchestrator adds: ${note}` : ""}`

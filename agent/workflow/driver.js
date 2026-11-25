@@ -30,7 +30,7 @@ import { liftBudget } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
-import { PLAN, PLAN_VERSION, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "./plan.js"
+import { PLAN, isCurrent, writable, changePlan, PlanVersionError, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "./plan.js"
 import { decide } from "./decide.js"
 import { scopeOf, webScope, sameScope, initLedger } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
@@ -240,7 +240,7 @@ export class WorkflowDriver {
     if (!plan) return false
     if (heldElsewhere(plan, this.runnerUrl, this.live)) return false
     if (this.generation === null || !holdsLease(plan, this.runnerUrl, this.generation)) {
-      this.handle.change((d) => { this.generation = claimLease(d, this.runnerUrl, this.now()).generation })
+      changePlan(this.handle, (d) => { this.generation = claimLease(d, this.runnerUrl, this.now()).generation })
       this.claimedAt = this.now()
     }
     // A claim another page made at the same moment may yet win the merge;
@@ -260,12 +260,12 @@ export class WorkflowDriver {
   beat() {
     if (this.stopped || this.generation === null) return
     if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
-    this.handle.change((d) => { d.lease.at = this.now() })
+    this.write((d) => { d.lease.at = this.now() })
   }
 
   /** Read what is there, decide what to do (decide.js), and do it. */
   async tick() {
-    if (this.stopped || !current(this.handle.doc())) return
+    if (this.stopped || !isCurrent(this.handle.doc())) return
     if (!this.hold()) return this.help()
     const plan = this.handle.doc()
     const observations = plan.status === PLAN.running ? await this.observe(plan) : {}
@@ -366,7 +366,7 @@ export class WorkflowDriver {
    */
   async help() {
     const plan = this.handle.doc()
-    if (this.stopped || !current(plan) || plan.status !== PLAN.running) return
+    if (this.stopped || !isCurrent(plan) || plan.status !== PLAN.running) return
     for (const step of plan.steps ?? []) {
       if (step.status === STEP.running && step.sessionUrl) await this.run(step.sessionUrl)
     }
@@ -495,10 +495,16 @@ export class WorkflowDriver {
     return (handle.doc()?.turns ?? []).some((t) => (t.blocks ?? []).some((b) => b.type === "call" && b.status === "pending"))
   }
 
-  /** Write to the plan, if this driver still holds it. */
+  /** Write to the plan, if this driver still holds it and it is of this version. */
   write(fn) {
     if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return false
-    this.handle.change(fn)
+    try {
+      changePlan(this.handle, fn)
+    } catch (err) {
+      // Changed to another version under a running driver: left alone, as a tick leaves it.
+      if (err instanceof PlanVersionError) return false
+      throw err
+    }
     return true
   }
 
@@ -680,11 +686,12 @@ export class WorkflowDriver {
   /**
    * Reopen closed steps (plan.js reopenSteps), stopping any running step a
    * cascade reaches, then tick so the ready ones continue. Throws, changing
-   * nothing, if a named step cannot be reopened.
+   * nothing, if a named step cannot be reopened or the plan is of another
+   * version.
    */
   async reopen(ids, opts = {}) {
     let result
-    this.handle.change((d) => {
+    changePlan(this.handle, (d) => {
       result = reopenSteps(d, ids, { now: this.now(), ...opts })
     })
     if (result.interrupt.length) await this.haltSessions(result.interrupt, "reopened: something it is built on changed")
@@ -701,10 +708,11 @@ export class WorkflowDriver {
   /**
    * Cancel steps without ticking: what cancel does, and what a tick does
    * itself when it finds a step that must stop. `reason`, when given, is kept
-   * on each step for the views to show.
+   * on each step for the views to show. Throws, changing nothing, if the plan
+   * is of another version.
    */
   async stopSteps(stepIds = null, reason = null) {
-    const plan = this.handle.doc()
+    const plan = writable(this.handle.doc())
     const targets = plan.steps.filter(
       (s) => (stepIds ? stepIds.includes(s.id) : true) && (s.status === STEP.pending || s.status === STEP.running)
     )
@@ -715,7 +723,7 @@ export class WorkflowDriver {
       targets.filter((s) => s.status === STEP.running && s.sessionUrl).map((s) => s.sessionUrl),
       reason ?? "cancelled by its workflow"
     )
-    this.handle.change((d) => {
+    changePlan(this.handle, (d) => {
       for (const t of targets) cancelStep(d, t.id, { reason, now: this.now() })
       if (!stepIds) stopPlan(d, this.now())
     })
@@ -765,9 +773,6 @@ function confinedAs(doc, scope) {
     return false
   }
 }
-
-/** A plan this driver reads: of this version. */
-const current = (plan) => !!plan && (plan.schemaVersion ?? 1) === PLAN_VERSION
 
 /**
  * What the orchestrator has not been told, as of `plan`, `waiting` (what

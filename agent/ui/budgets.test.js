@@ -17,7 +17,7 @@ import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
 import { claimLease } from "../session/lease.js"
-import { initPlan, STEP, DEFAULT_STEP_BUDGETS, stepBudget, resumePlan, told, pauseKey } from "../workflow/plan.js"
+import { initPlan, STEP, PLAN_VERSION, DEFAULT_STEP_BUDGETS, stepBudget, resumePlan, told, pauseKey } from "../workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, _resetDrivers } from "../workflow/driver.js"
 import { workflowBudget } from "../workflow/tools.js"
 import { renderBudgetItem } from "./waiting.js"
@@ -200,8 +200,8 @@ describe("a step's budget", () => {
 
 describe("Resume, where the person sees it", () => {
   it("offers each amount, and adds it to what was spent", () => {
-    const doc = { title: "W", steps: [step("b", { status: STEP.pending })], usage: { cost: 1 }, limits: { cost: 0.5 }, paused: { reason: "budget", at: 9, spent: 1, limit: 0.5 } }
-    const handle = { change: (fn) => fn(doc) }
+    const doc = { schemaVersion: PLAN_VERSION, title: "W", steps: [step("b", { status: STEP.pending })], usage: { cost: 1 }, limits: { cost: 0.5 }, paused: { reason: "budget", at: 9, spent: 1, limit: 0.5 } }
+    const handle = { doc: () => doc, change: (fn) => fn(doc) }
     const item = budgetWaiting(doc, "automerge:plan", handle)
     expect(item).toMatchObject({ kind: "budget", callId: "budget:automerge:plan:9", notStarted: 1 })
     const node = renderBudgetItem(item)

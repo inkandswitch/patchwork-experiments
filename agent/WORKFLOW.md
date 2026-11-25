@@ -14,7 +14,7 @@ and a step do to one.
 
 | field | |
 |---|---|
-| `schemaVersion` | the shape it is in. A driver leaves a plan of another version alone |
+| `schemaVersion` | the shape it is in. Nothing writes a plan of another version: every writer — the driver, the workflow tools, the views — goes through one gate (`writable` in `workflow/plan.js`), which says why in words a person can act on |
 | `title`, `goal`, `subject` | what the job is, and the document it is about |
 | `sessionUrl` | the orchestrator's session |
 | `status` | `running`, `done` or `stopped` |
