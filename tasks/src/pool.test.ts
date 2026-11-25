@@ -3,7 +3,7 @@
 // A pool on real automerge-repo documents, with a fake executor whose workers
 // say what the test tells them to, a clock moved by hand, and ears that carry
 // messages between the pools in this process. Each of the design's finite
-// cases, (a) to (j), is a test named by its letter; each of the pool's own
+// cases, (a) to (k), is a test named by its letter; each of the pool's own
 // promises is a test named by what it promises.
 
 import * as A from '@automerge/automerge';
@@ -25,14 +25,20 @@ import {
 import {
   BEAT_MS,
   GRACE_MS,
+  Hearing,
   LAPSE_MS,
+  allHeard,
+  claimRun,
+  endRun,
   ending,
   listTask,
   taskError,
   taskResult,
+  taskState,
   type Queue,
   type Run,
   type Task,
+  type TaskState,
 } from './task-rules.js';
 
 await initSubduction();
@@ -119,7 +125,8 @@ class Loopback {
   }
   /** Says a run is going on, as its pool would. */
   beat(url: string, run: string) {
-    this.ears().send({ url }, { type: 'task progress', run, from: 'elsewhere', seq: this.sent.length });
+    const message = { type: 'task progress', run, from: 'elsewhere', seq: this.sent.length };
+    this.ears().send({ url } as any, message);
   }
 }
 
@@ -399,8 +406,8 @@ describe('the design cases', () => {
     await settle();
     await w.clock.advance(LAPSE_MS);
     expect(statuses(task)).toEqual(['lost', 'lost', 'lost']);
-    expect(ending(task.doc())).toBe('failed');
-    expect(taskError(task.doc())).toMatch(/stopped 3 times/);
+    expect(ending(task.doc(), allHeard)).toBe('failed');
+    expect(taskError(task.doc(), allHeard)).toMatch(/stopped 3 times/);
     expect(executor.workers).toHaveLength(0);
     expect(listed(w.queue, 'k')).toBeUndefined();
   });
@@ -475,7 +482,7 @@ describe('the design cases', () => {
     expect(executor.of(firstRun).aborts.map((it) => it.reason)).toEqual(['yielded']);
     await w.clock.advance(GRACE_MS);
     expect(statuses(first)).toEqual(['yielded']);
-    expect(ending(first.doc())).toBeNull();
+    expect(ending(first.doc(), allHeard)).toBeNull();
     // the freed slot takes the survivor
     expect(runsOf(second)).toHaveLength(1);
     executor.of(lastRun(second).id).events.done('done');
@@ -494,7 +501,7 @@ describe('the design cases', () => {
     await settle();
     expect(statuses(task)).toEqual(['failed']);
     expect(lastRun(task).logs!.map((line) => line.message)).toEqual(['starting', 'Error: boom']);
-    expect(taskError(task.doc())).toBe('Error: boom');
+    expect(taskError(task.doc(), allHeard)).toBe('Error: boom');
     expect(listed(w.queue, 'k')).toBeUndefined();
     await w.clock.advance(LAPSE_MS * 2);
     expect(runsOf(task)).toHaveLength(1);
@@ -510,7 +517,7 @@ describe('the design cases', () => {
     worker.events.exit();
     await settle();
     expect(statuses(task)).toEqual(['failed']);
-    expect(taskError(task.doc())).toBe('its worker died');
+    expect(taskError(task.doc(), allHeard)).toBe('its worker died');
     await w.clock.advance(LAPSE_MS * 2);
     expect(runsOf(task)).toHaveLength(1);
     w.ask('k2');
@@ -557,9 +564,38 @@ describe('the design cases', () => {
     executor.of(lastRun(task).id).events.threw('could not load https://nowhere.invalid/task.js: 404');
     await settle();
     expect(statuses(task)).toEqual(['failed']);
-    expect(taskError(task.doc())).toBe('could not load https://nowhere.invalid/task.js: 404');
+    expect(taskError(task.doc(), allHeard)).toBe('could not load https://nowhere.invalid/task.js: 404');
     await w.clock.advance(LAPSE_MS * 2);
     expect(runsOf(task)).toHaveLength(1);
+  });
+
+  it('(k) a copy of a task another pool is running, listed under its own key, is taken after the lapse while the original keeps beating, by a pool that follows both', async () => {
+    // The copy carries the original's open run, with the same name.
+    const original = w.ask('original', { runs: [{ id: 'r', pool: 'X', start: 0 }] });
+    const copied = w.ask('copy', { runs: [{ id: 'r', pool: 'X', start: 0 }] });
+    const { pool, executor } = w.pool('B');
+    await settle();
+    const firstSeen = w.clock.now();
+    while (w.clock.now() < firstSeen + LAPSE_MS - BEAT_MS) {
+      w.net.beat(original.url, 'r');
+      await w.clock.advance(BEAT_MS);
+      expect(runsOf(copied), `at ${w.clock.now() - firstSeen}`).toHaveLength(1);
+    }
+    w.net.beat(original.url, 'r');
+    await w.clock.advance(BEAT_MS);
+    expect(w.clock.now()).toBe(firstSeen + LAPSE_MS);
+    // the original's word was heard for the original only
+    expect(pool.heardOf(original.url)('r')).toBe(true);
+    expect(pool.heardOf(copied.url)('r')).toBe(false);
+    expect(runsOf(original)).toHaveLength(1);
+    expect(runsOf(copied).map((run) => run.pool)).toEqual(['X', 'B']);
+    expect(executor.of(lastRun(copied).id).job?.taskUrl).toBe(copied.url);
+    // and the copy's run carries on while the original keeps beating
+    for (let i = 0; i < 3; i++) {
+      w.net.beat(original.url, 'r');
+      await w.clock.advance(BEAT_MS);
+    }
+    expect(executor.of(lastRun(copied).id).aborts).toEqual([]);
   });
 });
 
@@ -631,7 +667,7 @@ describe('the pool', () => {
     await settle();
     await w.clock.advance(GRACE_MS);
     expect(statuses(done)).toEqual(['succeeded']);
-    expect(ending(done.doc())).toBe('succeeded');
+    expect(ending(done.doc(), allHeard)).toBe('succeeded');
 
     // the cancel, then done within the grace: the cancel decided it
     w = world();
@@ -808,7 +844,7 @@ describe('the pool', () => {
     await settle();
     await w.clock.advance(LAPSE_MS);
     expect(statuses(task)).toEqual(['lost', 'lost', 'lost']);
-    expect(ending(task.doc())).toBe('failed');
+    expect(ending(task.doc(), allHeard)).toBe('failed');
     expect(executor.workers).toHaveLength(0);
   });
 
@@ -941,6 +977,126 @@ describe('the pool', () => {
     expect(runsOf(task)).toHaveLength(1);
   });
 
+  it('stopping, records a run as gone says: cancelled if the task is flagged meanwhile, yielded if another run ended it, else lost; whether its code returns or is killed', async () => {
+    const meanwhile: [string, (task: Handle<Task>) => void][] = [
+      ['nothing', () => {}],
+      ['flagged', (task) => task.change((doc) => void (doc.cancelled = true))],
+      [
+        'yielded',
+        (task) =>
+          task.change((doc) => {
+            claimRun(doc, { id: 'theirs', pool: 'Z', start: 0 });
+            endRun(doc, 'theirs', { status: 'succeeded', result: 'theirs', end: 1 });
+          }),
+      ],
+    ];
+    const want: Record<string, string> = { nothing: 'lost', flagged: 'cancelled', yielded: 'yielded' };
+    for (const [what, change] of meanwhile) {
+      for (const returns of [false, true]) {
+        w = world();
+        const task = w.ask('k');
+        const { pool, executor } = w.pool('A');
+        await settle();
+        const worker = executor.of(lastRun(task).id);
+        const stopped = pool.stop();
+        await settle();
+        expect(worker.aborts.map((it) => it.reason)).toEqual(['stopping']);
+        change(task);
+        await settle();
+        // told once, for the pool stopping: the change meanwhile tells it nothing more
+        expect(worker.aborts).toHaveLength(1);
+        if (returns) {
+          worker.events.done('returned');
+          await settle();
+        } else {
+          await w.clock.advance(GRACE_MS);
+        }
+        await stopped;
+        expect(runsOf(task)[0].status, `${what}, ${returns ? 'returned' : 'killed'}`).toBe(want[what]);
+        expect(runsOf(task)[0].result).toBeNull();
+      }
+    }
+  });
+
+  it('records its own orphan runs, at a restart, as gone says: cancelled on a flagged task, yielded on one another run ended; and lets their entries go', async () => {
+    const flagged = w.ask('flagged', { runs: [{ id: 'mine', pool: 'A', start: 0 }] });
+    flagged.change((doc) => void (doc.cancelled = true));
+    const ended = w.ask('ended', {
+      runs: [
+        { id: 'mine too', pool: 'A', start: 0 },
+        { id: 'theirs', pool: 'B', start: 1, end: 2, status: 'succeeded', result: 'theirs', logs: [] },
+      ],
+    });
+    const { executor } = w.pool('A', { slots: 2 });
+    await settle();
+    expect(statuses(flagged)).toEqual(['cancelled']);
+    expect(statuses(ended)).toEqual(['yielded', 'succeeded']);
+    expect(taskResult(ended.doc())).toBe('theirs');
+    expect(listed(w.queue, 'flagged')).toBeUndefined();
+    expect(listed(w.queue, 'ended')).toBeUndefined();
+    expect(executor.workers).toHaveLength(0);
+  });
+
+  it("lets go of a flagged task's entry only once another pool's open run of it has gone unheard for the lapse", async () => {
+    const task = w.ask('k', { runs: [{ id: 'theirs', pool: 'X', start: 0 }] });
+    task.change((doc) => void (doc.cancelled = true));
+    const { pool } = w.pool('A');
+    await settle();
+    // heard from first sight, then by its pool's word
+    for (let i = 0; i < 8; i++) {
+      expect(listed(w.queue, 'k'), `beat ${i}`).toBe(task.url);
+      expect(taskState(task.doc(), pool.heardOf(task.url))).toBe('stopping');
+      w.net.beat(task.url, 'theirs');
+      await w.clock.advance(BEAT_MS);
+    }
+    const lastWord = w.clock.now() - BEAT_MS;
+    await w.clock.advance(lastWord + LAPSE_MS - BEAT_MS - w.clock.now());
+    expect(listed(w.queue, 'k')).toBe(task.url);
+    await w.clock.advance(BEAT_MS);
+    expect(listed(w.queue, 'k')).toBeUndefined();
+    // nobody writes another pool's run
+    expect(statuses(task)).toEqual(['open']);
+  });
+
+  it('three lost runs with a healthy fourth run that then succeeds: the run is never stopped, and a reader that hears it reads succeeded, never failed in between', async () => {
+    const lost = (id: string, start: number): Run => ({ id, pool: 'X', start, end: start, status: 'lost', result: null, logs: [] });
+    const task = w.ask('k', { runs: [lost('l1', 0), lost('l2', 1), { id: 'x', pool: 'X', start: 2 }] });
+    // a reader with ears of its own
+    const reader = new Hearing(w.clock);
+    w.net.ears().listen(task, (message) => message?.type === 'task progress' && reader.heardFrom(message.run));
+    const states: TaskState[] = [];
+    const look = () => {
+      reader.saw(task.doc().runs);
+      states.push(taskState(task.doc(), reader.heard));
+    };
+    task.on('change', look);
+    const { executor } = w.pool('A');
+    await settle();
+    await w.clock.advance(LAPSE_MS);
+    const mine = lastRun(task);
+    expect(mine.pool).toBe('A');
+    const worker = executor.of(mine.id);
+    look();
+    // X's pool comes back and records its run lost: the third
+    task.change((doc) => endRun(doc, 'x', { status: 'lost', end: w.clock.now() }));
+    for (let i = 0; i < 6; i++) {
+      await w.clock.advance(BEAT_MS);
+      look();
+    }
+    expect(statuses(task)).toEqual(['lost', 'lost', 'lost', 'open']);
+    expect(worker.aborts).toEqual([]);
+    expect(listed(w.queue, 'k')).toBe(task.url);
+    // a reader that cannot hear the run would read failed here, and be wrong by the end
+    expect(taskState(task.doc(), () => false)).toBe('failed');
+    worker.events.done('done after all');
+    await settle();
+    look();
+    expect(states).not.toContain('failed');
+    expect(states.at(-1)).toBe('succeeded');
+    expect(taskResult(task.doc())).toBe('done after all');
+    expect(listed(w.queue, 'k')).toBeUndefined();
+  });
+
   it('writes nothing but runs and their ends into a task, and nothing but deletions into a queue', async () => {
     const task = w.ask('k');
     const queueBefore = structuredClone(w.queue.doc());
@@ -1066,7 +1222,7 @@ describe('the pool, when something it uses throws', () => {
     const { pool } = w.pool('A', { executor });
     await settle();
     expect(statuses(task)).toEqual(['failed']);
-    expect(taskError(task.doc())).toMatch(/run broke/);
+    expect(taskError(task.doc(), allHeard)).toMatch(/run broke/);
     expect(executor.workers[0].terminations).toHaveLength(1);
     expect(pool.busy).toBe(0);
     const said = w.net.sent.length;
