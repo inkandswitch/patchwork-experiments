@@ -44,6 +44,7 @@ import {
   taskResult,
   taskState,
   type TaskState,
+  waitingWork,
 } from './rules';
 
 // Building tasks
@@ -126,22 +127,26 @@ function runLists(length: number): Spec[][] {
 
 const ALL_RUN_LISTS = [0, 1, 2, 3].flatMap(runLists);
 
-const ROWS: Row[] = ALL_RUN_LISTS.flatMap((specs) =>
-  [false, true].flatMap((flagged) =>
-    NAMED.map((is): Row => {
-      const task = makeTask(specs.map(makeRun), flagged);
-      const heardIds = specs.flatMap((spec, index) => (spec.kind === 'heard' ? [runId(index)] : []));
-      return {
-        specs,
-        flagged,
-        is,
-        task,
-        heard: hearing(...heardIds),
-        label: `[${specs.map((s) => `${s.pool}:${s.kind}`).join(', ')}]${flagged ? ' flagged' : ''}, key names ${is}`,
-      };
-    }),
-  ),
-);
+/** Every run list given, times the flag, times what the key names. */
+const rowsFor = (lists: Spec[][]): Row[] =>
+  lists.flatMap((specs) =>
+    [false, true].flatMap((flagged) =>
+      NAMED.map((is): Row => {
+        const task = makeTask(specs.map(makeRun), flagged);
+        const heardIds = specs.flatMap((spec, index) => (spec.kind === 'heard' ? [runId(index)] : []));
+        return {
+          specs,
+          flagged,
+          is,
+          task,
+          heard: hearing(...heardIds),
+          label: `[${specs.map((s) => `${s.pool}:${s.kind}`).join(', ')}]${flagged ? ' flagged' : ''}, key names ${is}`,
+        };
+      }),
+    ),
+  );
+
+const ROWS: Row[] = rowsFor(ALL_RUN_LISTS);
 
 /** Runs `check` on every row and fails with the rows it complains about. */
 function everyRow(check: (row: Row) => string | null | undefined, rows: Row[] = ROWS) {
@@ -463,6 +468,87 @@ describe('bounded starts', () => {
       }
       return null;
     }, rows);
+  });
+});
+
+// Lists of three runs cannot hold MAX_LOST lost runs beside anything else, so
+// the table above never asks about a task that failed by lost runs while a
+// run of it is still open, finished, or heard. These rows are every list of
+// three lost runs with one more run of any kind at any place. One more run is
+// enough: once three runs are lost, the ending, the state and every pool's and
+// asker's decision depend on no other run but the first one that ended the
+// task, and one extra run can put such a run before, between or after the
+// lost ones.
+
+const LOST: Spec = { kind: 'lost', pool: 'P' };
+
+const THREE_LOST_AND_ONE = [
+  ...new Map(
+    SPECS.flatMap((spec) =>
+      [0, 1, 2, 3].map((at): Spec[] => {
+        const specs = [LOST, LOST, LOST];
+        specs.splice(at, 0, spec);
+        return specs;
+      }),
+    ).map((specs) => [specs.map((s) => `${s.pool}:${s.kind}`).join(','), specs] as const),
+  ).values(),
+];
+
+const LOST_ROWS = rowsFor(THREE_LOST_AND_ONE);
+
+describe('the table, with three runs lost and one more', () => {
+  it('has the four places for each of the eight other run specs, and the one list of four lost runs', () => {
+    expect(THREE_LOST_AND_ONE.length).toBe(8 * 4 + 1);
+    expect(LOST_ROWS.length).toBe((8 * 4 + 1) * 2 * 3);
+  });
+
+  it('reads the holder, the ending and the state as the header says', () => {
+    everyRow((row) => {
+      const got = [holder(row.task, row.heard)?.id ?? null, ending(row.task), taskState(row.task, row.heard)];
+      const want = [expectedHolder(row), expectedEnding(row), expectedState(row)];
+      return got.every((it, n) => it === want[n]) ? null : `got ${got.join('/')}, expected ${want.join('/')}`;
+    }, LOST_ROWS);
+  });
+
+  it('always has an ending: failed, unless a run ended the task first', () => {
+    everyRow((row) => {
+      const at = firstFinal(row.specs);
+      const want = at >= 0 ? row.specs[at].kind : 'failed';
+      return ending(row.task) === want ? null : `ending ${ending(row.task)}, expected ${want}`;
+    }, LOST_ROWS);
+  });
+
+  it('lets no pool claim, stops every open run as yielded, delists, and never relists', () => {
+    everyRow((row) => {
+      for (const pool of ['P', 'Q', 'R']) {
+        if (mayClaim(row.task, pool, row.is, row.heard)) {
+          return `${pool} may claim`;
+        }
+      }
+      for (const pool of ['P', 'Q'] as const) {
+        for (const index of openRunsOf(row, pool)) {
+          const why = stopReason(row.task, runId(index), row.is, row.heard);
+          if (why !== 'yielded') {
+            return `open ${runId(index)} of ${pool} is told ${why}`;
+          }
+        }
+      }
+      if (mayDelist(row.task, row.is) !== (row.is === 'this')) {
+        return `mayDelist ${mayDelist(row.task, row.is)}`;
+      }
+      if (mayRelist(row.task, row.is, row.heard, 0, LAPSE_MS * 10)) {
+        return 'mayRelist';
+      }
+      return null;
+    }, LOST_ROWS);
+  });
+
+  it("a flagged task with three lost runs and nothing ending it reads 'failed', not 'cancelled' or 'stopping', even while a run is heard", () => {
+    const rows = LOST_ROWS.filter((row) => row.flagged && firstFinal(row.specs) < 0);
+    // Five kinds that end nothing (heard and unheard of P and of Q, yielded) at
+    // four places, and the list of four lost runs, times what the key names.
+    expect(rows.length).toBe((5 * 4 + 1) * 3);
+    everyRow((row) => (taskState(row.task, row.heard) === 'failed' ? null : `state ${taskState(row.task, row.heard)}`), rows);
   });
 });
 
@@ -1096,5 +1182,219 @@ describe('merges', () => {
       expect(stopReason(doc, 'A', 'this', hearsAll)).toBeNull();
       expect(taskState(doc, hearsAll)).toBe('running');
     }
+  });
+
+  it('three pools claiming at once: every merge order gives one list, the first run holds and alone carries on for pools that hear all', () => {
+    const base = baseTask();
+    const claims = ['a', 'b', 'c'].map((digit, n) =>
+      A.change(replica(base, digit), (task) => {
+        expect(mayClaim(task, `P${n}`, 'this', hearsNone)).toBe(true);
+        claimRun(task, { id: `R${n}`, pool: `P${n}`, start: 1 });
+      }),
+    );
+    const [x, y, z] = claims;
+    const replicas = [mergeAll(x, y, z), mergeAll(x, z, y), mergeAll(y, x, z), mergeAll(y, z, x), mergeAll(z, x, y), mergeAll(z, y, x)];
+    for (const doc of replicas) {
+      expect(ids(doc)).toEqual(ids(replicas[0]));
+      const [first, second, third] = ids(doc);
+      expect(holder(doc, hearsAll)?.id).toBe(first);
+      expect(ids(doc).filter((id) => stopReason(doc, id, 'this', hearsAll) === null)).toEqual([first]);
+      // A pool that hears only the second run gives way to it; the second
+      // carries on until its pool hears the first.
+      expect(stopReason(doc, third, 'this', hearing(second))).toBe('yielded');
+      expect(stopReason(doc, second, 'this', hearing(third))).toBeNull();
+      // Three pools that hear nobody all carry on: the work is done three times,
+      // and the first in the list is the ending.
+      expect(ids(doc).every((id) => stopReason(doc, id, 'this', hearsNone) === null)).toBe(true);
+    }
+  });
+
+  it("a pool restarting records its run lost while another pool claims the task: one list on both replicas, no ending, one run holds, and the restarted pool may not claim again while it hears that run", () => {
+    const base = baseTask([open('A', 'P')]);
+    const onQ = A.change(replica(base, 'b'), (task) => {
+      expect(mayClaim(task, 'Q', 'this', hearsNone)).toBe(true);
+      claimRun(task, { id: 'B', pool: 'Q', start: 1 });
+    });
+    const onP = A.change(replica(base, 'a'), (task) => {
+      // Its own open run keeps it from claiming until it records that run lost.
+      expect(mayClaim(task, 'P', 'this', hearsNone)).toBe(false);
+      endRun(task, 'A', { status: 'lost', end: 1 });
+      expect(mayClaim(task, 'P', 'this', hearsNone)).toBe(true);
+      claimRun(task, { id: 'C', pool: 'P', start: 2 });
+    });
+    const [one, two] = syncBoth(onP, onQ);
+    expect(ids(one)).toEqual(ids(two));
+    for (const doc of [one, two]) {
+      expect(ids(doc)[0]).toBe('A');
+      expect(ids(doc).slice(1).sort()).toEqual(['B', 'C']);
+      expect(doc.runs.filter((run) => run.status === 'lost').map((run) => run.id)).toEqual(['A']);
+      expect(ending(doc)).toBeNull();
+      const [, first, second] = ids(doc);
+      expect(holder(doc, hearsAll)?.id).toBe(first);
+      expect(stopReason(doc, first, 'this', hearsAll)).toBeNull();
+      expect(stopReason(doc, second, 'this', hearsAll)).toBe('yielded');
+      expect(taskState(doc, hearsAll)).toBe('running');
+      for (const pool of ['P', 'Q']) {
+        expect(mayClaim(doc, pool, 'this', hearsAll)).toBe(false);
+      }
+    }
+  });
+
+  it('a flag crossing two runs: the first run in list order is the ending, whether it is the one stopped for the flag or the one that succeeded without seeing it', () => {
+    // A run stopped for the flag is a run that ended the task, so ruling 1
+    // keeps a success from being hidden by the flag alone, not by such a run
+    // earlier in the list.
+    for (const [statusA, statusB] of [
+      ['succeeded', 'cancelled'],
+      ['cancelled', 'succeeded'],
+    ] as const) {
+      const base = baseTask([open('A', 'P'), open('B', 'Q')]);
+      const asker = A.change(replica(base, 'c'), (task) => {
+        task.cancelled = true;
+      });
+      const complete = (id: string, digit: string, status: FinalStatus) => {
+        const start = status === 'cancelled' ? A.merge(replica(base, digit), asker) : replica(base, digit);
+        return A.change(start, (task) => {
+          expect(stopReason(task, id, 'this', hearsNone)).toBe(status === 'cancelled' ? 'cancelled' : null);
+          endRun(task, id, { status, result: id, end: 1 });
+        });
+      };
+      const p = complete('A', 'a', statusA);
+      const q = complete('B', 'b', statusB);
+      for (const doc of [mergeAll(asker, p, q), mergeAll(q, p, asker), mergeAll(p, asker, q)]) {
+        expect(ids(doc)).toEqual(['A', 'B']);
+        expect(ending(doc), `${statusA} then ${statusB}`).toBe(statusA);
+        expect(taskState(doc, hearsAll)).toBe(statusA);
+        expect(taskResult(doc)).toBe(statusA === 'succeeded' ? 'A' : undefined);
+      }
+    }
+  });
+
+  describe('a queue key over a longer history', () => {
+    const baseQueue = (jobs: Queue['jobs'] = {}) => A.from<Queue>({ jobs }, actor('0'));
+    const entry = (name: string) => ({ taskUrl: url(name), askedAt: 1, package: null });
+
+    it('a replica that last saw the first entry and delists it leaves an entry listed after that one was replaced and delisted in turn', () => {
+      for (const [staleActor, liveActor] of [
+        ['a', 'b'],
+        ['b', 'a'],
+      ]) {
+        const base = baseQueue({ K: entry('T1') });
+        const stale = A.change(replica(base, staleActor), (queue) => delistTask(queue, 'K', url('T1')));
+        let live = replica(base, liveActor);
+        live = A.change(live, (queue) => listTask(queue, 'K', entry('T2'), url('T1')));
+        live = A.change(live, (queue) => delistTask(queue, 'K', url('T2')));
+        live = A.change(live, (queue) => listTask(queue, 'K', entry('T3')));
+        for (const doc of syncBoth(stale, live)) {
+          expect(named(doc, 'K', url('T3')), `stale ${staleActor}`).toBe('this');
+        }
+      }
+    });
+
+    it('a replica that saw the key empty lists while another lists, delists and lists again: one entry survives, the same on both, never the delisted one', () => {
+      for (const [staleActor, liveActor] of [
+        ['a', 'b'],
+        ['b', 'a'],
+      ]) {
+        const base = baseQueue();
+        const stale = A.change(replica(base, staleActor), (queue) => listTask(queue, 'K', entry('T0')));
+        let live = replica(base, liveActor);
+        live = A.change(live, (queue) => listTask(queue, 'K', entry('T1')));
+        live = A.change(live, (queue) => delistTask(queue, 'K', url('T1')));
+        live = A.change(live, (queue) => listTask(queue, 'K', entry('T2')));
+        const [one, two] = syncBoth(stale, live);
+        expect(one.jobs.K.taskUrl).toBe(two.jobs.K.taskUrl);
+        expect([url('T0'), url('T2')]).toContain(one.jobs.K.taskUrl);
+        for (const doc of [one, two]) {
+          expect(named(doc, 'K', url('T1'))).toBe('other');
+          expect([named(doc, 'K', url('T0')), named(doc, 'K', url('T2'))].sort()).toEqual(['other', 'this']);
+        }
+      }
+    });
+
+    it.fails("RULE HOLE: a task listed under the key '__proto__' is named there on every replica but is never work to take", () => {
+      // Automerge hands the entry back as the prototype of `jobs`, not as a
+      // key of it: `jobs[key]` finds it and Object.entries does not.
+      const base = baseQueue();
+      const listed = A.change(replica(base, 'a'), (queue) => listTask(queue, '__proto__', entry('T1')));
+      for (const doc of syncBoth(listed, replica(base, 'b'))) {
+        expect(named(doc, '__proto__', url('T1'))).toBe('this');
+        expect(waitingWork(doc).map((work) => work.key)).toEqual(['__proto__']);
+      }
+    });
+  });
+});
+
+// Readings the table does not reach
+
+describe('taskResult and taskError', () => {
+  const run = (kind: Kind, index: number) => makeRun({ kind, pool: 'P' }, index);
+
+  it('give a result only for a task that succeeded, from the run that ended it', () => {
+    expect(taskResult(makeTask([run('yielded', 0), run('succeeded', 1)]))).toEqual({ from: 'r1' });
+    expect(taskResult(makeTask([run('failed', 0), run('succeeded', 1)]))).toBeUndefined();
+    expect(taskResult(makeTask([run('lost', 0), run('lost', 1), run('lost', 2)]))).toBeUndefined();
+    expect(taskResult(makeTask([], true))).toBeUndefined();
+    expect(taskResult(makeTask([{ id: 'A', pool: 'P', start: 0 }]))).toBeUndefined();
+    expect(taskResult(undefined)).toBeUndefined();
+  });
+
+  it("give a reason only for a task that failed: the failing run's last line, 'failed' without one, or the lost runs", () => {
+    const task = makeTask([{ id: 'A', pool: 'P', start: 0 }]);
+    endRun(task, 'A', { status: 'failed', logs: [{ timestampMillis: 1, message: 'first' }, { timestampMillis: 2, message: 'boom' }], end: 3 });
+    expect(taskError(task)).toBe('boom');
+    expect(taskError(makeTask([run('failed', 0)]))).toBe('failed');
+    expect(taskError(makeTask([run('lost', 0), run('lost', 1), run('lost', 2)]))).toContain('3 times');
+    expect(taskError(makeTask([run('succeeded', 0), run('failed', 1)]))).toBeNull();
+    expect(taskError(makeTask([], true))).toBeNull();
+    expect(taskError(makeTask([run('lost', 0), run('lost', 1)]))).toBeNull();
+    expect(taskError(undefined)).toBeNull();
+  });
+});
+
+describe('waitingWork', () => {
+  const jobs = {
+    b: { taskUrl: url('Tb'), askedAt: 5, package: 'pkg' },
+    a: { taskUrl: url('Ta'), askedAt: 5, package: null },
+    c: { taskUrl: url('Tc'), askedAt: 1 },
+    d: 'junk',
+    e: { taskUrl: url('Te') },
+  };
+
+  it('lists every entry, oldest ask first and by key among asks made at once; a missing ask time counts as 0 and a missing package as null', () => {
+    const work = waitingWork({ jobs } as unknown as Queue);
+    expect(work.map((it) => it.key)).toEqual(['e', 'c', 'a', 'b']);
+    expect(work.find((it) => it.key === 'c')?.package).toBeNull();
+    expect(work.find((it) => it.key === 'b')).toEqual({ key: 'b', taskUrl: url('Tb'), askedAt: 5, package: 'pkg' });
+    expect(waitingWork(undefined)).toEqual([]);
+    expect(waitingWork({} as Queue)).toEqual([]);
+  });
+
+  it('gives the same order whatever order the keys were written in', () => {
+    const keys = Object.keys(jobs) as (keyof typeof jobs)[];
+    const orders = (rest: string[]): string[][] =>
+      rest.length === 0 ? [[]] : rest.flatMap((key) => orders(rest.filter((it) => it !== key)).map((tail) => [key, ...tail]));
+    const want = waitingWork({ jobs } as unknown as Queue);
+    for (const order of orders(keys)) {
+      const shuffled = Object.fromEntries(order.map((key) => [key, jobs[key as keyof typeof jobs]]));
+      expect(waitingWork({ jobs: shuffled } as unknown as Queue), order.join('')).toEqual(want);
+    }
+  });
+});
+
+describe('a document named under a key that is not a task', () => {
+  // Anyone can write a queue (isEntry), so an entry can name any document.
+  // holder, ending and taskState read a missing `runs` as no runs.
+  const notATask = { title: 'not a task' } as unknown as Task;
+
+  it('reads as a waiting task with no holder and no ending', () => {
+    expect(holder(notATask, hearsAll)).toBeNull();
+    expect(ending(notATask)).toBeNull();
+    expect(taskState(notATask, hearsAll)).toBe('waiting');
+    expect(mayDelist(notATask, 'this')).toBe(false);
+  });
+
+  it.fails('RULE HOLE: mayClaim throws on it instead of answering', () => {
+    expect(() => mayClaim(notATask, 'P', 'this', hearsNone)).not.toThrow();
   });
 });
