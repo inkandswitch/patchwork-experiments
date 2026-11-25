@@ -17,8 +17,7 @@
  * is asked of the step as it now is.
  */
 
-import { CALL } from "../session/schema.js"
-import { findCall, unansweredCalls } from "../session/calls.js"
+import { findCall, unansweredCalls, move } from "../session/calls.js"
 import { makeTurn, resultBlock, textBlock } from "../session/blocks.js"
 import { sessionTitle } from "../session/title.js"
 import { say } from "../kernel/loop.js"
@@ -64,8 +63,7 @@ export function makeAside(doc, { sessionUrl, now = Date.now() }) {
   const open = unansweredCalls(doc)
   if (open.length) {
     for (const call of open) {
-      const found = findCall(doc, call.id)
-      if (found) found.block.status = CALL.error
+      move(findCall(doc, call.id)?.block, "abandon")
     }
     doc.turns.push(makeTurn("tool", open.map((call) => resultBlock(call.id, NOT_IN_ASIDE, { isError: true, summary: "not run" }))))
   }

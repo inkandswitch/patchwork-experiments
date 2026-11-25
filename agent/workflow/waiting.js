@@ -53,6 +53,7 @@ export function waitingIn(doc) {
     tool: call.tool,
     input: call.input ?? {},
     ask: call.ask ?? null,
+    shown: call.shown ?? null,
   }))
   const questions = questionsAwaitingAnswer(doc).map((call) => ({
     kind: "question",

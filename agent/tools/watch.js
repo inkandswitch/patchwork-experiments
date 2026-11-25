@@ -318,7 +318,8 @@ export const docWatch = {
     "A watch lasts until you stop it: doc_watch {stop: id}, or {stop: 'all'}. It survives reloads, and what changed while no tab had this session open is reported when one opens it. Every call answers with the watches open now. Stop a watch once its job is done — a finished run, a question answered.",
   ].join("\n"),
   where: "worker",
-  risk: "read",
+  // It writes, though only this conversation: the session's own `watches`.
+  risk: "self",
   input_schema: {
     type: "object",
     properties: {

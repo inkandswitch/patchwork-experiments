@@ -76,7 +76,7 @@ describe("what a step waits on", () => {
       { kind: "question", callId: "q1", question: "Metric or imperial?", options: [{ label: "metric", detail: null }, { label: "imperial", detail: null }] },
     ])
     expect(waitingIn(waitingSession(repo, "approval").doc())).toEqual([
-      { kind: "approval", callId: "p1", tool: "web_fetch", input: { url: "https://iba-world.com/negroni" }, ask: null },
+      { kind: "approval", callId: "p1", tool: "web_fetch", input: { url: "https://iba-world.com/negroni" }, ask: null, shown: null },
     ])
   })
 })

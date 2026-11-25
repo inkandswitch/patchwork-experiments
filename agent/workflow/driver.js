@@ -35,6 +35,7 @@ import { decide } from "./decide.js"
 import { scopeOf, webScope, sameScope } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
 import { documentIdOf } from "../documents/doc-urls.js"
+import { treeNode, treeEntries, treeLink } from "../documents/tree.js"
 import { releaseNowPermitted } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
 import { waitingIn } from "./waiting.js"
@@ -439,7 +440,8 @@ export class WorkflowDriver {
     } catch {
       return
     }
-    const present = new Set((folder.doc()?.docs ?? []).map((entry) => documentIdOf(entry?.url)))
+    const node = treeNode(folder)
+    const present = new Set(treeEntries(node).map((entry) => documentIdOf(entry?.url)))
     // A search's results page is kept, as the record of how a step found what
     // it read, but it is not a source: the folder is for what a person
     // reviewing the work checks claims against.
@@ -453,12 +455,7 @@ export class WorkflowDriver {
         type: KERNEL_TYPES.includes(e.type) ? "file" : e.type ?? "file",
         url: e.kind === "finding" ? stringifyAutomergeUrl({ documentId: id }) : stringifyAutomergeUrl({ documentId: id, heads: [...e.heads] }),
       }))
-    if (fresh.length) {
-      folder.change((d) => {
-        if (!d.docs) d.docs = []
-        for (const entry of fresh) d.docs.push(entry)
-      })
-    }
+    for (const entry of fresh) treeLink(node, entry)
     this.write((d) => {
       if (!d.sourcesFiled) d.sourcesFiled = {}
       for (const [id] of due) d.sourcesFiled[id] = true

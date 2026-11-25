@@ -110,7 +110,7 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
 
   const actions = el("div", "cluster")
   if (item.kind === "approval") {
-    const { verb, detail } = describeCall({ tool: item.tool, input: item.input }, null, { subject })
+    const { verb, detail } = describeCall({ tool: item.tool, input: item.input, shown: item.shown }, null, { subject })
     node.append(el("p", null, `Wants to ${verb}${detail ? ` ${detail}` : ""}`))
     const allow = el("button", null, "Allow once")
     allow.dataset.variant = "primary"

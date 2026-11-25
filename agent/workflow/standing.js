@@ -25,9 +25,11 @@
 
 import { states, STATE, STEP, PLAN, reopenErrors, reopenSteps, staleInputs, dependantsOf } from "./plan.js"
 
-const LABEL = {
+/** A step's state in a word, wherever one is shown. */
+export const STATE_LABEL = {
   [STATE.waiting]: "waiting",
-  [STATE.ready]: "starting",
+  // It can start; it may still be waiting its turn for a runner.
+  [STATE.ready]: "ready",
   [STATE.blocked]: "blocked",
   [STATE.running]: "running",
   [STATE.needsInput]: "needs you",
@@ -76,7 +78,7 @@ export function stepStanding(plan, stepId, sessions = {}) {
   const run = (step.previous?.length ?? 0) + 1
   const steer = step.status === STEP.running
   const reopen = !steer && !reopenErrors(plan, [stepId]).length
-  return { state, label: LABEL[state] ?? state, detail: detailOf(plan, step, state, byId), plan: whole, run, steer, reopen, later: reopen ? laterReopened(plan, stepId) : [] }
+  return { state, label: STATE_LABEL[state] ?? state, detail: detailOf(plan, step, state, byId), plan: whole, run, steer, reopen, later: reopen ? laterReopened(plan, stepId) : [] }
 }
 
 function detailOf(plan, step, state, byId) {

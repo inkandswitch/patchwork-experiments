@@ -146,8 +146,8 @@ describe("the agent naming its own work", () => {
     // conversation opened, which needed a yes when it was mounted. And
     // finding_write writes only what a research step itself makes, or a
     // finding in its workflow's ledger, through a repo that can reach nothing
-    // else (kernel/scope.js).
-    expect(selfWriters).toEqual(["view_unmount", "finding_write", "session_title"])
+    // else (kernel/scope.js). doc_watch writes the session's own `watches`.
+    expect([...selfWriters].sort()).toEqual(["doc_watch", "finding_write", "session_title", "view_unmount"])
   })
 
   it("reads as naming something in the log", () => {

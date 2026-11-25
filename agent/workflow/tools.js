@@ -40,6 +40,7 @@ import {
 import { liftBudget } from "../session/usage.js"
 import { ensureDriver, getDriver, keptCounts } from "./driver.js"
 import { truncate } from "../documents/format.js"
+import { createFolder } from "../documents/tree.js"
 import { answerQuestion } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
 import { waitingIn } from "./waiting.js"
@@ -206,12 +207,7 @@ export const workflowStart = {
     // rather than by the driver on first need: two tabs driving one plan could
     // each make one.
     const folderTitle = `Sources · ${input.title}`
-    const folder = await repo.create2()
-    folder.change((d) => {
-      d["@patchwork"] = { type: "folder" }
-      d.title = folderTitle
-      d.docs = []
-    })
+    const folder = await createFolder(repo, folderTitle)
     const handle = await repo.create2()
     handle.change((d) =>
       initPlan(d, {

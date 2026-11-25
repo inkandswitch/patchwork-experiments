@@ -25,19 +25,9 @@ import { renderWaitingItem } from "./waiting.js"
 import { morph } from "./morph.js"
 import { ensureStyles } from "./styles.js"
 import { statusOf } from "../session/status.js"
+import { STATE_LABEL } from "../workflow/standing.js"
 
 
-const STATE_LABEL = {
-  [STATE.waiting]: "waiting",
-  [STATE.ready]: "ready",
-  [STATE.blocked]: "blocked",
-  [STATE.running]: "running",
-  [STATE.needsInput]: "needs you",
-  [STATE.done]: "done",
-  [STATE.stale]: "out of date",
-  [STATE.failed]: "failed",
-  [STATE.cancelled]: "cancelled",
-}
 
 const WHERE_LABEL = { host: "frontend", worker: "worker" }
 
