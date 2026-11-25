@@ -24,6 +24,7 @@ import { cleanTitle, MAX_TITLE } from "../session/title.js"
 
 export const sessionTitleTool = {
   id: "session_title",
+  present: { verb: "name", detail: (i) => i.title ?? null },
   needs: ["session.write"],
   name: "Name this session",
   description: [

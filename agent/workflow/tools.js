@@ -170,6 +170,7 @@ export function describePlan(plan, url) {
 
 export const workflowStart = {
   id: "workflow_start",
+  present: { verb: "orchestrate", detail: (i) => (i.title ? `${i.title} · ${i.steps?.length ?? 0} steps` : null) },
   needs: ["workflows"],
   name: "Start a workflow",
   description: [
@@ -235,6 +236,7 @@ export const workflowStart = {
 
 export const workflowAddSteps = {
   id: "workflow_add_steps",
+  present: { verb: "extend workflow", detail: (i) => `${i.steps?.length ?? 0} steps` },
   needs: ["workflows"],
   name: "Add workflow steps",
   description:
@@ -269,6 +271,7 @@ export const workflowAddSteps = {
 
 export const workflowStatus = {
   id: "workflow_status",
+  present: { verb: "check workflow", detail: () => null },
   needs: ["workflows"],
   name: "Workflow status",
   description: "Where a workflow stands: every step's state, model tier, session and result so far.",
@@ -289,6 +292,7 @@ export const workflowStatus = {
 
 export const workflowStop = {
   id: "workflow_stop",
+  present: { verb: "stop", detail: (i) => (i.steps?.length ? i.steps.join(", ") : "workflow") },
   needs: ["workflows"],
   name: "Stop a workflow",
   description: "Cancel some steps, or with no `steps` the whole workflow. Running steps are interrupted; their sessions keep what they did.",
@@ -314,6 +318,7 @@ export const workflowStop = {
 
 export const workflowAnswer = {
   id: "workflow_answer",
+  present: { verb: "answer step", detail: (i) => i.step ?? null },
   needs: ["workflows"],
   name: "Answer a workflow step",
   description: [
@@ -360,6 +365,7 @@ export const workflowAnswer = {
 
 export const workflowBudget = {
   id: "workflow_budget",
+  present: { verb: "give more budget to", detail: (i) => (i.step ? `${i.step} (+${i.add ?? "?"})` : null) },
   needs: ["workflows"],
   name: "Give a workflow step more budget",
   description: [
@@ -426,6 +432,7 @@ export const workflowBudget = {
 
 export const workflowReopen = {
   id: "workflow_reopen",
+  present: { verb: "reopen", detail: (i) => (i.steps?.length ? `${i.steps.join(", ")}${i.cascade ? " and what follows" : ""}` : null) },
   needs: ["workflows"],
   name: "Reopen workflow steps",
   description: [
@@ -463,6 +470,7 @@ export const workflowReopen = {
 
 export const workflowKeep = {
   id: "workflow_keep",
+  present: { verb: "keep results of", detail: (i) => (i.steps ?? []).join(", ") || null },
   needs: ["workflows"],
   name: "Keep workflow results",
   description:
@@ -497,6 +505,7 @@ const EDIT_SCHEMA = {
 
 export const workflowEditSteps = {
   id: "workflow_edit_steps",
+  present: { verb: "edit steps", detail: (i) => (i.steps ?? []).map((x) => x?.id).filter(Boolean).join(", ") || null },
   needs: ["workflows"],
   name: "Edit workflow steps",
   description:
@@ -525,6 +534,7 @@ export const workflowEditSteps = {
 
 export const workflowDecide = {
   id: "workflow_decide",
+  present: { verb: "decide request", detail: (i) => (i.request ? `${i.request} · ${i.accept ? "accept" : "decline"}` : null) },
   needs: ["workflows"],
   name: "Decide a step's request",
   description: [
@@ -595,6 +605,11 @@ export const workflowDecide = {
  */
 export const workflowRequest = {
   id: "workflow_request",
+  present: {
+    verb: "ask the orchestrator",
+    detail: (i) =>
+      [i.add_steps?.length ? `${i.add_steps.length} more step${i.add_steps.length === 1 ? "" : "s"}` : null, i.reopen?.length ? `reopen ${i.reopen.join(", ")}` : null].filter(Boolean).join(" and ") || null,
+  },
   needs: ["step"],
   scoped: true,
   name: "Ask the orchestrator for more work",

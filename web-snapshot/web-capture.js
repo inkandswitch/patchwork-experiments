@@ -289,6 +289,18 @@ export const webCapture = {
     return capture(input, ctx)
   },
 
+  // How a call reads in the agent's log: "capture site.test".
+  present: {
+    verb: "capture",
+    detail: (input) => {
+      try {
+        return new URL(input.url).host
+      } catch {
+        return String(input?.url ?? "")
+      }
+    },
+  },
+
   summarize(input, output) {
     let host = input?.url ?? ""
     try {

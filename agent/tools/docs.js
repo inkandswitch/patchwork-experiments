@@ -20,6 +20,7 @@ import { entriesOf, isDirectory, isFile, isFolder, treeNode, treeLink } from "..
 import { imageForModel } from "../documents/images.js"
 import { findAll, MAX_MATCHES, pdfOf, pdfWithoutText } from "./read-source.js"
 import { fileKind, officeText, describeFile } from "../documents/files.js"
+import { shortDoc, pathLabel, describeOps } from "../documents/labels.js"
 
 /** Resolve a url argument against the session's subject. */
 function targetUrl(input, ctx) {
@@ -147,6 +148,10 @@ function foundIn(url, path, find, { count, strings, hits }, { pages = false } = 
 
 export const docRead = {
   id: "doc_read",
+  present: {
+    verb: "read",
+    detail: (i, subject) => pathLabel(i.path) ?? (i.shapeOnly ? "shape" : shortDoc(i.url, subject)),
+  },
   name: "Read document",
   target: { fields: ["url"], fallback: "subject" },
   description: [
@@ -314,6 +319,7 @@ const MAX_REPORT = 6000
 
 export const docEdit = {
   id: "doc_edit",
+  present: { verb: "edit", detail: (i) => describeOps(i.ops) },
   name: "Edit document",
   // The url defaults to the session's subject in execute(), so it does here.
   target: { fields: ["url"], fallback: "subject" },
@@ -431,6 +437,7 @@ export const docEdit = {
 
 export const docCreate = {
   id: "doc_create",
+  present: { verb: "create", detail: (i) => i.title || i.datatype || null },
   name: "Create document",
   // A new document is about no existing one. Keyed on the subject, its card
   // offered "this document", which was not what it was going to touch.
@@ -500,6 +507,7 @@ const DEFAULT_SCAN = 500
 
 export const docHistory = {
   id: "doc_history",
+  present: { verb: "history", detail: (i, subject) => shortDoc(i.url, subject) },
   name: "Document history",
   target: { fields: ["url"], fallback: "subject" },
   description: [

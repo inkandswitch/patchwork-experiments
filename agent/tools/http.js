@@ -29,9 +29,14 @@ import { sourceFooter } from "./sources.js"
 import { readBytes, keepResponse, htmlToText, WEB_GROUP } from "./web.js"
 import { fetcher } from "../net/guard.js"
 import { isInterruption } from "../net/network.js"
+import { hostOf } from "../documents/labels.js"
 
 export const httpRequest = {
   id: "http_request",
+  present: {
+    verb: (i) => (i.method ?? "GET").toUpperCase(),
+    detail: (i) => hostOf(i.url),
+  },
   ...WEB_GROUP,
   name: "Call an API",
   description: [

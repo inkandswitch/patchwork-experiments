@@ -304,6 +304,7 @@ async function capture(input, root, ownerDocument) {
 
 export const viewScreenshot = {
   id: "view_screenshot",
+  present: { verb: "screenshot", detail: (i) => i.selector ?? null },
   name: "Look at what it renders",
   description: [
     "Capture a picture of what a view is actually drawing, and look at it.",

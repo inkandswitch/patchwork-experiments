@@ -141,6 +141,7 @@ export async function packageSkillsSection(ctx) {
 
 export const skillList = {
   id: "skill_list",
+  present: { verb: "skills", detail: () => null },
   name: "List skills",
   description:
     "List the guidance available to you, by name. Read one with skill_read before doing something you have not done here before — especially writing a tool.",
@@ -159,6 +160,7 @@ export const skillList = {
 
 export const skillRead = {
   id: "skill_read",
+  present: { verb: "read skill", detail: (i) => i.name ?? null },
   name: "Read a skill",
   description:
     "Read one skill in full. Do this before writing a Patchwork tool, before your first edit to an unfamiliar document shape, and whenever a skill's description sounds like the thing you are about to attempt.",

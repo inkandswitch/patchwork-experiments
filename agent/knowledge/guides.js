@@ -553,6 +553,7 @@ const PACKAGE_PROP = {
 
 export const guideRead = {
   id: "guide_read",
+  present: { verb: "recall the guide for", detail: (i) => (i.package && !/^automerge:/.test(i.package) ? i.package : i.package ? "a package" : "all packages") },
   name: "Read a usage guide",
   description:
     "Read the usage guide for a package, with whether the package has changed since the guide was last checked. With no `package`, list every guide and where it stands. A guide also arrives by itself the first time you use a package.",
@@ -585,6 +586,7 @@ export const guideRead = {
 
 export const guideChanges = {
   id: "guide_changes",
+  present: { verb: "see what changed in", detail: (i) => (i.package && !/^automerge:/.test(i.package) ? i.package : "a package") },
   name: "See what changed since a guide was checked",
   description:
     "For a guide that may be out of date: which of the package's files were added, removed or changed since the guide was last checked, and a bounded diff of each changed text file. Review the guide against this, fix what is wrong, then record it with guide_write (reviewed: true) or guide_pin. Pass `file` for the full diff of one file.",
@@ -608,6 +610,7 @@ export const guideChanges = {
 
 export const guidePin = {
   id: "guide_pin",
+  present: { verb: "mark reviewed", detail: (i) => (i.package && !/^automerge:/.test(i.package) ? i.package : "a guide") },
   name: "Record that a guide was reviewed",
   description:
     "Record that you checked a guide against the package as it is now and it is right (or you have just corrected it), so it is no longer flagged. Do this only after reading guide_changes: it says you reviewed.",
@@ -629,6 +632,7 @@ export const guidePin = {
 
 export const guideWrite = {
   id: "guide_write",
+  present: { verb: "write the guide for", detail: (i) => i.name ?? (i.package && !/^automerge:/.test(i.package) ? i.package : "a package") },
   name: "Write a usage guide",
   description: [
     "Write or update the usage guide for one package, so no later session has to learn its tools from scratch. One guide per package; writing again replaces it, so guide_read it first and write the whole guide back.",

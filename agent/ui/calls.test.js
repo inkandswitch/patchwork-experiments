@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest"
-import { describeCall, PRESENTATION, PRESENTED_PLUGINS } from "./calls.js"
+import { describeCall } from "./calls.js"
+import { written } from "../fixtures/calls.js"
 import { describeOps, shortDoc, pathLabel, hostOf, baseName } from "../documents/labels.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 
-const call = (tool, input = {}, status = "done") => ({ tool, input, status })
+/** A call as the loop writes one: saying how it reads, where its tool says. */
+const call = (tool, input = {}, status = "done", subject = null) => written({ tool, input, status }, subject)
 const show = (tool, input, result = null, subject = null) =>
-  describeCall(call(tool, input), result, { subject })
+  describeCall(call(tool, input, "done", subject), result, { subject })
 
 describe("what a call says of itself", () => {
   it("is what the log shows, whatever this page would have made of the call", () => {
@@ -15,25 +17,19 @@ describe("what a call says of itself", () => {
 
   it("and a call that says nothing is described here", () => {
     const block = { tool: "doc_read", input: { path: ["title"] }, status: "done", shown: null }
-    expect(describeCall(block, null)).toMatchObject({ verb: "read", detail: "/title" })
+    expect(describeCall(block, null)).toMatchObject({ verb: "doc_read", detail: "/title" })
   })
 })
 
 describe("every tool has a presentation", () => {
   it("covers the whole built-in toolset", () => {
-    // The point of the test: adding a tool without a presentation entry means a
-    // line in the log that reads `view_interact  #btn-3`, which is a dump of the
-    // arguments rather than a description of what happened.
-    const missing = BUILTIN_TOOLS.map((t) => t.id).filter((id) => !PRESENTATION[id])
-    expect(missing).toEqual([])
+    // The point of the test: a tool that does not say how its calls read means
+    // a line in the log that reads `view_interact  #btn-3`, which is a dump of
+    // the arguments rather than a description of what happened.
+    expect(BUILTIN_TOOLS.filter((t) => !t.present).map((t) => t.id)).toEqual([])
   })
 
-  it("has no entries for tools that no longer exist, but the plugins it names", () => {
-    const ids = new Set(BUILTIN_TOOLS.map((t) => t.id))
-    expect(Object.keys(PRESENTATION).filter((id) => !ids.has(id))).toEqual(PRESENTED_PLUGINS)
-  })
-
-  const PRESENTED_IDS = [...BUILTIN_TOOLS.map((t) => t.id), ...PRESENTED_PLUGINS]
+  const PRESENTED_IDS = BUILTIN_TOOLS.map((t) => t.id)
 
   it("gives every tool a verb that is not just its id", () => {
     for (const id of PRESENTED_IDS) {
@@ -50,10 +46,6 @@ describe("every tool has a presentation", () => {
       const { detail } = show(id, { url, root: url, docUrl: url })
       expect(detail, id).not.toContain("PDTNBQcoJiMQPEnKFRW8hyW787z")
     }
-  })
-
-  it("presents the Web snapshot package's web_capture by the page it captures", () => {
-    expect(show("web_capture", { url: "https://site.test/cells" })).toMatchObject({ verb: "capture", detail: "site.test" })
   })
 
   it("survives an input that makes no sense", () => {
@@ -183,7 +175,7 @@ describe("a row says what happened, not what was asked twice", () => {
   // The verb and detail already carry the question. A summary that repeats them
   // gives you `click button:last-child · click button:last-child · ok`.
   const noisy = (tool, input, output) => {
-    const { verb, detail, note } = describeCall({ tool, input, status: "done" }, { output, summary: summaryOf(tool, input, output) })
+    const { verb, detail, note } = describeCall(written({ tool, input, status: "done" }), { output, summary: summaryOf(tool, input, output) })
     return { verb, detail, note }
   }
 

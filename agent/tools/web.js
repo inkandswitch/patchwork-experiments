@@ -25,6 +25,7 @@ import { titleFrom, mediaType, isTextResponse, decodeText, isPdf, formatOf, MAX_
 import { fetcher, assertTarget } from "../net/guard.js"
 import { Interruption, isInterruption, asInterruption } from "../net/network.js"
 import { readPdf, pdfSummary } from "../documents/pdf-text.js"
+import { hostOf } from "../documents/labels.js"
 
 /**
  * The tools that reach the web share their grants: "may you read
@@ -519,6 +520,7 @@ function readableOf(ref, { response, body }) {
  */
 export const webFetch = {
   id: "web_fetch",
+  present: { verb: "fetch", detail: (i) => hostOf(i.url) },
   ...WEB_GROUP,
   scoped: true,
   name: "Read a web page",
@@ -605,6 +607,7 @@ export const webFetch = {
 
 export const webSearch = {
   id: "web_search",
+  present: { verb: "search", detail: (i) => (i.query ? `“${i.query}”` : null) },
   ...WEB_GROUP,
   scoped: true,
   name: "Search the web",

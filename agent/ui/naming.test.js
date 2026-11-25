@@ -7,6 +7,7 @@ import { needsApproval } from "../session/grants.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { describeCall } from "./calls.js"
+import { written } from "../fixtures/calls.js"
 
 function fresh(turns = []) {
   const doc = {}
@@ -151,7 +152,7 @@ describe("the agent naming its own work", () => {
   })
 
   it("reads as naming something in the log", () => {
-    const row = describeCall({ tool: "session_title", input: { title: "Tally counter tool" }, status: "done" }, null)
+    const row = describeCall(written({ tool: "session_title", input: { title: "Tally counter tool" }, status: "done" }), null)
     expect(row.verb).toBe("name")
     expect(row.detail).toBe("Tally counter tool")
   })

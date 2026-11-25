@@ -277,6 +277,7 @@ function defaultRunInWorker(file, code, options, { deadlineMs = WORKER_FILE_DEAD
 
 export const packageTest = {
   id: "package_test",
+  present: { verb: "test", detail: (i) => i.filter ?? "package" },
   name: "Run a package's tests",
   description: [
     "Run the tests in a package and report which passed and which failed, with the failure messages.",

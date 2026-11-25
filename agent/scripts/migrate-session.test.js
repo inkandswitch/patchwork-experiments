@@ -142,6 +142,14 @@ describe("a version 1 session", () => {
     expect(sent.map((part) => part.output)).toEqual(["edited"])
   })
 
+  it("each call says how it reads in the log, where its tool can say", () => {
+    const call = (id, tool, input) => ({ type: "call", id, tool, input, where: "worker", status: "done", runner: null, generation: null })
+    const doc = v1({ subject: "automerge:subject" })
+    doc.turns.push(turn("assistant", [call("c1", "doc_read", { url: "automerge:subject" }), call("c2", "fs_write", { path: "tally/tool.js", content: "" }), call("c3", "some_package_tool", { n: 1 })]))
+    migrateSession(doc)
+    expect(doc.turns.at(-1).blocks.map((b) => b.shown ?? null)).toEqual([{ verb: "read", detail: "this document" }, { verb: "write", detail: "tool.js" }, null])
+  })
+
   it("a refused call that had no result gets one, where the model will read it", () => {
     const call = (id, status) => ({ type: "call", id, tool: "doc_edit", input: {}, where: "worker", status, runner: null, generation: null })
     const doc = v1()

@@ -431,6 +431,7 @@ export function packagePlugin(files, { cdn = CDN, fetchImpl = fetch, fetched = n
 
 export const packageBuild = {
   id: "package_build",
+  present: { verb: "build", detail: (i) => i.entry ?? "package" },
   name: "Build a package",
   description: [
     "Compile a package that needs building — TypeScript, JSX, or npm dependencies — and write the result back into it as dist/index.js.",

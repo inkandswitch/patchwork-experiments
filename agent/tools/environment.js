@@ -12,6 +12,7 @@ import { truncate, bytes } from "../documents/format.js"
 import { resolvePath, treeNode, treeEntries, treeFiles } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 import { fetcher } from "../net/guard.js"
+import { shortDoc, baseName } from "../documents/labels.js"
 
 /**
  * The registry, one line per plugin, grouped by type.
@@ -55,6 +56,7 @@ export function listRegistries(registries, { type = null, search = null, urls = 
 
 export const registryList = {
   id: "registry_list",
+  present: { verb: "installed", detail: (i) => i.search || i.type || null },
   name: "List installed plugins",
   description:
     "List what is installed in this Patchwork: tools, datatypes, components, themes, and any other plugin type. Use this before doc_create (to find a datatype id) or before opening a view (to find a tool id).\n\nPass type: 'agent:tool' to see the capabilities packages have exposed for YOU rather than for a person. Those are already in your tool list — this tells you which package each came from, and whether the thing the user is asking for exists as a tool you can simply call.",
@@ -117,6 +119,7 @@ export function packageDocOf(importUrl) {
 
 export const pluginSource = {
   id: "plugin_source",
+  present: { verb: "source", detail: (i) => (i.file ? `${i.id}/${baseName(i.file)}` : i.id ?? null) },
   name: "Read plugin source",
   description:
     "Read the source of an installed plugin, by plugin id. This is how you learn how an existing tool works before writing one like it. Automerge-hosted packages are read from their folder document; http-hosted ones are fetched.",
@@ -214,6 +217,7 @@ export function viewShowing(root, url) {
 
 export const domSnapshot = {
   id: "dom_snapshot",
+  present: { verb: "look", detail: (i) => i.selector ?? "the page" },
   name: "Look at the page",
   description:
     "Snapshot the live DOM of the Patchwork view the user is looking at. Use it to see what is actually rendered — what a tool drew, whether an element exists, what classes it has. Requires an open tab.",
@@ -271,6 +275,7 @@ export const domSnapshot = {
 
 export const viewOpen = {
   id: "view_open",
+  present: { verb: "open", detail: (i, subject) => shortDoc(i.url, subject) },
   name: "Open a document for the user",
   description:
     "Navigate the user's Patchwork to a document, optionally in a particular tool. Use it when you have made or found something they should look at — handing over a URL in prose is worse than just showing them.",

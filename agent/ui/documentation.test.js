@@ -3,7 +3,6 @@ import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { toSchema } from "../kernel/tool.js"
 import { BUILTIN_SKILLS } from "../knowledge/builtin-skills.js"
 import { DEFAULT_SYSTEM } from "../kernel/loop.js"
-import { PRESENTATION, PRESENTED_PLUGINS } from "./calls.js"
 
 /**
  * The tool descriptions ARE the documentation.
@@ -50,8 +49,8 @@ describe("every tool explains itself", () => {
         expect(typeof tool.summarize, `${tool.id}.summarize`).toBe("function")
       })
 
-      it("has a line in the transcript's presentation table", () => {
-        expect(PRESENTATION[tool.id], `${tool.id} is missing from ui/calls.js`).toBeTruthy()
+      it("says how its calls read in the transcript", () => {
+        expect(tool.present, `${tool.id} has no \`present\``).toBeTruthy()
       })
 
       it("survives being turned into a schema for the model", () => {
@@ -93,9 +92,10 @@ describe("the skills", () => {
       })
 
       it("refers only to tools that exist", () => {
-        // A built-in, or a plugin this agent knows by name and presents
-        // (ui/calls.js), which a skill names as there only when its package is.
-        const ids = new Set([...BUILTIN_TOOLS.map((t) => t.id), ...PRESENTED_PLUGINS])
+        // A built-in, or the one package's tool a skill names: the Web
+        // snapshot package's web_capture, said to be there only when its
+        // package is.
+        const ids = new Set([...BUILTIN_TOOLS.map((t) => t.id), "web_capture"])
         // Backticked identifiers that look like tool names — the way a skill
         // names one. A skill naming a tool that was removed is worse than
         // silence: the agent will try to call it.

@@ -80,6 +80,10 @@ async function checkedCitations(text, members, repo) {
 
 export const findingWrite = {
   id: "finding_write",
+  present: {
+    verb: (i) => (!i.finding ? "finding" : i.mode === "replace" ? "rewrite finding" : "add to finding"),
+    detail: (i) => i.title ?? null,
+  },
   scoped: "only",
   name: "Write down a finding",
   target: "none",

@@ -18,6 +18,7 @@ import { openDocument } from "./read-source.js"
 
 export const sourceFile = {
   id: "source_file",
+  present: { verb: "file", detail: (i) => i.name ?? "kept source" },
   ...FILES_GROUP,
   name: "File a kept source",
   target: { fields: ["folder"] },

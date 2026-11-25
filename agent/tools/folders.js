@@ -13,6 +13,7 @@ import { previewJson, truncate, bytes } from "../documents/format.js"
 import { contentText } from "../documents/values.js"
 import { isFile, treeNode, treeEntries, treeEnter, treeLink, treeRemove, treeRepin, resolvePath, ensurePath, findPath } from "../documents/tree.js"
 import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, OpError, TEXT_OPS } from "../documents/ops.js"
+import { baseName } from "../documents/labels.js"
 
 /**
  * Writing files is one decision too: a grant to write, edit or delete under a
@@ -116,6 +117,7 @@ function rootFor(input, ctx) {
 
 export const fsList = {
   id: "fs_list",
+  present: { verb: "list", detail: (i) => (i.path ? `/${i.path}` : "/") },
   name: "List folder",
   description:
     "List the contents of a folder document. `path` is slash-separated from the root folder. Shows each entry's name, type and URL.",
@@ -144,6 +146,7 @@ export const fsList = {
 
 export const fsRead = {
   id: "fs_read",
+  present: { verb: "read", detail: (i) => baseName(i.path) },
   name: "Read file",
   description: [
     "Read a file document's text. Pass `path` to find it by name in a folder, or `url` to read one you already have.",
@@ -204,6 +207,10 @@ export const fsRead = {
 
 export const fsGrep = {
   id: "fs_grep",
+  present: {
+    verb: "grep",
+    detail: (i) => (i.pattern ? `${i.pattern}${i.include ? ` in ${i.include}` : ""}` : null),
+  },
   name: "Search files",
   description:
     "Search a folder tree for a regular expression, returning matching lines with their file and line number. This is how you find code without reading every file.",
@@ -403,6 +410,18 @@ function notAFile(url, doc) {
 
 export const fsWrite = {
   id: "fs_write",
+  present: {
+    verb: "write",
+    detail: (i) => {
+      // `files` is a map of path to content, not an array.
+      const paths = i.files && typeof i.files === "object" ? Object.keys(i.files) : []
+      if (paths.length) {
+        const names = paths.slice(0, 2).map(baseName)
+        return names.join(", ") + (paths.length > 2 ? ` +${paths.length - 2}` : "")
+      }
+      return i.path ? baseName(i.path) : i.url ? "file" : null
+    },
+  },
   ...FILES_GROUP,
   name: "Write files",
   // A url names one file; a root names the folder written under; a path with
@@ -583,6 +602,10 @@ async function fileFor(input, ctx) {
 
 export const fsEdit = {
   id: "fs_edit",
+  present: {
+    verb: "edit",
+    detail: (i) => (i.path ? baseName(i.path) : i.url ? "file" : null),
+  },
   ...FILES_GROUP,
   name: "Edit a file",
   target: { fields: ["url", "root"] },
@@ -704,6 +727,7 @@ function checkEdit(edit) {
 
 export const fsDelete = {
   id: "fs_delete",
+  present: { verb: "remove", detail: (i) => baseName(i.path) },
   ...FILES_GROUP,
   name: "Delete a file or folder",
   target: { fields: ["root"] },

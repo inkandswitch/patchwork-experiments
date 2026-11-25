@@ -613,6 +613,7 @@ const MOUNT_PROPS = {
 
 export const viewMount = {
   id: "view_mount",
+  present: { verb: "mount", detail: (i) => i.toolId ?? i.datatype ?? null },
   // About the document opened, or the package mounted; never the subject.
   target: { fields: ["docUrl", "url"] },
   name: "Open a document in its tool",
@@ -674,6 +675,7 @@ export const viewMount = {
 
 export const viewInspect = {
   id: "view_inspect",
+  present: { verb: "inspect", detail: (i) => i.selector ?? i.mountId ?? null },
   name: "Look at an open document",
   description:
     "Read what an open document is currently showing: its rendered text, its elements, and the document behind it. Pass a selector to look at one part of it.",
@@ -724,6 +726,10 @@ export const MAX_SETTLE_MS = 30000
 
 export const viewInteract = {
   id: "view_interact",
+  present: {
+    verb: (i) => i.action ?? "interact",
+    detail: (i) => `${i.selector ?? ""}${i.value != null ? ` = ${String(i.value).slice(0, 24)}` : ""}`.trim() || null,
+  },
   // Acts on a mount, which view_mount was approved for. No document of its own.
   target: "none",
   name: "Drive an open document",
@@ -819,6 +825,7 @@ export const viewInteract = {
 
 export const viewUnmount = {
   id: "view_unmount",
+  present: { verb: "close", detail: (i) => i.mountId ?? null },
   target: "none",
   name: "Close an open document",
   description:
@@ -856,6 +863,7 @@ export const viewUnmount = {
 
 export const toolCheck = {
   id: "tool_check",
+  present: { verb: "check", detail: (i) => i.toolId ?? i.datatype ?? "tool" },
   target: { fields: ["docUrl", "url"] },
   name: "Check a tool you wrote",
   description: [

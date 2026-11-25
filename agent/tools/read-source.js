@@ -123,6 +123,10 @@ export function pdfWithoutText(doc, url, name, mine) {
 
 export const sourceRead = {
   id: "source_read",
+  present: {
+    verb: (i) => (i.find ? "search" : "read"),
+    detail: (i) => (i.find ? `“${i.find}”` : i.offset ? `from ${i.offset}` : "kept source"),
+  },
   scoped: true,
   name: "Read a kept source",
   target: { fields: ["source"] },
@@ -212,6 +216,7 @@ export const sourceRead = {
 
 export const sourceList = {
   id: "source_list",
+  present: { verb: "kept sources", detail: (i) => (i.find ? `“${i.find}”` : null) },
   scoped: true,
   name: "List kept sources",
   target: "none",

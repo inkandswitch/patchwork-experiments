@@ -52,6 +52,7 @@ export function originalResult(turns, callId) {
 
 export const sessionRecall = {
   id: "session_recall",
+  present: { verb: "recall", detail: (i) => i.callId ?? null },
   scoped: true,
   name: "Recall an earlier result",
   description: [

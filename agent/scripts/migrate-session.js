@@ -21,6 +21,8 @@
  *
  *   results      the result a runner wrote for a call it found cut off says
  *                that it is one (`placeholder`), where it was told by its wording.
+ *   calls        each says how it reads in the log (`shown`), as its tool
+ *                describes it; the view no longer has a table to look it up in.
  *   denied calls a call a person refused has a result saying so, as every
  *                other outcome does. Some from long ago had none.
  *
@@ -30,6 +32,12 @@
  */
 
 import { DENIED_RESULT } from "../session/request.js"
+import { presentCall } from "../kernel/tool.js"
+import { BUILTIN_TOOLS } from "../assembly/builtin.js"
+
+/** The built-in tools by id, the full-access session's of two with one id. */
+const TOOLS = new Map([...BUILTIN_TOOLS].reverse().map((tool) => [tool.id, tool]))
+
 import { INTERRUPTED } from "../session/recovery.js"
 
 /** The group each tool's grants on a target are kept under, for those in one. */
@@ -85,6 +93,14 @@ export function migrateSession(doc, { now = Date.now() } = {}) {
   for (const turn of doc.turns ?? []) {
     for (const block of turn.blocks ?? []) {
       if (block.type === "result" && block.summary === "interrupted" && String(block.output ?? "") === INTERRUPTED) block.placeholder = true
+    }
+  }
+
+  for (const turn of doc.turns ?? []) {
+    for (const block of turn.blocks ?? []) {
+      if (block.type !== "call" || block.shown) continue
+      const shown = presentCall(TOOLS.get(block.tool), JSON.parse(JSON.stringify(block.input ?? {})), doc.subject ?? null)
+      if (shown) block.shown = shown
     }
   }
 

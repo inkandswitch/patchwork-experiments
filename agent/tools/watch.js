@@ -46,6 +46,7 @@ import { editsBetween, editsOfPatches, matchEdit, touchesPath } from "../documen
 import { valueAt } from "../documents/values.js"
 import { addedHeads } from "../kernel/own-changes.js"
 import { watchesWriter } from "../kernel/store.js"
+import { shortDoc, pathLabel } from "../documents/labels.js"
 
 export const MAX_WATCHES = 8
 /** Edits kept for one wake; older ones are counted, not shown. */
@@ -307,6 +308,10 @@ const newId = () => `w${Math.random().toString(36).slice(2, 6)}`
 
 export const docWatch = {
   id: "doc_watch",
+  present: {
+    verb: "watch",
+    detail: (i, subject) => (i.stop ? `stop ${i.stop}` : pathLabel(i.path) ?? shortDoc(i.url, subject)),
+  },
   needs: ["watches"],
   name: "Watch a document",
   target: { fields: ["url"], fallback: "subject" },

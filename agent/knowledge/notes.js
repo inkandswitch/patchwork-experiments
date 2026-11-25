@@ -163,6 +163,7 @@ const refuseCredential = (...texts) => {
 
 export const noteWrite = {
   id: "note_write",
+  present: { verb: "note", detail: (i) => i.name ?? null },
   name: "Write a note",
   description: [
     "Keep something you learned, for every later session. Notes are markdown files in the user's \"Agent notes\" folder; each session starts with a list of them.",
@@ -216,6 +217,7 @@ export const noteWrite = {
 
 export const noteEdit = {
   id: "note_edit",
+  present: { verb: "amend note", detail: (i) => i.name ?? null },
   name: "Change part of a note",
   description: [
     "Change a note you already have without rewriting it: add to the end, or replace one passage. Everything else in the note stays exactly as it is.",
@@ -273,6 +275,7 @@ export const noteEdit = {
 
 export const noteRead = {
   id: "note_read",
+  present: { verb: "recall", detail: (i) => i.name ?? "notes" },
   name: "Read a note",
   description: "Read one of your notes in full, by the name shown in your notes list. With no name, list every note.",
   where: "worker",
@@ -302,6 +305,7 @@ export const noteRead = {
 
 export const noteDelete = {
   id: "note_delete",
+  present: { verb: "forget", detail: (i) => i.name ?? null },
   name: "Delete a note",
   description: "Remove a note that turned out to be wrong or no longer matters. It stays in the folder's history, so this is recoverable.",
   where: "worker",

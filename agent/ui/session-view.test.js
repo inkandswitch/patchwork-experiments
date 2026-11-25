@@ -11,6 +11,7 @@ import { renderTranscript, callSummary } from "./transcript.js"
 import { _reset as resetRunners } from "../runners/registry.js"
 import { viewMount, _resetMounts } from "../tools/checking.js"
 import { pendingCall, toolOf } from "../fixtures/asking.js"
+import { written } from "../fixtures/calls.js"
 
 /** A DocHandle double with the parts the tool actually uses. */
 let handleCounter = 0
@@ -408,7 +409,7 @@ describe("transcript rendering", () => {
 
 describe("callSummary", () => {
   it("names the verb and the target", () => {
-    const summary = callSummary({ tool: "fs_grep", input: { pattern: "TODO" }, status: CALL.done }, null)
+    const summary = callSummary(written({ tool: "fs_grep", input: { pattern: "TODO" }, status: CALL.done }), null)
     expect(summary.verb).toBe("grep")
     expect(summary.detail).toBe("TODO")
   })

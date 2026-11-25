@@ -97,6 +97,7 @@ export async function walkTree(
 
 export const docSearch = {
   id: "doc_search",
+  present: { verb: "search docs", detail: (i) => (i.query ? `“${i.query}”` : null) },
   name: "Find documents",
   description:
     "Search the user's documents by name. This is how you find something you were not handed — start here when the user refers to a document you do not have a URL for. Returns paths, types and URLs. It reads only folder listings, never the documents themselves, so it is cheap; it stops after a few seconds and says so.\n\nTo search inside files, name the folder they are in with `root` and pass `content: true`: it reads up to 50 files under that folder. It will not read your whole account.",
@@ -206,6 +207,7 @@ export const docSearch = {
 
 export const docTree = {
   id: "doc_tree",
+  present: { verb: "browse", detail: () => null },
   name: "Outline my documents",
   description:
     "Show the shape of the user's document tree — folders and what is in them, a few levels deep. Use it once to orient yourself before searching.",

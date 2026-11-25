@@ -12,6 +12,7 @@ import { citationsInDocument, checkCitation } from "../documents/citations.js"
 
 export const citationsCheck = {
   id: "citations_check",
+  present: { verb: "check the citations in", detail: (i) => (i.url ? String(i.url).replace(/^automerge:/, "").slice(0, 8) + "…" : null) },
   name: "Check a document's citations",
   target: { fields: ["url"] },
   description: [
