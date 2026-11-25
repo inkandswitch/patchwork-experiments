@@ -1033,6 +1033,27 @@ describe('served', () => {
     stop();
   });
 
+  it('drops at once a pool that says it has no slots (it has stopped), and lists it again when it says it has some', async () => {
+    const { repo, queue } = world();
+    const { reports, stop } = hear(repo, queue);
+    await settle();
+    serving(queue, 'A');
+    serving(queue, 'B');
+    const cases: [unknown, string[]][] = [
+      [0, ['B']],
+      [2, ['A', 'B']],
+      ['none', ['B']],
+      [undefined, ['B']],
+      [-1, ['B']],
+      [1, ['A', 'B']],
+    ];
+    for (const [slots, pools] of cases) {
+      serving(queue, 'A', { slots });
+      expect(reports.at(-1)?.map((it) => it.pool), JSON.stringify(slots)).toEqual(pools);
+    }
+    stop();
+  });
+
   it('drops a pool 1 ms after one lapse from its last message, each pool at its own lapse: the timer fires at the oldest pool lapse', async () => {
     const { repo, queue } = world();
     const { reports, stop } = hear(repo, queue);

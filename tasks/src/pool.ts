@@ -7,15 +7,16 @@
 //
 // It takes only work it has what for (`has`, see `satisfies`), and of what it
 // may take, it holds back for the task's preferred pool: it hears the other
-// pools serving each queue (their `serving`, within the lapse), takes a task
-// at once when `preferred` names it, and otherwise only once it has seen the
-// task takeable for HOLD_MS. A pool that hears nobody else is always the one.
-// So that the others choose from what is so, it says `serving` every beat,
-// whenever how many of its slots are busy changes, and at once to a pool it
-// hears for the first time; and it says which tasks it has runs of, so that
-// a pool that hears it full never reads that as room for a task it is
-// running already, and leaves alone what another says it runs before the
-// task's document shows that run.
+// pools serving each queue (their `serving`, within the lapse), and judges
+// once, when it first sees a task takeable, whether `preferred` names it. If
+// so it takes the task as soon as it has a free slot; if not, only once
+// HOLD_MS have passed since that first sight. The judgment is kept while the
+// task stays takeable, so nothing is decided again when another pool's slots
+// fill or free. Until it has listened to a queue for LISTEN_MS it does not
+// know who else serves it, and judges itself preferred for nothing there.
+// So that the others choose from what is so, it says `serving` every beat and
+// whenever how many of its slots are busy changes, and as it stops (or stops
+// serving a queue) it says it has no slots, so that nobody holds back for it.
 //
 // It writes three things and nothing else: a run appended when it takes a
 // task, that run completed when it is over, and an entry deleted when its
@@ -41,8 +42,8 @@ import {
   GRACE_MS,
   Hearing,
   HOLD_MS,
-  isOpen,
   LAPSE_MS,
+  LISTEN_MS,
   LOST_TOO_OFTEN,
   MAX_LOG_LINES,
   mayClaim,
@@ -50,7 +51,6 @@ import {
   named,
   orphans,
   preferred,
-  recordsOf,
   satisfies,
   stopReason,
   waitingWork,
@@ -212,8 +212,11 @@ function letGo(followed: Followed<unknown>) {
  */
 interface FollowedTask extends Followed<Task> {
   hearing: Hearing;
-  /** When this pool first saw the task takeable, on its own clock, until it is no longer. */
-  takeableSince?: number;
+  /**
+   * When this pool first saw the task takeable, on its own clock, and whether
+   * it was then the task's preferred pool; kept until the task is not takeable.
+   */
+  firstSight?: { at: number; preferred: boolean };
 }
 
 /** Another pool heard serving a queue: what it last said of itself, and when, on this pool's clock. */
@@ -221,8 +224,6 @@ interface HeardPool {
   has: string[];
   slots: number;
   busy: number;
-  /** The tasks it said it has runs of. */
-  running: string[];
   at: number;
 }
 
@@ -230,6 +231,8 @@ interface Served extends Followed<Queue> {
   acceptance: Acceptance;
   /** The other pools heard serving it, by id. */
   heard: Map<string, HeardPool>;
+  /** When this pool began listening to the queue's channel, on its own clock. */
+  listeningSince?: number;
 }
 
 interface Slot {
@@ -310,6 +313,7 @@ export class Pool {
   serve(queues: Record<AutomergeUrl, Acceptance>) {
     for (const [url, queue] of this.queues) {
       if (!(url in queues)) {
+        this.sayServing(queue.handle, true);
         letGo(queue);
         this.queues.delete(url);
       }
@@ -333,6 +337,10 @@ export class Pool {
     if (!this.stopped) {
       this.stopped = true;
       this.clock.clearInterval(this.tick);
+      // its last word on each queue: no slots, so that nobody holds back for it
+      for (const queue of this.queues.values()) {
+        this.sayServing(queue.handle, true);
+      }
       for (const run of this.runs.values()) {
         this.stopRun(run, 'stopping');
       }
@@ -456,24 +464,21 @@ export class Pool {
         }
         // Whose code it is and what it needs are asked of the entry first
         // and of the task last (see `mayClaim`). A task that has ended is not
-        // wanted, so `mayClaim` refuses one just let go above. One that a
-        // pool heard within the lapse says it runs is left to it: its run is
-        // on its way, and the word of it is quicker than the document.
+        // wanted, so `mayClaim` refuses one just let go above.
         const takeable =
           !this.stopped &&
           acceptsPackage(acceptance, work.package) &&
           satisfies(this.has, work.needs) &&
           mayClaim(task, id, is, heard) &&
           accepts(acceptance, task.importUrl) &&
-          satisfies(this.has, task.needs) &&
-          !this.runElsewhere(served, task, work.taskUrl, now);
+          satisfies(this.has, task.needs);
         if (!takeable) {
-          followed.takeableSince = undefined;
+          followed.firstSight = undefined;
           followed.unhold?.();
           return;
         }
-        followed.takeableSince ??= now;
-        if (this.runs.size < slots && this.mayTakeNow(followed, work, served, task, now)) {
+        followed.firstSight ??= { at: now, preferred: this.isPreferred(work, served, task, now) };
+        if (this.runs.size < slots && this.mayTakeNow(followed, now)) {
           this.claim(work, queue, handle, task);
         }
       });
@@ -481,43 +486,37 @@ export class Pool {
   }
 
   /**
-   * Whether a pool heard serving the queue within the lapse says it has a run
-   * of this task that the task's document does not show over. Its word counts
-   * only until the document catches up: once the document shows that pool's
-   * runs of the task and every one of them completed (a pool that stopped
-   * records its run lost and says nothing more), the word is older than the
-   * document, and the task is as takeable as the rules read it.
+   * Whether `preferred` names this pool for a task, now: among the pools
+   * heard serving the queue within the lapse that have what the task needs,
+   * and this pool. The task's own needs narrow the others; the entry's `near`
+   * is the asker's word for which pool it is next to. This pool counts itself
+   * as having a free slot: whether it has one decides when it takes the task,
+   * not whether it is the one to, and a pool that judged itself out while its
+   * slots were full would hold back as long as the others that saw it free.
+   * A pool that has listened to the queue for less than LISTEN_MS may not
+   * have heard the others yet, and is preferred for nothing.
    */
-  private runElsewhere(served: Served, task: Task, taskUrl: string, now: number): boolean {
-    const runs = recordsOf(task);
-    for (const [id, pool] of served.heard) {
-      if (now - pool.at >= LAPSE_MS || !pool.running.includes(taskUrl)) {
-        continue;
-      }
-      const its = runs.filter((run) => run.pool === id);
-      if (its.length === 0 || its.some(isOpen)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Whether to take a task this pool may take, now: at once if `preferred`
-   * names this pool among the pools heard serving the queue within the lapse
-   * that have what the task needs (this pool counted with its own free
-   * slots), and otherwise once it has been takeable for HOLD_MS, with a timer
-   * set to look again then. The task's own needs narrow the others; the
-   * entry's `near` is the asker's word for which pool it is next to.
-   */
-  private mayTakeNow(followed: FollowedTask, work: Work, served: Served, task: Task, now: number): boolean {
+  private isPreferred(work: Work, served: Served, task: Task, now: number): boolean {
     const { id, slots } = this.options;
+    if (served.listeningSince === undefined || now - served.listeningSince < LISTEN_MS) {
+      return false;
+    }
     const others = [...served.heard]
       .filter(([, pool]) => now - pool.at < LAPSE_MS && satisfies(pool.has, task.needs))
       .map(([pool, { slots, busy }]) => ({ pool, slots, busy }));
-    const choice = preferred(work.taskUrl, work.near ?? null, [{ pool: id, slots, busy: this.runs.size }, ...others]);
-    const waited = now - (followed.takeableSince ?? now);
-    if (choice === id || waited >= HOLD_MS) {
+    return preferred(work.taskUrl, work.near ?? null, [{ pool: id, slots, busy: 0 }, ...others]) === id;
+  }
+
+  /**
+   * Whether to take a task this pool may take, now that it has a free slot:
+   * at once if it was the preferred pool when it first saw the task takeable,
+   * and otherwise once HOLD_MS have passed since then, with a timer set to
+   * look again at that moment.
+   */
+  private mayTakeNow(followed: FollowedTask, now: number): boolean {
+    const sight = followed.firstSight!;
+    const waited = now - sight.at;
+    if (sight.preferred || waited >= HOLD_MS) {
       followed.unhold?.();
       return true;
     }
@@ -564,6 +563,7 @@ export class Pool {
           unlisten?.();
         };
         if (!isTask) {
+          (followed as unknown as Served).listeningSince = this.clock.now();
           this.sayServing(handle as Handle<any>);
         }
         this.review();
@@ -625,10 +625,8 @@ export class Pool {
   }
 
   /**
-   * Another pool's word, on a queue's channel, that it serves the queue. One
-   * heard for the first time, or again after a lapse, is told at once that
-   * this pool serves it too, so that a pool just started knows whom to hold
-   * back for within a crossing rather than a beat.
+   * Another pool's word, on a queue's channel, that it serves the queue, with
+   * how many slots it has free. A pool that stops says it has none.
    */
   private onQueueMessage(served: Served, handle: Handle<any>, message: Partial<ServingMessage> | null) {
     if (message?.type !== 'serving' || typeof message.pool !== 'string' || message.pool === this.options.id) {
@@ -637,18 +635,12 @@ export class Pool {
     if (this.queues.get(handle.url) !== served) {
       return; // a queue no longer served
     }
-    const now = this.clock.now();
-    const before = served.heard.get(message.pool);
     served.heard.set(message.pool, {
       has: Array.isArray(message.has) ? message.has.filter((label): label is string => typeof label === 'string') : [],
       slots: Number(message.slots) || 0,
       busy: Number(message.busy) || 0,
-      running: Array.isArray(message.running) ? message.running.filter((url): url is string => typeof url === 'string') : [],
-      at: now,
+      at: this.clock.now(),
     });
-    if (!before || now - before.at >= LAPSE_MS) {
-      this.sayServing(handle);
-    }
     this.review();
   }
 
@@ -915,11 +907,12 @@ export class Pool {
     }
   }
 
-  private sayServing(handle: Handle<Queue> | undefined) {
+  /** Says it serves the queue, with its slots, or, `leaving`, that it has none for it any more. */
+  private sayServing(handle: Handle<Queue> | undefined, leaving = false) {
     if (handle) {
-      const { id: pool, name, slots } = this.options;
-      const running = [...new Set([...this.runs.values()].map((run) => run.task.url))];
-      this.send(handle, { type: 'serving', pool, name, slots, busy: this.busy, has: this.has, running } satisfies Omit<ServingMessage, keyof Stamp>);
+      const { id: pool, name } = this.options;
+      const slots = leaving ? 0 : this.options.slots;
+      this.send(handle, { type: 'serving', pool, name, slots, busy: this.busy, has: this.has } satisfies Omit<ServingMessage, keyof Stamp>);
     }
   }
 

@@ -1,5 +1,5 @@
 /**
- * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v5]
+ * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v6]
  *
  * What the documents are, and what may be read from them. Everything else (a
  * pool, an asker, a view) is these rules applied to documents and to what has
@@ -77,10 +77,16 @@
  *   the entry before it reads the task and of the task before it takes it.
  *   Work that no pool has what it needs for waits; it never fails for want
  *   of a machine.
- * - Of the pools heard serving a queue that have what a task needs, one is
- *   PREFERRED (`preferred`) and takes it at once; any other takes it only
- *   once it has seen it takeable for HOLD_MS on its own clock. This is advice that no rule depends on:
- *   two pools that both take a task resolve as below, the later giving way.
+ * - Of the pools heard serving a queue that have what a task needs and a free
+ *   slot, and the judging pool itself, one is PREFERRED (`preferred`). A
+ *   pool judges this once, when it first sees the task takeable, and keeps
+ *   that judgment while the task stays takeable: if it was preferred, it
+ *   takes the task as soon as it has a free slot; if not, only once HOLD_MS
+ *   have passed since that first sight, on its own clock. A pool that has
+ *   listened to a queue for less than LISTEN_MS is preferred for nothing
+ *   there, and one that stops says it has no slots. This is advice that no
+ *   rule depends on: two pools that both take a task resolve as below, the
+ *   later giving way.
  * - It STOPS a run of its own (`stopReason`) as soon as the work is done
  *   elsewhere, a run before it ended the task, its key names another task,
  *   or an earlier run it can hear holds it, each of which makes it `yielded`,
@@ -205,6 +211,13 @@ export const MAX_LOG_LINES = 200;
  * back, so that the preferred pool's run is normally here first.
  */
 export const HOLD_MS = 1_500;
+
+/**
+ * How long a pool listens to a queue's channel before it may judge itself a
+ * task's preferred pool there: a beat, in which every other pool serving the
+ * queue says so, and a crossing more for the last of those words to arrive.
+ */
+export const LISTEN_MS = BEAT_MS + 500;
 
 // Hearing
 
@@ -737,8 +750,8 @@ export function preferenceHash(taskUrl, pool) {
  * below slots), `near` if it is one of them, and otherwise the one whose
  * `preferenceHash` with the task's url is highest, the smaller name where two
  * are equal; null where none has a free slot. The caller passes only the
- * pools that have what the task needs, itself among them with its own free
- * slots, and leaves out any not heard for LAPSE_MS. The answer depends on
+ * pools that have what the task needs, itself among them as having a free
+ * slot, and leaves out any not heard for LAPSE_MS. The answer depends on
  * the set alone, never on its order, so pools that have heard the same pools
  * choose the same one.
  * @param {string} taskUrl

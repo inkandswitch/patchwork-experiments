@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v11]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v12]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -64,14 +64,13 @@ export const LOCAL_MESSAGES_CHANNEL = 'patchwork-tasks-messages';
  */
 
 /**
- * Said on a queue's channel by each pool serving it, every BEAT_MS, whenever
- * how many of its slots are busy changes, and at once to a pool it hears
- * there for the first time: who it is, how many slots it has and how many
- * are busy, what it has (see `satisfies`), and the tasks it has runs of.
+ * Said on a queue's channel by each pool serving it, every BEAT_MS and
+ * whenever how many of its slots are busy changes: who it is, how many slots
+ * it has and how many are busy, and what it has (see `satisfies`). A pool
+ * that stops, or stops serving the queue, says it last with no slots.
  * Advice: no rule depends on it. People and askers read it to say why work
- * waits; pools read it to hold back for the pool a task prefers, and to
- * leave alone a task another pool runs before its document shows the run.
- * @typedef {{ type: 'serving', pool: string, name: string, slots: number, busy: number, has: string[], running: string[], from: string, seq: number }} ServingMessage
+ * waits; pools read it to hold back for the pool a task prefers.
+ * @typedef {{ type: 'serving', pool: string, name: string, slots: number, busy: number, has: string[], from: string, seq: number }} ServingMessage
  */
 
 /** @type {BroadcastChannel | undefined} */
@@ -612,7 +611,8 @@ export async function run(repo, queueUrl, request, onProgress, signal) {
 /**
  * Calls `onChange` with the pools heard serving `queueUrl` within the lapse,
  * now and whenever that changes: an empty list means nobody is heard, so a
- * task asked of it would wait. Returns how to stop.
+ * task asked of it would wait. A pool whose last word says it has no slots
+ * has stopped serving it, and is not listed. Returns how to stop.
  * @param {any} repo
  * @param {string} queueUrl
  * @param {(pools: Serving[]) => void} onChange
@@ -660,6 +660,11 @@ export function served(repo, queueUrl, onChange) {
         }
         unlisten = listen(queue, (message) => {
           if (message?.type !== 'serving' || typeof message.pool !== 'string') {
+            return;
+          }
+          if (!(Number(message.slots) > 0)) {
+            pools.delete(message.pool);
+            report();
             return;
           }
           pools.set(message.pool, {

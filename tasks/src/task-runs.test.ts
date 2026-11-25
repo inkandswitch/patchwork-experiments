@@ -220,7 +220,7 @@ describe('hearServing', () => {
     const heard = hearServing(repo, queue.url, 5_000);
     await new Promise((resolve) => setTimeout(resolve, 20));
     serving(queue);
-    expect(await heard).toEqual([{ pool: 'pool-1', name: 'Mac', slots: 2, busy: 0 }]);
+    expect(await heard).toEqual([{ pool: 'pool-1', name: 'Mac', slots: 2, busy: 0, has: [] }]);
     expect(queue.listenerCount('ephemeral-message')).toBe(before);
   });
   it('nobody: [] once the wait is over (by default a little over one beat), and stops listening', async () => {
