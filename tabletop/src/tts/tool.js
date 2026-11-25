@@ -2,11 +2,97 @@
 // the cached assets: files, a folder such as TTS's Mods/, or a .zip), watch it
 // import, read the report, open the game it made (a tabletop-game: its page
 // sets up tables).
+//
+// Dropping is this page's act: what was dropped exists only here, so the
+// save and the files it uses are kept as file docs at once (dropped.js) and
+// the import doc is set to ask for them (`request`, request.js). The import
+// itself is work done through the task system (import-task.js, asked with
+// doWork under a key naming this doc and that request): on the person's own
+// queue when one of their machines serves it, so that it finishes when this
+// page closes and two pages asking are one import; otherwise in this page.
+// What is shown is decided in one place (status.js) from the doc and from
+// whether that work is going on; an import asked from another tab or before
+// a reload is followed by its key and shown, not offered again.
 
 import css from "./styles.css?inline";
 import { DEFAULT_SETTINGS } from "./settings.js";
+import { importAsk, importRequest, canonicalJson } from "./request.js";
+import { shownStatus, underWay, workLines } from "./status.js";
+import { cancel, doWork, inSamePackage, ownQueueOf, storageUrlOf, watch } from "../kit/task-client.js";
 
 const OPEN_EVENT = "patchwork:open-document";
+
+// Vite sets this in the built package, whose import task is dist/import-task.js (vite.config.js)
+const BUILT = import.meta.env?.PROD === true;
+
+/**
+ * Where the import's code is, as an import url both this page and a pool can
+ * import: the package's own file, named by the package's url and not this
+ * site's, when this module was loaded from a package in automerge; the file
+ * beside this one when it runs unbuilt from anywhere else (tests, a dev
+ * server); null when neither can be known, and the tool then calls it itself.
+ */
+export function importTaskUrl(here = import.meta.url, built = BUILT) {
+  const inPackage = inSamePackage(here, built ? "dist/import-task.js" : "src/tts/import-task.js");
+  if (inPackage || built) return inPackage;
+  try {
+    return new URL("./import-task.js", here).href;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Does the import in this page by calling its module, for when there is no
+ * url to import it by: with the same views as doWork's for work done here,
+ * so that the tool shows it the same way.
+ */
+export async function callHere(repo, input, key, { onProgress, signal }) {
+  const { default: importTask } = await import("./import-task.js");
+  const logs = [];
+  let progress = null;
+  const view = (state, more = {}) => ({ key, state, taskUrl: null, importUrl: null, input, progress, logs: [...logs], result: undefined, error: null, runs: [], ...more });
+  const ctx = {
+    repo,
+    signal,
+    taskUrl: null,
+    key,
+    run: crypto.randomUUID(),
+    log: (...a) => {
+      logs.push({ timestampMillis: Date.now(), message: a.map(String).join(" ") });
+      onProgress(view("running"));
+    },
+    progress: (v) => {
+      progress = v;
+      onProgress(view("running"));
+    },
+  };
+  onProgress(view("running"));
+  try {
+    const result = await importTask(input, ctx);
+    onProgress(view("succeeded", { result }));
+    return result;
+  } catch (err) {
+    if (signal.aborted) {
+      onProgress(view("cancelled"));
+      throw new Error("The task was cancelled");
+    }
+    const error = String(err?.message ?? err);
+    onProgress(view("failed", { error }));
+    throw new Error(error);
+  }
+}
+
+/** The person's own queue, read without making anything: null if they have none. */
+async function ownQueueUrl(repo) {
+  const storageUrl = storageUrlOf(globalThis.accountDocHandle?.doc?.());
+  if (!storageUrl || !repo) return null;
+  try {
+    return ownQueueOf((await repo.find(storageUrl)).doc());
+  } catch {
+    return null;
+  }
+}
 
 const el = (tag, props = {}, ...children) => {
   const n = document.createElement(tag);
@@ -21,20 +107,24 @@ const el = (tag, props = {}, ...children) => {
   return n;
 };
 
-
 /** Copy plain data out of an automerge doc (for settings passed to the importer). */
 const plain = (v) => JSON.parse(JSON.stringify(v ?? null));
 
+const PILL = { empty: "empty", looking: "…", importing: "importing", done: "imported", failed: "failed", stopped: "stopped", interrupted: "interrupted" };
+
 export default function TtsImportTool(handle, element) {
-  const repo = element.repo ?? globalThis.repo;
+  const repoOf = () => handle.repo ?? element.repo ?? globalThis.repo;
   const style = document.createElement("style");
   style.textContent = css;
   const root = el("div", { class: "tts-import" });
   element.append(style, root);
   let dead = false;
-  let busy = false;
-  let local = null; // this browser's own progress line (between doc writes)
   let dropping = false;
+  // this page's own import, the latest: { controller, view } (view: a Work, status.js), kept once it has ended
+  let job = null;
+  // the import asked under the doc's request's key on the person's own queue, as followed:
+  // { request, view, queue, key, stop }, its view undefined while looking and null with no queue to look on
+  let seen = null;
 
   const doc = () => handle.doc() ?? {};
   const settings = () => ({ ...DEFAULT_SETTINGS, ...plain(doc().settings) });
@@ -43,59 +133,90 @@ export default function TtsImportTool(handle, element) {
     element.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url, toolId }, bubbles: true, composed: true }));
   }
 
-  // ─── running an import ────────────────────────────────────────────────────
-  async function run(getSources) {
-    if (busy) return;
-    busy = true;
-    local = { phase: "Reading what was dropped", done: 0, total: 0 };
-    render();
-    let lastWrite = 0;
-    const write = (p, force = false) => {
-      local = p;
-      if (!dead) renderProgress();
-      const now = Date.now();
-      if (!force && now - lastWrite < 400) return;
-      lastWrite = now;
-      handle.change((d) => {
-        d.progress = { phase: p.phase, done: p.done, total: p.total };
-      });
-    };
-    try {
-      const sources = await getSources();
-      handle.change((d) => {
-        d.status = "importing";
-        d.error = null;
-        d.progress = { phase: `Dropped ${sources.length} files`, done: 0, total: 0 };
-      });
-      const { runImport } = await import("./importer.js");
-      const { gameUrl, report } = await runImport({
-        sources,
-        repo,
-        fetch: globalThis.fetch?.bind(globalThis),
-        settings: settings(),
-        onProgress: (p) => write(p, p.phase === "Done"),
-      });
-      handle.change((d) => {
-        d.status = "done";
-        d.progress = null;
-        d.report = report;
-        d.gameUrl = gameUrl;
-        if (!Array.isArray(d.games)) d.games = [];
-        d.games.push(gameUrl);
-        if (!d.title || d.title === "TTS import") d.title = `${report.mod.saveName} (TTS)`;
-      });
-    } catch (err) {
-      console.error("[tts-import]", err);
-      handle.change((d) => {
-        d.status = "error";
-        d.error = String(err?.message ?? err);
-        d.progress = null;
-      });
-    } finally {
-      busy = false;
-      local = null;
-      if (!dead) render();
+  /** The work this page knows of for the doc's request (status.js's Work): its own, or the one followed. */
+  function work() {
+    const id = doc().request?.id ?? null;
+    const own = job && (job.view.request === null || job.view.request === id) ? job.view : null;
+    if (own && underWay(own.state)) return own;
+    const watched = id && seen?.request === id ? (seen.view === undefined ? undefined : seen.view && seen.view.state !== "missing" ? { ...seen.view, request: id } : null) : undefined;
+    if (watched && underWay(watched.state)) return watched;
+    return own ?? watched;
+  }
+
+  const shown = () => shownStatus(doc(), work());
+  const busy = () => ["importing", "looking"].includes(shown().status);
+
+  // ─── following the doc's request on the person's own queue ────────────────
+  let looking = 0;
+  async function follow() {
+    const request = doc().request ?? null;
+    const id = request?.id ?? null;
+    if ((seen?.request ?? null) === id) return;
+    const ticket = ++looking;
+    seen?.stop?.();
+    seen = id ? { request: id, view: undefined } : null;
+    if (!id) return;
+    const repo = repoOf();
+    const queue = await ownQueueUrl(repo);
+    if (dead || ticket !== looking) return;
+    if (!queue) {
+      seen = { request: id, view: null };
+      return void update();
     }
+    const { key } = importAsk(handle.url, request);
+    const followed = { request: id, view: undefined, queue, key, stop: null };
+    seen = followed;
+    followed.stop = watch(repo, queue, key, (view) => {
+      if (dead || seen !== followed) return;
+      followed.view = view;
+      update();
+    });
+  }
+
+  // ─── running an import ────────────────────────────────────────────────────
+  /** Starts an import of the request `makeRequest` makes (keeping what was dropped first, for a drop). */
+  async function start(makeRequest) {
+    if (busy()) return;
+    const controller = new AbortController();
+    const mine = (job = { controller, view: { request: null, state: "running", progress: { phase: "Reading what was dropped", done: 0, total: 0 }, logs: [], taskUrl: null } });
+    const show = (view) => {
+      if (job !== mine) return;
+      mine.view = view;
+      update();
+    };
+    update();
+    try {
+      const request = await makeRequest((p) => show({ ...mine.view, progress: p }), controller.signal);
+      controller.signal.throwIfAborted();
+      if (canonicalJson(doc().request ?? null) !== canonicalJson(request)) handle.change((d) => (d.request = plain(request)));
+      show({ request: request.id, state: "starting", progress: null, logs: [], taskUrl: null });
+      const { input, key } = importAsk(handle.url, request);
+      const importUrl = importTaskUrl();
+      const onProgress = (view) => show({ ...view, request: request.id });
+      if (importUrl) await doWork(repoOf(), { importUrl, input, key }, { signal: controller.signal, onProgress });
+      else await callHere(repoOf(), input, key, { signal: controller.signal, onProgress });
+    } catch (err) {
+      // the views have said how the work ended; what ended before any did (keeping the files, or a stop while deciding) is said here
+      if (underWay(mine.view.state)) show({ ...mine.view, state: controller.signal.aborted ? "cancelled" : "failed", error: String(err?.message ?? err) });
+    } finally {
+      update();
+    }
+  }
+
+  const keepDropped = (getSources) => async (onProgress, signal) => {
+    const sources = await getSources();
+    const { storeDropped } = await import("./dropped.js");
+    const files = await storeDropped(repoOf(), sources, { onProgress, signal });
+    return importRequest(files, settings());
+  };
+
+  const importAgain = () => start(async () => importRequest(doc().request.files, settings()));
+
+  function stop() {
+    const w = work();
+    if (!w || !underWay(w.state)) return;
+    if (job && job.view === w) job.controller.abort();
+    else if (seen?.queue) void cancel(repoOf(), seen.queue, seen.key);
   }
 
   const fromDrop = (dt) => {
@@ -112,7 +233,7 @@ export default function TtsImportTool(handle, element) {
 
   // ─── drop zone ────────────────────────────────────────────────────────────
   const onDragOver = (e) => {
-    if (![...(e.dataTransfer?.types ?? [])].includes("Files")) return;
+    if (![...(e.dataTransfer?.types ?? [])].includes("Files") || busy()) return;
     e.preventDefault();
     if (!dropping) {
       dropping = true;
@@ -129,7 +250,7 @@ export default function TtsImportTool(handle, element) {
     e.preventDefault();
     dropping = false;
     delete root.dataset.dropping;
-    run(fromDrop(e.dataTransfer));
+    if (!busy()) start(keepDropped(fromDrop(e.dataTransfer)));
   };
   root.addEventListener("dragover", onDragOver);
   root.addEventListener("dragleave", onDragLeave);
@@ -143,29 +264,31 @@ export default function TtsImportTool(handle, element) {
       ...(folder ? { webkitdirectory: true } : {}),
       onchange: (e) => {
         const files = [...e.target.files];
-        run(async () => (await import("./inputs.js")).sourcesFromFiles(files));
+        start(keepDropped(async () => (await import("./inputs.js")).sourcesFromFiles(files)));
       },
     });
 
   // ─── view ─────────────────────────────────────────────────────────────────
   let progressEl = null;
-  function renderProgress() {
+  function renderProgress(w) {
     if (!progressEl) return;
-    const p = local ?? doc().progress;
+    const { stage, where, done, total } = workLines(w);
     progressEl.replaceChildren(
-      el("div", { class: "phase" }, p?.phase ?? "Working…", p?.total ? ` — ${p.done} of ${p.total}` : ""),
-      el("progress", { max: p?.total || 1, value: p?.total ? p.done : null }),
+      el("div", { class: "phase" }, stage),
+      el("progress", { max: total || 1, value: total ? done : null }),
+      el("div", { class: "row" }, el("button", { class: "cancel", onclick: stop }, "Cancel"), where ? el("span", { class: "muted where" }, where) : null),
     );
   }
 
-  function settingsPanel() {
+  function settingsPanel(disabled) {
     const s = settings();
-    const set = (k, v) => handle.change((d) => {
-      if (!d.settings) d.settings = {};
-      d.settings[k] = v;
-    });
+    const set = (k, v) =>
+      handle.change((d) => {
+        if (!d.settings) d.settings = {};
+        d.settings[k] = v;
+      });
     const check = (k, label, hint) =>
-      el("label", { class: "check" }, el("input", { type: "checkbox", checked: !!s[k], disabled: busy, onchange: (e) => set(k, e.target.checked) }), el("span", {}, label), hint ? el("small", {}, hint) : null);
+      el("label", { class: "check" }, el("input", { type: "checkbox", checked: !!s[k], disabled, onchange: (e) => set(k, e.target.checked) }), el("span", {}, label), hint ? el("small", {}, hint) : null);
     return el(
       "details",
       { class: "settings" },
@@ -173,7 +296,7 @@ export default function TtsImportTool(handle, element) {
       el(
         "div",
         { class: "grid" },
-        el("label", { class: "field" }, el("span", {}, "One TTS unit is"), el("input", { type: "number", step: "0.0001", min: "0.001", value: String(s.metresPerUnit), disabled: busy, onchange: (e) => Number(e.target.value) > 0 && set("metresPerUnit", Number(e.target.value)) }), el("small", {}, "metres (0.0254: an inch)")),
+        el("label", { class: "field" }, el("span", {}, "One TTS unit is"), el("input", { type: "number", step: "0.0001", min: "0.001", value: String(s.metresPerUnit), disabled, onchange: (e) => Number(e.target.value) > 0 && set("metresPerUnit", Number(e.target.value)) }), el("small", {}, "metres (0.0254: an inch)")),
         check("includeContents", "Bring in what's in bags", "each bag holds what it held in TTS"),
         check("fetchNow", "Fetch every asset now", "for playing offline; otherwise each is fetched when it's first drawn (many hosts refuse: CORS)"),
         check("flipObjX", "Mirror OBJ models in x", "as TTS (Unity) does when it loads them"),
@@ -195,11 +318,11 @@ export default function TtsImportTool(handle, element) {
         el("code", {}, ".json"),
         " (Mods/Workshop/<id>.json, or a save from Saves/) together with its cached assets: the files, a folder (TTS's whole ",
         el("code", {}, "Mods"),
-        " folder is fine — only what the mod uses is read), or a ",
+        " folder is fine — only what the mod uses is kept), or a ",
         el("code", {}, ".zip"),
         ".",
       ),
-      el("div", { class: "row" }, el("button", { disabled: busy, onclick: () => files.click() }, "Choose files…"), el("button", { disabled: busy, onclick: () => folder.click() }, "Choose a folder…"), files, folder),
+      el("div", { class: "row" }, el("button", { onclick: () => files.click() }, "Choose files…"), el("button", { onclick: () => folder.click() }, "Choose a folder…"), files, folder),
       el("p", { class: "muted" }, "Scripts (Lua, XML UI) are not imported."),
     );
   }
@@ -266,35 +389,53 @@ export default function TtsImportTool(handle, element) {
     );
   }
 
-  function render() {
-    if (dead) return;
+  function render(s) {
     const d = doc();
     progressEl = null;
-    const importing = busy || d.status === "importing";
-    const parts = [el("div", { class: "head" }, el("div", { class: "title" }, d.title || "TTS import"), el("span", { class: "pill", "data-status": importing ? "importing" : d.status ?? "empty" }, importing ? "importing" : d.status === "done" ? "imported" : d.status === "error" ? "failed" : "empty"))];
-    if (importing) {
+    const going = s.status === "importing" || s.status === "looking";
+    const parts = [el("div", { class: "head" }, el("div", { class: "title" }, d.title || "TTS import"), el("span", { class: "pill", "data-status": s.status === "failed" ? "error" : s.status }, PILL[s.status]))];
+    if (s.status === "importing") {
       progressEl = el("div", { class: "progress" });
       parts.push(progressEl);
     }
-    if (d.status === "error" && d.error && !busy) parts.push(el("div", { class: "error" }, d.error));
-    if (d.report && !busy) parts.push(reportView(d.report, d.gameUrl));
-    if (!importing) parts.push(dropZone());
-    if (d.report && Array.isArray(d.games) && d.games.length > 1) parts.push(el("details", {}, el("summary", {}, `Earlier imports (${d.games.length - 1})`), el("ul", {}, ...d.games.slice(0, -1).map((u, i) => el("li", {}, el("a", { href: "#", onclick: (e) => (e.preventDefault(), open(u, "tabletop-game")) }, `Game ${i + 1}`))))));
-    parts.push(settingsPanel());
+    if (s.status === "failed") parts.push(el("div", { class: "error" }, s.line));
+    else if (s.line && s.status !== "done") parts.push(el("p", { class: "muted note" }, s.line));
+    if (s.status === "done") {
+      if (s.report) parts.push(reportView(s.report, s.gameUrl));
+      else parts.push(el("div", { class: "row" }, el("span", { class: "muted note" }, s.line ?? ""), el("button", { class: "primary", onclick: () => open(s.gameUrl, "tabletop-game") }, "Open the game")));
+    }
+    // the kept files again, with the settings as they are now: after an import that did not finish, or with other settings
+    const again = !going && !!d.request?.files?.length && (s.status !== "done" || canonicalJson(d.request.settings) !== canonicalJson(settings()));
+    if (again) parts.push(el("div", { class: "row" }, el("button", { class: "again", onclick: importAgain }, s.status === "done" ? "Import again with these settings" : "Import again"), el("span", { class: "muted" }, `the files kept from the last drop (${d.request.files.length})`)));
+    if (!going) parts.push(dropZone());
+    if (s.status === "done" && Array.isArray(d.games) && d.games.length > 1) parts.push(el("details", {}, el("summary", {}, `Earlier imports (${d.games.length - 1})`), el("ul", {}, ...d.games.slice(0, -1).map((u, i) => el("li", {}, el("a", { href: "#", onclick: (e) => (e.preventDefault(), open(u, "tabletop-game")) }, `Game ${i + 1}`))))));
+    parts.push(settingsPanel(going));
     root.replaceChildren(...parts);
-    renderProgress();
+    renderProgress(s.work);
   }
 
-  const onChange = () => {
-    if (busy) renderProgress();
-    else render();
-  };
-  render();
-  handle.on("change", onChange);
+  // what the last full render showed: while it stays the same only the progress is redrawn
+  let rendered = null;
+  function update() {
+    if (dead) return;
+    void follow();
+    const s = shown();
+    const d = doc();
+    const shape = canonicalJson({ status: s.status, line: s.line ?? null, gameUrl: s.gameUrl ?? null, report: !!s.report, title: d.title ?? null, settings: d.settings ?? null, request: d.request?.id ?? null, games: d.games?.length ?? 0 });
+    if (shape === rendered) return renderProgress(s.work);
+    rendered = shape;
+    render(s);
+  }
+
+  update();
+  handle.on("change", update);
 
   return () => {
     dead = true;
-    handle.off("change", onChange);
+    // work done in this page (or not yet asked of a queue) ends with it; work on the person's queue goes on
+    if (job && underWay(job.view.state) && !job.view.taskUrl) job.controller.abort();
+    seen?.stop?.();
+    handle.off("change", update);
     root.removeEventListener("dragover", onDragOver);
     root.removeEventListener("dragleave", onDragLeave);
     root.removeEventListener("drop", onDrop);
@@ -302,4 +443,3 @@ export default function TtsImportTool(handle, element) {
     style.remove();
   };
 }
-

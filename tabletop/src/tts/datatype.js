@@ -1,17 +1,18 @@
 // The tts-import datatype: one import of a Tabletop Simulator mod — its
-// settings, how far it got, the report, and the tabletop-game it made.
+// settings, what it asks to import (`request`: the files kept from a drop and
+// the settings, request.js), how the last import of it ended (`imported`:
+// the game and the report, or why it failed, written by the import's work,
+// import-task.js), and every game it made. Whether an import is going on is
+// not kept here: it is read from the work (status.js).
 
 import { DEFAULT_SETTINGS } from "./settings.js";
 
 export const TtsImportDatatype = {
   init(doc) {
     doc.title = "TTS import";
-    doc.status = "empty";
-    doc.error = null;
-    doc.progress = null;
     doc.settings = { ...DEFAULT_SETTINGS };
-    doc.report = null;
-    doc.gameUrl = null;
+    doc.request = null;
+    doc.imported = null;
     doc.games = [];
   },
   getTitle(doc) {

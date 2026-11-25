@@ -15,6 +15,11 @@
 //   repo            create2(doc) → handle
 //   fetch           for fetchNow (optional; CORS often says no)
 //   onProgress      ({ phase, done, total }) → void
+//   signal          stops it between steps and ends a fetch under way
+//
+// A source that is already a stored file doc (`fileUrl`: what the TTS import
+// tool stores when a mod is dropped) is used as the game's asset as it is,
+// when it needs no shrinking, so its bytes are not stored a second time.
 
 import { AssetIndex, cacheName, urlVariants, extensionOf } from "./cache.js";
 import { readSave, countNames, collectAssets } from "./tts.js";
@@ -27,8 +32,11 @@ import { browserShrink } from "./shrink.js";
 
 export { DEFAULT_SETTINGS };
 
-/** A dropped file, however it came: { path, size, read() → Promise<Uint8Array> }. */
-export const source = (path, size, read) => ({ path, size, read });
+/**
+ * A dropped file, however it came: { path, size, read() → Promise<Uint8Array> },
+ * and with `fileUrl` when it is already kept in a file doc.
+ */
+export const source = (path, size, read, fileUrl = null) => ({ path, size, read, ...(fileUrl ? { fileUrl } : {}) });
 
 /** Pick the save among the sources: a .json with ObjectStates (the biggest, if several). */
 export async function findSave(sources) {
@@ -56,12 +64,18 @@ const safeName = (s) => String(s ?? "asset").replace(/[\\/:*?"<>|]+/g, "-").trim
  * smaller (shrink.js: the browser's, by default; none in Node), resolving
  * { bytes, mimeType, extension, width, height } or null (then it isn't kept).
  *
- * @param {{ sources: ReturnType<typeof source>[], repo, fetch?, settings?, onProgress?, now?, shrink? }} o
+ * Aborting `signal` stops it between steps, and a fetch under way, with the
+ * signal's reason; it then makes no game.
+ *
+ * @param {{ sources: ReturnType<typeof source>[], repo, fetch?, settings?, onProgress?, now?, shrink?, signal?: AbortSignal }} o
  */
-export async function runImport({ sources, repo, fetch: fetchFn = null, settings = {}, onProgress = () => {}, now = () => Date.now(), shrink = browserShrink() }) {
+export async function runImport({ sources, repo, fetch: fetchFn = null, settings = {}, onProgress = () => {}, now = () => Date.now(), shrink = browserShrink(), signal = undefined }) {
   const s = { ...DEFAULT_SETTINGS, ...settings };
   const unit = Number(s.metresPerUnit) > 0 ? Number(s.metresPerUnit) : DEFAULT_METRES_PER_UNIT;
-  const progress = (phase, done = 0, total = 0) => onProgress({ phase, done, total });
+  const progress = (phase, done = 0, total = 0) => {
+    signal?.throwIfAborted();
+    onProgress({ phase, done, total });
+  };
   const warnings = [];
 
   progress("Reading the mod");
@@ -96,13 +110,15 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
   let done = 0;
   progress("Finding assets", 0, needed.size);
   for (const a of needed.values()) {
-    const entry = { url: a.url, role: a.role, by: a.by, uses: a.uses, source: null, fileUrl: null, error: null, mimeType: null, extension: null, size: 0, bytes: null };
+    const entry = { url: a.url, role: a.role, by: a.by, uses: a.uses, source: null, file: null, fileUrl: null, error: null, mimeType: null, extension: null, size: 0, bytes: null };
     const hit = index.find(a.url);
     if (hit) {
       try {
         entry.bytes = await hit.value.read();
         entry.source = "cache";
+        entry.file = hit.value.fileUrl ?? null;
       } catch (err) {
+        signal?.throwIfAborted();
         entry.error = `found in the dropped files (${hit.path.split(/[\\/]/).pop()}) but couldn't read it: ${err?.message ?? err}`;
       }
     }
@@ -110,9 +126,10 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
       if (!isWeb(a.url)) entry.error = "not in the dropped files, and not on the web";
       else if (s.fetchNow && fetchFn) {
         try {
-          entry.bytes = (await fetchBytes(fetchFn, a.url)).bytes;
+          entry.bytes = (await fetchBytes(fetchFn, a.url, undefined, signal)).bytes;
           entry.source = "fetch";
         } catch (err) {
+          signal?.throwIfAborted();
           entry.error = `not in the dropped files; fetching failed: ${err?.message ?? err}`;
         }
       } else entry.source = "web"; // fetched when something is first drawn from it
@@ -146,6 +163,7 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
       try {
         smaller = await shrink(a.bytes, { mimeType: a.mimeType, limit: keepLimit });
       } catch {
+        signal?.throwIfAborted();
         smaller = null;
       }
     }
@@ -160,6 +178,12 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
   const present = [...assets.values()].filter((a) => a.bytes && !a.error && a.size <= keepLimit);
   progress("Storing assets", 0, present.length);
   for (const a of present) {
+    // a dropped file kept already, and used as it is, is the asset's file doc
+    if (a.file && !a.shrunkFrom) {
+      a.fileUrl = a.file;
+      progress("Storing assets", ++done, present.length);
+      continue;
+    }
     const content = a.extension === "obj" ? new TextDecoder().decode(a.bytes) : a.bytes;
     const h = await repo.create2({
       "@patchwork": { type: "file" },
@@ -184,6 +208,7 @@ export async function runImport({ sources, repo, fetch: fetchFn = null, settings
   // publisher's module says whose it is wherever it goes, and every table set up from it says so too
   const workshopId = /(?:^|\/)(\d{6,})\.json$/i.exec(found.path)?.[1] ?? null;
   const game = { ...t.game, origin: { tts: { saveName: save.saveName ?? null, fileName: found.path, workshopId } }, assets: cached };
+  signal?.throwIfAborted();
   const gameHandle = await repo.create2({ "@patchwork": { type: "tabletop-game" }, ...game, drawn: {}, tables: [] });
 
   // ─── the report ──────────────────────────────────────────────────────────

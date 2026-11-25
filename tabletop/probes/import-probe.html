@@ -62,22 +62,25 @@ try {
   let t0 = performance.now();
   probe.phase = "importing";
   toolHost.querySelector(".tts-import").dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+  // the import's outcome, written by its work for the request the drop wrote
   for (let i = 0; i < 6000; i++) {
-    const s = importDoc.doc().status;
-    if (s === "done" || s === "error") break;
+    const d = importDoc.doc();
+    if (d.request && d.imported?.id === d.request.id) break;
     await sleep(50);
   }
   const d = importDoc.doc();
+  const outcome = d.imported ?? {};
   probe.importMs = Math.round(performance.now() - t0);
-  probe.status = d.status;
-  probe.error = d.error;
-  probe.report = d.report && { counts: d.report.counts, warnings: d.report.warnings, missing: Object.values(d.report.assets).filter((a) => !a.source).map((a) => ({ url: a.url, usedBy: a.usedBy, error: a.error })) };
-  if (d.status !== "done") throw new Error(`import ${d.status}: ${d.error}`);
+  probe.status = outcome.gameUrl ? "done" : outcome.error ? "error" : "none";
+  probe.error = outcome.error ?? null;
+  const report = outcome.report;
+  probe.report = report && { counts: report.counts, warnings: report.warnings, missing: Object.values(report.assets).filter((a) => !a.source).map((a) => ({ url: a.url, usedBy: a.usedBy, error: a.error })) };
+  if (probe.status !== "done") throw new Error(`import ${probe.status}: ${probe.error}`);
 
   // "Open the game": the tabletop-game tool on the game it made
   toolHost.querySelector("button.primary")?.click();
   probe.opened = [...opened];
-  const gameHandle = await repo.find(d.gameUrl);
+  const gameHandle = await repo.find(outcome.gameUrl);
   probe.game = { pieces: Object.keys(gameHandle.doc().pieces).length, things: gameHandle.doc().setup.length, origin: gameHandle.doc().origin, seats: Object.keys(gameHandle.doc().seats ?? {}) };
   unmountImport();
   const gameOpened = [];

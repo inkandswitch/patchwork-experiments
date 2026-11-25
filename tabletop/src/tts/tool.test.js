@@ -34,7 +34,7 @@ describe("the datatype", () => {
   it("starts empty with default settings", () => {
     const d = {};
     TtsImportDatatype.init(d);
-    expect(d).toMatchObject({ status: "empty", report: null, gameUrl: null, games: [] });
+    expect(d).toMatchObject({ request: null, imported: null, games: [] });
     expect(d.settings).toEqual({ metresPerUnit: 0.0254, includeContents: true, fetchNow: false, flipObjX: true, maxObjects: 5000, maxStoredBytes: 32e6 });
     expect(d.settings.metresPerUnit).toBe(0.0254);
     expect(TtsImportDatatype.getTitle(d)).toBe("TTS import");
@@ -62,7 +62,7 @@ describe("the tool", () => {
       assets: { a: { url: "https://example.invalid/x.obj", usedBy: ["Lost model"], source: null, error: "not in the dropped files" } },
       warnings: [],
     };
-    const { element, opened } = mount({ status: "done", report, gameUrl: "automerge:game", games: ["automerge:game"] });
+    const { element, opened } = mount({ request: { id: "r", files: [], settings: {} }, imported: { id: "r", gameUrl: "automerge:game", report }, games: ["automerge:game"] });
     expect(element.textContent).toContain("Missing assets (1)");
     expect(element.textContent).toContain("https://example.invalid/x.obj");
     expect(element.textContent).toContain("3DText");
@@ -72,7 +72,7 @@ describe("the tool", () => {
   });
 
   it("shows an import's failure", () => {
-    const { element } = mount({ status: "error", error: "No Tabletop Simulator save found" });
+    const { element } = mount({ request: { id: "r", files: [], settings: {} }, imported: { id: "r", error: "No Tabletop Simulator save found" } });
     expect(element.querySelector(".error").textContent).toContain("No Tabletop Simulator save found");
   });
 });

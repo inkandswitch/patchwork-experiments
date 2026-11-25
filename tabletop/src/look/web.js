@@ -11,21 +11,29 @@ import { sniff } from "../tts/sniff.js";
 /** Is this a web URL (an asset fetched, then cached in a file doc), rather than a file doc's? */
 export const isWeb = (url) => typeof url === "string" && /^https?:\/\//i.test(url);
 
-/** The bytes at a URL, from the first of its variants that answers: { bytes, via }. Throws the last failure. */
-export async function fetchBytes(fetchFn, url, timeoutMs = 20000) {
+/**
+ * The bytes at a URL, from the first of its variants that answers: { bytes, via }. Throws the last failure.
+ * Aborting `signal` ends the fetch under way and throws its reason at once, without trying another variant.
+ */
+export async function fetchBytes(fetchFn, url, timeoutMs = 20000, signal = undefined) {
   let lastError = null;
   for (const u of urlVariants(url)) {
     if (!isWeb(u)) continue;
+    signal?.throwIfAborted();
     const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
     const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
+    const stop = () => ctl?.abort();
+    signal?.addEventListener("abort", stop, { once: true });
     try {
       const res = await fetchFn(u, ctl ? { signal: ctl.signal } : undefined);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return { bytes: new Uint8Array(await res.arrayBuffer()), via: u };
     } catch (err) {
+      signal?.throwIfAborted();
       lastError = err?.name === "AbortError" ? new Error("timed out") : err;
     } finally {
       if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", stop);
     }
   }
   throw lastError ?? new Error("not an http(s) URL");
