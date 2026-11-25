@@ -51,11 +51,44 @@ await initSubduction();
 
 // The harness
 
-/** Lets promises, and the Repo's own work, run. */
+/** The longest `settle` waits before it fails the test. */
+const SETTLE_LIMIT_MS = 3_000;
+
+/**
+ * A Repo that counts its finds and flushes while they are under way. Besides
+ * the clock, they are all a pool waits on. Each ends when the Repo's own
+ * storage work does, which has real timers in it, so no number of turns of
+ * the event loop is sure to be enough: `settle` waits for the count instead.
+ */
+function countingWork(repo: Repo) {
+  const counter = { underWay: 0 };
+  const find = repo.find.bind(repo);
+  const flush = repo.flush.bind(repo);
+  const count = <T>(promise: Promise<T>) => {
+    counter.underWay++;
+    return promise.finally(() => counter.underWay--);
+  };
+  repo.find = ((...args: Parameters<Repo['find']>) => count(find(...args))) as Repo['find'];
+  repo.flush = ((...args: Parameters<Repo['flush']>) => count(flush(...args))) as Repo['flush'];
+  return counter;
+}
+
+/**
+ * Waits until none of the world's Repo's finds and flushes is under way, a
+ * whole turn after the last one ended: the pool's answer to it, and whatever
+ * that answer started, has then run. Everything a pool does without the clock
+ * moving is then done, so what a test sees after it is all there is to see.
+ * A find or flush a test's own Docs holds back is not the Repo's and is not
+ * waited for.
+ */
 async function settle() {
-  for (let i = 0; i < 5; i++) {
+  const giveUpAt = Date.now() + SETTLE_LIMIT_MS;
+  do {
     await new Promise((resolve) => setTimeout(resolve, 0));
-  }
+    if (Date.now() > giveUpAt) {
+      throw new Error(`settle: ${w.repoWork.underWay} finds or flushes still under way after ${SETTLE_LIMIT_MS} ms`);
+    }
+  } while (w.repoWork.underWay > 0);
 }
 
 class ManualClock implements Clock {
@@ -189,6 +222,7 @@ function world() {
   const clock = new ManualClock();
   const net = new Loopback();
   const repo = new Repo({ network: [] } as any);
+  const repoWork = countingWork(repo);
   const queue = repo.create<Queue>({ title: 'q', jobs: {} });
   let asked = 0;
   const ask = (
@@ -217,7 +251,7 @@ function world() {
     });
     return { pool: it, executor, ears };
   };
-  return { clock, net, repo, queue, ask, pool };
+  return { clock, net, repo, repoWork, queue, ask, pool };
 }
 
 const runsOf = (task: Handle<Task>) => task.doc()!.runs;
