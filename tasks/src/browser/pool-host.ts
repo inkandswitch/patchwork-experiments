@@ -14,6 +14,9 @@
 //   back/forward cache, or frozen in the background, would otherwise hold
 //   the lock, frozen, for minutes, with its runs unheard. The runs it had
 //   are recorded lost by the next pool, and taken again.
+// - A pool that cannot start is ended and tried again RETRY_MS later. One
+//   that has started is ended only when its worker stops answering
+//   (UNANSWERED_MS); an error it reports is logged, and it goes on.
 //
 // A newer build. The tab holding the lock runs the build it loaded. Every
 // host says its build on BUILD_CHANNEL when it starts, and answers an
@@ -31,7 +34,7 @@ import type { AutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
 import { acceptanceOf } from '../acceptance';
 import { getAccountDocUrl, getTaskQueues } from '../helpers';
 import { getRepoConfig } from '../repo-config';
-import { BEAT_MS } from '../task-rules.js';
+import { BEAT_MS, LAPSE_MS } from '../task-rules.js';
 import { browserPoolId, browserPoolName } from './pool-id';
 import type { FromPoolWorker, ServedQueues, ToPoolWorker } from './pool-worker';
 
@@ -55,6 +58,16 @@ const SLOTS = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 2))
 
 /** How long a pool that could not start waits before trying again. */
 const RETRY_MS = 60_000;
+
+/**
+ * How long a running pool's worker may leave a status request unanswered
+ * before this page takes it for dead (or stuck) and ends it. Its runs have
+ * then gone unheard for three lapses, so others may already have taken them;
+ * ending it lets the lock go to a tab that can run a pool. A worker answers
+ * at once whenever its thread is free, so only one that has died or is stuck
+ * in synchronous code stays silent this long.
+ */
+const UNANSWERED_MS = 3 * LAPSE_MS;
 
 /**
  * - `waiting`: another tab of this browser runs its pool; this one takes over when that one goes.
@@ -295,14 +308,27 @@ class BrowserPoolHost implements PoolHost {
           this.ask();
         }, RETRY_MS);
       };
+      // Once the pool has said it is ready, an error event from its worker
+      // is something that escaped the worker's code (from inside its Repo,
+      // say), not the worker dying: a worker goes on after an uncaught
+      // error. Ending the pool for it would cost every run it has, and leave
+      // a tab with no other tab serving nothing for RETRY_MS. A pool that
+      // has really died, or is stuck, is noticed by its silence instead:
+      // `unansweredSince` is when the oldest status request still without
+      // an answer was sent, looked at on each request.
+      let ready = false;
+      let unansweredSince: number | null = null;
       worker.onmessage = ({ data }: MessageEvent<FromPoolWorker>) => {
         switch (data?.type) {
           case 'ready':
+            ready = true;
+            unansweredSince = null;
             if (!this.standing) {
               this.set({ state: 'running' });
             }
             break;
           case 'status':
+            unansweredSince = null;
             this.set({ busy: data.busy });
             break;
           case 'stopped':
@@ -317,7 +343,11 @@ class BrowserPoolHost implements PoolHost {
       };
       worker.onerror = (event: ErrorEvent) => {
         event.preventDefault();
-        failed(event.message || "its worker could not be started");
+        if (ready) {
+          console.error(`tasks: this browser's pool hit an error, and goes on: ${event.message}`);
+        } else {
+          failed(event.message || 'its worker could not be started');
+        }
       };
 
       worker.postMessage({
@@ -330,7 +360,19 @@ class BrowserPoolHost implements PoolHost {
         importMap: pageImportMap(),
         baseURI: document.baseURI,
       } satisfies ToPoolWorker);
-      poll = setInterval(() => worker.postMessage({ type: 'status' } satisfies ToPoolWorker), BEAT_MS);
+      // The status the badge shows, and the pool's sign of life. A hidden
+      // page's timers slow to one a minute after five minutes, so silence is
+      // measured from when a request was sent, not counted in requests.
+      poll = setInterval(() => {
+        if (ready && unansweredSince !== null && Date.now() - unansweredSince > UNANSWERED_MS) {
+          failed(`its worker has not answered for ${Math.round((Date.now() - unansweredSince) / 1000)} s`);
+          return;
+        }
+        if (ready && unansweredSince === null) {
+          unansweredSince = Date.now();
+        }
+        worker.postMessage({ type: 'status' } satisfies ToPoolWorker);
+      }, BEAT_MS);
     });
   }
 
