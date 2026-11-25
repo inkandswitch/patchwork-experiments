@@ -9,7 +9,7 @@
 // it measured and split into faces, click a face on the part and fix it,
 // add a force and pick its face, see why Run can't go and then that it can,
 // press Run (a run doc with the part frozen in it, asked of the server's
-// task queue), read a finished run's figures and see it on the part, a modal
+// task queue), cancel it while it waits, read a finished run's figures and see it on the part, a modal
 // run's modes, re-read a changed part and keep the faces that are still
 // alike. Screenshots at desktop and phone widths, light and dark.
 
@@ -149,6 +149,12 @@ try {
   check("the study turns to its results", (await P("panel()")).tab === "results");
   const waiting = await P(`texts(".fea ul.runs li")`);
   check("the run is listed under the part's name, waiting for the server", waiting.length === 1 && /^plate · static/.test(waiting[0]) && /waiting for the server/.test(waiting[0]), waiting);
+  // Cancel on a run that waits: a stop recorded in its task, read back from it
+  await P(`click('.fea ul.runs [data-act="stop-run"]')`);
+  await until(`/cancelled before it started/.test(document.querySelector(".fea ul.runs")?.innerText ?? "")`, 8000);
+  const cancelled = await P(`texts(".fea ul.runs li")`);
+  const afterCancel = { queue: await P("serverState()"), run: (await P("runDocs()"))[0] };
+  check("Cancel on a waiting run: it reads cancelled, the queue no longer lists it, and its run doc isn't written", /cancelled · cancelled before it started/.test(cancelled[0]) && Object.keys(afterCancel.queue.jobs).length === 0 && afterCancel.run.status === "queued" && !(await b.js(`!!document.querySelector('.fea ul.runs [data-act="stop-run"]')`)), { cancelled, jobs: afterCancel.queue.jobs, status: afterCancel.run.status });
 
   // ---- a run mid-solve, then finished runs
   if (DONE) {
