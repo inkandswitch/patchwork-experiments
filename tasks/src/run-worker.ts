@@ -120,13 +120,18 @@ export function serve(port: RunWorkerPort) {
       }
       docs = await repo;
       if (task) {
-        docs.import(task, { docId: documentIdOf(job.taskUrl) });
+        const docId = documentIdOf(job.taskUrl);
+        const handle: { whenReady?(): Promise<void> } | undefined = docs.import(task, { docId });
+        await settled(handle?.whenReady?.(), docs.flush([docId]));
       }
       const module = await importModule(job.importUrl);
       const fn = module?.default;
       if (typeof fn !== 'function') {
         throw new Error("the task's code has no default export to call");
       }
+      // A turn of the event loop, so that what the Repo has asked of storage
+      // is finished before the code can block this thread (see `settled`).
+      await new Promise((resolve) => setTimeout(resolve, 0));
       const ctx: TaskContext = {
         log: (...args) => sayWhileRunning({ type: 'log', message: args.map((arg) => String(arg)).join(' ') }),
         progress: (value) => sayWhileRunning({ type: 'progress', value: copy(value) }),
@@ -151,6 +156,19 @@ export function serve(port: RunWorkerPort) {
     over = true;
     say(outcome);
   }
+}
+
+/**
+ * Waits for what importing the task set going in the Repo's storage: the
+ * load that merges it with what is stored, and its save. In a browser every
+ * Repo of the task system shares one database, and a storage transaction
+ * left open when code blocks its thread holds up all of them (the page's
+ * asks and stops, the pool's records) until the code yields or its worker is
+ * ended; a stop could then not even be saved, so it would never be heard.
+ * Neither failing stops the run: the code is called all the same.
+ */
+async function settled(...steps: (Promise<unknown> | undefined)[]) {
+  await Promise.all(steps.map((step) => step?.catch(() => {})));
 }
 
 /** The document id an `automerge:` url names. */

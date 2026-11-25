@@ -1,0 +1,28 @@
+<!doctype html>
+<!--
+  A stand-in for a Patchwork page, for probes/browser-run.mjs: as much of
+  the site as the tasks package needs, and nothing more. The harness serves
+  the built package at /dist (and a copy stamped as a newer build at
+  /dist-newer), and the site's modules, bundled from this package's own
+  node_modules, at /vendor, under the names the site's import map gives them.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>tasks probe</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "@automerge/automerge/slim": "/vendor/automerge-slim.js",
+          "@automerge/automerge-repo/slim": "/vendor/automerge-repo-slim.js",
+          "@automerge/automerge-repo-storage-indexeddb": "/vendor/automerge-repo-storage-indexeddb.js",
+          "@automerge/automerge-subduction/slim": "/vendor/automerge-subduction-slim.js",
+          "solid-js": "/vendor/solid-js.js",
+          "solid-js/web": "/vendor/solid-js-web.js"
+        }
+      }
+    </script>
+    <script type="module" src="/probe/page.js"></script>
+  </head>
+  <body></body>
+</html>

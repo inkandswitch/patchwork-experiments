@@ -1,0 +1,133 @@
+// A browser's pool: a dedicated worker made by the one tab of this browser
+// profile that holds the pool's Web Lock (pool-host.ts). It has a Repo of its
+// own on the tasks database, a Pool (../pool.ts), and run workers it makes
+// itself, nested inside it (executor.ts).
+//
+// It lives in a worker, not the page, because a hidden page's own timers
+// slow to one a minute after five minutes, and the pool's beat is what tells
+// everyone its runs are going on. A dedicated worker's timers keep time.
+//
+// The page tells it once how to start, and from then on which queues to
+// serve; it answers with its status when asked, and stops when told.
+
+import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
+import type { Acceptance } from '../acceptance';
+import { Pool, type Docs } from '../pool';
+import type { RepoConfig } from '../repo-config';
+import { getRepo, setUpImportMap } from '../webworker-lib';
+import { BrowserExecutor } from './executor';
+
+export type ServedQueues = Record<AutomergeUrl, Acceptance>;
+
+/** What the page says to its pool's worker. */
+export type ToPoolWorker =
+  | {
+      type: 'start';
+      repoConfig: RepoConfig;
+      /** The pool's id: the same for every pool this browser profile runs, so each owns what the last one started. */
+      id: string;
+      name: string;
+      slots: number;
+      queues: ServedQueues;
+      /** The page's import map and base URI, which the Repo's modules and a task's bare imports resolve by. */
+      importMap: unknown;
+      baseURI: string;
+    }
+  /** The queues to serve from now on, with whose code to run from each. */
+  | { type: 'serve'; queues: ServedQueues }
+  | { type: 'status' }
+  /**
+   * Stop. With `drain`, take nothing new, let the runs going on end by
+   * themselves, then stop; without, stop now, which records each run lost.
+   */
+  | { type: 'stop'; drain: boolean };
+
+/** What the pool's worker says to the page. */
+export type FromPoolWorker =
+  | { type: 'ready' }
+  | { type: 'failed'; message: string }
+  | { type: 'status'; busy: number }
+  | { type: 'stopped' };
+
+const scope = self as unknown as {
+  postMessage(message: FromPoolWorker): void;
+  onmessage: ((event: MessageEvent<ToPoolWorker>) => void) | null;
+};
+const say = (message: FromPoolWorker) => scope.postMessage(message);
+
+let pool: Promise<Pool | null> | null = null;
+let queues: ServedQueues = {};
+let stopping = false;
+
+scope.onmessage = ({ data }) => {
+  switch (data?.type) {
+    case 'start':
+      if (!pool) {
+        queues = data.queues;
+        pool = start(data).then(
+          (started) => {
+            say({ type: 'ready' });
+            return started;
+          },
+          (error) => {
+            console.error('tasks: the pool could not start', error);
+            say({ type: 'failed', message: (error as Error)?.message ?? String(error) });
+            return null;
+          },
+        );
+      }
+      break;
+    case 'serve':
+      // A pool that is draining serves nothing, whatever the account says.
+      if (!stopping) {
+        queues = data.queues;
+        void pool?.then((it) => it?.serve(queues));
+      }
+      break;
+    case 'status':
+      void (pool ?? Promise.resolve(null)).then((it) => say({ type: 'status', busy: it?.busy ?? 0 }));
+      break;
+    case 'stop':
+      stopping = true;
+      void stop(data.drain);
+      break;
+  }
+};
+
+async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promise<Pool> {
+  await setUpImportMap(settings.importMap ?? {}, settings.baseURI);
+  const repo = await getRepo(settings.repoConfig, `task-pool-${crypto.randomUUID()}`);
+  const executor = new BrowserExecutor({
+    settings: {
+      repoConfig: settings.repoConfig,
+      importMap: settings.importMap,
+      baseURI: settings.baseURI,
+    },
+    taskBytes: (taskUrl) => repo.export(taskUrl),
+  });
+  return new Pool({
+    repo: repo as unknown as Docs,
+    id: settings.id,
+    name: settings.name,
+    slots: settings.slots,
+    executor,
+    // the latest the page has said, which may have come while this was starting
+    queues: stopping ? {} : queues,
+  });
+}
+
+async function stop(drain: boolean) {
+  const it = await (pool ?? Promise.resolve(null));
+  if (it) {
+    if (drain) {
+      it.serve({});
+      // Looked at on this worker's own clock, which keeps time in a hidden tab.
+      await new Promise<void>((resolve) => {
+        const check = () => (it.busy === 0 ? resolve() : setTimeout(check, 100));
+        check();
+      });
+    }
+    await it.stop();
+  }
+  say({ type: 'stopped' });
+}

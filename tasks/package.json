@@ -25,12 +25,9 @@
     "@automerge/automerge-repo-node": "npm:@automerge/automerge-repo@2.6.0-subduction.43",
     "@automerge/automerge-repo-storage-indexeddb": "2.6.0-subduction.20",
     "@automerge/automerge-repo-storage-nodefs": "2.6.0-subduction.43",
-    "@automerge/vanillajs": "2.6.0-subduction.20",
     "@inkandswitch/patchwork-bootloader": "^0.7.2",
     "@inkandswitch/patchwork-elements": "^6.0.2",
     "@inkandswitch/patchwork-plugins": "^1.2.5",
-    "boring-name-generator": "^1.0.3",
-    "es-module-shims": "^2.8.1",
     "solid-js": "^1.9.13"
   },
   "devDependencies": {
@@ -38,6 +35,8 @@
     "esbuild": "^0.21.5",
     "happy-dom": "^15.11.7",
     "nodemon": "^3.1.14",
+    "site-automerge-repo": "npm:@chee/automerge-repo@2.6.0-rabbit.1",
+    "site-automerge-repo-storage-indexeddb": "npm:@chee/automerge-repo-storage-indexeddb@2.6.0-rabbit.1",
     "vite": "^5.4.21",
     "vite-plugin-css-injected-by-js": "^3.5.2",
     "vite-plugin-solid": "^2.11.17",
