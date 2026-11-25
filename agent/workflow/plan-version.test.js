@@ -96,12 +96,14 @@ describe("a writer of a plan", () => {
 
 describe("what a person is told", () => {
   it.each([
-    [1, /earlier version of the agent[^]*migration/],
-    [PLAN_VERSION + 1, /newer version of the agent[^]*Update the agent package/],
+    [1, /earlier version of the agent[^]*start a new workflow/],
+    [PLAN_VERSION + 1, /newer version of the agent[^]*where that version is running/],
   ])("of a plan of version %i", (version, said) => {
     const plan = version === 1 ? {} : { schemaVersion: version }
     expect(isCurrent(plan)).toBe(false)
     expect(versionNote(plan)).toMatch(said)
+    // Nothing a person cannot do from here: no script, no package, no reload.
+    expect(versionNote(plan)).not.toMatch(/scripts?\/|\.mjs|package|reload/i)
   })
 
   it("nothing of a plan of this version", () => {

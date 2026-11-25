@@ -115,8 +115,8 @@ export function isCurrent(plan) {
 export function versionNote(plan) {
   const version = plan?.schemaVersion ?? 1
   return version < PLAN_VERSION
-    ? `This workflow was made by an earlier version of the agent and has not been brought up to date, so nothing here changes it. Bring it up to date with the agent's migration (scripts/migrate.mjs in the agent package), and it can run again.`
-    : `This workflow was made by a newer version of the agent than the one installed here, so nothing here changes it. Update the agent package to work on it.`
+    ? `This workflow was made by an earlier version of the agent, so nothing here changes it. Its results can still be read; start a new workflow to carry on.`
+    : `This workflow was made by a newer version of the agent than this one, so nothing here changes it. It can be worked on where that version is running.`
 }
 
 /** A writer refused a plan of another version. Its message is versionNote's. */
