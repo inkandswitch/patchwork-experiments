@@ -41,6 +41,7 @@ import {
   GRACE_MS,
   Hearing,
   HOLD_MS,
+  isOpen,
   LAPSE_MS,
   LOST_TOO_OFTEN,
   MAX_LOG_LINES,
@@ -49,6 +50,7 @@ import {
   named,
   orphans,
   preferred,
+  recordsOf,
   satisfies,
   stopReason,
   waitingWork,
@@ -464,7 +466,7 @@ export class Pool {
           mayClaim(task, id, is, heard) &&
           accepts(acceptance, task.importUrl) &&
           satisfies(this.has, task.needs) &&
-          !this.runElsewhere(served, work.taskUrl, now);
+          !this.runElsewhere(served, task, work.taskUrl, now);
         if (!takeable) {
           followed.takeableSince = undefined;
           followed.unhold?.();
@@ -478,10 +480,22 @@ export class Pool {
     }
   }
 
-  /** Whether a pool heard serving the queue within the lapse says it has a run of this task. */
-  private runElsewhere(served: Served, taskUrl: string, now: number): boolean {
-    for (const pool of served.heard.values()) {
-      if (now - pool.at < LAPSE_MS && pool.running.includes(taskUrl)) {
+  /**
+   * Whether a pool heard serving the queue within the lapse says it has a run
+   * of this task that the task's document does not show over. Its word counts
+   * only until the document catches up: once the document shows that pool's
+   * runs of the task and every one of them completed (a pool that stopped
+   * records its run lost and says nothing more), the word is older than the
+   * document, and the task is as takeable as the rules read it.
+   */
+  private runElsewhere(served: Served, task: Task, taskUrl: string, now: number): boolean {
+    const runs = recordsOf(task);
+    for (const [id, pool] of served.heard) {
+      if (now - pool.at >= LAPSE_MS || !pool.running.includes(taskUrl)) {
+        continue;
+      }
+      const its = runs.filter((run) => run.pool === id);
+      if (its.length === 0 || its.some(isOpen)) {
         return true;
       }
     }

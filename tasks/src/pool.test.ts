@@ -1593,6 +1593,37 @@ describe('the preferred pool', () => {
     expect(lastRun(task).start).toBe(seenAt + HOLD_MS);
   });
 
+  // A stopping pool says nothing more, so its last word stands for the lapse:
+  // with one slot it was full, and the other is preferred at once; with two it
+  // had a free slot, and the other holds back for it as for any preferred pool.
+  it('a pool that stops while it runs the task records it lost, and the other, which heard it say it runs it, takes it then (one slot) or HOLD_MS later (a slot free as last heard), not a lapse later', async () => {
+    for (const [slots, after] of [
+      [1, 0],
+      [2, HOLD_MS],
+    ] as const) {
+      w = world();
+      const task = made('k');
+      const [P, O] = byPreference(task);
+      const p = w.pool(P, { slots });
+      const o = w.pool(O, { slots });
+      await settle();
+      list(task);
+      await settle();
+      expect(poolsOf(task)).toEqual([P]);
+      const stopping = p.pool.stop();
+      await settle();
+      p.executor.of(lastRun(task).id).events.done('finished anyway');
+      await stopping;
+      const lostAt = w.clock.now();
+      expect(statuses(task), `${slots} slots`).toEqual(after === 0 ? ['lost', 'open'] : ['lost']);
+      await w.clock.advance(after);
+      expect(statuses(task), `${slots} slots`).toEqual(['lost', 'open']);
+      expect(lastRun(task).pool).toBe(O);
+      expect(lastRun(task).start).toBe(lostAt + after);
+      expect(o.executor.workers).toHaveLength(1);
+    }
+  });
+
   it('a pool last heard a lapse ago is not a candidate: listed a moment before the lapse, the other holds back; at the lapse, it takes it at once', async () => {
     for (const [after, atOnce] of [
       [LAPSE_MS - 1, false],
