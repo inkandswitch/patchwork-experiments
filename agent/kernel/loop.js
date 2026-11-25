@@ -22,7 +22,7 @@ import { askOf, covered, needsApproval, ownGrant } from "../session/grants.js"
 import { addUsage, costOf } from "../session/usage.js"
 import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTokens, DENIED_RESULT } from "../session/request.js"
 import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock, noticeBlock } from "../session/blocks.js"
-import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult } from "../session/calls.js"
+import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult, move } from "../session/calls.js"
 import { recordArtifact } from "../session/made.js"
 import { holdsLease } from "../session/lease.js"
 import { markReconnecting } from "../session/recovery.js"
@@ -704,6 +704,9 @@ async function executeCalls(opts) {
   const runnable = runnableCalls(store.doc())
   if (!runnable.length) return null
 
+  // This run's claim on a call: what it records when it takes one, and what a
+  // call must still carry for this run to settle it (session/calls.js move).
+  const mine = { runner: runnerUrl, generation }
   const results = []
 
   for (const call of runnable) {
@@ -742,13 +745,7 @@ async function executeCalls(opts) {
     // from double-executing a side effect.
     let claimed = false
     store.change((d) => {
-      const found = findCall(d, call.id)
-      if (!found) return
-      if (found.block.status !== CALL.approved) return
-      found.block.status = CALL.running
-      found.block.runner = runnerUrl
-      found.block.generation = generation
-      claimed = true
+      claimed = move(findCall(d, call.id)?.block, "claim", mine)
     })
     if (!claimed) continue
 
@@ -775,10 +772,7 @@ async function executeCalls(opts) {
       Object.assign(outcome, { output: `Error: ${outcome.reason}`, isError: true, summary: `${call.tool} stopped` })
     } else if (outcome.interrupted) {
       store.change((d) => {
-        const found = findCall(d, call.id)
-        if (found && found.block.status === CALL.running && found.block.runner === runnerUrl && found.block.generation === generation) {
-          found.block.status = CALL.approved
-        }
+        move(findCall(d, call.id)?.block, "release", mine)
       })
       emit({ type: "call-end", tool: call.tool, summary: "interrupted: no network", isError: false })
       commitResults(store, results)
@@ -797,10 +791,7 @@ async function executeCalls(opts) {
     // Only while the claim is still this run's: a runner that took the session
     // over meanwhile may have closed the call as interrupted, and that stands.
     store.change((d) => {
-      const found = findCall(d, call.id)
-      if (found && found.block.status === CALL.running && found.block.runner === runnerUrl && found.block.generation === generation) {
-        found.block.status = outcome.isError ? CALL.error : CALL.done
-      }
+      move(findCall(d, call.id)?.block, outcome.isError ? "fail" : "succeed", mine)
     })
 
     results.push(
@@ -874,10 +865,7 @@ export function releaseNowPermitted({ store }) {
   if (!freed.length) return 0
 
   store.change((d) => {
-    for (const call of freed) {
-      const found = findCall(d, call.id)
-      if (found && found.block.status === CALL.pending) found.block.status = CALL.approved
-    }
+    for (const call of freed) move(findCall(d, call.id)?.block, "approve")
   })
   return freed.length
 }
@@ -1017,7 +1005,7 @@ export function decide(store, callId, decision) {
     if (block.status !== CALL.pending) return
 
     if (decision === "deny") {
-      block.status = CALL.denied
+      move(block, "deny")
       // Record the refusal as the call's RESULT, the same as any other outcome.
       //
       // Without this the session simply stopped: status stayed
@@ -1029,7 +1017,7 @@ export function decide(store, callId, decision) {
       d.turns.push(makeTurn("tool", [resultBlock(callId, DENIED_RESULT, { isError: true, summary: "declined" })]))
       return
     }
-    block.status = CALL.approved
+    move(block, "approve")
 
     // A call that asks every time, or does not say what it asks, takes no
     // grant: the yes is for this call.
@@ -1067,10 +1055,7 @@ export function answerQuestion(store, callId, answer, author = null) {
   store.change((d) => {
     const found = findCall(d, callId)
     if (!found) return
-    const block = found.block
-    if (block.status !== CALL.asking) return
-
-    block.status = CALL.done
+    if (!move(found.block, "answer")) return
     if (!d.turns) d.turns = []
     d.turns.push(
       makeTurn("tool", [resultBlock(callId, text, { summary: `answered: ${text.slice(0, 40)}` })], { author })

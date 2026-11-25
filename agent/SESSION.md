@@ -74,6 +74,12 @@ when a budget is lifted.
 
     asking ──answered──▶ done
 
+Each arrow is a named move, made by `move(block, name)` in `session/calls.js`
+and nowhere else; a move that is not legal from where the call stands changes
+nothing. Two more: `release` puts a running call back to `approved` when it
+was cut off before it could have had an effect, and `abandon` closes any open
+call with an error.
+
 - A call is written when the model's turn is complete, never half-parsed.
 - `where` is `"worker"` (a repo is all it needs) or `"host"` (it needs the
   page). A runner that cannot run a call records that on it and leaves it for

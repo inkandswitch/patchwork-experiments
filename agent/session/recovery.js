@@ -4,7 +4,7 @@
  */
 
 import { livenessOf } from "./lease.js"
-import { findCall, runnableCalls, unansweredCalls } from "./calls.js"
+import { findCall, move, runnableCalls, unansweredCalls } from "./calls.js"
 import { CALL } from "./schema.js"
 import { makeTurn, resultBlock, noticeBlock } from "./blocks.js"
 import { STOP } from "./status.js"
@@ -80,14 +80,8 @@ export function resolveOrphans(doc, opts = {}) {
   for (const call of orphans) {
     const found = findCall(doc, call.id)
     if (!found) continue
-    if (rerun(call)) {
-      found.block.status = CALL.approved
-      if (found.block.runner != null) found.block.runner = null
-      if (found.block.generation != null) found.block.generation = null
-    } else {
-      found.block.status = CALL.error
-      closed.push(call)
-    }
+    if (rerun(call)) move(found.block, "release")
+    else if (move(found.block, "abandon")) closed.push(call)
   }
   if (!doc.turns) doc.turns = []
   if (closed.length) doc.turns.push(makeTurn("tool", closed.map((call) => resultBlock(call.id, INTERRUPTED, { isError: true, summary: "interrupted" }))))
@@ -118,7 +112,7 @@ export function stopReconnecting(doc) {
   const waiting = runnableCalls(doc)
   for (const call of waiting) {
     const found = findCall(doc, call.id)
-    if (found) found.block.status = CALL.error
+    if (found) move(found.block, "abandon")
   }
   if (!doc.turns) doc.turns = []
   if (waiting.length) doc.turns.push(makeTurn("tool", waiting.map((call) => resultBlock(call.id, STOPPED_OFFLINE, { isError: true, summary: "stopped" }))))
