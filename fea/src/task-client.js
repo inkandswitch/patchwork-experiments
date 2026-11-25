@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v4]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v5]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -810,14 +810,18 @@ export async function tasksStorage(repo, element) {
  * the served list. `repo` is the Repo the page's account is in; the queue is
  * made there too.
  *
- * Two tabs or machines that make one at the same moment each make a queue
- * and set `own`; the merge keeps one pointer, and both read that one from
- * then on. If the served list was there before, the other queue stays on it,
- * served and empty, since nothing is asked of a queue no pointer names. If
- * each made the list in that same change, the merge keeps one list whole,
- * the one made with the pointer that stands, and the other queue is on none.
- * One made here while this tab waited for its own to save is named by
- * nothing, and left.
+ * Two tabs or machines that make one at the same moment, from the same
+ * storage document, each make a queue and set `own`; the merge keeps one
+ * pointer, and both read that one from then on. If the served list was there
+ * before, the other queue stays on it, served and empty, since nothing is
+ * asked of a queue no pointer names. If each made the list in that same
+ * change, the merge keeps one list whole, the one made with the pointer that
+ * stands, and the other queue is on none. Where the two started from
+ * different documents (one had changes the other had not seen), a list
+ * either of them made then can win over the other's, and the pointer that
+ * stands may name a queue that is not served: the titlebar then offers to
+ * open it, where it can be joined. One made here while this tab waited for
+ * its own to save is named by nothing, and left.
  * @param {any} repo
  * @param {any} element
  * @returns {Promise<string>}
@@ -835,11 +839,16 @@ export async function ownQueue(repo, element) {
     if (ownQueueOf(doc)) {
       return;
     }
-    doc.own = queue.url;
+    // The list first and the pointer last. A url is stored as text, one
+    // operation a character, so whatever came after the pointer would be
+    // numbered by the url's length. In this order two replicas that start
+    // from the same document number the list and the pointer alike, and the
+    // merge keeps both from the same replica.
     if (!doc.served || typeof doc.served !== 'object' || Array.isArray(doc.served)) {
       doc.served = {};
     }
     doc.served[queue.url] = true;
+    doc.own = queue.url;
   });
   await repo.flush([storage.documentId]).catch(() => {
     // it is saved a moment later all the same

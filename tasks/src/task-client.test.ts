@@ -1223,40 +1223,62 @@ describe('ownQueue', () => {
     return { one, repoB, storageA, storageB };
   }
 
-  it('two replicas making one at once leave one pointer, which both follow after the merge; with no list before, the list that stands is the one made with that pointer', async () => {
-    const { one, repoB, storageA, storageB } = twoReplicas({});
-    const [a, b] = await Promise.all([outcome(ownQueue(one.repo, one.element)), outcome(ownQueue(repoB, one.element))]);
-    expect(a.value).toMatch(/^automerge:/);
-    expect(b.value).toMatch(/^automerge:/);
-    expect(a.value).not.toBe(b.value);
-    storageA.merge(storageB);
-    storageB.merge(storageA);
-    const winner = ownQueueOf(storageA.doc());
-    expect([a.value, b.value]).toContain(winner);
-    expect(ownQueueOf(storageB.doc())).toBe(winner);
-    // Both made the list in the same change as the pointer, so the same
-    // replica's list and pointer stand: the other queue is named by nothing.
-    expect(servedOf(storageA.doc())).toEqual({ [winner!]: true });
-    expect(servedOf(storageB.doc())).toEqual({ [winner!]: true });
-    const handles = [handleCount(one.repo), handleCount(repoB)];
-    expect((await outcome(ownQueue(one.repo, one.element))).value).toBe(winner);
-    expect((await outcome(ownQueue(repoB, one.element))).value).toBe(winner);
-    expect([handleCount(one.repo), handleCount(repoB)]).toEqual(handles);
+  // Which replica's write stands is decided by the replicas' random names,
+  // and the op numbers by the urls' lengths, so each race is run on many
+  // fresh pairs: both orders of names, and urls of either length, come up.
+  const RACES = 24;
+
+  it('two replicas making one at once from the same document, with no list before: one pointer both follow, and the list that stands is the one made with it', async () => {
+    for (let i = 0; i < RACES; i++) {
+      const { one, repoB, storageA, storageB } = twoReplicas({});
+      const [a, b] = await Promise.all([outcome(ownQueue(one.repo, one.element)), outcome(ownQueue(repoB, one.element))]);
+      expect(a.value).toMatch(/^automerge:/);
+      expect(b.value).toMatch(/^automerge:/);
+      expect(a.value).not.toBe(b.value);
+      storageA.merge(storageB);
+      storageB.merge(storageA);
+      const winner = ownQueueOf(storageA.doc());
+      expect([a.value, b.value]).toContain(winner);
+      expect(ownQueueOf(storageB.doc())).toBe(winner);
+      expect(servedOf(storageA.doc())).toEqual({ [winner!]: true });
+      expect(servedOf(storageB.doc())).toEqual({ [winner!]: true });
+      const handles = [handleCount(one.repo), handleCount(repoB)];
+      expect((await outcome(ownQueue(one.repo, one.element))).value).toBe(winner);
+      expect((await outcome(ownQueue(repoB, one.element))).value).toBe(winner);
+      expect([handleCount(one.repo), handleCount(repoB)]).toEqual(handles);
+    }
   });
 
-  it('two replicas making one at once where a list was there before: one pointer both follow; both queues stay served beside what was, the other one empty', async () => {
+  it('two replicas making one at once from the same document, with a list before: one pointer both follow; both queues stay served beside what was, the other one empty', async () => {
     const before = 'automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P';
-    const { one, repoB, storageA, storageB } = twoReplicas({ served: { [before]: { packages: ['automerge:pkg'] } } });
-    const [a, b] = await Promise.all([outcome(ownQueue(one.repo, one.element)), outcome(ownQueue(repoB, one.element))]);
-    storageA.merge(storageB);
-    storageB.merge(storageA);
-    const winner = ownQueueOf(storageA.doc());
-    expect([a.value, b.value]).toContain(winner);
-    expect(ownQueueOf(storageB.doc())).toBe(winner);
-    const all = { [before]: { packages: ['automerge:pkg'] }, [a.value!]: true, [b.value!]: true };
-    expect(servedOf(storageA.doc())).toEqual(all);
-    expect(servedOf(storageB.doc())).toEqual(all);
-    expect((await outcome(ownQueue(repoB, one.element))).value).toBe(winner);
+    for (let i = 0; i < RACES; i++) {
+      const { one, repoB, storageA, storageB } = twoReplicas({ served: { [before]: { packages: ['automerge:pkg'] } } });
+      const [a, b] = await Promise.all([outcome(ownQueue(one.repo, one.element)), outcome(ownQueue(repoB, one.element))]);
+      storageA.merge(storageB);
+      storageB.merge(storageA);
+      const winner = ownQueueOf(storageA.doc());
+      expect([a.value, b.value]).toContain(winner);
+      expect(ownQueueOf(storageB.doc())).toBe(winner);
+      const all = { [before]: { packages: ['automerge:pkg'] }, [a.value!]: true, [b.value!]: true };
+      expect(servedOf(storageA.doc())).toEqual(all);
+      expect(servedOf(storageB.doc())).toEqual(all);
+      expect((await outcome(ownQueue(repoB, one.element))).value).toBe(winner);
+    }
+  });
+
+  it('two replicas making one at once from different documents (one had made the list unseen): still one pointer both follow, though it may name a queue no list that stands serves', async () => {
+    const elsewhere = 'automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P' as AutomergeUrl;
+    for (let i = 0; i < RACES; i++) {
+      const { one, repoB, storageA, storageB } = twoReplicas({});
+      storageA.change((doc) => joinTaskQueue(doc, elsewhere));
+      const [a, b] = await Promise.all([outcome(ownQueue(one.repo, one.element)), outcome(ownQueue(repoB, one.element))]);
+      storageA.merge(storageB);
+      storageB.merge(storageA);
+      const winner = ownQueueOf(storageA.doc());
+      expect([a.value, b.value]).toContain(winner);
+      expect(ownQueueOf(storageB.doc())).toBe(winner);
+      expect(servedOf(storageA.doc())).toEqual(servedOf(storageB.doc()));
+    }
   });
 
   it('with no provider to answer: rejects plainly after PROVIDER_WAIT_MS, and has written and made nothing', async () => {
