@@ -5,13 +5,13 @@
 // writes the outcome only while the doc still asks for this import; a second
 // run makes no second game; a stop is prompt and writes nothing; a fetch
 // that fails says what it says today; what it returns is small.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { FakeRepo } from "../test/fake-repo.js";
 import { fixtureSources } from "./test/fixture.js";
 import { storeDropped, NO_SAVE } from "./dropped.js";
 import { importAsk, importRequest } from "./request.js";
 import { DEFAULT_SETTINGS } from "./settings.js";
-import importTask, { importMod, MOVED, STOPPED } from "./import-task.js";
+import importTask, { importMod, LOST_FILE, MOVED, STOPPED } from "./import-task.js";
 import { runImport } from "./importer.js";
 import tinyGame from "../../contract/v2/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
 
@@ -218,6 +218,24 @@ describe("the import task", () => {
     // asked again, the same request is tried again (a failure is no game to return)
     doc.change((d) => (d.request = input.request));
     expect((await importMod(input, context(repo), { fetch: notFound, shrink: null })).imported).toBe(true);
+  });
+
+  it("a kept file that cannot be had fails with LOST_FILE, kept on the doc for whoever opens it", async () => {
+    const { repo, doc, input, made } = await asked();
+    repo.handles.delete(input.request.files[1].url);
+    vi.useFakeTimers();
+    try {
+      const run = importMod(input, context(repo), { fetch: notFound, shrink: null });
+      const failed = expect(run).rejects.toThrow(LOST_FILE);
+      // findWhenThere asks again for about half a minute before it gives up
+      await vi.runAllTimersAsync();
+      await failed;
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(doc.doc().imported).toMatchObject({ id: input.request.id, error: LOST_FILE });
+    expect(doc.doc().games).toEqual([]);
+    expect(made()).toEqual([]);
   });
 
   it("refuses an input that names no import", async () => {

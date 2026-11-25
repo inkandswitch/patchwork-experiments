@@ -103,31 +103,33 @@ export async function importMod(input, ctx, { fetch = (...a) => globalThis.fetch
     return { imported: false, message: MOVED };
   }
 
-  ctx.progress({ phase: "Opening the kept files", done: 0, total: request.files.length });
-  const sources = await untilStopped(
-    Promise.all(
-      request.files.map(async (f) => {
-        const file = await findWhenThere(ctx.repo, f.url).catch(() => {
-          throw new Error(LOST_FILE);
-        });
-        return source(
-          f.path,
-          f.size,
-          async () => {
-            const bytes = asBytes(file.doc()?.content);
-            if (!bytes) throw new Error("its file is empty");
-            return bytes;
-          },
-          f.url,
-        );
-      }),
-    ),
-    signal,
-  );
-
   let phase = null;
   let result;
+  // A kept file that cannot be had fails the import like anything else that
+  // goes wrong here, and so is kept on the doc: once the task has ended, the
+  // doc is all that a page opened later has to say why.
   try {
+    ctx.progress({ phase: "Opening the kept files", done: 0, total: request.files.length });
+    const sources = await untilStopped(
+      Promise.all(
+        request.files.map(async (f) => {
+          const file = await findWhenThere(ctx.repo, f.url).catch(() => {
+            throw new Error(LOST_FILE);
+          });
+          return source(
+            f.path,
+            f.size,
+            async () => {
+              const bytes = asBytes(file.doc()?.content);
+              if (!bytes) throw new Error("its file is empty");
+              return bytes;
+            },
+            f.url,
+          );
+        }),
+      ),
+      signal,
+    );
     result = await runImport({
       sources,
       repo: ctx.repo,
