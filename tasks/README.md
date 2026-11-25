@@ -19,6 +19,12 @@ on the task's channel, where a pool says every two seconds that each of its runs
 The promise: **at least once** (a pool that falls silent for ten seconds has its task taken
 again), **a throw is final** (the task fails, once, and is not run again for it), and **a stop is
 hard** (five seconds after code is told to stop, its worker is ended whatever it is doing).
+Two more about documents: **what a run wrote can be found once its ending is read** (a run
+worker says how its run ended, returned, threw or stopped, only once the sync server has
+acknowledged every document its code changed, half a minute at most, after which the run's log
+says how many had not reached it; with no server to reach, the log says what was written stays on
+that machine), and **what a task is handed can be found** (its `ctx.repo.find` waits for a
+document that has not arrived yet, for about half a minute, instead of rejecting at once).
 
 ## Asking for work
 
@@ -71,13 +77,42 @@ the task returns. `ctx` holds:
   the task), `'yielded'` (another run has the task, or has ended it) or `'stopping'` (the
   machine's pool is shutting down, and the task will be taken again). Code holding something
   outside its worker (a child process, a file lock) lets go of it here.
-- `repo`: the worker's own Repo, which already has the task's document.
+- `repo`: the worker's own Repo, which already has the task's document. Its `find` waits for a
+  document made elsewhere a moment ago (asking again for about half a minute, as `findWhenThere`
+  in `task-client.js` does), so an input the asker has just made is found, not refused. What the
+  code writes through it reaches the sync server before the run's ending is said: write, and
+  return (or throw); there is nothing to flush or wait for. A stopped run's writes (a run document
+  set to "cancelled" when `signal` aborts) are sent the same way, within the five seconds.
 - `taskUrl`, `key`, and `run`, this run's id.
 
 What must not happen twice guards itself. A run's id is in the task's `runs` before its code is
 called, after every earlier run, so code can look there (and write its run's id beside its
 effects) to know whether it is the second to try. `earlier(task, runId)` in `task-runs.js` reads
 this for a long run kept in a document of its own. `src/tasks/wait.ts` is a small task to copy.
+
+## Having work done from a page
+
+A tool in a page has its work done with `doWork(repo, { importUrl, input, key }, { onProgress,
+signal })` from `task-client.js`, handed the site's Repo. When the person has a queue of their own
+and a pool is heard serving it, the work is asked of that queue as `run` would; otherwise the same
+module is imported and called in the page. Either way it resolves to what the code returned and
+rejects with what it threw, `onProgress` hears the same views, and aborting `signal` stops it.
+
+```js
+import { doWork, inSamePackage } from './task-client.js';
+
+const stop = new AbortController();
+const tiles = await doWork(
+  repo,
+  { importUrl: inSamePackage(import.meta.url, 'dist/fetch-task.js'), input: { area }, key: `fetch:${docUrl}` },
+  { onProgress: (view) => show(view.progress), signal: stop.signal },
+);
+```
+
+Where it runs decides what the person gets. Asked of their queue, it goes on when the page closes,
+is done once however many pages ask under one key, and a stop ends it for good. Done in the page,
+it is that page's alone, ends with it, and code that does not heed `signal` runs on. `doWork` makes
+nothing: a person has a queue of their own only once they have made one (Make my queue).
 
 ## Serving a queue
 
@@ -121,7 +156,8 @@ offers Make my queue.
 A host needs at least one `--queue` or `--new-queue`, and says whose code it runs: `--accept` or
 `--local` packages, or else `--accept-any`, never both. SIGINT or SIGTERM stops it: its runs are
 told `stopping`, their threads ended at most five seconds later, and each run recorded lost, to be
-taken again.
+taken again. What a run that has ended wrote is on the sync server already, so a host stopped
+the moment a run reads succeeded loses none of it.
 
 ## Using it from another package
 
@@ -153,6 +189,7 @@ processes and say what they saw, one line per check:
 - `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
   stand-in page in a throwaway Chrome profile. One pool per profile across tabs; a closed,
   navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning code;
-  tasks writing through `ctx.repo`; a pool worker that errors or dies; Make my queue and Join.
+  tasks writing through `ctx.repo`, with no server to reach; a pool worker that errors or dies;
+  Make my queue and Join.
 - `probes/real-run.mjs`: the same in the real Patchwork, from a published copy of the package.
 - `probes/solve-task.mjs`: a task that runs a child process, used by `node-run.mjs`.

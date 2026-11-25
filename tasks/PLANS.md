@@ -163,12 +163,26 @@ that one machine serves.
   that ran its predecessor. Waits on the first queue served by two kinds of machine.
 - **A link in memory between a pool and its run workers.** A run worker's Repo has storage of its
   own (a directory in Node, a database in a browser), so what a task writes through `ctx.repo`
-  reaches the page by the sync server. A message-channel link to the pool's Repo would carry it
-  directly and work offline. Waits on a network adapter that works with the Repo in use.
+  reaches the page by the sync server, and a run's ending waits until the server has acknowledged
+  it. Measured on 2026-11-25 (FACTS.md, "What a task writes"), that costs a run from about 0.2 s
+  (10 KB) to 0.5 s (5 MB) and 1.1–1.8 s (20 MB) in Node, 0.2–1.7 s up to 5 MB in a browser, and
+  an asker in another process then fetches what it could have been handed: 0.1–0.5 s up to
+  1 MB, about 1 s at 5 MB, 3–10 s at 20 MB. With no server, what a run writes stays in its worker's storage. A
+  message-channel link to the pool's Repo would carry it directly and work offline. Waits on a
+  network adapter that works with the Repo in use.
 - **A new worker for every run.** A worker is reused after a run that ended by itself, so code one
   task leaves running shares a thread with the next. Confining task code (an opaque-origin worker in
-  a browser) requires fresh workers, and so does treating tasks as strangers to each other. Waits on
-  the link above, since a worker ended at once must first hand over what its task wrote.
+  a browser) requires fresh workers, and so does treating tasks as strangers to each other. Ending
+  a worker once its run has ended loses nothing it wrote (the ending waits for the sync server;
+  offline, the run's log says the writes stayed on the machine), so this waits only on confinement
+  and on what a fresh worker costs: a run that wrote something ends only once the new worker's
+  Repo has made its first connection to the server (not measured on its own).
+- **What a stopped worker leaves behind.** A run worker ended before the server acknowledged what
+  its run wrote (a stopped run not done within five seconds, a process or tab that died, a run
+  written offline) leaves it in that worker's storage, and the next worker on the same storage does
+  not send it: the Repo loads a stored document only when something asks for it. Sending what a
+  slot's storage holds when a worker starts there would close this. Waits on a case that needs it;
+  the solver packages write their run documents as they go, so a lost tail is what is at risk.
 - **Finding queues.** A page with no document that names a queue asks its person's own queue
   (`ownQueue`). Queues one only asks of, and does not serve, have no place to be kept: the task
   storage could keep them as root keys of their own whose setting serves nothing, and tools pick
