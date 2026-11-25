@@ -4,8 +4,8 @@
 
 import css from "./styles.css?inline";
 import { normalizeSetup, patchSetup, writeSetup, setupProblems, speedIn, MODE_LABELS, MESH_PRESETS, KNOT, formatDuration, formatSpeed } from "../setup.js";
-import { isTerminal, shownRun } from "../protocol.js";
-import { isQueue, queueCounts, servedBy } from "../run-tasks.js";
+import { isTerminal } from "../protocol.js";
+import { isQueue, queueCounts, servedBy, shownRun } from "../task-runs.js";
 import { served, watch } from "../task-client.js";
 import { BEAT_MS } from "../task-rules.js";
 import { pathLabel } from "../hull/acquire.js";

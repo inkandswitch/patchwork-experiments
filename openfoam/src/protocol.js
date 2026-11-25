@@ -6,7 +6,7 @@
 // Two documents of this package's own:
 //
 //   openfoam-case    the user's: the hull link, the setup, the server (a
-//                    task queue: see src/run-tasks.js), the runs it has made.
+//                    task queue: see src/task-runs.js), the runs it has made.
 //                    Only people write it.
 //   openfoam-run     one analysis: the setup and hull FROZEN at the moment
 //                    it was asked for, then the run's progress and results.
@@ -21,19 +21,26 @@
 //                        it is asked for)     layers, error, startedAt,
 //                                             finishedAt
 //
-// Cancelling is not written here: it is a stop appended to the run's task,
-// and the status a person sees is read from both (`shownRun`).
+// What this file doesn't say is the kit's (src/task-runs.js): asking for a
+// run, cancelling it (a stop appended to its task, never a write here), the
+// status a person sees (`shownRun`, read from the run doc and its task), and
+// what a stopped or interrupted run writes, which this file adds to.
 
 import { formatSpeed } from "./setup.js";
+import { RUN_ENDED, isRunEnded, markStopped as markRunStopped, markInterrupted as markRunInterrupted } from "./task-runs.js";
 
 export const CASE_TYPE = "openfoam-case";
 export const RUN_TYPE = "openfoam-run";
 export const PROTOCOL_VERSION = 1;
 
-/** Run statuses. Terminal: done, failed, cancelled. */
-export const STATUSES = Object.freeze(["queued", "meshing", "solving", "post", "done", "failed", "cancelled"]);
-export const TERMINAL = Object.freeze(["done", "failed", "cancelled"]);
-export const isTerminal = (status) => TERMINAL.includes(status);
+/** Run statuses: queued, this package's working ones, and the endings the kit reads (src/task-runs.js RUN_ENDED). */
+export const STATUSES = Object.freeze(["queued", "meshing", "solving", "post", ...RUN_ENDED]);
+/** The statuses that say a run has ended, and whether a status is one, by this package's names for the kit's. */
+export const TERMINAL = RUN_ENDED;
+export const isTerminal = isRunEnded;
+
+/** The run's code: what a run's task names, within this package (src/task-runs.js codeUrl). */
+export const RUN_CODE = "daemon/run-task.mjs";
 
 /**
  * The stages a run goes through, in order, by mode. Meshing on several cores
@@ -137,98 +144,30 @@ export function requestFinish(run) {
 
 // ---------------------------------------------------------------- stopping
 
-/** Why a run's code was told to stop (its task's signal): see daemon/run-task.mjs. */
-export const STOP_REASONS = Object.freeze(["cancelled", "stopping", "yielded"]);
-
-/** What a run doc says when the machine running it stopped mid-run. */
-export const MACHINE_STOPPED = "The machine running this stopped while it ran; run it again.";
-/** What a run doc says when its task is taken again after that: it is never solved twice unasked. */
-export const NOT_RESTARTED = "This run was interrupted (the machine running it stopped) and was not started again, so that it isn't solved twice without anyone asking; run it again.";
-
 /**
- * The run's code, told to stop (inside a change on the run doc): `cancelled`
- * says cancelled, `stopping` (its machine is shutting down) says failed with
- * MACHINE_STOPPED. A run that had finished and was keeping its flow volume
- * keeps its status and says the volume wasn't kept. (`yielded` writes
- * nothing: another run of the task has it.)
+ * The run's code, told to stop (inside a change on the run doc): the kit's
+ * `markStopped` (src/task-runs.js), and one thing of this package's own: a
+ * run that had finished and was keeping its flow volume keeps its status and
+ * says the volume wasn't kept.
  */
 export function markStopped(run, reason, now) {
-  if (reason === "yielded") return;
-  if (isTerminal(run.status)) {
-    if (run.volume?.status === "posting") {
-      run.volume.status = "failed";
-      run.volume.error = reason === "cancelled" ? "cancelled while keeping it" : "the machine running it stopped while keeping it";
-      for (const s of run.stages ?? []) if (s.id === "volume" && s.status === "running") s.status = "failed";
-    }
+  if (reason !== "yielded" && isTerminal(run.status) && run.volume?.status === "posting") {
+    run.volume.status = "failed";
+    run.volume.error = reason === "cancelled" ? "cancelled while keeping it" : "the machine running it stopped while keeping it";
+    for (const s of run.stages ?? []) if (s.id === "volume" && s.status === "running") s.status = "failed";
     return;
   }
-  run.status = reason === "cancelled" ? "cancelled" : "failed";
-  run.error = reason === "cancelled" ? null : MACHINE_STOPPED;
-  run.finishedAt = now;
-  for (const s of run.stages ?? [])
-    if (s.status === "running") {
-      s.status = "failed";
-      s.endedAt = now;
-      s.note = reason === "cancelled" ? "cancelled" : "stopped";
-    }
+  markRunStopped(run, reason, now);
 }
 
 /**
  * A run taken up again after its first try was interrupted (inside a change
- * on the run doc): not solved again. A run doc that already says how it
- * ended keeps that; one keeping its volume says the volume wasn't kept.
+ * on the run doc): the kit's `markInterrupted`, and a run that had finished
+ * and was keeping its volume says the volume wasn't kept.
  */
 export function markInterrupted(run, now) {
-  if (isTerminal(run.status)) {
-    markStopped(run, "stopping", now);
-    return;
-  }
-  run.status = "failed";
-  run.error = NOT_RESTARTED;
-  run.finishedAt = now;
-  for (const s of run.stages ?? []) if (s.status === "running") s.status = "failed";
-}
-
-/**
- * The status a person sees for a run: its document's, unless its task says
- * what the document can't. The run's code writes the run doc; but a run
- * cancelled before its code started, or whose code never ran to the end (it
- * would not load, its machine stopped for good, its worker was ended), has
- * nobody to write it, and only its task knows.
- *
- * Read from the task: its state, its error, and whether a machine ever took
- * it (a record in its list with a pool; a stop someone appended has none).
- * - cancelled: cancelled; "before it started" when no machine ever took it.
- * - failed: failed, with the task's error.
- * - stopping (cancelled, and a run still has it): the doc's, "cancelling…".
- * - stalled (a run has it and isn't heard): the doc's, with a note saying so.
- * - waiting, and a machine took it once: that machine stopped without it,
- *   and a run taken up again never solves (run-task.mjs's guard), so the note
- *   says to run it again. Waiting and never taken: the doc's, no note (a run
- *   doc that says more is only ahead of its task's news).
- * - running, succeeded (the doc's own ending is on its way), missing: the doc's.
- * @param {{ status: string, error?: string | null }} run  the run doc
- * @param {{ state: string, error?: string | null, runs?: { pool?: string }[] } | null} task  the task as its reader has it (task-client.js's watch view, or taskState, taskError and the task's runs), or null while unknown
- * @returns {{ status: string, error: string | null, note: string | null }}
- */
-export function shownRun(run, task) {
-  const status = run?.status ?? "queued";
-  if (isTerminal(status) || !task) return { status, error: run?.error ?? null, note: null };
-  const taken = (task.runs ?? []).some((r) => typeof r?.pool === "string");
-  switch (task.state) {
-    case "cancelled":
-      return { status: "cancelled", error: null, note: taken ? null : "cancelled before it started" };
-    case "failed":
-      return { status: "failed", error: task.error ?? "it failed", note: null };
-    case "stopping":
-      return { status, error: null, note: "cancelling…" };
-    case "stalled":
-      return { status, error: null, note: "the machine running it isn't heard from" };
-    case "waiting":
-      return { status, error: null, note: taken ? "the machine running it stopped; it won't be solved again, so run it again" : null };
-    default:
-      return { status, error: null, note: null };
-  }
+  if (isTerminal(run.status)) markStopped(run, "stopping", now);
+  else markRunInterrupted(run, now);
 }
 
 // ---------------------------------------------------------------- progress

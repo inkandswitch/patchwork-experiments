@@ -13,7 +13,7 @@ import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { keepVolume } from "../daemon/volume.mjs";
 import { readVolume, volumeBytes, parseFoam } from "../src/volume.js";
 import { serverWatch, freshPeer } from "../src/segments.js";
-import { findWhenThere } from "../src/find.js";
+import { findWhenThere } from "../src/task-runs.js";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const args = Object.fromEntries(rest.reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));

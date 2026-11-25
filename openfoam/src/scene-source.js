@@ -14,7 +14,7 @@
 import { CASE_TYPE, RUN_TYPE, decodeLayer } from "./protocol.js";
 import { decodeSTL } from "./hull/prepare.js";
 import { buildResultsGLB } from "./scene-build.js";
-import { findWhenThere } from "./find.js";
+import { findWhenThere } from "./task-runs.js";
 import { getBytes, internalize } from "./segments.js";
 
 const typeOf = (doc) => doc?.["@patchwork"]?.type;

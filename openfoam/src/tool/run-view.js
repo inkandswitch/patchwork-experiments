@@ -11,14 +11,13 @@
 // another run if you pick one), and how it ran. A run that failed or was
 // stopped opens on how it ran, with what went wrong above.
 
-import { unpackChunks, decodeLayer, requestFinish, isTerminal, shownRun, FIELD_INFO } from "../protocol.js";
-import { cancelRun, aheadOf } from "../run-tasks.js";
+import { unpackChunks, decodeLayer, requestFinish, isTerminal, FIELD_INFO } from "../protocol.js";
+import { cancelRun, aheadOf, shownRun, findWhenThere } from "../task-runs.js";
 import { watch } from "../task-client.js";
 import { formatSpeed, formatDuration, MODE_LABELS } from "../setup.js";
 import { weightOf } from "../results.js";
 import { lineChart, seriesColors } from "./charts.js";
 import { runningAttitude } from "../attitude.js";
-import { findWhenThere } from "../find.js";
 import { internalize } from "../segments.js";
 import { waveProfile } from "../waveprofile.js";
 import { inputRows, diffInputs, resultRows } from "../inputs.js";

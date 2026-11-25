@@ -1,190 +1,82 @@
 // @vitest-environment node
-// The run's task code with a fake context and a fake runJob (no solver):
-// the guard that never solves a run twice, what reaches the task's view, and
-// what it returns or throws for each way a run ends.
+// What of the run's task code is this package's own, with a fake repo and a
+// fake runner (no solver): the runner handed this machine's OpenFOAM, cores
+// and directories with a second peer it closes after, the echo a task view
+// is told, and the task code made from them. The rest (the guard, stopping,
+// a run doc that arrives late, each way a run ends) is the kit's makeRunTask,
+// tested in the tasks package (src/task-runs.test.ts).
 import { describe, it, expect, beforeEach } from "vitest";
-import { makeRunTask, progressOf } from "./run-task.mjs";
+import { solve, progressOf } from "./run-task.mjs";
 import { FakeRepo } from "../probes/fake-repo.js";
-import { newRun, NOT_RESTARTED, MACHINE_STOPPED, markStopped } from "../src/protocol.js";
+import { newRun, markInterrupted, RUN_TYPE } from "../src/protocol.js";
 import { defaultSetup } from "../src/setup.js";
-import { findWhenThere } from "../src/find.js";
+import { makeRunTask, findWhenThere, NOT_RESTARTED } from "../src/task-runs.js";
 
-let repo, run, calls, awake, released;
+let repo, run;
 const MACHINE = { env: { describe: "fake" }, cores: 4, state: "/tmp/openfoam-state", sync: "wss://example.invalid", info: { host: "here", openfoam: "v2606" } };
 
 beforeEach(() => {
   repo = new FakeRepo();
   run = repo.add(newRun({ caseUrl: "automerge:c", serverUrl: "automerge:q", setup: defaultSetup(), hull: {}, now: 1 }));
-  calls = [];
-  awake = 0;
-  released = 0;
 });
 
-/** A stop someone appended to a task's list: a record with no pool. */
-const STOP = { id: "s", start: 0, end: 0, status: "cancelled" };
-
-/** A task document with these records (a name is an open run of pool "p"), and a context for the run named `me`. */
-function context(records, me, { signal = new AbortController().signal } = {}) {
-  const runs = records.map((r) => (typeof r === "string" ? { id: r, pool: "p", start: 0 } : r));
+/** A task document with these records, and a context for the run named `me`. */
+function context(runs, me) {
   const task = repo.add({ importUrl: "/x/daemon/run-task.mjs", input: { run: run.url }, key: run.url, runs });
   const said = { progress: [], logs: [] };
-  return { said, ctx: { repo, taskUrl: task.url, run: me, key: run.url, signal, log: (m) => said.logs.push(m), progress: (p) => said.progress.push(p) } };
+  return { said, ctx: { repo, taskUrl: task.url, run: me, key: run.url, signal: new AbortController().signal, log: (m) => said.logs.push(m), progress: (p) => said.progress.push(p) } };
 }
 
-/** findWhenThere with no wait between tries. */
-const findNow = (r, url) => findWhenThere(r, url, { tries: 3, sleep: async () => {} });
+/** This package's task code, as the default export makes it, with a fake runner and machine. */
+const task = (runJob, more = {}) =>
+  makeRunTask({ type: RUN_TYPE, what: "an OpenFOAM run", machine: async () => MACHINE, runJob, progressOf, interrupted: markInterrupted, say: () => {}, find: (r, url) => findWhenThere(r, url, { tries: 2, sleep: async () => {} }), ...more });
 
-function task(runJob, { machine = async () => MACHINE, find = findNow } = {}) {
-  return makeRunTask({
-    find,
-    runJob: async (o) => {
-      calls.push(o);
-      return runJob(o);
-    },
-    machine,
-    awake: () => {
-      awake++;
-      return () => released++;
-    },
-    peer: () => ({ verify: async () => [], close: async () => {} }),
-    say: () => {},
-  });
-}
-
-describe("the guard", () => {
-  it("the first run solves", async () => {
-    const { ctx } = context(["r1"], "r1");
-    const out = await task(async ({ handle }) => {
-      handle.change((d) => (d.status = "done"));
-      return "done";
-    })({ run: run.url }, ctx);
-    expect(out).toEqual({ status: "done" });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ handle: run, cores: 4, workDir: "/tmp/openfoam-state/runs", daemon: MACHINE.info, signal: ctx.signal, env: MACHINE.env });
-  });
-  it("a run after another never solves: the run doc says it was interrupted, and the task fails", async () => {
-    run.change((d) => {
-      d.status = "solving";
-      d.stages[1].status = "running";
-    });
-    const { ctx } = context(["r0", "r1"], "r1");
-    await expect(task(async () => "done")({ run: run.url }, ctx)).rejects.toThrow(NOT_RESTARTED);
-    expect(calls).toHaveLength(0);
-    expect([run.doc().status, run.doc().error, run.doc().stages[1].status]).toEqual(["failed", NOT_RESTARTED, "failed"]);
-  });
-  it("a lost run before it, or a yielded run of another pool, is a run before it: it never solves", async () => {
-    for (const earlier of [
-      { id: "r0", pool: "p", start: 0, end: 1, status: "lost" },
-      { id: "r0", pool: "q", start: 0, end: 1, status: "yielded" },
-    ]) {
-      run.change((d) => (d.status = "queued"));
-      const { ctx } = context([earlier, "r1"], "r1");
-      await expect(task(async () => "done")({ run: run.url }, ctx)).rejects.toThrow(NOT_RESTARTED);
-      expect(calls).toHaveLength(0);
-      expect(run.doc().status).toBe("failed");
-    }
-  });
-  it("a stop is not a run: one before it or after it leaves the run to solve (its pool stops it for the stop)", async () => {
-    for (const records of [[STOP, "r1"], ["r1", STOP]]) {
-      run.change((d) => (d.status = "queued"));
-      const { ctx } = context(records, "r1");
-      const out = await task(async ({ handle }) => {
-        handle.change((d) => (d.status = "done"));
+describe("the runner", () => {
+  it("is handed this machine's OpenFOAM, cores and directories, and a second peer that is closed when it ends", async () => {
+    const calls = [];
+    let closed = 0;
+    const verify = async () => [];
+    const { ctx } = context([{ id: "r1", pool: "p", start: 0 }], "r1");
+    const runJob = solve({
+      runJob: async (o) => {
+        calls.push(o);
+        o.handle.change((d) => (d.status = "done"));
         return "done";
-      })({ run: run.url }, ctx);
-      expect(out).toEqual({ status: "done" });
-    }
-    expect(calls).toHaveLength(2);
-  });
-  it("a run doc that already says its machine stopped keeps saying so", async () => {
-    run.change((d) => markStopped(d, "stopping", 5));
-    const { ctx } = context(["r0", "r1"], "r1");
-    await expect(task(async () => "done")({ run: run.url }, ctx)).rejects.toThrow(NOT_RESTARTED);
-    expect(calls).toHaveLength(0);
-    expect([run.doc().status, run.doc().error]).toEqual(["failed", MACHINE_STOPPED]);
-  });
-  it("a run that can't find itself in its task doesn't start", async () => {
-    const { ctx } = context(["r0"], "r9");
-    await expect(task(async () => "done")({ run: run.url }, ctx)).rejects.toThrow(/not started/);
-    expect(calls).toHaveLength(0);
-    expect(run.doc().status).toBe("queued");
-  });
-});
-
-describe("how a run ends", () => {
-  it("a solver failure fails the task once, with the run doc's error", async () => {
-    const { ctx } = context(["r1"], "r1");
-    const t = task(async ({ handle }) => {
-      handle.change((d) => {
-        d.status = "failed";
-        d.error = "snappyHexMesh failed (exit 1)";
-      });
-      return "failed";
-    });
-    await expect(t({ run: run.url }, ctx)).rejects.toThrow("snappyHexMesh failed (exit 1)");
-    expect(calls).toHaveLength(1);
-  });
-  it("told to stop: lets go of sleep at once, and throws (what it says after an abort isn't counted)", async () => {
-    for (const reason of ["cancelled", "stopping", "yielded"]) {
-      const abort = new AbortController();
-      const { ctx } = context(["r1"], "r1", { signal: abort.signal });
-      const before = released;
-      let releasedAtAbort = null;
-      const t = task(
-        ({ signal }) =>
-          new Promise((resolve) =>
-            signal.addEventListener("abort", () => {
-              releasedAtAbort = released - before;
-              resolve("stopped");
-            }),
-          ),
-      );
-      const going = t({ run: run.url }, ctx);
-      await new Promise((r) => setTimeout(r, 10));
-      abort.abort(reason);
-      await expect(going).rejects.toThrow(`stopped (${reason})`);
-      expect(calls.at(-1).signal).toBe(abort.signal);
-      // the abort's own listener let go before runJob's did anything
-      expect(releasedAtAbort).toBe(1);
-    }
-    expect(awake).toBe(3);
-  });
-  it("a runJob that throws fails the run doc as well as the task", async () => {
-    const { ctx } = context(["r1"], "r1");
-    const t = task(async () => {
-      throw new Error("the run's setup can't be read");
-    });
-    await expect(t({ run: run.url }, ctx)).rejects.toThrow("the run's setup can't be read");
-    expect([run.doc().status, run.doc().error]).toEqual(["failed", "the run's setup can't be read"]);
-  });
-  it("OpenFOAM that won't start fails the run doc and the task, and runs nothing", async () => {
-    const { ctx } = context(["r1"], "r1");
-    const t = task(async () => "done", {
-      machine: async () => {
-        throw new Error("OpenFOAM didn't start on here (via fake): check its launcher or bashrc.");
       },
+      peer: (sync) => ({ sync, verify, close: async () => void closed++ }),
     });
-    await expect(t({ run: run.url }, ctx)).rejects.toThrow(/OpenFOAM didn't start/);
-    expect(calls).toHaveLength(0);
-    expect([run.doc().status, run.doc().error]).toEqual(["failed", "OpenFOAM didn't start on here (via fake): check its launcher or bashrc."]);
+    expect(await task(runJob)({ run: run.url }, ctx)).toEqual({ status: "done" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ handle: run, env: MACHINE.env, cores: 4, workDir: "/tmp/openfoam-state/runs", daemon: MACHINE.info, signal: ctx.signal, verify });
+    expect(closed).toBe(1);
   });
-  it("refuses an input that names no run", async () => {
-    const { ctx } = context(["r1"], "r1");
-    await expect(task(async () => "done")({}, ctx)).rejects.toThrow(/names no run/);
-    await expect(task(async () => "done")({ run: "automerge:nothing-here" }, ctx)).rejects.toThrow(/unavailable/);
+  it("closes its peer when the runner throws too", async () => {
+    let closed = 0;
+    const { ctx } = context([{ id: "r1", pool: "p", start: 0 }], "r1");
+    const runJob = solve({ runJob: async () => Promise.reject(new Error("snappyHexMesh failed (exit 1)")), peer: () => ({ verify: null, close: async () => void closed++ }) });
+    await expect(task(runJob)({ run: run.url }, ctx)).rejects.toThrow("snappyHexMesh failed");
+    expect([closed, run.doc().status, run.doc().error]).toEqual([1, "failed", "snappyHexMesh failed (exit 1)"]);
   });
-  it("waits for a run doc that reaches the machine after its task", async () => {
-    const { ctx } = context(["r1"], "r1");
-    let asked = 0;
-    const late = { find: async (url) => (++asked < 3 ? Promise.reject(new Error(`Document ${url} is unavailable`)) : repo.find(url)) };
-    const out = await task(async () => "done")({ run: run.url }, { ...ctx, repo: Object.assign(Object.create(repo), late) });
-    expect([out, asked, calls.length]).toEqual([{ status: "done" }, 4, 1]);
+  it("refuses a run doc of another package's", async () => {
+    const { ctx } = context([{ id: "r1", pool: "p", start: 0 }], "r1");
+    const other = repo.add({ "@patchwork": { type: "fea-run" } });
+    await expect(task(async () => "done")({ run: other.url }, ctx)).rejects.toThrow(/isn't an OpenFOAM run/);
+  });
+  it("an interrupted run that had finished while keeping its volume keeps its status and says the volume wasn't kept", async () => {
+    run.change((d) => {
+      d.status = "done";
+      d.volume = { status: "posting" };
+      d.stages.push({ id: "volume", status: "running" });
+    });
+    const { ctx } = context([{ id: "r0", pool: "p", start: 0, end: 1, status: "lost" }, { id: "r1", pool: "p", start: 0 }], "r1");
+    await expect(task(async () => "done")({ run: run.url }, ctx)).rejects.toThrow(NOT_RESTARTED);
+    expect([run.doc().status, run.doc().volume.status, run.doc().stages.at(-1).status]).toEqual(["done", "failed", "failed"]);
   });
 });
 
 describe("what a task view is told", () => {
   it("the status, the stage and the iteration as the run doc has them, and a log line per stage", async () => {
-    const { ctx, said } = context(["r1"], "r1");
+    const { ctx, said } = context([{ id: "r1", pool: "p", start: 0 }], "r1");
     await task(async ({ handle }) => {
       handle.change((d) => {
         d.status = "meshing";

@@ -35,12 +35,11 @@ import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { glbTriangles } from "../src/hull/mesh-read.js";
 import { prepareHull } from "../src/hull/prepare.js";
 import { defaultSetup, normalizeSetup } from "../src/setup.js";
-import { newRun, requestFinish, isTerminal, decodeLayer, MACHINE_STOPPED, NOT_RESTARTED } from "../src/protocol.js";
-import { askRun, cancelRun, setPackageUrl, hearServing } from "../src/run-tasks.js";
+import { newRun, requestFinish, isTerminal, decodeLayer, RUN_CODE } from "../src/protocol.js";
+import { askRun, cancelRun, setPackageUrl, hearServing, findWhenThere, MACHINE_STOPPED, NOT_RESTARTED } from "../src/task-runs.js";
 import { served } from "../src/task-client.js";
 import { taskState, allHeard, LAPSE_MS } from "../src/task-rules.js";
 import { internalize } from "../src/segments.js";
-import { findWhenThere } from "../src/find.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = resolve(HERE, "..");
@@ -119,7 +118,7 @@ let queueUrl;
 async function ask(title, setupPatch = {}, hull = { stl: prep.stl, info: prep.info, warnings: prep.warnings }) {
   const setup = normalizeSetup({ ...defaultSetup(), mode: "double-body", mesh: "coarse", speed: { value: 6, unit: "kn" }, stop: "iterations", iterations: 2000, ...setupPatch });
   const run = await repo.create2(newRun({ caseUrl: "automerge:net-probe", serverUrl: queueUrl, setup, hull: { ...hull, source: { title: "narrow-transom.glb" } }, by: "net probe", now: Date.now(), title: `net probe · ${title}` }));
-  const taskUrl = await askRun(repo, queueUrl, run);
+  const taskUrl = await askRun(repo, queueUrl, run, RUN_CODE);
   await repo.flush?.();
   say(`asked for "${title}": run ${run.url}, task ${taskUrl}`);
   let last = "";

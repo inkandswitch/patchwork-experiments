@@ -315,8 +315,10 @@ daemon/start.sh --new-queue "title" | --queue automerge:… [--jobs N] [--cores 
 - **Never re-run behind your back.** Tasks run at least once: when a host
   stops mid-run (SIGTERM gives the run 5 s, and its document says the machine
   stopped), its task is taken again when the host is back. A run's code that
-  finds an earlier run of its task doesn't solve; it marks the run failed
-  ("interrupted and not started again"), and the task fails.
+  finds an earlier run of its task that has ended doesn't solve; it marks the
+  run failed ("interrupted and not started again"), and the task fails. One
+  that finds an earlier run still open (another machine may be running it)
+  doesn't solve either, and leaves the run doc to that run.
 - **Runs at once**: `--jobs` (1 by default), oldest first.
 - **Cores a run**: all but two, at most 8, unless `--cores` or the case says
   otherwise. Meshing and solving both run on them (snappyHexMesh in
@@ -379,11 +381,13 @@ never overlaps:
 | run | `control.finish`, `task` (once, when it is asked for) | status, stages, progress, mesh, summary, layers, volume, error |
 
 The task and the queue are the tasks package's documents, written through
-`src/task-client.js` and read through `src/task-rules.js` (verbatim copies
-of the tasks package's kit files; `node scripts/check-kit.mjs` at the
-experiments root checks them). The status a person sees is the run doc's,
-or, where nobody wrote it (cancelled before it started, a machine that
-stopped for good), its task's (`shownRun`).
+`src/task-client.js` and read through `src/task-rules.js`; what joins a run
+doc to its task (asking, cancelling, the guard that never starts a run
+twice, the run's task code around the runner) is `src/task-runs.js`. All
+three are verbatim copies of the tasks package's kit files; `node
+scripts/check-kit.mjs` at the experiments root checks them. The status a
+person sees is the run doc's, or, where nobody wrote it (cancelled before it
+started, a machine that stopped for good), its task's (`shownRun`).
 
 A run doc is made when you press Run, with the setup and the hull (as a
 closed binary STL in the floating frame) frozen into it, so every run

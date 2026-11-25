@@ -10,7 +10,7 @@ import { FakeRepo } from "../../probes/fake-repo.js";
 import { encodeGLB } from "../glb.js";
 import { boxTriangles } from "../test/box.js";
 import { initCase, CASE_TYPE } from "../protocol.js";
-import { setPackageUrl } from "../run-tasks.js";
+import { setPackageUrl } from "../task-runs.js";
 import { defaultSetup, waterProperties } from "../setup.js";
 import CaseTool from "./case-tool.js";
 

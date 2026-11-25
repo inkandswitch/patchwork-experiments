@@ -8,13 +8,12 @@
 // (src/hull/acquire.js). No DOM.
 
 import { normalizeSetup, waterProperties, metresPerSecond, froude, reynolds, frictionEstimate, waveLength, domainForHull, estimateCells, estimateSeconds } from "./setup.js";
-import { newRun } from "./protocol.js";
-import { askRun, isQueue, runCodeUrl } from "./run-tasks.js";
+import { newRun, RUN_CODE } from "./protocol.js";
+import { askRun, isQueue, codeUrl, findWhenThere } from "./task-runs.js";
 import { acquireHull } from "./hull/acquire.js";
 import { prepareHull, sinkageForVolume, weld, edgeStats, boundsOf } from "./hull/prepare.js";
 import { partsOf, waterPlanes, defaultParts, hullTriangles } from "./hull/parts.js";
 import { makeStash, fromStash, stashCovers } from "./hull/stash.js";
-import { findWhenThere } from "./find.js";
 import { putBytes, externalize, internalize, isRef, SEGMENT_BYTES } from "./segments.js";
 import { geometryDigest } from "./inputs.js";
 
@@ -345,7 +344,7 @@ export async function queueRerun(repo, { caseHandle, serverHandle, run, by = nul
 }
 
 async function addRun(repo, { caseHandle, serverHandle, run, message }) {
-  runCodeUrl(); // a tool that can't name the run's code says so before it makes anything
+  codeUrl(RUN_CODE); // a tool that can't name the run's code says so before it makes anything
   const rh = await repo.create2(run);
   const opts = message ? { message } : undefined;
   caseHandle.change((x) => {
@@ -353,6 +352,6 @@ async function addRun(repo, { caseHandle, serverHandle, run, message }) {
     x.runs.push(rh.url);
     x.selected = rh.url;
   }, opts);
-  await askRun(repo, serverHandle.url, rh, opts);
+  await askRun(repo, serverHandle.url, rh, RUN_CODE, opts);
   return rh;
 }

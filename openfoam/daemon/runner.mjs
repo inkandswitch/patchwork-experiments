@@ -14,7 +14,8 @@ import { run as runFoam } from "./foam.mjs";
 import { datTail, forceRow, residualColumns, parseCheckMesh, parseLayers } from "./parse.mjs";
 import { readLayers, summarize } from "./results.mjs";
 import { normalizeSetup } from "../src/setup.js";
-import { packChunk, runIdOf, isTerminal, stagesFor, markStopped, STOP_REASONS } from "../src/protocol.js";
+import { packChunk, runIdOf, isTerminal, stagesFor, markStopped } from "../src/protocol.js";
+import { STOP_REASONS } from "../src/task-runs.js";
 import { settled } from "../src/convergence.js";
 import { getBytes, externalize, serverWatch } from "../src/segments.js";
 import { keepVolume } from "./volume.mjs";
@@ -334,7 +335,7 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
       urls[layer.name] = h.url;
     }
     // the layer docs are new: let them reach the sync server before their links do
-    // (readers retry too, src/find.js; this keeps the first look from missing them)
+    // (readers retry too, src/task-runs.js findWhenThere; this keeps the first look from missing them)
     const there = await onServer.wait(made, { timeoutMs: 120_000, ackMs: 30_000, verify });
     if (there.ok === null) await new Promise((r) => setTimeout(r, 2500));
     else if (!there.ok) say(`run ${id}: the server hasn't acknowledged ${there.missing.length} layer doc(s); readers will retry`);
