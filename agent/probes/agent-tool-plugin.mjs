@@ -20,7 +20,7 @@
  */
 
 import { spawn } from "node:child_process"
-import { readFileSync, mkdtempSync } from "node:fs"
+import { readFileSync, mkdtempSync, readdirSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -30,6 +30,22 @@ const args = process.argv.slice(2)
 const option = (name, fallback) => {
   const i = args.indexOf(`--${name}`)
   return i >= 0 ? args[i + 1] : fallback
+}
+
+/**
+ * The package's modules as they are on disk, by path, each with its length:
+ * what the published package should be once a browser has all of it.
+ */
+function modulesOnDisk(dir = join(here, ".."), under = "") {
+  const out = {}
+  for (const name of readdirSync(dir)) {
+    if (["node_modules", ".pushwork", "probes", "scripts", "dist"].includes(name)) continue
+    const path = join(dir, name)
+    const rel = under ? `${under}/${name}` : name
+    if (statSync(path).isDirectory()) Object.assign(out, modulesOnDisk(path, rel))
+    else if (name.endsWith(".js") && !name.endsWith(".test.js")) out[rel] = readFileSync(path, "utf8").length
+  }
+  return out
 }
 
 const SHELL = option("shell", "https://patchwork.inkandswitch.com/")
@@ -248,6 +264,39 @@ try {
       const out = {}
       const bare = ${JSON.stringify(AGENT)}.split("#")[0]
       const handle = await window.repo.find(bare)
+      // A package with a long history arrives in pieces in a new profile, and
+      // its heads meanwhile are those of an earlier version of it: wait for
+      // the file this is about to import.
+      const arrived = Date.now()
+      while (!("assembly/toolset.js" in (handle.doc() ?? {})) && Date.now() - arrived < 90000) await new Promise((r) => setTimeout(r, 500))
+      // Each file is a document of its own, and arrives the same way. Until
+      // every one is the file on disk, a module here may be an earlier
+      // version of itself, importing what is no longer there.
+      const expected = ${JSON.stringify(modulesOnDisk())}
+      const behind = async () => {
+        const wrong = []
+        for (const [path, length] of Object.entries(expected)) {
+          const url = handle.doc()?.[path]
+          try {
+            const file = typeof url === "string" ? await window.repo.find(url.split("#")[0]) : null
+            if (String(file?.doc()?.content ?? "").length !== length) wrong.push(path)
+          } catch {
+            wrong.push(path)
+          }
+        }
+        return wrong
+      }
+      out.arrival = []
+      let wrong = await behind()
+      out.arrival.push([Date.now() - arrived, wrong.length])
+      while (wrong.length && Date.now() - arrived < 180000) {
+        await new Promise((r) => setTimeout(r, 3000))
+        wrong = await behind()
+        out.arrival.push([Date.now() - arrived, wrong.length])
+      }
+      out.behind = wrong.slice(0, 8)
+      out.modules = Object.keys(expected).length
+      out.arrivedAfter = Date.now() - arrived
       const heads = handle.heads?.() ?? []
       const base = "/" + encodeURIComponent(heads.length ? bare + "#" + [...heads].sort().join("|") : bare) + "/"
 
@@ -279,6 +328,17 @@ try {
         // package: each one loads, which takes its whole module graph
         // resolving here, and the session view mounts on a new session.
         const id = bare.slice("automerge:".length)
+        // The shell may have read the package's entry before all of it had
+        // arrived. It is given time to notice the rest and register again.
+        const mine = (type) => getRegistry(type).all().filter((p) => decodeURIComponent(String(p.importUrl ?? "")).includes(id))
+        const count = () => ["patchwork:datatype", "patchwork:tool", "patchwork:component"].reduce((n, type) => n + mine(type).length, 0)
+        const waited = Date.now()
+        out.registration = [[0, count()]]
+        while (count() < 6 && Date.now() - waited < 120000) {
+          await new Promise((r) => setTimeout(r, 5000))
+          out.registration.push([Date.now() - waited, count()])
+        }
+        out.importUrls = [...new Set(["patchwork:datatype", "patchwork:tool", "patchwork:component"].flatMap((type) => mine(type).map((p) => decodeURIComponent(String(p.importUrl)).split("#")[1]?.slice(0, 8) ?? "no heads")))]
         const own = []
         for (const type of ["patchwork:datatype", "patchwork:tool", "patchwork:component"]) {
           for (const p of getRegistry(type).all()) {
@@ -327,18 +387,22 @@ try {
   if (!report.ok) {
     console.log("\n=== FAILED ===")
     console.log(report.error)
+    console.log(`modules behind over time: ${(report.arrival ?? []).map(([ms, n]) => `${n} at ${Math.round(ms / 1000)}s`).join(", ")}; still behind: ${(report.behind ?? []).join(", ")}`)
   } else {
     console.log("\n=== what happened ===")
+    console.log(`  package arrived in:   ${report.arrivedAfter} ms; modules behind over time: ${(report.arrival ?? []).map(([ms, n]) => `${n} at ${Math.round(ms / 1000)}s`).join(", ")}`)
     console.log(`  agent:tool registry:  ${JSON.stringify(report.registered)}`)
     console.log(`  tools in the toolset: ${report.toolCount}`)
     console.log(`  description:          ${report.described}`)
     console.log(`  where/risk:           ${report.where}/${report.risk}`)
     console.log(`  schema:               ${report.schema}`)
     console.log(`  executed:             ${JSON.stringify(report.ran)}  (${report.summary})`)
+    console.log(`  registered over time: ${(report.registration ?? []).map(([ms, n]) => `${n} at ${Math.round(ms / 1000)}s`).join(", ")}; from the package at heads ${(report.importUrls ?? []).join(", ")}`)
     console.log(`  the agent's plugins:  ${(report.own ?? []).map((p) => `${p.plugin}${p.loaded === true ? "" : ` (${p.loaded})`}`).join(", ")}`)
     console.log(`  its session view:     ${JSON.stringify(report.view ?? null)}`)
 
     const checks = [
+      [`every module of the package, as a new browser receives it, is the one on disk (${report.modules})`, (report.behind ?? ["?"]).length === 0],
       ["the package registered an agent:tool", (report.registered ?? []).includes("wordcount_count")],
       ["the agent's toolset picked it up", report.visible === true],
       ["it carries the package's description", /Count the words/.test(report.described ?? "")],

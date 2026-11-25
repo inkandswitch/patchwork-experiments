@@ -41,8 +41,9 @@
  * `--dry` stops after the first pass and says what the second would change.
  * Without `--force` nothing is changed while a session found has a runner on
  * it now. `--no-follow` looks only at the documents named, for a list an
- * earlier walk made. `--record <file>` writes down the heads each document
- * had before it was changed.
+ * earlier walk made; `--sessions-only` follows sessions, plans and the
+ * floating box's list, and walks no folders. `--record <file>` writes down
+ * the heads each document had before it was changed.
  *
  * Delete this file, migrate-session.js and migrate-plan.js once it has been
  * run: the agent reads only the current shape (kernel/runner.js,
@@ -289,6 +290,8 @@ let unreached = []
 const counts = { folders: 0, documents: 0 }
 
 function enqueue(rank, url, path) {
+  // `--sessions-only`: sessions, plans and the lists of them, and no folders.
+  if (rank !== SESSIONS && flag("sessions-only")) return
   if (seen.has(url)) return
   seen.add(url)
   paths.set(url, path)
