@@ -140,8 +140,6 @@ export class SessionRunner {
     // session's document selects them (toolset.js). A host may build it its
     // own way.
     this.buildToolset = opts.buildToolset ?? (async (doc) => toolsetOf(fullTools(doc, { builtins: this.builtins, plugins: await this.plugins() })))
-    // Told every toolset a run gets, scoped or not, so a view can ask it about calls.
-    this.onToolset = opts.onToolset ?? null
     // What the loop adds to the prompt and to results (kernel/loop.js): the
     // agent's own are assembly/prompt.js. None unless given.
     this.sections = opts.sections ?? []
@@ -488,7 +486,6 @@ export class SessionRunner {
     const prepared = scope
       ? { toolset: scopedToolset(doc, { builtins: this.builtins, plugins: await this.plugins() }), ctx: await confine(this.ctx, scope), privileged: () => null }
       : { toolset: await this.buildToolset(doc), ctx: this.fullCtx, privileged: (this.privileged ??= privileges(this.ctx, this.store, { builtins: this.builtins, plugins: () => this.plugins() })) }
-    this.onToolset?.(prepared.toolset)
     return prepared
   }
 

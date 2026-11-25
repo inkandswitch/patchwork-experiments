@@ -12,11 +12,12 @@
  * should go on holding what was fetched.
  */
 
-import { isFolder } from "./folders.js"
+import { isFolder, FILES_GROUP } from "./folders.js"
 import { openDocument } from "./read-source.js"
 
 export const sourceFile = {
   id: "source_file",
+  ...FILES_GROUP,
   name: "File a kept source",
   target: { fields: ["folder"] },
   description: [

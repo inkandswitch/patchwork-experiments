@@ -11,7 +11,6 @@
 import { STATUS, CALL } from "../session/schema.js"
 import { callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
 import { sessionTitle } from "../session/title.js"
-import { asksEveryTime, callScope } from "../session/grants.js"
 import { stopReconnecting } from "../session/recovery.js"
 import { handleStore } from "../kernel/store.js"
 import { decide, say, answerQuestion } from "../kernel/loop.js"
@@ -385,8 +384,6 @@ export function AgentTool(handle, element, options = {}) {
 
   // ---- state -----------------------------------------------------------
   const uiState = { open: new Set(), names: new Map(), subject: null, settings: null, heads: {} }
-  // The toolset the runner built, so the view can ask it about a call.
-  let toolsetRef = null
 
   // The inline views: what each call made or opened, live, beside the call.
   // A person's own mount goes through the same loader as the agent's, with a
@@ -401,7 +398,6 @@ export function AgentTool(handle, element, options = {}) {
     uninstall: (ref) => onUninstall(ref),
     rerender: () => render(),
   })
-  const sensitiveDocs = () => accountContext().sensitiveDocs
   const store = handleStore(handle, options.splice ?? null)
   let runner = null
   let detachView = null
@@ -483,7 +479,6 @@ export function AgentTool(handle, element, options = {}) {
       subject: subjectUrl(),
       element: root,
       canRun: workerRunner ? (where) => where === "host" : (where) => where === "worker" || where === "host",
-      onToolset: (toolset) => { toolsetRef = toolset },
     })
 
     runner = entry?.runner ?? null
@@ -688,9 +683,8 @@ export function AgentTool(handle, element, options = {}) {
   }
 
   function onDecide(callId, decision) {
-    // The toolset decides which other pending calls a new grant releases, so
-    // one "yes" answers every call it covers instead of one per call.
-    decide(store, callId, decision, subjectUrl(), { toolset: toolsetRef, sensitive: sensitiveDocs() })
+    // One "yes" answers every waiting call the grant covers, not one per call.
+    decide(store, callId, decision)
     render()
     kick()
   }
@@ -1070,10 +1064,6 @@ export function AgentTool(handle, element, options = {}) {
       decide: onDecide,
       answer: onAnswer,
       openDoc: onOpenDoc,
-      // The view has the session document; only the toolset knows which calls
-      // ignore grants, so it answers that question for the card.
-      alwaysAsks: (block) => asksEveryTime(toolsetRef?.get(block.tool), block.input),
-      scopeOf: (block) => callScope(block, subjectUrl(), toolsetRef?.get(block.tool) ?? null),
       view: (block, result) => views.elementFor(block, result, uiState),
       inline: () => [
         ...waitingIn(doc).filter((item) => item.kind === "budget").map((item) => renderWaitingItem({ ...item, handle }, { showStep: false })),

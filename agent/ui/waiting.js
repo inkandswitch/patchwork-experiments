@@ -10,8 +10,7 @@
  */
 
 import { decide, answerQuestion } from "../kernel/loop.js"
-import { grantOffers, callScope, asksEveryTime } from "../session/grants.js"
-import { builtinToolset } from "../assembly/builtin.js"
+import { grantOffers } from "../session/grants.js"
 import { handleStore } from "../kernel/store.js"
 import { describeCall } from "./calls.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
@@ -19,9 +18,6 @@ import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
 import { liftBudget, liftAmounts } from "../session/usage.js"
 import { drivePlanHere } from "../runners/tab.js"
 
-/** Documents a grant never covers: the account and its module settings. */
-const sensitiveDocs = () =>
-  [globalThis.accountDocHandle?.doc?.()?.moduleSettingsUrl, globalThis.accountDocHandle?.url].filter(Boolean)
 
 function el(tag, className, text) {
   const node = document.createElement(tag)
@@ -129,23 +125,16 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
     })
     actions.append(allow)
     // The broader answers, as the call's own card offers them: this site, any
-    // site. Deciding with the toolset is what lets the grant release every
-    // other call in the session it now covers — and a workflow spreads it to
-    // its other sessions (workflow/driver.js).
-    const toolset = builtinToolset()
-    const tool = toolset.get(item.tool)
-    if (tool && !asksEveryTime(tool, item.input)) {
-      const block = { tool: item.tool, input: item.input }
-      const { target, kind } = callScope(block, subject, tool)
-      for (const offer of grantOffers(item.tool, target, kind ?? "document").slice(-2)) {
-        const grant = el("button", null, `Allow ${offer.label}`)
-        grant.title = offer.detail
-        grant.addEventListener("click", (event) => {
-          event.preventDefault()
-          decide(store(), item.callId, { grant: offer.key }, subject, { toolset, sensitive: sensitiveDocs() })
-        })
-        actions.append(grant)
-      }
+    // site. A grant releases every other call in the session it covers, and a
+    // workflow spreads it to its other sessions (workflow/driver.js).
+    for (const offer of grantOffers(item).slice(-2)) {
+      const grant = el("button", null, `Allow ${offer.label}`)
+      grant.title = offer.detail
+      grant.addEventListener("click", (event) => {
+        event.preventDefault()
+        decide(store(), item.callId, { grant: offer.key })
+      })
+      actions.append(grant)
     }
     actions.append(deny)
   } else {

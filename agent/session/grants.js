@@ -1,6 +1,14 @@
 /**
- * Approval: what a call touches, whether it must be asked about, and the
- * grants that answer for later calls.
+ * Approval: what a call asks of the person, and the grants that answer for
+ * later calls.
+ *
+ * What a call asks is worked out once, when the call is written, from the
+ * tool that will run it (`askOf`), and kept on the call block as `ask`.
+ * Everything after that — the card a person sees, the scopes it offers, and
+ * whether a grant given since covers the call — is read from the block and
+ * the session's grants, by whoever has the document. No toolset is needed to
+ * decide about a call, so a view, a pop-over and a workflow's driver all
+ * decide the same way.
  */
 
 import { documentIdOf } from "../documents/doc-urls.js"
@@ -15,42 +23,28 @@ import { documentIdOf } from "../documents/doc-urls.js"
  *   target: { fields: ["url"], fallback: "subject" } …else the session's subject
  *
  * With no declaration a call is about `input.url`, else `input.root`, else
- * nothing. The one rule that used to apply to every tool — url, root, else the
- * subject — was wrong for most of them, and wrong in a way that showed up on
- * the approval card: a web_search was "about" whatever document the session
- * was open on, so its card offered "this document" and "any document", and
- * "any document" wrote `web@*` — every site, for every web tool. fs_write by
- * path was "about" the subject too, though it writes wherever the path says;
- * doc_create, view_interact and the rest likewise. Only doc_read, doc_edit and
- * doc_history really default to the subject, and they say so.
+ * nothing. Falling back to the subject is right for few tools — doc_read,
+ * doc_edit and doc_history, which say so — and wrong for the rest in a way
+ * that shows on the card: a web_search "about" the document the session is
+ * open on offers "any document", which grants every site.
  *
  * `kind` says what sort of thing the target is, so the card can say "this
  * folder — anything inside it" for a root and "this document" for a file.
  */
 const DEFAULT_TARGET = { fields: ["url", "root"] }
 
-/** What callers with no tool definition get: the historical rule, kept for them. */
-const LEGACY_TARGET = { fields: ["url", "root"], fallback: "subject" }
-
-export function callScope(block, env = null, toolDef = null) {
-  const subject = typeof env === "string" ? env : (env?.subject ?? null)
-  const input = block?.input ?? {}
-
-  const spec = toolDef ? (toolDef.target === undefined ? DEFAULT_TARGET : toolDef.target) : LEGACY_TARGET
+export function callScope(input, tool, subject = null) {
+  const spec = tool?.target === undefined ? DEFAULT_TARGET : tool.target
   if (spec === "none" || spec === null) return { target: null, kind: null }
 
   for (const field of spec.fields ?? []) {
-    const value = input[field]
+    const value = input?.[field]
     if (value != null && value !== "") {
       return { target: normalizeTarget(value), kind: spec.kind ?? (field === "root" || field === "folder" ? "folder" : "document") }
     }
   }
   if (spec.fallback === "subject" && subject) return { target: normalizeTarget(subject), kind: "document" }
   return { target: null, kind: null }
-}
-
-export function callTarget(block, env = null, toolDef = null) {
-  return callScope(block, env, toolDef).target
 }
 
 /**
@@ -108,68 +102,6 @@ export function urlPrefixes(target) {
 }
 
 /**
- * Grants are scoped to a tool AND a document.
- *
- * Scoping to the tool alone is too coarse to be safe: approving `doc_edit` once
- * would let the agent edit every document you own for the rest of the session,
- * including ones you never had in mind. A grant should mean "yes, edit THIS",
- * not "yes, edit anything".
- */
-/**
- * Tools that mean the same thing to the person approving them.
- *
- * "May you read adjointlabs.com" is one decision. It was three: a real session
- * ended up holding web_fetch@adjointlabs.com, web_import@adjointlabs.com AND
- * http_request@adjointlabs.com, because every tool carried its own grant and
- * the user was asked once per tool per site. (web_import has since gone.)
- *
- * http_request is in the group only for the calls that are equivalent in power
- * to a fetch — a plain GET. Another method, or a body, still asks every time;
- * see `asksEveryTime`.
- */
-const GRANT_GROUPS = {
-  web_fetch: "web",
-  web_search: "web",
-  // Keeping a page is reading it, with its pictures: the same decision.
-  // web_capture is a plugin (the Web snapshot package's), and a grouping is by
-  // id, so its calls are asked about and granted with the web's all the same
-  // — and a research step's standing web grant covers it.
-  web_capture: "web",
-  http_request: "web",
-  // "May you write files" is likewise one decision; before fs_edit existed it
-  // was implicitly one tool. Grants written as fs_write@… keep working.
-  fs_write: "files",
-  fs_edit: "files",
-  fs_delete: "files",
-  // Filing a kept source into a folder is writing into that folder.
-  source_file: "files",
-}
-
-/** What a broad grant on this tool's group actually allows, for the button's tooltip. */
-function describeGrantScope(toolId) {
-  switch (grantGroup(toolId)) {
-    case "web":
-      return "every web fetch, capture, search and plain GET in this session"
-    case "files":
-      return "every file write, edit, delete and filing in this session"
-    default:
-      return `every ${toolId} call in this session`
-  }
-}
-
-export function grantGroup(toolId) {
-  return GRANT_GROUPS[toolId] ?? toolId
-}
-
-export function grantKey(toolId, target) {
-  // A grant with no target is on the tool, not the group: "always allow
-  // searching" must not be stored as a bare `web`, which reads as the whole
-  // group and would need a rule saying it means less than it says.
-  if (!target) return toolId
-  return `${grantGroup(toolId)}@${normalizeTarget(target)}`
-}
-
-/**
  * Does this call ask every time, whatever has been granted?
  *
  * `alwaysAsk` may be a boolean or a function of the input, because for some
@@ -177,8 +109,8 @@ export function grantKey(toolId, target) {
  * GET with no credential is a fetch, and the same tool with your API key
  * attached is the most dangerous thing here.
  */
-export function asksEveryTime(toolDef, input = {}) {
-  const rule = toolDef?.alwaysAsk
+function asksEveryTime(tool, input = {}) {
+  const rule = tool?.alwaysAsk
   if (typeof rule === "function") {
     try {
       return !!rule(input ?? {})
@@ -189,160 +121,9 @@ export function asksEveryTime(toolDef, input = {}) {
   return !!rule
 }
 
-/** The key that means "this tool, on anything at all". */
-const ANY_TARGET = "*"
-
-/**
- * Every grant that would cover this call, narrowest first.
- *
- * Approving each fetch individually is what made the loop unusable — the agent
- * stops on every page of a documentation site and waits for a human to agree
- * that yes, it may read the next one. So a grant can name a subtree: the exact
- * URL, any directory above it, the whole origin, or every target the tool can
- * reach.
- *
- * Matching is by generating the call's own keys and looking each up exactly, so
- * no substring comparison is ever made against a stored grant.
- */
-export function grantCandidates(toolId, target) {
-  const keys = []
-  // The group key first, then the tool's own — so grants written before tools
-  // were grouped keep working instead of silently asking again.
-  const scopes = [...new Set([grantGroup(toolId), toolId])]
-
-  for (const scope of scopes) {
-    if (target == null) {
-      keys.push(scope)
-    } else {
-      keys.push(`${scope}@${normalizeTarget(target)}`)
-      for (const prefix of urlPrefixes(target)) keys.push(`${scope}@${prefix}`)
-    }
-    keys.push(`${scope}@${ANY_TARGET}`)
-  }
-  return [...new Set(keys)]
-}
-
-/**
- * The grants worth *offering* a human for this call, narrowest first.
- *
- * Not the same list as the candidates: every intermediate directory is a valid
- * grant, but a column of six buttons is a worse interface than three. So the
- * offer is the exact target, its immediate directory, the whole site, and
- * anything — the scopes people actually think in.
- */
-export function grantOffers(toolId, target, kind = "document") {
-  if (target == null) {
-    return [{ key: toolId, label: "always", detail: `every ${toolId} call in this session` }]
-  }
-
-  const offers = []
-  const isWeb = /^https?:\/\//i.test(String(target))
-
-  if (isWeb) {
-    const prefixes = urlPrefixes(target)
-    const origin = prefixes[prefixes.length - 1]
-    const directory = prefixes[0]
-    let host = target
-    try {
-      host = new URL(target).host
-    } catch {
-      /* keep the raw string */
-    }
-
-    // Only offer the exact URL when it is not already the directory, otherwise
-    // two buttons would mean the same thing.
-    if (normalizeTarget(target) !== directory) {
-      offers.push({ key: grantKey(toolId, target), label: "this page", detail: String(target) })
-    }
-    if (directory && directory !== origin) {
-      offers.push({ key: grantKey(toolId, directory), label: shortPath(directory), detail: `anything under ${directory}` })
-    }
-    if (origin) offers.push({ key: grantKey(toolId, origin), label: host, detail: `anything on ${host}` })
-    offers.push({ key: grantKey(toolId, ANY_TARGET), label: "any site", detail: describeGrantScope(toolId) })
-    return offers
-  }
-
-  // The tooltip has to say what the broad grant covers, because it is keyed by
-  // group: "any document" on an fs_edit is every write, edit and delete.
-  if (kind === "folder") {
-    return [
-      { key: grantKey(toolId, target), label: "this folder", detail: `anything inside ${target}` },
-      { key: grantKey(toolId, ANY_TARGET), label: "any folder", detail: describeGrantScope(toolId) },
-    ]
-  }
-  return [
-    { key: grantKey(toolId, target), label: "this document", detail: String(target) },
-    { key: grantKey(toolId, ANY_TARGET), label: "any document", detail: describeGrantScope(toolId) },
-  ]
-}
-
-/** `https://docs.python.org/3/library/` -> `/3/library/`, for a button label. */
-function shortPath(url) {
-  try {
-    const path = new URL(url).pathname
-    return path.length > 28 ? `…${path.slice(-27)}` : path
-  } catch {
-    return String(url)
-  }
-}
-
-/**
- * Does this call still need a human decision?
- *
- *   read      runs silently: it touches nothing.
- *   self      runs silently: it touches only this conversation — its own
- *             document, or a view it opened and is now closing.
- *   edit      runs silently: it writes only automerge documents, which keep
- *             their history, so anything it does can be seen and put back —
- *             doc_history shows every overwritten value. Asking first bought
- *             nothing that history does not, and the prompts were the main
- *             thing slowing the loop down. Two exceptions, below.
- *   write     needs a grant: it does something history cannot undo.
- *   external  needs a grant: it reaches past the user's documents.
- *
- * `edit` has two exceptions, and both are about the one thing history cannot
- * undo — code that has already run:
- *
- *   - Sensitive documents always ask (see below).
- *   - A tool's `askWhen(input)` names the calls that write source code. Code in
- *     a package runs with the user's authority on its next load, and automerge
- *     has no access control, so a package someone else published is as
- *     writable as your own — editing it changes it for everyone who installed
- *     it. Those calls fall back to needing a grant, like `write`.
- *
- * Tools flagged `alwaysAsk` ignore grants entirely.
- */
-export function needsApproval(doc, toolDef, block = null, subject = null, sensitive = []) {
-  if (!toolDef) return true
-  // "self" is a write, but only ever to the session document — the conversation
-  // you are already having. Stopping to ask permission to name your own
-  // conversation would be an absurd thing to put in front of someone, and
-  // calling it "read" to get that behaviour would be a lie in the tool list.
-  if (toolDef.risk === "read" || toolDef.risk === "self") return false
-  if (asksEveryTime(toolDef, block?.input)) return true
-
-  const target = block ? callTarget(block, subject, toolDef) : null
-
-  // Risk belongs to the document, not only to the verb. Your module settings
-  // decide what code runs on every future load, and your account is your
-  // identity; a write to either deserves an explicit yes every time, whichever
-  // tool is doing it. Attaching this to a bespoke "install" tool instead would
-  // just mean the next tool that can write a document routes around it.
-  if (target && isSensitive(target, sensitive)) return true
-
-  if (toolDef.risk === "edit" && !writesCode(toolDef, block?.input)) return false
-
-  // Any grant from the exact target up to "anything" answers for this call.
-  const grants = doc.grants ?? {}
-  return !grantCandidates(toolDef.id, target).some((key) => {
-    const held = grants[key]
-    return held === "session" || held === "always"
-  })
-}
-
 /** Does this `edit` call write source code? A rule that throws is taken as yes. */
-function writesCode(toolDef, input = {}) {
-  const rule = toolDef?.askWhen
+function writesCode(tool, input = {}) {
+  const rule = tool?.askWhen
   if (typeof rule !== "function") return false
   try {
     return !!rule(input ?? {})
@@ -364,4 +145,167 @@ export function isSensitive(target, sensitive = []) {
   const id = documentIdOf(target)
   if (id) return sensitive.some((url) => documentIdOf(url) === id)
   return /^automerge:/i.test(String(target ?? "").trim())
+}
+
+/**
+ * What a call asks of the person: plain data, kept on the call block.
+ *
+ *   scope    the name its grants on a target are kept under. A tool's own id,
+ *            unless it declares a `group`: tools that mean the same thing to
+ *            the person approving them share one, so "may you read
+ *            adjointlabs.com" is one decision and not one per tool. A grant
+ *            on the scope covers every tool in it.
+ *   covers   what a grant on any target of the scope allows, in words, for
+ *            the widest button's tooltip
+ *   target   what the call is about, or null
+ *   kind     "document" | "folder" | null
+ *   always   it asks every time, whatever has been granted: the tool says so
+ *            for this input (`alwaysAsk`), or the target is a sensitive
+ *            document. Risk belongs to the document as well as the verb:
+ *            your module settings decide what code runs on every future
+ *            load, and your account is your identity, so a write to either
+ *            deserves an explicit yes whichever tool is doing it.
+ */
+export function askOf(tool, input, { subject = null, sensitive = [] } = {}) {
+  const { target, kind } = callScope(input, tool, subject)
+  const scope = tool.group ?? tool.id
+  return {
+    scope,
+    covers: tool.groupCovers ?? `every ${scope} call in this session`,
+    target,
+    kind,
+    always: asksEveryTime(tool, input) || (!!target && isSensitive(target, sensitive)),
+  }
+}
+
+/**
+ * Does a call to this tool need a human decision?
+ *
+ *   read      runs silently: it touches nothing.
+ *   self      runs silently: it touches only this conversation — its own
+ *             document, or a view it opened and is now closing. It is a
+ *             write, so calling it "read" would be a lie in the tool list.
+ *   edit      runs silently: it writes only automerge documents, which keep
+ *             their history, so anything it does can be seen and put back —
+ *             doc_history shows every overwritten value. Two exceptions, below.
+ *   write     needs a grant: it does something history cannot undo.
+ *   external  needs a grant: it reaches past the user's documents.
+ *
+ * `edit` has two exceptions, and both are about the one thing history cannot
+ * undo — code that has already run:
+ *
+ *   - Sensitive documents always ask (`askOf`).
+ *   - A tool's `askWhen(input)` names the calls that write source code. Code in
+ *     a package runs with the user's authority on its next load, and automerge
+ *     has no access control, so a package someone else published is as
+ *     writable as your own — editing it changes it for everyone who installed
+ *     it. Those calls fall back to needing a grant, like `write`.
+ *
+ * `ask` is what `askOf` gave for the call. A call to no known tool needs one.
+ */
+export function needsApproval(doc, tool, input, ask) {
+  if (!tool) return true
+  if (tool.risk === "read" || tool.risk === "self") return false
+  if (ask.always) return true
+  if (tool.risk === "edit" && !writesCode(tool, input)) return false
+  return !covered(doc, { tool: tool.id, ask })
+}
+
+/** The key that means "this scope, on anything at all". */
+const ANY_TARGET = "*"
+
+/**
+ * The key a grant is kept under. A grant with no target is on the tool, not
+ * the scope: "always allow searching" must not be stored as a bare `web`,
+ * which reads as the whole group.
+ */
+function grantKey(call, target = call.ask.target) {
+  return target ? `${call.ask.scope}@${normalizeTarget(target)}` : call.tool
+}
+
+/** The key of a grant on exactly what this call is about: what "yes, and from now on" means. */
+export const ownGrant = (call) => grantKey(call)
+
+/**
+ * Every grant that would cover this call, narrowest first.
+ *
+ * Approving each fetch individually is what makes a loop unusable — the agent
+ * stops on every page of a documentation site and waits for a human to agree
+ * that yes, it may read the next one. So a grant can name a subtree: the exact
+ * URL, any directory above it, the whole origin, or every target the scope
+ * can reach.
+ *
+ * Matching is by generating the call's own keys and looking each up exactly, so
+ * no substring comparison is ever made against a stored grant.
+ */
+export function grantCandidates(call) {
+  const { scope, target } = call.ask
+  if (target == null) return [call.tool, `${scope}@${ANY_TARGET}`]
+  return [...new Set([`${scope}@${normalizeTarget(target)}`, ...urlPrefixes(target).map((prefix) => `${scope}@${prefix}`), `${scope}@${ANY_TARGET}`])]
+}
+
+/**
+ * Do the session's grants answer for this call? Never for one that asks
+ * every time, nor for one that does not say what it asks (a call to a tool
+ * the runner that wrote it did not know).
+ */
+export function covered(doc, call) {
+  if (!call?.ask || call.ask.always) return false
+  const grants = doc?.grants ?? {}
+  return grantCandidates(call).some((key) => !!grants[key])
+}
+
+/**
+ * The grants worth *offering* a human for this call, narrowest first; none
+ * for a call that asks every time.
+ *
+ * Not the same list as the candidates: every intermediate directory is a valid
+ * grant, but a column of six buttons is a worse interface than three. So the
+ * offer is the exact target, its immediate directory, the whole site, and
+ * anything — the scopes people actually think in.
+ */
+export function grantOffers(call) {
+  const ask = call?.ask
+  if (!ask || ask.always) return []
+  const { target, kind } = ask
+  if (target == null) return [{ key: call.tool, label: "always", detail: `every ${call.tool} call in this session` }]
+
+  if (/^https?:\/\//i.test(String(target))) {
+    const offers = []
+    const prefixes = urlPrefixes(target)
+    const origin = prefixes[prefixes.length - 1]
+    const directory = prefixes[0]
+    let host = target
+    try {
+      host = new URL(target).host
+    } catch {
+      /* keep the raw string */
+    }
+
+    // Only offer the exact URL when it is not already the directory, otherwise
+    // two buttons would mean the same thing.
+    if (normalizeTarget(target) !== directory) offers.push({ key: grantKey(call, target), label: "this page", detail: String(target) })
+    if (directory && directory !== origin) offers.push({ key: grantKey(call, directory), label: shortPath(directory), detail: `anything under ${directory}` })
+    if (origin) offers.push({ key: grantKey(call, origin), label: host, detail: `anything on ${host}` })
+    offers.push({ key: grantKey(call, ANY_TARGET), label: "any site", detail: ask.covers })
+    return offers
+  }
+
+  // The tooltip says what the broad grant covers, because it is keyed by
+  // scope: "any document" on an fs_edit is every write, edit and delete.
+  const noun = kind === "folder" ? "folder" : "document"
+  return [
+    { key: grantKey(call, target), label: `this ${noun}`, detail: kind === "folder" ? `anything inside ${target}` : String(target) },
+    { key: grantKey(call, ANY_TARGET), label: `any ${noun}`, detail: ask.covers },
+  ]
+}
+
+/** `https://docs.python.org/3/library/` -> `/3/library/`, for a button label. */
+function shortPath(url) {
+  try {
+    const path = new URL(url).pathname
+    return path.length > 28 ? `…${path.slice(-27)}` : path
+  } catch {
+    return String(url)
+  }
 }

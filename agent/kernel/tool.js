@@ -4,7 +4,7 @@
  * A tool definition:
  *
  *   { id, name, description, input_schema, where, risk, alwaysAsk?, askWhen?, target?,
- *     scoped?, needs?, execute(input, ctx), summarize?(input, output) }
+ *     group?, groupCovers?, scoped?, needs?, execute(input, ctx), summarize?(input, output) }
  *
  * `where` is "worker" | "host" and decides who may run it (placement.js).
  * `scoped` and `needs` decide which sessions are offered it (toolset.js), and
@@ -41,7 +41,7 @@ export function toSchema(tool) {
  * (runners/worker-client.js hands the shared runner every entry's metadata, and the
  * worker loads the code from `importUrl` itself: runners/worker-plugins.js).
  */
-export const PLUGIN_FIELDS = ["id", "name", "description", "input_schema", "where", "risk", "alwaysAsk", "scoped", "target", "importUrl"]
+export const PLUGIN_FIELDS = ["id", "name", "description", "input_schema", "where", "risk", "alwaysAsk", "scoped", "target", "group", "groupCovers", "importUrl"]
 
 /** One plugin entry's metadata, and nothing that cannot be cloned. Null for an entry with no id. */
 export function describePlugin(entry) {
@@ -83,8 +83,11 @@ export function pluginTool(description, current, { impl = null, where = null } =
     // (kernel/toolset.js scopedTools). Read from the metadata, as plain JSON,
     // and only as exactly true.
     scoped: description.scoped === true,
-    // What a call is about, for approval scoping — see session.callScope.
+    // What a call is about, and which tools its grants are shared with, for
+    // approval (session/grants.js askOf).
     target: description.target,
+    ...(typeof description.group === "string" ? { group: description.group } : {}),
+    ...(typeof description.groupCovers === "string" ? { groupCovers: description.groupCovers } : {}),
     // Looked up again at call time, not kept from when the toolset was
     // built: a run lasts as long as the model keeps calling tools, and
     // when the package behind this tool is edited mid-run Patchwork

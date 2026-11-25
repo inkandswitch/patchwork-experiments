@@ -19,7 +19,7 @@ function session() {
   const doc = {}
   initSession(doc, { title: "T", subject: "automerge:subject" })
   doc.turns = [makeTurn("user", [textBlock("fix the bug")])]
-  doc.grants = { fs_edit: "always" }
+  doc.grants = { fs_edit: true }
   claimLease(doc, "local", Date.now())
   return memoryStore(doc)
 }

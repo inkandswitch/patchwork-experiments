@@ -267,7 +267,7 @@ describe("approvals", () => {
     expect(store.doc().grants.doc_edit).toBeUndefined()
   })
 
-  it("stops asking for the rest of the session after a session grant", async () => {
+  it("stops asking for the rest of the session after a grant", async () => {
     const store = session()
     const provider = makeMock([
       [{ type: "call", id: "c1", name: "doc_edit", input: {} }],
@@ -277,10 +277,10 @@ describe("approvals", () => {
     const toolset = fakeToolset([writeTool()])
 
     await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
-    decide(store, "c1", "session")
+    decide(store, "c1", "always")
     const result = await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
 
-    expect(store.doc().grants.doc_edit).toBe("session")
+    expect(store.doc().grants.doc_edit).toBe(true)
     expect(findCall(store.doc(), "c2").block.status).toBe(CALL.done)
     expect(result.outcome).toBe(OUTCOME.idle)
   })

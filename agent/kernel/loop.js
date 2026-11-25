@@ -18,7 +18,7 @@
 
 import { CALL, WHERE } from "../session/schema.js"
 import { STOP } from "../session/status.js"
-import { callTarget, grantKey, needsApproval } from "../session/grants.js"
+import { askOf, covered, needsApproval, ownGrant } from "../session/grants.js"
 import { addUsage, costOf } from "../session/usage.js"
 import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTokens, DENIED_RESULT } from "../session/request.js"
 import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock, noticeBlock } from "../session/blocks.js"
@@ -668,18 +668,19 @@ async function streamTurn(opts) {
     store.change((d) => {
       for (const call of calls) {
         const tool = toolset.get(call.name)
+        // What the call asks of the person, worked out here, where the tool is
+        // known, and kept on the call while it waits: whoever decides about it
+        // later has only the document (session/grants.js).
+        const ask = tool ? askOf(tool, call.input, { subject: opts.subject ?? null, sensitive: opts.sensitive ?? [] }) : null
         // A question is not approved or refused, it is answered — so it goes
         // in as `asking` and no runner will ever pick it up.
-        const status = tool?.asksHuman
-          ? CALL.asking
-          : tool && !needsApproval(d, tool, { input: call.input }, opts.subject ?? null, opts.sensitive ?? [])
-            ? CALL.approved
-            : CALL.pending
+        const status = tool?.asksHuman ? CALL.asking : needsApproval(d, tool, call.input, ask) ? CALL.pending : CALL.approved
         d.turns[turnIndex].blocks.push(
           callBlock(call.name, call.input, {
             id: call.id,
             where: tool?.where ?? WHERE.worker,
             status,
+            ask: status === CALL.pending ? ask : null,
           })
         )
       }
@@ -860,21 +861,16 @@ function commitResults(store, results) {
 // ---------------------------------------------------------------- helpers
 
 /**
- * Approve every pending call the session's grants now allow.
+ * Approve every pending call the session's grants now cover.
  *
  * Only ever loosens: a call that still needs a human is left exactly as it is.
- * The loop is the right place for this because it holds the toolset, and
- * whether a call needs approval depends on the tool's risk and on whether it
- * asks every time regardless.
+ * Decided from the document alone — what each call asks is on the call — so
+ * a view or a workflow's driver, which have no toolset, release the same
+ * calls a runner would.
  */
-export function releaseNowPermitted({ store, toolset, subject, sensitive }) {
-  const waiting = callsAwaitingApproval(store.doc())
-  if (!waiting.length) return 0
-
-  const freed = waiting.filter((call) => {
-    const tool = toolset.get(call.tool)
-    return tool && !needsApproval(store.doc(), tool, call, subject ?? null, sensitive ?? [])
-  })
+export function releaseNowPermitted({ store }) {
+  const doc = store.doc()
+  const freed = callsAwaitingApproval(doc).filter((call) => covered(doc, call))
   if (!freed.length) return 0
 
   store.change((d) => {
@@ -1004,8 +1000,8 @@ function finish(store, outcome, emit, reason = null) {
  *
  * `decision` is one of:
  *   "once" | "deny"                 — answer this call and nothing else
- *   "session" | "always"            — and grant this tool on this exact target
- *   { grant: "<grantKey>" }         — and grant this tool on a chosen scope
+ *   "always"                        — and grant exactly what this call is about
+ *   { grant: "<grant key>" }        — and grant a chosen scope
  *
  * The object form is what makes broad authority possible: the UI offers the
  * scopes from `grantOffers` — this page, this directory, this site, anything —
@@ -1013,7 +1009,7 @@ function finish(store, outcome, emit, reason = null) {
  * narrowest one. Grants are stored on the session document, so any participant
  * can approve and every approval is in the history.
  */
-export function decide(store, callId, decision, subject = null, { toolset = null, sensitive = [] } = {}) {
+export function decide(store, callId, decision) {
   store.change((d) => {
     const found = findCall(d, callId)
     if (!found) return
@@ -1035,18 +1031,15 @@ export function decide(store, callId, decision, subject = null, { toolset = null
     }
     block.status = CALL.approved
 
-    if (decision && typeof decision === "object" && decision.grant) {
-      if (!d.grants) d.grants = {}
-      d.grants[decision.grant] = "always"
-      return
-    }
-    if (decision === "session" || decision === "always") {
-      if (!d.grants) d.grants = {}
-      // Scoped to the document this call is about, so "yes" means yes to this
-      // rather than yes to everything this tool could ever touch. The tool
-      // says what it is about; without a toolset the historical rule applies.
-      d.grants[grantKey(block.tool, callTarget(block, subject, toolset?.get?.(block.tool) ?? null))] = decision
-    }
+    // A call that asks every time, or does not say what it asks, takes no
+    // grant: the yes is for this call.
+    if (!block.ask || block.ask.always) return
+    // Scoped to what this call is about unless a wider scope was chosen, so
+    // "yes" means yes to this rather than to everything the tool could touch.
+    const key = decision && typeof decision === "object" ? decision.grant : decision === "always" ? ownGrant(block) : null
+    if (!key) return
+    if (!d.grants) d.grants = {}
+    d.grants[key] = true
   })
 
   // A grant just given may already cover other calls still waiting. It has to
@@ -1054,7 +1047,7 @@ export function decide(store, callId, decision, subject = null, { toolset = null
   // awaits approval, so a runner would never get a turn in which to notice.
   // Answering "yes, docs.python.org" left the turn's other two docs.python.org
   // fetches sitting pending, and the session stuck.
-  if (toolset) releaseNowPermitted({ store, toolset, subject, sensitive })
+  releaseNowPermitted({ store })
 }
 
 /**

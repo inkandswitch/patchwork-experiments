@@ -5,7 +5,7 @@ import { DENIED_RESULT, toRequest } from "./request.js"
 import { callBlock, makeTurn, reasoningBlock, resultBlock, textBlock } from "./blocks.js"
 import { callsAwaitingApproval, findCall, findResult, runnableCalls, unansweredCalls } from "./calls.js"
 import { canClaim, claimLease, holdsLease, leaseIsLive } from "./lease.js"
-import { needsApproval } from "./grants.js"
+import { needsApproval as approval, askOf } from "./grants.js"
 import { statusOf } from "./status.js"
 
 const freshDoc = () => {
@@ -172,6 +172,7 @@ describe("call bookkeeping", () => {
 })
 
 describe("needsApproval", () => {
+  const needsApproval = (doc, tool) => approval(doc, tool, {}, tool ? askOf(tool, {}) : null)
   it("lets read tools run silently", () => {
     expect(needsApproval(freshDoc(), { id: "doc_read", risk: "read" })).toBe(false)
   })
@@ -182,13 +183,13 @@ describe("needsApproval", () => {
 
   it("honours a session grant", () => {
     const doc = freshDoc()
-    doc.grants.doc_edit = "session"
+    doc.grants.doc_edit = true
     expect(needsApproval(doc, { id: "doc_edit", risk: "write" })).toBe(false)
   })
 
   it("ignores grants for tools flagged alwaysAsk", () => {
     const doc = freshDoc()
-    doc.grants.tool_install = "always"
+    doc.grants.tool_install = true
     expect(needsApproval(doc, { id: "tool_install", risk: "write", alwaysAsk: true })).toBe(true)
   })
 

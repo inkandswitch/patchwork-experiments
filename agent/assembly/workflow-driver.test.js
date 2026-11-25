@@ -88,7 +88,7 @@ describe("running a plan", () => {
   it("gives each step its tier's model, its tools, and the orchestrator's grants", async () => {
     const { repo, plan, make } = await setup(
       [step("w", { tier: "deep", behaviour: "hang" }), step("h", { where: "host", tier: "standard" })],
-      { behaviour: { w: "hang", h: "hang" }, grants: { "files@*": "session" } }
+      { behaviour: { w: "hang", h: "hang" }, grants: { "files@*": true } }
     )
     await settle(started(make()))
     const [w, h] = await Promise.all(plan.doc().steps.map(async (s) => (await repo.find(s.sessionUrl)).doc()))
@@ -98,7 +98,7 @@ describe("running a plan", () => {
     expect(w.config.params.maxTokens).toBe(4000)
     expect(w.tools).toEqual({ where: "worker" })
     expect(h.tools).toBeUndefined()
-    expect(w.grants).toEqual({ "files@*": "session" })
+    expect(w.grants).toEqual({ "files@*": true })
     expect(w.subject).toBe("automerge:subj")
     expect(w.workflow).toEqual({ planUrl: plan.url, stepId: "w", orchestratorUrl: expect.any(String) })
     expect(w["@patchwork"]).toEqual({ type: "agent-session" })

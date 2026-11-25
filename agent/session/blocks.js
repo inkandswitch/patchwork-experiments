@@ -125,6 +125,8 @@ export function callBlock(tool, input, opts = {}) {
     input: input ?? {},
     where: opts.where ?? WHERE.worker,
     status: opts.status ?? CALL.pending,
+    // What it asks of the person, for a call that waits on their yes (grants.js askOf).
+    ask: opts.ask ?? null,
     runner: opts.runner ?? null,
     generation: opts.generation ?? null,
   }

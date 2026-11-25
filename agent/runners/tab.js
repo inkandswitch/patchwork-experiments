@@ -56,9 +56,8 @@ export function accountContext(account = globalThis.accountDocHandle) {
  *   subject     the document the session is about, if any
  *   element     where host-tier tools mount; swapped as views come and go
  *   canRun      which tiers this runner picks up — fixed for its life
- *   onToolset   told each toolset the runner builds (the view keeps it for cards)
  */
-export async function startTabRunner(handle, { repo, subject = null, element = null, canRun = null, onToolset = null } = {}) {
+export async function startTabRunner(handle, { repo, subject = null, element = null, canRun = null } = {}) {
   return ensureSharedRunner(handle.url, async (emit) => {
     const automerge = await hostImport("automerge").catch(() => null)
     const splice = automerge?.splice ?? null
@@ -122,7 +121,6 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       // This tab's plugin registry. A research step is offered only the
       // plugins in it that declare `scoped: true` (kernel/toolset.js).
       pluginTools: () => loadPluginTools(),
-      onToolset,
       getProvider: async () => getProvider(providerId()),
       getKey: () => readKey(providerId()),
       getModelInfo: (model, id) => modelInfo(id, model, { key: readKey(id) }),

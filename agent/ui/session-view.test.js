@@ -10,6 +10,7 @@ import { makeTurn, textBlock, callBlock, resultBlock } from "../session/blocks.j
 import { renderTranscript, callSummary } from "./transcript.js"
 import { _reset as resetRunners } from "../runners/registry.js"
 import { viewMount, _resetMounts } from "../tools/checking.js"
+import { pendingCall, toolOf } from "../fixtures/asking.js"
 
 /** A DocHandle double with the parts the tool actually uses. */
 let handleCounter = 0
@@ -219,7 +220,7 @@ describe("transcript rendering", () => {
     initSession(doc, {})
     doc.turns.push(
       makeTurn("assistant", [
-        callBlock("doc_edit", { ops: [{ path: [], range: "title", value: "Soup" }] }, { id: "c1", status: CALL.pending }),
+        pendingCall({ id: "doc_edit", risk: "write", target: "none" }, { ops: [{ path: [], range: "title", value: "Soup" }] }, { id: "c1" }),
       ])
     )
 
@@ -245,7 +246,7 @@ describe("transcript rendering", () => {
     initSession(doc, {})
     doc.turns.push(
       makeTurn("assistant", [
-        callBlock("web_fetch", { url: "https://docs.python.org/3/library/os.html" }, { id: "c1", status: CALL.pending }),
+        pendingCall(toolOf("web_fetch"), { url: "https://docs.python.org/3/library/os.html" }, { id: "c1" }),
       ])
     )
 
@@ -462,39 +463,43 @@ describe("an approval a person can actually see", () => {
 describe("an approval for a call that will ask again anyway", () => {
   const state = () => ({ open: new Set(), names: new Map() })
 
-  function card(tool, input, alwaysAsks) {
+  function card(tool, input) {
     const doc = {}
     initSession(doc, {})
-    doc.turns.push(makeTurn("assistant", [callBlock(tool, input, { id: "c1", status: CALL.pending })]))
+    doc.turns.push(makeTurn("assistant", [pendingCall(toolOf(tool), input, { id: "c1" })]))
     const container = document.createElement("div")
-    renderTranscript(container, doc, state(), { decide: () => {}, alwaysAsks })
+    renderTranscript(container, doc, state(), { decide: () => {} })
     return container.querySelector(".agent-approval")
   }
 
   it("offers no standing grant, and says why", () => {
-    // A real session collected four http_request grants, including "any site",
-    // and was asked eleven times regardless — alwaysAsk is checked before
-    // grants are. Offering the buttons was worse than offering nothing.
-    const node = card("http_request", { url: "https://api.test/x", method: "POST" }, () => true)
+    // A grant would be kept and the call asked about all the same: offering
+    // the buttons is worse than offering nothing.
+    const node = card("http_request", { url: "https://api.test/x", method: "POST" })
     expect(node.querySelector(".agent-approval-scopes")).toBeNull()
     expect(node.querySelector(".agent-approval-note").textContent).toMatch(/asks every time/)
   })
 
   it("still offers allow-once and deny", () => {
-    const node = card("http_request", { url: "https://api.test/x" }, () => true)
+    const node = card("http_request", { url: "https://api.test/x", method: "DELETE" })
     expect([...node.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Allow once", "Deny"])
   })
 
   it("offers the scopes as normal for a call that honours them", () => {
-    const node = card("web_fetch", { url: "https://docs.python.org/3/os.html" }, () => false)
+    const node = card("web_fetch", { url: "https://docs.python.org/3/os.html" })
     expect(node.querySelector(".agent-approval-scopes")).toBeTruthy()
     expect(node.querySelector(".agent-approval-note")).toBeNull()
   })
 
-  it("offers them when nothing answers the question", () => {
-    // No toolset to ask — better to offer than to claim it will always ask.
-    const node = card("web_fetch", { url: "https://x.test/" }, undefined)
-    expect(node.querySelector(".agent-approval-scopes")).toBeTruthy()
+  it("offers none for a call that does not say what it asks: a call to a tool its runner did not know", () => {
+    const doc = {}
+    initSession(doc, {})
+    doc.turns.push(makeTurn("assistant", [callBlock("gone_tool", { url: "https://x.test/" }, { id: "c1", status: CALL.pending })]))
+    const container = document.createElement("div")
+    renderTranscript(container, doc, state(), { decide: () => {} })
+    const node = container.querySelector(".agent-approval")
+    expect(node.querySelector(".agent-approval-scopes")).toBeNull()
+    expect([...node.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Allow once", "Deny"])
   })
 })
 

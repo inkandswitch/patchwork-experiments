@@ -25,7 +25,6 @@ import buildTools from "../tools/build.js"
 import testingTools from "../tools/testing.js"
 import screenshotTools from "../tools/screenshot.js"
 import watchTools from "../tools/watch.js"
-import { toolsetOf } from "../kernel/toolset.js"
 
 export const BUILTIN_TOOLS = Object.freeze([...docTools, ...watchTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...readSourceTools, ...fileSourceTools, ...findingTools, ...citingTools, ...askTools, ...namingTools, ...recallTools, ...noteTools, ...guideTools, ...workflowTools])
 
@@ -40,16 +39,4 @@ export const builtinIds = () => new Set(BUILTIN_TOOLS.map((t) => t.id))
  */
 export function takesBuiltin(id, taken = builtinIds()) {
   return taken.has(id) ? new Error(`'${id}' is a built-in tool; a plugin cannot replace it.`) : null
-}
-
-let builtins = null
-
-/**
- * The built-in tools a full-access session can have, as a toolset, for
- * deciding about calls outside a runner — a permission granted from the
- * pop-over — where no runner has built one. Plugin tools are not in it: a
- * call to one is left for its own session's view to release.
- */
-export function builtinToolset() {
-  return (builtins ??= toolsetOf(BUILTIN_TOOLS.filter((tool) => tool.scoped !== "only")))
 }

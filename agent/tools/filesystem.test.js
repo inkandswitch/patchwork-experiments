@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { generateAutomergeUrl } from "@automerge/automerge-repo"
 import { fsWrite, fsList, fsRead, fsDelete, fsEdit } from "./folders.js"
 import { fileInFolder } from "./docs.js"
-import { needsApproval, grantKey } from "../session/grants.js"
+import { needsApproval as approval, askOf } from "../session/grants.js"
 import { initSession } from "../session/schema.js"
 
 /** A repo of plain-object documents with a root folder. */
@@ -124,6 +124,8 @@ describe("fs_write creates what does not exist", () => {
 
 describe("risk on the document, not the verb", () => {
   const doc = () => { const d = {}; initSession(d, {}); return d }
+  const needsApproval = (d, tool, block, subject, sensitive) => approval(d, tool, block.input, askOf(tool, block.input, { subject, sensitive }))
+  const grantKey = (id, target) => `${id}@${target}`
   const editTool = { id: "doc_edit", risk: "write" }
   // Real document URLs: the sensitive-document check uses the repo's own
   // parser, and treats an automerge: reference it rejects as sensitive.
@@ -132,13 +134,13 @@ describe("risk on the document, not the verb", () => {
 
   it("always asks for a write to a sensitive document, even with a grant", () => {
     const d = doc()
-    d.grants[grantKey("doc_edit", SETTINGS)] = "session"
+    d.grants[grantKey("doc_edit", SETTINGS)] = true
     expect(needsApproval(d, editTool, { input: { url: SETTINGS } }, null, [SETTINGS])).toBe(true)
   })
 
   it("does not bother the user about ordinary documents", () => {
     const d = doc()
-    d.grants[grantKey("doc_edit", NOTES)] = "session"
+    d.grants[grantKey("doc_edit", NOTES)] = true
     expect(needsApproval(d, editTool, { input: { url: NOTES } }, null, [SETTINGS])).toBe(false)
   })
 
@@ -147,7 +149,7 @@ describe("risk on the document, not the verb", () => {
     // cannot route around the gate.
     const d = doc()
     const otherTool = { id: "fs_write", risk: "write" }
-    d.grants[grantKey("fs_write", SETTINGS)] = "session"
+    d.grants[grantKey("fs_write", SETTINGS)] = true
     expect(needsApproval(d, otherTool, { input: { url: SETTINGS } }, null, [SETTINGS])).toBe(true)
   })
 })

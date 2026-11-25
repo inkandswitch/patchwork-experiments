@@ -12,7 +12,7 @@
  */
 
 import { CALL } from "../session/schema.js"
-import { callTarget, grantOffers } from "../session/grants.js"
+import { grantOffers } from "../session/grants.js"
 import { questionOptions } from "../session/calls.js"
 import { renderMarkdown } from "./markdown.js"
 import { describeCall } from "./calls.js"
@@ -75,7 +75,7 @@ function renderCall(block, result, state, handlers) {
   // is the same argument in a smaller way; a screenshot the agent took to check
   // its work is the thing you most want to see without clicking.
   const attachments = []
-  if (block.status === CALL.pending) attachments.push(renderApproval(block, handlers, state.subject))
+  if (block.status === CALL.pending) attachments.push(renderApproval(block, handlers))
   if (block.status === CALL.asking) attachments.push(renderQuestion(block, handlers))
   if (result?.image) attachments.push(renderImage(result.image, state))
   // What the call made or opened, live in the transcript when the host can
@@ -145,11 +145,10 @@ function renderDocLink(ref, handlers) {
   return link
 }
 
-function renderApproval(block, handlers, subject) {
+function renderApproval(block, handlers) {
   const card = el("div", "agent-approval")
-  // The tool knows what its call is about; the view only has the document, so
-  // the host answers through a handler and the historical rule is the fallback.
-  const { target, kind } = handlers.scopeOf?.(block) ?? { target: callTarget(block, subject), kind: "document" }
+  // What the call is about, as it said when it was written (session/grants.js).
+  const target = block.ask?.target ?? null
   card.append(el("div", "agent-approval-title", `Run ${block.tool}?`))
   if (target) {
     card.append(el("div", "agent-approval-detail", `on ${String(target).replace(/^automerge:/, "doc ")}`))
@@ -175,10 +174,9 @@ function renderApproval(block, handlers, subject) {
   card.append(row)
 
   // Offering a standing grant for a call that will ask again anyway is worse
-  // than offering nothing: a real session collected four http_request grants,
-  // including "any site", and was asked eleven times regardless, because
-  // alwaysAsk is checked before grants are. Say so instead.
-  if (handlers.alwaysAsks?.(block)) {
+  // than offering nothing: the grant would be kept and the call asked about
+  // all the same. Say so instead.
+  if (block.ask?.always) {
     card.append(
       el(
         "div",
@@ -194,10 +192,9 @@ function renderApproval(block, handlers, subject) {
   // scopes are one click away: this page, this section, this whole site.
   const scopes = el("div", "agent-approval-scopes")
   scopes.append(el("span", "agent-approval-label", "Always allow:"))
-  for (const offer of grantOffers(block.tool, target, kind ?? "document")) {
-    scopes.append(button(offer.label, { grant: offer.key }, { title: offer.detail }))
-  }
-  card.append(scopes)
+  const offers = grantOffers(block)
+  for (const offer of offers) scopes.append(button(offer.label, { grant: offer.key }, { title: offer.detail }))
+  if (offers.length) card.append(scopes)
   return card
 }
 

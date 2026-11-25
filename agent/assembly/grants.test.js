@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { initSession, CALL, STATUS, _resetIds } from "../session/schema.js"
-import { needsApproval, grantKey, grantCandidates, grantOffers, urlPrefixes, callTarget, callScope } from "../session/grants.js"
+import { grantCandidates, grantOffers, urlPrefixes, callScope } from "../session/grants.js"
+import { waits, pendingCall, about, toolOf } from "../fixtures/asking.js"
 import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
 import { claimLease } from "../session/lease.js"
 import { callsAwaitingApproval, findCall } from "../session/calls.js"
@@ -15,18 +16,12 @@ const fresh = () => { const d = {}; initSession(d, {}); return d }
 // that says nothing is about the url it is given and nothing else.
 const editTool = { id: "doc_edit", risk: "write", target: { fields: ["url"], fallback: "subject" } }
 
-describe("callTarget", () => {
-  it("prefers an explicit url", () => {
-    expect(callTarget({ input: { url: "automerge:a" } }, "automerge:subject")).toBe("automerge:a")
-  })
-  it("with no tool definition to consult, keeps the historical rule: url, root, then the subject", () => {
-    expect(callTarget({ input: { root: "automerge:r" } }, "automerge:s")).toBe("automerge:r")
-    expect(callTarget({ input: {} }, "automerge:s")).toBe("automerge:s")
-  })
-  it("is null when nothing identifies a document", () => {
-    expect(callTarget({ input: {} }, null)).toBeNull()
-  })
-})
+/** Does a call to `tool` with this block's input wait for the person? */
+const needsApproval = (doc, tool, block = null, subject = null, sensitive = []) => waits(doc, tool, block?.input ?? {}, { subject, sensitive })
+/** What a call is about. */
+const callTarget = (block, subject, tool) => callScope(block.input, tool, subject).target
+/** The key a grant on `target` for the tool with this id is kept under. */
+const grantKey = (id, target) => (target ? `${toolOf(id).group ?? id}@${target}` : id)
 
 describe("what a call is about is the tool's to say", () => {
   const subject = "automerge:subject"
@@ -53,9 +48,9 @@ describe("what a call is about is the tool's to say", () => {
 
   it("knows a root is a folder and a url is a document", () => {
     const write = { id: "fs_write", target: { fields: ["url", "root"] } }
-    expect(callScope({ input: { root: "automerge:r", path: "a/b.js" } }, subject, write)).toEqual({ target: "automerge:r", kind: "folder" })
-    expect(callScope({ input: { url: "automerge:f" } }, subject, write)).toEqual({ target: "automerge:f", kind: "document" })
-    expect(callScope({ input: { path: "a/b.js" } }, subject, write)).toEqual({ target: null, kind: null })
+    expect(callScope({ root: "automerge:r", path: "a/b.js" }, write, subject)).toEqual({ target: "automerge:r", kind: "folder" })
+    expect(callScope({ url: "automerge:f" }, write, subject)).toEqual({ target: "automerge:f", kind: "document" })
+    expect(callScope({ path: "a/b.js" }, write, subject)).toEqual({ target: null, kind: null })
   })
 
   it("is what the real tools declare", () => {
@@ -83,27 +78,25 @@ describe("the web search that granted the web", () => {
   // search, picks the broad one — and every web tool may now reach every site.
   const subject = "automerge:3H3XydHzrADXYsr6AmWvzStGSrMs"
   const tools = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
-  const toolset = { get: (id) => tools.get(id) ?? null }
 
   it("no longer offers document scopes for a search, or writes web@* from one", () => {
     const search = tools.get("web_search")
-    const block = callBlock("web_search", { query: "petri nets" }, { id: "c1" })
-    const { target, kind } = callScope(block, subject, search)
-    expect(target).toBeNull()
-    expect(grantOffers("web_search", target, kind ?? "document").map((o) => o.key)).toEqual(["web_search"])
+    const block = pendingCall(search, { query: "petri nets" }, { id: "c1", subject })
+    expect(block.ask.target).toBeNull()
+    expect(grantOffers(block).map((o) => o.key)).toEqual(["web_search"])
 
     const doc = fresh()
     doc.turns.push(makeTurn("assistant", [block]))
     const store = memoryStore(doc)
-    decide(store, "c1", "always", subject, { toolset })
-    expect(store.doc().grants).toEqual({ web_search: "always" })
+    decide(store, "c1", "always")
+    expect(store.doc().grants).toEqual({ web_search: true })
 
     const fetchTool = tools.get("web_fetch")
     expect(needsApproval(store.doc(), fetchTool, { input: { url: "https://evil.example/x" } }, subject)).toBe(true)
   })
 
   it("says what 'any site' actually covers", () => {
-    const offers = grantOffers("web_fetch", "https://docs.python.org/3/library/os.html")
+    const offers = grantOffers(about("web_fetch", "https://docs.python.org/3/library/os.html"))
     expect(offers.at(-1)).toEqual({ key: "web@*", label: "any site", detail: "every web fetch, capture, search and plain GET in this session" })
   })
 })
@@ -111,19 +104,15 @@ describe("the web search that granted the web", () => {
 describe("file tools share one grant", () => {
   const tools = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
 
-  it("an fs_write grant on a folder covers an fs_edit under it, and the old key still works", () => {
+  it("a grant to write files in a folder covers an fs_edit under it", () => {
     const doc = fresh()
-    doc.grants["files@automerge:pkg"] = "always"
+    doc.grants["files@automerge:pkg"] = true
     expect(needsApproval(doc, tools.get("fs_edit"), { input: { root: "automerge:pkg", path: "a.js", edits: [{ op: "replace", find: "a", text: "b" }] } })).toBe(false)
     expect(needsApproval(doc, tools.get("fs_delete"), { input: { root: "automerge:other", path: "a.js" } })).toBe(true)
-
-    const legacy = fresh()
-    legacy.grants["fs_write@*"] = "always" // written before the grouping
-    expect(needsApproval(legacy, tools.get("fs_write"), { input: { url: "automerge:f", content: "" } })).toBe(false)
   })
 
   it("offers folder scopes for a root, and says what 'any folder' covers", () => {
-    const offers = grantOffers("fs_write", "automerge:pkg", "folder")
+    const offers = grantOffers(about("fs_write", "automerge:pkg", "folder"))
     expect(offers.map((o) => o.label)).toEqual(["this folder", "any folder"])
     expect(offers[0].detail).toBe("anything inside automerge:pkg")
     expect(offers[1]).toEqual({ key: "files@*", label: "any folder", detail: "every file write, edit, delete and filing in this session" })
@@ -131,8 +120,7 @@ describe("file tools share one grant", () => {
 
   it("offers a plain always for a write by path, which goes wherever the path says", () => {
     const write = tools.get("fs_write")
-    const { target, kind } = callScope({ input: { path: "petri/tool.js", content: "" } }, "automerge:subject", write)
-    expect(grantOffers("fs_write", target, kind ?? "document")).toEqual([
+    expect(grantOffers(pendingCall(write, { path: "petri/tool.js", content: "" }, { subject: "automerge:subject" }))).toEqual([
       { key: "fs_write", label: "always", detail: "every fs_write call in this session" },
     ])
   })
@@ -141,7 +129,7 @@ describe("file tools share one grant", () => {
 describe("scoped grants", () => {
   it("a grant for one document does not cover another", () => {
     const doc = fresh()
-    doc.grants[grantKey("doc_edit", "automerge:a")] = "session"
+    doc.grants[grantKey("doc_edit", "automerge:a")] = true
 
     const onA = { input: { url: "automerge:a" } }
     const onB = { input: { url: "automerge:b" } }
@@ -152,7 +140,7 @@ describe("scoped grants", () => {
 
   it("covers calls that fall back to the subject", () => {
     const doc = fresh()
-    doc.grants[grantKey("doc_edit", "automerge:subject")] = "session"
+    doc.grants[grantKey("doc_edit", "automerge:subject")] = true
     expect(needsApproval(doc, editTool, { input: {} }, "automerge:subject")).toBe(false)
     expect(needsApproval(doc, editTool, { input: {} }, "automerge:other")).toBe(true)
   })
@@ -161,19 +149,19 @@ describe("scoped grants", () => {
     // This is the behaviour change: approving the tool once must not hand it
     // every document you own.
     const doc = fresh()
-    doc.grants.doc_edit = "session"
+    doc.grants.doc_edit = true
     expect(needsApproval(doc, editTool, { input: { url: "automerge:a" } })).toBe(true)
   })
 
   it("an unscoped grant still covers a tool that targets no document", () => {
     const doc = fresh()
-    doc.grants.web_search = "session"
+    doc.grants.web_search = true
     expect(needsApproval(doc, { id: "web_search", risk: "external" }, { input: { query: "x" } })).toBe(false)
   })
 
   it("still lets read tools through and still always asks for alwaysAsk tools", () => {
     const doc = fresh()
-    doc.grants[grantKey("tool_install", "automerge:a")] = "always"
+    doc.grants[grantKey("tool_install", "automerge:a")] = true
     expect(needsApproval(doc, { id: "doc_read", risk: "read" }, { input: {} })).toBe(false)
     expect(
       needsApproval(doc, { id: "tool_install", risk: "external", alwaysAsk: true }, { input: { url: "automerge:a" } })
@@ -184,22 +172,22 @@ describe("scoped grants", () => {
 describe("decide records the scoped grant", () => {
   function session() {
     const doc = fresh()
-    doc.turns.push(makeTurn("assistant", [callBlock("doc_edit", { url: "automerge:a" }, { id: "c1" })]))
+    doc.turns.push(makeTurn("assistant", [pendingCall(editTool, { url: "automerge:a" }, { id: "c1" })]))
     return memoryStore(doc)
   }
 
-  it("writes a tool@document key for a session grant", () => {
+  it("writes a tool@document key for a grant on what the call is about", () => {
     const store = session()
-    decide(store, "c1", "session")
-    expect(store.doc().grants).toEqual({ "doc_edit@automerge:a": "session" })
+    decide(store, "c1", "always")
+    expect(store.doc().grants).toEqual({ "doc_edit@automerge:a": true })
   })
 
   it("uses the subject when the call names no document", () => {
     const doc = fresh()
-    doc.turns.push(makeTurn("assistant", [callBlock("doc_edit", {}, { id: "c1" })]))
+    doc.turns.push(makeTurn("assistant", [pendingCall(editTool, {}, { id: "c1", subject: "automerge:subject" })]))
     const store = memoryStore(doc)
-    decide(store, "c1", "session", "automerge:subject")
-    expect(store.doc().grants["doc_edit@automerge:subject"]).toBe("session")
+    decide(store, "c1", "always")
+    expect(store.doc().grants["doc_edit@automerge:subject"]).toBe(true)
   })
 
   it("grants nothing for a one-off approval", () => {
@@ -252,7 +240,7 @@ describe("a grant on a subtree", () => {
 
   function granted(key) {
     const doc = fresh()
-    doc.grants[key] = "always"
+    doc.grants[key] = true
     return doc
   }
 
@@ -313,7 +301,7 @@ describe("a grant on a subtree", () => {
 
 describe("the scopes offered to a human", () => {
   it("offers page, directory, site and anything for a web page", () => {
-    const offers = grantOffers("web_fetch", "https://docs.python.org/3/library/os.html")
+    const offers = grantOffers(about("web_fetch", "https://docs.python.org/3/library/os.html"))
     expect(offers.map((o) => o.label)).toEqual(["this page", "/3/library/", "docs.python.org", "any site"])
     // Keyed by GROUP, not by tool: "may you read docs.python.org" is one
     // decision, and it used to be asked once per web tool.
@@ -326,29 +314,29 @@ describe("the scopes offered to a human", () => {
   })
 
   it("does not offer the same scope twice for a directory URL", () => {
-    const offers = grantOffers("web_fetch", "https://example.test/docs/")
+    const offers = grantOffers(about("web_fetch", "https://example.test/docs/"))
     expect(offers.map((o) => o.label)).toEqual(["/docs/", "example.test", "any site"])
   })
 
   it("collapses to site and anything at the root of a site", () => {
-    const offers = grantOffers("web_fetch", "https://example.test/")
+    const offers = grantOffers(about("web_fetch", "https://example.test/"))
     expect(offers.map((o) => o.label)).toEqual(["example.test", "any site"])
   })
 
   it("offers document scopes for a document target", () => {
-    expect(grantOffers("doc_edit", "automerge:abc").map((o) => o.label)).toEqual(["this document", "any document"])
+    expect(grantOffers(about("doc_edit", "automerge:abc")).map((o) => o.label)).toEqual(["this document", "any document"])
   })
 
   it("offers a single always for a call with no target", () => {
-    expect(grantOffers("web_search", null)).toEqual([
+    expect(grantOffers(about("web_search", null))).toEqual([
       { key: "web_search", label: "always", detail: "every web_search call in this session" },
     ])
   })
 
   it("offers only scopes that would actually cover the call", () => {
     const target = "https://docs.python.org/3/library/os.html"
-    const candidates = grantCandidates("web_fetch", target)
-    for (const offer of grantOffers("web_fetch", target)) {
+    const candidates = grantCandidates(about("web_fetch", target))
+    for (const offer of grantOffers(about("web_fetch", target))) {
       expect(candidates).toContain(offer.key)
     }
   })
@@ -359,7 +347,7 @@ describe("deciding with a chosen scope", () => {
     const doc = fresh()
     doc.turns.push(
       makeTurn("assistant", [
-        callBlock("web_fetch", { url: "https://docs.python.org/3/library/os.html" }, { id: "c1" }),
+        pendingCall({ id: "web_fetch", risk: "external" }, { url: "https://docs.python.org/3/library/os.html" }, { id: "c1" }),
       ])
     )
     return memoryStore(doc)
@@ -369,7 +357,7 @@ describe("deciding with a chosen scope", () => {
     const store = fetchCall()
     decide(store, "c1", { grant: "web_fetch@https://docs.python.org/" })
 
-    expect(store.doc().grants).toEqual({ "web_fetch@https://docs.python.org/": "always" })
+    expect(store.doc().grants).toEqual({ "web_fetch@https://docs.python.org/": true })
     expect(findCall(store.doc(), "c1").block.status).toBe(CALL.approved)
   })
 
@@ -392,6 +380,7 @@ describe("one answer releases every call it covers", () => {
     name: "Fetch",
     where: "worker",
     risk: "external",
+    group: "web",
     execute: async (input) => `fetched ${input.url}`,
   }
   const toolset = (tools) => {
@@ -423,10 +412,10 @@ describe("one answer releases every call it covers", () => {
     const { store, provider } = await threeFetches()
     expect(callsAwaitingApproval(store.doc())).toHaveLength(3)
 
-    // One decision: yes, that site. The toolset is what lets it release the
-    // others — and it has to happen here, because needsWork stands down while
-    // anything awaits approval and a runner would never get a turn to notice.
-    decide(store, "c1", { grant: "web@https://docs.python.org/" }, null, { toolset: toolset([fetchTool]) })
+    // One decision: yes, that site. It releases the others here, because
+    // needsWork stands down while anything awaits approval and a runner would
+    // never get a turn to notice.
+    decide(store, "c1", { grant: "web@https://docs.python.org/" })
     expect(callsAwaitingApproval(store.doc())).toHaveLength(0)
     // …and the session stops claiming to be waiting for someone.
     expect(settled(store.doc())).toBe(STATUS.idle)
@@ -455,7 +444,7 @@ describe("one answer releases every call it covers", () => {
     ])
     await run({ store, provider, toolset: toolset([fetchTool]), canRun: () => true, flushMs: 0 })
 
-    decide(store, "c1", { grant: "web@https://docs.python.org/" }, null, { toolset: toolset([fetchTool]) })
+    decide(store, "c1", { grant: "web@https://docs.python.org/" })
     await run({ store, provider, toolset: toolset([fetchTool]), canRun: () => true, flushMs: 0 })
 
     // Only ever loosens: the other site is a different decision.
@@ -463,12 +452,25 @@ describe("one answer releases every call it covers", () => {
     expect(settled(store.doc())).toBe(STATUS.awaitingApproval)
   })
 
-  it("does nothing when no toolset is there to judge with", async () => {
-    // decide() is called from probes and from other realms without one; it must
-    // degrade to the old behaviour rather than throwing.
+  it("needs no toolset: each waiting call says what it asks", async () => {
+    // decide() is called from a pop-over, a workflow's driver and probes, none
+    // of which has the tools.
     const { store } = await threeFetches()
+    expect(callsAwaitingApproval(store.doc()).map((call) => call.ask)).toEqual(
+      ["a", "b", "c"].map((page) => ({ scope: "web", covers: "every web call in this session", target: `https://docs.python.org/3/${page}.html`, kind: "document", always: false })),
+    )
     decide(store, "c1", { grant: "web@https://docs.python.org/" })
-    expect(callsAwaitingApproval(store.doc())).toHaveLength(2)
+    expect(callsAwaitingApproval(store.doc())).toHaveLength(0)
+  })
+
+  it("a grant is not taken from a call that asks every time", async () => {
+    const doc = fresh()
+    doc.turns.push(makeTurn("assistant", [pendingCall({ id: "http_request", risk: "external", group: "web", alwaysAsk: true }, { url: "https://x.test/" }, { id: "c1" })]))
+    const store = memoryStore(doc)
+    expect(grantOffers(findCall(store.doc(), "c1").block)).toEqual([])
+    decide(store, "c1", { grant: "web@*" })
+    expect(store.doc().grants).toEqual({})
+    expect(findCall(store.doc(), "c1").block.status).toBe(CALL.approved)
   })
 
   it("does not release a call that asks every time", async () => {
@@ -476,7 +478,7 @@ describe("one answer releases every call it covers", () => {
     const doc = {}
     initSession(doc, {})
     doc.turns = [makeTurn("user", [textBlock("go")])]
-    doc.grants["web@*"] = "always"
+    doc.grants["web@*"] = true
     claimLease(doc, "local", Date.now())
     const store = memoryStore(doc)
     const asksAlways = { ...fetchTool, id: "http_request", alwaysAsk: () => true }

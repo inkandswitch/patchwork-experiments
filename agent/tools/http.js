@@ -26,12 +26,13 @@
 import { truncate, bytes } from "../documents/format.js"
 import { isTextResponse, describeBytes, decodeText } from "../documents/media.js"
 import { sourceFooter } from "./sources.js"
-import { readBytes, keepResponse, htmlToText } from "./web.js"
+import { readBytes, keepResponse, htmlToText, WEB_GROUP } from "./web.js"
 import { fetcher } from "../net/guard.js"
 import { isInterruption } from "../net/network.js"
 
 export const httpRequest = {
   id: "http_request",
+  ...WEB_GROUP,
   name: "Call an API",
   description: [
     "Make an HTTP request and return the response. Use this for JSON APIs, for files, and for anything that needs a method, headers or a body — web_fetch is for reading pages.",

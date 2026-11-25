@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { generateAutomergeUrl, parseAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
 import { initSession } from "../session/schema.js"
-import { needsApproval, isSensitive } from "../session/grants.js"
+import { isSensitive } from "../session/grants.js"
+import { waits } from "../fixtures/asking.js"
 import { documentIdOf } from "../documents/doc-urls.js"
 import { BUILTIN_TOOLS } from "./builtin.js"
 import { isCodePath } from "../tools/folders.js"
@@ -13,7 +14,7 @@ const tool = (id) => {
 }
 const fresh = () => { const d = {}; initSession(d, {}); return d }
 const asks = (id, input, { subject = "automerge:subject", sensitive = [], doc = fresh() } = {}) =>
-  needsApproval(doc, tool(id), { input }, subject, sensitive)
+  waits(doc, tool(id), input, { subject, sensitive })
 
 // Real document URLs: the sensitive-document check uses the repo's own parser,
 // and treats an automerge: reference it rejects as sensitive.
@@ -50,7 +51,7 @@ describe("writing source code still needs a grant", () => {
 
   it("and a grant answers for it, as before", () => {
     const doc = fresh()
-    doc.grants = { "files@*": "session" }
+    doc.grants = { "files@*": true }
     expect(asks("fs_write", { path: "tally/index.js", content: "" }, { doc })).toBe(false)
   })
 })
@@ -68,7 +69,7 @@ describe("sensitive documents always ask", () => {
 
   it("whatever has been granted", () => {
     const doc = fresh()
-    doc.grants = { "doc_edit@*": "session" }
+    doc.grants = { "doc_edit@*": true }
     expect(asks("doc_edit", { url: SETTINGS, ops: [] }, { sensitive, doc })).toBe(true)
   })
 

@@ -10,6 +10,7 @@ import { STOP, stopOf, statusOf } from "../session/status.js"
 import { needsWork } from "../kernel/runner.js"
 import { toRequest } from "../session/request.js"
 import { unknownBlocks } from "../session/schema.js"
+import { covered, grantOffers } from "../session/grants.js"
 
 const turn = (role, blocks, at = 1) => ({ id: `t${Math.random()}`, role, at, author: null, blocks })
 const text = (t) => ({ type: "text", id: `b${Math.random()}`, text: t })
@@ -124,6 +125,22 @@ describe("a version 1 session", () => {
     const doc = v1({ lease })
     migrateSession(doc)
     expect(doc.lease).toEqual(lease)
+  })
+
+  it("grants have one value, and one on a target is under its tool's group", () => {
+    const doc = v1({ grants: { "web_fetch@https://docs.python.org/": "session", "fs_write@*": "always", "files@automerge:pkg": "always", "doc_edit@automerge:a": "session", web_search: "always", "web@*": "session" } })
+    migrateSession(doc)
+    expect(doc.grants).toEqual({ "web@https://docs.python.org/": true, "files@*": true, "files@automerge:pkg": true, "doc_edit@automerge:a": true, web_search: true, "web@*": true })
+  })
+
+  it("a call that was waiting still waits, with no grant offered for it or answering it", () => {
+    const doc = v1({ grants: { "web@*": "always" } })
+    doc.turns.push(turn("assistant", [{ type: "call", id: "c1", tool: "web_fetch", input: { url: "https://x.test/" }, where: "worker", status: "pending", runner: null, generation: null }]))
+    migrateSession(doc)
+    const call = doc.turns.at(-1).blocks[0]
+    expect(statusOf(doc)).toBe(STATUS.awaitingApproval)
+    expect(covered(doc, call)).toBe(false)
+    expect(grantOffers(call)).toEqual([])
   })
 
   // A step's list of tools it may not have.

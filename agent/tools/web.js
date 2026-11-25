@@ -27,6 +27,14 @@ import { Interruption, isInterruption, asInterruption } from "../net/network.js"
 import { readPdf, pdfSummary } from "../documents/pdf-text.js"
 
 /**
+ * The tools that reach the web share their grants: "may you read
+ * adjointlabs.com" is one decision, whichever of them asks (session/grants.js).
+ * http_request is among them only for what is equal in power to a fetch, a
+ * plain GET; anything else it does asks every time.
+ */
+export const WEB_GROUP = { group: "web", groupCovers: "every web fetch, capture, search and plain GET in this session" }
+
+/**
  * Strip HTML down to readable text.
  *
  * Used wherever we hold a page's own bytes rather than a reader's markdown of
@@ -511,6 +519,7 @@ function readableOf(ref, { response, body }) {
  */
 export const webFetch = {
   id: "web_fetch",
+  ...WEB_GROUP,
   scoped: true,
   name: "Read a web page",
   description: [
@@ -596,6 +605,7 @@ export const webFetch = {
 
 export const webSearch = {
   id: "web_search",
+  ...WEB_GROUP,
   scoped: true,
   name: "Search the web",
   // A search is about no document and no site. Left to the default rule it was

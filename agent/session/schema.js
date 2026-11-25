@@ -17,7 +17,7 @@
  *     turns:   Turn[]
  *     reconnecting: { reason, since, attempts } | null   while the network is away (net/network.js)
  *     lease:   { runner, at, generation } | null
- *     grants:  { [grantKey]: "session" | "always" }
+ *     grants:  { [key]: true }            what the person allowed (grants.js)
  *     made:    Artifact[]                 documents this session created
  *     watches: { [id]: Watch }            absent until doc_watch makes one (tools/watch.js)
  *   }
@@ -25,7 +25,7 @@
  *   Turn  = { id, role: "user"|"assistant"|"tool", at, author, blocks: Block[] }
  *   Block = { type: "text",      id, text }
  *         | { type: "reasoning", id, text }
- *         | { type: "call",      id, tool, input, where, status, runner, generation }
+ *         | { type: "call",      id, tool, input, where, status, runner, generation, ask }
  *         | { type: "result",    id, callId, output, isError, image, doc }
  *         | { type: "event",     id, source, label, text, count, at }
  *         | { type: "notice",    id, kind, text, data }

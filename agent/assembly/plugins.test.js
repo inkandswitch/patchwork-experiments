@@ -3,7 +3,7 @@ import { loadPluginTools } from "./plugins.js"
 import { runTool } from "../kernel/tool.js"
 import { buildToolset } from "./toolset.js"
 import { BUILTIN_TOOLS } from "./builtin.js"
-import { needsApproval, grantGroup } from "../session/grants.js"
+import { waits } from "../fixtures/asking.js"
 import { initSession } from "../session/schema.js"
 import { recordArtifact } from "../session/made.js"
 import { keptSources } from "../tools/sources.js"
@@ -95,7 +95,7 @@ describe("what a session's tool list means", () => {
  * and runs with the context it is handed.
  */
 describe("the Web snapshot package's web_capture", () => {
-  const WEB_CAPTURE = { id: "web_capture", name: "Keep a web page", description: "Keep a web page as it looks…", where: "worker", risk: "external", scoped: true, input_schema: { type: "object", required: ["url"], properties: { url: { type: "string" } } } }
+  const WEB_CAPTURE = { id: "web_capture", name: "Keep a web page", description: "Keep a web page as it looks…", where: "worker", risk: "external", scoped: true, group: "web", groupCovers: "every web fetch, capture, search and plain GET in this session", input_schema: { type: "object", required: ["url"], properties: { url: { type: "string" } } } }
   const seen = []
   const modules = {
     web_capture: {
@@ -117,12 +117,12 @@ describe("the Web snapshot package's web_capture", () => {
 
   it("is asked about and granted with the rest of the web", async () => {
     const [capture] = await loadPluginTools({ registry })
-    expect(grantGroup("web_capture")).toBe("web")
-    const call = { input: { url: "https://site.test/page" } }
-    expect(needsApproval({ grants: {} }, capture, call)).toBe(true)
-    expect(needsApproval({ grants: { "web@*": "session" } }, capture, call)).toBe(false)
-    expect(needsApproval({ grants: { "web@https://site.test/": "session" } }, capture, call)).toBe(false)
-    expect(needsApproval({ grants: { "web@https://other.test/": "session" } }, capture, call)).toBe(true)
+    expect(capture.group).toBe("web")
+    const input = { url: "https://site.test/page" }
+    expect(waits({ grants: {} }, capture, input)).toBe(true)
+    expect(waits({ grants: { "web@*": true } }, capture, input)).toBe(false)
+    expect(waits({ grants: { "web@https://site.test/": true } }, capture, input)).toBe(false)
+    expect(waits({ grants: { "web@https://other.test/": true } }, capture, input)).toBe(true)
   })
 
   it("runs with the context it is handed, guarded fetch and session included", async () => {

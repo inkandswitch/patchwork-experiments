@@ -14,6 +14,7 @@ import { waitingIn } from "../workflow/waiting.js"
 import { WORKFLOW_TOOL_IDS } from "../fixtures/tool-ids.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { statusOf, stopOf, STOP } from "../session/status.js"
+import { pendingCall, toolOf } from "../fixtures/asking.js"
 
 await initSubduction()
 
@@ -27,9 +28,7 @@ afterEach(() => { for (const d of drivers.splice(0)) d.stop(); _resetDrivers(); 
 /** A session with a web fetch waiting for permission. */
 function fetching(handle, url = "https://dnv.com/rules", id = "f1") {
   handle.change((d) => {
-    const call = callBlock("web_fetch", { url }, { id })
-    call.status = CALL.pending
-    d.turns.push(makeTurn("assistant", [call]))
+    d.turns.push(makeTurn("assistant", [pendingCall(toolOf("web_fetch"), { url }, { id })]))
   })
 }
 
@@ -90,7 +89,7 @@ describe("web-only research steps", () => {
     expect(session.tools).toBeUndefined()
     expect(session.workflow).toEqual({ planUrl: plan.url, stepId: "research", orchestratorUrl: plan.doc().sessionUrl })
     expect(session.subject).toBeNull()
-    expect({ ...session.grants }).toEqual({ [WEB_GRANT]: "session" })
+    expect({ ...session.grants }).toEqual({ [WEB_GRANT]: true })
   })
 
   it("and a full step gets none of that", async () => {
@@ -115,11 +114,11 @@ describe("one job, one set of permissions", () => {
     const b = await sessionOf(repo, plan, "b")
     fetching(b, "https://dnv.com/rules", "fb")
 
-    a.change((d) => { d.grants["web@*"] = "session" }) // granted "any site" in step a
+    a.change((d) => { d.grants["web@*"] = true }) // granted "any site" in step a
     await settle(driver)
 
-    expect(b.doc().grants["web@*"]).toBe("session")
-    expect(orchestrator.doc().grants["web@*"]).toBe("session")
+    expect(b.doc().grants["web@*"]).toBe(true)
+    expect(orchestrator.doc().grants["web@*"]).toBe(true)
     expect(waitingIn(b.doc())).toEqual([]) // b's waiting fetch went ahead
     expect(b.doc().turns.at(-1).blocks[0].status).toBe(CALL.approved)
   })
@@ -129,27 +128,27 @@ describe("one job, one set of permissions", () => {
     const driver = make()
     driver.start()
     await settle(driver)
-    expect((await sessionOf(repo, plan, "research")).doc().grants[WEB_GRANT]).toBe("session")
+    expect((await sessionOf(repo, plan, "research")).doc().grants[WEB_GRANT]).toBe(true)
     expect((await sessionOf(repo, plan, "build")).doc().grants[WEB_GRANT]).toBeUndefined()
     expect(orchestrator.doc().grants[WEB_GRANT]).toBeUndefined()
   })
 
   it("a research step neither gives nor receives: not the orchestrator's grants, not its siblings', not its own", async () => {
     const { repo, plan, orchestrator, make } = setup([step("research", { access: "web" }), step("build")])
-    orchestrator.change((d) => { d.grants["files@*"] = "session" })
+    orchestrator.change((d) => { d.grants["files@*"] = true })
     const driver = make()
     driver.start()
     await settle(driver)
     const research = await sessionOf(repo, plan, "research")
     const build = await sessionOf(repo, plan, "build")
-    expect(build.doc().grants["files@*"]).toBe("session") // a full step receives
+    expect(build.doc().grants["files@*"]).toBe(true) // a full step receives
 
-    build.change((d) => { d.grants["web@dnv.com"] = "session" })
-    research.change((d) => { d.grants["doc_edit@*"] = "always" })
+    build.change((d) => { d.grants["web@dnv.com"] = true })
+    research.change((d) => { d.grants["doc_edit@*"] = true })
     await settle(driver)
 
-    expect({ ...research.doc().grants }).toEqual({ [WEB_GRANT]: "session", "doc_edit@*": "always" })
-    expect(orchestrator.doc().grants["web@dnv.com"]).toBe("session") // full steps still share
+    expect({ ...research.doc().grants }).toEqual({ [WEB_GRANT]: true, "doc_edit@*": true })
+    expect(orchestrator.doc().grants["web@dnv.com"]).toBe(true) // full steps still share
     for (const full of [orchestrator, build]) expect(full.doc().grants["doc_edit@*"]).toBeUndefined()
   })
 
@@ -161,7 +160,7 @@ describe("one job, one set of permissions", () => {
     await settle(driver)
     const a = await sessionOf(repo, plan, "a")
     a.change((d) => {
-      d.grants["doc_edit@*"] = "always"
+      d.grants["doc_edit@*"] = true
       const call = callBlock("doc_edit", { url: "automerge:settings", ops: [] }, { id: "e1" })
       call.status = CALL.pending
       d.turns.push(makeTurn("assistant", [call]))
@@ -175,7 +174,7 @@ describe("one job, one set of permissions", () => {
     const driver = make()
     driver.start()
     await settle(driver)
-    ;(await sessionOf(repo, plan, "a")).change((d) => { d.grants["web@dnv.com"] = "session" })
+    ;(await sessionOf(repo, plan, "a")).change((d) => { d.grants["web@dnv.com"] = true })
     await settle(driver)
     const heads = await Promise.all(["a", "b"].map(async (id) => A.getHeads((await sessionOf(repo, plan, id)).doc())))
     await settle(driver)
@@ -234,9 +233,7 @@ describe("granting from the peek or the strip", () => {
     handle.change((d) => initSession(d, {}))
     fetching(handle, "https://dnv.com/rules", "f1")
     handle.change((d) => {
-      const second = callBlock("web_fetch", { url: "https://abs.org/standards" }, { id: "f2" })
-      second.status = CALL.pending
-      d.turns.at(-1).blocks.push(second)
+      d.turns.at(-1).blocks.push(pendingCall(toolOf("web_fetch"), { url: "https://abs.org/standards" }, { id: "f2" }))
     })
     const [first] = waitingIn(handle.doc())
     const node = renderWaitingItem({ ...first, handle, stepTitle: "Research" })

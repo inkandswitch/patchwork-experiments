@@ -14,7 +14,18 @@
  *   "(…)" turns  what it said as the person, to prompt the model, is one too.
  *   tools        `disabled` no longer lists the workflow tools: a step is
  *                not offered them because it is a step.
+ *   grants       one value, `true`, where there were two that meant the
+ *                same; and a grant on a target is kept under the group its
+ *                tool is in ("web", "files"), where some were kept under the
+ *                tool's own id.
+ *
+ * A call that was waiting for approval keeps waiting, and can be allowed once
+ * or denied. It does not say what it asks (a call block's `ask`, written with
+ * the call from now on), so no grant is offered for it and none answers it.
  */
+
+/** The group each tool's grants on a target are kept under, for those in one. */
+const GROUPS = { web_fetch: "web", web_search: "web", web_capture: "web", web_import: "web", http_request: "web", fs_write: "files", fs_edit: "files", fs_delete: "files", source_file: "files" }
 
 const WORKFLOW_TOOLS = ["workflow_start", "workflow_add_steps", "workflow_edit_steps", "workflow_status", "workflow_stop", "workflow_reopen", "workflow_keep", "workflow_decide", "workflow_answer", "workflow_budget"]
 
@@ -82,6 +93,13 @@ export function migrateSession(doc, { now = Date.now() } = {}) {
     if (kept.length) doc.tools.disabled = kept
     else delete doc.tools.disabled
     if (!Object.keys(doc.tools).length) delete doc.tools
+  }
+
+  for (const [key, held] of Object.entries(doc.grants ?? {})) {
+    const at = key.indexOf("@")
+    const group = at > 0 ? GROUPS[key.slice(0, at)] : null
+    delete doc.grants[key]
+    if (held) doc.grants[group ? `${group}${key.slice(at)}` : key] = true
   }
 
   for (const key of ["status", "halted", "stopped"]) if (key in doc) delete doc[key]

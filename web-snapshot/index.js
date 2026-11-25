@@ -49,6 +49,12 @@ export const plugins = [
     // no platform fetch and no host module. Saying so lets the agent give it
     // to a research step, with that step's confined context and nothing more.
     scoped: true,
+    // Keeping a page is reading it, with its pictures: the same decision as a
+    // fetch. Sharing the web's grants means a person who allowed a site is
+    // not asked again for a capture of it, and a research step's standing
+    // permission for the web covers this too.
+    group: "web",
+    groupCovers: "every web fetch, capture, search and plain GET in this session",
     description:
       "Keep a web page as it looks: the page as rendered, frozen so that nothing in it runs, with every stylesheet, font and image that can be fetched from here, in one web-snapshot document that opens later exactly as captured, offline. Use it when the page itself is the evidence — a datasheet, a price, a statement that may change — or the person wants to keep it. To read what a page says, web_fetch is cheaper.\n\nThe result says what was kept and what was not, and why. The snapshot's text is read with source_read like any kept source. A PDF or other file is kept as the file it is.\n\nA URL whose snapshot is already kept here answers from it; pass `again` for a new one.",
     input_schema: {

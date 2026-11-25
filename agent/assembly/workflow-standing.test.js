@@ -129,7 +129,7 @@ async function stepSession(repo, { scoped = false } = {}) {
   handle.change((d) => {
     initSession(d, { title: "Plan · B", config: { model: "m", budget: { cost: 1 } } })
     d.workflow = { planUrl: "automerge:2ZB7EhdqPcSAApFM3bwf7gNxh7fv", stepId: "b", orchestratorUrl: null }
-    d.grants = { "web:*": "session" }
+    d.grants = { "web:*": true }
     d.tools = { disabled: ["workflow_start"] }
     if (scoped) d.scope = webScope("automerge:2ZB7EhdqPcSAApFM3bwf7gNxh7fv", "b")
     d.turns.push(makeTurn("user", [textBlock("Find the rig loads.")]))

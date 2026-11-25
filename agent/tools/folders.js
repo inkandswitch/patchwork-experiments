@@ -12,6 +12,12 @@
 import { previewJson, truncate, bytes } from "../documents/format.js"
 import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, OpError, TEXT_OPS } from "../documents/ops.js"
 
+/**
+ * Writing files is one decision too: a grant to write, edit or delete under a
+ * folder covers all three, and filing a kept source there (session/grants.js).
+ */
+export const FILES_GROUP = { group: "files", groupCovers: "every file write, edit, delete and filing in this session" }
+
 /** File content arrives as a string, an ImmutableString, or raw bytes. */
 export function contentToText(content) {
   if (content == null) return ""
@@ -589,6 +595,7 @@ function notAFile(url, doc) {
 
 export const fsWrite = {
   id: "fs_write",
+  ...FILES_GROUP,
   name: "Write files",
   // A url names one file; a root names the folder written under; a path with
   // neither writes into the account tree, which no single document stands
@@ -777,6 +784,7 @@ async function fileFor(input, ctx) {
 
 export const fsEdit = {
   id: "fs_edit",
+  ...FILES_GROUP,
   name: "Edit a file",
   target: { fields: ["url", "root"] },
   description: [
@@ -918,6 +926,7 @@ async function findPath(repo, rootUrl, parts) {
 
 export const fsDelete = {
   id: "fs_delete",
+  ...FILES_GROUP,
   name: "Delete a file or folder",
   target: { fields: ["root"] },
   description: [

@@ -36,7 +36,6 @@ import { documentIdOf } from "../documents/doc-urls.js"
 import { releaseNowPermitted } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
 import { waitingIn } from "./waiting.js"
-import { toolsetOf } from "../kernel/toolset.js"
 import { checkStepTools } from "./step-tools.js"
 
 const { stringifyAutomergeUrl } = AutomergeRepo
@@ -145,18 +144,15 @@ export function _resetDrivers() {
 }
 
 export class WorkflowDriver {
-  constructor({ repo, handle, startSession, notify = null, tools = null, sensitive = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
+  constructor({ repo, handle, startSession, notify = null, tools = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
     this.repo = repo
     this.handle = handle
     this.startSession = startSession
     this.notify = notify
-    // Every tool the runner that started this has, as `{ builtins, plugins }`:
-    // for checking a step's prompt before it starts (step-tools.js), and for
-    // judging a step's waiting calls against a grant (`toolset`). Without it
-    // neither is done.
+    // Every tool the runner that started this has, as `{ builtins, plugins }`,
+    // for checking a step's prompt before it starts (step-tools.js). Without
+    // it that is not done.
     this.tools = tools
-    // Documents a grant never covers: the account and its module settings.
-    this.sensitive = sensitive ?? (() => [globalThis.accountDocHandle?.doc?.()?.moduleSettingsUrl, globalThis.accountDocHandle?.url].filter(Boolean))
     this.now = now
     this.heartbeatMs = heartbeatMs
     this.settleMs = settleMs
@@ -439,28 +435,20 @@ export class WorkflowDriver {
     const merged = {}
     for (const handle of sessions) {
       for (const [key, held] of Object.entries(handle.doc().grants ?? {})) {
-        if (held === "always" || (held === "session" && merged[key] !== "always")) merged[key] = held
+        if (held) merged[key] = true
       }
     }
 
     for (const handle of sessions) {
       const doc = handle.doc()
-      const missing = Object.keys(merged).filter((key) => !["session", "always"].includes(doc.grants?.[key]))
+      const missing = Object.keys(merged).filter((key) => !doc.grants?.[key])
       if (missing.length) {
         handle.change((d) => {
           if (!d.grants) d.grants = {}
-          for (const key of missing) d.grants[key] = merged[key]
+          for (const key of missing) d.grants[key] = true
         })
       }
-      const toolset = missing.length || this.unreleased(handle) ? await this.toolset() : null
-      if (toolset) {
-        releaseNowPermitted({
-          store: handleStore(handle, null),
-          toolset,
-          subject: doc.subject ?? null,
-          sensitive: this.sensitive(),
-        })
-      }
+      if (missing.length || this.unreleased(handle)) releaseNowPermitted({ store: handleStore(handle, null) })
     }
   }
 
@@ -626,7 +614,7 @@ export class WorkflowDriver {
         // it can reach none of the person's documents, so there is nothing of
         // theirs to leak, and it gets nothing the orchestrator was granted.
         d.scope = webScope(this.handle.url, step.id)
-        d.grants = { [WEB_GRANT]: "session" }
+        d.grants = { [WEB_GRANT]: true }
       } else {
         // A worker step gets every tool that runs without the page, built-in
         // or plugin, decided by whichever runner builds its toolset — so it
@@ -656,18 +644,6 @@ export class WorkflowDriver {
     // Started only if the plan now names this session for the step — not
     // merely because the write was allowed.
     if (this.handle.doc().steps.find((x) => x.id === step.id)?.sessionUrl === child.url) await this.run(child.url)
-  }
-
-  /**
-   * The built-in tools a full-access session can have, as a toolset: what a
-   * step's waiting calls are judged against when a grant reaches it. Plugin
-   * tools are not in it: a call to one is left for its own session's runner
-   * to release. Null without `tools`.
-   */
-  async toolset() {
-    if (!this.tools) return null
-    const { builtins = [] } = (await this.tools()) ?? {}
-    return toolsetOf(builtins.filter((tool) => tool.scoped !== "only"))
   }
 
   /**

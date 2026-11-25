@@ -171,7 +171,7 @@ window.__agentProbe = async function (opts) {
       // Approvals now have to come from outside the view, since there is none.
       const approveFromOutside = setInterval(() => {
         for (const call of callsAwaitingApproval(session.doc())) {
-          decide(store, call.id, "session", subject.url)
+          decide(store, call.id, "always")
         }
       }, 300)
 
