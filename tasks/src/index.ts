@@ -1,5 +1,6 @@
 import { Plugin } from '@inkandswitch/patchwork-plugins';
 import {
+  POOL_COMPONENT_ID,
   QUEUE_DATATYPE_ID,
   QUEUE_TOOL_ID,
   TITLEBAR_TOOL_ID,
@@ -45,5 +46,16 @@ export const plugins: Plugin<any>[] = [
     icon: 'CirclePlus',
     tags: ['system-tray'],
     load: async () => (await import('./titlebar-tool')).TaskTray,
+  },
+  {
+    // What puts this page in the browser's pool. `background`: it shows
+    // nothing, and a frame mounts it once, inside its providers, for as long
+    // as the frame lives (see pool-starter.ts).
+    type: 'patchwork:component',
+    id: POOL_COMPONENT_ID,
+    name: 'Task pool (experimental)',
+    icon: 'Cpu',
+    tags: ['background'],
+    load: async () => (await import('./pool-starter')).PoolStarter,
   },
 ];

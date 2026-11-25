@@ -15,6 +15,7 @@ export { QUEUE_DATATYPE_ID, TASKS_STORAGE_ID } from './task-client.js';
 export const QUEUE_TOOL_ID = 'task-queue-next-browser';
 export const TITLEBAR_TOOL_ID = 'task-titlebar-next';
 export const TRAY_COMPONENT_ID = 'task-tray-next';
+export const POOL_COMPONENT_ID = 'task-pool-next';
 
 /**
  * Where, in this package as it is published, the task it brings along is

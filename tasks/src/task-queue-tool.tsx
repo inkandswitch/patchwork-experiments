@@ -17,10 +17,13 @@ import type { Acceptance } from './acceptance';
 import { useDoc, useHandle, useHandleDoc, useRepo, WithTasksRepo } from './use-doc';
 import { AcceptanceChoice, JobsSection } from './jobs-view';
 import { readBrowserPoolId } from './browser/pool-id';
+import { NOT_STARTED, watchPoolHost, type PoolHostStatus } from './browser/pool-host';
+import { poolWords } from './pool-words';
 
 // A queue, as a person sees it: what it lists, how each task stands, which
-// pools are heard serving it (this browser's marked), whether this
-// person's browsers serve it, and whether it is their own queue.
+// pools are heard serving it (this browser's marked), what this browser's
+// pool is doing in this page and why, whether this person's browsers serve
+// it, and whether it is their own queue.
 //
 // The site hands this tool a handle from its own Repo. Only the url is used:
 // everything here goes through this tab's tasks Repo instead (see
@@ -113,7 +116,11 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
   const membership = useMembership(props.handle.url, props.hostRepo, props.element);
   const [pools, setPools] = createSignal<Serving[]>([]);
   onCleanup(served(repo, props.handle.url, setPools));
-  const mine = readBrowserPoolId();
+  // What this browser's pool is doing in this page, and its id: read again
+  // as that changes, since the id is made when a pool first starts.
+  const [here, setHere] = createSignal<PoolHostStatus>(NOT_STARTED);
+  onCleanup(watchPoolHost(setHere));
+  const mine = () => here().id ?? readBrowserPoolId();
 
   return (
     <div class="tq">
@@ -145,7 +152,7 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
                 {(pool) => (
                   <li class="tq-run-line">
                     {pool.name || pool.pool.slice(0, 8)}
-                    <Show when={pool.pool === mine}>
+                    <Show when={pool.pool === mine()}>
                       <span class="tq-tag">this browser</span>
                     </Show>
                     <span class="tq-muted">
@@ -156,6 +163,9 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
               </For>
             </ul>
           </Show>
+          <p class="tq-choice-note tq-pool-here" data-pool-state={here().state}>
+            {poolWords(here()).long}
+          </p>
         </section>
 
         <Show when={membership.problem()}>
@@ -191,7 +201,7 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
           </Show>
         </Show>
 
-        <JobsSection handle={props.handle} queue={queue()} pools={pools()} mine={mine} />
+        <JobsSection handle={props.handle} queue={queue()} pools={pools()} mine={mine()} />
       </div>
     </div>
   );

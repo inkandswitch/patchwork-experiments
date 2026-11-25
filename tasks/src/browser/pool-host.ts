@@ -1,9 +1,18 @@
-// The page's side of this browser's pool. Every tab runs one pool host; the
-// one whose host holds the Web Lock `patchwork-tasks-pool` runs the pool, in
-// a dedicated worker of its own (pool-worker.ts), and the rest wait in line
-// for the lock. A browser profile therefore has one pool at a time, and when
-// the tab running it closes or reloads the lock passes to a waiting tab at
-// once.
+// The page's side of this browser's pool. A page has one pool host, made
+// the first time something starts it (the frame's background component,
+// pool-starter.ts) and kept while anything holds it. Of the pages holding
+// theirs, the one whose host holds the Web Lock `patchwork-tasks-pool` runs
+// the pool, in a dedicated worker of its own (pool-worker.ts), and the rest
+// wait in line for the lock. A browser profile therefore has one pool at a
+// time, and when the tab running it closes or reloads the lock passes to a
+// waiting tab at once.
+//
+// - Holding is what asks for the lock. When the last hold in a page is let
+//   go (the frame that mounted the component is gone), its pool takes
+//   nothing new, lets the runs going on end, and then lets go of the lock;
+//   until something holds it again the page has no part in the pool.
+// - Views (the badge, the queue browser) only watch (`watchPoolHost`): a
+//   page where nothing has started a pool host says so, and starts none.
 //
 // - The pool's id is this profile's (pool-id.ts), so the next tab's pool owns
 //   the runs the last one started and records those it lost.
@@ -72,13 +81,23 @@ const RETRY_MS = 60_000;
 const UNANSWERED_MS = 3 * LAPSE_MS;
 
 /**
+ * - `not started`: nothing in this page has started the pool host, or nothing holds it any more.
  * - `waiting`: another tab of this browser runs its pool; this one takes over when that one goes.
  * - `starting`, `running`: this tab runs the pool.
+ * - `letting go`: nothing in this page holds the pool any more; it takes nothing new and finishes what it has.
  * - `handing over`: a newer build is in another tab; this one's pool takes nothing new and finishes what it has.
  * - `stood down`: it has handed over, and runs nothing from now on.
- * - `unavailable`: there is no pool here (`problem` says why).
+ * - `unavailable`: there is no pool here (`problem` says why; `retryAt`, when it tries again, if it will).
  */
-export type PoolHostState = 'waiting' | 'starting' | 'running' | 'handing over' | 'stood down' | 'unavailable';
+export type PoolHostState =
+  | 'not started'
+  | 'waiting'
+  | 'starting'
+  | 'running'
+  | 'letting go'
+  | 'handing over'
+  | 'stood down'
+  | 'unavailable';
 
 export interface PoolHostStatus {
   state: PoolHostState;
@@ -89,29 +108,81 @@ export interface PoolHostStatus {
   id: string | null;
   name: string | null;
   problem?: string;
+  /** When an unavailable pool tries again (ms since the epoch); absent when it will not. */
+  retryAt?: number;
 }
+
+/** What a page where nothing has started a pool host is. */
+export const NOT_STARTED: PoolHostStatus = { state: 'not started', busy: 0, slots: SLOTS, id: null, name: null };
 
 export interface PoolHost {
   status(): PoolHostStatus;
   /** Calls `listener` whenever the status changes. Returns how to stop. */
   subscribe(listener: (status: PoolHostStatus) => void): () => void;
+  /** Keeps this page in the pool until the returned function is called. */
+  hold(): () => void;
 }
 
 /**
- * The page's pool host, started the first time it is asked for: one per page
- * and build, however many tools ask. A newer build loaded into the same page
- * starts its own, and this one stands down for it as for any other tab.
- * `hostRepo` is the site's Repo, which the account document comes from.
+ * Starts the page's pool host and holds it: one host per page and build,
+ * however many things start it, kept in the pool while any of them holds it.
+ * A newer build loaded into the same page starts its own, and this one
+ * stands down for it as for any other tab. `hostRepo` is the site's Repo,
+ * which the account document comes from. Returns how to let go, once.
  */
-export function startPoolHost(hostRepo: Repo | undefined): PoolHost {
-  const tab = window as any;
-  tab.patchworkTasks ??= {};
-  tab.patchworkTasks.poolHosts ??= {};
-  const host: BrowserPoolHost = (tab.patchworkTasks.poolHosts[BUILD] ??= new BrowserPoolHost());
+export function startPoolHost(hostRepo: Repo | undefined): () => void {
+  const hosts = pageHosts();
+  let host = hosts.poolHosts[BUILD] as BrowserPoolHost | undefined;
+  if (!host) {
+    host = hosts.poolHosts[BUILD] = new BrowserPoolHost();
+    hosts.hostsChanged.dispatchEvent(new Event('change'));
+  }
   if (hostRepo) {
     host.followAccount(hostRepo);
   }
-  return host;
+  return host.hold();
+}
+
+/**
+ * Calls `listener` with the status of this page's pool host now and whenever
+ * it changes, starting nothing: `NOT_STARTED` while there is none. Of hosts
+ * of two builds in one page, the newer's, which is the one that can run the
+ * pool. Returns how to stop.
+ */
+export function watchPoolHost(listener: (status: PoolHostStatus) => void): () => void {
+  const hosts = pageHosts();
+  let watched: PoolHost | null | undefined; // null: none, once looked
+  let unsubscribe = () => {};
+  const look = () => {
+    const builds = Object.keys(hosts.poolHosts).map(Number).sort((a, b) => b - a);
+    const newest: PoolHost | null = builds.length ? hosts.poolHosts[builds[0]] : null;
+    if (newest === watched) {
+      return;
+    }
+    unsubscribe();
+    watched = newest;
+    unsubscribe = newest ? newest.subscribe(listener) : () => {};
+    listener(newest ? newest.status() : NOT_STARTED);
+  };
+  hosts.hostsChanged.addEventListener('change', look);
+  look();
+  return () => {
+    hosts.hostsChanged.removeEventListener('change', look);
+    unsubscribe();
+  };
+}
+
+/**
+ * Where a page keeps its pool hosts, by build, on the window, so that two
+ * copies of this module (two builds of the package in one page) find each
+ * other's, and `hostsChanged`, which says a host has been made.
+ */
+function pageHosts(): { poolHosts: Record<number, PoolHost>; hostsChanged: EventTarget } {
+  const tab = window as any;
+  tab.patchworkTasks ??= {};
+  tab.patchworkTasks.poolHosts ??= {};
+  tab.patchworkTasks.hostsChanged ??= new EventTarget();
+  return tab.patchworkTasks;
 }
 
 interface Held {
@@ -121,10 +192,12 @@ interface Held {
 }
 
 class BrowserPoolHost implements PoolHost {
-  private current: PoolHostStatus = { state: 'waiting', busy: 0, slots: SLOTS, id: null, name: null };
+  private current: PoolHostStatus = NOT_STARTED;
   private readonly listeners = new Set<(status: PoolHostStatus) => void>();
   private queues: ServedQueues = {};
   private following = false;
+  /** How many things in this page hold it now: only a held host asks for the lock. */
+  private holds = 0;
   private asking: AbortController | null = null;
   private held: Held | null = null;
   /** Between `pagehide` and `pageshow`, or `freeze` and `resume`. */
@@ -158,7 +231,7 @@ class BrowserPoolHost implements PoolHost {
       this.asking = null;
       if (this.held) {
         this.held.end();
-        this.set({ state: this.standing ? 'stood down' : 'waiting', busy: 0 });
+        this.set({ state: this.idle(), busy: 0 });
       }
     };
     const back = () => {
@@ -171,7 +244,50 @@ class BrowserPoolHost implements PoolHost {
     document.addEventListener('freeze', away);
     window.addEventListener('pageshow', back);
     document.addEventListener('resume', back);
+  }
+
+  hold() {
+    this.holds += 1;
+    if (this.current.state === 'not started') {
+      this.set({ state: 'waiting' });
+    }
     this.ask();
+    let held = true;
+    return () => {
+      if (!held) {
+        return;
+      }
+      held = false;
+      this.holds -= 1;
+      if (this.holds === 0) {
+        this.letGo();
+      }
+    };
+  }
+
+  /** What this host is when it is not running the pool. */
+  private idle(): PoolHostState {
+    return this.standing ? 'stood down' : this.holds > 0 ? 'waiting' : 'not started';
+  }
+
+  /**
+   * Nothing in this page holds the pool any more. A pool running here takes
+   * nothing new and lets the lock go once its runs have ended, as when
+   * handing over to a newer build; one asked for is no longer asked for.
+   */
+  private letGo() {
+    clearTimeout(this.retry);
+    this.asking?.abort();
+    this.asking = null;
+    if (this.standing) {
+      return;
+    }
+    if (this.held) {
+      this.tell({ type: 'stop', drain: true });
+      this.set({ state: 'letting go' });
+    } else {
+      this.set({ state: 'not started', busy: 0, problem: undefined, retryAt: undefined });
+    }
   }
 
   status() {
@@ -290,9 +406,9 @@ class BrowserPoolHost implements PoolHost {
     this.held?.worker.postMessage(message);
   }
 
-  /** Asks for the lock, unless this page has it, is asking, is hidden or has stood down. */
+  /** Asks for the lock, unless nothing holds this host, or this page has the lock, is asking, is hidden or has stood down. */
   private ask() {
-    if (this.standing || this.hidden || this.asking || this.held) {
+    if (this.holds === 0 || this.standing || this.hidden || this.asking || this.held) {
       return;
     }
     if (!navigator.locks) {
@@ -306,7 +422,7 @@ class BrowserPoolHost implements PoolHost {
         if (this.asking === asking) {
           this.asking = null;
         }
-        return this.hold();
+        return this.run();
       })
       .catch((error) => {
         if (this.asking === asking) {
@@ -319,8 +435,8 @@ class BrowserPoolHost implements PoolHost {
   }
 
   /** Runs the pool while this page holds the lock: the lock is let go when the promise settles. */
-  private hold(): Promise<void> {
-    if (this.standing || this.hidden) {
+  private run(): Promise<void> {
+    if (this.holds === 0 || this.standing || this.hidden) {
       return Promise.resolve();
     }
     return new Promise<void>((release) => {
@@ -348,15 +464,20 @@ class BrowserPoolHost implements PoolHost {
         },
       };
       this.held = held;
-      this.set({ state: 'starting', id, name, busy: 0, problem: undefined });
+      this.set({ state: 'starting', id, name, busy: 0, problem: undefined, retryAt: undefined });
 
       const failed = (problem: string) => {
         console.error(`tasks: this browser's pool stopped: ${problem}`);
         held.end();
-        this.set({ state: 'unavailable', busy: 0, problem });
+        if (this.holds === 0) {
+          // it was being let go: there is nothing to try again for
+          this.set({ state: this.idle(), busy: 0 });
+          return;
+        }
+        this.set({ state: 'unavailable', busy: 0, problem, retryAt: Date.now() + RETRY_MS });
         clearTimeout(this.retry);
         this.retry = setTimeout(() => {
-          this.set({ state: 'waiting', problem: undefined });
+          this.set({ state: this.idle(), problem: undefined, retryAt: undefined });
           this.ask();
         }, RETRY_MS);
       };
@@ -375,7 +496,7 @@ class BrowserPoolHost implements PoolHost {
           case 'ready':
             ready = true;
             unansweredSince = null;
-            if (!this.standing) {
+            if (!this.standing && this.holds > 0) {
               this.set({ state: 'running' });
             }
             break;
@@ -385,7 +506,7 @@ class BrowserPoolHost implements PoolHost {
             break;
           case 'stopped':
             held.end();
-            this.set({ state: this.standing ? 'stood down' : 'waiting', busy: 0 });
+            this.set({ state: this.idle(), busy: 0 });
             this.ask();
             break;
           case 'failed':
