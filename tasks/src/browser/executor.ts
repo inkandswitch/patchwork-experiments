@@ -9,9 +9,24 @@
 // when it is terminated. A worker that runs out of memory takes the whole tab
 // with it, pool included, so nothing here hears of that: the next pool of
 // this browser records the run lost.
+//
+// Each run worker keeps its documents in a database of its own, numbered
+// (`runDatabase`), and uses it only while it holds the Web Lock of the same
+// name (see getRepo in ../webworker-lib.ts): that is what keeps two live
+// workers off one database, whatever happens here. What happens here only
+// keeps a new worker from waiting. A worker takes the lowest number this
+// pool does not hold, and the number is held from the worker's start until
+// this pool has itself been granted that lock after the worker's `exit`,
+// which is when the worker has really ended: a terminated worker spinning in
+// a loop goes on for about 2 s, lock and open database with it. So there can
+// be a few more databases than slots, and a worker waits for its lock only
+// behind a worker of an earlier pool of this browser.
 
 import type { Executor, Job, RunWorker, StopReason, WorkerEvents } from '../pool';
 import type { FromRunWorker, RunWorkerSettings, ToRunWorker } from '../run-worker';
+
+/** The database, and the Web Lock, of run worker number `n`. */
+export const runDatabase = (n: number) => `patchwork-tasks-run-${n}`;
 
 export interface BrowserExecutorOptions {
   /** What every run worker is told before its first job: the sync server, and the page's import map. */
@@ -21,22 +36,22 @@ export interface BrowserExecutorOptions {
 }
 
 export class BrowserExecutor implements Executor {
-  private alive = 0;
+  /** The numbers of run workers that have not really ended, as far as this pool knows. */
+  private readonly held = new Set<number>();
 
   constructor(private readonly options: BrowserExecutorOptions) {}
 
-  /** How many run workers are alive: from start until `exit` is said. */
-  get workers() {
-    return this.alive;
-  }
-
   start(events: WorkerEvents): RunWorker {
     const { settings, taskBytes } = this.options;
+    let n = 0;
+    while (this.held.has(n)) {
+      n++;
+    }
+    this.held.add(n);
     const worker = new Worker(new URL('./run-worker-entry.ts', import.meta.url), {
       type: 'module',
       name: 'patchwork-task-run',
     });
-    this.alive++;
     let over = false;
     // Said after the current call returns, as a Node thread's 'exit' is: the
     // pool may be in the middle of ending this very worker.
@@ -45,7 +60,7 @@ export class BrowserExecutor implements Executor {
         return;
       }
       over = true;
-      this.alive--;
+      this.free(n);
       queueMicrotask(() => events.exit());
     };
     const tell = (message: ToRunWorker) => worker.postMessage(message);
@@ -86,7 +101,7 @@ export class BrowserExecutor implements Executor {
         events.log('something its worker said could not be read');
       }
     };
-    tell({ type: 'settings', settings });
+    tell({ type: 'settings', settings: { ...settings, place: { ...settings.place, database: runDatabase(n) } } });
 
     // A job goes with the task's document, which takes a moment to read. What
     // is said after it waits its turn, so that an abort never overtakes its job.
@@ -115,5 +130,18 @@ export class BrowserExecutor implements Executor {
         exit();
       },
     };
+  }
+
+  /**
+   * Lets number `n` go to a new worker once its last worker has really
+   * ended: once this pool is granted the lock that worker held for its life
+   * (or would have taken, had it got that far). Until then `n` stays held.
+   */
+  private free(n: number) {
+    navigator.locks
+      .request(runDatabase(n), { mode: 'exclusive' }, () => {
+        this.held.delete(n);
+      })
+      .catch((error) => console.error(`tasks: run worker ${n}'s number could not be freed`, error));
   }
 }

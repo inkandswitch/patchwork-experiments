@@ -9,12 +9,13 @@ import { onOrigin } from './import-url';
 // run worker itself is the same code in both.
 
 /**
- * What only a run worker in a Node process is told (see
- * node/webworker-lib.node.ts). A browser's keeps its documents in the tasks
- * database and has its code from the site, and ignores it.
+ * Where a run worker keeps its documents, and, in Node, where it finds code
+ * (see node/webworker-lib.node.ts). Each platform reads only its own fields.
  */
 export interface PlaceSettings {
-  /** Where its Repo keeps documents: a directory no other live Repo uses. */
+  /** In a browser: the IndexedDB database its Repo keeps documents in, which it uses only while it holds the Web Lock of the same name. */
+  database?: string;
+  /** In Node: where its Repo keeps documents, a directory no other live Repo uses. */
   storageDir?: string;
   /** Where code fetched from automerge is written (see node/package-files.ts). */
   codeDir?: string;
@@ -99,7 +100,35 @@ function resolveImportMap(importMap: any, baseURI: string) {
 
 /**
  * A Repo for this worker: an ordinary Subduction node with a socket of its
- * own to the sync server, keeping its documents in the tasks database.
+ * own to the sync server.
+ *
+ * The pool's worker (no `place.database`) keeps its documents in the tasks
+ * database and hears the other Repos of the family on the tasks heads
+ * channel, as the page's tasks Repo does (ids.ts).
+ *
+ * A run worker keeps its documents in a database of its own
+ * (`place.database`), as a Node run thread keeps a directory of its own. Its
+ * task's code may block this thread at any moment, and an IndexedDB
+ * transaction left open by a blocked thread holds up every other transaction
+ * on that database until the thread is ended: on the shared database that
+ * would hold up the page's stops and the pool's records, so a stop could not
+ * even be saved. On its own database it holds up only itself. The cost: what
+ * a task writes through `ctx.repo` reaches the page and the pool only by way
+ * of the sync server (its run's record does not: the pool writes that, from
+ * what the run worker says). The job carries the task's own document, so a
+ * run worker never needs the shared database.
+ *
+ * It uses that database only while it holds the Web Lock of the same name,
+ * which it keeps for its whole life. A browser passes a worker's locks on only
+ * once the worker has really ended, and a terminated worker spinning in a loop
+ * goes on for about 2 s; so a run worker never shares its database with one
+ * that is still going, whatever number the pool hands out.
+ *
+ * Nor does a run worker join the heads channel. What comes on it is news of
+ * saves to the shared database, which a Repo on another database cannot load,
+ * and what it would say there is news of saves the others cannot load either.
+ * The Repo takes the channel as optional, and without one says and hears
+ * nothing; a channel of its own would be the same with one more object.
  *
  * No `signer`, on purpose: the Repo makes itself a new identity each time. The
  * tabs on an origin all sign as one peer, and a worker that did the same would
@@ -107,9 +136,14 @@ function resolveImportMap(importMap: any, baseURI: string) {
  * same peer's other connections. As a peer of its own it is to the pool what
  * another machine would be.
  */
-export async function getRepo(config: RepoConfig, peerId: string, _place?: PlaceSettings) {
+export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSettings = {}) {
   if (!importMapReady) {
     throw new Error('Import map must be configured before creating a worker repo');
+  }
+
+  const { database } = place;
+  if (database) {
+    await holdForLife(database);
   }
 
   const { Repo, IndexedDBStorageAdapter, initializeWasm, initSubductionSync } =
@@ -125,16 +159,36 @@ export async function getRepo(config: RepoConfig, peerId: string, _place?: Place
   console.log('Automerge & Subduction WASM initialized');
 
   const repo: Repo = new Repo({
-    storage: new IndexedDBStorageAdapter(TASKS_DATABASE),
+    storage: new IndexedDBStorageAdapter(database ?? TASKS_DATABASE),
     peerId: peerId as any,
     subductionWebsocketEndpoints: [config.syncServerUrl],
-    headsChannel: TASKS_HEADS_CHANNEL,
+    ...(database ? {} : { headsChannel: TASKS_HEADS_CHANNEL }),
     enableRemoteHeadsGossiping: true,
   });
 
   (globalThis as any).repo = repo;
 
   return repo;
+}
+
+/**
+ * Resolves once this worker holds the Web Lock `name`, which it then keeps
+ * until it ends. A worker with no Web Locks gets no Repo: it could not know
+ * that its database is its own.
+ */
+function holdForLife(name: string): Promise<void> {
+  const locks = (self as unknown as { navigator?: Navigator }).navigator?.locks;
+  if (!locks) {
+    return Promise.reject(new Error('its worker has no Web Locks, so it cannot keep a database to itself'));
+  }
+  return new Promise<void>((granted, failed) => {
+    locks
+      .request(name, { mode: 'exclusive' }, () => {
+        granted();
+        return new Promise<never>(() => {});
+      })
+      .catch(failed);
+  });
 }
 
 async function getRepoModules() {

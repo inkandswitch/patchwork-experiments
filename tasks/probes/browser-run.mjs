@@ -3,8 +3,11 @@
 // loads the BUILT package from dist/, mounts its real titlebar tool (which
 // starts the page's pool host) and asks through the built task-client. Task
 // code comes from data: URLs and from a file served here; the queue accepts
-// any code. No sync server is reached: every Repo works from the profile's
-// shared database.
+// any code. No sync server is reached: the pages' Repos and the pool's work
+// from the profile's shared database, and each run worker's from a database
+// of its own. So what a task writes through ctx.repo, which reaches the page
+// only by the sync server, is not seen here (check 15 says so; real-run.mjs
+// checks it).
 //
 //   (in tasks/, after `pnpm build`)
 //   /Users/pvh/dev/pwx-one/tools/slot.sh chrome -- node probes/browser-run.mjs [--show]
@@ -55,6 +58,16 @@ const LOGS = dataUrl(
 );
 const THROWS = dataUrl("export default () => { throw new Error('thrown on purpose'); };");
 const SPIN = dataUrl("export default () => { for (;;) {} };");
+// Each of these marks its worker before it spins, so the harness can tell which run worker is the spinning one.
+const READS_WRITES_SPINS = dataUrl(
+  "export default async (input, ctx) => { const task = await ctx.repo.find(ctx.taskUrl); const doc = ctx.repo.create({ wrote: input.tag, runsSeen: task.doc().runs.length }); doc.change((d) => { d.changed = true; }); await ctx.repo.flush(); ctx.log('wrote ' + doc.url); globalThis.spinning = true; for (;;) {} };",
+);
+const FLUSHES_SPINS = dataUrl(
+  "export default (input, ctx) => { const doc = ctx.repo.create({ wrote: input.tag }); doc.change((d) => { d.changed = true; }); ctx.repo.flush(); globalThis.spinning = true; for (;;) {} };",
+);
+const WRITES = dataUrl(
+  "export default async (input, ctx) => { const doc = ctx.repo.create({ wrote: input.tag }); doc.change((d) => { d.changed = true; }); await ctx.repo.flush(); await new Promise((r) => setTimeout(r, input.ms)); return doc.url; };",
+);
 const SLEEP = `http://127.0.0.1:${PORT}/probe/tasks/sleep.js`;
 
 // ── what is served ──
@@ -185,6 +198,8 @@ const pending = new Map();
 /** Every attached dedicated worker, by session: its url, the session it hangs from, and when it went. */
 const workers = new Map();
 const workerLogs = [];
+/** What the pages logged as errors (check 16 looks for the pool host's). */
+const pageErrors = [];
 /** Why Chrome did not keep a page in its back/forward cache, by page session, when it said. */
 const notCached = new Map();
 ws.addEventListener("message", (ev) => {
@@ -205,6 +220,8 @@ ws.addEventListener("message", (ev) => {
   if (m.method === "Target.detachedFromTarget" && workers.has(m.params.sessionId)) {
     workers.get(m.params.sessionId).gone = Date.now();
   }
+  if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error" && !workers.has(m.sessionId))
+    pageErrors.push(m.params.args.map((a) => a.value ?? a.description).join(" ").slice(0, 300));
   if (DEBUG && m.method === "Runtime.consoleAPICalled" && !workers.has(m.sessionId))
     workerLogs.push(`page ${m.params.type}: ${m.params.args.map((a) => a.value ?? a.description).join(" ").slice(0, 300)}`);
   if (DEBUG && m.method === "Runtime.exceptionThrown" && !workers.has(m.sessionId)) workerLogs.push(`page exception: ${m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text}`);
@@ -242,6 +259,28 @@ const pageOf = (sessionId) => {
 /** The live workers of one tab whose script url matches. */
 const liveWorkers = (tab, pattern) =>
   [...workers.entries()].filter(([id, w]) => !w.gone && pattern.test(w.url) && pageOf(id) === tab.sessionId).map(([id]) => id);
+/**
+ * The live run workers of one tab whose task's code is spinning: those that
+ * say they are (the probe's spinning tasks set `globalThis.spinning`; DevTools
+ * can still evaluate in a spinning worker), or that do not answer at all.
+ */
+async function spinningRunWorkers(tab) {
+  const spinning = [];
+  for (const id of liveWorkers(tab, /run-worker-entry/)) {
+    const said = await Promise.race([
+      send("Runtime.evaluate", { expression: "globalThis.spinning === true", returnByValue: true }, id).then((r) => r.result?.value === true, () => false),
+      sleep(1_000).then(() => "silent"),
+    ]);
+    if (said === true || said === "silent") spinning.push(id);
+  }
+  return spinning;
+}
+/** Resolves once every worker in `ids` has gone, or at `until`. */
+const allGone = (ids, until) =>
+  new Promise((r) => {
+    const look = () => (ids.every((id) => workers.get(id).gone) || Date.now() > until ? r() : setTimeout(look, 50));
+    look();
+  });
 
 async function tab(label, path = "/probe/index.html") {
   const { targetId } = await send("Target.createTarget", { url: `${base}${path}`, background: false });
@@ -504,8 +543,9 @@ try {
 
   // 12. the holder frozen (as the browser freezes a background tab), not left:
   // it lets go, another tab of its build takes over, and on resuming it waits
+  let F;
   {
-    const F = await tab("F"); // the newer build, as D is, so that it does not stand down for D
+    F = await tab("F"); // the newer build, as D is, so that it does not stand down for D
     await F.js("probe.mount('/dist-newer')");
     await F.waitFor("probe.status()?.state === 'waiting'", 15_000);
     const key = await F.js(`probe.ask(${J(SLEEP)}, { ms: 4000, value: 'twelve' })`);
@@ -525,6 +565,145 @@ try {
       "12 the holding tab frozen mid-run: it lets go at once, the other tab's pool (same id) records the run lost and runs it again; resumed, it waits",
       took < 5_000 && last.state === "succeeded" && J(runsOf(last)) === J(["lost", "succeeded"]) && last.runs.every((run) => run.pool === poolId) && poolsWhileFrozen.D === 0 && poolsWhileFrozen.F === 1 && dBack === "waiting" && locks.held === 1 && locks.pending >= 1 && locks.workerHeld === 1,
       `F took the lock ${took} ms after the freeze; runs ${J(runsOf(last))}, ${last.state} ${J(last.result)}; pool workers while frozen D ${poolsWhileFrozen.D}, F ${poolsWhileFrozen.F}; D resumed reads ${J(dBack)}; locks ${J(locks)}`,
+    );
+  }
+
+  // 13 and 14. A task that has used ctx.repo spins, its worker's Repo
+  // perhaps in the middle of a write. Every run worker keeps its documents in
+  // a database of its own, so what its blocked thread holds open holds up
+  // nobody else: the page's stop is saved at once, the pool hears it and ends
+  // the worker GRACE_MS later (gone about 2 s after that), and the next task
+  // runs. (With every Repo on one database, the page's save of the stop
+  // waited on the spinning worker for over a minute.)
+  const spinThenCancel = async (importUrl, tag) => {
+    const key = await F.js(`probe.ask(${J(importUrl)}, ${J({ tag })})`);
+    await F.waitFor(stateIs(key, "running"), 20_000);
+    await sleep(500);
+    const spinning = await spinningRunWorkers(F);
+    const t0 = Date.now();
+    const saved = await F.js(`probe.cancel(${J(key)})`, 20_000).then(
+      () => Date.now() - t0,
+      (e) => `not in ${Date.now() - t0} ms (${e.message})`,
+    );
+    await F.waitFor(stateIs(key, "cancelled", "failed", "succeeded"), GRACE_MS + 10_000);
+    await allGone(spinning, t0 + GRACE_MS + 5_000);
+    const goneIn = spinning.map((id) => (workers.get(id).gone ? workers.get(id).gone - t0 : null));
+    const views = await F.js(`probe.views[${J(key)}]`);
+    const stopping = views.find((v) => v.state === "stopping");
+    const last = views.at(-1);
+    const run = last.runs.find((r) => r.pool);
+    const next = await F.js(`probe.timeRun(${J(NOOP)})`).catch((e) => ({ error: String(e.message ?? e) }));
+    const outcome = {
+      spinning: spinning.length,
+      saved,
+      stoppingIn: stopping ? stopping.t - t0 : null,
+      recordedIn: run?.end ? run.end - t0 : null,
+      goneIn,
+      states: await F.js(`probe.states(${J(key)})`),
+      run,
+      next,
+    };
+    outcome.ok =
+      spinning.length === 1 &&
+      typeof saved === "number" && saved <= 1_500 &&
+      outcome.stoppingIn !== null && outcome.stoppingIn <= 1_500 &&
+      last.state === "cancelled" && run?.status === "cancelled" &&
+      goneIn.every((ms) => ms !== null && ms <= GRACE_MS + 3_000) &&
+      next.result === 1;
+    outcome.line = `${spinning.length} run worker(s) spinning at the cancel; the stop saved ${typeof saved === "number" ? `${saved} ms` : saved} after asking; read stopping after ${outcome.stoppingIn} ms; states ${J(outcome.states)}; the run recorded ${run?.status} ${outcome.recordedIn} ms after the cancel; its worker gone after ${J(goneIn)} ms (bound ${GRACE_MS + 3_000}); next task ${next.result === 1 ? `ran in ${next.ms.toFixed(0)} ms` : J(next)}`;
+    return outcome;
+  };
+  {
+    const out = await spinThenCancel(READS_WRITES_SPINS, "thirteen");
+    const wrote = (out.run?.logs ?? []).find((line) => /^wrote automerge:/.test(line));
+    check(
+      "13 a task that read and wrote through ctx.repo (find, create, change, flush) and then spins: the stop is saved and heard at once, its worker is gone GRACE + 2 s later, the next task runs",
+      out.ok && !!wrote,
+      `its record says ${J(wrote ?? "(no 'wrote' line)")}; ${out.line}`,
+    );
+  }
+  {
+    const out = await spinThenCancel(FLUSHES_SPINS, "fourteen");
+    check(
+      "14 a task that changes a document, starts a flush and spins at once, never awaiting: the same",
+      out.ok,
+      out.line,
+    );
+  }
+
+  // 15. Two tasks at once, in two run workers, each writing a document of its
+  // own through ctx.repo. Shown: both run at once, each holding its own
+  // database's lock; each result and record reaches the page (the pool writes
+  // those); each document is stored in exactly one run worker's database, a
+  // different one for each, and not in the shared one. NOT shown: that the
+  // documents reach the page. They go by the sync server, and this harness
+  // has none (its Repos point at ws://127.0.0.1:9), so the page cannot have
+  // them here, and the check says that it does not. probes/real-run.mjs
+  // checks the documents arrive, against the real server.
+  {
+    const keys = [];
+    for (const tag of ["fifteen-a", "fifteen-b"]) keys.push(await F.js(`probe.ask(${J(WRITES)}, ${J({ tag, ms: 3_000 })})`));
+    await F.waitFor(keys.map((k) => stateIs(k, "running")).join(" && "), 20_000);
+    await sleep(1_000);
+    const during = (await F.js("probe.locks()")).runHeld;
+    for (const k of keys) await F.waitFor(stateIs(k, "succeeded", "failed", "cancelled"), 20_000);
+    const lasts = [];
+    for (const k of keys) lasts.push(await F.js(`probe.last(${J(k)})`));
+    const urls = lasts.map((l) => l.result);
+    const stored = [];
+    const pageHas = [];
+    for (const url of urls) {
+      const ok = typeof url === "string" && url.startsWith("automerge:");
+      stored.push(ok ? await F.js(`probe.storedIn(${J(url)})`) : null);
+      pageHas.push(ok ? await F.js(`probe.has(${J(url)}, 2000)`) : null);
+    }
+    const homes = stored.map((s) => s?.found ?? []);
+    check(
+      "15 two tasks at once in two run workers, each writing its own document: both run, each document is stored in its own worker's database only; results and records reach the page (documents reaching the page through the sync server: NOT exercised here)",
+      lasts.every((l) => l.state === "succeeded" && J(runsOf(l)) === J(["succeeded"])) &&
+        new Set(urls).size === 2 &&
+        during.length >= 2 &&
+        homes.every((h) => h.length === 1 && /^patchwork-tasks-run-\d+$/.test(h[0])) &&
+        homes[0][0] !== homes[1][0] &&
+        pageHas.every((has) => has === false),
+      `run locks held while both ran ${J(during)}; ${lasts.map((l, i) => `${l.state} ${J(runsOf(l))} → ${String(urls[i]).slice(0, 22)}… stored in ${J(homes[i])}`).join("; ")}; task databases ${J(stored[0]?.databases)}; the page's Repo has the documents: ${J(pageHas)} (expected false: no sync server here). That a document a task writes reaches the page is NOT shown by this harness; real-run.mjs checks it.`,
+    );
+  }
+
+  // 16. An error that escapes the pool's worker after it is ready is logged,
+  // and the pool goes on.
+  {
+    const [pool] = liveWorkers(F, /pool-worker/);
+    const from = await F.js("probe.statusLog.length");
+    const errorsFrom = pageErrors.length;
+    await send("Runtime.evaluate", { expression: "setTimeout(() => { throw new Error('thrown on purpose in the pool worker'); }, 0), true", returnByValue: true }, pool);
+    await sleep(3_000);
+    const states = await F.js(`probe.statusLog.slice(${from}).map((s) => s.state)`);
+    const logged = pageErrors.slice(errorsFrom).find((line) => /pool hit an error, and goes on.*thrown on purpose/.test(line));
+    const next = await F.js(`probe.timeRun(${J(NOOP)})`).catch((e) => ({ error: String(e.message ?? e) }));
+    const pools = liveWorkers(F, /pool-worker/);
+    check(
+      "16 an error escaping the pool's worker once it is ready is logged; the pool goes on",
+      !!logged && !states.includes("unavailable") && (await F.js("probe.status().state")) === "running" && J(pools) === J([pool]) && next.result === 1,
+      `the page logged ${J(logged ?? "(nothing)")}; states since ${J(states)}; the same pool worker ${J(pools) === J([pool]) ? "lives" : `is gone (${pools.length} now)`}; next task ${next.result === 1 ? `ran in ${next.ms.toFixed(0)} ms` : J(next)}`,
+    );
+  }
+
+  // 17. A pool's worker that has died says nothing; its page notices by its
+  // silence, ends it and lets the lock go, and the tab waiting takes over.
+  {
+    const [pool] = liveWorkers(F, /pool-worker/);
+    const t0 = Date.now();
+    await send("Runtime.evaluate", { expression: "setTimeout(() => self.close(), 0), true", returnByValue: true }, pool).catch(() => {});
+    const problem = await F.waitFor("probe.status()?.state === 'unavailable' && probe.status().problem", 45_000, 200);
+    const noticedIn = Date.now() - t0;
+    const taken = await D.waitFor("probe.status()?.state === 'running'", 15_000, 50);
+    const next = await D.js(`probe.timeRun(${J(NOOP)})`).catch((e) => ({ error: String(e.message ?? e) }));
+    const bound = 30_000 + 2 * 2_000 + 1_000;
+    check(
+      "17 a pool's worker that dies is noticed by its silence; the lock passes to the waiting tab, whose pool runs the next task",
+      /not answered/.test(problem || "") && noticedIn <= bound && !!taken && next.result === 1,
+      `F read ${J(problem)} ${noticedIn} ms after its pool's worker closed itself (bound ${bound}); D ${taken ? "runs the pool" : `reads ${J(await D.js("probe.status()"))}`}; next task ${next.result === 1 ? `ran in ${next.ms.toFixed(0)} ms` : J(next)}`,
     );
   }
 } catch (error) {

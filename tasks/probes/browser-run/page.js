@@ -2,14 +2,16 @@
 // would, makes this tab's tasks Repo, and offers the harness `window.probe`:
 // make the account and its queue, mount the real titlebar tool from the
 // built package, and ask, watch and stop tasks through the built task-client.
-import { Repo } from '@automerge/automerge-repo/slim';
+import { Repo, parseAutomergeUrl } from '@automerge/automerge-repo/slim';
 import { IndexedDBStorageAdapter } from '@automerge/automerge-repo-storage-indexeddb';
 import { initializeWasm } from '@automerge/automerge/slim';
-import { initSync } from '@automerge/automerge-subduction/slim';
+import { initSync, SedimentreeId } from '@automerge/automerge-subduction/slim';
 import * as client from '/vendor/task-client.js';
 
-// Nothing listens here: every Repo of the probe works from the shared
-// database alone, and no document leaves this machine.
+// Nothing listens here, and no document leaves this machine. This tab's Repo
+// and the pool's work from the shared database alone; each run worker's
+// Repo has a database of its own, so what a task writes through ctx.repo
+// never reaches this page here (see check 15).
 const SYNC = 'ws://127.0.0.1:9';
 
 const [automergeWasm, subductionWasm] = await Promise.all([
@@ -120,7 +122,46 @@ const probe = {
       // the one each pool's worker holds for its life (pool-worker.ts)
       workerHeld: count(held, 'patchwork-tasks-pool-worker'),
       workerPending: count(pending, 'patchwork-tasks-pool-worker'),
+      // the one each run worker holds for its life, named as its database (webworker-lib.ts)
+      runHeld: held.map((lock) => lock.name).filter((name) => /^patchwork-tasks-run-\d+$/.test(name)).sort(),
     };
+  },
+
+  /**
+   * Which of this origin's task databases have stored anything of the
+   * document `url`: the shared one, and each run worker's. Read straight
+   * from IndexedDB, by the key the Repo stores a document's id under (its
+   * sedimentree id, made as the Repo makes it), and never opening a
+   * database that does not exist (that would make it).
+   */
+  async storedIn(url) {
+    const id = parseAutomergeUrl(url).binaryDocumentId;
+    const padded = new Uint8Array(32);
+    padded.set(id.subarray(0, 32));
+    const sid = SedimentreeId.fromBytes(padded).toString();
+    const names = (await indexedDB.databases()).map((db) => db.name).filter((name) => /^patchwork-tasks(-run-\d+)?$/.test(name));
+    const found = [];
+    for (const name of names) {
+      const keys = await new Promise((resolve, reject) => {
+        const open = indexedDB.open(name);
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          if (!db.objectStoreNames.contains('documents')) return resolve((db.close(), []));
+          const request = db.transaction('documents').objectStore('documents').getAllKeys();
+          request.onsuccess = () => resolve((db.close(), request.result));
+          request.onerror = () => reject(request.error);
+        };
+      });
+      if (keys.some((key) => JSON.stringify(key).includes(sid))) found.push(name);
+    }
+    return { databases: names.sort(), found };
+  },
+
+  /** Whether this tab's Repo can get the document `url` within `ms`. */
+  async has(url, ms = 2000) {
+    const found = repo.find(url).then((handle) => !!handle.doc(), () => false);
+    return Promise.race([found, new Promise((resolve) => setTimeout(() => resolve(false), ms))]);
   },
 
   /** Asks and waits; how long from asking to the result, in ms. */
@@ -151,7 +192,7 @@ const probe = {
           logs: view.logs.map((line) => line.message),
           error: view.error,
           result: view.result,
-          runs: view.runs.map((run) => ({ pool: run.pool ?? null, status: run.status ?? null, start: run.start, logs: (run.logs ?? []).map((l) => l.message) })),
+          runs: view.runs.map((run) => ({ pool: run.pool ?? null, status: run.status ?? null, start: run.start, end: run.end ?? null, logs: (run.logs ?? []).map((l) => l.message) })),
         }),
       { keep: true, from },
     );
