@@ -8,7 +8,7 @@
 // it, as an `ephemeral-message` on the handle.
 
 import * as A from '@automerge/automerge';
-import { initSubduction, Repo, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
+import { generateAutomergeUrl, initSubduction, Repo, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LOCAL_MESSAGES_CHANNEL,
@@ -213,6 +213,31 @@ describe('ask', () => {
     }
   });
 
+  it('asking under a key whose task cannot be found (nobody could run it either) lists a new task over it', async () => {
+    const { repo, queue } = world();
+    const nowhere = generateAutomergeUrl();
+    queue.change((doc) => listTask(doc, 'k', { taskUrl: nowhere, askedAt: 0, package: null }));
+    const asking = ask(repo, queue.url, { importUrl: CODE, input: 3, key: 'k' });
+    await settle();
+    const got = await asking;
+    expect(got.taskUrl).not.toBe(nowhere);
+    expect(entryOf(queue, 'k').taskUrl).toBe(got.taskUrl);
+    expect((await repo.find<Task>(got.taskUrl as AutomergeUrl)).doc()!.input).toBe(3);
+    // and the next ask under the key is asking for that task
+    expect((await ask(repo, queue.url, { importUrl: CODE, key: 'k' })).taskUrl).toBe(got.taskUrl);
+  });
+
+  it.fails("RULE HOLE: asking or cancelling under a key whose task's runs hold null rejects, every time, so the key is stuck", async () => {
+    // isTask is true for { importUrl, runs: [null] }, and isWanted then reads
+    // `.status` of null; see the RULE HOLE in rules.test.ts. Nobody can ask
+    // under the key again, cancel it, or (the pool's mayDelist throws in its
+    // guard) let its entry go.
+    const { repo, queue } = world();
+    listed(repo, queue, 'k', [null as unknown as Task['runs'][number]]);
+    const outcomes = await Promise.allSettled([ask(repo, queue.url, { importUrl: CODE, key: 'k' }), cancel(repo, queue.url, 'k')]);
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(['fulfilled', 'fulfilled']);
+  });
+
   it('without a key, each ask gets a key and a task of its own', async () => {
     const { repo, queue } = world();
     const one = await ask(repo, queue.url, { importUrl: CODE, input: 1 });
@@ -332,6 +357,22 @@ describe('cancel', () => {
       expect(notATask.doc()).toEqual(doc);
       expect(entryOf(queue, 'k')).toBeUndefined();
     }
+  });
+
+  it('on a key whose task cannot be found: removes the entry, makes and writes no task, and is false', async () => {
+    const { repo, queue } = world();
+    const nowhere = generateAutomergeUrl();
+    queue.change((doc) => listTask(doc, 'k', { taskUrl: nowhere, askedAt: 0, package: null }));
+    const other = listed(repo, queue, 'other');
+    const otherHeads = other.heads();
+    const create = vi.spyOn(repo, 'create');
+    const cancelling = cancel(repo, queue.url, 'k');
+    await settle();
+    expect(await cancelling).toBe(false);
+    expect(entryOf(queue, 'k')).toBeUndefined();
+    expect(entryOf(queue, 'other').taskUrl).toBe(other.url);
+    expect(other.heads()).toEqual(otherHeads);
+    expect(create).not.toHaveBeenCalled();
   });
 
   it('cancelling twice: true, then false; one stop is recorded', async () => {
@@ -569,6 +610,31 @@ describe('watch', () => {
     beat(task, 'r1', { logs: [line('b')] });
     expect(watcher.last).toMatchObject({ progress: 1, logs: [line('a'), line('b')] });
     watcher.stop();
+  });
+
+  it('on a task document whose runs are malformed (missing, null, a map, a number, a string): reports a view and does not throw; it reads waiting with no runs, a beat changes nothing, and with keep it is never listed again', async () => {
+    const malformed: [string, Record<string, unknown>][] = [
+      ['missing', { importUrl: CODE, input: 1, key: 'k' }],
+      ['null', { importUrl: CODE, input: 1, key: 'k', runs: null }],
+      ['a map', { importUrl: CODE, input: 1, key: 'k', runs: { r: { id: 'r', pool: 'P', start: 0 } } }],
+      ['a number', { importUrl: CODE, input: 1, key: 'k', runs: 5 }],
+      ['a string', { importUrl: CODE, input: 1, key: 'k', runs: 'r' }],
+    ];
+    for (const [name, doc] of malformed) {
+      const { repo, queue } = world();
+      const task = listed(repo, queue, 'k', [], doc);
+      const watcher = follow(repo, queue.url, 'k', { keep: true });
+      await settle();
+      expect(watcher.last, name).toMatchObject({ state: 'waiting', taskUrl: task.url, importUrl: CODE, input: 1, runs: [], logs: [], result: undefined, error: null });
+      beat(task, 'r', { progress: 0.5 });
+      await settle();
+      expect(watcher.last, name).toMatchObject({ state: 'waiting', runs: [], progress: null });
+      queue.change((it) => delistTask(it, 'k', task.url));
+      await vi.advanceTimersByTimeAsync(LAPSE_MS * 3);
+      expect(entryOf(queue, 'k'), name).toBeUndefined();
+      expect(watcher.states(), name).not.toContain('missing');
+      watcher.stop();
+    }
   });
 
   it('a message that is not a well-formed beat changes nothing and breaks nothing', async () => {

@@ -1170,6 +1170,54 @@ describe('the pool', () => {
     expect(taskResult(task.doc())).toBe('A after all');
   });
 
+  it('a run that sees a later success and a stop together yields, whatever their order: its pool records yielded, and the ending stays the success', async () => {
+    for (const order of [['success', 'stop'], ['stop', 'success']]) {
+      w = world();
+      const task = w.ask('k');
+      const { executor } = w.pool('A');
+      await settle();
+      const mine = lastRun(task).id;
+      const worker = executor.of(mine);
+      // both reach A's pool in one change, so it decides on a list that has them both
+      task.change((doc) => {
+        for (const what of order) {
+          if (what === 'stop') {
+            stopTask(doc, { id: 'stop', at: w.clock.now() });
+          } else {
+            claimRun(doc, { id: 'theirs', pool: 'Z', start: 1 });
+            endRun(doc, 'theirs', { status: 'succeeded', result: 'theirs', end: 2 });
+          }
+        }
+      });
+      await settle();
+      expect(worker.aborts.map((it) => it.reason), order.join()).toEqual(['yielded']);
+      // its code returns all the same: the reason is what is recorded
+      worker.events.done('mine');
+      await settle();
+      expect(runById(task, mine).status, order.join()).toBe('yielded');
+      expect(runById(task, mine).result, order.join()).toBeNull();
+      expect(taskState(task.doc(), allHeard), order.join()).toBe('succeeded');
+      expect(taskResult(task.doc()), order.join()).toBe('theirs');
+    }
+  });
+
+  it('a task document whose runs are malformed (null, a map, a number, a string) is not taken, not written, and keeps nobody from the next task', async () => {
+    for (const runs of [null, {}, 5, 'r']) {
+      w = world();
+      const broken = w.repo.create<any>({ importUrl: CODE, input: null, key: 'broken', runs });
+      w.queue.change((doc) => listTask(doc, 'broken', { taskUrl: broken.url, askedAt: 0, package: null }));
+      const heads = broken.heads();
+      const good = w.ask('good');
+      const { pool } = w.pool('A');
+      await settle();
+      await w.clock.advance(LAPSE_MS);
+      expect(broken.heads(), JSON.stringify(runs)).toEqual(heads);
+      expect(listed(w.queue, 'broken'), JSON.stringify(runs)).toBe(broken.url);
+      expect(statuses(good), JSON.stringify(runs)).toEqual(['open']);
+      expect(pool.busy, JSON.stringify(runs)).toBe(1);
+    }
+  });
+
   it('a third loss recorded after a healthy earlier run does not stop it: a reader that hears it reads running, never failed, and then succeeded', async () => {
     const lost = (id: string, start: number): Run => ({ id, pool: 'X', start, end: start, status: 'lost', result: null, logs: [] });
     const task = w.ask('k', { runs: [lost('l1', 0), lost('l2', 1)] });
