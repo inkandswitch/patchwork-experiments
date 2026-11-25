@@ -1,8 +1,12 @@
 // The run worker's side of a job, with its port and its platform faked: every
 // way a job can end says exactly one `done` or `threw`, after what the code
-// wrote is saved, and nothing the code says after that reaches the pool.
+// wrote is saved and the sync server has acknowledged it, and nothing the code
+// says after that reaches the pool. The fake Repo has the members of the real
+// ones that the run worker uses (`handles`, the 'subduction-remote-heads'
+// event with its real shape, `connectedSubductionPeerIds`,
+// `resyncSubduction`), and a private field, as the real Repo's methods have.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FromRunWorker, ToRunWorker } from './run-worker';
 import type { Job } from './pool';
 
@@ -14,6 +18,107 @@ let flushFails: boolean;
 let repoFails: boolean;
 let imported: { docId: string; bytes: Uint8Array }[];
 let calls: string[];
+/** How the next Repo is made: whether it records every use, offers the server's reports, and which peers it is connected to. */
+let made: { recorded: boolean; event: boolean; connected: string[] };
+let theRepo: FakeRepo;
+/** What `flush` does once it has saved (the same-tick case schedules a marker). */
+let afterFlush: () => void;
+
+const SERVER = 'server-peer';
+
+class FakeHandle {
+  #n = 1;
+  constructor(
+    readonly documentId: string,
+    public value: unknown = {},
+    private headsNow: string[] = [`${documentId}@1`],
+  ) {}
+  get url() {
+    return `automerge:${this.documentId}`;
+  }
+  heads() {
+    return this.headsNow;
+  }
+  doc() {
+    return this.value;
+  }
+  change() {
+    this.headsNow = [`${this.documentId}@${++this.#n}`];
+  }
+}
+
+class FakeRepo {
+  /** Read by its methods, so that one called with any other `this` throws. */
+  #own = 'the real Repo';
+  byId: Record<string, FakeHandle> = {};
+  listeners = new Map<string, Set<(event: any) => void>>();
+  resynced: string[] = [];
+  peersAsked = 0;
+  /** Each find answers with the next of these: a handle, or a rejection; the last repeats. */
+  answers: (FakeHandle | Error)[] = [new Error('Document is unavailable')];
+  finds = 0;
+  declare on?: (name: string, listener: (event: any) => void) => void;
+  declare off?: (name: string, listener: (event: any) => void) => void;
+  declare connectedSubductionPeerIds?: () => Promise<string[]>;
+  declare resyncSubduction?: (documentId: string) => void;
+
+  constructor(event: boolean, connected: string[]) {
+    if (event) {
+      this.on = (name, listener) => {
+        if (!this.listeners.has(name)) {
+          this.listeners.set(name, new Set());
+        }
+        this.listeners.get(name)!.add(listener);
+      };
+      this.off = (name, listener) => void this.listeners.get(name)?.delete(listener);
+      this.connectedSubductionPeerIds = async () => {
+        this.peersAsked++;
+        return connected;
+      };
+      this.resyncSubduction = (documentId) => void this.resynced.push(documentId);
+    }
+  }
+  get handles() {
+    return { ...this.byId };
+  }
+  import(bytes: Uint8Array, args: { docId: string }) {
+    imported.push({ docId: args.docId, bytes });
+    this.byId[args.docId] = new FakeHandle(args.docId);
+  }
+  async flush() {
+    events.push('flush');
+    if (flushFails) {
+      throw new Error('disk full');
+    }
+    afterFlush();
+  }
+  create(value: unknown = {}) {
+    const id = `doc${Object.keys(this.byId).length + 1}`;
+    return (this.byId[id] = new FakeHandle(id, value));
+  }
+  async find(url: string) {
+    this.finds++;
+    const answer = this.answers[Math.min(this.finds, this.answers.length) - 1];
+    if (answer instanceof Error) {
+      throw answer;
+    }
+    return answer;
+  }
+  /** A method that needs `this` to be the Repo itself. */
+  whoAmI() {
+    return { own: this.#own, self: this };
+  }
+  /** A method that finds through `this`, as the Repo's own workings do. */
+  findInside(url: string) {
+    return this.find(url);
+  }
+  /** What the sync server says: the real event's shape. */
+  report(handle: FakeHandle, storageId = SERVER) {
+    for (const listener of this.listeners.get('subduction-remote-heads') ?? []) {
+      listener({ documentId: handle.documentId, storageId, heads: [...handle.heads()], timestamp: Date.now() });
+    }
+  }
+}
 
 vi.mock('./webworker-lib', () => ({
   setUpImportMap: async () => {},
@@ -21,26 +126,19 @@ vi.mock('./webworker-lib', () => ({
     if (repoFails) {
       throw new Error('no repo here');
     }
-    // A Repo that records every use: the run worker may import the task and flush, nothing else.
-    return new Proxy(
-      {
-        import: (bytes: Uint8Array, args: { docId: string }) => {
-          imported.push({ docId: args.docId, bytes });
-        },
-        flush: async () => {
-          events.push('flush');
-          if (flushFails) {
-            throw new Error('disk full');
-          }
-        },
+    theRepo = new FakeRepo(made.event, made.connected);
+    if (!made.recorded) {
+      return theRepo;
+    }
+    // Records every use: the run worker may look at what the Repo can say, import the task, flush, and read heads.
+    return new Proxy(theRepo, {
+      get(target, name) {
+        calls.push(String(name));
+        const value = Reflect.get(target, name, target);
+        // bound, so that the fake's own workings are not counted as uses
+        return typeof value === 'function' ? value.bind(target) : value;
       },
-      {
-        get(target, name) {
-          calls.push(String(name));
-          return (target as any)[name];
-        },
-      },
-    );
+    });
   },
   importModule: async (url: string) => {
     if (!(url in modules)) {
@@ -50,7 +148,7 @@ vi.mock('./webworker-lib', () => ({
   },
 }));
 
-const { serve } = await import('./run-worker');
+const { serve, REACH_LIMIT_MS, RESYNC_EVERY_MS, STAYS_HERE, notReached } = await import('./run-worker');
 
 const job = (importUrl: string): Job => ({
   taskUrl: 'automerge:2KYqboWHPS5rvWsheoLnHgFvE7ou' as Job['taskUrl'],
@@ -77,6 +175,7 @@ function start() {
 const settings: ToRunWorker = { type: 'settings', settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' } } };
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 const endings = () => said.filter((m) => m.type === 'done' || m.type === 'threw');
+const logs = () => said.filter((m) => m.type === 'log').map((m) => (m as { message: string }).message);
 
 beforeEach(() => {
   events = [];
@@ -86,6 +185,12 @@ beforeEach(() => {
   repoFails = false;
   imported = [];
   calls = [];
+  made = { recorded: false, event: true, connected: [SERVER] };
+  afterFlush = () => {};
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('a run worker', () => {
@@ -107,6 +212,7 @@ describe('a run worker', () => {
   });
 
   it('hands the code a Repo that has the task, and does nothing else to it', async () => {
+    made.recorded = true;
     modules.ok = { default: () => 1 };
     const tell = start();
     tell(settings);
@@ -114,8 +220,14 @@ describe('a run worker', () => {
     tell({ type: 'job', job: job('ok'), task: bytes });
     await settle();
     expect(imported).toEqual([{ docId: '2KYqboWHPS5rvWsheoLnHgFvE7ou', bytes }]);
-    // `then` is the promise machinery asking whether the Repo is itself a promise
-    expect(new Set(calls)).toEqual(new Set(['then', 'import', 'flush']));
+    // `then` is the promise machinery asking whether the Repo is itself a
+    // promise; `on` and the two methods beside it are looked at once, to hear
+    // the server's reports for the Repo's whole life; `handles` gives the
+    // heads before and after the code ran.
+    expect(new Set(calls)).toEqual(
+      new Set(['then', 'on', 'connectedSubductionPeerIds', 'resyncSubduction', 'import', 'handles', 'flush']),
+    );
+    expect(theRepo.peersAsked).toBe(0);
   });
 
   // Each way the code can fail ends in one `threw`, after a save, never in silence.
@@ -231,5 +343,299 @@ describe('a run worker', () => {
       { type: 'done', result: 'early' },
       { type: 'done', result: 'second' },
     ]);
+  });
+});
+
+describe('a run ends only once what it wrote has reached the sync server', () => {
+  /** Code that writes `count` new documents and returns their ids. */
+  const writes = (count: number) => ({
+    default: (_: unknown, ctx: any) => Array.from({ length: count }, () => ctx.repo.create({ x: 1 }).documentId),
+  });
+  const handle = (id: string) => theRepo.byId[id];
+
+  it('says done only after the server reports the heads of the document the code changed', async () => {
+    modules.w = writes(1);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    expect(endings()).toEqual([]);
+    theRepo.report(handle('doc1'));
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: ['doc1'] }]);
+    expect(logs()).toEqual([]);
+  });
+
+  it('of two changed documents, waits for both', async () => {
+    modules.w = writes(2);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    theRepo.report(handle('doc1'));
+    await settle();
+    expect(endings()).toEqual([]);
+    theRepo.report(handle('doc2'));
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: ['doc1', 'doc2'] }]);
+  });
+
+  it('counts a report that came before the code returned', async () => {
+    modules.w = {
+      default: (_: unknown, ctx: any) => {
+        const made = ctx.repo.create({});
+        theRepo.report(made);
+        return 'early report';
+      },
+    };
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'early report' }]);
+  });
+
+  it('waits for the latest heads when they change again while it waits', async () => {
+    modules.w = writes(1);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    // code that went on after returning changes it again, and then the
+    // server reports the heads from before that change
+    handle('doc1').change();
+    theRepo.report(new FakeHandle('doc1', {}, ['doc1@1']));
+    await settle();
+    expect(endings()).toEqual([]);
+    theRepo.report(handle('doc1'));
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: ['doc1'] }]);
+  });
+
+  it('does not count a report from a peer it is not connected to', async () => {
+    modules.w = writes(1);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    theRepo.report(handle('doc1'), 'a-peer-gossiped-about');
+    await settle();
+    expect(endings()).toEqual([]);
+    theRepo.report(handle('doc1'));
+    await settle();
+    expect(endings()).toHaveLength(1);
+  });
+
+  it('waits when the code threw, too', async () => {
+    modules.w = {
+      default: (_: unknown, ctx: any) => {
+        ctx.repo.create({ half: 'done' });
+        throw new Error('gave up');
+      },
+    };
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    expect(endings()).toEqual([]);
+    theRepo.report(handle('doc1'));
+    await settle();
+    expect(endings()).toEqual([{ type: 'threw', message: 'gave up' }]);
+  });
+
+  it('waits when the run was stopped, and then says how it ended', async () => {
+    // a solver writes "cancelled" into its run document when told to stop
+    modules.w = {
+      default: (_: unknown, ctx: any) => {
+        const run = ctx.repo.create({ status: 'running' });
+        return new Promise((resolve) =>
+          ctx.signal.addEventListener('abort', () => {
+            run.change();
+            resolve('stopped');
+          }),
+        );
+      },
+    };
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    theRepo.report(handle('doc1')); // the "running" heads reach the server
+    tell({ type: 'abort', reason: 'cancelled' });
+    await settle();
+    expect(endings()).toEqual([]);
+    theRepo.report(handle('doc1')); // and the "cancelled" heads
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'stopped' }]);
+  });
+
+  it('with no report, says so in the log and how it ended after REACH_LIMIT_MS, asking again every RESYNC_EVERY_MS', async () => {
+    vi.useFakeTimers();
+    modules.w = writes(2);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await vi.advanceTimersByTimeAsync(0);
+    theRepo.report(handle('doc2'));
+    await vi.advanceTimersByTimeAsync(RESYNC_EVERY_MS);
+    expect(theRepo.resynced).toEqual(['doc1']);
+    await vi.advanceTimersByTimeAsync(REACH_LIMIT_MS - RESYNC_EVERY_MS - 1);
+    expect(endings()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(theRepo.resynced).toEqual(['doc1', 'doc1']);
+    expect(logs()).toEqual([notReached(1, 2)]);
+    expect(endings()).toEqual([{ type: 'done', result: ['doc1', 'doc2'] }]);
+    expect(said.at(-2)).toEqual({ type: 'log', message: notReached(1, 2) });
+  });
+
+  it('when not connected to a server, waits for nothing and says once that it stays here', async () => {
+    made.connected = [];
+    modules.w = writes(3);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    expect(said).toEqual([
+      { type: 'log', message: STAYS_HERE },
+      { type: 'done', result: ['doc1', 'doc2', 'doc3'] },
+    ]);
+  });
+
+  it('when the Repo cannot say what the server holds, waits for nothing and says once that it stays here', async () => {
+    made.event = false;
+    modules.w = writes(2);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    expect(said).toEqual([
+      { type: 'log', message: STAYS_HERE },
+      { type: 'done', result: ['doc1', 'doc2'] },
+    ]);
+  });
+
+  it("does not wait for the task's own document", async () => {
+    modules.w = {
+      default: (_: unknown, ctx: any) => {
+        theRepo.byId['2KYqboWHPS5rvWsheoLnHgFvE7ou'].change();
+        return 'own only';
+      },
+    };
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w'), task: new Uint8Array([1]) });
+    await settle();
+    expect(said).toEqual([{ type: 'done', result: 'own only' }]);
+    expect(theRepo.peersAsked).toBe(0);
+  });
+
+  it('does not wait for a document that only changed before the code was called', async () => {
+    modules.w = writes(1);
+    modules.nothing = { default: () => 'idle' };
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('w') });
+    await settle();
+    theRepo.report(handle('doc1'));
+    await settle();
+    said = [];
+    tell({ type: 'job', job: { ...job('nothing'), runId: 'run-2' } });
+    await settle();
+    expect(said).toEqual([{ type: 'done', result: 'idle' }]);
+  });
+
+  it('a run that changes nothing says done in the same tick as its save, asking nothing of the server', async () => {
+    modules.ok = { default: () => 'nothing written' };
+    afterFlush = () => {
+      setTimeout(() => events.push('next tick'), 0);
+    };
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('ok') });
+    await settle();
+    expect(events).toEqual(['flush', 'done', 'next tick']);
+    expect(theRepo.peersAsked).toBe(0);
+  });
+});
+
+describe("the code's Repo", () => {
+  /** Runs `body(ctx.repo)` as a task's code and resolves to what it settled to. */
+  async function withCode(body: (repo: any) => Promise<unknown> | unknown) {
+    let settled: Promise<{ ok: unknown } | { error: unknown }> = Promise.resolve({ error: 'never ran' });
+    modules.code = {
+      default: (_: unknown, ctx: any) => {
+        settled = Promise.resolve()
+          .then(() => body(ctx.repo))
+          .then(
+            (ok) => ({ ok }),
+            (error) => ({ error }),
+          );
+        return null;
+      },
+    };
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('code') });
+    await vi.advanceTimersByTimeAsync(0);
+    return () => settled;
+  }
+
+  it('finds a document that arrives on the third asking', async () => {
+    vi.useFakeTimers();
+    const arrived = new FakeHandle('input', { content: 'here' });
+    const result = await withCode((repo) => {
+      theRepo.answers = [new Error('unavailable'), new Error('unavailable'), arrived];
+      return repo.find('automerge:input');
+    });
+    await vi.advanceTimersByTimeAsync(500 + 1000);
+    expect(await result()).toEqual({ ok: arrived });
+    expect(theRepo.finds).toBe(3);
+  });
+
+  it('rejects a document that never arrives after findWhenThere has tried for about half a minute', async () => {
+    vi.useFakeTimers();
+    let done = false;
+    const result = await withCode(async (repo) => {
+      try {
+        return await repo.find('automerge:never');
+      } finally {
+        done = true;
+      }
+    });
+    // 8 tries, waiting 0.5, 1, 2, 4, 8, 8 and 8 s between them
+    await vi.advanceTimersByTimeAsync(31_499);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await result()).toEqual({ error: new Error('Document is unavailable') });
+    expect(theRepo.finds).toBe(8);
+  });
+
+  it('passes every other member through to the Repo itself, whose own workings keep its own find', async () => {
+    vi.useFakeTimers();
+    const result = await withCode(async (repo) => {
+      const inside = await repo.findInside('automerge:x').then(
+        () => 'found',
+        (error: Error) => error.message,
+      );
+      return {
+        who: repo.whoAmI(),
+        isRepo: repo instanceof FakeRepo,
+        handles: Object.keys(repo.handles),
+        created: repo.create({ a: 1 }).documentId,
+        sameMethod: repo.whoAmI === repo.whoAmI,
+        inside,
+        findsByInside: theRepo.finds,
+      };
+    });
+    const { ok } = (await result()) as { ok: any };
+    expect(ok.who).toEqual({ own: 'the real Repo', self: theRepo });
+    expect(ok).toMatchObject({
+      isRepo: true,
+      handles: [],
+      created: 'doc1',
+      sameMethod: true,
+      inside: 'Document is unavailable',
+      findsByInside: 1,
+    });
   });
 });

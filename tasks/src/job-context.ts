@@ -26,13 +26,28 @@ export interface TaskContext {
    * code's worker is ended, whatever it is doing, so code that holds
    * something outside its worker (a child process, a lock on a file) lets go
    * of it when this aborts. What the code returns or throws after an abort
-   * is not counted.
+   * is not counted, but what it writes before returning (a run document's
+   * "cancelled") is sent to the sync server like any other write, within
+   * the same GRACE_MS.
    */
   signal: AbortSignal;
   /**
    * The worker's Repo, for a task whose work is on documents. It has the
    * task's document as the pool had it when it handed the run over, this
    * run included, without waiting for the network.
+   *
+   * One thing differs from the Repo itself: `find` waits for a document that
+   * has not arrived yet (asking again for about half a minute, as
+   * `findWhenThere` in task-client.js does) instead of rejecting at once,
+   * because what a task is handed was often made a moment before it was
+   * asked, elsewhere. Everything else is the Repo's own, and the Repo's own
+   * workings still use its own `find`.
+   *
+   * What the code changes through it reaches the sync server before the run
+   * is said to have ended: the run worker waits for the server to report
+   * every changed document's heads (half a minute at most, then the run's
+   * log says how many had not arrived). With no connection to a server, the
+   * log says that what the run wrote stays on this machine.
    */
   repo: Repo;
   /** The task's own document. */
