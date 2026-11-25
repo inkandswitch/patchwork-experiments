@@ -141,9 +141,16 @@ once they have made one (Make my queue).
 ## Serving a queue
 
 **In a browser.** Install the package through module settings (`pnpm build`, then `pnpm push` and
-`pnpm register`). Its titlebar tool, or the same thing as a system-tray component, starts the
-page's pool host; the one tab of the profile that holds the Web Lock `patchwork-tasks-pool` runs
-the pool, in a worker that runs tasks in run workers it can end, and the others wait to take over.
+`pnpm register`). A page takes part in its browser's pool through the package's component
+`task-pool-next` (`src/pool-starter.ts`), which draws nothing and is tagged `background`. A frame
+mounts every `patchwork:component` tagged `background` once, inside its providers (so such a
+component can ask for tool storage), with no chrome, for as long as the frame lives: the tiling
+frame and threepane both do, and name no package to do it. Mounted, the component starts the
+page's pool host (one per page, however many mount it); let go, the last one lets the pool go
+(it takes nothing new, its runs end, and the lock passes on). Of the tabs taking part, the one
+that holds the Web Lock `patchwork-tasks-pool` runs the pool, in a worker that runs tasks in run
+workers it can end, and the others wait to take over. A frame that mounts no background
+components takes no part: its pages run nothing, whatever they show.
 Which queues it serves is kept in the account's tool storage for this package
 (`account.toolStorage['tasks-next']`, a document Patchwork's frame makes the first time it is
 needed). Its root is the list: each served queue is a key of its own, the queue's url, holding
@@ -154,6 +161,21 @@ queue. `servedOf`, `ownQueueOf`, `setServed` and `ownQueue` in `src/task-client.
 knows this. To serve a queue, open it in the Task Queue Browser and press Join queue; there you
 also choose whose code it runs (any, or named packages) and Leave. With no queue, the titlebar
 offers Make my queue.
+
+What a person sees of it, each read from what is (this page's pool host, the storage document,
+the queue's document, what is heard on the queue's channel), and never starting anything:
+
+- **The badge** (a title bar tool, and the same as a `system-tray` component) shows, for each
+  served queue, how many tasks it lists and what this browser's pool is doing: running here
+  (with how many runs), served by another tab, finishing up (handing over to a newer build, or
+  let go), or not running here, with why in its tooltip (nothing in this frame has started it;
+  this browser cannot keep its tabs to one pool; the pool could not start, with what it said and
+  when it tries again). It opens the queue browser.
+- **The queue browser** (the Task Queue Browser tool) shows the pools heard serving the queue
+  (name, slots, busy; this browser's marked), a line saying what this browser's pool is doing in
+  this page and why, whether this person's browsers serve the queue, and each listed task: its
+  state (stalled, with since when this view has seen it so), its records (which pool took it,
+  when, how it went; a stop as a stop), its log, and a Stop while it has not ended.
 
 **On a machine.** `pnpm build:node`, then `node dist-node/host.mjs` with:
 
@@ -225,11 +247,15 @@ processes and say what they saw, one line per check or measurement:
   the asker reads succeeded (`term`). `probes/write-path/browser.mjs` (after `pnpm build`, in
   the chrome slot) measures `out`, `in` and `ack` for a browser's run worker.
 - `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
-  stand-in page in a throwaway Chrome profile, with no sync server, 19 checks. One pool per
-  profile across tabs; a closed, navigated, frozen or hidden holder tab; a newer build taking
-  over; cancel of spinning code, also code that read and wrote through `ctx.repo`; two run
-  workers at once; a run that wrote with no server to reach says so; a pool worker that errors
-  or dies; `served()` and the queue browser; Make my queue and Join.
+  stand-in page in a throwaway Chrome profile, with no sync server, 21 checks. The page mounts
+  what a frame does: the components the package tags `background`, found by tag in its plugin
+  list (the page has no registry), and the titlebar tool. One pool per profile across tabs; a
+  closed, navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning
+  code, also code that read and wrote through `ctx.repo`; two run workers at once; a run that
+  wrote with no server to reach says so; a pool worker that errors or dies; `served()` and the
+  queue browser; Make my queue and Join; with only the badge mounted no pool runs and the badge
+  and queue browser say why; the background component mounted later starts it, and let go lets
+  the lock go.
 - `probes/real-run.mjs`: the same in the real Patchwork, from a published copy of the package.
   It has not been run: it needs a published copy.
 - `probes/solve-task.mjs`: a task that runs a child process, used by `node-run.mjs`.

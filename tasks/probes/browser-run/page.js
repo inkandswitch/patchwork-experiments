@@ -1,8 +1,9 @@
 // The probe page's side (see index.html): starts automerge as the site
 // would, makes this tab's tasks Repo, stands in for the frame's tool-storage
 // provider, and offers the harness `window.probe`: make the account and a
-// queue, mount the real titlebar tool and queue browser from the built
-// package, and ask, watch and stop tasks through the built task-client.
+// queue, mount what a frame mounts from the built package (its background
+// components, the titlebar tool) and its queue browser, and ask, watch and
+// stop tasks through the built task-client.
 import { Repo, parseAutomergeUrl } from '@automerge/automerge-repo/slim';
 import { IndexedDBStorageAdapter } from '@automerge/automerge-repo-storage-indexeddb';
 import { initializeWasm } from '@automerge/automerge/slim';
@@ -74,6 +75,8 @@ document.addEventListener('patchwork:subscribe', (event) => {
 });
 
 const queueUrl = () => localStorage.getItem('probeQueue');
+/** What letting go of each background component mounted here is, as a frame would on unmounting it. */
+const backgrounds = [];
 const statusLog = [];
 const views = {};
 let queueView = null;
@@ -146,18 +149,52 @@ const probe = {
     return { pressed: !!button, served: client.servedOf(await probe.storage())[queueUrl()] ?? null };
   },
 
-  /** Mounts the built package's titlebar tool, as a frame would, with this Repo standing in for the site's. */
-  async mount(dist = '/dist') {
+  /**
+   * Mounts what a frame mounts of the built package, with this Repo standing
+   * in for the site's: every component it registers tagged `background`,
+   * found by tag in its plugin list (this page has no registry; the list is
+   * what the package would register), each once, as a frame mounts them;
+   * then its titlebar tool. With `background: false`, only the titlebar tool:
+   * a frame that mounts no background components.
+   */
+  async mount(dist = '/dist', { background = true } = {}) {
     const { plugins } = await import(`${dist}/index.js`);
+    if (background) {
+      await probe.mountBackground(dist);
+    }
     const TitlebarTool = await plugins.find((plugin) => plugin.id === 'task-titlebar-next').load();
     const element = document.createElement('div');
     element.id = 'badge';
     element.repo = repo;
     document.body.append(element);
     TitlebarTool(null, element);
-    const host = Object.values(window.patchworkTasks.poolHosts)[0];
-    statusLog.push({ t: Date.now(), ...host.status() });
-    host.subscribe((status) => statusLog.push({ t: Date.now(), ...status }));
+    const host = Object.values(window.patchworkTasks?.poolHosts ?? {})[0];
+    if (host) {
+      statusLog.push({ t: Date.now(), ...host.status() });
+      host.subscribe((status) => statusLog.push({ t: Date.now(), ...status }));
+    }
+    return true;
+  },
+
+  /** Mounts every component the built package tags `background`, once each, as a frame does; how many. */
+  async mountBackground(dist = '/dist') {
+    const { plugins } = await import(`${dist}/index.js`);
+    const tagged = plugins.filter((p) => p.type === 'patchwork:component' && p.tags?.includes('background'));
+    for (const plugin of tagged) {
+      const element = document.createElement('div');
+      element.className = 'background';
+      element.style.display = 'contents';
+      element.repo = repo;
+      document.body.append(element);
+      const cleanup = (await plugin.load())(element, repo);
+      backgrounds.push(() => (cleanup?.(), element.remove()));
+    }
+    return tagged.length;
+  },
+
+  /** Lets go of the background components, as a frame that goes away does. */
+  unmountBackground() {
+    for (const cleanup of backgrounds.splice(0)) cleanup();
     return true;
   },
 
@@ -179,7 +216,7 @@ const probe = {
     queueView = null;
   },
 
-  /** What the queue browser shows: the pools heard serving, and each task row with its runs. */
+  /** What the queue browser shows: the pools heard serving, its line for this browser's pool, and each task row with its runs. */
   queueView() {
     const view = document.querySelector('#queue-view');
     if (!view) return null;
@@ -188,6 +225,10 @@ const probe = {
     const serving = sections.find((section) => /Serving it/.test(section.querySelector('h2')?.textContent ?? ''));
     return {
       serving: [...(serving?.querySelectorAll('li') ?? [])].map((li) => li.textContent),
+      here: (() => {
+        const line = view.querySelector('.tq-pool-here');
+        return line ? { state: line.dataset.poolState, text: line.textContent } : null;
+      })(),
       tasks: [...view.querySelectorAll('details.tq-task')].map((details) => ({
         row: details.querySelector('summary')?.textContent,
         runs: [...details.querySelectorAll('.tq-runs li')].map((li) => li.textContent),

@@ -2,9 +2,10 @@
 // person's browser runs it: a fresh profile (cdp.mjs) installs it from its
 // automerge url through module settings, makes the profile's own queue with
 // the asker's client (`ownQueue`, which asks the site's own tool-storage
-// provider for the task storage and serves that queue alone), mounts the
-// titlebar badge (which starts the page's pool host), and asks that queue
-// for tasks through the client (src/task-client.js, bundled here and put on
+// provider for the task storage and serves that queue alone), mounts what a
+// frame mounts of it (its background component, which starts the page's pool
+// host, and the titlebar badge), and asks that queue for tasks through the
+// client (src/task-client.js, bundled here and put on
 // the page).
 //
 // NOT RUN YET. It needs a published copy of the package, and only the
@@ -95,14 +96,26 @@ try {
   );
   check("the package is in this profile's module settings", setup.modules?.includes(pkg), setup);
 
-  // Open the queue (its browser is this package's tool), then put the badge up as a frame would.
+  // Open the queue (its browser is this package's tool), then mount what a
+  // frame mounts: the background component, by its component id (this
+  // harness has no hold on the site's registry, and the site's frame may be
+  // one that mounts no background components; if it does, the page has one
+  // pool host either way), and the badge.
   const MOUNT = `(() => {
+    const parent = document.querySelector("repo-provider") ?? document.body;
+    if (!document.querySelector("#probe-pool")) {
+      const v = document.createElement("patchwork-view");
+      v.id = "probe-pool";
+      v.setAttribute("component", "task-pool-next");
+      v.style.display = "contents";
+      parent.appendChild(v);
+    }
     if (!document.querySelector("#probe-badge")) {
       const v = document.createElement("patchwork-view");
       v.id = "probe-badge";
       v.setAttribute("tool-id", "task-titlebar-next");
       v.setAttribute("doc-url", window.__probe.queueUrl);
-      (document.querySelector("repo-provider") ?? document.body).appendChild(v);
+      parent.appendChild(v);
     }
     return true;
   })()`;

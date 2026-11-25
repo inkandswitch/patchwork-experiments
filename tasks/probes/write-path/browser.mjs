@@ -1,9 +1,9 @@
 // How a document travels between a task's run worker in a browser and the
 // page that asked, through the real sync server: the browser half of
 // probes/write-path.mjs. A throwaway Chrome profile opens a stand-in page
-// (index.html, page.js) that loads the BUILT package from dist/, mounts its
-// real titlebar tool (which starts the page's pool) and presses its Make my
-// queue; the pool, its run workers and the page's Repos all use the real
+// (index.html, page.js) that loads the BUILT package from dist/, mounts what
+// a frame mounts of it (its background component, which starts the page's
+// pool, and its real titlebar tool) and presses Make my queue; the pool, its run workers and the page's Repos all use the real
 // sync server, so a run worker's Repo (a database of its own) and the page's
 // meet there. It measures and says what it saw; it checks nothing.
 //

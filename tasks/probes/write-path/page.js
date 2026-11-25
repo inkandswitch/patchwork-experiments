@@ -135,12 +135,23 @@ async function ask(importUrl, input) {
 window.probe = {
   sync: SYNC,
 
-  /** An account, the real titlebar tool mounted, and its Make my queue pressed: the pool then serves that queue. */
+  /**
+   * An account, what a frame mounts of the package (its background
+   * components, found by tag in its plugin list, and the real titlebar tool),
+   * and the titlebar's Make my queue pressed: the pool then serves that queue.
+   */
   async setUp() {
     const account = repo.create({});
     await repo.flush();
     window.accountDocHandle = account;
     const { plugins } = await import('/dist/index.js');
+    for (const plugin of plugins.filter((p) => p.type === 'patchwork:component' && p.tags?.includes('background'))) {
+      const element = document.createElement('div');
+      element.style.display = 'contents';
+      element.repo = repo;
+      document.body.append(element);
+      (await plugin.load())(element, repo);
+    }
     const TitlebarTool = await plugins.find((plugin) => plugin.id === 'task-titlebar-next').load();
     const element = document.createElement('div');
     element.id = 'badge';

@@ -1,7 +1,9 @@
 // The browser's pool, proved on this machine without publishing anything: a
 // throwaway Chrome profile opens tabs of a stand-in page (browser-run/) that
-// loads the BUILT package from dist/, mounts its real titlebar tool (which
-// starts the page's pool host) and asks through the built task-client. Task
+// loads the BUILT package from dist/, mounts what a frame mounts of it (its
+// background component, which starts the page's pool host, found by its tag
+// in the package's plugin list, and its real titlebar tool) and asks through
+// the built task-client. Task
 // code comes from data: URLs and from a file served here; the queue accepts
 // any code. No sync server is reached: the pages' Repos and the pool's work
 // from the profile's shared database, and each run worker's from a database
@@ -23,8 +25,10 @@
 // (page.js), which makes the account's task storage the first time a tool
 // asks; and the page's tasks Repo, which the site would have. The account
 // starts with no task storage (check 18); the probe's queue is then joined
-// through the queue browser's Join, and checks 1 to 17 ask it.
-// A copy of dist/ stamped as a newer build is served at /dist-newer.
+// through the queue browser's Join, and checks 1 to 17 ask it. Checks 20
+// and 21 run in a browser context of its own, where nothing mounts the
+// background component until 21 does, and then lets it go. A copy of
+// dist/ stamped as a newer build is served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
 // any failed. The files are served here (not by cdp.mjs, see below); Chrome
@@ -286,8 +290,8 @@ const allGone = (ids, until) =>
     look();
   });
 
-async function tab(label, path = "/probe/index.html") {
-  const { targetId } = await send("Target.createTarget", { url: `${base}${path}`, background: false });
+async function tab(label, path = "/probe/index.html", browserContextId) {
+  const { targetId } = await send("Target.createTarget", { url: `${base}${path}`, background: false, ...(browserContextId ? { browserContextId } : {}) });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
   await send("Runtime.enable", {}, sessionId);
   await send("Page.enable", {}, sessionId);
@@ -761,6 +765,58 @@ try {
       /not answered/.test(problem || "") && noticedIn <= bound && !!taken && next.result === 1,
       `F read ${J(problem)} ${noticedIn} ms after its pool's worker closed itself (bound ${bound}); D ${taken ? "runs the pool" : `reads ${J(await D.js("probe.status()"))}`}; next task ${next.result === 1 ? `ran in ${next.ms.toFixed(0)} ms` : J(next)}`,
     );
+  }
+
+  // 20. A frame that mounts only the badge, and not the background
+  // component, runs no pool, and the badge and the queue browser say so and
+  // why. In a browser context of its own (its own storage and locks), so
+  // that no tab above can be serving: a queue joined there, a task asked of
+  // it waits, and nothing holds or waits for the pool's lock.
+  {
+    const { browserContextId } = await send("Target.createBrowserContext", {});
+    const Z = await tab("Z", "/probe/index.html", browserContextId);
+    await Z.js("probe.makeAccount()");
+    const joined = await Z.js("probe.join()");
+    await Z.js("probe.mount('/dist', { background: false })");
+    const badge = await Z.waitFor("probe.badge()?.state && probe.badge()", 15_000);
+    const key = await Z.js(`probe.ask(${J(NOOP)})`);
+    const heard = await Z.js("probe.served(4000)");
+    const task = await Z.js(`probe.last(${J(key)})`);
+    await Z.js("probe.mountQueueView()");
+    const view = await Z.waitFor("probe.queueView()?.here && probe.queueView()", 15_000);
+    const locks = await Z.js("probe.locks()");
+    const status = await Z.js("probe.status()");
+    const poolWorkers = liveWorkers(Z, /pool-worker/).length;
+    check(
+      "20 with only the badge mounted, no pool runs, and the badge and the queue browser say so and why",
+      !!joined?.served && status === null && locks.held === 0 && locks.pending === 0 && locks.workerHeld === 0 && poolWorkers === 0 &&
+        heard.length === 0 && task?.state === "waiting" &&
+        badge?.state === "not started" && /not running here/.test(badge.text) && /nothing in this frame has started it/.test(badge.title) &&
+        view?.here?.state === "not started" && /nothing in this frame has started it/.test(view.here.text),
+      `joined ${J(joined)}; host ${J(status)}; locks ${J(locks)}; pool workers ${poolWorkers}; pools heard ${heard.length}; the task ${task?.state}; badge ${J(badge)}; queue browser ${J(view?.here)}`,
+    );
+
+    // 21. The background component mounted later: the page takes the lock,
+    // the waiting task runs, and the badge says so without being mounted
+    // again. Then let go, as a frame that goes away lets go: the pool lets
+    // the lock go, and the badge says the page has no part in it again.
+    const mounted = await Z.js("probe.mountBackground()");
+    const running = await Z.waitFor("probe.status()?.state === 'running'", 30_000);
+    await Z.waitFor(stateIs(key, "succeeded", "failed", "cancelled"), 20_000);
+    const ran = await Z.js(`probe.last(${J(key)})`);
+    const badgeRunning = await Z.waitFor("probe.badge()?.state === 'running' && probe.badge()", 10_000);
+    await Z.js("probe.unmountBackground()");
+    const idle = await Z.waitFor("probe.status()?.state === 'not started' && probe.status()", 15_000);
+    const locksAfter = await Z.js("probe.locks()");
+    const badgeAfter = await Z.waitFor("probe.badge()?.state === 'not started' && probe.badge()", 10_000);
+    const poolWorkersAfter = await new Promise((r) => setTimeout(() => r(liveWorkers(Z, /pool-worker/).length), 500));
+    check(
+      "21 the background component mounted later starts the pool and the badge follows; let go, the pool lets the lock go and the badge says so",
+      mounted === 1 && !!running && ran?.state === "succeeded" && badgeRunning?.state === "running" &&
+        !!idle && locksAfter.held === 0 && locksAfter.workerHeld === 0 && poolWorkersAfter === 0 && /not running here/.test(badgeAfter?.text ?? ""),
+      `background components ${mounted}; running ${!!running}; the waiting task ${ran?.state}; badge ${J(badgeRunning?.text)}; after letting go: host ${J(idle?.state)}, locks ${J(locksAfter)}, pool workers ${poolWorkersAfter}, badge ${J(badgeAfter?.text)}`,
+    );
+    await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
   }
 } catch (error) {
   console.error("probe stopped:", error?.stack ?? error);
