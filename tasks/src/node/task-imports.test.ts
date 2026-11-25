@@ -15,9 +15,16 @@
 // - carried code imports Node's built-in modules by bare name;
 // - carried code importing any other bare name, directly or through a
 //   relative import, fails with the error that says what it may import;
+// - carried code that imports while it runs, after it was loaded (import(),
+//   require through createRequire, import.meta.resolve), is held to the same:
+//   the shared names are the thread's own, any other bare name fails;
 // - code installed on this machine (--local) imports its own dependencies
 //   from its node_modules, and the shared names, there and in those
 //   dependencies, are the thread's own, not a copy in that node_modules;
+// - a CommonJS dependency of installed code that requires the shared names,
+//   before any task has imported them, gets the very ES modules the Repo
+//   uses, not the copy CommonJS rules would find beside it (the second copy
+//   in that node_modules), and so does every task after it;
 // - the host's own code resolves as Node does: its `@automerge/automerge` is
 //   this package's own dependency (another copy than the Repo's), and a bare
 //   name that is nowhere fails with Node's own error.
@@ -70,6 +77,22 @@ import { splice as repoSplice, Repo } from '@automerge/automerge-repo';
 export const got = { splice, repoSplice, Repo };
 export default ${APPEND};`);
 const dataBare = dataUrl(`import earcut from 'earcut'; export default earcut;`);
+// carried code that imports only once it runs
+const later = put(
+  'carried/later.js',
+  `import { createRequire } from 'node:module';
+const outcome = async (f) => { try { return { value: await f() }; } catch (error) { return { error: { message: error?.message, code: error?.code } }; } };
+export default async () => {
+  const require = createRequire(import.meta.url);
+  return {
+    importShared: await outcome(async () => (await import('@automerge/automerge')).splice),
+    importBare: await outcome(() => import('earcut')),
+    requireRepo: await outcome(() => require('@automerge/automerge-repo').Repo),
+    requireBare: await outcome(() => require('earcut')),
+    resolveBare: await outcome(() => import.meta.resolve('earcut')),
+  };
+};`,
+);
 
 // installed: a package checked out here, with a dependency and a second copy of Automerge in its node_modules
 put('installed/package.json', '{ "type": "module" }\n');
@@ -87,6 +110,17 @@ put(
   '{ "name": "@automerge/automerge", "type": "module", "exports": { ".": "./index.js" } }\n',
 );
 put('installed/node_modules/@automerge/automerge/index.js', `export const splice = 'a second copy';`);
+const installedCjs = put('installed/cjs-user.js', `import lib from 'fake-cjs'; export const got = lib;`);
+put('installed/node_modules/fake-cjs/package.json', '{ "name": "fake-cjs", "main": "index.js" }\n');
+put(
+  'installed/node_modules/fake-cjs/index.js',
+  `module.exports = {
+  splice: require('@automerge/automerge').splice,
+  slimSplice: require('@automerge/automerge/slim').splice,
+  Repo: require('@automerge/automerge-repo').Repo,
+  slimRepo: require('@automerge/automerge-repo/slim').Repo,
+};`,
+);
 
 const THREAD = `
 import { parentPort, workerData } from 'node:worker_threads';
@@ -102,6 +136,10 @@ const handle = repo.create({ text: '' });
 const same = (got) => Object.fromEntries(Object.entries(got).map(([name, value]) => [name, value === (/Repo$/i.test(name) ? RepoModule.Repo : RepoModule.splice) ? 'same' : String(value).slice(0, 40)]));
 
 const report = {};
+// First of all, so that the first time this thread resolves a shared name it
+// is for a require: each name is resolved once and kept.
+const cjs = await importTask(workerData.installedCjs, 'installed');
+report.cjs = same(cjs.got);
 const c = await importTask(workerData.carried, 'carried');
 report.carried = same(Object.fromEntries(Object.entries(c.got).filter(([n]) => n !== 'builtins')));
 report.builtins = c.got.builtins;
@@ -121,6 +159,9 @@ report.carriedBare = await outcome(importTask(workerData.carriedBare, 'carried')
 report.carriedBareBeside = await outcome(importTask(workerData.carriedBareBeside, 'carried'));
 report.dataBare = await outcome(importTask(workerData.dataBare, 'carried'));
 
+const l = await (await importTask(workerData.later, 'carried')).default();
+report.later = Object.fromEntries(Object.entries(l).map(([name, got]) => [name, got.error ? got : same({ [name]: got.value })[name]]));
+
 // the host's own code, after the hooks are in: Node's resolution, from this package
 const own = await import('@automerge/automerge');
 report.hostAutomerge = own.splice === RepoModule.splice ? 'the Repo copy' : 'its own copy';
@@ -133,7 +174,7 @@ beforeAll(async () => {
   const script = join(hostDir, 'thread.mjs');
   writeFileSync(script, THREAD);
   const worker = new Worker(pathToFileURL(script), {
-    workerData: { hooks, carried, data, installed, carriedBare, carriedBareBeside, dataBare },
+    workerData: { hooks, carried, data, installed, carriedBare, carriedBareBeside, dataBare, later, installedCjs },
   });
   try {
     report = await new Promise((resolve, reject) => {
@@ -183,6 +224,20 @@ describe("a task's imports in a Node run thread", () => {
     expect(report.carriedBareBeside).toEqual(plainError('earcut'));
     expect(report.dataBare).toEqual(plainError('earcut'));
     expect(unshared('earcut').message).toContain('@automerge/automerge-repo/slim');
+  });
+
+  it('holds carried code to the same when it imports while it runs, by import(), require or import.meta.resolve', () => {
+    expect(report.later).toEqual({
+      importShared: 'same',
+      importBare: plainError('earcut'),
+      requireRepo: 'same',
+      requireBare: plainError('earcut'),
+      resolveBare: plainError('earcut'),
+    });
+  });
+
+  it("gives a CommonJS dependency of installed code the Repo's own ES modules, not Automerge's CommonJS build", () => {
+    expect(report.cjs).toEqual({ splice: 'same', slimSplice: 'same', Repo: 'same', slimRepo: 'same' });
   });
 
   it("leaves the host's own code resolving as Node does", () => {

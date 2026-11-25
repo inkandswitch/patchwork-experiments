@@ -70,9 +70,11 @@ const { registerHooks, isBuiltin } = nodeModule as unknown as {
 const taskModules = new Map<string, TaskCode>();
 /** What `importTask` is importing now, by the specifier it gave `import()`. */
 const importing = new Map<string, TaskCode>();
-/** Each shared name, once resolved: the same url every time. */
+/** Each shared name, resolved once when the hooks are registered: the same url every time. */
 const shared = new Map<string, string>();
 let registered = false;
+/** True only while `shareAutomerge` resolves the shared names. */
+let resolvingShared = false;
 
 /** Whether a specifier names a package rather than a path or a URL. */
 const isBare = (specifier: string) =>
@@ -100,27 +102,18 @@ export function shareAutomerge(): void {
   }
   registered = true;
   const repoUrl = import.meta.resolve('@automerge/automerge-repo-node');
-  const sharedUrl = (specifier: string, context: ResolveContext, next: NextResolve) => {
-    let url = shared.get(specifier);
-    if (!url) {
-      // The Repo's own package is `@automerge/automerge-repo` by name, and its
-      // modules import Automerge as ES modules: resolved from inside it, as
-      // an import, these are the files its own imports were.
-      url =
-        specifier === '@automerge/automerge-repo'
-          ? repoUrl
-          : next(specifier, {
-              ...context,
-              parentURL: repoUrl,
-              conditions: (context.conditions ?? []).map((c) => (c === 'require' ? 'import' : c)),
-            }).url;
-      shared.set(specifier, url);
-    }
-    return url;
-  };
 
   registerHooks({
     resolve(specifier, context, next) {
+      if (resolvingShared) {
+        // The Repo's own package is `@automerge/automerge-repo` by name, and
+        // its modules import Automerge as ES modules: resolved from inside
+        // it, as an import, these are the files its own imports were.
+        const url =
+          specifier === '@automerge/automerge-repo' ? repoUrl : next(specifier, { ...context, parentURL: repoUrl }).url;
+        shared.set(specifier, url);
+        return { url, shortCircuit: true };
+      }
       const from = context.parentURL === undefined ? undefined : taskModules.get(context.parentURL);
       if (from === undefined) {
         const resolved = next(specifier, context);
@@ -130,8 +123,9 @@ export function shareAutomerge(): void {
         }
         return resolved;
       }
-      if ((SHARED as readonly string[]).includes(specifier)) {
-        return { url: sharedUrl(specifier, context, next), shortCircuit: true };
+      const url = shared.get(specifier);
+      if (url) {
+        return { url, shortCircuit: true };
       }
       if (from === 'carried' && isBare(specifier) && !isBuiltin(specifier)) {
         throw unshared(specifier);
@@ -143,6 +137,22 @@ export function shareAutomerge(): void {
       return resolved;
     },
   });
+
+  // All of them here, once, as ES imports from inside the Repo's package, and
+  // not when a task first asks: a task's require() of one would be resolved
+  // by CommonJS rules, which take no other parent and find whatever copy is
+  // beside the module that requires it.
+  resolvingShared = true;
+  try {
+    for (const specifier of SHARED) {
+      import.meta.resolve(specifier);
+    }
+  } finally {
+    resolvingShared = false;
+  }
+  if (shared.size !== SHARED.length) {
+    throw new Error(`this thread could not resolve ${SHARED.filter((s) => !shared.has(s)).join(', ')} from its Repo's package`);
+  }
 }
 
 /**
