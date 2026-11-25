@@ -6,6 +6,10 @@
 //
 //   (in tasks/) node probes/node-run.mjs [<automerge:package url>] [--only 1,16] [--sync wss://…] [--verbose]
 //
+// Checks 9 and 17 to 19 are about a queue two hosts serve: each task runs
+// once, by the one host it prefers (the one its asker is near, or else the
+// highest hash), and work that needs a label goes only to a host that has it.
+//
 // The task code is in probes/ (solve-task.mjs, which runs a process) and in
 // data: URLs. Nothing is published: without a package url the hosts are
 // given this directory as their copy of a made-up package (--local), and the
@@ -94,8 +98,8 @@ const freshDir = (label) => {
   return dir;
 };
 /** Starts a host and resolves once it has said who it is. Every line it says is kept with when it was heard. */
-function startHost(label, { queue, dataDir, accept = ANY, workers = 2, wait = true }) {
-  const child = spawn(process.execPath, [join(ROOT, "dist-node/host.mjs"), "--queue", queue, ...accept, "--data-dir", dataDir, "--workers", String(workers), "--name", label, "--sync", SYNC, "--verbose"], { stdio: ["ignore", "pipe", "pipe"] });
+function startHost(label, { queue, dataDir, accept = ANY, workers = 2, wait = true, has = [] }) {
+  const child = spawn(process.execPath, [join(ROOT, "dist-node/host.mjs"), "--queue", queue, ...accept, "--data-dir", dataDir, "--workers", String(workers), "--name", label, "--sync", SYNC, "--verbose", ...has.flatMap((label) => ["--has", label])], { stdio: ["ignore", "pipe", "pipe"] });
   const host = { label, child, dataDir, lines: [], pool: null, exit: null };
   host.exited = new Promise((r) => child.on("exit", (code) => ((host.exit = { code, at: Date.now() }), r(host.exit))));
   for (const stream of [child.stdout, child.stderr]) {
@@ -311,10 +315,10 @@ try {
     check(7, "kill -9 mid-run, restart on the same data dir: the restarted pool records its dead run lost and takes the task again", result?.input === "kill9" && t.runs.map((r) => r.status).join() === "lost,succeeded" && t.runs.every((r) => r.pool === A.pool), { runs: t.runs.map((r) => `${r.pool.slice(0, 8)}:${r.status}`), restartToResultMs: Date.now() - tRestart });
   }
 
-  // 8–10 share a second host, B.
-  if (want(8, 9, 10)) {
+  // 8–10 and 17–19 share a second host, B, which alone has the label probe-b.
+  if (want(8, 9, 10, 17, 18, 19)) {
     const dirB = freshDir("B");
-    let B = await startHost("B", { queue: Q, dataDir: dirB });
+    let B = await startHost("B", { queue: Q, dataDir: dirB, has: ["probe-b"] });
     await until(() => pools.length === 2, LAPSE_MS, "both pools heard serving").catch(() => {});
     const bothHeard = pools.map((p) => p.name).sort();
 
@@ -355,19 +359,62 @@ try {
       check(8, "two hosts, kill -9 the one running it: the other takes it after the lapse and finishes; the dead run stays open; the asker saw running, stalled, running, succeeded", result?.input === "failover" && finished?.pool === other.pool && dead && !dead.status && at === order.length, { killed: victim.label, finishedBy: finished && (finished.pool === other.pool ? other.label : "?"), runs: t.runs.map((r) => `${r.pool === A.pool ? "A" : "B"}:${r.status ?? "open"}`), states, killToResultMs: Date.now() - tKill });
       // back on its own directory, so that both are up for what follows
       if (victim === A) A = await startHost("A", { queue: Q, dataDir: dirA });
-      else B = await startHost("B", { queue: Q, dataDir: dirB });
+      else B = await startHost("B", { queue: Q, dataDir: dirB, has: ["probe-b"] });
       await until(() => pools.length === 2, LAPSE_MS, "both pools heard serving again").catch(() => {});
     }
 
-    // 9. two hosts, four tasks listed at once
+    const hostOf = (pool) => (pool === A.pool ? "A" : pool === B.pool ? "B" : pool ? pool.slice(0, 8) : "?");
+
+    // 9. two hosts, four tasks listed at once: each runs once, by the host it prefers
     if (want(9)) {
       const keys = ["w", "x", "y", "z"].map((k) => `four-${k}`);
       const results = await within(90000, Promise.all(keys.map((key) => runKey(Q, { importUrl: SOLVE, input: { steps: 6, stepMs: 200, tag: key }, key }))), "four tasks at once");
       const tasks = await Promise.all(keys.map((k) => taskOf(k)));
-      const finals = tasks.map((t) => t.runs.filter((r) => ["succeeded", "failed", "cancelled"].includes(r.status)).length);
+      const runs = tasks.map((t) => t.runs.length);
       const yielded = tasks.map((t) => t.runs.filter((r) => r.status === "yielded").length);
-      const by = tasks.map((t) => { const r = t.runs.find((it) => it.status === "succeeded"); return r?.pool === A.pool ? "A" : r?.pool === B.pool ? "B" : "?"; });
-      check(9, "two hosts, four tasks listed at once: each has exactly one final run", results.every((r, i) => r?.input === keys[i]) && finals.every((n) => n === 1), { finalRuns: finals, yieldedRuns: yielded.reduce((a, b) => a + b, 0), perTask: yielded, finishedBy: by });
+      const by = tasks.map((t) => hostOf(t.runs.find((it) => it.status === "succeeded")?.pool));
+      check(9, "two hosts, four tasks listed at once: each has exactly one run, and none yielded", results.every((r, i) => r?.input === keys[i]) && runs.every((n) => n === 1) && yielded.every((n) => n === 0), { runsPerTask: runs, yieldedRuns: yielded.reduce((a, b) => a + b, 0), finishedBy: by });
+    }
+
+    // 17. work that needs a label only B has is run by B, every time, also while B's slots are full
+    if (want(17)) {
+      const keys = Array.from({ length: 10 }, (_, i) => `needs-b-${i}`);
+      const results = await within(90000, Promise.all(keys.map((key, i) => runKey(Q, { importUrl: NOOP, input: i, key, needs: ["probe-b"] }))), "ten tasks that need probe-b");
+      const tasks = await Promise.all(keys.map((k) => taskOf(k)));
+      const by = tasks.map((t) => t.runs.map((r) => `${hostOf(r.pool)}:${r.status}`).join(","));
+      const byB = tasks.filter((t) => t.runs.length === 1 && t.runs[0].pool === B.pool && t.runs[0].status === "succeeded").length;
+      check(17, "ten tasks listed at once that need a label only one host has: that host runs each, once", results.every((r, i) => r === i) && byB === 10, { ranByThatHostOnce: `${byB} of 10`, runs: by });
+    }
+
+    // 18. work that needs a label neither host has waits, listed and untaken, until a third host that has it starts
+    if (want(18)) {
+      const asked = runKey(Q, { importUrl: NOOP, input: "for C", key: "needs-c", needs: ["probe-c"] });
+      asked.catch(() => {});
+      await sleep(5000);
+      const before = await taskOf("needs-c");
+      const listedBefore = queue.doc().jobs["needs-c"]?.taskUrl === lastTask["needs-c"];
+      const heardHave = pools.map((p) => `${p.name}: ${p.has.filter((l) => !l.startsWith("pool:")).join("+")}`).sort();
+      const C = await startHost("C", { queue: Q, dataDir: freshDir("C18"), workers: 1, has: ["probe-c"] });
+      const tStart = Date.now();
+      const result = await within(60000, asked, "the task that needs probe-c").catch((e) => e.message);
+      const tookMs = Date.now() - tStart;
+      const after = await taskOf("needs-c");
+      check(18, "a task that needs a label no host has stays listed with no run, and the host that has it, once started, runs it", before.runs.length === 0 && listedBefore && result === "for C" && after.runs.length === 1 && after.runs[0].pool === C.pool, { runsAfter5s: before.runs.length, stillListed: listedBefore, heardServing: heardHave, result, runs: after.runs.map((r) => `${r.pool === C.pool ? "C" : hostOf(r.pool)}:${r.status}`), resultAfterCSaidWhoItIsMs: tookMs });
+      sigterm(C);
+      await within(2 * GRACE_MS + 5000, C.exited, "host C to stop");
+    }
+
+    // 19. near: work asked near one host is run by that host, whichever the hash would prefer
+    if (want(19)) {
+      const rows = [];
+      for (const host of [A, B, A, B, A, B]) {
+        const key = `near-${rows.length}`;
+        await within(30000, runKey(Q, { importUrl: NOOP, input: key, key, near: host.pool }), "a task asked near a host");
+        const t = await taskOf(key);
+        rows.push({ near: host.label, runs: t.runs.map((r) => `${hostOf(r.pool)}:${r.status}`).join(",") });
+      }
+      const right = rows.filter((r) => r.runs === `${r.near}:succeeded`).length;
+      check(19, "a task asked near a host is run by that host, once", right === rows.length, { ranByTheHostNamed: `${right} of ${rows.length}`, rows });
     }
 
     // 10. served(): lists a host while it is up, and not one lapse after it stops

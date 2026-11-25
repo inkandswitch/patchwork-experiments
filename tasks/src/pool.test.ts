@@ -1083,14 +1083,38 @@ describe('the pool', () => {
     await settle();
     await w.clock.advance(BEAT_MS * 2);
     const serving = w.net.sent.filter((it) => it.message.type === 'serving');
-    expect(serving.length).toBe(3);
+    expect(serving.length).toBe(4);
     for (const { url, message } of serving) {
       expect(url).toBe(w.queue.url);
       expect(message).toMatchObject({ pool: 'A', name: 'pool A', slots: 4, has: ['unix', 'node', 'pool:A'] });
     }
-    // said first as the queue is found, before it has taken anything
-    expect(serving.map((it) => it.message.busy)).toEqual([0, 1, 1]);
+    // said first as the queue is found, before it has taken anything; then as it takes the task; then each beat
+    expect(serving.map((it) => it.message.busy)).toEqual([0, 1, 1, 1]);
     expect(runsOf(task)).toHaveLength(1);
+  });
+
+  it('says it serves, on every queue it serves, the moment how many of its slots are busy changes, and not while it stops', async () => {
+    const other = w.repo.create<Queue>({ title: 'other', jobs: {} });
+    const task = w.ask('k');
+    const { pool, executor } = w.pool('A', { slots: 2, queues: { [w.queue.url]: 'any', [other.url]: 'any' } });
+    await settle();
+    const busyOn = (url: string) => w.net.sent.filter((it) => it.url === url && it.message.type === 'serving').map((it) => it.message.busy);
+    expect(busyOn(w.queue.url)).toEqual([0, 1]);
+    expect(busyOn(other.url)).toEqual([0, 1]);
+    executor.of(lastRun(task).id).events.done('done');
+    await settle();
+    expect(busyOn(w.queue.url)).toEqual([0, 1, 0]);
+    expect(busyOn(other.url)).toEqual([0, 1, 0]);
+
+    const second = w.ask('k2');
+    await settle();
+    expect(busyOn(w.queue.url)).toEqual([0, 1, 0, 1]);
+    const sent = w.net.sent.length;
+    const stopping = pool.stop();
+    await w.clock.advance(GRACE_MS);
+    await stopping;
+    expect(statuses(second)).toEqual(['lost']);
+    expect(w.net.sent.slice(sent).filter((it) => it.message.type === 'serving')).toEqual([]);
   });
 
   it('stopping, records a run as gone says: cancelled if the task is stopped meanwhile, yielded if another run ended it, else lost; whether its code returns or is killed', async () => {
@@ -1510,8 +1534,7 @@ describe('the preferred pool', () => {
     list(busy);
     await settle();
     expect(poolsOf(busy)).toEqual([P]);
-    // its next word says so
-    await w.clock.advance(BEAT_MS);
+    // P said so as it took it, with no beat in between
     const listedAt = w.clock.now();
     list(task);
     await settle();
@@ -1640,7 +1663,6 @@ describe('the preferred pool', () => {
       list(busy);
       await settle();
       expect(poolsOf(busy)).toEqual([O]);
-      await w.clock.advance(BEAT_MS);
       list(task, O);
       await settle();
       expect(poolsOf(task), 'near a pool with no free slot').toEqual([P]);
@@ -2089,7 +2111,8 @@ describe('the pool, when a document arrives after its listing', () => {
     late.arrive(w.queue.url);
     await settle();
     expect(w.clock.t).toBe(t);
-    expect(serving()).toHaveLength(1);
+    // as it is found, and as it takes the task
+    expect(serving().map((it) => it.message.busy)).toEqual([0, 1]);
     expect(runsOf(task)).toHaveLength(1);
     expect(executor.workers).toHaveLength(1);
     expect(late.live()).toBe(0);

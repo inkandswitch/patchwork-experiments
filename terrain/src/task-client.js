@@ -64,10 +64,10 @@ export const LOCAL_MESSAGES_CHANNEL = 'patchwork-tasks-messages';
  */
 
 /**
- * Said on a queue's channel by each pool serving it, every BEAT_MS, and at
- * once to a pool it hears there for the first time: who it is, how many
- * slots it has and how many are busy, and what it has (see `satisfies`).
- * Advice: no rule depends on it. People and askers read it to say why work
+ * Said on a queue's channel by each pool serving it, every BEAT_MS, whenever
+ * how many of its slots are busy changes, and at once to a pool it hears
+ * there for the first time: who it is, how many slots it has and how many
+ * are busy, and what it has (see `satisfies`). Advice: no rule depends on it. People and askers read it to say why work
  * waits; pools read it to hold back for the pool a task prefers.
  * @typedef {{ type: 'serving', pool: string, name: string, slots: number, busy: number, has: string[], from: string, seq: number }} ServingMessage
  */

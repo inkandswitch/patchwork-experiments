@@ -10,6 +10,9 @@
 // pools serving each queue (their `serving`, within the lapse), takes a task
 // at once when `preferred` names it, and otherwise only once it has seen the
 // task takeable for HOLD_MS. A pool that hears nobody else is always the one.
+// So that the others choose from what is so, it says `serving` every beat,
+// whenever how many of its slots are busy changes, and at once to a pool it
+// hears for the first time.
 //
 // It writes three things and nothing else: a run appended when it takes a
 // task, that run completed when it is over, and an entry deleted when its
@@ -672,6 +675,7 @@ export class Pool {
     // The run is counted only once it is appended: a change that throws takes nothing.
     task.change((doc) => claimRun(doc, { id: run.id, pool: this.options.id, start: this.clock.now() }));
     this.runs.set(run.id, run);
+    this.sayBusy();
     this.options.repo.flush([task.documentId]).then(
       () => this.begin(run, job),
       (error) => {
@@ -823,6 +827,7 @@ export class Pool {
           console.error('pool: letting an entry go failed', error);
         }
         this.runs.delete(run.id);
+        this.sayBusy();
         run.finish();
         this.review();
       });
@@ -861,6 +866,20 @@ export class Pool {
     } satisfies Omit<RunProgressMessage, keyof Stamp>);
     run.unsaid = [];
     run.progressNew = false;
+  }
+
+  /**
+   * Says it serves, on every queue it serves, as soon as how many of its
+   * slots are busy changes: the others choose a task's preferred pool among
+   * those with a free slot, and a count a beat old would have them hold back
+   * for a pool that cannot take the task.
+   */
+  private sayBusy() {
+    if (!this.stopped) {
+      for (const queue of this.queues.values()) {
+        this.sayServing(queue.handle);
+      }
+    }
   }
 
   private sayServing(handle: Handle<Queue> | undefined) {
