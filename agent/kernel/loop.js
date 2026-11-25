@@ -199,10 +199,9 @@ export async function run(opts) {
     if (asking.length) return finish(store, OUTCOME.awaitingAnswer, emit)
 
     // A grant given a moment ago may already cover other calls that are still
-    // waiting. Approval is decided when a call is written, so three fetches of
-    // one site in one turn used to be three separate questions — the user
-    // answered "yes, docs.python.org", and the two calls that were about
-    // docs.python.org went on sitting there pending.
+    // waiting. Approval is decided when a call is written, so without this
+    // three fetches of one site in one turn are three separate questions: the
+    // person answers "yes, docs.python.org" and the other two go on waiting.
     releaseNowPermitted(settings)
 
     const pending = callsAwaitingApproval(store.doc())
@@ -230,8 +229,8 @@ export async function run(opts) {
       assistant = await streamTurn(settings)
     } catch (err) {
       // streamTurn appends its assistant turn before the first token arrives,
-      // so a request that dies leaves an empty one behind. Two of those sit in
-      // a real session, rendering as nothing and telling nobody anything.
+      // so a request that dies leaves an empty one behind, which renders as
+      // nothing and tells nobody anything.
       dropTrailingEmptyTurn(store)
       if (signal?.aborted) return stopped()
       // The network went away. What streamed of the turn is half a turn — no
@@ -252,10 +251,10 @@ export async function run(opts) {
     // ---- 4. Was it cut off?
     //
     // `finish_reason: "length"` means the model ran out of output budget
-    // mid-sentence. Nothing here used to look at it, so a turn that stopped
-    // halfway through thinking was written to the transcript and the session
-    // went idle — indistinguishable from a model that had finished. What a
-    // person saw was an agent that wrote a long plan and then did none of it.
+    // mid-sentence. Left alone, a turn that stopped halfway through thinking
+    // is written to the transcript and the session goes idle, which looks the
+    // same as a model that finished: an agent that wrote a long plan and then
+    // did none of it.
     //
     // Reasoning models make this much easier to hit, because the thinking
     // spends the same budget as the answer: several thousand tokens of thought
@@ -283,10 +282,10 @@ export async function run(opts) {
         )
         settings.paramsOverride = { ...(settings.paramsOverride ?? {}), maxTokens }
         // A turn that was mostly thinking will only think longer with more
-        // room. Turn the thinking down as well, a step each time. It used to
-        // be only a turn that was ALL thinking; one that thought at length and
-        // then had its long write cut off kept the same thinking, ran out the
-        // same way three times, and the workflow step failed for good.
+        // room. Turn the thinking down as well, a step each time. Mostly, not
+        // wholly: a turn that thinks at length and then has its long write
+        // cut off would otherwise keep the same thinking and run out the same
+        // way every time.
         if (mostlyThinking(store.doc().turns[assistant.turnIndex], assistant.broken)) {
           const current = settings.paramsOverride.reasoning ?? store.doc().config?.params?.reasoning ?? null
           settings.paramsOverride.reasoning = quieterReasoning(current, settings.capabilities, maxTokens)
@@ -321,9 +320,9 @@ export async function run(opts) {
     // room. A model that is repeating itself needs the opposite: it was
     // stopped by streamTurn the moment its thinking began re-emitting its own
     // earlier paragraphs, and giving it a bigger budget would buy more of the
-    // same. Watched happen: sixty seconds of "just rewrite the file — actually
-    // wait —" over the same three options, in a loop that would have run to
-    // the output limit and then been told to continue.
+    // same: a minute of "just rewrite the file — actually wait —" over the
+    // same three options, which would run to the output limit and then be
+    // told to continue.
     if (assistant.stopReason === "repetition") {
       repetitions++
       emit({ type: "repeating", turn: turnNumber, attempt: repetitions })

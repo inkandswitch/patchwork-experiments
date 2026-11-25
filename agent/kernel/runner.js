@@ -115,8 +115,8 @@ export function needsWork(doc, canRun = () => true, live = null) {
   // the model. In a healthy run that never persists — the loop goes straight
   // round again — so seeing it means either an answered question, or a runner
   // that died between committing results and its next turn. Both want the same
-  // thing: prompt the model. Before this, an answered question sat there and a
-  // half-finished turn was stranded looking idle.
+  // thing: prompt the model. Otherwise an answered question sits there, and a
+  // half-finished turn is stranded looking idle.
   return last.role === "user" || last.role === "tool"
 }
 

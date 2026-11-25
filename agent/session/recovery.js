@@ -14,8 +14,8 @@ import { STOP } from "./status.js"
  *
  * A call is claimed (`running`) under the lease of the runner executing it.
  * If that runner's tab closes or reloads mid-call, nothing will ever write the
- * call's result — and before this, nothing noticed: the call was neither
- * runnable nor awaiting anyone, so the session sat there looking busy forever.
+ * call's result. Such a call is neither runnable nor awaiting anyone, so
+ * unless it is found here the session sits there looking busy forever.
  * A running call is orphaned exactly when its claim is not the live lease:
  * the lease has gone stale, or another runner or generation holds it.
  */

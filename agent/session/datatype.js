@@ -15,11 +15,9 @@ export const AgentSessionDatatype = {
   },
 
   /**
-   * What the agent called this work, else what was first asked of it.
-   *
-   * This used to have the fallback and never reach it: `init` set the title to
-   * "Agent", so `doc.title` was always truthy and every session in the list was
-   * called the same thing.
+   * What the agent called this work, else what was first asked of it. A new
+   * session's title is null, not a placeholder, so that this fallback is
+   * reached and the sessions in a list are not all called the same thing.
    */
   getTitle(doc) {
     return sessionTitle(doc) ?? "Agent"

@@ -32,17 +32,16 @@ export const MAX_IMAGES_IN_REQUEST = 2
  * stand-in (taperedResult).
  *
  * A transcript is almost all tool results, and every one is re-sent on every
- * turn — measured, 97% of a real session's weight. So old large results are
+ * turn: nearly all of a long session's weight. So old large results are
  * shortened. But how they are shortened matters as much as how much:
  *
- *   - It used to keep only the newest 40,000 characters of large results.
- *     That is about four file reads: an agent working across a handful of
- *     files lost each one a few turns after reading it, recalled it, lost the
- *     recall, and recalled the recall — one real step read the same three files
- *     four to seven times each.
- *   - The line between kept and shortened moved on every turn, so the request
- *     changed in the middle on every turn, and prompt caching — which bills a
- *     repeated prefix at a tenth of the price — could never get past it.
+ *   - Keeping only a small window of the newest results is too little. A few
+ *     file reads fill it, so an agent working across a handful of files loses
+ *     each one a few turns after reading it, recalls it, loses the recall,
+ *     and reads the same files over and over.
+ *   - A line between kept and shortened that moves on every turn changes the
+ *     request in the middle on every turn, and prompt caching — which bills a
+ *     repeated prefix at a tenth of the price — never gets past it.
  *
  * So results are now shortened in batches. Large results stay whole until they
  * pass HIGH characters in all; then the oldest are shortened, in one go, until

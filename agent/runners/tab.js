@@ -1,11 +1,11 @@
 /**
  * Running a session in this tab.
  *
- * The view used to build its runner inline, which meant a session could only
- * run in a tab if a view of it was open. A workflow starts sessions nobody is
- * looking at — its steps — so the recipe lives here, and the view and the
- * workflow driver both use it. Runners are still registered per session in
- * runners/registry.js and outlive whoever started them.
+ * A session runs in a tab whether or not a view of it is open: a workflow
+ * starts sessions nobody is looking at — its steps. So the recipe for a tab's
+ * runner is here, for the view and for a workflow's steps alike. Runners are
+ * registered per session in runners/registry.js and outlive whoever started
+ * them.
  */
 
 import { handleStore } from "../kernel/store.js"

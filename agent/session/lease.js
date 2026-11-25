@@ -86,11 +86,11 @@ export function canClaim(doc, runnerUrl, opts = {}) {
  * Claim the session for `runnerUrl`, inside a change.
  *
  * Every claim that is not a renewal gets a generation never used in this
- * session before, counted in `lastGeneration`, which outlives the lease. It
- * used to count from the lease alone, so a claim after a release started
- * again at 1: a runner that lost a session mid-reply and then took it up
- * again, once it had been released, had its old generation back, and its own
- * dead reply and cut-off calls looked like live work it was doing.
+ * session before, counted in `lastGeneration`, which outlives the lease.
+ * Counting from the lease alone would start again at 1 after a release: a
+ * runner that lost a session mid-reply and took it up again once it had been
+ * released would have its old generation back, and its own dead reply and
+ * cut-off calls would look like live work it was doing.
  */
 export function claimLease(doc, runnerUrl, now = Date.now()) {
   const prev = doc.lease
