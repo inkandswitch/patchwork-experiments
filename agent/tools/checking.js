@@ -27,7 +27,7 @@
 import { hostImport } from "../host/import.js"
 import { truncate, preview, changesBetween } from "../documents/format.js"
 import { rasterize, shrink, canvasWithin, HOLDER_STYLE } from "./screenshot.js"
-import { treeNode, treeEntries } from "./folders.js"
+import { treeNode, treeEntries } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 
 /**

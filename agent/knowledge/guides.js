@@ -34,7 +34,8 @@
  */
 
 import { AutomergeRepo } from "../host/modules.js"
-import { fsWrite, createFolder, isFolder, treeNode, treeEntries, treeEnter } from "../tools/folders.js"
+import { fsWrite } from "../tools/folders.js"
+import { createFolder, isTreeEntry, resolvePath, treeEntries, treeFiles, treeLink, treeNode } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 import { notesFolder, noteFileName, looksLikeCredential } from "./notes.js"
 import { truncate } from "../documents/format.js"
@@ -136,27 +137,16 @@ export async function packageSnapshot(repo, ref, { timeoutMs = WALK_MS } = {}) {
   const root = treeNode(rootHandle)
   if (!root) throw new Error(`${ref.url} is not a package folder.`)
 
+  const listed = await treeFiles(repo, root, { skip: (path) => SKIP_WALK.test(path), stop: () => Date.now() > until })
   const files = {}
-  let truncated = false
-  const walk = async (node, prefix, depth) => {
-    for (const entry of treeEntries(node)) {
-      const path = prefix ? `${prefix}/${entry.name}` : entry.name
-      if (SKIP_WALK.test(path)) continue
-      if (Object.keys(files).length >= MAX_FILES || Date.now() > until) {
-        truncated = true
-        return
-      }
-      if (entry.type === "folder" && depth < 8) {
-        const { node: inside } = await treeEnter(repo, entry).catch(() => ({}))
-        if (inside) {
-          await walk(inside, path, depth + 1)
-          continue
-        }
-      }
-      files[path] = await fileHeads(repo, entry, until).catch(() => null)
+  let truncated = listed.truncated
+  for (const { path, entry } of listed.files) {
+    if (Object.keys(files).length >= MAX_FILES || Date.now() > until) {
+      truncated = true
+      break
     }
+    files[path] = await fileHeads(repo, entry, until).catch(() => null)
   }
-  await walk(root, "", 0)
   return { heads: [...rootHandle.heads()], files, truncated }
 }
 
@@ -204,12 +194,13 @@ export async function guidesFolder(ctx, { create = false } = {}) {
   if (ctx.guidesFolderUrl) return ctx.guidesFolderUrl
   const notesUrl = await notesFolder(ctx, { create })
   if (!notesUrl) return null
-  const notesHandle = await ctx.repo.find(notesUrl)
-  const entry = (notesHandle.doc()?.docs ?? []).find((e) => e.type === "folder" && e.name === GUIDES_FOLDER_NAME)
+  const notes = treeNode(await ctx.repo.find(notesUrl))
+  if (!notes) return null
+  const entry = treeEntries(notes).find((e) => e.type === "folder" && e.name === GUIDES_FOLDER_NAME)
   let found = entry?.url ?? null
   if (!found && create) {
     const folder = await createFolder(ctx.repo, GUIDES_FOLDER_NAME)
-    notesHandle.change((d) => { d.docs.push({ name: GUIDES_FOLDER_NAME, type: "folder", url: folder.url }) })
+    treeLink(notes, { name: GUIDES_FOLDER_NAME, type: "folder", url: folder.url })
     found = folder.url
     await fsWrite.execute({ root: found, path: README, content: README_TEXT }, ctx)
   }
@@ -218,8 +209,8 @@ export async function guidesFolder(ctx, { create = false } = {}) {
 }
 
 async function readPins(ctx, folderUrl) {
-  const folder = (await ctx.repo.find(folderUrl)).doc()
-  const entry = (folder?.docs ?? []).find((e) => e.name === PINS_FILE)
+  const folder = treeNode(await ctx.repo.find(folderUrl))
+  const entry = folder && treeEntries(folder).find((e) => e.name === PINS_FILE)
   if (!entry) return {}
   try {
     return JSON.parse(contentText((await ctx.repo.find(entry.url)).doc()?.content)) ?? {}
@@ -236,11 +227,11 @@ async function readPins(ctx, folderUrl) {
 export async function listGuides(ctx) {
   const folderUrl = await guidesFolder(ctx)
   if (!folderUrl) return { folderUrl: null, guides: [] }
-  const folder = (await ctx.repo.find(folderUrl)).doc()
+  const folder = treeNode(await ctx.repo.find(folderUrl))
   const pins = await readPins(ctx, folderUrl)
   const guides = []
-  for (const entry of folder?.docs ?? []) {
-    if (entry.type === "folder" || !/\.md$/i.test(entry.name) || entry.name === README) continue
+  for (const entry of folder ? treeEntries(folder) : []) {
+    if (isTreeEntry(entry) || !/\.md$/i.test(entry.name) || entry.name === README) continue
     let text = ""
     try {
       text = contentText((await ctx.repo.find(entry.url)).doc()?.content)
@@ -381,7 +372,7 @@ export async function describeChanges(ctx, guide, { heads = null, file = null, m
     if (!(path in snapshot.files) || !(path in (guide.pin.files ?? {}))) continue
     lines.push("", `--- ${path}`)
     try {
-      const entryUrl = await fileUrlOf(ctx.repo, guide.package, snapshot.heads, path)
+      const entryUrl = (await resolvePath(ctx.repo, guide.package, path)).url
       const before = await fileTextAtHeads(ctx.repo, entryUrl, guide.pin.files[path])
       const after = await fileTextAtHeads(ctx.repo, entryUrl, snapshot.files[path])
       const diff = lineDiff(before, after, file ? maxLines * 10 : maxLines)
@@ -393,19 +384,6 @@ export async function describeChanges(ctx, guide, { heads = null, file = null, m
   }
   if (!file && changes.changed.filter((p) => !NO_DIFF.test(p)).length > maxFiles) lines.push("", `…and more changed files; pass \`file\` for any one.`)
   return lines.join("\n")
-}
-
-/** The URL of one file in the package tree, by path. */
-async function fileUrlOf(repo, packageUrl, _heads, path) {
-  let node = treeNode(await repo.find(packageUrl))
-  const parts = path.split("/")
-  for (let i = 0; i < parts.length; i++) {
-    const entry = treeEntries(node).find((e) => e.name === parts[i])
-    if (!entry) throw new Error("gone")
-    if (i === parts.length - 1) return entry.url
-    node = (await treeEnter(repo, entry)).node
-  }
-  throw new Error("gone")
 }
 
 // ----------------------------------------------------------------- surfacing

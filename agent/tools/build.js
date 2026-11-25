@@ -22,7 +22,7 @@
  */
 
 import { truncate, bytes } from "../documents/format.js"
-import { isFile, treeNode, treeEntries, treeEnter, treeAdd, treeRepin } from "./folders.js"
+import { isFile, treeNode, treeEntries, treeEnter, treeLink, treeRepin, ensurePath } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 
 /** Pinned, because a build that changes under you is not a build. */
@@ -216,35 +216,14 @@ export async function materialize(repo, folderUrl, { maxFiles = 400 } = {}) {
  * being reinstalled. In a directory document a link pinned to heads is moved to
  * the new heads, or Patchwork would go on serving the previous build.
  */
-export async function absorb(repo, folderUrl, outputs, { makeFile, makeFolder }) {
+export async function absorb(repo, folderUrl, outputs, { makeFile }) {
   const written = []
-
-  const folderFor = async (parts) => {
-    let node = treeNode(await repo.find(folderUrl))
-    if (!node) throw new Error(`${folderUrl} is not a folder or a directory document.`)
-    for (const part of parts) {
-      const existing = treeEntries(node).find((entry) => entry.name === part)
-      if (existing) {
-        ;({ node } = await treeEnter(repo, existing))
-        if (!node) throw new Error(`'${part}' is a file, so build output cannot go inside it.`)
-      } else if (node.prefix !== null) {
-        node = { handle: node.handle, prefix: `${node.prefix}${part}/` }
-      } else {
-        const created = await makeFolder(part)
-        node.handle.change((draft) => {
-          if (!draft.docs) draft.docs = []
-          draft.docs.push({ name: part, type: "folder", url: created.url })
-        })
-        node = { handle: created, prefix: null }
-      }
-    }
-    return node
-  }
+  if (!treeNode(await repo.find(folderUrl))) throw new Error(`${folderUrl} is not a folder or a directory document.`)
 
   for (const [path, content] of outputs) {
     const parts = path.split("/").filter(Boolean)
     const name = parts.pop()
-    const folder = await folderFor(parts)
+    const folder = await ensurePath(repo, folderUrl, parts)
     const existing = treeEntries(folder).find((entry) => entry.name === name)
 
     if (existing) {
@@ -256,7 +235,7 @@ export async function absorb(repo, folderUrl, outputs, { makeFile, makeFolder })
       written.push(`${path} · updated, ${bytes(content.length)}`)
     } else {
       const file = await makeFile(name, content)
-      treeAdd(folder, name, file.url)
+      treeLink(folder, { name, url: file.url })
       written.push(`${path} · created, ${bytes(content.length)}`)
     }
   }
@@ -264,7 +243,7 @@ export async function absorb(repo, folderUrl, outputs, { makeFile, makeFolder })
   return written
 }
 
-/** Document constructors for absorb, so callers do not have to supply them. */
+/** The file constructor absorb takes, so callers do not have to supply one. Folders are documents/tree.js's. */
 export function makers(repo) {
   return {
     async makeFile(name, content) {
@@ -276,15 +255,6 @@ export function makers(repo) {
         doc.mimeType = extension === "js" ? "text/javascript" : "text/plain"
         doc.content = content
         doc["@patchwork"] = { type: "file" }
-      })
-      return handle
-    },
-    async makeFolder(name) {
-      const handle = await repo.create2()
-      handle.change((doc) => {
-        doc.title = name
-        doc.docs = []
-        doc["@patchwork"] = { type: "folder" }
       })
       return handle
     },

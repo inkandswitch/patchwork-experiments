@@ -9,7 +9,7 @@
 
 import { hostImport } from "../host/import.js"
 import { truncate, bytes } from "../documents/format.js"
-import { resolvePath, treeNode, treeEntries, treeEnter } from "./folders.js"
+import { resolvePath, treeNode, treeEntries, treeFiles } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 import { fetcher } from "../net/guard.js"
 
@@ -151,21 +151,7 @@ export const pluginSource = {
       if (input.list || !input.file) {
         // Every file, by path: a directory document keeps its whole tree in
         // one document, so the top level alone would hide src/ entirely.
-        const names = []
-        const walk = async (node, prefix, depth) => {
-          for (const entry of treeEntries(node)) {
-            const path = prefix ? `${prefix}/${entry.name}` : entry.name
-            if (entry.type === "folder" && depth < 8) {
-              const { node: inside } = await treeEnter(ctx.repo, entry).catch(() => ({}))
-              if (inside) {
-                await walk(inside, path, depth + 1)
-                continue
-              }
-            }
-            names.push(path)
-          }
-        }
-        await walk(tree, "", 0)
+        const names = (await treeFiles(ctx.repo, tree)).files.map(({ path }) => path)
         if (input.list) return `${input.id} (${bare})\n${names.join("\n")}`
         // Default to the entry point named by package.json.
         let main = "index.js"

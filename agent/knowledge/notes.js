@@ -12,7 +12,8 @@
  * with history like any other, and editing one writes only what changed.
  */
 
-import { fsDelete, fsWrite, createFolder, isFolder } from "../tools/folders.js"
+import { fsDelete, fsWrite } from "../tools/folders.js"
+import { createFolder, isTreeEntry, treeEntries, treeLink, treeNode } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 import { truncate } from "../documents/format.js"
 
@@ -73,11 +74,10 @@ export async function notesFolder(ctx, { create = false } = {}) {
   const rootUrl = ctx.rootFolderUrl
   if (!rootUrl || !ctx.repo) return null
 
-  const rootHandle = await ctx.repo.find(rootUrl)
-  const root = rootHandle.doc()
-  if (!isFolder(root)) return null
+  const root = treeNode(await ctx.repo.find(rootUrl))
+  if (!root) return null
 
-  const folders = root.docs.filter((entry) => entry?.type === "folder")
+  const folders = treeEntries(root).filter((entry) => entry.type === "folder" && entry.url)
   const byName = folders.find((entry) => entry.name === NOTES_FOLDER_NAME)
   let found = byName?.url ?? null
   if (!found) {
@@ -96,7 +96,7 @@ export async function notesFolder(ctx, { create = false } = {}) {
   if (!found && create) {
     const folder = await createFolder(ctx.repo, NOTES_FOLDER_NAME)
     folder.change((d) => { d[MARKER] = true })
-    rootHandle.change((d) => { d.docs.push({ name: NOTES_FOLDER_NAME, type: "folder", url: folder.url }) })
+    treeLink(root, { name: NOTES_FOLDER_NAME, type: "folder", url: folder.url })
     found = folder.url
     await fsWrite.execute({ root: found, path: README, content: README_TEXT }, ctx)
   }
@@ -109,10 +109,10 @@ export async function notesFolder(ctx, { create = false } = {}) {
 export async function listNotes(ctx) {
   const folderUrl = await notesFolder(ctx)
   if (!folderUrl) return { folderUrl: null, notes: [] }
-  const folder = (await ctx.repo.find(folderUrl)).doc()
+  const folder = treeNode(await ctx.repo.find(folderUrl))
   const notes = []
-  for (const entry of folder?.docs ?? []) {
-    if (entry.type === "folder" || !/\.md$/i.test(entry.name) || entry.name === README) continue
+  for (const entry of folder ? treeEntries(folder) : []) {
+    if (isTreeEntry(entry) || !/\.md$/i.test(entry.name) || entry.name === README) continue
     let text = ""
     try {
       text = contentText((await ctx.repo.find(entry.url)).doc()?.content)

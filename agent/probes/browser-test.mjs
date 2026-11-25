@@ -66,6 +66,7 @@ const ON_DISK = Object.fromEntries(
     "tools/build.js",
     "documents/format.js",
     "documents/values.js",
+    "documents/tree.js",
     "tools/folders.js",
     "host/import.js",
     "runners/worker-client.js",

@@ -166,3 +166,24 @@ describe("doc_tree", () => {
     expect(shallow).not.toContain("Leek Soup")
   })
 })
+
+describe("inside a pushwork directory document", () => {
+  const PACKAGED = {
+    "automerge:root": { docs: [{ name: "pkg", type: "directory", url: "automerge:pkg" }] },
+    "automerge:pkg": { "@patchwork": { type: "directory" }, "package.json": "automerge:manifest", "src/budget.js": "automerge:budget" },
+    "automerge:manifest": { content: "{}" },
+    "automerge:budget": { content: "export const total = 42\n" },
+  }
+  const packaged = { repo: fakeRepo(PACKAGED), rootFolderUrl: "automerge:root" }
+
+  it("doc_search finds a file by its path, and inside it", async () => {
+    expect(await docSearch.execute({ query: "budget" }, packaged)).toContain("pkg/src/budget.js")
+    const inside = await docSearch.execute({ query: "total = 42", content: true, root: "automerge:root" }, packaged)
+    expect(inside).toContain("automerge:budget")
+  })
+
+  it("doc_tree outlines it, its prefixes as folders", async () => {
+    const out = await docTree.execute({ depth: 3 }, packaged)
+    expect(out.split("\n").slice(1)).toEqual(["pkg/", "  package.json  (file)", "  src/", "    budget.js  (file)"])
+  })
+})

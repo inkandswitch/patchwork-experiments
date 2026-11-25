@@ -12,7 +12,8 @@
  */
 
 import { previewJson, truncate } from "../documents/format.js"
-import { isFolder, isFile, ROOT_DESCRIPTION } from "./folders.js"
+import { ROOT_DESCRIPTION } from "./folders.js"
+import { isFile, isTreeEntry, treeEntries, treeNode } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 
 const DEFAULT_MAX_VISITS = 300
@@ -48,7 +49,9 @@ function searchRoot(input, ctx) {
  *
  * Only folders are loaded. The folder listing already says what each entry is,
  * so opening every document just to learn it is not a folder would pull the
- * whole account into memory for a name search.
+ * whole account into memory for a name search. A folder is a folder document
+ * or a directory document, and a folder inside a directory is walked in place
+ * (documents/tree.js), so each visit is one tree node, loaded or not.
  */
 export async function walkTree(
   repo,
@@ -57,30 +60,34 @@ export async function walkTree(
   { maxVisits = DEFAULT_MAX_VISITS, budgetMs = WALK_BUDGET_MS, now = () => Date.now() } = {}
 ) {
   const seen = new Set([rootUrl])
-  const queue = [{ url: rootUrl, path: "" }]
+  const queue = [{ url: rootUrl, node: null, path: "" }]
   let visits = 0
   const until = now() + budgetMs
 
   while (queue.length && visits < maxVisits && now() < until) {
-    const { url, path } = queue.shift()
+    const { url, path, ...place } = queue.shift()
     if (visits) await breathe()
-    let doc
-    try {
-      doc = (await repo.find(url)).doc()
-    } catch {
-      continue // a link to something we cannot load; skip it rather than fail
+    let node = place.node
+    if (!node) {
+      try {
+        node = treeNode(await repo.find(url))
+      } catch {
+        continue // a link to something we cannot load; skip it rather than fail
+      }
     }
     visits++
 
-    if (!isFolder(doc)) continue
+    if (!node) continue
 
-    for (const entry of doc.docs ?? []) {
+    for (const entry of treeEntries(node)) {
       const entryPath = path ? `${path}/${entry.name}` : entry.name
-      const stop = await visit({ entry, path: entryPath, parentUrl: url })
+      const stop = await visit({ entry, path: entryPath, parentUrl: node.handle.url ?? url })
       if (stop) return { visits, truncated: false }
-      if (entry.type === "folder" && !seen.has(entry.url)) {
+      if (!isTreeEntry(entry)) continue
+      if (entry.node) queue.push({ url: null, node: entry.node, path: entryPath })
+      else if (!seen.has(entry.url)) {
         seen.add(entry.url)
-        queue.push({ url: entry.url, path: entryPath })
+        queue.push({ url: entry.url, node: null, path: entryPath })
       }
     }
   }
@@ -217,24 +224,24 @@ export const docTree = {
     const maxDepth = input.depth ?? 2
     const lines = []
 
-    const walk = async (url, prefix, depth) => {
-      if (depth > maxDepth || lines.length > 400) return
-      let doc
-      try {
-        doc = (await ctx.repo.find(url)).doc()
-      } catch {
-        return
-      }
-      if (!isFolder(doc)) return
-
-      for (const entry of doc.docs ?? []) {
-        const isDir = entry.type === "folder"
+    const walk = async (node, prefix, depth) => {
+      if (!node || depth > maxDepth || lines.length > 400) return
+      for (const entry of treeEntries(node)) {
+        const isDir = isTreeEntry(entry)
         lines.push(`${prefix}${entry.name}${isDir ? "/" : ""}${isDir ? "" : `  (${entry.type ?? "doc"})`}`)
-        if (isDir) await walk(entry.url, `${prefix}  `, depth + 1)
+        if (isDir && depth < maxDepth) await walk(await enter(entry), `${prefix}  `, depth + 1)
+      }
+    }
+    const enter = async (entry) => {
+      if (entry.node) return entry.node
+      try {
+        return treeNode(await ctx.repo.find(entry.url))
+      } catch {
+        return null
       }
     }
 
-    await walk(root, "", 1)
+    await walk(await enter({ url: root }), "", 1)
     if (!lines.length) return `The root folder (${root}) is empty.`
     return `${root}\n${lines.join("\n")}`
   },

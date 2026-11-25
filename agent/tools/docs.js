@@ -15,7 +15,8 @@ import { applyOps, opLabel, valueAtOrThrow, OP_NAMES } from "../documents/ops.js
 import { isBytes, isLines, textForm, textOf, valueAt } from "../documents/values.js"
 import { previewJson, preview, shape, bytes, truncate, noDocumentError } from "../documents/format.js"
 import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "../documents/history.js"
-import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
+import { isCodePath } from "./folders.js"
+import { entriesOf, isDirectory, isFile, isFolder, treeNode, treeLink } from "../documents/tree.js"
 import { imageForModel } from "../documents/images.js"
 import { findAll, MAX_MATCHES, pdfOf, pdfWithoutText } from "./read-source.js"
 import { fileKind, officeText, describeFile } from "../documents/files.js"
@@ -287,8 +288,9 @@ export const docRead = {
  */
 function sourceCode(doc) {
   if (isFile(doc) && isCodePath(doc.name)) return `the source file ${doc.name}`
-  if (isFolder(doc) && doc.docs.some((entry) => entry?.name === "package.json")) return "a package folder"
-  if (isDirectory(doc) && "package.json" in doc) return "a package"
+  if (!entriesOf(doc)?.some((entry) => entry.name === "package.json")) return null
+  if (isFolder(doc)) return "a package folder"
+  if (isDirectory(doc)) return "a package"
   return null
 }
 
@@ -485,14 +487,7 @@ export async function fileInFolder(repo, folderUrl, { name, type, url }) {
   const handle = await repo.find(String(folderUrl).trim())
   const node = treeNode(handle)
   if (!node) throw new Error(`${folderUrl} is not a folder; the document was made but not filed (${url}).`)
-  handle.change((d) => {
-    if (node.prefix === null) {
-      if (!d.docs) d.docs = []
-      d.docs.push({ name, type, url })
-    } else {
-      d[`${node.prefix}${name}`] = url
-    }
-  })
+  treeLink(node, { name, type, url })
   const doc = handle.doc()
   return `'${doc?.title ?? doc?.name ?? "folder"}' (${handle.url})`
 }

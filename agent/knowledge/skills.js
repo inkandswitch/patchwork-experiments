@@ -18,7 +18,7 @@
  */
 
 import { BUILTIN_SKILLS } from "./builtin-skills.js"
-import { isFolder } from "../tools/folders.js"
+import { treeEnter, treeEntries, treeNode } from "../documents/tree.js"
 import { contentText } from "../documents/values.js"
 import { truncate } from "../documents/format.js"
 
@@ -27,24 +27,24 @@ export async function folderSkills(repo, folderUrl) {
   if (!folderUrl) return []
   let folder
   try {
-    folder = (await repo.find(folderUrl)).doc()
+    folder = treeNode(await repo.find(folderUrl))
   } catch {
     return []
   }
-  if (!isFolder(folder)) return []
+  if (!folder) return []
 
   const found = []
-  for (const entry of folder.docs ?? []) {
+  for (const entry of treeEntries(folder)) {
     try {
-      const doc = (await repo.find(entry.url)).doc()
+      const { node, handle } = await treeEnter(repo, entry)
 
       // A skill can be a folder holding SKILL.md, or just a markdown file.
       let body = null
-      if (isFolder(doc)) {
-        const file = (doc.docs ?? []).find((d) => /^skill\.md$/i.test(d.name))
-        if (file) body = contentText((await repo.find(file.url)).doc()?.content)
-      } else if (doc?.content != null) {
-        body = contentText(doc.content)
+      if (node) {
+        const file = treeEntries(node).find((d) => /^skill\.md$/i.test(d.name))
+        if (file) body = contentText((await treeEnter(repo, file)).handle.doc()?.content)
+      } else if (handle.doc()?.content != null) {
+        body = contentText(handle.doc().content)
       }
       if (!body) continue
 

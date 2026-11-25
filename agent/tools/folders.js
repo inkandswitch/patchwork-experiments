@@ -11,6 +11,7 @@
 
 import { previewJson, truncate, bytes } from "../documents/format.js"
 import { contentText } from "../documents/values.js"
+import { isFile, treeNode, treeEntries, treeEnter, treeLink, treeRemove, treeRepin, resolvePath, ensurePath, findPath } from "../documents/tree.js"
 import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, OpError, TEXT_OPS } from "../documents/ops.js"
 
 /**
@@ -51,178 +52,6 @@ export function deletesCode(input) {
   const path = String(input.path ?? "")
   const name = path.split("/").filter(Boolean).at(-1) ?? ""
   return !name || isCodePath(path) || name.lastIndexOf(".") <= 0
-}
-
-export function isFolder(doc) {
-  return !!doc && Array.isArray(doc.docs)
-}
-
-export function isFile(doc) {
-  return !!doc && "content" in doc
-}
-
-/**
- * A directory document: what pushwork writes for a package (its "vfs" shape).
- *
- * One document holds the whole tree, keyed by full path — `"src/index.ts":
- * "automerge:…"` — with each value a link to a file document, pinned to heads
- * for build output. There are no folder documents in it at all, so code that
- * only knew `docs[]` saw an empty package and built nothing.
- */
-export function isDirectory(doc) {
-  return doc?.["@patchwork"]?.type === "directory"
-}
-
-/** Keys a directory document uses for itself rather than for files. */
-const DIRECTORY_RESERVED = new Set(["@patchwork", "lastSyncAt", "contentVersion", "title"])
-
-/**
- * A place in a tree that can hold files.
- *
- * Either a folder document (`{ handle }`), or a path inside a directory
- * document (`{ handle, prefix }`, where the prefix is "" or ends in "/"). The
- * tools below walk, list and write through these, so both shapes behave the
- * same to the agent: `src` is a folder you can list and write into whether it
- * is a document of its own or a prefix on some keys.
- */
-export function treeNode(handle) {
-  const doc = handle?.doc()
-  if (isFolder(doc)) return { handle, prefix: null }
-  if (isDirectory(doc)) return { handle, prefix: "" }
-  return null
-}
-
-/** What is in a tree node: `{ name, type: "file" | "folder", url, node? }`. */
-export function treeEntries(node) {
-  const doc = node.handle.doc()
-  if (node.prefix === null) return (doc?.docs ?? []).map((d) => ({ name: d.name, type: d.type, url: d.url }))
-
-  const entries = new Map()
-  for (const [key, value] of Object.entries(doc ?? {})) {
-    if (DIRECTORY_RESERVED.has(key) || !key.startsWith(node.prefix)) continue
-    if (typeof value !== "string" || !value.startsWith("automerge:")) continue
-    const rest = key.slice(node.prefix.length)
-    const slash = rest.indexOf("/")
-    if (slash === -1) {
-      entries.set(rest, { name: rest, type: "file", url: value })
-    } else {
-      const name = rest.slice(0, slash)
-      if (!entries.has(name)) {
-        // A folder here is only a shared prefix: it has no document of its own.
-        entries.set(name, { name, type: "folder", url: null, node: { handle: node.handle, prefix: `${node.prefix}${name}/` } })
-      }
-    }
-  }
-  return [...entries.values()]
-}
-
-/**
- * Step into an entry: the tree node it is, or `{ handle }` for a file.
- *
- * Always the live document, even through a link pinned to heads: a pinned
- * link finds a read-only view, and every tool that walks here may go on to
- * write. A write re-pins the link (treeRepin), so reading the live document is
- * reading what the link will say.
- */
-export async function treeEnter(repo, entry) {
-  if (entry.node) return { node: entry.node, handle: entry.node.handle }
-  const handle = await repo.find(String(entry.url).split("#")[0])
-  return { node: treeNode(handle), handle }
-}
-
-/** Link a new file into a tree node. */
-export function treeAdd(node, name, url) {
-  node.handle.change((draft) => {
-    if (node.prefix === null) {
-      if (!draft.docs) draft.docs = []
-      draft.docs.push({ name, type: "file", url })
-    } else {
-      draft[`${node.prefix}${name}`] = url
-    }
-  })
-}
-
-/** Unlink an entry — a file, or a folder and everything under it. */
-export function treeRemove(node, entry) {
-  node.handle.change((draft) => {
-    if (node.prefix === null) {
-      const index = draft.docs.findIndex((d) => d.name === entry.name)
-      if (index !== -1) draft.docs.splice(index, 1)
-      return
-    }
-    const key = `${node.prefix}${entry.name}`
-    for (const existing of Object.keys(draft)) {
-      if (existing === key || existing.startsWith(`${key}/`)) delete draft[existing]
-    }
-  })
-}
-
-/**
- * After a file's content changes, keep a pinned link pointing at it.
- *
- * pushwork links build output with heads (`automerge:…#heads`), so the
- * directory names an exact version. Rewriting that file without moving the
- * link would leave Patchwork serving the old build however often it rebuilt.
- */
-export function treeRepin(node, entry, handle) {
-  if (node.prefix === null || !String(entry.url).includes("#") || !handle.view) return
-  const pinned = handle.view(handle.heads()).url
-  node.handle.change((draft) => {
-    draft[`${node.prefix}${entry.name}`] = pinned
-  })
-}
-
-/** A child folder of a tree node, made if it does not exist. */
-async function treeChild(repo, node, name) {
-  const existing = treeEntries(node).find((entry) => entry.name === name)
-  if (existing) {
-    const { node: child } = await treeEnter(repo, existing)
-    if (!child) throw new Error(`'${name}' is a file, so nothing can go inside it.`)
-    return child
-  }
-  // Inside a directory document a folder is just a longer key, which the
-  // first file written into it creates.
-  if (node.prefix !== null) return { handle: node.handle, prefix: `${node.prefix}${name}/` }
-  const created = await createFolder(repo, name)
-  node.handle.change((draft) => {
-    if (!draft.docs) draft.docs = []
-    draft.docs.push({ name, type: "folder", url: created.url })
-  })
-  return { handle: created, prefix: null }
-}
-
-/**
- * Walk a slash-separated path from a root folder or directory document.
- * Returns { url, doc, handle, node, trail }: `node` when the path names a
- * folder, `doc` and `handle` for whatever is there. Throws with the available
- * names on a miss, because "no such file" without a listing costs the model
- * another round trip.
- */
-export async function resolvePath(repo, rootUrl, path = "") {
-  const parts = String(path)
-    .split("/")
-    .map((s) => s.trim())
-    .filter(Boolean)
-
-  let url = rootUrl
-  let handle = await repo.find(url)
-  let node = treeNode(handle)
-  const trail = []
-
-  for (const part of parts) {
-    if (!node) throw new Error(`/${trail.join("/")} is not a folder, so '${part}' cannot be inside it.`)
-    const entries = treeEntries(node)
-    const entry = entries.find((d) => d.name === part)
-    if (!entry) {
-      const names = entries.map((d) => d.name).join(", ")
-      throw new Error(`'${part}' is not in /${trail.join("/")}. Contains: ${names || "(empty)"}`)
-    }
-    ;({ node, handle } = await treeEnter(repo, entry))
-    url = entry.url ?? handle.url
-    trail.push(part)
-  }
-
-  return { url, doc: node?.prefix ? null : handle.doc(), handle, node, trail }
 }
 
 /** A real automerge URL, rather than the shape of one. */
@@ -481,39 +310,6 @@ async function createFile(repo, name, content) {
   return handle
 }
 
-/** Make a folder document. */
-export async function createFolder(repo, name) {
-  const handle = await repo.create2()
-  handle.change((doc) => {
-    doc.title = name
-    doc.docs = []
-    doc["@patchwork"] = { type: "folder" }
-  })
-  return handle
-}
-
-/**
- * Walk to a path, creating folders along the way.
- *
- * This is what `fs_write` was missing, and its absence is why a separate
- * "write a tool" tool existed at all: a Patchwork package is nothing but a
- * folder document of file documents, so once files and folders can be created
- * here, writing a tool is writing files. There is nothing else to it.
- */
-async function ensurePath(repo, rootUrl, parts) {
-  let node = treeNode(await repo.find(rootUrl))
-  const trail = []
-
-  for (const part of parts) {
-    if (!node) throw new Error(`/${trail.join("/")} is not a folder, so '${part}' cannot go inside it.`)
-    node = await treeChild(repo, node, part)
-    trail.push(part)
-  }
-
-  if (!node) throw new Error(`/${trail.join("/")} is not a folder, so nothing can be written inside it.`)
-  return node
-}
-
 /**
  * Move the version of every package a write landed in.
  *
@@ -672,7 +468,7 @@ export const fsWrite = {
       } else {
         touched.push(parts)
         const created = await createFile(ctx.repo, name, content)
-        treeAdd(folder, name, created.url)
+        treeLink(folder, { name, url: created.url })
         if (DATA_FILE.test(name)) createdData.push({ path, parts: [...parts] })
         written.push(`${path} · created ${content.split("\n").length} lines (${created.url})`)
       }
@@ -890,27 +686,6 @@ function checkEdit(edit) {
     if (anchors.length !== 1) throw new OpError("insert takes `before` or `after` (one of them): the exact text to insert next to. For the start or end, prepend or append")
   }
   if (edit.op !== "replace" && !edit.text) throw new OpError(`${edit.op} takes \`text\`: what to add`)
-}
-
-/**
- * Walk to a folder without creating anything along the way.
- *
- * `ensurePath` makes the folders it cannot find, which is right for writing and
- * wrong for deleting: a typo in a path to delete would otherwise silently build
- * the folders it was about to look in and then report finding nothing.
- */
-async function findPath(repo, rootUrl, parts) {
-  let node = treeNode(await repo.find(rootUrl))
-  const trail = []
-  for (const part of parts) {
-    if (!node) throw new Error(`/${trail.join("/")} is not a folder.`)
-    const existing = treeEntries(node).find((entry) => entry.name === part)
-    if (!existing) return { node: null, missing: `/${[...trail, part].join("/")}` }
-    ;({ node } = await treeEnter(repo, existing))
-    trail.push(part)
-  }
-  if (!node) throw new Error(`/${trail.join("/")} is not a folder.`)
-  return { node, missing: null }
 }
 
 export const fsDelete = {
