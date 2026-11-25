@@ -195,13 +195,13 @@ try {
     const out = await call(`
       const storage = await site.find(window.__probe.storageUrl);
       const data = "data:text/javascript," + encodeURIComponent("export default () => 'ran'");
-      storage.change((d) => { d.served[Q] = { packages: [${J(pkg)}] }; });
+      storage.change((d) => C.setServed(d, Q, { packages: [${J(pkg)}] }));
       await new Promise((r) => setTimeout(r, 2000));
       const { key } = await C.ask(T, Q, { importUrl: data });
       const fromPackage = await C.run(T, Q, { importUrl: ${J(`/${encodeURIComponent(pkg)}/dist/tasks/wait.js`)}, input: { ms: 100, value: "accepted" } });
       await new Promise((r) => setTimeout(r, 3000));
       const waiting = (await T.find((await T.find(Q)).doc().jobs[key].taskUrl)).doc().runs.length;
-      storage.change((d) => { d.served[Q] = true; });
+      storage.change((d) => C.setServed(d, Q, true));
       const afterwards = await new Promise((r) => { const stop = C.watch(T, Q, key, (v) => { if (v.state === "succeeded") { stop(); r(v.result); } }); });
       return { fromPackage, runsWhileRefused: waiting, afterwards };`, "what the pool accepts", 90_000);
     check("told to run only this package's code, the pool leaves a data: URL waiting, and runs it once told it may", out.fromPackage === "accepted" && out.runsWhileRefused === 0 && out.afterwards === "ran", out);

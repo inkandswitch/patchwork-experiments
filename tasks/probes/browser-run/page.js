@@ -102,6 +102,16 @@ const probe = {
     return url ? (await repo.find(url)).doc() : null;
   },
 
+  /** The queues the task storage document serves now, each with its setting, as the client reads them. */
+  async servedNow() {
+    return client.servedOf(await probe.storage());
+  },
+
+  /** The queue the task storage document names as this person's own, as the client reads it, or null. */
+  async ownNow() {
+    return client.ownQueueOf(await probe.storage());
+  },
+
   /** What the titlebar tool shows, as text, and which offer it makes (`make`, `open` or none). */
   titlebar() {
     const list = document.querySelector('#badge .task-titlebar-list');

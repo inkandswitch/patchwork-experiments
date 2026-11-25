@@ -352,8 +352,8 @@ try {
     const heard = await A.js("probe.served(4000)");
     const waited = await A.js(`probe.last(${J(waitingKey)})`);
     const pressed = await A.js("probe.pressMakeOwn()");
-    const own = await A.waitFor("probe.storage().then((s) => s?.own ?? false)", 15_000);
-    const storageAfter = await A.js("probe.storage()");
+    const own = await A.waitFor("probe.ownNow().then((url) => url ?? false)", 15_000);
+    const servedAfter = await A.js("probe.servedNow()");
     const ownRun = await A.js(`probe.ownQueue().then((url) => probe.timeRun(${J(NOOP)}, null, url).then((r) => ({ url, ...r })))`, 30_000).catch((e) => ({ error: String(e.message ?? e) }));
     const asked = await A.js("probe.providerAsked");
     const offerAfter = await A.waitFor("probe.titlebar()?.offer === null && probe.titlebar()", 10_000);
@@ -363,10 +363,10 @@ try {
     check(
       "18 a fresh account serves nothing and says so; Make my queue makes and serves one, and a task asked of ownQueue() runs; Join serves the probe's queue and its waiting task runs",
       !!said && /No task queues/.test(said.text) && storageBefore === null && heard.length === 0 && waited.state === "waiting" && waited.runs.length === 0 &&
-        pressed && typeof own === "string" && storageAfter?.served?.[own] === true && J(Object.keys(storageAfter.served)) === J([own]) &&
+        pressed && typeof own === "string" && servedAfter?.[own] === true && J(Object.keys(servedAfter)) === J([own]) &&
         ownRun.url === own && ownRun.result === 1 && J(asked) === J(["tasks-next"]) && !!offerAfter &&
         joined.pressed && joined.served === true && afterJoin.state === "succeeded",
-      `before: titlebar ${J(said?.text)} offering ${J(said?.offer)}, task storage ${J(storageBefore)}, pools heard on the probe's queue ${J(heard)}, a task asked of it ${waited.state} with ${waited.runs.length} runs; pressed ${pressed}; after: own ${String(own).slice(0, 22)}…, served ${J(Object.keys(storageAfter?.served ?? {}).map((u) => u.slice(0, 22)))}, the provider asked for ${J(asked)}; a task asked of ownQueue() ${ownRun.result === 1 ? `ran in ${ownRun.ms.toFixed(0)} ms on ${ownRun.url === own ? "that queue" : J(ownRun.url)}` : J(ownRun)}; titlebar then ${J(offerAfter?.text)}; Join pressed ${joined.pressed}, served ${J(joined.served)}; the waiting task ${afterJoin.state}`,
+      `before: titlebar ${J(said?.text)} offering ${J(said?.offer)}, task storage ${J(storageBefore)}, pools heard on the probe's queue ${J(heard)}, a task asked of it ${waited.state} with ${waited.runs.length} runs; pressed ${pressed}; after: own ${String(own).slice(0, 22)}…, served ${J(Object.keys(servedAfter ?? {}).map((u) => u.slice(0, 22)))}, the provider asked for ${J(asked)}; a task asked of ownQueue() ${ownRun.result === 1 ? `ran in ${ownRun.ms.toFixed(0)} ms on ${ownRun.url === own ? "that queue" : J(ownRun.url)}` : J(ownRun)}; titlebar then ${J(offerAfter?.text)}; Join pressed ${joined.pressed}, served ${J(joined.served)}; the waiting task ${afterJoin.state}`,
     );
   }
 
