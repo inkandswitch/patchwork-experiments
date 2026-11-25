@@ -13,13 +13,16 @@
     "watch": "nodemon --watch src -e js,tsx,ts,tsx,css,json --exec 'pnpm build && pnpm push'",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:node": "node scripts/build-node.mjs",
+    "host": "node dist-node/host.mjs"
   },
   "keywords": [],
   "author": "Ink & Switch",
   "dependencies": {
     "@automerge/automerge": "^3.2.6",
     "@automerge/automerge-repo": "2.6.0-subduction.20",
+    "@automerge/automerge-repo-node": "npm:@automerge/automerge-repo@2.6.0-subduction.43",
     "@automerge/automerge-repo-storage-indexeddb": "2.6.0-subduction.20",
     "@automerge/vanillajs": "2.6.0-subduction.20",
     "@inkandswitch/patchwork-bootloader": "^0.7.2",
@@ -31,6 +34,7 @@
   },
   "devDependencies": {
     "autoprefixer": "^10.5.0",
+    "esbuild": "^0.21.5",
     "happy-dom": "^15.11.7",
     "nodemon": "^3.1.14",
     "vite": "^5.4.21",

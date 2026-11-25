@@ -2,8 +2,16 @@
 
 console.log('task worker script starting; self.name =', (self as any).name);
 
-import type { TaskQueueDoc, TaskDoc, RunStatus, WorkerDoc, RunLogEntry } from './datatype';
 import type {
+  TaskQueueDoc,
+  TaskDoc,
+  RunStatus,
+  WorkerDoc,
+  RunLogEntry,
+  TaskQueueSet,
+} from './datatype';
+import type {
+  MessageToTaskChannel,
   MessageToWorker,
   MessageToWorkerChannel,
   MessageToWorkerPoolProxy,
@@ -12,11 +20,15 @@ import type {
 import type { Repo, AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
 
 import generateName from 'boring-name-generator';
-import { getRepo, setUpImportMap } from './webworker-lib';
-import { DeliveryStats, reportDeliveryStats } from './delivery-stats';
+import { getRepo, importModule, setUpImportMap } from './webworker-lib';
+import { DeliveryStats, reportDeliveryStats, Sequencer } from './delivery-stats';
 import { assignmentId } from './claims';
-import { listen } from './messages';
+import { listen, send } from './messages';
 import { retireForNewerBuild } from './retire';
+import { acceptanceOf, accepts } from './acceptance';
+import { endedBy, finishJob, isJobEntry } from './jobs';
+import type { TaskContext } from './job-context';
+import { trace } from './trace';
 
 let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 
@@ -27,6 +39,7 @@ declare global {
 }
 
 let workerHandle: DocHandle<WorkerDoc>;
+let sequencer: Sequencer;
 
 const deliveryStats = new DeliveryStats();
 
@@ -62,6 +75,9 @@ function handleConnect(e: any) {
         case 'init':
           init(port, msg.repoConfig, msg.contactUrl, msg.importMap, msg.baseURI);
           break;
+        case 'update task queue set':
+          setTaskQueues(msg.taskQueues);
+          break;
       }
     } catch (error) {
       console.error('uh-oh, error handling message', { msg, error });
@@ -72,6 +88,48 @@ function handleConnect(e: any) {
 
 (self as any).onconnect = handleConnect;
 self.addEventListener('connect', handleConnect as any);
+
+// The queues this worker works on and whose code it runs from each (see
+// acceptance.ts), as whoever started it last said. Until it has been told, it
+// runs nothing.
+let taskQueues: TaskQueueSet = {};
+
+function setTaskQueues(said: TaskQueueSet | undefined) {
+  taskQueues = said ?? {};
+  sayWhatThisTakes();
+}
+
+/** What this worker takes from each queue, as its doc should say it. */
+function takenNow(): NonNullable<WorkerDoc['accepts']> {
+  const taken: NonNullable<WorkerDoc['accepts']> = {};
+  for (const taskQueueUrl of Object.keys(taskQueues).sort() as AutomergeUrl[]) {
+    const acceptance = acceptanceOf(taskQueues[taskQueueUrl]);
+    if (acceptance !== undefined) {
+      taken[taskQueueUrl] = acceptance === 'any' ? 'any' : [...acceptance].sort();
+    }
+  }
+  return taken;
+}
+
+/**
+ * Keeps this worker's own doc saying whose code it runs. A router goes by
+ * that, so a task is only sent where it will be taken; the worker checks
+ * again itself before it imports anything (see `run`).
+ */
+function sayWhatThisTakes() {
+  if (!workerHandle) {
+    return; // said when the doc is made
+  }
+  const taken = takenNow();
+  const said = workerHandle.doc().accepts;
+  const sorted = said && Object.fromEntries(Object.keys(said).sort().map((url) => [url, (said as any)[url]]));
+  if (JSON.stringify(sorted ?? null) === JSON.stringify(taken)) {
+    return;
+  }
+  workerHandle.change((doc) => {
+    doc.accepts = taken;
+  });
+}
 
 async function init(
   workerPoolProxyPort: MessagePort,
@@ -116,7 +174,10 @@ async function init(
     currentTask: null,
     // present from the start, so a router can tell this worker will report
     lastFinished: null,
+    taskCount: 0,
+    accepts: takenNow(),
   });
+  sequencer = new Sequencer(workerHandle.url);
 
   // tell the worker pool proxy that I exist
   workerPoolProxyPort.postMessage({
@@ -141,7 +202,7 @@ async function init(
           console.log('busy, ignoring request to work on', msg.taskUrl);
           break;
         }
-        processTask(msg.taskUrl, msg.taskQueueUrl, assignmentId(msg));
+        processTask(msg.taskUrl, msg.taskQueueUrl, assignmentId(msg), msg.key);
         break;
     }
   });
@@ -168,24 +229,26 @@ function logTally() {
   console.log('');
 }
 
-const MAX_TRIES = 3;
-
 async function processTask(
   taskUrl: AutomergeUrl,
   taskQueueUrl: AutomergeUrl,
   assignment: string,
+  /** For a task asked for by key, the key: said in this worker's doc, for routers (see jobs.ts). */
+  key?: string,
 ) {
   console.log('executing task', taskUrl);
+  trace('worker told', taskUrl);
 
   workerHandle.change((doc) => {
-    doc.currentTask = { taskUrl, taskQueueUrl };
+    doc.currentTask = key === undefined ? { taskUrl, taskQueueUrl } : { taskUrl, taskQueueUrl, key };
+    doc.taskCount = (doc.taskCount ?? 0) + 1;
   });
 
   let ok = true;
 
   let taskHandle: DocHandle<TaskDoc<any, any>>;
   try {
-    taskHandle = await repo.find<TaskDoc<any, any>>(taskUrl);
+    taskHandle = await findSoon<TaskDoc<any, any>>(taskUrl);
   } catch (error) {
     console.error('unable to get doc handle for task', { taskUrl, error });
     ok = false;
@@ -214,22 +277,22 @@ async function processTask(
 
   taskHandle = taskHandle!;
   taskQueueHandle = taskQueueHandle!;
+  trace('worker has the task', taskUrl);
 
-  // whether the task has left its queue's pending list, as far as this worker knows
+  // whether the task is finished with (off its queue's waiting work), as far as this worker knows
   let done = false;
   try {
-    const status = await execute(taskHandle);
-    if (status === 'succeeded') {
-      console.log('task succeeded!');
-      tally.numSuccesses++;
-    } else {
+    const { status, ended } = await run(taskHandle, taskQueueHandle, assignment, key);
+    if (status === 'not mine') {
+      tally.numBails++;
+    } else if (status === 'failed') {
       console.error('task failed');
       tally.numFailures++;
+    } else {
+      console.log(`task ${status}!`);
+      tally.numSuccesses++;
     }
-    if (status === 'succeeded' || failedTooManyTimes(taskHandle)) {
-      moveToDone(taskUrl, taskQueueHandle);
-      done = true;
-    }
+    done = ended;
   } catch (error) {
     console.error('impossible error:', error);
   } finally {
@@ -237,6 +300,7 @@ async function processTask(
       doc.currentTask = null;
       doc.lastFinished = { assignment, done };
     });
+    trace('worker says it is free', taskUrl);
   }
   logTally();
   if (retiring) {
@@ -244,57 +308,240 @@ async function processTask(
   }
 }
 
-function failedTooManyTimes(taskHandle: DocHandle<TaskDoc<any, any>>) {
-  return taskHandle.doc().runs.filter(({ status }) => status === 'failed').length >= MAX_TRIES;
+/** How long, at the least, between two messages about a running task's progress. */
+const SAY_EVERY_MS = 100;
+
+/** How often a running task's latest progress is said again, for whoever has only just started watching. */
+const SAY_AGAIN_EVERY_MS = 2_000;
+
+/** How long a cancelled task's code is given to stop before its worker moves on without it. */
+const STOP_GRACE_MS = 5_000;
+
+/** How long a worker sits on a task it won't run before saying so, so that being sent it again and again is slow. */
+const REFUSAL_PAUSE_MS = 2_000;
+
+/** What waiting on a cancelled task's code comes to when it doesn't stop. */
+const GAVE_UP = Symbol('gave up');
+
+/** A copy that can be sent in a message, or null. */
+function sendable(value: unknown): any {
+  try {
+    return value === undefined ? null : JSON.parse(JSON.stringify(value)) ?? null;
+  } catch {
+    return String(value);
+  }
 }
 
-async function execute(taskHandle: DocHandle<TaskDoc<any, any>>) {
+/**
+ * Runs a task once and records how it went.
+ *
+ * `status` is the run's: `succeeded`, `failed` (its code couldn't be loaded,
+ * or threw), `cancelled` (someone asked it to stop, before or during the run),
+ * or `not mine`, when this worker doesn't run code from where the task's is
+ * (see acceptance.ts) and nothing is recorded. `ended` says the task is
+ * finished with: it has left its queue's waiting work.
+ *
+ * While it runs, the task doc's `current` is this run, and what its code
+ * reports goes out on the task doc's channel (see `TaskProgressMessage`). A
+ * second worker handed the same task (it can happen; see lab note 2) replaces
+ * `current` with its own run, and this one then leaves it alone.
+ */
+async function run(
+  taskHandle: DocHandle<TaskDoc<any, any>>,
+  taskQueueHandle: DocHandle<TaskQueueDoc>,
+  assignment: string,
+  key: string | undefined,
+): Promise<{ status: RunStatus | 'not mine'; ended: boolean }> {
+  const taskUrl = taskHandle.url;
+  const taskQueueUrl = taskQueueHandle.url;
   const { importUrl, input } = taskHandle.doc();
 
-  const logs: RunLogEntry[] = [];
+  /** Takes the task off its queue's waiting work. */
+  const delist = () => {
+    if (key === undefined) {
+      moveToDone(taskUrl, taskQueueHandle);
+    } else {
+      taskQueueHandle.change((doc) => finishJob(doc, key, taskUrl));
+    }
+  };
+
+  // Cancelled is said in the task's own doc. A task asked for by key also
+  // stops when its key has been finished with by another task: a second ask
+  // took this one's place under the key and was then cancelled, so nobody is
+  // waiting on this run any more.
+  const isCancelled = () => {
+    if (taskHandle.doc().cancelled) {
+      return true;
+    }
+    const job = key === undefined ? undefined : taskQueueHandle.doc().jobs?.[key];
+    return isJobEntry(job) && !!job.done && job.taskUrl !== taskUrl;
+  };
+
+  const ended = taskHandle.doc().outcome;
+  if (ended) {
+    // Over already: this hand-out was made on an old view of the queue.
+    delist();
+    return { status: ended, ended: true };
+  }
+  if (isCancelled()) {
+    // cancelled before it got anywhere: nothing ran, so there's no run to record
+    delist();
+    return { status: 'cancelled', ended: true };
+  }
+
+  if (!accepts(acceptanceOf(taskQueues[taskQueueUrl]), importUrl)) {
+    // The router sent it on an out-of-date view of this worker, or the queue
+    // says the task's code is somewhere it isn't. It goes to another worker.
+    console.log('not running code from', importUrl.slice(0, 120), 'for', taskUrl);
+    await new Promise((resolve) => setTimeout(resolve, REFUSAL_PAUSE_MS));
+    return { status: 'not mine', ended: false };
+  }
+
   const startTimeMillis = Date.now();
+  trace('run starts', taskUrl);
+  taskHandle.change((doc) => {
+    doc.current = { workerUrl: workerHandle.url, assignment, startTimeMillis };
+  });
+
+  // What the task's code reports, said on the task's channel: at most every
+  // SAY_EVERY_MS, and the latest progress again every so often.
+  const logs: RunLogEntry[] = [];
+  let logsSaid = 0;
+  let progress: unknown;
+  let progressChanged = false;
+  let sayTimer: ReturnType<typeof setTimeout> | null = null;
+  const say = (again = false) => {
+    sayTimer = null;
+    const freshLogs = logs.slice(logsSaid);
+    if (!progressChanged && freshLogs.length === 0 && !(again && progress !== undefined)) {
+      return;
+    }
+    send(taskHandle, {
+      type: 'task progress',
+      ...sequencer.stamp(taskUrl),
+      assignment,
+      ...(progressChanged || again ? { progress: sendable(progress) } : {}),
+      ...(freshLogs.length > 0 ? { logs: freshLogs } : {}),
+    } satisfies MessageToTaskChannel);
+    logsSaid = logs.length;
+    progressChanged = false;
+  };
+  const saySoon = () => {
+    sayTimer ??= setTimeout(say, SAY_EVERY_MS);
+  };
+  const sayAgainTimer = setInterval(() => say(true), SAY_AGAIN_EVERY_MS);
+
+  const controller = new AbortController();
+  const stopIfCancelled = () => {
+    if (isCancelled() && !controller.signal.aborted) {
+      console.log('task cancelled', taskUrl);
+      controller.abort(new DOMException('The task was cancelled', 'AbortError'));
+    }
+  };
+  taskHandle.on('change', stopIfCancelled);
+  taskQueueHandle.on('change', stopIfCancelled);
+  // resolves a while after a cancel, for code that doesn't stop by itself
+  const gaveUpWaiting = new Promise<typeof GAVE_UP>((resolve) => {
+    controller.signal.addEventListener('abort', () =>
+      setTimeout(() => resolve(GAVE_UP), STOP_GRACE_MS),
+    );
+  });
+
+  const context: TaskContext = {
+    log(...args: unknown[]) {
+      const message = args.map((arg) => '' + arg).join(' ');
+      logs.push({ timestampMillis: Date.now(), message });
+      console.log('Task log:', message);
+      saySoon();
+    },
+    progress(value: unknown) {
+      progress = value;
+      progressChanged = true;
+      saySoon();
+    },
+    signal: controller.signal,
+    repo,
+    taskUrl,
+    key: key ?? null,
+  };
+
   let status: RunStatus = 'succeeded';
   let result: any;
   try {
-    // Dynamic import of the task module using importShim for import map support
-    const module = await (self as any).importShim(importUrl);
-    const taskFunction = module.default as any;
-
-    // Execute the task with logging context
-    result = await taskFunction.call(
-      {
-        log(...args: any) {
-          const timestamp = Date.now();
-          const message = args
-            .map((arg: any) => '' + arg)
-            .reduce((acc: string, m: string) => `${acc} ${m}`);
-          logs.push({ timestampMillis: timestamp, message });
-          console.log('Task log:', message);
-        },
-      },
-      input,
-    );
+    // Dynamic import of the task module, with import map support
+    const module = await importModule(importUrl);
+    trace('code loaded', taskUrl);
+    const taskFunction = module?.default;
+    if (typeof taskFunction !== 'function') {
+      throw new Error("the task's code has no default export to call");
+    }
+    // Execute the task with its context as `this`, as ever, and as a second argument
+    const running = Promise.resolve().then(() => taskFunction.call(context, input, context));
+    const outcome = await Promise.race([running, gaveUpWaiting]);
+    if (outcome === GAVE_UP) {
+      running.catch(() => {}); // whatever it does now, nobody is listening
+    } else {
+      result = outcome;
+    }
   } catch (error: any) {
-    console.error('task execution failed:', error);
-    logs.push({ timestampMillis: Date.now(), message: error?.message ?? '' + error });
-    status = 'failed';
+    if (!controller.signal.aborted) {
+      console.error('task execution failed:', error);
+      logs.push({ timestampMillis: Date.now(), message: error?.message ?? '' + error });
+      status = 'failed';
+    }
+  } finally {
+    clearInterval(sayAgainTimer);
+    if (sayTimer) {
+      clearTimeout(sayTimer);
+    }
+    taskHandle.off('change', stopIfCancelled);
+    taskQueueHandle.off('change', stopIfCancelled);
   }
+  trace('code ran', taskUrl);
+  if (isCancelled()) {
+    // however its code ended: a result nobody wants any more isn't one
+    status = 'cancelled';
+  }
+  say(); // whatever hasn't been said yet
 
-  const endTimeMillis = Date.now();
-
-  // Update task document with results
+  // The run, and with it, in the same change, whether it ends the task: a
+  // reader of the task has both or neither (see `taskState`).
+  let endsTask = false;
   taskHandle.change((doc) => {
     doc.runs.push({
       workerUrl: workerHandle.url,
       status,
-      result: result ?? null,
+      result: status === 'succeeded' ? (result ?? null) : null,
       startTimeMillis,
-      endTimeMillis,
-      logs,
+      endTimeMillis: Date.now(),
+      logs: logs.map((entry) => ({ ...entry })),
     });
+    if (doc.current?.assignment === assignment) {
+      doc.current = null;
+    }
+    const outcome = endedBy(status, doc);
+    if (outcome) {
+      endsTask = true;
+      if (!doc.outcome) {
+        doc.outcome = outcome;
+      }
+    }
   });
+  trace('run recorded', taskUrl);
+  if (endsTask) {
+    delist();
+  }
+  // Saved at once: whoever asked shares this worker's database, in a browser,
+  // and hears of the result as it is saved, which left alone is a tenth of a
+  // second from now (and the same again for the router to see the queue).
+  saveNow(taskHandle, taskQueueHandle).then(() => trace('run saved', taskUrl));
+  return { status, ended: endsTask };
+}
 
-  return status;
+function saveNow(...handles: DocHandle<any>[]) {
+  return repo.flush(handles.map((handle) => handle.documentId)).catch((error) => {
+    console.log('could not save at once; it is saved a moment later all the same', error);
+  });
 }
 
 function moveToDone(taskUrl: AutomergeUrl, taskQueueHandle: DocHandle<TaskQueueDoc>) {
@@ -308,6 +555,39 @@ function moveToDone(taskUrl: AutomergeUrl, taskQueueHandle: DocHandle<TaskQueueD
   });
 }
 
+/** How long one ask for a doc is waited on before asking again. */
+const FIND_WAIT_MS = 8_000;
+
+/**
+ * The doc at `url`, asked for a few times before giving up. A task is named
+ * in its queue the moment it's made, and where the worker doesn't share a
+ * database with whoever made it (see src/node), the name can get here before
+ * the doc does. Nor is an ask waited on for ever: one the sync server never
+ * answers would otherwise hold the worker for as long as the server's own
+ * patience lasts, a minute at a time. Giving up hands the task back, to be
+ * sent out again.
+ */
+async function findSoon<T>(url: AutomergeUrl, tries = 3, gapMs = 700): Promise<DocHandle<T>> {
+  for (let attempt = 1; ; attempt++) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        repo.find<T>(url),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`no answer for ${url} in ${FIND_WAIT_MS} ms`)), FIND_WAIT_MS);
+        }),
+      ]);
+    } catch (error) {
+      if (attempt >= tries) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, gapMs));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
 const taskQueueHandles = new Map<AutomergeUrl, DocHandle<TaskQueueDoc>>();
 
 async function getTaskQueueHandle(taskQueueUrl: AutomergeUrl) {
@@ -315,7 +595,7 @@ async function getTaskQueueHandle(taskQueueUrl: AutomergeUrl) {
     return taskQueueHandles.get(taskQueueUrl)!;
   }
 
-  const handle = await repo.find<TaskQueueDoc>(taskQueueUrl);
+  const handle = await findSoon<TaskQueueDoc>(taskQueueUrl);
   taskQueueHandles.set(taskQueueUrl, handle);
   return handle;
 }

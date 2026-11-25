@@ -1,5 +1,5 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
-import { TaskQueueSet } from './datatype';
+import type { RunLogEntry, TaskQueueSet } from './datatype';
 import type { Stamp } from './delivery-stats';
 import type { TabReport } from './availability';
 
@@ -37,7 +37,13 @@ export type MessageToTaskQueueChannel =
 export type MessageToWorker =
   // sent by the app (worker pool proxy)
   | WorkerInitMessage
+  | UpdateTaskQueueSetMessage // a worker goes by it for whose code it runs (see acceptance.ts)
   | TerminateMessage
+  ;
+
+export type MessageToTaskChannel =
+  // sent by the worker running the task
+  | TaskProgressMessage
   ;
 
 export type MessageToWorkerChannel =
@@ -92,6 +98,8 @@ export interface WorkerHeartbeatMessage extends Stamp {
   type: 'worker heartbeat';
   workerUrl: AutomergeUrl;
   currentTask: { taskUrl: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null;
+  /** The worker's `taskCount` as the pool had it when it sent this (see datatype.ts). */
+  taskCount?: number;
   taskQueues: TaskQueueSet;
   /**
    * False when this worker's host would rather it wasn't given work just now
@@ -119,8 +127,25 @@ export interface RouterHeartbeatMessage extends Stamp {
   incompatibleWorkerUrls?: AutomergeUrl[];
 };
 
+/**
+ * How a running task is going, said by its worker on the task doc's own
+ * channel to whoever has the task open. Nothing is written for these: a
+ * watcher that arrives late hears the next one.
+ */
+export interface TaskProgressMessage extends Stamp {
+  type: 'task progress';
+  /** The hand-out this is a run of: a watcher keeps what it hears to the run going on. */
+  assignment: string;
+  /** What the task's function last reported, if this message brings news of that. */
+  progress?: unknown;
+  /** Lines its function has logged since the last message. */
+  logs?: RunLogEntry[];
+}
+
 export interface WorkOnTaskMessage extends Stamp {
   type: 'work on';
   taskUrl: AutomergeUrl;
   taskQueueUrl: AutomergeUrl;
+  /** For a task asked for by key (see jobs.ts), the key. */
+  key?: string;
 }

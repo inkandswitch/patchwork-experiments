@@ -26,7 +26,15 @@ import {
   setAvailabilityMode,
 } from './host-activity';
 import { listen } from './messages';
-import { getAccountDocUrl, isOnTaskQueue, joinTaskQueue, leaveTaskQueue } from './helpers';
+import {
+  getAccountDocUrl,
+  getAcceptance,
+  isOnTaskQueue,
+  joinTaskQueue,
+  leaveTaskQueue,
+  setAcceptance,
+} from './helpers';
+import type { Acceptance } from './acceptance';
 import {
   useDoc,
   useHandle,
@@ -35,6 +43,8 @@ import {
   useRepo,
   WithTasksRepo,
 } from './use-doc';
+import { AcceptanceChoice, JobsSection } from './jobs-view';
+import { waitingWork } from './jobs';
 
 const DEFAULT_INPUT_EXPR = `[
   Math.floor(Math.random() * 10) + 1,
@@ -103,6 +113,10 @@ function useMembership(queueUrl: AutomergeUrl, hostRepo: Repo) {
     joined: () => isOnTaskQueue(account(), queueUrl),
     join: () => accountHandle()?.change((doc: any) => joinTaskQueue(doc, queueUrl)),
     leave: () => accountHandle()?.change((doc: any) => leaveTaskQueue(doc, queueUrl)),
+    /** Whose code this account's browsers run from the queue (see acceptance.ts). */
+    acceptance: () => getAcceptance(account(), queueUrl),
+    accept: (acceptance: Acceptance) =>
+      accountHandle()?.change((doc: any) => setAcceptance(doc, queueUrl, acceptance)),
   };
 }
 
@@ -170,7 +184,7 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc>; hostRepo: Re
         <header class="tq-header">
           <h1 class="tq-title">{queue().title ?? 'Task queue'}</h1>
           <div class="tq-stats">
-            <Stat value={queue().pending.length} label="pending" />
+            <Stat value={waitingWork(queue()).length} label="pending" />
             <Stat value={queue().done.length} label="done" />
             <Stat value={workers().length} label={workers().length === 1 ? 'worker' : 'workers'} />
           </div>
@@ -233,6 +247,12 @@ const TaskQueueBrowser = (props: { handle: DocHandle<TaskQueueDoc>; hostRepo: Re
           joined={membership.known() && membership.joined()}
           onLeave={membership.leave}
         />
+
+        <Show when={membership.known() && membership.joined()}>
+          <AcceptanceChoice acceptance={membership.acceptance()} onChange={membership.accept} />
+        </Show>
+
+        <JobsSection handle={props.handle} queue={queue()} />
 
         <NewTaskForm onAdd={addTask} />
 
@@ -785,7 +805,9 @@ const Run = (props: { run: RunInfo<any> }) => {
   return (
     <div class={`tq-run tq-run--${props.run.status}`}>
       <div class="tq-run-line">
-        <span class="tq-task-mark">{props.run.status === 'succeeded' ? '✓' : '✕'}</span>
+        <span class="tq-task-mark">
+          {props.run.status === 'succeeded' ? '✓' : props.run.status === 'cancelled' ? '–' : '✕'}
+        </span>
         <Show when={worker()} fallback={<Placeholder />}>
           {(doc) => <Identity contactUrl={doc().contactUrl} name={doc().name} />}
         </Show>

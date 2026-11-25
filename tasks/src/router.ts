@@ -19,10 +19,12 @@ import generateName from 'boring-name-generator';
 import { seconds, shuffle } from './helpers';
 import { DeliveryStats, reportDeliveryStats, Sequencer } from './delivery-stats';
 import { RouterWatch } from './takeover';
-import { assignmentId, claimIsSettled, type Claim } from './claims';
+import { assignmentId, claimIsSettled, heardRunning, type Claim } from './claims';
 import { listen, send } from './messages';
 import { retireForNewerBuild } from './retire';
 import { BUILD, compatible, protocolOf, WIRE_PROTOCOL } from './version';
+import { canRun, eachWaiting, hasWaitingWork, takingOf } from './jobs';
+import { trace } from './trace';
 
 let repo: Repo;
 let contactUrl: AutomergeUrl;
@@ -52,10 +54,14 @@ const attemptingToTakeOverTaskQueueUrls = new Set<AutomergeUrl>();
 
 interface WorkerState {
   handle: DocHandle<WorkerDoc>;
-  /** Last task URL reported by the worker pool heartbeat (replica of WorkerDoc). */
+  /** Last task URL reported by the worker pool heartbeat (replica of WorkerDoc). Read through `runningAsHeard`. */
   currentTaskUrl: AutomergeUrl | null;
+  /** The worker's `taskCount` as that heartbeat gave it, where it did. */
+  heartbeatTaskCount: number | undefined;
   /** The task this router has handed the worker and not yet heard about (see claims.ts). */
   claim: Claim | null;
+  /** If that task was asked for by key, the queue and the key (see `isKeyHeld`). */
+  claimJob: { taskQueueUrl: AutomergeUrl; key: string } | null;
   taskQueues: TaskQueueSet;
   lastTimestamp: number;
   /** Whether the worker's host wants it given work just now (see availability.ts). */
@@ -125,6 +131,7 @@ async function init(
         processWorkerHeartbeat(
           msg.workerUrl,
           msg.currentTask?.taskUrl ?? null,
+          msg.taskCount,
           msg.taskQueues,
           // a pool from before there was a choice is always available
           msg.available ?? true,
@@ -153,33 +160,35 @@ async function pRouteTasks() {
     const taskQueuesWithPendingTasks = shuffle(
       [...taskQueueHandles.values()]
         .filter(thisIsTheActiveRouterFor)
-        .filter((taskQueue) => taskQueue.doc().pending.length > 0),
+        .filter((taskQueue) => hasWaitingWork(taskQueue.doc())),
     );
     while (taskQueuesWithPendingTasks.length > 0) {
       const taskQueue = taskQueuesWithPendingTasks.shift()!;
-      const nextPendingTaskUrl = nextPendingTask(taskQueue);
-      if (!nextPendingTaskUrl) {
-        continue;
-      }
-
       const idleWorkers = idleWorkersByTaskQueueUrl.get(taskQueue.url);
       if (!idleWorkers || idleWorkers.size === 0) {
         continue;
       }
 
-      const worker = shuffle([...idleWorkers])[0];
+      const next = nextHandOut(taskQueue, idleWorkers);
+      if (!next) {
+        continue;
+      }
+      const { taskUrl: nextPendingTaskUrl, worker } = next;
       const stamp = sequencer.stamp(worker.handle.url);
       worker.claim = {
         taskUrl: nextPendingTaskUrl,
         assignment: assignmentId(stamp),
         issuedAt: Date.now(),
       };
+      worker.claimJob = next.key === null ? null : { taskQueueUrl: taskQueue.url, key: next.key };
       console.log('routing task', nextPendingTaskUrl, 'to worker', worker.handle.url);
+      trace('handed out', nextPendingTaskUrl);
       send(worker.handle, {
         type: 'work on',
         ...stamp,
         taskUrl: nextPendingTaskUrl,
         taskQueueUrl: taskQueue.url,
+        ...(next.key === null ? {} : { key: next.key }),
       } satisfies MessageToWorkerChannel);
 
       // remove this worker from all idle workers sets
@@ -346,14 +355,16 @@ function releaseSettledClaims() {
     const doc = worker.handle.doc();
     const view = {
       docTaskUrl: doc.currentTask?.taskUrl ?? null,
-      heartbeatTaskUrl: worker.currentTaskUrl,
+      heartbeatTaskUrl: runningAsHeard(worker),
       lastFinished: doc.lastFinished,
     };
     if (claimIsSettled(worker.claim, view)) {
+      trace('router sees it is free', worker.claim.taskUrl);
       if (view.lastFinished?.assignment === worker.claim.assignment && view.lastFinished.done) {
         finishedTasks.set(worker.claim.taskUrl as AutomergeUrl, Date.now());
       }
       worker.claim = null;
+      worker.claimJob = null;
     }
   }
 
@@ -361,7 +372,7 @@ function releaseSettledClaims() {
   // that somehow stays pending anyway: better it runs twice than never again.
   const stillPending = new Set<AutomergeUrl>();
   for (const taskQueueHandle of taskQueueHandles.values()) {
-    for (const taskUrl of taskQueueHandle.doc().pending) {
+    for (const { taskUrl } of eachWaiting(taskQueueHandle.doc())) {
       stillPending.add(taskUrl);
     }
   }
@@ -375,7 +386,7 @@ function releaseSettledClaims() {
 function getIdleWorkersByTaskQueueUrl() {
   const idleWorkers = [...workers.values()].filter((worker) => {
     const docBusy = !!worker.handle.doc().currentTask;
-    const heartbeatBusy = !!worker.currentTaskUrl;
+    const heartbeatBusy = !!runningAsHeard(worker);
     return (
       worker.available &&
       // one that speaks another protocol wouldn't understand what it was sent
@@ -397,13 +408,56 @@ function getIdleWorkersByTaskQueueUrl() {
   return idleWorkersByTaskQueueUrl;
 }
 
-function nextPendingTask(taskQueueHandle: DocHandle<TaskQueueDoc>) {
-  for (const taskUrl of taskQueueHandle.doc().pending) {
-    if (isReallyPending(taskUrl)) {
-      return taskUrl;
+/**
+ * The first of the queue's waiting work that one of these idle workers will
+ * take, and a worker to take it. What each takes is what its own doc says:
+ * whose code it runs from this queue (see acceptance.ts). Work that nobody
+ * idle will take is passed over, not waited behind.
+ */
+function nextHandOut(taskQueueHandle: DocHandle<TaskQueueDoc>, idleWorkers: Set<WorkerState>) {
+  for (const work of eachWaiting(taskQueueHandle.doc())) {
+    if (!isReallyPending(work.taskUrl)) {
+      continue;
+    }
+    if (work.key !== null && isKeyHeld(taskQueueHandle.url, work.key)) {
+      continue;
+    }
+    const able = [...idleWorkers].filter((worker) =>
+      canRun(takingOf(worker.handle.doc(), taskQueueHandle.url), work),
+    );
+    if (able.length > 0) {
+      return { taskUrl: work.taskUrl, key: work.key, worker: shuffle(able)[0] };
     }
   }
   return null;
+}
+
+/**
+ * Whether a task for this key of this queue is out with a worker: handed to
+ * one by this router and not yet heard about, or what a worker's own doc says
+ * it is running. While one is, nothing else is handed out for the key, though
+ * the key may have come to name another task meanwhile (a second ask that
+ * took the first's place): the one that is out is the one the key names
+ * when it finishes (see `finishJob`), and the other is then never run.
+ *
+ * It goes by workers' docs as well as this router's own claims so that it
+ * holds across a takeover, when the new router has no claims to go by.
+ */
+function isKeyHeld(taskQueueUrl: AutomergeUrl, key: string) {
+  for (const worker of workers.values()) {
+    if (
+      worker.claim &&
+      worker.claimJob?.key === key &&
+      worker.claimJob.taskQueueUrl === taskQueueUrl
+    ) {
+      return true;
+    }
+    const running = worker.handle.doc().currentTask;
+    if (running?.key === key && running.taskQueueUrl === taskQueueUrl) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function isReallyPending(taskUrl: AutomergeUrl) {
@@ -415,7 +469,7 @@ function isReallyPending(taskUrl: AutomergeUrl) {
     if (
       taskUrl === docTask ||
       taskUrl === worker.claim?.taskUrl ||
-      taskUrl === worker.currentTaskUrl
+      taskUrl === runningAsHeard(worker)
     ) {
       return false;
     }
@@ -498,9 +552,23 @@ async function leaveTaskQueue(taskQueueUrl: AutomergeUrl) {
   routerWatch.stopWatching(taskQueueUrl);
 }
 
+/**
+ * The task a worker is running according to its pool's last heartbeat, where
+ * that is later news than this router's own copy of the worker's doc (see
+ * `heardRunning`); null where the doc is the later word.
+ */
+function runningAsHeard(worker: WorkerState): AutomergeUrl | null {
+  return heardRunning({
+    taskUrl: worker.currentTaskUrl,
+    taskCount: worker.heartbeatTaskCount,
+    docTaskCount: worker.handle.doc().taskCount,
+  }) as AutomergeUrl | null;
+}
+
 async function processWorkerHeartbeat(
   workerUrl: AutomergeUrl,
   currentTaskUrl: AutomergeUrl | null,
+  heartbeatTaskCount: number | undefined,
   taskQueues: TaskQueueSet,
   available: boolean,
   build: number | undefined,
@@ -510,6 +578,7 @@ async function processWorkerHeartbeat(
   const state = workers.get(workerUrl);
   if (state) {
     state.currentTaskUrl = currentTaskUrl;
+    state.heartbeatTaskCount = heartbeatTaskCount;
     state.taskQueues = taskQueues;
     state.lastTimestamp = lastTimestamp;
     state.available = available;
@@ -526,7 +595,9 @@ async function processWorkerHeartbeat(
       workers.set(workerUrl, {
         handle,
         currentTaskUrl,
+        heartbeatTaskCount,
         claim: null,
+        claimJob: null,
         taskQueues,
         lastTimestamp,
         available,

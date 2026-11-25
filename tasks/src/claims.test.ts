@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignmentId, claimIsSettled, CLAIM_TIMEOUT_MS, type Claim } from './claims';
+import { assignmentId, claimIsSettled, CLAIM_TIMEOUT_MS, type Claim, heardRunning } from './claims';
 
 const claim: Claim = { taskUrl: 'automerge:task', assignment: 'router#7', issuedAt: 1_000 };
 // a worker that reports the hand-outs it finishes, and hasn't finished one yet
@@ -56,5 +56,34 @@ describe('claimIsSettled', () => {
   it("doesn't give up while the worker is busy with something else", () => {
     const busyElsewhere = { ...idle, docTaskUrl: 'automerge:other' };
     expect(claimIsSettled(claim, busyElsewhere, claim.issuedAt + 60_000)).toBe(false);
+  });
+});
+
+describe('what a heartbeat adds to what a router knows of a worker', () => {
+  const T = 'automerge:task';
+
+  it('nothing, when the heartbeat says the worker is running nothing', () => {
+    for (const docTaskCount of [undefined, 0, 3])
+      for (const taskCount of [undefined, 0, 3])
+        expect(heardRunning({ taskUrl: null, taskCount, docTaskCount })).toBeNull();
+  });
+
+  // the heartbeat says the worker is on its 3rd task; the router's copy of the worker's doc is at…
+  it('…its 2nd: the doc is behind, so the worker is running what the heartbeat says', () => {
+    expect(heardRunning({ taskUrl: T, taskCount: 3, docTaskCount: 2 })).toBe(T);
+  });
+
+  it('…its 3rd: the same task, and what the doc says of it is the later word', () => {
+    expect(heardRunning({ taskUrl: T, taskCount: 3, docTaskCount: 3 })).toBeNull();
+  });
+
+  it('…its 4th: the doc has moved on since the heartbeat', () => {
+    expect(heardRunning({ taskUrl: T, taskCount: 3, docTaskCount: 4 })).toBeNull();
+  });
+
+  it('with no count on either side there is no telling, and the heartbeat is believed', () => {
+    expect(heardRunning({ taskUrl: T, taskCount: undefined, docTaskCount: 3 })).toBe(T);
+    expect(heardRunning({ taskUrl: T, taskCount: 3, docTaskCount: undefined })).toBe(T);
+    expect(heardRunning({ taskUrl: T, taskCount: undefined, docTaskCount: undefined })).toBe(T);
   });
 });

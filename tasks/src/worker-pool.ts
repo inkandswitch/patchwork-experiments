@@ -267,8 +267,13 @@ async function registerWorker(sharedWorkerName: string, workerUrl: AutomergeUrl)
     workerHandle.on('change', (payload) => workerByUrl.set(workerUrl, payload.doc));
     workerByUrl.set(workerUrl, workerHandle.doc());
   } catch (error) {
-    console.error('did not add worker, unable to get its doc handle', { workerUrl, error });
+    // Not here yet, most likely. In a browser the pool and its workers share a
+    // database, and a worker's doc is there as soon as it's made; where they
+    // don't (see src/node), it comes by way of the sync server and takes a
+    // moment. The worker only says it exists once, so this asks again itself.
+    console.log('worker doc not here yet', { workerUrl, error });
     sharedWorkerNames.delete(sharedWorkerName);
+    setTimeout(() => registerWorker(sharedWorkerName, workerUrl), 1_000);
   }
 }
 
@@ -370,7 +375,7 @@ function sendWorkerHeartbeats() {
       continue;
     }
 
-    for (const [workerUrl, { currentTask }] of workerByUrl.entries()) {
+    for (const [workerUrl, { currentTask, taskCount }] of workerByUrl.entries()) {
       if (currentTask && currentTask.taskQueueUrl !== taskQueueUrl) {
         // don't bother sending the heartbeats of workers that are busy with tasks from other queues
       } else {
@@ -379,6 +384,7 @@ function sendWorkerHeartbeats() {
           ...sequencer.stamp(activeRouterHandle.url),
           workerUrl,
           currentTask,
+          taskCount,
           taskQueues,
           build: BUILD,
           protocol: WIRE_PROTOCOL,

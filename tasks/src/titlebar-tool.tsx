@@ -9,6 +9,7 @@ import { getAccountDocUrl, getTaskQueues } from './helpers';
 import { QUEUE_TOOL_ID } from './ids';
 import { useDoc, WithTasksRepo } from './use-doc';
 import { AVAILABILITY_CHANNEL, type AvailabilityStatus } from './availability';
+import { waitingWork } from './jobs';
 
 // A shared worker's script has to come from the page's own origin. Installed by
 // its automerge url this package is served from there; installed from a web
@@ -126,12 +127,14 @@ const QueueBadge = (props: { element: HTMLElement; taskQueueUrl: AutomergeUrl })
     <Show when={queue()}>
       {(doc) => {
         const name = () => doc().title ?? 'Tasks';
-        const busy = () => doc().pending.length > 0;
+        // tasks and jobs alike (see jobs.ts): whatever is waiting to be handed out
+        const pending = () => waitingWork(doc()).length;
+        const busy = () => pending() > 0;
         return (
           <button
             class="task-titlebar"
             classList={{ 'task-titlebar--busy': busy() }}
-            title={`${name()}: ${doc().pending.length} pending, ${doc().done.length} done`}
+            title={`${name()}: ${pending()} pending, ${doc().done.length} done`}
             // Name the tool: a queue made by the older copy, or by tasklib, would
             // otherwise open in the older browser or in nothing.
             onClick={() =>
@@ -144,7 +147,7 @@ const QueueBadge = (props: { element: HTMLElement; taskQueueUrl: AutomergeUrl })
             <span class="task-titlebar-name">{name()}</span>
             <span class="task-titlebar-count">
               {busy()
-                ? `${doc().pending.length} pending`
+                ? `${pending()} pending`
                 : `${doc().done.length.toLocaleString()} done`}
             </span>
           </button>

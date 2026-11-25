@@ -38,6 +38,12 @@ interface Running {
   release: Release;
   contactUrl: AutomergeUrl;
   proxy: WorkerPoolProxy;
+  /**
+   * The build of the copy of this package whose code made `proxy`. Not always
+   * the workers' build: a tab starts a newer build's workers with whatever
+   * copy of the package it has. Missing where a copy from before this made it.
+   */
+  madeBy?: number;
   /** Stops announcing it and listening for others. */
   stop(): void;
 }
@@ -62,6 +68,13 @@ export async function ensureWorkers(contactUrl: AutomergeUrl) {
   if (current?.contactUrl === contactUrl) {
     if (decideHandover(current.release, OWN_RELEASE) === 'adopt') {
       start(OWN_RELEASE, contactUrl);
+    } else if ((current.madeBy ?? 0) < BUILD && current.release.startProtocol === START_PROTOCOL) {
+      // The workers are as new as this copy's (another tab's word brought this
+      // tab to them), but what speaks to them here was made by an older copy
+      // of the package, which doesn't tell them everything this one does: which
+      // job handlers the registry holds, for one. Made again by this copy, it
+      // joins the same workers and tells them.
+      start(current.release, contactUrl);
     }
     return;
   }
@@ -119,6 +132,7 @@ function start(release: Release, contactUrl: AutomergeUrl) {
     release,
     contactUrl,
     proxy,
+    madeBy: BUILD,
     stop() {
       clearInterval(timer);
       channel.close();

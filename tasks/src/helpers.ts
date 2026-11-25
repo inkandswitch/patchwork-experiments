@@ -1,4 +1,5 @@
 import { type AutomergeUrl, type DocHandle, type Repo } from '@automerge/automerge-repo/slim';
+import { acceptanceOf, type Acceptance, type QueueSetting } from './acceptance';
 
 export const TASK_QUEUE_URLS_FIELD_NAME = '__taskQueues__';
 
@@ -35,7 +36,7 @@ export async function getSelfContactUrl(repo: Repo): Promise<AutomergeUrl> {
   return accountHandle.doc().contactUrl;
 }
 
-export type TaskQueues = { [taskQueueUrl: AutomergeUrl]: true };
+export type TaskQueues = { [taskQueueUrl: AutomergeUrl]: QueueSetting };
 
 /**
  * The queue everyone works on who hasn't chosen otherwise. An account that has
@@ -62,7 +63,24 @@ export function isOnTaskQueue(account: any, taskQueueUrl: AutomergeUrl) {
  * joining a second queue would quietly take it off the first.
  */
 export function joinTaskQueue(account: any, taskQueueUrl: AutomergeUrl) {
-  ownTaskQueues(account)[taskQueueUrl] = true;
+  const queues = ownTaskQueues(account);
+  if (!queues[taskQueueUrl]) {
+    queues[taskQueueUrl] = true;
+  }
+}
+
+/** Whose code this account's browsers run from a queue they work on (see acceptance.ts). */
+export function getAcceptance(account: any, taskQueueUrl: AutomergeUrl): Acceptance | undefined {
+  return acceptanceOf(getTaskQueues(account)[taskQueueUrl]);
+}
+
+/**
+ * Says whose code this account's browsers run from a queue: any, or only
+ * what is in these packages. Call it inside a change to the account doc.
+ */
+export function setAcceptance(account: any, taskQueueUrl: AutomergeUrl, acceptance: Acceptance) {
+  ownTaskQueues(account)[taskQueueUrl] =
+    acceptance === 'any' ? true : { packages: [...acceptance] };
 }
 
 /** Takes a queue off the account's list. Call it inside a change to the account doc. */

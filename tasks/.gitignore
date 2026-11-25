@@ -4,4 +4,4 @@ node_modules
 .vscode
 .env
 .pushwork
-
+dist-node

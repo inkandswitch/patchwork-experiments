@@ -34,6 +34,44 @@ export interface WorkerView {
   lastFinished?: { assignment: string; done: boolean } | null;
 }
 
+/**
+ * What a pool's heartbeat adds to what a router knows of a worker: the task
+ * the heartbeat says it is running, if the heartbeat is the later word, and
+ * null if the router's own copy of the worker's doc is.
+ *
+ * A heartbeat repeats the worker's doc as its pool last had it, once a
+ * second. Taken as it comes it says a worker caught in the middle of a task
+ * is busy until the next heartbeat, a second on, though the worker's doc said
+ * it was free a moment after. So the two are put in order by the worker's
+ * `taskCount`, which goes up by one each time it takes a task on:
+ *
+ * - the doc's count is the higher: the doc has moved on since. Go by the doc.
+ * - they are the same: both speak of the same task, and a doc that no longer
+ *   shows it running can only be later than a heartbeat that does. Go by the
+ *   doc.
+ * - the heartbeat's is the higher: the worker has taken on a task this
+ *   router's copy of its doc doesn't show yet. Go by the heartbeat.
+ *
+ * Where either gives no count (an older worker, or an older pool), there is
+ * no telling, and the heartbeat is believed as it always was.
+ */
+export function heardRunning(heard: {
+  /** The task the last heartbeat said the worker was running. */
+  taskUrl: string | null;
+  /** The worker's count as that heartbeat gave it. */
+  taskCount: number | undefined;
+  /** The worker's count in this router's copy of its doc. */
+  docTaskCount: number | undefined;
+}): string | null {
+  if (!heard.taskUrl) {
+    return null;
+  }
+  if (heard.taskCount === undefined || heard.docTaskCount === undefined) {
+    return heard.taskUrl;
+  }
+  return heard.docTaskCount < heard.taskCount ? heard.taskUrl : null;
+}
+
 export function claimIsSettled(claim: Claim, worker: WorkerView, now = Date.now()) {
   // The worker says it has finished this very hand-out, however it went. This
   // is what lets a task that takes a moment free its worker in a moment.

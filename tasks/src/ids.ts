@@ -16,6 +16,16 @@ export const QUEUE_TOOL_ID = 'task-queue-next-browser';
 export const TITLEBAR_TOOL_ID = 'task-titlebar-next';
 export const TRAY_COMPONENT_ID = 'task-tray-next';
 
+/**
+ * Where, in this package as it is published, the task it brings along is
+ * (see src/tasks/wait.ts): a way to try a queue out without writing any code.
+ * The build puts it there under that name (vite.config.ts).
+ */
+export const WAIT_TASK_PATH = 'dist/tasks/wait.js';
+
+/** Where the code for asking a queue for work is (see src/job-client.ts), for other packages to import. */
+export const JOB_CLIENT_PATH = 'dist/job-client.js';
+
 /** Shared workers are found by name, so these are names to keep apart as well. */
 export const WORKER_POOL_NAME = 'task-next-worker-pool';
 export const ROUTER_NAME = 'task-next-router';

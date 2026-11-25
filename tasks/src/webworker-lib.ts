@@ -1,6 +1,22 @@
 import type { Repo } from '@automerge/automerge-repo/slim';
 import type { RepoConfig } from './protocol';
 import { TASKS_DATABASE, TASKS_HEADS_CHANNEL } from './ids';
+import { onOrigin } from './import-url';
+
+// This file is what a worker needs from wherever it is running: a Repo, and a
+// way to load a task's code. This one is a browser's shared worker's. A
+// worker somewhere else (see src/node) brings its own in this file's place,
+// and the router, the pool and the worker themselves are the same code in
+// both.
+
+/**
+ * Imports a task's code from its import URL, bare specifiers in it resolved
+ * by the page's import map. Code kept in automerge is fetched from this
+ * site's own service worker, whichever site the URL was made on (see
+ * import-url.ts).
+ */
+export const importModule = (importUrl: string): Promise<any> =>
+  (self as any).importShim(onOrigin(importUrl, self.location.origin));
 
 const shimCodeUrl = 'https://ga.jspm.io/npm:es-module-shims@1.6.2/dist/es-module-shims.wasm.js';
 

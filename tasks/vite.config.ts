@@ -30,7 +30,15 @@ export default defineConfig({
     cssCodeSplit: true,
     rollupOptions: {
       external,
-      input: './src/index.ts',
+      // index is the package's entry point. The other two are files that code
+      // elsewhere imports by URL, so each is built under a name that doesn't
+      // change from build to build: a task to try a queue out with, and the
+      // code for asking a queue for work (see src/ids.ts).
+      input: {
+        index: './src/index.ts',
+        'tasks/wait': './src/tasks/wait.ts',
+        'job-client': './src/job-client.ts',
+      },
       output: {
         format: 'es',
         entryFileNames: '[name].js',

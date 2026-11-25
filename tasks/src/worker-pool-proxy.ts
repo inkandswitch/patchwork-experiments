@@ -143,6 +143,11 @@ export class WorkerPoolProxy {
       // Worker pool must get the same update: it forwards worker heartbeats to the active
       // router's doc channel; without this it never joins queues and the router sees no workers.
       this.workerPool.port.postMessage(message);
+      // And each worker: the set says whose code it runs from each queue (see
+      // acceptance.ts), and a worker that hasn't been told runs nothing.
+      for (const worker of this.workers) {
+        worker.port.postMessage(message satisfies MessageToWorker);
+      }
     };
 
     const accountHandle = await getAccountHandle(repo);
