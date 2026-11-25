@@ -127,6 +127,8 @@ export function callBlock(tool, input, opts = {}) {
     status: opts.status ?? CALL.pending,
     // What it asks of the person, for a call that waits on their yes (grants.js askOf).
     ask: opts.ask ?? null,
+    // How it reads in the log, `{ verb, detail }`, when its tool says (kernel/tool.js presentCall).
+    shown: opts.shown ?? null,
     runner: opts.runner ?? null,
     generation: opts.generation ?? null,
   }

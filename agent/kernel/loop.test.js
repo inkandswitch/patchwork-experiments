@@ -553,6 +553,23 @@ describe("interruption and budget", () => {
   })
 })
 
+describe("a call as it is written", () => {
+  it("carries how it reads in the log, from the tool that will run it", async () => {
+    const store = session()
+    const provider = makeMock([[{ type: "call", id: "c1", name: "doc_read", input: { n: 7 } }], [{ type: "text", delta: "done" }]])
+    const tool = { ...readTool(), present: { verb: "read", detail: (input) => `entry ${input.n}` } }
+    await run({ store, provider, toolset: fakeToolset([tool]), runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    expect(findCall(store.doc(), "c1").block.shown).toEqual({ verb: "read", detail: "entry 7" })
+  })
+
+  it("and nothing, for a tool that does not say", async () => {
+    const store = session()
+    const provider = makeMock([[{ type: "call", id: "c1", name: "doc_read", input: {} }], [{ type: "text", delta: "done" }]])
+    await run({ store, provider, toolset: fakeToolset([readTool()]), runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    expect(findCall(store.doc(), "c1").block.shown).toBeNull()
+  })
+})
+
 describe("say", () => {
   it("appends a user turn, which ends a stop", async () => {
     const store = session()

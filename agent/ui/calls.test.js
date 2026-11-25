@@ -6,6 +6,18 @@ const call = (tool, input = {}, status = "done") => ({ tool, input, status })
 const show = (tool, input, result = null, subject = null) =>
   describeCall(call(tool, input), result, { subject })
 
+describe("what a call says of itself", () => {
+  it("is what the log shows, whatever this page would have made of the call", () => {
+    const block = { tool: "doc_read", input: { url: "automerge:abc" }, status: "done", shown: { verb: "consult", detail: "the register" } }
+    expect(describeCall(block, { summary: "read 3 entries" })).toEqual({ verb: "consult", detail: "the register", note: "read 3 entries" })
+  })
+
+  it("and a call that says nothing is described here", () => {
+    const block = { tool: "doc_read", input: { path: ["title"] }, status: "done", shown: null }
+    expect(describeCall(block, null)).toMatchObject({ verb: "read", detail: "/title" })
+  })
+})
+
 describe("every tool has a presentation", () => {
   it("covers the whole built-in toolset", () => {
     // The point of the test: adding a tool without a presentation entry means a

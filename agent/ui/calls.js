@@ -223,6 +223,10 @@ function firstReadableValue(input) {
  * than this file what its result meant.
  */
 export function describeCall(block, result, { subject = null } = {}) {
+  // What the call says of itself, written with it by the runner that knew its
+  // tool (kernel/tool.js presentCall), comes before anything worked out here.
+  if (block?.shown?.verb) return { verb: String(block.shown.verb), detail: String(block.shown.detail ?? ""), note: noteFor(block, result) }
+
   const input = block?.input ?? {}
   const entry = PRESENTATION[block?.tool]
 

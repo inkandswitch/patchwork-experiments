@@ -4,7 +4,7 @@
  * A tool definition:
  *
  *   { id, name, description, input_schema, where, risk, alwaysAsk?, askWhen?, target?,
- *     group?, groupCovers?, scoped?, needs?, execute(input, ctx), summarize?(input, output) }
+ *     group?, groupCovers?, scoped?, needs?, present?, execute(input, ctx), summarize?(input, output) }
  *
  * `where` is "worker" | "host" and decides who may run it (placement.js).
  * `scoped` and `needs` decide which sessions are offered it (toolset.js), and
@@ -25,6 +25,34 @@
  */
 
 import { isInterruption } from "../net/network.js"
+
+/** How long a call's detail may be in the log. */
+const MAX_DETAIL = 64
+
+/**
+ * How a call reads in the log: `{ verb, detail }`, a verb a person would use
+ * and what the call acted on. Worked out when the call is written and kept on
+ * it, because a view has the session document and nothing else: the tool may
+ * have run in another realm, or belong to a package this page does not have.
+ *
+ * A tool says how with `present: { verb, detail }`, each a string or a
+ * function of the input (`detail` is also given the session's subject, to
+ * say "this document"). Null for a tool that does not say, or whose way of
+ * saying fails on this input; a view then makes its best guess.
+ */
+export function presentCall(tool, input, subject = null) {
+  const entry = tool?.present
+  if (!entry) return null
+  try {
+    const verb = typeof entry.verb === "function" ? entry.verb(input ?? {}) : entry.verb
+    const said = typeof entry.detail === "function" ? entry.detail(input ?? {}, subject) : entry.detail
+    if (!verb) return null
+    const detail = said == null ? "" : String(said)
+    return { verb: String(verb), detail: detail.length > MAX_DETAIL ? `${detail.slice(0, MAX_DETAIL - 1)}…` : detail }
+  } catch {
+    return null
+  }
+}
 
 /** Everything about a tool the model is allowed to see. */
 export function toSchema(tool) {
@@ -104,6 +132,8 @@ export function pluginTool(description, current, { impl = null, where = null } =
       return (await current()).module.execute(input, ctx)
     },
     summarize: impl?.summarize ?? null,
+    // How its calls read in the log, from the package's own module (presentCall).
+    present: impl?.present ?? null,
     source: description.importUrl ?? null,
   }
 }

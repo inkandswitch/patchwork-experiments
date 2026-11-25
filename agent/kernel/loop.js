@@ -27,7 +27,7 @@ import { recordArtifact } from "../session/made.js"
 import { holdsLease } from "../session/lease.js"
 import { markReconnecting } from "../session/recovery.js"
 import { batchedAppender } from "./store.js"
-import { runTool } from "./tool.js"
+import { presentCall, runTool } from "./tool.js"
 import { withFileData } from "../documents/files.js"
 import { isInterruption } from "../net/network.js"
 import { callNeeds } from "./placement.js"
@@ -656,6 +656,7 @@ async function streamTurn(opts) {
             where: tool?.where ?? WHERE.worker,
             status,
             ask: status === CALL.pending ? ask : null,
+            shown: presentCall(tool, call.input, opts.subject ?? null),
           })
         )
       }
