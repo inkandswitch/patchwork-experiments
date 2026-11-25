@@ -52,7 +52,7 @@ window.__agentProbe = async function (opts) {
     // ---- 1. Is the harness actually installed in this Patchwork? --------
     const { getRegistry, createDocOfDatatype2 } = await import("@inkandswitch/patchwork-plugins")
     const { decide } = await import(opts.agentBase + "kernel/loop.js")
-    const { callsAwaitingApproval } = await import(opts.agentBase + "session/session.js")
+    const { callsAwaitingApproval } = await import(opts.agentBase + "session/calls.js")
     const { handleStore } = await import(opts.agentBase + "kernel/store.js")
     const automerge = await import("@automerge/automerge/slim")
     const toolRegistry = getRegistry("patchwork:tool")

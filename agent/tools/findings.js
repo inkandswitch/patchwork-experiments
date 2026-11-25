@@ -20,7 +20,8 @@
  */
 
 import { Automerge, AutomergeRepo } from "../host/modules.js"
-import { documentIdOf, cleanTitle } from "../session/session.js"
+import { documentIdOf } from "../session/grants.js"
+import { cleanTitle } from "../session/title.js"
 import { citationsIn, checkCitation } from "../documents/citations.js"
 
 const { splice, updateText } = Automerge

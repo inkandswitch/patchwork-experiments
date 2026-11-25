@@ -1,6 +1,11 @@
 import { ImmutableString } from "@automerge/automerge"
 import { describe, it, expect, beforeEach } from "vitest"
-import { CALL, DENIED_RESULT, STATUS, _resetIds, callBlock, callsAwaitingApproval, canClaim, claimLease, findCall, findResult, holdsLease, initSession, leaseIsLive, makeId, makeTurn, needsApproval, reasoningBlock, resultBlock, runnableCalls, textBlock, toRequest, unansweredCalls } from "./session/session.js"
+import { CALL, STATUS, _resetIds, initSession, makeId } from "./session/schema.js"
+import { DENIED_RESULT, toRequest } from "./session/request.js"
+import { callBlock, makeTurn, reasoningBlock, resultBlock, textBlock } from "./session/blocks.js"
+import { callsAwaitingApproval, findCall, findResult, runnableCalls, unansweredCalls } from "./session/calls.js"
+import { canClaim, claimLease, holdsLease, leaseIsLive } from "./session/lease.js"
+import { needsApproval } from "./session/grants.js"
 
 const freshDoc = () => {
   const doc = {}

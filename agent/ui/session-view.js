@@ -8,22 +8,18 @@
  * a container query.
  */
 
-import {
-  STATUS,
-  CALL,
-  callsAwaitingApproval,
-  questionsAwaitingAnswer,
-  sessionTitle,
-  asksEveryTime,
-  callScope,
-  stopReconnecting,
-} from "../session/session.js"
+import { STATUS, CALL } from "../session/schema.js"
+import { callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
+import { sessionTitle } from "../session/title.js"
+import { asksEveryTime, callScope } from "../session/grants.js"
+import { stopReconnecting } from "../session/recovery.js"
 import { handleStore } from "../kernel/store.js"
 import { decide, say, answerQuestion } from "../kernel/loop.js"
 import { heldElsewhere, needsWork } from "../kernel/runner.js"
 import { attachView } from "../runners/registry.js"
 import { startTabRunner, accountContext } from "../runners/tab.js"
-import { formatCost, unknownBlocks } from "../session/session.js"
+import { formatCost } from "../session/usage.js"
+import { unknownBlocks } from "../session/schema.js"
 import { watchWaiting, renderWaiting, renderWaitingItem } from "./waiting.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { markCitations } from "./citations.js"
@@ -414,7 +410,7 @@ export function AgentTool(handle, element, options = {}) {
   const subjectUrl = () => handle.doc()?.subject ?? options.subject ?? null
 
   // A session about no one document is about whatever you have open. Each
-  // message records that (session/session.js `contextBlock`), so "this" means what was
+  // message records that (session/blocks.js `contextBlock`), so "this" means what was
   // focused when you said it — in the floating box, or docked as a panel.
   const workspace =
     !options.context && !subjectUrl() ? watchWorkspace(element, { repo, exclude: () => [handle.url] }) : null

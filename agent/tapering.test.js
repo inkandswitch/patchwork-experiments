@@ -1,18 +1,7 @@
 import { describe, it, expect } from "vitest"
-import {
-  toRequest,
-  resultsToKeepWhole,
-  taperedResult,
-  initSession,
-  makeTurn,
-  textBlock,
-  callBlock,
-  resultBlock,
-  TAPER_ABOVE,
-  RESULTS_HIGH,
-  RESULTS_LOW,
-  _resetIds,
-} from "./session/session.js"
+import { toRequest, resultsToKeepWhole, taperedResult, TAPER_ABOVE, RESULTS_HIGH, RESULTS_LOW } from "./session/request.js"
+import { initSession, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock, callBlock, resultBlock } from "./session/blocks.js"
 import { sessionRecall } from "./tools/recall.js"
 
 const big = (n) => "x".repeat(n)

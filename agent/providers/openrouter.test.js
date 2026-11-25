@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { toOpenAIMessages, toOpenAITools, buildBody, sseEvents, decodeStream, stream, models, describeModel, describeDefaults, effortsOf, ALL_EFFORTS } from "./openrouter.js"
-import { DEFAULT_CONFIG } from "../session/session.js"
+import { DEFAULT_CONFIG } from "../session/schema.js"
 
 /** A ReadableStream of SSE chunks, the shape `response.body` actually has. */
 function streamOf(chunks) {

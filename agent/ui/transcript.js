@@ -11,7 +11,9 @@
  * pictures and approvals get full width.
  */
 
-import { CALL, callTarget, grantOffers, questionOptions } from "../session/session.js"
+import { CALL } from "../session/schema.js"
+import { callTarget, grantOffers } from "../session/grants.js"
+import { questionOptions } from "../session/calls.js"
 import { renderMarkdown } from "./markdown.js"
 import { describeCall } from "./calls.js"
 import { renderCallBody } from "./bodies.js"
@@ -282,7 +284,7 @@ function renderReasoning(block, state) {
 /**
  * Where the person was when they spoke: one muted line naming the focused
  * document, with the rest of what was open in its tooltip. The model gets the
- * full note (session/session.js `describeContext`); a person only needs the gist.
+ * full note (session/blocks.js `describeContext`); a person only needs the gist.
  */
 function renderContext(block) {
   const focused = block.focused

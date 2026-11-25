@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest"
 import { loadPluginTools, runTool, buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
 import { SCOPED_TOOL_IDS, scopedToolset } from "./kernel/scope.js"
-import { needsApproval, grantGroup, initSession, recordArtifact } from "./session/session.js"
+import { needsApproval, grantGroup } from "./session/grants.js"
+import { initSession } from "./session/schema.js"
+import { recordArtifact } from "./session/made.js"
 import { keptSources } from "./tools/sources.js"
 
 /** A registry that hands out whatever module is current, as Patchwork's does after a re-register. */

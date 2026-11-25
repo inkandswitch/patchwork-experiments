@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { createInlineViews, iconFor, isPackage, wantsInstall } from "./ui/views.js"
 import { installState, moduleUrlFor, splitModuleUrl, applyInstall, applyUninstall, shortHeads, pinIsBehind } from "./ui/install.js"
-import { initSession, recordArtifact, artifacts, MAX_ARTIFACTS } from "./session/session.js"
+import { initSession } from "./session/schema.js"
+import { recordArtifact, MAX_ARTIFACTS } from "./session/made.js"
 
 describe("recording what a session made", () => {
   const fresh = () => { const d = {}; initSession(d, {}); return d }
@@ -10,7 +11,7 @@ describe("recording what a session made", () => {
     const doc = fresh()
     recordArtifact(doc, { url: "automerge:a", name: "first" })
     recordArtifact(doc, { url: "automerge:b", name: "second" })
-    expect(artifacts(doc).map((a) => a.name)).toEqual(["second", "first"])
+    expect((doc.made ?? []).map((a) => a.name)).toEqual(["second", "first"])
   })
 
   it("updates in place rather than stacking duplicates", () => {
@@ -18,15 +19,15 @@ describe("recording what a session made", () => {
     const doc = fresh()
     recordArtifact(doc, { url: "automerge:a", name: "tally", bytes: 10 })
     expect(recordArtifact(doc, { url: "automerge:a", name: "tally", bytes: 20 })).toBe(false)
-    expect(artifacts(doc)).toHaveLength(1)
-    expect(artifacts(doc)[0].bytes).toBe(20)
+    expect((doc.made ?? [])).toHaveLength(1)
+    expect((doc.made ?? [])[0].bytes).toBe(20)
   })
 
   it("does not grow without bound", () => {
     const doc = fresh()
     for (let i = 0; i < MAX_ARTIFACTS + 10; i++) recordArtifact(doc, { url: `automerge:${i}`, name: `x${i}` })
-    expect(artifacts(doc)).toHaveLength(MAX_ARTIFACTS)
-    expect(artifacts(doc)[0].name).toBe(`x${MAX_ARTIFACTS + 9}`)
+    expect((doc.made ?? [])).toHaveLength(MAX_ARTIFACTS)
+    expect((doc.made ?? [])[0].name).toBe(`x${MAX_ARTIFACTS + 9}`)
   })
 
   it("caps the other documents but never drops a kept source, which a web-only step reads through this list", () => {
@@ -35,8 +36,8 @@ describe("recording what a session made", () => {
       recordArtifact(doc, { url: `automerge:s${i}`, name: `s${i}`, kind: "source", source: `https://x.test/${i}`, engine: "raw", chars: 1 })
       recordArtifact(doc, { url: `automerge:f${i}`, name: `f${i}` })
     }
-    const sources = artifacts(doc).filter((a) => a.source)
-    const others = artifacts(doc).filter((a) => !a.source)
+    const sources = (doc.made ?? []).filter((a) => a.source)
+    const others = (doc.made ?? []).filter((a) => !a.source)
     expect(sources.map((a) => a.name)).toEqual(Array.from({ length: MAX_ARTIFACTS + 10 }, (_, i) => `s${MAX_ARTIFACTS + 9 - i}`))
     expect(others.map((a) => a.name)).toEqual(Array.from({ length: MAX_ARTIFACTS }, (_, i) => `f${MAX_ARTIFACTS + 9 - i}`))
   })
@@ -45,13 +46,13 @@ describe("recording what a session made", () => {
     const doc = fresh()
     expect(recordArtifact(doc, null)).toBe(false)
     expect(recordArtifact(doc, { name: "no url" })).toBe(false)
-    expect(artifacts(doc)).toEqual([])
+    expect((doc.made ?? [])).toEqual([])
   })
 
   it("stores no undefined, because automerge cannot hold it", () => {
     const doc = fresh()
     recordArtifact(doc, { url: "automerge:a" })
-    for (const value of Object.values(artifacts(doc)[0])) expect(value).not.toBeUndefined()
+    for (const value of Object.values((doc.made ?? [])[0])) expect(value).not.toBeUndefined()
   })
 })
 
@@ -169,17 +170,17 @@ describe("sessions written before any of this existed", () => {
   const legacy = () => ({ schemaVersion: 1, title: "old", turns: [], status: "idle", grants: {} })
 
   it("reads as having made nothing", () => {
-    expect(artifacts(legacy())).toEqual([])
+    expect((legacy().made ?? [])).toEqual([])
   })
 
   it("starts recording without a migration", () => {
     const doc = legacy()
     expect(recordArtifact(doc, { url: "automerge:a", name: "tally", kind: "package" })).toBe(true)
-    expect(artifacts(doc)).toHaveLength(1)
+    expect((doc.made ?? [])).toHaveLength(1)
   })
 
   it("wants nothing installed", () => {
-    expect(wantsInstall(artifacts(legacy()), { modules: [] })).toBe(false)
+    expect(wantsInstall((legacy().made ?? []), { modules: [] })).toBe(false)
   })
 })
 

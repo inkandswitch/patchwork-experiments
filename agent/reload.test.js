@@ -14,10 +14,10 @@
  *     other, so a runner's own dead work never looks like work it is doing.
  */
 import { describe, it, expect, beforeEach } from "vitest"
-import {
-  initSession, makeTurn, textBlock, callBlock, claimLease, CALL, STATUS, _resetIds,
-  interruptedTurns, dropInterruptedTurns, resolveOrphans, orphanedCalls, INTERRUPTED,
-} from "./session/session.js"
+import { initSession, CALL, STATUS, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock, callBlock } from "./session/blocks.js"
+import { claimLease } from "./session/lease.js"
+import { interruptedTurns, dropInterruptedTurns, resolveOrphans, orphanedCalls, INTERRUPTED } from "./session/recovery.js"
 import { SessionRunner, needsWork, STALE_AFTER_MS } from "./kernel/runner.js"
 import { memoryStore } from "./kernel/store.js"
 

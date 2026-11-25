@@ -3,7 +3,9 @@ import { run, OUTCOME, MAX_OUTPUT_TOKENS } from "./kernel/loop.js"
 import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
 import { buildBody } from "./providers/openrouter.js"
-import { initSession, claimLease, makeTurn, textBlock, STATUS, _resetIds } from "./session/session.js"
+import { initSession, STATUS, _resetIds } from "./session/schema.js"
+import { claimLease } from "./session/lease.js"
+import { makeTurn, textBlock } from "./session/blocks.js"
 
 function toolset(tools = []) {
   const byId = new Map(tools.map((t) => [t.id, t]))

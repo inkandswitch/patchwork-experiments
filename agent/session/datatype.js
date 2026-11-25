@@ -1,4 +1,5 @@
-import { initSession, sessionTitle, STATUS } from "./session.js"
+import { initSession, STATUS } from "./schema.js"
+import { sessionTitle } from "./title.js"
 
 /**
  * The agent session datatype.

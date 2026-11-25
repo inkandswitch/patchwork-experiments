@@ -17,7 +17,10 @@
  * is asked of the step as it now is.
  */
 
-import { CALL, STATUS, findCall, unansweredCalls, makeTurn, resultBlock, textBlock, sessionTitle } from "../session/session.js"
+import { CALL, STATUS } from "../session/schema.js"
+import { findCall, unansweredCalls } from "../session/calls.js"
+import { makeTurn, resultBlock, textBlock } from "../session/blocks.js"
+import { sessionTitle } from "../session/title.js"
 import { say } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
 

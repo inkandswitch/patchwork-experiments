@@ -17,7 +17,7 @@ vi.mock("./ui/voice.js", async (importOriginal) => {
 import { composeDictation } from "./ui/voice.js"
 import { AgentTool } from "./ui/session-view.js"
 import { AmbientAgent } from "./ui/ambient.js"
-import { initSession } from "./session/session.js"
+import { initSession } from "./session/schema.js"
 import { _reset as resetRunners } from "./runners/registry.js"
 
 // ---- the seam itself (real implementation) --------------------------------

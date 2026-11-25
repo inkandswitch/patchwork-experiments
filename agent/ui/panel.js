@@ -13,7 +13,7 @@
 
 import { AgentTool } from "./session-view.js"
 import { selectedDocUrl } from "../host/context.js"
-import { initSession } from "../session/session.js"
+import { initSession } from "../session/schema.js"
 import { hostImport } from "../host/import.js"
 
 /**

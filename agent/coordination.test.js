@@ -16,7 +16,9 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import * as A from "@automerge/automerge"
 import { SessionRunner, CONFIRM_MS, STALE_AFTER_MS, HEARTBEAT_MS, needsWork } from "./kernel/runner.js"
 import { WorkflowDriver } from "./workflow/driver.js"
-import { initSession, makeTurn, textBlock, LeaseWatch, DEAD_ON_SIGHT_MS, _resetIds } from "./session/session.js"
+import { initSession, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock } from "./session/blocks.js"
+import { LeaseWatch, DEAD_ON_SIGHT_MS } from "./session/lease.js"
 import { makeMock } from "./providers/mock.js"
 
 afterEach(() => {

@@ -10,13 +10,13 @@
  */
 
 import { decide, answerQuestion } from "../kernel/loop.js"
-import { grantOffers, callScope, asksEveryTime } from "../session/session.js"
+import { grantOffers, callScope, asksEveryTime } from "../session/grants.js"
 import { builtinToolset } from "../tools/index.js"
 import { handleStore } from "../kernel/store.js"
 import { describeCall } from "./calls.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
-import { liftBudget, liftAmounts } from "../session/session.js"
+import { liftBudget, liftAmounts } from "../session/usage.js"
 
 /** Documents a grant never covers: the account and its module settings. */
 const sensitiveDocs = () =>

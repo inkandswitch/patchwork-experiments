@@ -12,7 +12,8 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { initSession, makeTurn, textBlock, callBlock, resultBlock, STATUS, CALL, _resetIds } from "./session/session.js"
+import { initSession, STATUS, CALL, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock, callBlock, resultBlock } from "./session/blocks.js"
 import { initPlan, PLAN, STEP, budgetOf, canExtend, orchestratorSpend, shouldPause, resumePlan, askForBudget, stepPrompt, reopenPrompt, requestErrors, DEFAULT_LIMITS } from "./workflow/plan.js"
 import { sessionOutcome, describeProgress, WorkflowDriver, _resetDrivers, EMPTY_RESULT } from "./workflow/driver.js"
 import { waitingIn, budgetWaiting } from "./workflow/waiting.js"

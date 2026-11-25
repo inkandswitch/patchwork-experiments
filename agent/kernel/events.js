@@ -10,7 +10,7 @@
  *
  * A tool opens a channel (`ctx.events.open(key, { label })`) and calls `notify` on it as
  * often as it likes. Notices on one channel fold together. A wake is delivered
- * as a user turn of `event` blocks (see session/session.js `eventBlock`), and only:
+ * as a user turn of `event` blocks (see session/blocks.js `eventBlock`), and only:
  *
  *   - once the channel has been quiet for SETTLE_MS, or busy for MAX_DELAY_MS;
  *   - when the session is idle — mid-turn, the agent is already calling tools
@@ -30,7 +30,8 @@
  * `onClose` (an option to `open`) is told when it ends for any reason.
  */
 
-import { STATUS, eventBlock, makeTurn } from "../session/session.js"
+import { STATUS } from "../session/schema.js"
+import { eventBlock, makeTurn } from "../session/blocks.js"
 import { needsWork } from "./runner.js"
 
 export const SETTLE_MS = 2000

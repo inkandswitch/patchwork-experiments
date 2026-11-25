@@ -16,39 +16,15 @@
  * host-tier call has nowhere to run, or the iteration budget runs out.
  */
 
-import {
-  STATUS,
-  CALL,
-  WHERE,
-  callTarget,
-  grantKey,
-  addUsage,
-  resultsToKeepWhole,
-  pinResult,
-  rejectSentImages,
-  costOf,
-  makeTurn,
-  textBlock,
-  contextBlock,
-  reasoningBlock,
-  callBlock,
-  resultBlock,
-  summaryBlock,
-  toRequest,
-  estimateTokens,
-  unansweredCalls,
-  callsAwaitingApproval,
-  questionsAwaitingAnswer,
-  recordArtifact,
-  DENIED_RESULT,
-  runnableCalls,
-  needsApproval,
-  findCall,
-  findResult,
-  attachmentBlock,
-  holdsLease,
-  markReconnecting,
-} from "../session/session.js"
+import { STATUS, CALL, WHERE } from "../session/schema.js"
+import { callTarget, grantKey, needsApproval } from "../session/grants.js"
+import { addUsage, costOf } from "../session/usage.js"
+import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTokens, DENIED_RESULT } from "../session/request.js"
+import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock } from "../session/blocks.js"
+import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult } from "../session/calls.js"
+import { recordArtifact } from "../session/made.js"
+import { holdsLease } from "../session/lease.js"
+import { markReconnecting } from "../session/recovery.js"
 import { batchedAppender } from "./store.js"
 import { runTool } from "../tools/index.js"
 import { withFileData } from "../documents/files.js"
@@ -570,7 +546,7 @@ async function streamTurn(opts) {
   }
 
   // Marked while it streams, so a runner that finds it after this page has
-  // gone knows it is half a reply and asks again (session/session.js interruptedTurns).
+  // gone knows it is half a reply and asks again (session/recovery.js interruptedTurns).
   const turn = makeTurn("assistant", [])
   turn.streaming = { runner: opts.runnerUrl ?? null, generation: opts.generation ?? null }
   appendTurn(store, turn)

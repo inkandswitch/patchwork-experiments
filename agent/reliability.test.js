@@ -3,10 +3,11 @@
  * closed twice. And what the session has spent.
  */
 import { describe, it, expect, beforeEach } from "vitest"
-import {
-  initSession, makeTurn, textBlock, callBlock, claimLease, CALL, _resetIds,
-  orphanedCalls, resolveOrphans, INTERRUPTED, addUsage, costOf, formatCost,
-} from "./session/session.js"
+import { initSession, CALL, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock, callBlock } from "./session/blocks.js"
+import { claimLease } from "./session/lease.js"
+import { orphanedCalls, resolveOrphans, INTERRUPTED } from "./session/recovery.js"
+import { addUsage, costOf, formatCost } from "./session/usage.js"
 import { SessionRunner, needsWork, STALE_AFTER_MS } from "./kernel/runner.js"
 import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"

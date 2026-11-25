@@ -12,7 +12,10 @@
  *   finished  runs over a minute long that just ended, for a notification
  */
 
-import { STATUS, lastTurn, sessionTitle, callsAwaitingApproval, questionsAwaitingAnswer } from "../session/session.js"
+import { STATUS } from "../session/schema.js"
+import { lastTurn } from "../session/blocks.js"
+import { sessionTitle } from "../session/title.js"
+import { callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
 import { needsWork } from "../kernel/runner.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP } from "../workflow/plan.js"

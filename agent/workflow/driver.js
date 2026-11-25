@@ -21,12 +21,16 @@
  * So steps spread over the browsers that have a key, and none runs twice.
  */
 
-import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch, liftBudget, CALL, unansweredCalls } from "../session/session.js"
+import { claimLease, holdsLease, LeaseWatch } from "../session/lease.js"
+import { initSession, STATUS, CALL } from "../session/schema.js"
+import { makeTurn, textBlock, lastTurn } from "../session/blocks.js"
+import { liftBudget } from "../session/usage.js"
+import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
 import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
 import { scopeOf, webScope, sameScope, KERNEL_TYPES, SCOPED_TOOL_IDS } from "../kernel/scope.js"
-import { documentIdOf } from "../session/session.js"
+import { documentIdOf } from "../session/grants.js"
 import { releaseNowPermitted } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
 import { waitingIn } from "./waiting.js"
@@ -160,7 +164,7 @@ export class WorkflowDriver {
     this.soon = null
     this.runnerUrl = `workflow-${Math.random().toString(36).slice(2, 10)}`
     this.generation = null
-    // Whose the plan is, judged on this page's clock alone (session/session.js).
+    // Whose the plan is, judged on this page's clock alone (session/lease.js).
     this.watch = new LeaseWatch({ now: () => this.now(), staleAfterMs: STALE_AFTER_MS })
     this.live = (lease) => this.watch.live(lease)
     this.confirmMs = confirmMs

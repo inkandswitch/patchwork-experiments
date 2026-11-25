@@ -2,9 +2,10 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { run, OUTCOME } from "./kernel/loop.js"
 import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import {
-  initSession, claimLease, makeTurn, textBlock, summaryBlock, toRequest, estimateTokens, _resetIds,
-} from "./session/session.js"
+import { initSession, _resetIds } from "./session/schema.js"
+import { claimLease } from "./session/lease.js"
+import { makeTurn, textBlock, summaryBlock } from "./session/blocks.js"
+import { toRequest, estimateTokens } from "./session/request.js"
 
 const toolset = { tools: [], schemas: [], get: () => null }
 

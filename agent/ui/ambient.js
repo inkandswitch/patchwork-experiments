@@ -15,11 +15,13 @@
  * The session belongs to the account, not to a document: it lives in the
  * agent's tool storage (`patchwork:tool-storage`, `{ sessionUrl, sessions }`),
  * has no subject, and so each message records what was focused and open when
- * it was sent (see ui/workspace.js and session/session.js `contextBlock`).
+ * it was sent (see ui/workspace.js and session/blocks.js `contextBlock`).
  */
 
 import { AgentTool, isDictationShortcut } from "./session-view.js"
-import { initSession, sessionTitle, documentIdOf } from "../session/session.js"
+import { initSession } from "../session/schema.js"
+import { sessionTitle } from "../session/title.js"
+import { documentIdOf } from "../session/grants.js"
 import { hostImport } from "../host/import.js"
 import { subscribe, openDocument } from "../host/context.js"
 import { watchWorkspace } from "./workspace.js"

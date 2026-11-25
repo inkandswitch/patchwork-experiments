@@ -3,7 +3,8 @@ import { Repo, initSubduction, stringifyAutomergeUrl } from "@automerge/automerg
 import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, WORKFLOW_TOOL_IDS, stepPrompt, WITHHELD, RESULT_IN_PROMPT } from "./workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, describeProgress, keptCounts, _resetDrivers } from "./workflow/driver.js"
 import { scopedRepo, KERNEL_TYPES } from "./kernel/scope.js"
-import { initSession, makeTurn, textBlock, STATUS, CALL } from "./session/session.js"
+import { initSession, STATUS, CALL } from "./session/schema.js"
+import { makeTurn, textBlock } from "./session/blocks.js"
 import { buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
 
 await initSubduction()

@@ -7,7 +7,7 @@
  * workflow view — and so the orchestrator can answer questions itself.
  */
 
-import { callsAwaitingApproval, questionsAwaitingAnswer, questionOptions } from "../session/session.js"
+import { callsAwaitingApproval, questionsAwaitingAnswer, questionOptions } from "../session/calls.js"
 import { notStarted } from "./plan.js"
 
 /**

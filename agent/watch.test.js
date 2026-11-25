@@ -14,7 +14,7 @@ await initSubduction()
 const { docWatch, restoreWatches, splitTarget, watchesWriter, KEPT_EDITS } = await import("./tools/watch.js")
 const { createEvents } = await import("./kernel/events.js")
 const { handleStore } = await import("./kernel/store.js")
-const { initSession, STATUS } = await import("./session/session.js")
+const { initSession, STATUS } = await import("./session/schema.js")
 const { fullContext } = await import("./kernel/runner.js")
 
 /** Change events are judged a microtask after they fire (tools/watch.js). */

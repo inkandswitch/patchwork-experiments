@@ -4,7 +4,9 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { fileKind, decodeIfText, unzip, officeText, withFileData, MAX_FILE_BYTES } from "./documents/files.js"
-import { initSession, makeTurn, textBlock, callBlock, resultBlock, attachmentBlock, toRequest, CALL, _resetIds } from "./session/session.js"
+import { initSession, CALL, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock, callBlock, resultBlock, attachmentBlock } from "./session/blocks.js"
+import { toRequest } from "./session/request.js"
 import { toOpenAIMessages } from "./providers/openrouter.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
 import { sourceRead, sourceList } from "./tools/read-source.js"

@@ -5,7 +5,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { AgentTool } from "./ui/session-view.js"
-import { initSession, makeTurn, textBlock, callBlock, resultBlock, CALL, STATUS, _resetIds } from "./session/session.js"
+import { initSession, CALL, STATUS, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock, callBlock, resultBlock } from "./session/blocks.js"
 import { renderTranscript, callSummary } from "./ui/transcript.js"
 import { _reset as resetRunners } from "./runners/registry.js"
 import { viewMount, _resetMounts } from "./tools/checking.js"

@@ -17,20 +17,12 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { run, OUTCOME } from "./kernel/loop.js"
 import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import {
-  initSession,
-  claimLease,
-  makeTurn,
-  textBlock,
-  callBlock,
-  resultBlock,
-  resolveOrphans,
-  toRequest,
-  findCall,
-  CALL,
-  INTERRUPTED,
-  _resetIds,
-} from "./session/session.js"
+import { initSession, CALL, _resetIds } from "./session/schema.js"
+import { claimLease } from "./session/lease.js"
+import { makeTurn, textBlock, callBlock, resultBlock } from "./session/blocks.js"
+import { resolveOrphans, INTERRUPTED } from "./session/recovery.js"
+import { toRequest } from "./session/request.js"
+import { findCall } from "./session/calls.js"
 
 beforeEach(_resetIds)
 

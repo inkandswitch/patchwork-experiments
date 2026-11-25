@@ -37,7 +37,7 @@ import {
   requestErrors,
   EDITABLE,
 } from "./plan.js"
-import { liftBudget } from "../session/session.js"
+import { liftBudget } from "../session/usage.js"
 import { drivePlanHere, getDriver, keptCounts } from "./driver.js"
 import { truncate } from "../documents/format.js"
 import { answerQuestion } from "../kernel/loop.js"
@@ -390,7 +390,7 @@ export const workflowBudget = {
       const session = await repo.find(step.sessionUrl)
       resumed = session.doc()?.stopped?.reason === "budget"
       // More than it has already spent, whatever its budget said; a step
-      // stopped for its budget carries on (session/session.js liftBudget).
+      // stopped for its budget carries on (session/usage.js liftBudget).
       session.change((d) => {
         limit = liftBudget(d, add)
       })

@@ -32,7 +32,7 @@ import { SessionRunner, needsWork, heldElsewhere } from "../kernel/runner.js"
 import { createEvents } from "../kernel/events.js"
 import { buildToolset } from "../tools/index.js"
 import { getProvider, modelInfo } from "../providers/index.js"
-import { STATUS } from "../session/session.js"
+import { STATUS } from "../session/schema.js"
 import { nodeFetch } from "../net/node-fetch.mjs"
 import { braveSearch } from "../tools/web.js"
 

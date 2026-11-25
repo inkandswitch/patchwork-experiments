@@ -9,7 +9,7 @@ import { join } from "node:path"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import * as Automerge from "@automerge/automerge/slim"
 import { setHostUrls } from "./host/urls.js"
-import { initSession } from "./session/session.js"
+import { initSession } from "./session/schema.js"
 import { startTabRunner } from "./runners/tab.js"
 import { stopRunner } from "./runners/registry.js"
 

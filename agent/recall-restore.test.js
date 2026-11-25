@@ -6,7 +6,9 @@
  * seven times each.
  */
 import { describe, it, expect } from "vitest"
-import { initSession, makeTurn, textBlock, callBlock, resultBlock, toRequest, resultsToKeepWhole, pinResult, _resetIds } from "./session/session.js"
+import { initSession, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock, callBlock, resultBlock } from "./session/blocks.js"
+import { toRequest, resultsToKeepWhole, pinResult } from "./session/request.js"
 import { storeRecall } from "./kernel/loop.js"
 import { memoryStore } from "./kernel/store.js"
 import { sessionRecall, originalResult, RESTORE_LIMIT } from "./tools/recall.js"

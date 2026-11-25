@@ -58,7 +58,7 @@ export function watchWorkspace(element, { repo, exclude = () => [], onChange = n
     notify()
   })
 
-  /** The context block's input (session/session.js `contextBlock`), titles resolved. */
+  /** The context block's input (session/blocks.js `contextBlock`), titles resolved. */
   async function snapshot() {
     const views = open.filter((v) => !excluded(v.url))
     const focusedView = focused ? (views.find((v) => v.url === focused) ?? { url: focused, toolId: null }) : null

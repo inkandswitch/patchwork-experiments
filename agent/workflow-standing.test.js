@@ -12,7 +12,9 @@
  */
 import { describe, it, expect } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { initSession, makeTurn, textBlock, callBlock, CALL, STATUS, unansweredCalls } from "./session/session.js"
+import { initSession, CALL, STATUS } from "./session/schema.js"
+import { makeTurn, textBlock, callBlock } from "./session/blocks.js"
+import { unansweredCalls } from "./session/calls.js"
 import { STEP, STATE, PLAN, reopenErrors, reopenSteps, states } from "./workflow/plan.js"
 import { stepStanding, laterReopened, planGlance, glanceText } from "./workflow/standing.js"
 import { askAside, asideOf, makeAside, reusableAside, NOT_IN_ASIDE, ASIDE_NOTE } from "./workflow/aside.js"

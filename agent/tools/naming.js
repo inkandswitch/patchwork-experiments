@@ -20,7 +20,7 @@
  * absurd thing to put in front of someone.
  */
 
-import { cleanTitle, MAX_TITLE } from "../session/session.js"
+import { cleanTitle, MAX_TITLE } from "../session/title.js"
 
 export const sessionTitleTool = {
   id: "session_title",

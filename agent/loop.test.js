@@ -3,17 +3,10 @@ import { run, decide, say, OUTCOME, DEFAULT_SYSTEM } from "./kernel/loop.js"
 import { needsWork } from "./kernel/runner.js"
 import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import {
-  initSession,
-  claimLease,
-  makeTurn,
-  textBlock,
-  STATUS,
-  CALL,
-  _resetIds,
-  findCall,
-  callsAwaitingApproval,
-} from "./session/session.js"
+import { initSession, STATUS, CALL, _resetIds } from "./session/schema.js"
+import { claimLease } from "./session/lease.js"
+import { makeTurn, textBlock } from "./session/blocks.js"
+import { findCall, callsAwaitingApproval } from "./session/calls.js"
 
 // A toolset double with the same surface as tools/buildToolset.
 function fakeToolset(tools) {

@@ -1,24 +1,9 @@
 import { describe, it, expect } from "vitest"
-import {
-  initSession,
-  needsApproval,
-  grantKey,
-  grantCandidates,
-  grantCovering,
-  grantOffers,
-  urlPrefixes,
-  callTarget,
-  callScope,
-  makeTurn,
-  textBlock,
-  callBlock,
-  claimLease,
-  callsAwaitingApproval,
-  CALL,
-  STATUS,
-  findCall,
-  _resetIds,
-} from "./session/session.js"
+import { initSession, CALL, STATUS, _resetIds } from "./session/schema.js"
+import { needsApproval, grantKey, grantCandidates, grantOffers, urlPrefixes, callTarget, callScope } from "./session/grants.js"
+import { makeTurn, textBlock, callBlock } from "./session/blocks.js"
+import { claimLease } from "./session/lease.js"
+import { callsAwaitingApproval, findCall } from "./session/calls.js"
 import { decide, run } from "./kernel/loop.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
 import { makeMock } from "./providers/mock.js"
@@ -322,14 +307,6 @@ describe("a grant on a subtree", () => {
     const edit = { id: "doc_edit", risk: "write" }
     expect(needsApproval(doc, edit, { input: { url: "automerge:ordinary" } })).toBe(false)
     expect(needsApproval(doc, edit, { input: { url: "automerge:settings" } }, null, ["automerge:settings"])).toBe(true)
-  })
-
-  it("names the grant that answered, so a decision can be explained", () => {
-    const doc = granted("web_fetch@https://docs.python.org/")
-    expect(grantCovering(doc, "web_fetch", "https://docs.python.org/3/x.html")).toBe(
-      "web_fetch@https://docs.python.org/"
-    )
-    expect(grantCovering(doc, "web_fetch", "https://other.test/")).toBe(null)
   })
 })
 

@@ -10,7 +10,9 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { initSession, makeTurn, textBlock, liftBudget, liftAmounts, _resetIds } from "./session/session.js"
+import { initSession, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock } from "./session/blocks.js"
+import { liftBudget, liftAmounts } from "./session/usage.js"
 import { waitingIn } from "./workflow/waiting.js"
 import { renderWaitingItem } from "./ui/waiting.js"
 import { needsWork } from "./kernel/runner.js"

@@ -5,19 +5,10 @@ import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
 import { askUser } from "./tools/ask.js"
 import { renderTranscript } from "./ui/transcript.js"
-import {
-  initSession,
-  makeTurn,
-  textBlock,
-  findCall,
-  questionsAwaitingAnswer,
-  questionOptions,
-  callsAwaitingApproval,
-  claimLease,
-  STATUS,
-  CALL,
-  _resetIds,
-} from "./session/session.js"
+import { initSession, STATUS, CALL, _resetIds } from "./session/schema.js"
+import { makeTurn, textBlock } from "./session/blocks.js"
+import { findCall, questionsAwaitingAnswer, questionOptions, callsAwaitingApproval } from "./session/calls.js"
+import { claimLease } from "./session/lease.js"
 
 function toolset(tools) {
   const byId = new Map(tools.map((t) => [t.id, t]))

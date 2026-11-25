@@ -18,26 +18,11 @@
  * handed explicit capabilities instead, and nothing else handed them.
  */
 
-import {
-  STATUS,
-  canClaim,
-  claimLease,
-  holdsLease,
-  leaseIsLive,
-  LeaseWatch,
-  lastTurn,
-  runnableCalls,
-  callsAwaitingApproval,
-  questionsAwaitingAnswer,
-  orphanedCalls,
-  resolveOrphans,
-  interruptedTurns,
-  dropInterruptedTurns,
-  unknownBlocks,
-  makeTurn,
-  textBlock,
-  markReconnecting,
-} from "../session/session.js"
+import { STATUS, unknownBlocks } from "../session/schema.js"
+import { canClaim, claimLease, holdsLease, leaseIsLive, LeaseWatch } from "../session/lease.js"
+import { lastTurn, makeTurn, textBlock } from "../session/blocks.js"
+import { runnableCalls, callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
+import { orphanedCalls, resolveOrphans, interruptedTurns, dropInterruptedTurns, markReconnecting } from "../session/recovery.js"
 import { run, OUTCOME } from "./loop.js"
 import { scopeOf, assertScopeAgrees, confine, scopedToolset, kernelRepo, ScopeRefusal } from "./scope.js"
 import { WORKFLOW_TOOL_IDS } from "../workflow/plan.js"
@@ -164,7 +149,7 @@ export class SessionRunner {
     this.now = opts.now ?? (() => Date.now())
     this.system = opts.system ?? undefined
     // Whether another runner's lease is live, judged by this runner's clock
-    // alone (session/session.js LeaseWatch). Every lease decision here goes through it.
+    // alone (session/lease.js LeaseWatch). Every lease decision here goes through it.
     this.watch = new LeaseWatch({ now: () => this.now(), staleAfterMs: STALE_AFTER_MS })
     this.live = (lease) => this.watch.live(lease)
     this.confirmMs = opts.confirmMs ?? CONFIRM_MS

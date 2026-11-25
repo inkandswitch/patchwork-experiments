@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { initSession, makeTurn, callBlock, resultBlock, toRequest, MAX_IMAGES_IN_REQUEST } from "./session/session.js"
+import { initSession } from "./session/schema.js"
+import { makeTurn, callBlock, resultBlock } from "./session/blocks.js"
+import { toRequest, MAX_IMAGES_IN_REQUEST } from "./session/request.js"
 import { toOpenAIMessages } from "./providers/openrouter.js"
 import { runTool } from "./tools/index.js"
 import { canvasWithin, viewScreenshot, layOut } from "./tools/screenshot.js"

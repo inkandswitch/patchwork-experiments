@@ -227,7 +227,8 @@ try {
     for (const p of (await import(absolute)).plugins) if (["agent:tool", "patchwork:datatype"].includes(p.type)) plugins.getRegistry(p.type).register(p, absolute)
   }
 
-  const { initSession, makeTurn, textBlock } = await import("/agent/session/session.js")
+  const { initSession } = await import("/agent/session/schema.js")
+  const { makeTurn, textBlock } = await import("/agent/session/blocks.js")
   const { initPlan, WORKFLOW_TOOL_IDS } = await import("/agent/workflow/plan.js")
   const folder = repo.create({ "@patchwork": { type: "folder" }, title: "Task", docs: [] })
   const plan = repo.create({})
