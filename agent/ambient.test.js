@@ -3,11 +3,11 @@
  * carry what was open when they were sent.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { AmbientAgent, STORAGE_TOOL_ID, STORAGE_PATIENCE_MS } from "./ambient.js"
-import { contextBlock, describeContext, toRequest, initSession, makeTurn, textBlock } from "./session.js"
-import { say } from "./loop.js"
-import { memoryStore } from "./store.js"
-import { _reset as resetRunners } from "./runners.js"
+import { AmbientAgent, STORAGE_TOOL_ID, STORAGE_PATIENCE_MS } from "./ui/ambient.js"
+import { contextBlock, describeContext, toRequest, initSession, makeTurn, textBlock } from "./session/session.js"
+import { say } from "./kernel/loop.js"
+import { memoryStore } from "./kernel/store.js"
+import { _reset as resetRunners } from "./runners/registry.js"
 
 // ---- doubles -------------------------------------------------------------
 
@@ -163,7 +163,7 @@ describe("the context block", () => {
   })
 
   it("does not become the session's title", async () => {
-    const { sessionTitle } = await import("./session.js")
+    const { sessionTitle } = await import("./session/session.js")
     const doc = {}
     initSession(doc)
     doc.turns.push(

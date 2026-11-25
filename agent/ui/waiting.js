@@ -9,14 +9,14 @@
  * the same decide/answerQuestion a step's own view would use.
  */
 
-import { decide, answerQuestion } from "../loop.js"
-import { grantOffers, callScope, asksEveryTime } from "../session.js"
+import { decide, answerQuestion } from "../kernel/loop.js"
+import { grantOffers, callScope, asksEveryTime } from "../session/session.js"
 import { builtinToolset } from "../tools/index.js"
-import { handleStore } from "../store.js"
+import { handleStore } from "../kernel/store.js"
 import { describeCall } from "./calls.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
-import { liftBudget, liftAmounts } from "../session.js"
+import { liftBudget, liftAmounts } from "../session/session.js"
 
 /** Documents a grant never covers: the account and its module settings. */
 const sensitiveDocs = () =>

@@ -12,7 +12,7 @@ import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initPlan, STEP } from "./workflow/plan.js"
 import { WorkflowDriver, _resetDrivers } from "./workflow/driver.js"
-import { initSession, makeTurn, textBlock, STATUS } from "./session.js"
+import { initSession, makeTurn, textBlock, STATUS } from "./session/session.js"
 
 await initSubduction()
 

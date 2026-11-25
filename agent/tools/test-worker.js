@@ -3,7 +3,7 @@
  *
  * The tab builds the bundle, with Patchwork's importmap already applied — a
  * module worker has no importmap, so the externals arrive as absolute URLs
- * (the same table worker-client.js hands the shared runner). This side only
+ * (the same table runners/worker-client.js hands the shared runner). This side only
  * imports it under the runtime and posts the report back. One worker per
  * file, so a file that never finishes can be terminated without taking the
  * tab with it.
@@ -19,7 +19,7 @@
 
 import * as engine from "./vendor/vitest-engine.js"
 import { createRuntime, captureConsole } from "./vitest-runtime.js"
-import { initAutomergeHere } from "./host.js"
+import { initAutomergeHere } from "../host/import.js"
 
 self.onmessage = async ({ data: { file, code, options } }) => {
   try {

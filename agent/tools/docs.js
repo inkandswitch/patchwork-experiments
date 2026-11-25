@@ -10,15 +10,15 @@
  * what it is looking at.
  */
 
-import { Automerge } from "../host-modules.js"
-import { hostImport } from "./host.js"
-import { applyOps, opLabel, valueAt, OP_NAMES } from "./ops.js"
-import { previewJson, preview, shape, bytes, truncate, noDocumentError } from "./format.js"
-import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "./history.js"
+import { Automerge } from "../host/modules.js"
+import { hostImport } from "../host/import.js"
+import { applyOps, opLabel, valueAt, OP_NAMES } from "../documents/ops.js"
+import { previewJson, preview, shape, bytes, truncate, noDocumentError } from "../documents/format.js"
+import { editsBetween, editsOfChange, headsAt, matchEdit, touchesPath } from "../documents/history.js"
 import { isCodePath, isDirectory, isFile, isFolder, treeNode } from "./folders.js"
-import { imageForModel } from "../images.js"
+import { imageForModel } from "../documents/images.js"
 import { findAll, MAX_MATCHES, pdfOf, pdfWithoutText } from "./read-source.js"
-import { fileKind, officeText, describeFile } from "../files.js"
+import { fileKind, officeText, describeFile } from "../documents/files.js"
 
 const { isImmutableString } = Automerge
 
@@ -131,7 +131,7 @@ export function matchLine(text, at, length) {
   return { number, line }
 }
 
-/** The page a PDF's text has `at` on: the last `[Page N]` line before it (pdf-text.js), or null. */
+/** The page a PDF's text has `at` on: the last `[Page N]` line before it (documents/pdf-text.js), or null. */
 export function pageAt(text, at) {
   const before = text.slice(0, at)
   const marks = [...before.matchAll(/^\[Page (\d+)\]$/gm)]
@@ -213,7 +213,7 @@ export const docRead = {
       )
     }
 
-    // A file is read in the form a model can use (files.js), not as a count
+    // A file is read in the form a model can use (documents/files.js), not as a count
     // of bytes: an image shown, a PDF's text read page by page (a scan handed over whole), an Office file's
     // text, text that arrived as bytes decoded.
     const wholeFile = path.length === 0 || (path.length === 1 && path[0] === "content")
@@ -308,7 +308,7 @@ function sourceCode(doc) {
 
 /**
  * What to use instead of doc_edit on the documents only the runtime writes.
- * The repo is what refuses the write (scope.js); this only adds, to its
+ * The repo is what refuses the write (kernel/scope.js); this only adds, to its
  * refusal, the tools that do the job, which saves the model a turn of guessing.
  */
 function insteadOfKernel(doc) {

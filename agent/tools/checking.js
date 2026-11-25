@@ -24,8 +24,8 @@
  * Host tier throughout: they need a DOM and a real module import.
  */
 
-import { hostImport } from "./host.js"
-import { truncate, preview, changesBetween } from "./format.js"
+import { hostImport } from "../host/import.js"
+import { truncate, preview, changesBetween } from "../documents/format.js"
 import { rasterize, shrink, canvasWithin, HOLDER_STYLE } from "./screenshot.js"
 import { contentToText, treeNode, treeEntries } from "./folders.js"
 

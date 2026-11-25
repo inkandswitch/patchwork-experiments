@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { sessionTitleTool } from "./tools/naming.js"
-import { AgentSessionDatatype } from "./datatype.js"
+import { AgentSessionDatatype } from "./session/datatype.js"
 import {
   initSession,
   sessionTitle,
@@ -10,7 +10,7 @@ import {
   makeTurn,
   textBlock,
   MAX_TITLE,
-} from "./session.js"
+} from "./session/session.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
 import { describeCall } from "./ui/calls.js"
 
@@ -152,7 +152,7 @@ describe("the agent naming its own work", () => {
     // conversation opened, which needed a yes when it was mounted. And
     // finding_write writes only what a research step itself makes, or a
     // finding in its workflow's ledger, through a repo that can reach nothing
-    // else (scope.js).
+    // else (kernel/scope.js).
     expect(selfWriters).toEqual(["view_unmount", "finding_write", "session_title"])
   })
 

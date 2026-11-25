@@ -62,7 +62,7 @@ const INLINE = [
   // first `)` both breaks the link and leaves a stray bracket in the prose.
   { name: "image", pattern: /!\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"]*")?\)/ },
   { name: "link", pattern: /\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)(?:\s+"([^"]*)")?\)/ },
-  // The agent's word that a fact has no document behind it (see citations.js).
+  // The agent's word that a fact has no document behind it (see documents/citations.js).
   { name: "memory", pattern: /\(from memory\)/i },
   { name: "bold", pattern: /\*\*([^*]+)\*\*|__([^_]+)__/ },
   { name: "italic", pattern: /(?<![*\w])\*([^*\n]+)\*(?!\*)|(?<![_\w])_([^_\n]+)_(?![\w_])/ },
@@ -155,7 +155,7 @@ function anchor(href, label) {
 
 /**
  * A citation: a link to a document carrying the passage it rests on. The
- * view checks the passage is really there (citations.js) and marks it.
+ * view checks the passage is really there (documents/citations.js) and marks it.
  */
 function citation(href, label, quote) {
   const link = anchor(href, label)

@@ -10,12 +10,12 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { SessionRunner } from "./runner.js"
-import { ensureRunner, getEntry, CODE_VERSION, _reset } from "./runners.js"
-import { memoryStore } from "./store.js"
+import { SessionRunner } from "./kernel/runner.js"
+import { ensureRunner, getEntry, CODE_VERSION, _reset } from "./runners/registry.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { initSession, makeTurn, textBlock, unknownBlocks, BLOCK_TYPES, _resetIds } from "./session.js"
-import { AgentTool } from "./tool.js"
+import { initSession, makeTurn, textBlock, unknownBlocks, BLOCK_TYPES, _resetIds } from "./session/session.js"
+import { AgentTool } from "./ui/session-view.js"
 
 beforeEach(() => {
   _resetIds()

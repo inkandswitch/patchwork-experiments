@@ -11,13 +11,13 @@
 
 import { describe, it, expect, afterEach, beforeEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { run, OUTCOME, spentBudget } from "./loop.js"
-import { memoryStore } from "./store.js"
+import { run, OUTCOME, spentBudget } from "./kernel/loop.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { initSession, makeTurn, textBlock, claimLease, STATUS, _resetIds } from "./session.js"
+import { initSession, makeTurn, textBlock, claimLease, STATUS, _resetIds } from "./session/session.js"
 import { initPlan, STEP, DEFAULT_STEP_BUDGETS, stepBudget, resumePlan } from "./workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, _resetDrivers } from "./workflow/driver.js"
-import { workflowBudget } from "./tools/workflow.js"
+import { workflowBudget } from "./workflow/tools.js"
 import { renderBudgetItem } from "./ui/waiting.js"
 import { budgetWaiting } from "./workflow/waiting.js"
 

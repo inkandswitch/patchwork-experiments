@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { skillList, skillRead, describeFrom, folderSkills, resolveSkills, packageSkillsSection } from "./tools/skills.js"
-import { BUILTIN_SKILLS } from "./skills/builtin.js"
+import { skillList, skillRead, describeFrom, folderSkills, resolveSkills, packageSkillsSection } from "./knowledge/skills.js"
+import { BUILTIN_SKILLS } from "./knowledge/builtin-skills.js"
 
 function fakeRepo(docs) {
   return { async find(url) { if (!(url in docs)) throw new Error("missing"); return { url, doc: () => docs[url] } } }

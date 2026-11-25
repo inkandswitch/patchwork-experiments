@@ -8,10 +8,10 @@ import { describe, it, expect } from "vitest"
 import { join } from "node:path"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import * as Automerge from "@automerge/automerge/slim"
-import { setHostUrls } from "./host-urls.js"
-import { initSession } from "./session.js"
-import { startTabRunner } from "./tab-runner.js"
-import { stopRunner } from "./runners.js"
+import { setHostUrls } from "./host/urls.js"
+import { initSession } from "./session/session.js"
+import { startTabRunner } from "./runners/tab.js"
+import { stopRunner } from "./runners/registry.js"
 
 await initSubduction()
 

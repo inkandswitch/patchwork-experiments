@@ -11,7 +11,7 @@
  * The driver holds a lease on the plan document, exactly as a runner holds one
  * on a session, so two tabs with the plan open cannot both start the same
  * step: liveness judged on its own clock, and a fresh claim believed only
- * after CONFIRM_MS, as a runner's is (runner.js). Nothing about the run lives
+ * after CONFIRM_MS, as a runner's is (kernel/runner.js). Nothing about the run lives
  * only in memory: close the tab and reopen the plan, and a new driver picks up
  * where the document says things are.
  *
@@ -21,16 +21,16 @@
  * So steps spread over the browsers that have a key, and none runs twice.
  */
 
-import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch, liftBudget, CALL, unansweredCalls } from "../session.js"
-import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../runner.js"
-import { AutomergeRepo } from "../host-modules.js"
+import { claimLease, holdsLease, initSession, makeTurn, textBlock, lastTurn, STATUS, LeaseWatch, liftBudget, CALL, unansweredCalls } from "../session/session.js"
+import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
+import { AutomergeRepo } from "../host/modules.js"
 import { PLAN, STEP, toStart, isSettled, stepPrompt, reopenPrompt, states, STATE, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, shouldPause, budgetOf, orchestratorSpend, notStarted, stepBudget, inputsOf, staleInputs, openRequests, newRequest, reopenSteps } from "./plan.js"
-import { scopeOf, webScope, sameScope, KERNEL_TYPES, SCOPED_TOOL_IDS } from "../scope.js"
-import { documentIdOf } from "../session.js"
-import { releaseNowPermitted } from "../loop.js"
-import { handleStore } from "../store.js"
+import { scopeOf, webScope, sameScope, KERNEL_TYPES, SCOPED_TOOL_IDS } from "../kernel/scope.js"
+import { documentIdOf } from "../session/session.js"
+import { releaseNowPermitted } from "../kernel/loop.js"
+import { handleStore } from "../kernel/store.js"
 import { waitingIn } from "./waiting.js"
-import { checkStepTools } from "../placement.js"
+import { checkStepTools } from "../kernel/placement.js"
 
 const { stringifyAutomergeUrl } = AutomergeRepo
 
@@ -149,7 +149,7 @@ export class WorkflowDriver {
     this.startSession = startSession
     this.notify = notify
     // Every tool this page knows, for checking a step's prompt before it
-    // starts (placement.js checkStepTools); this page's own by default.
+    // starts (kernel/placement.js checkStepTools); this page's own by default.
     this.catalogue = catalogue
     this.toolset = toolset
     // Documents a grant never covers: the account and its module settings.
@@ -160,7 +160,7 @@ export class WorkflowDriver {
     this.soon = null
     this.runnerUrl = `workflow-${Math.random().toString(36).slice(2, 10)}`
     this.generation = null
-    // Whose the plan is, judged on this page's clock alone (session.js).
+    // Whose the plan is, judged on this page's clock alone (session/session.js).
     this.watch = new LeaseWatch({ now: () => this.now(), staleAfterMs: STALE_AFTER_MS })
     this.live = (lease) => this.watch.live(lease)
     this.confirmMs = confirmMs
@@ -286,7 +286,7 @@ export class WorkflowDriver {
     }
 
     // 0. A research step runs confined or not at all. Its runner refuses an
-    // unconfined session too (scope.js); this ends the step in the plan.
+    // unconfined session too (kernel/scope.js); this ends the step in the plan.
     await this.checkScopes()
     plan = this.handle.doc()
 
@@ -463,7 +463,7 @@ export class WorkflowDriver {
   /**
    * End every running research step whose session is not confined exactly as
    * its plan says. A scope is written when the step starts and nothing in the
-   * agent may change it (scope.js kernelRepo), so a scope that is gone or
+   * agent may change it (kernel/scope.js kernelRepo), so a scope that is gone or
    * different was changed by hand, and the step stops rather than run on with
    * more than research should have.
    */
@@ -618,7 +618,7 @@ export class WorkflowDriver {
       if (web) {
         // In the same change as the session itself, so it never exists
         // unconfined. The scope decides its tools and everything it can reach
-        // (scope.js); it has no list of tools to edit. It may fetch any site:
+        // (kernel/scope.js); it has no list of tools to edit. It may fetch any site:
         // it can reach none of the person's documents, so there is nothing of
         // theirs to leak, and it gets nothing the orchestrator was granted.
         d.scope = webScope(this.handle.url, step.id)
@@ -626,7 +626,7 @@ export class WorkflowDriver {
       } else {
         // A worker step gets every tool that runs without the page, built-in
         // or plugin, decided by whichever runner builds its toolset — so it
-        // can run anywhere a repo is (placement.js). Neither kind can start a
+        // can run anywhere a repo is (kernel/placement.js). Neither kind can start a
         // workflow of its own.
         d.tools = step.where === "worker" ? { where: "worker", disabled: WORKFLOW_TOOL_IDS } : { disabled: WORKFLOW_TOOL_IDS }
         // What the person already allowed the orchestrator carries into its
@@ -654,7 +654,7 @@ export class WorkflowDriver {
   }
 
   /**
-   * Check a step's prompt against the tools it would get (placement.js), and
+   * Check a step's prompt against the tools it would get (kernel/placement.js), and
    * act on the answer: a worker step that needs the page is moved there, to
    * start when the page is free; one that cannot work as written fails with
    * the reason, which the orchestrator is told like any failure. True when
@@ -719,7 +719,7 @@ export class WorkflowDriver {
    * Stop these sessions from outside, and keep them stopped: their lease is
    * taken, so any runner stands down at its next look, and they are marked
    * halted, so none takes them up again when that lease goes stale — not even
-   * one whose last call landed after the stop (runner.js needsWork). Spoken
+   * one whose last call landed after the stop (kernel/runner.js needsWork). Spoken
    * to, or continued by a reopen, they carry on.
    */
   async haltSessions(urls, reason) {
@@ -995,7 +995,7 @@ async function builtinToolset() {
 }
 
 /**
- * Every tool this page knows, built-in and plugin, as placement.js reads
+ * Every tool this page knows, built-in and plugin, as kernel/placement.js reads
  * them: metadata only, nothing loaded. Loaded late: the toolset imports this
  * module.
  */
@@ -1019,7 +1019,7 @@ export async function drivePlanHere(planUrl, { repo, events = null, startSession
     existing.kick()
     return existing
   }
-  const { startTabRunner } = await import("../tab-runner.js")
+  const { startTabRunner } = await import("../runners/tab.js")
   // A caller with its own way of running sessions (a test, a runner outside
   // the browser) passes it; in a page, steps run in this tab.
   const start =

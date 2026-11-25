@@ -17,9 +17,9 @@
  * is asked of the step as it now is.
  */
 
-import { CALL, STATUS, findCall, unansweredCalls, makeTurn, resultBlock, textBlock, sessionTitle } from "../session.js"
-import { say } from "../loop.js"
-import { handleStore } from "../store.js"
+import { CALL, STATUS, findCall, unansweredCalls, makeTurn, resultBlock, textBlock, sessionTitle } from "../session/session.js"
+import { say } from "../kernel/loop.js"
+import { handleStore } from "../kernel/store.js"
 
 /** What a copied call that never finished is answered with in the copy. */
 export const NOT_IN_ASIDE = "Not run: this is a side thread copied from a workflow step, and the call had not finished when it was copied."

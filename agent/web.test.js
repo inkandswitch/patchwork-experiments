@@ -4,10 +4,10 @@ import {
   parseBraveResults, braveSearch, braveSearchUrl, BRAVE_SEARCH, SNIPPET_MAX, readerUrl, readerSiteError, webFetch, webSearch, htmlToText,
 } from "./tools/web.js"
 import { MAX_PDF_BYTES, sha256Hex } from "./tools/sources.js"
-import { guardedFetch, Refused } from "./tools/guard.js"
+import { guardedFetch, Refused } from "./net/guard.js"
 import { httpRequest } from "./tools/http.js"
-import { bytes } from "./tools/format.js"
-import { makePdf } from "./pdf-fixture.js"
+import { bytes } from "./documents/format.js"
+import { makePdf } from "./fixtures/pdf-fixture.js"
 
 /** A repo double that makes real-looking URLs and records every document. */
 function fakeRepo() {

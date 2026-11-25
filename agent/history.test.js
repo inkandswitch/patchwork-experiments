@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest"
 import * as A from "@automerge/automerge"
-import { editsBetween, editsOfChange, headsAt } from "./tools/history.js"
+import { editsBetween, editsOfChange, headsAt } from "./documents/history.js"
 
 // The host's automerge and repo, supplied from node_modules instead of the importmap.
-vi.mock("./tools/host.js", () => ({
+vi.mock("./host/import.js", () => ({
   hostImport: (name) =>
     name === "automerge" ? import("@automerge/automerge")
     : name === "repo" ? import("@automerge/automerge-repo")

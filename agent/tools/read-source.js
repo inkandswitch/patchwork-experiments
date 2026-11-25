@@ -12,19 +12,19 @@
  * reaching for the network.
  *
  * Which documents these may open is the repo's to decide, not theirs. In a
- * research step the repo is scoped (scope.js): it opens only the workflow's
+ * research step the repo is scoped (kernel/scope.js): it opens only the workflow's
  * ledger of kept things, at the versions recorded there, and refuses anything
  * else before asking for it. Anywhere else these read any document they are
  * given, as doc_read already can.
  */
 
-import { AutomergeRepo } from "../host-modules.js"
-import { repairDocUrl } from "../doc-urls.js"
+import { AutomergeRepo } from "../host/modules.js"
+import { repairDocUrl } from "../documents/doc-urls.js"
 import { readable, sessionDoc, keptSources, headingAt, outline, formatOf, readOn } from "./sources.js"
-import { bytes } from "./format.js"
-import { imageForModel } from "../images.js"
-import { fileKind, officeText, MAX_FILE_BYTES } from "../files.js"
-import { readPdf, pdfSummary } from "../pdf-text.js"
+import { bytes } from "../documents/format.js"
+import { imageForModel } from "../documents/images.js"
+import { fileKind, officeText, MAX_FILE_BYTES } from "../documents/files.js"
+import { readPdf, pdfSummary } from "../documents/pdf-text.js"
 
 const { interpretAsDocumentId, isValidAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } = AutomergeRepo
 
@@ -90,7 +90,7 @@ export function around(text, at, length) {
  * document instead, which is not a source.
  */
 export async function openDocument(source, repo) {
-  // A run-on or quoted URL is mended (doc-urls.js); the repo mends the rest.
+  // A run-on or quoted URL is mended (documents/doc-urls.js); the repo mends the rest.
   const name = repairDocUrl(String(source ?? "").trim()).url
   const id = canonical(name)
   if (!id) throw new Error(`'${name}' does not name a document. Pass the automerge: URL a fetch gave you.`)
@@ -162,7 +162,7 @@ export const sourceRead = {
     let text = readable(doc)
     let marks = Array.isArray(doc.marks) ? doc.marks : []
     if (text == null) {
-      // What was kept with no text beside it: read it as what it is (files.js).
+      // What was kept with no text beside it: read it as what it is (documents/files.js).
       const kind = fileKind(doc)
       if (kind?.kind === "image") {
         const shown = await imageForModel(doc.content, kind.type)

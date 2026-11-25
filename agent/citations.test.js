@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { normalise, locateQuote, quoteParts, citationsIn, quotableText, checkCitation, MIN_QUOTE, tableCitations, citationsInDocument } from "./citations.js"
+import { normalise, locateQuote, quoteParts, citationsIn, quotableText, checkCitation, MIN_QUOTE, tableCitations, citationsInDocument } from "./documents/citations.js"
 import { citationsCheck } from "./tools/citing.js"
 import { renderMarkdown } from "./ui/markdown.js"
 import { markCitations, _forgetChecks } from "./ui/citations.js"

@@ -9,7 +9,7 @@
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "runner": "node node-runner.mjs",
+    "runner": "node runners/node.mjs",
     "vendor:vitest": "node scripts/vendor-vitest.mjs",
     "vendor:pdfjs": "node scripts/vendor-pdfjs.mjs"
   },

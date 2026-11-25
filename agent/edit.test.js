@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { applyOp, locate, lineOf, minimalSplice, OpError } from "./tools/ops.js"
+import { applyOp, locate, lineOf, minimalSplice, OpError } from "./documents/ops.js"
 import { fsEdit, fsWrite, fsRead } from "./tools/folders.js"
 import { docEdit } from "./tools/docs.js"
 

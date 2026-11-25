@@ -17,9 +17,9 @@ import { describe, it, expect, beforeEach } from "vitest"
 import {
   initSession, makeTurn, textBlock, callBlock, claimLease, CALL, STATUS, _resetIds,
   interruptedTurns, dropInterruptedTurns, resolveOrphans, orphanedCalls, INTERRUPTED,
-} from "./session.js"
-import { SessionRunner, needsWork, STALE_AFTER_MS } from "./runner.js"
-import { memoryStore } from "./store.js"
+} from "./session/session.js"
+import { SessionRunner, needsWork, STALE_AFTER_MS } from "./kernel/runner.js"
+import { memoryStore } from "./kernel/store.js"
 
 beforeEach(() => _resetIds())
 

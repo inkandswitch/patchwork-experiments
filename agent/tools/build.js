@@ -21,7 +21,7 @@
  * package is still a folder of files and installs exactly like any other.
  */
 
-import { truncate, bytes } from "./format.js"
+import { truncate, bytes } from "../documents/format.js"
 import { contentToText, isFile, treeNode, treeEntries, treeEnter, treeAdd, treeRepin } from "./folders.js"
 
 /** Pinned, because a build that changes under you is not a build. */

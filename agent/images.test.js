@@ -8,9 +8,9 @@
 import { describe, it, expect } from "vitest"
 import { fitWithin, MAX_IMAGE_SIDE } from "./tools/screenshot.js"
 import { stream } from "./providers/openrouter.js"
-import { initSession, makeTurn, textBlock, resultBlock, toRequest, rejectSentImages, _resetIds } from "./session.js"
-import { SessionRunner } from "./runner.js"
-import { memoryStore } from "./store.js"
+import { initSession, makeTurn, textBlock, resultBlock, toRequest, rejectSentImages, _resetIds } from "./session/session.js"
+import { SessionRunner } from "./kernel/runner.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
 
 // The provider's own words, from the session that got stuck.

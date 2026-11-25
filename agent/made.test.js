@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { createInlineViews, iconFor, isPackage, wantsInstall } from "./ui/views.js"
 import { installState, moduleUrlFor, splitModuleUrl, applyInstall, applyUninstall, shortHeads, pinIsBehind } from "./ui/install.js"
-import { initSession, recordArtifact, artifacts, MAX_ARTIFACTS } from "./session.js"
+import { initSession, recordArtifact, artifacts, MAX_ARTIFACTS } from "./session/session.js"
 
 describe("recording what a session made", () => {
   const fresh = () => { const d = {}; initSession(d, {}); return d }

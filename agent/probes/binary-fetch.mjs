@@ -137,7 +137,7 @@ try {
       try {
         const http = await import(base + "tools/http.js")
         const filing = await import(base + "tools/file-source.js")
-        const guard = await import(base + "tools/guard.js")
+        const guard = await import(base + "net/guard.js")
         const build = await import(base + "tools/build.js")
 
         // A package folder to fetch into, so the "put it somewhere useful" path

@@ -4,11 +4,11 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { generateAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
-import { AmbientAgent, STORAGE_TOOL_ID } from "./ambient.js"
-import { initSession, makeTurn, textBlock, callBlock, CALL, STATUS, _resetIds } from "./session.js"
+import { AmbientAgent, STORAGE_TOOL_ID } from "./ui/ambient.js"
+import { initSession, makeTurn, textBlock, callBlock, CALL, STATUS, _resetIds } from "./session/session.js"
 import { activityOf, askedInText, watchAttention, LONG_RUN_MS } from "./ui/attention.js"
 import { createNotifier, setNotifications, notificationsEnabled, describe as describeNotice } from "./ui/notify.js"
-import { _reset as resetRunners } from "./runners.js"
+import { _reset as resetRunners } from "./runners/registry.js"
 
 // ---- doubles -------------------------------------------------------------
 
@@ -359,7 +359,7 @@ describe("the pop-over at rest", () => {
     const { $ } = mount(session("approval"))
     await vi.waitFor(() => expect($(".agent-peek").hidden).toBe(false))
     expect($(".agent-peek .agent-waiting-item .cluster")).toBeTruthy()
-    const css = (await import("node:fs")).readFileSync(`${process.cwd()}/styles.css`, "utf8")
+    const css = (await import("node:fs")).readFileSync(`${process.cwd()}/ui/styles.css`, "utf8")
     expect(css).toContain(":is(.patchwork-agent, .agent-pop) button {")
     expect(css).toContain(".agent-pop .cluster {")
   })

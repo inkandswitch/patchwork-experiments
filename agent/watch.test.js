@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import * as A from "@automerge/automerge"
 
 // The host's automerge and repo, supplied from node_modules instead of the importmap.
-vi.mock("./tools/host.js", () => ({
+vi.mock("./host/import.js", () => ({
   hostImport: (name) =>
     name === "automerge" ? import("@automerge/automerge")
     : name === "repo" ? import("@automerge/automerge-repo")
@@ -12,10 +12,10 @@ vi.mock("./tools/host.js", () => ({
 const { Repo, initSubduction } = await import("@automerge/automerge-repo")
 await initSubduction()
 const { docWatch, restoreWatches, splitTarget, watchesWriter, KEPT_EDITS } = await import("./tools/watch.js")
-const { createEvents } = await import("./events.js")
-const { handleStore } = await import("./store.js")
-const { initSession, STATUS } = await import("./session.js")
-const { fullContext } = await import("./runner.js")
+const { createEvents } = await import("./kernel/events.js")
+const { handleStore } = await import("./kernel/store.js")
+const { initSession, STATUS } = await import("./session/session.js")
+const { fullContext } = await import("./kernel/runner.js")
 
 /** Change events are judged a microtask after they fire (tools/watch.js). */
 const settled = () => new Promise((r) => setTimeout(r, 0))
@@ -60,7 +60,7 @@ function recordingEvents() {
     },
     forTool: () => events,
     channel: (key) => channels.get(key),
-    /** Deliver: render the latest notice, as events.js does once it may wake. */
+    /** Deliver: render the latest notice, as kernel/events.js does once it may wake. */
     deliver(key) {
       const channel = channels.get(key)
       const render = channel?.renders.at(-1)
@@ -422,7 +422,7 @@ describe("doc_watch through events.js: a real wake", () => {
 
 describe("doc_watch: a runner that starts listens again", () => {
   it("SessionRunner.start restores the session's watches and the next edit wakes it", async () => {
-    const { SessionRunner } = await import("./runner.js")
+    const { SessionRunner } = await import("./kernel/runner.js")
     const repo = new Repo({ network: [] })
     const run = runDoc(repo)
     const store = sessionStore(repo)

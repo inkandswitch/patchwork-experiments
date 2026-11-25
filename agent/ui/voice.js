@@ -14,7 +14,7 @@
  * dictation reports progress through `onStatus` before it listens.
  */
 
-import { hostImport } from "../tools/host.js"
+import { hostImport } from "../host/import.js"
 
 /** The version `call` pins. Bump both together. */
 export const TRANSCRIPT_PACKAGE =

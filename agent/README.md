@@ -14,28 +14,28 @@ claimed by a node process with no tab open.
 
 | | |
 |---|---|
-| `session.js` | the session model — pure functions over plain objects, no automerge |
-| `store.js` | applies that model to a DocHandle (and to a plain object, for tests) |
-| `loop.js` | the agentic loop: stream, dispatch tools, stop for approval, resume |
-| `runner.js` | claims the lease, notices work, drives the loop; decides from the session what its tools may reach |
-| `network.js` | what an interruption is, and how long to wait before trying again |
-| `scope.js` | research steps: the confined context and repo, the scoped toolset, and the repo that keeps tools off sessions and plans |
+| `session/session.js` | the session model — pure functions over plain objects, no automerge |
+| `kernel/store.js` | applies that model to a DocHandle (and to a plain object, for tests) |
+| `kernel/loop.js` | the agentic loop: stream, dispatch tools, stop for approval, resume |
+| `kernel/runner.js` | claims the lease, notices work, drives the loop; decides from the session what its tools may reach |
+| `net/network.js` | what an interruption is, and how long to wait before trying again |
+| `kernel/scope.js` | research steps: the confined context and repo, the scoped toolset, and the repo that keeps tools off sessions and plans |
 | `datatype.js` | the `agent-session` datatype |
 | `tool.js` | the view — sidebar panel and full-window pop-out, one render function |
-| `tab-runner.js` | runs a session in this tab, with or without a view of it |
-| `worker-runner.js`, `worker-client.js` | the SharedWorker runner, and the page's half that hands it what it cannot get itself |
-| `worker-plugins.js` | the SharedWorker's plugin tools: the page registry's metadata, loaded in the worker where they can be |
-| `placement.js` | where a tool runs, which tools a session placed on a worker gets, and the check a step's prompt gets before it starts |
-| `host-modules.js` | automerge and automerge-repo as the host provides them, imported by every module here instead of by bare specifier |
+| `runners/tab.js` | runs a session in this tab, with or without a view of it |
+| `runners/worker.js`, `runners/worker-client.js` | the SharedWorker runner, and the page's half that hands it what it cannot get itself |
+| `runners/worker-plugins.js` | the SharedWorker's plugin tools: the page registry's metadata, loaded in the worker where they can be |
+| `kernel/placement.js` | where a tool runs, which tools a session placed on a worker gets, and the check a step's prompt gets before it starts |
+| `host/modules.js` | automerge and automerge-repo as the host provides them, imported by every module here instead of by bare specifier |
 | `workflow/` | workflows: the plan model, the driver that runs it, its datatype and view |
-| `panel.js` | the `context-tool` variant that attaches to whatever you are looking at |
-| `ambient.js` | the pop-over at the bottom centre: the session (⌘J), a pill while it works, a peek when it needs you |
+| `ui/panel.js` | the `context-tool` variant that attaches to whatever you are looking at |
+| `ui/ambient.js` | the pop-over at the bottom centre: the session (⌘J), a pill while it works, a peek when it needs you |
 | `ui/attention.js` | what across your sessions and their workflows is working, waiting on you, or just finished |
 | `ui/notify.js` | opt-in browser notifications for those, while the tab is in the background |
-| `node-runner.mjs` | the same runner, outside the browser: durable, no CORS |
-| `providers/` | `openrouter.js` (real, with retry; a lost connection is an interruption — `network.js`), `mock.js` (scripted, for tests) |
+| `runners/node.mjs` | the same runner, outside the browser: durable, no CORS |
+| `providers/` | `openrouter.js` (real, with retry; a lost connection is an interruption — `net/network.js`), `mock.js` (scripted, for tests) |
 | `tools/` | the tool surface — documents, discovery, folders, environment, web, http, kept sources, authoring, checking |
-| `tools/guard.js` | where any tool may send a request: the guarded fetch every runner hands its tools |
+| `net/guard.js` | where any tool may send a request: the guarded fetch every runner hands its tools |
 | `ui/` | transcript rendering and the provider-subscription protocol |
 | `probes/` | browser and node probes that drive the real thing (see Testing) |
 
@@ -84,7 +84,7 @@ A package's `agent:tool` declares `where` the same way, and the declaration is
 all that decides who gets a tool: a session placed on a worker — a workflow
 step, `tools.where = "worker"` — gets every tool declared `worker`, built-in
 or plugin, and none declared `host`, filtered when a runner builds its toolset
-(`placement.js`, `tools/index.js` `buildToolset`).
+(`kernel/placement.js`, `tools/index.js` `buildToolset`).
 
 A call the current runner cannot execute **parks** the session rather than
 failing it, and resumes when a capable runner appears. Which tier a call needs
@@ -110,7 +110,7 @@ session — the page reloaded, another tab, a worker:
   other call gets an error result saying it may or may not have taken effect —
   so the model checks, rather than a write silently happening twice.
 - **A page that says it is going gives its sessions up.** On `pagehide` every
-  runner in the page drops its lease before it stops (`runners.js`
+  runner in the page drops its lease before it stops (`runners/registry.js`
   `releaseAll`), so the next runner takes over at once instead of after the
   lease goes stale (15 s), the fallback when the page dies without saying so.
   A runner that no longer holds the lease writes nothing as it stops, so a
@@ -121,7 +121,7 @@ session — the page reloaded, another tab, a worker:
   claim that is not a renewal gets a new one, so a runner that loses a session
   and later takes it up again never mistakes its own dead work for live work.
 
-**The network going away is an interruption, not a failure** (`network.js`).
+**The network going away is an interruption, not a failure** (`net/network.js`).
 A request that never reached the other end did nothing, so nothing is written
 for it: no ⚠ turn, no error result. A turn cut off part-way is taken back whole
 (none of its calls were committed) and asked for again; a tool call cut off goes
@@ -248,7 +248,7 @@ and a notebook's list of lines are all text, each written back in its own form,
 and only the characters that differ are written, so edits merge. Long text goes
 in pieces — `append` creates a missing field, so every piece is the same call —
 and `from` copies text that already exists in a document instead of the model
-retyping it under its output limit. `tools/ops.js` opens with the design.
+retyping it under its output limit. `documents/ops.js` opens with the design.
 
 There is deliberately **no tool for writing a tool**. A Patchwork tool is a
 folder of files, so writing one is `fs_write`; installing one is `doc_edit` on
@@ -272,7 +272,7 @@ wrote, and it exists because the failure mode is not knowing what to look for.
 site's page read them (CORS), so a tab on its own keeps a reader's text of a
 page, and a PDF only when the site allows. With a fetch relay set up in the
 agent's settings (`fetch-relay/` in this repo: a Cloudflare Worker or a Node
-server), every GET and HEAD a tab makes goes through it (`tools/relay.js`),
+server), every GET and HEAD a tab makes goes through it (`net/relay.js`),
 still behind the guard, and the tab keeps what a node runner keeps — the PDF
 or the page as the site sent it, with its text beside it. A search's results
 page is kept too, as the record of how a step found what it read, but it is
@@ -375,7 +375,7 @@ document it read, titled with the passage word for word:
 no document for is marked `(from memory)`. The system prompt asks for both,
 and every fetch result ends with the form to use.
 
-The quote is checked, not trusted (`citations.js`). Case, whitespace,
+The quote is checked, not trusted (`documents/citations.js`). Case, whitespace,
 typographic quotes and dashes, and markdown emphasis and link syntax are set
 aside on both sides; anything else must match, and a quote must be at least
 12 characters so it names a place rather than a figure. The
@@ -388,7 +388,7 @@ word changed is found at all.
 ## Where a tool may fetch
 
 Every runner gives its tools `ctx.fetchImpl`, a guarded fetch
-(`tools/guard.js`), and the tools have no other: there is no fallback to the
+(`net/guard.js`), and the tools have no other: there is no fallback to the
 global `fetch`, so a runner that forgot to wire one fails loudly. It refuses
 anything but http and https; `localhost` and every private, loopback and
 link-local address in any spelling (`2130706433`, `127.1`, `0x7f.1`,
@@ -399,7 +399,7 @@ asking by URL; and any path that names an automerge document, however many
 times it is percent-encoded. A redirect's destination is checked before its
 body is read. In node every address a name resolves to must be public, and a
 name that resolves to nothing is refused; the node runner and probe both build
-that fetch with `nodeFetch` (`node-fetch.mjs`). A reader URL hides its target
+that fetch with `nodeFetch` (`net/node-fetch.mjs`). A reader URL hides its target
 in its path, so the web tools check the target before building one.
 `plugin_source` reads a package the page serves from its document, and
 fetches any other through the guard.
@@ -419,7 +419,7 @@ anything; what it is able to do is decided by what its tools are handed.
 **One field decides it.** The driver writes `session.scope = { kind: "web",
 ledgerUrl: <the plan>, stepId }` in the same change that creates the step's
 session. Every runner — tab, worker, node — reads it in one place
-(`runner.js` `prepare`) and nowhere else:
+(`kernel/runner.js` `prepare`) and nowhere else:
 
 - **The toolset** is exactly `web_search`, `web_fetch`,
   `http_request` (GET and HEAD, no body), `source_read`, `source_list`, `finding_write` and
@@ -458,7 +458,7 @@ ran, not what it found, and names no session.
 document is named and whichever handle — a view, a sub-path — is used, so no
 `doc_edit`, `fs_write` or plugin can drop a step's scope, give it tools, or add
 a document to the ledger. The two modules that do write them are handed
-explicit capabilities, for their own calls only: `tools/workflow.js` gets
+explicit capabilities, for their own calls only: `workflow/tools.js` gets
 `ctx.workflows` (the runner's repo and its step starter), and `session_title`
 writes its own session through `ctx.session`; no other tool, and no plugin, is
 handed either, and a test holds each to its one module. Nor can a tool make a
@@ -470,7 +470,7 @@ driver cancels it ("its research scope was removed").
 **A package's tool joins only by saying so.** A plugin is someone else's code,
 and a research step fetches without asking, so none is there by default. A
 plugin whose metadata says `scoped: true` at its top level — the Web snapshot
-package's `web_capture` is one — is admitted (`scope.js` `admitScoped`) when
+package's `web_capture` is one — is admitted (`kernel/scope.js` `admitScoped`) when
 it is a worker tool whose id is no built-in's, the first plugin with that id,
 from the registry of the runner running the step. It is handed what the
 step's built-ins are handed, the confined context, and nothing more. So
@@ -478,7 +478,7 @@ everything the agent controls still holds for it: it gets no field of the
 person's, its repo opens only the ledger and its new documents go into it,
 and its every request goes through the guard. A tab admits from its own
 registry and the SharedWorker from the metadata the page hands it
-(`worker-plugins.js`), by what each plugin declared, so a step gets the same
+(`runners/worker-plugins.js`), by what each plugin declared, so a step gets the same
 plugins in either; one that will not load in the worker runs in a tab, with
 the confined context that tab builds. The node runner has no registry, so a
 step running there gets the built-ins alone.
@@ -541,7 +541,7 @@ to expose it.
 wherever the session does, the SharedWorker included: the page hands the
 worker every entry's metadata, again whenever the registry changes, and the
 worker loads the code from the entry's `importUrl` the way the page does
-(`worker-plugins.js`). Code that cannot load in a worker — it imports a bare
+(`runners/worker-plugins.js`). Code that cannot load in a worker — it imports a bare
 specifier, or touches the DOM as it loads — still works: its calls go to a
 tab. A tool that genuinely needs the page says `where: "host"`; a workflow
 step placed on a worker does not get it, and one whose prompt names it is
@@ -557,7 +557,7 @@ SharedWorker alike it holds `ctx.repo`, `ctx.subject`, `ctx.fetchImpl` and:
   registry (`getRegistry(type)`). In a tab it is the page's. In the
   SharedWorker it is the worker's own copy, holding every view and datatype
   the page has registered, each loaded from its `importUrl` on first use
-  (`worker-plugins.js` `createRegistryMirror`), so a datatype's hooks are found
+  (`runners/worker-plugins.js` `createRegistryMirror`), so a datatype's hooks are found
   through it there too.
 
 Neither is in a research step's confined context, and the node runner has
@@ -599,7 +599,7 @@ something — a document, a running world — sees the interesting part when
 nobody is asking. `ctx.events.open(key, { label })` gives it a channel, and
 `channel.notify(render)` says something happened; `channel.close()` stops it.
 
-Whether and when that wakes the agent is decided here, in `events.js`, not by
+Whether and when that wakes the agent is decided here, in `kernel/events.js`, not by
 each tool, because every wake is a model call over the whole conversation:
 notices on a channel fold together and wait for a quiet moment; nothing is
 delivered while a turn is running (the agent will hear it from the tool
@@ -665,7 +665,7 @@ the report.
 each file in a fresh module worker (`tools/test-worker.js`), which has none, for
 code meant to run in one. A worker has no importmap, so the tab resolves
 Patchwork's importmap to absolute URLs and the build writes them into the
-bundle, the same table `worker-client.js` hands the shared runner. A file that
+bundle, the same table `runners/worker-client.js` hands the shared runner. A file that
 declares `// @vitest-environment happy-dom` (or jsdom) is skipped in a worker,
 with that reason. A worker that does not finish a file in 60 s is terminated.
 
@@ -912,7 +912,7 @@ learn them again. There is one guide per package, a markdown document in a
 guides are never among them). A guide is written for a future agent and a
 person alike: the package's tools, datatypes and agent tools, their inputs, working
 recipes, and pitfalls with their workarounds. Tools: `guide_read` (one guide, or
-the list), `guide_write`, `guide_changes`, `guide_pin` (`tools/guides.js`).
+the list), `guide_write`, `guide_changes`, `guide_pin` (`knowledge/guides.js`).
 
 **Pin.** A guide records the package it describes and a pin in `pins.json`
 beside it: the package folder's heads and every file's heads when the guide was
@@ -933,7 +933,7 @@ where it stands; a package with no guide gets a one-line prompt to write one.
 `registry_list` appends only a pointer for the plugins it lists. Finding a
 plugin's package is `ctx.packageOf`: the tab runner reads the page's registry,
 and the SharedWorker runner reads the index of every tool, view and datatype
-the page sends it with its plugins (`worker-plugins.js` `packageIndex`), so
+the page sends it with its plugins (`runners/worker-plugins.js` `packageIndex`), so
 worker steps surface guides on the same triggers. The node runner has no
 registry and no plugins, so it surfaces nothing; its guide tools take a
 package's folder URL. A stale guide says to read `guide_changes`: the files added, removed and
@@ -1347,7 +1347,7 @@ result calls for it.
   steps it waits for. A full step inherits the orchestrator's grants, never
   gets the workflow tools (no nesting), and a `worker` step gets every tool
   that runs without the page, the tools of installed packages included
-  (`placement.js`). A research step is confined instead (see *Research steps
+  (`kernel/placement.js`). A research step is confined instead (see *Research steps
   keep things*). A step's optional `subject` is its main document: its
   session is attached to it, so tools that take a url default to it; without
   one, a step calling them with no url is told to pass one.
@@ -1467,7 +1467,7 @@ have the built-ins alone.
 - **The SharedWorker runner is opt-in, not default.** Turn it on with
   `localStorage["patchwork-agent:worker"] = "on"`. The page hands the worker its
   resolved importmap, which it imports automerge by with **no CDN shim** —
-  this package's own modules included, through `host-modules.js`, since a
+  this package's own modules included, through `host/modules.js`, since a
   worker cannot resolve a bare specifier — initializes automerge's slim build
   from the wasm the page loaded and the subduction wasm behind a six-property
   `document` shim, builds a Repo over a donated MessagePort, and gets the page
@@ -1482,7 +1482,7 @@ have the built-ins alone.
   worker, so attaching a second network adapter may not relay changes;
   `worker-port`'s `donatePort`/`makePortProvider` look purpose-built for this
   and are the first thing to try. Note that a SharedWorker dies with its last
-  client anyway: durability comes from `node-runner.mjs`, not from it.
+  client anyway: durability comes from `runners/node.mjs`, not from it.
 - **The `task` tier is declared and routed but nothing claims it.** The node
   runner accepts task-tier work; no tool currently asks for it, because direct
   fetch covers what the reader could not.

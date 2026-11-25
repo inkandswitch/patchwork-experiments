@@ -5,11 +5,11 @@
 import { describe, it, expect } from "vitest"
 import { buildBody, sessionKey, isClaude } from "./providers/openrouter.js"
 import { listRegistries } from "./tools/environment.js"
-import { initSession, addUsage, makeTurn, textBlock, DEFAULT_CONFIG } from "./session.js"
-import { SessionRunner } from "./runner.js"
-import { memoryStore } from "./store.js"
+import { initSession, addUsage, makeTurn, textBlock, DEFAULT_CONFIG } from "./session/session.js"
+import { SessionRunner } from "./kernel/runner.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { DEFAULT_SYSTEM } from "./loop.js"
+import { DEFAULT_SYSTEM } from "./kernel/loop.js"
 
 describe("prompt caching", () => {
   it("asks Claude to cache the conversation, and leaves other models to cache on their own", () => {

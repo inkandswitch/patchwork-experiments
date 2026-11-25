@@ -6,11 +6,11 @@
  */
 import { describe, it, expect, afterEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { AgentTool } from "./tool.js"
-import { initSession, makeTurn, textBlock, STATUS } from "./session.js"
+import { AgentTool } from "./ui/session-view.js"
+import { initSession, makeTurn, textBlock, STATUS } from "./session/session.js"
 import { initPlan, STEP } from "./workflow/plan.js"
 import { ensureDriver, _resetDrivers } from "./workflow/driver.js"
-import { _reset as resetRunners } from "./runners.js"
+import { _reset as resetRunners } from "./runners/registry.js"
 
 await initSubduction()
 

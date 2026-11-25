@@ -8,11 +8,11 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { sniffImage, imageTypeOf, imageForModel, MAX_RAW_BYTES } from "./images.js"
+import { sniffImage, imageTypeOf, imageForModel, MAX_RAW_BYTES } from "./documents/images.js"
 import { readDrop, carriesAttachments, pastedImages, attachmentTray } from "./ui/attachments.js"
-import { initSession, makeTurn, textBlock, attachmentBlock, toRequest, rejectSentImages, resultBlock, callBlock, CALL, _resetIds } from "./session.js"
-import { say } from "./loop.js"
-import { memoryStore } from "./store.js"
+import { initSession, makeTurn, textBlock, attachmentBlock, toRequest, rejectSentImages, resultBlock, callBlock, CALL, _resetIds } from "./session/session.js"
+import { say } from "./kernel/loop.js"
+import { memoryStore } from "./kernel/store.js"
 import { toOpenAIMessages } from "./providers/openrouter.js"
 import { renderTranscript } from "./ui/transcript.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
@@ -231,8 +231,8 @@ describe("the tray of what goes with the next message", () => {
   })
 })
 
-import { AgentTool } from "./tool.js"
-import { _reset as resetRunners } from "./runners.js"
+import { AgentTool } from "./ui/session-view.js"
+import { _reset as resetRunners } from "./runners/registry.js"
 
 describe("in the session view", () => {
   it("a document dropped on the composer goes with the next message", async () => {

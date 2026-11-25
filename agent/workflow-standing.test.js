@@ -12,12 +12,12 @@
  */
 import { describe, it, expect } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { initSession, makeTurn, textBlock, callBlock, CALL, STATUS, unansweredCalls } from "./session.js"
+import { initSession, makeTurn, textBlock, callBlock, CALL, STATUS, unansweredCalls } from "./session/session.js"
 import { STEP, STATE, PLAN, reopenErrors, reopenSteps, states } from "./workflow/plan.js"
 import { stepStanding, laterReopened, planGlance, glanceText } from "./workflow/standing.js"
 import { askAside, asideOf, makeAside, reusableAside, NOT_IN_ASIDE, ASIDE_NOTE } from "./workflow/aside.js"
 import { sessionOutcome } from "./workflow/driver.js"
-import { scopedToolset, SCOPED_TOOL_IDS, webScope } from "./scope.js"
+import { scopedToolset, SCOPED_TOOL_IDS, webScope } from "./kernel/scope.js"
 
 await initSubduction()
 

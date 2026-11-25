@@ -6,7 +6,7 @@ import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initPlan, PLAN, STEP, validateSteps, WORKFLOW_TOOL_IDS } from "./workflow/plan.js"
 import { WorkflowDriver, WEB_GRANT, _resetDrivers } from "./workflow/driver.js"
-import { initSession, makeTurn, textBlock, callBlock, claimLease, CALL, STATUS, _resetIds } from "./session.js"
+import { initSession, makeTurn, textBlock, callBlock, claimLease, CALL, STATUS, _resetIds } from "./session/session.js"
 import { renderWaitingItem } from "./ui/waiting.js"
 import { waitingIn } from "./workflow/waiting.js"
 
@@ -81,7 +81,7 @@ describe("web-only research steps", () => {
     await settle(driver)
     const session = (await sessionOf(repo, plan, "research")).doc()
     // The scope is the whole of what decides its tools and its reach
-    // (scope.js); there is no tool list to edit and no access flag beside it.
+    // (kernel/scope.js); there is no tool list to edit and no access flag beside it.
     expect(session.scope).toEqual({ kind: "web", ledgerUrl: plan.url, stepId: "research" })
     expect(session.tools).toBeUndefined()
     expect(session.workflow).toEqual({ planUrl: plan.url, stepId: "research", orchestratorUrl: plan.doc().sessionUrl })

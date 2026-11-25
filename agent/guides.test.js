@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { guideRead, guideChanges, guidePin, guideWrite, guidesSection, surfaceGuides, guideFor, guideState, guidesOverview, listGuides, packageRef, lineDiff, describeState } from "./tools/guides.js"
-import { noteRead, notesSection } from "./tools/notes.js"
-import { createPluginCatalogue, packageIndex, PACKAGE_TYPES } from "./worker-plugins.js"
+import { guideRead, guideChanges, guidePin, guideWrite, guidesSection, surfaceGuides, guideFor, guideState, guidesOverview, listGuides, packageRef, lineDiff, describeState } from "./knowledge/guides.js"
+import { noteRead, notesSection } from "./knowledge/notes.js"
+import { createPluginCatalogue, packageIndex, PACKAGE_TYPES } from "./runners/worker-plugins.js"
 
 await initSubduction()
 

@@ -6,9 +6,9 @@
  * seven times each.
  */
 import { describe, it, expect } from "vitest"
-import { initSession, makeTurn, textBlock, callBlock, resultBlock, toRequest, resultsToKeepWhole, pinResult, _resetIds } from "./session.js"
-import { storeRecall } from "./loop.js"
-import { memoryStore } from "./store.js"
+import { initSession, makeTurn, textBlock, callBlock, resultBlock, toRequest, resultsToKeepWhole, pinResult, _resetIds } from "./session/session.js"
+import { storeRecall } from "./kernel/loop.js"
+import { memoryStore } from "./kernel/store.js"
 import { sessionRecall, originalResult, RESTORE_LIMIT } from "./tools/recall.js"
 
 const big = (n, ch = "x") => ch.repeat(n)

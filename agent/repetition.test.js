@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { run, OUTCOME, REPEAT_WINDOW, repeatsItself } from "./loop.js"
-import { memoryStore } from "./store.js"
+import { run, OUTCOME, REPEAT_WINDOW, repeatsItself } from "./kernel/loop.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { initSession, claimLease, makeTurn, textBlock, STATUS, _resetIds } from "./session.js"
+import { initSession, claimLease, makeTurn, textBlock, STATUS, _resetIds } from "./session/session.js"
 
 function toolset(tools = []) {
   const byId = new Map(tools.map((t) => [t.id, t]))

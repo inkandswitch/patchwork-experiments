@@ -1,5 +1,5 @@
 /**
- * Every module of the runner takes automerge from host-modules.js: one bare
+ * Every module of the runner takes automerge from host/modules.js: one bare
  * `@automerge/...` import anywhere in the graph keeps the SharedWorker runner
  * from loading (it has no importmap). This scans the package's own source, so
  * a new module that slips back to a bare specifier fails here, not in a worker.
@@ -26,9 +26,9 @@ function sources(dir) {
 const BARE = /^\s*(?:import|export)\b[^;]*?\bfrom\s*["']@automerge\/|\bimport\s*\(\s*["']@automerge\//m
 
 describe("automerge imports", () => {
-  it("no module but host-modules.js imports automerge by bare specifier", () => {
+  it("no module but host/modules.js imports automerge by bare specifier", () => {
     const offenders = sources(ROOT)
-      .filter((path) => !path.endsWith("host-modules.js"))
+      .filter((path) => relative(ROOT, path) !== "host/modules.js")
       .filter((path) => BARE.test(readFileSync(path, "utf8")))
       .map((path) => relative(ROOT, path))
     expect(offenders).toEqual([])

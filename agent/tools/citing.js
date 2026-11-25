@@ -8,7 +8,7 @@
  * do not hold, so they are fixed before anyone reads them.
  */
 
-import { citationsInDocument, checkCitation } from "../citations.js"
+import { citationsInDocument, checkCitation } from "../documents/citations.js"
 
 export const citationsCheck = {
   id: "citations_check",

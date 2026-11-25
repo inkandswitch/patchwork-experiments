@@ -1,10 +1,10 @@
 /**
- * The SharedWorker's plugin catalogue (worker-plugins.js): what the page's
+ * The SharedWorker's plugin catalogue (runners/worker-plugins.js): what the page's
  * registry holds, loaded in the worker where it can be, listed for a tab
  * where it cannot, following re-registration.
  */
 import { describe, it, expect } from "vitest"
-import { createPluginCatalogue, importPluginHere, createRegistryMirror } from "./worker-plugins.js"
+import { createPluginCatalogue, importPluginHere, createRegistryMirror } from "./runners/worker-plugins.js"
 import { describePlugin, pluginDescriptions } from "./tools/index.js"
 
 const entry = (id, more = {}) => ({ id, name: id, description: `${id}.`, where: "worker", risk: "read", importUrl: `https://p.example/${id}@1/index.js`, ...more })

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { run, answerQuestion, OUTCOME } from "./loop.js"
-import { needsWork } from "./runner.js"
-import { memoryStore } from "./store.js"
+import { run, answerQuestion, OUTCOME } from "./kernel/loop.js"
+import { needsWork } from "./kernel/runner.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
 import { askUser } from "./tools/ask.js"
 import { renderTranscript } from "./ui/transcript.js"
@@ -17,7 +17,7 @@ import {
   STATUS,
   CALL,
   _resetIds,
-} from "./session.js"
+} from "./session/session.js"
 
 function toolset(tools) {
   const byId = new Map(tools.map((t) => [t.id, t]))

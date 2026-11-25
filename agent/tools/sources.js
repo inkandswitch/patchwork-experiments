@@ -41,7 +41,7 @@
  * engine "reader-dom" or "raw", so source_read reads one like any kept source.
  */
 
-import { Automerge } from "../host-modules.js"
+import { Automerge } from "../host/modules.js"
 
 const { ImmutableString, isImmutableString } = Automerge
 
@@ -304,7 +304,7 @@ export function sessionDoc(ctx) {
 
 /**
  * What this session can see it has kept, newest first: in a research step the
- * workflow's ledger (every step's sources, scope.js), and otherwise what the
+ * workflow's ledger (every step's sources, kernel/scope.js), and otherwise what the
  * session recorded in `made`, which is why recordArtifact keeps `source`,
  * `engine`, `chars` and `what`. The Web snapshot package's web_capture reads
  * `made` the same way, from the session its context carries — and in a

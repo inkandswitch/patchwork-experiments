@@ -10,15 +10,15 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { initSession, makeTurn, textBlock, liftBudget, liftAmounts, _resetIds } from "./session.js"
+import { initSession, makeTurn, textBlock, liftBudget, liftAmounts, _resetIds } from "./session/session.js"
 import { waitingIn } from "./workflow/waiting.js"
 import { renderWaitingItem } from "./ui/waiting.js"
-import { needsWork } from "./runner.js"
-import { AgentTool } from "./tool.js"
-import { WorkflowView } from "./workflow/view.js"
+import { needsWork } from "./kernel/runner.js"
+import { AgentTool } from "./ui/session-view.js"
+import { WorkflowView } from "./ui/workflow-view.js"
 import { initPlan, PLAN, STEP } from "./workflow/plan.js"
 import { _resetDrivers } from "./workflow/driver.js"
-import { _reset as resetRunners } from "./runners.js"
+import { _reset as resetRunners } from "./runners/registry.js"
 
 await initSubduction()
 

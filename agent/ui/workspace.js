@@ -13,7 +13,7 @@
  * keeps whatever was focused before, which is what "this" still means.
  */
 
-import { subscribe, selectedDocUrl } from "./providers.js"
+import { subscribe, selectedDocUrl } from "../host/context.js"
 
 const TITLE_TIMEOUT_MS = 1500
 
@@ -58,7 +58,7 @@ export function watchWorkspace(element, { repo, exclude = () => [], onChange = n
     notify()
   })
 
-  /** The context block's input (session.js `contextBlock`), titles resolved. */
+  /** The context block's input (session/session.js `contextBlock`), titles resolved. */
   async function snapshot() {
     const views = open.filter((v) => !excluded(v.url))
     const focusedView = focused ? (views.find((v) => v.url === focused) ?? { url: focused, toolId: null }) : null

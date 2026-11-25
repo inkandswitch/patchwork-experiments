@@ -17,7 +17,7 @@
  */
 
 import openrouter from "./openrouter.js"
-import { subscribe } from "../ui/providers.js"
+import { subscribe } from "../host/context.js"
 
 const registry = new Map([[openrouter.id, openrouter]])
 

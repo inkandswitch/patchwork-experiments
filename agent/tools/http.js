@@ -23,10 +23,10 @@
  * for.
  */
 
-import { truncate, bytes } from "./format.js"
+import { truncate, bytes } from "../documents/format.js"
 import { isTextResponse, describeBytes, decodeText, sourceFooter } from "./sources.js"
 import { readBytes, keepResponse, htmlToText } from "./web.js"
-import { fetcher } from "./guard.js"
+import { fetcher } from "../net/guard.js"
 
 export const httpRequest = {
   id: "http_request",
@@ -154,7 +154,7 @@ export const httpRequest = {
 }
 
 /**
- * http_request as a research step has it (scope.js): GET and HEAD, never a
+ * http_request as a research step has it (kernel/scope.js): GET and HEAD, never a
  * body. A research step may fetch any site without asking, which is fine for
  * reading; a request that changes something at the other end is not a read,
  * and with no one asked there is no one to have agreed to it. What it gets

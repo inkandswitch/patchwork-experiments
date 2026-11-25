@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { generateAutomergeUrl } from "@automerge/automerge-repo"
 import { fsWrite, fsList, fsRead, fsDelete, fsEdit } from "./tools/folders.js"
 import { fileInFolder } from "./tools/docs.js"
-import { needsApproval, initSession, grantKey } from "./session.js"
+import { needsApproval, initSession, grantKey } from "./session/session.js"
 
 /** A repo of plain-object documents with a root folder. */
 function fakeRepo() {

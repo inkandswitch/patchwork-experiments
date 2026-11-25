@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { readFileSync } from "node:fs"
-import { checkTarget, guardedFetch, isPrivateAddress, Refused, SYNC_SERVERS } from "./tools/guard.js"
-import { tabFetch } from "./tab-runner.js"
-import { nodeFetch } from "./node-fetch.mjs"
+import { checkTarget, guardedFetch, isPrivateAddress, Refused, SYNC_SERVERS } from "./net/guard.js"
+import { tabFetch } from "./runners/tab.js"
+import { nodeFetch } from "./net/node-fetch.mjs"
 
 /**
  * The guard is a table: every target is allowed or refused by rule, and the
@@ -485,7 +485,7 @@ describe("the fetch each runner hands its tools", () => {
       expect(calls).toHaveLength(0)
     })
 
-    it.each(["node-runner.mjs", "probes/node-session.mjs"])("%s builds its fetch with nodeFetch and nothing else", (file) => {
+    it.each(["runners/node.mjs", "probes/node-session.mjs"])("%s builds its fetch with nodeFetch and nothing else", (file) => {
       const source = readFileSync(`${process.cwd()}/${file}`, "utf8")
       expect(source).toMatch(/fetchImpl[^\n]*nodeFetch\(\{ sync: SYNC \}\)/)
       expect(source).not.toMatch(/guardedFetch/)
@@ -493,7 +493,7 @@ describe("the fetch each runner hands its tools", () => {
   })
 
   it("a worker refuses the same places a tab does", () => {
-    const source = readFileSync(`${process.cwd()}/worker-runner.js`, "utf8")
+    const source = readFileSync(`${process.cwd()}/runners/worker.js`, "utf8")
     expect(source).toContain("deny: [self.location.origin, ...SYNC_SERVERS]")
   })
 })

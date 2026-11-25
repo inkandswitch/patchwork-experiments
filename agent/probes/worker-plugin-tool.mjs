@@ -1,9 +1,9 @@
 /**
  * Does a worker step call a package's tool in the SharedWorker runner?
  *
- * Runs the real worker runner (worker-runner.js, served from this folder
+ * Runs the real worker runner (runners/worker.js, served from this folder
  * as-is) in headless Chrome: a page makes a workflow step's session placed on
- * a worker, connects the shared runner with worker-client.js, and the runner
+ * a worker, connects the shared runner with runners/worker-client.js, and the runner
  * — in a module SharedWorker, with no importmap — runs the step. The model is
  * a script (providers/mock.js) that calls a real package's agent tools: it
  * makes an assumptions register with `assumptions_create` and reads it back
@@ -227,7 +227,7 @@ try {
     for (const p of (await import(absolute)).plugins) if (["agent:tool", "patchwork:datatype"].includes(p.type)) plugins.getRegistry(p.type).register(p, absolute)
   }
 
-  const { initSession, makeTurn, textBlock } = await import("/agent/session.js")
+  const { initSession, makeTurn, textBlock } = await import("/agent/session/session.js")
   const { initPlan, WORKFLOW_TOOL_IDS } = await import("/agent/workflow/plan.js")
   const folder = repo.create({ "@patchwork": { type: "folder" }, title: "Task", docs: [] })
   const plan = repo.create({})
@@ -242,7 +242,7 @@ try {
   })
   out.folder = folder.url
 
-  const { connectWorkerRunner } = await import("/agent/worker-client.js")
+  const { connectWorkerRunner } = await import("/agent/runners/worker-client.js")
   const worker = await connectWorkerRunner({ repo, sessionUrl: session.url, key: "probe-key", providerId: "probe", account: {}, onEvent: (e) => out.events.push(e?.type === "worker-error" ? "worker-error: " + e.error : e?.type) })
   out.connected = !!worker
   out.runnerUrl = worker?.runnerUrl ?? null

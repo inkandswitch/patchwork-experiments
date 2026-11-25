@@ -22,7 +22,7 @@
  * so a full-resolution PNG would be expensive twice over.
  */
 
-import { bytes } from "./format.js"
+import { bytes } from "../documents/format.js"
 
 const DEFAULT_MAX_WIDTH = 800
 

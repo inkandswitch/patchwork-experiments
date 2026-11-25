@@ -11,13 +11,13 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { run, OUTCOME, mostlyThinking, quieterReasoning } from "./loop.js"
-import { memoryStore } from "./store.js"
+import { run, OUTCOME, mostlyThinking, quieterReasoning } from "./kernel/loop.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { initSession, makeTurn, textBlock, callBlock, claimLease, needsApproval, CALL, STATUS, _resetIds } from "./session.js"
+import { initSession, makeTurn, textBlock, callBlock, claimLease, needsApproval, CALL, STATUS, _resetIds } from "./session/session.js"
 import { sessionOutcome, _resetDrivers } from "./workflow/driver.js"
 import { initPlan, PLAN, STEP } from "./workflow/plan.js"
-import { WorkflowView } from "./workflow/view.js"
+import { WorkflowView } from "./ui/workflow-view.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
 
 await initSubduction()

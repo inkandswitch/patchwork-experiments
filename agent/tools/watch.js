@@ -8,13 +8,13 @@
  * changes inside its own part of the document, and with the patches that made
  * them. Each change costs only what it touched (history.js editsOfPatches).
  *
- * What it hears goes to the session through events.js, which decides when a
+ * What it hears goes to the session through kernel/events.js, which decides when a
  * wake is allowed (settled, idle, rate-limited). With `match`, only edits whose
  * new or removed value matches wake the agent — doc_history's `query`, applied
  * as things happen.
  *
  * A watch is written into the session document, through `ctx.watches`: a
- * capability the runner gives this tool alone (runner.js privileges), which
+ * capability the runner gives this tool alone (kernel/runner.js privileges), which
  * writes the session's `watches` map and nothing else in it.
  *
  *   watches: { [id]: { url, path, match, label, heads, at } }
@@ -27,8 +27,8 @@
  * listening; there is no runner outside the browser.
  *
  * The session's own edits are not reported: it made them, and a watch that
- * woke the agent about its own edits would be a loop events.js could only slow
- * down. Own is by heads (own-changes.js): every write a session's tools make
+ * woke the agent about its own edits would be a loop kernel/events.js could only slow
+ * down. Own is by heads (kernel/own-changes.js): every write a session's tools make
  * is noted by the change hashes it added, and a change event whose added heads
  * are all the session's own is skipped. Anyone else's — a person in this same
  * tab, the daemon, another session — is reported. (A sync never carries a
@@ -40,10 +40,10 @@
  * edit, from queued to failed.
  */
 
-import { hostImport } from "./host.js"
-import { preview, noDocumentError } from "./format.js"
-import { editsBetween, editsOfPatches, matchEdit, touchesPath } from "./history.js"
-import { addedHeads, isOwn } from "../own-changes.js"
+import { hostImport } from "../host/import.js"
+import { preview, noDocumentError } from "../documents/format.js"
+import { editsBetween, editsOfPatches, matchEdit, touchesPath } from "../documents/history.js"
+import { addedHeads, isOwn } from "../kernel/own-changes.js"
 
 export const MAX_WATCHES = 8
 /** Edits kept for one wake; older ones are counted, not shown. */
@@ -52,7 +52,7 @@ export const KEPT_EDITS = 20
 export const PERSIST_MS = 5 * 60 * 1000
 const EDIT_PREVIEW = { maxString: 200, maxItems: 6, maxDepth: 3 }
 
-/** Did the session make this change event, every head it added? (own-changes.js) */
+/** Did the session make this change event, every head it added? (kernel/own-changes.js) */
 export function ownEvent(automerge, payload, isOwnHash) {
   const before = payload.patchInfo?.before
   const after = payload.patchInfo?.after
@@ -63,7 +63,7 @@ export function ownEvent(automerge, payload, isOwnHash) {
 
 /**
  * The watches open in this page, by session and id. On globalThis, as the
- * runners are (runners.js): a newer version of this module, loaded in place,
+ * runners are (runners/registry.js): a newer version of this module, loaded in place,
  * must find and replace the older one's watches, not run beside them.
  */
 const open = (globalThis.__patchworkAgentWatches ??= new Map())
@@ -249,7 +249,7 @@ export async function openWatch({ id, spec, repo, events, watches, catchUp = fal
 
   // Change events are judged a moment after they fire, in order. An event fires
   // inside the write that caused it, before the guarded repo has noted that
-  // write's hash as the session's own (scope.js); writes are synchronous, so
+  // write's hash as the session's own (kernel/scope.js); writes are synchronous, so
   // by the next microtask it has. Each event's before/after are immutable
   // snapshots, so judging it later judges exactly what happened.
   const queue = []
@@ -312,7 +312,7 @@ export async function restoreWatches({ repo, events, store }) {
 
 /**
  * The session's watches, writable, and nothing else in it: what the runner
- * hands doc_watch (runner.js privileges) and what a starting runner restores
+ * hands doc_watch (kernel/runner.js privileges) and what a starting runner restores
  * with. `doc()` reads the whole session, which every tool may.
  */
 export function watchesWriter(store) {

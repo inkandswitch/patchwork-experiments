@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { BUILTIN_TOOLS, toSchema } from "./tools/index.js"
-import { BUILTIN_SKILLS } from "./skills/builtin.js"
-import { DEFAULT_SYSTEM } from "./loop.js"
+import { BUILTIN_SKILLS } from "./knowledge/builtin-skills.js"
+import { DEFAULT_SYSTEM } from "./kernel/loop.js"
 import { PRESENTATION, PRESENTED_PLUGINS } from "./ui/calls.js"
 
 /**

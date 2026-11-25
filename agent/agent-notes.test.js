@@ -9,10 +9,10 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { run, OUTCOME, saidNothing, mostlyThinking } from "./loop.js"
-import { memoryStore } from "./store.js"
+import { run, OUTCOME, saidNothing, mostlyThinking } from "./kernel/loop.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { initSession, makeTurn, textBlock, callBlock, claimLease, STATUS, _resetIds } from "./session.js"
+import { initSession, makeTurn, textBlock, callBlock, claimLease, STATUS, _resetIds } from "./session/session.js"
 import { sessionOutcome } from "./workflow/driver.js"
 import { domSnapshot } from "./tools/environment.js"
 

@@ -20,7 +20,7 @@
  * absurd thing to put in front of someone.
  */
 
-import { cleanTitle, MAX_TITLE } from "../session.js"
+import { cleanTitle, MAX_TITLE } from "../session/session.js"
 
 export const sessionTitleTool = {
   id: "session_title",
@@ -50,8 +50,8 @@ export const sessionTitleTool = {
     if (!title) throw new Error("Pass a title with something in it.")
 
     // `ctx.session` is this conversation's own document, and the runner
-    // makes it writable for this tool's calls alone (runner.js privileges).
-    // The repo the tools get cannot change a session at all (scope.js
+    // makes it writable for this tool's calls alone (kernel/runner.js privileges).
+    // The repo the tools get cannot change a session at all (kernel/scope.js
     // kernelRepo), so this is the one way a tool writes one, and this is the
     // one tool that does.
     if (!ctx.session?.change) {

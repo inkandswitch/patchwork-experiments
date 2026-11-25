@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Writes tools/vendor/pdfjs.js: pdf.js (parser and worker together) as one ES
+ * Writes documents/vendor/pdfjs.js: pdf.js (parser and worker together) as one ES
  * module, so the agent reads a PDF's text itself, in a page, a worker or node,
  * with no reader service and no network.
  *
@@ -53,7 +53,7 @@ if (external.length) {
   process.exit(1)
 }
 
-const out = join(root, "tools", "vendor", "pdfjs.js")
+const out = join(root, "documents", "vendor", "pdfjs.js")
 mkdirSync(dirname(out), { recursive: true })
 writeFileSync(out, result.outputFiles[0].text)
 console.log(`wrote ${out} (${Math.round(result.outputFiles[0].contents.length / 1024)} KB)`)

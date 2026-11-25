@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { WorkflowView, stages } from "./workflow/view.js"
+import { WorkflowView, stages } from "./ui/workflow-view.js"
 import { initPlan, PLAN, STEP } from "./workflow/plan.js"
-import { initSession, STATUS, _resetIds } from "./session.js"
+import { initSession, STATUS, _resetIds } from "./session/session.js"
 import { _resetDrivers, ensureDriver } from "./workflow/driver.js"
-import { AgentTool } from "./tool.js"
-import { _reset as resetRunners } from "./runners.js"
+import { AgentTool } from "./ui/session-view.js"
+import { _reset as resetRunners } from "./runners/registry.js"
 
 await initSubduction()
 

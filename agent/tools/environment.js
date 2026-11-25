@@ -7,10 +7,10 @@
  * document to look at.
  */
 
-import { hostImport } from "./host.js"
-import { truncate, bytes } from "./format.js"
+import { hostImport } from "../host/import.js"
+import { truncate, bytes } from "../documents/format.js"
 import { contentToText, resolvePath, treeNode, treeEntries, treeEnter } from "./folders.js"
-import { fetcher } from "./guard.js"
+import { fetcher } from "../net/guard.js"
 
 /**
  * The registry, one line per plugin, grouped by type.

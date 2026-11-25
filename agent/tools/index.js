@@ -26,9 +26,9 @@
  * then need a grant like any `write`.
  */
 
-import { tryHostImport } from "./host.js"
-import { isInterruption } from "../network.js"
-import { fitsPlacement } from "../placement.js"
+import { tryHostImport } from "../host/import.js"
+import { isInterruption } from "../net/network.js"
+import { fitsPlacement } from "../kernel/placement.js"
 import docTools from "./docs.js"
 import folderTools from "./folders.js"
 import environmentTools from "./environment.js"
@@ -43,11 +43,11 @@ import citingTools from "./citing.js"
 import askTools from "./ask.js"
 import namingTools from "./naming.js"
 import recallTools from "./recall.js"
-import noteTools from "./notes.js"
-import guideTools from "./guides.js"
-import workflowTools from "./workflow.js"
+import noteTools from "../knowledge/notes.js"
+import guideTools from "../knowledge/guides.js"
+import workflowTools from "../workflow/tools.js"
 import { WORKFLOW_TOOL_IDS, STEP_TOOL_IDS } from "../workflow/plan.js"
-import skillTools from "./skills.js"
+import skillTools from "../knowledge/skills.js"
 import buildTools from "./build.js"
 import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
@@ -59,13 +59,13 @@ export const BUILTIN_TOOLS = [...docTools, ...watchTools, ...folderTools, ...env
  * Tools for one kind of session only. finding_write writes into a research
  * step's ledger, which only a research step has; source_file writes into a
  * folder, which a research step may not. Neither toolset ever contains the
- * other's: buildToolset leaves out SCOPED_ONLY_IDS, and scope.js's
+ * other's: buildToolset leaves out SCOPED_ONLY_IDS, and kernel/scope.js's
  * scopedToolset leaves out UNSCOPED_ONLY_IDS.
  */
 export const SCOPED_ONLY_IDS = ["finding_write"]
 export const UNSCOPED_ONLY_IDS = ["source_file"]
 
-/** The narrower versions of built-ins a research step gets in their place (scope.js). */
+/** The narrower versions of built-ins a research step gets in their place (kernel/scope.js). */
 export const SCOPED_VARIANTS = Object.freeze({ http_request: scopedHttpRequest })
 
 /** Everything about a tool the model is allowed to see. */
@@ -80,8 +80,8 @@ export function toSchema(tool) {
 /**
  * The metadata of an `agent:tool` plugin a toolset reads. Plain JSON at the
  * top level of the plugin entry, which is what lets it cross into a worker
- * (worker-client.js hands the shared runner every entry's metadata, and the
- * worker loads the code from `importUrl` itself: worker-plugins.js).
+ * (runners/worker-client.js hands the shared runner every entry's metadata, and the
+ * worker loads the code from `importUrl` itself: runners/worker-plugins.js).
  */
 export const PLUGIN_FIELDS = ["id", "name", "description", "input_schema", "where", "risk", "alwaysAsk", "scoped", "target", "importUrl"]
 
@@ -118,7 +118,7 @@ export async function pluginDescriptions({ registry: given } = {}) {
  * A plugin tool, from its metadata and `current`, which loads the plugin as
  * registered now: `{ ...metadata, module }`. `impl` is the module loaded
  * already, for its `summarize`. `where` is who runs it when that is not what
- * it declared — a runner that cannot load it here (placement.js).
+ * it declared — a runner that cannot load it here (kernel/placement.js).
  */
 export function pluginTool(description, current, { impl = null, where = null } = {}) {
   const declared = description.where ?? "worker"
@@ -129,12 +129,12 @@ export function pluginTool(description, current, { impl = null, where = null } =
     input_schema: description.input_schema ?? { type: "object", properties: {} },
     where: where ?? declared,
     // What the package declared, which decides who gets the tool even where
-    // this runner hands its calls to another (placement.js declaredWhere).
+    // this runner hands its calls to another (kernel/placement.js declaredWhere).
     declared,
     risk: description.risk ?? "write",
     alwaysAsk: description.alwaysAsk ?? false,
     // The package's word that this tool works only through the context
-    // it is handed, which is what lets a research step have it (scope.js
+    // it is handed, which is what lets a research step have it (kernel/scope.js
     // admitScoped). Read from the metadata, as plain JSON, and only as
     // exactly true.
     scoped: description.scoped === true,
@@ -234,14 +234,14 @@ export function builtinToolset() {
  * placed on a worker — gets only the tools declared to run there.
  *
  * The plugins are this page's registry's, or `opts.plugins()` from a runner
- * with no registry of its own (worker-runner.js). A research step's toolset is not built here and
- * does not depend on anything the session says (scope.js).
+ * with no registry of its own (runners/worker.js). A research step's toolset is not built here and
+ * does not depend on anything the session says (kernel/scope.js).
  */
 export async function buildToolset(sessionDoc, opts = {}) {
   const plugins = opts.skipPlugins ? [] : opts.plugins ? await opts.plugins() : await loadPluginTools(opts)
   const all = [...BUILTIN_TOOLS, ...plugins]
   // A workflow step on a worker gets what runs without the page, built-in or
-  // plugin alike, by what each declared (placement.js).
+  // plugin alike, by what each declared (kernel/placement.js).
   const placement = sessionDoc?.tools?.where ?? null
 
   const enabled = sessionDoc?.tools?.enabled
@@ -293,7 +293,7 @@ export async function runTool(tool, input, ctx) {
     ) {
       image = typeof result.image === "string" ? result.image : null
       // A file for the model to read itself — a PDF — by its document, never
-      // its bytes: those are loaded when the request is made (files.js).
+      // its bytes: those are loaded when the request is made (documents/files.js).
       file = typeof result.file?.url === "string" ? { url: result.file.url, name: result.file.name ?? null, mimeType: result.file.mimeType ?? null } : null
       doc = result.doc ?? null
       // Several documents at once — a folder of files, say. `doc` is the one
@@ -313,7 +313,7 @@ export async function runTool(tool, input, ctx) {
   } catch (err) {
     const message = String(err?.message ?? err)
     // Not a result at all: the call had no effect and runs again when the
-    // network is back (network.js, loop.js executeCalls).
+    // network is back (net/network.js, kernel/loop.js executeCalls).
     if (isInterruption(err)) return { interrupted: true, reason: message, output: "", isError: false, summary: "interrupted" }
     return { output: `Error: ${message}`, isError: true, summary: `${tool.id} failed` }
   }

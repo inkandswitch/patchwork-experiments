@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync, existsSync } from "node:fs"
-import { makePdf } from "./pdf-fixture.js"
-import { extractPdf, pdfText, pdfSummary, pageAt, readPdf, pageText } from "./pdf-text.js"
+import { makePdf } from "./fixtures/pdf-fixture.js"
+import { extractPdf, pdfText, pdfSummary, pageAt, readPdf, pageText } from "./documents/pdf-text.js"
 
 describe("pageText", () => {
   const item = (str, x, y, extra = {}) => ({ str, transform: [12, 0, 0, 12, x, y], width: str.length * 6, ...extra })

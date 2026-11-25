@@ -12,7 +12,7 @@ import {
   RESULTS_HIGH,
   RESULTS_LOW,
   _resetIds,
-} from "./session.js"
+} from "./session/session.js"
 import { sessionRecall } from "./tools/recall.js"
 
 const big = (n) => "x".repeat(n)

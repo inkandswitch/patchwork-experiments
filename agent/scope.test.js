@@ -21,10 +21,10 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { ImmutableString } from "@automerge/automerge"
 import { Repo, initSubduction, parseAutomergeUrl, interpretAsDocumentId, generateAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
-import { initSession, makeTurn, textBlock, callBlock, resultBlock } from "./session.js"
+import { initSession, makeTurn, textBlock, callBlock, resultBlock } from "./session/session.js"
 import { initPlan, STEP } from "./workflow/plan.js"
 import { runTool, BUILTIN_TOOLS } from "./tools/index.js"
-import { guardedFetch } from "./tools/guard.js"
+import { guardedFetch } from "./net/guard.js"
 import { braveSearch } from "./tools/web.js"
 import { keepSource } from "./tools/sources.js"
 import { findingWrite } from "./tools/findings.js"
@@ -32,7 +32,7 @@ import { sourceRead } from "./tools/read-source.js"
 import {
   confine, scopedRepo, scopeOf, assertScopeAgrees, scopedToolset, webScope, sameScope,
   SCOPED_TOOL_IDS, NOT_A_SOURCE, EDITED_OUTSIDE, ScopeRefusal, KERNEL_TYPES, KERNEL_REFUSAL,
-} from "./scope.js"
+} from "./kernel/scope.js"
 
 await initSubduction()
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { rememberOwn, isOwn, addedHeads, OWN_KEPT } from "./own-changes.js"
+import { rememberOwn, isOwn, addedHeads, OWN_KEPT } from "./kernel/own-changes.js"
 
 describe("own changes", () => {
   it("the heads a mutation added are those after it that were not before", () => {

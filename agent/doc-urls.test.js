@@ -1,5 +1,5 @@
 /**
- * Mending the document URLs a model mistypes (doc-urls.js).
+ * Mending the document URLs a model mistypes (documents/doc-urls.js).
  *
  * Every corruption of a small set of real ids is tried — every run-on, every
  * wrapping, every one-character substitution, deletion and insertion at every
@@ -10,8 +10,8 @@
 
 import { describe, it, expect } from "vitest"
 import { Repo, initSubduction, generateAutomergeUrl, isValidAutomergeUrl } from "@automerge/automerge-repo"
-import { repairDocUrl, urlsIn, editDistance, MistypedUrl } from "./doc-urls.js"
-import { kernelRepo } from "./scope.js"
+import { repairDocUrl, urlsIn, editDistance, MistypedUrl } from "./documents/doc-urls.js"
+import { kernelRepo } from "./kernel/scope.js"
 
 await initSubduction()
 

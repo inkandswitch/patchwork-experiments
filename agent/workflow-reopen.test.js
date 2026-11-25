@@ -17,13 +17,13 @@
 import { describe, it, expect, afterEach } from "vitest"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { SessionRunner, needsWork } from "./runner.js"
-import { handleStore } from "./store.js"
+import { SessionRunner, needsWork } from "./kernel/runner.js"
+import { handleStore } from "./kernel/store.js"
 import { buildToolset } from "./tools/index.js"
-import { initSession, makeTurn, textBlock, STATUS } from "./session.js"
+import { initSession, makeTurn, textBlock, STATUS } from "./session/session.js"
 import { PLAN, STEP, STATE, initPlan, states, STEP_TOOL_IDS } from "./workflow/plan.js"
 import { ensureDriver, _resetDrivers, describeProgress } from "./workflow/driver.js"
-import { workflowReopen, workflowKeep, workflowEditSteps, workflowDecide, workflowAddSteps, workflowRequest } from "./tools/workflow.js"
+import { workflowReopen, workflowKeep, workflowEditSteps, workflowDecide, workflowAddSteps, workflowRequest } from "./workflow/tools.js"
 
 await initSubduction()
 
@@ -132,7 +132,7 @@ describe("reopening", () => {
     }
     const w = await workflow([step("a")], { a: held })
     expect(await until(() => w.at("a").status === STEP.running && w.at("a").sessionUrl)).toBe(true)
-    await w.run((await import("./tools/workflow.js")).workflowStop, { steps: ["a"] })
+    await w.run((await import("./workflow/tools.js")).workflowStop, { steps: ["a"] })
     release()
     expect(w.at("a").status).toBe(STEP.cancelled)
     const halted = await w.sessionOf("a")
@@ -267,7 +267,7 @@ describe("a step's requests", () => {
     const ids = async (doc) => (await buildToolset(doc, { skipPlugins: true })).tools.map((t) => t.id)
     expect(await ids({ config: { workflows: { enabled: true } } })).not.toContain("workflow_request")
     expect(await ids({ config: {}, workflow: { planUrl: "automerge:x", stepId: "a" } })).toEqual(expect.arrayContaining(STEP_TOOL_IDS))
-    const { SCOPED_TOOL_IDS } = await import("./scope.js")
+    const { SCOPED_TOOL_IDS } = await import("./kernel/scope.js")
     expect(SCOPED_TOOL_IDS).toContain("workflow_request")
     await expect(workflowRequest.execute({ why: "" })).rejects.toThrow(/Say `why`/)
     await expect(workflowRequest.execute({ why: "x" })).rejects.toThrow(/`why` alone asks for nothing/)

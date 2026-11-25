@@ -5,7 +5,7 @@ import { slice, findAll, sourceRead, sourceList, MAX_READ } from "./tools/read-s
 import { sourceFile } from "./tools/file-source.js"
 import { headingAt } from "./tools/sources.js"
 import { initPlan } from "./workflow/plan.js"
-import { scopedRepo, NOT_A_SOURCE } from "./scope.js"
+import { scopedRepo, NOT_A_SOURCE } from "./kernel/scope.js"
 
 await initSubduction()
 

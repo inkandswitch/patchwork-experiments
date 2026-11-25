@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { applyOp, applyOps, editText, splitLines, textDiff, plain, OpError } from "./tools/ops.js"
+import { applyOp, applyOps, editText, splitLines, textDiff, plain, OpError } from "./documents/ops.js"
 import { docEdit } from "./tools/docs.js"
 
 await initSubduction()

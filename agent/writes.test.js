@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import * as A from "@automerge/automerge"
-import { applyOp, writeValue, OpError } from "./tools/ops.js"
+import { applyOp, writeValue, OpError } from "./documents/ops.js"
 import { docEdit } from "./tools/docs.js"
 
 const splice = A.splice

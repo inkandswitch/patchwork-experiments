@@ -1,5 +1,5 @@
 /**
- * What the "automerge" skill (skills/builtin.js) tells the agent, checked
+ * What the "automerge" skill (knowledge/builtin-skills.js) tells the agent, checked
  * against the automerge Patchwork actually ships.
  *
  * Each test is one claim in that skill. If an automerge upgrade changes a

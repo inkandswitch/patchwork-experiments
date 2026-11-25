@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { generateAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
-import { guardedFetch, Refused, pageOriginFetch } from "./tools/guard.js"
+import { guardedFetch, Refused, pageOriginFetch } from "./net/guard.js"
 
 /**
  * plugin_source reads a package's code. A package the page serves is a
@@ -11,7 +11,7 @@ import { guardedFetch, Refused, pageOriginFetch } from "./tools/guard.js"
  */
 
 let plugins = []
-vi.mock("./tools/host.js", () => ({
+vi.mock("./host/import.js", () => ({
   hostImport: async () => ({ getRegistry: () => ({ all: () => plugins }) }),
 }))
 const { pluginSource, packageDocOf } = await import("./tools/environment.js")

@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach } from "vitest"
 import { Repo, initSubduction, stringifyAutomergeUrl } from "@automerge/automerge-repo"
 import { initPlan, PLAN, STEP, DEFAULT_TIER_MODELS, WORKFLOW_TOOL_IDS, stepPrompt, WITHHELD, RESULT_IN_PROMPT } from "./workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, describeProgress, keptCounts, _resetDrivers } from "./workflow/driver.js"
-import { scopedRepo, KERNEL_TYPES } from "./scope.js"
-import { initSession, makeTurn, textBlock, STATUS, CALL } from "./session.js"
+import { scopedRepo, KERNEL_TYPES } from "./kernel/scope.js"
+import { initSession, makeTurn, textBlock, STATUS, CALL } from "./session/session.js"
 import { buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
 
 await initSubduction()

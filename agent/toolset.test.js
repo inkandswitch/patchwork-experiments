@@ -13,13 +13,13 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { SessionRunner } from "./runner.js"
-import { memoryStore, handleStore } from "./store.js"
-import { initSession, makeTurn, textBlock } from "./session.js"
+import { SessionRunner } from "./kernel/runner.js"
+import { memoryStore, handleStore } from "./kernel/store.js"
+import { initSession, makeTurn, textBlock } from "./session/session.js"
 import { makeMock } from "./providers/mock.js"
 import { initPlan, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS } from "./workflow/plan.js"
 import { buildToolset, loadPluginTools, BUILTIN_TOOLS, SCOPED_VARIANTS } from "./tools/index.js"
-import { SCOPED_TOOL_IDS, UNDECLARED_MID_RUN, scopedToolset, admitScoped, webScope } from "./scope.js"
+import { SCOPED_TOOL_IDS, UNDECLARED_MID_RUN, scopedToolset, admitScoped, webScope } from "./kernel/scope.js"
 
 await initSubduction()
 
@@ -27,7 +27,7 @@ const BUILTIN_IDS = BUILTIN_TOOLS.map((t) => t.id)
 /** The two tools for one kind of session only, named here rather than taken from the registry's own lists. */
 const RESEARCH_ONLY = "finding_write"
 const FULL_ONLY = "source_file"
-/** What a research step's context holds (scope.js confine), written out. */
+/** What a research step's context holds (kernel/scope.js confine), written out. */
 const CONFINED = ["direct", "events", "fetchImpl", "reader", "repo", "scope", "search", "signal"]
 
 /** What a research step's tool list said before scopes decided it. */
@@ -288,7 +288,7 @@ describe("a research step's http_request", () => {
 describe("the modules a research step's tools are made of", () => {
   // Everything a scoped tool runs, and nothing in it that reaches past its
   // context: the page's globals, the platform's fetch, or the host's modules.
-  const MODULES = ["scope.js", "tools/web.js", "tools/http.js", "tools/read-source.js", "tools/findings.js", "tools/recall.js", "tools/sources.js", "tools/guard.js", "tools/format.js"]
+  const MODULES = ["kernel/scope.js", "tools/web.js", "tools/http.js", "tools/read-source.js", "tools/findings.js", "tools/recall.js", "tools/sources.js", "net/guard.js", "documents/format.js"]
   it.each(MODULES)("%s uses no globalThis, no bare fetch( and no hostImport", (file) => {
     const code = readFileSync(join(import.meta.dirname, file), "utf8")
     expect(code).not.toMatch(/globalThis/)

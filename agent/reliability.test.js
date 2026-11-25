@@ -6,9 +6,9 @@ import { describe, it, expect, beforeEach } from "vitest"
 import {
   initSession, makeTurn, textBlock, callBlock, claimLease, CALL, _resetIds,
   orphanedCalls, resolveOrphans, INTERRUPTED, addUsage, costOf, formatCost,
-} from "./session.js"
-import { SessionRunner, needsWork, STALE_AFTER_MS } from "./runner.js"
-import { memoryStore } from "./store.js"
+} from "./session/session.js"
+import { SessionRunner, needsWork, STALE_AFTER_MS } from "./kernel/runner.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
 import { viewUnmount } from "./tools/checking.js"
 

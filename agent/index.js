@@ -15,7 +15,7 @@ export const plugins = [
     name: "Agent Session",
     icon: "Bot",
     async load() {
-      return (await import("./datatype.js")).AgentSessionDatatype
+      return (await import("./session/datatype.js")).AgentSessionDatatype
     },
   },
 
@@ -27,7 +27,7 @@ export const plugins = [
     icon: "Bot",
     supportedDatatypes: ["agent-session"],
     async load() {
-      const { AgentTool } = await import("./tool.js")
+      const { AgentTool } = await import("./ui/session-view.js")
       return (handle, element) => AgentTool(handle, element, { mode: "full" })
     },
   },
@@ -49,7 +49,7 @@ export const plugins = [
     icon: "Workflow",
     supportedDatatypes: ["agent-workflow"],
     async load() {
-      const { WorkflowView } = await import("./workflow/view.js")
+      const { WorkflowView } = await import("./ui/workflow-view.js")
       return (handle, element) => WorkflowView(handle, element)
     },
   },
@@ -61,7 +61,7 @@ export const plugins = [
     icon: "Bot",
     tags: ["context-tool"],
     async load() {
-      const { AgentPanel } = await import("./panel.js")
+      const { AgentPanel } = await import("./ui/panel.js")
       return (element) => AgentPanel(element, { mode: "panel" })
     },
   },
@@ -76,7 +76,7 @@ export const plugins = [
     icon: "Bot",
     tags: ["overlay"],
     async load() {
-      const { AmbientAgent } = await import("./ambient.js")
+      const { AmbientAgent } = await import("./ui/ambient.js")
       return (element) => AmbientAgent(element)
     },
   },

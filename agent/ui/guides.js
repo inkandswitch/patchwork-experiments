@@ -9,7 +9,7 @@
  * reads the packages.
  */
 
-import { guidesOverview, listGuides } from "../tools/guides.js"
+import { guidesOverview, listGuides } from "../knowledge/guides.js"
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag)

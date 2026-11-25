@@ -18,13 +18,13 @@
  *     orchestratorFrom,                       what that session had spent when the plan began
  *     sources: { [documentId]: { url, kind: "source" | "finding", what,
  *                source, name, engine, chars, by, at, heads } },
- *                                             the research steps' ledger (scope.js)
+ *                                             the research steps' ledger (kernel/scope.js)
  *     sourcesFolderUrl,                       where the driver files the ledger for people
  *     sourcesFiled: { [documentId]: true },   what it has filed
  *     steps: [{
  *       id, title, prompt, after: [ids],
  *       where: "host" | "worker",             needs the page, or only a repo
- *       access?: "web",                       a research step (scope.js)
+ *       access?: "web",                       a research step (kernel/scope.js)
  *       tier, why,                            which model, and the reason
  *       status: "pending" | "running" | "done" | "failed" | "cancelled",
  *       sessionUrl, result, error, startedAt, finishedAt,
@@ -115,7 +115,7 @@ export const WHERE = ["host", "worker"]
  * research step: the web, and what the workflow's research steps have kept
  * from it, and nothing else — none of the person's documents — so fetching
  * cannot leak anything of theirs, and it fetches without asking. What it may
- * do is decided by its session's scope (scope.js), not listed here.
+ * do is decided by its session's scope (kernel/scope.js), not listed here.
  */
 export const ACCESS = ["full", "web"]
 

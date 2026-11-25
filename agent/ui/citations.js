@@ -2,13 +2,13 @@
  * Marking the citations in a rendered transcript as checked or not.
  *
  * markdown.js renders a citation as a link with its quote on it; this looks
- * each one up in its document (citations.js) and says what it found, on the
+ * each one up in its document (documents/citations.js) and says what it found, on the
  * link itself: `data-check` is found, missing, short or unreadable, and the
  * hover text says what that means. A citation is checked once per page and
  * the answer remembered, so re-rendering on every change costs nothing.
  */
 
-import { checkCitation } from "../citations.js"
+import { checkCitation } from "../documents/citations.js"
 
 /** url \u0000 quote -> Promise<{ status, … }> */
 const checked = new Map()

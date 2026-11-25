@@ -1,14 +1,14 @@
 /**
- * Every kind of file document, read in the form a model can use (files.js).
+ * Every kind of file document, read in the form a model can use (documents/files.js).
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { fileKind, decodeIfText, unzip, officeText, withFileData, MAX_FILE_BYTES } from "./files.js"
-import { initSession, makeTurn, textBlock, callBlock, resultBlock, attachmentBlock, toRequest, CALL, _resetIds } from "./session.js"
+import { fileKind, decodeIfText, unzip, officeText, withFileData, MAX_FILE_BYTES } from "./documents/files.js"
+import { initSession, makeTurn, textBlock, callBlock, resultBlock, attachmentBlock, toRequest, CALL, _resetIds } from "./session/session.js"
 import { toOpenAIMessages } from "./providers/openrouter.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
 import { sourceRead, sourceList } from "./tools/read-source.js"
-import { makePdf } from "./pdf-fixture.js"
+import { makePdf } from "./fixtures/pdf-fixture.js"
 
 beforeEach(_resetIds)
 

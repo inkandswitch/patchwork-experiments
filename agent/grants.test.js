@@ -18,11 +18,11 @@ import {
   STATUS,
   findCall,
   _resetIds,
-} from "./session.js"
-import { decide, run } from "./loop.js"
+} from "./session/session.js"
+import { decide, run } from "./kernel/loop.js"
 import { BUILTIN_TOOLS } from "./tools/index.js"
 import { makeMock } from "./providers/mock.js"
-import { memoryStore } from "./store.js"
+import { memoryStore } from "./kernel/store.js"
 
 const fresh = () => { const d = {}; initSession(d, {}); return d }
 // The real doc_edit says its url defaults to the session's subject; a fake

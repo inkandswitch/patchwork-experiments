@@ -1,6 +1,6 @@
 /**
  * Which tools a session placed somewhere gets, and where each call runs
- * (placement.js).
+ * (kernel/placement.js).
  *
  * The rule: a session's toolset is filtered by what each tool declared,
  * built-in or plugin alike — a worker step gets every tool declared "worker"
@@ -12,13 +12,13 @@
  */
 import { describe, it, expect } from "vitest"
 import { buildToolset, loadPluginTools, BUILTIN_TOOLS, SCOPED_ONLY_IDS } from "./tools/index.js"
-import { scopedToolset, SCOPED_TOOL_IDS } from "./scope.js"
+import { scopedToolset, SCOPED_TOOL_IDS } from "./kernel/scope.js"
 import { WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, initPlan } from "./workflow/plan.js"
-import { createPluginCatalogue } from "./worker-plugins.js"
-import { callNeeds, checkStepTools, declaredWhere, fitsPlacement, namedIn, stepToolIds } from "./placement.js"
-import { SessionRunner } from "./runner.js"
-import { memoryStore } from "./store.js"
-import { initSession, makeTurn, textBlock, findCall } from "./session.js"
+import { createPluginCatalogue } from "./runners/worker-plugins.js"
+import { callNeeds, checkStepTools, declaredWhere, fitsPlacement, namedIn, stepToolIds } from "./kernel/placement.js"
+import { SessionRunner } from "./kernel/runner.js"
+import { memoryStore } from "./kernel/store.js"
+import { initSession, makeTurn, textBlock, findCall } from "./session/session.js"
 import { makeMock } from "./providers/mock.js"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 

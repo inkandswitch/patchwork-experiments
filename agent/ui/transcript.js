@@ -11,7 +11,7 @@
  * pictures and approvals get full width.
  */
 
-import { CALL, callTarget, grantOffers, questionOptions } from "../session.js"
+import { CALL, callTarget, grantOffers, questionOptions } from "../session/session.js"
 import { renderMarkdown } from "./markdown.js"
 import { describeCall } from "./calls.js"
 import { renderCallBody } from "./bodies.js"
@@ -282,7 +282,7 @@ function renderReasoning(block, state) {
 /**
  * Where the person was when they spoke: one muted line naming the focused
  * document, with the rest of what was open in its tooltip. The model gets the
- * full note (session.js `describeContext`); a person only needs the gist.
+ * full note (session/session.js `describeContext`); a person only needs the gist.
  */
 function renderContext(block) {
   const focused = block.focused
@@ -353,7 +353,7 @@ export function renderTranscript(container, doc, state, handlers) {
   for (const turn of turns) {
     if (turn.role === "tool") continue // results render inside their call
 
-    // News a tool delivered (events.js). It rides in a user turn, but nobody
+    // News a tool delivered (kernel/events.js). It rides in a user turn, but nobody
     // said it, so it must not look as if anybody did.
     if (turn.role === "user" && turn.blocks?.length && turn.blocks.every((b) => b.type === "event")) {
       const node = el("div", "agent-turn")

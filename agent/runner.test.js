@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { SessionRunner, needsWork } from "./runner.js"
-import { memoryStore, handleStore } from "./store.js"
+import { SessionRunner, needsWork } from "./kernel/runner.js"
+import { memoryStore, handleStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { initSession, makeTurn, textBlock, contextBlock, STATUS, _resetIds } from "./session.js"
+import { initSession, makeTurn, textBlock, contextBlock, STATUS, _resetIds } from "./session/session.js"
 import { initPlan } from "./workflow/plan.js"
 import { buildToolset } from "./tools/index.js"
-import { NOTES_FOLDER_NAME } from "./tools/notes.js"
-import { webScope } from "./scope.js"
+import { NOTES_FOLDER_NAME } from "./knowledge/notes.js"
+import { webScope } from "./kernel/scope.js"
 
 await initSubduction()
 

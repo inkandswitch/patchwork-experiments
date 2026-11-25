@@ -14,8 +14,8 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { run, OUTCOME } from "./loop.js"
-import { memoryStore } from "./store.js"
+import { run, OUTCOME } from "./kernel/loop.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
 import {
   initSession,
@@ -30,7 +30,7 @@ import {
   CALL,
   INTERRUPTED,
   _resetIds,
-} from "./session.js"
+} from "./session/session.js"
 
 beforeEach(_resetIds)
 

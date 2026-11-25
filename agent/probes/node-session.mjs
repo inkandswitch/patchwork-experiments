@@ -12,14 +12,14 @@
 import { Repo, initSubduction, setSubductionLogLevel } from "@automerge/automerge-repo"
 import { splice } from "@automerge/automerge/slim"
 
-import { handleStore } from "../store.js"
-import { SessionRunner } from "../runner.js"
+import { handleStore } from "../kernel/store.js"
+import { SessionRunner } from "../kernel/runner.js"
 import { buildToolset } from "../tools/index.js"
 import { getProvider } from "../providers/index.js"
-import { initSession, STATUS } from "../session.js"
-import { say, decide } from "../loop.js"
-import { callsAwaitingApproval } from "../session.js"
-import { nodeFetch } from "../node-fetch.mjs"
+import { initSession, STATUS } from "../session/session.js"
+import { say, decide } from "../kernel/loop.js"
+import { callsAwaitingApproval } from "../session/session.js"
+import { nodeFetch } from "../net/node-fetch.mjs"
 
 const SYNC = process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com"
 const KEY = process.env.OPENROUTER_API_KEY

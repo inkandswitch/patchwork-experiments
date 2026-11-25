@@ -11,7 +11,7 @@
  * not helped anybody.
  */
 
-import { previewJson, truncate } from "./format.js"
+import { previewJson, truncate } from "../documents/format.js"
 import { contentToText, isFolder, isFile, ROOT_DESCRIPTION } from "./folders.js"
 
 const DEFAULT_MAX_VISITS = 300

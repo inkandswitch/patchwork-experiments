@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest"
 import {
   ensureRunner, attachView, stopRunner, reapIdle, stopAll, getEntry, liveCount, _reset,
   IDLE_GRACE_MS, MAX_LIVE_RUNNERS,
-} from "./runners.js"
+} from "./runners/registry.js"
 
 /** A runner double with the bits the registry touches. */
 const fakeRunner = (running = false) => {

@@ -4,10 +4,10 @@
  * collapsed-state churn.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { AgentTool } from "./tool.js"
-import { initSession, makeTurn, textBlock, callBlock, resultBlock, CALL, STATUS, _resetIds } from "./session.js"
+import { AgentTool } from "./ui/session-view.js"
+import { initSession, makeTurn, textBlock, callBlock, resultBlock, CALL, STATUS, _resetIds } from "./session/session.js"
 import { renderTranscript, callSummary } from "./ui/transcript.js"
-import { _reset as resetRunners } from "./runners.js"
+import { _reset as resetRunners } from "./runners/registry.js"
 import { viewMount, _resetMounts } from "./tools/checking.js"
 
 /** A DocHandle double with the parts the tool actually uses. */

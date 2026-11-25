@@ -10,15 +10,15 @@
 import { describe, it, expect, afterEach } from "vitest"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { SessionRunner } from "./runner.js"
-import { handleStore } from "./store.js"
-import { createEvents } from "./events.js"
+import { SessionRunner } from "./kernel/runner.js"
+import { handleStore } from "./kernel/store.js"
+import { createEvents } from "./kernel/events.js"
 import { buildToolset } from "./tools/index.js"
 import { makeMock } from "./providers/mock.js"
-import { initSession, makeTurn, textBlock, STATUS } from "./session.js"
+import { initSession, makeTurn, textBlock, STATUS } from "./session/session.js"
 import { PLAN, STEP, DEFAULT_TIER_MODELS } from "./workflow/plan.js"
 import { _resetDrivers } from "./workflow/driver.js"
-import { guardedFetch } from "./tools/guard.js"
+import { guardedFetch } from "./net/guard.js"
 
 await initSubduction()
 
@@ -218,7 +218,7 @@ describe("a workflow, end to end", () => {
     const repo = new Repo({ network: [] })
     const session = repo.create({})
     session.change((d) => initSession(d, { config: { workflows: { enabled: false } } }))
-    const { workflowStart } = await import("./tools/workflow.js")
+    const { workflowStart } = await import("./workflow/tools.js")
     await expect(workflowStart.execute({ title: "T", goal: "G", steps: STEPS }, { session: { url: session.url, doc: () => session.doc() }, workflows: { repo } })).rejects.toThrow(/switched off/)
   })
 
@@ -226,7 +226,7 @@ describe("a workflow, end to end", () => {
     const repo = new Repo({ network: [] })
     const session = repo.create({})
     session.change((d) => initSession(d, { config: { workflows: { enabled: true } } }))
-    const { workflowStart } = await import("./tools/workflow.js")
+    const { workflowStart } = await import("./workflow/tools.js")
     const circular = [STEPS[0], { ...STEPS[1], after: ["judge"] }, STEPS[2]]
     await expect(workflowStart.execute({ title: "T", goal: "G", steps: circular }, { session: { url: session.url, doc: () => session.doc() }, workflows: { repo } })).rejects.toThrow(/in a circle/)
   })

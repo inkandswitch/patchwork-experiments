@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { createEvents, canWake, SETTLE_MS, MAX_DELAY_MS, MIN_GAP_MS, WAKES_PER_HOUR } from "./events.js"
-import { memoryStore } from "./store.js"
-import { initSession, makeTurn, textBlock, toRequest, STATUS, _resetIds } from "./session.js"
-import { needsWork } from "./runner.js"
-import { ensureRunner, attachView, reapIdle, liveCount, _reset } from "./runners.js"
+import { createEvents, canWake, SETTLE_MS, MAX_DELAY_MS, MIN_GAP_MS, WAKES_PER_HOUR } from "./kernel/events.js"
+import { memoryStore } from "./kernel/store.js"
+import { initSession, makeTurn, textBlock, toRequest, STATUS, _resetIds } from "./session/session.js"
+import { needsWork } from "./kernel/runner.js"
+import { ensureRunner, attachView, reapIdle, liveCount, _reset } from "./runners/registry.js"
 import { renderTranscript } from "./ui/transcript.js"
 
 /** A clock and timers that only move when the test says so. */

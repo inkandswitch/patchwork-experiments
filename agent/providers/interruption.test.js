@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { stream, decodeStream, NOT_NOW } from "./openrouter.js"
-import { isInterruption } from "../network.js"
+import { isInterruption } from "../net/network.js"
 
 const enc = new TextEncoder()
 

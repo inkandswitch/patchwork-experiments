@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { splice } from "@automerge/automerge/slim"
-import { noteWrite, noteEdit, noteRead, noteDelete, looksLikePlaceholder, notesSection, notesFolder, noteFileName, looksLikeCredential, NOTES_FOLDER_NAME } from "./tools/notes.js"
-import { run } from "./loop.js"
-import { memoryStore } from "./store.js"
+import { noteWrite, noteEdit, noteRead, noteDelete, looksLikePlaceholder, notesSection, notesFolder, noteFileName, looksLikeCredential, NOTES_FOLDER_NAME } from "./knowledge/notes.js"
+import { run } from "./kernel/loop.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { initSession, claimLease, makeTurn, textBlock, _resetIds } from "./session.js"
+import { initSession, claimLease, makeTurn, textBlock, _resetIds } from "./session/session.js"
 
 await initSubduction()
 

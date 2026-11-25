@@ -19,9 +19,9 @@
  * would lead from there to everything the plan names.
  */
 
-import { Automerge, AutomergeRepo } from "../host-modules.js"
-import { documentIdOf, cleanTitle } from "../session.js"
-import { citationsIn, checkCitation } from "../citations.js"
+import { Automerge, AutomergeRepo } from "../host/modules.js"
+import { documentIdOf, cleanTitle } from "../session/session.js"
+import { citationsIn, checkCitation } from "../documents/citations.js"
 
 const { splice, updateText } = Automerge
 const { stringifyAutomergeUrl } = AutomergeRepo

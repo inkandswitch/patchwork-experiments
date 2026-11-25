@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { run, decide, say, OUTCOME, DEFAULT_SYSTEM } from "./loop.js"
-import { needsWork } from "./runner.js"
-import { memoryStore } from "./store.js"
+import { run, decide, say, OUTCOME, DEFAULT_SYSTEM } from "./kernel/loop.js"
+import { needsWork } from "./kernel/runner.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
 import {
   initSession,
@@ -13,7 +13,7 @@ import {
   _resetIds,
   findCall,
   callsAwaitingApproval,
-} from "./session.js"
+} from "./session/session.js"
 
 // A toolset double with the same surface as tools/buildToolset.
 function fakeToolset(tools) {

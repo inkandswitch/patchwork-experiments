@@ -7,7 +7,7 @@
  * a document of the person's to the ledger. One that could make either could
  * do the same from scratch: a plan whose ledger lists the person's notes, run
  * by the driver as if it were real. Every session's tools get a repo
- * (scope.js kernelRepo) whose handles refuse both, however the document is
+ * (kernel/scope.js kernelRepo) whose handles refuse both, however the document is
  * named; the two modules that write them legitimately are handed explicit
  * capabilities instead, and nothing else is.
  */
@@ -16,13 +16,13 @@ import { readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction, parseAutomergeUrl } from "@automerge/automerge-repo"
-import { initSession, makeTurn, textBlock } from "./session.js"
+import { initSession, makeTurn, textBlock } from "./session/session.js"
 import { initPlan, WORKFLOW_TOOL_IDS } from "./workflow/plan.js"
 import { runTool, buildToolset, BUILTIN_TOOLS } from "./tools/index.js"
-import { SessionRunner, fullContext } from "./runner.js"
-import { memoryStore } from "./store.js"
+import { SessionRunner, fullContext } from "./kernel/runner.js"
+import { memoryStore } from "./kernel/store.js"
 import { makeMock } from "./providers/mock.js"
-import { kernelRepo, webScope, KERNEL_REFUSAL, KERNEL_TYPES } from "./scope.js"
+import { kernelRepo, webScope, KERNEL_REFUSAL, KERNEL_TYPES } from "./kernel/scope.js"
 
 await initSubduction()
 
@@ -388,20 +388,25 @@ describe("the legitimate writers", () => {
   // the only way, each is used by one module, and each is handed to that
   // module's built-in tools and to no other tool — not to a plugin, whatever
   // it is called.
-  const dir = join(import.meta.dirname, "tools")
-  const tools = readdirSync(dir).filter((f) => f.endsWith(".js"))
-  const using = (pattern) => tools.filter((f) => pattern.test(readFileSync(join(dir, f), "utf8")))
+  // Every directory that defines tools.
+  const root = process.cwd()
+  const tools = ["tools", "knowledge", "workflow"].flatMap((dir) =>
+    readdirSync(join(root, dir))
+      .filter((f) => f.endsWith(".js") && !f.endsWith(".test.js"))
+      .map((f) => `${dir}/${f}`),
+  )
+  const using = (pattern) => tools.filter((f) => pattern.test(readFileSync(join(root, f), "utf8")))
 
-  it("only tools/workflow.js reaches for ctx.workflows", () => {
-    expect(using(/ctx\.workflows/)).toEqual(["workflow.js"])
+  it("only workflow/tools.js reaches for ctx.workflows", () => {
+    expect(using(/ctx\.workflows/)).toEqual(["workflow/tools.js"])
   })
 
   it("only tools/naming.js writes through ctx.session", () => {
-    expect(using(/ctx\.session\??\.change/)).toEqual(["naming.js"])
+    expect(using(/ctx\.session\??\.change/)).toEqual(["tools/naming.js"])
   })
 
   it("only tools/watch.js reaches for ctx.watches", () => {
-    expect(using(/ctx\.watches/)).toEqual(["watch.js"])
+    expect(using(/ctx\.watches/)).toEqual(["tools/watch.js"])
   })
 
   /** A full session with Workflows on, a plugin of its own, and a runner over it. */

@@ -12,7 +12,7 @@
  * out and `decodeStream` turns the wire format back into neutral events.
  */
 
-import { Interruption } from "../network.js"
+import { Interruption } from "../net/network.js"
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -400,7 +400,7 @@ export async function* decodeStream(chunks) {
 /**
  * Turn a fetch Response body into the async-iterable of strings decodeStream
  * wants. Every chunk tells the watchdog the connection is alive; a read that
- * fails is the connection lost, which is an interruption (network.js) — or the
+ * fails is the connection lost, which is an interruption (net/network.js) — or the
  * person stopping the run, which the loop tells apart by its signal.
  */
 async function* readBody(response, dog = null) {
@@ -447,7 +447,7 @@ function isRetryable(status) {
 
 /**
  * Statuses that say "not now", never "not this": past the retries here, they
- * are an interruption and the session waits (network.js). A plain 500 is not
+ * are an interruption and the session waits (net/network.js). A plain 500 is not
  * one of them — some upstreams answer a request they cannot take with it, and
  * waiting for ever on that would be a session that never says why it stopped.
  */
@@ -497,7 +497,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  * Retries happen here only *before* the first byte of the body. Once tokens
  * are flowing they have already been written into the document, so a reply
  * lost part-way is thrown as an Interruption and the loop discards the partial
- * turn before anyone asks again (network.js). So is a request that never got
+ * turn before anyone asks again (net/network.js). So is a request that never got
  * an answer, and a "not now" status, once the retries here are spent.
  *
  * `key` is passed per call rather than held in module state, so nothing here
@@ -550,7 +550,7 @@ export async function* stream({
       dog.stop()
       if (signal?.aborted) throw err
       // No answer at all: worth another go, and past the last one an
-      // interruption, not an error — nothing reached the model (network.js).
+      // interruption, not an error — nothing reached the model (net/network.js).
       const why = dog.fired() ? `no answer for ${quietMs / 1000} s` : String(err?.message ?? err)
       lastError = new Interruption(`Could not reach OpenRouter (${why})`, { cause: err })
       if (attempt === maxAttempts) throw lastError

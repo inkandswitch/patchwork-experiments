@@ -9,8 +9,8 @@
  * Worker tier throughout: repo access only.
  */
 
-import { previewJson, truncate, bytes } from "./format.js"
-import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, OpError, TEXT_OPS } from "./ops.js"
+import { previewJson, truncate, bytes } from "../documents/format.js"
+import { editText, applySplices, lineOf, minimalSplice, spliceString, textDiff, OpError, TEXT_OPS } from "../documents/ops.js"
 
 /** File content arrives as a string, an ImmutableString, or raw bytes. */
 export function contentToText(content) {

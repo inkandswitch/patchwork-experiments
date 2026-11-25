@@ -64,10 +64,10 @@ const ON_DISK = Object.fromEntries(
     "tools/vitest-runtime.js",
     "tools/vendor/vitest-engine.js",
     "tools/build.js",
-    "tools/format.js",
+    "documents/format.js",
     "tools/folders.js",
-    "tools/host.js",
-    "worker-client.js",
+    "host/import.js",
+    "runners/worker-client.js",
   ].map((path) => [path, readFileSync(join(here, "..", path), "utf8")])
 )
 const CHROME = option("chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")

@@ -1,5 +1,5 @@
 /**
- * The network going away is an interruption, not a failure (network.js).
+ * The network going away is an interruption, not a failure (net/network.js).
  *
  * What must hold, whatever was under way when it went:
  *
@@ -14,12 +14,12 @@
  *   6. a person can stop it, and then nothing is left to run.
  */
 import { describe, it, expect, vi } from "vitest"
-import { run, OUTCOME } from "./loop.js"
-import { SessionRunner, needsWork } from "./runner.js"
-import { memoryStore } from "./store.js"
-import { initSession, claimLease, makeTurn, textBlock, STATUS, CALL, _resetIds, findCall, findResult, stopReconnecting, STOPPED_OFFLINE } from "./session.js"
-import { Interruption, isInterruption, networkDown, asInterruption, reconnectDelay, onOnline, RECONNECT_MAX_MS } from "./network.js"
-import { relayFetch } from "./tools/relay.js"
+import { run, OUTCOME } from "./kernel/loop.js"
+import { SessionRunner, needsWork } from "./kernel/runner.js"
+import { memoryStore } from "./kernel/store.js"
+import { initSession, claimLease, makeTurn, textBlock, STATUS, CALL, _resetIds, findCall, findResult, stopReconnecting, STOPPED_OFFLINE } from "./session/session.js"
+import { Interruption, isInterruption, networkDown, asInterruption, reconnectDelay, onOnline, RECONNECT_MAX_MS } from "./net/network.js"
+import { relayFetch } from "./net/relay.js"
 import { webSearch } from "./tools/web.js"
 import { sessionOutcome } from "./workflow/driver.js"
 import { activityOf } from "./ui/attention.js"

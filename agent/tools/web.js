@@ -19,14 +19,14 @@
  * than a rewrite.
  */
 
-import { bytes } from "./format.js"
+import { bytes } from "../documents/format.js"
 import {
   keepSource, sourceFooter, findKept, titleFrom, mediaType, isTextResponse, decodeText, isPdf, formatOf,
   MAX_PDF_BYTES, readOn,
 } from "./sources.js"
-import { fetcher, assertTarget } from "./guard.js"
-import { Interruption, isInterruption, asInterruption } from "../network.js"
-import { readPdf, pdfSummary } from "../pdf-text.js"
+import { fetcher, assertTarget } from "../net/guard.js"
+import { Interruption, isInterruption, asInterruption } from "../net/network.js"
+import { readPdf, pdfSummary } from "../documents/pdf-text.js"
 
 /**
  * Strip HTML down to readable text.
@@ -341,7 +341,7 @@ async function readerText(response) {
 }
 
 /**
- * The PDF's own text, read from its bytes here (pdf-text.js): `{text, marks,
+ * The PDF's own text, read from its bytes here (documents/pdf-text.js): `{text, marks,
  * summary}`, or null when there is none — bytes pdf.js cannot open, or a scan
  * with no text layer, whose `summary` says so.
  */
@@ -413,7 +413,7 @@ export async function keepPdf(target, { pdf, markdown = null, readerStatus = nul
 /** In a browser: the reader first (it is needed anyway), then a PDF's bytes when there is a signal for one. */
 async function readInBrowser(target, format, input, ctx, fetchImpl, at) {
   const readerCache = input.fresh ? "no-cache" : "allowed"
-  // A PDF's own bytes carry its words (pdf-text.js), so when the path says PDF
+  // A PDF's own bytes carry its words (documents/pdf-text.js), so when the path says PDF
   // they are asked for first and the reader only when they hold none.
   if (pdfByPath(target)) {
     const pdf = await fetchPdf(target, ctx, fetchImpl)
@@ -631,7 +631,7 @@ export const webSearch = {
       if (ctx.signal?.aborted) throw err
       // Brave's endpoint is fixed and up, so no answer from it — or a name of
       // its that would not resolve — is this end's network: an interruption,
-      // and the search runs again when the network is back (network.js).
+      // and the search runs again when the network is back (net/network.js).
       throw isInterruption(err) ? err : new Interruption(`Could not reach the search API (${err?.reason ?? err?.message ?? err})`, { cause: err })
     }
     if (!response.ok) throw new Error(searchFailed(response.status, !!response.relayed))

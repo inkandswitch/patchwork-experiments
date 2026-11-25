@@ -1,10 +1,10 @@
 /**
- * Fetching through a relay (tools/relay.js): what a tab sends, what it keeps.
+ * Fetching through a relay (net/relay.js): what a tab sends, what it keeps.
  */
 
 import { describe, it, expect } from "vitest"
-import { relayFetch } from "./tools/relay.js"
-import { guardedFetch, Refused } from "./tools/guard.js"
+import { relayFetch } from "./net/relay.js"
+import { guardedFetch, Refused } from "./net/guard.js"
 import { webFetch } from "./tools/web.js"
 
 const RELAY = { url: "https://relay.test", key: "k" }

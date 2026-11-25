@@ -10,8 +10,8 @@
  * with a way to take it back.
  */
 
-import { imageTypeOf, imageForModel, sniffImage } from "../images.js"
-import { fileKind } from "../files.js"
+import { imageTypeOf, imageForModel, sniffImage } from "../documents/images.js"
+import { fileKind } from "../documents/files.js"
 
 const URLS_MIME = "text/x-patchwork-urls"
 const DND_MIME = "text/x-patchwork-dnd"
