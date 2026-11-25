@@ -16,6 +16,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import * as A from "@automerge/automerge"
 import { SessionRunner, CONFIRM_MS, STALE_AFTER_MS, HEARTBEAT_MS, needsWork } from "../kernel/runner.js"
 import { WorkflowDriver } from "./driver.js"
+import { PLAN_VERSION } from "./plan.js"
 import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { LeaseWatch, DEAD_ON_SIGHT_MS } from "../session/lease.js"
@@ -283,6 +284,7 @@ describe("two browsers with one plan open: at no moment do both drive it", () =>
         for (const skew of SKEWS) {
           vi.useFakeTimers({ now: 1_000_000_000 })
           const base = A.change(A.init({ actor: "cc".repeat(16) }), (d) => {
+            d.schemaVersion = PLAN_VERSION
             d.status = "running"
             d.steps = []
           })

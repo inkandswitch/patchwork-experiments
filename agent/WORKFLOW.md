@@ -14,7 +14,7 @@ and a step do to one.
 
 | field | |
 |---|---|
-| `schemaVersion` | the shape it is in. A driver leaves a plan of another version alone |
+| `schemaVersion` | the shape it is in. Nothing writes a plan of another version: every writer — the driver, the workflow tools, the views — goes through one gate (`writable` in `workflow/plan.js`), which says why in words a person can act on |
 | `title`, `goal`, `subject` | what the job is, and the document it is about |
 | `sessionUrl` | the orchestrator's session |
 | `status` | `running`, `done` or `stopped` |
@@ -27,7 +27,7 @@ and a step do to one.
 | `resumes` | `[{ add, limit, at }]`: each time a person did |
 | `runs` | how many times it has been set running |
 | `told` | `{ [key]: true }`: what the orchestrator has been told |
-| `sources` | the research steps' ledger of what they kept (`kernel/scope.js`) |
+| `ledgerUrl` | the research steps' ledger (*Research steps*), or null until the first one starts |
 | `sourcesFolderUrl`, `sourcesFiled` | where the driver files the ledger for people, and what it has filed |
 | `lease` | which driver is driving it, as a session's lease says which runner |
 
@@ -39,7 +39,8 @@ A step:
 | `after` | the ids of the steps it waits for |
 | `where` | `"worker"`: a repo is all it needs. `"host"`: it needs the page |
 | `access` | `"web"` for a research step: the web and what research steps kept, and none of the person's documents |
-| `tier`, `budget`, `tools` | which model; dollars it may spend; tools it must have |
+| `tier`, `budget`, `tools` | which model; dollars its session starts with (*Money*); tools it must have |
+| `budgetLog` | `[{ add, limit, why, at }]`: each time the orchestrator raised its budget |
 | `status` | `pending`, `running`, `done`, `failed` or `cancelled` |
 | `sessionUrl`, `result`, `error`, `startedAt`, `finishedAt` | its session, and how it went |
 | `version` | how many times it has finished |
@@ -119,8 +120,8 @@ A tick is three parts:
    step whether it is still confined as the plan says.
 2. **Decide.** `decide(plan, observations, now)` in `workflow/decide.js` is
    pure. It returns the actions to take, in order, as plain data: cancel,
-   finish, fail, requests, usage, share grants, file sources, run, start,
-   continue, pause, settle, report. Each decision is made on the plan as the
+   finish, fail, requests, usage, share grants, file sources, run, open the
+   ledger, start, continue, pause, settle, report. Each decision is made on the plan as the
    actions before it leave it, so a step that finishes on a tick makes what
    waits on it ready on that tick.
 3. **Do.** The driver performs each action: plan.js's transitions for the
@@ -138,7 +139,10 @@ they were waiting on. A research step neither gives nor receives.
 ## Money
 
 `limits.cost` caps what the steps and the orchestrator spend together. Each
-step has its own budget, by tier unless it says. A step that spends its budget
+step has its own budget, by tier unless it says. That is what its session
+starts with; from then on the session's `config.budget` is the step's budget,
+the one it spends against and the one raised, by the orchestrator or a
+person (`stepBudget` in `workflow/plan.js`). A step that spends its budget
 stops part-way with a `budget` notice ([SESSION.md](SESSION.md), *Stops*) and
 the orchestrator is told; it can give the step more out of what the plan has
 left. When the plan itself is at its cap with work waiting, it pauses and asks
@@ -147,9 +151,20 @@ the person, and only a person raises the cap.
 ## Research steps
 
 A step with `access: "web"` fetches without asking, which is safe only because
-nothing of the person's can reach what it sends. Its session's `scope` confines
-it ([TOOLS.md](TOOLS.md)): its tools open only what is in the plan's `sources`
-ledger, at the heads recorded there. Everything it fetches and every finding it
-writes goes into the ledger, is shared with the plan's other research steps,
-and is filed by the driver in the plan's Sources folder for people. It is never
-handed the result of a step that had the person's documents.
+nothing of the person's can reach what it sends. Its session's `scope` names
+the plan and the step, and confines it ([TOOLS.md](TOOLS.md)): its tools open
+only what is in the plan's ledger, at the heads recorded there. Everything it
+fetches and every finding it writes goes into the ledger, is shared with the
+plan's other research steps, and is filed by the driver in the plan's Sources
+folder for people. It is never handed the result of a step that had the
+person's documents.
+
+The ledger is a document of its own, `{ "@patchwork": { type: "agent-ledger" },
+sources }`, one per plan. `sources` maps each kept document's id to `{ url,
+kind, what, type, source, name, engine, chars, by, at, heads }`: `kind` is
+`source` (read-only) or `finding` (writable by research steps), `by` the step
+that kept it, `heads` the version a step reads. The driver opens it, under the
+plan's lease, before the first research step starts. Research steps' kernels
+write it, from any runner, outside the lease; the driver only reads it, and
+wakes when it changes to file what is new. No agent tool writes a ledger, and
+a step whose plan names none, or names something else, does not run.

@@ -3,7 +3,7 @@ import {
   STEP, STATE, PLAN, TIERS, DEFAULT_LIMITS,
   initPlan, validateSteps, findCycle, states, toStart, isSettled, stepPrompt,
   overBudget, shouldPause, resumePlan, budgetOf, notStarted, reopenSteps, reopenPrompt,
-  newStep, editSteps, editErrors, EDITABLE, MISSING_TOOL_GUIDANCE,
+  newStep, editSteps, editErrors, EDITABLE, MISSING_TOOL_GUIDANCE, DEFAULT_STEP_BUDGETS, startBudget, stepBudget,
   STEP_TRANSITIONS, PLAN_TRANSITIONS, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, runAgain, keepSteps, RESULT_KEPT,
 } from "./plan.js"
 
@@ -324,6 +324,36 @@ describe("a step's tools", () => {
     editSteps(doc, [{ id: "a", tools: [] }])
     expect("tools" in doc.steps[0]).toBe(false)
     expect(editErrors(doc, [{ id: "a", tools: [3] }]).join()).toMatch(/'tools' must be/)
+  })
+})
+
+describe("a step's budget has one home", () => {
+  // [the step's own budget] × [its session's] → what it starts with, and what
+  // its budget is. The session's, once there is one, whatever the step says:
+  // that is what is spent against and raised.
+  const cases = []
+  for (const own of [undefined, 3]) for (const session of [null, { config: {} }, { config: { budget: 7.5 } }]) cases.push([own, session])
+  it.each(cases)("own %s, session %j", (own, session) => {
+    const s = step("a", { tier: "deep", ...(own === undefined ? {} : { budget: own }) })
+    const start = own ?? DEFAULT_STEP_BUDGETS.deep
+    expect(startBudget(s)).toBe(start)
+    expect(stepBudget(s, session)).toBe(session?.config?.budget ?? start)
+  })
+
+  // [has it a session] × [what is edited] → may it be? A step with a session
+  // (reopened, waiting to continue) has its budget there, so the plan's is
+  // not edited: workflow_budget raises the session's.
+  it.each([
+    [false, { budget: 4 }, true],
+    [false, { after: [] }, true],
+    [true, { budget: 4 }, false],
+    [true, { after: [] }, true],
+    [true, { budget: 4, after: [] }, false],
+  ])("session %s, editing %j → allowed %s", (hasSession, fields, allowed) => {
+    const doc = plan([step("a", hasSession ? { sessionUrl: "automerge:a", reopen: { note: "again" } } : {})])
+    const errors = editErrors(doc, [{ id: "a", ...fields }])
+    expect(errors.length === 0).toBe(allowed)
+    if (!allowed) expect(errors.join()).toMatch(/workflow_budget/)
   })
 })
 

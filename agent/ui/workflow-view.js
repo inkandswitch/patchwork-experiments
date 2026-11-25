@@ -11,7 +11,7 @@
  * running when its tab closed resumes when anyone opens it again.
  */
 
-import { states, STATE, PLAN, DEFAULT_LIMITS, budgetOf, stepBudget, staleInputs, reopenSteps } from "../workflow/plan.js"
+import { states, STATE, PLAN, DEFAULT_LIMITS, budgetOf, stepBudget, staleInputs, reopenSteps, isCurrent, versionNote, changePlan } from "../workflow/plan.js"
 import { budgetWaiting } from "../workflow/waiting.js"
 import { renderBudgetItem } from "./waiting.js"
 import { formatCost } from "../session/usage.js"
@@ -190,7 +190,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     if (runs > 1) meta.append(el("span", "agent-wf-badge", `run ${runs}`))
     card.append(meta)
     if (step.access === "web") {
-      const { sources, findings } = keptCounts(handle.doc(), step.id)
+      const { sources, findings } = keptCounts(sessionDoc(handle.doc()?.ledgerUrl), step.id)
       if (sources || findings) card.append(el("p", "agent-wf-kept", `kept ${sources} source${sources === 1 ? "" : "s"} · ${findings} finding${findings === 1 ? "" : "s"}`))
     }
     if (step.why) card.append(el("p", "agent-wf-why", step.why))
@@ -242,7 +242,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
 
     // A person can resume a step that failed or was cancelled, as it was:
     // reopening a finished one, or with a note, is the orchestrator's.
-    if (repo && (state === STATE.failed || state === STATE.cancelled)) {
+    if (repo && isCurrent(handle.doc()) && (state === STATE.failed || state === STATE.cancelled)) {
       const resume = el("button", "agent-wf-open", "Resume")
       resume.dataset.wfResume = step.id
       card.append(resume)
@@ -304,7 +304,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     },
   }
   async function resume(stepId) {
-    handle.change((d) => reopenSteps(d, [stepId], { note: "Resumed by the person: carry on from where you were.", cascade: false, by: "person" }))
+    changePlan(handle, (d) => reopenSteps(d, [stepId], { note: "Resumed by the person: carry on from where you were.", cascade: false, by: "person" }))
     const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo }))
     driver.kick()
   }
@@ -346,6 +346,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     const waitingOrStatus = (doc) => (waitingIn(doc).length ? STATUS.awaitingApproval : doc ? statusOf(doc) : null)
     const statuses = Object.fromEntries(plan.steps.filter((s) => s.sessionUrl).map((s) => [s.sessionUrl, waitingOrStatus(sessionDoc(s.sessionUrl))]))
     if (plan.sessionUrl) watch(plan.sessionUrl)
+    // What the research steps kept, counted off the plan's ledger.
+    if (plan.ledgerUrl) watch(plan.ledgerUrl)
     const derived = states(plan, statuses)
     const count = (state) => plan.steps.filter((s) => derived.get(s.id) === state).length
 
@@ -357,6 +359,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     const goal = el("p", "agent-wf-goal", plan.goal)
     goal.dataset.open = String(goalOpen)
     header.append(titleRow, goal)
+    // Of another version, it is shown as it is and offers nothing to do to it.
+    if (!isCurrent(plan)) header.append(el("p", "agent-wf-error", versionNote(plan)))
     // Long goals — a whole brief — pushed the board off the screen.
     if (String(plan.goal ?? "").length > GOAL_FOLD) {
       const toggle = el("button", "agent-wf-goal-toggle", goalOpen ? "Show less" : "Show the whole goal")
@@ -383,14 +387,14 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     if (plan.sourcesFolderUrl) {
       // What the research steps kept, filed for people. Shown once there is
       // something in it; the count is the ledger's, which the folder follows.
-      const { sources, findings } = keptCounts(plan)
+      const { sources, findings } = keptCounts(sessionDoc(plan.ledgerUrl))
       if (sources + findings) {
         const kept = el("button", "agent-wf-sources", `Sources (${sources + findings})`)
         kept.dataset.wfOpen = plan.sourcesFolderUrl
         buttons.append(kept)
       }
     }
-    if (plan.status === PLAN.running) {
+    if (plan.status === PLAN.running && isCurrent(plan)) {
       const stop = el("button", null, "Stop workflow")
       stop.dataset.variant = "danger"
       stop.dataset.wfAction = "stop"
@@ -399,7 +403,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     header.append(buttons)
     // Paused for its budget: say so first, with Resume.
     const paused = budgetWaiting(plan, handle.url, handle)
-    if (paused) {
+    if (paused && isCurrent(plan)) {
       const banner = whole(renderBudgetItem({ ...paused, repo }, { showStep: false }))
       banner.classList.add("agent-wf-paused")
       header.append(banner)

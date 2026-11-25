@@ -21,9 +21,33 @@
  *   request.reported     each request, by its id
  *
  * The flags go, and the plan gains `runs` (this is its first) and its version.
+ *
+ * And the research steps' ledger, `plan.sources`, moves out of the plan into
+ * a document of its own, which the plan names as `ledgerUrl`. Making that
+ * document takes a repo, so it is migrate.mjs that makes it, from what
+ * `ledgerFor` says it holds, and hands its URL in here.
  */
 
 import { PLAN, STEP, staleInputs, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "../workflow/plan.js"
+import { initLedger } from "../kernel/scope.js"
+
+const isV1Plan = (doc) => doc?.["@patchwork"]?.type === "agent-workflow" && (doc.schemaVersion ?? 1) < 2
+
+/**
+ * The ledger document a version 1 plan needs, as a plain value: what its
+ * research steps kept, for a plan that has research steps or kept anything.
+ * Null for any other document, and for a plan with no research in it, whose
+ * driver opens a ledger if it ever needs one.
+ */
+export function ledgerFor(doc) {
+  if (!isV1Plan(doc)) return null
+  const sources = doc.sources ?? {}
+  if (!Object.keys(sources).length && !(doc.steps ?? []).some((step) => step.access === "web")) return null
+  const ledger = {}
+  initLedger(ledger)
+  ledger.sources = JSON.parse(JSON.stringify(sources))
+  return ledger
+}
 
 /** What version 1 stored in `staleNoticed` for a step stale as `plan` stands. */
 function oldStaleKey(plan, step) {
@@ -33,10 +57,14 @@ function oldStaleKey(plan, step) {
     .join(",")
 }
 
-/** Returns whether the document was changed. */
-export function migratePlan(doc) {
-  if (doc?.["@patchwork"]?.type !== "agent-workflow") return false
-  if ((doc.schemaVersion ?? 1) >= 2) return false
+/**
+ * Returns whether the document was changed. `ledgerUrl` is the document made
+ * from `ledgerFor(doc)`, which a plan that needs one must be given: its
+ * sources are not dropped.
+ */
+export function migratePlan(doc, { ledgerUrl = null } = {}) {
+  if (!isV1Plan(doc)) return false
+  if (ledgerFor(doc) && !ledgerUrl) throw new Error("This plan's research steps kept things: make its ledger (ledgerFor) and pass its URL.")
 
   if (doc.runs == null) doc.runs = 1
   if (!doc.told) doc.told = {}
@@ -58,7 +86,8 @@ export function migratePlan(doc) {
     if ("reported" in request) delete request.reported
   }
 
-  for (const key of ["asked", "reportedEnd"]) if (key in doc) delete doc[key]
+  for (const key of ["asked", "reportedEnd", "sources"]) if (key in doc) delete doc[key]
+  doc.ledgerUrl = ledgerUrl
   doc.schemaVersion = 2
   return true
 }

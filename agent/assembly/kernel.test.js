@@ -1,15 +1,16 @@
 /**
- * No agent tool can rewrite a session or a plan, or make one.
+ * No agent tool can rewrite a session, a plan or a ledger, or make one.
  *
- * A research step's confinement is written in its session (`scope`) and its
- * plan (`sources`, `steps`), so a full-access session that could edit either
- * could undo it: drop a step's scope, give it tools, grant it things, or add
- * a document of the person's to the ledger. One that could make either could
- * do the same from scratch: a plan whose ledger lists the person's notes, run
- * by the driver as if it were real. Every session's tools get a repo
- * (kernel/kernel-repo.js) whose handles refuse both, however the document is
- * named; the two modules that write them legitimately are handed explicit
- * capabilities instead, and nothing else is.
+ * A research step's confinement is written in its session (`scope`), its
+ * plan (`steps`, `ledgerUrl`) and the plan's ledger (`sources`), so a
+ * full-access session that could edit any of them could undo it: drop a
+ * step's scope, give it tools, grant it things, or add a document of the
+ * person's to the ledger. One that could make one could do the same from
+ * scratch: a plan whose ledger lists the person's notes, run by the driver as
+ * if it were real. Every session's tools get a repo (kernel/kernel-repo.js)
+ * whose handles refuse all three, however the document is named; the modules
+ * that write them legitimately are handed explicit capabilities instead, and
+ * nothing else is.
  */
 import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync } from "node:fs"
@@ -27,6 +28,7 @@ import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { kernelRepo, KERNEL_REFUSAL, KERNEL_TYPES } from "../kernel/kernel-repo.js"
 import { webScope } from "../kernel/scope.js"
+import { withLedger } from "../fixtures/ledger.js"
 import { WORKFLOW_TOOL_IDS } from "../fixtures/tool-ids.js"
 
 await initSubduction()
@@ -47,9 +49,10 @@ function spellings(url) {
 }
 
 /**
- * A research step's session and its plan, in a repo, and an ordinary file.
+ * A research step's session, its plan and the plan's ledger, in a repo, and
+ * an ordinary file.
  *
- * The session and the plan are shaped so that every call below would change
+ * The session, the plan and the ledger are shaped so that every call below would change
  * them if nothing stopped it: each is a file (it has `content`), a folder (it
  * has `docs`), and has every field as a map — at its root and again inside
  * `part`, which the `path` spelling names. The control runs prove it.
@@ -59,13 +62,14 @@ function world() {
   const plain = repo.create({ "@patchwork": { type: "file" }, name: "notes.md", content: "web", meta: { note: "" } })
   const plan = repo.create({})
   plan.change((d) => initPlan(d, { title: "P", goal: "G", steps: [{ id: "r", title: "R", prompt: "p", why: "w", where: "worker", tier: "fast", access: "web" }] }))
+  const ledger = withLedger(repo, plan)
   const session = repo.create({})
   session.change((d) => {
     initSession(d, {})
     d.scope = webScope(plan.url, "r")
     d.workflow = { planUrl: plan.url, stepId: "r" }
   })
-  for (const handle of [plan, session]) {
+  for (const handle of [plan, session, ledger]) {
     handle.change((d) => {
       d.content = "web"
       d.docs = [{ name: "x", type: "file", url: plain.url }]
@@ -73,7 +77,7 @@ function world() {
       d.part = { content: "web", docs: [{ name: "x", type: "file", url: plain.url }], ...Object.fromEntries(FIELDS.map((f) => [f, {}])) }
     })
   }
-  return { repo, plan, session, plain }
+  return { repo, plan, session, ledger, plain }
 }
 
 /** A folder that links `url`, spelled however it is, by the name "target". */
@@ -81,7 +85,7 @@ const folderLinking = (repo, url) => repo.create({ "@patchwork": { type: "folder
 
 const tool = (id) => BUILTIN_TOOLS.find((t) => t.id === id)
 
-describe("from a full session, no tool changes a session or a plan", () => {
+describe("from a full session, no tool changes a session, a plan or a ledger", () => {
   // [tool, how, takes a field?, input for (spelling, field, a folder linking it)]
   // — each the way that tool names a document and a place in it.
   const CALLS = [
@@ -99,7 +103,7 @@ describe("from a full session, no tool changes a session or a plan", () => {
   // where it must be refused by the kernel rule; and, as a control, through
   // the raw repo, where it must succeed and change the document — so a row
   // that fails for some other reason cannot pass here.
-  for (const which of ["session", "plan"]) {
+  for (const which of ["session", "plan", "ledger"]) {
     for (const [id, how, takesField, inputFor] of CALLS) {
       it(`${id} ${how}, on the ${which}, by every spelling${takesField ? ", at every field" : ""}`, async () => {
         for (const form of ["url", "path", "bare", "uuid"]) {
@@ -136,7 +140,7 @@ describe("from a full session, no tool changes a session or a plan", () => {
   })
 })
 
-describe("from a full session, nothing becomes a session or a plan", () => {
+describe("from a full session, nothing becomes a session, a plan or a ledger", () => {
   // A plan made by a tool would pass for a real one: the driver would run its
   // research steps against a ledger the tool wrote. So the rule is judged on
   // what a document is after a write as well as before it.
@@ -201,6 +205,7 @@ describe("from a full session, nothing becomes a session or a plan", () => {
       create2: (k) => k.create2({ "@patchwork": { type } }),
       "clone of a session": (k, w) => k.clone(w.session),
       "clone of a plan": (k, w) => k.clone(w.plan),
+      "clone of a ledger": (k, w) => k.clone(w.ledger),
       import: (k, w) => k.import(A.save(A.change(A.clone(w.plain.doc()), (d) => { d["@patchwork"].type = type }))),
     }
     for (const [how, make] of Object.entries(REPO)) {
@@ -253,7 +258,7 @@ describe("kernelRepo", () => {
     delete: (h) => h.delete(),
   }
 
-  for (const which of ["session", "plan"]) {
+  for (const which of ["session", "plan", "ledger"]) {
     for (const form of ["url", "path", "bare", "uuid", "sub"]) {
       for (const [verb, write] of Object.entries(WRITES)) {
         it(`refuses ${verb} on the ${which} found by its ${form}`, async () => {

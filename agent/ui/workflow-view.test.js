@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { WorkflowView, stages } from "./workflow-view.js"
-import { initPlan, PLAN, STEP } from "../workflow/plan.js"
+import { initPlan, PLAN, STEP, PLAN_VERSION, versionNote } from "../workflow/plan.js"
+import { budgetWaiting } from "../workflow/waiting.js"
+import { renderBudgetItem } from "./waiting.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { _resetDrivers, ensureDriver } from "../workflow/driver.js"
 import { AgentTool } from "./session-view.js"
 import { _reset as resetRunners } from "../runners/registry.js"
 import { makeTurn } from "../session/blocks.js"
+import { withLedger } from "../fixtures/ledger.js"
 
 await initSubduction()
 
@@ -109,14 +112,19 @@ describe("the workflow view", () => {
     expect(element.querySelector(".agent-wf-sources")).toBeNull()
     expect(element.querySelector(".agent-wf-kept")).toBeNull()
 
-    plan.change((d) => {
-      d.sourcesFolderUrl = "automerge:sources-folder"
+    plan.change((d) => { d.sourcesFolderUrl = "automerge:sources-folder" })
+    const ledger = withLedger(repo, plan)
+    await tick()
+    expect(element.querySelector(".agent-wf-sources")).toBeNull()
+    // The counts are the ledger's, and follow it as research steps keep things.
+    ledger.change((d) => {
       d.sources = {
         a: { kind: "source", what: "extract", by: "r" },
         b: { kind: "finding", what: "finding", by: "r" },
         c: { kind: "source", what: null, by: "r" }, // made, not yet written
       }
     })
+    await tick()
     const opened = []
     element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail.url))
     const link = element.querySelector(".agent-wf-sources")
@@ -180,6 +188,41 @@ describe("the workflow view", () => {
     expect(await (async () => { for (let i = 0; i < 50 && plan.doc().steps[0].status !== STEP.running; i++) await tick(); return plan.doc().steps[0] })()).toMatchObject({ status: STEP.running, sessionUrl: session.url })
     expect(String(session.doc().turns.at(-1).blocks[0].text)).toContain("Resumed by the person")
     cleanup()
+  })
+
+  // [the plan's version] → what the view offers to do to it: Stop, Resume on
+  // a failed step, Resume on a spent budget; or, for a plan of another
+  // version, nothing, and why.
+  it.each([
+    [1, false],
+    [PLAN_VERSION, true],
+    [PLAN_VERSION + 1, false],
+  ])("a plan of version %i offers what can be done to it: %s", async (version, offers) => {
+    const { repo, plan } = await planWith([step("a"), step("b")], { status: PLAN.running })
+    plan.change((d) => {
+      Object.assign(d.steps[0], { status: STEP.failed, error: "it broke" })
+      d.usage = { in: 0, out: 0, cost: 30 }
+      d.paused = { reason: "budget", at: 9, spent: 30, limit: 20, stopped: [] }
+      if (version === 1) delete d.schemaVersion
+      else d.schemaVersion = version
+    })
+    const before = plan.heads()
+    const { element, cleanup } = mount(plan, repo)
+    const buttons = [...element.querySelectorAll("button")].map((b) => b.textContent)
+    for (const offered of ["Stop workflow", "Resume", "Resume with $5 more"]) expect(buttons.includes(offered), offered).toBe(offers)
+    const notes = [...element.querySelectorAll(".agent-wf-error")].map((n) => n.textContent)
+    expect(notes.includes(versionNote(plan.doc()))).toBe(!offers)
+    cleanup()
+
+    // Resume offered elsewhere, from what waits on the person: on another
+    // version it changes nothing and says why.
+    const node = renderBudgetItem({ ...budgetWaiting(plan.doc(), plan.url, plan), repo })
+    node.querySelector("button").click()
+    if (offers) expect(plan.doc().paused).toBeNull()
+    else {
+      expect(plan.heads()).toEqual(before)
+      expect(node.textContent).toBe(versionNote(plan.doc()))
+    }
   })
 
   it("cleans up after itself", async () => {

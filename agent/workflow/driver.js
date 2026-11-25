@@ -30,9 +30,9 @@ import { liftBudget } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
-import { PLAN, PLAN_VERSION, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, stepBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "./plan.js"
+import { PLAN, isCurrent, writable, changePlan, PlanVersionError, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "./plan.js"
 import { decide } from "./decide.js"
-import { scopeOf, webScope, sameScope } from "../kernel/scope.js"
+import { scopeOf, webScope, sameScope, initLedger } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
 import { documentIdOf } from "../documents/doc-urls.js"
 import { treeNode, treeEntries, treeLink } from "../documents/tree.js"
@@ -240,7 +240,7 @@ export class WorkflowDriver {
     if (!plan) return false
     if (heldElsewhere(plan, this.runnerUrl, this.live)) return false
     if (this.generation === null || !holdsLease(plan, this.runnerUrl, this.generation)) {
-      this.handle.change((d) => { this.generation = claimLease(d, this.runnerUrl, this.now()).generation })
+      changePlan(this.handle, (d) => { this.generation = claimLease(d, this.runnerUrl, this.now()).generation })
       this.claimedAt = this.now()
     }
     // A claim another page made at the same moment may yet win the merge;
@@ -260,12 +260,12 @@ export class WorkflowDriver {
   beat() {
     if (this.stopped || this.generation === null) return
     if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
-    this.handle.change((d) => { d.lease.at = this.now() })
+    this.write((d) => { d.lease.at = this.now() })
   }
 
   /** Read what is there, decide what to do (decide.js), and do it. */
   async tick() {
-    if (this.stopped || !current(this.handle.doc())) return
+    if (this.stopped || !isCurrent(this.handle.doc())) return
     if (!this.hold()) return this.help()
     const plan = this.handle.doc()
     const observations = plan.status === PLAN.running ? await this.observe(plan) : {}
@@ -334,6 +334,9 @@ export class WorkflowDriver {
         case "run":
           await this.run(action.sessionUrl)
           break
+        case "ledger":
+          await this.openLedger()
+          break
         case "start":
         case "continue": {
           if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
@@ -350,7 +353,7 @@ export class WorkflowDriver {
           this.write((d) => settlePlan(d, action.at))
           break
         case "report":
-          this.report()
+          this.report(await this.ledger())
           break
       }
     }
@@ -363,7 +366,7 @@ export class WorkflowDriver {
    */
   async help() {
     const plan = this.handle.doc()
-    if (this.stopped || !current(plan) || plan.status !== PLAN.running) return
+    if (this.stopped || !isCurrent(plan) || plan.status !== PLAN.running) return
     for (const step of plan.steps ?? []) {
       if (step.status === STEP.running && step.sessionUrl) await this.run(step.sessionUrl)
     }
@@ -416,11 +419,36 @@ export class WorkflowDriver {
   }
 
   /**
+   * Open the plan's ledger, the document its research steps keep into and
+   * read from (kernel/scope.js), and name it in the plan. Under the lease,
+   * and only while the plan names none, so a plan has one ledger whichever
+   * page drives it.
+   */
+  async openLedger() {
+    if (this.handle.doc().ledgerUrl || !holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
+    const ledger = await this.repo.create2()
+    ledger.change(initLedger)
+    this.write((d) => {
+      if (!d.ledgerUrl) d.ledgerUrl = ledger.url
+    })
+  }
+
+  /**
+   * The plan's ledger, watched like a step's session: what a research step
+   * keeps wakes the driver, to file it. Null while the plan has none.
+   */
+  async ledger() {
+    const url = this.handle.doc()?.ledgerUrl
+    return url ? this.session(url) : null
+  }
+
+  /**
    * File what the research steps kept into the plan's Sources folder.
    *
-   * The folder is for people. The ledger, `plan.sources`, is what research
-   * steps may read; the folder grants them nothing, so linking a document into
-   * it by hand changes nothing about what they can reach. A kept source is
+   * The folder is for people. The ledger is what research steps may read; the
+   * folder grants them nothing, so linking a document into it by hand changes
+   * nothing about what they can reach. The ledger is read, never written, and
+   * the plan is written only to mark what was filed. A kept source is
    * linked at the version that was fetched, a finding live, since a person may
    * go on editing it. An entry is filed once it says what it is, and marked
    * in `sourcesFiled`; one already in the folder is only marked, so a driver
@@ -431,7 +459,7 @@ export class WorkflowDriver {
     const plan = this.handle.doc()
     if (!plan.sourcesFolderUrl) return
     const filed = plan.sourcesFiled ?? {}
-    const due = Object.entries(plan.sources ?? {}).filter(([id, e]) => !filed[id] && e?.what != null)
+    const due = Object.entries((await this.ledger())?.doc()?.sources ?? {}).filter(([id, e]) => !filed[id] && e?.what != null)
     if (!due.length || !holdsLease(plan, this.runnerUrl, this.generation)) return
 
     let folder
@@ -467,14 +495,20 @@ export class WorkflowDriver {
     return (handle.doc()?.turns ?? []).some((t) => (t.blocks ?? []).some((b) => b.type === "call" && b.status === "pending"))
   }
 
-  /** Write to the plan, if this driver still holds it. */
+  /** Write to the plan, if this driver still holds it and it is of this version. */
   write(fn) {
     if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return false
-    this.handle.change(fn)
+    try {
+      changePlan(this.handle, fn)
+    } catch (err) {
+      // Changed to another version under a running driver: left alone, as a tick leaves it.
+      if (err instanceof PlanVersionError) return false
+      throw err
+    }
     return true
   }
 
-  /** A step's session handle, watched so its progress wakes the driver. */
+  /** A document the driver reads — a step's session, the plan's ledger — watched so a change to it wakes the driver. */
   async session(url) {
     try {
       const handle = await this.repo.find(url)
@@ -519,8 +553,11 @@ export class WorkflowDriver {
     // or failed now, said once, rather than left to find out by searching.
     if (await this.misplaced(step)) return
 
-    const orchestrator = plan.sessionUrl ? (await this.session(plan.sessionUrl))?.doc() : null
     const web = step.access === "web"
+    // A research step keeps into its plan's ledger, which decide() has the
+    // driver open first; without one its session would refuse to run.
+    if (web && !plan.ledgerUrl) return
+    const orchestrator = plan.sessionUrl ? (await this.session(plan.sessionUrl))?.doc() : null
     const child = await this.repo.create2()
     child.change((d) => {
       initSession(d, {
@@ -536,7 +573,8 @@ export class WorkflowDriver {
           // Workflows do not nest: a step never orchestrates.
           workflows: { enabled: false },
           // What it may spend before it stops and waits on the orchestrator.
-          budget: stepBudget(step),
+          // From here on the session's is the step's budget (plan.js stepBudget).
+          budget: startBudget(step),
         },
       })
       d.workflow = { planUrl: this.handle.url, stepId: step.id, orchestratorUrl: plan.sessionUrl ?? null }
@@ -603,7 +641,7 @@ export class WorkflowDriver {
    * Carry on a reopened step in its own session: it is told why, and handed
    * what it depends on as that now stands (plan.js reopenPrompt). Whatever
    * stopped it is undone — failed, cancelled, out of its budget — since it has
-   * new work: a fresh allowance on top of what it has spent.
+   * new work: as much again as it started with, on top of what it has spent.
    */
   async continueStep(step) {
     const plan = this.handle.doc()
@@ -612,7 +650,7 @@ export class WorkflowDriver {
     const message = reopenPrompt(plan, step)
     handle.change((d) => {
       d.reconnecting = null
-      if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || stopOf(d)?.kind === STOP.budget) liftBudget(d, stepBudget(step))
+      if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || stopOf(d)?.kind === STOP.budget) liftBudget(d, startBudget(step))
       // Its new instructions, which also end whatever stop it was under
       // (session/status.js stopOf).
       d.turns.push(makeTurn("user", [textBlock(message)]))
@@ -648,11 +686,12 @@ export class WorkflowDriver {
   /**
    * Reopen closed steps (plan.js reopenSteps), stopping any running step a
    * cascade reaches, then tick so the ready ones continue. Throws, changing
-   * nothing, if a named step cannot be reopened.
+   * nothing, if a named step cannot be reopened or the plan is of another
+   * version.
    */
   async reopen(ids, opts = {}) {
     let result
-    this.handle.change((d) => {
+    changePlan(this.handle, (d) => {
       result = reopenSteps(d, ids, { now: this.now(), ...opts })
     })
     if (result.interrupt.length) await this.haltSessions(result.interrupt, "reopened: something it is built on changed")
@@ -669,10 +708,11 @@ export class WorkflowDriver {
   /**
    * Cancel steps without ticking: what cancel does, and what a tick does
    * itself when it finds a step that must stop. `reason`, when given, is kept
-   * on each step for the views to show.
+   * on each step for the views to show. Throws, changing nothing, if the plan
+   * is of another version.
    */
   async stopSteps(stepIds = null, reason = null) {
-    const plan = this.handle.doc()
+    const plan = writable(this.handle.doc())
     const targets = plan.steps.filter(
       (s) => (stepIds ? stepIds.includes(s.id) : true) && (s.status === STEP.pending || s.status === STEP.running)
     )
@@ -683,7 +723,7 @@ export class WorkflowDriver {
       targets.filter((s) => s.status === STEP.running && s.sessionUrl).map((s) => s.sessionUrl),
       reason ?? "cancelled by its workflow"
     )
-    this.handle.change((d) => {
+    changePlan(this.handle, (d) => {
       for (const t of targets) cancelStep(d, t.id, { reason, now: this.now() })
       if (!stepIds) stopPlan(d, this.now())
     })
@@ -693,9 +733,10 @@ export class WorkflowDriver {
    * Tell the orchestrator what it has not heard: steps that finished, and
    * questions steps are asking. A step waiting for a permission does not wake
    * it — only the person can grant one, and they see it in the views — but
-   * the news it does get says so.
+   * the news it does get says so. `ledger` is the plan's ledger handle, for
+   * what research steps kept.
    */
-  report() {
+  report(ledger = null) {
     if (!this.notify) return
     // What has been told is recorded in the plan, not in this driver: a reload,
     // or another tab's driver taking over, tells nothing twice.
@@ -713,7 +754,7 @@ export class WorkflowDriver {
       // A driver that has lost the plan leaves the telling to the one holding it.
       if (!recorded) return ""
       if (news.end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
-      return describeProgress(now, news.finished, this.waiting, news.budgets, { stale: news.stale, requests: news.requests })
+      return describeProgress(now, news.finished, this.waiting, news.budgets, { stale: news.stale, requests: news.requests, ledger: ledger?.doc() ?? null })
     })
   }
 }
@@ -732,9 +773,6 @@ function confinedAs(doc, scope) {
     return false
   }
 }
-
-/** A plan this driver reads: of this version. */
-const current = (plan) => !!plan && (plan.schemaVersion ?? 1) === PLAN_VERSION
 
 /**
  * What the orchestrator has not been told, as of `plan`, `waiting` (what
@@ -783,8 +821,8 @@ export function staleSteps(plan) {
   return (plan.steps ?? []).filter((s) => derived.get(s.id) === STATE.stale)
 }
 
-/** The news the orchestrator wakes to. */
-export function describeProgress(plan, news, waiting = [], outOfBudget = [], { stale = [], requests = [] } = {}) {
+/** The news the orchestrator wakes to. `ledger` is the plan's ledger document, when it has one. */
+export function describeProgress(plan, news, waiting = [], outOfBudget = [], { stale = [], requests = [], ledger = null } = {}) {
   const derived = states(plan)
   const count = (state) => [...derived.values()].filter((s) => s === state).length
   const lines = [`Workflow "${plan.title}" (${plan.paused ? "paused" : plan.status === PLAN.running ? "running" : plan.status}).`]
@@ -804,7 +842,7 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = [], { s
       step.status === STEP.done ? step.result ?? "" : step.error ?? "",
       `Session: ${step.sessionUrl}`
     )
-    if (step.access === "web") lines.push(`It ${keptLine(plan, step.id)}`)
+    if (step.access === "web") lines.push(`It ${keptLine(plan, ledger, step.id)}`)
   }
   const title = (id) => plan.steps.find((s) => s.id === id)?.title ?? id
   const money = budgetOf(plan)
@@ -854,7 +892,7 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = [], { s
       `Waiting on the person's permission: ${approvals.map((a) => `${title(a.stepId)} wants to run ${a.tool}`).join("; ")}. Only they can grant it; they see it in your view and the workflow's.`
     )
   }
-  if (Object.keys(plan.sources ?? {}).length) lines.push("", `The research steps have ${keptLine(plan)}`)
+  if (Object.keys(ledger?.sources ?? {}).length) lines.push("", `The research steps have ${keptLine(plan, ledger)}`)
   lines.push(
     "",
     `Steps: ${count(STATE.done)} done, ${count(STATE.running) + count(STATE.needsInput)} running, ${count(STATE.ready) + count(STATE.waiting)} to come, ${count(STATE.failed)} failed, ${count(STATE.blocked)} blocked, ${count(STATE.cancelled)} cancelled${count(STATE.stale) ? `, ${count(STATE.stale)} out of date` : ""}.`
@@ -871,10 +909,10 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = [], { s
   return lines.join("\n")
 }
 
-/** What the research steps have kept: every one of them, or one. */
-export function keptCounts(plan, stepId = null) {
+/** What the research steps have kept, as a plan's ledger document says: every one of them, or one. */
+export function keptCounts(ledger, stepId = null) {
   const counts = { sources: 0, findings: 0 }
-  for (const entry of Object.values(plan?.sources ?? {})) {
+  for (const entry of Object.values(ledger?.sources ?? {})) {
     if (entry?.what == null || (stepId && entry.by !== stepId)) continue
     if (entry.kind === "finding") counts.findings++
     else counts.sources++
@@ -885,8 +923,8 @@ export function keptCounts(plan, stepId = null) {
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
 /** "kept 3 sources and 1 finding — Sources: automerge:…", for the news. */
-function keptLine(plan, stepId = null) {
-  const { sources, findings } = keptCounts(plan, stepId)
+function keptLine(plan, ledger, stepId = null) {
+  const { sources, findings } = keptCounts(ledger, stepId)
   const where = plan.sourcesFolderUrl ? ` — Sources: ${plan.sourcesFolderUrl}` : ""
   return `kept ${plural(sources, "source", "sources")} and ${plural(findings, "finding", "findings")}${where}`
 }

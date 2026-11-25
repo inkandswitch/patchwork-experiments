@@ -9,6 +9,7 @@ import { initPlan } from "../workflow/plan.js"
 import { buildToolset } from "./toolset.js"
 import { NOTES_FOLDER_NAME } from "../knowledge/notes.js"
 import { webScope } from "../kernel/scope.js"
+import { withLedger } from "../fixtures/ledger.js"
 import { AGENT } from "./agent.js"
 import { statusOf } from "../session/status.js"
 
@@ -133,6 +134,7 @@ async function account() {
   const accountDoc = make({ title: "SENTINEL account", rootFolderUrl: root.url })
   const plan = make({})
   plan.change((d) => initPlan(d, { title: "P", goal: "find packs", subject: subject.url, steps: [{ id: "r", title: "R", prompt: "p", why: "w", where: "worker", tier: "fast", access: "web" }] }))
+  const ledger = withLedger(repo, plan)
   const userIds = [note, notes, root, skills, subject, accountDoc].map((h) => h.documentId)
   const ctx = {
     repo,
@@ -144,7 +146,7 @@ async function account() {
     moduleSettingsUrl: accountDoc.url,
     sensitiveDocs: [accountDoc.url],
   }
-  return { repo, plan, subject, ctx, userIds }
+  return { repo, plan, ledger, subject, ctx, userIds }
 }
 
 /** A session in that account: asked something while the person had the subject focused. */
@@ -181,8 +183,8 @@ describe("I5: a research step's model is told nothing of the person's", () => {
     const sent = JSON.stringify(provider.requests)
     expect(provider.requests).toHaveLength(1)
     expect(sent).not.toContain("SENTINEL")
-    // Nor the plan's: from the plan, everything else is reachable.
-    for (const id of [...w.userIds, w.plan.documentId]) expect(sent).not.toContain(id)
+    // Nor the plan's or its ledger's: from the plan, everything else is reachable.
+    for (const id of [...w.userIds, w.plan.documentId, w.ledger.documentId]) expect(sent).not.toContain(id)
     expect(sent).toContain("research packs")
   })
 
@@ -204,7 +206,7 @@ describe("I6: a session runs confined exactly when its scope says so, and its pl
 
   it("a malformed scope does not run, and says why", async () => {
     const w = await account()
-    const { provider, doc } = await runOnce(w, sessionIn(w, { scope: { kind: "web", ledgerUrl: w.plan.url } }))
+    const { provider, doc } = await runOnce(w, sessionIn(w, { scope: { kind: "web", planUrl: w.plan.url } }))
     expect(provider.requests).toHaveLength(0)
     refused(doc, /malformed/)
   })
@@ -221,6 +223,24 @@ describe("I6: a session runs confined exactly when its scope says so, and its pl
     const { provider, doc } = await runOnce(w, sessionIn(w, { scope: webScope(w.plan.url, "nobody") }))
     expect(provider.requests).toHaveLength(0)
     refused(doc, /names no web-only step/)
+  })
+
+  it("a step whose plan has no ledger does not run, and none is made for it", async () => {
+    const w = await account()
+    w.plan.change((d) => { d.ledgerUrl = null })
+    const before = w.plan.heads()
+    const { provider, doc } = await runOnce(w, sessionIn(w, { scope: webScope(w.plan.url, "r"), workflow: { planUrl: w.plan.url, stepId: "r" } }))
+    expect(provider.requests).toHaveLength(0)
+    refused(doc, /no ledger/)
+    expect(w.plan.heads()).toEqual(before)
+  })
+
+  it("a step whose plan names something else as its ledger does not run", async () => {
+    const w = await account()
+    w.plan.change((d) => { d.ledgerUrl = w.subject.url })
+    const { provider, doc } = await runOnce(w, sessionIn(w, { scope: webScope(w.plan.url, "r"), workflow: { planUrl: w.plan.url, stepId: "r" } }))
+    expect(provider.requests).toHaveLength(0)
+    refused(doc, /not one/)
   })
 
   it("and once refused it is not work, so the runner does not try again on every change", async () => {

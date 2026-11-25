@@ -27,6 +27,9 @@
  *                tool describes it; the view has no table to look it up in.
  *   denied calls a call a person refused has a result saying so, as every
  *                other outcome does. Some from long ago had none.
+ *   scope        a research step's names its plan (`planUrl`), through which
+ *                it reaches the plan's ledger; it named the plan as the
+ *                ledger itself (`ledgerUrl`). A side thread's too.
  *
  * A call that was waiting for approval keeps waiting, and can be allowed once
  * or denied. It does not say what it asks (a call block's `ask`, written with
@@ -150,6 +153,11 @@ export function migrateSession(doc, { now = Date.now() } = {}) {
     const group = at > 0 ? GROUPS[key.slice(0, at)] : null
     delete doc.grants[key]
     if (held) doc.grants[group ? `${group}${key.slice(at)}` : key] = true
+  }
+
+  if (doc.scope && typeof doc.scope === "object" && "ledgerUrl" in doc.scope) {
+    doc.scope.planUrl = doc.scope.ledgerUrl
+    delete doc.scope.ledgerUrl
   }
 
   for (const key of ["status", "halted", "stopped"]) if (key in doc) delete doc[key]

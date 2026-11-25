@@ -11,8 +11,7 @@
  *   I1  every document the repo was asked for is in the plan's ledger, and
  *       every read of one was at the heads the ledger recorded for it;
  *   I2  every document that changed was made in that call, is a finding in
- *       the ledger nobody else had edited, or is the plan — and of the plan,
- *       only its ledger;
+ *       the ledger nobody else had edited, or is the ledger; the plan never;
  *   I4  no request went to a refused host, reader target included, and each
  *       refused target was refused: an error, and nothing kept;
  *   and no sentinel is in the result, or in any URL, header or body sent; and
@@ -32,8 +31,9 @@ import { keepSource } from "../tools/sources.js"
 import { findingWrite } from "../tools/findings.js"
 import { sourceRead } from "../tools/read-source.js"
 import { confine, scopedRepo, scopeOf, assertScopeAgrees, webScope, sameScope, NOT_A_SOURCE, EDITED_OUTSIDE, ScopeRefusal } from "../kernel/scope.js"
-import { KERNEL_TYPES, KERNEL_REFUSAL } from "../kernel/kernel-repo.js"
+import { KERNEL_TYPES, KERNEL_REFUSAL, LEDGER_TYPE } from "../kernel/kernel-repo.js"
 import { SCOPED_TOOL_IDS, researchToolset } from "../fixtures/tool-ids.js"
+import { withLedger } from "../fixtures/ledger.js"
 
 await initSubduction()
 
@@ -118,6 +118,7 @@ async function world() {
     })
     Object.assign(d.steps[2], { status: STEP.done, result: `${SENTINEL} full result`, sessionUrl: user.full.url })
   })
+  user.ledger = withLedger(repo, user.plan)
   const research = webScope(user.plan.url, "research")
   user.own = make({})
   user.own.change((d) => {
@@ -136,8 +137,8 @@ async function world() {
   // What the research steps have kept so far: a page and a finding of this
   // step's, and a finding of its sibling's.
   const ledger = {}
-  const mine = scopedRepo(repo, user.plan, { stepId: "research" })
-  const sib = scopedRepo(repo, user.plan, { stepId: "sibling" })
+  const mine = scopedRepo(repo, user.ledger, { stepId: "research" })
+  const sib = scopedRepo(repo, user.ledger, { stepId: "sibling" })
   ledger.source = (await keepSource({ repo: mine }, { source: "https://web.test/kept", role: "extract", content: "# Kept\nfrom the web" })).ref.url
   ledger.finding = (await findingWrite.execute({ text: "mine" }, { repo: mine, scope: { stepId: "research" } })).doc.url
   ledger.sibling = (await findingWrite.execute({ text: "theirs" }, { repo: sib, scope: { stepId: "sibling" } })).doc.url
@@ -181,7 +182,7 @@ async function world() {
   // heads it was read at and the heads the ledger had for it at that moment.
   const asked = []
   const reads = []
-  const ledgerHeads = (id) => [...(user.plan.doc().sources?.[id]?.heads ?? [])]
+  const ledgerHeads = (id) => [...(user.ledger.doc().sources?.[id]?.heads ?? [])]
   const observed = (handle, id) => ({
     url: handle.url,
     documentId: handle.documentId,
@@ -307,12 +308,11 @@ describe("whatever a research step is handed, it reaches only the web and its wo
   /** Each finding in the ledger: its live heads, and the heads the ledger recorded. */
   const findings = () =>
     new Map(
-      Object.entries(w.user.plan.doc().sources)
+      Object.entries(w.user.ledger.doc().sources)
         .filter(([, e]) => e.kind === "finding")
         .map(([id, e]) => [id, { live: w.repo.handles[id].heads(), recorded: [...e.heads] }])
     )
-  const withoutLedger = (plan) => JSON.stringify({ ...plan, sources: null })
-  const userIds = () => new Set(Object.values(w.user).filter((h) => h !== w.user.plan).map((h) => h.documentId))
+  const userIds = () => new Set(Object.values(w.user).filter((h) => h !== w.user.ledger).map((h) => h.documentId))
 
   it("covers every tool it has", () => {
     expect(tools.map((t) => t.id).sort()).toEqual(Object.keys(FIELDS).sort())
@@ -326,8 +326,8 @@ describe("whatever a research step is handed, it reaches only the web and its wo
           const label = `${tool.id}.${field} = ${name}`
           const before = heads()
           const findingsBefore = findings()
-          const entriesBefore = Object.keys(w.user.plan.doc().sources).length
-          const planBefore = withoutLedger(w.user.plan.doc())
+          const entriesBefore = Object.keys(w.user.ledger.doc().sources).length
+          const planBefore = w.user.plan.heads()
           w.asked.length = 0
           w.reads.length = 0
           w.sent.length = 0
@@ -339,31 +339,31 @@ describe("whatever a research step is handed, it reaches only the web and its wo
             repo: { ...w.ctx.repo, create2: async () => { const h = await create2(); made.add(h.documentId); return h } },
           })
           calls++
-          const ledger = w.user.plan.doc().sources
+          const ledger = w.user.ledger.doc().sources
 
           // I1: asked for nothing outside the ledger, and read each thing at
           // the heads the ledger had for it — or, for what this call itself
-          // wrote, at the heads it wrote. The plan is read too, but only by
-          // the scoped repo, for its ledger: that is how it knows the rest.
+          // wrote, at the heads it wrote. The ledger is read too, but only by
+          // the scoped repo: that is how it knows the rest.
           const after = heads()
           for (const id of w.asked) expect(Object.keys(ledger), `${label} read ${id}`).toContain(id)
-          for (const read of w.reads.filter((r) => r.id !== w.user.plan.documentId)) {
+          for (const read of w.reads.filter((r) => r.id !== w.user.ledger.documentId)) {
             const atLedger = sameHeads(read.heads, read.ledger)
             const ownWrite = before.get(read.id) !== after.get(read.id) && sameHeads(read.heads, ledger[read.id]?.heads)
             expect(atLedger || ownWrite, `${label} read ${read.id} at heads the ledger did not record`).toBe(true)
           }
 
           // I2: changed only what it made, a finding nobody else had edited,
-          // or the plan's ledger.
+          // or the ledger — never the plan.
           for (const [id, h] of after) {
             if (before.get(id) === h) continue
-            const allowed = made.has(id) || ledger[id]?.kind === "finding" || id === w.user.plan.documentId
+            const allowed = made.has(id) || ledger[id]?.kind === "finding" || id === w.user.ledger.documentId
             expect(allowed, `${label} changed ${id}`).toBe(true)
             expect(userIds().has(id), `${label} changed a document of the person's`).toBe(false)
             const was = findingsBefore.get(id)
             if (was) expect(sameHeads(was.live, was.recorded), `${label} wrote over a finding someone else had edited`).toBe(true)
           }
-          expect(withoutLedger(w.user.plan.doc()), `${label} changed the plan beyond its ledger`).toBe(planBefore)
+          expect(w.user.plan.heads(), `${label} wrote the plan`).toEqual(planBefore)
 
           // I4: no request reached a refused host, the reader's target
           // included; and a fetching tool handed a refused target refused it,
@@ -429,8 +429,8 @@ describe("web_fetch answers from the ledger", () => {
 
   it.each(cases)("ledger holds %s, fresh %s → answered from the ledger %s", async (holds, fresh, answered) => {
     const w = await world()
-    const mine = scopedRepo(w.repo, w.user.plan, { stepId: "research" })
-    const sib = scopedRepo(w.repo, w.user.plan, { stepId: "sibling" })
+    const mine = scopedRepo(w.repo, w.user.ledger, { stepId: "research" })
+    const sib = scopedRepo(w.repo, w.user.ledger, { stepId: "sibling" })
     const url = await HOLDS[holds].keep(w, mine, sib)
     w.sent.length = 0
     w.asked.length = 0
@@ -443,7 +443,7 @@ describe("web_fetch answers from the ledger", () => {
       expect(outcome.output.startsWith("Kept "), outcome.output).toBe(true)
       expect(w.sent.map((r) => r.url)).toEqual([`${READER}${URL_}`])
     }
-    const ledger = Object.keys(w.user.plan.doc().sources)
+    const ledger = Object.keys(w.user.ledger.doc().sources)
     for (const id of w.asked) expect(ledger).toContain(id)
   })
 
@@ -511,7 +511,7 @@ describe("scopedRepo", () => {
     const w = await world()
     await findingWrite.execute({ text: "second thought", finding: w.ledger.finding }, w.ctx)
     const finding = await w.repo.find(w.ledger.finding)
-    expect([...w.user.plan.doc().sources[finding.documentId].heads]).toEqual(finding.heads())
+    expect([...w.user.ledger.doc().sources[finding.documentId].heads]).toEqual(finding.heads())
     expect(await sourceRead.execute({ source: w.ledger.finding }, w.ctx)).toContain("mine\n\nsecond thought")
   })
 
@@ -519,7 +519,7 @@ describe("scopedRepo", () => {
     const w = await world()
     let made = null
     const raw = { find: (url) => w.repo.find(url), create2: async () => (made = await w.repo.create2()) }
-    const ledger = { doc: () => w.user.plan.doc(), change: () => { throw new Error("crashed") } }
+    const ledger = { doc: () => w.user.ledger.doc(), change: () => { throw new Error("crashed") } }
     await expect(scopedRepo(raw, ledger, { stepId: "research" }).create2()).rejects.toThrow("crashed")
     expect(made).not.toBeNull()
     await expect(w.ctx.repo.find(made.url)).rejects.toThrow(NOT_A_SOURCE)
@@ -531,11 +531,11 @@ describe("scopedRepo", () => {
     const w = await world()
     const handle = what === "a finding" ? await w.ctx.repo.find(w.ledger.finding) : await w.ctx.repo.create2()
     const raw = await w.repo.find(handle.url)
-    const [before, entry] = [raw.heads(), { ...w.user.plan.doc().sources[handle.documentId] }]
+    const [before, entry] = [raw.heads(), { ...w.user.ledger.doc().sources[handle.documentId] }]
     expect(() => handle.change((d) => { d["@patchwork"] = { type } })).toThrow(KERNEL_REFUSAL)
     expect(raw.heads()).toEqual(before)
     expect(raw.doc()["@patchwork"]?.type).not.toBe(type)
-    expect({ ...w.user.plan.doc().sources[handle.documentId] }).toEqual(entry)
+    expect({ ...w.user.ledger.doc().sources[handle.documentId] }).toEqual(entry)
   })
 
   it("decides kind by the first description, so a source cannot later turn into a writable finding", async () => {
@@ -543,7 +543,7 @@ describe("scopedRepo", () => {
     const made = await w.ctx.repo.create2()
     made.change((d) => { d.role = "extract"; d.name = "x" })
     made.change((d) => { d.role = "finding" })
-    expect(w.user.plan.doc().sources[made.documentId].kind).toBe("source")
+    expect(w.user.ledger.doc().sources[made.documentId].kind).toBe("source")
     expect((await w.ctx.repo.find(made.url)).change).toBeUndefined()
   })
 })
@@ -553,22 +553,24 @@ describe("scopeOf", () => {
   it.each([
     ["absent", {}, null],
     ["null", { scope: null }, null],
-    ["well formed", { scope: { kind: "web", ledgerUrl: plan, stepId: "r" } }, { kind: "web", ledgerUrl: plan, stepId: "r" }],
+    ["well formed", { scope: { kind: "web", planUrl: plan, stepId: "r" } }, { kind: "web", planUrl: plan, stepId: "r" }],
   ])("%s → %j", (_name, doc, expected) => {
     expect(scopeOf(doc)).toEqual(expected)
   })
 
   // Every way of being almost right is wrong, and fails closed.
   it.each([
-    ["another kind", { kind: "full", ledgerUrl: plan, stepId: "r" }],
-    ["no kind", { ledgerUrl: plan, stepId: "r" }],
-    ["no ledger", { kind: "web", stepId: "r" }],
-    ["a ledger that is not a URL", { kind: "web", ledgerUrl: "plan", stepId: "r" }],
-    ["a ledger at some heads", { kind: "web", ledgerUrl: `${plan}#${encodeHeads(["00".repeat(32)])[0]}`, stepId: "r" }],
-    ["a part of a ledger", { kind: "web", ledgerUrl: `${plan}/steps`, stepId: "r" }],
-    ["no step", { kind: "web", ledgerUrl: plan }],
-    ["an empty step", { kind: "web", ledgerUrl: plan, stepId: "" }],
-    ["a field too many", { kind: "web", ledgerUrl: plan, stepId: "r", extra: 1 }],
+    ["another kind", { kind: "full", planUrl: plan, stepId: "r" }],
+    ["no kind", { planUrl: plan, stepId: "r" }],
+    ["no plan", { kind: "web", stepId: "r" }],
+    ["a plan that is not a URL", { kind: "web", planUrl: "plan", stepId: "r" }],
+    ["a plan at some heads", { kind: "web", planUrl: `${plan}#${encodeHeads(["00".repeat(32)])[0]}`, stepId: "r" }],
+    ["a part of a plan", { kind: "web", planUrl: `${plan}/steps`, stepId: "r" }],
+    ["no step", { kind: "web", planUrl: plan }],
+    ["an empty step", { kind: "web", planUrl: plan, stepId: "" }],
+    ["a field too many", { kind: "web", planUrl: plan, stepId: "r", extra: 1 }],
+    ["a ledger named beside the plan", { kind: "web", planUrl: plan, stepId: "r", ledgerUrl: plan }],
+    ["a ledger named instead of the plan", { kind: "web", ledgerUrl: plan, stepId: "r" }],
     ["not an object", "web"],
   ])("%s throws", (_name, scope) => {
     expect(() => scopeOf({ scope })).toThrow(ScopeRefusal)
@@ -601,9 +603,54 @@ describe("assertScopeAgrees", () => {
   it("compares scopes field by field", () => {
     const a = webScope("automerge:x", "r")
     expect(sameScope(a, { ...a })).toBe(true)
-    for (const field of ["kind", "ledgerUrl", "stepId"]) expect(sameScope(a, { ...a, [field]: "other" })).toBe(false)
+    for (const field of ["kind", "planUrl", "stepId"]) expect(sameScope(a, { ...a, [field]: "other" })).toBe(false)
     expect(sameScope(null, null)).toBe(true)
     expect(sameScope(a, null)).toBe(false)
+  })
+})
+
+describe("a research step's ledger is the one its plan names, or the step does not run", () => {
+  // [what the plan names as its ledger] → confined, or refused. Refused is a
+  // ScopeRefusal, never "no scope", and nothing is made up in its place: no
+  // ledger is made, and the plan is not written.
+  const at = (url, suffix) => `${url}${suffix}`
+  const CASES = [
+    ["its ledger", (w) => w.user.ledger.url, true],
+    ["nothing", () => null, false],
+    ["no field at all", () => undefined, false],
+    ["something that is not a URL", () => "ledger", false],
+    ["its ledger at some heads", (w) => at(w.user.ledger.url, `#${encodeHeads(["00".repeat(32)])[0]}`), false],
+    ["a part of its ledger", (w) => at(w.user.ledger.url, "/sources"), false],
+    ["the plan itself", (w) => w.user.plan.url, false],
+    ["the step's own session", (w) => w.user.own.url, false],
+    ["a document of the person's", (w) => w.user.private.url, false],
+    ["the Sources folder", (w) => w.user.folder.url, false],
+    ["a document nobody has", () => generateAutomergeUrl(), false],
+  ]
+
+  it.each(CASES)("names %s → runs %s", async (_name, ledgerUrl, runs) => {
+    const w = await world()
+    const value = ledgerUrl(w)
+    w.user.plan.change((d) => {
+      if (value === undefined) delete d.ledgerUrl
+      else d.ledgerUrl = value
+    })
+    const ledgers = () => Object.values(w.repo.handles).filter((h) => h.doc()?.["@patchwork"]?.type === LEDGER_TYPE).length
+    const [planBefore, ledgersBefore] = [w.user.plan.heads(), ledgers()]
+    const attempt = confine(w.full, webScope(w.user.plan.url, "research"))
+    if (runs) {
+      const ctx = await attempt
+      expect(ctx.repo.sources().map((e) => e.url).sort()).toEqual(w.ctx.repo.sources().map((e) => e.url).sort())
+    } else {
+      await expect(attempt).rejects.toThrow(ScopeRefusal)
+    }
+    expect(w.user.plan.heads()).toEqual(planBefore)
+    expect(ledgers()).toBe(ledgersBefore)
+  })
+
+  it("and a scope whose plan is not a plan finds no ledger", async () => {
+    const w = await world()
+    await expect(confine(w.full, webScope(w.user.subject.url, "research"))).rejects.toThrow(ScopeRefusal)
   })
 })
 
@@ -617,7 +664,7 @@ describe("finding_write", () => {
     expect({ name: doc.name, role: doc.role, content: doc.content, by: { ...doc.by } }).toEqual({ name: "Pack cells.md", role: "finding", content: "LFP, 280 Ah.", by: { stepId: "research" } })
     // Every spelling of one source is one citation, by its plain URL.
     expect([...doc.cites]).toEqual([w.ledger.source])
-    expect(w.user.plan.doc().sources[idOf(url)]).toMatchObject({ kind: "finding", what: "finding", by: "research", name: "Pack cells.md" })
+    expect(w.user.ledger.doc().sources[idOf(url)]).toMatchObject({ kind: "finding", what: "finding", by: "research", name: "Pack cells.md" })
   })
 
   it("adds to a finding, or rewrites it", async () => {
@@ -631,9 +678,9 @@ describe("finding_write", () => {
 
   it("refuses to cite what is not in the ledger, and writes nothing", async () => {
     const w = await world()
-    const before = Object.keys(w.user.plan.doc().sources).length
+    const before = Object.keys(w.user.ledger.doc().sources).length
     await expect(findingWrite.execute({ text: "x", cites: [w.user.private.url] }, w.ctx)).rejects.toThrow(/not one of this workflow's sources/)
-    expect(Object.keys(w.user.plan.doc().sources)).toHaveLength(before)
+    expect(Object.keys(w.user.ledger.doc().sources)).toHaveLength(before)
   })
 
   it("is for research steps only", async () => {
@@ -649,7 +696,7 @@ describe("finding_write", () => {
 
   it("refuses a quote that is not in its source, one too short to check, and a source that is not the workflow's — and writes nothing", async () => {
     const w = await world()
-    const before = Object.keys(w.user.plan.doc().sources).length
+    const before = Object.keys(w.user.ledger.doc().sources).length
     const cases = [
       [`[page](${w.ledger.source} "Kept from the sea")`, /"Kept from the sea" is not in .*quote its words exactly/],
       [`[page](${w.ledger.source} "the web")`, /too short/],
@@ -658,6 +705,6 @@ describe("finding_write", () => {
     for (const [text, refusal] of cases) {
       await expect(findingWrite.execute({ text: `Claim ${text}.` }, w.ctx)).rejects.toThrow(refusal)
     }
-    expect(Object.keys(w.user.plan.doc().sources)).toHaveLength(before)
+    expect(Object.keys(w.user.ledger.doc().sources)).toHaveLength(before)
   })
 })

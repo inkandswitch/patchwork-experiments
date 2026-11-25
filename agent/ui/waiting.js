@@ -14,7 +14,7 @@ import { grantOffers } from "../session/grants.js"
 import { handleStore } from "../kernel/store.js"
 import { describeCall } from "./calls.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
-import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
+import { STEP, RESUME_AMOUNTS, resumePlan, changePlan } from "../workflow/plan.js"
 import { liftBudget, liftAmounts } from "../session/usage.js"
 import { drivePlanHere } from "../runners/tab.js"
 
@@ -195,7 +195,13 @@ export function renderBudgetItem(item, { onOpen = null, showStep = true } = {}) 
     if (amount === RESUME_AMOUNTS[0]) resume.dataset.variant = "primary"
     resume.addEventListener("click", async (event) => {
       event.preventDefault()
-      item.planHandle?.change((d) => resumePlan(d, amount))
+      try {
+        if (item.planHandle) changePlan(item.planHandle, (d) => resumePlan(d, amount))
+      } catch (err) {
+        // A plan of another version is left alone (workflow/plan.js writable), and says why.
+        node.replaceChildren(el("p", null, err?.message ?? String(err)))
+        return
+      }
       // A driver must be running for anything to start: the plan view starts
       // one, and so does this, for a person who never opened it.
       if (item.repo && item.planUrl) {

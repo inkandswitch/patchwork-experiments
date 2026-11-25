@@ -210,8 +210,11 @@ describe("a workflow, end to end", () => {
     expect(await until(() => plan.doc().status === PLAN.done)).toBe(true)
     expect(plan.doc().steps.map((s) => s.result)).toEqual(["Found the cells.", "Both kept things mention it."])
 
-    // The ledger has the page and the finding, both the first step's...
-    const ledger = Object.values(plan.doc().sources)
+    // The plan's ledger, its one document of what research steps kept, has
+    // the page and the finding, both the first step's...
+    expect("sources" in plan.doc()).toBe(false)
+    expect(Object.values(repo.handles).filter((h) => h.doc()?.["@patchwork"]?.type === "agent-ledger").map((h) => h.url)).toEqual([plan.doc().ledgerUrl])
+    const ledger = Object.values((await repo.find(plan.doc().ledgerUrl)).doc().sources)
     expect(ledger.map((e) => [e.kind, e.what, e.by]).sort()).toEqual([["finding", "finding", "gather"], ["source", "extract", "gather"]])
     const finding = (await repo.find(ledger.find((e) => e.kind === "finding").url)).doc()
     expect(finding.cites).toEqual([ledger.find((e) => e.kind === "source").url])

@@ -14,8 +14,9 @@ export const AgentWorkflowDatatype = {
     doc.limits = { ...DEFAULT_LIMITS }
     doc.usage = { in: 0, out: 0 }
     doc.steps = []
-    // The research steps' ledger, and where it is filed for people (plan.js).
-    doc.sources = {}
+    // The research steps' ledger, opened by the driver when one is needed,
+    // and where it is filed for people (WORKFLOW.md).
+    doc.ledgerUrl = null
     doc.sourcesFolderUrl = null
     doc.sourcesFiled = {}
   },

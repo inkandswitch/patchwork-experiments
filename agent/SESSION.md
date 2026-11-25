@@ -25,7 +25,7 @@ Automerge cannot hold `undefined`, so an optional field is present or `null`.
 | `watches` | `{ [id]: watch }`, once `doc_watch` makes one |
 | `tools` | `{ enabled?, disabled?, where? }`: which tools it leaves out, and `where: "worker"` for a step placed on one |
 | `workflow` | `{ planUrl, stepId, orchestratorUrl }` when it is a step of a plan |
-| `scope` | `{ kind: "web", ledgerUrl, stepId }` when it is a research step (`kernel/scope.js`) |
+| `scope` | `{ kind: "web", planUrl, stepId }` when it is a research step: the step it is, whose plan names the ledger it reads and keeps into (`kernel/scope.js`) |
 | `aside`, `asides` | a side thread's pointer to the step it was copied from, and a step's list of its side threads |
 
 There is no `status` field. See *Status* below.

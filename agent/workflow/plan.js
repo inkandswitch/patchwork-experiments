@@ -51,9 +51,18 @@ export const DEFAULT_LIMITS = { parallel: 3, hostParallel: 1, steps: 24, cost: 2
  */
 export const DEFAULT_STEP_BUDGETS = { deep: 5, standard: 2, fast: 0.5 }
 
-/** A step's budget in dollars: its own, or its tier's. */
-export function stepBudget(step) {
+/** What a step's session starts with, in dollars: the step's own budget, or its tier's. */
+export function startBudget(step) {
   return step?.budget ?? DEFAULT_STEP_BUDGETS[step?.tier] ?? DEFAULT_STEP_BUDGETS.standard
+}
+
+/**
+ * A step's budget in dollars. Once it has a session it is the session's
+ * (`config.budget`): that is what the session spends against and what is
+ * raised, by the orchestrator or a person. Until then, what it will start with.
+ */
+export function stepBudget(step, session = null) {
+  return session?.config?.budget ?? startBudget(step)
 }
 
 /** What a person can add to a spent budget in one click, in dollars. */
@@ -97,6 +106,39 @@ export const PLAN = { running: "running", done: "done", stopped: "stopped" }
 /** The shape of plan this code reads and writes. One without a version is version 1. */
 export const PLAN_VERSION = 2
 
+/** Is `plan` of the version this code reads and writes? */
+export function isCurrent(plan) {
+  return !!plan && (plan.schemaVersion ?? 1) === PLAN_VERSION
+}
+
+/** Why a plan of another version is left alone, in words a person can act on. */
+export function versionNote(plan) {
+  const version = plan?.schemaVersion ?? 1
+  return version < PLAN_VERSION
+    ? `This workflow was made by an earlier version of the agent and has not been brought up to date, so nothing here changes it. Bring it up to date with the agent's migration (scripts/migrate.mjs in the agent package), and it can run again.`
+    : `This workflow was made by a newer version of the agent than the one installed here, so nothing here changes it. Update the agent package to work on it.`
+}
+
+/** A writer refused a plan of another version. Its message is versionNote's. */
+export class PlanVersionError extends Error {}
+
+/**
+ * The gate every writer of a plan goes through — the driver, the workflow
+ * tools, the views: `plan` if this code may write it, or a PlanVersionError,
+ * so a plan of another version is left as it is. A writer that changes other
+ * documents too asks before it changes any of them.
+ */
+export function writable(plan) {
+  if (!isCurrent(plan)) throw new PlanVersionError(versionNote(plan))
+  return plan
+}
+
+/** Change a plan through its handle, past the gate (`writable`). */
+export function changePlan(handle, fn) {
+  writable(handle.doc())
+  return handle.change(fn)
+}
+
 const TERMINAL = new Set([STEP.done, STEP.failed, STEP.cancelled])
 /** Derived states that need nothing more from the driver: over, or waiting on the orchestrator. */
 const SETTLED = new Set([STATE.done, STATE.stale, STATE.failed, STATE.cancelled, STATE.blocked])
@@ -119,7 +161,8 @@ export function initPlan(doc, { title, goal, subject = null, sessionUrl = null, 
   doc.usage = { in: 0, out: 0 }
   doc.createdAt = Date.now()
   doc.steps = steps.map(newStep)
-  doc.sources = {}
+  // Opened by the driver before the first research step starts (driver.js).
+  doc.ledgerUrl = null
   doc.sourcesFolderUrl = sourcesFolderUrl
   doc.sourcesFiled = {}
   doc.told = {}
@@ -629,9 +672,10 @@ export const EDITABLE = ["title", "prompt", "why", "after", "where", "tier", "bu
 
 /**
  * Why these edits cannot be made; empty when they can. A step may be edited
- * while pending; one reopened and waiting to continue takes only `after` and
- * `budget`, since its session already has its prompt (say what changed in the
- * reopen note instead). The whole graph is checked as it would be after.
+ * while pending; one reopened and waiting to continue takes only `after`,
+ * since its session already has its prompt (say what changed in the reopen
+ * note instead) and its budget (raise it with workflow_budget). The whole
+ * graph is checked as it would be after.
  */
 export function editErrors(plan, edits) {
   if (!Array.isArray(edits) || !edits.length) return ["Give at least one edit."]
@@ -653,6 +697,7 @@ export function editErrors(plan, edits) {
     if (step.sessionUrl) {
       const fixed = fields.filter((k) => !["after", "budget"].includes(k))
       if (fixed.length) errors.push(`'${edit.id}' was reopened and continues its own session, which already has its ${fixed.join(", ")}; put what changed in the reopen note.`)
+      if (fields.includes("budget")) errors.push(`'${edit.id}' was reopened and continues its own session, whose budget is the session's; give it more with workflow_budget.`)
     }
     const merged = { ...step, ...Object.fromEntries(fields.filter((k) => EDITABLE.includes(k)).map((k) => [k, edit[k]])) }
     errors.push(...stepFieldErrors(merged, `'${edit.id}'`))

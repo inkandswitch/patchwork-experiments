@@ -72,7 +72,7 @@ in a document.
 
 | | |
 |---|---|
-| `ctx.repo` | the repo. For a full-access session it refuses to change a session or a plan, or to make a document into one (`kernel/kernel-repo.js`), and records each write as the session's own |
+| `ctx.repo` | the repo. For a full-access session it refuses to change a session, a plan or a research ledger, or to make a document into one (`kernel/kernel-repo.js`), and records each write as the session's own |
 | `ctx.subject` | the document the session is about |
 | `ctx.session` | `{ url, doc() }`: this conversation, to read |
 | `ctx.signal` | aborted when the person stops the run |
@@ -100,10 +100,11 @@ nothing global: a `"worker"` tool that touches `document`, the platform's
 session's `scope` and nothing else (`kernel/scope.js` `confine`): `repo`,
 `fetchImpl`, `search`, `direct`, `events`, `signal`, `scope`, and per call
 `recall` and `hasTool`. Its `repo` is `{ find, create2, sources }` and opens
-only what the plan's ledger of kept things holds, at the heads recorded
-there. It has no subject, no account, no session and no page, so nothing of
-the person's can reach what it fetches. Declaring `scoped: true` is a
-package's word that its tool works through that context alone.
+only what its plan's ledger of kept things holds, at the heads recorded
+there; what it makes goes into that ledger ([WORKFLOW.md](WORKFLOW.md),
+*Research steps*). It has no subject, no account, no session and no page, so
+nothing of the person's can reach what it fetches. Declaring `scoped: true`
+is a package's word that its tool works through that context alone.
 
 ## What a tool returns
 
