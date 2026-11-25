@@ -172,7 +172,8 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
     // A worker has no DOM. Host-tier calls park here and are picked up by a
     // tab — the page's own tools, and plugins that cannot load here.
     canRun: (where) => where === "worker",
-    system,
+    // The page may send its own; the agent's otherwise.
+    system: system ?? AGENT.system,
     onEvent: (event) => broadcast(sessionUrl, { type: "event", sessionUrl, event }),
   })
 

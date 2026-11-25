@@ -8,7 +8,7 @@
 
 import { restoreWatches } from "../tools/watch.js"
 import { BUILTIN_TOOLS } from "./builtin.js"
-import { PROMPT_SECTIONS, AFTER_CALL } from "./prompt.js"
+import { DEFAULT_SYSTEM, PROMPT_SECTIONS, AFTER_CALL } from "./prompt.js"
 
 /** Listen again to every watch the session has, reporting first what changed while no runner was (tools/watch.js). */
 async function listenAgain({ repo, events, store, report }) {
@@ -19,6 +19,7 @@ async function listenAgain({ repo, events, store, report }) {
 
 export const AGENT = Object.freeze({
   builtins: BUILTIN_TOOLS,
+  system: DEFAULT_SYSTEM,
   sections: PROMPT_SECTIONS,
   afterCall: AFTER_CALL,
   onStart: Object.freeze([listenAgain]),

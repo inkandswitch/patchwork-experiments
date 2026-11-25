@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { toSchema } from "../kernel/tool.js"
 import { BUILTIN_SKILLS } from "../knowledge/builtin-skills.js"
-import { DEFAULT_SYSTEM } from "../kernel/loop.js"
+import { DEFAULT_SYSTEM } from "../assembly/prompt.js"
 
 /**
  * The tool descriptions ARE the documentation.
@@ -133,5 +133,6 @@ describe("the system prompt", () => {
     // It is sent on every request. Guidance that belongs in a skill should be
     // in a skill, which is read once and on purpose.
     expect(DEFAULT_SYSTEM.length).toBeLessThan(3000)
+    expect(DEFAULT_SYSTEM).toMatch(/ask with ask_user — never as a question at the end of a message/)
   })
 })

@@ -12,7 +12,6 @@ import { makeTurn, textBlock } from "../session/blocks.js"
 import { SessionRunner } from "../kernel/runner.js"
 import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
-import { DEFAULT_SYSTEM } from "../kernel/loop.js"
 
 describe("prompt caching", () => {
   it("asks Claude to cache the conversation, and leaves other models to cache on their own", () => {
@@ -108,9 +107,5 @@ describe("the registry, listed", () => {
 describe("defaults", () => {
   it("leave room for a long tool call", () => {
     expect(DEFAULT_CONFIG.params.maxTokens).toBe(16000)
-  })
-
-  it("tell the agent to ask with ask_user, not at the end of a message", () => {
-    expect(DEFAULT_SYSTEM).toMatch(/ask with ask_user — never as a question at the end of a message/)
   })
 })

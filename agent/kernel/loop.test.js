@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { run, decide, say, OUTCOME, DEFAULT_SYSTEM } from "./loop.js"
+import { run, decide, say, OUTCOME } from "./loop.js"
 import { needsWork } from "./runner.js"
 import { memoryStore } from "./store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
@@ -83,10 +83,10 @@ describe("a plain text turn", () => {
     const store = session({ turns: [makeTurn("user", [textBlock("hello")])] })
     const provider = makeMock([[{ type: "text", delta: "ok" }]])
 
-    await run({ store, provider, toolset: fakeToolset([]), runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset: fakeToolset([]), system: "You are terse.", runnerUrl: "runner-a", generation: 1, flushMs: 0 })
 
     const request = provider.requests[0]
-    expect(request.system).toBe(DEFAULT_SYSTEM)
+    expect(request.system).toBe("You are terse.")
     expect(request.messages[0]).toEqual({ role: "user", content: [{ type: "text", text: "hello" }] })
   })
 
