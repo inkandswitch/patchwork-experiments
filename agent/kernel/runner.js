@@ -125,10 +125,14 @@ export class SessionRunner {
     this.store = opts.store
     this.runnerUrl = opts.runnerUrl ?? `runner-${Math.random().toString(36).slice(2, 10)}`
     // The context as the runner's host built it, with the repo as it is. Tools
-    // never see this object: they get `fullCtx` or a confined one (prepare).
+    // never see this object: they get `fullCtx`, made from it here, or a
+    // confined one (prepare).
     this.ctx = opts.ctx ?? {}
     this.fullCtx = fullContext(this.ctx, this.store)
     this.privileged = null
+    // How this host runs a workflow step's session, for the workflow tools
+    // alone (`privileges`). Not part of the context: no other tool sees it.
+    this.startStepSession = opts.startStepSession ?? null
     // The built-in tools: what every toolset here starts from, and the only
     // tools handed what they say they need (`privileges`).
     this.builtins = opts.builtins ?? []
@@ -412,8 +416,8 @@ export class SessionRunner {
         sections: this.sections,
         afterCall: this.afterCall,
         // The session's own URL keeps its prompt cache on one provider. It is
-        // the runner's to give, since a research step's context has no URL in it.
-        sessionUrl: this.ctx.sessionUrl ?? null,
+        // the store's, and no context has it.
+        sessionUrl: this.store.url ?? null,
         runnerUrl: this.runnerUrl,
         generation,
         signal: this.controller.signal,
@@ -485,7 +489,7 @@ export class SessionRunner {
     await assertScopeAgrees(doc, scope, this.ctx.repo)
     const prepared = scope
       ? { toolset: scopedToolset(doc, { builtins: this.builtins, plugins: await this.plugins() }), ctx: await confine(this.ctx, scope), privileged: () => null }
-      : { toolset: await this.buildToolset(doc), ctx: this.fullCtx, privileged: (this.privileged ??= privileges(this.ctx, this.store, { builtins: this.builtins, plugins: () => this.plugins() })) }
+      : { toolset: await this.buildToolset(doc), ctx: this.fullCtx, privileged: (this.privileged ??= privileges(this.ctx, this.store, { builtins: this.builtins, plugins: () => this.plugins(), startSession: this.startStepSession })) }
     return prepared
   }
 
@@ -540,47 +544,46 @@ export class SessionRunner {
 }
 
 /**
- * A full-access session's tool context: the host's own context, read live —
- * a view swaps `element` while a run is under way, and notes cache their
- * folder on it — with three fields put over it.
+ * A full-access session's tool context: the host's own, with two fields put
+ * over it.
  *
- *   repo              kernelRepo: works as the repo does, except that nothing
- *                     it hands out can change or make a session or a plan
- *   session           this conversation's own document, to read, through the
- *                     store
- *   startStepSession  absent: starting a step's session is a workflow tool's
- *                     capability (`privileges`), not every tool's
+ *   repo     kernelRepo: works as the repo does, except that nothing it hands
+ *            out can change or make a document only the runtime writes
+ *            (kernel-repo.js KERNEL_TYPES)
+ *   session  this conversation's own document, to read, through the store
  *
- * Every tool of the session gets this, plugins included, so nothing in it
- * writes a session or a plan.
+ * It is a value: made once, frozen, and the same for every tool of the
+ * session, plugins included, so nothing in it writes a session or a plan and
+ * no tool can leave anything on it for another. What a host changes under a
+ * run — where a page tool mounts, whether fetches go direct — it defines as a
+ * getter, and each call reads it afresh (kernel/loop.js spreads the context
+ * into the call's own).
  */
 export function fullContext(base, store) {
-  const overrides = {
-    // Every write through it is noted as this session's (kernel/own-changes.js), so
-    // a watch can tell the session's own edits from everyone else's.
-    repo: kernelRepo(base.repo, { known: () => knownUrls(store), record: (hashes) => rememberOwn(store?.url, hashes) }),
-    session: { url: store?.url ?? null, doc: () => store.doc() },
-    startStepSession: undefined,
-  }
-  return new Proxy(base, {
-    get: (target, key) => (key in overrides ? overrides[key] : Reflect.get(target, key)),
-    has: (target, key) => key in overrides || key in target,
-    set: (target, key, value) => (key in overrides ? false : Reflect.set(target, key, value)),
-    ownKeys: (target) => [...new Set([...Reflect.ownKeys(target), ...Reflect.ownKeys(overrides)])],
-    getOwnPropertyDescriptor: (target, key) =>
-      key in overrides
-        ? { value: overrides[key], enumerable: true, configurable: true, writable: false }
-        : Reflect.getOwnPropertyDescriptor(target, key),
-  })
+  return Object.freeze(
+    Object.defineProperties(
+      {},
+      {
+        ...Object.getOwnPropertyDescriptors(base),
+        ...Object.getOwnPropertyDescriptors({
+          // Every write through it is noted as this session's (kernel/own-changes.js),
+          // so a watch can tell the session's own edits from everyone else's.
+          repo: kernelRepo(base.repo, { known: () => knownUrls(store), record: (hashes) => rememberOwn(store?.url, hashes) }),
+          session: { url: store?.url ?? null, doc: () => store.doc() },
+        }),
+      }
+    )
+  )
 }
 
 /**
  * What only some of a full session's tools get beyond its context: each
  * thing a tool `needs` (session/capabilities.js) that stands for a value.
  *
- *   workflows      the real repo, the step-session starter and every tool
- *                  this runner has, for the tools that write plans and drive
- *                  step sessions
+ *   workflows      the real repo, how this host runs a step's session
+ *                  (`startSession`, a runner option: it is never in the
+ *                  context) and every tool this runner has, for the tools
+ *                  that write plans and drive step sessions
  *   session.write  this conversation's own document, writable
  *   watches        only the `watches` map in it, writable
  *
@@ -588,13 +591,13 @@ export function fullContext(base, store) {
  * built-in's id, and a tool that is not one of them gets nothing whatever it
  * declares.
  */
-export function privileges(base, store, { builtins = [], plugins = async () => [] } = {}) {
+export function privileges(base, store, { builtins = [], plugins = async () => [], startSession = null } = {}) {
   const own = new Set(builtins)
   const values = {
     workflows: {
       workflows: {
         repo: base.repo ?? null,
-        startSession: base.startStepSession ?? null,
+        startSession,
         tools: async () => ({ builtins, plugins: await plugins() }),
       },
     },

@@ -429,7 +429,8 @@ describe("the legitimate writers", () => {
       builtins: BUILTIN_TOOLS,
       store,
       runnerUrl: "runner-test",
-      ctx: { repo: w.repo, startStepSession, element: "a" },
+      ctx: { repo: w.repo, element: "a" },
+      startStepSession,
       buildToolset: (d) => buildToolset(d, { registry }),
       getProvider: async () => null,
       canRun: () => true,
@@ -509,12 +510,22 @@ describe("the legitimate writers", () => {
     expect(store.doc().title).toBe("Named")
   })
 
-  it("the host's own context is read live beneath them", () => {
+  it("the context is a value: frozen, with what the host changes under a run read by a getter", () => {
     const w = world()
-    const base = { repo: w.repo, element: "a" }
+    const view = { element: "a" }
+    const base = { repo: w.repo, fixed: 1, get element() { return view.element } }
     const ctx = fullContext(base, memoryStore({}))
-    // Read live: a view swapping the element mid-run is seen by the next call.
-    base.element = "b"
+    // A view swapping the element mid-run is seen by the next call, which
+    // spreads the context into its own (kernel/loop.js).
+    view.element = "b"
     expect({ ...ctx }.element).toBe("b")
+    // No tool can leave anything on it for another, or change what is there.
+    expect(Object.isFrozen(ctx)).toBe(true)
+    expect(() => { "use strict"; ctx.cache = new Set() }).toThrow(TypeError)
+    expect(() => { "use strict"; ctx.fixed = 2 }).toThrow(TypeError)
+    expect(Object.keys(ctx).sort()).toEqual(["element", "fixed", "repo", "session"])
+    // Nor reach the host's own object through it.
+    expect(ctx.repo).not.toBe(w.repo)
+    expect(base.session).toBeUndefined()
   })
 })

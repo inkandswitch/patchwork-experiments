@@ -107,7 +107,7 @@ async function claim(sessionUrl) {
     // The runner decides from the session document what of this the tools
     // get (kernel/runner.js, kernel/scope.js): a research step gets none of the subject and
     // a repo that opens only its workflow's ledger.
-    ctx: { ...baseCtx, sessionUrl, subject: doc.subject ?? null, events: createEvents(store) },
+    ctx: { ...baseCtx, subject: doc.subject ?? null, events: createEvents(store) },
     // No pluginTools: node has no plugin registry, so sessions here get the
     // built-ins alone.
     getProvider: async () => getProvider(doc.config?.providerId ?? MODEL_PROVIDER),

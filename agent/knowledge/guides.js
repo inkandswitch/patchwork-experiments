@@ -374,16 +374,12 @@ export async function describeChanges(ctx, guide, { heads = null, file = null, m
 const labelOf = (ref, guide, name) => guide?.name ?? ref.name ?? name ?? ref.url
 
 /**
- * The notice to put after a tool result when a session first uses a package:
- * its guide (with where it stands) or, with none, the nudge to write one.
- * Once per package per session — `ctx.guidesShown` remembers. Null when there
- * is nothing to say. Never throws.
+ * The notice to put after a tool result when a session uses a package: its
+ * guide (with where it stands) or, with none, the nudge to write one. Null
+ * when there is nothing to say. Never throws.
  */
 export async function guideNotice(ctx, ref, { name = null, body = true } = {}) {
   if (!ref?.url || !ctx?.repo) return null
-  const shown = (ctx.guidesShown ??= new Set())
-  if (shown.has(ref.url)) return null
-  shown.add(ref.url)
   try {
     const guide = await guideFor(ctx, ref.url)
     if (!guide) {
@@ -430,17 +426,30 @@ export async function packagesOfCall(ctx, tool, facts) {
   return found
 }
 
-/** Everything to append to a call's result, or null. */
-export async function surfaceGuides(ctx, call, tool, outcome) {
+/**
+ * What to add to a call's result, or null: the guide of each package the call
+ * is about, once per package per session.
+ *
+ * Which packages have had theirs is in the session, not in anything this
+ * keeps: the result a notice is added to says so (`facts.guides`, their
+ * package URLs), and `earlier` is the facts of every result so far. So a
+ * session passed from one runner to another is not told twice.
+ */
+export async function surfaceGuides(ctx, call, tool, outcome, earlier = []) {
   if (!ctx?.repo || !ctx.rootFolderUrl) return null
   try {
+    const had = new Set(earlier.flatMap((facts) => facts?.guides ?? []))
     const packages = await packagesOfCall(ctx, tool, outcome?.facts ?? null)
     const notices = []
+    const guides = []
     for (const { ref, name, body } of packages) {
+      if (had.has(ref.url)) continue
       const notice = await guideNotice(ctx, ref, { name, body })
-      if (notice) notices.push(notice)
+      if (!notice) continue
+      notices.push(notice)
+      guides.push(ref.url)
     }
-    return notices.length ? notices.join("\n\n") : null
+    return notices.length ? { text: notices.join("\n\n"), facts: { guides } } : null
   } catch {
     return null
   }

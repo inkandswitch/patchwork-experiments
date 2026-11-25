@@ -10,9 +10,11 @@ const fakeRunner = (running = false) => {
   return r
 }
 
+/** As a tab's runner is made (runners/tab.js): its context reads the element, and `mount` says where it is. */
 const make = (sessionUrl, runner = fakeRunner()) => {
-  const ctx = { element: null }
-  return ensureRunner(sessionUrl, async () => ({ runner, ctx }))
+  const view = { element: null }
+  const ctx = { get element() { return view.element } }
+  return ensureRunner(sessionUrl, async () => ({ runner, ctx, mount: (to) => { view.element = to } }))
 }
 
 beforeEach(_reset)

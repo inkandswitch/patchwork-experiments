@@ -65,7 +65,10 @@ so a declaration cannot change one unnoticed.
 
 ## What a tool is handed
 
-`execute(input, ctx)`. `ctx` is the runner's context for the session:
+`execute(input, ctx)`. `ctx` is the runner's context for the session. It is
+a value: frozen, and the same for every tool of the session. A tool keeps
+nothing on it; what a later call must know goes in the result's `facts`, or
+in a document.
 
 | | |
 |---|---|
@@ -81,7 +84,13 @@ so a declaration cannot change one unnoticed.
 | `ctx.rootFolderUrl`, `ctx.sensitiveDocs` | the account's root folder, and the documents that always ask |
 | `ctx.automerge`, `ctx.splice` | the host's automerge, initialised. Take it from here: a worker cannot resolve a bare `@automerge/automerge` |
 | `ctx.plugins` | the plugin registry module. In the SharedWorker, a mirror of the page's |
-| `ctx.element`, `ctx.getMount` | in a tab only: where a host tool mounts, and the views `view_mount` opened |
+| `ctx.packageOf(type, id)` | the package a plugin came from: `{ url, heads, name }` |
+| `ctx.skillsFolderUrl`, `ctx.skillRegistry`, `ctx.notesFolderUrl` | where the person's skills and notes are kept, and the skills packages bring |
+| `ctx.element`, `ctx.getMount`, `ctx.pageFetch` | in a tab only: where a host tool mounts, the views `view_mount` opened, and a fetch of the page's own origin for `plugin_source` |
+| `ctx.reader` | the reader service a fetch goes through when it is not direct, where a host replaces the default |
+| `ctx.importModule`, `ctx.importMap`, `ctx.packageBaseUrl`, `ctx.workerPreparation`, `ctx.runBundle`, `ctx.runInWorker` | how this host loads and runs a package's code, where it replaces the platform's way (`package_build`, `package_test`, `tool_check`) |
+| `ctx.scope` | in a research step only: `{ stepId }` |
+| `ctx.workflows`, `ctx.watches` | only for a tool that declares the need (above) |
 
 A node runner has no `plugins`, `automerge` module or page. A tool reaches
 nothing global: a `"worker"` tool that touches `document`, the platform's

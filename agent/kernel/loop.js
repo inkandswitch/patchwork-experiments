@@ -22,7 +22,7 @@ import { askOf, covered, needsApproval, ownGrant } from "../session/grants.js"
 import { addUsage, costOf } from "../session/usage.js"
 import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTokens, DENIED_RESULT } from "../session/request.js"
 import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock, noticeBlock } from "../session/blocks.js"
-import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult, move } from "../session/calls.js"
+import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult, move, results as landed } from "../session/calls.js"
 import { recordArtifact } from "../session/made.js"
 import { holdsLease } from "../session/lease.js"
 import { markReconnecting } from "../session/recovery.js"
@@ -487,7 +487,7 @@ async function streamTurn(opts) {
     model: store.doc().config?.model,
     params: { ...(store.doc().config?.params ?? {}), ...(opts.paramsOverride ?? {}) },
     capabilities: opts.capabilities ?? null,
-    cacheKey: sessionKey(opts.sessionUrl ?? opts.ctx?.sessionUrl),
+    cacheKey: sessionKey(opts.sessionUrl),
     key: opts.key ?? null,
     signal,
     onRetry: (info) => {
@@ -737,10 +737,16 @@ async function executeCalls(opts) {
 
     // What a result has added to it before it is written, the result being
     // where the agent is looking: the first use of a package brings its usage
-    // guide along (knowledge/guides.js surfaceGuides).
+    // guide along (knowledge/guides.js surfaceGuides). A hook answers as a
+    // tool does, with text or `{ text, facts }`, and is shown what the
+    // session's results have said so far, this turn's included: that is all
+    // the memory it has, so it holds for whichever runner takes the next call.
     for (const after of opts.afterCall ?? []) {
-      const more = await after(ctx, call, tool, outcome)
-      if (more) outcome.output = `${outcome.output}\n\n${more}`
+      const earlier = [...landed(store.doc()), ...results].map((result) => result.facts).filter(Boolean)
+      const more = await after(ctx, call, tool, outcome, earlier)
+      const text = typeof more === "string" ? more : more?.text
+      if (text) outcome.output = `${outcome.output}\n\n${text}`
+      if (more?.facts) outcome.facts = { ...outcome.facts, ...JSON.parse(JSON.stringify(more.facts)) }
     }
 
     // Only while the claim is still this run's: a runner that took the session

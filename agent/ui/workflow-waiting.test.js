@@ -192,11 +192,12 @@ describe("end to end: a step asks, the orchestrator answers", () => {
   it("the question wakes the orchestrator, its answer reaches the step, and the step finishes with it", async () => {
     const repo = new Repo({ network: [] })
     const runners = []
-    const run = (handle, provider, toolset, ctx = {}) => {
+    const run = (handle, provider, toolset, ctx = {}, startStepSession = null) => {
       const runner = new SessionRunner({
         builtins: BUILTIN_TOOLS,
         store: handleStore(handle, A.splice),
-        ctx: { ...ctx, sessionUrl: handle.url },
+        ctx,
+        startStepSession,
         buildToolset: toolset,
         getProvider: async () => provider,
         getKey: () => "test",
@@ -240,7 +241,7 @@ describe("end to end: a step asks, the orchestrator answers", () => {
     ])
     const events = createEvents(handleStore(orchestrator, A.splice), { policy: { settleMs: 10, maxDelayMs: 50, minGapMs: 0 } })
     stops.push(() => events.stop())
-    run(orchestrator, provider, (doc) => buildToolset(doc, { skipPlugins: true }), { repo, events, startStepSession: stepSession })
+    run(orchestrator, provider, (doc) => buildToolset(doc, { skipPlugins: true }), { repo, events }, stepSession)
 
     const planUrl = async () => orchestrator.doc().made?.find((m) => m.kind === "agent-workflow")?.url
     expect(await until(planUrl)).toBe(true)

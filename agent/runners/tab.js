@@ -74,23 +74,23 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
     const events = createEvents(liveStore)
 
     const fetchImpl = tabFetch()
-    // Mutable on purpose: `element` is swapped as views come and go, so
-    // host-tier tools always mount into something actually on the page, and
-    // becomes null when nothing is watching.
+    // Where page tools mount. It is swapped as views come and go (`mount`,
+    // below), so they always mount into something actually on the page, and
+    // is null when nothing is watching. The context reads it by a getter: it
+    // is the one thing here that changes under a run.
+    const view = { element }
     const ctx = {
       repo,
       subject,
-      // The session's own URL, which keeps its prompt cache on one provider.
-      // Tools reach the session through the runner (ctx.session, ctx.recall),
-      // never by this.
-      sessionUrl: handle.url,
       splice,
       // For plugin tools: the page's registry and its automerge, initialised
       // (TOOLS.md).
       plugins,
       automerge,
       events,
-      element,
+      get element() {
+        return view.element
+      },
       ...accountContext(),
       skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
       skillRegistry,
@@ -108,9 +108,6 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       // web_search: Brave with the account's key, read afresh so a key saved
       // in settings works at once. Tools get the search, never the key.
       search: braveSearch({ key: () => readKey(SEARCH_KEY_ID), fetchImpl }),
-      // How a workflow's steps are run from here: in this tab's runners. Only
-      // the workflow tools are handed it (kernel/runner.js privileges).
-      startStepSession: stepStarter(repo),
       // The page's own origin, for plugin_source alone (see pageOriginFetch).
       pageFetch: pageOriginFetch({ fetch: (url, init) => fetch(url, init), origin: location.origin }),
     }
@@ -121,6 +118,9 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
       store: liveStore,
       runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
       ctx,
+      // How a workflow's steps are run from here: in this tab's runners. Only
+      // the workflow tools are handed it (kernel/runner.js privileges).
+      startStepSession: stepStarter(repo),
       // This tab's plugin registry. A research step is offered only the
       // plugins in it that declare `scoped: true` (kernel/toolset.js).
       pluginTools: () => loadPluginTools(),
@@ -148,6 +148,10 @@ export async function startTabRunner(handle, { repo, subject = null, element = n
     return {
       runner: made,
       ctx,
+      events,
+      mount: (to) => {
+        view.element = to
+      },
       dispose: () => {
         handle.off("change", onDocChange)
         events.stop()
@@ -183,7 +187,7 @@ export async function drivePlanHere(planUrl, { repo, events = null, startSession
     const plan = (await repo.find(planUrl)).doc()
     if (plan?.sessionUrl) {
       const entry = await startTabRunner(await repo.find(plan.sessionUrl), { repo, subject: plan.subject ?? null })
-      channels = entry?.ctx?.events?.forTool("workflow") ?? null
+      channels = entry?.events?.forTool("workflow") ?? null
     }
   }
   return ensureDriver(planUrl, {

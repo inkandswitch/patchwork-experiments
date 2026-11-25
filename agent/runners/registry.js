@@ -83,7 +83,7 @@ export async function ensureRunner(sessionUrl, create) {
     return live.get(sessionUrl)
   }
 
-  const entry = { runner: null, ctx: null, viewers: new Set(), listeners: new Set(), idleSince: null, version: CODE_VERSION }
+  const entry = { runner: null, ctx: null, events: null, mount: null, viewers: new Set(), listeners: new Set(), idleSince: null, version: CODE_VERSION }
   entry.creating = (async () => {
     const made = await create((event) => {
       // Fan an event out to every attached view.
@@ -96,7 +96,11 @@ export async function ensureRunner(sessionUrl, create) {
       }
     })
     entry.runner = made?.runner ?? made
+    // The host's context as built, to look at; its events; and how a view
+    // says where page tools mount.
     entry.ctx = made?.ctx ?? null
+    entry.events = made?.events ?? null
+    entry.mount = made?.mount ?? null
     // Anything the runner owns for its whole life — notably its subscription to
     // the session document — is released here, not by whichever view happened
     // to create it.
@@ -126,7 +130,7 @@ export function attachView(sessionUrl, { element = null, onEvent = null } = {}) 
   entry.viewers.add(token)
   entry.idleSince = null
   if (onEvent) entry.listeners.add(onEvent)
-  if (element && entry.ctx) entry.ctx.element = element
+  if (element) entry.mount?.(element)
 
   return () => {
     entry.viewers.delete(token)
@@ -135,7 +139,7 @@ export function attachView(sessionUrl, { element = null, onEvent = null } = {}) 
     if (entry.viewers.size === 0) {
       // Nothing is watching. Keep working, but stop pointing host-tier tools at
       // an element that has been removed from the page.
-      if (entry.ctx) entry.ctx.element = null
+      entry.mount?.(null)
       entry.idleSince = Date.now()
     }
   }
@@ -160,7 +164,7 @@ export function stopRunner(sessionUrl) {
 }
 
 /** A session a tool can still wake is listening, not idle (kernel/events.js). */
-const listening = (entry) => entry.ctx?.events?.listening() > 0
+const listening = (entry) => entry.events?.listening() > 0
 
 /**
  * Reap runners nobody is watching and which have nothing left to do.

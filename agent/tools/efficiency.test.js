@@ -37,15 +37,17 @@ describe("prompt caching", () => {
     initSession(doc, {})
     doc.turns.push(makeTurn("user", [textBlock("hi")]))
     const provider = makeMock([[{ type: "text", delta: "hello" }]])
+    // The key is the store's URL: the session's own, which no context holds.
+    const store = memoryStore(doc)
     const runner = new SessionRunner({
-      store: memoryStore(doc),
-      ctx: { sessionUrl: "automerge:abc" },
+      store,
       buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
       getProvider: async () => provider,
       canRun: () => true,
     })
     await runner.tick()
-    expect(provider.requests[0].cacheKey).toBe(sessionKey("automerge:abc"))
+    expect(store.url).toBeTruthy()
+    expect(provider.requests[0].cacheKey).toBe(sessionKey(store.url))
   })
 
   it("counts what came from the cache", () => {

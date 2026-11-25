@@ -32,12 +32,13 @@ const STEPS = [
 ]
 
 /** Run a session on a scripted model: it answers from what its first message says. */
-function runSession(handle, { provider, toolset = { tools: [], schemas: [], get: () => null }, ctx = {} }) {
+function runSession(handle, { provider, toolset = { tools: [], schemas: [], get: () => null }, ctx = {}, startStepSession = null }) {
   const store = handleStore(handle, A.splice)
   const runner = new SessionRunner({
     builtins: BUILTIN_TOOLS,
     store,
-    ctx: { ...ctx, sessionUrl: handle.url },
+    ctx,
+    startStepSession,
     buildToolset: async (doc) => (typeof toolset === "function" ? toolset(doc) : toolset),
     getProvider: async () => provider,
     getKey: () => "test",
@@ -105,7 +106,8 @@ describe("a workflow, end to end", () => {
     const { runner } = runSession(orchestrator, {
       provider,
       toolset: (doc) => buildToolset(doc, { skipPlugins: true }),
-      ctx: { repo, subject: "automerge:subject", events, startStepSession: stepSession },
+      ctx: { repo, subject: "automerge:subject", events },
+      startStepSession: stepSession,
     })
     runners.push(runner)
 
@@ -197,7 +199,8 @@ describe("a workflow, end to end", () => {
     const { runner } = runSession(orchestrator, {
       provider,
       toolset: (doc) => buildToolset(doc, { skipPlugins: true }),
-      ctx: { repo, events, startStepSession: stepSession },
+      ctx: { repo, events },
+      startStepSession: stepSession,
     })
     runners.push(runner)
 

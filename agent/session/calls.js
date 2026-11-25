@@ -19,6 +19,13 @@ export function findResult(doc, callId) {
   return null
 }
 
+/** Every result that has landed, in document order. */
+export function results(doc) {
+  const out = []
+  for (const found of eachBlock(doc)) if (found.block.type === "result") out.push(found.block)
+  return out
+}
+
 /** Calls that have no result yet, in document order. */
 export function unansweredCalls(doc) {
   const out = []

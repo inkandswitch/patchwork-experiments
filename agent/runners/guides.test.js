@@ -155,15 +155,22 @@ describe("surfacing", () => {
     const ctx = w.ctx()
     const tool = { id: "pkg_do", name: "Pkg do", source: w.pkg.url }
     const first = await surfaceGuides(ctx, call("pkg_do"), tool, did())
-    expect(first).toMatch(/Usage guide for Pkg[\s\S]*Up to date[\s\S]*pass `thing`/)
-    expect(await surfaceGuides(ctx, call("pkg_do"), tool, did())).toBeNull()
+    expect(first.text).toMatch(/Usage guide for Pkg[\s\S]*Up to date[\s\S]*pass `thing`/)
+    // Which package has had its guide is said on the result it was added to.
+    // That is all the memory there is: given the session's earlier results,
+    // any runner knows; given none, it is the first use again.
+    expect(first.facts).toEqual({ guides: [w.pkg.url] })
+    Object.freeze(ctx) // nothing is kept on the context: a write to it now would throw
+    expect(await surfaceGuides(ctx, call("pkg_do"), tool, did(), [{ mountId: "m" }, first.facts])).toBeNull()
+    expect(await surfaceGuides(w.ctx(), call("pkg_do"), tool, did(), [first.facts])).toBeNull()
+    expect(await surfaceGuides(ctx, call("pkg_do"), tool, did(), [])).toEqual(first)
   })
 
   it("flags a stale guide on surfacing, and says what to do", async () => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
     w.index.change((d) => { d.content = "new\n" })
-    const text = await surfaceGuides(w.ctx(), call("pkg_do"), { id: "pkg_do", source: w.pkg.url }, did())
+    const { text } = await surfaceGuides(w.ctx(), call("pkg_do"), { id: "pkg_do", source: w.pkg.url }, did())
     expect(text).toMatch(/May be out of date/)
     expect(text).toMatch(/guide_changes/)
   })
@@ -177,7 +184,8 @@ describe("surfacing", () => {
   ])("a call brings the guide of %s", async (name, facts) => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    const text = await surfaceGuides(w.ctx(), call("anything"), null, did(facts(w)))
+    const { text, facts: said } = await surfaceGuides(w.ctx(), call("anything"), null, did(facts(w)))
+    expect(said).toEqual({ guides: [w.pkg.url] })
     expect(text.match(/Usage guide for Pkg/g)).toHaveLength(1)
     expect(text).toContain("pass `thing`")
   })
@@ -186,21 +194,28 @@ describe("surfacing", () => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
     const ctx = { ...w.ctx(), packageOf: async (type, id) => (type === "patchwork:datatype" && id === "pkgdata" ? { url: w.pkg.url, heads: null } : null) }
-    expect(await surfaceGuides(ctx, call("anything"), null, did({ plugins: [{ type: "patchwork:datatype", id: "pkgdata" }] }))).toMatch(/Usage guide for/)
+    expect((await surfaceGuides(ctx, call("anything"), null, did({ plugins: [{ type: "patchwork:datatype", id: "pkgdata" }] }))).text).toMatch(/Usage guide for/)
   })
 
   it("plugins it only listed are pointed to, without their guides' text", async () => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    const text = await surfaceGuides(w.ctx(), call("anything"), null, did({ listed: [TOOL, { type: "patchwork:tool", id: "unknown" }] }))
+    const { text } = await surfaceGuides(w.ctx(), call("anything"), null, did({ listed: [TOOL, { type: "patchwork:tool", id: "unknown" }] }))
     expect(text).toMatch(/Usage guide for Pkg/)
     expect(text).not.toContain("pass `thing`")
   })
 
   it("with no guide, a use says so and offers to write one; a listing says nothing", async () => {
     const w = await world()
-    expect(await surfaceGuides(w.ctx(), call("anything"), null, did({ plugins: [TOOL] }))).toMatch(/No usage guide for Pkg tool yet[\s\S]*guide_write/)
+    const use = await surfaceGuides(w.ctx(), call("anything"), null, did({ plugins: [TOOL] }))
+    expect(use.text).toMatch(/No usage guide for Pkg tool yet[\s\S]*guide_write/)
+    expect(use.facts).toEqual({ guides: [w.pkg.url] })
     expect(await surfaceGuides(w.ctx(), call("anything"), null, did({ listed: [TOOL] }))).toBeNull()
+    // Having nothing to say about a package does not use up its turn: a use
+    // after such a listing is still told there is no guide.
+    expect((await surfaceGuides(w.ctx(), call("anything"), null, did({ plugins: [TOOL] }), [{ listed: [TOOL] }])).text).toMatch(/No usage guide for Pkg tool yet/)
+    // Being told once does.
+    expect(await surfaceGuides(w.ctx(), call("anything"), null, did({ plugins: [TOOL] }), [use.facts])).toBeNull()
   })
 
   it("a call that says nothing, or an account with no notes place, surfaces nothing", async () => {
@@ -263,7 +278,7 @@ describe("surfacing in the shared worker", () => {
   ])("a call that used %s brings the guide in a worker session", async (name, plugin) => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    expect(await surfaceGuides(await workerCtx(w), call("anything"), null, { output: "ok", facts: { plugins: [plugin] } })).toMatch(/Usage guide for Pkg/)
+    expect((await surfaceGuides(await workerCtx(w), call("anything"), null, { output: "ok", facts: { plugins: [plugin] } })).text).toMatch(/Usage guide for Pkg/)
   })
 
   it("guide_read finds a package by plugin id in the worker", async () => {

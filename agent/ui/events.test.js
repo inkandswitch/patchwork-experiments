@@ -214,7 +214,7 @@ describe("a listening session is not reaped", () => {
   it("keeps an unwatched runner alive while a channel is open", async () => {
     const events = createEvents(idleSession(), time)
     const channel = events.forTool("t").open("k")
-    await ensureRunner("automerge:listening", async () => ({ runner: { running: false, stop() {} }, ctx: { events } }))
+    await ensureRunner("automerge:listening", async () => ({ runner: { running: false, stop() {} }, events }))
     attachView("automerge:listening")() // a view came and went
     expect(reapIdle({ now: Date.now() + 60 * 60 * 1000 })).toEqual([])
     expect(liveCount()).toBe(1)

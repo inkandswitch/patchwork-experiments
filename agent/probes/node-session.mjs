@@ -77,7 +77,7 @@ const runner = new SessionRunner({
   store,
   runnerUrl: `node-probe-${process.pid}`,
   ctx: {
-    repo, splice, subject: subject.url, sessionUrl: session.url, direct: true,
+    repo, splice, subject: subject.url, direct: true,
     fetchImpl: nodeFetch({ sync: SYNC }),
   },
   getProvider: async () => getProvider("openrouter"),

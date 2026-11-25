@@ -591,6 +591,28 @@ describe("what a call did, as data", () => {
     expect(JSON.stringify(provider.requests[1].messages)).not.toContain("mount_ab12")
   })
 
+  it("a hook is shown what earlier results said, this turn's included, and adds to what this one says", async () => {
+    const store = session()
+    const provider = makeMock([
+      [{ type: "call", id: "c1", name: "doc_read", input: {} }, { type: "call", id: "c2", name: "doc_read", input: {} }],
+      [{ type: "call", id: "c3", name: "doc_read", input: {} }],
+      [{ type: "text", delta: "done" }],
+    ])
+    const seen = []
+    // Tells once, and its only memory of having told is what results say.
+    const after = async (ctx, call, tool, outcome, earlier) => {
+      seen.push(earlier)
+      return earlier.some((facts) => facts.told) ? null : { text: "Told once.", facts: { told: true } }
+    }
+    const tool = readTool(async () => ({ text: "read", facts: { n: 1 } }))
+    await run({ store, provider, toolset: fakeToolset([tool]), afterCall: [after], runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+
+    const results = transcript(store).filter((b) => b.type === "result")
+    expect(results.map((r) => String(r.output))).toEqual(["read\n\nTold once.", "read", "read"])
+    expect(results.map((r) => r.facts)).toEqual([{ n: 1, told: true }, { n: 1 }, { n: 1 }])
+    expect(seen).toEqual([[], [{ n: 1, told: true }], [{ n: 1, told: true }, { n: 1 }]])
+  })
+
   it("is null for a tool that says nothing, a plain string, or a failure", async () => {
     for (const impl of [async () => "text", async () => ({ text: "text" }), async () => { throw new Error("no") }]) {
       const { store } = await once(readTool(impl))

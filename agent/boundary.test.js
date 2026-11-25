@@ -151,4 +151,22 @@ describe("the contract pages", () => {
   it.each(["README.md", "SESSION.md", "TOOLS.md", "WORKFLOW.md"])("%s is at most 200 lines", (page) => {
     expect(readFileSync(join(ROOT, page), "utf8").split("\n").length).toBeLessThanOrEqual(200)
   })
+
+  // The context is what a tool is handed, so a field one reads is part of
+  // the contract whether or not anyone wrote it down. Here it must be.
+  it("TOOLS.md names every field of the context that a tool reads, and no tool writes one", () => {
+    const page = readFileSync(join(ROOT, "TOOLS.md"), "utf8")
+    const named = new Set([...page.matchAll(/`ctx\.([A-Za-z]+)/g)].map((m) => m[1]))
+    const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+    const read = new Map()
+    const written = []
+    for (const file of sources().filter((f) => ["tools", "knowledge", "workflow"].includes(layerOf(f)))) {
+      const text = code(readFileSync(join(ROOT, file), "utf8"))
+      for (const m of text.matchAll(/\bctx\??\.([A-Za-z_]+)/g)) read.set(m[1], file)
+      for (const m of text.matchAll(/\bctx\??\.[A-Za-z_]+\s*(?:=(?!=)|\?\?=|\|\|=|\+=)/g)) written.push(`${file}: ${m[0]}`)
+    }
+    expect(read.size).toBeGreaterThan(20)
+    expect([...read].filter(([field]) => !named.has(field)).map(([field, file]) => `ctx.${field} (${file})`)).toEqual([])
+    expect(written).toEqual([])
+  })
 })

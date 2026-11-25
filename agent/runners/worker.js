@@ -145,7 +145,6 @@ async function startSession({ sessionUrl, subject, key, providerId, system, acco
     ctx: {
       repo,
       subject,
-      sessionUrl,
       splice: automerge?.splice ?? null,
       events: createEvents(store),
       rootFolderUrl: account?.rootFolderUrl ?? null,
