@@ -255,7 +255,7 @@ try {
         const { getRegistry } = await import("@inkandswitch/patchwork-plugins")
         out.registered = (getRegistry("agent:tool").all() ?? []).map((p) => p.id)
 
-        const tools = await import(base + "assembly/toolset.js")
+        const tools = { ...(await import(base + "assembly/toolset.js")), ...(await import(base + "kernel/tool.js")) }
         const toolset = await tools.buildToolset({})
         out.toolCount = toolset.tools.length
         const found = toolset.get("wordcount_count")
@@ -274,6 +274,46 @@ try {
 
         // And it must appear in what the MODEL is sent, not just in the map.
         out.inSchemas = toolset.schemas.some((s) => s.id === "wordcount_count")
+
+        // The agent's own plugins, as the shell registered them from this
+        // package: each one loads, which takes its whole module graph
+        // resolving here, and the session view mounts on a new session.
+        const id = bare.slice("automerge:".length)
+        const own = []
+        for (const type of ["patchwork:datatype", "patchwork:tool", "patchwork:component"]) {
+          for (const p of getRegistry(type).all()) {
+            if (!decodeURIComponent(String(p.importUrl ?? "")).includes(id)) continue
+            let loaded
+            try {
+              loaded = !!(await getRegistry(type).load(p.id))?.module
+            } catch (err) {
+              loaded = String(err?.message ?? err)
+            }
+            own.push({ plugin: type.split(":")[1] + " " + p.id, loaded })
+          }
+        }
+        out.own = own
+        const tool = getRegistry("patchwork:tool").all().find((p) => p.id === "agent-session" && decodeURIComponent(String(p.importUrl ?? "")).includes(id))
+        if (tool) {
+          const datatype = (await getRegistry("patchwork:datatype").load("agent-session")).module
+          const session = await window.repo.create2()
+          session.change((d) => datatype.init(d))
+          const host = document.createElement("div")
+          host.style.cssText = "position:fixed;left:0;top:0;width:900px;height:700px;display:flex"
+          document.body.append(host)
+          const cleanup = (await getRegistry("patchwork:tool").load("agent-session")).module(session, host)
+          await new Promise((r) => setTimeout(r, 2000))
+          const sheet = [...document.querySelectorAll("link[data-patchwork-agent-styles]")].some((link) => decodeURIComponent(link.href).includes(id) && link.sheet)
+          out.view = {
+            root: !!host.querySelector(".patchwork-agent"),
+            composer: !!host.querySelector(".agent-composer textarea"),
+            model: !!host.querySelector(".agent-model"),
+            styled: sheet,
+            version: session.doc().schemaVersion ?? null,
+          }
+          cleanup?.()
+          host.remove()
+        }
         out.ok = true
         return out
       } catch (err) {
@@ -295,6 +335,8 @@ try {
     console.log(`  where/risk:           ${report.where}/${report.risk}`)
     console.log(`  schema:               ${report.schema}`)
     console.log(`  executed:             ${JSON.stringify(report.ran)}  (${report.summary})`)
+    console.log(`  the agent's plugins:  ${(report.own ?? []).map((p) => `${p.plugin}${p.loaded === true ? "" : ` (${p.loaded})`}`).join(", ")}`)
+    console.log(`  its session view:     ${JSON.stringify(report.view ?? null)}`)
 
     const checks = [
       ["the package registered an agent:tool", (report.registered ?? []).includes("wordcount_count")],
@@ -305,6 +347,8 @@ try {
       ["it reaches the model's tool list", report.inSchemas === true],
       ["it actually runs", report.ran === "5 words" && report.isError === false],
       ["its own summarize is used", report.summary === "counted: 5 words"],
+      ["the agent's own plugins are registered from this package, and each loads", (report.own ?? []).length >= 6 && report.own.every((p) => p.loaded === true)],
+      ["its session view mounts in the shell, styled, on a session of the current version", !!report.view && report.view.root && report.view.composer && report.view.model && report.view.styled && report.view.version === 2],
     ]
     console.log("\n=== verdict ===")
     for (const [label, ok] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${label}`)
