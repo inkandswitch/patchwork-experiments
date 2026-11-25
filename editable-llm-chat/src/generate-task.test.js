@@ -8,6 +8,7 @@ import { initSubduction, Repo, splice } from '@automerge/automerge-repo';
 import * as A from '@automerge/automerge';
 import { generate, streamPieces } from './generate-task.js';
 import { provider } from './test/provider.js';
+import { shownReply } from './reply-status.js';
 
 await initSubduction();
 
@@ -205,6 +206,25 @@ describe('a reply written by a run', () => {
     const p = provider(PIECES, { gate: (i) => (i === 2 ? (run.controller.abort('yielded'), new Promise(() => {})) : undefined) });
     expect(await generate(input, run.ctx, { fetch: p.fetch })).toEqual({ ended: 'taken', pieces: 2, chars: 10 });
     expect(reply(handle).ended).toBeUndefined();
+  });
+
+  it('a run that took the reply over and is then told it yielded leaves it unended, so it shows as interrupted', async () => {
+    const { repo, handle, input } = chat();
+    let releaseA;
+    const holdA = new Promise((resolve) => (releaseA = resolve));
+    const a = generate(input, context(repo, 'run-a').ctx, { fetch: provider(['A0 ', 'A1 '], { gate: (i) => (i === 1 ? holdA : undefined) }).fetch });
+    for (let t = 0; reply(handle).content !== 'A0 ' && t < 200; t++) await new Promise((r) => setTimeout(r, 5));
+    // a later run of the same task takes the reply over, writes a piece, then hears the earlier run and yields
+    const second = context(repo, 'run-b');
+    const b = generate(input, second.ctx, { fetch: provider(['B0 ', 'B1 '], { gate: (i) => (i === 1 ? (second.controller.abort('yielded'), new Promise(() => {})) : undefined) }).fetch });
+    expect(await b).toEqual({ ended: 'taken', pieces: 1, chars: 3 });
+    releaseA();
+    // the earlier run finds the reply another's, writes nothing, and returns: its task succeeds without finishing the reply
+    const resultA = await a;
+    expect(resultA).toEqual({ ended: 'taken', pieces: 1, chars: 3 });
+    expect(reply(handle)).toMatchObject({ content: 'B0 ', run: 'run-b' });
+    expect(reply(handle).ended).toBeUndefined();
+    expect(shownReply(reply(handle), { state: 'succeeded', result: resultA, taskUrl: 'automerge:t' })).toMatchObject({ status: 'interrupted', retry: true });
   });
 
   it("marks the reply failed with the provider's answer when the provider refuses", async () => {
