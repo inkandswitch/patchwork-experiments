@@ -14,7 +14,7 @@ import { handleStore } from "../kernel/store.js"
 import { approvalOf, drawApproval } from "./approval.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP, RESUME_AMOUNTS, resumePlan } from "../workflow/plan.js"
-import { liftBudget, liftAmounts } from "../session/usage.js"
+import { liftBudget, liftAmounts, dollars } from "../session/usage.js"
 import { drivePlanHere } from "../runners/tab.js"
 import { morph } from "./morph.js"
 
@@ -201,7 +201,7 @@ export function renderLiftItem(item, { onOpen = null, showStep = true, splice = 
   node.append(el("p", null, describeBudget(item)))
   const actions = el("div", "cluster")
   liftAmounts(item.limit).forEach((amount, i) => {
-    const give = el("button", null, `Give $${amount.toFixed(2)} more`)
+    const give = el("button", null, `Give ${dollars(amount)} more`)
     if (i === 0) give.dataset.variant = "primary"
     give.addEventListener("click", (event) => {
       event.preventDefault()
@@ -216,14 +216,14 @@ export function renderLiftItem(item, { onOpen = null, showStep = true, splice = 
 
 /** One line on a spent budget: a session's, or a whole workflow's. */
 export function describeBudget({ spent, limit, notStarted, stopped = 0, ask: askFor = null, scope }) {
-  if (scope === "session") return `Spent its $${Number(limit).toFixed(2)} budget ($${Number(spent).toFixed(2)}) and stopped part-way. It carries on from there if it is given more.`
+  if (scope === "session") return `Spent its ${dollars(limit)} budget (${dollars(spent)}) and stopped part-way. It carries on from there if it is given more.`
 
-  const money = `$${Number(spent).toFixed(2)} of $${Number(limit).toFixed(2)}`
+  const money = `${dollars(spent)} of ${dollars(limit)}`
   const blocked = [
     notStarted ? `${notStarted} step${notStarted === 1 ? "" : "s"} waiting to start` : null,
     stopped ? `${stopped} stopped part-way` : null,
   ].filter(Boolean)
-  const ask = askFor ? ` The orchestrator wants to give ${askFor.stepTitle ?? askFor.stepId} $${Number(askFor.need).toFixed(2)} more${askFor.why ? `: ${askFor.why}` : ""}.` : ""
+  const ask = askFor ? ` The orchestrator wants to give ${askFor.stepTitle ?? askFor.stepId} ${dollars(askFor.need)} more${askFor.why ? `: ${askFor.why}` : ""}.` : ""
   return `The workflow has spent its whole budget (${money}, orchestrator included), so ${blocked.join(" and ") || "nothing more can run"}.${ask} Resume raises the budget to what has been spent plus the amount you pick; the orchestrator then decides how to spend it.`
 }
 
