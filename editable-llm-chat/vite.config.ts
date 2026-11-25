@@ -6,6 +6,11 @@ import wasm from "vite-plugin-wasm";
 
 import external from "@inkandswitch/patchwork-bootloader/externals";
 
+// The second entry is the reply's task (src/generate-task.js), at
+// dist/generate-task.js in every build: a task names its code by that path,
+// and a pool imports it in a run worker or a Node thread, so it imports
+// nothing but Automerge's Repo, which the page's import map or the host
+// resolves.
 export default defineConfig({
   base: "./",
   plugins: [topLevelAwait(), wasm(), solid(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
@@ -25,6 +30,7 @@ export default defineConfig({
       external,
       input: {
         index: "./src/index.ts",
+        "generate-task": "./src/generate-task.js",
       },
       output: {
         format: "es",
