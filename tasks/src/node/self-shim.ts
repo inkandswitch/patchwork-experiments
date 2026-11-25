@@ -18,6 +18,8 @@ interface ThreadData {
   verbose: boolean;
   /** Where code fetched from automerge is kept (see package-files.ts). */
   codeDir?: string;
+  /** Packages whose code is run from a directory here, not fetched: `automerge:<package>` to a path. */
+  local?: Record<string, string>;
 }
 
 const data = workerData as ThreadData;
@@ -27,6 +29,7 @@ const listeners = new Set<(event: { ports: unknown[] }) => void>();
 scope.self = scope;
 scope.name = data.name;
 scope.__tasksCodeDir = data.codeDir;
+scope.__tasksLocalCode = data.local ?? {};
 scope.addEventListener = (type: string, listener: (event: { ports: unknown[] }) => void) => {
   if (type === 'connect') {
     listeners.add(listener);

@@ -26,6 +26,15 @@
 // unless said). It runs in Node: it can import its neighbours and Node's own
 // modules, not what a browser's import map would have given it.
 //
+//   --local automerge:<package>=<dir>   run that package's code from this
+//                                       directory instead of fetching it
+//
+// For a machine that has the package checked out and installed: a solver's
+// package, whose code imports its own source and its dependencies and drives
+// programs installed beside it. A task names the package's code the way it
+// always does; this host answers from its own copy, whichever version the
+// task named. Naming a package this way accepts it.
+//
 // --new-queue makes a queue, prints its url, and serves it: for a machine
 // that should have a queue of its own.
 
@@ -50,6 +59,8 @@ interface Options {
   queues: string[];
   accept: string[];
   acceptAny: boolean;
+  /** Packages to run from a directory here: `automerge:<package>` to an absolute path. */
+  local: Record<string, string>;
   workers: number;
   sync: string;
   newQueue: string | null;
@@ -62,6 +73,7 @@ function parseArgs(argv: string[]): Options {
     queues: [],
     accept: [],
     acceptAny: false,
+    local: {},
     workers: 1,
     sync: process.env.PATCHWORK_SYNC ?? DEFAULT_SYNC_SERVER_URL,
     newQueue: null,
@@ -87,6 +99,19 @@ function parseArgs(argv: string[]): Options {
       case '--accept-any':
         options.acceptAny = true;
         break;
+      case '--local': {
+        const given = value();
+        const at = given.indexOf('=');
+        if (at < 0) {
+          throw new Error('--local wants automerge:<package>=<directory>');
+        }
+        const packageUrl = given.slice(0, at);
+        if (!AUTOMERGE_URL.test(packageUrl)) {
+          throw new Error(`${packageUrl} isn't a package's automerge: url`);
+        }
+        options.local[packageUrl] = resolve(given.slice(at + 1));
+        break;
+      }
       case '--workers':
         options.workers = Number(value());
         break;
@@ -116,6 +141,14 @@ function parseArgs(argv: string[]): Options {
   }
   if (options.queues.length === 0 && !options.newQueue) {
     throw new Error('say which queue to work on: --queue automerge:…, or --new-queue "a title"');
+  }
+  // a package this host has a copy of is one it runs
+  if (!options.acceptAny) {
+    for (const packageUrl of Object.keys(options.local)) {
+      if (!options.accept.includes(packageUrl)) {
+        options.accept.push(packageUrl);
+      }
+    }
   }
   if (options.acceptAny === options.accept.length > 0) {
     throw new Error(
@@ -149,7 +182,7 @@ async function makeQueue(title: string, sync: string) {
 /** Starts one of the three scripts in a thread, and "connects" to it as a tab would. */
 function startThread(script: string, name: string, options: Options) {
   const worker = new Worker(new URL(script, import.meta.url), {
-    workerData: { name, verbose: options.verbose, codeDir: options.codeDir },
+    workerData: { name, verbose: options.verbose, codeDir: options.codeDir, local: options.local },
     name,
   });
   const { port1, port2 } = new MessageChannel();

@@ -2,7 +2,7 @@
 // for a Node process: the build puts this file in that one's place.
 
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Repo, initSubduction } from '@automerge/automerge-repo-node';
 import type { RepoConfig } from '../protocol';
@@ -52,6 +52,29 @@ export async function importModule(importUrl: string): Promise<any> {
       `a worker in a process imports code kept in automerge, or a data: URL; this is neither: ${importUrl.slice(0, 120)}`,
     );
   }
+  const here = localCopy(found.packageUrl, found.path);
+  if (here) {
+    return import(pathToFileURL(here).href);
+  }
   const file = await materialise((globalThis as any).repo, found, cacheDir());
   return import(pathToFileURL(file).href);
+}
+
+/**
+ * Where `path` of a package is on this machine, if the process was started
+ * with a copy of that package (`--local`, see host.ts): the code then comes
+ * from there, with whatever it imports beside it, whichever version of the
+ * package the task named. Null for a package there's no copy of. A path that
+ * would leave the copy's directory is refused.
+ */
+function localCopy(packageUrl: string, path: string): string | null {
+  const dir: string | undefined = (globalThis as any).__tasksLocalCode?.[packageUrl];
+  if (!dir) {
+    return null;
+  }
+  const file = resolve(dir, path);
+  if (!file.startsWith(resolve(dir) + sep)) {
+    throw new Error(`${path} is not inside the copy of ${packageUrl} here`);
+  }
+  return file;
 }
