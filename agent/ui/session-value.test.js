@@ -26,7 +26,7 @@ describe("the hint line", () => {
   const NONE = { voice: null, outdated: false, hasKey: true, elsewhere: false, asking: 0, pending: 0, status: STATUS.idle, reason: null }
   const ROWS = [
     ["voice", { voice: "Listening…" }, "Listening…"],
-    ["outdated", { outdated: true }, "Something here needs a newer version of the agent: reload the page"],
+    ["outdated", { outdated: true }, "Waiting for a newer version of the agent: something in this session needs it"],
     ["no-key-elsewhere", { hasKey: false, elsewhere: true }, "Running in another browser — this one has no API key"],
     ["no-key", { hasKey: false }, "Add an API key to start"],
     ["asking", { asking: 1 }, "Waiting on your answer"],

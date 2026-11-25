@@ -42,7 +42,7 @@ export const PLACEHOLDER = "Ask for a change…"
 export const HINTS = [
   // Dictation's status wins while it is on: it is what you are doing now.
   { name: "voice", when: (f) => f.voice != null, says: (f) => f.voice },
-  { name: "outdated", when: (f) => f.outdated, says: () => "Something here needs a newer version of the agent: reload the page" },
+  { name: "outdated", when: (f) => f.outdated, says: () => "Waiting for a newer version of the agent: something in this session needs it" },
   { name: "no-key-elsewhere", when: (f) => !f.hasKey && f.elsewhere, says: () => "Running in another browser — this one has no API key" },
   { name: "no-key", when: (f) => !f.hasKey, says: () => "Add an API key to start" },
   { name: "asking", when: (f) => f.asking > 0, says: (f) => (f.asking === 1 ? "Waiting on your answer" : `Waiting on ${f.asking} answers`) },
