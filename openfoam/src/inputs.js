@@ -98,14 +98,14 @@ export function inputRows(run) {
   add("Solver", "setup.iterations", "Iterations (at most)", s.iterations ?? null);
   add("Solver", "setup.stop", "Stop", s.stop ?? null, s.stop === "settled" ? "when settled (±1%)" : s.stop === "iterations" ? "after the iterations" : "–");
   add("Solver", "setup.domain", "Domain asked", s.domain ?? null);
-  add("Solver", "setup.cores", "Cores asked", s.cores ?? null, s.cores ? String(s.cores) : "the daemon's choice");
+  add("Solver", "setup.cores", "Cores asked", s.cores ?? null, s.cores ? String(s.cores) : "the machine's choice");
   add("Solver", "setup.keepVolume", "Flow volume", s.keepVolume === true, s.keepVolume ? volumeText(run?.volume) : "not kept");
   add("Solver", "setup.warmStart", "Started from", s.warmStart ?? null, s.warmStart ? `a past run (${s.warmStart.replace(/^automerge:/, "").slice(0, 8)}…)` : "rest");
 
   add("Ran on", "daemon.host", "Host", dmn.host ?? null);
   add("Ran on", "daemon.openfoam", "OpenFOAM", dmn.openfoam ?? null);
   add("Ran on", "daemon.cores", "Cores used", dmn.cores ?? null);
-  add("Ran on", "daemon.code", "Daemon code", dmn.commit ? `${dmn.commit}${dmn.dirty ? "+" : ""}` : (dmn.version ?? null), dmn.commit ? `${dmn.version ?? ""} @ ${dmn.commit}${dmn.dirty ? " (with changes)" : ""}`.trim() : (dmn.version ?? "–"));
+  add("Ran on", "daemon.code", "Run code", dmn.commit ? `${dmn.commit}${dmn.dirty ? "+" : ""}` : (dmn.version ?? null), dmn.commit ? `${dmn.version ?? ""} @ ${dmn.commit}${dmn.dirty ? " (with changes)" : ""}`.trim() : (dmn.version ?? "–"));
   add("Ran on", "made.tool", "Asked for with", run?.made?.version ?? null, run?.made ? `${run.made.tool ?? "openfoam"} ${run.made.version ?? ""}`.trim() : "–");
   add("Ran on", "recipe", "Case recipe", run?.recipe?.digest ?? null, run?.recipe?.digest ? `${short(run.recipe.digest)} · ${run.recipe.count ?? "?"} files` : "–");
   return rows;

@@ -42,7 +42,8 @@
 <script type="module">
   import { FakeRepo } from "/probes/fake-repo.js";
   import { getRegistry } from "/probes/plugins-stub.js";
-  import { plugins } from "/dist/index.js";
+  // served as a package's files are, so the tool can name its run's code (src/run-tasks.js)
+  import { plugins } from "/automerge%3AopenfoamProbePackage/dist/index.js";
 
   const errors = [];
   window.addEventListener("error", (e) => errors.push(String(e.error?.stack ?? e.message)));
@@ -77,15 +78,14 @@
     async setup({ hull = "/hulls/narrow-transom.glb", online = true } = {}) {
       const bytes = new Uint8Array(await (await fetch(hull)).arrayBuffer());
       const file = repo.add({ "@patchwork": { type: "file" }, name: hull.split("/").pop(), extension: "glb", mimeType: "model/gltf-binary", content: bytes });
-      serverHandle = repo.add({
-        "@patchwork": { type: "openfoam-server" },
-        title: "OpenFOAM on the probe",
-        protocol: 1,
-        daemon: { id: "d", host: "probe-host", platform: "darwin arm64", openfoam: "v2606", cores: 8, heartbeat: online ? Date.now() : 1, startedAt: Date.now() - 60000 },
-        requests: {},
-        handled: {},
-        active: null,
-      });
+      serverHandle = repo.add({ title: "OpenFOAM on the probe", jobs: {} });
+      // a machine serving the queue says so every couple of seconds (src/task-client.js, `served`)
+      if (online) {
+        let seq = 0;
+        const beat = () => serverHandle.hear({ type: "serving", pool: "probe-pool", name: "probe-host", slots: 1, busy: 0, from: "probe", seq: seq++ });
+        beat();
+        setInterval(beat, 1000);
+      }
       const dt = await datatype("openfoam-case");
       const doc = { "@patchwork": { type: "openfoam-case" } };
       dt.init(doc);
@@ -170,7 +170,8 @@
       return {
         runs: c.runs,
         selected: c.selected,
-        requests: Object.values(s.requests).map((r) => r.run),
+        requests: Object.keys(s.jobs),
+        task: runs[0]?.task ?? null,
         run0: runs[0] ? { status: runs[0].status, title: runs[0].title, stl: runs[0].hull?.stl?.byteLength, info: runs[0].hull?.info?.lwl, stages: runs[0].stages.length, stageIds: runs[0].stages.map((x) => x.id), setup: runs[0].setup, geometry: runs[0].hull?.geometry?.digest, triangles: runs[0].hull?.geometry?.triangles, heads: runs[0].hull?.source?.heads, made: runs[0].made?.version } : null,
       };
     },
@@ -187,7 +188,7 @@
       });
       return h.url;
     },
-    /** drive a run doc as the daemon would: a partial run, mid-solve */
+    /** drive a run doc as the run's code would: a partial run, mid-solve */
     async midRun(path, fraction = 0.4) {
       const dump = await (await fetch(path)).json();
       const run = revive(dump.run);

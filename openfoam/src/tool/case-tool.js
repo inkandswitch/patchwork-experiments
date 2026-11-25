@@ -1,9 +1,13 @@
 // The case tool: link a hull, describe the analysis, see what it will cost,
-// send it to a daemon, watch it run, and read what it found.
+// ask a machine for it (a task queue, the Server field), watch it run, and
+// read what it found.
 
 import css from "./styles.css?inline";
 import { normalizeSetup, patchSetup, writeSetup, setupProblems, speedIn, MODE_LABELS, MESH_PRESETS, KNOT, formatDuration, formatSpeed } from "../setup.js";
-import { daemonOnline, queueView, isTerminal, SERVER_TYPE } from "../protocol.js";
+import { isTerminal, shownRun } from "../protocol.js";
+import { isQueue, queueCounts, servedBy } from "../run-tasks.js";
+import { served, watch } from "../task-client.js";
+import { BEAT_MS } from "../task-rules.js";
 import { pathLabel } from "../hull/acquire.js";
 import { stashCovers } from "../hull/stash.js";
 import { readHull, hullModel, prepareModel, partShells, floatAt, keepDisplacement, writeAttitude, keepHull as keepHullDoc, runBlocker, queueRuns, queueRerun, sinkageMeaning, preflight } from "../case-model.js";
@@ -86,17 +90,17 @@ export default function CaseTool(handle, element) {
               <legend>Solver</legend>
               <label class="field"><span>Mesh</span><select data-k="mesh">${MESH_PRESETS.map((m) => `<option value="${m}">${m}</option>`).join("")}</select></label>
               <label class="field"><span>Iterations</span><input type="number" step="100" min="50" data-k="iterations"></label>
-              <label class="field"><span>Start from</span><select data-k="warmStart" class="warm-select" title="A finished run's solution, mapped onto the new mesh, on the daemon that ran it. Helps a free-surface run most: its waves are already there"><option value="">rest</option></select></label>
+              <label class="field"><span>Start from</span><select data-k="warmStart" class="warm-select" title="A finished run's solution, mapped onto the new mesh, on the machine that ran it. Helps a free-surface run most: its waves are already there"><option value="">rest</option></select></label>
               <label class="field"><span>Stop</span><select data-k="stop" title="Settled: when the resistance holds within 1% over two windows of iterations; the iterations are then a ceiling"><option value="settled">when settled (±1%)</option><option value="iterations">after the iterations</option></select></label>
               <label class="field"><span>Domain</span><select data-k="domain"><option value="auto">Half if symmetric</option><option value="half">Half (y ≤ 0)</option><option value="full">Full</option></select></label>
-              <label class="field"><span>Cores</span><input type="number" step="1" min="0" data-k="cores" title="0: the daemon decides"></label>
+              <label class="field"><span>Cores</span><input type="number" step="1" min="0" data-k="cores" title="0: the machine running it decides"></label>
               <label class="field"><span>Keep volume</span><input type="checkbox" data-k="keepVolume" title="Every cell's flow (the mesh and the last fields), kept in docs after the run so it can be explored: about 200 bytes a cell, so hundreds of MB for a medium mesh"></label>
             </fieldset>
             <div class="setup-problems warn" hidden></div>
             <fieldset>
               <legend>Server</legend>
               <div class="server-box"></div>
-              <div class="cluster" style="margin-top:6px"><input type="text" class="server-url" placeholder="Paste the daemon's inbox link"><button class="server-forget" hidden>Change</button></div>
+              <div class="cluster" style="margin-top:6px"><input type="text" class="server-url" placeholder="Paste the queue link the OpenFOAM host printed"><button class="server-forget" hidden>Change</button></div>
             </fieldset>
           </div>
           <div class="flow col-main" style="--flow-space:10px">
@@ -170,8 +174,9 @@ export default function CaseTool(handle, element) {
   // ------------------------------------------------------------ state
   let hull = { url: null, result: null, key: null, loading: false, sub: null };
   let prepared = null; // { mesh, stl, info, warnings, attitudeKey }
-  let server = { url: null, handle: null, sub: null };
+  let server = { url: null, handle: null, sub: null, pools: [], since: 0 };
   const runHandles = new Map(); // url → handle (subscribed)
+  const runTasks = new Map(); // url → its task as followed ({ state, error }), while the run hasn't ended
   let variants = new Map(); // variantKey → "A", "B", … over the case's runs, oldest first
   const runSubs = [];
   let disposed = false;
@@ -522,7 +527,7 @@ export default function CaseTool(handle, element) {
       canvas.__drawn = prepared;
       canvas.__drawKey = drawKey;
     }
-    const pf = preflight(s, i, server.handle?.doc());
+    const pf = preflight(s, i);
     const { rho, nu, L, cells, cores, upTo, dom } = pf;
     const a = s.attitude;
     const floated = [a.sinkage && `sunk ${a.sinkage.toFixed(3)} m`, a.trim && `trimmed ${Math.abs(a.trim)}° ${a.trim > 0 ? "bow down" : "bow up"}`, a.heel && `heeled ${Math.abs(a.heel)}° to ${a.heel > 0 ? "starboard" : "port"}`].filter(Boolean);
@@ -581,43 +586,51 @@ export default function CaseTool(handle, element) {
     const url = doc()?.server ?? null;
     if (url === server.url) return;
     server.sub?.();
-    server = { url, handle: null, sub: null, error: null };
+    server = { url, handle: null, sub: null, error: null, pools: [], since: Date.now() };
     renderServer();
     if (!url) return;
+    const mine = server;
     try {
       const h = await repo.find(url);
       if (disposed || doc()?.server !== url) return;
-      server.handle = h;
-      if (h.doc()?.["@patchwork"]?.type !== SERVER_TYPE) server.error = "that link isn't an OpenFOAM daemon's inbox";
-      const on = () => {
-        renderServer();
-        renderPreflight();
-      };
+      mine.handle = h;
+      if (!isQueue(h.doc())) mine.error = "that link isn't a task queue";
+      const on = () => renderServer();
       h.on("change", on);
-      server.sub = () => h.off("change", on);
+      // who serves it: heard, not read (each machine says so every couple of seconds)
+      const stopHearing = served(repo, url, (pools) => {
+        mine.pools = pools;
+        renderServer();
+      });
+      const listened = setTimeout(renderServer, BEAT_MS + 500);
+      mine.sub = () => {
+        h.off("change", on);
+        stopHearing();
+        clearTimeout(listened);
+      };
     } catch (err) {
-      server.error = `couldn't load the inbox (${err?.message ?? err})`;
+      mine.error = `couldn't load the queue (${err?.message ?? err})`;
     }
     renderServer();
-    renderPreflight();
   }
+  /** Whether it's too soon to say nobody serves the queue: a machine says so every couple of seconds. */
+  const listening = () => !server.pools.length && Date.now() - server.since < BEAT_MS + 500;
   function renderServer() {
     const box = $(".server-box");
     $(".server-forget").hidden = !server.url;
     $(".server-url").hidden = !!server.url;
     if (!server.url) {
-      box.innerHTML = `<div class="hint">Start a daemon where OpenFOAM is installed (<code>daemon/start.sh</code> in the openfoam package) and paste the inbox link it prints.</div>`;
+      box.innerHTML = `<div class="hint">Start the OpenFOAM host where OpenFOAM is installed (<code>daemon/start.sh</code> in the openfoam package) and paste the queue link it prints.</div>`;
     } else if (server.error) box.innerHTML = `<div class="warn">${esc(server.error)}</div>`;
     else if (!server.handle) box.innerHTML = `<span class="chip">loading…</span>`;
     else {
       const s = server.handle.doc();
-      const online = daemonOnline(s, Date.now());
-      const q = queueView(s);
-      const d = s.daemon ?? {};
+      const by = servedBy(server.pools);
+      const q = queueCounts(s, server.pools);
       box.innerHTML = `
-        <span class="chip"><span class="dot" data-state="${online ? "online" : "idle"}"></span>${esc(s.title ?? "OpenFOAM")}</span>
-        <div class="hint">${online ? `online · OpenFOAM ${esc(d.openfoam ?? "?")} · ${d.cores ?? "?"} cores · ${esc(d.platform ?? "")}` : `offline${d.heartbeat ? ` since ${new Date(d.heartbeat).toLocaleString()}` : ""}: runs wait in its queue until it's back`}</div>
-        <div class="hint">${q.active.length ? `running ${q.active.length}${d.jobs > 1 ? ` of ${d.jobs} at once` : ""}` : "idle"}${q.waiting.length ? `, ${q.waiting.length} waiting` : ""}</div>`;
+        <span class="chip"><span class="dot" data-state="${by ? "online" : "idle"}"></span>${esc(s.title ?? "OpenFOAM")}</span>
+        <div class="hint">${by ? `served by ${esc(by)}` : listening() ? "listening for the machines that serve it…" : "nobody is serving it: runs wait in its queue until a machine does"}</div>
+        <div class="hint">${q.running ? `running ${q.running}${q.slots > 1 ? ` of ${q.slots} at once` : ""}` : "idle"}${q.waiting ? `, ${q.waiting} waiting` : ""}</div>`;
     }
     renderRunButton();
   }
@@ -632,7 +645,7 @@ export default function CaseTool(handle, element) {
     const s = setup();
     $(".run").textContent = `Run at ${formatSpeed(s.speed)}`;
     $(".sweep").placeholder = `speeds in ${s.speed.unit}, e.g. 4, 5, 6, 7`;
-    $(".run-why").textContent = why ?? (server.handle && !daemonOnline(server.handle.doc(), Date.now()) ? "The daemon is offline: the run will wait for it." : "");
+    $(".run-why").textContent = why ?? (server.handle && !server.pools.length && !listening() ? "Nobody is serving the queue: the run will wait for a machine." : "");
   }
   async function runAt(speeds) {
     if (whyNot()) return;
@@ -691,7 +704,8 @@ export default function CaseTool(handle, element) {
           let last = "";
           const on = () => {
             const r = h.doc();
-            const k = `${r.status}|${r.summary ? 1 : 0}|${r.progress?.iteration}`;
+            const t = runTasks.get(url);
+            const k = `${r.status}|${r.summary ? 1 : 0}|${r.progress?.iteration}|${t?.state}`;
             if (k !== last) {
               last = k;
               renderRuns();
@@ -699,15 +713,37 @@ export default function CaseTool(handle, element) {
           };
           h.on("change", on);
           runSubs.push(() => h.off("change", on));
+          // what the run doc can't say about a run that hasn't ended is read from its task (shownRun)
+          const r0 = h.doc();
+          if (r0?.server && !isTerminal(r0.status)) {
+            const stop = watch(
+              repo,
+              r0.server,
+              url,
+              (view) => {
+                runTasks.set(url, { state: view.state, error: view.error });
+                on();
+              },
+              r0.task ? { from: r0.task } : {},
+            );
+            runSubs.push(stop);
+          }
           renderRuns();
           showSelected();
         })
         .catch(() => {});
     }
   }
+  /** A run as a person sees it: its doc, with the status its task gives it (shownRun). */
+  const shownDoc = (u) => {
+    const raw = runHandles.get(u)?.doc() ?? null;
+    if (!raw) return null;
+    const s = shownRun(raw, runTasks.get(u) ?? null);
+    return s.status === raw.status && s.error === (raw.error ?? null) && !s.note ? raw : { ...raw, status: s.status, error: s.error, note: s.note };
+  };
   /** The case's runs, newest first, split into those going (or waiting) and those finished. */
   function runLists() {
-    const all = (doc()?.runs ?? []).map((u) => ({ u, r: runHandles.get(u)?.doc() ?? null })).reverse();
+    const all = (doc()?.runs ?? []).map((u) => ({ u, r: shownDoc(u) })).reverse();
     return { going: all.filter(({ r }) => !r || !isTerminal(r.status)), finished: all.filter(({ r }) => r && isTerminal(r.status)) };
   }
   const dotOf = (st) => (st === "done" ? "done" : st === "failed" ? "failed" : isTerminal(st) || st === "queued" ? "idle" : "running");
@@ -732,7 +768,7 @@ export default function CaseTool(handle, element) {
               const p = r.progress ?? {};
               return `<tr data-click data-url="${u}" ${u === live ? "data-selected" : ""}>
                 <td><span class="dot" data-state="${dotOf(r.status)}" style="display:inline-block;margin-right:6px"></span>${esc(r.title)}</td>
-                <td>${esc(r.status)}</td>
+                <td>${esc(r.status)}${r.note ? ` · ${esc(r.note)}` : ""}</td>
                 <td>${r.status === "solving" && p.of ? `<progress max="${p.of}" value="${p.iteration ?? 0}" style="width:8em"></progress>` : ""}</td></tr>`;
             })
             .join("")}</table>`;

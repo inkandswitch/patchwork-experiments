@@ -459,7 +459,7 @@ export function encodeSTL({ points: p, faces }, name = "hull") {
   return new Uint8Array(buf);
 }
 
-/** Read a binary STL back (tests, and the daemon's checks). */
+/** Read a binary STL back (tests, and the run's checks). */
 export function decodeSTL(bytes) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const n = dv.getUint32(80, true);

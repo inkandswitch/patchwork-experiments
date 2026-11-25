@@ -17,6 +17,9 @@ import { availableParallelism } from "node:os";
 
 const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
+/** How long a killed command's processes have to stop on SIGTERM before SIGKILL: well inside the 5 s a stopped task's thread is given. */
+export const KILL_AFTER_MS = 3000;
+
 /** Find the macOS launcher if none was named. */
 export function findLauncher() {
   for (const p of ["/opt/homebrew/bin/openfoam", "/usr/local/bin/openfoam"]) if (existsSync(p)) return p;
@@ -56,8 +59,9 @@ export function defaultCores() {
 
 /**
  * Run one command in the case directory, its output to `logFile` and to
- * `onLine` line by line.
- * @returns {{ done: Promise<{ code: number|null, signal: string|null }>, kill: () => void }}
+ * `onLine` line by line. `kill` resolves once the last of its processes has
+ * been sent SIGKILL.
+ * @returns {{ done: Promise<{ code: number|null, signal: string|null }>, kill: () => Promise<void> }}
  */
 export function run(env, cmd, { cwd, logFile, onLine }) {
   const [bin, args] = env.argv(cmd);
@@ -86,12 +90,16 @@ export function run(env, cmd, { cwd, logFile, onLine }) {
   const kill = () => {
     // not the process group: OpenMPI's launcher (prterun) makes its own, and
     // gives every rank another, so a group kill leaves the solver running.
-    // Every descendant, then, launcher first (it stops its ranks cleanly).
+    // Every descendant, then, launcher first (it stops its ranks cleanly),
+    // and KILL_AFTER_MS later whatever is left.
     const tree = descendants(child.pid);
     for (const pid of [child.pid, ...tree]) signal(pid, "SIGTERM");
-    setTimeout(() => {
-      for (const pid of [child.pid, ...tree, ...descendants(child.pid)]) signal(pid, "SIGKILL");
-    }, 3000).unref();
+    return new Promise((resolve) =>
+      setTimeout(() => {
+        for (const pid of [child.pid, ...tree, ...descendants(child.pid)]) signal(pid, "SIGKILL");
+        resolve();
+      }, KILL_AFTER_MS).unref(),
+    );
   };
   return { done, kill };
 }

@@ -1,4 +1,4 @@
-// When has a run's resistance settled? Pure, so the daemon stops on it and
+// When has a run's resistance settled? Pure, so the run stops on it and
 // the tool can say the same thing about any history.
 //
 // The rule, kept simple enough to check by hand: compare the mean of the last
@@ -55,7 +55,7 @@ export function settled(values, c = {}) {
 /**
  * The first iteration at which a history would have stopped under the rule,
  * or null: for comparing runs (the convergence experiment) after the fact.
- * Checked every `every` iterations, as the daemon checks every flush.
+ * Checked every `every` iterations, as the runner checks every flush.
  */
 export function settledAt(values, c = {}, every = 10) {
   for (let n = every; n <= values.length; n += every) if (settled(values.slice(0, n), c).settled) return n;

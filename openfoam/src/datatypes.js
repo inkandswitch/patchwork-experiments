@@ -1,5 +1,5 @@
-// The three datatypes. A case is made from the "new document" menu; runs
-// and servers are made by the tool and the daemon (unlisted).
+// The datatypes. A case is made from the "new document" menu; runs and
+// kept hulls are made by the case tool (unlisted).
 import { defaultSetup } from "./setup.js";
 import { initCase } from "./protocol.js";
 
@@ -40,18 +40,6 @@ export const HullDatatype = {
   },
   getTitle(doc) {
     return doc.title || "OpenFOAM hull";
-  },
-  setTitle(doc, title) {
-    doc.title = title;
-  },
-};
-
-export const ServerDatatype = {
-  init(doc) {
-    doc.title = "OpenFOAM server";
-  },
-  getTitle(doc) {
-    return doc.title || "OpenFOAM server";
   },
   setTitle(doc, title) {
     doc.title = title;

@@ -1,36 +1,34 @@
-// The documents a case, its runs and a daemon share, and every write either
-// side makes to them. Pure functions over plain objects (an automerge doc
-// inside a change() is one), so the tool and the daemon run the same code
-// and the tests prove the protocol without a network.
+// The documents a case and its runs share, and every write anyone makes to
+// them. Pure functions over plain objects (an automerge doc inside a
+// change() is one), so the tool and the run's code (daemon/run-task.mjs) run
+// the same code and the tests prove it without a network.
 //
-// Three documents:
+// Two documents of this package's own:
 //
-//   openfoam-case    the user's: the hull link, the setup, the server, the
-//                    runs it has made. Only people write it.
+//   openfoam-case    the user's: the hull link, the setup, the server (a
+//                    task queue: see src/run-tasks.js), the runs it has made.
+//                    Only people write it.
 //   openfoam-run     one analysis: the setup and hull FROZEN at the moment
-//                    it was asked for, then the daemon's progress and results.
-//                    People write only `control` (cancel / finish now).
-//   openfoam-server  a daemon's inbox and status. People add `requests`;
-//                    the daemon writes everything else.
+//                    it was asked for, then the run's progress and results.
+//                    It is the record of the run; the task that asked a
+//                    machine for it says only whether a machine has it.
 //
 // Who writes what never overlaps, so concurrent edits never conflict:
 //
 //   case      ← people
-//   run       ← people: control.*         daemon: status, daemon, stages,
-//                                          progress, mesh, summary, layers,
-//                                          error, startedAt, finishedAt
-//   server    ← people: requests[id]      daemon: daemon, handled[id], active[id]
+//   run       ← people: control.finish,     the run's code: status, daemon,
+//                        task (once, when     stages, progress, mesh, summary,
+//                        it is asked for)     layers, error, startedAt,
+//                                             finishedAt
+//
+// Cancelling is not written here: it is a flag on the run's task, and the
+// status a person sees is read from both (`shownRun`).
 
 import { formatSpeed } from "./setup.js";
 
 export const CASE_TYPE = "openfoam-case";
 export const RUN_TYPE = "openfoam-run";
-export const SERVER_TYPE = "openfoam-server";
 export const PROTOCOL_VERSION = 1;
-
-/** A daemon is online if it beat within this long. */
-export const HEARTBEAT_MS = 20_000;
-export const ONLINE_MS = 75_000;
 
 /** Run statuses. Terminal: done, failed, cancelled. */
 export const STATUSES = Object.freeze(["queued", "meshing", "solving", "post", "done", "failed", "cancelled"]);
@@ -40,8 +38,8 @@ export const isTerminal = (status) => TERMINAL.includes(status);
 /**
  * The stages a run goes through, in order, by mode. Meshing on several cores
  * splits the background mesh first and meshes the pieces in parallel; on one,
- * nothing is split. (A run doc starts with the serial order; the daemon, which
- * knows its cores, rewrites the list when it starts.)
+ * nothing is split. (A run doc starts with the serial order; the run's code,
+ * which knows its cores, rewrites the list when it starts.)
  */
 export function stagesFor(mode, { parallel = false, volume = false } = {}) {
   const split = { id: "decomposePar", label: "Split for cores" };
@@ -61,8 +59,8 @@ export function stagesFor(mode, { parallel = false, volume = false } = {}) {
   ];
 }
 
-/** The id a run's request goes under in a server's inbox: its document id. */
-export const requestIdOf = (runUrl) => String(runUrl).replace(/^automerge:/, "");
+/** A run's id: its document id, which names its case directory on the machine that ran it. */
+export const runIdOf = (runUrl) => String(runUrl).replace(/^automerge:/, "");
 
 // ---------------------------------------------------------------- case
 
@@ -82,7 +80,7 @@ export function initCase(doc, setup) {
  * A new run doc's contents: the setup and hull frozen as they are now.
  * @param {object} o
  * @param {string} o.caseUrl
- * @param {string} o.serverUrl
+ * @param {string} o.serverUrl  the task queue it is asked of
  * @param {object} o.setup     normalised setup
  * @param {object} o.hull      { stl: Uint8Array, info, source, warnings }
  * @param {string} [o.by]      who asked (a name, for the queue)
@@ -90,8 +88,9 @@ export function initCase(doc, setup) {
  *
  * A run doc, as asked for. `hull` is everything about the hull the run uses
  * (its STL, measurements, frame, where it came from, its geometry digest);
- * `made` the tool that asked ({ tool, version }). The daemon adds `daemon`
- * (where and with what it ran) and `recipe` (the case files it wrote): see
+ * `made` the tool that asked ({ tool, version }). The asker adds `task`
+ * once it has asked; the run's code adds `daemon` (where and with what it
+ * ran) and `recipe` (the case files it wrote): see
  * src/inputs.js for reading them back.
  * @param {{ tool: string, version: string }} [o.made]
  */
@@ -109,7 +108,8 @@ export function newRun({ caseUrl, serverUrl, setup, hull, by = null, now, title,
     made,
     recipe: null,
     status: "queued",
-    control: { cancel: false, finish: false },
+    task: null,
+    control: { finish: false },
     daemon: null,
     stages: stagesFor(setup.mode, { volume: setup.keepVolume }).map((s) => ({ ...s, status: "pending", startedAt: null, endedAt: null, note: null, tail: null })),
     progress: { iteration: 0, of: setup.iterations, forces: [], residuals: [] },
@@ -129,66 +129,93 @@ export function runTitle(setup, hullTitle) {
   return `${hullTitle ? `${hullTitle} · ` : ""}${formatSpeed(setup.speed)}${heel} · ${what} · ${setup.mesh}`;
 }
 
-/** People: ask the daemon to stop. `finish` keeps what it has (writes now); otherwise it is killed. */
-export function requestStop(run, { keep }) {
-  if (!run.control) run.control = { cancel: false, finish: false };
-  if (keep) run.control.finish = true;
-  else run.control.cancel = true;
+/** People: ask a solving run to finish now: the solver writes what it has, and its results are read. */
+export function requestFinish(run) {
+  if (!run.control) run.control = { finish: false };
+  run.control.finish = true;
 }
 
-// ---------------------------------------------------------------- server
+// ---------------------------------------------------------------- stopping
 
-/** A fresh server doc (the daemon makes it). */
-export function newServer({ title, daemon }) {
-  return {
-    "@patchwork": { type: SERVER_TYPE },
-    title,
-    protocol: PROTOCOL_VERSION,
-    daemon,
-    requests: {},
-    handled: {},
-    active: {}, // request id → { run, since }: what runs now (up to the daemon's --jobs)
-  };
-}
+/** Why a run's code was told to stop (its task's signal): see daemon/run-task.mjs. */
+export const STOP_REASONS = Object.freeze(["cancelled", "stopping", "yielded"]);
 
-/** People: put a run in a server's queue (inside a change on the server doc). */
-export function enqueue(server, runUrl, { now, by = null }) {
-  if (!server.requests) server.requests = {};
-  server.requests[requestIdOf(runUrl)] = { run: runUrl, at: now, by };
+/** What a run doc says when the machine running it stopped mid-run. */
+export const MACHINE_STOPPED = "The machine running this stopped while it ran; run it again.";
+/** What a run doc says when its task is taken again after that: it is never solved twice unasked. */
+export const NOT_RESTARTED = "This run was interrupted (the machine running it stopped) and was not started again, so that it isn't solved twice without anyone asking; run it again.";
+
+/**
+ * The run's code, told to stop (inside a change on the run doc): `cancelled`
+ * says cancelled, `stopping` (its machine is shutting down) says failed with
+ * MACHINE_STOPPED. A run that had finished and was keeping its flow volume
+ * keeps its status and says the volume wasn't kept. (`yielded` writes
+ * nothing: another run of the task has it.)
+ */
+export function markStopped(run, reason, now) {
+  if (reason === "yielded") return;
+  if (isTerminal(run.status)) {
+    if (run.volume?.status === "posting") {
+      run.volume.status = "failed";
+      run.volume.error = reason === "cancelled" ? "cancelled while keeping it" : "the machine running it stopped while keeping it";
+      for (const s of run.stages ?? []) if (s.id === "volume" && s.status === "running") s.status = "failed";
+    }
+    return;
+  }
+  run.status = reason === "cancelled" ? "cancelled" : "failed";
+  run.error = reason === "cancelled" ? null : MACHINE_STOPPED;
+  run.finishedAt = now;
+  for (const s of run.stages ?? [])
+    if (s.status === "running") {
+      s.status = "failed";
+      s.endedAt = now;
+      s.note = reason === "cancelled" ? "cancelled" : "stopped";
+    }
 }
 
 /**
- * The requests a daemon has yet to take, oldest first. A request is taken
- * once it is in `handled`, so a daemon that restarts never runs one twice.
+ * A run taken up again after its first try was interrupted (inside a change
+ * on the run doc): not solved again. A run doc that already says how it
+ * ended keeps that; one keeping its volume says the volume wasn't kept.
  */
-export function pendingRequests(server) {
-  const handled = server?.handled ?? {};
-  return Object.entries(server?.requests ?? {})
-    .filter(([id, r]) => !handled[id] && typeof r?.run === "string")
-    .map(([id, r]) => ({ id, run: r.run, at: Number(r.at) || 0, by: r.by ?? null }))
-    .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+export function markInterrupted(run, now) {
+  if (isTerminal(run.status)) {
+    markStopped(run, "stopping", now);
+    return;
+  }
+  run.status = "failed";
+  run.error = NOT_RESTARTED;
+  run.finishedAt = now;
+  for (const s of run.stages ?? []) if (s.status === "running") s.status = "failed";
 }
 
-/** What runs now: [{ id, run, since }]. */
-export function activeRuns(server) {
-  const a = server?.active;
-  if (!a || typeof a !== "object") return [];
-  return Object.entries(a)
-    .filter(([, v]) => typeof v?.run === "string")
-    .map(([id, v]) => ({ id, run: v.run, since: Number(v.since) || 0 }));
-}
-
-/** The queue as people see it: what runs, then what waits, oldest first. */
-export function queueView(server) {
-  const active = activeRuns(server);
-  const running = new Set(active.map((r) => r.id));
-  return { active, waiting: pendingRequests(server).filter((r) => !running.has(r.id)) };
-}
-
-/** Is the daemon behind this server doc alive? */
-export function daemonOnline(server, now) {
-  const hb = Number(server?.daemon?.heartbeat);
-  return Number.isFinite(hb) && now - hb < ONLINE_MS;
+/**
+ * The status a person sees for a run: its document's, unless its task says
+ * what the document can't. The run's code writes the run doc; but a run
+ * cancelled before its code started, or whose code never ran to the end (it
+ * would not load, its machine stopped for good, its worker was ended), has
+ * nobody to write it, and only its task knows.
+ * @param {{ status: string, error?: string | null }} run  the run doc
+ * @param {{ state: string, error?: string | null } | null} task  the task's state as its reader has it (task-client.js's watch, or taskState and taskError), or null while unknown
+ * @returns {{ status: string, error: string | null, note: string | null }}
+ */
+export function shownRun(run, task) {
+  const status = run?.status ?? "queued";
+  if (isTerminal(status) || !task) return { status, error: run?.error ?? null, note: null };
+  switch (task.state) {
+    case "cancelled":
+      return { status: "cancelled", error: null, note: status === "queued" ? "cancelled before it started" : null };
+    case "failed":
+      return { status: "failed", error: task.error ?? "it failed", note: null };
+    case "stopping":
+      return { status, error: null, note: "cancelling…" };
+    case "stalled":
+      return { status, error: null, note: "the machine running it isn't heard from" };
+    case "waiting":
+      return { status, error: null, note: status === "queued" ? null : "the machine running it stopped; it waits to be taken up again" };
+    default:
+      return { status, error: null, note: null };
+  }
 }
 
 // ---------------------------------------------------------------- progress
@@ -221,7 +248,7 @@ export function unpackChunks(chunks) {
 // ---------------------------------------------------------------- layers
 
 /**
- * A result layer: geometry the daemon cut out of the solution, in the
+ * A result layer: geometry the run cut out of the solution, in the
  * floating frame (metres), with dimensionless fields per point.
  *   kind "triangles": positions (xyz Float32), indices (Uint32 triples)
  *   kind "lines":     positions, counts (Uint32: points per polyline, in order)

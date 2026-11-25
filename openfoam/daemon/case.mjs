@@ -53,7 +53,7 @@ export function inflowTurbulence(V, nu) {
 
 export const isHalf = isHalfModel;
 
-/** Everything about a run's case the daemon and the results reader agree on. */
+/** Everything about a run's case the run and the results reader agree on. */
 export function caseGeometry(setupIn, info) {
   const setup = normalizeSetup(setupIn);
   const { half, dom } = domainForHull(setup, info);
@@ -711,7 +711,7 @@ export function caseFiles(setup, info, { cores = 1 } = {}) {
 }
 
 /**
- * A run's recipe: every file the daemon writes to make its OpenFOAM case
+ * A run's recipe: every file the run writes to make its OpenFOAM case
  * (the dictionaries and the initial fields), kept in the run doc so the case
  * can be made again without this daemon, and a digest over them and the hull
  * STL, so two runs with the same digest were the same case (whatever their

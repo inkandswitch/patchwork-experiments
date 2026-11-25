@@ -5,7 +5,7 @@
 //   pnpm build && node probes/ui-run.mjs [--done run.json] [--done2 run2.json] [--shots dir] [--show]
 //
 // Checks: the hull is read and measured; the pre-flight figures; Run makes a
-// run doc (frozen setup + STL) and files it in the server's inbox; a run
+// run doc (frozen setup + STL) and asks the server's queue for it; a run
 // mid-solve shows its stages and charts; a finished run shows its figures
 // and each plot; two finished runs at different speeds draw a resistance
 // curve; the scene provider builds the results; unmounting leaves nothing.
@@ -34,7 +34,7 @@ if (DONE2) copyFileSync(DONE2, join(runs, "done2.json"));
 if (!existsSync(join(PKG, "dist/index.js"))) throw new Error("build first: pnpm build");
 
 const W = 1300, H = 950;
-const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4795, cdp: Number(process.env.PROBE_CDP) || 9795, page: "/probes/ui-probe.html", width: W, height: H, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/hulls/": HULLS, "/runs/": runs } });
+const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4795, cdp: Number(process.env.PROBE_CDP) || 9795, page: "/probes/ui-probe.html", width: W, height: H, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/hulls/": HULLS, "/runs/": runs, "/automerge:openfoamProbePackage/": PKG } });
 const js = (expr) => b.js(expr);
 const P = (e) => js(`window.__p.${e}`);
 const until = (expr, ms = 20_000) => b.waitFor(expr, ms, 60);
@@ -61,7 +61,8 @@ try {
   const lwl = Number(fig.find((r) => r[0] === "Length, waterline")?.[1].replace(/[^\d.]/g, ""));
   check("waterline length 9.91 m (as node measured it)", Math.abs(lwl - 9.91) < 0.01, lwl);
   check("the open transom is reported closed", /closed 1 opening/.test(await P("hullWarn()")), await P("hullWarn()"));
-  check("the server shows online with its cores", /online/.test(await P("server()")) && /8 cores/.test(await P("server()")), await P("server()"));
+  await until(`/served by/.test(window.__p.server())`, 10_000);
+  check("the server shows the machine serving it", /served by probe-host/.test(await P("server()")), await P("server()"));
   const rb = await P("runButton()");
   check("Run is enabled and names the speed", rb.disabled === false && /6 kn/.test(rb.text), rb);
   const ph = await P("phases()");
@@ -96,12 +97,14 @@ try {
   await until("window.__p.state().runs.length === 1", 10_000);
   const st = await P("state()");
   report.afterRun = st;
-  check("Run makes a run doc (queued, STL frozen, setup copied) and files it in the inbox", st.run0?.status === "queued" && st.run0.stl > 84 && st.requests[0] === st.runs[0] && st.selected === st.runs[0] && Math.abs(st.run0.info - 9.91) < 0.01, st);
+  await until("!!window.__p.state().task", 10_000);
+  const st2 = await P("state()");
+  check("Run makes a run doc (queued, STL frozen, setup copied) and asks the queue for it, keyed by the run", st2.run0?.status === "queued" && st2.run0.stl > 84 && st2.requests[0] === st2.runs[0] && /^automerge:/.test(st2.task ?? "") && st2.selected === st2.runs[0] && Math.abs(st2.run0.info - 9.91) < 0.01, st2);
   check("and keeps what it was made from: the hull's geometry digest and heads, the tool's version", /^[0-9a-f]{64}$/.test(st.run0.geometry ?? "") && st.run0.triangles > 100 && Array.isArray(st.run0.heads) && st.run0.made === "0.1.0", st.run0);
   check("a run that keeps its volume says so, and has a stage for it", st.run0.setup.keepVolume === true && st.run0.stageIds.at(-1) === "volume", st.run0.stageIds);
   check("Run switches to the Runs tab", (await P("tabs()")).selected === "runs", await P("tabs()"));
   await sleep(300);
-  check("the queued run shows under Running, waiting for the daemon", /Queued/.test((await P(`runView("live")`)).status ?? "") && /1 waiting/.test((await P("phases()"))[2].sum), await P(`runView("live")`));
+  check("the queued run shows under Running, waiting for a machine", /Queued/.test((await P(`runView("live")`)).status ?? "") && /1 waiting/.test((await P("phases()"))[2].sum), await P(`runView("live")`));
   await shot("2-queued", { scroll: '[data-phase="running"]' });
 
   if (DONE) {

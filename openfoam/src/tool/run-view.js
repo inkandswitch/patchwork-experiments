@@ -1,6 +1,9 @@
 // One run: where it is, how it's converging, and what it found. Updates
-// in place as the daemon writes the run doc (every couple of seconds while
-// it solves); the layers are loaded once, when it's done.
+// in place as the run's code writes the run doc (every couple of seconds
+// while it solves); the layers are loaded once, when it's done. While the
+// run hasn't ended, its task is followed too: what the run doc can't say
+// (cancelled before it started, a machine that stopped) is read from it
+// (shownRun), and Cancel is said to it.
 //
 // While a run goes, its stages and convergence are all there is to see. A
 // finished run shows its headline numbers, then one row of tabs: its
@@ -8,7 +11,9 @@
 // another run if you pick one), and how it ran. A run that failed or was
 // stopped opens on how it ran, with what went wrong above.
 
-import { unpackChunks, decodeLayer, requestStop, isTerminal, FIELD_INFO } from "../protocol.js";
+import { unpackChunks, decodeLayer, requestFinish, isTerminal, shownRun, FIELD_INFO } from "../protocol.js";
+import { cancelRun, aheadOf } from "../run-tasks.js";
+import { watch } from "../task-client.js";
 import { formatSpeed, formatDuration, MODE_LABELS } from "../setup.js";
 import { weightOf } from "../results.js";
 import { lineChart, seriesColors } from "./charts.js";
@@ -95,6 +100,10 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
   const plot = fieldPlot($(".plot-host"));
   let profileChart = null;
   let handle = null;
+  let task = null; // the run's task as followed ({ state, error }), while the run hasn't ended
+  let queue = null; // its queue's handle, for its place in line
+  let unfollow = () => {};
+  let cancelAsked = false;
   let lastProgress = "";
   let resultsFor = null;
   let layers = {};
@@ -117,25 +126,79 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
       </span>
     </div>
     <div class="head-info flow" style="--flow-space:4px"></div>`;
-  $(".finish").addEventListener("click", () => handle?.change((d) => requestStop(d, { keep: true })));
-  $(".cancel").addEventListener("click", () => handle?.change((d) => requestStop(d, { keep: false })));
+  $(".finish").addEventListener("click", () => handle?.change((d) => requestFinish(d)));
+  $(".cancel").addEventListener("click", () => {
+    if (!handle) return;
+    cancelAsked = true;
+    render();
+    cancelRun(repo, handle.doc(), handle.url).catch(() => {});
+  });
+
+  /** The run as a person sees it: its doc, with the status its task gives it (shownRun). */
+  function shown() {
+    const raw = handle?.doc();
+    if (!raw) return null;
+    const s = shownRun(raw, task);
+    return { ...raw, status: s.status, error: s.error, note: s.note };
+  }
+
+  /** Follows the run's task and queue while the run hasn't ended. */
+  function follow(h) {
+    unfollow();
+    task = null;
+    queue = null;
+    cancelAsked = false;
+    const run = h.doc();
+    if (!run?.server || isTerminal(run.status)) {
+      unfollow = () => {};
+      return;
+    }
+    let live = true;
+    const stopTask = watch(
+      repo,
+      run.server,
+      h.url,
+      (view) => {
+        task = { state: view.state, error: view.error };
+        render();
+      },
+      run.task ? { from: run.task } : {},
+    );
+    const onQueue = () => render();
+    repo
+      .find(run.server)
+      .then((q) => {
+        if (!live) return;
+        queue = q;
+        q.on("change", onQueue);
+        render();
+      })
+      .catch(() => {});
+    unfollow = () => {
+      live = false;
+      stopTask();
+      queue?.off("change", onQueue);
+    };
+  }
 
   function header(run) {
     const p = run.progress ?? {};
     const st = run.status;
     const started = run.startedAt ?? run.requestedAt;
     const ended = run.finishedAt ?? Date.now();
-    const asked = run.control?.cancel ? "cancel asked…" : run.control?.finish ? "finishing…" : "";
+    const stopping = task?.state === "stopping" || (cancelAsked && !isTerminal(st));
+    const asked = stopping ? "cancelling…" : run.note ? run.note : run.control?.finish ? "finishing…" : "";
     const pct = p.of ? Math.min(100, (100 * (p.iteration ?? 0)) / p.of) : 0;
     const letter = variant?.(run);
     if (showTitle) $(".run-title").textContent = `${letter ? `${letter} · ` : ""}${run.title ?? ""}`;
     $(".status-chip").innerHTML = `<span class="dot" data-state="${dotState(st)}"></span>${STATUS_LABEL[st] ?? esc(st)}${asked ? ` · ${asked}` : ""}`;
-    $(".finish").hidden = st !== "solving" || !!run.control?.finish;
-    $(".cancel").hidden = isTerminal(st) || !!run.control?.cancel;
+    $(".finish").hidden = st !== "solving" || !!run.control?.finish || stopping;
+    $(".cancel").hidden = isTerminal(st) || stopping;
+    const ahead = st === "queued" && queue ? aheadOf(queue.doc(), handle.url) : null;
     $(".head-info").innerHTML = `
       <div class="hint">${esc(MODE_LABELS[run.setup?.mode] ?? "")} · ${formatSpeed(run.setup?.speed)} · ${esc(run.setup?.mesh)} mesh${run.daemon ? ` · ${esc(run.daemon.host)}, ${run.daemon.cores} core${run.daemon.cores === 1 ? "" : "s"}, OpenFOAM ${esc(run.daemon.openfoam ?? "")}` : ""}${started && st !== "queued" ? ` · ${formatDuration((ended - started) / 1000)}` : ""}</div>
       ${st === "solving" ? `<progress max="100" value="${pct.toFixed(1)}"></progress><div class="hint">iteration ${p.iteration ?? 0} of ${p.of}${run.setup?.mode === "double-body" ? " (it stops early once the residuals settle)" : ""}</div>` : ""}
-      ${st === "queued" ? `<div class="hint">Waiting for the daemon; it takes runs oldest first.</div>` : ""}
+      ${st === "queued" ? `<div class="hint">Waiting for a machine; the queue takes runs oldest first${ahead ? `, and ${ahead} asked earlier ${ahead === 1 ? "is" : "are"} still in it` : ""}.</div>` : ""}
     `;
   }
 
@@ -275,7 +338,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
       ${other ? `<div class="hint">${differs.size ? `${differs.size} input${differs.size === 1 ? " differs" : "s differ"}, marked.` : "No input differs."}${sameCase ? " Both wrote the same OpenFOAM case (one recipe digest)." : ""}</div>` : ""}
       <table class="figures inputs"><tr><th>Input</th><th>This run</th>${other ? `<th>${esc(otherName)}</th>` : ""}</tr>${rows}</table>
       ${res}
-      <div class="hint">A run keeps all of this, with its hull as a closed STL and, once the daemon has started it, every file of its OpenFOAM case (the recipe): it can be made again without this case or that daemon.</div>`;
+      <div class="hint">A run keeps all of this, with its hull as a closed STL and, once it has started, every file of its OpenFOAM case (the recipe): it can be made again without this case or that daemon.</div>`;
     box.querySelector(".compare")?.addEventListener("change", (e) => {
       compareUrl = e.target.value || null;
       inputs(run);
@@ -388,7 +451,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
   }
 
   function render() {
-    const run = handle?.doc();
+    const run = shown();
     if (!run) return;
     header(run);
     stages(run);
@@ -404,6 +467,11 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
       if (handle === h) return;
       handle?.off("change", onChange);
       handle = h;
+      if (h) follow(h);
+      else {
+        unfollow();
+        unfollow = () => {};
+      }
       lastProgress = "";
       resultsFor = null;
       root.hidden = !h;
@@ -413,7 +481,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
       render();
       // the elapsed time and stage clocks move without doc changes
       tick = setInterval(() => {
-        const run = handle?.doc();
+        const run = shown();
         if (run && !isTerminal(run.status)) {
           header(run);
           stages(run);
@@ -422,13 +490,14 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
     },
     /** Redraw what depends on other runs (the comparison, the variation letter), after they change. */
     refresh() {
-      const run = handle?.doc();
+      const run = shown();
       if (!run) return;
       header(run);
       if (tabId === "inputs" && isTerminal(run.status) && !$(".p-inputs").hidden) inputs(run);
     },
     dispose() {
       handle?.off("change", onChange);
+      unfollow();
       clearInterval(tick);
       plot.dispose();
       profileChart?.dispose();

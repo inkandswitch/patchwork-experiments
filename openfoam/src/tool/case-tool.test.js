@@ -9,7 +9,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { FakeRepo } from "../../probes/fake-repo.js";
 import { encodeGLB } from "../glb.js";
 import { boxTriangles } from "../test/box.js";
-import { newServer, initCase, CASE_TYPE } from "../protocol.js";
+import { initCase, CASE_TYPE } from "../protocol.js";
+import { setPackageUrl } from "../run-tasks.js";
 import { defaultSetup, waterProperties } from "../setup.js";
 import CaseTool from "./case-tool.js";
 
@@ -28,11 +29,15 @@ const until = async (fn, ms = 3000) => {
   }
 };
 
-let repo, handle, server, el, dispose;
+let repo, handle, server, el, dispose, beating;
 beforeEach(async () => {
+  setPackageUrl("automerge:openfoamTestPackage");
   repo = new FakeRepo();
   const hull = repo.add({ "@patchwork": { type: "file" }, name: "box.glb", extension: "glb", content: glb });
-  server = repo.add(newServer({ title: "Test daemon", daemon: { heartbeat: Date.now(), cores: 8, openfoam: "v2606" } }));
+  server = repo.add({ title: "Test queue", jobs: {} });
+  // a machine serving the queue says so every so often (task-client.js's `served`)
+  let seq = 0;
+  beating = setInterval(() => server.hear({ type: "serving", pool: "pool-1", name: "Test machine", slots: 2, busy: 0, from: "test-pool", seq: seq++ }), 50);
   const doc = { "@patchwork": { type: CASE_TYPE } };
   initCase(doc, defaultSetup());
   doc.hull = { url: hull.url };
@@ -46,6 +51,7 @@ beforeEach(async () => {
   await until(() => !el.querySelector(".run").disabled);
 });
 afterEach(() => {
+  clearInterval(beating);
   dispose?.();
   el.remove();
 });
@@ -117,7 +123,26 @@ describe("running from the case tool", () => {
     await until(() => handle.doc().runs.length === 1);
     const run = (await repo.find(handle.doc().runs[0])).doc();
     expect(run.setup.speed).toEqual({ value: 7.5, unit: "kn" });
-    expect(Object.keys(server.doc().requests)).toHaveLength(1);
+    expect(Object.keys(server.doc().jobs)).toEqual(handle.doc().runs);
+    await until(() => (repo.handles.get(handle.doc().runs[0]).doc().task));
+  });
+  it("shows who serves the queue, heard", async () => {
+    await until(() => /served by Test machine \(2 at once\)/.test($(".server-box").textContent));
+    expect($(".server-box").textContent).toContain("Test queue");
+  });
+  it("Cancel on a waiting run cancels its task; the run reads cancelled though its doc still says queued", async () => {
+    $(".run").click();
+    await until(() => handle.doc().runs.length === 1 && repo.handles.get(handle.doc().runs[0]).doc().task);
+    const runUrl = handle.doc().runs[0];
+    await until(() => !el.querySelector(".live-host .cancel").hidden);
+    el.querySelector(".live-host .cancel").click();
+    const task = repo.handles.get(repo.handles.get(runUrl).doc().task);
+    await until(() => task.doc().cancelled === true);
+    expect(server.doc().jobs).toEqual({});
+    expect(repo.handles.get(runUrl).doc().status).toBe("queued");
+    // the views read it from the task: it is finished, cancelled before it started
+    await until(() => /cancelled/.test($(".runs-table").textContent));
+    expect($(".running-sum").textContent).toBe("nothing running");
   });
   it("a sweep's speeds are in the unit shown", async () => {
     set('[data-k="speed-unit"]', "m/s");

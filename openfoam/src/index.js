@@ -62,26 +62,6 @@ export const plugins = [
     },
   },
   {
-    type: "patchwork:datatype",
-    id: "openfoam-server",
-    name: "OpenFOAM server",
-    icon: "Server",
-    unlisted: true,
-    async load() {
-      return (await import("./datatypes.js")).ServerDatatype;
-    },
-  },
-  {
-    type: "patchwork:tool",
-    id: "openfoam-server",
-    name: "OpenFOAM server",
-    icon: "Server",
-    supportedDatatypes: ["openfoam-server"],
-    async load() {
-      return (await import("./tool/server-tool.js")).default;
-    },
-  },
-  {
     type: "scene:source",
     id: "openfoam-results",
     content: "built",

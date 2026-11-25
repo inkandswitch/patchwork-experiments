@@ -1,6 +1,6 @@
 // Run one analysis through the real runner and real OpenFOAM, on an
-// in-memory repo (no sync server): what the daemon does for a request,
-// without the network. Prints the run doc's progress as it changes, then
+// in-memory repo (no sync server): what a run's task does
+// (daemon/run-task.mjs), without the network or a tasks host. Prints the run doc's progress as it changes, then
 // the summary and the layers.
 //
 //   node probes/local-run.mjs [--glb path] [--mode double-body|free-surface] [--mesh coarse|medium|fine]
@@ -12,7 +12,7 @@
 // probes/ui-run.mjs to show without running OpenFOAM again.
 //
 // --finish-after N asks for "finish now" once the solver passes iteration N;
-// --cancel-after N cancels then. Default hull: naval's camber fixture
+// --cancel-after N cancels then (aborts the signal, as a cancelled task's is). Default hull: naval's camber fixture
 // narrow-transom.glb (a 12 m sloop hull, open transom).
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -23,7 +23,7 @@ import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { glbTriangles } from "../src/hull/mesh-read.js";
 import { prepareHull } from "../src/hull/prepare.js";
 import { defaultSetup, normalizeSetup, DEFAULT_ITERATIONS } from "../src/setup.js";
-import { newRun, requestStop, unpackChunks, decodeLayer } from "../src/protocol.js";
+import { newRun, requestFinish, unpackChunks, decodeLayer } from "../src/protocol.js";
 import { internalize } from "../src/segments.js";
 import { foamEnvironment, defaultCores } from "../daemon/foam.mjs";
 import { runJob } from "../daemon/runner.mjs";
@@ -65,6 +65,7 @@ const h = await handle;
 let lastLine = "";
 const t0 = Date.now();
 let asked = false;
+const stop = new AbortController();
 h.on("change", () => {
   const d = h.doc();
   const running = d.stages.find((s) => s.status === "running");
@@ -74,14 +75,15 @@ h.on("change", () => {
   const at = Number(args["finish-after"] ?? args["cancel-after"]);
   if (!asked && Number.isFinite(at) && d.progress.iteration >= at) {
     asked = true;
-    h.change((x) => requestStop(x, { keep: !!args["finish-after"] }));
+    if (args["finish-after"]) h.change((x) => requestFinish(x));
+    else stop.abort("cancelled");
     console.log(`asked to ${args["finish-after"] ? "finish now" : "cancel"} at iteration ${d.progress.iteration}`);
   }
 });
-const work = resolve(args.work ?? join(tmpdir(), "foamd-probe"));
+const work = resolve(args.work ?? join(tmpdir(), "openfoam-probe"));
 mkdirSync(work, { recursive: true });
 const env = foamEnvironment({});
-const status = await runJob({ repo, handle: h, env, workDir: work, cores: defaultCores(), daemon: { id: "probe", host: "local" }, say: (m) => console.log("  ·", m) });
+const status = await runJob({ repo, handle: h, env, workDir: work, cores: defaultCores(), daemon: { host: "local" }, say: (m) => console.log("  ·", m), signal: stop.signal });
 const d = h.doc();
 console.log("\nstatus", status, d.error ?? "");
 for (const s of d.stages) console.log(`  ${s.status.padEnd(8)} ${s.id.padEnd(22)} ${s.startedAt && s.endedAt ? `${((s.endedAt - s.startedAt) / 1000).toFixed(1)}s` : ""}  ${s.note ?? ""}`);

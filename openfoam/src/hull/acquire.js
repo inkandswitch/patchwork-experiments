@@ -14,10 +14,10 @@
 import { readRender, isRenderDoc, fileBytes, renderKey } from "../render-read.js";
 import { decodeGLB, glbTriangles } from "./mesh-read.js";
 import { loadGetRegistry } from "../registry.js";
-import { CASE_TYPE, RUN_TYPE, SERVER_TYPE } from "../protocol.js";
+import { CASE_TYPE, RUN_TYPE } from "../protocol.js";
 
 const GLB_MAGIC = 0x46546c67;
-const OWN = new Set([CASE_TYPE, RUN_TYPE, SERVER_TYPE]);
+const OWN = new Set([CASE_TYPE, RUN_TYPE]);
 
 function extensionOf(doc) {
   const ext = String(doc?.extension ?? "").replace(/^\./, "").toLowerCase();

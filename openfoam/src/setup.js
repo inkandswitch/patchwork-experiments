@@ -1,5 +1,5 @@
 // The analysis a case describes, and the physics both sides read: the tool
-// (pre-flight figures) and the daemon (the case it writes). Pure: no DOM, no
+// (pre-flight figures) and the run's code (the case it writes). Pure: no DOM, no
 // automerge, no node. Everything is SI and in the FLOATING frame: metres, x
 // toward the bow, y to port, z up, the design waterline at z = 0. A boat going
 // ahead sees the stream come from +x (U = (−V, 0, 0)).
@@ -28,9 +28,9 @@
  * @property {MeshPreset} mesh
  * @property {number} iterations       solver iterations (steady, or LTS pseudo-time)
  * @property {"auto"|"half"|"full"} domain   half: y ≤ 0 with a symmetry plane, for a symmetric hull
- * @property {number} cores            0: the daemon decides
+ * @property {number} cores            0: the machine running it decides
  * @property {string|null} warmStart  a finished run (automerge url) whose solution starts this one,
- *   when the daemon still has its case; null starts from rest
+ *   when the machine that ran it still has its case; null starts from rest
  * @property {"settled"|"iterations"} stop  settled: stop once the resistance settles
  *   (src/convergence.js), with `iterations` as the ceiling; iterations: run them all
  */
@@ -296,7 +296,7 @@ export function frictionEstimate({ V, S, L, rho, nu, formFactor = 1 }) {
 // ---------------------------------------------------------------- mesh sizing
 
 /**
- * How the case is meshed, as numbers the daemon writes and the tool shows.
+ * How the case is meshed, as numbers the run writes and the tool shows.
  * Everything scales with the hull's length L, so the same preset makes a
  * similar mesh for a dinghy and a ship.
  *
@@ -480,7 +480,7 @@ export function isHalfModel(setup, info) {
   return info.symmetric === true;
 }
 
-/** The domain a run of this setup on this hull would mesh: the daemon writes it, the tool previews it. */
+/** The domain a run of this setup on this hull would mesh: the run writes it, the tool previews it. */
 export function domainForHull(setupIn, info) {
   const setup = normalizeSetup(setupIn);
   const half = isHalfModel(setup, info);

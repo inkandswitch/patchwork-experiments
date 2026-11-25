@@ -1,8 +1,8 @@
 # openfoam
 
 A frontend to [OpenFOAM](https://www.openfoam.com) for hulls in a scene. Link
-a hull, describe a resistance analysis, send it to an OpenFOAM daemon running
-anywhere, watch it converge, read the figures, and drop the results into the
+a hull, describe a resistance analysis, ask any machine with OpenFOAM to run
+it, watch it converge, read the figures, and drop the results into the
 scene next to the hull.
 
 It is the real thing [flow-field](../flow-field) stands in for: viscous,
@@ -19,10 +19,11 @@ pnpm install && pnpm build && pnpm test
    `brew trust --cask gerlero/openfoam/openfoam` first). It installs
    `OpenFOAM-v2606.app` and an `openfoam` launcher. On Linux, any ESI
    OpenFOAM (v2306 or later) with its `etc/bashrc`.
-2. **The daemon**, where OpenFOAM is: `daemon/start.sh` (from anywhere; it
-   finds node 22+ on PATH or in nvm, and installs its dependencies the first
-   time). On a server: `daemon/start.sh --bashrc /usr/lib/openfoam/openfoam2606/etc/bashrc`.
-   It prints an **inbox** link.
+2. **The host**, where OpenFOAM is: `daemon/start.sh --new-queue "OpenFOAM on
+   my Mac"`, with `TASKS_HOST` naming the tasks package's Node host and
+   `OPENFOAM_PACKAGE` this package's automerge url (below, *Running it*). On a
+   server add `--bashrc /usr/lib/openfoam/openfoam2606/etc/bashrc`. It prints
+   a **task queue** link; later starts serve it with `--queue <that link>`.
 3. **A case.** New document → "OpenFOAM case". It has two tabs:
    - **Model setup**: the **Model** (drop in a 3D file or hull, or paste
      its link; choose its parts, each listed with its size and, once the
@@ -30,7 +31,7 @@ pnpm install && pnpm build && pnpm test
      see it drawn with its waterline, length, beam, draft, displacement and
      wetted area) and the **Run setup** (how it floats: sinkage, trim, heel,
      or a mass to float at; the flow; the solver; the server, where you paste
-     the inbox link). Beside the setup, what to expect: Froude and Reynolds
+     the queue link). Beside the setup, what to expect: Froude and Reynolds
      numbers, the friction floor, cells and time. Then **Run**, or a sweep of
      speeds (in the speed's unit).
    - **Runs**: what's **Running** (stages, convergence, Finish now, Cancel)
@@ -47,10 +48,8 @@ pnpm install && pnpm build && pnpm test
 |---|---|---|
 | `patchwork:datatype` | `openfoam-case` | "OpenFOAM case": a hull link, a setup, a server, the runs it has made |
 | `patchwork:tool` | `openfoam-case` | model setup (model, run setup) and runs (running, results, inputs and comparison) |
-| `patchwork:datatype` | `openfoam-run` (unlisted) | one analysis, frozen when asked for; the daemon writes its progress and results |
+| `patchwork:datatype` | `openfoam-run` (unlisted) | one analysis, frozen when asked for; its code writes its progress and results |
 | `patchwork:tool` | `openfoam-run` | the same run view, on its own |
-| `patchwork:datatype` | `openfoam-server` (unlisted) | a daemon's inbox and status |
-| `patchwork:tool` | `openfoam-server` | is it up, what runs, what waits, what it did |
 | `scene:source` | `openfoam-results` | a case (or a run) as a GLB: hull by Cp or Cf, the water surface, wake and centre planes, streamlines |
 | `agent:tool` | `openfoam_case`, `openfoam_setup`, `openfoam_run`, `openfoam_results`, `openfoam_stop` | the same case for an agent (below, *For agents*) |
 
@@ -65,7 +64,7 @@ is computed where the physics needs it (`metresPerSecond`). Choosing the
 other unit in the form converts the value, so the boat's speed stays what it
 was; a sweep's speeds are in the unit shown.
 
-Both the tool and the daemon read a setup through `normalizeSetup`, which
+Both the tool and the run's code read a setup through `normalizeSetup`, which
 fills and clamps. What it had to change (a bare-number speed, a trim out of
 range, a field a setup doesn't have) is listed by `setupProblems`: the case
 shows it under the run setup, and the next change from the form writes the
@@ -98,11 +97,13 @@ gives one sinkage (it's a position, not an increment).
 
 **Waiting.** A run's state is the small top-level field `status` of its
 document: `queued` → `meshing` → `solving` → `post` → `done`, or `failed`, or
-`cancelled`; only the daemon writes it. `openfoam_run` returns each run and
+`cancelled`; only the run's code writes it. `openfoam_run` returns each run and
 the exact watch, e.g. `doc_watch { url: "automerge:…", path: ["status"], match: "done|failed|cancelled" }`,
 then `openfoam_results { runs: [...] }`. A double body takes about a minute
-once it starts, a free surface tens of minutes; a daemon runs its queue
-oldest first.
+once it starts, a free surface tens of minutes; a queue is run oldest first.
+A run cancelled before it started has nobody to write its document, so its
+`status` stays `queued`; `openfoam_results` and the case tool read it from
+the run's task and show it cancelled.
 
 **Results.** One row a run: status (with the iteration while solving),
 speed, analysis, mesh, sinkage / trim / heel, R<sub>T</sub> (± its scatter
@@ -133,8 +134,8 @@ set against another:
   in the order the case first ran it. The runs table and the speed curve
   split by variation once there's more than one;
 - **the tool that asked** (`made`: this package's version);
-- from the daemon: **where and with what it ran** (host, OpenFOAM version,
-  cores, the daemon's version and git commit, marked when it has changes)
+- from the run's code: **where and with what it ran** (host, OpenFOAM version,
+  cores, this package's version and git commit, marked when it has changes)
   and the **recipe**: every file it wrote for the OpenFOAM case (dictionaries
   and initial fields, 15–20 KB), with a digest over them and the STL. Two
   runs with one recipe digest were the same OpenFOAM case.
@@ -148,11 +149,11 @@ makes a new run with its setup and its frozen STL.
 
 ## The flow volume, and big bytes in segments
 
-**Keep volume** (Solver) asks the daemon to keep every cell's flow after the
+**Keep volume** (Solver) asks the run to keep every cell's flow after the
 run: the mesh and the last time's fields, as OpenFOAM wrote them (binary,
 with their headers). It is big, about 200 bytes a cell: 31 MB for a coarse
 double body (154k cells), 228 MB for a medium one (1.08M), so it's off unless
-asked for, and the estimate says how big it would be. The daemon keeps it
+asked for, and the estimate says how big it would be. The run keeps it
 after the run is done (the results don't wait for it), as the run's last
 stage, and links it as `run.volume` (`{ status, url, bytes, docs, missing }`).
 
@@ -177,8 +178,8 @@ sometimes never come for docs that did arrive. The note at the top of
 `src/segments.js` says how to check whether it's still needed. **If it is
 December 2026 or later, check.**
 
-The daemon waits for the server to acknowledge each doc it makes; where an
-acknowledgement doesn't come within a minute, a second peer in the daemon
+The run waits for the server to acknowledge each doc it makes; where an
+acknowledgement doesn't come within a minute, a second peer in the run
 (nothing stored) fetches the doc the way a reader would. Only what that can't
 get either is reported missing, in the stage's note and `run.volume.missing`.
 
@@ -287,24 +288,36 @@ The double body through the real sync server gives the same 769.7 N, and
 4000 to 6000 iterations (as DTCHull runs). Whether the coarse preset settles at
 a credible value at 4000 hasn't been checked yet.
 
-## The daemon
+## Running it
 
-`daemon/foamd.mjs` is an automerge peer, not a web service. It syncs with
-the same server Patchwork does and owns one `openfoam-server` document, its
-inbox. Nothing listens on a port, so moving it to a big machine is a matter
-of running it there and pasting the new inbox link.
+A run is a **task** asked of a **task queue** (the case's Server field): a
+document keyed by the run doc's url, naming this package's
+`daemon/run-task.mjs` as its code. A **tasks host** (the tasks package's Node
+host, `TASKS_HOST`) on a machine with OpenFOAM serves the queue: it takes the
+queue's tasks oldest first and runs each one's code from this package's
+directory. Nothing listens on a port, so moving it to a big machine is a
+matter of running it there and serving the same queue (or pasting a new
+queue's link).
 
 ```
-daemon/start.sh [--sync wss://…] [--state ~/.patchwork-openfoam] [--cores N] [--jobs N]
+TASKS_HOST=…/tasks/dist-node/host.mjs OPENFOAM_PACKAGE=automerge:… \
+daemon/start.sh --new-queue "title" | --queue automerge:… [--jobs N] [--cores N] [--name "…"]
                 [--launcher /path/to/openfoam] [--bashrc /path/to/etc/bashrc]
-                [--mpirun-args "…"] [--title "…"] [--new-server]
+                [--mpirun-args "…"] [--state ~/.patchwork-openfoam] [--sync wss://…]
 ```
 
-- **State** (`--state`): `config.json` (the inbox and the daemon's id, so a
-  restart keeps its inbox), `automerge/` (a local copy of its docs) and
-  `runs/<id>/`, each run's OpenFOAM case, kept for ParaView.
-- **Runs at once**: `--jobs` (1 by default), oldest request first. A run
-  interrupted by a restart is marked failed, never re-run behind your back.
+- **State** (`--state`): `host/` (the host's documents) and `runs/<id>/`,
+  each run's OpenFOAM case, kept for ParaView. The machine's settings reach
+  each run as `FOAMD_*` environment variables (`daemon/run-task.mjs` lists them).
+- **Who serves it.** Each host says so on the queue every two seconds; the
+  case tool shows who is heard ("served by …") and what runs and waits. Runs
+  asked of a queue nobody serves wait in it.
+- **Never re-run behind your back.** Tasks run at least once: when a host
+  stops mid-run (SIGTERM gives the run 5 s, and its document says the machine
+  stopped), its task is taken again when the host is back. A run's code that
+  finds an earlier run of its task doesn't solve; it marks the run failed
+  ("interrupted and not started again"), and the task fails.
+- **Runs at once**: `--jobs` (1 by default), oldest first.
 - **Cores a run**: all but two, at most 8, unless `--cores` or the case says
   otherwise. Meshing and solving both run on them (snappyHexMesh in
   parallel: the free-surface coarse mesh in 27 s on 8 cores, 51 s on one).
@@ -314,15 +327,17 @@ daemon/start.sh [--sync wss://…] [--state ~/.patchwork-openfoam] [--cores N] [
   3× for 8 cores. A server with 4–8× the bandwidth runs a coarse free-surface
   run 4–8× faster (an estimate), and does best as several runs of a few dozen
   cores each (192 cores: `--jobs 6 --cores 32`).
-- **Sleep.** On macOS it holds off idle sleep (`caffeinate -i`) while a run is
-  active, and only then: a Mac that idles to sleep stops the solver and drops
+- **Sleep.** On macOS each run holds off idle sleep (`caffeinate -i`) while it
+  goes, and only then: a Mac that idles to sleep stops the solver and drops
   the sync connection.
-- **Cancel** kills the running command and everything under it. Not its
-  process group: OpenMPI's `prterun` makes its own, and gives every rank
-  another, so a group kill leaves the solver running
-  (`daemon/foam.test.mjs` reproduces that shape). **Finish now** sets
-  `stopAt writeNow`: the solver writes and stops, and the results are read
-  as usual.
+- **Cancel** flags the run's task. A run that hasn't started never does; a
+  running one has the command and everything under it killed at once (SIGTERM,
+  then SIGKILL 3 s later), and its document says cancelled. Not its process
+  group: OpenMPI's `prterun` makes its own, and gives every rank another, so a
+  group kill leaves the solver running (`daemon/foam.test.mjs` reproduces
+  that shape). **Finish now** is the run doc's `control.finish`: it sets
+  `stopAt writeNow`, the solver writes and stops, and the results are read as
+  usual.
 
 ### Starting and stopping runs sooner
 
@@ -333,11 +348,11 @@ daemon/start.sh [--sync wss://…] [--state ~/.patchwork-openfoam] [--cores N] [
   their residuals, which usually comes first. The 1500-iteration coarse
   free-surface run above was still 72% apart between its last two windows, so
   the rule would have kept going.
-- **Start from a past run** ("Start from" in the case). The daemon maps that
+- **Start from a past run** ("Start from" in the case). The run maps that
   run's last solution onto the new mesh (`mapFields -consistent`, decomposed
   to decomposed) and puts the inlet back to the new speed (`changeDictionary`:
   mapFields carries boundary values over too, and an early try ran the
-  6 kn case at 4.5 kn). Only on the daemon that ran the source. What it buys:
+  6 kn case at 4.5 kn). Only on the machine that ran the source. What it buys:
   - double body, 6 kn from 4.5 kn: **nothing**, 297 iterations against 263
     cold, the same drag to 0.2%. The boundary layer re-forms either way.
   - free surface: the source's waves arrive intact (a 6 kn start from a 6 kn
@@ -355,14 +370,20 @@ daemon/start.sh [--sync wss://…] [--state ~/.patchwork-openfoam] [--cores N] [
 
 ### The protocol
 
-`src/protocol.js`, shared by the tool and the daemon. Who writes what
+`src/protocol.js`, shared by the tool and the run's code. Who writes what
 never overlaps:
 
-| doc | people write | the daemon writes |
+| doc | people write | the run's code writes |
 |---|---|---|
 | case | everything | nothing |
-| run | `control.cancel`, `control.finish` | status, stages, progress, mesh, summary, layers, volume, error |
-| server | `requests[id]` | `daemon` (heartbeat every 20 s), `handled[id]`, `active` |
+| run | `control.finish`, `task` (once, when it is asked for) | status, stages, progress, mesh, summary, layers, volume, error |
+
+The task and the queue are the tasks package's documents, written through
+`src/task-client.js` and read through `src/task-rules.js` (verbatim copies
+of the tasks package's kit files; `node scripts/check-kit.mjs` at the
+experiments root checks them). The status a person sees is the run doc's,
+or, where nobody wrote it (cancelled before it started, a machine that
+stopped for good), its task's (`shownRun`).
 
 A run doc is made when you press Run, with the setup and the hull (as a
 closed binary STL in the floating frame) frozen into it, so every run
@@ -441,7 +462,10 @@ waterline on a grid plane), the hull preparation on a box with known answers
 (volume 2, wetted area 9, LCB 2, an open end closed), the protocol, the case
 files, the parsers and results against **real OpenFOAM output**
 (`daemon/test/fixtures`, from the narrow-transom run above), the scene GLB,
-the process-tree kill, the speed and its units, the agent's tools over a fake
+the process-tree kill, a run told to stop for each reason (cancelled,
+stopping, yielded) with a stand-in solver, the run's task code (its guard
+against solving twice, what it tells a task view), the status read from a
+run doc and its task, the speed and its units, the agent's tools over a fake
 repo (a GLB of a closed box hull, an open cabin and a water plane: every
 part's report, floating at a mass and trim against the box's exact answer,
 one run and a sweep, the results table, every refusal), and the case tool in
@@ -451,9 +475,12 @@ Probes (need OpenFOAM, or Chrome):
 
 - `node probes/local-run.mjs [--mode free-surface] [--dump run.json]`: one
   run through the real runner and OpenFOAM, on an in-memory repo.
-- `node probes/net-run.mjs --inbox automerge:…`: one run through a real
-  `foamd` and the real sync server, from a separate peer.
-- `node probes/converge-experiment.mjs --inbox automerge:…`: free-surface
+- `node probes/net-run.mjs`: the whole arrangement on this machine: a tasks
+  host serving a new queue, runs asked from a separate peer through the real
+  sync server; a run end to end, finish now, cancel mid-solve (no solver
+  process left), the host stopped mid-run and started again (the run is not
+  solved twice), a solver error (fails once), and who is heard serving.
+- `node probes/converge-experiment.mjs --queue automerge:…`: free-surface
   runs from rest, at a double body's predicted attitude, and warm-started from
   a nearby speed, each to the settled rule; reports when each settled. Hours
   on a laptop: run it plugged in, or on a server.
@@ -463,7 +490,7 @@ Probes (need OpenFOAM, or Chrome):
   (`--chunk-mb 0`: one doc). What `src/segments.js`'s workaround rests on.
 - `node probes/volume-run.mjs keep --case <run dir>`, then `read --url
   automerge:… --case <run dir> [--fields p] [--pieces 0]`: keep a finished
-  case's flow volume as the daemon does, then read part of it into a fresh
+  case's flow volume as a run does, then read part of it into a fresh
   peer and compare it byte for byte with the case on disk.
 - `pnpm build && node probes/ui-run.mjs --done run.json --done2 run2.json`:
   the built tool in headless Chrome on a fake repo, with real dumped runs:
@@ -487,4 +514,4 @@ Probes (need OpenFOAM, or Chrome):
   cutter, or vtk.js), and a compact resampled copy near the hull for a quick
   look (5–20 MB), are next. Surfaces as VTK XML (`.vtp`) with every array and
   a sidecar (frame, units, reference V/ρ/L) are still deferred. Warm starts
-  from another daemon's runs want the same data.
+  from another machine's runs want the same data.

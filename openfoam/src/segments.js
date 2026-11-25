@@ -18,7 +18,7 @@
 // │     fresh peer fetched it in 130 ms); the 34 MB doc above was not.
 // │  Hence: no doc holds more than SEGMENT_BYTES of bytes, readers fetch a
 // │  couple of segments at a time and check a digest, and a writer that can
-// │  wait (the daemon) confirms each segment reached the server: by its
+// │  wait (a run) confirms each segment reached the server: by its
 // │  acknowledgement, or failing that by a fresh peer fetching it.
 // │
 // │  To check: `node probes/bulk-bench.mjs post --case <a run dir>

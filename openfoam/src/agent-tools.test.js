@@ -1,13 +1,15 @@
 // The agent's tools over a fake repo: a GLB model of three parts (a closed
-// box hull, an open cabin above the water, a water plane), a daemon's inbox,
-// and the finite cases each tool decides: units, floating, sweeps, the
+// box hull, an open cabin above the water, a water plane), a task queue a
+// fake machine says it serves, and the finite cases each tool decides: units, floating, sweeps, the
 // results table, and every refusal.
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { FakeRepo } from "../probes/fake-repo.js";
 import { encodeGLB } from "./glb.js";
 import { boxTriangles } from "./test/box.js";
-import { newServer, newRun, CASE_TYPE, RUN_TYPE } from "./protocol.js";
+import { newRun, CASE_TYPE, RUN_TYPE } from "./protocol.js";
+import { setPackageUrl, RUN_CODE } from "./run-tasks.js";
+import { taskState, allHeard } from "./task-rules.js";
 import { defaultSetup, normalizeSetup, waterProperties, G, KNOT } from "./setup.js";
 import { caseTool, setupTool, runTool, resultsTool, stopTool, setupPatch, STATUS_PATH, MAX_PARTS } from "./agent-tools.js";
 import { AGENT_TOOLS } from "./agent-meta.js";
@@ -43,8 +45,19 @@ const glb = encodeGLB({
 const RHO = waterProperties("salt", 15).rho;
 const SESSION = "automerge:session";
 
-let repo, ctx, hullUrl, server, folder;
+const PACKAGE = "automerge:openfoamTestPackage";
+let repo, ctx, hullUrl, server, folder, beating;
+/** A machine serving the queue says so every so often (task-client.js's `served` hears it). */
+function serveQueue({ name = "Test machine", slots = 1, busy = 0 } = {}) {
+  let seq = 0;
+  const beat = () => server.hear({ type: "serving", pool: "pool-1", name, slots, busy, from: "test-pool", seq: seq++ });
+  beat();
+  clearInterval(beating);
+  beating = setInterval(beat, 50);
+}
+afterEach(() => clearInterval(beating));
 beforeEach(() => {
+  setPackageUrl(PACKAGE);
   repo = new FakeRepo();
   // the fake repo records each change's options, to check the messages
   const add = repo.add.bind(repo);
@@ -60,7 +73,8 @@ beforeEach(() => {
   };
   ctx = { repo, sessionUrl: SESSION };
   hullUrl = repo.add({ "@patchwork": { type: "file" }, name: "box.glb", extension: "glb", content: glb }).url;
-  server = repo.add(newServer({ title: "Test daemon", daemon: { heartbeat: Date.now(), cores: 8, openfoam: "v2606" } }));
+  server = repo.add({ title: "Test queue", jobs: {} });
+  serveQueue();
   folder = repo.add({ "@patchwork": { type: "folder" }, title: "Work", docs: [] });
 });
 
@@ -132,8 +146,8 @@ describe("openfoam_case", () => {
     expect(t).toContain("The hull is one closed shell.");
     expect(t).toContain("measured at x = 2.000 m");
     expect(t).toContain("Setup: Double body (no waves) · 6 kn (3.087 m/s) · coarse mesh");
-    expect(t).toContain("Server: “Test daemon”");
-    expect(t).toContain("online, OpenFOAM v2606, 8 cores");
+    expect(t).toContain("Server: “Test queue”");
+    expect(t).toContain("served by Test machine; nothing running.");
     expect(t).toMatch(/Ready: openfoam_run \{ case \} asks for a run at 6 kn/);
   });
   it("after the hull is kept, reads only the kept copy, which knows every part but holds the chosen ones", async () => {
@@ -177,7 +191,7 @@ describe("openfoam_case", () => {
     await expect(caseTool.execute({ case: hullUrl }, ctx)).rejects.toThrow(/is a file document, not an OpenFOAM case\. openfoam_case makes one\./);
     await expect(caseTool.execute({ case: "nonsense" }, ctx)).rejects.toThrow(/`case` "nonsense" isn't an automerge: URL/);
     const { url } = await newCase();
-    await expect(caseTool.execute({ case: url, server: hullUrl }, ctx)).rejects.toThrow(/`server` automerge:\S+: that link isn't an OpenFOAM daemon's inbox/);
+    await expect(caseTool.execute({ case: url, server: hullUrl }, ctx)).rejects.toThrow(/`server` automerge:\S+: that link isn't a task queue/);
     await expect(caseTool.execute({ case: url, parts: [] }, ctx)).rejects.toThrow(/`parts` is a list of part names/);
   });
   it("says what's missing before a run can be asked for", async () => {
@@ -341,11 +355,17 @@ describe("openfoam_run", () => {
     expect(run.hull.source.parts).toEqual(["Hull"]);
     expect(run.hull.geometry.digest).toMatch(/^[0-9a-f]{64}$/);
     expect(handle.doc().runs).toEqual([runUrl]);
-    expect(Object.values(server.doc().requests).map((q) => q.run)).toEqual([runUrl]);
+    // asked of the case's queue as a task keyed by the run, naming this package's run code
+    expect(Object.keys(server.doc().jobs)).toEqual([runUrl]);
+    const entry = server.doc().jobs[runUrl];
+    expect(entry.package).toBe(PACKAGE);
+    expect(run.task).toBe(entry.taskUrl);
+    const task = (await repo.find(entry.taskUrl)).doc();
+    expect(task).toMatchObject({ importUrl: `/${encodeURIComponent(PACKAGE)}/${RUN_CODE}`, input: { run: runUrl }, key: runUrl, runs: [] });
     expect(STATUS_PATH).toEqual(["status"]);
     expect(r.text).toContain(`doc_watch { url: "${runUrl}", path: ["status"], match: "done|failed|cancelled" }`);
     expect(r.text).toContain('the small field ["status"] of its document');
-    expect(r.text).toMatch(/^Asked for a run on “Test daemon”: online\./);
+    expect(r.text).toMatch(/^Asked for a run on “Test queue”: served by Test machine\./);
   });
   it("asks for a sweep, one run per speed with its unit, in order", async () => {
     const { url, handle } = await newCase();
@@ -357,7 +377,7 @@ describe("openfoam_run", () => {
       { value: 4.5, unit: "m/s" },
     ]);
     expect(handle.doc().runs).toEqual(r.made.map((m) => m.url));
-    expect(Object.keys(server.doc().requests)).toHaveLength(3);
+    expect(Object.keys(server.doc().jobs)).toEqual(r.made.map((m) => m.url));
     for (const m of r.made) expect(r.text).toContain(`doc_watch { url: "${m.url}"`);
     // one hull, frozen once for all
     expect(new Set(runs.map((x) => x.hull.geometry.digest)).size).toBe(1);
@@ -372,13 +392,28 @@ describe("openfoam_run", () => {
     const bare = await caseTool.execute({ title: "No server", hull: hullUrl }, ctx);
     await expect(runTool.execute({ case: bare.doc.url }, ctx)).rejects.toThrow("Can't run yet: Choose a server.");
     expect(handle.doc().runs).toEqual([]);
-    expect(server.doc().requests).toEqual({});
+    expect(server.doc().jobs).toEqual({});
   });
-  it("says when the daemon is offline: the runs wait", async () => {
-    server.change((d) => (d.daemon.heartbeat = 0));
+  it("says when nobody is serving the queue: the runs wait", async () => {
     const { url } = await newCase();
+    clearInterval(beating);
     const r = await runTool.execute({ case: url }, ctx);
-    expect(r.text).toMatch(/OFFLINE — they wait in its queue/);
+    expect(r.text).toMatch(/NOBODY IS SERVING IT — they wait in its queue/);
+  }, 10_000);
+  it("says how many runs are ahead, from the queue and what its machines say they are busy with", async () => {
+    const { url } = await newCase();
+    await runTool.execute({ case: url, speeds: ["7 kn", "8 kn"] }, ctx);
+    serveQueue({ busy: 1 });
+    const r = await runTool.execute({ case: url }, ctx);
+    expect(r.text).toMatch(/served by Test machine; 2 ahead of them\./);
+    expect(await caseTool.execute({ case: url }, ctx)).toContain("running 1, 2 waiting.");
+  });
+  it("can't name the run's code outside its package without being told, and asks for nothing", async () => {
+    const { url, handle } = await newCase();
+    setPackageUrl(null);
+    await expect(runTool.execute({ case: url }, ctx)).rejects.toThrow(/wasn't loaded from its package/);
+    expect(handle.doc().runs).toEqual([]);
+    expect(server.doc().jobs).toEqual({});
   });
 });
 
@@ -459,7 +494,7 @@ describe("the results table", () => {
 // ---------------------------------------------------------------- stopping
 
 describe("openfoam_stop", () => {
-  it("cancels a queued run, finishes a solving one, and leaves finished ones be", async () => {
+  it("cancels a queued run through its task, finishes a solving one by its control, and leaves finished ones be", async () => {
     const { url } = await newCase();
     const r = await runTool.execute({ case: url, speeds: ["7 kn", "8 kn"] }, ctx);
     const [a, b] = await Promise.all(r.made.map((m) => repo.find(m.url)));
@@ -467,11 +502,17 @@ describe("openfoam_stop", () => {
     const t = await stopTool.execute({ runs: [a.url, b.url], keep: true }, ctx);
     expect(t).toContain(`${a.url}: queued, not solving, so there's nothing to finish yet`);
     expect(t).toContain(`${b.url}: asked to finish now`);
-    expect(a.doc().control).toEqual({ cancel: false, finish: false });
-    expect(b.doc().control).toEqual({ cancel: false, finish: true });
-    await stopTool.execute({ runs: [a.url], keep: false }, ctx);
-    expect(a.doc().control.cancel).toBe(true);
-    a.change((d) => (d.status = "cancelled"));
+    expect(a.doc().control).toEqual({ finish: false });
+    expect(b.doc().control).toEqual({ finish: true });
+    const taskA = await repo.find(a.doc().task);
+    expect(await stopTool.execute({ runs: [a.url], keep: false }, ctx)).toMatch(/: cancelled\. If it hadn't started it never will/);
+    // the task is flagged and off the queue; the run doc isn't written
+    expect(taskA.doc().cancelled).toBe(true);
+    expect(taskState(taskA.doc(), allHeard)).toBe("cancelled");
+    expect(Object.keys(server.doc().jobs)).toEqual([b.url]);
+    expect(a.doc().status).toBe("queued");
+    // read from both, it is cancelled: to the results and to stop
+    expect(await resultsTool.execute({ runs: [a.url] }, ctx)).toContain(`| 1 | ${a.url} | cancelled |`);
     expect(await stopTool.execute({ runs: [a.url], keep: false }, ctx)).toBe(`${a.url}: already cancelled; nothing to stop.`);
     await expect(stopTool.execute({ runs: [a.url] }, ctx)).rejects.toThrow(/`keep`: true finishes now/);
     await expect(stopTool.execute({ runs: [hullUrl], keep: false }, ctx)).rejects.toThrow(/not an OpenFOAM run/);
@@ -479,7 +520,7 @@ describe("openfoam_stop", () => {
 });
 
 // the speeds a sweep's runs were made at are the speeds asked for, in m/s too
-describe("speed through to the daemon", () => {
+describe("speed through to the run", () => {
   it("a run at 8 kn is at 8 × 1852/3600 m/s", async () => {
     const { metresPerSecond } = await import("./setup.js");
     expect(metresPerSecond({ value: 8, unit: "kn" })).toBeCloseTo(8 * KNOT, 12);

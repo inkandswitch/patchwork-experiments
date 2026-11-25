@@ -1,11 +1,11 @@
 // Publish an example OpenFOAM case to the sync server: the narrow-transom
 // hull as a GLB file doc, and a case that links it and adopts finished runs
-// (made by probes/net-run.mjs through a real foamd). Every doc suggests this
+// (made by probes/net-run.mjs through a real OpenFOAM host). Every doc suggests this
 // package (its pushwork url), so a viewer without it is offered it.
 //
 //   node probes/publish-example.mjs --runs automerge:…,automerge:… [--sync wss://…] [--glb path] [--title "…"]
 //
-// The case has no server: whoever opens it pastes their own daemon's inbox.
+// The case has no server: whoever opens it pastes their own task queue.
 // Makes NEW docs on every run; the runs are re-pointed at the new case.
 
 import { readFileSync } from "node:fs";

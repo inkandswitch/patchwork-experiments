@@ -1,8 +1,8 @@
-// The whole loop in the REAL Patchwork: open a case, point it at a live
-// daemon's inbox, set a speed, press Run, and wait until the run comes back
+// The whole loop in the REAL Patchwork: open a case, point it at a task
+// queue a running OpenFOAM host serves (daemon/start.sh), set a speed, press Run, and wait until the run comes back
 // done, all through the UI (headless Chrome, a fresh profile).
 //
-//   node probes/real-run.mjs <case url> <inbox url> [--knots 5] [--shots dir] [--wait 600]
+//   node probes/real-run.mjs <case url> <queue url> [--knots 5] [--shots dir] [--wait 600]
 
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,7 +11,7 @@ import { mkdirSync } from "node:fs";
 import { browser, checklist, sleep } from "./cdp.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const [caseUrl, inbox] = process.argv.slice(2);
+const [caseUrl, queue] = process.argv.slice(2);
 const arg = (n, d = null) => {
   const i = process.argv.indexOf(n);
   return i > 0 ? process.argv[i + 1] : d;
@@ -43,10 +43,10 @@ try {
     ready = await b.js(`!!${q(".openfoam .run")}`);
   }
   check("the case opened in the tool", ready);
-  // the server: forget any, then paste the live inbox
+  // the server: forget any, then paste the live queue
   await b.js(`${q(".openfoam .server-forget")}?.hidden === false && ${q(".openfoam .server-forget")}.click()`);
   await sleep(500);
-  check("the inbox link is accepted", await fill(".openfoam .server-url", inbox));
+  check("the queue link is accepted", await fill(".openfoam .server-url", queue));
   let online = false;
   for (let i = 0; i < 30 && !online; i++) {
     await sleep(1000);

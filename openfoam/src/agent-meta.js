@@ -29,7 +29,7 @@ export const AGENT_TOOLS = [
     where: "host",
     risk: "edit",
     description:
-      "Make an OpenFOAM resistance case for a hull, or change what it analyses, and report it. With no `case`, makes one (filed in `folder` if given). `hull` links the model (a 3D file such as a Rhino .3dm or GLB, or any hull document); `parts` chooses which of its named parts (Rhino layers) are the hull; `bow` says which way the model's bow points; `server` is an OpenFOAM daemon's inbox. Every call reports the case: each part's extent in the model's frame and whether it is a closed shell, the hull as floated (displacement, draft, waterline, wetted area) and how sinkage is measured, the setup, what a run will cost, the server, and whether it's ready to run. With only `case`, it just reports.",
+      "Make an OpenFOAM resistance case for a hull, or change what it analyses, and report it. With no `case`, makes one (filed in `folder` if given). `hull` links the model (a 3D file such as a Rhino .3dm or GLB, or any hull document); `parts` chooses which of its named parts (Rhino layers) are the hull; `bow` says which way the model's bow points; `server` is the task queue its runs are asked of (an OpenFOAM host prints one). Every call reports the case: each part's extent in the model's frame and whether it is a closed shell, the hull as floated (displacement, draft, waterline, wetted area) and how sinkage is measured, the setup, what a run will cost, the server, and whether it's ready to run. With only `case`, it just reports.",
     input_schema: {
       type: "object",
       properties: {
@@ -42,7 +42,7 @@ export const AGENT_TOOLS = [
           anyOf: [{ type: "array", items: { type: "string" } }, { type: "string", enum: ["default"] }],
         },
         bow: { type: "string", enum: ["+x", "-x"], description: "Which way the model's bow points; the analysis turns it to +x." },
-        server: URL_OF("the OpenFOAM daemon's inbox (the daemon prints it when it starts)"),
+        server: URL_OF("the task queue that runs go to (the OpenFOAM host prints it when it starts)"),
         reread: { type: "boolean", description: "Read the hull again from the original model, not the copy kept with the case (after the model changed)." },
       },
     },
@@ -81,9 +81,9 @@ export const AGENT_TOOLS = [
         iterations: { type: "number", description: "Solver iterations, 50–20000 (a ceiling when stopping once settled)." },
         stop: { type: "string", enum: ["settled", "iterations"], description: "settled: stop once the resistance holds within 1%; iterations: run them all." },
         domain: { type: "string", enum: ["auto", "half", "full"], description: "auto: a half model when the hull is symmetric (never when heeled)." },
-        cores: { type: "number", description: "Cores a run, 0 for the daemon's choice." },
+        cores: { type: "number", description: "Cores a run, 0 for the machine's choice." },
         keep_volume: { type: "boolean", description: "Keep every cell's flow after the run (about 200 bytes a cell)." },
-        start_from: { type: ["string", "null"], description: "automerge: URL of a finished run whose solution starts the next one (on the daemon that ran it), or null to start from rest." },
+        start_from: { type: ["string", "null"], description: "automerge: URL of a finished run whose solution starts the next one (on the machine that ran it), or null to start from rest." },
       },
     },
     async load() {
@@ -135,7 +135,7 @@ export const AGENT_TOOLS = [
     name: "Stop OpenFOAM runs",
     where: "worker",
     risk: "edit",
-    description: "Stop runs: `keep: true` finishes now (the solver writes what it has and its results are read, only while solving); `keep: false` cancels (nothing is kept). The run's status says when the daemon has done it.",
+    description: "Stop runs: `keep: true` finishes now (the solver writes what it has and its results are read, only while solving); `keep: false` cancels (nothing is kept). The run's status says when it has stopped; a run cancelled before it started keeps the status \"queued\", and openfoam_results shows it cancelled.",
     input_schema: {
       type: "object",
       required: ["runs", "keep"],

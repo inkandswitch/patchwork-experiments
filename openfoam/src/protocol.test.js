@@ -1,49 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { newRun, newServer, enqueue, pendingRequests, queueView, daemonOnline, packChunk, unpackChunks, encodeLayer, decodeLayer, requestStop, stagesFor, requestIdOf, ONLINE_MS } from "./protocol.js";
+import { newRun, packChunk, unpackChunks, encodeLayer, decodeLayer, requestFinish, stagesFor, runIdOf, markStopped, markInterrupted, shownRun, MACHINE_STOPPED, NOT_RESTARTED } from "./protocol.js";
 import { defaultSetup } from "./setup.js";
-
-describe("the inbox", () => {
-  const server = () => newServer({ title: "t", daemon: { heartbeat: 1000 } });
-  it("hands out requests oldest first, ties by id", () => {
-    const s = server();
-    enqueue(s, "automerge:B", { now: 5 });
-    enqueue(s, "automerge:A", { now: 5 });
-    enqueue(s, "automerge:C", { now: 1 });
-    expect(pendingRequests(s).map((r) => r.id)).toEqual(["C", "A", "B"]);
-  });
-  it("never hands out a request twice once handled", () => {
-    const s = server();
-    enqueue(s, "automerge:A", { now: 1 });
-    enqueue(s, "automerge:B", { now: 2 });
-    s.handled.A = { at: 3, status: "done" };
-    expect(pendingRequests(s).map((r) => r.id)).toEqual(["B"]);
-    // asking again for a handled run doesn't bring it back
-    enqueue(s, "automerge:A", { now: 4 });
-    expect(pendingRequests(s).map((r) => r.id)).toEqual(["B"]);
-  });
-  it("shows the running runs apart from what waits", () => {
-    const s = server();
-    enqueue(s, "automerge:A", { now: 1 });
-    enqueue(s, "automerge:B", { now: 2 });
-    enqueue(s, "automerge:C", { now: 3 });
-    s.active.A = { run: "automerge:A", since: 5 };
-    s.active.C = { run: "automerge:C", since: 6 };
-    const q = queueView(s);
-    expect(q.active.map((r) => r.id).sort()).toEqual(["A", "C"]);
-    expect(q.waiting.map((r) => r.id)).toEqual(["B"]);
-  });
-  it("reads a malformed running map as nothing running", () => {
-    expect(queueView({ requests: {}, active: { request: "A" } }).active).toEqual([]);
-    expect(queueView({ requests: {}, active: null }).active).toEqual([]);
-  });
-  it("is online only while it beats", () => {
-    const s = server();
-    expect(daemonOnline(s, 1000 + ONLINE_MS - 1)).toBe(true);
-    expect(daemonOnline(s, 1000 + ONLINE_MS)).toBe(false);
-    expect(daemonOnline({}, 0)).toBe(false);
-  });
-  it("keys a request by its run's document id", () => expect(requestIdOf("automerge:abc")).toBe("abc"));
-});
 
 describe("a run", () => {
   it("starts queued with every stage pending", () => {
@@ -53,13 +10,99 @@ describe("a run", () => {
     expect(r.stages.every((s) => s.status === "pending")).toBe(true);
     expect(stagesFor("free-surface").map((s) => s.id)).toContain("setFields");
   });
-  it("asks to stop by control only", () => {
+  it("asks to finish by control only, and names no task until one is asked", () => {
     const r = newRun({ caseUrl: "c", serverUrl: "s", setup: defaultSetup(), hull: {}, now: 1 });
-    requestStop(r, { keep: true });
-    expect(r.control).toEqual({ cancel: false, finish: true });
-    requestStop(r, { keep: false });
-    expect(r.control).toEqual({ cancel: true, finish: true });
+    expect(r.task).toBe(null);
+    requestFinish(r);
+    expect(r.control).toEqual({ finish: true });
     expect(r.status).toBe("queued");
+  });
+  it("is named by its document id", () => expect(runIdOf("automerge:abc")).toBe("abc"));
+});
+
+describe("a run told to stop", () => {
+  const solving = () => {
+    const r = newRun({ caseUrl: "c", serverUrl: "s", setup: defaultSetup(), hull: {}, now: 1 });
+    r.status = "solving";
+    r.stages[0].status = "done";
+    r.stages[1].status = "running";
+    return r;
+  };
+  it("cancelled: says cancelled, and the stage it was on stopped", () => {
+    const r = solving();
+    markStopped(r, "cancelled", 9);
+    expect([r.status, r.error, r.finishedAt]).toEqual(["cancelled", null, 9]);
+    expect(r.stages.map((s) => s.status).slice(0, 3)).toEqual(["done", "failed", "pending"]);
+    expect(r.stages[1].note).toBe("cancelled");
+  });
+  it("stopping (its machine is shutting down): failed, saying the machine stopped", () => {
+    const r = solving();
+    markStopped(r, "stopping", 9);
+    expect([r.status, r.error]).toEqual(["failed", MACHINE_STOPPED]);
+    expect(r.stages[1].note).toBe("stopped");
+  });
+  it("yielded: nothing written", () => {
+    const r = solving();
+    const before = JSON.stringify(r);
+    markStopped(r, "yielded", 9);
+    expect(JSON.stringify(r)).toBe(before);
+  });
+  it("a finished run keeps its status; only a volume being kept says it wasn't", () => {
+    for (const reason of ["cancelled", "stopping"]) {
+      const r = solving();
+      r.status = "done";
+      r.stages.find((s) => s.id === "solve").status = "done";
+      r.stages[1].status = "done";
+      r.volume = { status: "posting" };
+      r.stages.push({ id: "volume", status: "running" });
+      markStopped(r, reason, 9);
+      expect(r.status).toBe("done");
+      expect(r.volume.status).toBe("failed");
+      expect(r.stages.at(-1).status).toBe("failed");
+    }
+  });
+  it("taken up again after an interruption: failed, not solved again; an ending already written stands", () => {
+    const r = solving();
+    markInterrupted(r, 9);
+    expect([r.status, r.error, r.stages[1].status]).toEqual(["failed", NOT_RESTARTED, "failed"]);
+    const stopped = solving();
+    markStopped(stopped, "stopping", 5);
+    markInterrupted(stopped, 9);
+    expect([stopped.status, stopped.error, stopped.finishedAt]).toEqual(["failed", MACHINE_STOPPED, 5]);
+  });
+});
+
+describe("the status a person sees", () => {
+  // every run doc status against every task state a reader can have
+  const RUN = ["queued", "meshing", "solving", "post", "done", "failed", "cancelled"];
+  const TASK = [null, "missing", "waiting", "running", "stalled", "stopping", "succeeded", "failed", "cancelled"];
+  const shown = (status, state) => shownRun({ status, error: status === "failed" ? "the doc's error" : null }, state ? { state, error: state === "failed" ? "the task's error" : null } : null);
+  it("is the run doc's once it has ended, whatever the task says", () => {
+    for (const st of ["done", "failed", "cancelled"])
+      for (const t of TASK) expect(shown(st, t)).toEqual({ status: st, error: st === "failed" ? "the doc's error" : null, note: null });
+  });
+  it("is the task's ending when the run doc can't say it (nobody wrote it)", () => {
+    for (const st of ["queued", "meshing", "solving", "post"]) {
+      expect(shown(st, "cancelled").status).toBe("cancelled");
+      expect(shown(st, "failed")).toEqual({ status: "failed", error: "the task's error", note: null });
+    }
+    expect(shown("queued", "cancelled").note).toBe("cancelled before it started");
+    expect(shown("solving", "cancelled").note).toBe(null);
+  });
+  it("is the run doc's while the task goes on, with a note when the task knows more", () => {
+    const table = Object.fromEntries(TASK.filter((t) => !["failed", "cancelled"].includes(t)).map((t) => [t ?? "null", [shown("queued", t), shown("solving", t)].map((s) => `${s.status}${s.note ? ` (${s.note})` : ""}`)]));
+    expect(table).toEqual({
+      null: ["queued", "solving"],
+      missing: ["queued", "solving"],
+      waiting: ["queued", "solving (the machine running it stopped; it waits to be taken up again)"],
+      running: ["queued", "solving"],
+      stalled: ["queued (the machine running it isn't heard from)", "solving (the machine running it isn't heard from)"],
+      stopping: ["queued (cancelling…)", "solving (cancelling…)"],
+      succeeded: ["queued", "solving"],
+    });
+  });
+  it("covers every pair", () => {
+    for (const st of RUN) for (const t of TASK) expect(RUN).toContain(shown(st, t).status);
   });
 });
 

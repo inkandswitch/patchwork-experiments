@@ -8,7 +8,8 @@
 // (src/hull/acquire.js). No DOM.
 
 import { normalizeSetup, waterProperties, metresPerSecond, froude, reynolds, frictionEstimate, waveLength, domainForHull, estimateCells, estimateSeconds } from "./setup.js";
-import { newRun, enqueue, SERVER_TYPE } from "./protocol.js";
+import { newRun } from "./protocol.js";
+import { askRun, isQueue, runCodeUrl } from "./run-tasks.js";
 import { acquireHull } from "./hull/acquire.js";
 import { prepareHull, sinkageForVolume, weld, edgeStats, boundsOf } from "./hull/prepare.js";
 import { partsOf, waterPlanes, defaultParts, hullTriangles } from "./hull/parts.js";
@@ -201,9 +202,10 @@ export const VOLUME_BYTES_PER_CELL = 205;
 /**
  * What to expect of a run of this setup on this hull, before it's asked for:
  * the flow's numbers, the friction floor, the domain, cells and time.
- * `serverDoc` (optional) gives the daemon's cores.
+ * Without cores in the setup, a run gets what its machine gives it; the
+ * estimate assumes 8.
  */
-export function preflight(setupIn, info, serverDoc = null) {
+export function preflight(setupIn, info) {
   const s = normalizeSetup(setupIn);
   const { rho, nu, source } = waterProperties(s.water, s.temperature);
   const L = info.lwl > 0 ? info.lwl : info.loa;
@@ -211,7 +213,7 @@ export function preflight(setupIn, info, serverDoc = null) {
   const fr = frictionEstimate({ V, S: info.wettedArea, L, rho, nu });
   const pv = domainForHull(s, info);
   const cells = estimateCells(pv.dom, info.wettedArea);
-  const cores = s.cores || serverDoc?.daemon?.cores || 8;
+  const cores = s.cores || 8;
   return {
     L,
     V,
@@ -269,22 +271,23 @@ export function runBlocker({ hullUrl, result, loading = false, prepared, serverU
   if (!serverUrl) return "Choose a server.";
   if (serverError) return serverError;
   if (!serverDoc) return "Loading the server…";
-  if (serverDoc["@patchwork"]?.type !== SERVER_TYPE) return "That link isn't an OpenFOAM daemon's inbox.";
+  if (!isQueue(serverDoc)) return "That link isn't a task queue: paste the queue link the OpenFOAM host printed (daemon/start.sh).";
   return null;
 }
 
 /**
  * Ask for runs: one run doc per setup, each with the hull frozen into it as
- * prepared, listed in the case and put in the server's queue.
+ * prepared, listed in the case and asked of the server (a task queue) as a
+ * task keyed by the run doc's url.
  * @param {object} o
  * @param {object} o.caseHandle
- * @param {object} o.serverHandle
+ * @param {object} o.serverHandle  the task queue
  * @param {object} o.result     the model as read (readHull)
  * @param {object} o.prepared   prepareModel() at the setups' attitude
  * @param {object[]} o.setups   normalised setups (one attitude: the prepared one)
  * @param {string|null} [o.by]  who asked
  * @param {object} [o.made]     { tool, version }
- * @param {string} [o.message]  the change message on the case and server docs
+ * @param {string} [o.message]  the change message on the case and run docs
  * @returns {Promise<object[]>}  the run handles, in order
  */
 export async function queueRuns(repo, { caseHandle, serverHandle, result, prepared, setups, by = null, made = null, message, now = () => Date.now() }) {
@@ -327,7 +330,7 @@ export async function queueRuns(repo, { caseHandle, serverHandle, result, prepar
     });
     const suggested = d["@patchwork"]?.suggestedImportUrl;
     if (suggested) run["@patchwork"].suggestedImportUrl = suggested;
-    handles.push(await addRun(repo, { caseHandle, serverHandle, run, by, message, now }));
+    handles.push(await addRun(repo, { caseHandle, serverHandle, run, message }));
   }
   return handles;
 }
@@ -338,10 +341,11 @@ export async function queueRerun(repo, { caseHandle, serverHandle, run, by = nul
   // segments never change, so a ref is copied as it is
   copy.hull.stl = isRef(run.hull.stl) ? JSON.parse(JSON.stringify(run.hull.stl)) : new Uint8Array(run.hull.stl);
   const doc = newRun({ caseUrl: caseHandle.url, serverUrl: serverHandle.url, setup: copy.setup, hull: copy.hull, by, now: now(), title: `${run.title} (again)`, made });
-  return addRun(repo, { caseHandle, serverHandle, run: doc, by, message, now });
+  return addRun(repo, { caseHandle, serverHandle, run: doc, message });
 }
 
-async function addRun(repo, { caseHandle, serverHandle, run, by, message, now }) {
+async function addRun(repo, { caseHandle, serverHandle, run, message }) {
+  runCodeUrl(); // a tool that can't name the run's code says so before it makes anything
   const rh = await repo.create2(run);
   const opts = message ? { message } : undefined;
   caseHandle.change((x) => {
@@ -349,6 +353,6 @@ async function addRun(repo, { caseHandle, serverHandle, run, by, message, now })
     x.runs.push(rh.url);
     x.selected = rh.url;
   }, opts);
-  serverHandle.change((x) => enqueue(x, rh.url, { now: now(), by }), opts);
+  await askRun(repo, serverHandle.url, rh, opts);
   return rh;
 }

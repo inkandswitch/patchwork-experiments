@@ -17,7 +17,8 @@
 // with their units, part names. Every write is one change whose message
 // names the agent session and why.
 
-import { CASE_TYPE, RUN_TYPE, SERVER_TYPE, initCase, daemonOnline, queueView, isTerminal, requestStop } from "./protocol.js";
+import { CASE_TYPE, RUN_TYPE, initCase, isTerminal, requestFinish, shownRun } from "./protocol.js";
+import { isQueue, hearServing, queueCounts, servedBy, cancelRun, lookAtTask } from "./run-tasks.js";
 import { defaultSetup, normalizeSetup, patchSetup, writeSetup, setupProblems, parseSpeed, formatSpeed, formatSpeedBoth, formatDuration, MODES, MODE_LABELS, MESH_PRESETS } from "./setup.js";
 import { readHull, hullModel, prepareModel, partShells, unknownParts, floatAt, keepDisplacement, parseMass, sinkageMeaning, keepHull, runBlocker, queueRuns, preflight } from "./case-model.js";
 import { resultsTable, runLine, MAX_ROWS } from "./results.js";
@@ -56,14 +57,16 @@ async function findTyped(ctx, url, type, label, hint) {
 
 const findCase = (ctx, input) => findTyped(ctx, urlOf(input, "case", "the automerge: URL of an OpenFOAM case (openfoam_case makes one)"), CASE_TYPE, "an OpenFOAM case", "openfoam_case makes one.");
 
-async function openServer(ctx, url) {
-  if (!url) return { url: null, handle: null, doc: null, error: null };
+/** The case's server (a task queue), and (unless `hear` is false) the machines heard serving it. */
+async function openServer(ctx, url, { hear = true } = {}) {
+  if (!url) return { url: null, handle: null, doc: null, error: null, pools: [] };
   try {
     const handle = await ctx.repo.find(url);
     const doc = handle.doc();
-    return { url, handle, doc, error: doc?.["@patchwork"]?.type === SERVER_TYPE ? null : "that link isn't an OpenFOAM daemon's inbox" };
+    if (!isQueue(doc)) return { url, handle, doc, error: "that link isn't a task queue (the OpenFOAM host prints one when it starts)", pools: [] };
+    return { url, handle, doc, error: null, pools: hear ? await hearServing(ctx.repo, url) : [] };
   } catch (err) {
-    return { url, handle: null, doc: null, error: `couldn't load the inbox (${err?.message ?? err})` };
+    return { url, handle: null, doc: null, error: `couldn't load the queue (${err?.message ?? err})`, pools: [] };
   }
 }
 
@@ -143,7 +146,7 @@ function setupText(s) {
     `${s.iterations} iterations, ${s.stop === "settled" ? "stopping once settled (±1%)" : "all of them"}`,
     `${s.water === "fresh" ? "fresh water" : "seawater"} at ${s.temperature} °C`,
     `domain ${s.domain === "auto" ? "half if symmetric" : s.domain}`,
-    s.cores ? `${s.cores} cores` : "the daemon's choice of cores",
+    s.cores ? `${s.cores} cores` : "the machine's choice of cores",
   ];
   if (s.keepVolume) bits.push("keeping the flow volume");
   if (s.warmStart) bits.push(`starting from ${s.warmStart}`);
@@ -152,17 +155,16 @@ function setupText(s) {
 
 function expectText(c) {
   if (!c.prepared?.info) return null;
-  const pf = preflight(c.setup, c.prepared.info, c.server.doc);
+  const pf = preflight(c.setup, c.prepared.info);
   return `Expect: Fn ${pf.Fn.toFixed(3)}, Re ${pf.Re.toExponential(2)} on L = ${m3(pf.L)} m; ITTC-57 friction alone ${Math.round(pf.friction.R).toLocaleString("en")} N (the floor R_T should sit above); ${pf.half ? "half model" : "full model"}; ≈ ${Math.round(pf.cells / 1000)}k cells; ${pf.upTo ? "up to " : ""}≈ ${formatDuration(pf.seconds)} on ${pf.cores} cores${pf.volumeBytes ? `; flow volume ≈ ${Math.round(pf.volumeBytes / 1048576)} MB` : ""}.`;
 }
 
 function serverText(sv) {
-  if (!sv.url) return "Server: none. Set one with openfoam_case { case, server: <the daemon's inbox URL> }.";
+  if (!sv.url) return "Server: none. Set one with openfoam_case { case, server: <the task queue URL the OpenFOAM host printed> }.";
   if (sv.error) return `Server: ${sv.url}: ${sv.error}.`;
-  const d = sv.doc.daemon ?? {};
-  const online = daemonOnline(sv.doc, Date.now());
-  const q = queueView(sv.doc);
-  return `Server: “${sv.doc.title ?? "OpenFOAM"}” (${sv.url}): ${online ? `online, OpenFOAM ${d.openfoam ?? "?"}, ${d.cores ?? "?"} cores` : `offline${d.heartbeat ? ` since ${new Date(d.heartbeat).toISOString().slice(0, 16).replace("T", " ")}` : ""} (runs wait in its queue)`}; ${q.active.length ? `running ${q.active.length}` : "nothing running"}${q.waiting.length ? `, ${q.waiting.length} waiting` : ""}.`;
+  const by = servedBy(sv.pools);
+  const q = queueCounts(sv.doc, sv.pools);
+  return `Server: “${sv.doc.title ?? "OpenFOAM"}” (${sv.url}): ${by ? `served by ${by}` : "nobody is heard serving it (runs wait in its queue until a machine does)"}; ${q.running ? `running ${q.running}` : "nothing running"}${q.waiting ? `, ${q.waiting} waiting` : ""}.`;
 }
 
 function report(c, { head = null } = {}) {
@@ -247,8 +249,8 @@ export const caseTool = {
     }
     let serverUrl;
     if (input.server !== undefined && input.server !== null && input.server !== "") {
-      serverUrl = urlOf(input.server, "server", "the OpenFOAM daemon's inbox");
-      const sv = await openServer(ctx, serverUrl);
+      serverUrl = urlOf(input.server, "server", "the task queue the OpenFOAM host printed");
+      const sv = await openServer(ctx, serverUrl, { hear: false });
       if (sv.error) throw new Error(`\`server\` ${serverUrl}: ${sv.error}.`);
       if (serverUrl !== doc.server) changes.push(`server ${serverUrl}`);
       else serverUrl = undefined;
@@ -332,7 +334,7 @@ export function setupPatch(input) {
   }
   if (input.cores !== undefined) {
     patch.cores = numberIn(input.cores, "cores", 0, 256);
-    if (!Number.isInteger(patch.cores)) throw new Error(`\`cores\` is a whole number (0: the daemon decides), not ${input.cores}.`);
+    if (!Number.isInteger(patch.cores)) throw new Error(`\`cores\` is a whole number (0: the machine decides), not ${input.cores}.`);
   }
   if (input.keep_volume !== undefined) {
     if (typeof input.keep_volume !== "boolean") throw new Error("`keep_volume` is true or false.");
@@ -426,15 +428,14 @@ export const runTool = {
       made: MADE,
       message: message(ctx, `ask for ${setups.length === 1 ? "a run" : `${setups.length} runs`} at ${setups.map((s) => formatSpeed(s.speed)).join(", ")}`),
     });
-    const online = daemonOnline(c.server.doc, Date.now());
-    const q = queueView(c.server.handle.doc());
-    const ahead = q.active.length + q.waiting.length - handles.length;
+    const online = c.server.pools.length > 0;
+    const ahead = queueCounts(c.server.handle.doc(), c.server.pools).listed - handles.length;
     const lines = [
-      `Asked for ${handles.length === 1 ? "a run" : `${handles.length} runs`} on “${c.server.doc.title ?? "OpenFOAM"}”: ${online ? "online" : "OFFLINE — they wait in its queue until it's back"}${ahead > 0 ? `; ${ahead} ahead of them` : ""}.`,
+      `Asked for ${handles.length === 1 ? "a run" : `${handles.length} runs`} on “${c.server.doc.title ?? "OpenFOAM"}”: ${online ? `served by ${servedBy(c.server.pools)}` : "NOBODY IS SERVING IT — they wait in its queue until a machine does"}${ahead > 0 ? `; ${ahead} ahead of them` : ""}.`,
       ...handles.map((h, i) => `  ${i + 1}. ${h.url} — ${runLine(h.doc())}`),
-      `Each run's state is the small field ${JSON.stringify(STATUS_PATH)} of its document: queued → meshing → solving → post → done, or failed, or cancelled.`,
+      `Each run's state is the small field ${JSON.stringify(STATUS_PATH)} of its document: queued → meshing → solving → post → done, or failed, or cancelled. A run cancelled before it started stays "queued" there; openfoam_results says what became of it.`,
       `To wait, watch it: ${handles.map((h) => `doc_watch { url: "${h.url}", path: ${JSON.stringify(STATUS_PATH)}, match: "${STATUS_END}" }`).join("; ")}. Then openfoam_results { runs: [${handles.map((h) => `"${h.url}"`).join(", ")}] }.`,
-      `Roughly: ${c.setup.mode === "free-surface" ? "a free-surface run takes tens of minutes" : "a double-body run takes about a minute"} on a laptop once it starts; runs go one after another unless the daemon runs several at once.`,
+      `Roughly: ${c.setup.mode === "free-surface" ? "a free-surface run takes tens of minutes" : "a double-body run takes about a minute"} on a laptop once it starts; runs go one after another unless the machine runs several at once.`,
     ];
     return { text: lines.join("\n"), made: handles.map((h) => ({ url: h.url, name: h.doc().title, kind: RUN_TYPE })) };
   },
@@ -465,7 +466,7 @@ export const resultsTool = {
           const h = await ctx.repo.find(url);
           const doc = h.doc();
           if (doc?.["@patchwork"]?.type !== RUN_TYPE) return { url, doc: null, error: `not an OpenFOAM run (${doc?.["@patchwork"]?.type ?? "untyped"})` };
-          return { url, doc };
+          return { url, doc: await shownDoc(ctx, doc) };
         } catch (err) {
           return { url, doc: null, error: String(err?.message ?? err) };
         }
@@ -478,6 +479,13 @@ export const resultsTool = {
   },
 };
 
+/** A run as a person sees it: its doc, with the status its task gives it (shownRun), from one look at the task. */
+async function shownDoc(ctx, doc) {
+  if (isTerminal(doc.status)) return doc;
+  const s = shownRun(doc, await lookAtTask(ctx.repo, doc));
+  return s.status === doc.status && s.error === (doc.error ?? null) ? doc : { ...doc, status: s.status, error: s.error };
+}
+
 // ---------------------------------------------------------------- openfoam_stop
 
 export const stopTool = {
@@ -488,13 +496,20 @@ export const stopTool = {
     for (const raw of input.runs) {
       const url = urlOf(raw, "runs", "an OpenFOAM run");
       const h = await findTyped(ctx, url, RUN_TYPE, "an OpenFOAM run");
-      const st = h.doc().status;
+      const run = await shownDoc(ctx, h.doc());
+      const st = run.status;
       if (isTerminal(st)) lines.push(`${url}: already ${st}; nothing to stop.`);
       else if (input.keep && st !== "solving") lines.push(`${url}: ${st}, not solving, so there's nothing to finish yet; cancel it (keep: false) or wait.`);
-      else {
-        h.change((d) => requestStop(d, { keep: input.keep }), { message: message(ctx, input.keep ? "finish the run now" : "cancel the run") });
-        lines.push(`${url}: ${input.keep ? "asked to finish now: the solver writes what it has, then the results are read" : "asked to cancel"}. Its status (${JSON.stringify(STATUS_PATH)}) says when the daemon has done it.`);
-      }
+      else if (input.keep) {
+        h.change((d) => requestFinish(d), { message: message(ctx, "finish the run now") });
+        lines.push(`${url}: asked to finish now: the solver writes what it has, then the results are read. Its status (${JSON.stringify(STATUS_PATH)}) says when it has.`);
+      } else if (await cancelRun(ctx.repo, h.doc(), url)) {
+        lines.push(
+          st === "queued"
+            ? `${url}: cancelled. If it hadn't started it never will, and its status field stays "queued" (openfoam_results shows it cancelled); if it had, the field says cancelled within seconds.`
+            : `${url}: cancelled: the solver is stopped within seconds, and its status (${JSON.stringify(STATUS_PATH)}) then says cancelled.`,
+        );
+      } else lines.push(`${url}: its queue no longer lists it, so there's nothing to cancel; openfoam_results says how it ended.`);
     }
     return lines.join("\n");
   },

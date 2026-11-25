@@ -4,15 +4,11 @@
   "type": "module",
   "private": true,
   "main": "./dist/index.js",
-  "description": "A frontend to OpenFOAM: describe a resistance analysis of a hull from a scene (double body or free surface), run it on an OpenFOAM daemon anywhere, watch it converge, and render the results into the scene.",
-  "bin": {
-    "foamd": "./daemon/foamd.mjs"
-  },
+  "description": "A frontend to OpenFOAM: describe a resistance analysis of a hull from a scene (double body or free surface), run it on any machine with OpenFOAM (a tasks host serving a task queue), watch it converge, and render the results into the scene.",
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
     "sync": "vite build && pushwork sync",
-    "daemon": "node daemon/foamd.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

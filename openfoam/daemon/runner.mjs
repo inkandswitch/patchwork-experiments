@@ -1,8 +1,10 @@
 // One run, start to finish: write the case, mesh it, solve it, read it back,
-// and keep the run doc up to date throughout. The run doc's `control` is
-// watched the whole time: cancel kills the running command (and its whole
-// process group); finish-now tells the solver to write and stop, which keeps
-// every result.
+// and keep the run doc up to date throughout. The run doc's `control.finish`
+// is watched the whole time: finish-now tells the solver to write and stop,
+// which keeps every result. `signal` stops it (daemon/run-task.mjs hands it
+// the task's): the running command and every process under it are killed at
+// once, and the run doc says why in the same moment (markStopped), since the
+// thread this runs in is ended a few seconds later.
 
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, statSync, openSync, readSync, closeSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -12,7 +14,7 @@ import { run as runFoam } from "./foam.mjs";
 import { datTail, forceRow, residualColumns, parseCheckMesh, parseLayers } from "./parse.mjs";
 import { readLayers, summarize } from "./results.mjs";
 import { normalizeSetup } from "../src/setup.js";
-import { packChunk, requestIdOf, isTerminal, stagesFor } from "../src/protocol.js";
+import { packChunk, runIdOf, isTerminal, stagesFor, markStopped, STOP_REASONS } from "../src/protocol.js";
 import { settled } from "../src/convergence.js";
 import { getBytes, externalize, serverWatch } from "../src/segments.js";
 import { keepVolume } from "./volume.mjs";
@@ -23,7 +25,7 @@ const FLUSH_MS = 2000;
 
 class Stopped extends Error {
   constructor(kind) {
-    super(kind === "cancel" ? "cancelled" : "stopped");
+    super(kind);
     this.kind = kind;
   }
 }
@@ -50,9 +52,11 @@ function readFrom(file, pos) {
  * @param {object} o.env          foamEnvironment()
  * @param {string} o.workDir      where case directories go
  * @param {number} o.cores        the default when the setup says 0
- * @param {object} o.daemon       { id, host } written to the run
+ * @param {object} o.daemon       where and with what it runs ({ host, platform, openfoam, … }), written to the run
  * @param {(msg: string) => void} [o.say]
- * @returns {Promise<"done"|"failed"|"cancelled">}
+ * @param {AbortSignal} [o.signal] aborted with a reason in STOP_REASONS
+ * @param {(urls: string[]) => Promise<string[]>} [o.verify]  a second peer's check of docs the server didn't acknowledge (src/segments.js)
+ * @returns {Promise<"done"|"failed"|"cancelled"|"stopped">}  "stopped": told to stop by `signal` (the run doc says why, unless it yielded)
  */
 export async function runJob({ repo, handle, env, workDir, cores, daemon, say = () => {}, signal = null, verify = null }) {
   const run0 = handle.doc();
@@ -61,7 +65,7 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
     if (run0.volume?.status === "posting")
       handle.change((d) => {
         d.volume.status = "failed";
-        d.volume.error = "the daemon stopped while keeping it";
+        d.volume.error = "the machine running it stopped while keeping it";
         for (const s of d.stages) if (s.id === "volume" && s.status === "running") s.status = "failed";
       });
     return run0.status;
@@ -71,11 +75,15 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
   let stl = null;
   // which of the docs this job makes the sync server has (start it before making any)
   const onServer = serverWatch(repo);
-  const id = requestIdOf(handle.url);
+  const id = runIdOf(handle.url);
   const dir = join(workDir, id);
   const np = Math.max(1, setup.cores || cores);
   const now = () => Date.now();
-  const change = (fn) => handle.change(fn);
+  // once told to stop, nothing more is written: the stop wrote what is to be said
+  let stopKind = null;
+  const change = (fn) => {
+    if (!stopKind) handle.change(fn);
+  };
   const setStage = (sid, patch) =>
     change((d) => {
       const i = d.stages.findIndex((s) => s.id === sid);
@@ -83,18 +91,13 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
       for (const [k, v] of Object.entries(patch)) d.stages[i][k] = v;
     });
 
-  // ---- control: cancel and finish-now
+  // ---- control: finish-now; and the signal
   let current = null; // the running command
-  let stopKind = null;
+  let killed = null; // the kill under way: done once every process under the command has been sent SIGKILL
   let finishAsked = false;
   let onFinish = null;
   const watch = () => {
     const c = handle.doc()?.control ?? {};
-    if (c.cancel && !stopKind) {
-      stopKind = "cancel";
-      say(`run ${id}: cancel asked`);
-      current?.kill();
-    }
     if (c.finish && !finishAsked) {
       finishAsked = true;
       say(`run ${id}: finish-now asked`);
@@ -102,13 +105,16 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
     }
   };
   handle.on("change", watch);
-  // the daemon shutting down: stop, but don't call it the user's cancel
   const onAbort = () => {
     if (stopKind) return;
-    stopKind = "shutdown";
-    current?.kill();
+    const reason = STOP_REASONS.includes(signal.reason) ? signal.reason : "stopping";
+    say(`run ${id}: ${reason}`);
+    killed = current?.kill() ?? null;
+    handle.change((d) => markStopped(d, reason, now()));
+    stopKind = reason;
   };
-  signal?.addEventListener("abort", onAbort);
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener("abort", onAbort);
 
   // ---- the log tail each stage shows
   let tail = [];
@@ -159,10 +165,7 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
     extra?.tick?.();
     flush(sid);
     current = null;
-    if (stopKind) {
-      setStage(sid, { status: "failed", endedAt: now(), note: stopKind === "cancel" ? "cancelled" : "stopped" });
-      throw new Stopped(stopKind);
-    }
+    if (stopKind) throw new Stopped(stopKind);
     const log = existsSync(logFile) ? readFileSync(logFile, "utf8") : "";
     if (code !== 0) {
       const fatal = log.match(/--> FOAM FATAL[\s\S]{0,900}/)?.[0]?.split("\n").slice(0, 12).join("\n");
@@ -244,10 +247,10 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
     if (!par) setStage("decomposePar", { status: "skipped", note: "one core" });
 
     // ---- a warm start: the past run's last solution, mapped onto this mesh
-    const from = setup.warmStart ? join(workDir, requestIdOf(setup.warmStart)) : null;
+    const from = setup.warmStart ? join(workDir, runIdOf(setup.warmStart)) : null;
     if (!from) setStage("initialise", { status: "skipped", note: "from rest" });
     else if (!existsSync(join(from, "system/controlDict")))
-      setStage("initialise", { status: "skipped", note: "that run's case isn't on this daemon: from rest" });
+      setStage("initialise", { status: "skipped", note: "that run's case isn't on this machine: from rest" });
     else {
       writeFileSync(join(dir, "system/changeDictionaryDict"), inletResetDict(g));
       const par = np > 1;
@@ -386,25 +389,13 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
         say(`run ${id}: keeping the volume failed: ${err?.message ?? err}`);
       }
     }
-    return "done";
+    return stopKind ? "stopped" : "done";
   } catch (err) {
     clearInterval(flushTimer);
-    if (stopKind === "shutdown") {
-      change((d) => {
-        d.status = "failed";
-        d.error = "the daemon was stopped while this ran; run it again";
-        d.finishedAt = now();
-        for (const s of d.stages) if (s.status === "running") s.status = "failed";
-      });
-      return "failed";
-    }
     if (err instanceof Stopped || stopKind) {
-      change((d) => {
-        d.status = "cancelled";
-        d.finishedAt = now();
-      });
-      say(`run ${id}: cancelled`);
-      return "cancelled";
+      // every process under the command is gone before this returns
+      await killed;
+      return "stopped";
     }
     say(`run ${id}: failed: ${err?.message ?? err}`);
     change((d) => {

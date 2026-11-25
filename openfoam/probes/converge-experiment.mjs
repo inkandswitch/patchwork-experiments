@@ -1,8 +1,8 @@
 // Does a better start make a free-surface run settle sooner? Runs the arms
-// through a live daemon (its inbox), one after another, each to the settled
+// through a live OpenFOAM host (its task queue), one after another, each to the settled
 // rule (src/convergence.js) with a ceiling, and reports when each settled.
 //
-//   node probes/converge-experiment.mjs --inbox automerge:… [--out dir] [--knots 6] [--source-knots 5.5]
+//   node probes/converge-experiment.mjs --queue automerge:… [--out dir] [--knots 6] [--source-knots 5.5]
 //                                       [--ceiling 5000] [--glb path] [--only cold,warm,…]
 //
 // Arms (free surface, coarse, the same hull):
@@ -11,7 +11,7 @@
 //   attitude  at --knots, from rest, at the running attitude a double body
 //             predicts (src/attitude.js); a different hull position, so a
 //             different answer: compare how soon it settles, not the drag
-//   warm      at --knots, started from the source's solution (same daemon)
+//   warm      at --knots, started from the source's solution (same machine)
 // plus one double body at --knots, for the attitude.
 //
 // Each run is dumped (--out) as it finishes, so a stopped experiment keeps
@@ -19,7 +19,7 @@
 // depend on how busy the machine is; wall-clock does.
 //
 // It takes hours on a laptop (about 45 min an arm on an M4, 8 cores): run
-// it plugged in, or on a server (foamd --jobs runs nothing faster here: the
+// it plugged in, or on a server (several runs at once gain nothing here: the
 // arms go one at a time because the warm arm needs the source finished).
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -33,7 +33,7 @@ import { formatSpeed } from "../src/setup.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
-if (!args.inbox) throw new Error("--inbox automerge:… (a running foamd's)");
+if (!args.queue) throw new Error("--queue automerge:… (one a running OpenFOAM host serves)");
 const OUT = resolve(args.out ?? "converge-experiment");
 mkdirSync(OUT, { recursive: true });
 const KN = Number(args.knots ?? 6);
@@ -64,7 +64,7 @@ function run(arm, extra) {
   if (load(arm) && !(only && only.has(arm))) return load(arm);
   const t0 = Date.now();
   console.log(`\n=== ${arm}: ${extra.join(" ")}`);
-  const r = spawnSync(process.execPath, [join(HERE, "net-run.mjs"), "--inbox", args.inbox, "--dump", join(OUT, `${arm}.json`), "--timeout", String(6 * 3600), ...(args.glb ? ["--glb", args.glb] : []), ...extra], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [join(HERE, "net-run.mjs"), "--queue", args.queue, "--dump", join(OUT, `${arm}.json`), "--timeout", String(6 * 3600), ...(args.glb ? ["--glb", args.glb] : []), ...extra], { encoding: "utf8" });
   const out = `${r.stdout}${r.stderr}`;
   writeFileSync(join(OUT, `${arm}.log`), out);
   const url = out.match(/^run (automerge:\S+)/m)?.[1];
