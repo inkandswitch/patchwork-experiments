@@ -131,7 +131,7 @@ export function listen(handle, onMessage) {
     seen.add(stamp);
     if (seen.size > REMEMBERED) {
       // a Set keeps the order things were added in, so this is the oldest
-      seen.delete(seen.values().next().value);
+      seen.delete(/** @type {string} */ (seen.values().next().value));
     }
     onMessage(message);
   };
@@ -260,6 +260,7 @@ export async function ask(repo, queueUrl, { importUrl, input, key }) {
   const queue = await repo.find(queueUrl);
   const jobKey = key ?? crypto.randomUUID();
   const listed = entryAt(queue.doc(), jobKey);
+  /** @type {string | undefined} */
   let over;
   if (listed) {
     // One look, with nobody listening: a task with a run still open has not
@@ -364,8 +365,14 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
   /** @type {ReturnType<typeof setTimeout> | undefined} */ let lapse;
   /** @type {number | null} */ let noneSince = null;
   const hearing = new Hearing();
-  /** What has been heard from the run that has the task: @type {{ run: string | null, progress: unknown, logs: LogLine[] }} */
-  let said = { run: null, progress: null, logs: [] };
+  /**
+   * What has been heard from each run of the task followed, by run. Kept per
+   * run because two runs can be heard at once (two pools took the task
+   * together, and the later has not yet given way), and the view shows the
+   * one that has the task.
+   * @type {Map<string, { progress: unknown, logs: LogLine[] }>}
+   */
+  let said = new Map();
 
   /** @type {string | null} */ let reported = null;
 
@@ -404,15 +411,15 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
     reported = state;
     const by = endingRun(doc);
     const has = doc?.runs?.find((run) => run.status == null && hearing.heard(run.id));
-    const live = !!has && said.run === has.id;
+    const live = has ? said.get(has.id) : undefined;
     onChange({
       key,
       state,
       taskUrl: following,
       importUrl: doc?.importUrl ?? null,
       input: doc?.input,
-      progress: live ? said.progress : null,
-      logs: by ? (by.logs ?? []) : live ? said.logs : [],
+      progress: live ? live.progress : null,
+      logs: by ? (by.logs ?? []) : live ? live.logs : [],
       result: state === 'succeeded' ? taskResult(doc) : undefined,
       error: taskError(doc, hearing.heard),
       runs: doc?.runs ?? [],
@@ -426,7 +433,7 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
     unlisten?.();
     unlisten = undefined;
     task = undefined;
-    said = { run: null, progress: null, logs: [] };
+    said = new Map();
   };
 
   const follow = () => {
@@ -452,12 +459,13 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
                 return;
               }
               hearing.heardFrom(message.run);
-              const same = said.run === message.run;
-              said = {
-                run: message.run,
-                progress: 'progress' in message ? message.progress : same ? said.progress : null,
-                logs: [...(same ? said.logs : []), ...(message.logs ?? [])].slice(-MAX_LOG_LINES),
-              };
+              const was = said.get(message.run);
+              // anyone who can read the task can send on its channel, so lines that are not a list are not lines
+              const logs = Array.isArray(message.logs) ? message.logs : [];
+              said.set(message.run, {
+                progress: 'progress' in message ? message.progress : was ? was.progress : null,
+                logs: [...(was?.logs ?? []), ...logs].slice(-MAX_LOG_LINES),
+              });
               report(false);
             });
             report(false);
