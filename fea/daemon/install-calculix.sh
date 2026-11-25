@@ -10,7 +10,7 @@
 #
 # It downloads three archives, checks each against the digest below, builds
 # them under <prefix>/build and leaves one program, <prefix>/bin/ccx, which
-# the daemon finds there. Nothing is installed anywhere else.
+# a run's code finds there. Nothing is installed anywhere else.
 #
 #   ccx 2.23      https://www.dhondt.de        the solver (GPL 2+)
 #   SPOOLES 2.2   https://www.netlib.org       its direct equation solver, linked in

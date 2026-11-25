@@ -65,7 +65,7 @@ export function deckOutline(text, keep = 6) {
  * @param {{ gmsh: string, ccx: string, gmshVersion: string|null, ccxVersion: string|null }} o.tools
  * @param {string} o.workDir      where run directories go
  * @param {number} o.cores        the default when the setup says 0
- * @param {number} o.maxNodes     the largest mesh this daemon will solve
+ * @param {number} o.maxNodes     the largest mesh this machine solves
  * @param {object} o.daemon       where and with what it runs ({ host, platform, calculix, gmsh, … }), written to the run
  * @param {(msg: string) => void} [o.say]
  * @param {AbortSignal} [o.signal] aborted with a reason in STOP_REASONS

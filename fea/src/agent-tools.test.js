@@ -399,7 +399,7 @@ describe("fea_run", () => {
 
 // ---------------------------------------------------------------- results
 
-/** A finished static run, as the daemon leaves it (src/solver/post.js summarizeStatic, daemon/runner.mjs). */
+/** A finished static run, as its code leaves it (src/solver/post.js summarizeStatic, daemon/runner.mjs). */
 function doneRun(studyUrl) {
   const setup = normalizeSetup({ supports: { s1: { name: "Wall", kind: "fixed", faces: [0] } }, loads: { l1: { name: "Push", kind: "force", faces: [5], magnitude: { value: 250, unit: "N" }, direction: [0, -1, 0] } } });
   return {
