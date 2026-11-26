@@ -228,6 +228,8 @@ export async function askFor(repo, sessionUrl, opts = {}) {
     const doc = (await repo.find(bare(sessionUrl))).doc()
     if (!doc) return { asked: false, why: "no session" }
     if (outdated(doc)) return { asked: false, why: "another version's session" }
+    // askWork's first rule, before the catalogue is read: most looks find nothing to do.
+    if (!needsWork(doc, (where) => where === WHERE.worker, doc.burst?.run ?? null)) return { asked: false, why: "no work" }
     const model = readKey(doc.config?.providerId ?? "openrouter")
     if (!model) return { asked: false, why: "no key" }
     const catalogue = await pluginCatalogue().catch(() => ({ tools: [], skills: [] }))
