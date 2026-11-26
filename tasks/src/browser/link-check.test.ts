@@ -569,6 +569,120 @@ describe("a worker's code in another's name and in its own", () => {
   }, 15_000);
 });
 
+// A fifth checker's, kept as it.fails. Three costs a run worker's code can
+// still put on the page in its own name, after the gate admits one first word
+// and ends a link on a message it cannot read.
+//
+// - The adapter reads `data` before the gate does: it makes
+//   `new Uint8Array(message.data)` of any message that has one, of any type,
+//   and only then emits it for the gate to judge. A number that is no length
+//   throws there, in the page's port listener (on the stand-in page, 1000 such
+//   messages gave 1000 uncaught exceptions, and the link stayed); an
+//   array-like `{ length }` is copied element by element on the page's main
+//   thread (ten of about 60 bytes each, length 3e7, held it for 3.4 s). A type
+//   the gate drops ends nothing, so neither has a bound.
+// - A link the page ends (the worker's leave in its own name, or a message it
+//   cannot read) leaves the worker as it was: its Repo still takes the page
+//   for a peer, and the pool keeps the run worker and hands it the next job
+//   (its idle list is last in, first out). On the stand-in page, with the
+//   network and without, the next work that wrote a page document on it had
+//   no answer in 45 s, and a worker cut off this way was still handed work
+//   minutes later.
+// - Each `request` for a made-up unprotected id passes, and the page's Repo
+//   makes and keeps a handle for it, after the link has ended. On the stand-in
+//   page, 5000 of them left 5000 handles, and work asked through the site's
+//   Repo ran again only after 100 s with no network, 65 s with it.
+describe("what a worker's code can still cost the page in its own name", () => {
+  /** A port the test drives by hand, so that what the page's adapter throws as it listens is seen. */
+  function handPort() {
+    const listeners: ((event: { data: unknown }) => void)[] = [];
+    const port = {
+      addEventListener: (type: string, listener: (event: { data: unknown }) => void) => void (type === 'message' && listeners.push(listener)),
+      removeEventListener: () => {},
+      start: () => {},
+      close: () => {},
+      postMessage: () => {},
+    };
+    return { port, deliver: (data: unknown) => listeners.forEach((listener) => listener({ data })) };
+  }
+  /** The page's end of a link to `peer` whose first word has been heard, on a hand-driven port. */
+  function openEnd(peer: string) {
+    const { port, deliver } = handPort();
+    const adapter = new Gated(port as any, peer) as any;
+    adapter.connect('page-peer', {});
+    deliver({ type: 'arrive', senderId: peer, peerMetadata: {} });
+    return { adapter, deliver };
+  }
+
+  it.fails('a message to the page whose data is a number throws nothing in the page', () => {
+    const { deliver } = openEnd('worker-peer');
+    let threw = 0;
+    for (let i = 0; i < 20; i++) {
+      try {
+        deliver({ type: 'anything', senderId: 'worker-peer', targetId: 'page-peer', data: -1 });
+      } catch {
+        threw++;
+      }
+    }
+    // today: 20, each "Invalid typed array length: -1", and the link stays
+    expect(threw).toBe(0);
+  });
+
+  it.fails('a message to the page whose data is an array-like of a large length costs the page little', () => {
+    const { deliver } = openEnd('worker-peer');
+    const t0 = performance.now();
+    for (let i = 0; i < 3; i++) {
+      try {
+        deliver({ type: 'anything', senderId: 'worker-peer', targetId: 'page-peer', data: { length: 5e7 } });
+      } catch {
+        // what it throws is the case above
+      }
+    }
+    // today: a 50 MB copy each, element by element, before the gate sees it
+    expect(performance.now() - t0).toBeLessThan(100);
+  }, 30_000);
+
+  it.fails('a worker whose link the page ended is told: its Repo no longer takes the page for a peer', async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const { port, peer } = links.open('run 1');
+    const run = keep(make([new MessageChannelNetworkAdapter(port as any)], undefined, peer));
+    const doc = page.create<{ n: number }>({ n: 0 });
+    await run.find(doc.url);
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // its code, in its own name: a message the page cannot read
+      port.postMessage({ type: 'sync', senderId: peer, targetId: page.peerId, documentId: doc.documentId, data: new Uint8Array([1, 2, 3]).buffer });
+      expect(await until(() => !page.peers.includes(peer as never))).toBe(true);
+    } finally {
+      warnings.mockRestore();
+    }
+    // the pool hands this worker the next job; it waits on a page that no longer hears it
+    expect(await until(() => run.peers.length === 0, 2000)).toBe(true);
+  }, 15_000);
+
+  it.fails('requests for made-up unprotected ids leave the page no handle once the link has ended', async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const { port, peer } = links.open('run 1');
+    const run = keep(make([new MessageChannelNetworkAdapter(port as any)], undefined, peer));
+    expect(await until(() => run.peers.length > 0)).toBe(true);
+    const before = Object.keys(page.handles).length;
+    for (let i = 0; i < 300; i++) {
+      port.postMessage({ type: 'request', senderId: peer, targetId: page.peerId, documentId: idOf(crypto.getRandomValues(new Uint8Array(16))), data: empty() });
+    }
+    await quiet(1000);
+    links.remove('run 1');
+    await quiet(200);
+    // today: 300
+    expect(Object.keys(page.handles).length - before).toBeLessThan(10);
+  }, 15_000);
+
+  const empty = () => A.generateSyncMessage(A.init(), A.initSyncState())[1]!.slice().buffer;
+});
+
 describe('a 5 MB document', () => {
   const blob = (bytes: number) => {
     const out = new Uint8Array(bytes);
