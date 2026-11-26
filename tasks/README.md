@@ -360,13 +360,14 @@ The site's Repo gives a worker no more than the sync server gives a Repo of no o
 documents keyhive leaves unprotected, and of those only the ones the worker has named first, by a
 `request` or a `sync` of its own for that document; it neither offers a worker the documents it has
 open nor answers it about any other (the header of `link.ts` says which of the Repo's messages
-pass). The gate sees the Repo's messages only, not the adapter's own handshake (`arrive`,
-`welcome`, `leave`), and a Repo sends its messages for a peer through the adapter that last
-announced that peer. So a worker's code that says `arrive` or `leave` on its port in another
-peer's name (the pool's, whose id reaches it on the ephemeral messages the page relays) turns the
-page's messages for that peer to itself, or makes the page forget that peer: the pool, which has
-no socket of its own, is then cut off until it starts again. No document the worker has not named
-reaches it that way. `link-check.test.ts` keeps that case (`it.fails`). A worker with no page
+pass). Before the Repo's messages, the gate reads what arrives on the page's port, the adapter's
+own handshake (`arrive`, `welcome`, `leave`) included: a link has one peer, the first its worker's
+end announces, and any later announcement, any `leave` or message in another peer's name, and any
+message addressed to another peer are dropped before the adapter sees them. A Repo sends its
+messages for a peer through the adapter that last announced that peer, so without this a worker's
+code that knew another peer's id (the pool's, which the ephemeral messages the page relays carry)
+could turn the page's messages for that peer to itself, or make the page forget it and so cut the
+pool off (`link-check.test.ts`, "the handshake"). A worker with no page
 above it (a Node host's thread) has no link.
 
 | On one device with no network | |
@@ -392,10 +393,13 @@ sync server. Its checks 26 to 30 show the link with a site Repo that shares no s
 task system's: a tool's `doWork` through it is run by the pool, what the task writes is in that
 Repo when `doWork` resolves, liveness and progress arrive, a run worker ended in the middle of
 writing leaves that Repo working, and the pool handed over to another tab links that tab's Repo.
-The unit tests show the rest: the link's gate for every kind of message both ways, and Repos of
+The unit tests show the rest: the link's gate for every kind of message both ways and for what
+arrives on the page's port, and Repos of
 both kinds joined by a gated link (documents named cross both ways, others do not, a protected one
 never, a run's report waits for the page; `link.test.ts`); what a worker's code posts on its port
-by hand gets it no protected document by any other field or spelling, no offer the gate drops
+by hand gets it no protected document by any other field or spelling, and an announcement, a
+`leave` or a message in the pool's name, or one addressed to another peer, neither cuts the page
+off from the pool nor throws in the page, no offer the gate drops
 carries a change, ten links write at once and each run is reported once the page has its writes,
 and a 5 MB document crosses, also after a link taken out in the middle of it
 (`link-check.test.ts`); two replicas that each made a queue

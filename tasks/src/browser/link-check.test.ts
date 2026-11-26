@@ -8,8 +8,8 @@
 // - What a worker's code can post on its port by hand, past its own Repo:
 //   a protected document named in any other field, or in another spelling,
 //   gets it nothing.
-// - The handshake, which the gate does not see: a known defect, kept as
-//   `it.fails` (see there).
+// - The handshake, and messages in another peer's name or addressed to
+//   another peer, posted on a run worker's port: the pool stays linked.
 // - The gate's claim that a dropped message never carries a change, read
 //   off every message it drops: with a page that changes a document many
 //   times before the worker names it, and a later worker on the same
@@ -150,20 +150,18 @@ describe("what a worker's code posts on its port by hand", () => {
   }, 15_000);
 });
 
-// A known defect, kept as the case that shows it (`it.fails`: it passes
-// while the defect is there, and fails once it is mended, to be turned into
-// an `it` then). The gate sees only what the adapter emits as 'message'; the
-// handshake ('arrive', 'leave') is the adapter's own and is not gated. A
-// Repo routes its messages for a peer through the adapter that last
-// announced that peer ("a replacement connection"), so a run worker's code
-// that knows another peer's id (here the pool's, from an ephemeral message
-// the page relays with its sender's id) can say 'arrive' in that peer's
-// name on its own port and the page's messages for that peer go to it, and
-// say 'leave' and the page forgets that peer: the pool, which has no socket
-// of its own, is then cut off from everything until it restarts. No
-// protected document crosses: what reaches the worker is still gated.
+// The handshake. A Repo routes its messages for a peer through the adapter
+// that last announced that peer ("a replacement connection"), and forgets a
+// peer whose adapter says it left. So a run worker's code that knows another
+// peer's id (here the pool's, from an ephemeral message the page relays with
+// its sender's id) and says 'arrive' and 'leave' in that peer's name on its
+// own port would, were the handshake not gated, turn the page's messages for
+// that peer to itself and then cut the pool off. The page's end keeps the one
+// peer its link first announced (link.ts, `LinkGate.fromPort`). A message
+// addressed to another peer would make the adapter throw in the page; it is
+// dropped before the adapter sees it.
 describe('the handshake', () => {
-  it.fails("is not gated: a run worker's code that says 'arrive' and 'leave' in the pool's name cuts the page off from the pool", async () => {
+  it("is gated: a run worker's code that says 'arrive' and 'leave' in the pool's name does not cut the page off from the pool", async () => {
     const page = keep(make());
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
@@ -191,6 +189,38 @@ describe('the handshake', () => {
     // what should be true: the page still syncs with the pool, and has it as a peer
     expect(await until(() => poolQueue.doc()?.jobs === 2, 2000)).toBe(true);
     expect(page.peers).toContain(pool.peerId);
+  }, 15_000);
+
+  it("messages in the pool's name, a second welcome, and messages addressed to another peer reach nothing and throw nothing in the page; the run worker's own still cross", async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const pool = keep(make([new MessageChannelNetworkAdapter(links.open('pool') as any)]));
+    const runPort = links.open('run 1');
+    const run = keep(make([new MessageChannelNetworkAdapter(runPort as any)]));
+    const queue = page.create<{ jobs: number; by?: string }>({ jobs: 0 });
+    const poolQueue = await pool.find<{ jobs: number; by?: string }>(queue.url);
+    const runQueue = await run.find<{ jobs: number; by?: string }>(queue.url);
+    await quiet(100);
+
+    // a sync in the pool's name that says it has nothing (were it read, the page would take the pool for empty), welcomes, and messages addressed elsewhere
+    const empty = A.generateSyncMessage(A.init(), A.initSyncState())[1]!;
+    const raw = (message: Record<string, unknown>) => runPort.postMessage({ data: empty.slice().buffer, ...message });
+    raw({ type: 'sync', senderId: pool.peerId, targetId: page.peerId, documentId: queue.documentId });
+    raw({ type: 'request', senderId: pool.peerId, targetId: page.peerId, documentId: queue.documentId });
+    raw({ type: 'welcome', senderId: pool.peerId, targetId: page.peerId });
+    raw({ type: 'welcome', senderId: run.peerId, targetId: page.peerId });
+    raw({ type: 'sync', senderId: run.peerId, targetId: pool.peerId, documentId: queue.documentId });
+    raw({ type: 'sync', senderId: run.peerId, targetId: 'someone-else', documentId: queue.documentId });
+    raw({ type: 'leave', senderId: run.peerId, targetId: pool.peerId });
+    raw({ type: 'leave', senderId: pool.peerId });
+    await quiet(300);
+
+    expect(page.peers.sort()).toEqual([pool.peerId, run.peerId].sort());
+    queue.change((d) => void (d.jobs = 3));
+    expect(await until(() => poolQueue.doc()?.jobs === 3 && runQueue.doc()?.jobs === 3, 2000)).toBe(true);
+    runQueue.change((d) => void (d.by = 'run'));
+    expect(await until(() => queue.doc()?.by === 'run' && poolQueue.doc()?.by === 'run', 2000)).toBe(true);
   }, 15_000);
 });
 

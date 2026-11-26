@@ -140,11 +140,6 @@ that one machine serves.
     does the work in the page. A BroadcastChannel adapter on the site's Repo (measured as D1 in
     notes/LINK.md) would join every tab, with every Repo on the channel hearing all its traffic.
     Waits on the lead's call on that cost.
-  - *The handshake is not gated.* A worker's code can say `arrive` or `leave` on its port in
-    another peer's name and so take the page's messages for that peer, or make the page forget it
-    (README; `link-check.test.ts` keeps the case as `it.fails`). A page end that keeps the one peer
-    its link first announced, and drops any later `arrive`, any `leave`, and any message in another
-    peer's name, would close it. Waits on nothing.
   - *A frozen holder that held the site's database.* On the stand-in page, when the holder tab
     is frozen the other tab takes the pool and links it, but if the frozen tab held the database
     the two tabs' site Repos share, the other tab's site Repo saves nothing until the frozen one

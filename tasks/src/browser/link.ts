@@ -40,6 +40,19 @@
 // - Every other message (one that names no document, such as
 //   `remote-subscription-change`, or Subduction's own) is dropped both ways.
 //
+// Before any of that, the gate reads what arrives on the page's port, ahead
+// of the adapter, which does not see what it drops (`LinkGate.fromPort`). A
+// link has one peer: the first the worker's end announces (`arrive` or
+// `welcome`; a worker's Repo announces itself before its task's code runs).
+// Any later `arrive` or `welcome`, a `leave` in another's name, and any
+// message whose `senderId` is not that peer or whose `targetId` is not the
+// page are dropped. A Repo sends its messages for a peer through the adapter
+// that last announced that peer, and forgets a peer whose adapter says it
+// left; so without this a worker's code that knew another peer's id (the
+// pool's, which the page's relayed ephemeral messages carry) could take the
+// page's messages for that peer, or have the page forget it, and could make
+// the adapter throw in the page with a message addressed to another peer.
+//
 // What a dropped message costs. The page's Repo sends a `sync` to a new peer
 // for each document it has open (its announce), and the gate drops those for
 // documents the worker has not named. A first sync message between two
@@ -99,6 +112,39 @@ export class LinkGate {
   /** The documents the worker has named, each unprotected. */
   readonly named = new Set<string>();
 
+  /** The link's one peer: the first the worker's end announced; null until it has. */
+  peer: string | null = null;
+
+  /** Whether the adapter may read `message`, as it arrived on the page's port; `self` is the page's peer id. */
+  fromPort(message: unknown, self: unknown): boolean {
+    if (typeof message !== 'object' || message === null) {
+      return false;
+    }
+    const { type, senderId, targetId } = message as { type?: unknown; senderId?: unknown; targetId?: unknown };
+    if (typeof senderId !== 'string' || senderId === '') {
+      return false;
+    }
+    if (type === 'arrive' || type === 'leave') {
+      // the two the adapter sends addressed to no one
+      if (type === 'arrive' && this.peer === null && !('targetId' in message)) {
+        this.peer = senderId;
+        return true;
+      }
+      return type === 'leave' && senderId === this.peer && !('targetId' in message);
+    }
+    if (targetId !== self || typeof self !== 'string') {
+      return false;
+    }
+    if (type === 'welcome') {
+      if (this.peer !== null) {
+        return false;
+      }
+      this.peer = senderId;
+      return true;
+    }
+    return senderId === this.peer;
+  }
+
   /** What to do with a message from the worker to the page. */
   fromWorker(message: AboutADocument | null | undefined): Verdict {
     const type = String(message?.type);
@@ -151,15 +197,54 @@ export interface PortAdapter {
 export type PortAdapterClass = new (port: MessagePort) => PortAdapter;
 
 /**
+ * `port` as the adapter is given it: the same port, but a 'message' listener
+ * added to it hears only what `admit` lets through.
+ */
+function admittingPort(port: MessagePort, admit: (data: unknown) => boolean): MessagePort {
+  const wrapped = new WeakMap<object, EventListener>();
+  const wrap = (listener: EventListenerOrEventListenerObject) => {
+    let gated = wrapped.get(listener);
+    if (!gated) {
+      gated = (event: Event) => {
+        if (admit((event as MessageEvent).data)) {
+          typeof listener === 'function' ? listener.call(port, event) : listener.handleEvent(event);
+        }
+      };
+      wrapped.set(listener, gated);
+    }
+    return gated;
+  };
+  return new Proxy(port, {
+    get(target, key) {
+      if (key === 'addEventListener' || key === 'removeEventListener') {
+        return (type: string, listener: EventListenerOrEventListenerObject | null, options?: unknown) =>
+          target[key](type, (type === 'message' && listener ? wrap(listener) : listener) as EventListener, options as never);
+      }
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+/**
  * The class of the page's end of a link: the MessageChannel network adapter
- * with a `LinkGate` between it and the Repo. What the Repo sends goes
- * through `send`; what comes from the worker reaches the Repo as a
- * 'message' event; everything else (the handshake, readiness, leaving) is
- * the adapter's own.
+ * with a `LinkGate` between it and the Repo. What arrives on the port reaches
+ * the adapter only as `fromPort` admits it (the handshake included); what the
+ * Repo sends goes through `send`; what comes from the worker reaches the
+ * Repo as a 'message' event.
  */
 export function gatedAdapterClass(Adapter: PortAdapterClass): new (port: MessagePort) => PortAdapter & { gate: LinkGate } {
   return class GatedPortAdapter extends Adapter {
-    readonly gate = new LinkGate();
+    readonly gate: LinkGate;
+
+    constructor(port: MessagePort) {
+      const gate = new LinkGate();
+      // the page's peer id is read as each message arrives: the Repo gives it the adapter as it connects
+      let adapter: PortAdapter | undefined;
+      super(admittingPort(port, (data) => gate.fromPort(data, adapter?.peerId)));
+      this.gate = gate;
+      adapter = this;
+    }
 
     send(message: RepoMessage) {
       const verdict = this.gate.toWorker(message);

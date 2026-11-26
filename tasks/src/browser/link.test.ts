@@ -1,7 +1,8 @@
 // @vitest-environment node
 //
 // The local link (link.ts): the gate's verdict for every kind of message,
-// both ways, in a finite table; then a page's Repo and a worker's, each with
+// both ways, in a finite table, and for what arrives on the page's port (the
+// handshake, and whose message it is); then a page's Repo and a worker's, each with
 // storage of its own and no sync server, joined only by a MessageChannel
 // whose page end is gated, as pool-host.ts adds it, and whose worker end is
 // the plain MessageChannel adapter, as a worker's Repo takes it, with no
@@ -122,6 +123,42 @@ describe('the gate, for every kind of message', () => {
       expect([type, gate.toWorker(message(type, OTHER))]).toEqual([type, type === 'request' ? 'refuse' : 'drop']);
       // what the page sends never names a document
       expect(gate.named.has(OTHER)).toBe(false);
+    }
+  });
+
+  it("on the port: the first peer announced is the link's one peer; a later announcement, a leave or message in another's name, and one addressed to another peer are dropped", () => {
+    const PAGE = 'page';
+    const at = (type: string, senderId: string, targetId?: string) => ({ type, senderId, ...(targetId === undefined ? {} : { targetId }) });
+    for (const first of [at('arrive', 'w'), at('welcome', 'w', PAGE)]) {
+      const gate = new LinkGate();
+      // nothing before the announcement, nor anything that is not a message from a peer
+      expect(gate.fromPort(at('sync', 'w', PAGE), PAGE)).toBe(false);
+      expect([null, undefined, 'arrive', 7, {}, { type: 'arrive' }, at('arrive', '')].map((m) => gate.fromPort(m, PAGE))).toEqual(Array(7).fill(false));
+      expect(gate.fromPort(at('welcome', 'w', 'elsewhere'), PAGE)).toBe(false);
+      expect(gate.fromPort(at('arrive', 'w', PAGE), PAGE)).toBe(false);
+      expect(gate.peer).toBe(null);
+      expect(gate.fromPort(first, PAGE)).toBe(true);
+      expect(gate.peer).toBe('w');
+      // its messages to the page pass, whatever their type (what they name is the other half's to judge)
+      for (const type of TYPES) {
+        if (type !== 'arrive') {
+          expect([type, gate.fromPort(at(type, 'w', PAGE), PAGE)]).toEqual([type, true]);
+        }
+      }
+      // later announcements, its own too, and anything in another's name or to another peer
+      for (const later of [at('arrive', 'w'), at('welcome', 'w', PAGE), at('arrive', 'pool'), at('welcome', 'pool', PAGE)]) {
+        expect(gate.fromPort(later, PAGE)).toBe(false);
+      }
+      expect(gate.fromPort(at('sync', 'pool', PAGE), PAGE)).toBe(false);
+      expect(gate.fromPort(at('sync', 'w', 'pool'), PAGE)).toBe(false);
+      expect(gate.fromPort(at('sync', 'w'), PAGE)).toBe(false);
+      expect(gate.fromPort(at('leave', 'pool'), PAGE)).toBe(false);
+      expect(gate.fromPort(at('leave', 'w', 'pool'), PAGE)).toBe(false);
+      expect(gate.peer).toBe('w');
+      // its own leave passes
+      expect(gate.fromPort(at('leave', 'w'), PAGE)).toBe(true);
+      // and nothing passes while the page has no id
+      expect(gate.fromPort(at('sync', 'w', PAGE), undefined)).toBe(false);
     }
   });
 });
