@@ -85,22 +85,19 @@ const bare = (url) => String(url).split("#")[0]
 
 /**
  * Retire what earlier code left in this page: every runner an older version
- * registered on globalThis (`__patchworkAgentRunners`: retired, so it
- * finishes the turn it is in and stops, then the map deleted), and every
- * follower of another version of this module. An older view's own dispose
- * closes the shared worker connection it held.
+ * registered on globalThis (`__patchworkAgentRunners`: stopped at once, as a
+ * Stop would, so it does not work on a session beside the burst this page is
+ * about to ask for; then the map deleted), and every follower of another
+ * version of this module. An older view's own dispose closes the shared
+ * worker connection it held.
  */
 export function retireEarlier(scope = globalThis) {
   const runners = scope.__patchworkAgentRunners
   if (runners) {
     for (const entry of runners.values()) {
       try {
-        const runner = entry?.runner
-        if (typeof runner?.retire === "function") runner.retire(() => entry.dispose?.())
-        else {
-          runner?.stop?.()
-          entry?.dispose?.()
-        }
+        entry?.runner?.stop?.()
+        entry?.dispose?.()
       } catch {
         /* already gone */
       }
@@ -377,7 +374,7 @@ function startFollowing(handle, repo) {
       builtins: AGENT.builtins,
       plugins: () => loadPluginTools(),
       afterCall: AGENT.afterCall,
-      startSession: stepStarter(repo),
+      startSession: followAndAsk(repo),
       ask,
       onRunning: (tool) => {
         entry.running = tool
@@ -433,7 +430,7 @@ function startFollowing(handle, repo) {
 }
 
 /** How the workflow tools and the driver start a step's session from this page: followed here, and asked for. */
-const stepStarter = (repo) => async (handle) => {
+const followAndAsk = (repo) => async (handle) => {
   follow(handle, { repo })
   return askFor(repo, handle.url)
 }
@@ -443,7 +440,7 @@ const pageTools = async () => ({ builtins: BUILTIN_TOOLS, plugins: await loadPlu
 
 /**
  * Drive a plan from this page, for a view: its steps are asked for and
- * followed here (stepStarter), and news goes to the orchestrating session
+ * followed here (followAndAsk), and news goes to the orchestrating session
  * through its events in this page, which ask when they wake it. The
  * workflow tools start a driver themselves, with what their page hands them
  * (workflow/tools.js). `startSession` is for a caller with its own way of
@@ -462,7 +459,7 @@ export async function drivePlanHere(planUrl, { repo, events = null, startSession
   }
   return ensureDriver(planUrl, {
     repo,
-    startSession: startSession ?? stepStarter(repo),
+    startSession: startSession ?? followAndAsk(repo),
     tools: pageTools,
     notify: channels ? (url, title) => channels.open(url, { label: `workflow: ${title}` }) : null,
   })

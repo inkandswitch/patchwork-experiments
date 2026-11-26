@@ -44,9 +44,9 @@ async function page() {
 }
 
 describe("a person's edit and the agent's own, reaching the page together", () => {
-  // DEFECT (step 4 checker): an event is judged own by the heads it added
-  // alone, so a person's change under the agent's own is dropped. it.fails.
-  it.fails("the person's edit, which the agent's write was made on top of, still wakes the session", async () => {
+  // Found by the step 4 checker (an event was judged own by the heads it
+  // added alone); fixed: every change the event brought is judged.
+  it("the person's edit, which the agent's write was made on top of, still wakes the session", async () => {
     const { target, session, events, woke } = await page()
     // The pool's copy hears a person's edit first, and the agent edits on top of it.
     const person = copyIn(target)
@@ -65,9 +65,9 @@ describe("a person's edit and the agent's own, reaching the page together", () =
     events.stop()
   })
 
-  // DEFECT (minor, step 4 checker): a mixed event is reported whole, the
-  // agent's own edit with it. it.fails.
-  it.fails("the agent's own edit, arriving with a person's that was made beside it, is not reported back to it", async () => {
+  // Found by the step 4 checker (a mixed event was reported whole); fixed:
+  // only the edits of the changes that are not the session's own.
+  it("the agent's own edit, arriving with a person's that was made beside it, is not reported back to it", async () => {
     const { target, session, events, woke } = await page()
     const person = copyIn(target)
     person.change((d) => (d.a = 1))

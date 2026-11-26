@@ -3,11 +3,11 @@
  *
  * Every write a session's tools make goes through its guarded repo
  * (kernel/kernel-repo.js), which notes the heads the write added here. A watch
- * (tools/watch.js) compares the heads a change event adds with this set: all
- * of them the session's own, and the session is hearing about itself; any
- * other, and someone else wrote — a person in this same tab, a daemon, another
- * session. Change hashes name changes everywhere, so this needs no actor ids
- * and no guess about who was busy when.
+ * (tools/watch.js) compares the changes a change event brought with this set:
+ * the session's own it is not told of; any other, and someone else wrote — a
+ * person in this same tab, a daemon, another session. Change hashes name
+ * changes everywhere, so this needs no actor ids and no guess about who was
+ * busy when.
  *
  * In memory, per page, on globalThis, so a newer version of this code loaded
  * in place still knows what the older one wrote. A burst in a pool's worker

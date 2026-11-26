@@ -29,12 +29,14 @@
  *
  * The session's own edits are not reported: it made them, and a watch that
  * woke the agent about its own edits would be a loop kernel/events.js could only slow
- * down. Own is by heads (kernel/own-changes.js): every write a session's tools make
- * is noted by the change hashes it added, and a change event whose added heads
- * are all the session's own is skipped. Anyone else's — a person in this same
- * tab, the daemon, another session — is reported. (A sync never carries a
- * change this page already has, so a session's own write and someone else's
- * never arrive in one event.)
+ * down. Own is by change hash (kernel/own-changes.js): every write a session's
+ * tools make is noted by the hashes it added, and the burst's reach the page
+ * that follows it. A change event judges every change it brought: all the
+ * session's own, and it is skipped; none, and all of it is reported; some, and
+ * only the edits of the others are (the diff from before the event to before
+ * plus those changes). The agent writes in a pool's worker and the page hears
+ * both by sync, so one event can bring a person's change and the agent's own
+ * made on top of it.
  *
  * A runner catching up reports the net edits between two versions (a diff), so
  * a value that went queued → solving → failed while nobody listened is one
@@ -45,7 +47,6 @@ import { hostImport } from "../host/import.js"
 import { preview, noDocumentError } from "../documents/format.js"
 import { editsBetween, editsOfPatches, matchEdit, touchesPath } from "../documents/history.js"
 import { valueAt } from "../documents/values.js"
-import { addedHeads } from "../kernel/own-changes.js"
 import { watchesWriter } from "../kernel/store.js"
 import { shortDoc, pathLabel } from "../documents/labels.js"
 
@@ -56,27 +57,36 @@ export const KEPT_EDITS = 20
 export const PERSIST_MS = 5 * 60 * 1000
 const EDIT_PREVIEW = { maxString: 200, maxItems: 6, maxDepth: 3 }
 
-/** The heads one change event added (kernel/own-changes.js), or none when it cannot say. */
-export function eventHeads(automerge, payload) {
+/** The changes one change event brought, decoded (hash, deps), or none when it cannot say. */
+export function eventChanges(automerge, payload) {
   const before = payload.patchInfo?.before
   const after = payload.patchInfo?.after
   if (!before || !after) return []
-  return addedHeads(automerge.getHeads(before), automerge.getHeads(after))
-}
-
-/** The hashes of every change `doc` has beyond `heads`, or none when it cannot say. */
-export function changesSince(automerge, doc, heads) {
   try {
-    return automerge.getChanges(automerge.view(doc, heads), doc).map((change) => automerge.decodeChange(change).hash)
+    return automerge.getChanges(before, after).map((change) => automerge.decodeChange(change))
   } catch {
     return []
   }
 }
 
-/** Did the session make this change event, every head it added? (kernel/own-changes.js) */
-export function ownEvent(automerge, payload, isOwnHash) {
-  const added = eventHeads(automerge, payload)
-  return added.length > 0 && added.every(isOwnHash)
+/** The changes `doc` has beyond `heads`, decoded (hash, deps), or none when it cannot say. */
+export function changesSince(automerge, doc, heads) {
+  try {
+    return automerge.getChanges(automerge.view(doc, heads), doc).map((change) => automerge.decodeChange(change))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The edits made by the changes in `others`, of all `doc` has beyond `from`:
+ * the diff from `from` to `from` with those changes added (and whatever they
+ * were made on, which a version must hold).
+ */
+export function editsOfOthers(automerge, doc, from, others) {
+  const deps = new Set(others.flatMap((change) => change.deps))
+  const to = [...new Set([...from, ...others.map((change) => change.hash)])].filter((hash) => !deps.has(hash))
+  return editsBetween(automerge, doc, from, to)
 }
 
 /**
@@ -280,9 +290,14 @@ export async function openWatch({ id, spec, repo, events, watches, catchUp = fal
     let took = false
     let own = false
     for (const payload of payloads) {
-      const heads = eventHeads(automerge, payload)
-      if (heads.length && heads.every(watches.isOwn)) own = true
-      else if (take(editsOfChange(payload, spec.path), heads)) took = true
+      const changes = eventChanges(automerge, payload)
+      const others = changes.filter((change) => !watches.isOwn(change.hash))
+      if (changes.length && !others.length) own = true
+      else if (others.length && others.length < changes.length) {
+        own = true
+        const from = automerge.getHeads(payload.patchInfo.before)
+        if (take(editsOfOthers(automerge, payload.patchInfo.after, from, others), others.map((change) => change.hash))) took = true
+      } else if (take(editsOfChange(payload, spec.path), changes.map((change) => change.hash))) took = true
     }
     if (took) channel.notify(render)
     // The session's own edit is recorded as seen at once when nothing is
@@ -297,11 +312,13 @@ export async function openWatch({ id, spec, repo, events, watches, catchUp = fal
     const doc = root.doc()
     const from = repoModule.decodeHeads([...spec.heads])
     const to = automerge.getHeads(doc)
-    // What changed while nobody listened, unless every change of it is the
-    // session's own (a burst that watched, then edited, before the page
-    // opened the watch): those it is not told of.
+    // What changed while nobody listened, but not the session's own changes
+    // (a burst that watched, then edited, before the page opened the watch):
+    // those it is not told of.
     const since = changesSince(automerge, doc, from)
-    if (!(since.length && since.every(watches.isOwn)) && take(editsBetween(automerge, doc, from, to), since)) channel.notify(render)
+    const others = since.filter((change) => !watches.isOwn(change.hash))
+    const edits = !since.length || others.length === since.length ? editsBetween(automerge, doc, from, to) : others.length ? editsOfOthers(automerge, doc, from, others) : []
+    if (take(edits, others.map((change) => change.hash))) channel.notify(render)
   }
   return watch
 }

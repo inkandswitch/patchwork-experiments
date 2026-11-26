@@ -1729,4 +1729,17 @@ person, parked or nothing; a re-ask when a followed task ends goes back
 through the page's own asker, so it carries the keys; the line under the
 composer keeps "no key, working on another device" as a row of its own; a
 page claim held by another tab reads "Running <tool> in another page", not
-someone else's work.
+someone else's work, and offers Take over beside it.
+
+A checker of the switch found three things, fixed the same day. A page that
+died mid-call left a claim nothing offered to take over: a claim names no
+pool, so a live page and a dead one look alike, and any claim this page does
+not hold now offers Take over. A watch judged a change event as the
+session's own by the heads it added alone; now that the agent writes in a
+pool's worker and the page hears it by sync, one event can bring a person's
+change and the agent's own made on top of it, so every change the event
+brought is judged, and only the others' edits are reported. And a runner an
+older version left in the page was let finish its turn beside the burst the
+new code asked for; it is now stopped at once, as a Stop would. An opt-in
+SharedWorker runner of an older version is still not stopped: the page has
+no way to tell it to.

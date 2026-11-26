@@ -341,10 +341,9 @@ describe("a stop from another copy", () => {
 })
 
 describe("marks nobody will release", () => {
-  // DEFECT (step 4 checker): ui/session-value.js foreignBurst treats any claim
-  // with a running page call as "Running <tool> in another page", so a page
-  // that died mid-call is never offered Take over. Kept as it.fails.
-  it.fails("Take over is offered for a page that died mid-call (its claim in `burst`, its call running), as the specification names", () => {
+  // Found by the step 4 checker (a claim showed "Running <tool> in another
+  // page" with no Take over); fixed: a claim not held here offers it.
+  it("Take over is offered for a page that died mid-call (its claim in `burst`, its call running), as the specification names", () => {
     const doc = {}
     initSession(doc, {})
     doc.turns.push(makeTurn("user", [textBlock("make a note")]))

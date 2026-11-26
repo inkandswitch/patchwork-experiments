@@ -93,16 +93,17 @@ describe("a burst runs the version its asker runs", () => {
 })
 
 describe("a page retires what an older version left", () => {
-  it("every runner on globalThis: an idle one retired at once, a busy one when its turn ends, and the map goes", () => {
+  it("every runner on globalThis is stopped at once, a busy one too (not left to finish beside a burst), and the map goes", () => {
     const scope = {}
     const told = []
-    const runner = (name) => ({ retire: (done) => (told.push(name), done()) })
+    // An older runner could also retire after its turn; that is not used.
+    const runner = (name) => ({ retire: () => told.push(`retired ${name}`), stop: () => told.push(`stopped ${name}`) })
     scope.__patchworkAgentRunners = new Map([
       ["automerge:a", { runner: runner("a"), dispose: () => told.push("disposed a") }],
       ["automerge:b", { runner: { stop: () => told.push("stopped b") }, dispose: () => told.push("disposed b") }],
     ])
     retireEarlier(scope)
-    expect(told).toEqual(["a", "disposed a", "stopped b", "disposed b"])
+    expect(told).toEqual(["stopped a", "disposed a", "stopped b", "disposed b"])
     expect("__patchworkAgentRunners" in scope).toBe(false)
   })
 

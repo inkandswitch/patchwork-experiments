@@ -144,14 +144,17 @@ describe("where the session's task is, as the queue says", () => {
     expect(value(doc, { work: view("missing") })).toMatchObject({ canTakeOver: true, canStop: true })
   })
 
-  it("a page's claim on a call it runs is not foreign: it says the tool, in another page", () => {
+  it("a page's claim on a call it runs is not foreign: it says the tool, in another page, and offers Take over", () => {
     const doc = session({}, (d) => {
       d.burst = { run: "claim-1" }
       d.turns.push(makeTurn("assistant", [callBlock("view_mount", {}, { id: "c1", where: "host", status: CALL.running, runner: "claim-1" })]))
     })
     const facts = hintFacts(doc, { ...LOCAL, work: view("missing") })
     expect([facts.foreign, facts.claimed]).toEqual([false, "view_mount"])
+    // It may be a page that died mid-call, which nothing here can tell apart.
+    expect(value(doc, { work: view("missing") })).toMatchObject({ canTakeOver: true, canStop: true })
     expect(hintFacts(doc, { ...LOCAL, work: view("missing"), pageTool: "view_mount" })).toMatchObject({ foreign: false, claimed: null, pageTool: "view_mount" })
+    expect(value(doc, { work: view("missing"), pageTool: "view_mount" }).canTakeOver).toBe(false)
   })
 })
 

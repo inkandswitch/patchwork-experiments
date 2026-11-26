@@ -223,8 +223,10 @@ export function sessionValue(doc, local) {
     // Stop on any device: while the session says something is under way, or
     // the queue says its task is.
     canStop: status === STATUS.running || status === STATUS.reconnecting || status === STATUS.parked || facts.work != null,
-    // Take over: `burst` names a run nobody here hears.
-    canTakeOver: facts.foreign,
+    // Take over: `burst` names a run nobody here hears, or another page's
+    // claim. A claim names no pool (no liveness to judge it by), so a page
+    // that died mid-call without pagehide looks just like a live one.
+    canTakeOver: facts.foreign || facts.claimed != null,
     // Not before the account has had its say: the key is usually there, and
     // opening the panel only to have it found a moment later is just noise.
     openSettings: !!local.keysSettled && !local.hasKey && !doc.turns?.length,
