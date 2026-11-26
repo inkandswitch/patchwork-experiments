@@ -85,3 +85,98 @@ describe("a person's edit and the agent's own, reaching the page together", () =
     events.stop()
   })
 })
+
+/** The page, as above, but its watch is on one place: `t` of { t: { a, b }, o: { x } }. */
+async function pageAt(path, { restore = true } = {}) {
+  const repo = new Repo({ network: [] })
+  const target = repo.create()
+  target.change((d) => {
+    d.t = { a: 0, b: 0 }
+    d.o = { x: 0 }
+  })
+  const session = repo.create()
+  session.change((d) => {
+    initSession(d, {})
+    d.turns.push(makeTurn("user", [textBlock("watch it")]), makeTurn("assistant", [textBlock("watching")]))
+    d.burst = null
+    d.watches = { w1: { url: target.url, path, match: null, label: null, heads: [...target.heads()], at: 1 } }
+  })
+  const store = handleStore(session)
+  const woke = []
+  const events = createEvents(store, { policy: { settleMs: 5, maxDelayMs: 20, minGapMs: 0 }, onWake: () => woke.push(JSON.stringify(session.doc().turns.at(-1).blocks)) })
+  const open = async () => expect((await restoreWatches({ repo, events, store })).map((r) => r.ok)).toEqual([true])
+  if (restore) await open()
+  return { repo, target, session, events, woke, open }
+}
+
+/** A person's change, then the pool's own change made on top of it; the own hash remembered now or `later`. */
+function personThenAgent(target, session, person, agent) {
+  const p = copyIn(target)
+  p.change(person)
+  const worker = copyIn(target)
+  worker.merge(p)
+  const before = A.getHeads(worker.doc())
+  worker.change(agent)
+  const own = A.getHeads(worker.doc()).filter((h) => !before.includes(h))
+  return { worker, own }
+}
+
+describe("a mixed event, rechecked after the fix", () => {
+  it("on a watch of one place: the person's edit there wakes it, the agent's own beside it is not told", async () => {
+    const { target, session, events, woke } = await pageAt(["t"])
+    const { worker, own } = personThenAgent(target, session, (d) => (d.t.a = 1), (d) => (d.t.b = 1))
+    rememberOwn(session.url, own)
+    target.merge(worker)
+    await vi.waitFor(() => expect(woke.length).toBeGreaterThan(0), { timeout: 2000 })
+    expect(woke.join("")).toContain("/t/a")
+    expect(woke.join("")).not.toContain("/t/b")
+    events.stop()
+  })
+
+  it("on a watch of one place: a person's edit elsewhere under the agent's own there wakes nothing", async () => {
+    const { target, session, events, woke } = await pageAt(["t"])
+    const { worker, own } = personThenAgent(target, session, (d) => (d.o.x = 1), (d) => (d.t.b = 1))
+    rememberOwn(session.url, own)
+    target.merge(worker)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(woke).toEqual([])
+    events.stop()
+  })
+
+  it("the agent's hash arriving after the sync: the person's edit still wakes it", async () => {
+    const { target, session, events, woke } = await pageAt([])
+    const { worker, own } = personThenAgent(target, session, (d) => (d.t.a = 1), (d) => (d.t.b = 1))
+    target.merge(worker)
+    rememberOwn(session.url, own)
+    await vi.waitFor(() => expect(woke.length).toBeGreaterThan(0), { timeout: 2000 })
+    expect(woke.join("")).toContain("/t/a")
+    events.stop()
+  })
+
+  it("catching up on restore: the person's edit under the agent's own is reported, the agent's is not", async () => {
+    const { target, session, events, woke, open } = await pageAt([], { restore: false })
+    const { worker, own } = personThenAgent(target, session, (d) => (d.t.a = 1), (d) => (d.t.b = 1))
+    rememberOwn(session.url, own)
+    target.merge(worker)
+    await open()
+    await vi.waitFor(() => expect(woke.length).toBeGreaterThan(0), { timeout: 2000 })
+    expect(woke.join("")).toContain("/t/a")
+    expect(woke.join("")).not.toContain("/t/b")
+    events.stop()
+  })
+
+  it("catching up on restore: only the agent's own changes since, and nothing is reported", async () => {
+    const { target, session, events, woke, open } = await pageAt([], { restore: false })
+    const worker = copyIn(target)
+    const before = A.getHeads(worker.doc())
+    worker.change((d) => (d.t.b = 1))
+    worker.change((d) => (d.t.b = 2))
+    const all = A.getChanges(A.view(worker.doc(), before), worker.doc()).map((c) => A.decodeChange(c).hash)
+    rememberOwn(session.url, all)
+    target.merge(worker)
+    await open()
+    await new Promise((r) => setTimeout(r, 200))
+    expect(woke).toEqual([])
+    events.stop()
+  })
+})

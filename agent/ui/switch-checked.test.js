@@ -24,7 +24,7 @@ import { makeMock } from "../fixtures/mock-provider.js"
 import { setHostUrls } from "../host/urls.js"
 import { asInterruption } from "../net/network.js"
 import { askWork } from "../runners/ask.js"
-import { _reset, askFor, stopFor, takeOverFor } from "../runners/page.js"
+import { _reset, askFor, stopFor, takeOverFor, retireEarlier } from "../runners/page.js"
 import { handleStore } from "../kernel/store.js"
 
 const handleStoreOf = (handle) => handleStore(handle, A.splice)
@@ -386,8 +386,9 @@ describe("page and plugin tools", () => {
     const view = mount(repo, handle)
     await send(view, "make a note")
     expect(await until(() => lastText(handle) === "made it", 15_000)).toBe(true)
-    const result = findResult(handle.doc(), "d1")
-    expect(result?.isError ?? false).toBe(false)
+    const result = findResult(handle.doc(), "d1")?.block
+    expect(result).toBeTruthy()
+    expect(result.isError).toBe(false)
     expect(handle.doc().made?.length).toBe(1)
     expect(pool.asks.length).toBe(2)
   }, 20_000)
@@ -760,4 +761,76 @@ describe("offline, what a person can still do", () => {
     await send(view, "now?")
     expect(await until(() => lastText(handle) === "back, and answering")).toBe(true)
   }, 20_000)
+})
+
+describe("after the fixes (cd5cb96c), rechecked", () => {
+  const pluginsFile = join(process.cwd(), "fixtures", "plugins-page.js")
+
+  it("a page that died mid-call: the view offers Take over, a click answers the call INTERRUPTED, and the session carries on", async () => {
+    const repo = new Repo({ network: [] })
+    wire(repo, () => makeMock([(request) => [{ type: "text", delta: JSON.stringify(request.messages).includes("interrupted") ? "carried on after the interruption" : "carried on, unaware" }]]))
+    const call = callBlock("doc_create", { datatype: "note" }, { id: "p1", status: CALL.running, where: "host" })
+    call.runner = "claim-dead"
+    const handle = sessionIn(repo, [makeTurn("user", [textBlock("make a note")]), makeTurn("assistant", [call])], { burst: { run: "claim-dead" } })
+    const view = mount(repo, handle)
+    expect(await until(() => view.button("Take over")?.style.display === "")).toBe(true)
+    expect(view.hint()).toBe("Running doc_create in another page")
+    expect(pool.asks).toHaveLength(0)
+    view.button("Take over").click()
+    expect(await until(() => lastText(handle).startsWith("carried on"), 15_000)).toBe(true)
+    const result = findResult(handle.doc(), "p1")?.block
+    expect(result?.isError).toBe(true)
+    expect(result?.summary).toBe("interrupted")
+    expect(lastText(handle)).toBe("carried on after the interruption")
+    expect(findCall(handle.doc(), "p1").block.status).toBe(CALL.error)
+    expect(await pool.idle(5000)).toBe(true)
+    expect(handle.doc().burst).toBe(null)
+    expect(pool.asks).toHaveLength(1)
+  }, 20_000)
+
+  // Found by the recheck (pre-existing since a32d38c4, not from the fix):
+  // while this page takes a parked call it writes its claim id into `burst`
+  // and waits a beat (runners/page.js BEAT_MS, 2 s) before it claims the
+  // call. For that beat `burst` names neither a run the queue lists nor a
+  // running call's claim, so ui/session-value.js foreignBurst calls it
+  // someone else's, on this page too: the hint says "Someone else's work is
+  // under way here…" and Take over is offered, though this page holds it.
+  it.fails("while this page takes a parked call, its own view does not call that someone else's work", async () => {
+    setHostUrls({ "@inkandswitch/patchwork-plugins": pluginsFile })
+    const repo = new Repo({ network: [] })
+    const provider = makeMock([[{ type: "call", id: "d1", name: "doc_create", input: { datatype: "note", title: "N" } }], [{ type: "text", delta: "made it" }]])
+    wire(repo, () => provider)
+    const handle = sessionIn(repo)
+    const view = mount(repo, handle)
+    const seen = new Set()
+    const offered = []
+    const sample = setInterval(() => {
+      seen.add(view.hint())
+      if (view.button("Take over")?.style.display === "") offered.push(view.hint())
+    }, 20)
+    try {
+      await send(view, "make a note")
+      expect(await until(() => lastText(handle) === "made it", 15_000)).toBe(true)
+    } finally {
+      clearInterval(sample)
+    }
+    expect([...seen]).not.toContain("Someone else's work is under way here, or work that stopped without saying")
+    expect(offered).toEqual([])
+  }, 20_000)
+
+  // Found by the recheck (from the fix): an older version's SessionRunner
+  // stopped while it holds its lease finishes the reply it is streaming, cut
+  // off and unmarked (its loop's "stopped on purpose" path), and that is no
+  // work for today's code, so the person's message is left with half an
+  // answer. Its own registry gave a session up first on the way out
+  // (registry.js releaseAll: release(), then stop()), which leaves the reply
+  // marked, debris for the next burst. Shown against the old code itself in
+  // the checker's scratch script (old-runner-retire.mjs); here, the order.
+  it.fails("an older version's runner is given up (release) before it is stopped, so a reply it was streaming stays debris", () => {
+    const calls = []
+    const scope = { __patchworkAgentRunners: new Map([["automerge:made-up-1", { runner: { release: () => calls.push("release"), stop: () => calls.push("stop"), retire: () => calls.push("retire") }, dispose: () => calls.push("dispose") }]]) }
+    retireEarlier(scope)
+    expect(calls.indexOf("release")).toBeGreaterThanOrEqual(0)
+    expect(calls.indexOf("release")).toBeLessThan(calls.indexOf("stop"))
+  })
 })
