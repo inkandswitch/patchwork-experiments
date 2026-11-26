@@ -28,6 +28,9 @@
  * An open channel is a session listening, so the runner holding it is not
  * reaped for idleness (runners/registry.js). Closing it drops anything pending, and
  * `onClose` (an option to `open`) is told when it ends for any reason.
+ *
+ * `onWake` (an option to `createEvents`) is told after each wake is written,
+ * so whoever owns the events can ask for the work it made.
  */
 
 import { STATUS } from "../session/schema.js"
@@ -113,6 +116,11 @@ export function createEvents(store, opts = {}) {
       d.turns.push(makeTurn("user", blocks))
     })
     wakes.push(now())
+    // A wake is a write of work: whoever owns these events asks for it
+    // (runners/ask.js askWork). A failing asker does not undo the wake.
+    try {
+      opts.onWake?.()?.catch?.(() => {})
+    } catch {}
   }
 
   function open(source, key, { label = null, onClose = null } = {}) {
