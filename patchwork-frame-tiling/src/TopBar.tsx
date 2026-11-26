@@ -12,7 +12,6 @@ import type {
 import {
   createDocOfDatatype2,
   getRegistry,
-  isLoadablePlugin,
   isLoadedPlugin,
   type DatatypeDescription,
   type Plugin,
@@ -188,19 +187,29 @@ function useDatatypePlugins(): Plugin<DatatypeDescription>[] {
   return plugins;
 }
 
+/**
+ * The datatype with its module. Loading does not change the plugin in hand:
+ * the registry puts a new, loaded one in its place and answers with that.
+ */
+export async function loadedDatatype(datatype: Plugin<DatatypeDescription>) {
+  if (isLoadedPlugin(datatype)) return datatype;
+  const loaded = await getRegistry<DatatypeDescription>(
+    "patchwork:datatype",
+  ).load(datatype.id);
+  return loaded && isLoadedPlugin(loaded) ? loaded : undefined;
+}
+
 async function createNewDoc(
   repo: Repo,
   datatype: Plugin<DatatypeDescription>,
 ): Promise<DocLink> {
-  if (isLoadablePlugin(datatype)) {
-    await getRegistry("patchwork:datatype").load(datatype.id);
+  const loaded = await loadedDatatype(datatype);
+  if (!loaded) {
+    throw new Error(`The ${datatype.name} plugin could not be loaded`);
   }
-  if (!isLoadedPlugin(datatype)) {
-    throw new Error("plugin not loaded after loading");
-  }
-  const docHandle = await createDocOfDatatype2(datatype, repo);
-  const name = datatype.module.getTitle(docHandle.doc());
-  return { name, type: datatype.id, url: docHandle.url };
+  const docHandle = await createDocOfDatatype2(loaded, repo);
+  const name = loaded.module.getTitle(docHandle.doc());
+  return { name, type: loaded.id, url: docHandle.url };
 }
 
 async function docLinkByUrl(repo: Repo, url: AutomergeUrl): Promise<DocLink> {
@@ -212,10 +221,8 @@ async function docLinkByUrl(repo: Repo, url: AutomergeUrl): Promise<DocLink> {
     const registry = getRegistry("patchwork:datatype");
     const datatype = registry.get(type);
     if (datatype) {
-      await registry.load(datatype.id);
-      if (isLoadedPlugin(datatype)) {
-        name = datatype.module.getTitle(doc) || name;
-      }
+      const loaded = await loadedDatatype(datatype);
+      if (loaded) name = loaded.module.getTitle(doc) || name;
     }
   }
   return { name, type, url };
