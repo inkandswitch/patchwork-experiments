@@ -28,9 +28,12 @@ import {
   endRun,
   ending,
   endingRun,
+  type Entry,
   entryAt,
   fnv1a,
   type FinalStatus,
+  type Fold,
+  foldStep,
   gone,
   type Heard,
   Hearing,
@@ -54,6 +57,7 @@ import {
   mayRelist,
   type Named,
   named,
+  NOT_HAD,
   orphans,
   preferenceHash,
   preferred,
@@ -63,6 +67,7 @@ import {
   type Run,
   type RunStatus,
   satisfies,
+  settles,
   stopReason,
   stopTask,
   type Task,
@@ -2744,5 +2749,349 @@ describe('preferred', () => {
 
   it('ranks a pool named twice once', () => {
     expect(ranked(TASK, null, [free('A'), free('A'), full('B')])).toEqual(['A']);
+  });
+});
+
+// Settling
+
+describe('settles', () => {
+  // The pool's run is R, its taking saved at HELD on the pool's clock.
+  const HELD = 50_000;
+  const open = (id: string, pool: string): Run => ({ id, pool, start: 0 });
+  const done = (id: string, status: RunStatus, pool = 'Q'): Run => ({ id, pool, start: 0, end: 1, status, result: null, logs: [] });
+  const stop = (id: string): Run => ({ id, start: 1, end: 1, status: 'cancelled' });
+
+  type Listener = (task: Task, now: number) => Heard;
+  const fixed = (heard: Heard): Listener => () => heard;
+  /** A listener that first saw every run of the task at `seenAt` and has heard from none, asked at `now`. */
+  const firstSeenAt =
+    (seenAt: number): Listener =>
+    (task, now) => {
+      let clock = seenAt;
+      const hearing = new Hearing({ now: () => clock });
+      hearing.saw(task.runs);
+      clock = now;
+      return hearing.heard;
+    };
+
+  // When it is asked: at the taking, just under a beat, exactly a beat, and
+  // just under the lapse (an earlier run first seen at HELD still counts as
+  // heard then).
+  const NOWS = [HELD, HELD + BEAT_MS - 1, HELD + BEAT_MS, HELD + LAPSE_MS - 1];
+
+  interface Case {
+    label: string;
+    runs: Run[];
+    is: Named;
+    heard: Listener;
+    /** What `stopReason` gives R: the case's class. */
+    reason: 'cancelled' | 'yielded' | null;
+  }
+
+  const CASES: Case[] = [
+    // nothing stops it
+    { label: 'alone', runs: [open('R', 'P')], is: 'this', heard: fixed(hearsNone), reason: null },
+    { label: 'after a lost and a yielded run', runs: [done('a', 'lost'), done('b', 'yielded'), open('R', 'P')], is: 'this', heard: fixed(allHeard), reason: null },
+    { label: 'with a failure after it', runs: [open('R', 'P'), done('b', 'failed')], is: 'this', heard: fixed(allHeard), reason: null },
+    { label: 'with an open run after it, heard', runs: [open('R', 'P'), open('b', 'Q')], is: 'this', heard: fixed(allHeard), reason: null },
+    { label: 'its key naming nothing', runs: [open('R', 'P')], is: 'none', heard: fixed(hearsNone), reason: null },
+    {
+      label: 'an earlier open run first seen a lapse before the taking and never heard (cut off: settling is not exclusivity)',
+      runs: [open('a', 'Q'), open('R', 'P')],
+      is: 'this',
+      heard: firstSeenAt(HELD - LAPSE_MS),
+      reason: null,
+    },
+    // yielded
+    { label: 'an earlier open run heard', runs: [open('a', 'Q'), open('R', 'P')], is: 'this', heard: fixed(hearing('a')), reason: 'yielded' },
+    {
+      label: 'an earlier open run never heard, first seen at the taking, within LAPSE_MS',
+      runs: [open('a', 'Q'), open('R', 'P')],
+      is: 'this',
+      heard: firstSeenAt(HELD),
+      reason: 'yielded',
+    },
+    { label: 'an earlier run failed', runs: [done('a', 'failed'), open('R', 'P')], is: 'this', heard: fixed(hearsNone), reason: 'yielded' },
+    { label: 'a later run succeeded', runs: [open('R', 'P'), done('b', 'succeeded')], is: 'this', heard: fixed(hearsNone), reason: 'yielded' },
+    { label: 'its key naming another', runs: [open('R', 'P')], is: 'other', heard: fixed(hearsNone), reason: 'yielded' },
+    { label: 'R not in the list', runs: [open('a', 'P')], is: 'this', heard: fixed(hearsNone), reason: 'yielded' },
+    { label: 'R completed already', runs: [done('R', 'lost', 'P')], is: 'this', heard: fixed(hearsNone), reason: 'yielded' },
+    // cancelled
+    { label: 'a stop after it', runs: [open('R', 'P'), stop('s')], is: 'this', heard: fixed(hearsNone), reason: 'cancelled' },
+    { label: 'a stop before it', runs: [stop('s'), open('R', 'P')], is: 'this', heard: fixed(hearsNone), reason: 'cancelled' },
+    { label: 'an earlier run its pool recorded cancelled', runs: [done('a', 'cancelled'), open('R', 'P')], is: 'this', heard: fixed(hearsNone), reason: 'cancelled' },
+  ];
+
+  /** Every case at every time in `nows`, as [label, what settles gave, what it should]. */
+  function check(cases: Case[], nows: number[], expected: (it: Case, now: number) => boolean) {
+    const failures: string[] = [];
+    for (const it of cases) {
+      const task = makeTask(it.runs);
+      for (const now of nows) {
+        const heard = it.heard(task, now);
+        const reason = stopReason(task, 'R', it.is, heard);
+        if (reason !== it.reason) {
+          failures.push(`${it.label} at +${now - HELD}: the case says stopReason ${it.reason}, it gives ${reason}`);
+        }
+        const got = settles(task, 'R', it.is, heard, HELD, now);
+        if (got !== expected(it, now)) {
+          failures.push(`${it.label} at +${now - HELD}: settles ${got}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  }
+
+  it('the cases cover each reason stopReason gives', () => {
+    expect(new Set(CASES.map((it) => it.reason))).toEqual(new Set([null, 'yielded', 'cancelled']));
+  });
+
+  it('held less than a beat: false, whatever stops it or not', () => {
+    check(CASES, NOWS.filter((now) => now - HELD < BEAT_MS), () => false);
+  });
+
+  it('a beat or more (exactly a beat included) with nothing stopping it: true', () => {
+    check(CASES.filter((it) => it.reason === null), NOWS.filter((now) => now - HELD >= BEAT_MS), () => true);
+  });
+
+  it('a beat or more, but yielded (an earlier open run heard or first seen within LAPSE_MS, an earlier ending, or the key names another): false', () => {
+    check(CASES.filter((it) => it.reason === 'yielded'), NOWS.filter((now) => now - HELD >= BEAT_MS), () => false);
+  });
+
+  it('a beat or more, but cancelled: false', () => {
+    check(CASES.filter((it) => it.reason === 'cancelled'), NOWS.filter((now) => now - HELD >= BEAT_MS), () => false);
+  });
+});
+
+// Folding
+
+describe('foldStep', () => {
+  const T = url('T1');
+  const T2 = url('T2');
+  const SPARE_ENTRY: Entry = { taskUrl: T, askedAt: 1, package: 'pkg', needs: ['unix'], near: 'P' };
+  const OWN_NAMES_T: Entry = { taskUrl: T, askedAt: 2, package: 'pkg', needs: ['unix'] };
+  const OWN_NAMES_T2: Entry = { taskUrl: T2, askedAt: 3, package: null, needs: [] };
+  const OTHER_KEY: Entry = { taskUrl: url('T9'), askedAt: 9, package: null, needs: [] };
+
+  const record = (kind: Kind, index: number) => makeRun({ kind, pool: kind === 'stop' ? null : 'P' }, index);
+
+  /** What a document under T or T′ may be, as the folder has it. */
+  type DocKind = 'NOT_HAD' | 'not a task' | 'wanted' | 'ended';
+  const DOCS: Record<DocKind, [string, unknown][]> = {
+    NOT_HAD: [['NOT_HAD', NOT_HAD]],
+    'not a task': [
+      ['an empty document', {}],
+      ['a document with no runs', { importUrl: 'data:text/javascript,', input: null, key: 'K' }],
+      ['a document with no importUrl', { runs: [] }],
+    ],
+    wanted: [
+      ['never taken', makeTask()],
+      ['held by an open run', makeTask([record('heard', 0)])],
+      ['lost once', makeTask([record('lost', 0)])],
+      ['yielded once', makeTask([record('yielded', 0)])],
+    ],
+    ended: [
+      ['succeeded', makeTask([record('succeeded', 0)])],
+      ['failed', makeTask([record('failed', 0)])],
+      ['cancelled by its pool', makeTask([record('cancelled', 0)])],
+      ['stopped', makeTask([record('stop', 0)])],
+      ['succeeded after an open run', makeTask([record('heard', 0), record('succeeded', 1)])],
+    ],
+  };
+  const KINDS = Object.keys(DOCS) as DocKind[];
+  const docsOf = (kinds: DocKind[]) => kinds.flatMap((kind) => DOCS[kind].map(([label, doc]) => ({ kind, label, doc })));
+
+  type TClass = 'wanted' | 'not wanted' | 'not had';
+  type OClass = 'none' | 'names T' | 'names T′, wanted' | 'names T′, not wanted' | 'names T′, not had';
+  const classOf = (kind: DocKind): TClass => (kind === 'NOT_HAD' ? 'not had' : kind === 'wanted' ? 'wanted' : 'not wanted');
+
+  // The specification's table, case by case: T, O[k], and the step.
+  const CASES: [TClass, OClass, Fold][] = [
+    ['wanted', 'none', 'list'],
+    ['wanted', 'names T', 'keep'],
+    ['wanted', 'names T′, wanted', 'adopt'],
+    ['wanted', 'names T′, not wanted', 'list'],
+    ['wanted', 'names T′, not had', 'keep'],
+    ['not wanted', 'none', 'drop'],
+    ['not wanted', 'names T', 'drop'],
+    ['not wanted', 'names T′, wanted', 'drop'],
+    ['not wanted', 'names T′, not wanted', 'drop'],
+    ['not wanted', 'names T′, not had', 'drop'],
+    ['not had', 'none', 'keep'],
+    ['not had', 'names T', 'keep'],
+    ['not had', 'names T′, wanted', 'adopt'],
+    ['not had', 'names T′, not wanted', 'keep'],
+    ['not had', 'names T′, not had', 'keep'],
+  ];
+  const stepFor = (t: TClass, o: OClass) => CASES.find(([a, b]) => a === t && b === o)?.[2];
+
+  /** What own may have under the key, with the documents that may be passed as `other` beside it. */
+  const OWNS: { o: OClass; label: string; ownEntry: unknown; others: DocKind[] }[] = [
+    // `other` is not read: every kind is passed
+    { o: 'none', label: 'no entry', ownEntry: undefined, others: KINDS },
+    { o: 'none', label: 'null', ownEntry: null, others: KINDS },
+    { o: 'none', label: 'a string', ownEntry: 'junk', others: KINDS },
+    { o: 'none', label: 'an entry whose url is not a string', ownEntry: { taskUrl: 5, askedAt: 1 }, others: KINDS },
+    { o: 'names T', label: 'T', ownEntry: OWN_NAMES_T, others: KINDS },
+    // `other` is T′, as the case says
+    { o: 'names T′, wanted', label: 'T′', ownEntry: OWN_NAMES_T2, others: ['wanted'] },
+    { o: 'names T′, not wanted', label: 'T′', ownEntry: OWN_NAMES_T2, others: ['not a task', 'ended'] },
+    { o: 'names T′, not had', label: 'T′', ownEntry: OWN_NAMES_T2, others: ['NOT_HAD'] },
+  ];
+
+  interface FoldRow {
+    t: TClass;
+    o: OClass;
+    tKind: DocKind;
+    otherKind: DocKind;
+    task: unknown;
+    ownEntry: unknown;
+    other: unknown;
+    label: string;
+  }
+
+  const ROWS: FoldRow[] = docsOf(KINDS).flatMap((task) =>
+    OWNS.flatMap((own) =>
+      docsOf(own.others).map(
+        (other): FoldRow => ({
+          t: classOf(task.kind),
+          o: own.o,
+          tKind: task.kind,
+          otherKind: other.kind,
+          task: task.doc,
+          ownEntry: own.ownEntry,
+          other: other.doc,
+          label: `T ${task.kind} (${task.label}), own's key ${own.label}, other ${other.kind} (${other.label})`,
+        }),
+      ),
+    ),
+  );
+
+  function everyFoldRow(check: (row: FoldRow) => string | null | undefined) {
+    const failures = ROWS.flatMap((row) => {
+      const why = check(row);
+      return why ? [`${row.label}: ${why}`] : [];
+    });
+    expect(failures.slice(0, 20), `${failures.length} of ${ROWS.length} rows`).toEqual([]);
+  }
+
+  it('the table is the fifteen cases, T of every kind meets every case of O[k], and T′ is of every kind its case allows', () => {
+    expect(CASES).toHaveLength(15);
+    expect(new Set(CASES.map(([t, o]) => `${t} / ${o}`)).size).toBe(15);
+    const seen = new Set(ROWS.map((row) => `${row.tKind} / ${row.o}`));
+    for (const kind of KINDS) {
+      for (const own of OWNS) {
+        expect(seen.has(`${kind} / ${own.o}`), `${kind} / ${own.o}`).toBe(true);
+      }
+    }
+    const others = (o: OClass) => [...new Set(ROWS.filter((row) => row.o === o).map((row) => row.otherKind))].sort();
+    expect(others('names T′, wanted')).toEqual(['wanted']);
+    expect(others('names T′, not wanted')).toEqual(['ended', 'not a task']);
+    expect(others('names T′, not had')).toEqual(['NOT_HAD']);
+    expect(others('none')).toEqual([...KINDS].sort());
+    expect(others('names T')).toEqual([...KINDS].sort());
+  });
+
+  it('gives the step its case gives, for every row', () => {
+    everyFoldRow((row) => {
+      const got = foldStep(SPARE_ENTRY, row.task, row.ownEntry, row.other);
+      const want = stepFor(row.t, row.o);
+      return got === want ? null : `${got}, not ${want}`;
+    });
+  });
+
+  it('reads a value that is not an object (undefined, null, a number, a string) as NOT_HAD, as T and as T′: nothing is dropped or listed over for want of a document', () => {
+    const NOT_OBJECTS = [undefined, null, 0, 'automerge:T1'];
+    everyFoldRow((row) => {
+      const want = foldStep(SPARE_ENTRY, row.task, row.ownEntry, row.other);
+      for (const value of NOT_OBJECTS) {
+        if (row.tKind === 'NOT_HAD' && foldStep(SPARE_ENTRY, value, row.ownEntry, row.other) !== want) {
+          return `T as ${String(value)}`;
+        }
+        if (row.otherKind === 'NOT_HAD' && foldStep(SPARE_ENTRY, row.task, row.ownEntry, value) !== want) {
+          return `T′ as ${String(value)}`;
+        }
+      }
+      return null;
+    });
+  });
+
+  it("keeps what is under the spare's key when it is not an entry, whatever else is passed", () => {
+    everyFoldRow((row) => {
+      for (const spare of [undefined, null, 'junk', { taskUrl: 5, askedAt: 1 }]) {
+        const got = foldStep(spare, row.task, row.ownEntry, row.other);
+        if (got !== 'keep') {
+          return `${JSON.stringify(spare)}: ${got}`;
+        }
+      }
+      return null;
+    });
+  });
+
+  it('applied as `Fold` says, on plain queues and on real Automerge documents alike: an entry leaves the spare only on drop or adopt, adopt names T′ there, list names T in own, nothing else changes, and the step for what is then read is keep', () => {
+    // Key order is not a document's to keep: compare with keys sorted.
+    const same = (a: unknown, b: unknown) => JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
+    const sorted = (it: unknown): unknown =>
+      Array.isArray(it)
+        ? it.map(sorted)
+        : it && typeof it === 'object'
+          ? Object.fromEntries(Object.keys(it).sort().map((key) => [key, sorted((it as Record<string, unknown>)[key])]))
+          : it;
+    // The documents each url names, for reading again after the step.
+    const named2 = (row: FoldRow) => new Map<string, unknown>([[T, row.task], [T2, row.other]]);
+    everyFoldRow((row) => {
+      const step = foldStep(SPARE_ENTRY, row.task, row.ownEntry, row.other);
+      const spareBefore: Queue = { jobs: { K: copy(SPARE_ENTRY), J: copy(OTHER_KEY) } };
+      const ownBefore = {
+        jobs: { ...(row.ownEntry === undefined ? {} : { K: copy(row.ownEntry) }), J: copy(OTHER_KEY) },
+      } as unknown as Queue;
+      const p = entryAt(spareBefore, 'K') as Entry;
+      const o = entryAt(ownBefore, 'K');
+      const toSpare =
+        step === 'drop'
+          ? (queue: Queue) => delistTask(queue, 'K', p.taskUrl)
+          : step === 'adopt'
+            ? (queue: Queue) => listTask(queue, 'K', o as Entry, p.taskUrl)
+            : null;
+      const toOwn = step === 'list' ? (queue: Queue) => listTask(queue, 'K', p, o?.taskUrl) : null;
+
+      const spare = copy(spareBefore);
+      const own = copy(ownBefore);
+      toSpare?.(spare);
+      toOwn?.(own);
+      let spareDoc = A.from<Queue>(copy(spareBefore));
+      let ownDoc = A.from<Queue>(copy(ownBefore));
+      if (toSpare) {
+        spareDoc = A.change(spareDoc, toSpare);
+      }
+      if (toOwn) {
+        ownDoc = A.change(ownDoc, toOwn);
+      }
+      if (!same(A.toJS(spareDoc), spare) || !same(A.toJS(ownDoc), own)) {
+        return `${step}: Automerge and plain objects differ`;
+      }
+
+      const listed = (entry: Entry) => ({ taskUrl: entry.taskUrl, askedAt: entry.askedAt, package: entry.package, needs: entry.needs, ...(entry.near ? { near: entry.near } : {}) });
+      const expectSpare =
+        step === 'drop' ? { jobs: { J: OTHER_KEY } } : step === 'adopt' ? { jobs: { K: listed(OWN_NAMES_T2), J: OTHER_KEY } } : spareBefore;
+      const expectOwn = step === 'list' ? { jobs: { ...ownBefore.jobs, K: listed(SPARE_ENTRY) } } : ownBefore;
+      if (!same(spare, expectSpare)) {
+        return `${step}: the spare is ${JSON.stringify(spare)}`;
+      }
+      if (!same(own, expectOwn)) {
+        return `${step}: own is ${JSON.stringify(own)}`;
+      }
+
+      const docs = named2(row);
+      const pNow = entryAt(spare, 'K');
+      const oNow = entryAt(own, 'K');
+      const again = foldStep(
+        pNow,
+        pNow ? docs.get(pNow.taskUrl) : NOT_HAD,
+        oNow,
+        oNow && oNow.taskUrl !== pNow?.taskUrl ? docs.get(oNow.taskUrl) : NOT_HAD,
+      );
+      return again === 'keep' ? null : `${step}, then ${again}`;
+    });
   });
 });

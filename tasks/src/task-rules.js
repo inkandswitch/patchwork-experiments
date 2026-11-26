@@ -1,5 +1,5 @@
 /**
- * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v7]
+ * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v8]
  *
  * What the documents are, and what may be read from them. Everything else (a
  * pool, an asker, a view) is these rules applied to documents and to what has
@@ -95,6 +95,15 @@
  *   `cancelled`. A failure after it in the list does not stop it: it may yet
  *   do better. Stopped code is told through its signal, and its worker is
  *   ended GRACE_MS later whatever it does.
+ * - A run SETTLES (`settles`) once its pool has held it for BEAT_MS, counted
+ *   from when its taking was saved, and nothing stops it. A pool that can be
+ *   heard says each of its runs every BEAT_MS, and an earlier open run counts
+ *   as heard from first sight for LAPSE_MS, so an earlier run that can be
+ *   heard at all is heard within the beat, and stops this one before it
+ *   settles. Settled is the point from which code may do what cannot be
+ *   undone. It is not exclusivity: an earlier run cut off for longer than
+ *   the beat is not heard, and hearing it later still makes this run yield,
+ *   with what it did already done.
  * - A run it started and no longer has (the pool stopped, or crashed and
  *   came back) it completes as what it would have been stopped for, or else
  *   as `lost`; the task's third loss is recorded `failed`, which ends it
@@ -119,6 +128,26 @@
  * was asked for and is still wanted.
  * Asking under a key whose task has ended is asking afresh; whether work was
  * done already is for the asker to look up where the work's result lands.
+ *
+ * FOLDING
+ *
+ * What one queue lists can be moved into another: a SPARE folded into OWN.
+ * A folder goes through the spare key by key. For each it fetches the task
+ * the spare's entry names and, when own's entry under the key names another,
+ * that one too; then, in one turn, it reads the two entries and the two
+ * tasks afresh, and applies the step `foldStep` gives, unless an entry
+ * changed meanwhile. A task the folder does not have (`NOT_HAD`) is never
+ * read as ended. An entry leaves the spare only when its task's own document
+ * says the task has ended (`drop`), or when own's key names another task that
+ * is wanted (`adopt`): the spare's key then names that one too, as when two
+ * asks under one key merge in one queue, so the spare's task yields to it and
+ * its asker follows the key. A wanted task that own names nothing for, or an
+ * ended task for, is listed in own and stays in the spare (`list`); anything
+ * else stays as it is (`keep`). So nothing listed is lost, a step applied
+ * leaves nothing for the next pass to do, and once every replica has every
+ * change and a pass has had the tasks, own names a wanted task under every
+ * key the spare listed one, and the spare lists only what own lists. A task
+ * listed in both has one list of runs, read as everywhere else.
  *
  * WHAT IS PROMISED
  *
@@ -615,6 +644,23 @@ export function stopReason(task, runId, is, heard) {
 }
 
 /**
+ * Whether a pool's run has settled: the pool has held it for BEAT_MS or more
+ * since `heldSince` (its own clock, from when its taking was saved), and
+ * nothing stops it (`stopReason` is null). Within the beat, any earlier run
+ * the pool can hear has been heard, so a run that settles is the one its pool
+ * goes on with unless an earlier run cut off for longer turns up later.
+ * @param {Pick<Task, 'runs'>} task
+ * @param {string} runId
+ * @param {Named} is
+ * @param {Heard} heard
+ * @param {number} heldSince
+ * @param {number} now
+ */
+export function settles(task, runId, is, heard, heldSince, now) {
+  return now - heldSince >= BEAT_MS && stopReason(task, runId, is, heard) === null;
+}
+
+/**
  * The open runs bearing `pool`'s name that it is not running (`has` says
  * which it is): runs it started and lost track of, by stopping or crashing.
  * It completes each as `gone` says.
@@ -685,6 +731,73 @@ export function mayRelist(task, is, heard, noneSince, now) {
     holder(task, heard) === null &&
     now - noneSince >= LAPSE_MS
   );
+}
+
+// Folding one queue into another
+
+/**
+ * What a folder passes for a task whose document it does not have. A
+ * document it has is always an object, so anything else it passes (a handle's
+ * `doc()` that is not ready yet gives undefined) is read as not had too: a
+ * task is never dropped or listed over for want of its document.
+ */
+export const NOT_HAD = Symbol.for('task-rules: not had');
+
+/** @param {unknown} doc */
+const had = (doc) => doc !== NOT_HAD && !!doc && typeof doc === 'object';
+
+/**
+ * What a folder does with one key of a spare (see FOLDING):
+ * - `drop`: `delistTask(spare, key, spareEntry.taskUrl)`.
+ * - `adopt`: `listTask(spare, key, ownEntry, spareEntry.taskUrl)`.
+ * - `list`: `listTask(own, key, spareEntry, ownEntry?.taskUrl)`; the spare keeps its entry.
+ * - `keep`: nothing.
+ * @typedef {'drop' | 'keep' | 'adopt' | 'list'} Fold
+ */
+
+/**
+ * The step for one key of a spare, from the spare's entry under it (P[k]),
+ * the task that names (T), own's entry under the key (O[k]), and the task
+ * that names when it is another (T′); `task` and `other` are NOT_HAD when the
+ * folder does not have them, and `other` is not read when O[k] names T or
+ * nothing.
+ *
+ * | T                                   | O[k]                           | step    |
+ * |-------------------------------------|--------------------------------|---------|
+ * | had, not wanted (ended, not a task) | any                            | `drop`  |
+ * | wanted or not had                   | names T                        | `keep`  |
+ * | wanted or not had                   | names T′, had and wanted       | `adopt` |
+ * | wanted or not had                   | names T′, not had              | `keep`  |
+ * | not had                             | none, or T′ had and not wanted | `keep`  |
+ * | wanted                              | none, or T′ had and not wanted | `list`  |
+ *
+ * What is under the spare's key that is not an entry is kept: there is no
+ * task to move. What is under own's key that is not an entry names nothing,
+ * as `named` reads it.
+ * @param {unknown} spareEntry
+ * @param {unknown} task
+ * @param {unknown} ownEntry
+ * @param {unknown} other
+ * @returns {Fold}
+ */
+export function foldStep(spareEntry, task, ownEntry, other) {
+  if (!isEntry(spareEntry)) {
+    return 'keep';
+  }
+  if (had(task) && !isWanted(task)) {
+    return 'drop';
+  }
+  // the task is wanted, or not had
+  if (!isEntry(ownEntry)) {
+    return isWanted(task) ? 'list' : 'keep';
+  }
+  if (ownEntry.taskUrl === spareEntry.taskUrl || !had(other)) {
+    return 'keep';
+  }
+  if (isWanted(other)) {
+    return 'adopt';
+  }
+  return isWanted(task) ? 'list' : 'keep';
 }
 
 // What a machine has
