@@ -1,7 +1,8 @@
 // The TTS import tool's drop, through the task system's doWork, watchWork
 // and stopWork (stood in for: their own tests are the tasks package's), on a page with
 // the stand-in Repo: what a drop keeps and asks for, under which key; what
-// a person sees while it runs here or on their own machines; Cancel; closing
+// a person sees while it waits for and runs on their own machines (and when
+// this browser takes no part); a rejection shown as written; Cancel; closing
 // the tool; an import asked from elsewhere followed and not offered again;
 // an import that nothing is doing shown as interrupted, with the drop zone
 // and Import again; and where the task's code is.
@@ -34,7 +35,7 @@ vi.mock("../kit/task-client.js", async (importOriginal) => ({
   },
 }));
 
-const { default: TtsImportTool, importTaskUrl, callHere } = await import("./tool.js");
+const { default: TtsImportTool, importTaskUrl, NOT_FROM_A_PACKAGE } = await import("./tool.js");
 
 // the tiny fixture mod (fixtures/tiny-mod) as sources; test/fixture.js finds it by import.meta.url, which this page's environment does not give as a file
 const FIXTURE = join(process.cwd(), "fixtures/tiny-mod");
@@ -52,7 +53,7 @@ function fixtureSources({ without = [] } = {}) {
 }
 
 const TASK = "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P";
-const view = (more) => ({ key: "k", state: "running", taskUrl: null, importUrl: "x", input: null, progress: null, logs: [], result: undefined, error: null, runs: [], ...more });
+const view = (more) => ({ key: "k", state: "running", taskUrl: TASK, importUrl: "x", input: null, progress: null, logs: [], result: undefined, error: null, runs: [], ...more });
 const settle = async () => {
   for (let i = 0; i < 30; i++) await new Promise((resolve) => setTimeout(resolve, 0));
 };
@@ -62,10 +63,11 @@ beforeEach(() => {
 });
 afterEach(() => {
   document.body.innerHTML = "";
+  delete window.patchworkTasks;
 });
 
 /** The tool mounted on an import doc (with `seed`). */
-function mounted({ seed = {} } = {}) {
+function mounted({ seed = {}, Tool = TtsImportTool } = {}) {
   const repo = new FakeRepo();
   const doc = { "@patchwork": { type: "tts-import" } };
   TtsImportDatatype.init(doc);
@@ -73,7 +75,7 @@ function mounted({ seed = {} } = {}) {
   const element = document.createElement("div");
   element.repo = repo;
   document.body.append(element);
-  const unmount = TtsImportTool(handle, element);
+  const unmount = Tool(handle, element);
   const $ = (s) => element.querySelector(s);
   const text = () => element.querySelector(".tts-import").textContent;
   return { repo, handle, element, unmount, $, text };
@@ -112,14 +114,14 @@ describe("dropping a mod", () => {
     expect(Object.keys(handle.doc()).sort()).toEqual(["@patchwork", "games", "imported", "request", "settings", "title"]);
   });
 
-  it("done in this page: shows the stage, says it runs here, offers Cancel and no drop zone; when the outcome comes, the report", async () => {
+  it("asked of the person's own queue: shows the stage, says closing this does not stop it, offers Cancel and no drop zone; when the outcome comes, the report", async () => {
     const { handle, element, $, text } = mounted();
     drop(element);
     await settle();
     const { options, resolve } = calls.doWork[0];
     options.onProgress(view({ progress: { phase: "Storing assets", done: 3, total: 8 } }));
     expect($(".progress .phase").textContent).toBe("Storing assets: 3 of 8");
-    expect($(".where").textContent).toBe("In this page: closing it stops the import.");
+    expect($(".where").textContent).toBe("On your own machines: closing this does not stop it.");
     expect($("button.cancel")).toBeTruthy();
     expect($(".drop")).toBeNull();
     expect($(".pill").textContent).toBe("importing");
@@ -136,13 +138,18 @@ describe("dropping a mod", () => {
     expect($(".progress")).toBeNull();
   });
 
-  it("asked of the person's own queue: says closing this does not stop it, and that it waits for a machine", async () => {
+  it("waiting: says it waits for one of the person's machines, and, where the tasks package is not installed here, that this browser takes no part", async () => {
     const { element, $ } = mounted();
     drop(element);
     await settle();
+    window.patchworkTasks = { poolHosts: { 1: {} } };
     calls.doWork[0].options.onProgress(view({ taskUrl: TASK, state: "waiting" }));
     expect($(".progress .phase").textContent).toBe(LINES.waiting);
     expect($(".where").textContent).toBe("On your own machines: closing this does not stop it.");
+    delete window.patchworkTasks;
+    calls.doWork[0].options.onProgress(view({ taskUrl: TASK, state: "stalled" }));
+    expect($(".progress .phase").textContent).toBe(LINES.waitingWithoutThisBrowser);
+    expect(LINES.waitingWithoutThisBrowser).toBe("Waiting for one of your machines to take it up: this browser takes no part, because the tasks package is not installed here.");
     calls.doWork[0].options.onProgress(view({ taskUrl: TASK, progress: { phase: "Translating the game", done: 0, total: 0 } }));
     expect($(".progress .phase").textContent).toBe("Translating the game");
   });
@@ -169,6 +176,34 @@ describe("dropping a mod", () => {
     calls.doWork[0].reject(new Error("The task was cancelled"));
     await settle();
     expect($(".note").textContent).toBe(LINES.stopped);
+  });
+
+  it("a rejection of doWork (no queue could be had) is shown as written, with the drop zone and Import again", async () => {
+    const { element, $ } = mounted();
+    drop(element);
+    await settle();
+    calls.doWork[0].reject(new Error("Task queues can only be kept from a Patchwork page with your account open."));
+    await settle();
+    expect($(".pill").textContent).toBe("failed");
+    expect($(".error").textContent).toBe("Task queues can only be kept from a Patchwork page with your account open.");
+    expect($(".drop")).toBeTruthy();
+    expect($("button.again").textContent).toBe("Import again");
+  });
+
+  it("a copy not loaded from a package (built, served from anywhere else): the drop is kept, and the import says it cannot be asked of the queue, asking nothing", async () => {
+    vi.stubEnv("PROD", true);
+    vi.resetModules();
+    try {
+      const { default: BuiltTool } = await import("./tool.js");
+      const { handle, element, $ } = mounted({ Tool: BuiltTool });
+      drop(element);
+      await settle();
+      expect(handle.doc().request).toBeTruthy();
+      expect(calls.doWork).toHaveLength(0);
+      expect($(".error").textContent).toBe(NOT_FROM_A_PACKAGE);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("an import that failed shows its message", async () => {
@@ -201,12 +236,18 @@ describe("dropping a mod", () => {
     expect(calls.doWork).toHaveLength(1);
   });
 
-  it("closing the tool stops work done in this page, and leaves work on the person's queue going", async () => {
-    const here = mounted();
-    drop(here.element);
+  it("closing the tool while the drop is still being kept stops the keeping, and nothing is asked; once doWork is called, closing leaves the import going", async () => {
+    const keeping = mounted();
+    drop(keeping.element);
+    keeping.unmount();
     await settle();
-    here.unmount();
-    expect(calls.doWork[0].options.signal.aborted).toBe(true);
+    expect(calls.doWork).toHaveLength(0);
+
+    const asking = mounted();
+    drop(asking.element);
+    await settle();
+    asking.unmount();
+    expect(calls.doWork[0].options.signal.aborted).toBe(false);
 
     const asked = mounted();
     drop(asked.element);
@@ -321,39 +362,7 @@ describe("where the import task's code is", () => {
   it("unbuilt, anywhere else: the file beside this one", () => {
     expect(importTaskUrl("file:///x/tabletop/src/tts/tool.js", false)).toBe("file:///x/tabletop/src/tts/import-task.js");
   });
-  it("built, not in a package: unknown, so the tool calls it itself", () => {
+  it("built, not in a package: unknown, so the import cannot be asked", () => {
     expect(importTaskUrl("http://localhost:4173/dist/assets/tool-1234.js", true)).toBeNull();
-  });
-});
-
-describe("called here, with no url to import it by", () => {
-  async function askedRepo() {
-    const repo = new FakeRepo();
-    const { storeDropped } = await import("./dropped.js");
-    const files = await storeDropped(repo, fixtureSources());
-    const request = await importRequest(files, DEFAULT_SETTINGS);
-    const doc = repo.add({ "@patchwork": { type: "tts-import" }, title: "TTS import", settings: { ...DEFAULT_SETTINGS }, request, imported: null, games: [] });
-    return { repo, doc, ...importAsk(doc.url, request) };
-  }
-
-  it("imports, with the views doWork gives for work done here", async () => {
-    const { repo, doc, input, key } = await askedRepo();
-    const views = [];
-    const result = await callHere(repo, input, key, { onProgress: (v) => views.push(v), signal: new AbortController().signal });
-    expect(result.imported).toBe(true);
-    expect(doc.doc().imported.gameUrl).toBe(result.gameUrl);
-    expect(views.at(-1)).toMatchObject({ key, state: "succeeded", taskUrl: null, result });
-    expect(views.some((v) => v.progress?.phase === "Storing assets")).toBe(true);
-    expect(Object.keys(views[0]).sort()).toEqual(["error", "importUrl", "input", "key", "logs", "progress", "result", "runs", "state", "taskUrl"]);
-  });
-
-  it("stopped: the last view says cancelled, and nothing is written", async () => {
-    const { repo, doc, input, key } = await askedRepo();
-    const views = [];
-    const controller = new AbortController();
-    controller.abort("cancelled");
-    await expect(callHere(repo, input, key, { onProgress: (v) => views.push(v), signal: controller.signal })).rejects.toThrow("The task was cancelled");
-    expect(views.at(-1).state).toBe("cancelled");
-    expect(doc.doc().imported).toBeNull();
   });
 });

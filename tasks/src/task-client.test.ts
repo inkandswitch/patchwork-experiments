@@ -10,7 +10,7 @@
 import * as A from '@automerge/automerge';
 import { generateAutomergeUrl, initSubduction, parseAutomergeUrl, Repo, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -52,7 +52,7 @@ import {
   type TaskView,
 } from './task-client.js';
 import { getAcceptance, getTaskQueues, isOnTaskQueue, joinTaskQueue, leaveTaskQueue, setAcceptance } from './helpers';
-import { BEAT_MS, LAPSE_MS, LISTEN_MS, LOST_TOO_OFTEN, MAX_LOG_LINES, allHeard, claimRun, delistTask, endRun, isWanted, listTask, mayClaim, named, stopReason, type Queue, type RunStatus, type Task } from './task-rules.js';
+import { BEAT_MS, LAPSE_MS, LOST_TOO_OFTEN, MAX_LOG_LINES, allHeard, claimRun, delistTask, endRun, isWanted, listTask, mayClaim, named, stopReason, type Queue, type RunStatus, type Task } from './task-rules.js';
 
 await initSubduction();
 
@@ -2193,14 +2193,15 @@ describe('run with a signal', () => {
 
 describe('doWork', () => {
   const g = globalThis as any;
-  /** The work every test here asks for: it hands its arguments to whatever the test put at globalThis.__work. */
+  /** The work every test here asks for: it hands its arguments to whatever the test put at globalThis.__work, which no test expects to be called. */
   const WORK = 'data:text/javascript,export default function (input, ctx) { return globalThis.__work(input, ctx, this); }';
   afterEach(() => {
     delete g.accountDocHandle;
     delete g.__work;
+    delete g.localStorage;
   });
 
-  type Setup = 'no account' | 'no storage' | 'no own queue' | 'an own queue nobody is heard serving' | 'an own queue';
+  type Setup = 'no account' | 'no storage' | 'no own queue' | 'an own queue';
   /** A page in one of the setups, with the person's own queue if it has one. */
   function page(setup: Setup) {
     const repo = newRepo();
@@ -2222,16 +2223,8 @@ describe('doWork', () => {
     }
     return { repo, queue };
   }
-  /** Every document a Repo has, and its heads: what doing work here must leave as it was. */
+  /** Every document a Repo has, and its heads: what a refused asking must leave as it was. */
   const everything = (repo: Repo) => Object.values(repo.handles).map((h: any) => [h.url, A.getHeads(h.doc())]);
-
-  let servingSeq = 0;
-  const serving = (queue: DocHandle<Queue>, pool = 'P', has: string[] = ['browser', `pool:${pool}`]) =>
-    queue.emit('ephemeral-message', {
-      handle: queue,
-      senderId: pool as any,
-      message: { type: 'serving', pool, name: `pool ${pool}`, slots: 1, busy: 0, has, from: `stamp ${pool}`, seq: servingSeq++ },
-    });
 
   function doing(repo: Repo, request: { importUrl?: string; input?: unknown; key?: string; needs?: string[]; near?: string } = {}, signal?: AbortSignal) {
     const views: TaskView[] = [];
@@ -2242,7 +2235,7 @@ describe('doWork', () => {
     );
     return { views, settled, promise };
   }
-  /** Lets an import (which comes on the real event loop) and the Repo's work go on, moving fake time by `ms` first. */
+  /** Lets the Repo's work go on, moving fake time by `ms` first. */
   async function until(done: () => boolean, ms = 0) {
     if (ms) await vi.advanceTimersByTimeAsync(ms);
     for (let i = 0; i < 400 && !done(); i++) {
@@ -2259,60 +2252,40 @@ describe('doWork', () => {
     return own ? (Object.values(repo.handles).find((handle) => handle.url === own) as DocHandle<Queue> | undefined) : undefined;
   }
 
-  const HERE: [Setup, number][] = [
-    ['no account', 0],
-    ['no storage', 0],
-    ['an own queue nobody is heard serving', LISTEN_MS + 500],
+  const REFUSED: [Setup, string][] = [
+    ['no account', 'Task queues can only be kept from a Patchwork page with your account open.'],
+    ['no storage', 'Task queues can only be kept from a Patchwork page with your account open.'],
   ];
-  for (const [setup, wait] of HERE) {
-    it(`with ${setup}: imports the code and calls it here with (input, ctx), and resolves with what it returned; it writes and makes nothing`, async () => {
+  for (const [setup, sentence] of REFUSED) {
+    it(`with ${setup}: no queue can be had, so it rejects at once with ownQueue's sentence; nothing is called, written or made`, async () => {
       const { repo } = page(setup);
       await settle();
       const before = everything(repo);
-      let seen: any;
-      g.__work = (input: any, ctx: any, self: any) => {
-        seen = { input, ctx, self };
-        ctx.log('a line', 1);
-        ctx.progress({ stage: 'half' });
-        return { n: input.n + 1 };
-      };
-      const input = { n: 1 };
-      const { views, settled } = doing(repo, { input });
-      if (wait) {
-        await vi.advanceTimersByTimeAsync(wait - 1);
-        expect(seen).toBeUndefined();
-      }
-      await until(() => 'value' in settled || 'error' in settled, wait ? 1 : 0);
-      expect(settled).toEqual({ value: { n: 2 } });
-      expect(seen.input).toEqual(input);
-      expect(seen.input).not.toBe(input);
-      expect(seen.self).toBe(seen.ctx);
-      expect(Object.keys(seen.ctx).sort()).toEqual(['key', 'log', 'progress', 'repo', 'run', 'signal', 'taskUrl']);
-      expect(seen.ctx.repo).toBe(repo);
-      expect(seen.ctx.key).toBe('k');
-      expect(seen.ctx.taskUrl).toBeNull();
-      expect(seen.ctx.run).toMatch(/^[0-9a-f-]{36}$/);
-      expect(seen.ctx.signal.aborted).toBe(false);
-      expect(views.map((view) => view.state)).toEqual(['running', 'running', 'running', 'succeeded']);
-      const last = views.at(-1)!;
-      expect(last).toMatchObject({ key: 'k', taskUrl: null, importUrl: WORK, progress: { stage: 'half' }, result: { n: 2 }, error: null, runs: [] });
-      expect(last.logs.map((l) => l.message)).toEqual(['a line 1']);
+      g.__work = vi.fn();
+      const started = Date.now();
+      const { settled, views } = doing(repo);
+      await until(() => 'error' in settled);
+      expect(settled.error?.message).toBe(sentence);
+      expect(Date.now()).toBe(started);
+      expect(views).toEqual([]);
+      expect(g.__work).not.toHaveBeenCalled();
       expect(everything(repo)).toEqual(before);
     });
   }
 
-  it('with no own queue: asking makes it (one pointer, its mark and its url key), lists nothing in it, and with no pool heard does the work here after the wait', async () => {
+  it('with no own queue: asking makes it (one pointer, its mark and its url key) and lists the task in it, at once', async () => {
     const { repo } = page('no own queue');
-    g.__work = vi.fn(() => 'here');
+    g.__work = vi.fn();
+    const started = Date.now();
     const work = doing(repo);
-    await settle();
+    await until(() => !!ownIn(repo) && !!entryOf(ownIn(repo)!, 'k'));
     const own = ownIn(repo)!;
-    expect(own).toBeDefined();
     const storage = Object.values(repo.handles).find((handle) => handle.url === storageUrlOf(g.accountDocHandle.doc()))!;
     expect(storage.doc()).toEqual({ '@patchwork': { type: 'patchwork:tool-storage' }, own: own.url, [markOf(own.url)]: true, [own.url]: true });
-    await until(() => 'value' in work.settled, LISTEN_MS + 500);
-    expect(work.settled).toEqual({ value: 'here' });
-    expect(own.doc()!.jobs).toEqual({});
+    expect(Object.keys(own.doc()!.jobs)).toEqual(['k']);
+    expect(Date.now()).toBe(started);
+    expect(work.settled).toEqual({});
+    expect(g.__work).not.toHaveBeenCalled();
   });
 
   it('asking puts the page in its pool: one pool view appended, inside the tool-storage provider, by the first of two asks at once; none when one is there', async () => {
@@ -2334,8 +2307,6 @@ describe('doWork', () => {
       g.__work = vi.fn();
       doing(repo, { key: 'one' });
       doing(repo, { key: 'two' });
-      await settle();
-      serving(queue!);
       await until(() => !!entryOf(queue!, 'one') && !!entryOf(queue!, 'two'));
       expect(appended).toHaveLength(1);
       expect(appended[0]).toMatchObject({ tag: 'patchwork-view', attributes: { component: 'task-pool-next' }, style: { display: 'contents' } });
@@ -2351,7 +2322,7 @@ describe('doWork', () => {
     }
   });
 
-  it("own named, its document not here: asking makes a queue of its own and, nobody heard, does the work here; a pool heard on that queue is asked; once own's document is here and a pool is heard on it, own is asked", async () => {
+  it("own named, its document not here: asking makes a queue of its own and asks that; once own's document is here, own is asked", async () => {
     const { repo } = page('no own queue');
     const elsewhere = newRepo();
     const away = elsewhere.create<Queue>({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} } as any);
@@ -2361,111 +2332,42 @@ describe('doWork', () => {
       doc[markOf(away.url)] = true;
       doc[away.url] = true;
     });
-    g.__work = vi.fn(() => 'here');
+    g.__work = vi.fn();
     const first = doing(repo, { key: 'first' });
-    await until(() => 'value' in first.settled, HERE_MS + LISTEN_MS + 500);
-    expect(first.settled).toEqual({ value: 'here' });
+    await until(() => sparesOf(storage.doc()).length > 0, HERE_MS);
     const spares = sparesOf(storage.doc());
     expect(spares).toHaveLength(1);
     expect(ownQueueOf(storage.doc())).toBe(away.url);
     const spare = (await repo.find<Queue>(spares[0] as AutomergeUrl))!;
-    expect(spare.doc()!.jobs).toEqual({});
-    serving(spare);
-    const second = doing(repo, { key: 'second' });
-    await until(() => !!entryOf(spare, 'second'), HERE_MS);
-    expect(second.settled).toEqual({});
+    await until(() => !!entryOf(spare, 'first'));
+    expect(Object.keys(spare.doc()!.jobs)).toEqual(['first']);
+    expect(first.settled).toEqual({});
     const awayHere = replicate(repo, away);
-    const third = doing(repo, { key: 'third' });
-    await settle();
-    serving(awayHere);
-    await until(() => !!entryOf(awayHere, 'third'));
-    expect(entryOf(awayHere, 'third')).toBeDefined();
-    expect(third.settled).toEqual({});
-    expect(g.__work).toHaveBeenCalledTimes(1);
-  });
-
-  it("a pool heard only on this browser's own channel, and not through the page's Repo, is not counted: the work is done here after the wait (with no network, the page hears its pool but cannot hand it work through its Repo)", async () => {
-    const { repo, queue } = page('an own queue');
-    g.__work = vi.fn(() => 'here');
-    const local = new BroadcastChannel(LOCAL_MESSAGES_CHANNEL);
-    try {
-      const work = doing(repo);
-      await settle();
-      local.postMessage({ channel: queue!.url, message: { type: 'serving', pool: 'P', name: 'pool P', slots: 1, busy: 0, has: ['browser', 'pool:P'], from: 'a pool here', seq: 1 } });
-      // the same message reaches an ordinary listener of the queue
-      const heard: Serving[][] = [];
-      const stop = served(repo, queue!.url, (pools) => heard.push(pools));
-      await settle();
-      local.postMessage({ channel: queue!.url, message: { type: 'serving', pool: 'P', name: 'pool P', slots: 1, busy: 0, has: ['browser', 'pool:P'], from: 'a pool here', seq: 2 } });
-      await delivered(() => heard.length > 1);
-      expect(heard.at(-1)?.map((pool) => pool.pool)).toEqual(['P']);
-      stop();
-      await until(() => 'value' in work.settled, LISTEN_MS + 500);
-      expect(work.settled).toEqual({ value: 'here' });
-      expect(queue!.doc()!.jobs).toEqual({});
-    } finally {
-      local.close();
-    }
-  });
-
-  it('done here: a throw rejects with its message and is reported failed', async () => {
-    const { repo } = page('no account');
-    g.__work = () => {
-      throw new Error('boom');
-    };
-    const { views, settled } = doing(repo);
-    await until(() => 'error' in settled);
-    expect(settled.error?.message).toBe('boom');
-    expect(views.at(-1)).toMatchObject({ state: 'failed', error: 'boom' });
-    expect(views.at(-1)!.logs.at(-1)?.message).toBe('boom');
-  });
-
-  it('done here: code with no default function rejects plainly, and is reported failed', async () => {
-    const { repo } = page('no account');
-    const { views, settled } = doing(repo, { importUrl: 'data:text/javascript,export const notAFunction = 1' });
-    await until(() => 'error' in settled);
-    expect(settled.error?.message).toBe("the task's code has no default export to call");
-    expect(views.at(-1)?.state).toBe('failed');
-  });
-
-  it("done here: aborting the signal aborts ctx.signal with 'cancelled' and rejects at once, though the code goes on and then returns; nothing is heard after", async () => {
-    const { repo } = page('no account');
-    let ctx: any;
-    let finish = (_: unknown) => {};
-    g.__work = (_input: unknown, c: any) => {
-      ctx = c;
-      return new Promise((resolve) => (finish = resolve));
-    };
-    const controller = new AbortController();
-    const { views, settled } = doing(repo, {}, controller.signal);
-    await until(() => ctx !== undefined);
-    controller.abort();
-    await until(() => 'error' in settled);
-    expect(ctx.signal.aborted).toBe(true);
-    expect(ctx.signal.reason).toBe('cancelled');
-    expect(settled.error?.message).toBe('The task was cancelled');
-    expect(views.at(-1)?.state).toBe('cancelled');
-    const heard = views.length;
-    ctx.log('still going');
-    finish('a result after all');
-    await until(() => false);
-    expect(settled.error?.message).toBe('The task was cancelled');
-    expect(views).toHaveLength(heard);
-  });
-
-  it('done here: a signal aborted before it is called rejects, and the code is not called', async () => {
-    const { repo } = page('no account');
-    g.__work = vi.fn();
-    const controller = new AbortController();
-    controller.abort();
-    const { settled } = doing(repo, {}, controller.signal);
-    await until(() => 'error' in settled);
-    expect(settled.error?.message).toBe('The task was cancelled');
+    const second = doing(repo, { key: 'second' });
+    await until(() => !!entryOf(awayHere, 'second'));
+    expect(entryOf(awayHere, 'second')).toBeDefined();
+    expect(entryOf(spare, 'second')).toBeUndefined();
+    expect(second.settled).toEqual({});
     expect(g.__work).not.toHaveBeenCalled();
   });
 
-  it('aborted while it still waits to hear whether a pool serves the own queue: rejects at once, and neither asks nor calls anything, then or once a pool is heard', async () => {
-    const { repo, queue } = page('an own queue nobody is heard serving');
+  it('nothing is listened for: with no pool heard serving own, the task is listed at once, and waits there', async () => {
+    const { repo, queue } = page('an own queue');
+    g.__work = vi.fn();
+    const started = Date.now();
+    const { views } = doing(repo);
+    await until(() => !!entryOf(queue!, 'k') && views.length > 0);
+    expect(Date.now()).toBe(started);
+    await vi.advanceTimersByTimeAsync(LAPSE_MS);
+    expect(entryOf(queue!, 'k')).toBeDefined();
+    expect(views.at(-1)?.state).toBe('waiting');
+    expect(g.__work).not.toHaveBeenCalled();
+  });
+
+  it("aborted while it still looks for the queue (the list of the person's queues not here yet): rejects at once, and asks and calls nothing, then or later", async () => {
+    const repo = newRepo();
+    const account = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: generateAutomergeUrl() } });
+    g.accountDocHandle = account;
     g.__work = vi.fn();
     const controller = new AbortController();
     const { settled } = doing(repo, {}, controller.signal);
@@ -2477,78 +2379,49 @@ describe('doWork', () => {
     await until(() => 'error' in settled);
     expect(settled.error?.message).toBe('The task was cancelled');
     expect(Date.now()).toBe(stoppedAt);
-    serving(queue!);
-    await until(() => false, LISTEN_MS + 500);
-    expect(queue!.doc()!.jobs).toEqual({});
+    await until(() => false, 60_000);
+    expect(Object.values(repo.handles).filter((handle: any) => handle.doc()?.jobs || handle.doc()?.runs)).toEqual([]);
     expect(g.__work).not.toHaveBeenCalled();
   });
 
-  it('a signal aborted before it is called, with an own queue a pool is heard serving: rejects, and asks nothing', async () => {
+  it("the list of the person's queues never comes: it rejects, once ownQueue gives up, with ownQueue's sentence, having asked and called nothing", async () => {
+    const repo = newRepo();
+    g.accountDocHandle = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: generateAutomergeUrl() } });
+    g.__work = vi.fn();
+    const { settled } = doing(repo);
+    for (let i = 0; i < 40 && !('error' in settled); i++) await until(() => 'error' in settled, 5_000);
+    expect(settled.error?.message).toBe('The list of your task queues could not be found, so nothing was changed.');
+    expect(g.__work).not.toHaveBeenCalled();
+  });
+
+  it('a signal aborted before it is called, with an own queue: rejects, and asks nothing', async () => {
     const { repo, queue } = page('an own queue');
     g.__work = vi.fn();
     const controller = new AbortController();
     controller.abort();
     const { settled } = doing(repo, {}, controller.signal);
-    await settle();
-    serving(queue!);
-    await until(() => 'error' in settled, LISTEN_MS + 500);
+    await until(() => 'error' in settled);
     expect(settled.error?.message).toBe('The task was cancelled');
     expect(queue!.doc()!.jobs).toEqual({});
     expect(g.__work).not.toHaveBeenCalled();
   });
 
-  /** An own queue a pool is heard serving, and work asked of it. */
+  /** An own queue, and work asked of it. */
   async function asked(signal?: AbortSignal) {
     const { repo, queue } = page('an own queue');
     g.__work = vi.fn();
     const doingIt = doing(repo, {}, signal);
-    await settle();
-    serving(queue!);
     await until(() => !!entryOf(queue!, 'k'));
     return { repo, queue: queue!, ...doingIt };
   }
 
-  it('with an own queue a pool is heard serving: lists a task under the key with the import url and input, and calls nothing here', async () => {
+  it('with an own queue: lists a task under the key with the import url and input, and calls nothing here', async () => {
     const { repo, queue, views } = await asked();
     const task = await repo.find<Task>(entryOf(queue, 'k').taskUrl as AutomergeUrl);
     expect(task.doc()).toEqual({ importUrl: WORK, input: { n: 1 }, key: 'k', runs: [] });
     expect(g.__work).not.toHaveBeenCalled();
+    await settle();
     expect(views.at(-1)).toMatchObject({ state: 'waiting', taskUrl: task.url });
-  });
-
-  it('asked: the first asking waits to hear a pool only until one is heard; a later one does not wait at all', async () => {
-    const { repo, queue } = page('an own queue');
-    g.__work = vi.fn();
-    doing(repo, { key: 'first' });
-    await settle();
-    await vi.advanceTimersByTimeAsync(BEAT_MS);
-    expect(entryOf(queue!, 'first')).toBeUndefined();
-    serving(queue!);
-    await until(() => !!entryOf(queue!, 'first'));
-    expect(entryOf(queue!, 'first')).toBeDefined();
-    const started = Date.now();
-    doing(repo, { key: 'later' });
-    await until(() => !!entryOf(queue!, 'later'));
-    expect(entryOf(queue!, 'later')).toBeDefined();
-    expect(Date.now()).toBe(started);
-    expect(g.__work).not.toHaveBeenCalled();
-  });
-
-  it('nobody heard: the first asking is done here once it has listened for LISTEN_MS and a crossing; a later one is done here at once', async () => {
-    const { repo, queue } = page('an own queue nobody is heard serving');
-    g.__work = vi.fn(() => 'here');
-    const first = doing(repo, { key: 'first' });
-    await settle();
-    await vi.advanceTimersByTimeAsync(LISTEN_MS + 499);
-    expect(g.__work).not.toHaveBeenCalled();
-    await until(() => 'value' in first.settled, 1);
-    expect(first.settled).toEqual({ value: 'here' });
-    const started = Date.now();
-    const later = doing(repo, { key: 'later' });
-    await until(() => 'value' in later.settled);
-    expect(later.settled).toEqual({ value: 'here' });
-    expect(Date.now()).toBe(started);
-    expect(queue!.doc()!.jobs).toEqual({});
   });
 
   it("asked: the result of the task's ending run resolves it", async () => {
@@ -2564,6 +2437,15 @@ describe('doWork', () => {
     expect(views.at(-1)?.state).toBe('succeeded');
   });
 
+  it("asked: the task's failing run rejects it with its error", async () => {
+    const { repo, queue, settled } = await asked();
+    const task = await repo.find<Task>(entryOf(queue, 'k').taskUrl as AutomergeUrl);
+    take(task, 'r');
+    complete(task, 'r', 'failed', { logs: [line('boom')] });
+    await until(() => 'error' in settled);
+    expect(settled.error?.message).toBe('boom');
+  });
+
   it('asked: aborting the signal appends a stop to the task and rejects', async () => {
     const controller = new AbortController();
     const { repo, queue, settled } = await asked(controller.signal);
@@ -2575,154 +2457,97 @@ describe('doWork', () => {
     expect(entryOf(queue, 'k')).toBeUndefined();
   });
 
-  it('code in a package kept in automerge travels: with a pool heard, it is asked of the own queue and not called here', async () => {
+  it('code in a package kept in automerge travels: it is asked of the own queue with its package and no need added', async () => {
     const { repo, queue } = await asked();
     doing(repo, { importUrl: codeIn(PKG), key: 'packaged' });
     await until(() => !!entryOf(queue, 'packaged'));
     expect(entryOf(queue, 'packaged').package).toBe(PKG);
+    expect(entryOf(queue, 'packaged').needs).toEqual([]);
     expect(g.__work).not.toHaveBeenCalled();
   });
 
-  it('code at an http: url (a dev server) is done here at once though a pool is heard: the import is tried here, and nothing is asked', async () => {
-    const { repo, queue } = await asked();
-    const started = Date.now();
-    const here = doing(repo, { importUrl: 'http://localhost:5173/src/task.js', key: 'dev' });
-    await until(() => 'error' in here.settled);
-    expect(Date.now()).toBe(started);
-    // Node cannot import http: urls, so what this page's import said is the failure
-    expect(here.views.at(-1)).toMatchObject({ state: 'failed', taskUrl: null, importUrl: 'http://localhost:5173/src/task.js' });
-    expect(entryOf(queue, 'dev')).toBeUndefined();
-  });
-
-  it('code at a file: url is done here at once though a pool is heard, and resolves with what it returned', async () => {
-    const { repo, queue } = await asked();
+  describe('code that cannot travel', () => {
+    const storage = (items: Record<string, string>) => ({
+      items,
+      getItem: (key: string) => items[key] ?? null,
+      setItem: (key: string, value: string) => void (items[key] = String(value)),
+    });
     const dir = mkdtempSync(join(tmpdir(), 'task-client-'));
-    const file = join(dir, 'task.mjs');
-    writeFileSync(file, 'export default function (input, ctx) { return globalThis.__work(input, ctx, this); }');
-    g.__work = vi.fn((input: { n: number }) => input.n * 10);
-    const started = Date.now();
-    const here = doing(repo, { importUrl: pathToFileURL(file).href, key: 'local' });
-    await until(() => 'value' in here.settled || 'error' in here.settled);
-    expect(here.settled).toEqual({ value: 10 });
-    expect(Date.now()).toBe(started);
-    expect(here.views.at(-1)).toMatchObject({ state: 'succeeded', taskUrl: null });
-    expect(entryOf(queue, 'local')).toBeUndefined();
-  });
+    const URLS = ['http://localhost:5173/src/task.js', pathToFileURL(join(dir, 'task.mjs')).href];
 
-  // What the work needs, and where it is done: each row is a setup, what the
-  // pools heard serving the own queue have (none heard: null), what the work
-  // needs, and where it goes: asked of the queue at once, asked once the
-  // listening for a pool is over (LISTEN_MS and a crossing), done here at once or
-  // then, or rejected.
-  type Where = 'asked at once' | 'asked after the wait' | 'here at once' | 'here after the wait' | 'rejected at once' | 'rejected after the wait';
-  const NEED_CASES: [Setup, string[] | null, string[], Where][] = [
-    ['an own queue', ['browser'], ['browser'], 'asked at once'],
-    ['an own queue', ['node'], ['browser'], 'here after the wait'],
-    ['an own queue nobody is heard serving', null, ['browser'], 'here after the wait'],
-    ['an own queue', ['node', 'unix'], ['unix'], 'asked at once'],
-    ['an own queue', ['node', 'unix'], ['unix', 'node'], 'asked at once'],
-    ['an own queue', ['node'], ['unix'], 'asked after the wait'],
-    ['an own queue', ['browser'], ['unix'], 'asked after the wait'],
-    ['an own queue nobody is heard serving', null, ['unix'], 'asked after the wait'],
-    ['an own queue', ['browser', 'pool:P'], ['pool:P'], 'asked at once'],
-    ['an own queue', ['browser', 'pool:P'], ['pool:Q'], 'asked after the wait'],
-    ['no own queue', null, ['unix'], 'asked after the wait'],
-    ['no storage', null, ['unix'], 'rejected at once'],
-    ['no account', null, ['unix'], 'rejected at once'],
-    ['no own queue', null, ['browser'], 'here after the wait'],
-  ];
-  for (const [setup, has, needs, where] of NEED_CASES) {
-    it(`needing ${JSON.stringify(needs)}, with ${setup}${has ? ` and a pool heard that has ${JSON.stringify(has)}` : ''}: ${where}`, async () => {
-      const { repo, queue: given } = page(setup);
-      g.__work = vi.fn(() => 'here');
-      const startedAt = Date.now();
-      const work = doing(repo, { needs });
-      await settle();
-      const queue = given ?? ownIn(repo);
-      if (has) {
-        serving(queue!, 'P', has);
-      }
-      const decided = () => 'value' in work.settled || 'error' in work.settled || (!!queue && !!entryOf(queue, 'k'));
-      if (where.endsWith('after the wait')) {
-        await until(decided, LISTEN_MS + 499);
-        expect(decided(), 'decided before the wait was over').toBe(false);
-        await until(decided, 1);
-      } else {
-        await until(decided);
-      }
-      expect(decided()).toBe(true);
-      expect(Date.now() - startedAt).toBe(where.endsWith('after the wait') ? LISTEN_MS + 500 : 0);
-      if (where.startsWith('asked')) {
-        const task = await repo.find<Task>(entryOf(queue!, 'k').taskUrl as AutomergeUrl);
-        expect(task.doc()!.needs).toEqual(needs);
-        expect(entryOf(queue!, 'k').needs).toEqual(needs);
+    for (const importUrl of URLS) {
+      it(`at ${importUrl.split(':')[0]}: is asked of the own queue with the need pool:<this browser's pool id>, near it, and is not called here`, async () => {
+        g.localStorage = storage({ [POOL_ID_KEY]: 'this-browser' });
+        const { repo, queue } = page('an own queue');
+        g.__work = vi.fn();
+        doing(repo, { importUrl, key: 'dev', needs: ['unix'] });
+        await until(() => !!entryOf(queue!, 'dev'));
+        const task = await repo.find<Task>(entryOf(queue!, 'dev').taskUrl as AutomergeUrl);
+        expect(task.doc()).toMatchObject({ importUrl, needs: ['unix', 'pool:this-browser'] });
+        expect(entryOf(queue!, 'dev')).toMatchObject({ package: null, needs: ['unix', 'pool:this-browser'], near: 'this-browser' });
         expect(g.__work).not.toHaveBeenCalled();
-        expect(work.settled).toEqual({});
-        expect(work.views.at(-1)?.state).toBe('waiting');
-      } else if (where.startsWith('here')) {
-        expect(work.settled).toEqual({ value: 'here' });
-        expect(queue ? queue.doc()!.jobs : {}).toEqual({});
-      } else {
-        expect(work.settled.error?.message).toBe('This work needs a device with unix, and it could not be asked of your task queue: Task queues can only be kept from a Patchwork page with your account open.');
-        expect(g.__work).not.toHaveBeenCalled();
+      });
+    }
+
+    it("where no pool has started here yet: the page makes the pool's id under the key the pool's host keeps it under, and asks with it", async () => {
+      const items: Record<string, string> = {};
+      g.localStorage = storage(items);
+      const { repo, queue } = page('an own queue');
+      doing(repo, { importUrl: URLS[0], key: 'dev' });
+      await until(() => !!entryOf(queue!, 'dev'));
+      expect(items[POOL_ID_KEY]).toMatch(/^[0-9a-f-]{36}$/);
+      expect(entryOf(queue!, 'dev')).toMatchObject({ needs: [`pool:${items[POOL_ID_KEY]}`], near: items[POOL_ID_KEY] });
+    });
+
+    it('the need is not written twice when the tool gave it', async () => {
+      g.localStorage = storage({ [POOL_ID_KEY]: 'this-browser' });
+      const { repo, queue } = page('an own queue');
+      doing(repo, { importUrl: URLS[0], key: 'dev', needs: ['pool:this-browser'] });
+      await until(() => !!entryOf(queue!, 'dev'));
+      expect(entryOf(queue!, 'dev').needs).toEqual(['pool:this-browser']);
+    });
+
+    it("where this browser cannot keep a pool id (no localStorage, or one that refuses): rejects at once with a sentence saying why, and writes nothing", async () => {
+      for (const local of [undefined, { getItem: () => null, setItem: () => { throw new Error('blocked'); } }]) {
+        g.localStorage = local;
+        const { repo } = page('no own queue');
+        await settle();
+        const before = everything(repo);
+        const work = doing(repo, { importUrl: URLS[0], key: 'dev' });
+        await until(() => 'error' in work.settled);
+        expect(work.settled.error?.message).toBe("This work's code is only on this machine (http url), and this browser keeps no id for its pool, so no pool can be asked to run it.");
+        expect(everything(repo)).toEqual(before);
       }
     });
-  }
+  });
 
-  it('needing what a page lacks, the first asking is made as soon as a pool that has it is heard, not when the wait is over', async () => {
-    const { repo, queue } = page('an own queue');
-    g.__work = vi.fn();
-    const work = doing(repo, { needs: ['unix'] });
+  it('with needs: they are written on the task and its entry as asked, and the task waits for a pool that has them', async () => {
+    for (const needs of [['unix'], ['node', 'unix'], ['pool:P'], ['browser']]) {
+      const { repo, queue } = page('an own queue');
+      g.__work = vi.fn();
+      const work = doing(repo, { needs });
+      await until(() => !!entryOf(queue!, 'k') && work.views.length > 0);
+      const task = await repo.find<Task>(entryOf(queue!, 'k').taskUrl as AutomergeUrl);
+      expect(task.doc()!.needs).toEqual(needs);
+      expect(entryOf(queue!, 'k').needs).toEqual(needs);
+      expect(work.views.at(-1)?.state).toBe('waiting');
+      expect(g.__work).not.toHaveBeenCalled();
+    }
+  });
+
+  it('needs that are not a list of labels, and a key that cannot be one, are refused before anything is written', async () => {
+    const { repo } = page('no own queue');
     await settle();
-    serving(queue!, 'B', ['browser']);
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(entryOf(queue!, 'k')).toBeUndefined();
-    serving(queue!, 'N', ['node', 'unix']);
-    const heardAt = Date.now();
-    await until(() => !!entryOf(queue!, 'k'));
-    expect(Date.now()).toBe(heardAt);
-    expect(work.settled).toEqual({});
-  });
-
-  it('code that cannot travel, needing what a page lacks, is rejected at once, even with a pool heard that has it', async () => {
-    const { repo, queue } = await asked();
-    serving(queue, 'N', ['node', 'unix']);
-    const here = doing(repo, { importUrl: 'http://localhost:5173/src/task.js', key: 'dev', needs: ['unix'] });
-    await until(() => 'error' in here.settled);
-    expect(here.settled.error?.message).toBe('This work needs a device with unix, and its code is only on this machine, so no other device can run it.');
-    expect(entryOf(queue, 'dev')).toBeUndefined();
-  });
-
-  it('the sentence names every need, and a pool: need as one particular device', async () => {
-    const { repo } = page('no account');
-    const cases: [string[], string][] = [
-      [['unix', 'gpu'], 'a device with unix and gpu'],
-      [['unix', 'gpu', 'ollama'], 'a device with unix, gpu and ollama'],
-      [['pool:P'], 'one particular device'],
-      [['pool:P', 'unix'], 'one particular device, with unix'],
-    ];
-    for (const [needs, words] of cases) {
-      const work = doing(repo, { needs, key: needs.join() });
+    const before = everything(repo);
+    for (const request of [{ needs: 'unix' }, { needs: [''] }, { needs: [7] }, { key: '__proto__' }]) {
+      const work = doing(repo, request as never);
       await until(() => 'error' in work.settled);
-      expect(work.settled.error?.message).toBe(`This work needs ${words}, and it could not be asked of your task queue: Task queues can only be kept from a Patchwork page with your account open.`);
+      expect(work.settled.error, JSON.stringify(request)).toBeInstanceOf(Error);
     }
-  });
-
-  it('needs that are not a list of labels are refused before anything is asked or called', async () => {
-    const { repo, queue } = await asked();
-    for (const needs of ['unix', [''], [7]]) {
-      const work = doing(repo, { needs: needs as never, key: 'bad' });
-      await until(() => 'error' in work.settled);
-      expect(work.settled.error?.message, JSON.stringify(needs)).toMatch(/list of labels/);
-    }
-    expect(entryOf(queue, 'bad')).toBeUndefined();
-    expect(g.__work).not.toHaveBeenCalled();
+    expect(everything(repo)).toEqual(before);
   });
 
   describe('near', () => {
-    afterEach(() => {
-      delete g.localStorage;
-    });
     const storage = (items: Record<string, string>) => ({ getItem: (key: string) => items[key] ?? null });
 
     it("is this browser's pool id, read from where the pool's host keeps it, when the page can read one", async () => {
@@ -2753,8 +2578,6 @@ describe('doWork', () => {
       const { repo, queue } = page('an own queue');
       g.__work = vi.fn();
       doing(repo, { near: 'that-machine' });
-      await settle();
-      serving(queue!);
       await until(() => !!entryOf(queue!, 'k'));
       expect(entryOf(queue!, 'k').near).toBe('that-machine');
     });

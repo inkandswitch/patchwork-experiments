@@ -4,8 +4,8 @@
 // nothing a browser can do alone waits on the sync server, and nothing waits
 // for ever. Every Repo here has no network at all. Time is vitest's fake
 // clock. Beside offline-check.test.ts: the cases here are the ones the fix
-// touched (the storage document looked for only here, for page work; a spare
-// marked once by several copies of the client) and what lies next to them.
+// touched (the storage document not here; a spare marked once by several
+// copies of the client) and what lies next to them.
 
 import * as A from '@automerge/automerge';
 import { initSubduction, parseAutomergeUrl, Repo, stringifyAutomergeUrl, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
@@ -26,7 +26,7 @@ import {
   watchWork,
   type TaskView,
 } from './task-client.js';
-import { LAPSE_MS, LISTEN_MS, type Queue } from './task-rules.js';
+import { LAPSE_MS, entryAt, type Queue } from './task-rules.js';
 
 await initSubduction();
 await initSiteSubduction();
@@ -41,9 +41,6 @@ afterEach(() => {
   delete g.document;
   delete g.__work;
 });
-
-/** How long doWork listens for a pool before doing page work here. */
-const HEAR_MS = LISTEN_MS + 500;
 
 const REPOS = {
   "the task system's Repo": () => new Repo({ network: [] } as any),
@@ -85,9 +82,9 @@ function ownElsewhere(repo: Repo) {
   return { away, storage };
 }
 
-describe('page work with no network, on either Repo', () => {
+describe('doWork with no network, on either Repo', () => {
   for (const [name, makeRepo] of Object.entries(REPOS)) {
-    it(`${name}: the account names a storage document not here: the work is done in the page within HERE_MS, and nothing is written or appended`, async () => {
+    it(`${name}: the account names a storage document not here: doWork rejects with ownQueue's sentence once it gives up, and nothing is run, written or appended`, async () => {
       const repo = makeRepo();
       const account = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: madeUp(11) } });
       g.accountDocHandle = account;
@@ -97,26 +94,29 @@ describe('page work with no network, on either Repo', () => {
       g.__work = () => ++called;
       const heads = A.getHeads(account.doc() as any);
       const work = settling(doWork(repo, { importUrl: WORK, key: 'k' }));
-      const took = await timeUntil(work.done, 300_000);
-      expect(work.settled).toEqual({ value: 1 });
-      expect(took).toBeLessThanOrEqual(HERE_MS + 100);
+      const took = await timeUntil(work.done, 600_000, 500);
+      expect(took).toBeLessThan(Infinity);
+      expect(work.settled.error?.message).toBe('The list of your task queues could not be found, so nothing was changed.');
+      expect(called).toBe(0);
       expect(appended).toEqual([]);
       expect(A.getHeads(account.doc() as any)).toEqual(heads);
     });
 
-    it(`${name}: the storage document here, own's document not: the first page work is done within HERE_MS twice and HEAR_MS, later ones within HERE_MS, and one spare is made for all of them`, async () => {
+    it(`${name}: the storage document here, own's document not: the first doWork asks the spare within HERE_MS twice, later ones within HERE_MS, one spare is made for all of them, and nothing is run in the page`, async () => {
       const repo = makeRepo();
       const { storage } = ownElsewhere(repo);
       let called = 0;
       g.__work = () => ++called;
+      const listedIn = (key: string) => sparesOf(storage.doc()).some((url) => !!entryAt(handleOf<Queue>(repo, url)?.doc(), key));
       const times: number[] = [];
       for (let i = 1; i <= 3; i++) {
         void doWork(repo, { importUrl: WORK, key: `k${i}` });
-        times.push(await timeUntil(() => called >= i, 300_000));
+        times.push(await timeUntil(() => listedIn(`k${i}`), 300_000));
       }
-      expect(times[0]).toBeLessThanOrEqual(2 * HERE_MS + HEAR_MS + 100);
+      expect(times[0]).toBeLessThanOrEqual(2 * HERE_MS + 100);
       for (const t of times.slice(1)) expect(t).toBeLessThanOrEqual(HERE_MS + 100);
       expect(sparesOf(storage.doc())).toHaveLength(1);
+      expect(called).toBe(0);
     });
   }
 });
@@ -169,14 +169,14 @@ describe('several copies of the client on one Repo, own not here', () => {
 });
 
 describe('nothing waits for ever, with the storage document not here', () => {
-  it('work that needs a node: doWork settles, rejecting with a sentence that says what it needs (it waits on the storage document as ownQueue does)', async () => {
+  it('work that needs a node: doWork settles, rejecting with ownQueue\'s sentence (it waits on the storage document as ownQueue does)', async () => {
     const repo = newRepo();
     g.accountDocHandle = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: madeUp(12) } });
     const work = settling(doWork(repo, { importUrl: WORK, key: 'n', needs: ['node'] }));
     const took = await timeUntil(work.done, 600_000, 500);
     console.log(`work needing a node, storage document not here: settled after ${took} ms`);
     expect(took).toBeLessThan(Infinity);
-    expect(work.settled.error?.message).toMatch(/^This work needs a device with node, and it could not be asked of your task queue: /);
+    expect(work.settled.error?.message).toBe('The list of your task queues could not be found, so nothing was changed.');
   });
 
   it('aborted while it waits on that document: rejects at once with "The task was cancelled", having written nothing', async () => {
@@ -210,14 +210,12 @@ describe('nothing waits for ever, with the storage document not here', () => {
   });
 });
 
-describe("own's document arriving after page work was done without it", () => {
-  it("once own's document is here, ownQueue gives own, and the spare made before stays marked and served", async () => {
+describe("own's document arriving after work was asked without it", () => {
+  it("once own's document is here, ownQueue gives own, and the spare made before stays marked and served, with the work asked of it", async () => {
     const repo = newRepo();
     const { away, storage } = ownElsewhere(repo);
-    let called = 0;
-    g.__work = () => ++called;
     void doWork(repo, { importUrl: WORK, key: 'first' });
-    await timeUntil(() => called >= 1, 60_000);
+    await timeUntil(() => sparesOf(storage.doc()).length > 0 && !!entryAt(handleOf<Queue>(repo, sparesOf(storage.doc())[0])?.doc(), 'first'), 60_000);
     const [spare] = sparesOf(storage.doc());
     expect(spare).toBeDefined();
     repo.import(A.save(away.doc() as any), { docId: away.documentId } as any);

@@ -75,7 +75,10 @@ Node one of your own (`dist-node/task-client.mjs` is the same file built for Nod
 - `cancel(repo, queueUrl, key)` stops the task under the key.
 - `served(repo, queueUrl, onChange)` hears which pools serve the queue now, with what each has
   (one that began serving it less than two and a half seconds ago is not taking yet, and not
-  listed); an empty list, or none that has what a task needs, means that task waits.
+  listed); an empty list, or none that has what a task needs, means that task waits. With
+  `{ local: false }` it hears only what reaches `repo` itself: in a tab that does not hold its
+  browser's pool, through the site's Repo, that is nothing, since the pool's messages reach
+  another tab only on the task system's own BroadcastChannel. Asking does not depend on it.
 - `ownQueue(repo, element)` gives a page the url of its person's own queue, served by their
   browsers for any code, making it the first time anything asks, with nothing pressed and nothing
   waited for on the network (see Serving a queue).
@@ -124,8 +127,7 @@ the task returns. `ctx` holds:
   (<reason>)". It is not exclusivity: an earlier run heard later than that (its pool cut off for
   longer than the beat, or taken a moment after this one by a pool whose round trip to this one
   is longer than the beat) makes this run yield only after it settled, with what it did already
-  done. Code that never awaits it is not held up by it. Work done in the page (see Having work
-  done from a page) has no `settled` in its `ctx`.
+  done. Code that never awaits it is not held up by it.
 - `repo`: the worker's own Repo, which already has the task's document. Its `find` waits for a
   document made elsewhere a moment ago (asking again for about half a minute, as `findWhenThere`
   in `task-client.js` does), so an input the asker has just made is found, not refused; a url it
@@ -170,26 +172,27 @@ with those of the run that replaced it. No tool in this tree does this yet;
 A tool in a page needs three functions from `task-client.js`, each handed the site's Repo, and
 never names a queue:
 
-- `doWork(repo, { importUrl, input, key, needs }, { onProgress, signal })` has the work done.
-  For code that can travel it first has `ownQueue` give the person's queue, which makes it if they
-  have none, and puts the page in its browser's pool if nothing has (`joinPool`: it appends the
-  package's background component, `task-pool-next`, inside the frame's tool-storage provider), so
-  that a pool is there to be heard the next time. When a pool heard through the page's Repo
-  serving that queue has what the work needs, the work is asked of it as `run` would, near this
-  browser's pool (the tab that runs the pool hears it through its Repo with no network, by the
-  local link; see Offline and partition); otherwise work that needs nothing a page lacks (no
-  needs, or only `browser`) is done in the page, by importing the same module and calling it (the
-  first asking in a frame that had started no pool is done so, and so is work asked with no
-  network from a tab other than the one running the pool; for such work the list of the person's
-  queues is looked for only in what this browser keeps, so a list that has not arrived yet does
-  not hold it up); and work that needs more is asked of the queue all the same, where it waits for a
-  device that has it. Either way it resolves to what the code returned and rejects with what it
-  threw, `onProgress` hears the same views, and aborting `signal` stops it. Only code that can
-  travel is asked of a queue: a file in a package kept in automerge, or a `data:` URL; any other
-  url (a dev server's `http://localhost`, a `file:` url) is done in the page. Work that needs more
-  than a page and cannot be asked of a queue (its code cannot travel, or no queue can be had: no
-  account open, nowhere to keep it, or the list of the person's queues not found within about half
-a minute) is rejected with a sentence saying what it needs and why.
+- `doWork(repo, { importUrl, input, key, needs }, { onProgress, signal })` has the work done by
+  asking the person's own queue: `ownQueue` gives it, making it if they have none, and the page
+  is put in its browser's pool if nothing has put it there (`joinPool`: it appends the package's
+  background component, `task-pool-next`, inside the frame's tool-storage provider). The task is
+  asked as `run` asks it, near this browser's pool, at once: nothing listens for pools first, and
+  work that no pool serving the queue can take yet waits there. It resolves to what the code
+  returned, rejects with what it threw, `onProgress` hears every change of the task, and aborting
+  `signal` stops it. It never imports the code itself. Code that can travel (a file in a package
+  kept in automerge, or a `data:` URL) may run on any of the person's machines that serves the
+  queue; any other url (a dev server's `http://localhost`, a `file:` url) is asked with the need
+  `pool:<this browser's pool id>`, so that only this browser's pool takes it (where no pool has
+  started here yet, the page makes the id under the key the pool's host keeps it under, and the
+  host keeps it). Where no queue can be had, it rejects, having asked and run nothing, with one
+  sentence saying why: no account open ("Task queues can only be kept from a Patchwork page with
+  your account open."), nowhere to keep the list of queues ("This page has nowhere to keep your
+  task queues, so nothing was changed."), or that list not on this device within about half a
+  minute ("The list of your task queues could not be found, so nothing was changed."); and code
+  that cannot travel is refused where this browser can keep no pool id. `poolHere()` says whether
+  this page takes part in its browser's pool (the tasks package has put a pool host in it), so
+  that a tool can say why work waits: where it is false, the tasks package is not installed in
+  this browser, and the work waits for the person's other machines.
 - `watchWork(repo, key, onChange)` follows the work under the key on the person's queues (own,
   and every spare, see below), so that a page opened later, or another tab, shows work already
   going on instead of offering it again. It follows them as they change, makes nothing, and
@@ -217,12 +220,12 @@ stop.abort();
 await stopWork(repo, key);
 ```
 
-Where it runs decides what the person gets, and what is known where. Asked of their queue, it
-goes on when the page closes, is done once however many pages ask under one key, a stop ends it
-for good, and every page of theirs sees it (`watchWork`) and can stop it (`stopWork`). Done in
-the page, it is that page's alone: only the `onProgress` of the `doWork` call that started it
-hears of it, another tab neither sees it nor can stop it, it ends with the page, and code that
-does not heed `signal` runs on.
+So the work goes on when the page closes, is done once however many pages ask under one key, a
+stop ends it for good, and every page of theirs, in any tab or on any machine, sees it
+(`watchWork`) and can stop it (`stopWork`). A tab that does not hold its browser's pool asks
+through its own site Repo all the same: what it writes reaches the tab that holds the pool
+through the database and heads channel the site's Repos share, and the pool's writes come back
+the same way (browser-run checks 40 and 41).
 
 ## Serving a queue
 
@@ -241,7 +244,7 @@ and partition). A browser's pool has `browser` and
 `pool:<its id>`, so a task that needs anything else is left for a machine that has it. A frame
 that mounts no background components takes part once a page in it asks for work: `doWork`
 mounts the component itself (`joinPool`), and where the tasks package is not installed that
-mounts nothing.
+mounts nothing, and the work waits on the queue for the person's other machines.
 Which queues it serves is kept in the account's tool storage for this package
 (`account.toolStorage['tasks-next']`, a document Patchwork's frame makes the first time it is
 needed). Its root is the list: each served queue is a key of its own, the queue's url, holding
@@ -413,10 +416,11 @@ above it (a Node host's thread) has no link.
 | On one device with no network | |
 |---|---|
 | Making your own queue; the pool starting | works: making writes in the page's Repo and waits on nothing, and the pool starts and serves it |
-| A task asked in this browser, run by this browser's pool, its progress and result | works: asked through the task system's own Repo (`tasks-repo.ts`, as the queue browser asks), or by a page tool through the site's Repo in the tab that runs the pool, which reaches the pool by the local link, so `doWork` hears the pool through that Repo and asks it; from another tab, whose site Repo hears the pool only by way of the sync server, `doWork` hears none and does the work in the page |
-| What a pool-run task writes into a document the page has open | reaches the site's Repo in the tab that runs the pool, through the link, and is saved there, before the run is reported; a tab reloaded the moment `doWork` resolves has it (browser-run `--lifetimes` check 39); the site's other tabs have it as they have that tab's own changes; the site's Repo sends it to the sync server once there is one |
-| Work that needs another machine (`needs: ['node']`) | waits in the queue, and the queue browser says what it waits for; where this browser does not have the list of the person's queues (the account names a storage document that has not arrived), `doWork` looks for it as `findWhenThere` does, about half a minute, and then rejects with "This work needs a device with node, and it could not be asked of your task queue: The list of your task queues could not be found, so nothing was changed." |
-| Stopping work | works for work in this browser: work done in the page by its signal, and work the pool runs by a stop written through the task system's own Repo (the queue browser's Stop) |
+| A tool's work (`doWork`), run by this browser's pool, its progress and result | works: asked of the person's own queue through the site's Repo and run by this browser's pool, from the tab that runs the pool (by the local link) and from any other tab of the browser (its site Repo shares a database and a heads channel with that tab's; the pool's messages reach it on the task system's own BroadcastChannel, not through its site Repo); also through the task system's own Repo (`tasks-repo.ts`, as the queue browser asks) |
+| What a pool-run task writes into a document the page has open | reaches the site's Repo in the tab that runs the pool, through the link, and is saved there, before the run is reported; a tab reloaded the moment `doWork` resolves has it (browser-run `--lifetimes` check 39); the site's other tabs have it as they have that tab's own changes, when their `doWork` resolves (check 40); the site's Repo sends it to the sync server once there is one |
+| Work that needs a device this browser is not (`needs: ['node']`, another browser's `pool:` id) | waits in the queue until one of the person's machines that has it can be reached, and the queue browser says what it waits for; where this browser does not have the list of the person's queues (the account names a storage document that has not arrived), `doWork` looks for it as `findWhenThere` does, about half a minute, and then rejects with "The list of your task queues could not be found, so nothing was changed.", having asked nothing |
+| Work where the tasks package is not installed in this browser | `doWork` asks own all the same; nothing here runs it, and it waits on the queue for the person's other machines; `poolHere()` is false, and the tools that ask say so where they show it waiting ("this browser takes no part, because the tasks package is not installed here") |
+| Stopping work | works for work in this browser, from any of its tabs: `stopWork`, a tool's signal, or the queue browser's Stop writes a stop the pool reads |
 
 | When a partition heals | |
 |---|---|
@@ -433,6 +437,10 @@ sync server. Its checks 26 to 30 show the link with a site Repo that shares no s
 task system's: a tool's `doWork` through it is run by the pool, what the task writes is in that
 Repo when `doWork` resolves, liveness and progress arrive, a run worker ended in the middle of
 writing leaves that Repo working, and the pool handed over to another tab links that tab's Repo.
+Its checks 40 and 41 show a second tab that does not hold the pool: its `doWork` through its own
+site Repo is run by the first tab's pool, and when `doWork` resolves the result is there, the
+task's change to a document that tab has open is in its Repo, and a document the task made is
+given at once when asked; `watchWork` and `stopWork` work from it.
 The unit tests show the rest: the link's gate for every kind of message both ways and for what
 arrives on the page's port, and Repos of
 both kinds joined by a gated link (documents named cross both ways, others do not, a protected one
@@ -460,7 +468,9 @@ it. What none of them shows yet is said at the end of Tests and probes.
 
 A package never imports this one. It carries copies of the kit files in its own `src/`:
 `task-rules.js` and `task-client.js` to ask for work, and `task-runs.js` too for a long run kept in
-a document of its own (openfoam and fea do). Each says `[kit: <name> v<N>]` in its header. The
+a document of its own (openfoam and fea do). A tool in a page asks with `doWork`, follows with
+`watchWork`, stops with `stopWork`, and says why work waits with `poolHere` (terrain's Fetch data
+and tabletop's Tabletop Simulator import do). Each says `[kit: <name> v<N>]` in its header. The
 canonical copies are here; `node scripts/check-kit.mjs` at the repository root fails when a copy
 differs, and `--fix` copies the canonical ones over. Change a canonical file, bump its version,
 and commit the copies with it.
@@ -507,8 +517,8 @@ processes and say what they saw, one line per check or measurement:
   the asker reads succeeded (`term`). `probes/write-path/browser.mjs` (after `pnpm build`, in
   the chrome slot) measures `out`, `in` and `ack` for a browser's run worker.
 - `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
-  stand-in page in a throwaway Chrome profile, with no sync server but for checks 24, 22 and 26
-  to 30, 30 checks. The page mounts
+  stand-in page in a throwaway Chrome profile, with no sync server but for checks 24, 22, 26
+  to 30, 40 and 41, 32 checks. The page mounts
   what a frame does: the components the package tags `background`, found by tag in its plugin
   list (the page has no registry), and the titlebar tool. One pool per profile across tabs; a
   closed, navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning
@@ -531,8 +541,14 @@ processes and say what they saw, one line per check or measurement:
   through it is run by the pool, which is heard through it; a task's change to a document the page
   made, and a document it made, are in that Repo when `doWork` resolves; progress and the pool's
   progress messages reach it; a run worker ended while it writes a document of the page's takes
-  its link out and leaves the page and the next task working; and closing the tab that runs the
-  pool, the next tab's pool is linked to its own site Repo and runs its work. With `--no-network` Chrome resolves no host
+  its link out and leaves the page and the next task working; (40, 41) a second tab of the
+  profile, whose site Repo is joined to the first's only by their one database and heads channel
+  (as the site's tabs are; the stand-in's Repos are plain ones of the site's version, not
+  keyhive's), has its `doWork` run by the first tab's pool, with the result, the task's change to
+  a document it has open, and the document the task made (given at once when asked) in its own
+  site Repo when `doWork` resolves, and follows and stops its work with
+  `watchWork` and `stopWork`; and (30) closing the tab that runs the pool, that second tab's pool
+  is linked to its own site Repo and runs its next work. With `--no-network` Chrome resolves no host
   but the probe's own 127.0.0.1, and every check runs but 22, which needs the sync server and is
   skipped, saying so. With `--lifetimes` (about ten minutes more) it runs checks 31 to 39 too, on
   the same `?site` pages, each counting the holder's links after (one for the pool and one per

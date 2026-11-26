@@ -334,18 +334,26 @@ those, found by TTS's cache naming) are kept at once as `file` docs
 settings (`src/tts/request.js`; its id is the SHA-256 of both). The import is
 a task: `src/tts/import-task.js`, whose input is the import doc and that
 request, asked with the task kit's `doWork` (`src/kit/task-client.js`,
-`task-rules.js`) under a key made from the same request. On the person's own
-queue, when one of their machines serves it, it finishes after the page
-closes and two pages asking are one import; otherwise it runs in the page
-and ends with it. It writes the outcome (`imported`: the game and the
+`task-rules.js`) under a key made from the same request, on the person's own
+queue (made the first time it is needed), and one of their machines runs it:
+this browser's pool, when the tasks package is installed here, with no
+network too. It finishes after the page closes, and two pages asking are one
+import. While it waits, the tool says it waits for one of the person's
+machines, and, where the tasks package is not installed in this browser,
+that this browser takes no part. Where no queue can be had (no account
+open, nowhere to keep the list of queues), `doWork`'s sentence is shown as
+written; so is "This copy of the Tabletop Simulator import is not loaded
+from a package, so Import cannot be asked of your queue." for a built copy
+served from anywhere but a package. Only keeping what was dropped is this
+page's own, and closing the page while it does stops it. It writes the outcome (`imported`: the game and the
 report, or why it failed) in one change, only while the doc still asks for
 that request; a second run of it finds the first one's game and returns it.
 Nothing writes that an import is under way: what a person sees is read from
-the doc and from the work (`src/tts/status.js`): this page's own, or the
-work under the request's key on the person's own queue, followed with the
-kit's `watchWork` (which says within ten seconds, also when their queue is
-made while the tool is open or cannot be had) and stopped with `stopWork`.
-An import done in another page is not seen from this one. An
+the doc and from the work (`src/tts/status.js`): this page's own asking, or
+the work under the request's key on the person's own queue, followed with
+the kit's `watchWork` (which says within ten seconds, also when their queue
+is made while the tool is open or cannot be had) and stopped with
+`stopWork`. An
 asked import with neither an outcome nor work going on shows as interrupted,
 with the drop zone and **Import again** (the kept files, with the settings
 as they are now). The build puts the task at `dist/import-task.js`. On a

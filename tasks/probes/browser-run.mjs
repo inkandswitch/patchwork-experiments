@@ -5,8 +5,8 @@
 // in the package's plugin list, and its real titlebar tool) and asks through
 // the built task-client. Task
 // code comes from data: URLs and from a file served here; the queue accepts
-// any code. No sync server is reached but by checks 24, 22 and 26 to 30: the
-// pages' Repos and the pool's work from the profile's shared database, and
+// any code. No sync server is reached but by checks 24, 22, 26 to 30, 40
+// and 41: the pages' Repos and the pool's work from the profile's shared database, and
 // each run worker's from a database of its own. What a task writes through
 // ctx.repo reaches the page by the local link the pool host makes to the Repo
 // the page hands it (src/browser/link.ts; checks 15 and 19). Checks 26 to 30
@@ -14,9 +14,18 @@
 // no storage with the task system's, so that only the link joins it to the
 // pool: a tool's `doWork` through it is run by the pool (26), what the task
 // writes is there when doWork resolves (27), liveness and progress arrive
-// (28), a run worker ended mid-write leaves that Repo working (29), and the
-// pool handed over to another tab links that tab's Repo (30); with
-// --no-network they show this with no network. Check 22 runs probes/append-task.js, the task
+// (28), a run worker ended mid-write leaves that Repo working (29); a
+// second page of the profile that does not hold the pool has its doWork run
+// by the first page's pool, with the result and what the task wrote in its
+// own site Repo when doWork resolves (40), and follows and stops its work
+// with watchWork and stopWork (41); and the pool handed over to that page
+// links its Repo and runs its next doWork (30); with --no-network they show
+// this with no network. The two pages' site Repos are joined as the
+// deployed site's tabs are, by one database and one heads channel, and by
+// nothing else: the pool's messages reach the second page only on the task
+// system's own BroadcastChannel. What the stand-in cannot show is the
+// site's own Repo (keyhive's): its are plain Repos of the version the site's
+// import map names. Check 22 runs probes/append-task.js, the task
 // append-run.mjs runs on a Node host, unchanged, in a browser context of its
 // own whose page and pool work through the real sync server (`--sync`, or
 // PATCHWORK_SYNC, or Ink & Switch's), and watches the text it appends to grow
@@ -62,8 +71,8 @@
 // and 21 run in a browser context of its own, where nothing mounts the
 // background component until 21 does, and then lets it go. Check 23 runs
 // on tab A's pool, after 19. Checks 24 and 22 run next, in a browser
-// context of their own, in that order, then 26 to 30 in another, and 25
-// last, over every request seen.
+// context of their own, in that order, then 26 to 29, 40, 41 and 30 in
+// another, and 25 last, over every request seen.
 // A copy of dist/ stamped as a newer build is served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
@@ -124,6 +133,10 @@ const WHERE = dataUrl("export default () => (typeof window === 'undefined' ? 'wo
 // changes a document it is handed and makes one, and says where it ran
 const MAKES_AND_CHANGES = dataUrl(
   "export default async ({ doc, tag }, ctx) => { const handle = await ctx.repo.find(doc); handle.change((d) => { d.changed = tag; }); const made = ctx.repo.create({ made: tag }); return { made: made.url, where: typeof window === 'undefined' ? 'worker' : 'page' }; };",
+);
+// waits `ms`, or until it is stopped
+const SLEEPS = dataUrl(
+  "export default ({ ms }, ctx) => new Promise((resolve, reject) => { const timer = setTimeout(() => resolve('slept'), ms); ctx.signal.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('stopped: ' + ctx.signal.reason)); }); });",
 );
 // writes a document it is handed every few ms, for ever, heeding no stop
 const KEEPS_WRITING = dataUrl(
@@ -1320,12 +1333,14 @@ try {
     }
   }
 
-  // 26 to 30, the local link, in a browser context of its own whose pages
-  // have a site Repo of their own (`?site`: its own database and heads
-  // channel, sharing no storage with the task system's), named to the real
-  // sync server (with --no-network, one they cannot reach). A tool's work is
-  // asked as a tool asks it, with `doWork` through that Repo, and the only
-  // way between that Repo and the pool is the link.
+  // 26 to 30, 40 and 41, the local link, in a browser context of its own
+  // whose pages have a site Repo of their own (`?site`: its own database and
+  // heads channel, sharing no storage with the task system's), named to the
+  // real sync server (with --no-network, one they cannot reach). A tool's
+  // work is asked as a tool asks it, with `doWork` through that Repo, and the
+  // only way between that Repo and the pool is the link (from a page that
+  // does not hold the pool, the database and heads channel its site Repo
+  // shares with the holder's, then the link).
   {
     const { browserContextId } = await send("Target.createBrowserContext", {});
     try {
@@ -1338,9 +1353,9 @@ try {
       const poolHere = await L.js("localStorage.getItem('patchwork-tasks-pool-id')");
 
       // 26. Asked through the site's Repo, the work is run by this browser's
-      // pool: the pool is heard serving own through that Repo alone (as
-      // doWork hears pools), the code runs in a run worker, and the run is
-      // the pool's.
+      // pool: the pool is heard serving own through that Repo alone (by the
+      // link, in the tab that holds the pool), the code runs in a run
+      // worker, and the run is the pool's.
       {
         const heard = await L.js("probe.servedThroughSite(4000)");
         const work = await L.js(`probe.work(${J(WHERE)})`, 60_000);
@@ -1409,14 +1424,63 @@ try {
         );
       }
 
-      // 30. The pool handed over to another tab: M, a second page of the
-      // same profile, waits; L closed, M's host takes the lock and starts a
-      // pool linked to M's own site Repo, and M's work runs in it and is
-      // seen there.
+      // M, a second page of the same profile, with its own site Repo (joined
+      // to L's by their one database and heads channel, as the site's tabs
+      // are), takes part in the pool but does not hold it: it waits.
+      const M = await tab("M", path, browserContextId);
+      await M.js("probe.mountBackground()");
+      const waiting = await M.waitFor("probe.status()?.state === 'waiting'", 15_000);
+
+      // 40. M's doWork is run by L's pool: M asks own through its site Repo,
+      // which hears no pool, and the task is taken by the pool L holds; when
+      // doWork resolves, the result is a run worker's, and what the task
+      // wrote is in M's site Repo: the change to a document M made, there
+      // without asking, and the new document, given at once when asked
+      // (from the database the two tabs share). M has no pool worker, no
+      // run worker and no link.
       {
-        const M = await tab("M", path, browserContextId);
-        await M.js("probe.mountBackground()");
-        const waiting = await M.waitFor("probe.status()?.state === 'waiting'", 15_000);
+        const doc = await M.js(`probe.siteDoc({ made: 'by M' })`);
+        const heard = await M.js("probe.servedThroughSite(2000)");
+        const got = await M.js(
+          `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'forty' }).then(async (work) => ({ ...work, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? await probe.siteFind(work.result.made) : null, links: probe.siteLinks(), state: probe.status()?.state }))`,
+          60_000,
+        );
+        const runs = got.views.at(-1)?.runs ?? [];
+        const mWorkers = liveWorkers(M, /pool-worker|run-worker-entry/).length;
+        const lRunWorkers = liveWorkers(L, /run-worker-entry/).length;
+        check(
+          `40 a second page of the profile, not holding the pool${NO_NETWORK ? ", with no network" : ""}: its doWork through its own site Repo, which hears no pool, is run by the first page's pool, and the result and what the task wrote are in that Repo when doWork resolves`,
+          !!waiting && got.state === "waiting" && got.result?.where === "worker" && runs.includes(poolHere) && got.changed?.changed === "forty" && got.made?.value?.made === "forty" && got.links === 0 && mWorkers === 0,
+          `M ${waiting ? "waited" : "did not wait"} for the pool; heard through its site Repo ${J(heard.map((pool) => (pool.pool === poolHere ? "this browser's pool" : pool.pool)))}; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms, states ${J(got.states)}, runs by ${J(runs.map((pool) => (pool === poolHere ? "this browser's pool" : pool)))}; M's site Repo then had ${J(got.changed)}, and gave ${J(got.made?.value ?? null)} in ${got.made ? got.made.ms.toFixed(0) : "?"} ms when asked; M ${got.state}, with ${got.links} links and ${mWorkers} pool or run workers; L has ${lRunWorkers} live run workers`,
+        );
+      }
+
+      // 41. From M, watchWork follows work it asked that L's pool runs, and
+      // stopWork stops it: the watcher sees it run and then cancelled, and
+      // M's doWork rejects, cancelled.
+      {
+        const key = `forty-one-${Date.now()}`;
+        await M.js(`probe.watchWork(${J(key)})`);
+        await M.js(`probe.startWork(${J(SLEEPS)}, { ms: 30000 }, ${J(key)})`);
+        const running = await M.waitFor(`probe.watched[${J(key)}].includes('running')`, 30_000);
+        const t0 = Date.now();
+        const stopped = await M.js(`probe.stopWork(${J(key)})`);
+        const ended = await M.waitFor(`probe.outcomes[${J(key)}].pending === false`, 20_000);
+        const endedMs = Date.now() - t0;
+        const cancelled = await M.waitFor(`probe.watched[${J(key)}].at(-1) === 'cancelled'`, 10_000);
+        const outcome = await M.js(`probe.outcomes[${J(key)}]`);
+        const watched = await M.js(`probe.watched[${J(key)}]`);
+        check(
+          `41 from that page, watchWork follows the work the first page's pool runs, and stopWork stops it${NO_NETWORK ? ", with no network" : ""}`,
+          !!running && stopped === true && !!ended && /cancelled/i.test(outcome?.error ?? "") && !!cancelled,
+          `watchWork saw ${J(watched)}; stopWork gave ${J(stopped)}; doWork ${outcome?.pending ? "had not settled" : outcome?.error ? `rejected ${J(outcome.error)}` : `gave ${J(outcome?.result)}`} ${endedMs} ms after the stop, states ${J(outcome?.states ?? [])}`,
+        );
+      }
+
+      // 30. The pool handed over to another tab: L closed, M's host takes
+      // the lock and starts a pool linked to M's own site Repo, and M's work
+      // runs in it and is seen there.
+      {
         await send("Target.closeTarget", { targetId: L.targetId });
         const taken = await M.waitFor("probe.status()?.state === 'running'", 30_000);
         await sleep(LISTEN_MS);

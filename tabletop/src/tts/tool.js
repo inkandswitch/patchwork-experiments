@@ -7,31 +7,34 @@
 // save and the files it uses are kept as file docs at once (dropped.js) and
 // the import doc is set to ask for them (`request`, request.js). The import
 // itself is work done through the task system (import-task.js, asked with
-// doWork under a key naming this doc and that request): on the person's own
-// queue when one of their machines serves it, so that it finishes when this
-// page closes and two pages asking are one import; otherwise in this page.
-// What is shown is decided in one place (status.js) from the doc and from
-// whether that work is going on; an import asked of the person's queue from
-// another tab or before a reload is followed by its key (watchWork) and
-// shown, not offered again. One done in another page is not seen here.
+// doWork under a key naming this doc and that request) on the person's own
+// queue, by one of their machines, so that it finishes when this page closes
+// and two pages asking are one import. What is shown is decided in one place
+// (status.js) from the doc and from whether that work is going on; an import
+// asked from another tab or before a reload is followed by its key
+// (watchWork) and shown, not offered again.
 
 import css from "./styles.css?inline";
 import { DEFAULT_SETTINGS } from "./settings.js";
 import { importAsk, importRequest, canonicalJson } from "./request.js";
 import { shownStatus, underWay, workLines } from "./status.js";
-import { doWork, inSamePackage, stopWork, watchWork } from "../kit/task-client.js";
+import { doWork, inSamePackage, poolHere, stopWork, watchWork } from "../kit/task-client.js";
 
 const OPEN_EVENT = "patchwork:open-document";
+
+/** What is said when this copy has no url its import task could be imported by. */
+export const NOT_FROM_A_PACKAGE = "This copy of the Tabletop Simulator import is not loaded from a package, so Import cannot be asked of your queue.";
 
 // Vite sets this in the built package, whose import task is dist/import-task.js (vite.config.js)
 const BUILT = import.meta.env?.PROD === true;
 
 /**
- * Where the import's code is, as an import url both this page and a pool can
- * import: the package's own file, named by the package's url and not this
- * site's, when this module was loaded from a package in automerge; the file
- * beside this one when it runs unbuilt from anywhere else (tests, a dev
- * server); null when neither can be known, and the tool then calls it itself.
+ * Where the import's code is, as an import url a pool can import: the
+ * package's own file, named by the package's url and not this site's, when
+ * this module was loaded from a package in automerge; the file beside this
+ * one when it runs unbuilt from anywhere else (tests, a dev server: only this
+ * browser's pool can reach it); null when neither can be known, and the
+ * import then cannot be asked.
  */
 export function importTaskUrl(here = import.meta.url, built = BUILT) {
   const inPackage = inSamePackage(here, built ? "dist/import-task.js" : "src/tts/import-task.js");
@@ -40,47 +43,6 @@ export function importTaskUrl(here = import.meta.url, built = BUILT) {
     return new URL("./import-task.js", here).href;
   } catch {
     return null;
-  }
-}
-
-/**
- * Does the import in this page by calling its module, for when there is no
- * url to import it by: with the same views as doWork's for work done here,
- * so that the tool shows it the same way.
- */
-export async function callHere(repo, input, key, { onProgress, signal }) {
-  const { default: importTask } = await import("./import-task.js");
-  const logs = [];
-  let progress = null;
-  const view = (state, more = {}) => ({ key, state, taskUrl: null, importUrl: null, input, progress, logs: [...logs], result: undefined, error: null, runs: [], ...more });
-  const ctx = {
-    repo,
-    signal,
-    taskUrl: null,
-    key,
-    run: crypto.randomUUID(),
-    log: (...a) => {
-      logs.push({ timestampMillis: Date.now(), message: a.map(String).join(" ") });
-      onProgress(view("running"));
-    },
-    progress: (v) => {
-      progress = v;
-      onProgress(view("running"));
-    },
-  };
-  onProgress(view("running"));
-  try {
-    const result = await importTask(input, ctx);
-    onProgress(view("succeeded", { result }));
-    return result;
-  } catch (err) {
-    if (signal.aborted) {
-      onProgress(view("cancelled"));
-      throw new Error("The task was cancelled");
-    }
-    const error = String(err?.message ?? err);
-    onProgress(view("failed", { error }));
-    throw new Error(error);
   }
 }
 
@@ -171,11 +133,11 @@ export default function TtsImportTool(handle, element) {
       show({ request: request.id, state: "starting", progress: null, logs: [], taskUrl: null });
       const { input, key } = importAsk(handle.url, request);
       const importUrl = importTaskUrl();
+      if (!importUrl) throw new Error(NOT_FROM_A_PACKAGE);
       const onProgress = (view) => show({ ...view, request: request.id });
-      if (importUrl) await doWork(repoOf(), { importUrl, input, key }, { signal: controller.signal, onProgress });
-      else await callHere(repoOf(), input, key, { signal: controller.signal, onProgress });
+      await doWork(repoOf(), { importUrl, input, key }, { signal: controller.signal, onProgress });
     } catch (err) {
-      // the views have said how the work ended; what ended before any did (keeping the files, or a stop while deciding) is said here
+      // the views have said how the work ended; what ended before any did (keeping the files, a stop while its queue was looked for, or doWork's sentence, shown as written) is said here
       if (underWay(mine.view.state)) show({ ...mine.view, state: controller.signal.aborted ? "cancelled" : "failed", error: String(err?.message ?? err) });
     } finally {
       update();
@@ -251,7 +213,7 @@ export default function TtsImportTool(handle, element) {
   let progressEl = null;
   function renderProgress(w) {
     if (!progressEl) return;
-    const { stage, where, done, total } = workLines(w);
+    const { stage, where, done, total } = workLines(w, poolHere());
     progressEl.replaceChildren(
       el("div", { class: "phase" }, stage),
       el("progress", { max: total || 1, value: total ? done : null }),
@@ -411,8 +373,8 @@ export default function TtsImportTool(handle, element) {
 
   return () => {
     dead = true;
-    // work done in this page (or not yet asked of a queue) ends with it; work on the person's queue goes on
-    if (job && underWay(job.view.state) && !job.view.taskUrl) job.controller.abort();
+    // a drop still being kept, before doWork is called, is this page's alone and ends with it; work asked of the person's queue goes on
+    if (job && underWay(job.view.state) && job.view.request === null) job.controller.abort();
     seen?.stop();
     handle.off("change", update);
     root.removeEventListener("dragover", onDragOver);

@@ -1,8 +1,8 @@
 // A TTS import as work: what the TTS import tool does once a mod has been
 // dropped and kept, wherever it runs. The tool asks for it through the task
-// system's doWork (kit/task-client.js), so it runs on the person's own queue
-// when one of their machines serves it (a browser's run worker, or a Node
-// run thread), and otherwise in the page. So it touches no DOM and imports
+// system's doWork (kit/task-client.js), so it runs on the person's own queue,
+// on one of their machines (a browser's run worker, or a Node run thread).
+// So it touches no DOM and imports
 // nothing a worker could not resolve; images over the size limit are made
 // smaller only where there is a canvas to do it (shrink.js), which a Node
 // thread has not.

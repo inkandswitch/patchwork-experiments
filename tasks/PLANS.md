@@ -135,11 +135,15 @@ that one machine serves.
     only unprotected documents it named. A Repo that asked its classic peers beside Subduction (or
     a Subduction transport over the port, which needs core to build the site's Repo with
     `subductionAdapters`) would let a worker keep its own socket. Waits on the Repo.
-  - *Another tab than the pool's.* Its site Repo hears the pool only by way of the sync server
-    (ephemeral messages do not cross between the site's tabs), so with no network its `doWork`
-    does the work in the page. A BroadcastChannel adapter on the site's Repo (measured as D1 in
-    notes/LINK.md) would join every tab, with every Repo on the channel hearing all its traffic.
-    Waits on the lead's call on that cost.
+  - *Another tab than the pool's.* Its site Repo shares a database and a heads channel with the
+    holder's, so its `doWork` is run by the pool, with or without the network, and has what the
+    task wrote when it resolves (browser-run checks 40 and 41). On the deployed site, with the
+    holder hidden behind it, each such ask took about a second (the hidden tab's timers are
+    throttled), against 0.15 to 0.25 s with the holder visible. The site's Repos do not carry the
+    pool's ephemeral messages between tabs: those reach another tab only on the task system's own
+    BroadcastChannel, so what listens there with `local: false` hears no pool. A BroadcastChannel
+    adapter on the site's Repo (measured as D1 in notes/LINK.md) would carry them, with every Repo
+    on the channel hearing all its traffic. Waits on something that needs them.
   - *A frozen holder that held the site's database.* On the stand-in page, when the holder tab
     is frozen the other tab takes the pool and links it, but if the frozen tab held the database
     the two tabs' site Repos share, the other tab's site Repo saves nothing until the frozen one

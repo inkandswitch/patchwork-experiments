@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v16]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v17]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -17,7 +17,6 @@
 
 import {
   LAPSE_MS,
-  LISTEN_MS,
   MAX_LOG_LINES,
   NOT_HAD,
   checkKey,
@@ -33,7 +32,6 @@ import {
   mayRelist,
   named,
   recordsOf,
-  satisfies,
   stopTask,
   taskError,
   taskResult,
@@ -956,20 +954,7 @@ const NOWHERE = 'This page has nowhere to keep your task queues, so nothing was 
  * @param {any} [element]
  * @returns {Promise<any>}  a DocHandle of {@link TasksStorage}
  */
-export function tasksStorage(repo, element) {
-  return storageFound(repo, element, findWhenThere);
-}
-
-/**
- * `tasksStorage`, finding the document with `find`: `findWhenThere`, or
- * `findHere` for an asker that waits on nothing it cannot have from this
- * Repo (`doWork` with work the page can do).
- * @param {any} repo
- * @param {any} element
- * @param {(repo: any, url: string) => Promise<any>} find
- * @returns {Promise<any>}
- */
-async function storageFound(repo, element, find) {
+export async function tasksStorage(repo, element) {
   const account = /** @type {any} */ (globalThis).accountDocHandle;
   if (!account) {
     throw new Error(PAGE_ONLY);
@@ -986,7 +971,7 @@ async function storageFound(repo, element, find) {
   if (!url) {
     throw new Error(NOWHERE);
   }
-  const handle = await find(repo, url).catch(() => null);
+  const handle = await findWhenThere(repo, url).catch(() => null);
   if (!handle) {
     throw new Error('The list of your task queues could not be found, so nothing was changed.');
   }
@@ -1405,133 +1390,59 @@ export async function findWhenThere(
 
 // Having work done, from a page
 //
-// A tool in a page that wants work done has it done by a task asked of the
-// person's own queue, or here, by importing the same code and calling it in
-// the page. Either way it is the one module the import url names, called
-// with (input, ctx). What differs is what the person gets. Asked of their
-// queue, the work goes on when this page closes, is done once however many
-// pages ask for it under one key, and a stop ends it for good. Done here it
-// is this page's alone, as a tool's own work always was, and code that does
-// not heed its signal runs on. Asking makes the person's queue if they have
-// none (`ownQueue`), and puts this page in its browser's pool if nothing has
-// (`joinPool`), so that a pool is there to be heard the next time.
-//
-// Which it is, in this order:
-// 1. The queue `ownQueue` gives is asked when a pool heard serving it has
-//    what the work needs (with no needs, any pool heard).
-// 2. Otherwise, work that needs nothing a page lacks (its needs are among
-//    PAGE_HAS) is done here. This is what works with no network, where the
-//    page's Repo hears no pool, and in a frame where nothing had started
-//    one: the first asking there starts the pool and is done here.
-// 3. Otherwise it is asked of that queue all the same, and waits there for
-//    a device that has what it needs.
-// A queue is asked only for code that can travel: a file in a package kept
-// in automerge, or a `data:` URL. Any other url (http://localhost while a
-// tool is developed, a file: url) names code that only this machine can
-// reach, so that work is done here, or, when it needs what a page lacks,
-// rejected.
+// A tool in a page that wants work done asks the person's own queue for it,
+// which `ownQueue` makes if there is none, and puts this page in its
+// browser's pool if nothing has (`joinPool`), so that a pool there serves
+// that queue. It never imports the code itself: whatever runs it is a pool.
+// So the work goes on when this page closes, is done once however many
+// pages ask for it under one key, a stop ends it for good, and every page of
+// the person's sees it (`watchWork`) and can stop it (`stopWork`), from any
+// tab or machine.
 //
 // Work asked of the queue is near this browser's pool, when the page can
 // read which that is: that pool takes it at once if it may, and the others
-// hold back for it.
+// hold back for it. A pool on another machine can run only code that
+// travels: a file in a package kept in automerge, or a `data:` URL. Any other
+// url (http://localhost while a tool is developed, a file: url) names code
+// that only this machine can reach, so that work is asked with the need
+// `pool:<this browser's pool id>`, and only this browser's pool takes it.
 //
-// What is known where. Work asked of the person's queues is seen by every
-// page of theirs: `watchWork` follows the key on them from any tab or
-// machine, and `stopWork` stops it from any of them. Work done in a page is
-// known to that page alone, through the `onProgress` of the `doWork` call
-// that started it: another tab, or another tool in the same page, neither
-// sees it nor can stop it, and no document says that it is going on.
-
-/** What a page has, as a pool's labels: work that needs only these can be done in it. */
-export const PAGE_HAS = ['browser'];
+// Nothing here listens for pools before asking. A page that does not hold
+// its browser's pool does not hear the pool through its own Repo (the pool's
+// messages reach another tab only on the task system's own channel), but
+// what it writes reaches the tab that holds the pool, through the database
+// and the heads channel the site's Repos share; so the queue is asked
+// whoever is heard, and work that no pool serving it can take waits there
+// until one can.
 
 /**
  * Where a browser profile keeps its pool's id, in localStorage. The pool's
- * host writes it; a page reads it to say which pool it is next to.
+ * host writes it, keeping any id that is there already; a page reads it to
+ * say which pool it is next to, and writes one only for work whose code
+ * cannot travel, before any pool has started here.
  */
 export const POOL_ID_KEY = 'patchwork-tasks-pool-id';
 
 /**
- * This browser profile's pool id, if this page can read one; null outside a
- * browser, before any pool has started here, or where localStorage cannot be
- * used.
+ * This browser profile's pool id, if this page can read one; with `make`,
+ * one is made and kept under POOL_ID_KEY first if there is none, as the
+ * pool's host makes it, which then keeps it. Null outside a browser, where
+ * localStorage cannot be used, or, without `make`, before any pool has
+ * started here.
+ * @param {{ make?: boolean }} [options]
  * @returns {string | null}
  */
-function browserPoolIdHere() {
+function browserPoolIdHere({ make = false } = {}) {
   try {
-    const id = /** @type {any} */ (globalThis).localStorage?.getItem(POOL_ID_KEY);
+    const storage = /** @type {any} */ (globalThis).localStorage;
+    if (make && storage && !storage.getItem(POOL_ID_KEY)) {
+      storage.setItem(POOL_ID_KEY, crypto.randomUUID());
+    }
+    const id = storage?.getItem(POOL_ID_KEY);
     return typeof id === 'string' && id !== '' ? id : null;
   } catch {
     return null;
   }
-}
-
-/**
- * The pools heard serving the queues this page has had work done on, by Repo
- * and queue, with until when the first listening lasts and who waits on a
- * change. Each queue is listened to from the first asking for as long as the
- * page lives, so that only an asking within a beat of the first waits to hear.
- * Only what reaches the page's Repo counts (`local: false`): a pool heard
- * there can see what this Repo writes (today, through the sync server), and
- * one heard only on this browser's own channel, with no sync server between
- * them, cannot be handed work through this Repo, so the work is done here.
- * @type {WeakMap<object, Map<string, { pools: Serving[], until: number, changed: Set<() => void> }>>}
- */
-const heardServing = new WeakMap();
-
-/**
- * How long a page listens to a queue for a pool before it decides without
- * one: a pool says its slots only once it has listened to the queue for
- * LISTEN_MS, so a pool that starts with the page is heard with them a
- * crossing after that.
- */
-const HEAR_MS = LISTEN_MS + 500;
-
-/**
- * The pools heard serving a queue, as soon as one of them has what `needs`
- * asks for, or else once this page has listened to the queue for HEAR_MS: at
- * once if it has already.
- * @param {any} repo
- * @param {string} queueUrl
- * @param {string[]} needs
- * @returns {Promise<Serving[]>}
- */
-function poolsHeard(repo, queueUrl, needs) {
-  let queues = heardServing.get(repo);
-  if (!queues) {
-    heardServing.set(repo, (queues = new Map()));
-  }
-  let state = queues.get(queueUrl);
-  if (!state) {
-    const made = { pools: /** @type {Serving[]} */ ([]), until: Date.now() + HEAR_MS, changed: new Set() };
-    queues.set(queueUrl, (state = made));
-    served(
-      repo,
-      queueUrl,
-      (pools) => {
-        made.pools = pools;
-        for (const changed of [...made.changed]) {
-          changed();
-        }
-      },
-      { local: false },
-    );
-  }
-  const heard = state;
-  return new Promise((resolve) => {
-    /** @type {ReturnType<typeof setTimeout> | undefined} */
-    let timer;
-    const look = () => {
-      if (heard.pools.some((pool) => satisfies(pool.has, needs)) || Date.now() >= heard.until) {
-        heard.changed.delete(look);
-        clearTimeout(timer);
-        resolve(heard.pools);
-      }
-    };
-    heard.changed.add(look);
-    timer = setTimeout(look, Math.max(0, heard.until - Date.now()));
-    look();
-  });
 }
 
 /**
@@ -1591,36 +1502,33 @@ export function joinPool() {
 const travels = (importUrl) => parseAutomergeImport(importUrl) !== null || /^data:/i.test(importUrl);
 
 /**
- * What a person reads when work needs a device: "a device with unix and
- * ollama"; a `pool:` need is one particular device.
- * @param {string[]} needs
+ * Whether this page takes part in its browser's pool: the tasks package has
+ * put a pool host in it (`window.patchworkTasks.poolHosts`). False where the
+ * package is not installed, so that a tool can say why work waits.
+ * @returns {boolean}
  */
-function deviceWords(needs) {
-  const labels = needs.filter((need) => !need.startsWith('pool:'));
-  const listed = labels.length <= 1 ? labels.join('') : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
-  if (labels.length === needs.length) {
-    return `a device with ${listed}`;
-  }
-  return labels.length > 0 ? `one particular device, with ${listed}` : 'one particular device';
+export function poolHere() {
+  const hosts = /** @type {any} */ (globalThis).patchworkTasks?.poolHosts;
+  return !!hosts && typeof hosts === 'object' && Object.keys(hosts).length > 0;
 }
 
 /**
- * Has work done, as the comment above says: asked of the person's queue (as
- * `run`), or done here. For code that can travel it first has `ownQueue`
- * give the queue, making it if there is none, and puts the page in its
- * browser's pool (`joinPool`); for work the page can do, the task storage
- * document is looked for only as `findHere` looks (no longer than HERE_MS),
- * and where this Repo does not have it the work is done here, so nothing
- * here waits on the network (own's document, where this browser's storage is
- * still reading it, is waited for as `ownQueue` waits for it: a read from
- * this machine). Resolves to what the code returned; rejects
- * with what it threw, or "The task was cancelled" once `signal` is aborted,
- * or, for work that needs what this page cannot give it and no queue of
- * theirs can be asked (its code cannot travel, or `ownQueue` could not give
- * one), with a sentence saying what it needs and why. `onProgress` hears the
- * same views either way (one for work done here has no `taskUrl` and no
- * `runs`). Aborted while it still looks for its queue or listens for a pool,
- * it rejects at once and neither asks nor calls anything.
+ * Has work done, as the comment above says: asks the queue `ownQueue` gives
+ * (as `run`), making it if there is none, then puts the page in its
+ * browser's pool (`joinPool`), and waits for the task. Its key and needs are
+ * checked, and so is where its code is, before anything is written. Code
+ * that cannot travel is asked with the need `pool:<this browser's pool id>`
+ * (the id is made here, as the pool's host would make it, where no pool has
+ * started yet).
+ *
+ * Resolves to what the code returned; rejects with what it threw, with "The
+ * task was cancelled" once `signal` is aborted (aborted while it still looks
+ * for the queue, at once, asking nothing), or, with nothing asked, with one
+ * sentence saying why no queue could be had: `ownQueue`'s (no account open,
+ * nowhere to keep the list of queues, or that list not found), or that code
+ * only this machine can reach cannot be asked where this browser keeps no
+ * pool id. `onProgress` hears every change of the task, as `run`'s does.
+ * Work that no pool serving the queue can take waits there.
  * @param {any} repo  the Repo the page's account is in
  * @param {Ask} request
  * @param {{ onProgress?: (view: TaskView) => void, signal?: AbortSignal }} [options]
@@ -1630,47 +1538,32 @@ export async function doWork(repo, request, { onProgress, signal } = {}) {
   if (signal?.aborted) {
     throw new Error(CANCELLED);
   }
-  const needs = request.needs ?? [];
-  checkNeeds(needs);
-  const travel = travels(request.importUrl);
-  /** @type {string | null} */
-  let own = null;
-  /** @type {string | null} */
-  let why = null;
-  if (travel) {
-    // Work the page can do waits for no storage document this Repo cannot
-    // produce at once (`findHere`): where it is not here, the work is done here.
-    const find = satisfies(PAGE_HAS, needs) ? findHere : findWhenThere;
-    own = await unlessStopped(
-      storageFound(repo, undefined, find).then((storage) => ownIn(repo, storage)).then(
-        (url) => {
-          joinPool();
-          return url;
-        },
-        (/** @type {Error} */ error) => {
-          why = error?.message ?? String(error);
-          return null;
-        },
-      ),
-      signal,
-    );
+  if (request.key !== undefined) {
+    checkKey(request.key);
   }
-  const pools = own ? await unlessStopped(poolsHeard(repo, own, needs), signal) : [];
-  const asked = { ...request, near: request.near ?? browserPoolIdHere() ?? undefined };
-  if (own && pools.some((pool) => satisfies(pool.has, needs))) {
-    return run(repo, own, asked, onProgress, signal);
+  checkNeeds(request.needs);
+  let needs = request.needs ?? [];
+  let near = request.near ?? browserPoolIdHere() ?? undefined;
+  if (!travels(request.importUrl)) {
+    const pool = browserPoolIdHere({ make: true });
+    if (!pool) {
+      throw new Error(
+        `This work's code is only on this machine (${schemeOf(request.importUrl)} url), and this browser keeps no id for its pool, so no pool can be asked to run it.`,
+      );
+    }
+    const mine = `pool:${pool}`;
+    needs = needs.includes(mine) ? needs : [...needs, mine];
+    near = request.near ?? pool;
   }
-  if (satisfies(PAGE_HAS, needs)) {
-    return workHere(repo, request, onProgress, signal);
-  }
-  if (own) {
-    return run(repo, own, asked, onProgress, signal);
-  }
-  throw new Error(
-    travel
-      ? `This work needs ${deviceWords(needs)}, and it could not be asked of your task queue: ${why}`
-      : `This work needs ${deviceWords(needs)}, and its code is only on this machine, so no other device can run it.`,
-  );
+  const own = await unlessStopped(ownQueue(repo), signal);
+  joinPool();
+  return run(repo, own, { ...request, needs, near }, onProgress, signal);
+}
+
+/** The scheme of a url, as a person reads it (`http`, `file`), or `this kind of` for one that is not a url. */
+function schemeOf(/** @type {string} */ importUrl) {
+  const found = /^([a-z][a-z0-9+.-]*):/i.exec(String(importUrl));
+  return found ? found[1].toLowerCase() : 'this kind of';
 }
 
 /**
@@ -1685,10 +1578,16 @@ function unlessStopped(promise, signal) {
   return new Promise((resolve, reject) => {
     const stop = () => reject(new Error(CANCELLED));
     signal?.addEventListener('abort', stop, { once: true });
-    promise.then((found) => {
-      signal?.removeEventListener('abort', stop);
-      resolve(found);
-    });
+    promise.then(
+      (found) => {
+        signal?.removeEventListener('abort', stop);
+        resolve(found);
+      },
+      (error) => {
+        signal?.removeEventListener('abort', stop);
+        reject(error);
+      },
+    );
   });
 }
 
@@ -1705,12 +1604,12 @@ function unlessStopped(promise, signal) {
  * Its state is `missing` when no work under this key is known on a queue of
  * this person's: no account is open, it has no storage, the storage names no
  * own, the key names nothing on own nor on any spare heard from within
- * HERE_MS of own, or own's document has not been had. Work done in a page is
- * never seen here (see above). It always reports promptly: what cannot be
- * told at once (no account, no storage, no own) is reported at once, and
- * own's document not had within LAPSE_MS is reported `missing` and looked
- * for still, its work reported when it comes. When the queue a report came
- * from is no longer followed, what it said is replaced at once.
+ * HERE_MS of own, or own's document has not been had. It always reports
+ * promptly: what cannot be told at once (no account, no storage, no own) is
+ * reported at once, and own's document not had within LAPSE_MS is reported
+ * `missing` and looked for still, its work reported when it comes. When the
+ * queue a report came from is no longer followed, what it said is replaced
+ * at once.
  *
  * The account is the page's (`accountDocHandle`), read when watching starts.
  * Returns how to stop; nothing is left behind once it is called.
@@ -1894,101 +1793,4 @@ export async function stopWork(repo, key) {
   const queues = await queuesHere(repo);
   const stopped = await Promise.all(queues.map((url) => cancel(repo, url, key).catch(() => false)));
   return stopped.some(Boolean);
-}
-
-/**
- * Does work in this page: imports the code and calls it with a context like
- * a pool's, but for `taskUrl`, since there is no task. Aborting `signal`
- * rejects at once, as a stop does for work asked of a queue; the code is
- * told through its own signal, and anything it reports after that is not
- * passed on, since the work has ended for whoever asked.
- * @param {any} repo
- * @param {Ask} request
- * @param {((view: TaskView) => void) | undefined} onProgress
- * @param {AbortSignal | undefined} signal
- * @returns {Promise<unknown>}
- */
-async function workHere(repo, { importUrl, input, key }, onProgress, signal) {
-  if (signal?.aborted) {
-    throw new Error(CANCELLED);
-  }
-  /** @type {LogLine[]} */
-  const logs = [];
-  /** @type {unknown} */
-  let progress = null;
-  let over = false;
-  const say = (/** @type {TaskState} */ state, /** @type {Partial<TaskView>} */ more = {}) => {
-    if (over) {
-      return;
-    }
-    over = isFinished(state);
-    onProgress?.({
-      key: key ?? '',
-      state,
-      taskUrl: null,
-      importUrl,
-      input,
-      progress,
-      logs: [...logs],
-      result: undefined,
-      error: null,
-      runs: [],
-      ...more,
-    });
-  };
-  const stopped = new AbortController();
-  /** @type {Promise<never>} */
-  const cancelled = new Promise((_, reject) => {
-    stopped.signal.addEventListener('abort', () => reject(new Error(CANCELLED)), { once: true });
-  });
-  const stopIt = () => stopped.abort('cancelled');
-  signal?.addEventListener('abort', stopIt, { once: true });
-  const context = {
-    log(/** @type {unknown[]} */ ...args) {
-      if (over) {
-        return;
-      }
-      logs.push({ timestampMillis: Date.now(), message: args.map((arg) => '' + arg).join(' ') });
-      logs.splice(0, logs.length - MAX_LOG_LINES);
-      say('running');
-    },
-    progress(/** @type {unknown} */ value) {
-      if (over) {
-        return;
-      }
-      progress = value;
-      say('running');
-    },
-    signal: stopped.signal,
-    repo,
-    taskUrl: null,
-    key: key ?? null,
-    run: crypto.randomUUID(),
-  };
-  say('running');
-  const work = (async () => {
-    const module = await import(/* @vite-ignore */ importUrl);
-    if (typeof module?.default !== 'function') {
-      throw new Error("the task's code has no default export to call");
-    }
-    return copy(await module.default.call(context, copy(input), context));
-  })();
-  // what the code does once it has been stopped is nobody's concern
-  work.catch(() => {});
-  try {
-    const result = await Promise.race([work, cancelled]);
-    say('succeeded', { result });
-    return result;
-  } catch (error) {
-    if (stopped.signal.aborted) {
-      say('cancelled');
-      throw new Error(CANCELLED);
-    }
-    const message = /** @type {any} */ (error)?.message ?? '' + error;
-    logs.push({ timestampMillis: Date.now(), message });
-    say('failed', { error: message });
-    throw new Error(message);
-  } finally {
-    signal?.removeEventListener('abort', stopIt);
-  }
 }

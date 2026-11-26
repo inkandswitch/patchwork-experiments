@@ -23,7 +23,10 @@ import * as client from '/vendor/task-client.js';
 // account, the task storage the provider makes, and what the background
 // components and the titlebar tool are handed are that Repo's, so the only
 // way between it and the pool is the link (checks 26 to 30). Without `?site`
-// the two are one Repo, the tasks Repo.
+// the two are one Repo, the tasks Repo. Two `?site` pages of one profile
+// are joined as the site's tabs are: their site Repos share one database
+// (`probe-site`) and one heads channel (`probe-site-heads`), and nothing else
+// (checks 40 and 41).
 const params = new URLSearchParams(location.search);
 const SYNC = params.get('sync') ?? 'ws://127.0.0.1:9';
 
@@ -350,6 +353,29 @@ const probe = {
     return { ...outcome, ms: performance.now() - t0, taskUrl, heard, states: views.map((v) => v.state).filter((state, i, all) => state !== all[i - 1]), views };
   },
 
+  /** Work started as `work` does it, not waited for: what came of it is in `probe.outcomes[key]` once it settles. */
+  startWork(importUrl, input, key) {
+    const outcome = (probe.outcomes[key] = { pending: true });
+    probe.work(importUrl, input, { key }).then((work) => Object.assign(outcome, work, { pending: false }));
+    return key;
+  },
+  outcomes: {},
+
+  /** Follows the work under `key` with the built client's `watchWork` through the site's Repo: each state it reports, in `probe.watched[key]`. */
+  watchWork(key) {
+    const states = (probe.watched[key] = []);
+    client.watchWork(site, key, (view) => {
+      if (states.at(-1) !== view.state) states.push(view.state);
+    });
+    return true;
+  },
+  watched: {},
+
+  /** Stops the work under `key` with the built client's `stopWork` through the site's Repo. */
+  stopWork(key) {
+    return client.stopWork(site, key);
+  },
+
   /** A document made in the site's Repo, with `value`; its url. */
   async siteDoc(value) {
     const handle = site.create(value);
@@ -367,7 +393,7 @@ const probe = {
     }
   },
 
-  /** The pools heard serving own through the site's Repo alone (as `doWork` hears them), after `ms`. */
+  /** The pools heard serving own through the site's Repo alone (`served` with `local: false`), after `ms`. */
   async servedThroughSite(ms = 4000) {
     const own = await client.ownQueue(site, document.body);
     return new Promise((resolve) => {
@@ -375,6 +401,14 @@ const probe = {
       const stop = client.served(site, own, (list) => (pools = list), { local: false });
       setTimeout(() => (stop(), resolve(pools)), ms);
     });
+  },
+
+  /** What the site's Repo gives for `url` when asked, within `ms` (from what this browser keeps, with no network): its value, or null, and how long it took. */
+  async siteFind(url, ms = 2000) {
+    const t0 = performance.now();
+    const found = site.find(url).then((handle) => JSON.parse(JSON.stringify(handle.doc() ?? null)), () => null);
+    const value = await Promise.race([found, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
+    return { value, ms: performance.now() - t0 };
   },
 
   /** How many network adapters the site's Repo has: one per link to a worker of this page's pool. */

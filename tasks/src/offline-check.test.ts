@@ -28,7 +28,7 @@ import {
   type TaskView,
 } from './task-client.js';
 import { mergeStorages, storageLosersOf } from './helpers';
-import { LAPSE_MS, LISTEN_MS, allHeard, claimRun, endRun, entryAt, isWanted, mayClaim, named, type Queue, type Task } from './task-rules.js';
+import { LAPSE_MS, allHeard, claimRun, endRun, entryAt, isWanted, mayClaim, named, type Queue, type Task } from './task-rules.js';
 
 await initSubduction();
 
@@ -42,9 +42,6 @@ afterEach(() => {
   delete g.document;
   delete g.__work;
 });
-
-/** How long doWork waits to hear a pool before doing page work here: what it waited before this step. */
-const HEAR_MS = LISTEN_MS + 500;
 
 const newRepo = () => new Repo({ network: [] } as any);
 const CODE = 'data:text/javascript,export default () => 1';
@@ -104,8 +101,8 @@ function sync(repos: Repo[]) {
   }
 }
 
-describe('doWork with no network, where the page can do the work', () => {
-  it("the account names a storage document this Repo does not have (it arrived on the account from another device, then the network went): the work is done in the page no later than a pool is listened for (HEAR_MS), as before this step", async () => {
+describe('doWork with no network, the list of queues not here', () => {
+  it("the account names a storage document this Repo does not have (it arrived on the account from another device, then the network went): no queue can be had, so doWork rejects once ownQueue gives up, with its sentence, and nothing is run", async () => {
     const repo = newRepo();
     const account = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: madeUp(7) } });
     g.accountDocHandle = account;
@@ -117,8 +114,9 @@ describe('doWork with no network, where the page can do the work', () => {
       (error) => (settled.error = error),
     );
     const took = await timeUntil(() => 'value' in settled || 'error' in settled, 300_000);
-    expect(settled).toEqual({ value: 1 });
-    expect(took).toBeLessThanOrEqual(HEAR_MS);
+    expect(took).toBeLessThan(Infinity);
+    expect(settled.error?.message).toBe('The list of your task queues could not be found, so nothing was changed.');
+    expect(called).toBe(0);
   });
 });
 
@@ -177,20 +175,25 @@ function devices(actors: readonly string[], { shareStorage }: { shareStorage: bo
 
 type Asked = { key: string; taskUrl: string; device: number; ended: boolean };
 
-/** Device `i`, alone: gets own at once, has page work done in the page, asks two tasks of own (its own key and a shared one), and its pool runs a third to its end. */
+/** Device `i`, alone: gets own at once, has a tool's work asked of own by doWork (then stopped), asks two tasks of own (its own key and a shared one), and its pool runs a third to its end. */
 async function alone(d: ReturnType<typeof devices>, i: number, asked: Asked[]) {
   const { repo, element } = d.on(i);
   const started = Date.now();
   const own = (await outcome(ownQueue(repo, element))).value!;
   expect(Date.now(), 'own is had with the clock still').toBe(started);
   expect(ownQueueOf(d.storageOn(i).doc())).toBe(own);
-  // page work, with no pool heard: done in the page, no later than a pool is listened for
+  // a tool's work, with no pool heard: asked of own at once, never called in the page; then stopped from the page
   let called = 0;
   g.__work = () => ++called;
-  const did = doWork(repo, { importUrl: WORK, key: `page${i}` });
-  const took = await timeUntil(() => called > 0, 60_000);
-  expect(took, 'page work is done in the page within HEAR_MS').toBeLessThanOrEqual(HEAR_MS + 100);
-  expect((await outcome(did)).value).toBe(1);
+  const stop = new AbortController();
+  const did = doWork(repo, { importUrl: WORK, key: `page${i}` }, { signal: stop.signal });
+  const ownHandle = handleOf<Queue>(repo, own)!;
+  expect(await timeUntil(() => !!entryAt(ownHandle.doc(), `page${i}`), 60_000), 'asked of own at once').toBeLessThanOrEqual(100);
+  const work = entryAt(ownHandle.doc(), `page${i}`)!;
+  stop.abort();
+  expect((await outcome(did)).error?.message).toBe('The task was cancelled');
+  expect(called).toBe(0);
+  asked.push({ key: `page${i}`, taskUrl: work.taskUrl, device: i, ended: true });
   for (const key of [`k${i}`, 'shared']) {
     const got = (await outcome(ask(repo, own, { importUrl: CODE, key, input: i }))).value!;
     asked.push({ ...got, device: i, ended: false });
@@ -273,7 +276,7 @@ function meetings(n: number): [number, number][][] {
 
 describe('devices that never met, each with no network, then meeting in every order (one storage document made before they parted)', () => {
   for (const n of [2, 3]) {
-    it(`${n} devices: each has own at once, page work done in the page, and a task run alone; met pairwise in every order, with each pair folding as it meets, then all: they agree on own, nothing asked is lost, and the shared key ends with one run going on`, async () => {
+    it(`${n} devices: each has own at once, a tool's work asked of it and stopped, and a task run alone; met pairwise in every order, with each pair folding as it meets, then all: they agree on own, nothing asked is lost, and the shared key ends with one run going on`, async () => {
       const owns = new Set<number>();
       for (const actors of permutations(ACTORS.slice(0, n))) {
         for (const order of meetings(n)) {
@@ -451,7 +454,7 @@ describe('work sitting in a spare', () => {
     stop();
   });
 
-  it("own's document not here: each doWork of page work offline is done in the page; the first within HERE_MS twice and HEAR_MS, later ones within HERE_MS (the re-look for own)", async () => {
+  it("own's document not here: each doWork offline asks the one spare made for them, the first within HERE_MS twice, later ones within HERE_MS (the re-look for own), and nothing is run in the page", async () => {
     const repo = newRepo();
     const elsewhere = newRepo();
     const away = elsewhere.create<Queue>({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} } as any);
@@ -459,18 +462,22 @@ describe('work sitting in a spare', () => {
     g.accountDocHandle = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: storage.url } });
     let called = 0;
     g.__work = () => ++called;
+    const listedIn = (key: string) => sparesOf(storage.doc()).some((url) => !!entryAt(handleOf<Queue>(repo, url)?.doc(), key));
     const times: number[] = [];
     for (let i = 1; i <= 3; i++) {
       void doWork(repo, { importUrl: WORK, key: `k${i}` });
-      times.push(await timeUntil(() => called >= i, 60_000));
+      times.push(await timeUntil(() => listedIn(`k${i}`), 60_000));
     }
-    expect(times[0]).toBeLessThanOrEqual(2 * HERE_MS + HEAR_MS + 100);
+    expect(times[0]).toBeLessThanOrEqual(2 * HERE_MS + 100);
     for (const t of times.slice(1)) expect(t).toBeLessThanOrEqual(HERE_MS + 100);
+    expect(sparesOf(storage.doc())).toHaveLength(1);
+    expect(Object.keys(handleOf<Queue>(repo, sparesOf(storage.doc())[0])!.doc()!.jobs).sort()).toEqual(['k1', 'k2', 'k3']);
+    expect(called).toBe(0);
   });
 });
 
 describe('two tools asking at once', () => {
-  it('two copies of the client (two packages’ kit copies) asking at once on a page with no own yet: one pointer, and one pool view appended', async () => {
+  it('two copies of the client (two packages’ kit copies) asking at once on a page with no own yet: one pointer, both asked of it, and one pool view appended', async () => {
     // @ts-expect-error a second instance of the module, as a second package's kit copy is
     const other = (await import('./task-client.js?copy=3')) as typeof import('./task-client.js');
     const appended: any[] = [];
@@ -495,8 +502,14 @@ describe('two tools asking at once', () => {
     g.__work = () => ++called;
     void doWork(repo, { importUrl: WORK, key: 'one' });
     void other.doWork(repo, { importUrl: WORK, key: 'two' });
-    await timeUntil(() => called >= 2, 60_000);
-    expect(called).toBe(2);
+    const ownJobs = () => {
+      const storageUrl = storageUrlOf(account.doc());
+      const own = storageUrl ? ownQueueOf(handleOf<any>(repo, storageUrl)?.doc()) : null;
+      return (own ? handleOf<Queue>(repo, own)?.doc()?.jobs : undefined) ?? {};
+    };
+    await timeUntil(() => 'one' in ownJobs() && 'two' in ownJobs(), 60_000);
+    expect(Object.keys(ownJobs()).sort()).toEqual(['one', 'two']);
+    expect(called).toBe(0);
     expect(appended).toHaveLength(1);
     const storage = handleOf<any>(repo, storageUrlOf(account.doc())!)!;
     expect(marksOf(storage.doc())).toHaveLength(1);
@@ -518,7 +531,7 @@ describe('two tools asking at once', () => {
 });
 
 describe('a page with no tool-storage provider', () => {
-  it('an account that names no storage, in a page with no provider: page work is done at once, nothing is written or appended; work that needs a node is refused with a sentence; watchWork says missing at once; stopWork is false', async () => {
+  it('an account that names no storage, in a page with no provider: doWork rejects at once with the sentence that says so, whatever the work needs, and nothing is run, written or appended; watchWork says missing at once; stopWork is false', async () => {
     const repo = newRepo();
     const account = repo.create<any>({});
     g.accountDocHandle = account;
@@ -527,14 +540,15 @@ describe('a page with no tool-storage provider', () => {
     const heads = A.getHeads(account.doc());
     let called = 0;
     g.__work = () => ++called;
-    const settled: { value?: unknown } = {};
-    void doWork(repo, { importUrl: WORK, key: 'k' }).then((value) => (settled.value = value));
-    expect(await timeUntil(() => 'value' in settled, 60_000)).toBeLessThanOrEqual(100);
-    expect(settled.value).toBe(1);
+    for (const needs of [undefined, ['node']]) {
+      const settled: { error?: Error } = {};
+      void doWork(repo, { importUrl: WORK, key: 'k', needs }).catch((error) => (settled.error = error));
+      expect(await timeUntil(() => 'error' in settled, 60_000)).toBeLessThanOrEqual(100);
+      expect(settled.error?.message).toBe('This page has nowhere to keep your task queues, so nothing was changed.');
+    }
+    expect(called).toBe(0);
     expect(appended).toEqual([]);
     expect(A.getHeads(account.doc())).toEqual(heads);
-    const refused = await outcome(doWork(repo, { importUrl: WORK, key: 'n', needs: ['node'] }));
-    expect(refused.error?.message).toMatch(/needs a device with node.*nowhere to keep your task queues/);
     const views: TaskView[] = [];
     const stop = watchWork(repo, 'k', (view) => views.push(view));
     await outcome(Promise.resolve());

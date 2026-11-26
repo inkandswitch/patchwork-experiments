@@ -3,8 +3,9 @@
 // The import doc says what is asked (`request`, written by the page when a
 // mod is dropped) and how it ended (`imported`, written by the work, for the
 // request it did). Whether the work is going on is not in the doc: it is
-// the task under the request's key, followed with watchWork, when it was
-// asked of the person's queue, or this page's own run when it was done here. So
+// the task under the request's key on the person's queue, followed with
+// watchWork, or this page's own asking of it (and, before that, its keeping
+// of what was dropped). So
 // what is shown is read from both, and nothing writes the doc to say that an
 // import is under way. A doc that asks for an import that has neither an
 // outcome nor work going on is shown as interrupted, and the drop zone is
@@ -42,6 +43,7 @@ export const LINES = Object.freeze({
   stopped: "Stopped.",
   looking: "Looking for the import…",
   waiting: "Waiting for one of your machines to take it up…",
+  waitingWithoutThisBrowser: "Waiting for one of your machines to take it up: this browser takes no part, because the tasks package is not installed here.",
   stopping: "Stopping…",
   starting: "Starting…",
   arriving: "Imported; the report is on its way.",
@@ -83,12 +85,18 @@ export function shownStatus(doc, work) {
   return { status: "interrupted", line: LINES.interrupted };
 }
 
-/** What to say about work going on: how far it is, and where it runs. */
-export function workLines(work) {
+/**
+ * What to say about work going on: how far it is, and where it runs. `poolHere`
+ * is whether this page takes part in its browser's pool (the task kit's
+ * `poolHere()`); where it does not, waiting says so.
+ */
+export function workLines(work, poolHere = true) {
   const p = /** @type {any} */ (work?.progress);
   const stage =
     work?.state === "waiting" || work?.state === "stalled"
-      ? LINES.waiting
+      ? poolHere
+        ? LINES.waiting
+        : LINES.waitingWithoutThisBrowser
       : work?.state === "stopping"
         ? LINES.stopping
         : p && typeof p === "object" && p.phase
