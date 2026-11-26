@@ -141,7 +141,8 @@ export async function runBurst(ctx, opts) {
     // Its end: `burst` cleared while it names this run or another of its
     // task, except when another run has the task now.
     if (outcome !== "yielded") {
-      const runs = new Set(await taskRuns())
+      // A task document it cannot read now still leaves it its own run.
+      const runs = new Set(await taskRuns().catch(() => []))
       guarded.changeOwn((d) => {
         const named = d.burst?.run ?? null
         if (named != null && (named === run || runs.has(named))) d.burst = null
