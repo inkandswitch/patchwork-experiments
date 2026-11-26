@@ -266,9 +266,10 @@ describe("G: what lands after an abort or a stop mid-run", () => {
     expect(doc.burst).toEqual(end === "yielded" ? { run: "run-1" } : null)
   })
 
-  // Reported, and declared by the builder: the guarded appender refuses the
-  // flush once aborted, so up to flushMs of text is lost. Flip to `it` when fixed.
-  it.fails("a cancel with text still in the appender's buffer keeps that text (G(1): a cancel loses no text)", async () => {
+  // Reported, and declared by the builder: the guarded appender refused the
+  // flush once aborted, so up to flushMs of text was lost. Fixed: the text
+  // left in the buffer goes in with the mark's removal, in the run's own change.
+  it("a cancel with text still in the appender's buffer keeps that text (G(1): a cancel loses no text)", async () => {
     const repo = new Repo({ network: [] })
     const handle = sessionIn(repo)
     const p = point()
@@ -584,10 +585,11 @@ describe("W: a step session whose plan stops naming it mid-burst", () => {
 // ---------------------------------------------------------------- a stale mark of its own task
 
 describe("burst left naming an earlier run of its own task, with nothing else to do", () => {
-  // Found by this checker, reported: hasWork counts the stale mark as work,
-  // and once it is cleared the loop asks the model all the same, with the
-  // session's last word its own reply. Flip to `it` when fixed.
-  it.fails("clears burst and asks the model nothing", async () => {
+  // Found by this checker, reported: the stale mark counted as work, and
+  // once it was cleared the loop asked the model all the same, with the
+  // session's last word its own reply. Fixed: the stale mark alone is
+  // cleared at the burst's end, and the loop does not run.
+  it("clears burst and asks the model nothing", async () => {
     const repo = new Repo({ network: [] })
     const handle = sessionIn(repo, [makeTurn("assistant", [textBlock("Done.")])], { burst: { run: "run-0" } })
     const provider = makeMock([[{ type: "text", delta: "Nothing to add." }]])

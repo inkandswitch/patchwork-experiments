@@ -106,6 +106,14 @@ export function batchedAppender(store, flushMs = 120) {
       if (timer) clearTimeout(timer)
       flush()
     },
+    /** What is buffered, `[{ path, text }]`, taken out unwritten, for a caller to write inside a change of its own. */
+    take() {
+      if (timer) clearTimeout(timer)
+      timer = null
+      const left = [...pending.values()]
+      pending.clear()
+      return left
+    },
   }
 }
 
@@ -122,6 +130,9 @@ export function batchedAppender(store, flushMs = 120) {
  *                    the change that what it writes is still the run's (its
  *                    reply's mark, a call it claimed, `burst` naming it).
  *   appendText       through `change`.
+ *   appendTextIn     the same append inside a change already open: how a run
+ *                    writes the text it buffered for its own reply inside
+ *                    the change that takes the reply's mark off.
  *
  * A refused write changes nothing, so it makes no change at all.
  */
@@ -155,7 +166,11 @@ export function guardedStore(store, { signal = null, settled }) {
     },
     appendText(path, delta) {
       if (!delta) return
-      guarded.change((d) => (store.appendTextIn ? store.appendTextIn(d, path, delta) : textInto(d, path, delta)))
+      guarded.change((d) => guarded.appendTextIn(d, path, delta))
+    },
+    appendTextIn(d, path, delta) {
+      if (store.appendTextIn) store.appendTextIn(d, path, delta)
+      else textInto(d, path, delta)
     },
   }
   if (store.onChange) guarded.onChange = (listener) => store.onChange(listener)

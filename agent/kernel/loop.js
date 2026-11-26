@@ -572,11 +572,16 @@ async function streamTurn(opts) {
     if (repeatsItself(streamed, repeatWindow)) repeated = true
   }
 
-  // Where a block's text is now, or null when the turn has gone.
-  const blockPath = (blockIndex) => () => {
-    const at = turnPath()
-    return at ? [...at, "blocks", blockIndex, "text"] : null
-  }
+  // Where a block's text is now, or null when the turn has gone. It carries
+  // its block's index, for the text left in the appender at the end.
+  const blockPath = (blockIndex) =>
+    Object.assign(
+      () => {
+        const at = turnPath()
+        return at ? [...at, "blocks", blockIndex, "text"] : null
+      },
+      { blockIndex }
+    )
   // Push a block onto this reply and say where it went, or null when the
   // turn has gone.
   const pushBlock = (block) => {
@@ -642,7 +647,10 @@ async function streamTurn(opts) {
     interrupted = isInterruption(err)
     throw err
   } finally {
-    appender.flush()
+    // With `checkMark`, the text still buffered goes in with the mark's
+    // removal below, in the run's own change, and only while the mark names
+    // this run: a cancel or a stop refuses an ordinary write, and would lose it.
+    const left = opts.checkMark ? appender.take() : (appender.flush(), [])
     // The stream is over and this runner saw it end — finished, stopped by
     // the person, or failed — so what is there is what happened. Not when it
     // was cut off by the network (the turn is taken back), nor when another
@@ -660,7 +668,10 @@ async function streamTurn(opts) {
       own((d) => {
         const t = reply(d)
         const mark = t?.streaming ?? null
-        if (mark && (saw ? !opts.checkMark || mine(mark) : mine(mark))) delete t.streaming
+        if (!mark || !(saw ? !opts.checkMark || mine(mark) : mine(mark))) return
+        const at = ["turns", d.turns.findIndex((x) => x.id === turn.id)]
+        for (const { path, text } of left) if (text) store.appendTextIn(d, [...at, "blocks", path.blockIndex, "text"], text)
+        delete t.streaming
       })
     }
   }

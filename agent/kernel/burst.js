@@ -19,7 +19,8 @@
  *   - Before it writes anything it looks: no work, a stop in force, a
  *     foreign `burst` (`held`), a step session its plan does not name
  *     (`not-the-step`), or `settled` rejecting, and it ends having written
- *     nothing.
+ *     nothing. When its only work is `burst` left naming an earlier run of
+ *     its task, it clears that at its end (`nothing`) and asks no model.
  *   - At the top of every turn it looks again (`held`, `not-the-step`), then
  *     settles what other runs left (session/recovery.js settleDebris) in one
  *     change, before any request.
@@ -127,7 +128,11 @@ export async function runBurst(ctx, opts) {
     if (stopOf(store.doc())) return ended(BURST.stopped)
     const first = await standBack()
     if (first.ended) return ended(first.ended)
-    if (!hasWork(store.doc(), first.runs)) return ended(BURST.nothing)
+    // Work for this run: what needsWork says, its debris judged against this
+    // run; or only `burst` left naming an earlier run of its task, which it
+    // clears at its end without asking the model.
+    const work = needsWork(store.doc(), canRun, null, (d) => hasDebris(d, run))
+    if (!work && !staleOwn(store.doc(), first.runs)) return ended(BURST.nothing)
     try {
       await ctx.settled
     } catch (err) {
@@ -135,7 +140,7 @@ export async function runBurst(ctx, opts) {
     }
 
     // ---- Working.
-    const result = await work()
+    const result = work ? await working() : { outcome: BURST.nothing, reason: null }
     const outcome = signal.aborted && TASK_REASONS.has(signal.reason) ? signal.reason : stopOf(store.doc()) && result.outcome === OUTCOME.aborted ? BURST.stopped : result.outcome
 
     // Its end: `burst` cleared while it names this run or another of its
@@ -178,14 +183,13 @@ export async function runBurst(ctx, opts) {
     return { runs }
   }
 
-  /** Work for this run: what needsWork says, its debris judged against this run, or `burst` left naming an earlier run of its task. */
-  function hasWork(doc, runs) {
+  /** `burst` left naming an earlier run of its task. */
+  function staleOwn(doc, runs) {
     const named = doc?.burst?.run ?? null
-    if (named != null && named !== run && runs.has(named)) return true
-    return needsWork(doc, canRun, null, (d) => hasDebris(d, run))
+    return named != null && named !== run && runs.has(named)
   }
 
-  async function work() {
+  async function working() {
     let prepared = null
     let reconnects = 0
     for (;;) {
