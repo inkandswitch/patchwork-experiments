@@ -3,9 +3,13 @@
  * the key `agent:<session>` on the asker's own queue. Not yet used: today's
  * runners still run sessions.
  *
- * The task client is handed in, `{ doWork, watchWork, stopWork }`, called as
- * the task system's own are (`doWork(repo, request)`, `watchWork(repo, key,
- * onChange)`, `stopWork(repo, key)`); nothing here imports the task system.
+ * The task client is the task system's (host/task-client.js, a kit copy):
+ * `doWork(repo, request)`, `watchWork(repo, key, onChange)`, `stopWork(repo,
+ * key)`, and `ownQueue(repo)` for the queue whose url goes in the input's
+ * `sensitiveDocs`. A caller may hand in another as `client` (the tests'
+ * stand-ins). What is asked for is this package's own runners/session-task.js,
+ * at the version the asker loaded (`inSamePackage`), unless `importUrl` names
+ * another.
  *
  * The one rule (`shouldAsk`). askWork asks iff all of these hold:
  *   - the copy needs work a run can do: needsWork, its debris judged against
@@ -44,6 +48,15 @@ import { STOP } from "../session/status.js"
 import { WHERE } from "../session/schema.js"
 import { onOnline } from "../net/network.js"
 import { Automerge, AutomergeRepo } from "../host/modules.js"
+import { doWork, watchWork, stopWork, ownQueue, inSamePackage } from "../host/task-client.js"
+
+/** The task system's own client, which asks the person's own queue. */
+export const TASK_CLIENT = Object.freeze({ doWork, watchWork, stopWork, ownQueue })
+
+/** The asker's own loaded session task, in its package and at its heads; null outside a package (tests). */
+export const SESSION_TASK = inSamePackage(import.meta.url, "runners/session-task.js")
+
+const clientOf = (opts) => opts?.client ?? TASK_CLIENT
 
 /** The most asks at one copy's heads. */
 export const MAX_ASKS = 2
@@ -92,8 +105,8 @@ const sessions = new Map() // bare url -> entry
  * @param {object} repo  the page's Repo
  * @param {string} sessionUrl
  * @param {object} opts
- * @param {{ doWork: Function, watchWork: Function, stopWork: Function }} opts.client
- * @param {string} opts.importUrl  the asker's loaded module: a burst runs the version the asker runs
+ * @param {{ doWork: Function, watchWork: Function, stopWork: Function, ownQueue?: Function }} [opts.client]  default TASK_CLIENT
+ * @param {string} [opts.importUrl]  default SESSION_TASK, the asker's loaded module: a burst runs the version the asker runs
  * @param {{ rootFolderUrl: string|null, sensitiveDocs: string[] }} [opts.account]
  * @param {{ tools: object[], skills: object[] }} [opts.catalogue]
  * @param {{ model: string|null, search: string|null, relay: object|null }} [opts.keys]
@@ -102,7 +115,7 @@ const sessions = new Map() // bare url -> entry
  * @param {Function} [opts.clearTimeout]
  * @param {(fn:Function)=>Function} [opts.onOnline]
  */
-export async function askWork(repo, sessionUrl, opts) {
+export async function askWork(repo, sessionUrl, opts = {}) {
   const entry = entryFor(repo, sessionUrl, opts)
   entry.opts = opts
   const handle = await repo.find(bare(sessionUrl))
@@ -114,17 +127,18 @@ export async function askWork(repo, sessionUrl, opts) {
 
   const at = headsKey(heads)
   entry.asked = { at, count: (entry.asked.at === at ? entry.asked.count : 0) + 1 }
+  const client = clientOf(opts)
   // In this order: what the queue browser shows first is the session and its
   // heads, and the keys last.
   const input = {
     session: bare(sessionUrl),
     heads,
-    account: opts.account ?? { rootFolderUrl: null, sensitiveDocs: [] },
+    account: await withOwnQueue(repo, client, opts.account ?? { rootFolderUrl: null, sensitiveDocs: [] }),
     catalogue: opts.catalogue ?? { tools: [], skills: [] },
     keys: opts.keys ?? { model: null, search: null, relay: null },
   }
   try {
-    const result = await opts.client.doWork(repo, { importUrl: opts.importUrl, key: workKey(sessionUrl), input })
+    const result = await client.doWork(repo, { importUrl: opts.importUrl ?? SESSION_TASK, key: workKey(sessionUrl), input })
     return { asked: true, outcome: result?.outcome ?? null }
   } catch (err) {
     throw new Error(withoutUrls(String(err?.message ?? err)))
@@ -137,7 +151,7 @@ export async function askWork(repo, sessionUrl, opts) {
  * settleDebris). For a mark nobody will release: a page that died mid-call,
  * a run nobody hears.
  */
-export async function takeOver(repo, sessionUrl, opts) {
+export async function takeOver(repo, sessionUrl, opts = {}) {
   const handle = await repo.find(bare(sessionUrl))
   handle.change((d) => {
     if (d.burst != null) d.burst = null
@@ -151,10 +165,12 @@ export async function takeOver(repo, sessionUrl, opts) {
  * which only makes it quicker. Resolves what stopWork says (false when there
  * was nothing of theirs to stop).
  */
-export async function stop(repo, sessionUrl, { client, author = null }) {
+export async function stop(repo, sessionUrl, { client = TASK_CLIENT, author = null } = {}) {
   const handle = await repo.find(bare(sessionUrl))
   handle.change((d) => stopSession(d, STOP.stopped, null, author))
-  return client.stopWork(repo, workKey(sessionUrl)).catch(() => false)
+  return Promise.resolve()
+    .then(() => client.stopWork(repo, workKey(sessionUrl)))
+    .catch(() => false)
 }
 
 /** Stop following a session: its watch, its timers, what it remembered. */
@@ -186,7 +202,7 @@ function entryFor(repo, sessionUrl, opts) {
   sessions.set(url, entry)
   const again = () => askWork(entry.repo, entry.url, entry.opts).catch(() => {})
   entry.again = again
-  entry.unwatch = opts.client.watchWork(repo, workKey(url), (view) => {
+  entry.unwatch = clientOf(opts).watchWork(repo, workKey(url), (view) => {
     const was = entry.view
     entry.view = view
     rememberOwn(url, view?.progress?.own)
@@ -199,6 +215,22 @@ function entryFor(repo, sessionUrl, opts) {
     again()
   })
   return entry
+}
+
+/**
+ * The account as the input carries it, with the person's own queue among the
+ * documents that always ask (its entries lead to tasks, whose inputs hold
+ * keys), when the client can say which it is.
+ */
+async function withOwnQueue(repo, client, account) {
+  const sensitiveDocs = [...(account.sensitiveDocs ?? [])]
+  if (typeof client.ownQueue === "function") {
+    const own = await Promise.resolve()
+      .then(() => client.ownQueue(repo))
+      .catch(() => null)
+    if (typeof own === "string" && !sensitiveDocs.includes(own)) sensitiveDocs.push(own)
+  }
+  return { ...account, sensitiveDocs }
 }
 
 /** What the rule reads, off the copy and the watch's view. */
