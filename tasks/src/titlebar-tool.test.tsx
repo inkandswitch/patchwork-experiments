@@ -1,6 +1,7 @@
-// The badge is a view: mounting it starts nothing, and for each served queue
-// it says how many tasks are listed and what this browser's pool is doing,
-// with the reason, for every state of the page's pool host.
+// The badge is a view of the pool: mounting it starts no pool, and for each
+// served queue it says how many tasks are listed and what this browser's pool
+// is doing, with the reason, for every state of the page's pool host. Mounted,
+// it asks for the person's own queue, which makes it if there is none.
 
 import { describe, expect, it, vi } from 'vitest';
 import type { PoolHostState, PoolHostStatus } from './browser/pool-host';
@@ -29,6 +30,16 @@ vi.mock('./helpers', async (importOriginal) => ({
 vi.mock('./use-doc', () => ({
   WithTasksRepo: (props: { children: unknown }) => props.children,
   useDoc: (url: () => string | null) => () => (url() ? docs[url()!] : undefined),
+}));
+
+let making: { resolve: (url: string) => void; reject: (error: Error) => void } | null = null;
+const asked: unknown[][] = [];
+vi.mock('./task-client.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  ownQueue: (...args: unknown[]) => {
+    asked.push(args);
+    return new Promise<string>((resolve, reject) => (making = { resolve, reject }));
+  },
 }));
 
 let started = 0;
@@ -63,7 +74,9 @@ describe('the badge', () => {
     expect(started).toBe(0);
     expect(badge().dataset.poolState).toBe('not started');
     expect(line()).toBe('2 listed · not running here');
-    expect(badge().title).toBe("My tasks: 2 listed. This page has no part in this browser's pool: nothing in this frame has started it.");
+    expect(badge().title).toBe(
+      "My tasks: 2 listed. This page has no part in this browser's pool: nothing on it has started it (a frame's background components do, and so does asking for work).",
+    );
 
     setStatus({ state: 'waiting' });
     expect(line()).toBe('2 listed · served by another tab');
@@ -93,7 +106,9 @@ describe('the badge', () => {
 
     setStatus({ state: 'serves nothing' });
     expect(line()).toBe('2 listed · not running here');
-    expect(badge().title).toMatch(/This browser serves no task queue, so this page runs no pool\./);
+    expect(badge().title).toMatch(
+      /This browser serves none of your task queues, so this page runs no pool: your own queue is made when a page first needs it, and served unless you leave it\./,
+    );
 
     setStatus({ state: 'winding down' });
     expect(line()).toBe('2 listed · finishing up');
@@ -122,6 +137,66 @@ describe('the badge', () => {
     expect(started).toBe(0);
     dispose();
     expect(listeners.size).toBe(0);
+  });
+});
+
+describe('own, from the badge', () => {
+  const element = () => {
+    const it = document.createElement('div');
+    return it;
+  };
+
+  it('asks for own once on mount, with the Repo and element it was given, and says it is making it until that resolves; no Make my queue, no "No task queues"', async () => {
+    const served = docs[STORAGE];
+    docs[STORAGE] = {};
+    try {
+      asked.length = 0;
+      const where = element();
+      const repo = { site: true } as any;
+      const dispose = TaskTray(where, repo);
+      expect(asked).toEqual([[repo, where]]);
+      expect(where.textContent).toBe('Making your queue…');
+      expect(where.querySelector('[data-offer="make"]')).toBeNull();
+      // made: the storage serves it, and the badge shows it
+      docs[STORAGE] = served;
+      making!.resolve(QUEUE);
+      await Promise.resolve();
+      expect(where.textContent).not.toMatch(/Making your queue|No task queues|Make my queue/);
+      dispose();
+    } finally {
+      docs[STORAGE] = served;
+    }
+  });
+
+  it('where the page has nowhere to keep the queues, says so and offers nothing to press', async () => {
+    const served = docs[STORAGE];
+    docs[STORAGE] = {};
+    try {
+      const where = element();
+      const dispose = TaskTray(where, {} as any);
+      making!.reject(new Error('This page has nowhere to keep your task queues, so nothing was changed.'));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(where.querySelector('[role="alert"]')?.textContent).toBe('This page has nowhere to keep your task queues, so nothing was changed.');
+      expect(where.textContent).not.toMatch(/Making your queue/);
+      expect(where.querySelector('button')).toBeNull();
+      dispose();
+    } finally {
+      docs[STORAGE] = served;
+    }
+  });
+
+  it('a left own is offered to open, to join again', () => {
+    const served = docs[STORAGE];
+    docs[STORAGE] = { own: QUEUE };
+    try {
+      const where = element();
+      const dispose = TaskTray(where, {} as any);
+      expect(where.querySelector('[data-offer="open"]')?.textContent).toBe('My queue');
+      dispose();
+    } finally {
+      docs[STORAGE] = served;
+    }
   });
 });
 
@@ -159,7 +234,7 @@ describe('the words for the pool', () => {
   it('claim nothing about who serves the queues where the page cannot know it', () => {
     for (const state of ['stood down', 'out of sight', 'reading'] as PoolHostState[]) {
       const { short, long } = poolWords({ state, busy: 0, slots: 2, id: null, name: null });
-      expect(`${short} ${long}`, state).not.toMatch(/serves the queues|served by|runs its pool|nothing in this frame/);
+      expect(`${short} ${long}`, state).not.toMatch(/serves the queues|served by|runs its pool|nothing on it has started/);
     }
   });
 });

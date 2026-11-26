@@ -3,7 +3,8 @@
 // probes/write-path.mjs. A throwaway Chrome profile opens a stand-in page
 // (index.html, page.js) that loads the BUILT package from dist/, mounts what
 // a frame mounts of it (its background component, which starts the page's
-// pool, and its real titlebar tool) and presses Make my queue; the pool, its run workers and the page's Repos all use the real
+// pool, and its real titlebar tool), which make the account's own queue as
+// they mount; the pool, its run workers and the page's Repos all use the real
 // sync server, so a run worker's Repo (a database of its own) and the page's
 // meet there. It measures and says what it saw; it checks nothing.
 //

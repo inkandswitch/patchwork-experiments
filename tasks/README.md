@@ -75,7 +75,8 @@ Node one of your own (`dist-node/task-client.mjs` is the same file built for Nod
   (one that began serving it less than two and a half seconds ago is not taking yet, and not
   listed); an empty list, or none that has what a task needs, means that task waits.
 - `ownQueue(repo, element)` gives a page the url of its person's own queue, served by their
-  browsers for any code, making it the first time (see below).
+  browsers for any code, making it the first time anything asks, with nothing pressed and nothing
+  waited for on the network (see Serving a queue).
 
 ```js
 import { run, inSamePackage } from './task-client.js';
@@ -166,23 +167,29 @@ A tool in a page needs three functions from `task-client.js`, each handed the si
 never names a queue:
 
 - `doWork(repo, { importUrl, input, key, needs }, { onProgress, signal })` has the work done.
-  When the person has a queue of their own and a pool heard serving it has what the work needs,
-  the work is asked of that queue as `run` would, near this browser's pool; otherwise work that
-  needs nothing a page lacks (no needs, or only `browser`) is done in the page, by importing the
-  same module and calling it; and work that needs more is asked of their queue all the same,
-  where it waits for a device that has it (with no queue of their own, it rejects with a
-  sentence naming what it needs). Either way it resolves to what the code returned and rejects
-  with what it threw, `onProgress` hears the same views, and aborting `signal` stops it. Only
-  code that can travel is asked of a queue: a file in a package kept in automerge, or a `data:`
-  URL; any other url (a dev server's `http://localhost`, a `file:` url) is done in the page.
-- `watchWork(repo, key, onChange)` follows the work under the key on the person's own queue, so
-  that a page opened later, or another tab, shows work already going on instead of offering it
-  again. It follows the person's queue as it changes (made, or lost, while the tool is open), and
+  For code that can travel it first has `ownQueue` give the person's queue, which makes it if they
+  have none, and puts the page in its browser's pool if nothing has (`joinPool`: it appends the
+  package's background component, `task-pool-next`, inside the frame's tool-storage provider), so
+  that a pool is there to be heard the next time. When a pool heard through the page's Repo
+  serving that queue has what the work needs, the work is asked of it as `run` would, near this
+  browser's pool; otherwise work that needs nothing a page lacks (no needs, or only `browser`) is
+  done in the page, by importing the same module and calling it (the first asking in a frame that
+  had started no pool is done so, and so is all work with no network: see Offline and
+  partition); and work that needs more is asked of the queue all the same, where it waits for a
+  device that has it. Either way it resolves to what the code returned and rejects with what it
+  threw, `onProgress` hears the same views, and aborting `signal` stops it. Only code that can
+  travel is asked of a queue: a file in a package kept in automerge, or a `data:` URL; any other
+  url (a dev server's `http://localhost`, a `file:` url) is done in the page. Work that needs more
+  than a page and cannot be asked of a queue (its code cannot travel, or no queue can be had: no
+  account open, or nowhere to keep it) is rejected with a sentence saying what it needs and why.
+- `watchWork(repo, key, onChange)` follows the work under the key on the person's queues (own,
+  and every spare, see below), so that a page opened later, or another tab, shows work already
+  going on instead of offering it again. It follows them as they change, makes nothing, and
   always says something within ten seconds: `missing` means no work under this key is known on a
-  queue of theirs (no queue, nothing under the key, or a queue that cannot be had now, which it
-  goes on looking for). It returns how to stop following.
-- `stopWork(repo, key)` stops the work under the key on the person's own queue; false when there
-  is none.
+  queue of theirs (no queue, nothing under the key, or own's document not had yet, which it goes
+  on looking for). It returns how to stop following.
+- `stopWork(repo, key)` stops the work under the key on own and on every spare this page's Repo
+  holds; false when there is none.
 
 ```js
 import { doWork, watchWork, stopWork, inSamePackage } from './task-client.js';
@@ -207,8 +214,7 @@ goes on when the page closes, is done once however many pages ask under one key,
 for good, and every page of theirs sees it (`watchWork`) and can stop it (`stopWork`). Done in
 the page, it is that page's alone: only the `onProgress` of the `doWork` call that started it
 hears of it, another tab neither sees it nor can stop it, it ends with the page, and code that
-does not heed `signal` runs on. `doWork` makes nothing: a person has a queue of their own only
-once they have made one (Make my queue).
+does not heed `signal` runs on.
 
 ## Serving a queue
 
@@ -223,21 +229,46 @@ page's pool host (one per page, however many mount it); let go, the last one let
 that holds the Web Lock `patchwork-tasks-pool` runs the pool, in a worker that runs tasks in run
 workers it can end, and the others wait to take over. A browser's pool has `browser` and
 `pool:<its id>`, so a task that needs anything else is left for a machine that has it. A frame
-that mounts no background components takes no part: its pages run nothing, whatever they show.
+that mounts no background components takes part once a page in it asks for work: `doWork`
+mounts the component itself (`joinPool`), and where the tasks package is not installed that
+mounts nothing.
 Which queues it serves is kept in the account's tool storage for this package
 (`account.toolStorage['tasks-next']`, a document Patchwork's frame makes the first time it is
 needed). Its root is the list: each served queue is a key of its own, the queue's url, holding
-`true` (any code) or `{ packages }`, and `own` names one's own queue. With nothing to make before
-writing, changes made at once on devices that have not synced all keep: two joins both stand, two
-settings of one queue keep one whole, and two Make my queue presses keep one pointer, to a served
-queue. `servedOf`, `ownQueueOf`, `setServed` and `ownQueue` in `src/task-client.js` are the only code that
-knows this. To serve a queue, open it in the Task Queue Browser and press Join queue; there you
-also choose whose code it runs (any, or named packages) and Leave. With no queue, the titlebar
-offers Make my queue. The tool storage comes from the frame's tool-storage provider
+`true` (any code) or `{ packages }`; `own` names one's own queue; and `own:<queueUrl>`, holding
+`true`, marks each queue made to be one's own. With nothing to make before writing, changes made
+at once on devices that have not synced all keep: two joins both stand, and two settings of one
+queue keep one whole. `servedOf`, `ownQueueOf`, `marksOf`, `sparesOf`, `setServed` and `ownQueue`
+in `src/task-client.js` are the only code that knows this. To serve a queue, open it in the Task
+Queue Browser and press Join queue; there you also choose whose code it runs (any, or named
+packages) and Leave.
+
+**One's own queue.** A person always has one: whatever first needs it makes it (a page asking for
+work, the background component as it mounts, the badge as it mounts), and nobody presses
+anything. Making writes, in one change and only where it sees no `own`, the pointer, the new
+queue's mark and its url key, serving it for any code; nothing deletes or rewrites `own` or a
+mark. So every write of `own` is concurrent with every other, and the one that stands is
+Automerge's winner among them, the same on every replica with the same changes. Making waits on
+nothing: it writes in the page's Repo and is done, with no network too. Several copies of the
+client in one page (a package's kit copy beside this one) on one Repo make one: a making's change
+reads `own` again before it writes. A page whose Repo sees a pointer to a queue whose document it
+does not have yet (made on another device, not yet arrived) makes a queue of its own instead,
+with its mark and url key and no pointer, and uses it until own's document comes. Every marked
+queue that is not own is a **spare**: it stays served, so what it lists runs whether or not it has
+been moved, and passes **fold** it into own (FOLDING in `src/task-rules.js`): an entry is listed
+in own, or, when own's key names another task that is still wanted, the spare's key comes to name
+that one too, so the spare's task yields to it and its asker follows the key; an ended task's
+entry leaves the spare. A pass starts with every `ownQueue` call, and the page whose pool host
+follows the account runs one whenever the account or the storage changes and there is a spare.
+Spares are kept for good (see PLANS.md). The frame's provider can also make the storage document
+twice (two devices that both found none); the account then keeps one link, and the pool host
+moves what the losing document lists into the winner (`mergeStorages` in `src/helpers.ts`: its
+marks, its `own` if the winner has none, and its served queues), after which the loser's own is a
+spare like any other. The tool storage comes from the frame's tool-storage provider
 (`patchwork-tool-storage-provider`, which threepane and the tiling frame mount), asked from the
-badge: where none is above it, the press waits five seconds for an answer ("Making your
-queue…"), then says "This page has nowhere to keep your task queues, so nothing was changed."
-and offers it again, having written nothing.
+element that asks, or else from the first such provider in the page: where none answers within
+five seconds, the badge says "This page has nowhere to keep your task queues, so nothing was
+changed." and nothing is written.
 
 What a person sees of it, each read from what is (this page's pool host, the storage document,
 the queue's document, what is heard on the queue's channel), and never starting anything:
@@ -245,12 +276,17 @@ the queue's document, what is heard on the queue's channel), and never starting 
 - **The badge** (a title bar tool, and the same as a `system-tray` component) shows, for each
   served queue, how many tasks it lists and what this browser's pool is doing: running here
   (with how many runs), served by another tab, finishing up (handing over to a newer build, or
-  let go), or not running here, with why in its tooltip (nothing in this frame has started it;
-  this browser cannot keep its tabs to one pool; the pool could not start, with what it said and
-  when it tries again). It opens the queue browser.
+  let go), or not running here, with why in its tooltip (nothing on the page has started it;
+  this browser serves none of the person's queues; this browser cannot keep its tabs to one pool;
+  the pool could not start, with what it said and when it tries again). It opens the queue
+  browser. As it mounts it asks for own, saying "Making your queue…" until that is done (at once,
+  unless the frame's provider has to make the storage); a person who left their own queue is
+  offered it to open and join again.
 - **The queue browser** (the Task Queue Browser tool) shows the pools heard serving the queue
   (name, slots, busy, what each has; this browser's marked), a line saying what this browser's
-  pool is doing in this page and why, whether this person's browsers serve the queue, and each
+  pool is doing in this page and why, whether this person's browsers serve the queue, whether it
+  is their own ("your queue": made for them, served by their browsers) or a spare ("folded": what
+  it lists moves to their queue), and each
   listed task: its state (waiting, with what it needs when no pool heard has it; stalled, with
   since when this view has seen it so), its records (which pool took it, when, how it went; a
   stop as a stop), its log, and a Stop while it has not ended.
@@ -288,22 +324,38 @@ the moment a run reads succeeded loses none of it, unless that run's log says so
 reached the server in half a minute, or that it stayed on the machine (its thread was not
 connected to the server as the run ended).
 
-## With no network
+## Offline and partition
 
 A browser's pool and its run workers start with nothing fetched from the network. Their code, and
 es-module-shims, through which they resolve a task's bare imports by the page's import map, are
 files of this package (the shim is a dependency, built in beside the workers); the Repo's modules
 and wasm they load are the ones the page's import map names and its origin serves, the same files
 the page itself loads. A sync server that cannot be reached holds nothing up: the Repos go on
-trying, and work from what this browser keeps. So in a browser with no network, the pool starts,
-takes the tasks its queues list, runs them, and records how they went, and a task asked through
-the task system's own Repo in that browser is heard running and ending, with its progress, log and
-result. A task's code imports by bare name there as it does online. What a task writes through
-`ctx.repo` stays in its run worker's storage, since it reaches the page only by way of the sync
-server, and the run's log says it stayed on the machine. `probes/browser-run.mjs --no-network`
-shows all of this with every host name unresolvable, and its check 25 shows, from every request
-DevTools sees each page and each worker make, that none leaves the machine but the Repos' sockets
-to the sync server.
+trying, and work from what this browser keeps.
+
+| On one device with no network | |
+|---|---|
+| Making your own queue; the pool starting | works: making writes in the page's Repo and waits on nothing, and the pool starts and serves it |
+| A task asked in this browser, run by this browser's pool, its progress and result | works when asked through the task system's own Repo (`tasks-repo.ts`, as the queue browser asks); a page tool asks through the site's Repo, which reaches the pool only by way of the sync server, so `doWork` counts only pools heard through that Repo, hears none, and does the work in the page (until the local link holds) |
+| What a pool-run task writes into a document the page has open | waits for the network (until the local link holds): it stays in its run worker's storage, and the run's log says so; this is why the in-page path stays |
+| Work that needs another machine (`needs: ['node']`) | waits in the queue, and the queue browser says what it waits for |
+| Stopping work | works for work in this browser: work done in the page by its signal, and work the pool runs by a stop written through the task system's own Repo (the queue browser's Stop) |
+
+| When a partition heals | |
+|---|---|
+| Two devices each made a queue | one becomes own everywhere (Automerge's winner among the pointer writes); the other is a spare, folded into it by the next pass; both stay served; no task is lost |
+| A task was listed on both for a while | one list of runs; a second run yields when it hears the first |
+| A run finished while cut off | its record and what it wrote arrive; if another machine took the task meanwhile, the later run's writes are the task code's to guard (as before) |
+| Two devices each had the storage document made | the account keeps one; the pool host moves what the other lists into it, and its own becomes a spare |
+
+A task's code imports by bare name with no network as it does online. `probes/browser-run.mjs
+--no-network` shows this with every host name unresolvable: a fresh profile gets its own queue, a
+pool and a finished task (check 18), tasks run, and its check 25 shows, from every request DevTools
+sees each page and each worker make, that none leaves the machine but the Repos' sockets to the
+sync server. The unit tests show the rest: two replicas that each made a queue apart agree on own
+when they meet, lose no task and run none twice; a replica that sees a pointer to a queue it does
+not have asks a queue of its own and folds it into own once own arrives; folding with one replica
+cut off part way, then healed, converges.
 
 ## Using it from another package
 
@@ -361,8 +413,9 @@ processes and say what they saw, one line per check or measurement:
   closed, navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning
   code, also code that read and wrote through `ctx.repo`; two run workers at once; a run that
   wrote with no server to reach says so; a pool worker that errors or dies; `served()` and the
-  queue browser; Make my queue and Join, on an account that serves nothing and so starts no
-  pool; with only the badge mounted no pool runs and the badge and queue browser say why; the
+  queue browser; (18) on a fresh account, the badge and the background component make own as
+  they mount, with nothing pressed, it is served, the pool starts, and a task asked of it runs,
+  then Join; with only the badge mounted no pool runs and the badge and queue browser say why; the
   background component mounted later starts it, and let go lets the lock go; and (22) a run
   worker runs `probes/append-task.js` unchanged, through the page's import map and the real
   sync server (`--sync`, `PATCHWORK_SYNC`, or Ink & Switch's), and the page sees the text it
@@ -377,13 +430,13 @@ processes and say what they saw, one line per check or measurement:
   skipped, saying so.
 - `probes/real-run.mjs <automerge:package url>` (in the chrome slot): a published copy of the
   package (a staging package will do) in the real Patchwork, https://patchwork.inkandswitch.com/,
-  in a throwaway profile, 22 checks, the last two that neither the page nor the task system's
-  workers logged an error of the task system's. It installs the package through the profile's module
-  settings and records what the site's frame does with it; presses Make my queue on a badge with
-  no tool-storage provider above it; mounts a `patchwork-tool-storage-provider` of its own on the
-  account and, inside it, the background component and the badge, as a frame mounts them (it
-  does not rely on the site's frame to), sees that serving nothing it starts no pool worker, and
-  makes the profile's queue with that badge.
+  in a throwaway profile, 20 checks, the last two that neither the page nor the task system's
+  workers logged an error of the task system's. It installs the package through the profile's
+  module settings and records what the site's frame does with it; mounts a
+  `patchwork-tool-storage-provider` of its own on the account and, inside it, the background
+  component and the badge, as a frame mounts them (it does not rely on the site's frame to), and
+  sees that under the site's provider own exists within 30 s, its url key is `true`, and the
+  pool serves it (whether or not the site's frame made it first).
   Then: the pool worker and the run workers load from the package through the site's service
   worker; ten do-nothing tasks are asked through this tab's tasks Repo and ten through the
   site's own (keyhive) Repo; the package's own task module, a throw, a spin cancelled and its

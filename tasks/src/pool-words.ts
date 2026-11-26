@@ -22,7 +22,7 @@ export function poolWords(pool: PoolHostStatus): { short: string; long: string }
     case 'serves nothing':
       return {
         short: 'not running here',
-        long: "This browser serves no task queue, so this page runs no pool. Joining a queue starts this browser's pool.",
+        long: "This browser serves none of your task queues, so this page runs no pool: your own queue is made when a page first needs it, and served unless you leave it.",
       };
     case 'reading':
       return {
@@ -58,7 +58,7 @@ export function poolWords(pool: PoolHostStatus): { short: string; long: string }
     case 'not started':
       return {
         short: 'not running here',
-        long: "This page has no part in this browser's pool: nothing in this frame has started it.",
+        long: "This page has no part in this browser's pool: nothing on it has started it (a frame's background components do, and so does asking for work).",
       };
     case 'out of sight':
       return {

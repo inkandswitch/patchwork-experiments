@@ -116,17 +116,9 @@ const probe = {
     return client.ownQueueOf(await probe.storage());
   },
 
-  /** What the titlebar tool shows, as text, and which offer it makes (`make`, `open` or none). */
+  /** What the titlebar tool shows, as text, or null before it shows anything. */
   titlebar() {
-    const list = document.querySelector('#badge .task-titlebar-list');
-    return list ? { text: list.textContent, offer: list.querySelector('[data-offer]')?.dataset.offer ?? null } : null;
-  },
-
-  /** Presses the titlebar's offer to make one's own queue, as a person would. */
-  pressMakeOwn() {
-    const button = document.querySelector('#badge [data-offer="make"]:not([disabled])');
-    button?.click();
-    return !!button;
+    return document.querySelector('#badge .task-titlebar-list')?.textContent ?? null;
   },
 
   /** This person's own queue, through the built client, from the titlebar tool's element. */

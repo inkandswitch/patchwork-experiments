@@ -1,7 +1,8 @@
-// The TTS import tool with the real task kit, in a page whose person has no
-// queue of their own: doWork does the import in the page, importing the
-// task's module by the url the tool names, and the doc ends up with the game
-// and the report, shown; stopped, it ends with nothing written.
+// The TTS import tool with the real task kit, in a page with no account
+// open, so no queue of theirs can be asked: doWork does the import in the
+// page, importing the task's module by the url the tool names, and the doc
+// ends up with the game and the report, shown; stopped, it ends with nothing
+// written.
 import { describe, it, expect, afterEach } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";

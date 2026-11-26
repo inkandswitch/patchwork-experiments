@@ -414,40 +414,41 @@ try {
     if (NO_NETWORK && reached === "reached") throw new Error(`--no-network, but a page reached ${host}`);
   }
   await A.js("probe.makeAccount()");
-  // The pool starts only once a queue is served, which check 18 brings about.
+  // Mounted, the badge and the background component make own, which the pool then serves (check 18).
   await A.js("probe.mount()");
   const slots = await A.js("Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 2))");
   let poolId;
 
   // 18 (first, while the account is fresh). An account that names no task
-  // storage serves nothing, and its titlebar says so and offers a queue of
-  // one's own; pressing that makes the storage (through the provider) and a
-  // queue, serves it, and a task asked of ownQueue() runs. Then the probe's
-  // queue is joined through the queue browser's Join, which checks 1 to 17
-  // ask, and a task asked of it before the join, which waited, runs.
+  // storage: the badge and the background component, as they mount, make
+  // the person's own queue without anything pressed (through the provider,
+  // which makes the storage), mark it and serve it, and the pool starts for
+  // it; a task asked of ownQueue() runs. Then the probe's queue is joined
+  // through the queue browser's Join, which checks 1 to 17 ask, and a task
+  // asked of it before the join, which waited, runs.
   {
-    const said = await A.waitFor("probe.titlebar()?.offer === 'make' && probe.titlebar()", 15_000);
-    const hostBefore = await A.js("probe.status()");
-    const storageBefore = await A.js("probe.storage()");
+    const own = await A.waitFor("probe.ownNow().then((url) => url ?? false)", 15_000);
+    const storageAfter = await A.js("probe.storage()");
+    const said = await A.waitFor("probe.titlebar()?.includes('My tasks') && probe.titlebar()", 15_000);
+    const offers = await A.js("document.querySelectorAll('#badge [data-offer]').length");
+    const running = await A.waitFor("probe.status()?.state === 'running' && probe.status()", 30_000);
     const waitingKey = await A.js(`probe.ask(${J(NOOP)})`);
     const heard = await A.js("probe.served(4000)");
     const waited = await A.js(`probe.last(${J(waitingKey)})`);
-    const pressed = await A.js("probe.pressMakeOwn()");
-    const own = await A.waitFor("probe.ownNow().then((url) => url ?? false)", 15_000);
-    const servedAfter = await A.js("probe.servedNow()");
     const ownRun = await A.js(`probe.ownQueue().then((url) => probe.timeRun(${J(NOOP)}, null, url).then((r) => ({ url, ...r })))`, 30_000).catch((e) => ({ error: String(e.message ?? e) }));
     const asked = await A.js("probe.providerAsked");
-    const offerAfter = await A.waitFor("probe.titlebar()?.offer === null && probe.titlebar()", 10_000);
     const joined = await A.js("probe.join()");
     await A.waitFor(stateIs(waitingKey, "succeeded", "failed", "cancelled"), 20_000);
     const afterJoin = await A.js(`probe.last(${J(waitingKey)})`);
+    const keys = Object.keys(storageAfter ?? {}).sort();
     check(
-      "18 a fresh account serves nothing and says so; Make my queue makes and serves one, and a task asked of ownQueue() runs; Join serves the probe's queue and its waiting task runs",
-      !!said && /No task queues/.test(said.text) && hostBefore?.state === "serves nothing" && storageBefore === null && heard.length === 0 && waited.state === "waiting" && waited.runs.length === 0 &&
-        pressed && typeof own === "string" && servedAfter?.[own] === true && J(Object.keys(servedAfter)) === J([own]) &&
-        ownRun.url === own && ownRun.result === 1 && J(asked) === J(["tasks-next"]) && !!offerAfter &&
+      "18 a fresh account: the badge and the background component make own with nothing pressed, mark it and serve it, and the pool starts for it; a task asked of ownQueue() runs; Join serves the probe's queue and its waiting task runs",
+      typeof own === "string" && J(keys) === J(["@patchwork", own, "own", `own:${own}`].sort()) && storageAfter[own] === true && storageAfter[`own:${own}`] === true &&
+        !!said && !/Make my queue|No task queues/.test(said) && offers === 0 && !!running &&
+        heard.length === 0 && waited.state === "waiting" && waited.runs.length === 0 &&
+        ownRun.url === own && ownRun.result === 1 && asked.length >= 1 && asked.every((id) => id === "tasks-next") &&
         joined.pressed && joined.served === true && afterJoin.state === "succeeded",
-      `before: titlebar ${J(said?.text)} offering ${J(said?.offer)}, host ${J(hostBefore?.state)}, task storage ${J(storageBefore)}, pools heard on the probe's queue ${J(heard)}, a task asked of it ${waited.state} with ${waited.runs.length} runs; pressed ${pressed}; after: own ${String(own).slice(0, 22)}…, served ${J(Object.keys(servedAfter ?? {}).map((u) => u.slice(0, 22)))}, the provider asked for ${J(asked)}; a task asked of ownQueue() ${ownRun.result === 1 ? `ran in ${ownRun.ms.toFixed(0)} ms on ${ownRun.url === own ? "that queue" : J(ownRun.url)}` : J(ownRun)}; titlebar then ${J(offerAfter?.text)}; Join pressed ${joined.pressed}, served ${J(joined.served)}; the waiting task ${afterJoin.state}`,
+      `own ${String(own).slice(0, 22)}…, storage keys ${J(keys.map((k) => k.slice(0, 26)))}; titlebar ${J(said)}, offers ${offers}; pool ${J(running?.state)}; pools heard on the probe's queue ${J(heard)}, a task asked of it ${waited.state} with ${waited.runs.length} runs; a task asked of ownQueue() ${ownRun.result === 1 ? `ran in ${ownRun.ms.toFixed(0)} ms on ${ownRun.url === own ? "own" : J(ownRun.url)}` : J(ownRun)}; the provider asked for ${J(asked)}; Join pressed ${joined.pressed}, served ${J(joined.served)}; the waiting task ${afterJoin.state}`,
     );
   }
   if (!(await A.waitFor("probe.status()?.state === 'running'", 30_000))) {
@@ -908,8 +909,8 @@ try {
       "20 with only the badge mounted, no pool runs, and the badge and the queue browser say so and why",
       !!joined?.served && status === null && locks.held === 0 && locks.pending === 0 && locks.workerHeld === 0 && poolWorkers === 0 &&
         heard.length === 0 && task?.state === "waiting" &&
-        badge?.state === "not started" && /not running here/.test(badge.text) && /nothing in this frame has started it/.test(badge.title) &&
-        view?.here?.state === "not started" && /nothing in this frame has started it/.test(view.here.text),
+        badge?.state === "not started" && /not running here/.test(badge.text) && /nothing on it has started it/.test(badge.title) &&
+        view?.here?.state === "not started" && /nothing on it has started it/.test(view.here.text),
       `joined ${J(joined)}; host ${J(status)}; locks ${J(locks)}; pool workers ${poolWorkers}; pools heard ${heard.length}; the task ${task?.state}; badge ${J(badge)}; queue browser ${J(view?.here)}`,
     );
 

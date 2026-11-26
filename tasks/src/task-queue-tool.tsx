@@ -3,7 +3,7 @@ import { render } from 'solid-js/web';
 import './index.css';
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
 import type { Queue } from './datatype';
-import { ownQueueOf, served, storageUrlOf, tasksStorage, type Serving, type TasksStorage } from './task-client.js';
+import { ownQueueOf, served, sparesOf, storageUrlOf, tasksStorage, type Serving, type TasksStorage } from './task-client.js';
 import { waitingWork } from './task-rules.js';
 import {
   getAccountDocUrl,
@@ -23,7 +23,8 @@ import { poolWords } from './pool-words';
 // A queue, as a person sees it: what it lists, how each task stands, which
 // pools are heard serving it (this browser's marked) and what each has, what
 // this browser's pool is doing in this page and why, whether this person's
-// browsers serve it, and whether it is their own queue.
+// browsers serve it, and whether it is their own queue or a spare folded
+// into it (see `ownQueue` and `fold` in task-client.js).
 //
 // The site hands this tool a handle from its own Repo. Only the url is used:
 // everything here goes through this tab's tasks Repo instead (see
@@ -95,6 +96,8 @@ function useMembership(queueUrl: AutomergeUrl, hostRepo: Repo, element: HTMLElem
     joined: () => isOnTaskQueue(storage(), queueUrl),
     /** Whether this is the person's own queue (see `ownQueue` in task-client.js). */
     own: () => ownQueueOf(storage()) === queueUrl,
+    /** Whether this is a spare: made as the person's own, and folded into it. */
+    spare: () => sparesOf(storage()).includes(queueUrl),
     join: () => change('join', (doc) => joinTaskQueue(doc, queueUrl)),
     leave: () => change('leave', (doc) => leaveTaskQueue(doc, queueUrl)),
     /** Whose code this person's browsers run from the queue (see acceptance.ts). */
@@ -132,12 +135,29 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
               {' '}
               <span class="tq-tag tq-own">your queue</span>
             </Show>
+            <Show when={membership.spare()}>
+              {' '}
+              <span class="tq-tag tq-own">folded</span>
+            </Show>
           </h1>
           <div class="tq-stats">
             <Stat value={waitingWork(queue()).length} label="listed" />
             <Stat value={pools().length} label={pools().length === 1 ? 'pool' : 'pools'} />
           </div>
         </header>
+
+        <Show when={membership.own()}>
+          <p class="tq-choice-note tq-whose">
+            {membership.joined() && membership.acceptance() === 'any'
+              ? 'Your own queue, made for you: your browsers serve it, for any code.'
+              : 'Your own queue, made for you.'}
+          </p>
+        </Show>
+        <Show when={membership.spare()}>
+          <p class="tq-choice-note tq-whose">
+            This was made as your own queue where your queue was not yet known (made at the same moment elsewhere, or not yet arrived); what it lists moves to your queue.
+          </p>
+        </Show>
 
         <section class="tq-section">
           <h2 class="tq-section-title">

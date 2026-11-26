@@ -16,7 +16,9 @@
 // and only then is ended and lets go of the lock (a hidden page ends it at
 // once instead, see below). Wanted again during a drain, it asks anew once
 // the drain is done. So a browser whose person serves no queue starts no
-// pool worker, and with it no Repo and no connection to the sync server.
+// pool worker, and with it no Repo and no connection to the sync server. Own
+// is served from its making on (the background component that starts the
+// host asks for it), so that is a browser whose person left every queue.
 //
 // - Views (the badge, the queue browser) only watch (`watchPoolHost`): a
 //   page where nothing has started a pool host says so, and starts none. A
@@ -29,6 +31,14 @@
 //   account (`account.toolStorage[TASKS_STORAGE_ID]`, see helpers.ts), and is
 //   told again whenever the account's pointer or that document changes. An
 //   account that names no such document serves nothing.
+// - It keeps the person's queues tidy, for whichever pool host follows the
+//   account: whenever the account or the storage changes and the account
+//   linked storage documents that lost (`storageLosersOf`) or the storage
+//   marks a spare (`sparesOf`), it moves the losers' lists into the winner
+//   (`mergeStorages`) and then asks for own (`ownQueue`), which folds every
+//   spare into it. One such pass at a time, and one more if anything changed
+//   meanwhile; one that fails is said in the console and done again on the
+//   next change.
 // - On `pagehide` or `freeze` it ends its pool at once and lets the lock go,
 //   and on `pageshow` or `resume` asks again. A page kept in the
 //   back/forward cache, or frozen in the background, would otherwise hold
@@ -52,8 +62,8 @@
 
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
 import { acceptanceOf } from '../acceptance';
-import { getAccountDocUrl, getTaskQueues } from '../helpers';
-import { storageUrlOf } from '../task-client.js';
+import { getAccountDocUrl, getTaskQueues, mergeStorages, storageLosersOf } from '../helpers';
+import { ownQueue, sparesOf, storageUrlOf } from '../task-client.js';
 import { getRepoConfig } from '../repo-config';
 import { BEAT_MS, LAPSE_MS } from '../task-rules.js';
 import { browserPoolId, browserPoolName } from './pool-id';
@@ -349,6 +359,9 @@ class BrowserPoolHost implements PoolHost {
     }
     this.following = true;
     const accountUrl = url;
+    let account: { doc(): unknown } | null = null;
+    let storage: { doc(): unknown } | null = null;
+    const tidy = () => this.tidy(repo, () => [account?.doc(), storage?.doc()]);
     // A document that is not here yet is never an error, only something to
     // try again: both finds below retry until they have it, or until what
     // they were finding is no longer wanted.
@@ -360,6 +373,7 @@ class BrowserPoolHost implements PoolHost {
       }
       unfollowStorage();
       storageUrl = next;
+      storage = null;
       if (!next) {
         unfollowStorage = () => {};
         this.setQueues({});
@@ -377,7 +391,11 @@ class BrowserPoolHost implements PoolHost {
             if (!wanted) {
               return;
             }
-            const show = () => this.setQueues(servedQueuesOf(handle.doc()));
+            storage = handle;
+            const show = () => {
+              this.setQueues(servedQueuesOf(handle.doc()));
+              tidy();
+            };
             handle.on('change', show);
             stop = () => handle.off('change', show);
             show();
@@ -398,13 +416,52 @@ class BrowserPoolHost implements PoolHost {
     const load = () =>
       repo.find<unknown>(accountUrl).then(
         (handle) => {
-          const show = () => followStorage(storageUrlOf(handle.doc()) as AutomergeUrl | null);
+          account = handle;
+          const show = () => {
+            followStorage(storageUrlOf(handle.doc()) as AutomergeUrl | null);
+            tidy();
+          };
           handle.on('change', show);
           show();
         },
         () => setTimeout(load, 2_000),
       );
     void load();
+  }
+
+  /** A pass of `tidy` is going on; and whether another was asked for meanwhile. */
+  private tidying = false;
+  private tidyAgain = false;
+
+  /**
+   * Moves what losing storage documents list into the winner, and folds the
+   * spares into own (see the header), when the account and the storage as
+   * they are now have any.
+   */
+  private tidy(repo: Repo, now: () => [account: unknown, storage: unknown]) {
+    const [account, storage] = now();
+    if (storageLosersOf(account).length === 0 && sparesOf(storage).length === 0) {
+      return;
+    }
+    if (this.tidying) {
+      this.tidyAgain = true;
+      return;
+    }
+    this.tidying = true;
+    void (async () => {
+      try {
+        await mergeStorages(repo, now()[0]);
+        await ownQueue(repo);
+      } catch (error) {
+        console.warn(`tasks: your task queues could not be tidied now: ${(error as Error)?.message ?? error}`);
+      } finally {
+        this.tidying = false;
+        if (this.tidyAgain) {
+          this.tidyAgain = false;
+          this.tidy(repo, now);
+        }
+      }
+    })();
   }
 
   private setQueues(queues: ServedQueues) {

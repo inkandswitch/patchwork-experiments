@@ -7,31 +7,58 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 describe('the background component', () => {
   afterEach(() => {
     vi.doUnmock('./browser/pool-host');
+    vi.doUnmock('./task-client.js');
     vi.resetModules();
+    vi.restoreAllMocks();
   });
 
-  it('starts the pool host when mounted, with the Repo it is handed, and lets go of it on cleanup', async () => {
+  /** The component with the pool host and `ownQueue` stood in for: what each was asked, and how often it was let go. */
+  async function starter(own: () => Promise<string>) {
     const started: unknown[] = [];
-    let released = 0;
+    const asked: unknown[][] = [];
+    const seen = { released: 0 };
     vi.doMock('./browser/pool-host', () => ({
       startPoolHost: (repo: unknown) => {
         started.push(repo);
         return () => {
-          released += 1;
+          seen.released += 1;
         };
       },
     }));
+    vi.doMock('./task-client.js', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      ownQueue: (...args: unknown[]) => (asked.push(args), own()),
+    }));
     const { PoolStarter } = await import('./pool-starter');
+    return { PoolStarter, started, asked, seen };
+  }
+
+  it('starts the pool host when mounted, with the Repo it is handed, asks for own from its element, and lets go of the host on cleanup', async () => {
+    const { PoolStarter, started, asked, seen } = await starter(async () => 'automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P');
     const element = document.createElement('div');
     const repo = { site: true } as any;
 
     const cleanup = PoolStarter(element, repo);
     expect(started).toEqual([repo]);
-    expect(released).toBe(0);
+    expect(asked).toEqual([[repo, element]]);
+    expect(seen.released).toBe(0);
     expect(element.childNodes.length).toBe(0); // it draws nothing
 
     cleanup();
-    expect(released).toBe(1);
+    expect(seen.released).toBe(1);
+  });
+
+  it("own that cannot be had is said in the console with 'tasks:', and the host is started all the same", async () => {
+    const warned: unknown[][] = [];
+    vi.spyOn(console, 'warn').mockImplementation((...args) => void warned.push(args));
+    const { PoolStarter, started } = await starter(async () => {
+      throw new Error('This page has nowhere to keep your task queues, so nothing was changed.');
+    });
+    const cleanup = PoolStarter(document.createElement('div'), { site: true } as any);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started).toHaveLength(1);
+    expect(warned).toEqual([['tasks: no queue of your own could be had here: This page has nowhere to keep your task queues, so nothing was changed.']]);
+    cleanup();
   });
 });
 

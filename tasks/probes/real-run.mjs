@@ -1,15 +1,15 @@
 // Run a PUBLISHED copy of this package in the REAL Patchwork, the way a
 // person's browser runs it, in a fresh profile (cdp.mjs): the package is
 // installed from its automerge url through the profile's module settings;
-// mounted where no tool-storage provider is above it, Make my queue says
-// plainly that nothing was changed; then what a frame mounts of it is mounted
-// inside the site's own tool-storage provider (a `patchwork-view` of
+// then what a frame mounts of it is mounted inside the site's own
+// tool-storage provider (a `patchwork-view` of
 // `patchwork-tool-storage-provider` on the account, as the frames mount it):
-// its background component, which starts the page's pool host (and, with no
-// queue served yet, no pool worker), and its badge, whose Make my queue makes
-// the profile's own queue. That queue is then asked for tasks through the
-// client (src/task-client.js, bundled here and put on the page), from this
-// tab's tasks Repo and from the site's own.
+// its background component, which starts the page's pool host, and its
+// badge; as they mount, they make the profile's own queue with nothing
+// pressed (unless the site's frame, mounting the package's background
+// component itself, made it first), and the pool serves it. That queue is
+// then asked for tasks through the client (src/task-client.js, bundled here
+// and put on the page), from this tab's tasks Repo and from the site's own.
 //
 // What only the real site has, and this checks: the site's Repo (a keyhive
 // one) beside the task system's plain ones; its import map; code kept in
@@ -202,33 +202,10 @@ try {
     })()`);
   });
 
-  // A page with no tool-storage provider above the badge: Make my queue says so, and changes nothing.
-  await part("with no tool-storage provider above it, Make my queue says plainly that nothing was changed", async () => {
-    await js(`(() => {
-      const v = document.createElement("patchwork-view");
-      v.id = "probe-bare";
-      v.setAttribute("tool-id", "task-titlebar-next");
-      v.setAttribute("doc-url", ${J(accountUrl)});
-      (document.querySelector("repo-provider") ?? document.body).appendChild(v);
-    })()`);
-    const offered = await b.waitFor(`!!document.querySelector('#probe-bare button[data-offer="make"]')`, 30_000, 250);
-    await js(`document.querySelector('#probe-bare button[data-offer="make"]')?.click()`);
-    const t0 = Date.now();
-    const said = await b.waitFor(`document.querySelector('#probe-bare [role="alert"]')?.textContent ?? false`, 15_000, 200);
-    const out = { offered, said, after: Date.now() - t0, storage: await js(`window.taskClient.storageUrlOf(window.accountDocHandle.doc())`), stillOffered: await js(`!!document.querySelector('#probe-bare button[data-offer="make"]:not([disabled])')`) };
-    report.noProvider = out;
-    await js(`document.querySelector("#probe-bare")?.remove()`);
-    check(
-      "with no tool-storage provider above it, Make my queue says plainly that nothing was changed",
-      offered && said === "This page has nowhere to keep your task queues, so nothing was changed." && out.storage === null && out.stillOffered,
-      out,
-    );
-  });
-
   // What a frame mounts of the package, inside the site's tool-storage
   // provider as the frames mount it: the background component and the badge.
-  // Make my queue, pressed in that badge, makes the profile's own queue.
-  await part("Make my queue, under the site's tool-storage provider, makes the profile's own queue, served alone", async () => {
+  // As they mount, they make the profile's own queue, and the pool serves it.
+  await part("under the site's provider, own exists within 30 s, its url key is true, and the pool serves it", async () => {
     await js(`(() => {
       const providers = document.createElement("patchwork-view");
       providers.id = "probe-providers";
@@ -246,38 +223,23 @@ try {
       providers.append(pool, badge);
       (document.querySelector("repo-provider") ?? document.body).appendChild(providers);
     })()`);
-    const offered = await b.waitFor(`!!document.querySelector('#probe-badge button[data-offer="make"]')`, 30_000, 250);
-    const storageBefore = await js(`window.taskClient.storageUrlOf(window.accountDocHandle.doc())`);
-    // Before the queue is made the account serves nothing, so the background
-    // component, mounted, asks for no lock and starts no pool worker.
-    const idle = await b.waitFor("Object.values(window.patchworkTasks?.poolHosts ?? {})[0]?.status().state === 'serves nothing'", 15_000, 250);
-    const idleOut = {
-      host: await status(),
-      poolWorkers: live("pool").length,
-      lock: await js(`navigator.locks.query().then((q) => [...q.held, ...q.pending].filter((l) => l.name === "patchwork-tasks-pool").length)`),
-    };
-    report.servingNothing = idleOut;
-    check(
-      "serving nothing, the background component asks for no lock and starts no pool worker, and its host says it serves nothing",
-      !!idle && storageBefore === null && idleOut.poolWorkers === 0 && idleOut.lock === 0,
-      idleOut,
-    );
-    await js(`document.querySelector('#probe-badge button[data-offer="make"]')?.click()`);
     const t0 = Date.now();
     const made = await b.waitFor(`(async () => { const C = window.taskClient; const s = C.storageUrlOf(window.accountDocHandle.doc()); if (!s) return false; return C.ownQueueOf((await window.repo.find(s)).doc()) ?? false; })()`, 30_000, 250);
+    const madeAfterMs = Date.now() - t0;
+    const serving = await b.waitFor("Object.values(window.patchworkTasks?.poolHosts ?? {})[0]?.status().state === 'running'", 60_000, 250);
     const setup = await js(`(async () => {
       const C = window.taskClient;
       const storageUrl = C.storageUrlOf(window.accountDocHandle.doc());
       const storage = storageUrl ? (await window.repo.find(storageUrl)).doc() : null;
       const queueUrl = storage ? C.ownQueueOf(storage) : null;
       window.__probe = { queueUrl, storageUrl };
-      return { queueUrl, storageUrl, served: C.servedOf(storage), problem: document.querySelector('#probe-badge [role="alert"]')?.textContent ?? null };
+      return { queueUrl, storageUrl, served: C.servedOf(storage), marks: C.marksOf(storage), badge: document.querySelector('#probe-badge .task-titlebar-list')?.textContent ?? null, problem: document.querySelector('#probe-badge [role="alert"]')?.textContent ?? null };
     })()`);
-    Object.assign(report, setup, { madeAfterMs: Date.now() - t0 });
+    Object.assign(report, setup, { madeAfterMs });
     check(
-      "Make my queue, under the site's tool-storage provider, makes the profile's own queue, served alone",
-      offered && storageBefore === null && !!made && /^automerge:/.test(setup.storageUrl ?? "") && J(setup.served) === J({ [setup.queueUrl]: true }),
-      { offered, storageBefore, ...setup },
+      "under the site's provider, own exists within 30 s, its url key is true, and the pool serves it",
+      !!made && /^automerge:/.test(setup.storageUrl ?? "") && setup.served?.[setup.queueUrl] === true && setup.marks.includes(setup.queueUrl) && !!serving && setup.problem === null,
+      { made, madeAfterMs, serving: !!serving, ...setup },
     );
   });
   if (!report.queueUrl) throw new Error("no queue was made, so nothing can be asked");

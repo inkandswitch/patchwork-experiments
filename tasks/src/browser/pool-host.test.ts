@@ -345,6 +345,80 @@ describe("a page's pool host, by what the storage lists", () => {
   });
 });
 
+describe("tidying the person's queues", () => {
+  const SPARE = 'automerge:3x7cLUJEpjP2EvgFz948PS6YhfhK';
+  const LOSER = 'automerge:bstquQmZKqNMFBRgzm57aYAKFgX';
+
+  afterEach(() => {
+    vi.doUnmock('../helpers');
+    vi.doUnmock('../task-client.js');
+  });
+
+  /**
+   * `mergeStorages` and `ownQueue` stood in for, each saying when it is
+   * called and finishing when the test says; the account's losers are read
+   * off a field of the stand-in account, as `storageLosersOf` reads them off
+   * the account's conflicts.
+   */
+  function standIns() {
+    const calls: string[] = [];
+    const pending: (() => void)[] = [];
+    const later = (name: string) => () => {
+      calls.push(name);
+      return new Promise<void>((resolve) => pending.push(resolve));
+    };
+    vi.doMock('../helpers', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      storageLosersOf: (account: any) => account?.losers ?? [],
+      mergeStorages: later('merge'),
+    }));
+    vi.doMock('../task-client.js', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      ownQueue: later('own'),
+    }));
+    const finish = async () => {
+      while (pending.length) {
+        pending.shift()!();
+        await settle();
+      }
+    };
+    return { calls, finish };
+  }
+
+  it('nothing to tidy (no spare, no loser): neither merges nor asks for own', async () => {
+    const { calls } = standIns();
+    const p = await page({ own: QUEUE, [`own:${QUEUE}`]: true, [QUEUE]: true });
+    await p.serve({ own: QUEUE, [`own:${QUEUE}`]: true, [QUEUE]: true, [SPARE]: true });
+    expect(calls).toEqual([]);
+    p.release();
+    p.unwatch();
+  });
+
+  it('a storage that marks a spare: merges, then asks for own, which folds it; one pass at a time, and one more for changes meanwhile', async () => {
+    const { calls, finish } = standIns();
+    const p = await page({ own: QUEUE, [`own:${QUEUE}`]: true, [`own:${SPARE}`]: true, [QUEUE]: true, [SPARE]: true });
+    expect(calls).toEqual(['merge']);
+    await p.serve({ own: QUEUE, [`own:${QUEUE}`]: true, [`own:${SPARE}`]: true, [QUEUE]: true, [SPARE]: { packages: ['automerge:pkg'] } });
+    await p.serve({ own: QUEUE, [`own:${QUEUE}`]: true, [`own:${SPARE}`]: true, [QUEUE]: true });
+    expect(calls).toEqual(['merge']);
+    await finish();
+    expect(calls).toEqual(['merge', 'own', 'merge', 'own']);
+    p.release();
+    p.unwatch();
+  });
+
+  it('an account that linked a storage that lost: merges, then asks for own', async () => {
+    const { calls, finish } = standIns();
+    const p = await page({ [QUEUE]: true });
+    p.change(ACCOUNT, { toolStorage: { 'tasks-next': STORAGE }, losers: [LOSER] });
+    await settle();
+    await finish();
+    expect(calls).toEqual(['merge', 'own']);
+    p.release();
+    p.unwatch();
+  });
+});
+
 describe('where a view can see the pool from', () => {
   /** A window whose parent is `parent`, or the top when there is none. */
   const frame = (parent?: any): any => {

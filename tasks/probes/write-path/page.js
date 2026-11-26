@@ -2,9 +2,9 @@
 // automerge as the site would, makes this tab's tasks Repo and a second Repo
 // that stands in for the site's own, both on the real sync server, stands in
 // for the frame's tool-storage provider, and offers the harness
-// `window.probe`: make an account and a queue of its own (through the real
-// titlebar tool's Make my queue), and measure how a document travels between
-// a task's run worker and this page.
+// `window.probe`: make an account, whose own queue the mounted package
+// makes with nothing pressed, and measure how a document travels between a
+// task's run worker and this page.
 //
 // The run worker's Repo keeps its documents in a database of its own and
 // meets this page's Repos only at the sync server, so that is the path
@@ -136,9 +136,9 @@ window.probe = {
   sync: SYNC,
 
   /**
-   * An account, what a frame mounts of the package (its background
+   * An account, and what a frame mounts of the package (its background
    * components, found by tag in its plugin list, and the real titlebar tool),
-   * and the titlebar's Make my queue pressed: the pool then serves that queue.
+   * which make the account's own queue as they mount: the pool then serves it.
    */
   async setUp() {
     const account = repo.create({});
@@ -159,16 +159,13 @@ window.probe = {
     document.body.append(element);
     TitlebarTool(null, element);
     const until = Date.now() + 30_000;
-    let button;
-    while (!(button = document.querySelector('#badge [data-offer="make"]:not([disabled])')) && Date.now() < until) await sleep(50);
-    if (!button) throw new Error(`no Make my queue offer: ${document.querySelector('#badge')?.textContent}`);
-    button.click();
-    // Once the press has made the queue and served it, ownQueue() reads it back rather than making another.
+    // Once what was mounted has made the queue and served it, ownQueue() reads it back rather than making another.
     for (;;) {
       const url = client.storageUrlOf(account.doc());
       const storage = url ? (await repo.find(url)).doc() : null;
-      if (storage?.own && client.servedOf(storage)[storage.own]) break;
-      if (Date.now() > until) throw new Error('Make my queue made no queue');
+      const own = client.ownQueueOf(storage);
+      if (own && client.servedOf(storage)[own]) break;
+      if (Date.now() > until) throw new Error(`no queue of its own was made: ${document.querySelector('#badge')?.textContent}`);
       await sleep(50);
     }
     ownQueue = await client.ownQueue(repo, element);

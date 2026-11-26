@@ -6,16 +6,16 @@
 // winning from one page load to the next. With names of its own, this one
 // never meets the other.
 
-// The datatype of a queue made here, and the tool id the task system's
-// storage is kept under on an account (`account.toolStorage[...]`). Both are
-// defined in the asker's client, which makes a person's own queue from any
-// package that carries it, and are the same names here.
-export { QUEUE_DATATYPE_ID, TASKS_STORAGE_ID } from './task-client.js';
+// The datatype of a queue made here, the tool id the task system's storage
+// is kept under on an account (`account.toolStorage[...]`), and the
+// background component that puts a page in its browser's pool. All three are
+// defined in the asker's client, which makes a person's own queue and joins
+// the pool from any package that carries it, and are the same names here.
+export { POOL_COMPONENT_ID, QUEUE_DATATYPE_ID, TASKS_STORAGE_ID } from './task-client.js';
 
 export const QUEUE_TOOL_ID = 'task-queue-next-browser';
 export const TITLEBAR_TOOL_ID = 'task-titlebar-next';
 export const TRAY_COMPONENT_ID = 'task-tray-next';
-export const POOL_COMPONENT_ID = 'task-pool-next';
 
 /**
  * Where, in this package as it is published, the task it brings along is

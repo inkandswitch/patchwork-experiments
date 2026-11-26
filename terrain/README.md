@@ -784,7 +784,7 @@ its key names. So:
   there: closing the page does not stop it, and two pages pressing Fetch for
   the same place and grid are one fetch. The tool says so, and follows the
   doc's key with the kit's `watchWork` from the moment it opens (also when
-  the person makes their queue while it is open), showing a fetch already
+  their queue is made while it is open), showing a fetch already
   under way instead of offering another; Cancel stops it with `stopWork`.
   Otherwise it runs in the page, and the tool says that closing the page
   stops it; a fetch done in another page is not seen from this one.
