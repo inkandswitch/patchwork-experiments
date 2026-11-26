@@ -4,7 +4,6 @@ import { CALL, STATUS, _resetIds, initSession, makeId } from "./schema.js"
 import { DENIED_RESULT, toRequest } from "./request.js"
 import { callBlock, makeTurn, reasoningBlock, resultBlock, textBlock } from "./blocks.js"
 import { callsAwaitingApproval, findCall, findResult, runnableCalls, unansweredCalls } from "./calls.js"
-import { canClaim, claimLease, holdsLease, leaseIsLive } from "./lease.js"
 import { needsApproval as approval, askOf } from "./grants.js"
 import { statusOf } from "./status.js"
 
@@ -201,46 +200,6 @@ describe("needsApproval", () => {
 
   it("asks when the tool is unknown", () => {
     expect(needsApproval(freshDoc(), null)).toBe(true)
-  })
-})
-
-describe("the lease", () => {
-  it("is live only while the heartbeat is recent", () => {
-    expect(leaseIsLive({ runner: "a", at: 1000 }, { now: 5000, staleAfterMs: 15000 })).toBe(true)
-    expect(leaseIsLive({ runner: "a", at: 1000 }, { now: 99000, staleAfterMs: 15000 })).toBe(false)
-    expect(leaseIsLive(null)).toBe(false)
-  })
-
-  it("can be claimed when absent, ours, or stale", () => {
-    const doc = freshDoc()
-    expect(canClaim(doc, "runner-a")).toBe(true)
-
-    claimLease(doc, "runner-a", 1000)
-    expect(canClaim(doc, "runner-a", { now: 2000 })).toBe(true)
-    expect(canClaim(doc, "runner-b", { now: 2000 })).toBe(false)
-    expect(canClaim(doc, "runner-b", { now: 999999 })).toBe(true)
-  })
-
-  it("bumps the generation on takeover but not on renewal", () => {
-    const doc = freshDoc()
-    const first = claimLease(doc, "runner-a", 1000)
-    expect(first.generation).toBe(1)
-
-    const renewed = claimLease(doc, "runner-a", 2000)
-    expect(renewed.generation).toBe(1)
-
-    const takenOver = claimLease(doc, "runner-b", 99999)
-    expect(takenOver.generation).toBe(2)
-  })
-
-  it("tells a displaced runner it no longer holds the lease", () => {
-    const doc = freshDoc()
-    claimLease(doc, "runner-a", 1000)
-    expect(holdsLease(doc, "runner-a", 1)).toBe(true)
-
-    claimLease(doc, "runner-b", 99999)
-    expect(holdsLease(doc, "runner-a", 1)).toBe(false)
-    expect(holdsLease(doc, "runner-b", 2)).toBe(true)
   })
 })
 

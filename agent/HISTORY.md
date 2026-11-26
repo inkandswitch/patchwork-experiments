@@ -1743,3 +1743,56 @@ older version left in the page was let finish its turn beside the burst the
 new code asked for; it is now stopped at once, as a Stop would. An opt-in
 SharedWorker runner of an older version is still not stopped: the page has
 no way to tell it to.
+
+A recheck found two more, fixed the next morning. Stopping an older runner at
+once let it finish the reply it was streaming, cut off and unmarked, which
+the new code does not count as work, so the person's message was left half
+answered: the page now gives the session up first (release, then stop), as
+the old registry did, and the reply stays marked for the next burst to
+settle. And while a page took a parked call, its own view read the claim it
+had just written into `burst` as someone else's work for the length of the
+beat, and offered Take over: the view now knows the claim its own page
+holds, and reads it as "Running <tool> in this page".
+
+## 2026-11-26: the plan without a lease
+
+The workflow driver held the last lease in the agent: a page claimed the plan,
+renewed the claim on a heartbeat, believed a fresh claim only after a
+confirm wait, and judged another page's claim live by watching it change on
+its own clock. Every other page only asked for the running steps' work. The
+lead's word was to use the worker queues instead of this; the specification
+(notes/SPEC-AGENT.md, step 5) found a reconciler with no lease smaller than
+a task per burst of a plan, since the driver's writes were already
+recomputations and its races are closed by a step session that its plan does
+not name ending before it writes, and by stopped and halted never reading
+as finished.
+
+So every page that has the plan open drives it, and none holds it. A tick
+is observe, decide, perform, run when the plan or a watched step session or
+ledger changes; no timer writes anything, and a tick with nothing new writes
+nothing. Each write of perform() either recomputes a value whole (the
+transitions, each applied only from the state it leaves; usage) or sets it
+only while unset (a step's session, orchestratorFrom, the ledger; requests,
+told, sourcesFiled and grants added by id or key). What two pages in one
+crossing can still do is written in WORKFLOW.md and accepted: begin one step
+in two sessions (the plan names one, and the other's burst ends at its first
+boundary), tell one piece of news twice, add one request twice (one request
+by its id, decided on either entry), open two ledgers, speak a reopened
+step's instructions twice, link a kept source twice, and file a step done
+across a reopen that followed another page's finish.
+
+One race the lease had hidden: a page whose copy of a step's session lags a
+reopen, while its copy of the plan does not, saw the old run's last message
+and filed the step done with it. A step session is now told which run of its
+step its instructions start (`workflow.run`, in the same change as them), and
+a copy showing an earlier run reads as running. A step session made before
+this has no `run`, so a step of an older plan that was reopened and is
+running again never reads as finished; there is no migration.
+
+Gone: hold, beat, LeaseWatch, claim, confirm, help, the heartbeat interval,
+holdsLease in write and perform, session/lease.js, HEARTBEAT_MS,
+STALE_AFTER_MS, CONFIRM_MS and the copy of heldElsewhere, and a plan copy's
+clearing of its lease. A plan no longer has `lease` or `lastGeneration`
+written or read; one an older version wrote keeps a stale lease that nothing
+reads. A workflow goes on only while some page has the plan open or drives
+it; workflows that progress with no page open are not in this change.

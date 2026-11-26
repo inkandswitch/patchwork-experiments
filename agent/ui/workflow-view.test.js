@@ -203,7 +203,7 @@ describe("the workflow view", () => {
     const session = repo.create({})
     session.change((d) => initSession(d, {}))
     plan.change((d) => Object.assign(d.steps[0], { status: STEP.failed, error: "it broke", sessionUrl: session.url }))
-    await ensureDriver(plan.url, { repo, startSession: async () => null, confirmMs: 0, settleMs: 10 })
+    await ensureDriver(plan.url, { repo, startSession: async () => null, settleMs: 10 })
     const { element, cleanup } = mount(plan, repo)
     const cards = element.querySelectorAll(".agent-wf-step")
     expect(cards[1].querySelector("button")?.textContent ?? null).not.toBe("Resume")

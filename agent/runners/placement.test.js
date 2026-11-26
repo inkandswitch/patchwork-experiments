@@ -331,7 +331,7 @@ describe("the driver, starting a step", () => {
       return { asked: true, outcome: "idle" }
     }
     const tools = async () => ({ builtins: BUILTIN_TOOLS, plugins })
-    const driver = new WorkflowDriver({ repo, handle, startSession, stopWork: async () => false, tools, heartbeatMs: 1e9, confirmMs: 0 })
+    const driver = new WorkflowDriver({ repo, handle, startSession, stopWork: async () => false, tools })
     driver.start()
     for (let i = 0; i < 20; i++) await driver.kick()
     driver.stop()

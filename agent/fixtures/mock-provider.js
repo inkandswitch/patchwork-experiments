@@ -1,7 +1,7 @@
 /**
  * A scripted provider.
  *
- * Not a toy: this is how the loop, the lease, approvals, and tool routing get
+ * Not a toy: this is how the loop, the burst, approvals, and tool routing get
  * tested without spending money or depending on a model behaving a particular
  * way this afternoon. A script is a list of turns; each turn is a list of
  * neutral events to emit, or a function that receives the request and returns

@@ -437,8 +437,8 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
   handle.on("change", onChange)
   render()
 
-  // Drive it if nothing else is. The plan's lease keeps this from fighting a
-  // driver already running it in another tab.
+  // Drive it from this page too. Nothing holds a plan: every page that has
+  // it open drives it, and their writes agree (workflow/driver.js perform).
   if (repo && handle.doc()?.status === PLAN.running) drivePlanHere(handle.url, { repo }).catch(() => {})
 
   return () => {

@@ -514,7 +514,7 @@ export function tell(doc, key) {
 }
 
 /** Which run of a step this is: each reopening starts another. */
-const attempt = (step) => step?.previous?.length ?? 0
+export const attempt = (step) => step?.previous?.length ?? 0
 
 export const finishedKey = (step) => `finished:${step.id}:${attempt(step)}`
 export const endKey = (plan) => `end:${plan.runs ?? 1}`
@@ -756,9 +756,29 @@ export function requestErrors(input) {
   return errors
 }
 
-/** Requests the orchestrator has not decided. */
+/**
+ * A request by its id. The plan may hold one twice: two pages that read it
+ * off a step's transcript in one crossing each add it (driver.js perform).
+ * They are one request, and a decision on either is its decision.
+ */
+export function requestOf(plan, id) {
+  const all = (plan?.requests ?? []).filter((r) => r.id === id)
+  return all.find((r) => r.status !== "open") ?? all[0] ?? null
+}
+
+/** Requests the orchestrator has not decided, each once. */
 export function openRequests(plan) {
-  return (plan?.requests ?? []).filter((r) => r.status === "open")
+  const seen = new Set()
+  return (plan?.requests ?? []).filter((r) => {
+    if (seen.has(r.id)) return false
+    seen.add(r.id)
+    return requestOf(plan, r.id).status === "open"
+  })
+}
+
+/** Decide a request, inside a change: every entry of it, so it is decided once however many there are. */
+export function decideRequest(doc, id, decision) {
+  for (const r of doc.requests ?? []) if (r.id === id) Object.assign(r, decision)
 }
 
 /** A step's request as the plan keeps it, from its workflow_request call. */

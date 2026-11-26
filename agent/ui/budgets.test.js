@@ -115,8 +115,6 @@ async function workflow(steps, { limits = {}, behaviour = {} } = {}) {
     handle: plan,
     startSession: fake.startSession,
     notify: () => ({ notify: (render) => news.push(render()), close() {} }),
-    heartbeatMs: 1e9,
-    confirmMs: 0,
   })
   drivers.push(driver)
   driver.start()

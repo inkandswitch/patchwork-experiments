@@ -19,9 +19,8 @@ export const AgentWorkflowDatatype = {
   },
   markCopy(doc) {
     doc.title = `Copy of ${this.getTitle(doc)}`
-    // A copy must not inherit the lease, nor look like it is running: its
-    // steps' sessions belong to the original.
-    doc.lease = null
+    // A copy must not look like it is running: its steps' sessions belong
+    // to the original.
     if (doc.status === PLAN.running) doc.status = PLAN.stopped
   },
 }

@@ -512,7 +512,7 @@ describe("a workflow on the real asker", () => {
     expect(await until(() => lastText(orchestrator) === "All done.", 45_000)).toBe(true)
   }, 90_000)
 
-  it("a person's Stop on a step pauses it and is told once; a message carries it on; a reopen runs it again; the plan lease is held", async () => {
+  it("a person's Stop on a step pauses it and is told once; a message carries it on; a reopen runs it again; the plan holds no lease", async () => {
     const repo = new Repo({ network: [] })
     const STEPS = [{ id: "a", title: "A", prompt: "Say what a is, at length.", where: "worker", tier: "fast", why: "words only" }]
     const orchestrator = sessionIn(repo, [], {})
@@ -533,8 +533,8 @@ describe("a workflow on the real asker", () => {
     expect(await until(() => plan.doc().steps[0].sessionUrl, 10_000)).toBe(true)
     const a = await repo.find(plan.doc().steps[0].sessionUrl)
     expect(await until(() => /a3 /.test(lastText(a)), 10_000)).toBe(true)
-    // The plan lease is held by this page's driver while it drives.
-    expect(plan.doc().lease?.runner).toBeTruthy()
+    // This page drives the plan and holds nothing on it (step 5).
+    expect("lease" in plan.doc()).toBe(false)
 
     // A person stops the step from its own view.
     await stopFor(repo, a.url, { author: "automerge:person" })

@@ -4,7 +4,7 @@ A workflow is a plan document. An orchestrating session breaks a job into
 steps; each step is its own session, on its own model; steps that depend on
 each other run in order and the rest side by side. Because the plan is a
 document and not a script, it can be watched, edited while it runs, resumed
-after a reload, and driven from whichever page has it open.
+after a reload, and driven from every page that has it open at once.
 
 `workflow/plan.js` is the model, as functions over the plan as plain data.
 `workflow/driver.js` runs a plan. `workflow/tools.js` is what an orchestrator
@@ -29,7 +29,6 @@ and a step do to one.
 | `told` | `{ [key]: true }`: what the orchestrator has been told |
 | `ledgerUrl` | the research steps' ledger (*Research steps*), or null until the first one starts |
 | `sourcesFolderUrl`, `sourcesFiled` | where the driver files the ledger for people, and what it has filed |
-| `lease` | which page's driver is driving it (a session has no lease: SESSION.md, *The burst mark*) |
 
 A step:
 
@@ -97,8 +96,8 @@ step's transcript, and only the orchestrator decides.
 ## Told once
 
 The orchestrator is woken with news: a step finished, a step asks something,
-a person stopped a step, the plan is over or out of money. Each thing is said once. `told` holds a key
-for each, and the key names the occurrence, not just the kind, so nothing is
+a person stopped a step, the plan is over or out of money. Each thing is said
+once (twice at most in a crossing: *The driver*). `told` holds a key for each, and the key names the occurrence, not just the kind, so nothing is
 ever reset: a reopened step's next finish is a different key.
 
 | key | |
@@ -113,23 +112,40 @@ ever reset: a reopened step's next finish is a different key.
 
 ## The driver
 
-One driver per plan per page; the plan's lease decides which page's drives.
-A tick is three parts:
+Every page that has the plan open drives it, and none holds it: no lease (an
+older plan's `lease` is read by nobody), no heartbeat, no timer that writes. One driver per plan per page; it ticks when
+the plan, a step's session or the ledger changes:
 
-1. **Read.** The plan, and of each step's session what a decision needs: its
-   status, usage, outcome, what it waits on, its requests, and for a research
-   step whether it is still confined as the plan says.
-2. **Decide.** `decide(plan, observations, now)` in `workflow/decide.js` is
-   pure. It returns the actions to take, in order, as plain data: cancel,
-   finish, fail, requests, usage, share grants, file sources, run, open the
-   ledger, start, continue, pause, settle, report. Each decision is made on the plan as the
-   actions before it leave it, so a step that finishes on a tick makes what
-   waits on it ready on that tick.
-3. **Do.** The driver performs each action: plan.js's transitions for the
-   plan, and for a step a session made, spoken to or halted. "Run" asks for
-   a running step's work (`startSession`: the page's askFor), never waiting
-   for the burst to end; a page that does not hold the lease asks the same.
-   A halt writes the stop into the session, then stops its task.
+1. **Read** the plan, and of each step's session what a decision needs.
+2. **Decide.** `decide(plan, observations, now)` (`workflow/decide.js`) is
+   pure: the actions in order, as data (cancel, finish, fail, requests, usage,
+   share grants, file sources, run, ledger, start, continue, pause, settle,
+   report), each decided on the plan as the ones before leave it.
+3. **Do** each: plan.js's transitions; a step's session made, spoken to or
+   halted. "Run" asks for its work (the page's askFor) and does not wait.
+
+A tick with nothing new writes nothing. Each write is **recomputed whole**
+(the transitions, each only from the state it leaves, checked inside the
+change; `usage`) or **set only if unset** (a step's `sessionUrl`,
+`orchestratorFrom`, `ledgerUrl`; `requests`, `told`, `sourcesFiled`, grants,
+by id or key). Two pages in one crossing may still, accepted: begin a step
+in two sessions (the plan names one; the other's burst ends at its first
+boundary, `not-the-step`, before a paid request unless the merge is slower
+than a beat); tell news twice; add a request twice (one by id, decided on
+either entry); open two ledgers; speak a reopen twice; link a source twice.
+A page that missed both another's finish of a step and the reopen that
+followed may file it done too, and the merge may keep that.
+
+A step session is told which run of its step it is in (`workflow.run`,
+plan.js `attempt`) in the change that gives it that run's instructions, and
+a copy showing an earlier run reads as running (`sessionOutcome`), one with
+the halt and not the new instructions as waiting: a page whose session copy
+lags a reopen never files the step with what the run before said.
+
+A workflow goes on only while some page has the plan open or drives it (the
+workflow view; a page whose workflow tool or person acted on it). With none,
+nothing ticks until a page drives it again. Workflows that progress with no
+page open are not built.
 
 A step's session is made with its scope, its tools' placement, its budget and
 the orchestrator's grants in one write, so it never exists half set up. A
@@ -175,8 +191,8 @@ The ledger is a document of its own, `{ "@patchwork": { type: "agent-ledger" },
 sources }`, one per plan. `sources` maps each kept document's id to `{ url,
 kind, what, type, source, name, engine, chars, by, at, heads }`: `kind` is
 `source` (read-only) or `finding` (writable by research steps), `by` the step
-that kept it, `heads` the version a step reads. The driver opens it, under the
-plan's lease, before the first research step starts. Research steps' kernels
-write it, from any burst, outside the lease; the driver only reads it, and
-wakes when it changes to file what is new. No agent tool writes a ledger, and
+that kept it, `heads` the version a step reads. The driver opens it before the
+first research step starts, naming it in the plan only while the plan names
+none. Research steps' kernels write it, from any burst; the driver only reads
+it, and wakes when it changes to file what is new. No agent tool writes a ledger, and
 a step whose plan names none, or names something else, does not run.

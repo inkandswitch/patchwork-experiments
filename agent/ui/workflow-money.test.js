@@ -55,7 +55,7 @@ describe("what the workflow has spent", () => {
     })
     const plan = repo.create({})
     plan.change((d) => initPlan(d, { title: "W", goal: "G", sessionUrl: orchestrator.url, limits: { cost: 10 }, steps: [step("a")] }))
-    const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => ({ asked: false }), stopWork: async () => false, heartbeatMs: 1e9, confirmMs: 0, toolIds: { worker: [] } })
+    const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => ({ asked: false }), stopWork: async () => false, toolIds: { worker: [] } })
     driver.start()
     for (let i = 0; i < 10; i++) await driver.kick()
     // The first look fixes what it had already spent; nothing before the plan counts.

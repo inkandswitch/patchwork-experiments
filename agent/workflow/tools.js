@@ -30,6 +30,8 @@ import {
   stepBudget,
   staleInputs,
   openRequests,
+  requestOf,
+  decideRequest,
   reopenErrors,
   reopenSteps,
   keepSteps,
@@ -587,13 +589,13 @@ export const workflowDecide = {
     const url = await planUrlFor(input, ctx)
     const handle = await workflows(ctx).repo.find(url)
     const plan = writable(handle.doc())
-    const request = (plan.requests ?? []).find((r) => r.id === input.request)
+    const request = requestOf(plan, input.request)
     if (!request) throw new Error(`No request '${input.request}' in this workflow.`)
     if (request.status !== "open") throw new Error(`Request '${input.request}' was already ${request.status}.`)
     const note = String(input.note ?? "").trim() || null
 
     if (input.accept !== true) {
-      changePlan(handle, (d) => Object.assign(d.requests.find((r) => r.id === request.id), { status: "declined", decidedAt: Date.now(), note }))
+      changePlan(handle, (d) => decideRequest(d, request.id, { status: "declined", decidedAt: Date.now(), note }))
       ;(await drive(url, ctx))?.kick()
       return `Declined ${request.stepId}'s request.\n\n${await described(workflows(ctx).repo, url)}`
     }
@@ -611,7 +613,7 @@ export const workflowDecide = {
         const why = `Step '${request.stepId}' found: ${request.why}${note ? `\n\nThe orchestrator adds: ${note}` : ""}`
         interrupt = reopenSteps(d, reopen, { note: why, cascade: input.cascade, by: `request from ${request.stepId}` }).interrupt
       }
-      Object.assign(d.requests.find((r) => r.id === request.id), { status: "accepted", decidedAt: Date.now(), note })
+      decideRequest(d, request.id, { status: "accepted", decidedAt: Date.now(), note })
       runAgain(d)
     })
     const driver = await drive(url, ctx)

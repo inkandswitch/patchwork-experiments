@@ -59,7 +59,7 @@ Lowest first:
 | `providers/` | model providers, which turn the kernel's request into theirs |
 | `tools/` | tool definitions |
 | `knowledge/` | notes, usage guides and skills: tools, and what they add to the prompt |
-| `workflow/` | plans, and the driver that asks for their steps as sessions (still holding a lease on the plan) |
+| `workflow/` | plans, and the driver, in every page that has a plan open, that asks for their steps as sessions |
 | `assembly/` | the agent put together: the built-in tools, plugin loading, the prompt's sections |
 | `runners/` | the session's task entry, asking for its work, and what a page does for a session it shows or drives |
 | `ui/` | views: the session, the workflow, the pop-over, the panel |

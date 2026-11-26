@@ -1,13 +1,15 @@
 /**
- * A driver that has nothing to do writes nothing.
+ * A driver writes nothing without a change.
  *
- * The bug this pins: the driver renewed its lease on every tick, and every
- * write to the plan scheduled another tick — so, left running with a clock
- * that moves, it rewrote the plan as fast as automerge could go and locked up
- * the tab. Tests that ticked within one millisecond never saw it, because the
- * renewed timestamp equalled the old one and the write was a no-op.
+ * The bug this first pinned: a driver renewed its lease on every tick, and
+ * every write to the plan scheduled another tick, so, left running with a
+ * clock that moves, it rewrote the plan as fast as automerge could go and
+ * locked up the tab. There is no lease now and no timer: a driver ticks on
+ * changes to the plan and to the documents it watches, and a tick writes
+ * only what a change calls for. So however long it is left, and however the
+ * clock moves, a driver with nothing new to act on writes nothing.
  */
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initPlan, STEP } from "./plan.js"
@@ -39,7 +41,7 @@ function setup() {
   // A clock that always moves: every call is a new millisecond.
   let t = 1_000_000
   const now = () => (t += 3)
-  const driver = new WorkflowDriver({ repo, handle: plan, startSession, now, heartbeatMs: 1e9, confirmMs: 0 })
+  const driver = new WorkflowDriver({ repo, handle: plan, startSession, now })
   drivers.push(driver)
   return { repo, plan, driver, sessions, writes: () => writes }
 }
@@ -59,7 +61,7 @@ describe("a quiet driver", () => {
     const { driver, writes } = setup()
     driver.start()
     await sleep(300)
-    // Claim the lease, start step a: a handful of writes, not thousands.
+    // Start step a: a handful of writes, not thousands.
     expect(writes()).toBeLessThan(10)
   })
 
@@ -77,12 +79,22 @@ describe("a quiet driver", () => {
     expect(writes() - before).toBeLessThan(3)
   })
 
-  it("still renews its lease on the heartbeat", async () => {
+  it("no write without a change: left for an hour with a moving clock, it writes nothing and has no tick waiting", async () => {
     const { plan, driver } = setup()
-    driver.start()
-    await sleep(50)
-    const at = plan.doc().lease.at
-    driver.beat()
-    expect(plan.doc().lease.at).toBeGreaterThan(at)
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval"] })
+    try {
+      driver.start()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(plan.doc().steps[0].status).toBe(STEP.running)
+      const heads = A.getHeads(plan.doc())
+      // An hour of this page's time, the clock moving at every read.
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+      expect(A.getHeads(plan.doc())).toEqual(heads)
+      expect(driver.soon).toBe(null)
+      expect("lease" in plan.doc()).toBe(false)
+      expect("lastGeneration" in plan.doc()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

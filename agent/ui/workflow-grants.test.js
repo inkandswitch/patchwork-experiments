@@ -51,7 +51,7 @@ function setup(steps, { behaviour = {} } = {}) {
   const stopWork = async (_repo, url) => (stopped.push(url), true)
   const make = () => {
     const driver = new WorkflowDriver({
-      repo, handle: plan, startSession, stopWork, heartbeatMs: 1e9, confirmMs: 0, settleMs: 5, sensitive: () => [],
+      repo, handle: plan, startSession, stopWork, settleMs: 5, sensitive: () => [],
       tools: async () => ({ builtins: BUILTIN_TOOLS, plugins: [] }),
       notify: () => ({ notify: (render) => { const text = render(); if (text) news.push(text) }, close: () => {} }),
     })
@@ -88,7 +88,7 @@ describe("web-only research steps", () => {
     // (kernel/scope.js); there is no tool list to edit and no access flag beside it.
     expect(session.scope).toEqual({ kind: "web", planUrl: plan.url, stepId: "research" })
     expect(session.tools).toBeUndefined()
-    expect(session.workflow).toEqual({ planUrl: plan.url, stepId: "research", orchestratorUrl: plan.doc().sessionUrl })
+    expect(session.workflow).toEqual({ planUrl: plan.url, stepId: "research", orchestratorUrl: plan.doc().sessionUrl, run: 0 })
     expect(session.subject).toBeNull()
     expect({ ...session.grants }).toEqual({ [WEB_GRANT]: true })
   })
@@ -192,7 +192,6 @@ describe("news, told once", () => {
     await settle(first)
     expect(news.filter((n) => n.includes("## Done: a"))).toHaveLength(1)
     first.stop()
-    plan.change((d) => { d.lease.at = 0 })
     const second = make()
     second.start()
     await settle(second)

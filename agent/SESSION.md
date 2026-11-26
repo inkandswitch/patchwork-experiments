@@ -24,7 +24,7 @@ A document an older version wrote may keep a `lease`; nothing reads it.
 | `usage` | `{ in, out, turns, cached?, cost?, costEstimated? }` |
 | `watches` | `{ [id]: watch }`, once `doc_watch` makes one |
 | `tools` | `{ enabled?, disabled?, where? }`: which tools it leaves out, and `where: "worker"` for a step placed on one |
-| `workflow` | `{ planUrl, stepId, orchestratorUrl }` when it is a step of a plan |
+| `workflow` | `{ planUrl, stepId, orchestratorUrl, run }` when it is a step of a plan; `run`, which run of the step its last instructions start (WORKFLOW.md, *The driver*) |
 | `scope` | `{ kind: "web", planUrl, stepId }` when it is a research step: the step it is, whose plan names the ledger it reads and keeps into (`kernel/scope.js`) |
 | `aside`, `asides` | a side thread's pointer to the step it was copied from, and a step's list of its side threads |
 

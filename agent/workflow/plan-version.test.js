@@ -51,7 +51,7 @@ function world(version) {
   })
   const startSession = async () => ({ runner: { interrupt() {} }, listen() {} })
   const ctx = { workflows: { repo, startSession } }
-  const driver = () => new WorkflowDriver({ repo, handle: plan, startSession, heartbeatMs: 1e9, confirmMs: 0 })
+  const driver = () => new WorkflowDriver({ repo, handle: plan, startSession })
   return { repo, plan, sessions, ctx, driver }
 }
 

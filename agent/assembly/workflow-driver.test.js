@@ -69,7 +69,7 @@ async function setup(steps, { behaviour = {}, limits = {}, grants = {} } = {}) {
   const runner = fakeRunner(behaviour)
   const news = []
   const notify = () => ({ notify: (render) => news.push(render()), close: () => {} })
-  const make = () => new WorkflowDriver({ repo, handle: plan, startSession: runner.startSession, stopWork: runner.stopWork, notify, heartbeatMs: 1e9, confirmMs: 0 })
+  const make = () => new WorkflowDriver({ repo, handle: plan, startSession: runner.startSession, stopWork: runner.stopWork, notify })
   return { repo, plan, orchestrator, runner, news, make }
 }
 
@@ -110,7 +110,7 @@ describe("running a plan", () => {
     expect(h.tools).toBeUndefined()
     expect(w.grants).toEqual({ "files@*": true })
     expect(w.subject).toBe("automerge:subj")
-    expect(w.workflow).toEqual({ planUrl: plan.url, stepId: "w", orchestratorUrl: expect.any(String) })
+    expect(w.workflow).toEqual({ planUrl: plan.url, stepId: "w", orchestratorUrl: expect.any(String), run: 0 })
     expect(w["@patchwork"]).toEqual({ type: "agent-session" })
   })
 
@@ -136,8 +136,8 @@ describe("running a plan", () => {
   })
 })
 
-describe("one plan, two tabs", () => {
-  it("only the driver holding the plan starts steps: each step gets exactly one session", async () => {
+describe("one plan, two drivers", () => {
+  it("two drivers on one copy, neither holding anything: each step is begun once, in the one session the plan names, and asked for", async () => {
     const { plan, runner, make } = await setup([step("a"), step("b"), step("c", { after: ["a", "b"] })])
     const first = started(make())
     const second = started(make())
@@ -154,7 +154,6 @@ describe("after a reload", () => {
     const before = started(make())
     await settle(before)
     before.stop()
-    plan.change((d) => { d.lease.at = 0 }) // the old tab's lease has gone stale
 
     runner.started.length = 0
     await settle(started(make()))
@@ -270,9 +269,8 @@ describe("filing what research steps kept", () => {
       if (state !== "unfiled") folder.change((d) => { d.docs.push(link) })
       if (state === "filed") plan.change((d) => { d.sourcesFiled[made.documentId] = true })
     }
-    const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => null, heartbeatMs: 1e9, confirmMs: 0 })
+    const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => null })
     drivers.push(driver)
-    driver.hold()
     return { plan, ledger, folder, driver, links, unwritten }
   }
 

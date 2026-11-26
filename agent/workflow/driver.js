@@ -10,21 +10,23 @@
  * orchestrating session what came in. A tick reads the plan and its step
  * sessions, decides what to do from those alone (decide.js), and does it.
  *
- * The driver holds a lease on the plan document, so two tabs with the plan
- * open cannot both start the same step: liveness judged on its own clock
- * (session/lease.js LeaseWatch), and a fresh claim believed only after
- * CONFIRM_MS. Nothing about the run lives only in memory: close the tab and
- * reopen the plan, and a new driver picks up where the document says things
- * are.
+ * Every page with the plan open drives it, and none holds it: there is no
+ * lease, no heartbeat and no timer that writes. A tick runs when the plan
+ * changes or a watched document does (a step's session, the ledger), and
+ * writes only what that change calls for, so a tick with nothing new writes
+ * nothing. Each write either recomputes a value whole or sets it only while
+ * it is unset (`perform`), so two pages that tick on the same change write
+ * the same thing, and a page whose copy lags writes nothing the others undo.
+ * What two pages in one crossing can still do twice is listed at `perform`.
+ * Nothing about the run lives only in memory: close the tab and reopen the
+ * plan, and its driver picks up where the document says things are. A
+ * workflow goes on only while some page has the plan open or drives it.
  *
- * Driving and running are separate. One page drives — starts steps, files
- * their results — and every page with the plan open asks for its running
- * steps' work (`help`); a step's burst runs in a pool's worker
- * (kernel/burst.js), and its session's `burst` mark keeps two from running
- * it at once.
+ * A step's burst runs in a pool's worker (kernel/burst.js); its session's
+ * `burst` mark keeps two from running it at once, and a burst of a session
+ * its plan does not name ends before it writes (`not-the-step`).
  */
 
-import { claimLease, holdsLease, LeaseWatch, leaseIsLive } from "../session/lease.js"
 import { initSession, CALL } from "../session/schema.js"
 import { STOP, stopOf, statusOf } from "../session/status.js"
 import { makeTurn, textBlock, lastTurn } from "../session/blocks.js"
@@ -35,7 +37,7 @@ import { needsWork } from "../kernel/runner.js"
 import { workKey } from "../kernel/burst.js"
 import { stopWork as stopTaskWork } from "../host/task-client.js"
 import { AutomergeRepo } from "../host/modules.js"
-import { PLAN, isCurrent, writable, changePlan, PlanVersionError, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, stoppedKey, staleKey, questionKey, requestKey } from "./plan.js"
+import { PLAN, isCurrent, writable, changePlan, PlanVersionError, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, stoppedKey, staleKey, questionKey, requestKey, attempt } from "./plan.js"
 import { decide } from "./decide.js"
 import { scopeOf, webScope, sameScope, initLedger } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
@@ -50,29 +52,6 @@ const { stringifyAutomergeUrl } = AutomergeRepo
 
 /** How long a burst of changes is gathered before the tick it asks for. */
 export const SETTLE_MS = 150
-
-/** How often the driver renews its lease on the plan, and looks again. */
-export const HEARTBEAT_MS = 5000
-/** How long a plan's lease goes unchanged, by this page's clock, before it is free. */
-export const STALE_AFTER_MS = 15000
-/**
- * How long a driver waits after claiming a plan before it believes the
- * claim: two pages that claim within one round trip of each other both
- * think they won until the writes meet, and the merge picks one of them.
- */
-export const CONFIRM_MS = 2000
-
-/**
- * Is some other driver holding this plan right now? `live` is a driver's own
- * judgement (its LeaseWatch), which is right across machines; without one,
- * the lease's stamp is compared with this clock, which is only right when the
- * clocks agree, and is for display.
- */
-export function heldElsewhere(plan, runnerUrl, live = null) {
-  const lease = plan?.lease
-  if (!lease || lease.runner === runnerUrl) return false
-  return live ? live(lease) : leaseIsLive(lease, { staleAfterMs: STALE_AFTER_MS })
-}
 
 /** How a step's work ended, when that is not news enough to keep: the model finished, or it waits on a person or a page. */
 const QUIET = new Set(["idle", "awaiting-approval", "awaiting-answer", "parked", "nothing"])
@@ -97,9 +76,18 @@ const QUIET = new Set(["idle", "awaiting-approval", "awaiting-answer", "parked",
  * An empty last message is not an empty result: the result is then the last
  * thing the session said in words. That costs nothing and cannot come back
  * empty a second time, which asking it to report again could.
+ *
+ * `run`, when given, is which run of its step the plan has going (plan.js
+ * `attempt`). A session is told its run in the same change as the
+ * instructions that start it (`workflow.run`, written by begin and
+ * continueStep), so a copy that shows an earlier run has not seen this one's
+ * instructions yet, and is still running, whatever its last turn says: a
+ * page whose session copy lags a reopen never files the step with what the
+ * run before said.
  */
-export function sessionOutcome(doc) {
+export function sessionOutcome(doc, { run = null } = {}) {
   if (!doc) return { state: "running" }
+  if (run != null && (doc.workflow?.run ?? 0) < run) return { state: "running" }
   const stop = stopOf(doc)
   if (stop?.kind === STOP.error) return { state: "failed" }
   // Out of budget is not done: it stopped part-way, and the orchestrator
@@ -172,7 +160,7 @@ export function _resetDrivers() {
 }
 
 export class WorkflowDriver {
-  constructor({ repo, handle, startSession, stopWork = null, notify = null, tools = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
+  constructor({ repo, handle, startSession, stopWork = null, notify = null, tools = null, now = () => Date.now(), settleMs = SETTLE_MS }) {
     this.repo = repo
     this.handle = handle
     this.startSession = startSession
@@ -183,17 +171,8 @@ export class WorkflowDriver {
     // it that is not done.
     this.tools = tools
     this.now = now
-    this.heartbeatMs = heartbeatMs
     this.settleMs = settleMs
     this.soon = null
-    this.runnerUrl = `workflow-${Math.random().toString(36).slice(2, 10)}`
-    this.generation = null
-    // Whose the plan is, judged on this page's clock alone (session/lease.js).
-    this.watch = new LeaseWatch({ now: () => this.now(), staleAfterMs: STALE_AFTER_MS })
-    this.live = (lease) => this.watch.live(lease)
-    this.confirmMs = confirmMs
-    this.claimedAt = null
-    this.confirming = null
     this.watched = new Map() // sessionUrl -> unsubscribe
     this.reasons = new Map() // sessionUrl -> how its last asked task ended, when that was not quiet
     this.waiting = [] // what running steps wait on a person for, as of the last tick
@@ -206,20 +185,15 @@ export class WorkflowDriver {
     this.onPlanChange = () => this.kickSoon()
   }
 
+  /** Tick now, and whenever the plan or a watched document changes. No timer. */
   start() {
     this.handle.on("change", this.onPlanChange)
-    this.timer = setInterval(() => {
-      this.beat()
-      this.kick()
-    }, this.heartbeatMs)
     this.kick()
   }
 
   stop() {
     this.stopped = true
-    clearInterval(this.timer)
     clearTimeout(this.soon)
-    clearTimeout(this.confirming)
     this.handle.off("change", this.onPlanChange)
     for (const off of this.watched.values()) off()
     this.watched.clear()
@@ -267,47 +241,9 @@ export class WorkflowDriver {
     return this.ticking
   }
 
-  /**
-   * Is this driver the one entitled to act on the plan right now? Claims the
-   * lease if it is free, and otherwise writes nothing.
-   *
-   * It used to renew the lease here, on every tick — and every write to the
-   * plan schedules a tick, so a driver with nothing to do rewrote the plan as
-   * fast as the clock moved and locked up the tab. Renewal is beat()'s job,
-   * on the heartbeat timer, as it is for a session's runner.
-   */
-  hold() {
-    const plan = this.handle.doc()
-    if (!plan) return false
-    if (heldElsewhere(plan, this.runnerUrl, this.live)) return false
-    if (this.generation === null || !holdsLease(plan, this.runnerUrl, this.generation)) {
-      changePlan(this.handle, (d) => { this.generation = claimLease(d, this.runnerUrl, this.now()).generation })
-      this.claimedAt = this.now()
-    }
-    // A claim another page made at the same moment may yet win the merge;
-    // act on ours only once it has had time to arrive (CONFIRM_MS).
-    const left = this.claimedAt + this.confirmMs - this.now()
-    if (left <= 0) return true
-    if (!this.confirming) {
-      this.confirming = setTimeout(() => {
-        this.confirming = null
-        this.kick()
-      }, left)
-    }
-    return false
-  }
-
-  /** Renew the lease. Called by the heartbeat timer, never by a tick. */
-  beat() {
-    if (this.stopped || this.generation === null) return
-    if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
-    this.write((d) => { d.lease.at = this.now() })
-  }
-
   /** Read what is there, decide what to do (decide.js), and do it. */
   async tick() {
     if (this.stopped || !isCurrent(this.handle.doc())) return
-    if (!this.hold()) return this.help()
     const plan = this.handle.doc()
     const observations = plan.status === PLAN.running ? await this.observe(plan) : {}
     await this.perform(decide(plan, observations, this.now()))
@@ -325,7 +261,7 @@ export class WorkflowDriver {
       const doc = (await this.session(step.sessionUrl))?.doc()
       const seen = { status: doc ? statusOf(doc) : null, usage: doc?.usage ?? null, requests: requestCalls(doc).map((call) => ({ id: call.id, input: call.input ?? {} })) }
       if (step.status === STEP.running) {
-        seen.outcome = sessionOutcome(doc)
+        seen.outcome = sessionOutcome(doc, { run: attempt(step) })
         if (seen.outcome.waiting) seen.waiting = waitingIn(doc)
         if (step.access === "web" && doc) seen.scopeOk = confinedAs(doc, webScope(this.handle.url, step.id))
       }
@@ -335,7 +271,40 @@ export class WorkflowDriver {
     return { sessions, orchestratorCost: orchestrator?.usage?.cost, reasons: Object.fromEntries(this.reasons) }
   }
 
-  /** Do what decide() said, in order. Writes to the plan go through write(), which holds to the lease. */
+  /**
+   * Do what decide() said, in order. Every page with the plan open does
+   * this on the same changes, holding nothing, so each write is one of two
+   * kinds, and two pages that make it write the same:
+   *
+   *   recomputed whole   finish, fail, cancel, pause, settle (plan.js
+   *                      transitions, each applied only from the state it
+   *                      leaves, checked inside the change); usage (the sum
+   *                      over the step sessions, assigned whole)
+   *   set only if unset  sessionUrl (beginStep, only from pending),
+   *                      orchestratorFrom, ledgerUrl; requests, told,
+   *                      sourcesFiled and the sessions' grants, added by
+   *                      key or id and never removed
+   *
+   * What two pages in one crossing (each writing before it has the other's
+   * write) can do twice, each accepted:
+   *   - begin a step in two sessions: the merge names one in the plan, and
+   *     the other's burst ends at its first boundary (`not-the-step`) before
+   *     any paid request, unless the merge is slower than a beat;
+   *   - open two ledgers: the plan names one, and the other stays empty;
+   *   - push one request twice: one request by its id (plan.js
+   *     openRequests, decideRequest);
+   *   - tell the orchestrator one piece of news twice;
+   *   - speak a reopened step's instructions into its session twice, and
+   *     lift its budget once from each copy (the same value);
+   *   - link one kept source into the Sources folder twice;
+   *   - file a step done across its reopen: a page that heard neither the
+   *     other page's finish nor the orchestrator's reopen that followed it
+   *     files it done too, and the merge may keep that over the reopen.
+   * A page whose copy lags writes nothing another undoes: every transition
+   * is checked against the plan as it is inside the change, and a step is
+   * filed done only from a session copy that has its current run's
+   * instructions (sessionOutcome `run`).
+   */
   async perform(actions) {
     for (const action of actions) {
       if (this.stopped) return
@@ -361,7 +330,9 @@ export class WorkflowDriver {
           this.outOfBudget = action.outOfBudget
           break
         case "orchestratorFrom":
-          this.write((d) => { d.orchestratorFrom = action.cost })
+          this.write((d) => {
+            if (d.orchestratorFrom == null) d.orchestratorFrom = action.cost
+          })
           break
         case "usage":
           this.write((d) => { d.usage = action.usage })
@@ -380,7 +351,6 @@ export class WorkflowDriver {
           break
         case "start":
         case "continue": {
-          if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
           const step = this.handle.doc().steps.find((s) => s.id === action.stepId)
           if (step?.status !== STEP.pending) break
           if (step.sessionUrl) await this.continueStep(step)
@@ -397,20 +367,6 @@ export class WorkflowDriver {
           this.report(await this.ledger())
           break
       }
-    }
-  }
-
-  /**
-   * What a page that is not driving the plan does: ask for each running
-   * step's work, so a step whose driver is in a page with no key, or gone,
-   * still runs. Writes nothing to the plan; asking is asking once, and a
-   * step's `burst` mark keeps two runs apart.
-   */
-  async help() {
-    const plan = this.handle.doc()
-    if (this.stopped || !isCurrent(plan) || plan.status !== PLAN.running) return
-    for (const step of plan.steps ?? []) {
-      if (step.status === STEP.running && step.sessionUrl) await this.run(step.sessionUrl)
     }
   }
 
@@ -462,12 +418,12 @@ export class WorkflowDriver {
 
   /**
    * Open the plan's ledger, the document its research steps keep into and
-   * read from (kernel/scope.js), and name it in the plan. Under the lease,
-   * and only while the plan names none, so a plan has one ledger whichever
-   * page drives it.
+   * read from (kernel/scope.js), and name it in the plan, only while the
+   * plan names none, so a plan has one ledger whichever page opens it (two
+   * pages in one crossing make two, and the merge names one).
    */
   async openLedger() {
-    if (this.handle.doc().ledgerUrl || !holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return
+    if (this.handle.doc().ledgerUrl) return
     const ledger = await this.repo.create2()
     ledger.change(initLedger)
     this.write((d) => {
@@ -493,8 +449,8 @@ export class WorkflowDriver {
    * the plan is written only to mark what was filed. A kept source is
    * linked at the version that was fetched, a finding live, since a person may
    * go on editing it. An entry is filed once it says what it is, and marked
-   * in `sourcesFiled`; one already in the folder is only marked, so a driver
-   * that lost the plan between the two writes leaves nothing to duplicate.
+   * in `sourcesFiled`; one already in the folder is only marked, so a page
+   * closed between the two writes leaves nothing to duplicate.
    * Run twice, the second time writes nothing.
    */
   async fileSources() {
@@ -502,7 +458,7 @@ export class WorkflowDriver {
     if (!plan.sourcesFolderUrl) return
     const filed = plan.sourcesFiled ?? {}
     const due = Object.entries((await this.ledger())?.doc()?.sources ?? {}).filter(([id, e]) => !filed[id] && e?.what != null)
-    if (!due.length || !holdsLease(plan, this.runnerUrl, this.generation)) return
+    if (!due.length) return
 
     let folder
     try {
@@ -537,9 +493,8 @@ export class WorkflowDriver {
     return (handle.doc()?.turns ?? []).some((t) => (t.blocks ?? []).some((b) => b.type === "call" && b.status === "pending"))
   }
 
-  /** Write to the plan, if this driver still holds it and it is of this version. */
+  /** Write to the plan, if it is of this version. */
   write(fn) {
-    if (!holdsLease(this.handle.doc(), this.runnerUrl, this.generation)) return false
     try {
       changePlan(this.handle, fn)
     } catch (err) {
@@ -601,6 +556,9 @@ export class WorkflowDriver {
     // driver open first; without one its session would refuse to run.
     if (web && !plan.ledgerUrl) return
     const orchestrator = plan.sessionUrl ? (await this.session(plan.sessionUrl))?.doc() : null
+    // Looked at again after the waits: another tick or page may have begun it.
+    const fresh = this.handle.doc()?.steps?.find((s) => s.id === stepId)
+    if (fresh?.status !== STEP.pending || fresh.sessionUrl) return
     const child = await this.repo.create2()
     child.change((d) => {
       initSession(d, {
@@ -620,7 +578,8 @@ export class WorkflowDriver {
           budget: startBudget(step),
         },
       })
-      d.workflow = { planUrl: this.handle.url, stepId: step.id, orchestratorUrl: plan.sessionUrl ?? null }
+      // `run`: which run of its step these instructions start (sessionOutcome).
+      d.workflow = { planUrl: this.handle.url, stepId: step.id, orchestratorUrl: plan.sessionUrl ?? null, run: attempt(step) }
       if (web) {
         // In the same change as the session itself, so it never exists
         // unconfined. The scope decides its tools and everything it can reach
@@ -697,6 +656,8 @@ export class WorkflowDriver {
       // (a page that died mid-call), and its marks are the next burst's to settle.
       if (d.burst != null) d.burst = null
       if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || stopOf(d)?.kind === STOP.budget) liftBudget(d, startBudget(step))
+      // In the same change as its instructions: a copy with this run has them.
+      if (d.workflow) d.workflow.run = attempt(step)
       // Its new instructions, which also end whatever stop it was under
       // (session/status.js stopOf) and close what that stop left cleared to
       // run (session/recovery.js speak).
@@ -785,7 +746,7 @@ export class WorkflowDriver {
   report(ledger = null) {
     if (!this.notify) return
     // What has been told is recorded in the plan, not in this driver: a reload,
-    // or another tab's driver taking over, tells nothing twice.
+    // or another page's driver, tells nothing twice.
     const plan = this.handle.doc()
     if (!hasNews(untold(plan, this.waiting, this.outOfBudget))) return
     this.channel ??= this.notify(this.handle.url, plan.title)
@@ -794,10 +755,11 @@ export class WorkflowDriver {
       const now = this.handle.doc()
       const news = untold(now, this.waiting, this.outOfBudget)
       if (!hasNews(news)) return ""
+      // Recorded first, so a page that has this change tells none of it
+      // again; two pages in one crossing may each tell it once.
       const recorded = this.write((d) => {
         for (const key of news.keys) tell(d, key)
       })
-      // A driver that has lost the plan leaves the telling to the one holding it.
       if (!recorded) return ""
       if (news.end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
       return describeProgress(now, news.finished, this.waiting, news.budgets, { stale: news.stale, requests: news.requests, stopped: news.stopped, ledger: ledger?.doc() ?? null })

@@ -97,7 +97,7 @@ async function workflow(steps, models) {
   const stopWork = async (_repo, url) => (bySession.get(url)?.interrupt("cancelled"), true)
   const plan = repo.create({})
   plan.change((d) => initPlan(d, { title: "W", goal: "G", steps }))
-  await ensureDriver(plan.url, { repo, startSession, stopWork, confirmMs: 0, settleMs: 10, heartbeatMs: 200 })
+  await ensureDriver(plan.url, { repo, startSession, stopWork, settleMs: 10 })
   const ctx = { workflows: { repo, startSession }, events: null }
   const run = (tool, input) => tool.execute({ plan: plan.url, ...input }, ctx)
   const at = (id) => plan.doc().steps.find((s) => s.id === id)
