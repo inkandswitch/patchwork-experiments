@@ -487,10 +487,12 @@ export class SessionRunner {
       // the person sees why, and the session stops asking to be run until
       // someone does something about it. Best-effort: if the document itself
       // is what failed, the write fails too, and losing the runner to that
-      // would be the worse outcome.
+      // would be the worse outcome. In the notice's own change, as the loop's:
+      // a run that could not start is no longer waiting for the network.
       try {
         this.store.change((d) => {
           d.turns.push(makeTurn("assistant", [noticeBlock(STOP.error, String(err?.message ?? err))]))
+          if (d.reconnecting != null) d.reconnecting = null
         })
       } catch {
         /* the document is unwritable; the event below is all we can report */

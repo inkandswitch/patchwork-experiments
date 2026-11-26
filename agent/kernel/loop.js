@@ -17,7 +17,7 @@
  */
 
 import { CALL, WHERE } from "../session/schema.js"
-import { STOP, stopOf } from "../session/status.js"
+import { STOP, stopOf, stoppedFromOutside } from "../session/status.js"
 import { askOf, covered, needsApproval, ownGrant } from "../session/grants.js"
 import { addUsage, costOf, dollars } from "../session/usage.js"
 import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTokens, DENIED_RESULT } from "../session/request.js"
@@ -596,11 +596,17 @@ async function streamTurn(opts) {
     // The stream is over and this runner saw it end — finished, stopped by
     // the person, or failed — so what is there is what happened. Not when it
     // was cut off by the network (the turn is taken back), nor when another
-    // runner has the session (it is that runner's to settle).
-    if (!lost && !interrupted && (!stillOurs || stillOurs())) {
+    // runner has the session (it is that runner's to settle). Nor, then, when
+    // a stop from outside took the lease, except that the stop took off only
+    // the marks its copy could see: this turn's, begun after, comes off here
+    // while it still names this run, and the text stays.
+    const ours = !lost && !interrupted && (!stillOurs || stillOurs())
+    const mine = (mark) => mark?.runner === turn.streaming.runner && mark?.generation === turn.streaming.generation
+    if (ours || (stoppedFromOutside(store.doc()) && mine(store.doc().turns?.[turnIndex]?.streaming))) {
       store.change((d) => {
         const t = d.turns?.[turnIndex]
-        if (t?.id === turn.id && t.streaming) delete t.streaming
+        const mark = t?.id === turn.id ? t.streaming : null
+        if (mark && (ours || mine(mark))) delete t.streaming
       })
     }
   }

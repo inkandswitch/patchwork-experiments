@@ -24,7 +24,7 @@ import { waitingIn } from "../workflow/waiting.js"
 import { renderWaitingItem } from "./waiting.js"
 import { morph } from "./morph.js"
 import { ensureStyles } from "./styles.js"
-import { statusOf } from "../session/status.js"
+import { STOP, statusOf, stopOf } from "../session/status.js"
 import { STATE_LABEL } from "../workflow/standing.js"
 
 
@@ -175,7 +175,10 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     // A step's budget is its session's once it has one (lifted budgets land
     // there first), else the one it will start with.
     const limit = stepSession?.config?.budget ?? stepBudget(step)
-    head.append(el("span", "agent-wf-chip", STATE_LABEL[state] ?? state), el("strong", null, step.title), moneyChip(stepSession?.usage?.cost ?? 0, limit, stepSession?.usage?.costEstimated))
+    // A person's Stop pauses a running step (WORKFLOW.md): it is stopped, and
+    // waits for a word in its session or for the orchestrator.
+    const stopped = state === STATE.running && stopOf(stepSession)?.kind === STOP.stopped
+    head.append(el("span", "agent-wf-chip", stopped ? "stopped" : (STATE_LABEL[state] ?? state)), el("strong", null, step.title), moneyChip(stepSession?.usage?.cost ?? 0, limit, stepSession?.usage?.costEstimated))
     card.append(head)
 
     const meta = el("div", "agent-wf-meta")
@@ -204,7 +207,9 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       const turns = session.turns?.length ?? 0
       const used = (session.usage?.in ?? 0) + (session.usage?.out ?? 0)
       const spent = formatCost(session.usage)
-      const status = statusOf(session) === STATUS.reconnecting ? "waiting for the network" : statusOf(session)
+      const status = stopped
+        ? "stopped by a person, waiting for a word or for the orchestrator"
+        : statusOf(session) === STATUS.reconnecting ? "waiting for the network" : statusOf(session)
       card.append(el("p", "agent-wf-activity", `${status} · ${turns} turns · ${tokens(used)} tokens${spent ? ` · ${spent}` : ""}`))
     }
 

@@ -320,11 +320,13 @@ function resultsAfterTheirCalls(messages) {
  *
  * A provider refuses a call with two results, and a document can hold two:
  * a runner taking a session over closes a call it thinks was cut off, while
- * the runner it displaced finishes the call and writes what it found; or two
- * runners each record a result before their writes meet. Both are writes to a
- * shared document, so nothing can stop them both landing. What is sent is
- * decided here instead: a real result over the takeover's "interrupted" note,
- * since it says what actually happened, and otherwise the first.
+ * the runner it displaced finishes the call and writes what it found; a
+ * message after a Stop closes a call "not run" that a runner which had not
+ * heard the Stop is running; or two runners each record a result before
+ * their writes meet. Both are writes to a shared document, so nothing can
+ * stop them both landing. What is sent is decided here instead: a real result
+ * over a placeholder (recovery.js isInterruptedResult), since it says what
+ * actually happened, and otherwise the first.
  * Returns callId -> the id of its result block.
  */
 function theResultOfEachCall(turns) {

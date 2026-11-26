@@ -22,7 +22,11 @@
  *     and what was put back for the network is closed, never run;
  *   - a step's session stopped this way is never read as finished on either
  *     copy once the two have met (before that, a copy that saw the run end
- *     and not the Stop reads it as done: a crossing, not a defect).
+ *     and not the Stop reads it as done: a crossing, not a defect);
+ *   - a reply begun after the stopper's copy last heard loses its mark to its
+ *     own run, and keeps its text; a call run across a Stop and a message is
+ *     sent as what it did, not as not run; a run's error crossing a Stop
+ *     never takes its place.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import * as A from "@automerge/automerge"
@@ -36,6 +40,7 @@ import { STOP, stopOf, statusOf } from "../session/status.js"
 import { sessionOutcome } from "./driver.js"
 import { SessionRunner, needsWork } from "../kernel/runner.js"
 import { say } from "../kernel/loop.js"
+import { toRequest } from "../session/request.js"
 
 beforeEach(() => _resetIds())
 
@@ -497,5 +502,142 @@ describe("calls cleared to run when a Stop lands", () => {
     stores[0].change((d) => liftBudget(d, 1))
     expect(stopOf(sides[0].doc)?.kind).toBe(STOP.stopped)
     expect(needsWork(sides[0].doc)).toBe(false)
+  })
+})
+
+/** Both ways round: which of two concurrent writes Automerge keeps. */
+const order = [["aa", "bb"], ["bb", "aa"]]
+
+describe("crossings a Stop could lose to, put right", () => {
+  it("a reply begun after the stopper's copy last heard: its run takes its own mark off on hearing the Stop, and the text stays through the next message", async () => {
+    const { sides, stores, deliver } = copies()
+    let inTool, go, reached
+    const started = new Promise((r) => (inTool = r))
+    const gate = new Promise((r) => (go = r))
+    const at = new Promise((r) => (reached = r))
+    const quick = { id: "quick", risk: "edit", where: "worker", execute: async () => (inTool(), await gate, "quick done") }
+    const m = model(calls(["c1", "quick"]), hangs("Second reply, seen on A", reached), says("Going on."))
+    const a = runnerOn(stores[0], "tab-A", m, [quick])
+    sides[0].heard = () => a.tick()
+    const run = a.tick()
+    await started
+    deliver(0, 1) // B sees the call running, and no more
+    go()
+    await at
+    await flushed()
+    stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
+    deliver(1, 0)
+    expect((await run).outcome).toBe("aborted")
+    deliver(0, 1)
+    expectStoppedOnBoth(sides)
+    const second = plain(sides[1].doc).turns.find((t) => t.blocks.some((b) => b.text === "Second reply, seen on A"))
+    expect(second.streaming ?? null).toBe(null)
+
+    say(stores[1], "go on")
+    deliver(1, 0)
+    await vi.waitFor(() => expect(shape(sides[0].doc).at(-1)).toEqual(["assistant", "Going on."]))
+    expect(shape(plain(sides[0].doc))).toContainEqual(["assistant", "Second reply, seen on A"])
+    a.stop()
+  })
+
+  it("a mark another run holds is not the stopped run's to take off", async () => {
+    const { sides, stores, deliver } = copies()
+    let reached
+    const at = new Promise((r) => (reached = r))
+    const m = model(hangs("Mine", reached))
+    const a = runnerOn(stores[0], "tab-A", m)
+    // B hears A's claim, and nothing after it.
+    let heard = false
+    sides[0].heard = () => {
+      if (!heard && sides[0].doc.lease) (heard = true), deliver(0, 1)
+      a.tick()
+    }
+    const run = a.tick()
+    await at
+    await flushed()
+    // Before A hears the Stop, its turn's mark is made another's (a crossing
+    // claim): A takes nothing off that is not its own.
+    stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
+    sides[0].doc = A.change(sides[0].doc, (d) => {
+      d.turns[d.turns.length - 1].streaming = { runner: "tab-C", generation: 9 }
+    })
+    deliver(1, 0)
+    expect((await run).outcome).toBe("aborted")
+    expect(plain(sides[0].doc).lease).toBe(null)
+    expect(plain(sides[0].doc).turns.find((t) => t.blocks.some((b) => b.text === "Mine")).streaming).toEqual({ runner: "tab-C", generation: 9 })
+  })
+
+  /**
+   * B, which has written much A has not seen when `ahead`, hears A write a
+   * call cleared to run, and at once stops and speaks. A claims the call
+   * first, and runs it. Whichever order the two results land in, what the
+   * call did is what the model is told.
+   */
+  const AHEAD = [...order.map((actors) => [actors, false]), [["aa", "bb"], true]]
+  it.each(AHEAD)("a Stop and a message at once, crossing a claim (actors %j, B ahead %s): the call ran, and the model is told what it did", async (actors, ahead) => {
+    const { sides, stores, deliver } = copies(actors)
+    if (ahead) stores[1].change((d) => {
+      d.pad = []
+      for (let i = 0; i < 500; i++) d.pad.push(i)
+    })
+    let finish, inTool
+    const started = new Promise((r) => (inTool = r))
+    const slow = { id: "slow", risk: "edit", where: "worker", runs: 0, execute: () => (slow.runs++, inTool(), new Promise((r) => (finish = r))) }
+    const m = model(calls(["c1", "slow"]), says("Next."))
+    const a = runnerOn(stores[0], "tab-A", m, [slow])
+    let acted = false
+    sides[0].heard = () => {
+      const c1 = findCall(sides[0].doc, "c1")
+      if (!acted && c1?.block.status === CALL.approved) {
+        acted = true
+        deliver(0, 1)
+        stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
+        say(stores[1], "do something else")
+      }
+      a.tick()
+    }
+    const run = a.tick()
+    await started
+    finish("slow did it")
+    await run
+    deliver(1, 0)
+    deliver(0, 1)
+    const doc = plain(sides[0].doc)
+    const results = doc.turns.flatMap((t) => t.blocks).filter((b) => b.type === "result" && b.callId === "c1")
+    const sent = toRequest(doc).messages.flatMap((x) => x.content).filter((p) => p.type === "result" && p.callId === "c1").map((p) => p.output)
+    expect(slow.runs).toBe(1)
+    expect(results.map((r) => String(r.output)).sort()).toEqual([NOT_RUN, "slow did it"].sort())
+    expect(sent).toEqual(["slow did it"])
+    a.stop()
+  })
+
+  it.each(order)("a run's error crossing a person's Stop (actors %s, %s): the Stop stays in force, and the step is not failed", async (...actors) => {
+    const { sides, stores, deliver } = copies(actors)
+    let reached, go
+    const at = new Promise((r) => (reached = r))
+    const gate = new Promise((r) => (go = r))
+    const m = model(async function* () {
+      yield { type: "text", delta: "Part" }
+      reached()
+      await gate
+      throw new Error("OpenRouter 500: upstream")
+    })
+    const a = runnerOn(stores[0], "tab-A", m)
+    sides[0].heard = () => a.tick()
+    const run = a.tick()
+    await at
+    await flushed()
+    deliver(0, 1)
+    stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
+    go()
+    expect((await run).outcome).toBe("error")
+    deliver(1, 0)
+    deliver(0, 1)
+    for (const side of sides) {
+      const doc = plain(side.doc)
+      expect(stopOf(doc)?.kind).toBe(STOP.stopped)
+      expect(statusOf(doc)).toBe(STATUS.idle)
+      expect(sessionOutcome(doc)).toMatchObject({ state: "running", waiting: true, stopped: {} })
+    }
   })
 })

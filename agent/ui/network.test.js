@@ -22,8 +22,8 @@ import { initSession, STATUS, CALL, _resetIds } from "../session/schema.js"
 import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { findCall, findResult } from "../session/calls.js"
-import { stopSession, NOT_RUN } from "../session/recovery.js"
-import { STOP } from "../session/status.js"
+import { stopSession, markReconnecting, NOT_RUN } from "../session/recovery.js"
+import { STOP, statusOf } from "../session/status.js"
 import { Interruption, isInterruption, networkDown, asInterruption, reconnectDelay, onOnline, RECONNECT_MAX_MS } from "../net/network.js"
 import { relayFetch } from "../net/relay.js"
 import { webSearch } from "../tools/web.js"
@@ -314,6 +314,32 @@ describe("the runner, waiting for the network", () => {
     expect(result.outcome).toBe(OUTCOME.reconnecting)
     expect(settled(store.doc())).toBe(STATUS.reconnecting)
     expect(store.doc().turns).toHaveLength(1)
+  })
+
+  it("a retry that cannot start for another reason says so, and is no longer waiting for the network, in one change", async () => {
+    const store = session([makeTurn("user", [textBlock("hello")])])
+    store.change((d) => markReconnecting(d, "no relay"))
+    // After every change: is there an error notice, and is it still waiting?
+    const seen = []
+    const change = store.change.bind(store)
+    store.change = (fn) => {
+      change(fn)
+      const doc = store.doc()
+      seen.push([doc.turns.some((t) => t.blocks.some((b) => b.type === "notice" && b.kind === STOP.error)), doc.reconnecting != null])
+    }
+    const runner = runnerOver(store, null, {
+      getProvider: async () => {
+        throw new Error("No provider called nowhere")
+      },
+    })
+    const result = await runner.tick()
+    runner.stop()
+    expect(result.outcome).toBe(OUTCOME.error)
+    expect(seen).not.toContainEqual([true, true])
+    expect(store.doc().reconnecting).toBe(null)
+    expect(settled(store.doc())).toBe(STATUS.error)
+    say(store, "try again")
+    expect(statusOf(store.doc())).not.toBe(STATUS.reconnecting)
   })
 })
 

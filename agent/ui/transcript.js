@@ -13,7 +13,8 @@
 
 import { CALL } from "../session/schema.js"
 import { questionOptions } from "../session/calls.js"
-import { stoppedFromOutside } from "../session/status.js"
+import { STOP, stoppedFromOutside } from "../session/status.js"
+import { isInterruptedResult } from "../session/recovery.js"
 import { renderMarkdown } from "./markdown.js"
 import { describeCall } from "./calls.js"
 import { renderCallBody } from "./bodies.js"
@@ -26,12 +27,18 @@ const el = (tag, className, text) => {
   return node
 }
 
-/** Map every result to the call it answers, so results render inside calls. */
+/**
+ * Map every result to the call it answers, so results render inside calls.
+ * Where a call has two, the one the model is sent (session/request.js): a
+ * real result over a placeholder, and otherwise the first.
+ */
 function indexResults(doc) {
   const byCallId = new Map()
   for (const turn of doc.turns ?? []) {
     for (const block of turn.blocks ?? []) {
-      if (block.type === "result") byCallId.set(block.callId, block)
+      if (block.type !== "result") continue
+      const held = byCallId.get(block.callId)
+      if (!held || (isInterruptedResult(held) && !isInterruptedResult(block))) byCallId.set(block.callId, block)
     }
   }
   return byCallId
@@ -330,6 +337,9 @@ export function renderTranscript(container, doc, state, handlers) {
     // The harness speaking (session/blocks.js noticeBlock): whichever role its
     // turn rides in, nobody said it, so it looks like neither.
     if (turn.blocks?.length && turn.blocks.every((b) => b.type === "notice")) {
+      // Stops pressed at once on two copies each write a notice: shown as one.
+      const shown = container.lastElementChild
+      if (turn.blocks.every((b) => b.kind === STOP.stopped) && shown?.dataset.role === "notice" && shown.dataset.kind === STOP.stopped) continue
       const node = el("div", "agent-turn")
       node.dataset.role = "notice"
       // Who, when a person did it: a Stop records who pressed it.

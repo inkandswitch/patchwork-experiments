@@ -20,7 +20,7 @@ import { needsWork } from "../kernel/runner.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP } from "../workflow/plan.js"
 import { describeCall } from "./calls.js"
-import { statusOf } from "../session/status.js"
+import { statusOf, stoppedFromOutside } from "../session/status.js"
 
 /** A run this long is worth telling someone about when it ends. */
 export const LONG_RUN_MS = 60_000
@@ -129,7 +129,9 @@ export function watchAttention(repo, getSessionUrls, onChange, { now = () => Dat
     if (since == null) return
     runningSince.delete(url)
     // Ended, not paused for a person: those show up as needing them instead.
-    if (status !== STATUS.idle || now() - since < longRunMs) return
+    // Nor stopped by a person or a workflow, who know: like a run that
+    // failed, it is not announced as finished.
+    if (status !== STATUS.idle || stoppedFromOutside(doc) || now() - since < longRunMs) return
     finishedQueue.push({
       kind: "finished",
       key: `${url}:finished:${doc.turns.length}`,

@@ -23,6 +23,8 @@ export const STOP = {
 }
 
 const STOPS = new Set(Object.values(STOP))
+// The stops written from outside the run, by a person or a workflow.
+const FROM_OUTSIDE = new Set([STOP.stopped, STOP.halted])
 
 /**
  * Does this user-role turn end a stop? Only when something was said to the
@@ -43,26 +45,34 @@ const endsStop = (turn) =>
  * changes nothing. Nor news a tool delivers later (kernel/events.js), nor the
  * loop's own `nudge` or a compaction's summary written by a run that had not
  * yet heard of the stop: none of those is anyone deciding it should carry on.
+ *
+ * A person's or a workflow's stop stays in force over a run's own `error` or
+ * `budget` notice after it with nothing said between: that is a run which had
+ * not yet heard the stop, failing or running out as it went, and its notice
+ * merged after the stop's.
  */
 export function stopOf(doc) {
   const turns = doc?.turns ?? []
+  let last = null
   for (let i = turns.length - 1; i >= 0; i--) {
     const turn = turns[i]
     if (turn.role === "user") {
       if (!endsStop(turn)) continue
-      return null
+      break
     }
     if (turn.role !== "assistant") continue
     const notice = (turn.blocks ?? []).find((block) => block.type === "notice" && STOPS.has(block.kind))
-    if (notice) return { kind: notice.kind, text: notice.text, data: notice.data ?? null, at: turn.at ?? null }
+    if (!notice) continue
+    const stop = { kind: notice.kind, text: notice.text, data: notice.data ?? null, at: turn.at ?? null }
+    if (FROM_OUTSIDE.has(stop.kind)) return stop
+    last ??= stop
   }
-  return null
+  return last
 }
 
 /** Is the stop in force one written from outside the run: a person's or a workflow's? */
 export function stoppedFromOutside(doc) {
-  const kind = stopOf(doc)?.kind
-  return kind === STOP.stopped || kind === STOP.halted
+  return FROM_OUTSIDE.has(stopOf(doc)?.kind)
 }
 
 /**

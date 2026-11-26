@@ -70,6 +70,25 @@ describe("the stop in force", () => {
   it("the last of two is the one in force", () => {
     expect(stopOf(session([user(), stop(STOP.budget), stop(STOP.halted)])).kind).toBe(STOP.halted)
   })
+
+  // Every kind of stop × every kind after it, with nothing said between (or
+  // only what a run writes for itself), and with a person speaking between.
+  // A run that had not heard a person's or a workflow's stop can fail or run
+  // out after it; its notice never takes that stop's place.
+  const OUTSIDE = new Set([STOP.stopped, STOP.halted])
+  const RUNS_OWN = new Set([STOP.error, STOP.budget])
+  const BETWEEN = [
+    ["nothing", () => [], false],
+    ["a late result and a nudge", () => [result(), makeTurn("user", [noticeBlock("nudge", "(go on)")])], false],
+    ["a person speaking", () => [user("carry on")], true],
+  ]
+  const PAIRS = Object.values(STOP).flatMap((first) => Object.values(STOP).flatMap((second) => BETWEEN.map(([name, between, spoken]) => [first, name, second, between, spoken])))
+  it.each(PAIRS)("a %s stop, then %s, then a %s stop", (first, _name, second, between, spoken) => {
+    const earlier = Object.assign(stop(first), { at: 1 })
+    const later = Object.assign(stop(second), { at: 2 })
+    const kept = !spoken && OUTSIDE.has(first) && RUNS_OWN.has(second)
+    expect(stopOf(session([user(), earlier, ...between(), later]))).toMatchObject({ kind: kept ? first : second, at: kept ? 1 : 2 })
+  })
 })
 
 describe("status", () => {

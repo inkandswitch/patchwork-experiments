@@ -170,18 +170,26 @@ export const NOT_RUN = "Not run: the session was stopped before this call ran. A
  * stop, the calls left cleared to run from before it are closed first, each
  * answered NOT_RUN: speaking is deciding to carry on, not to do what was
  * stopped. A budget's stop leaves them, to run once the budget is lifted.
+ *
+ * Nothing on a call says when it was approved, so a call a person approved
+ * under the stop is closed the same way, and shows "Not run: stopped" from
+ * the moment it is approved (ui/transcript.js).
+ *
+ * NOT_RUN is a placeholder, like INTERRUPTED: a runner that had not yet heard
+ * the stop may have claimed the call and run it, and what it found wins in
+ * the request and the transcript.
  */
 export function speak(doc, turn) {
   if (!doc.turns) doc.turns = []
   if (stoppedFromOutside(doc)) {
     const left = runnableCalls(doc)
     for (const call of left) move(findCall(doc, call.id)?.block, "abandon")
-    if (left.length) doc.turns.push(makeTurn("tool", left.map((call) => resultBlock(call.id, NOT_RUN, { isError: true, summary: "not run: stopped" }))))
+    if (left.length) doc.turns.push(makeTurn("tool", left.map((call) => resultBlock(call.id, NOT_RUN, { isError: true, summary: "not run: stopped", placeholder: true }))))
   }
   doc.turns.push(turn)
 }
 
-/** Is this the result a takeover writes for a call it found cut off? */
+/** Is this a result written for a call whose own may still arrive: a takeover's INTERRUPTED, or `speak`'s NOT_RUN? */
 export function isInterruptedResult(block) {
   return block?.placeholder === true
 }

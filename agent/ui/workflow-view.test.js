@@ -8,7 +8,9 @@ import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { _resetDrivers, ensureDriver } from "../workflow/driver.js"
 import { AgentTool } from "./session-view.js"
 import { _reset as resetRunners } from "../runners/registry.js"
-import { makeTurn } from "../session/blocks.js"
+import { makeTurn, textBlock } from "../session/blocks.js"
+import { stopSession } from "../session/recovery.js"
+import { STOP } from "../session/status.js"
 import { withLedger } from "../fixtures/ledger.js"
 
 await initSubduction()
@@ -94,6 +96,33 @@ describe("the workflow view", () => {
     card.querySelector(".agent-wf-open").click()
     expect(card.querySelector(".agent-wf-open").textContent).toBe("Answer in its session")
     expect(opened).toEqual([child.url])
+    cleanup()
+  })
+
+  it("says a step a person stopped is stopped, waiting for a word, not running", async () => {
+    const { repo, plan } = await planWith([step("a")], { status: PLAN.stopped })
+    const child = repo.create({})
+    child.change((d) => {
+      initSession(d, {})
+      d.turns.push(makeTurn("user", [textBlock("go")]), makeTurn("assistant", [textBlock("Working")]))
+      d.lease = { runner: "tab-A", generation: 1, at: 0 }
+    })
+    plan.change((d) => Object.assign(d.steps[0], { status: STEP.running, sessionUrl: child.url }))
+    const { element, cleanup } = mount(plan, repo)
+    await tick()
+    const card = () => element.querySelector(".agent-wf-step")
+    expect(card().querySelector(".agent-wf-chip").textContent).toBe("running")
+
+    child.change((d) => stopSession(d, STOP.stopped, null, "automerge:person"))
+    await tick()
+    expect(card().dataset.state).toBe("running")
+    expect(card().querySelector(".agent-wf-chip").textContent).toBe("stopped")
+    expect(card().querySelector(".agent-wf-activity").textContent).toMatch(/^stopped by a person, waiting for a word or for the orchestrator · /)
+
+    // Speaking carries it on.
+    child.change((d) => d.turns.push(makeTurn("user", [textBlock("carry on")])))
+    await tick()
+    expect(card().querySelector(".agent-wf-chip").textContent).toBe("running")
     cleanup()
   })
 

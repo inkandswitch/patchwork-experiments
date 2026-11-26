@@ -43,7 +43,7 @@ holds the lease was cut off: the next runner takes it out and asks again.
 | `text` | `text` | what the model or a person said |
 | `reasoning` | `text` | the model's thinking, when it shows it |
 | `call` | `tool, input, where, status, runner, generation, ask, shown` | a tool call. `shown` is how it reads in the log and opens, `{ verb, detail, body?, format? }`, when its tool says |
-| `result` | `callId, output, isError, image, doc, file, facts, summary, placeholder, pinned?` | a call's answer, in a `tool` turn. `output` is for the model; `facts` is what the call did as plain data, for code (TOOLS.md). `placeholder` marks the one a runner wrote for a call it found cut off, whose own result may still arrive |
+| `result` | `callId, output, isError, image, doc, file, facts, summary, placeholder, pinned?` | a call's answer, in a `tool` turn. `output` is for the model; `facts` is what the call did as plain data, for code (TOOLS.md). `placeholder` marks one written for a call whose own result may still arrive: a runner's for a call it found cut off, or one closed not run by a Stop |
 | `context` | `focused, open` | what the person had focused and open when they spoke |
 | `attachment` | `url, name, docType, mimeType, image` | a document attached to a message |
 | `event` | `source, label, text, count, at` | news a tool delivered after its call was over |
@@ -122,28 +122,28 @@ A stop is a notice in an `assistant` turn of its own, in force wherever it runs.
 | `halted` | a workflow cancelled the step, or reopened one it is built on |
 | `stopped` | a person pressed Stop, in any view on any device; the turn's `author` is who |
 
-A run writes its own two with clearing `reconnecting`, in one change. The others
-are `stopSession(doc, kind, text, author)` (`session/recovery.js`): one change
-that also drops every streaming mark (the text stays) and clears `reconnecting`
-and `lease`, said once, and by a person only with something under way and no
-stop in force. Runners hear it and abort stream and tool; the loop checks atop
-every turn. A call left running lands its result, or is answered as interrupted.
+A run's own two, and the runner's for a run that could not start, clear
+`reconnecting` in the notice's change. The rest are `stopSession(doc, kind, text,
+author)` (`session/recovery.js`): one change that drops the streaming marks its
+copy sees (the text stays) and clears `reconnecting` and `lease`; said once per
+copy (two at once show as one), by a person only with something under way and no
+stop in force. Runners hear it and abort stream and tool, each taking its reply's
+mark off; the loop checks atop every turn. A call left running lands its result.
 
 `stopOf(doc)` is the last stop notice with nothing said after it: a `user` turn
-with a person's text or attachments, a reopened step's instructions, or a
-lifted budget's notice. A result, a tool's news, a `nudge`, a `summary` is not.
+with a person's text or attachments, a reopened step's instructions, or a lifted
+budget's notice (not a result, a tool's news, a `nudge`, a `summary`). A `stopped`
+or `halted` outlasts an `error` or `budget` after it with nothing said between.
 
-A stopped session is not work. Calls `approved` under it show "Not run: stopped";
-`speak(doc, turn)`, behind every `say` and reopened step, answers them as not
-run under a person's or a workflow's stop (a lifted budget lets them run). A
-step stopped but by an error is running in its plan, and waits (WORKFLOW.md).
+A stopped session is not work. Its calls `approved`, whenever (nothing records
+when), show "Not run: stopped"; `speak(doc, turn)` (`say`, a reopen) answers them
+not run, a placeholder, under a person's or a workflow's stop, not a budget's.
 
 ## The lease
 
-A runner claims a session by writing `lease` and refreshing `lease.at` while
-it works. Claiming bumps `generation`, and a runner checks before every write
-that the lease is still its own, so a displaced runner stops mid-stream and
-writes nothing more.
+A runner claims a session by writing `lease`, and refreshes `lease.at` while it
+works. Claiming bumps `generation`; a runner checks before every write that the
+lease is still its own, so a displaced runner stops and writes nothing more.
 
 - Liveness is judged on the observer's own clock: a lease is stale when its
   value has not changed for a while of the observer's time (`LeaseWatch`),
