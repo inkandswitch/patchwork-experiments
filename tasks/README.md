@@ -301,7 +301,9 @@ the task system's own Repo in that browser is heard running and ending, with its
 result. A task's code imports by bare name there as it does online. What a task writes through
 `ctx.repo` stays in its run worker's storage, since it reaches the page only by way of the sync
 server, and the run's log says it stayed on the machine. `probes/browser-run.mjs --no-network`
-shows all of this with every host name unresolvable.
+shows all of this with every host name unresolvable, and its check 25 shows, from every request
+DevTools sees each page and each worker make, that none leaves the machine but the Repos' sockets
+to the sync server.
 
 ## Using it from another package
 
@@ -352,7 +354,7 @@ processes and say what they saw, one line per check or measurement:
   the asker reads succeeded (`term`). `probes/write-path/browser.mjs` (after `pnpm build`, in
   the chrome slot) measures `out`, `in` and `ack` for a browser's run worker.
 - `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
-  stand-in page in a throwaway Chrome profile, with no sync server but for checks 24 and 22, 24
+  stand-in page in a throwaway Chrome profile, with no sync server but for checks 24 and 22, 25
   checks. The page mounts
   what a frame does: the components the package tags `background`, found by tag in its plugin
   list (the page has no registry), and the titlebar tool. One pool per profile across tabs; a
@@ -368,8 +370,11 @@ processes and say what they saw, one line per check or measurement:
   beat after the run was recorded, and rejects, `cancelled`, for a run stopped within the beat;
   and (24) in a context whose Repos name the real sync server, the pool starts, a do-nothing task
   runs, and `probes/append-task.js` runs unchanged on a text its run worker made, needing no sync
-  server. With `--no-network` Chrome resolves no host but the probe's own 127.0.0.1, and every
-  check runs but 22, which needs the sync server and is skipped, saying so.
+  server; and (25) of every request a page or a worker made, as DevTools saw it (each worker held
+  at its start until its requests are watched), none left the machine, failed or not, but the
+  Repos' sockets to the sync server they are given. With `--no-network` Chrome resolves no host
+  but the probe's own 127.0.0.1, and every check runs but 22, which needs the sync server and is
+  skipped, saying so.
 - `probes/real-run.mjs <automerge:package url>` (in the chrome slot): a published copy of the
   package (a staging package will do) in the real Patchwork, https://patchwork.inkandswitch.com/,
   in a throwaway profile, 22 checks, the last two that neither the page nor the task system's

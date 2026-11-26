@@ -33,7 +33,11 @@
 // network but 22, which needs the sync server and is skipped, saying so.
 // So it shows that a pool and its run workers start with nothing fetched
 // from the network, that tasks run, and (24) that a task importing Automerge
-// by bare name runs, with the sync server named but unreachable.
+// by bare name runs, with the sync server named but unreachable. Check 25,
+// with or without the network, looks at every request each page and each
+// worker made, as DevTools saw it: none leaves this machine but the Repos'
+// sockets to the sync server, so a request that would fail quietly with no
+// network is caught too.
 //
 // What stands in for Patchwork: the site's modules (Repo, storage,
 // automerge, subduction, solid), bundled here from this package's own
@@ -46,9 +50,9 @@
 // through the queue browser's Join, and checks 1 to 17 ask it. Checks 20
 // and 21 run in a browser context of its own, where nothing mounts the
 // background component until 21 does, and then lets it go. Check 23 runs
-// on tab A's pool, after 19. Checks 24 and 22 run last, in a browser context
-// of their own, in that order. A copy of dist/ stamped as a newer build is
-// served at /dist-newer.
+// on tab A's pool, after 19. Checks 24 and 22 run next to last, in a browser
+// context of their own, in that order, and 25 last, over every request seen.
+// A copy of dist/ stamped as a newer build is served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
 // any failed. The files are served here (not by cdp.mjs, see below); Chrome
@@ -258,9 +262,14 @@ const workerLogs = [];
 const pageErrors = [];
 /** Why Chrome did not keep a page in its back/forward cache, by page session, when it said. */
 const notCached = new Map();
+/** Every request a page or a worker made, as DevTools saw it (check 25), and each page session's label. */
+const requests = [];
+const pageLabels = new Map();
 ws.addEventListener("message", (ev) => {
   const m = JSON.parse(ev.data);
   if (m.method === "Page.backForwardCacheNotUsed") notCached.set(m.sessionId, (m.params.notRestoredExplanations ?? []).map((e) => e.reason));
+  if (m.method === "Network.requestWillBeSent") requests.push({ session: m.sessionId, url: m.params.request.url, type: m.params.type, at: Date.now() });
+  if (m.method === "Network.webSocketCreated") requests.push({ session: m.sessionId, url: m.params.url, type: "WebSocket", at: Date.now() });
   if (m.id && pending.has(m.id)) {
     const { ok, no, method } = pending.get(m.id);
     pending.delete(m.id);
@@ -269,9 +278,12 @@ ws.addEventListener("message", (ev) => {
   if (m.method === "Target.attachedToTarget" && m.params.targetInfo.type === "worker") {
     const { sessionId, targetInfo } = m.params;
     workers.set(sessionId, { url: targetInfo.url, parent: m.sessionId, at: Date.now(), gone: null });
-    // its own workers, and what it says that is an error
-    send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId).catch(() => {});
+    // its own workers, what it says that is an error, and every request it
+    // makes: it waits to start until these are on, so its first are seen
+    send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, sessionId).catch(() => {});
     send("Runtime.enable", {}, sessionId).catch(() => {});
+    send("Network.enable", {}, sessionId).catch(() => {});
+    send("Runtime.runIfWaitingForDebugger", {}, sessionId).catch(() => {});
   }
   if (m.method === "Target.detachedFromTarget" && workers.has(m.params.sessionId)) {
     workers.get(m.params.sessionId).gone = Date.now();
@@ -338,12 +350,17 @@ const allGone = (ids, until) =>
     look();
   });
 
+// A tab opens blank and is sent to its page once its requests, and its
+// workers', are watched (check 25).
 async function tab(label, path = "/probe/index.html", browserContextId) {
-  const { targetId } = await send("Target.createTarget", { url: `${base}${path}`, background: false, ...(browserContextId ? { browserContextId } : {}) });
+  const { targetId } = await send("Target.createTarget", { url: "about:blank", background: false, ...(browserContextId ? { browserContextId } : {}) });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
+  pageLabels.set(sessionId, label);
   await send("Runtime.enable", {}, sessionId);
   await send("Page.enable", {}, sessionId);
-  await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
+  await send("Network.enable", {}, sessionId);
+  await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, sessionId);
+  await send("Page.navigate", { url: `${base}${path}` }, sessionId);
   const js = async (expr, ms = 60_000) => {
     const r = await Promise.race([
       send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }, sessionId),
@@ -369,6 +386,8 @@ async function tab(label, path = "/probe/index.html", browserContextId) {
   return t;
 }
 
+/** The probe's own fetch of the sync server's host, which check 25 does not count against the package. */
+const reachability = { session: null, url: null, from: 0, to: 0 };
 let failed = false;
 const check = (name, ok, observed) => {
   console.error(`${ok ? "ok  " : "FAIL"} ${name}: ${observed}`);
@@ -385,10 +404,12 @@ try {
   // Whether a page reaches beyond this machine, tried on the sync server's host.
   {
     const host = new URL(SYNC_SERVER.replace(/^ws/, "http")).origin;
+    reachability.from = Date.now();
     const reached = await A.js(
       `fetch(${J(host)}, { mode: 'no-cors', signal: AbortSignal.timeout(10_000) }).then(() => 'reached', (error) => 'not reached: ' + error.message)`,
       15_000,
     );
+    Object.assign(reachability, { session: A.sessionId, url: new URL(host).href, to: Date.now() });
     log(`the network: ${host} from a page, ${reached}${NO_NETWORK ? " (--no-network)" : ""}`);
     if (NO_NETWORK && reached === "reached") throw new Error(`--no-network, but a page reached ${host}`);
   }
@@ -972,6 +993,37 @@ try {
     } finally {
       await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
     }
+  }
+
+  // 25. Nothing a page or a worker of the package asked for left this
+  // machine, failed or not, but the Repos' sockets to the sync server they
+  // are given (context S's; the other pages are given ws://127.0.0.1:9, a
+  // port here that refuses). Every request DevTools saw from every tab and
+  // every worker under it, each worker held at its start until its requests
+  // were watched: this origin's files, data: and blob: URLs, and those
+  // sockets. The probe's own fetch of the sync server's host is not counted.
+  {
+    const here = new URL(base).origin;
+    const syncSocket = new URL(SYNC_SERVER).href;
+    const whose = (session) => {
+      const page = pageLabels.get(pageOf(session)) ?? "?";
+      return workers.has(session) ? `${page}'s ${workers.get(session).url.split("/").at(-1).replace(/-[\w-]{8}\.js$/, "")}` : page;
+    };
+    const ours = (r) => r.session === reachability.session && r.url === reachability.url && r.at >= reachability.from && r.at <= reachability.to;
+    const local = (r) =>
+      /^(data|blob):/.test(r.url) ||
+      new URL(r.url).origin === here ||
+      (r.type === "WebSocket" && (r.url === "ws://127.0.0.1:9/" || r.url === syncSocket));
+    const counted = requests.filter((r) => !ours(r));
+    const beyond = counted.filter((r) => !local(r));
+    const fromWorkers = counted.filter((r) => workers.has(r.session)).length;
+    const shims = new Set(counted.filter((r) => /es-module-shims/.test(r.url)).map((r) => new URL(r.url).pathname.replace(/-[\w-]{8}\.js$/, ".js")));
+    const sockets = new Set(counted.filter((r) => r.type === "WebSocket").map((r) => r.url));
+    check(
+      "25 nothing a page or a worker asked for left this machine, failed or not, but the Repos' sockets to the sync server they are given",
+      counted.length > 0 && fromWorkers > 0 && beyond.length === 0,
+      `${counted.length} requests, ${fromWorkers} of them from ${workers.size} workers; es-module-shims loaded from ${J([...shims])}; sockets to ${J([...sockets])}; beyond this machine ${beyond.length ? J(beyond.slice(0, 10).map((r) => `${whose(r.session)}: ${r.type} ${r.url.slice(0, 120)}`)) : "none"}`,
+    );
   }
 } catch (error) {
   console.error("probe stopped:", error?.stack ?? error);
