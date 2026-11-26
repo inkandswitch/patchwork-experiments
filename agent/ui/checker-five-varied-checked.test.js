@@ -6,6 +6,10 @@
  * `channel`); a session that can never be found with two pools heard, over a
  * simulated minute, and a failure whose words hold a web address, a file url
  * and a document url (runners/ask.js).
+ * Then the three it found, fixed: the orchestrator followed only for its
+ * channel holds no driver (workflow/driver.js `holdersMay`), a view that holds
+ * its plan's driver already does not join it on every change, and a document
+ * url leaves the sentence's punctuation behind.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
@@ -179,8 +183,9 @@ describe("the orchestrator followed only for its channel", () => {
   // joins the driver as that session. The view closes: no follow but the
   // channel's ever held the session's drivers, so none is let go, and the
   // channel holds the follow that holds the driver that holds the channel,
-  // until the plan's end news closes it (the edge the fixer named).
-  it.fails("lets go of everything once the view has, while the plan runs on", async () => {
+  // until the plan's end news closes it (the edge the fixer named). Fixed: a
+  // session followed here only for a channel holds no driver.
+  it("lets go of everything once the view has, while the plan runs on", async () => {
     const repo = new Repo({ network: [] })
     const { orchestrator, a, b, plan } = planIn(repo)
     const view = {}
@@ -193,6 +198,73 @@ describe("the orchestrator followed only for its channel", () => {
     expect(driver.stopped).toBe(true)
     expect(holdersOf(orchestrator.url)).toBe(0)
     expect(holdersOf(b.url)).toBe(0)
+  })
+
+  it("its workflow tool starts no driver for another plan", async () => {
+    const repo = new Repo({ network: [] })
+    const { orchestrator, a, plan } = planIn(repo)
+    const other = planIn(repo).plan
+    const view = {}
+    const driver = await drivePlanHere(plan.url, { repo, holder: view, startSession: quiet })
+    answer(a)
+    await driver.kick()
+    expect(holdersOf(orchestrator.url)).toBe(1)
+    expect(await ensureDriver(other.url, { repo, holder: sessionHolder(orchestrator.url), startSession: quiet })).toBe(null)
+    expect(getDriver(other.url)).toBe(null)
+    letGo(view)
+    expect(driver.stopped).toBe(true)
+    expect(holdersOf(orchestrator.url)).toBe(0)
+  })
+
+  it("a session also shown here holds the driver its tool joins, until that view closes", async () => {
+    const repo = new Repo({ network: [] })
+    const { orchestrator, a, plan } = planIn(repo)
+    const view = {}
+    const driver = await drivePlanHere(plan.url, { repo, holder: view, startSession: quiet })
+    answer(a)
+    await driver.kick()
+    const shown = follow(orchestrator, { repo })
+    await ensureDriver(plan.url, { repo, holder: sessionHolder(orchestrator.url) })
+    letGo(view)
+    expect(driver.stopped).toBe(false)
+    shown.release()
+    expect(driver.stopped).toBe(true)
+    expect(holdersOf(orchestrator.url)).toBe(0)
+  })
+})
+
+describe("a workflow view open on a running plan, through a burst of plan changes", () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+  /** Ticks of the plan's driver over twenty changes ten milliseconds apart. */
+  async function ticksOver(withView) {
+    const repo = new Repo({ network: [] })
+    const { plan } = planIn(repo)
+    const close = withView ? viewOn(plan, repo) : null
+    const holder = {}
+    const driver = await drivePlanHere(plan.url, { repo, holder, startSession: quiet })
+    await settle()
+    await driver.ticking
+    expect(driver.holders.size).toBe(withView ? 2 : 1)
+    const tick = vi.spyOn(driver, "tick")
+    for (let i = 0; i < 20; i++) {
+      changePlan(plan, (d) => (d.goal = `g${i}`))
+      await wait(10)
+    }
+    await wait(300)
+    await driver.ticking
+    const ticks = tick.mock.calls.length
+    close?.()
+    letGo(holder)
+    expect(driver.stopped).toBe(true)
+    return ticks
+  }
+
+  it("costs about as many ticks as with no view open", async () => {
+    const none = await ticksOver(false)
+    const viewed = await ticksOver(true)
+    expect(none).toBeGreaterThan(0)
+    expect(none).toBeLessThan(6)
+    expect(viewed).toBeLessThanOrEqual(none + 1)
   })
 })
 
@@ -287,9 +359,9 @@ describe("a failure whose words hold a web address, a file url and a document ur
     const result = await askFor(repo, handle.url)
     expect(result.error).toBe(true)
     expect(told.failed).not.toMatch(/automerge:|[a-z][a-z0-9+.-]*:\/\//i)
-    // A web address leaves its comma behind; a document url's heads take the
-    // full stop after them with them (withoutUrls, as it was before).
-    expect(told.failed).toBe("fetch failed: a web address, reading a web address; opening a document")
+    // Each leaves the sentence's punctuation behind: the web address its
+    // comma, the document url with heads its full stop.
+    expect(told.failed).toBe("fetch failed: a web address, reading a web address; opening a document.")
     expect(result.why).toBe(told.failed)
   })
 })

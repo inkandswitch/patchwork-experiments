@@ -12,7 +12,8 @@
  *       the session is a running step's (workflow/driver.js), the plan's
  *       channel to its orchestrator holds that while it is open, and the
  *       last to let go ends it. The drivers its workflow tools started are
- *       let go once every holder but a channel has: a channel is a driver's,
+ *       let go once every holder but a channel has, and while it has none
+ *       they join none (driver.js `holdersMay`): a channel is a driver's,
  *       so it never keeps one going. A burst under way is the pool's, and
  *       goes on.
  *   askFor(repo, sessionUrl)  ask for a session's work with this page's
@@ -69,7 +70,7 @@ import { WHERE, unknownBlocks, versionStanding } from "../session/schema.js"
 import { AGENT } from "../assembly/agent.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { loadPluginTools, pluginCatalogue } from "../assembly/plugins.js"
-import { ensureDriver, getDriver, letGo, sessionHolder } from "../workflow/driver.js"
+import { ensureDriver, getDriver, letGo, sessionHolder, holdersMay } from "../workflow/driver.js"
 import { readKey, readRelay, SEARCH_KEY_ID } from "../providers/keys.js"
 import { relayFetch } from "../net/relay.js"
 import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "../net/guard.js"
@@ -297,6 +298,13 @@ export const ASK_SETTLE_MS = 200
 
 /** sessionUrl -> follower. On globalThis, so a newer version of this module finds and retires an older one's. */
 const followers = (globalThis.__patchworkAgentFollowers ??= new Map())
+
+// A session followed here only for a driver's channel holds no driver: its
+// workflow tools join nothing, as when its other holders have all let go.
+holdersMay((holder) => {
+  for (const [url, entry] of followers) if (!entry.disposed && entry.toolHolders === 0 && sessionHolder(url) === holder) return false
+  return true
+})
 
 /** What the watches are, without how far each has looked: a change to these is a watch made or stopped. */
 const watchKey = (doc) =>

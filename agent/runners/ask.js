@@ -379,9 +379,9 @@ function has(doc, heads) {
   }
 }
 
-/** A message with every url taken out: a document's, and a web address. */
+/** A message with every url taken out: a document's, and a web address; the sentence's own punctuation after either stays. */
 function withoutUrls(text) {
   return text
-    .replace(/automerge:[1-9A-HJ-NP-Za-km-z]+(?:#[^\s'"`)]*)?/g, "a document")
+    .replace(/automerge:[1-9A-HJ-NP-Za-km-z]+(?:#[^\s'"`)]*[^\s'"`).,;:])?/g, "a document")
     .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s'"`)]*[^\s'"`).,;:]/gi, "a web address")
 }

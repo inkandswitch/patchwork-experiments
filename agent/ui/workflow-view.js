@@ -18,7 +18,7 @@ import { formatCost, dollars } from "../session/usage.js"
 import { STATUS } from "../session/schema.js"
 import { sessionTitle } from "../session/title.js"
 import { activityOf } from "./attention.js"
-import { keptCounts, letGo } from "../workflow/driver.js"
+import { keptCounts, letGo, getDriver } from "../workflow/driver.js"
 import { drivePlanHere } from "../runners/page.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { renderWaitingItem } from "./waiting.js"
@@ -439,6 +439,9 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
   // (workflow/driver.js perform).
   function driveWhileRunning() {
     if (!repo || disposed || handle.doc()?.status !== PLAN.running) return
+    // Held already: the driver hears the change itself, and gathers a burst
+    // of them into one tick; joining again would tick on each.
+    if (getDriver(handle.url)?.holders.has(root)) return
     drivePlanHere(handle.url, { repo, holder: root }).then(
       // A view closed while the driver was being found holds nothing.
       () => disposed && letGo(root),
