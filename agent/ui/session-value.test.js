@@ -156,6 +156,21 @@ describe("where the session's task is, as the queue says", () => {
     expect(hintFacts(doc, { ...LOCAL, work: view("missing"), pageTool: "view_mount" })).toMatchObject({ foreign: false, claimed: null, pageTool: "view_mount" })
     expect(value(doc, { work: view("missing"), pageTool: "view_mount" }).canTakeOver).toBe(false)
   })
+
+  it("during the beat of this page's own claim (the call approved, not yet claimed) it is work in this page, not someone else's", () => {
+    const doc = session({}, (d) => {
+      d.burst = { run: "claim-2" }
+      d.turns.push(makeTurn("assistant", [callBlock("doc_create", {}, { id: "c2", where: "host", status: CALL.approved })]))
+    })
+    // Another page's view, or this one's before it knows: foreign, as before.
+    expect(hintFacts(doc, { ...LOCAL, work: view("missing") }).foreign).toBe(true)
+    // This page's follower holds the claim.
+    const facts = hintFacts(doc, { ...LOCAL, work: view("missing"), pageClaim: "claim-2" })
+    expect([facts.foreign, facts.claimed, facts.pageTool]).toEqual([false, null, "doc_create"])
+    expect(value(doc, { work: view("missing"), pageClaim: "claim-2" })).toMatchObject({ hint: "Running doc_create in this page", canTakeOver: false })
+    // A claim this page held earlier is not this one.
+    expect(hintFacts(doc, { ...LOCAL, work: view("missing"), pageClaim: "claim-old" }).foreign).toBe(true)
+  })
 })
 
 describe("the header", () => {

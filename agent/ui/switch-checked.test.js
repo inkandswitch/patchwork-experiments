@@ -788,14 +788,14 @@ describe("after the fixes (cd5cb96c), rechecked", () => {
     expect(pool.asks).toHaveLength(1)
   }, 20_000)
 
-  // Found by the recheck (pre-existing since a32d38c4, not from the fix):
-  // while this page takes a parked call it writes its claim id into `burst`
-  // and waits a beat (runners/page.js BEAT_MS, 2 s) before it claims the
-  // call. For that beat `burst` names neither a run the queue lists nor a
-  // running call's claim, so ui/session-value.js foreignBurst calls it
-  // someone else's, on this page too: the hint says "Someone else's work is
-  // under way here…" and Take over is offered, though this page holds it.
-  it.fails("while this page takes a parked call, its own view does not call that someone else's work", async () => {
+  // Found by the recheck (pre-existing since a32d38c4), fixed in step 5's
+  // first commit: while this page takes a parked call it writes its claim id
+  // into `burst` and waits a beat (runners/page.js BEAT_MS, 2 s) before it
+  // claims the call. For that beat `burst` names neither a run the queue
+  // lists nor a running call's claim, so it read as someone else's, on this
+  // page too. The view now knows the claim its own follower holds
+  // (follow `claim()`, ui/session-value.js `pageClaim`).
+  it("while this page takes a parked call, its own view does not call that someone else's work", async () => {
     setHostUrls({ "@inkandswitch/patchwork-plugins": pluginsFile })
     const repo = new Repo({ network: [] })
     const provider = makeMock([[{ type: "call", id: "d1", name: "doc_create", input: { datatype: "note", title: "N" } }], [{ type: "text", delta: "made it" }]])
@@ -818,7 +818,8 @@ describe("after the fixes (cd5cb96c), rechecked", () => {
     expect(offered).toEqual([])
   }, 20_000)
 
-  // Found by the recheck (from the fix): an older version's SessionRunner
+  // Found by the recheck (from the fix), fixed in step 5's first commit
+  // (retireEarlier calls release() first): an older version's SessionRunner
   // stopped while it holds its lease finishes the reply it is streaming, cut
   // off and unmarked (its loop's "stopped on purpose" path), and that is no
   // work for today's code, so the person's message is left with half an
@@ -826,7 +827,7 @@ describe("after the fixes (cd5cb96c), rechecked", () => {
   // (registry.js releaseAll: release(), then stop()), which leaves the reply
   // marked, debris for the next burst. Shown against the old code itself in
   // the checker's scratch script (old-runner-retire.mjs); here, the order.
-  it.fails("an older version's runner is given up (release) before it is stopped, so a reply it was streaming stays debris", () => {
+  it("an older version's runner is given up (release) before it is stopped, so a reply it was streaming stays debris", () => {
     const calls = []
     const scope = { __patchworkAgentRunners: new Map([["automerge:made-up-1", { runner: { release: () => calls.push("release"), stop: () => calls.push("stop"), retire: () => calls.push("retire") }, dispose: () => calls.push("dispose") }]]) }
     retireEarlier(scope)

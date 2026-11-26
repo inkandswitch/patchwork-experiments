@@ -15,6 +15,8 @@
  *     pool          this browser's pool id (the tasks package's POOL_ID_KEY),
  *                   or null
  *     pageTool      the tool of the parked call this page runs now, or null
+ *     pageClaim     the id this page's follower wrote into `burst` to take a
+ *                   parked call (runners/page.js follow `claim()`), or null
  *     voiceStatus   what dictation is doing, or null when it is off
  *     place         where the session stands in its workflow (ui/standing.js
  *                   `current()`), or null
@@ -104,18 +106,24 @@ function claimedBy(doc, claim) {
 
 /** The facts the hint is decided from. */
 export function hintFacts(doc, local) {
-  const pageTool = local.pageTool ?? null
-  const claimed = pageTool ? null : claimedBy(doc, doc.burst?.run ?? null)
+  const parked = runnableCalls(doc).find((call) => call.where === WHERE.host)?.tool ?? null
+  // `burst` naming the claim this page's follower holds is work in this
+  // page, from the claim's write on: during its beat the call is not yet
+  // claimed, and is the parked one it is taking.
+  const ours = local.pageClaim != null && doc.burst?.run === local.pageClaim
+  const pageTool = local.pageTool ?? (ours ? parked : null)
+  const here = pageTool != null || ours
+  const claimed = here ? null : claimedBy(doc, doc.burst?.run ?? null)
   return {
     voice: local.voiceStatus ?? null,
     version: versionStanding(doc),
     outdated: unknownBlocks(doc).length > 0,
     hasKey: !!local.hasKey,
     work: workOf(local.work ?? null, local.pool ?? null),
-    foreign: !pageTool && foreignBurst(doc, local.work ?? null),
+    foreign: !here && foreignBurst(doc, local.work ?? null),
     pageTool,
     claimed,
-    parked: runnableCalls(doc).find((call) => call.where === WHERE.host)?.tool ?? null,
+    parked,
     asking: questionsAwaitingAnswer(doc).length,
     pending: callsAwaitingApproval(doc).length,
     status: statusOf(doc),

@@ -272,6 +272,7 @@ export function AgentTool(handle, element, options = {}) {
       work,
       pool: poolHere(),
       pageTool: followed?.running() ?? null,
+      pageClaim: followed?.claim() ?? null,
       voiceStatus: composer.dictation.status(),
       place: standing?.current() ?? null,
       waiting: waiting?.items() ?? [],

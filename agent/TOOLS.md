@@ -147,8 +147,9 @@ notices on a channel fold together, wait for things to settle, and are
 rate-limited; and a session that is running, waiting on a person or failed is
 not woken. The events are a page's: the page that shows or drives the session
 (`runners/page.js` follow) owns them, opens the session's `watches` again
-whenever they change, and asks for the work a wake makes. A burst's only
-record, so `doc_watch` there writes the watch and the page listens. A watch
+whenever they change, and asks for the work a wake makes. A burst's events
+only record: `doc_watch` in a burst writes the watch into `watches`, and the
+page listens. A watch
 leaves out edits whose change hashes the run reported as its own.
 
 ## Where a call runs

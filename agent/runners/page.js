@@ -85,17 +85,24 @@ const bare = (url) => String(url).split("#")[0]
 
 /**
  * Retire what earlier code left in this page: every runner an older version
- * registered on globalThis (`__patchworkAgentRunners`: stopped at once, as a
- * Stop would, so it does not work on a session beside the burst this page is
- * about to ask for; then the map deleted), and every follower of another
- * version of this module. An older view's own dispose closes the shared
- * worker connection it held.
+ * registered on globalThis (`__patchworkAgentRunners`: given up, then
+ * stopped at once, so it does not work on a session beside the burst this
+ * page is about to ask for; then the map deleted), and every follower of
+ * another version of this module. An older view's own dispose closes the
+ * shared worker connection it held.
+ *
+ * Given up first, as the old registry did on pagehide: a runner stopped
+ * while it still holds its session finishes the reply it is streaming, cut
+ * off and unmarked, which is no work for this code, and the person's message
+ * is left half answered. Given up, it writes nothing more, and the reply
+ * stays marked: debris, which the next burst settles and answers.
  */
 export function retireEarlier(scope = globalThis) {
   const runners = scope.__patchworkAgentRunners
   if (runners) {
     for (const entry of runners.values()) {
       try {
+        entry?.runner?.release?.()
         entry?.runner?.stop?.()
         entry?.dispose?.()
       } catch {
@@ -286,8 +293,11 @@ const watchKey = (doc) =>
 
 /**
  * Keep a session going from this page, as the header says. Returns
- * `{ events, mount(element), running(), onRunning(fn), release() }`:
- * `running()` is the tool of the parked call this page runs now, or null.
+ * `{ events, mount(element), running(), claim(), onRunning(fn), release() }`:
+ * `running()` is the tool of the parked call this page runs now, or null;
+ * `claim()` the id this page wrote into `burst` to take a parked call, from
+ * that write (before its beat) until it lets go, or null. `onRunning` is told
+ * whenever either changes.
  *
  * @param {object} handle  the session's DocHandle in the page's Repo
  * @param {object} opts
@@ -310,6 +320,7 @@ export function follow(handle, { repo, element = null } = {}) {
       entry.view.element = to
     },
     running: () => entry.running,
+    claim: () => entry.claim,
     onRunning: (fn) => {
       entry.watchers.add(fn)
       return () => entry.watchers.delete(fn)
@@ -359,6 +370,7 @@ function startFollowing(handle, repo) {
     view,
     events,
     running: null,
+    claim: null,
     watchers: new Set(),
     ask,
     dispose,
@@ -367,6 +379,14 @@ function startFollowing(handle, repo) {
   let calls = null
   let watchesAt = null
   let soon = null
+  /** Tell the views what this page holds now (its claim, the tool it runs). */
+  function tell() {
+    for (const fn of [...entry.watchers]) {
+      try {
+        fn(entry.running)
+      } catch {}
+    }
+  }
   const contextReady = pageContext(handle, { repo, events, view }).then((context) => {
     if (entry.disposed) return
     calls = pageCalls(handle, {
@@ -378,11 +398,11 @@ function startFollowing(handle, repo) {
       ask,
       onRunning: (tool) => {
         entry.running = tool
-        for (const fn of [...entry.watchers]) {
-          try {
-            fn(tool)
-          } catch {}
-        }
+        tell()
+      },
+      onClaim: (id) => {
+        entry.claim = id
+        tell()
       },
     })
     calls.tick().catch(() => {})
@@ -513,6 +533,7 @@ const mountOf = (call) => (typeof call?.input?.mountId === "string" ? call.input
  * @param {Function} [opts.splice]
  * @param {EventTarget|null} [opts.target]  where `pagehide` is heard; default globalThis
  * @param {(tool:string|null)=>void} [opts.onRunning]  told the tool of the call it runs now, and null after
+ * @param {(id:string|null)=>void} [opts.onClaim]  told the id it writes into `burst`, just before the write, and null once it lets go (or did not write)
  * @returns {{ tick: ()=>Promise<void>, pagehide: ()=>void, dispose: ()=>void }}
  */
 export function pageCalls(handle, opts) {
@@ -525,6 +546,11 @@ export function pageCalls(handle, opts) {
   const running = (tool) => {
     try {
       opts.onRunning?.(tool)
+    } catch {}
+  }
+  const holding = (id) => {
+    try {
+      opts.onClaim?.(id)
     } catch {}
   }
 
@@ -586,19 +612,25 @@ export function pageCalls(handle, opts) {
     // 1. `burst`, only while it is null and no stop is in force.
     const id = newId()
     let wrote = false
+    // Told before the write, so a view that renders on the change already
+    // knows the claim is this page's.
+    holding(id)
     handle.change((d) => {
       if (pageCall(d)?.id !== call.id) return
       d.burst = { run: id }
       wrote = true
     })
-    if (!wrote) return false
+    if (!wrote) {
+      holding(null)
+      return false
+    }
     held = { id, callId: call.id, controller: null }
     try {
       await wait(beatMs)
       if (gone) return false
       // 2. The claim, only if `burst` still names it and no stop is in force;
       // otherwise its own `burst` let go, if it still names it.
-      const mine = { runner: id, generation: null }
+      const mine = { runner: id }
       let claimed = false
       handle.change((d) => {
         if (disposed || d.burst?.run !== id || stopOf(d)) return
@@ -631,6 +663,7 @@ export function pageCalls(handle, opts) {
       return moved && !stopOf(handle.doc())
     } finally {
       held = null
+      holding(null)
     }
   }
 
@@ -711,7 +744,7 @@ export function pageCalls(handle, opts) {
     if (was) {
       handle.change((d) => {
         const found = was.callId ? findCall(d, was.callId) : null
-        if (found && move(found.block, "abandon", { runner: was.id, generation: null }) && !findResult(d, was.callId)) {
+        if (found && move(found.block, "abandon", { runner: was.id }) && !findResult(d, was.callId)) {
           if (!d.turns) d.turns = []
           d.turns.push(makeTurn("tool", [resultBlock(was.callId, INTERRUPTED, { isError: true, summary: "interrupted", placeholder: true })]))
         }
