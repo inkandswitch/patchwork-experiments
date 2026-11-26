@@ -33,8 +33,10 @@ export const plugins = [
     type: "agent:tool",
     id: "notebook_run",
     name: "Run a notebook",
-    // The page: Pyodide runs in a dedicated Worker, and Chrome has no Worker
-    // inside a SharedWorker, so the agent's shared-worker runner can't start one.
+    // The page: Pyodide runs in a dedicated Worker the page starts, and the
+    // kernel is kept between calls in the page. The agent's bursts run in a
+    // pool's worker and import no plugin code, so a call to this parks there
+    // until a page showing the session (or driving its workflow) runs it.
     where: "host",
     risk: "edit",
     description:

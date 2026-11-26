@@ -1670,3 +1670,63 @@ history at e8ab89aa. A document the walk could not read (the server did not
 have it) may still carry a session in the earlier shape, which says so and is
 replaced by a new one where it was kept.
 
+
+## 2026-11-26: the switch, every burst a task on the person's own queue
+
+Until now a session was run by whichever runner held its lease: a tab's, a
+SharedWorker's shared by the tabs, or a Node process's. Each refreshed the
+lease every five seconds, judged its rivals' liveness on its own clock, waited
+two seconds before believing a claim, and handed host-tier calls to a tab. The
+registry kept runners on `globalThis` so that closing a view did not stop one,
+and a newer version of the code retired an older one's.
+
+The task system (`tasks/`) came to do what the lease did, for every package:
+a task under a key is asked once, a run starts only once its pool has held it
+for a beat unopposed (`ctx.settled`), an earlier heard run holds, and a run
+whose pool goes is taken again. So, as the lead decided on 2026-11-25
+(notes/DESIGN.md §12 and §13, notes/SPEC-AGENT.md):
+
+- One task is one burst of one session, asked under `agent:<session>` on the
+  asker's own queue, run in a pool's worker, always: a browser pool's run
+  worker or a Node host's thread. Built and probed unused first (steps 2 and
+  3), then switched to in one change (step 4), so no lease-holding runner and
+  no task ever shared a session.
+- The session holds no lease. `burst: { run }` marks the run working on it,
+  written at its turn boundaries and cleared at its end; marks name run ids,
+  and debris is judged by equality with `burst.run`, with no clock. A copy
+  of a session, or a side thread, clears it.
+- Stop is a notice written into the session from anywhere, then the task
+  stopped on the stopper's queue. A run hears the notice and stops; its
+  writes are refused from then on.
+- Keys travel in the task's input, which only the person's queue holds. The
+  README's line that a key never enters a document went.
+- A call that needs a page parks, and the page showing the session, or
+  driving its plan, runs it, claiming through `burst` and a beat, and asks
+  again. Plugin code is not imported in a pool run: plugin calls park too.
+- doc_watch in a burst writes the watch and opens nothing; the page restores
+  watches and is told the hashes the run reports as its own, so a restored
+  watch leaves out the agent's own edits, at its wake and at catch-up.
+- The views ask after every write of work and whenever their copy shows
+  work, and say what the queue says: working on this browser or another
+  device, waiting for a device, a page tool, someone else's work (with Take
+  over), the network.
+- The workflow driver asks for its steps' work instead of starting runners,
+  and halting a step stops its task. The plan's own lease stays until the
+  driver is rebuilt without it (step 5).
+
+Gone with it: the tab, SharedWorker and Node runners, the registry,
+`ui/session-runners.js`, SessionRunner and its claim, heartbeat and confirm
+wait, the session's `lease` and `lastGeneration`, a call's `generation`, the
+lease-judged recovery functions, the whole-string text fallback, and the
+probes of the SharedWorker and the Node runner. Documents from before keep a
+stale `lease` that nothing reads; there is no migration.
+
+Choices made while the lead slept, kept unless said otherwise: a burst ends
+`outdated` on a session of another version, and a page asks nothing for one,
+or for a session with no model key in this browser; the driver's reasons for
+a failed step are the asked task's outcomes other than idle, waiting on a
+person, parked or nothing; a re-ask when a followed task ends goes back
+through the page's own asker, so it carries the keys; the line under the
+composer keeps "no key, working on another device" as a row of its own; a
+page claim held by another tab reads "Running <tool> in another page", not
+someone else's work.

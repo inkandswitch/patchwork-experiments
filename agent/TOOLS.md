@@ -25,7 +25,7 @@ decides anything about a tool.
 
 | field | |
 |---|---|
-| `where` | `"worker"`: a repo is all it needs, so it runs wherever the session does. `"host"`: it needs the page (a DOM, mounted views). A runner that cannot run a call leaves it for one that can |
+| `where` | `"worker"`: a repo is all it needs, so it runs in the burst, wherever that is. `"host"`: it needs a page (a DOM, mounted views); a burst parks it for one (*Where a call runs*) |
 | `risk` | `read`, `self`, `edit`, `write` or `external`: whether its calls wait for the person ([SESSION.md](SESSION.md), *Approval*) |
 | `target` | which document a call is about: `"none"`, or `{ fields: [...], fallback?: "subject", kind? }`, the first of those input fields that is given. Undeclared, it is `input.url`, else `input.root` |
 | `group`, `groupCovers` | the name its grants are shared under with other tools that mean the same decision to a person (`web`, `files`), and what a grant on the whole group allows, in words |
@@ -52,12 +52,12 @@ decides anything about a tool.
 
 | need | a session has it when | a built-in is handed |
 |---|---|---|
-| `workflows` | its Workflows switch is on, and it is not itself a step | `ctx.workflows`: the real repo, the step starter, every tool the runner has |
+| `workflows` | its Workflows switch is on, and it is not itself a step | `ctx.workflows`: the real repo, the page's step starter (none in a burst), every tool the run has |
 | `step` | it is a step of a plan | nothing: it only decides the offer |
 | `session.write` | it is a full-access session | `ctx.session` with `change` |
 | `watches` | it is a full-access session | `ctx.watches`: the session's `watches` map, writable |
 
-Only a runner's built-ins are handed what a need stands for. A plugin gains
+Only a run's built-ins are handed what a need stands for. A plugin gains
 nothing by naming one.
 
 `assembly/toolset.test.js` writes out the lists these declarations add up to,
@@ -65,7 +65,9 @@ so a declaration cannot change one unnoticed.
 
 ## What a tool is handed
 
-`execute(input, ctx)`. `ctx` is the runner's context for the session. It is
+`execute(input, ctx)`. `ctx` is the run's context for the session: a burst's
+(`runners/session-task.js`, in a browser's run worker or a Node host's thread)
+or a page's for a parked call (`runners/page.js` pageContext). It is
 a value: frozen, and the same for every tool of the session. A tool keeps
 nothing on it; what a later call must know goes in the result's `facts`, or
 in a document.
@@ -75,26 +77,27 @@ in a document.
 | `ctx.repo` | the repo. For a full-access session it refuses to change a session, a plan or a research ledger, or to make a document into one (`kernel/kernel-repo.js`), and records each write as the session's own |
 | `ctx.subject` | the document the session is about |
 | `ctx.session` | `{ url, doc() }`: this conversation, to read |
-| `ctx.signal` | aborted when the person stops the run |
-| `ctx.events` | how to tell the session something later (*Waking the session*) |
+| `ctx.signal` | aborted when the person stops the run, or its task is cancelled or taken by another run |
+| `ctx.events` | how to tell the session something later (*Waking the session*). In a burst it only records: what is opened there delivers nothing |
 | `ctx.recall` | earlier results of this session, in full |
 | `ctx.hasTool(id)` | whether the session was offered a tool |
 | `ctx.fetchImpl` | the only way to the network: a guarded fetch (`net/guard.js`). There is no fallback to the platform's |
-| `ctx.search`, `ctx.direct` | web search, and whether fetches reach sites directly (node, or a tab with the relay) |
+| `ctx.search`, `ctx.direct` | web search, with the key from the task's input or the page, and whether fetches reach sites directly (a Node host, or the relay) |
 | `ctx.rootFolderUrl`, `ctx.sensitiveDocs` | the account's root folder, and the documents that always ask |
 | `ctx.automerge`, `ctx.splice` | the host's automerge, initialised. Take it from here: a worker cannot resolve a bare `@automerge/automerge` |
-| `ctx.plugins` | the plugin registry module. In the SharedWorker, a mirror of the page's |
-| `ctx.packageOf(type, id)` | the package a plugin came from: `{ url, heads, name }` |
+| `ctx.plugins` | the plugin registry module, in a page only |
+| `ctx.packageOf(type, id)` | the package a plugin came from: `{ url, heads, name }`. In a burst, for an agent tool only, from the input's catalogue |
 | `ctx.skillsFolderUrl`, `ctx.skillRegistry`, `ctx.notesFolderUrl` | where the person's skills and notes are kept, and the skills packages bring |
-| `ctx.element`, `ctx.getMount`, `ctx.pageFetch` | in a tab only: where a host tool mounts, the views `view_mount` opened, and a fetch of the page's own origin for `plugin_source` |
+| `ctx.element`, `ctx.getMount`, `ctx.pageFetch` | in a page only: where a host tool mounts, the views `view_mount` opened, and a fetch of the page's own origin for `plugin_source` |
 | `ctx.reader` | the reader service a fetch goes through when it is not direct, where a host replaces the default |
 | `ctx.importModule`, `ctx.importMap`, `ctx.packageBaseUrl`, `ctx.workerPreparation`, `ctx.runBundle`, `ctx.runInWorker` | how this host loads and runs a package's code, where it replaces the platform's way (`package_build`, `package_test`, `tool_check`) |
 | `ctx.scope` | in a research step only: `{ stepId }` |
 | `ctx.workflows`, `ctx.watches` | only for a tool that declares the need (above) |
 
-A node runner has no `plugins`, `automerge` module or page. A tool reaches
-nothing global: a `"worker"` tool that touches `document`, the platform's
-`fetch` or a bare import works in a tab by accident and nowhere else.
+A burst has no `plugins`, `element` or page; its skills come from the
+catalogue, named and read only in a page. A tool reaches nothing global: a
+`"worker"` tool that touches `document`, the platform's `fetch` or a bare
+import works in a page by accident and nowhere else.
 
 **A research step's tools get a confined context instead**, built from the
 session's `scope` and nothing else (`kernel/scope.js` `confine`): `repo`,
@@ -142,7 +145,30 @@ later through `ctx.events`: it opens a channel (`ctx.events.open(key, { label
 that becomes a wake, since each is a model call over the whole conversation:
 notices on a channel fold together, wait for things to settle, and are
 rate-limited; and a session that is running, waiting on a person or failed is
-not woken.
+not woken. The events are a page's: the page that shows or drives the session
+(`runners/page.js` follow) owns them, opens the session's `watches` again
+whenever they change, and asks for the work a wake makes. A burst's only
+record, so `doc_watch` there writes the watch and the page listens. A watch
+leaves out edits whose change hashes the run reported as its own.
+
+## Where a call runs
+
+- A `"worker"` call runs in the burst's pool run: claimed under the run's id,
+  run with the tool's signal tied to the run's, and its move, result and
+  `made` written in one change. A batch shares one tool turn.
+- A call that waits on a person (approval, a question) ends the burst; the
+  answer is a write of work, and asks again.
+- A `"host"` call, and every plugin's (a burst imports no plugin code), parks:
+  the burst clears `burst` and ends. A page that shows the session, or drives
+  its plan, runs it: it writes `burst` to a fresh claim id, waits a beat, and
+  only if the claim still stands runs the call with its own context and
+  writes its move, result and `made` and clears `burst` in one change; then
+  it asks. So page and plugin tools run while the session is shown, or its
+  plan is driven, in a page.
+- A call naming a `mountId` is taken at once only by the page that has that
+  mount; another waits one more beat and answers that there is no such mount.
+- A page going away abandons the call it holds, INTERRUPTED. A claim slower
+  than a beat may run a call twice; the request sends one result.
 
 ## A package's tool
 
@@ -161,7 +187,7 @@ A package registers an `agent:tool` plugin beside its views and datatypes:
 - It cannot take a built-in's id.
 - Its code is looked up again at every call, so a package edited mid-run runs
   as it is now, and one that no longer loads says so.
-- A `"worker"` tool runs in the SharedWorker too: the page sends the worker
-  each entry's metadata and the worker loads the code itself. Code that
-  cannot load there keeps its declaration and has its calls run by a tab.
+- A burst is handed every entry's metadata in its input's catalogue
+  (`assembly/plugins.js`): it offers the tool as declared, and parks every
+  call to it for a page, where the registry loads the code.
 - `risk` defaults to `write`, `where` to `"worker"`.

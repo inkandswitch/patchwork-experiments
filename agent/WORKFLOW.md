@@ -29,7 +29,7 @@ and a step do to one.
 | `told` | `{ [key]: true }`: what the orchestrator has been told |
 | `ledgerUrl` | the research steps' ledger (*Research steps*), or null until the first one starts |
 | `sourcesFolderUrl`, `sourcesFiled` | where the driver files the ledger for people, and what it has filed |
-| `lease` | which driver is driving it, as a session's lease says which runner |
+| `lease` | which page's driver is driving it (a session has no lease: SESSION.md, *The burst mark*) |
 
 A step:
 
@@ -37,7 +37,7 @@ A step:
 |---|---|
 | `id`, `title`, `prompt`, `why` | what it is to do, and why it is a step |
 | `after` | the ids of the steps it waits for |
-| `where` | `"worker"`: a repo is all it needs. `"host"`: it needs the page |
+| `where` | `"worker"`: a repo is all it needs, so its calls run in its bursts. `"host"`: it needs a page, which runs its page calls |
 | `access` | `"web"` for a research step: the web and what research steps kept, and none of the person's documents |
 | `tier`, `budget`, `tools` | which model; dollars its session starts with (*Money*); tools it must have |
 | `budgetLog` | `[{ add, limit, why, at }]`: each time the orchestrator raised its budget |
@@ -126,19 +126,23 @@ A tick is three parts:
    actions before it leave it, so a step that finishes on a tick makes what
    waits on it ready on that tick.
 3. **Do.** The driver performs each action: plan.js's transitions for the
-   plan, and for a step a session made, spoken to or halted.
+   plan, and for a step a session made, spoken to or halted. "Run" asks for
+   a running step's work (`startSession`: the page's askFor), never waiting
+   for the burst to end; a page that does not hold the lease asks the same.
+   A halt writes the stop into the session, then stops its task.
 
 A step's session is made with its scope, its tools' placement, its budget and
 the orchestrator's grants in one write, so it never exists half set up. A
 step is done when its session has nothing left to do and its last turn is the
-agent's: no call unanswered, no reply still streaming, no live runner on it,
-and no stop in force. A step whose session stopped with an error fails (not a
+agent's: no call unanswered, no reply still streaming, no `burst` marked on
+it, and no stop in force. A step whose session stopped with an error fails (not a
 run's error that crosses a person's or a workflow's stop: SESSION.md, *Stops*).
 One stopped for its budget, by a person, or by its workflow is still running and
 waits: a person's stop is told to the orchestrator once per notice (two pressed
 at once on two copies may be two), its card says it is stopped and waits for a word
 or for the orchestrator, a word in the session carries it on, and
-`workflow_stop` cancels it.
+`workflow_stop` cancels it. `workflow_answer` and a reopen take the step's
+session over (clear `burst`, a mark nobody may release), and its work is asked.
 
 One job has one set of permissions: a grant given in any full-access step
 reaches the orchestrator and the other full-access steps, and releases what
@@ -173,6 +177,6 @@ kind, what, type, source, name, engine, chars, by, at, heads }`: `kind` is
 `source` (read-only) or `finding` (writable by research steps), `by` the step
 that kept it, `heads` the version a step reads. The driver opens it, under the
 plan's lease, before the first research step starts. Research steps' kernels
-write it, from any runner, outside the lease; the driver only reads it, and
+write it, from any burst, outside the lease; the driver only reads it, and
 wakes when it changes to file what is new. No agent tool writes a ledger, and
 a step whose plan names none, or names something else, does not run.
