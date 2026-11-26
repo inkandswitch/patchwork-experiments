@@ -359,7 +359,14 @@ The site's Repo gives a worker no more than the sync server gives a Repo of no o
 documents keyhive leaves unprotected, and of those only the ones the worker has named first, by a
 `request` or a `sync` of its own for that document; it neither offers a worker the documents it has
 open nor answers it about any other (the header of `link.ts` says which of the Repo's messages
-pass). A worker with no page above it (a Node host's thread) has no link.
+pass). The gate sees the Repo's messages only, not the adapter's own handshake (`arrive`,
+`welcome`, `leave`), and a Repo sends its messages for a peer through the adapter that last
+announced that peer. So a worker's code that says `arrive` or `leave` on its port in another
+peer's name (the pool's, whose id reaches it on the ephemeral messages the page relays) turns the
+page's messages for that peer to itself, or makes the page forget that peer: the pool, which has
+no socket of its own, is then cut off until it starts again. No document the worker has not named
+reaches it that way. `link-check.test.ts` keeps that case (`it.fails`). A worker with no page
+above it (a Node host's thread) has no link.
 
 | On one device with no network | |
 |---|---|
