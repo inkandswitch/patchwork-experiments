@@ -35,7 +35,7 @@ import { prepareRun } from "../kernel/runner.js"
 import { runTool } from "../kernel/tool.js"
 import { storeRecall } from "../kernel/loop.js"
 import { stopOf } from "../session/status.js"
-import { findCall, findResult, move, runnableCalls, results } from "../session/calls.js"
+import { findCall, findResult, move, runnableCalls, results, callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
 import { makeTurn, resultBlock } from "../session/blocks.js"
 import { recordArtifact } from "../session/made.js"
 import { INTERRUPTED } from "../session/recovery.js"
@@ -50,9 +50,14 @@ import { WHERE } from "../session/schema.js"
  */
 export const BEAT_MS = 2000
 
-/** The call a page would take now: none under a stop or a `burst`, and only when the first runnable call needs a page. */
+/**
+ * The call a page would take now: none under a stop or a `burst`, none while
+ * the session waits on a person (an approval or a question, as needsWork
+ * says), and only when the first runnable call needs a page.
+ */
 export function pageCall(doc) {
   if (!doc || stopOf(doc) || doc.burst != null) return null
+  if (callsAwaitingApproval(doc).length || questionsAwaitingAnswer(doc).length) return null
   const first = runnableCalls(doc)[0]
   return first && first.where === WHERE.host ? first : null
 }
@@ -99,7 +104,7 @@ export function pageCalls(handle, opts) {
   const onChange = () => {
     const doc = handle.doc()
     if (held?.controller && stopOf(doc)) held.controller.abort("stopped")
-    tick()
+    tick().catch(() => {})
   }
   handle.on("change", onChange)
   const target = opts.target === undefined ? globalThis : opts.target

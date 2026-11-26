@@ -187,7 +187,7 @@ describe("a page's parked calls", () => {
     expect(asked).toEqual([null])
   })
 
-  it("leaves a call a run would make first, and a session with `burst` set", async () => {
+  it("leaves a call a run would make first, a session with `burst` set, and one waiting on a person", async () => {
     const repo = new Repo({ network: [] })
     const worker = callBlock("doc_read", {}, { status: CALL.approved, id: "w1" })
     const h = sessionWith(repo, [worker, hostCall("doc_create", {}, "c1")])
@@ -195,8 +195,11 @@ describe("a page's parked calls", () => {
     const other = sessionWith(repo, [hostCall("doc_create", {}, "c1")])
     other.change((d) => (d.burst = { run: "run-1" }))
     expect(pageCall(other.doc())).toBe(null)
+    // A session waiting on a person's yes waits whole, as needsWork says.
+    const asking = sessionWith(repo, [hostCall("doc_create", {}, "c1"), callBlock("doc_delete", {}, { status: CALL.pending, id: "p1" })])
+    expect(pageCall(asking.doc())).toBe(null)
     const time = clock()
-    for (const s of [h, other]) {
+    for (const s of [h, other, asking]) {
       const before = changes(s)
       pageOf(s, { tools: [tool("doc_create")], time, id: "page-a" }).page.tick()
       await flush()
