@@ -49,12 +49,10 @@ async function refusalOf(status, body) {
   return { err: await pending, tries: fetchImpl.mock.calls.length }
 }
 
-describe("401 and 403: the key refused, in words, with the provider's own after it", () => {
+describe("401: the key refused, in words, with the provider's own after it", () => {
   it.each([
     [401, json(401, "User not found."), `${KEY_WORDS(401)} OpenRouter said: User not found.`],
-    [403, json(403, "Key is disabled."), `${KEY_WORDS(403)} OpenRouter said: Key is disabled.`],
     [401, "Unauthorized", `${KEY_WORDS(401)} OpenRouter said: Unauthorized`],
-    [403, "<html><body>Forbidden</body></html>", `${KEY_WORDS(403)} OpenRouter said: <html><body>Forbidden</body></html>`],
     [401, "", KEY_WORDS(401)],
   ])("%s with %j", async (status, body, says) => {
     const { err, tries } = await refusalOf(status, body)
@@ -63,6 +61,18 @@ describe("401 and 403: the key refused, in words, with the provider's own after 
     // Not asked again: a refused key stays refused.
     expect(tries).toBe(1)
     expect(err.message).not.toMatch(/"error"|"code"|[{}]/)
+  })
+})
+
+describe("a 403 is not the key: it keeps its status and the provider's words", () => {
+  it.each([
+    [json(403, "Your chosen model requires moderation."), "OpenRouter 403: Your chosen model requires moderation."],
+    ["<html><body>Forbidden</body></html>", "OpenRouter 403: <html><body>Forbidden</body></html>"],
+  ])("403 with %j", async (body, says) => {
+    const { err, tries } = await refusalOf(403, body)
+    expect(err.message).toBe(says)
+    expect(err.interruption).toBeFalsy()
+    expect(tries).toBe(1)
   })
 })
 
@@ -83,13 +93,13 @@ describe("other statuses keep their status, and the message is read out of JSON 
     const { err, tries } = await refusalOf(429, json(429, "Rate limit exceeded: free-models-per-day."))
     expect(tries).toBe(4)
     expect(err.interruption).toBe(true)
-    expect(err.message).toBe("OpenRouter is not taking requests just now (429)")
+    expect(err.message).toBe("OpenRouter is not taking requests just now (429: Rate limit exceeded: free-models-per-day.)")
     expect(err.cause.message).toBe("OpenRouter 429: Rate limit exceeded: free-models-per-day.")
   })
 
   it("429 with a body that is not JSON: the same, the body as text on the cause", async () => {
     const { err } = await refusalOf(429, "Too Many Requests")
-    expect(err.message).toBe("OpenRouter is not taking requests just now (429)")
+    expect(err.message).toBe("OpenRouter is not taking requests just now (429: Too Many Requests)")
     expect(err.cause.message).toBe("OpenRouter 429: Too Many Requests")
   })
 })

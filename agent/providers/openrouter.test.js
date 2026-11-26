@@ -437,7 +437,7 @@ describe("a refused request, in words", () => {
     expect(providerSays(detail)).toBe(said)
   })
 
-  it.each([401, 403])("%s: the API key refused, where to change it, then what the provider said", (status) => {
+  it.each([401])("%s: the API key refused, where to change it, then what the provider said", (status) => {
     expect(refusal(status, NOT_FOUND)).toBe(`OpenRouter refused the API key (${status}). Change it in this session's settings. OpenRouter said: User not found.`)
     expect(refusal(status, "")).toBe(`OpenRouter refused the API key (${status}). Change it in this session's settings.`)
   })

@@ -420,12 +420,6 @@ async function* readBody(response, dog = null) {
 }
 
 /**
- * Stream a completion. Yields neutral events; throws on transport/auth errors.
- *
- * `key` is passed per call rather than held in module state so that nothing
- * here ever caches a credential.
- */
-/**
  * What the provider said in an answer that was not ok, as plain text: the
  * message out of its JSON (`{ error: { message } }`, `{ error }` or
  * `{ message }`), or the body as it came when there is none to read out.
@@ -443,13 +437,13 @@ export function providerSays(detail) {
 }
 
 /**
- * The error a refused request is said with. A 401 or 403 is the provider
- * refusing the API key, said as what a person can do about it, with the
- * provider's own words after it; any other keeps its status.
+ * The error a refused request is said with. A 401 is the provider refusing the
+ * API key, said as what a person can do about it, with the provider's own
+ * words after it; any other keeps its status and the provider's words.
  */
 export function refusal(status, detail) {
   const said = providerSays(detail).slice(0, 400)
-  if (status === 401 || status === 403) {
+  if (status === 401) {
     return `OpenRouter refused the API key (${status}). Change it in this session's settings.${said ? ` OpenRouter said: ${said}` : ""}`
   }
   return `OpenRouter ${status}: ${said}`
@@ -617,7 +611,10 @@ export async function* stream({
 
     if (!isRetryable(response.status)) throw lastError
     if (attempt === maxAttempts) {
-      if (NOT_NOW.has(response.status)) throw new Interruption(`OpenRouter is not taking requests just now (${response.status})`, { cause: lastError })
+      if (NOT_NOW.has(response.status)) {
+        const said = providerSays(detail).slice(0, 400)
+        throw new Interruption(`OpenRouter is not taking requests just now (${response.status}${said ? `: ${said}` : ""})`, { cause: lastError })
+      }
       throw lastError
     }
 
