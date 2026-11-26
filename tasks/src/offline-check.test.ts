@@ -6,7 +6,7 @@
 // their documents by hand. Time is vitest's fake clock.
 
 import * as A from '@automerge/automerge';
-import { initSubduction, parseAutomergeUrl, Repo, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
+import { initSubduction, parseAutomergeUrl, Repo, stringifyAutomergeUrl, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   HERE_MS,
@@ -49,6 +49,9 @@ const HEAR_MS = LISTEN_MS + 500;
 const newRepo = () => new Repo({ network: [] } as any);
 const CODE = 'data:text/javascript,export default () => 1';
 const WORK = 'data:text/javascript,export default function (input, ctx) { return globalThis.__work(input, ctx); }';
+
+/** A made-up document url, from fixed bytes. */
+const madeUp = (byte: number) => stringifyAutomergeUrl({ documentId: new Uint8Array(16).fill(byte) } as any) as AutomergeUrl;
 
 async function outcome<T>(promise: Promise<T>, advanceMs = 0): Promise<{ value?: T; error?: Error }> {
   let result: { value?: T; error?: Error } | undefined;
@@ -100,6 +103,24 @@ function sync(repos: Repo[]) {
     for (const to of all) for (const from of all) if (to !== from) to.merge(from);
   }
 }
+
+describe('doWork with no network, where the page can do the work', () => {
+  it("the account names a storage document this Repo does not have (it arrived on the account from another device, then the network went): the work is done in the page no later than a pool is listened for (HEAR_MS), as before this step", async () => {
+    const repo = newRepo();
+    const account = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: madeUp(7) } });
+    g.accountDocHandle = account;
+    let called = 0;
+    g.__work = () => ++called;
+    const settled: { value?: unknown; error?: Error } = {};
+    doWork(repo, { importUrl: WORK, key: 'k' }).then(
+      (value) => (settled.value = value),
+      (error) => (settled.error = error),
+    );
+    const took = await timeUntil(() => 'value' in settled || 'error' in settled, 300_000);
+    expect(settled).toEqual({ value: 1 });
+    expect(took).toBeLessThanOrEqual(HEAR_MS);
+  });
+});
 
 /** A tool-storage provider for one replica, as the frame's: the account's link, or a new storage document it links in (making `toolStorage` when its copy has none). */
 function provider(target: EventTarget, repo: Repo, account: DocHandle<any>) {
@@ -480,6 +501,19 @@ describe('two tools asking at once', () => {
     const storage = handleOf<any>(repo, storageUrlOf(account.doc())!)!;
     expect(marksOf(storage.doc())).toHaveLength(1);
     expect(A.getConflicts(storage.doc(), 'own')).toBeUndefined();
+  });
+
+  it("two copies of the client asking at once while own's document is not here: one spare is made, and both are given it", async () => {
+    // @ts-expect-error a second instance of the module
+    const other = (await import('./task-client.js?copy=4')) as typeof import('./task-client.js');
+    const repo = newRepo();
+    const elsewhere = newRepo();
+    const away = elsewhere.create<Queue>({ title: OWN_QUEUE_TITLE, jobs: {} } as any);
+    const storage = repo.create<any>({ own: away.url, [markOf(away.url)]: true, [away.url]: true });
+    g.accountDocHandle = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: storage.url } });
+    const [a, b] = await Promise.all([outcome(ownQueue(repo), HERE_MS * 3), outcome(other.ownQueue(repo), HERE_MS * 3)]);
+    expect(sparesOf(storage.doc())).toHaveLength(1);
+    expect(b.value).toBe(a.value);
   });
 });
 

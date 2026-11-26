@@ -956,7 +956,20 @@ const NOWHERE = 'This page has nowhere to keep your task queues, so nothing was 
  * @param {any} [element]
  * @returns {Promise<any>}  a DocHandle of {@link TasksStorage}
  */
-export async function tasksStorage(repo, element) {
+export function tasksStorage(repo, element) {
+  return storageFound(repo, element, findWhenThere);
+}
+
+/**
+ * `tasksStorage`, finding the document with `find`: `findWhenThere`, or
+ * `findHere` for an asker that waits on nothing it cannot have from this
+ * Repo (`doWork` with work the page can do).
+ * @param {any} repo
+ * @param {any} element
+ * @param {(repo: any, url: string) => Promise<any>} find
+ * @returns {Promise<any>}
+ */
+async function storageFound(repo, element, find) {
   const account = /** @type {any} */ (globalThis).accountDocHandle;
   if (!account) {
     throw new Error(PAGE_ONLY);
@@ -973,11 +986,11 @@ export async function tasksStorage(repo, element) {
   if (!url) {
     throw new Error(NOWHERE);
   }
-  try {
-    return await findWhenThere(repo, url);
-  } catch {
+  const handle = await find(repo, url).catch(() => null);
+  if (!handle) {
     throw new Error('The list of your task queues could not be found, so nothing was changed.');
   }
+  return handle;
 }
 
 /**
@@ -1061,7 +1074,16 @@ const makings = new WeakMap();
  * @returns {Promise<string>}
  */
 export async function ownQueue(repo, element) {
-  const storage = await tasksStorage(repo, element);
+  return ownIn(repo, await tasksStorage(repo, element));
+}
+
+/**
+ * `ownQueue`, given the storage document's handle.
+ * @param {any} repo
+ * @param {any} storage
+ * @returns {Promise<string>}
+ */
+function ownIn(repo, storage) {
   let going = makings.get(repo);
   if (!going) {
     makings.set(repo, (going = new Map()));
@@ -1106,25 +1128,43 @@ async function settleOwn(repo, storage) {
 /**
  * A spare this Repo holds, or else a new one: a queue with its mark and its
  * url key, and no pointer (the queue `unnamed`, when this making made one
- * that nothing names).
+ * that nothing names). The change that marks it first looks at the marks
+ * again: a spare marked meanwhile (by another copy of this client on the
+ * same Repo, or arrived from another replica) is looked at before anything
+ * is written, so two copies asking at once mark one spare, and the queue
+ * the second made is left unnamed, as a second making of own leaves its own.
  * @param {any} repo
  * @param {any} storage
  * @param {any} unnamed
  * @returns {Promise<string>}
  */
 async function spareHere(repo, storage, unnamed) {
-  const spares = sparesOf(storage.doc());
-  const held = await Promise.all(spares.map((url) => findHere(repo, url)));
-  const spare = spares.find((_, i) => held[i]);
-  if (spare) {
-    return spare;
+  /** The spares looked at already, and not had here. */
+  const seen = new Set();
+  for (;;) {
+    const spares = sparesOf(storage.doc()).filter((url) => !seen.has(url));
+    const held = await Promise.all(spares.map((url) => findHere(repo, url)));
+    const spare = spares.find((_, i) => held[i]);
+    if (spare) {
+      return spare;
+    }
+    for (const url of spares) {
+      seen.add(url);
+    }
+    const queue = (unnamed ??= await newOwnQueue(repo));
+    let marked = false;
+    storage.change((/** @type {TasksStorage} */ doc) => {
+      if (sparesOf(doc).some((url) => !seen.has(url))) {
+        return;
+      }
+      doc[markOf(queue.url)] = true;
+      setServed(doc, queue.url, true);
+      marked = true;
+    });
+    if (marked) {
+      return queue.url;
+    }
   }
-  const queue = unnamed ?? (await newOwnQueue(repo));
-  storage.change((/** @type {TasksStorage} */ doc) => {
-    doc[markOf(queue.url)] = true;
-    setServed(doc, queue.url, true);
-  });
-  return queue.url;
 }
 
 /**
@@ -1494,7 +1534,10 @@ function deviceWords(needs) {
  * Has work done, as the comment above says: asked of the person's queue (as
  * `run`), or done here. For code that can travel it first has `ownQueue`
  * give the queue, making it if there is none, and puts the page in its
- * browser's pool (`joinPool`). Resolves to what the code returned; rejects
+ * browser's pool (`joinPool`); for work the page can do, the task storage
+ * document is looked for only as `findHere` looks (no longer than HERE_MS),
+ * and where this Repo does not have it the work is done here, so nothing
+ * here waits on the network. Resolves to what the code returned; rejects
  * with what it threw, or "The task was cancelled" once `signal` is aborted,
  * or, for work that needs what this page cannot give it and no queue of
  * theirs can be asked (its code cannot travel, or `ownQueue` could not give
@@ -1519,8 +1562,11 @@ export async function doWork(repo, request, { onProgress, signal } = {}) {
   /** @type {string | null} */
   let why = null;
   if (travel) {
+    // Work the page can do waits for no storage document this Repo cannot
+    // produce at once (`findHere`): where it is not here, the work is done here.
+    const find = satisfies(PAGE_HAS, needs) ? findHere : findWhenThere;
     own = await unlessStopped(
-      ownQueue(repo).then(
+      storageFound(repo, undefined, find).then((storage) => ownIn(repo, storage)).then(
         (url) => {
           joinPool();
           return url;

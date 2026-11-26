@@ -175,7 +175,8 @@ never names a queue:
   browser's pool; otherwise work that needs nothing a page lacks (no needs, or only `browser`) is
   done in the page, by importing the same module and calling it (the first asking in a frame that
   had started no pool is done so, and so is all work with no network: see Offline and
-  partition); and work that needs more is asked of the queue all the same, where it waits for a
+  partition; for such work the list of the person's queues is looked for only in what this
+  browser keeps, so a list that has not arrived yet does not hold it up); and work that needs more is asked of the queue all the same, where it waits for a
   device that has it. Either way it resolves to what the code returned and rejects with what it
   threw, `onProgress` hears the same views, and aborting `signal` stops it. Only code that can
   travel is asked of a queue: a file in a package kept in automerge, or a `data:` URL; any other
