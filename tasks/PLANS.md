@@ -168,7 +168,17 @@ that one machine serves.
     frozen, navigated and reloaded holder (33 to 36, 39), a write made cut off reaching the server
     once mended (37), and another context hearing the pool through the server (38); ten links at
     once only `link-check.test.ts` shows (a browser's pool has at most eight run workers). Waits
-    on a staging package for `real-run.mjs`.
+    on a staging package for `real-run.mjs`. Nor is the list of `src/browser/unsent.ts` shown
+    there: what a run wrote with no network, the browser restarted before the network came back,
+    reaching the sync server once it does. browser-run check 40 shows it on the stand-in page
+    (whose site Repo is 2.6.0-rabbit.1, which says when it is connected and reports the server's
+    heads); on keyhive's build, where the members it uses may be missing, the list falls back to
+    `navigator.onLine` (which stays true when only DNS fails) and to ten minutes of trying.
+  - *What the page writes itself with no network.* The list holds only what runs wrote. A
+    document the page makes or changes with no network, and closes before the network returns,
+    is not sent when it does either, until something opens it (check 40's control shows it on the
+    stand-in page). That is the site's Repo's to answer (it loads a stored document only when
+    asked for it), not the task system's; reported here, not fixed.
   - *Rule 2 is the conservative one.* The page gives a worker only documents keyhive leaves
     unprotected; sharing a protected document a person may read with a task they run is the
     lead's call.

@@ -7,8 +7,9 @@
 // it imports the code, calls its default export with `(input, ctx)` and
 // `this` = ctx, and says what the code logs and reports, and then how it
 // ended. It never writes the task's document: the pool records everything,
-// from what this says. What the code wrote to other documents through
-// `ctx.repo` is saved, and has reached the page's Repo through the link, or
+// from what this says. What the run wrote to other documents through
+// `ctx.repo` (what it made, and what it changed: "What a run wrote" below)
+// is saved, and has reached the page's Repo through the link, or
 // with no link has been acknowledged by the sync server, before this says
 // how the code ended (see "Reachable before it is said" and "..., through
 // the link" below), so that whoever reads the ending can find what the run
@@ -136,8 +137,8 @@ export function serve(port: RunWorkerPort) {
 
   async function runJob(job: Job, task: Uint8Array | undefined, signal: AbortSignal, settled: Promise<void>) {
     let docs: Repo | null = null;
-    /** Every document's heads as the code was called: what it changed is what differs at the end. */
-    let before: Map<string, string> | null = null;
+    /** What the run has had, each document's heads when it first had it ('' for one it made): what it wrote is what differs at the end (see "What a run wrote"). */
+    let had: Map<string, string> | null = null;
     let outcome: FromRunWorker;
     // Code can go on after it has returned or thrown (a timer, a promise it
     // did not wait for), and the worker may by then have the next job: what
@@ -163,13 +164,13 @@ export function serve(port: RunWorkerPort) {
       }
       // Taken after the code is imported: fetching a package's files is the
       // worker's doing, and they came from the server.
-      before = headsOfAll(docs);
+      had = headsOfAll(docs);
       const ctx: TaskContext = {
         log: (...args) => sayWhileRunning({ type: 'log', message: args.map((arg) => String(arg)).join(' ') }),
         progress: (value) => sayWhileRunning({ type: 'progress', value: copy(value) }),
         signal,
         settled,
-        repo: patient(docs),
+        repo: patient(docs, had),
         taskUrl: job.taskUrl,
         run: job.runId,
         key: job.key,
@@ -180,24 +181,24 @@ export function serve(port: RunWorkerPort) {
     }
     if (docs) {
       try {
-        await saveChanged(docs, before);
+        await saveChanged(docs, had);
       } catch (error) {
         // what it wrote is not safe yet, so it is not done
         outcome = { type: 'threw', message: `what its code wrote could not be saved: ${messageOf(error)}` };
       }
     }
-    if (docs && before) {
+    if (docs && had) {
       // Only a run that changed something waits, and then not in this tick:
       // a run that changed nothing says how it ended as soon as it did before.
       const own = documentIdOf(job.taskUrl);
       const log = (message: string) => say({ type: 'log', message });
       const toPage = linked(docs);
-      const waiting = toPage ? reachPage(docs, before, own, log) : reachServer(docs, reports, before, own, log);
+      const waiting = toPage ? reachPage(docs, had, own, log, REACH_LIMIT_MS, job.input) : reachServer(docs, reports, had, own, log, job.input);
       if (waiting) {
         await waiting;
       }
       if (toPage) {
-        const wrote = [...changedSince(docs, before).keys()].filter((id) => id !== own);
+        const wrote = [...changedSince(docs, had).keys()].filter((id) => id !== own);
         if (wrote.length > 0) {
           outcome = { ...outcome, wrote };
         }
@@ -267,10 +268,16 @@ const FIND_EACH_MS = 10_000;
  * The Repo as the task's code sees it: `find` waits for a document that has
  * not arrived yet; everything else is the Repo's own, bound to the Repo
  * (its methods read private fields, which a Proxy as `this` does not have).
+ * With `had`, it also notes what the run has had (see "What a run wrote").
  */
-export function patient(repo: Repo): Repo {
+export function patient(repo: Repo, had?: Map<string, string>): Repo {
   const bound = new Map<PropertyKey, unknown>();
+  const note = had ? noter(repo, had) : null;
   const find = (id: Parameters<Repo['find']>[0], options?: Parameters<Repo['find']>[1]) => {
+    const found = findPatiently(id, options);
+    return note ? found.then((handle) => (note.had(handle?.documentId), handle)) : found;
+  };
+  const findPatiently = (id: Parameters<Repo['find']>[0], options?: Parameters<Repo['find']>[1]) => {
     const signal = options?.signal;
     let final: { error: unknown } | null = null;
     const once = (url: string) =>
@@ -293,8 +300,19 @@ export function patient(repo: Repo): Repo {
         return find;
       }
       const value = Reflect.get(target, name, target);
+      if (note && name === 'handles' && value && typeof value === 'object') {
+        for (const id of Object.keys(value)) {
+          note.had(id);
+        }
+      }
       if (typeof value !== 'function') {
         return value;
+      }
+      if (note && NOTED.has(name)) {
+        if (!bound.has(name)) {
+          bound.set(name, noted(name as string, value.bind(target), note));
+        }
+        return bound.get(name);
       }
       // The same function each time, so that what is handed out compares equal.
       if (!bound.has(name)) {
@@ -308,6 +326,100 @@ export function patient(repo: Repo): Repo {
   });
 }
 
+// What a run wrote
+//
+// A document counts as written by a run only if the run made it, or its
+// heads at the run's end differ from its heads when the run first had it.
+// That is what a run saves, what its ending waits to see reach the page or
+// the sync server, and what a linked run's ending names (`wrote`).
+//
+// The run has every document its Repo holds as the code is called (a run
+// worker's Repo keeps what its earlier runs had) from then, and any other
+// from the moment `ctx.repo` gives it to the code: a `find` resolving to it,
+// `findWithProgress` asked for it (with no heads yet, if it is not here
+// yet, so that it counts if it has any at the end), or `handles` read while
+// it is there. A document the run made (`create`, `create2`, `clone`,
+// `import`) counts whatever its heads. So a document the code only read is
+// not written, however it reached the Repo (from the worker's own database,
+// the page or the server); nor is one that came into the Repo by the Repo's
+// own workings, which the code never had. Neither is waited for: a document
+// read from the worker's own database that the page will not take (keyhive
+// protects it), or that the server never reports, would otherwise hold the
+// run's ending for the whole REACH_LIMIT_MS.
+
+/** The members of the Repo through which code makes, or is given, a document other than `find`. */
+const NOTED = new Set<PropertyKey>(['create', 'create2', 'clone', 'import', 'findClassic', 'findWithProgress']);
+
+interface Noter {
+  /** The run has the document `id` from now, unless it had it already. */
+  had(id: unknown): void;
+  /** The run made the document `id`. */
+  made(id: unknown): void;
+}
+
+function noter(repo: Repo, had: Map<string, string>): Noter {
+  return {
+    had(id) {
+      if (typeof id !== 'string' || had.has(id)) {
+        return;
+      }
+      let heads = '';
+      try {
+        heads = headsKey((repo.handles as Record<string, { heads(): readonly unknown[] }>)[id]?.heads() ?? []);
+      } catch {
+        // not here yet, or deleted: it counts if it has heads at the end
+      }
+      had.set(id, heads);
+    },
+    made(id) {
+      if (typeof id === 'string') {
+        had.set(id, '');
+      }
+    },
+  };
+}
+
+/** `fn`, the Repo's member `name`, noting what it makes or gives the code. */
+function noted(name: string, fn: (...args: any[]) => any, note: Noter) {
+  const idOfHandle = (handle: unknown) => (handle as { documentId?: unknown } | null | undefined)?.documentId;
+  return (...args: any[]) => {
+    const result = fn(...args);
+    switch (name) {
+      case 'create':
+      case 'clone':
+        note.made(idOfHandle(result));
+        break;
+      case 'import':
+        note.made(idOfHandle(result) ?? args[1]?.docId);
+        break;
+      case 'create2':
+        return Promise.resolve(result).then((handle) => (note.made(idOfHandle(handle)), handle));
+      case 'findClassic':
+        return Promise.resolve(result).then((handle) => (note.had(idOfHandle(handle)), handle));
+      case 'findWithProgress':
+        note.had(documentIdOf(String(args[0])));
+        break;
+    }
+    return result;
+  };
+}
+
+/** Which documents are left, said without whole urls: by kind (one the run made, one its input names, another), each by the start of its id. */
+export function whichLeft(left: readonly string[], had: Map<string, string>, input: unknown): string {
+  let named = '';
+  try {
+    named = JSON.stringify(input ?? null);
+  } catch {
+    // an input that cannot be read names nothing
+  }
+  const kinds = new Map<string, string[]>();
+  for (const id of left) {
+    const kind = had.get(id) === '' ? 'made by this run' : named.includes(id) ? 'named in its input' : 'another it changed';
+    kinds.set(kind, [...(kinds.get(kind) ?? []), `${id.slice(0, 6)}…`]);
+  }
+  return [...kinds].map(([kind, ids]) => `${kind}: ${ids.join(', ')}`).join('; ');
+}
+
 // Reachable before it is said
 //
 // A run worker with no link (a Node host's thread, or a browser's whose page
@@ -316,10 +428,11 @@ export function patient(repo: Repo): Repo {
 // Ending the worker first loses it, and the Repo does not send a stored
 // document again by itself later: it loads one only when something asks for
 // it. So a run's ending is said only once the sync server has reported, for
-// every document whose heads changed while the code ran (the task's own
-// document apart, which the worker only imports), heads equal to this Repo's
-// latest. Documents others changed meanwhile are among them; the server
-// reports those at once, because it gave them to us.
+// every document the run wrote (see "What a run wrote"; the task's own
+// document apart, which the pool records), heads equal to this Repo's
+// latest. A document the run changed that others changed too is reported at
+// once for their part, because the server gave it to us. The log line at the
+// limit says how many are left, and of what kind.
 
 /** The most a run's ending waits for the sync server: far longer than 20 MB took (1.1-1.8 s), and short enough not to hold a slot when the server will not answer. */
 export const REACH_LIMIT_MS = 30_000;
@@ -332,8 +445,8 @@ const LOOK_AGAIN_MS = 250;
 export const STAYS_HERE =
   'Not connected to the sync server: what this run wrote stays on this machine, and is sent only if this worker is still running when it connects.';
 /** Said in a run's log when the server has not acknowledged everything by REACH_LIMIT_MS. */
-export const notReached = (left: number, of: number) =>
-  `${left} of the ${of} documents this run wrote had not reached the sync server after ${REACH_LIMIT_MS / 1000} s.`;
+export const notReached = (left: number, of: number, which = '') =>
+  `${left} of the ${of} documents this run wrote had not reached the sync server after ${REACH_LIMIT_MS / 1000} s${which ? ` (${which})` : ''}.`;
 
 /** A Repo that can say what the sync server holds (2.6.0-subduction.43 and the site's 2.6.0-rabbit.1 can). */
 interface ServerRepo {
@@ -395,31 +508,40 @@ function headsOfAll(repo: Repo): Map<string, string> {
   return heads;
 }
 
-/** The documents whose heads differ from `before`, each with its heads now: those made since, and those changed since. */
-function changedSince(repo: Repo, before: Map<string, string>): Map<string, string> {
-  const now = headsOfAll(repo);
-  for (const [id, heads] of now) {
-    if (heads === (before.get(id) ?? '')) {
-      now.delete(id);
+/** What the run wrote (see "What a run wrote"): of the documents in `had`, those whose heads now differ from theirs there, each with its heads now. */
+function changedSince(repo: Repo, had: Map<string, string>): Map<string, string> {
+  const now = new Map<string, string>();
+  if (had.size === 0) {
+    return now;
+  }
+  const handles = repo.handles as Record<string, { heads(): readonly unknown[] }>;
+  for (const [id, then] of had) {
+    try {
+      const heads = headsKey(handles[id]?.heads() ?? []);
+      if (heads !== then) {
+        now.set(id, heads);
+      }
+    } catch {
+      // a deleted document has nothing to send
     }
   }
   return now;
 }
 
 /**
- * Saves what the code changed before the run says how it ended, and only
- * that: a save makes the storage write each document it names out to the
- * disk at once, which for the task's own document, imported and never
- * written, costs tens of milliseconds on every run for nothing. The task's
- * own document is saved too when its heads changed, since code can write
- * to it. Everything is saved when what changed cannot be told (`before` is
- * null: the code was never called).
+ * Saves what the run wrote before it says how it ended, and only that: a
+ * save makes the storage write each document it names out to the disk at
+ * once, which for the task's own document, imported and never written,
+ * costs tens of milliseconds on every run for nothing. The task's own
+ * document is saved too when its heads changed, since code can write to it.
+ * Everything is saved when what was written cannot be told (`had` is null:
+ * the code was never called).
  */
-function saveChanged(repo: Repo, before: Map<string, string> | null): Promise<void> {
-  if (!before) {
+function saveChanged(repo: Repo, had: Map<string, string> | null): Promise<void> {
+  if (!had) {
     return repo.flush();
   }
-  const changed = [...changedSince(repo, before).keys()] as DocumentId[];
+  const changed = [...changedSince(repo, had).keys()] as DocumentId[];
   return changed.length > 0 ? repo.flush(changed) : Promise.resolve();
 }
 
@@ -437,13 +559,14 @@ function saveChanged(repo: Repo, before: Map<string, string> | null): Promise<vo
 function reachServer(
   repo: Repo,
   reports: ServerReports | null,
-  before: Map<string, string>,
+  had: Map<string, string>,
   own: DocumentId,
   log: (message: string) => void,
+  input?: unknown,
 ): Promise<void> | null {
-  /** The documents changed since `before`, each with its heads now. */
+  /** What the run wrote, each with its heads now. */
   const changed = () => {
-    const now = changedSince(repo, before);
+    const now = changedSince(repo, had);
     now.delete(own);
     return now;
   };
@@ -485,7 +608,8 @@ function reachServer(
       };
       // The limit is set first, so that at the limit it comes before a resync that would be of no use.
       const limit = setTimeout(() => {
-        log(notReached(left().length, changed().size));
+        const ids = left().map(([id]) => id);
+        log(notReached(ids.length, changed().size, whichLeft(ids, had, input)));
         finish();
       }, Math.max(0, giveUpAt - Date.now()));
       const stopListening = reports.listen(look);
@@ -510,24 +634,26 @@ function reachServer(
 //
 // A run worker linked to the site's Repo in the page above its pool
 // (browser/link.ts) says how a run ended once the page's Repo has what the
-// code changed: for every document whose heads changed while the code ran
-// (the task's own apart, as above), the page has said, in the sync it runs
+// run wrote: for every document it wrote (see "What a run wrote"; the
+// task's own apart, as above), the page has said, in the sync it runs
 // with this Repo over the link, heads equal to this Repo's latest. That is
 // the Repo's own record of a peer (`getSyncInfo` of the page's storage id,
 // kept from the sync state, and its 'remote-heads' event); nothing is asked
 // of the page beyond the sync itself. The page's Repo keeps what it has, and
 // sends it to the sync server when there is one, so a linked run does not
-// wait for the server, and does not wait on it when it cannot be reached.
-// The ending names the documents the code changed (`wrote`), and the pool
-// has the page save them before it reports the run (browser/executor.ts),
-// so that a page reloaded at that moment still has them.
-// A run that wrote a document the page will not take (one keyhive protects:
-// the link gives no such document over, either way) waits REACH_LIMIT_MS and
-// says so in its log.
+// wait for the server, and does not wait on it when it cannot be reached
+// (what the page saved is sent when the server can be reached, a reload
+// between: browser/unsent.ts). The ending names the documents the run
+// wrote (`wrote`), and the pool has the page save them before it reports the
+// run (browser/executor.ts), so that a page reloaded at that moment still
+// has them. A run that wrote a document the page will not take (one keyhive
+// protects: the link gives no such document over, either way) waits
+// REACH_LIMIT_MS and says so in its log, naming how many are left and of
+// what kind.
 
 /** Said in a run's log when the page's Repo has not had everything by REACH_LIMIT_MS. */
-export const notReachedPage = (left: number, of: number) =>
-  `${left} of the ${of} documents this run wrote had not reached the page after ${REACH_LIMIT_MS / 1000} s.`;
+export const notReachedPage = (left: number, of: number, which = '') =>
+  `${left} of the ${of} documents this run wrote had not reached the page after ${REACH_LIMIT_MS / 1000} s${which ? ` (${which})` : ''}.`;
 
 /** What a linked Repo says of its peers. */
 interface LinkedRepo {
@@ -552,13 +678,14 @@ function linked(repo: Repo): boolean {
  */
 export function reachPage(
   repo: Repo,
-  before: Map<string, string>,
+  had: Map<string, string>,
   own: DocumentId,
   log: (message: string) => void,
   limitMs = REACH_LIMIT_MS,
+  input?: unknown,
 ): Promise<void> | null {
   const changed = () => {
-    const now = changedSince(repo, before);
+    const now = changedSince(repo, had);
     now.delete(own);
     return now;
   };
@@ -592,7 +719,8 @@ export function reachPage(
       }
     };
     const limit = setTimeout(() => {
-      log(notReachedPage(left().length, changed().size));
+      const ids = left().map(([id]) => id);
+      log(notReachedPage(ids.length, changed().size, whichLeft(ids, had, input)));
       finish();
     }, limitMs);
     // The page's answers are heard as they come; looking again as well
@@ -614,9 +742,9 @@ export function reachPage(
   });
 }
 
-/** The document id an `automerge:` url names. */
+/** The document id an `automerge:` url names (its heads and path apart), or a bare document id itself. */
 function documentIdOf(url: string): DocumentId {
-  return url.slice('automerge:'.length).split('#')[0] as DocumentId;
+  return url.replace(/^automerge:/, '').split(/[#/]/)[0] as DocumentId;
 }
 
 /** Resolves after `ms`, or rejects with the signal's reason as soon as it aborts, leaving no timer or listener behind. */

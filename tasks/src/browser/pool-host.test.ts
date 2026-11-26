@@ -686,7 +686,8 @@ describe('the local link', () => {
     for (const port of [port2, other.port2]) port.close();
   });
 
-  it("kept before reported: a run's documents its link carried are saved in the site's Repo, and the pool's worker is told when, or why not", async () => {
+  it("kept before reported: a run's documents its link carried are saved in the site's Repo and listed until the sync server has them, and the pool's worker is told when, or why not", async () => {
+    localStorage.removeItem('patchwork-tasks-unsent');
     const { startPoolHost } = await import('./pool-host');
     const { repo, flushed, flush } = linkableRepo({ [ACCOUNT]: { toolStorage: { 'tasks-next': STORAGE } }, [STORAGE]: { [QUEUE]: true } });
     const release = startPoolHost(repo);
@@ -702,6 +703,7 @@ describe('the local link', () => {
     await settle();
     expect(flushed).toEqual([['carried']]);
     expect(kept()).toEqual([{ type: 'kept', ask: 1 }]);
+    expect(Object.keys(JSON.parse(localStorage.getItem('patchwork-tasks-unsent') ?? '{}'))).toEqual(['carried']);
 
     flush.fails = true;
     worker.say({ type: 'keep', id: 1, ask: 2, documents: ['carried'] });

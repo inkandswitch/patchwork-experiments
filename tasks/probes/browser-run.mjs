@@ -5,7 +5,7 @@
 // in the package's plugin list, and its real titlebar tool) and asks through
 // the built task-client. Task
 // code comes from data: URLs and from a file served here; the queue accepts
-// any code. No sync server is reached but by checks 24, 22 and 26 to 30: the
+// any code. No sync server is reached but by checks 24, 22, 26 to 30 and 40: the
 // pages' Repos and the pool's work from the profile's shared database, and
 // each run worker's from a database of its own. What a task writes through
 // ctx.repo reaches the page by the local link the pool host makes to the Repo
@@ -16,7 +16,12 @@
 // writes is there when doWork resolves (27), liveness and progress arrive
 // (28), a run worker ended mid-write leaves that Repo working (29), and the
 // pool handed over to another tab links that tab's Repo (30); with
-// --no-network they show this with no network. Check 22 runs probes/append-task.js, the task
+// --no-network they show this with no network. Check 40, in a context of its
+// own like 26's, shows what a task wrote cut off from the network reaching
+// the sync server, though its page closed first, once a new page of the
+// profile opens with the network, as a Node Repo of this process's (another
+// device) finds it (unsent.ts); with --no-network, only that the new page
+// lists it and has it. Check 22 runs probes/append-task.js, the task
 // append-run.mjs runs on a Node host, unchanged, in a browser context of its
 // own whose page and pool work through the real sync server (`--sync`, or
 // PATCHWORK_SYNC, or Ink & Switch's), and watches the text it appends to grow
@@ -62,8 +67,8 @@
 // and 21 run in a browser context of its own, where nothing mounts the
 // background component until 21 does, and then lets it go. Check 23 runs
 // on tab A's pool, after 19. Checks 24 and 22 run next, in a browser
-// context of their own, in that order, then 26 to 30 in another, and 25
-// last, over every request seen.
+// context of their own, in that order, then 26 to 30 in another, 40 in
+// another, and 25 last, over every request seen.
 // A copy of dist/ stamped as a newer build is served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
@@ -83,6 +88,7 @@ import { extname } from "node:path";
 import { sleep } from "./cdp.mjs";
 import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { BEAT_MS, LISTEN_MS } from "../src/task-rules.js";
+import { Repo as NodeRepo, initSubduction as initNodeSubduction } from "@automerge/automerge-repo-node";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = resolve(HERE, "..");
@@ -717,6 +723,139 @@ async function linkHeals() {
   } finally {
     if (P) offlinePages.delete(P.sessionId);
     for (const id of [ctxP, ctxQ]) await send("Target.disposeBrowserContext", { browserContextId: id }).catch(() => {});
+  }
+}
+
+/**
+ * What a Repo on this machine, standing for another device, finds of `url`
+ * at the sync server within `ms`: a Node Repo of its own, made afresh for
+ * each look so that no look is answered by an earlier "unavailable". What
+ * that Repo logs is left out of this probe's output.
+ */
+let nodeSubduction = null;
+async function nodeLook(url, ms = 8_000) {
+  const quiet = { log: console.log, warn: console.warn, info: console.info, debug: console.debug };
+  Object.assign(console, { log() {}, warn() {}, info() {}, debug() {} });
+  try {
+    nodeSubduction ??= initNodeSubduction();
+    await nodeSubduction;
+    const repo = new NodeRepo({ network: [], subductionWebsocketEndpoints: [SYNC_SERVER] });
+    try {
+      return await Promise.race([
+        repo.find(url).then((handle) => JSON.parse(JSON.stringify(handle.doc())), (error) => ({ unavailable: String(error?.message ?? error).slice(0, 80) })),
+        sleep(ms).then(() => null),
+      ]);
+    } finally {
+      await Promise.race([repo.shutdown?.(), sleep(2_000)]).catch(() => {});
+    }
+  } finally {
+    Object.assign(console, quiet);
+  }
+}
+
+const listedIn = (tab) => tab.js("Object.keys(JSON.parse(localStorage.getItem('patchwork-tasks-unsent') ?? '{}'))");
+
+/**
+ * 40. What a task wrote with no network reaches the sync server once the
+ * network is back, though the page that ran it closed first (unsent.ts).
+ * A page of a context of its own (U: `?site`, named the real sync server)
+ * runs its pool, and a task in a run worker; a document it made reaches the
+ * server. Then U is cut off
+ * (DevTools' network emulation, as check 37), a task counts its runs in that
+ * document and makes one, the page makes a document of its own (not a run's,
+ * so not listed: the control), and U is closed the moment doWork resolves,
+ * still cut off: nothing has those documents open any more. A Node Repo on
+ * the server (another device) has none of the three. A new page of the same
+ * profile (V) opens with the network, as a restarted browser does: the task
+ * system's list names the run's two documents; V mounts its pool, and the
+ * Node Repo finds both, the count once, V's list empties, and the page's own
+ * document, which nothing lists or opens, is still not at the server. With
+ * --no-network, where nothing reaches the server: the list in V names both,
+ * and V's site Repo has them; the rest is skipped, saying so.
+ */
+async function unsentSent() {
+  const { browserContextId } = await send("Target.createBrowserContext", {});
+  const path = `/probe/index.html?site&sync=${encodeURIComponent(SYNC_SERVER)}`;
+  let U;
+  try {
+    U = await tab("U", path, browserContextId);
+    await U.js("probe.makeAccount()");
+    await U.js("probe.mountBackground()");
+    const running = await U.waitFor("probe.status()?.state === 'running'", 30_000);
+    await sleep(LISTEN_MS);
+    // a run worker started with the network: one started cut off could not load its script from here
+    const warm = await U.js(`probe.work(${J(WHERE)}).then((work) => work.result ?? work.error)`, 60_000);
+    const doc = await U.js(`probe.siteDoc({ runs: 0 })`);
+    let before = null;
+    if (!NO_NETWORK) {
+      const t0 = Date.now();
+      while (before?.runs !== 0 && Date.now() - t0 < 30_000) {
+        before = await nodeLook(doc);
+        if (before?.runs !== 0) await sleep(2_000);
+      }
+    }
+
+    await cutOff(U, true);
+    await sleep(2_000);
+    const control = await U.js(`probe.siteDoc({ control: 'made by the page, cut off' })`);
+    const got = await U.js(
+      `probe.work(${J(COUNTS)}, { doc: ${J(doc)}, tag: 'forty' }).then((work) => ({ result: work.result ?? null, error: work.error ?? null, ms: work.ms, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? probe.siteNow(work.result.made) : null }))`,
+      90_000,
+    );
+    await send("Target.closeTarget", { targetId: U.targetId }).catch(() => {});
+    offlinePages.delete(U.sessionId);
+    const made = got.result?.made ?? null;
+    const ids = [doc, made].map((url) => url?.replace("automerge:", "") ?? null);
+    const wrote = got.changed?.runs === 1 && got.made?.made === "forty";
+    let cut = true;
+    let cutSaw = [];
+    if (!NO_NETWORK) {
+      cutSaw = [await nodeLook(doc, 6_000), made ? await nodeLook(made, 6_000) : null, await nodeLook(control, 6_000)];
+      cut = cutSaw[0]?.runs !== 1 && !cutSaw[1]?.made && !cutSaw[2]?.control;
+    }
+
+    // the browser restarted, with the network
+    const V = await tab("V", path, browserContextId);
+    const listedAtStart = await listedIn(V);
+    const lists = ids.every((id) => id && listedAtStart.includes(id)) && !listedAtStart.includes(control.replace("automerge:", ""));
+    const shortIds = (list) => list.map((id) => id.slice(0, 6));
+    if (NO_NETWORK) {
+      const here = await V.js(`Promise.all([${J(doc)}, ${J(made)}].map((url) => url ? probe.site.find(url).then((h) => JSON.parse(JSON.stringify(h.doc())), () => null) : null))`);
+      check(
+        "40 (no network) what a task wrote, its page closed the moment doWork resolved: a new page of the profile has the task system's list naming both documents, and its site Repo has them",
+        !!running && warm === "worker" && wrote && lists && here[0]?.runs === 1 && here[1]?.made === "forty",
+        `pool ${running ? "running" : "not running"}; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms, the page had ${J(got.changed)} and ${J(got.made)}; the new page's list ${J(shortIds(listedAtStart))} (the documents ${J(shortIds(ids.filter(Boolean)))}); its site Repo had ${J(here)}`,
+      );
+      console.error(`skip the rest of 40 (another device finds them once the network is back): it needs the sync server (${SYNC_SERVER}), and --no-network reaches none`);
+      return;
+    }
+    await V.js("probe.mountBackground()");
+    const again = await V.waitFor("probe.status()?.state === 'running'", 30_000);
+    const opened = Date.now();
+    let changed = null;
+    let found = null;
+    while (Date.now() - opened < 90_000) {
+      changed = await nodeLook(doc);
+      found = made ? await nodeLook(made) : null;
+      if (changed?.runs === 1 && found?.made === "forty") break;
+      await sleep(2_000);
+    }
+    const reachedMs = Date.now() - opened;
+    let listedAfter = await listedIn(V);
+    const t1 = Date.now();
+    while (listedAfter.length > 0 && Date.now() - t1 < 30_000) {
+      await sleep(1_000);
+      listedAfter = await listedIn(V);
+    }
+    const controlLater = await nodeLook(control, 6_000);
+    check(
+      "40 what a task wrote with no network, its page closed before the network came back: a new page of the profile, with the network, sends it, another device (a Node Repo on the sync server) finds it with the count once, and the list of what to send empties; a document the page itself made cut off, which nothing lists, is still not sent",
+      before?.runs === 0 && !!running && warm === "worker" && wrote && cut && lists && !!again && changed?.runs === 1 && found?.made === "forty" && listedAfter.length === 0 && !controlLater?.control,
+      `another device found the document made online: ${J(before)}; cut off, doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms, the page had ${J(got.changed)} and ${J(got.made)}, and the page closed at once; then another device had ${J(cutSaw)}${cut ? "" : " (the cut did not hold)"}; the new page's list ${J(shortIds(listedAtStart))} (the run's documents ${J(shortIds(ids.filter(Boolean)))}); its pool ${again ? "running" : "not running"}, and another device found ${J(changed)} and ${J(found)} ${reachedMs} ms after the new page opened; the list then ${J(listedAfter)}; the page's own document at the server: ${J(controlLater)}`,
+    );
+  } finally {
+    if (U) offlinePages.delete(U.sessionId);
+    await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
   }
 }
 
@@ -1437,6 +1576,8 @@ try {
       await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
     }
   }
+
+  await unsentSent();
 
   if (LIFETIMES) {
     if (NO_NETWORK) console.error(`skip 37 and 38 a cut-off page's writes reaching the sync server once mended, and another context hearing the pool through it: they need the sync server (${SYNC_SERVER}), and --no-network reaches none`);

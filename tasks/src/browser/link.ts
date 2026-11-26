@@ -87,6 +87,9 @@
 // page has also saved it (`PageLinks.keep`, asked through the pool's worker;
 // executor.ts): a page reloaded the moment the run is reported has it, with
 // no network too. The page saves only documents that run's link carried.
+// What it saves it also lists until the sync server has it, so that what
+// was written with no network is sent when the server can be reached again,
+// a reload between (unsent.ts).
 
 import { decodeSyncMessage } from '@automerge/automerge/slim';
 import { cbor, parseAutomergeUrl, type AutomergeUrl } from '@automerge/automerge-repo/slim';
@@ -421,16 +424,16 @@ export class PageLinks {
   /**
    * Saves, in the Repo, those of `documents` that the link named `name`
    * carried (the ones its worker named): what a run wrote, before the run is
-   * reported. Rejects when there is no such link. Not bounded here: whoever
-   * waits on it bounds the wait.
+   * reported. Resolves to those it saved; rejects when there is no such
+   * link. Not bounded here: whoever waits on it bounds the wait.
    */
-  keep(name: string, documents: readonly unknown[]): Promise<void> {
+  keep(name: string, documents: readonly unknown[]): Promise<string[]> {
     const link = this.links.get(name);
     if (!link) {
       return Promise.reject(new Error('its link to the page had ended'));
     }
     const carried = [...new Set(documents)].filter((id): id is string => typeof id === 'string' && link.adapter.gate.named.has(id));
-    return carried.length > 0 ? this.repo.flush(carried as never[]) : Promise.resolve();
+    return carried.length > 0 ? this.repo.flush(carried as never[]).then(() => carried) : Promise.resolve(carried);
   }
 
   /** Ends the link named `name`, if there is one: its adapter leaves the Repo, which forgets its worker as a peer. */

@@ -60,7 +60,9 @@
 // own messages to this page. Before a linked run is reported, the pool's
 // worker names the documents it wrote ('keep'), and this page saves those
 // its link carried in the site's Repo and says so ('kept'), or why it could
-// not. Every link of a pool's worker is taken out
+// not; it lists those it saved until the sync server has them, and while
+// its pool runs it sends what is listed whenever the server can be reached,
+// a reload or a restart between (unsent.ts). Every link of a pool's worker is taken out
 // when that worker ends here (`end`): it stopped, failed, stopped answering,
 // or the page was hidden. A host given no Repo, or whose page cannot load the
 // adapter, starts its pool with no link, as before there was one.
@@ -85,6 +87,7 @@ import { getRepoConfig } from '../repo-config';
 import { BEAT_MS, LAPSE_MS } from '../task-rules.js';
 import { browserPoolId, browserPoolName } from './pool-id';
 import { linkAdapterClass, PageLinks, type GatedAdapterClass, type LinkableRepo } from './link';
+import { Unsent, type UnsentRepo } from './unsent';
 import type { FromPoolWorker, ServedQueues, ToPoolWorker } from './pool-worker';
 
 declare const __TASKS_BUILD__: number | undefined;
@@ -671,6 +674,9 @@ class BrowserPoolHost implements PoolHost {
         Adapter && typeof this.siteRepo?.networkSubsystem?.addNetworkAdapter === 'function' && typeof this.siteRepo.flush === 'function'
           ? new PageLinks(this.siteRepo, Adapter)
           : null;
+      // What runs wrote with no sync server, listed by this page or an earlier one: sent from now on, in the background.
+      const unsent = links ? new Unsent(this.siteRepo as unknown as UnsentRepo) : null;
+      const stopSending = unsent?.start() ?? (() => {});
       const held: Held = {
         worker,
         ready: false,
@@ -683,6 +689,7 @@ class BrowserPoolHost implements PoolHost {
           clearInterval(poll);
           worker.terminate();
           links?.removeAll();
+          stopSending();
           if (this.held === held) {
             this.held = null;
             this.drain = null;
@@ -740,7 +747,13 @@ class BrowserPoolHost implements PoolHost {
           case 'keep': {
             const { id, ask } = data;
             (links ? links.keep(`run ${id}`, data.documents) : Promise.reject(new Error('this page has no link to it'))).then(
-              () => !ended && worker.postMessage({ type: 'kept', ask } satisfies ToPoolWorker),
+              (saved) => {
+                // listed until the sync server has them; sent in the background, and the run is reported without waiting
+                unsent?.remember(saved);
+                if (!ended) {
+                  worker.postMessage({ type: 'kept', ask } satisfies ToPoolWorker);
+                }
+              },
               (error) => !ended && worker.postMessage({ type: 'kept', ask, problem: (error as Error)?.message ?? String(error) } satisfies ToPoolWorker),
             );
             break;

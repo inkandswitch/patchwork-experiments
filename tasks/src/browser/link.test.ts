@@ -27,7 +27,7 @@ import * as A from '@automerge/automerge';
 import { Repo as SiteRepo, initSubduction as initSiteSubduction } from 'site-automerge-repo';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LinkGate, PageLinks, gatedAdapterClass, isUnprotectedDocId, unprotected, type PortAdapterClass, type Verdict } from './link';
-import { notReachedPage, reachPage } from '../run-worker';
+import { notReachedPage, patient, reachPage } from '../run-worker';
 
 await initSubduction();
 await initSiteSubduction();
@@ -372,12 +372,14 @@ for (const { pageKind, workerKind, makePage, makeWorker } of PAIRS) {
         const page = makePage();
         const existing = page.create<{ n: number }>({ n: 1 });
         const { worker } = linked(page);
-        const there = await worker.find<{ n: number }>(existing.url);
-        const before = headsOf(worker);
+        // as the run worker hands the code its Repo: what the run has had, noted
+        const had = headsOf(worker);
+        const code = patient(worker, had);
+        const there = await code.find<{ n: number }>(existing.url);
         there.change((d) => void (d.n = 2));
-        const made = worker.create<{ made: boolean }>({ made: true });
+        const made = code.create<{ made: boolean }>({ made: true });
         const logs: string[] = [];
-        const waiting = reachPage(worker, before, own, (line) => logs.push(line));
+        const waiting = reachPage(worker, had, own, (line) => logs.push(line));
         expect(waiting).not.toBeNull();
         await waiting;
         expect(existing.doc()).toEqual({ n: 2 });
@@ -394,20 +396,45 @@ for (const { pageKind, workerKind, makePage, makeWorker } of PAIRS) {
       it('the link gone, or a document the page will not take: said in the log at the limit', async () => {
         const { worker, links } = linked();
         expect(await connected(worker)).toBe(true);
-        const before = headsOf(worker);
+        const had = headsOf(worker);
         const shut = idOf(madeUp(32, 8));
-        worker.import(A.save(A.from({ shut: true })), { docId: shut } as any);
+        patient(worker, had).import(A.save(A.from({ shut: true })), { docId: shut } as any);
         const logs: string[] = [];
-        await reachPage(worker, before, own, (line) => logs.push(line), 500);
-        expect(logs).toEqual([notReachedPage(1, 1)]);
+        await reachPage(worker, had, own, (line) => logs.push(line), 500);
+        expect(logs).toEqual([notReachedPage(1, 1, `made by this run: ${shut.slice(0, 6)}…`)]);
 
         links.remove('worker');
         await until(() => worker.peers.length === 0);
-        const before2 = headsOf(worker);
-        worker.create({ alone: true });
+        const had2 = headsOf(worker);
+        const alone = patient(worker, had2).create({ alone: true });
         const logs2: string[] = [];
-        await reachPage(worker, before2, own, (line) => logs2.push(line), 300);
-        expect(logs2).toEqual([notReachedPage(1, 1)]);
+        await reachPage(worker, had2, own, (line) => logs2.push(line), 300, { doc: alone.url });
+        expect(logs2).toEqual([notReachedPage(1, 1, `made by this run: ${alone.documentId.slice(0, 6)}…`)]);
+      });
+
+      it("a document the run only read is not waited for, though the page will not take it: one from the worker's own database that keyhive protects", async () => {
+        const storage = memoryStorage();
+        const shut = idOf(madeUp(32, 9));
+        // an earlier worker on the same database kept it
+        const earlier = new SiteRepo({ storage, peerId: `earlier-${crypto.randomUUID()}` } as any) as unknown as Repo;
+        earlier.import(A.save(A.from({ kept: true })), { docId: shut } as any);
+        await earlier.flush();
+        await earlier.shutdown();
+        const page = makePage();
+        const links = new PageLinks(page as any, Gated);
+        const { port, peer } = links.open('worker');
+        const worker = new SiteRepo({ storage, network: [new MessageChannelNetworkAdapter(port as any)], peerId: peer } as any) as unknown as Repo;
+        opened.push({ page, worker, links });
+        const had = headsOf(worker);
+        const code = patient(worker, had);
+        const read = await code.find<{ kept: boolean }>(stringifyAutomergeUrl({ documentId: shut } as any));
+        expect(read.doc()).toEqual({ kept: true });
+        expect(reachPage(worker, had, own, () => {}, 500)).toBeNull();
+        // changed, it is the run's, and the page's refusal holds its ending to the bound, said
+        read.change((d) => void (d.kept = false));
+        const logs: string[] = [];
+        await reachPage(worker, had, own, (line) => logs.push(line), 500, { session: `automerge:${shut}` });
+        expect(logs).toEqual([notReachedPage(1, 1, `named in its input: ${shut.slice(0, 6)}…`)]);
       });
     });
   });
