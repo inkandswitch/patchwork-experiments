@@ -61,6 +61,7 @@ export const OUTCOME = {
   reconnecting: "reconnecting", // the network went away; the runner resumes when it is back
   error: "error",
   budgetExhausted: "budget-exhausted",
+  superseded: "superseded", // its reply, or the reply's mark, is gone: another run settled it (`checkMark`)
 }
 
 /**
@@ -77,6 +78,15 @@ export const OUTCOME = {
  * @param {AbortSignal} [opts.signal]
  * @param {number} [opts.maxTurns] iteration budget (default 24)
  * @param {(where:string)=>boolean} [opts.canRun] may this runner execute a tier?
+ *
+ * What a burst (kernel/burst.js) injects; each default is the SessionRunner's:
+ * @param {()=>boolean} [opts.stillOurs] may this run go on writing? (default: it holds the lease)
+ * @param {boolean} [opts.checkMark] every streamed write checks that its reply still carries
+ *   this run's mark; a reply or mark gone ends the run `superseded` (default false)
+ * @param {()=>Promise<object|null>} [opts.boundary] called at the top of every turn; a
+ *   result it returns ends the run with that result (default none)
+ * @param {boolean} [opts.oneChangePerCall] a call's move, result and `made` are one change,
+ *   through `store.changeOwn` when the store has it (default: the batch's results at its end)
  */
 export async function run(opts) {
   const {
@@ -102,7 +112,7 @@ export async function run(opts) {
     }
   }
 
-  const stillOurs = () => holdsLease(store.doc(), runnerUrl, generation)
+  const stillOurs = opts.stillOurs ?? (() => holdsLease(store.doc(), runnerUrl, generation))
   // Stopped. Said in the session only while it is still this runner's: a
   // page going away gives its leases up first (runners/registry.js), and must leave
   // what it was in the middle of for the next runner, not mark it idle.
@@ -142,6 +152,8 @@ export async function run(opts) {
     repeatWindow: opts.repeatWindow ?? REPEAT_WINDOW,
     sessionUrl: opts.sessionUrl ?? null,
     afterCall: opts.afterCall ?? [],
+    checkMark: opts.checkMark === true,
+    oneChangePerCall: opts.oneChangePerCall === true,
   }
 
   // What is added to the system prompt, in order: each section a function of
@@ -171,6 +183,12 @@ export async function run(opts) {
     // nothing more is asked or run, and nothing is written. A nudge or a
     // summary this run wrote after it does not end it (session/status.js).
     if (stopOf(store.doc())) return { outcome: OUTCOME.aborted, reason: "stopped" }
+    // The caller's own look at a turn's top (kernel/burst.js: stand back, or
+    // settle what other runs left).
+    if (opts.boundary) {
+      const ended = await opts.boundary()
+      if (ended) return ended
+    }
     const spent = spentBudget(store.doc())
     if (spent) return stopForBudget(store, spent, emit)
 
@@ -228,6 +246,7 @@ export async function run(opts) {
     }
 
     if (signal?.aborted) return stopped()
+    if (assistant.superseded) return { outcome: OUTCOME.superseded, reason: "its reply was settled by another run" }
     // Lost mid-stream: the session is another runner's, so write nothing more.
     if (assistant.lost) return { outcome: OUTCOME.aborted, reason: "lease lost" }
 
@@ -514,9 +533,21 @@ async function streamTurn(opts) {
   // merges in before it (a Stop's notice from a copy that had not seen it)
   // moves it along the list.
   const reply = (d) => (d?.turns ?? []).find((t) => t.id === turn.id) ?? null
+  const mine = (mark) => mark?.runner === turn.streaming.runner && mark?.generation === turn.streaming.generation
+  // With `checkMark`, a streamed write goes in only while the reply still
+  // carries this run's mark: a reply another run dropped, or whose mark it
+  // took off, is not this run's to write any more, and the run is
+  // superseded.
+  let superseded = false
+  const ours = (t) => {
+    if (t && (!opts.checkMark || mine(t.streaming))) return t
+    if (opts.checkMark) superseded = true
+    return null
+  }
   const turnPath = () => {
-    const i = (store.doc()?.turns ?? []).findIndex((t) => t.id === turn.id)
-    return i < 0 ? null : ["turns", i]
+    const turns = store.doc()?.turns ?? []
+    const i = turns.findIndex((t) => t.id === turn.id)
+    return ours(turns[i] ?? null) ? ["turns", i] : null
   }
 
   const appender = batchedAppender(store, flushMs)
@@ -551,7 +582,7 @@ async function streamTurn(opts) {
   const pushBlock = (block) => {
     let index = null
     store.change((d) => {
-      const t = reply(d)
+      const t = ours(reply(d))
       if (!t) return
       t.blocks.push(block)
       index = t.blocks.length - 1
@@ -564,7 +595,7 @@ async function streamTurn(opts) {
   try {
     for await (const event of provider.stream(request)) {
       if (signal?.aborted) break
-      if (repeated) break
+      if (repeated || superseded) break
       // The model answered: whatever cut the network off is over.
       if (!heard) {
         heard = true
@@ -619,18 +650,23 @@ async function streamTurn(opts) {
     // a stop from outside took the lease, except that the stop took off only
     // the marks its copy could see: this turn's, begun after, comes off here
     // while it still names this run, and the text stays.
-    const ours = !lost && !interrupted && (!stillOurs || stillOurs())
-    const mine = (mark) => mark?.runner === turn.streaming.runner && mark?.generation === turn.streaming.generation
-    if (ours || (stoppedFromOutside(store.doc()) && mine(reply(store.doc())?.streaming))) {
-      store.change((d) => {
+    //
+    // Taking the mark off is the run's own value, so a store that keeps own
+    // writes apart (kernel/store.js guardedStore) takes it after an abort or
+    // a stop too; it goes only while the mark still names this run.
+    const saw = !lost && !superseded && !interrupted && (!stillOurs || stillOurs())
+    if (saw || (stoppedFromOutside(store.doc()) && mine(reply(store.doc())?.streaming))) {
+      const own = store.changeOwn ? (fn) => store.changeOwn(fn) : (fn) => store.change(fn)
+      own((d) => {
         const t = reply(d)
         const mark = t?.streaming ?? null
-        if (mark && (ours || mine(mark))) delete t.streaming
+        if (mark && (saw ? !opts.checkMark || mine(mark) : mine(mark))) delete t.streaming
       })
     }
   }
 
   const turnId = turn.id
+  if (superseded) return { calls: [], stopReason: "superseded", turnId, lost: true, superseded: true }
   if (lost) return { calls: [], stopReason: "lease-lost", turnId, lost: true }
 
   // Stopped for going round in circles. Whatever was streamed stays in the
@@ -653,8 +689,12 @@ async function streamTurn(opts) {
   // a half-parsed call. Approval state is decided here, at write time.
   if (calls.length && stillOurs()) {
     store.change((d) => {
+      // Its mark is off by now, taken off above: the reply is found by id.
       const t = reply(d)
-      if (!t) return
+      if (!t) {
+        if (opts.checkMark) superseded = true
+        return
+      }
       for (const call of calls) {
         const tool = toolset.get(call.name)
         // What the call asks of the person, worked out here, where the tool is
@@ -675,6 +715,7 @@ async function streamTurn(opts) {
         )
       }
     })
+    if (superseded) return { calls: [], stopReason: "superseded", turnId, lost: true, superseded: true }
   }
 
   return { calls, stopReason, turnId }
@@ -703,6 +744,8 @@ async function executeCalls(opts) {
   // call must still carry for this run to settle it (session/calls.js move).
   const mine = { runner: runnerUrl, generation }
   const results = []
+  // The batch's tool turn, with `oneChangePerCall`: made by its first result.
+  let toolTurn = null
 
   for (const call of runnable) {
     if (signal?.aborted) {
@@ -789,26 +832,50 @@ async function executeCalls(opts) {
       if (more?.facts) outcome.facts = { ...outcome.facts, ...JSON.parse(JSON.stringify(more.facts)) }
     }
 
+    const result = resultBlock(call.id, outcome.output, {
+      isError: outcome.isError,
+      summary: outcome.summary,
+      image: outcome.image ?? null,
+      doc: outcome.doc ?? null,
+      file: outcome.file ?? null,
+      facts: outcome.facts ?? null,
+    })
+    // Anything the call created goes on the session's list of what it made, so
+    // it stays reachable after the transcript has scrolled past it.
+    const made = [outcome.doc, ...(outcome.made ?? [])].filter((ref) => ref?.url)
+
+    if (opts.oneChangePerCall) {
+      // One change, the run's own (kernel/store.js changeOwn), and only while
+      // the call is still running under this run: its move, its result in the
+      // batch's tool turn (made by the first result, found by id after) and
+      // what it made. A call another run settled meanwhile keeps what that
+      // run wrote, and this run writes nothing on it.
+      const own = store.changeOwn ? (fn) => store.changeOwn(fn) : (fn) => store.change(fn)
+      own((d) => {
+        if (!move(findCall(d, call.id)?.block, outcome.isError ? "fail" : "succeed", mine)) return
+        if (!findResult(d, call.id)) {
+          const batch = toolTurn ? (d.turns ?? []).find((t) => t.id === toolTurn) : null
+          if (batch) batch.blocks.push(result)
+          else {
+            const turn = makeTurn("tool", [result])
+            toolTurn = turn.id
+            if (!d.turns) d.turns = []
+            d.turns.push(turn)
+          }
+        }
+        for (const ref of made) recordArtifact(d, ref)
+      })
+      continue
+    }
+
     // Only while the claim is still this run's: a runner that took the session
     // over meanwhile may have closed the call as interrupted, and that stands.
     store.change((d) => {
       move(findCall(d, call.id)?.block, outcome.isError ? "fail" : "succeed", mine)
     })
 
-    results.push(
-      resultBlock(call.id, outcome.output, {
-        isError: outcome.isError,
-        summary: outcome.summary,
-        image: outcome.image ?? null,
-        doc: outcome.doc ?? null,
-        file: outcome.file ?? null,
-        facts: outcome.facts ?? null,
-      })
-    )
+    results.push(result)
 
-    // Anything the call created goes on the session's list of what it made, so
-    // it stays reachable after the transcript has scrolled past it.
-    const made = [outcome.doc, ...(outcome.made ?? [])].filter((ref) => ref?.url)
     if (made.length) {
       store.change((d) => {
         for (const ref of made) recordArtifact(d, ref)

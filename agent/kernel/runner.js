@@ -89,8 +89,12 @@ export const DEFER_PER_BUSY_MS = 1000
  * That is what stops a runner spinning on a failed session: the failure is
  * said in a notice (session/blocks.js), an assistant-role turn, so the next
  * check sees nothing to do until someone speaks.
+ *
+ * `debris`, when given, says whether the session holds marks other runs left
+ * (a burst's, judged by equality with its run: session/recovery.js
+ * hasDebris) in place of the lease's judgement.
  */
-export function needsWork(doc, canRun = () => true, live = null) {
+export function needsWork(doc, canRun = () => true, live = null, debris = null) {
   if (!doc) return false
   // A stop in force, first: a person's, a workflow's, a failure, a budget.
   // Nothing the session holds is work until it is spoken to again — not a
@@ -103,7 +107,7 @@ export function needsWork(doc, canRun = () => true, live = null) {
   // closed — has to be settled before anything else can happen, whatever else
   // the session is waiting on.
   const liveness = live ? { live } : {}
-  if (orphanedCalls(doc, liveness).length || interruptedTurns(doc, liveness).length) return true
+  if (debris ? debris(doc) : orphanedCalls(doc, liveness).length || interruptedTurns(doc, liveness).length) return true
   if (callsAwaitingApproval(doc).length) return false
   // A question the agent asked is work for a person, not for a runner.
   if (questionsAwaitingAnswer(doc).length) return false
@@ -519,12 +523,15 @@ export class SessionRunner {
    * the step's built-ins: the one `confine` builds.
    */
   async prepare(doc) {
-    const scope = scopeOf(doc)
-    await assertScopeAgrees(doc, scope, this.ctx.repo)
-    const prepared = scope
-      ? { toolset: scopedToolset(doc, { builtins: this.builtins, plugins: await this.plugins() }), ctx: await confine(this.ctx, scope), privileged: () => null }
-      : { toolset: await this.buildToolset(doc), ctx: this.fullCtx, privileged: (this.privileged ??= privileges(this.ctx, this.store, { builtins: this.builtins, plugins: () => this.plugins(), startSession: this.startStepSession })) }
-    return prepared
+    return prepareRun(doc, {
+      ctx: this.ctx,
+      store: this.store,
+      fullCtx: this.fullCtx,
+      builtins: this.builtins,
+      plugins: () => this.plugins(),
+      buildToolset: this.buildToolset,
+      privileged: () => (this.privileged ??= privileges(this.ctx, this.store, { builtins: this.builtins, plugins: () => this.plugins(), startSession: this.startStepSession })),
+    })
   }
 
   /** This runner's plugin tools, or none; a registry that fails to load is no plugins, not no run. */
@@ -578,6 +585,36 @@ export class SessionRunner {
 }
 
 /**
+ * What one run's tools get, decided by the session's scope and nothing else:
+ * a toolset, the context they share, and what only some of them get beyond
+ * it (`privileged`, which a research step's tools never have). A malformed
+ * scope, or one that disagrees with the plan, throws, and the session does
+ * not run. The SessionRunner and a burst (kernel/burst.js) both build a run
+ * this way.
+ *
+ *   ctx           the context as the host built it, with the repo as it is
+ *   store         the session's store
+ *   fullCtx       a full-access session's context (fullContext of the two)
+ *   builtins      the built-in tools
+ *   plugins       () => this run's plugin tools
+ *   buildToolset  (doc) => a full-access session's toolset
+ *   privileged    () => the privileges of a full-access session's tools
+ *   startSession  how this host runs a workflow step's session, when
+ *                 `privileged` is not given
+ */
+export async function prepareRun(doc, { ctx, store, fullCtx = null, builtins = [], plugins = async () => [], buildToolset = null, privileged = null, startSession = null }) {
+  const scope = scopeOf(doc)
+  await assertScopeAgrees(doc, scope, ctx.repo)
+  if (scope) return { toolset: scopedToolset(doc, { builtins, plugins: await plugins() }), ctx: await confine(ctx, scope), privileged: () => null }
+  const toolset = buildToolset ? await buildToolset(doc) : toolsetOf(fullTools(doc, { builtins, plugins: await plugins() }))
+  return {
+    toolset,
+    ctx: fullCtx ?? fullContext(ctx, store),
+    privileged: privileged ? privileged() : privileges(ctx, store, { builtins, plugins, startSession }),
+  }
+}
+
+/**
  * A full-access session's tool context: the host's own, with two fields put
  * over it.
  *
@@ -592,8 +629,11 @@ export class SessionRunner {
  * run — where a page tool mounts, whether fetches go direct — it defines as a
  * getter, and each call reads it afresh (kernel/loop.js spreads the context
  * into the call's own).
+ *
+ * `record`, when given, is told the hashes of every write as well (a burst
+ * reports them to whoever follows it: kernel/burst.js).
  */
-export function fullContext(base, store) {
+export function fullContext(base, store, { record = null } = {}) {
   return Object.freeze(
     Object.defineProperties(
       {},
@@ -602,7 +642,13 @@ export function fullContext(base, store) {
         ...Object.getOwnPropertyDescriptors({
           // Every write through it is noted as this session's (kernel/own-changes.js),
           // so a watch can tell the session's own edits from everyone else's.
-          repo: kernelRepo(base.repo, { known: () => knownUrls(store), record: (hashes) => rememberOwn(store?.url, hashes) }),
+          repo: kernelRepo(base.repo, {
+            known: () => knownUrls(store),
+            record: (hashes) => {
+              rememberOwn(store?.url, hashes)
+              record?.(hashes)
+            },
+          }),
           session: { url: store?.url ?? null, doc: () => store.doc() },
         }),
       }
