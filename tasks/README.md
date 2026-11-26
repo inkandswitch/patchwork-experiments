@@ -143,8 +143,8 @@ run (`ctx.run`), in one assignment, and from then on writes only inside that val
 each change that the value there still names its run. Two runs' values put in one place merge to
 one of them, whole, the same everywhere, and the other's writes stay in the value that lost; so a
 run taken over while cut off from the sync server, which goes on writing, cannot mix its writes
-with those of the run that replaced it. `editable-llm-chat/src/generate-task.js` is the worked
-example: a reply streamed by appends into a message the run made.
+with those of the run that replaced it. No tool in this tree does this yet;
+`probes/append-task.js` shows the appends alone.
 
 ## Having work done from a page
 

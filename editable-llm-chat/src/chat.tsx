@@ -1,23 +1,13 @@
-// The Editable Chat tool: a conversation with a model whose replies the
-// person can edit. Each reply is written into the chat by work done through
-// the task system (replies.js, generate-task.js); this view draws the chat
-// and what replies.js says of each reply, and writes nothing itself but the
-// chosen model.
-
 import { render } from 'solid-js/web';
-import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
+import { createEffect, createSignal, For, Show } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
+import { updateText } from '@automerge/automerge-repo';
 import type { ToolRender, DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { DocHandle, Repo } from '@automerge/automerge-repo';
+import type { DocHandle } from '@automerge/automerge-repo';
 import { SolidMarkdown } from 'solid-markdown';
 
-import type { EditableChatDoc, EditableChatMessage } from './types';
-import { chatReplies } from './replies.js';
-import { workLines } from './reply-status.js';
+import type { ChatMessage, EditableChatDoc, EditableChatMessage } from './types';
 import './chat.css';
-
-// The provider's key, given when the package is built. It goes into each reply's task input.
-const API_KEY: string = (import.meta as any).env?.VITE_OPENAI_API_KEY ?? '';
 
 // ─── Model list ───────────────────────────────────────────────────────────────
 
@@ -65,7 +55,7 @@ export const EditableChatTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <EditableChatView handle={handle as DocHandle<EditableChatDoc>} repo={element.repo} />
+        <EditableChatView handle={handle as DocHandle<EditableChatDoc>} />
       </RepoContext.Provider>
     ),
     element,
@@ -73,18 +63,12 @@ export const EditableChatTool: ToolRender = (handle, element) => {
   return dispose;
 };
 
-type Replies = ReturnType<typeof chatReplies>;
-
 // ─── Main view ────────────────────────────────────────────────────────────────
 
-function EditableChatView(props: { handle: DocHandle<EditableChatDoc>; repo: Repo }) {
+function EditableChatView(props: { handle: DocHandle<EditableChatDoc> }) {
   const [doc] = useDocument<EditableChatDoc>(() => props.handle.url);
   const [prompt, setPrompt] = createSignal('');
-  // bumped whenever replies.js says what it shows has changed
-  const [version, setVersion] = createSignal(0);
-  const replies = chatReplies(props.handle, props.repo, { apiKey: API_KEY, onChange: () => setVersion((v) => v + 1) });
-  onCleanup(() => replies.dispose());
-  const busy = () => (version(), doc(), replies.busy());
+  const [isSubmitting, setIsSubmitting] = createSignal(false);
   let messagesEndRef: HTMLDivElement | undefined;
 
   createEffect(() => {
@@ -92,8 +76,45 @@ function EditableChatView(props: { handle: DocHandle<EditableChatDoc>; repo: Rep
     messagesEndRef?.scrollIntoView({ behavior: 'smooth' });
   });
 
-  function handleSubmit() {
-    if (replies.send(prompt())) setPrompt('');
+  async function handleSubmit() {
+    const text = prompt().trim();
+    if (!text || isSubmitting()) return;
+
+    const currentDoc = doc();
+    if (!currentDoc) return;
+
+    setIsSubmitting(true);
+    setPrompt('');
+
+    // Snapshot context from current stored messages (captures any user edits)
+    const context: ChatMessage[] = [
+      { role: 'system', content: 'You are a helpful assistant.' },
+      ...currentDoc.messages
+        .filter((m) => !m.isStreaming)
+        .map((m) => ({ role: m.role as ChatMessage['role'], content: m.content })),
+      { role: 'user', content: text },
+    ];
+
+    // Append the user message and an empty streaming assistant placeholder
+    const assistantIdx = currentDoc.messages.length + 1;
+    props.handle.change((d) => {
+      d.messages.push({ role: 'user', content: text });
+      d.messages.push({ role: 'assistant', content: '', isStreaming: true });
+    });
+
+    try {
+      await streamToMessage(props.handle, assistantIdx, currentDoc.config, context);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      props.handle.change((d) => {
+        updateText(d, ['messages', assistantIdx, 'content'], `Error: ${errMsg}`);
+      });
+    } finally {
+      props.handle.change((d) => {
+        d.messages[assistantIdx].isStreaming = false;
+      });
+      setIsSubmitting(false);
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -116,7 +137,9 @@ function EditableChatView(props: { handle: DocHandle<EditableChatDoc>; repo: Rep
               fallback={<div class="ec-empty">Start a conversation below.</div>}
             >
               <For each={currentDoc().messages}>
-                {(msg) => <MessageView message={msg} replies={replies} version={version} />}
+                {(msg, idx) => (
+                  <MessageView message={msg} index={idx()} handle={props.handle} />
+                )}
               </For>
             </Show>
             <div ref={messagesEndRef} />
@@ -150,15 +173,15 @@ function EditableChatView(props: { handle: DocHandle<EditableChatDoc>; repo: Rep
                 value={prompt()}
                 onInput={(e) => setPrompt(e.currentTarget.value)}
                 onKeyDown={handleKeyDown}
+                disabled={isSubmitting()}
                 rows={3}
               />
               <button
                 class="ec-send-btn"
                 onClick={handleSubmit}
-                disabled={busy() || !prompt().trim()}
-                title={busy() ? 'A reply is being written' : undefined}
+                disabled={isSubmitting() || !prompt().trim()}
               >
-                {busy() ? 'Replying…' : 'Send'}
+                {isSubmitting() ? 'Sending…' : 'Send'}
               </button>
             </div>
           </div>
@@ -170,26 +193,26 @@ function EditableChatView(props: { handle: DocHandle<EditableChatDoc>; repo: Rep
 
 // ─── Message view ─────────────────────────────────────────────────────────────
 
-function MessageView(props: { message: EditableChatMessage; replies: Replies; version: () => number }) {
+function MessageView(props: {
+  message: EditableChatMessage;
+  index: number;
+  handle: DocHandle<EditableChatDoc>;
+}) {
   const [isEditing, setIsEditing] = createSignal(false);
   const [editValue, setEditValue] = createSignal('');
-  // the chat's heads the edited text was read at, so that saving changes that text and no later one
-  let editFrom: unknown;
   const isAssistant = () => props.message.role === 'assistant';
-  const shown = () => (props.version(), props.message.content, props.message.ended, props.replies.shown(props.message));
-  const canEdit = () => !!shown()?.editable;
-  const streaming = () => shown()?.status === 'streaming' || shown()?.status === 'looking';
+  const canEdit = () => isAssistant() && !props.message.isStreaming;
 
   function startEdit() {
     if (!canEdit()) return;
-    const { text, at } = props.replies.opened(props.message.id);
-    editFrom = at;
-    setEditValue(text);
+    setEditValue(props.message.content);
     setIsEditing(true);
   }
 
   function commitEdit() {
-    props.replies.edit(props.message.id, editValue(), editFrom);
+    props.handle.change((d) => {
+      updateText(d, ['messages', props.index, 'content'], editValue());
+    });
     setIsEditing(false);
   }
 
@@ -207,16 +230,6 @@ function MessageView(props: { message: EditableChatMessage; replies: Replies; ve
       commitEdit();
     }
   }
-
-  const statusLine = () => {
-    const s = shown();
-    if (!s || s.status === 'finished') return null;
-    if (s.status === 'streaming') {
-      const { stage, where } = workLines(s.work);
-      return [stage, where].filter(Boolean).join(' ') || null;
-    }
-    return s.line ?? null;
-  };
 
   return (
     <div class={`ec-message ec-message-${props.message.role}`}>
@@ -246,7 +259,7 @@ function MessageView(props: { message: EditableChatMessage; replies: Replies; ve
               <Show
                 when={props.message.content}
                 fallback={
-                  <Show when={streaming()}>
+                  <Show when={props.message.isStreaming}>
                     <span class="ec-thinking">Thinking…</span>
                   </Show>
                 }
@@ -255,7 +268,7 @@ function MessageView(props: { message: EditableChatMessage; replies: Replies; ve
                   <SolidMarkdown>{props.message.content}</SolidMarkdown>
                 </div>
               </Show>
-              <Show when={streaming()}>
+              <Show when={props.message.isStreaming}>
                 <span class="ec-cursor" />
               </Show>
             </Show>
@@ -274,20 +287,86 @@ function MessageView(props: { message: EditableChatMessage; replies: Replies; ve
           <button class="ec-cancel-btn" onClick={cancelEdit}>Cancel</button>
         </div>
       </Show>
-
-      <Show when={statusLine() || shown()?.stoppable || shown()?.retry}>
-        <div class="ec-reply-status" data-status={shown()?.status}>
-          <Show when={statusLine()}>
-            <span>{statusLine()}</span>
-          </Show>
-          <Show when={shown()?.stoppable && shown()?.work?.state !== 'stopping'}>
-            <button class="ec-reply-btn" onClick={() => props.replies.stop(props.message.id)}>Stop</button>
-          </Show>
-          <Show when={shown()?.retry}>
-            <button class="ec-reply-btn" onClick={() => props.replies.tryAgain(props.message.id)}>Try again</button>
-          </Show>
-        </div>
-      </Show>
     </div>
   );
+}
+
+// ─── LLM streaming ────────────────────────────────────────────────────────────
+
+async function streamToMessage(
+  handle: DocHandle<EditableChatDoc>,
+  msgIdx: number,
+  config: EditableChatDoc['config'],
+  messages: ChatMessage[],
+  signal?: AbortSignal,
+): Promise<void> {
+  let accumulated = '';
+  for await (const chunk of streamChatCompletion(config.apiUrl, config.model, messages, signal)) {
+    accumulated += chunk;
+    handle.change((d) => {
+      updateText(d, ['messages', msgIdx, 'content'], accumulated);
+    });
+  }
+}
+
+async function* streamChatCompletion(
+  apiUrl: string,
+  model: string,
+  messages: ChatMessage[],
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  const url = `${apiUrl.replace(/\/$/, '')}/chat/completions`;
+  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY ?? '';
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      'HTTP-Referer': globalThis.location?.origin ?? 'http://localhost',
+      'X-Title': 'Patchwork',
+    },
+    body: JSON.stringify({ model, messages, stream: true }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`LLM API error (${response.status}): ${text}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+        const data = trimmed.slice(6);
+        if (data === '[DONE]') return;
+
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        } catch {
+          // skip malformed JSON lines
+        }
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
 }
