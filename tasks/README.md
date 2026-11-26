@@ -108,6 +108,15 @@ the task returns. `ctx` holds:
   the task), `'yielded'` (another run has the task, or has ended it) or `'stopping'` (the
   machine's pool is shutting down, and the task will be taken again). Code holding something
   outside its worker (a child process, a file lock) lets go of it here.
+- `settled`: a promise that resolves once the pool has held the run for a beat (two seconds from
+  when its taking was saved) and nothing stops it. A pool says each of its runs every beat, and an
+  earlier open run counts as heard from first sight, so within that beat an earlier run that can
+  be heard at all is heard, and this run yields instead of settling. Code awaits it before doing
+  what cannot be undone (a payment, a message sent to someone). It resolves at most once, and
+  never once `signal` has aborted: then it rejects with "the run stopped before it settled
+  (<reason>)". It is not exclusivity: an earlier run cut off for longer than the beat is not
+  heard, and hearing it later still makes this run yield, with what it did already done. Code that
+  never awaits it is not held up by it.
 - `repo`: the worker's own Repo, which already has the task's document. Its `find` waits for a
   document made elsewhere a moment ago (asking again for about half a minute, as `findWhenThere`
   in `task-client.js` does), so an input the asker has just made is found, not refused; a url it
@@ -296,7 +305,7 @@ only asks of) is in `PLANS.md`, each with what it waits on.
 processes and say what they saw, one line per check or measurement:
 
 - `probes/node-run.mjs` (after `pnpm build:node`; `--only 1,16` runs only the checks named):
-  Node hosts through the real sync server, 20 checks. 1, latency of ten do-nothing tasks on a
+  Node hosts through the real sync server, 21 checks. 1, latency of ten do-nothing tasks on a
   host alone that has served the queue for two and a half seconds, none taken as late as the
   hold (and how long the first task, asked as the host started, waited); 2,
   logs and progress heard while running and kept; 3, a throw fails once; 4, a spin cancelled,
@@ -313,7 +322,9 @@ processes and say what they saw, one line per check or measurement:
   that host; 20, four tasks asked at once near a host with two slots run two there and two on
   the other host, each once and none yielded (when each run started is printed, not checked:
   the other host takes its two at once if it heard the first full before it saw them, and
-  otherwise a hold later). Checks 9, 17 and 19 print when each run started, too.
+  otherwise a hold later); 21, a task awaiting `ctx.settled` has it resolve no sooner than a beat
+  after its run was recorded, and one stopped within the beat has it reject, `cancelled`. Checks
+  9, 17 and 19 print when each run started, too.
 - `probes/write-path.mjs` (after `pnpm build:node`): measures, and checks nothing, how a
   document travels between a task on a Node host and its asker through the sync server, per
   size: written by the task (`out`), made by the asker for the task (`in`), twenty at once
@@ -321,7 +332,7 @@ processes and say what they saw, one line per check or measurement:
   the asker reads succeeded (`term`). `probes/write-path/browser.mjs` (after `pnpm build`, in
   the chrome slot) measures `out`, `in` and `ack` for a browser's run worker.
 - `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
-  stand-in page in a throwaway Chrome profile, with no sync server but for check 22, 22 checks. The page mounts
+  stand-in page in a throwaway Chrome profile, with no sync server but for check 22, 23 checks. The page mounts
   what a frame does: the components the package tags `background`, found by tag in its plugin
   list (the page has no registry), and the titlebar tool. One pool per profile across tabs; a
   closed, navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning
@@ -332,7 +343,8 @@ processes and say what they saw, one line per check or measurement:
   background component mounted later starts it, and let go lets the lock go; and (22) a run
   worker runs `probes/append-task.js` unchanged, through the page's import map and the real
   sync server (`--sync`, `PATCHWORK_SYNC`, or Ink & Switch's), and the page sees the text it
-  appends to grow piece by piece.
+  appends to grow piece by piece; and (23) `ctx.settled` in a run worker resolves no sooner than a
+  beat after the run was recorded, and rejects, `cancelled`, for a run stopped within the beat.
 - `probes/real-run.mjs <automerge:package url>` (in the chrome slot): a published copy of the
   package (a staging package will do) in the real Patchwork, https://patchwork.inkandswitch.com/,
   in a throwaway profile, 22 checks, the last two that neither the page nor the task system's

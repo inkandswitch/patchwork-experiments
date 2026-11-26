@@ -104,7 +104,7 @@ export class BrowserExecutor implements Executor {
     tell({ type: 'settings', settings: { ...settings, place: { ...settings.place, database: runDatabase(n) } } });
 
     // A job goes with the task's document, which takes a moment to read. What
-    // is said after it waits its turn, so that an abort never overtakes its job.
+    // is said after it waits its turn, so that neither an abort nor a settle overtakes its job.
     let said = Promise.resolve();
     const inTurn = (message: () => Promise<ToRunWorker> | ToRunWorker) => {
       said = said
@@ -125,6 +125,7 @@ export class BrowserExecutor implements Executor {
           task: await taskBytes(job.taskUrl).catch(() => undefined),
         })),
       abort: (reason: StopReason) => inTurn(() => ({ type: 'abort', reason })),
+      settle: (runId: string) => inTurn(() => ({ type: 'settled', run: runId })),
       terminate: () => {
         worker.terminate();
         exit();

@@ -3,7 +3,8 @@
 // The Node executor with real worker threads, each running a stand-in for
 // run-thread.mjs that does what its job's importUrl says. What is checked:
 // `exit` is said once per thread whatever ends it, `terminate` ends a thread
-// that never yields, and no two live threads are given one slot directory.
+// that never yields, no two live threads are given one slot directory, and
+// `settled` reaches a thread after the job it is about.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -24,12 +25,15 @@ parentPort.on('message', (m) => {
   } else if (m.type === 'job') {
     const what = m.job.importUrl;
     if (what === 'return') parentPort.postMessage({ type: 'done', result: m.task ? m.task.length : null });
+    if (what === 'hold') parentPort.postMessage({ type: 'log', message: 'job ' + m.job.runId });
     if (what === 'spin') for (;;) {}
     if (what === 'crash') setTimeout(() => { throw new Error('escaped'); });
     if (what === 'exit') process.exit(3);
     if (what === 'grow') { const kept = []; for (;;) kept.push(new Array(1e5).fill(Math.random())); }
   } else if (m.type === 'abort') {
     parentPort.postMessage({ type: 'log', message: 'aborted ' + m.reason });
+  } else if (m.type === 'settled') {
+    parentPort.postMessage({ type: 'log', message: 'settled ' + m.run });
   }
 });
 `;
@@ -49,13 +53,18 @@ const job = (importUrl: string): Job => ({
   key: 'k',
 });
 
-function executor(scriptUrl = standIn, maxHeapMb?: number) {
+function executor(scriptUrl = standIn, maxHeapMb?: number, bytesAfterMs = 0) {
   return new NodeExecutor({
     script: scriptUrl,
     maxHeapMb,
     dataDir: dir,
     settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' }, place: {} },
-    taskBytes: async () => new Uint8Array([1, 2, 3]),
+    taskBytes: async () => {
+      if (bytesAfterMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, bytesAfterMs));
+      }
+      return new Uint8Array([1, 2, 3]);
+    },
   });
 }
 
@@ -176,6 +185,20 @@ describe('the Node executor', () => {
       expect(r.said[0]).toMatch(/^log its worker crashed/);
       expect(pool.threads).toBe(0);
     }
+  });
+
+  it('passes settled on after the job it is about, though the task takes a moment to read', async () => {
+    // The task's document is read before the job is told: a settle said at
+    // once would overtake the job were it not told in turn.
+    const pool = executor(standIn, undefined, 200);
+    const r = recorder();
+    const worker = pool.start(r.events);
+    worker.run(job('hold'));
+    worker.settle('run-1');
+    await until(() => r.said.includes('log settled run-1'));
+    expect(r.said.filter((line) => /^log (job|settled) /.test(line))).toEqual(['log job run-1', 'log settled run-1']);
+    worker.terminate();
+    await r.gone;
   });
 
   it('never gives two live threads one directory: a replacement started before the old one has gone takes another', async () => {

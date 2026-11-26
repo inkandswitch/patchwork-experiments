@@ -96,7 +96,7 @@ export class NodeExecutor implements Executor {
     });
 
     // A job goes with the task's document, which takes a moment to read. What
-    // is said after it waits its turn, so that an abort never overtakes its job.
+    // is said after it waits its turn, so that neither an abort nor a settle overtakes its job.
     let said = Promise.resolve();
     const inTurn = (message: () => Promise<ToRunWorker> | ToRunWorker) => {
       said = said
@@ -117,6 +117,10 @@ export class NodeExecutor implements Executor {
       abort: (reason: StopReason) => {
         say?.(`run ${short(job)} told to stop: ${reason}`);
         inTurn(() => ({ type: 'abort', reason }));
+      },
+      settle: (runId: string) => {
+        say?.(`run ${runId.slice(0, 8)} settled`);
+        inTurn(() => ({ type: 'settled', run: runId }));
       },
       terminate: () => {
         void worker.terminate();

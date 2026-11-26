@@ -351,6 +351,124 @@ describe('a run worker', () => {
   });
 });
 
+describe('ctx.settled', () => {
+  /** Code that says how its `ctx.settled` went: 'settled', or the rejection's message. */
+  const awaits = {
+    default: async (_: unknown, ctx: any) => {
+      try {
+        await ctx.settled;
+        return 'settled';
+      } catch (error) {
+        return (error as Error).message;
+      }
+    },
+  };
+
+  it('counts a settle said while the code is still being imported', async () => {
+    let imported!: (module: unknown) => void;
+    modules.slow = new Promise((resolve) => (imported = resolve));
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('slow') });
+    tell({ type: 'settled', run: 'run-1' });
+    await settle();
+    expect(endings()).toEqual([]);
+    imported(awaits);
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'settled' }]);
+  });
+
+  it("resolves for its own run's id only: another id, and the previous job's, are ignored", async () => {
+    modules.quick = { default: () => 'first' };
+    modules.waits = awaits;
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('quick') });
+    await settle();
+    tell({ type: 'job', job: { ...job('waits'), runId: 'run-2' } });
+    await settle();
+    tell({ type: 'settled', run: 'run-1' });
+    tell({ type: 'settled', run: 'someone else' });
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'first' }]);
+    tell({ type: 'settled', run: 'run-2' });
+    await settle();
+    expect(endings()).toEqual([
+      { type: 'done', result: 'first' },
+      { type: 'done', result: 'settled' },
+    ]);
+  });
+
+  // Each reason the pool stops a run with, before it settled.
+  for (const reason of ['cancelled', 'yielded', 'stopping'] as const) {
+    it(`rejects with the reason when the run stops before it settled (${reason})`, async () => {
+      modules.waits = awaits;
+      const tell = start();
+      tell(settings);
+      tell({ type: 'job', job: job('waits') });
+      await settle();
+      tell({ type: 'abort', reason });
+      await settle();
+      expect(endings()).toEqual([{ type: 'done', result: `the run stopped before it settled (${reason})` }]);
+    });
+  }
+
+  // How the promise stands once the pool has said both, in either order:
+  // whichever came first decides, for good.
+  const orders: [string, ('settled' | 'abort')[], string][] = [
+    ['a settle, then an abort', ['settled', 'abort'], 'resolved'],
+    ['an abort, then a settle', ['abort', 'settled'], 'rejected: the run stopped before it settled (yielded)'],
+  ];
+  for (const [what, said, outcome] of orders) {
+    it(`resolves at most once, never after an abort: ${what}`, async () => {
+      const outcomes: string[] = [];
+      let finish!: () => void;
+      modules.both = {
+        default: (_: unknown, ctx: any) => {
+          ctx.settled.then(
+            () => outcomes.push('resolved'),
+            (error: Error) => outcomes.push(`rejected: ${error.message}`),
+          );
+          return new Promise<void>((resolve) => (finish = resolve));
+        },
+      };
+      const tell = start();
+      tell(settings);
+      tell({ type: 'job', job: job('both') });
+      await settle();
+      for (const message of said) {
+        tell(message === 'settled' ? { type: 'settled', run: 'run-1' } : { type: 'abort', reason: 'yielded' });
+      }
+      await settle();
+      finish();
+      await settle();
+      expect(outcomes).toEqual([outcome]);
+    });
+  }
+
+  it('leaves no unhandled rejection when the code never looks at it and the run is stopped', async () => {
+    const unhandled: unknown[] = [];
+    const listener = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', listener);
+    try {
+      modules.ignores = {
+        default: (_: unknown, ctx: any) => new Promise((resolve) => ctx.signal.addEventListener('abort', () => resolve('stopped'))),
+      };
+      const tell = start();
+      tell(settings);
+      tell({ type: 'job', job: job('ignores') });
+      await settle();
+      tell({ type: 'abort', reason: 'cancelled' });
+      await settle();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(endings()).toEqual([{ type: 'done', result: 'stopped' }]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', listener);
+    }
+  });
+});
+
 describe('a run ends only once what it wrote has reached the sync server', () => {
   /** Code that writes `count` new documents and returns their ids. */
   const writes = (count: number) => ({

@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Repo, initSubduction } from "@automerge/automerge-repo-node";
-import { GRACE_MS, HOLD_MS, LAPSE_MS, LISTEN_MS, listTask } from "../src/task-rules.js";
+import { BEAT_MS, GRACE_MS, HOLD_MS, LAPSE_MS, LISTEN_MS, listTask } from "../src/task-rules.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -57,6 +57,19 @@ const WRITE = code(`export default async function ({ size }, ctx) {
   const handle = ctx.repo.create({ content });
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", content));
   return { url: handle.url, sha256: [...digest].map((b) => b.toString(16).padStart(2, "0")).join("") };
+}`);
+// awaits ctx.settled, and says when it resolved, or why it rejected; then waits `holdMs`
+const SETTLES = code(`export default async function ({ holdMs }, ctx) {
+  try {
+    await ctx.settled;
+  } catch (error) {
+    ctx.log(error.message);
+    return { settled: false };
+  }
+  const at = Date.now();
+  ctx.log("settled at " + at);
+  await new Promise((resolve) => setTimeout(resolve, holdMs));
+  return { settled: true, at };
 }`);
 const MB = 1024 * 1024;
 const sha256 = async (bytes) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -255,6 +268,35 @@ try {
     const task = await taskOf("throws");
     const runs = task.runs.map((r) => r.status);
     check(3, "a throwing task ends failed, once, with its error as the last line", error === "boom, on purpose" && runs.length === 1 && runs[0] === "failed" && task.runs[0].logs.at(-1)?.message === "boom, on purpose", { error, runs });
+  }
+
+  // 21. ctx.settled: a run that nothing stops is told it settled no sooner
+  // than a beat after its run was recorded (its pool counts from when the
+  // start was saved, which is later); a run stopped within the beat has it
+  // reject, saying `cancelled`, and is never told it settled.
+  if (want(21)) {
+    const settled = await within(60000, runKey(Q, { importUrl: SETTLES, input: { holdMs: 0 }, key: "settles" }), "the task awaiting ctx.settled");
+    const run = (await taskOf("settles")).runs.find((r) => r.status === "succeeded");
+    const after = settled?.settled && run ? settled.at - run.start : null;
+
+    const states = [];
+    let ranAt = null;
+    const stop = follow("settle-stop", (v) => {
+      if (states.at(-1) !== v.state) states.push(v.state);
+      if (v.state === "running" && ranAt === null) ranAt = Date.now();
+    });
+    await ask(repo, Q, { importUrl: SETTLES, input: { holdMs: 5000 }, key: "settle-stop" });
+    await until(() => ranAt, 30000, "the task to stop running");
+    await cancel(repo, Q, "settle-stop");
+    const tCancel = Date.now();
+    await until(() => states.includes("cancelled"), 20000, "the task stopped within the beat cancelled").catch(() => {});
+    stop();
+    const stoppedTask = await taskOf("settle-stop");
+    const mine = stoppedTask.runs.find((r) => r.pool);
+    const lines = mine?.logs?.map((l) => l.message) ?? [];
+    const rejected = lines.some((l) => /^the run stopped before it settled \(cancelled\)$/.test(l));
+    const toldSettled = lines.some((l) => /^settled at /.test(l));
+    check(21, `a task awaiting ctx.settled has it resolve no sooner than BEAT_MS (${BEAT_MS} ms) after its run was recorded; one stopped within the beat has it reject, cancelled`, after !== null && after >= BEAT_MS && rejected && !toldSettled && mine?.status === "cancelled", { resolvedAfterRunRecordedMs: after, stopped: { cancelledAfterRunRecordedMs: mine ? tCancel - mine.start : null, status: mine?.status ?? null, lines, states } });
   }
 
   // 4. a spin, cancelled: stopping, then cancelled; its thread is ended; the next task runs

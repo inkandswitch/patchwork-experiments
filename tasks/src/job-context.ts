@@ -32,6 +32,19 @@ export interface TaskContext {
    */
   signal: AbortSignal;
   /**
+   * Resolves once the pool has held this run for a beat (BEAT_MS, from when
+   * its taking was saved) without anything stopping it: within that beat the
+   * pool hears any earlier run of the task that can be heard at all, and such
+   * a run makes this one yield before it settles. So code awaits it before
+   * doing what cannot be undone (a payment, a message sent). It resolves at
+   * most once, and never after `signal` aborts: then it rejects, with
+   * "the run stopped before it settled (<reason>)". It is not exclusivity: an
+   * earlier run cut off for longer than the beat is not heard, and hearing
+   * it later still aborts `signal` with `yielded`, with what was done
+   * already done. Code that never looks at it is not affected.
+   */
+  settled: Promise<void>;
+  /**
    * The worker's Repo, for a task whose work is on documents. It has the
    * task's document as the pool had it when it handed the run over, this
    * run included, without waiting for the network.

@@ -189,6 +189,7 @@ function deafToServing(ears: Ears): Ears {
 class FakeWorker implements RunWorker {
   jobs: Job[] = [];
   aborts: { reason: StopReason; at: number }[] = [];
+  settles: { run: string; at: number }[] = [];
   terminations: number[] = [];
   constructor(
     readonly events: WorkerEvents,
@@ -199,6 +200,9 @@ class FakeWorker implements RunWorker {
   }
   abort(reason: StopReason) {
     this.aborts.push({ reason, at: this.clock.now() });
+  }
+  settle(run: string) {
+    this.settles.push({ run, at: this.clock.now() });
   }
   terminate() {
     this.terminations.push(this.clock.now());
@@ -1436,7 +1440,7 @@ describe('the pool', () => {
 class ThrowingExecutor extends FakeExecutor {
   constructor(
     clock: Clock,
-    private readonly method: 'run' | 'abort' | 'terminate',
+    private readonly method: 'run' | 'abort' | 'terminate' | 'settle',
   ) {
     super(clock);
   }
@@ -1450,6 +1454,141 @@ class ThrowingExecutor extends FakeExecutor {
     return worker;
   }
 }
+
+describe('settling', () => {
+  // A run settles once its pool has held it for BEAT_MS, counted from when
+  // its start was saved, with nothing stopping it (`settles`): the pool tells
+  // its worker so, once.
+
+  it('tells the worker BEAT_MS after the start is saved, not before, and once', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const docs: Docs = { find: (url) => w.repo.find(url) as any, flush: () => gate };
+    const { executor } = await w.started('A', { repo: docs });
+    const task = w.ask('k');
+    await settle();
+    const claimedAt = lastRun(task).start;
+    // the start takes 700 ms to save; nothing is handed over meanwhile
+    await w.clock.advance(700);
+    expect(executor.workers).toHaveLength(0);
+    release();
+    await settle();
+    const savedAt = w.clock.now();
+    expect(savedAt).toBe(claimedAt + 700);
+    const worker = executor.of(lastRun(task).id);
+    await w.clock.advance(BEAT_MS - 1);
+    expect(worker.settles).toEqual([]);
+    await w.clock.advance(1);
+    expect(worker.settles).toEqual([{ run: lastRun(task).id, at: savedAt + BEAT_MS }]);
+    // more beats, more news of it, and something else changing: still once
+    worker.events.log('working');
+    w.ask('other');
+    await w.clock.advance(BEAT_MS * 3);
+    expect(worker.settles).toHaveLength(1);
+    worker.events.done('done');
+    await settle();
+    expect(statuses(task)).toEqual(['succeeded']);
+  });
+
+  // A run taken while an earlier run was unheard (first seen LAPSE_MS ago),
+  // and what then happens half a beat into its hold. Only where nothing does
+  // does it settle; otherwise it is stopped, and never told it settled.
+  const within: [string, (task: Handle<Task>, pool: Pool) => void, StopReason | null][] = [
+    ['nothing', () => {}, null],
+    ['the earlier run is heard', (task) => w.net.beat(task.url, 'cut off'), 'yielded'],
+    ['the earlier run ends the task', (task) => task.change((doc) => endRun(doc, 'cut off', { status: 'failed', end: w.clock.now(), logs: [] })), 'yielded'],
+    ['another run succeeds', (task) => task.change((doc) => void doc.runs.push({ id: 'elsewhere', pool: 'X', start: w.clock.now(), end: w.clock.now(), status: 'succeeded', result: 1, logs: [] } as Run)), 'yielded'],
+    [
+      'the key comes to name another task',
+      () => {
+        const other = w.make('k');
+        w.queue.change((doc) => {
+          doc.jobs.k = { taskUrl: other.url, askedAt: 1, package: null };
+        });
+      },
+      'yielded',
+    ],
+    ['the task is stopped', (task) => stop(task), 'cancelled'],
+    ['the pool stops', (_, pool) => void pool.stop(), 'stopping'],
+  ];
+  for (const [what, act, reason] of within) {
+    it(`within the beat, ${what}: ${reason ? `stopped (${reason}), never told it settled` : 'told it settled at BEAT_MS'}`, async () => {
+      const task = w.ask('k', { runs: [{ id: 'cut off', pool: 'X', start: 0 }] });
+      const { executor, pool } = w.pool('B');
+      await settle();
+      await w.clock.advance(LAPSE_MS);
+      const mine = lastRun(task);
+      expect(mine.pool).toBe('B');
+      const worker = executor.of(mine.id);
+      await w.clock.advance(BEAT_MS / 2);
+      act(task, pool);
+      await settle();
+      await w.clock.advance(BEAT_MS * 2);
+      if (reason) {
+        expect(worker.aborts.map((it) => it.reason)).toEqual([reason]);
+        expect(worker.settles).toEqual([]);
+      } else {
+        expect(worker.aborts).toEqual([]);
+        expect(worker.settles).toEqual([{ run: mine.id, at: mine.start + BEAT_MS }]);
+      }
+    });
+  }
+
+  it("clears its look at BEAT_MS when the run completes, and when it is stopped (the kill's timer takes its place)", async () => {
+    const { executor } = await w.started('A');
+    const idle = w.clock.pending;
+    const done = w.ask('done');
+    await settle();
+    // while held: the run's beat and its look at BEAT_MS
+    expect(w.clock.pending).toBe(idle + 2);
+    executor.of(lastRun(done).id).events.done(1);
+    await settle();
+    expect(w.clock.pending).toBe(idle);
+
+    const stopped = w.ask('stopped');
+    await settle();
+    const worker = executor.of(lastRun(stopped).id);
+    expect(w.clock.pending).toBe(idle + 2);
+    stop(stopped);
+    await settle();
+    // the run's beat and its kill
+    expect(w.clock.pending).toBe(idle + 2);
+    await w.clock.advance(GRACE_MS);
+    expect(statuses(stopped)).toEqual(['cancelled', 'cancelled']);
+    expect(w.clock.pending).toBe(idle);
+    expect(worker.settles).toEqual([]);
+  });
+
+  it('a settle that throws spoils nothing: the run beats on and ends as its code says, is told once, and the next run settles too', async () => {
+    const executor = new ThrowingExecutor(w.clock, 'settle');
+    const { pool } = await w.started('A', { executor });
+    const task = w.ask('k');
+    await settle();
+    const run = lastRun(task).id;
+    const worker = executor.of(run);
+    await w.clock.advance(BEAT_MS);
+    expect(worker.settles).toHaveLength(1);
+    const said = w.net.sent.length;
+    await w.clock.advance(BEAT_MS * 2);
+    expect(worker.settles).toHaveLength(1);
+    expect(w.net.sent.slice(said).filter((it) => it.message.type === 'task progress' && it.message.run === run)).toHaveLength(2);
+    expect(worker.aborts).toEqual([]);
+    worker.events.done('fine');
+    await settle();
+    expect(statuses(task)).toEqual(['succeeded']);
+    expect(worker.terminations).toEqual([]);
+    const next = w.ask('next');
+    await settle();
+    await w.clock.advance(BEAT_MS);
+    // the same worker, kept: told once of each run
+    expect(executor.of(lastRun(next).id)).toBe(worker);
+    expect(worker.settles).toEqual([
+      { run, at: expect.any(Number) },
+      { run: lastRun(next).id, at: lastRun(next).start + BEAT_MS },
+    ]);
+    expect(pool.busy).toBe(1);
+  });
+});
 
 describe('what a pool has', () => {
   /** A task with these needs, listed with these needs on its entry. */

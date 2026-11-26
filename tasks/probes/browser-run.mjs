@@ -32,8 +32,9 @@
 // starts with no task storage (check 18); the probe's queue is then joined
 // through the queue browser's Join, and checks 1 to 17 ask it. Checks 20
 // and 21 run in a browser context of its own, where nothing mounts the
-// background component until 21 does, and then lets it go. A copy of
-// dist/ stamped as a newer build is served at /dist-newer.
+// background component until 21 does, and then lets it go. Check 23 runs
+// on tab A's pool, after 19. A copy of dist/ stamped as a newer build is
+// served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
 // any failed. The files are served here (not by cdp.mjs, see below); Chrome
@@ -51,7 +52,7 @@ import { createServer } from "node:http";
 import { extname } from "node:path";
 import { sleep } from "./cdp.mjs";
 import { guardChrome, killChrome } from "./chrome-guard.mjs";
-import { LISTEN_MS } from "../src/task-rules.js";
+import { BEAT_MS, LISTEN_MS } from "../src/task-rules.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = resolve(HERE, "..");
@@ -81,6 +82,10 @@ const FLUSHES_SPINS = dataUrl(
 );
 const WRITES = dataUrl(
   "export default async (input, ctx) => { const doc = ctx.repo.create({ wrote: input.tag }); doc.change((d) => { d.changed = true; }); await ctx.repo.flush(); await new Promise((r) => setTimeout(r, input.ms)); return doc.url; };",
+);
+// awaits ctx.settled, and says when it resolved, or why it rejected; then waits `holdMs`
+const SETTLES = dataUrl(
+  "export default async ({ holdMs }, ctx) => { try { await ctx.settled; } catch (error) { ctx.log(error.message); return { settled: false }; } const at = Date.now(); ctx.log('settled at ' + at); await new Promise((r) => setTimeout(r, holdMs)); return { settled: true, at }; };",
 );
 const SLEEP = `http://127.0.0.1:${PORT}/probe/tasks/sleep.js`;
 // the task append-run.mjs runs on a Node host, served as it is
@@ -421,6 +426,38 @@ try {
       "19 a task that writes a document through ctx.repo, with no sync server: it completes at once, and its run's log says what it wrote stays on this machine",
       last.state === "succeeded" && kept.some((line) => /stays on this machine/.test(line)) && Math.max(...times) < 1_000,
       `ten in a row: median ${median(times).toFixed(1)} ms, worst ${Math.max(...times).toFixed(1)} ms; then ${last.state}, its run's log ${J(kept)}`,
+    );
+  }
+
+  // 23. ctx.settled in a browser's run worker: a run that nothing stops is
+  // told it settled no sooner than a beat after its run was recorded; a run
+  // stopped within the beat (the page cancels it the moment it reads it
+  // running) has it reject, saying `cancelled`, and is never told it settled.
+  {
+    const key = await A.js(`probe.ask(${J(SETTLES)}, ${J({ holdMs: 0 })})`);
+    await A.waitFor(stateIs(key, "succeeded", "failed", "cancelled"), 20_000);
+    const ran = await A.js(`probe.last(${J(key)})`);
+    const run = ran.runs.find((r) => r.status === "succeeded");
+    const after = ran.result?.settled && run ? ran.result.at - run.start : null;
+    const stopped = await A.js(
+      `(async () => {
+        const key = await probe.ask(${J(SETTLES)}, ${J({ holdMs: 5_000 })});
+        await new Promise((resolve) => { const look = () => (probe.last(key)?.state === 'running' ? resolve() : setTimeout(look, 5)); look(); });
+        await probe.cancel(key);
+        return { key, cancelledAt: Date.now() };
+      })()`,
+      30_000,
+    );
+    await A.waitFor(stateIs(stopped.key, "cancelled", "failed", "succeeded"), GRACE_MS + 10_000);
+    const last = await A.js(`probe.last(${J(stopped.key)})`);
+    const mine = last.runs.find((r) => r.pool);
+    const lines = mine?.logs ?? [];
+    const rejected = lines.some((l) => /^the run stopped before it settled \(cancelled\)$/.test(l));
+    const toldSettled = lines.some((l) => /^settled at /.test(l));
+    check(
+      `23 ctx.settled in a run worker resolves no sooner than BEAT_MS (${BEAT_MS} ms) after the run was recorded; for a run stopped within the beat it rejects, cancelled`,
+      after !== null && after >= BEAT_MS && rejected && !toldSettled && mine?.status === "cancelled",
+      `resolved ${after} ms after its run was recorded (${ran.state}); the stopped one cancelled ${mine ? stopped.cancelledAt - mine.start : "?"} ms after its run was recorded, recorded ${mine?.status}, its lines ${J(lines)}, states ${J(await A.js(`probe.states(${J(stopped.key)})`))}`,
     );
   }
 

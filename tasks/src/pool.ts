@@ -23,6 +23,10 @@
 // its slots are busy changes, and as it stops (or stops serving a queue) it
 // says it has no slots, so that nobody holds back for it.
 //
+// A run SETTLES (`settles`) once the pool has held it for BEAT_MS from when
+// its taking was saved and nothing stops it: the pool then tells its worker,
+// once, which resolves the code's `ctx.settled`.
+//
 // It writes three things and nothing else: a run appended when it takes a
 // task, that run completed when it is over, and an entry deleted when its
 // task has ended. Whether a run is going on is said on the task's channel
@@ -57,6 +61,7 @@ import {
   orphans,
   ranked,
   satisfies,
+  settles,
   stopReason,
   waitingWork,
 } from './task-rules.js';
@@ -96,6 +101,8 @@ export interface RunWorker {
   run(job: Job): void;
   /** Aborts the code's signal with this reason. The code may still finish; the pool ignores what it says. */
   abort(reason: StopReason): void;
+  /** Resolves the code's `ctx.settled`, if `runId` is still the worker's job. Said at most once per run, after `run`. */
+  settle(runId: string): void;
   /** Ends the worker at once, whatever its code is doing. It says nothing after this but, perhaps, `exit`. */
   terminate(): void;
 }
@@ -276,6 +283,12 @@ interface Running {
   progressNew: boolean;
   beat?: unknown;
   sayTimer?: unknown;
+  /** When its start was saved and its job handed over, on the pool's clock: what settling is counted from. */
+  heldSince?: number;
+  /** Its worker has been told it settled: said once, never again. */
+  settled: boolean;
+  /** Looks again when the run will have been held for BEAT_MS. */
+  settleTimer?: unknown;
   kill?: unknown;
   finished: Promise<void>;
   finish: () => void;
@@ -459,6 +472,9 @@ export class Pool {
             this.stopRun(run, reason);
           }
         });
+      }
+      if (!run.stopping && !run.over && run.slot && !run.settled) {
+        attempt('deciding whether a run has settled', () => this.settleIfDue(run, now));
       }
     }
 
@@ -719,6 +735,37 @@ export class Pool {
     return stopReason(task, run.id, named(queue, run.key, run.task.url), this.heardOf(run.task.url));
   }
 
+  /**
+   * Tells a run's worker that the run has settled, the first time `settles`
+   * says so; until then, makes sure the pool looks again the moment it has
+   * held the run for BEAT_MS (a timer may fire a little early on the clock it
+   * is read by). Only for a run with a worker that is not being stopped.
+   */
+  private settleIfDue(run: Running, now: number) {
+    const task = run.task.isDeleted?.() ? undefined : run.task.doc();
+    if (!task || run.heldSince === undefined) {
+      return;
+    }
+    const queue = run.queue.isDeleted?.() ? undefined : run.queue.doc();
+    if (settles(task, run.id, named(queue, run.key, run.task.url), this.heardOf(run.task.url), run.heldSince, now)) {
+      run.settled = true;
+      this.clock.clearTimeout(run.settleTimer);
+      run.settleTimer = undefined;
+      const worker = run.slot!.worker;
+      attempt('telling a run it has settled', () => worker.settle(run.id));
+    } else if (run.settleTimer === undefined && now - run.heldSince < BEAT_MS) {
+      this.lookWhenHeld(run, BEAT_MS - (now - run.heldSince));
+    }
+  }
+
+  /** Looks again in `ms`, when the run will have been held for BEAT_MS. */
+  private lookWhenHeld(run: Running, ms: number) {
+    run.settleTimer = this.clock.setTimeout(() => {
+      run.settleTimer = undefined;
+      this.review();
+    }, ms);
+  }
+
   /** What a stopped run is recorded as: its reason, and for a pool that is itself stopping, a run it no longer has. */
   private statusOf(run: Running, reason: StopReason): RunStatus {
     return reason === 'stopping' ? this.lostAs(run) : reason;
@@ -754,6 +801,7 @@ export class Pool {
       slot: null,
       stopping: null,
       over: false,
+      settled: false,
       logs: [],
       unsaid: [],
       progress: undefined,
@@ -794,8 +842,11 @@ export class Pool {
     }
     slot.run = run;
     run.slot = slot;
+    // Held from now: its start is saved, and its code is about to be called.
+    run.heldSince = this.clock.now();
     this.say(run, true);
     run.beat = this.clock.setInterval(() => this.say(run, true), BEAT_MS);
+    this.lookWhenHeld(run, BEAT_MS);
     try {
       slot.worker.run(job);
     } catch (error) {
@@ -862,6 +913,9 @@ export class Pool {
       return;
     }
     run.stopping = reason;
+    // A run being stopped never settles.
+    this.clock.clearTimeout(run.settleTimer);
+    run.settleTimer = undefined;
     if (!run.slot) {
       return; // not started: `begin` records it once the start is saved
     }
@@ -897,6 +951,8 @@ export class Pool {
     this.clock.clearInterval(run.beat);
     this.clock.clearTimeout(run.sayTimer);
     this.clock.clearTimeout(run.kill);
+    this.clock.clearTimeout(run.settleTimer);
+    run.settleTimer = undefined;
     const end = this.clock.now();
     try {
       run.task.change((doc) => endRun(doc, run.id, { status: how.status, result: how.result, logs: run.logs, end }));

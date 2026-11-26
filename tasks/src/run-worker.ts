@@ -45,7 +45,9 @@ export type ToRunWorker =
    * the task before the code is called, network or no network.
    */
   | { type: 'job'; job: Job; task?: Uint8Array }
-  | { type: 'abort'; reason: StopReason };
+  | { type: 'abort'; reason: StopReason }
+  /** The pool has held this run for a beat and nothing stops it: resolves the code's `ctx.settled`, if it is still this worker's job. */
+  | { type: 'settled'; run: string };
 
 /** What a run worker says, about the job it has. */
 export type FromRunWorker =
@@ -66,6 +68,8 @@ export interface RunWorkerPort {
 export function serve(port: RunWorkerPort) {
   let repo: Promise<Repo> | null = null;
   let running: AbortController | null = null;
+  /** The latest job's `ctx.settled`, made as its job arrives. */
+  let settling: Settling | null = null;
   /** What the sync server has said it holds, heard for the Repo's whole life (see `serverReports`). */
   let reports: ServerReports | null = null;
 
@@ -95,7 +99,9 @@ export function serve(port: RunWorkerPort) {
       case 'job': {
         const controller = new AbortController();
         running = controller;
-        runJob(message.job, message.task, controller.signal).then(
+        // Made before the code is imported, so that a settle said meanwhile counts.
+        settling = settlingOf(message.job.runId, controller.signal);
+        runJob(message.job, message.task, controller.signal, settling.promise).then(
           () => {
             if (running === controller) {
               running = null;
@@ -108,10 +114,15 @@ export function serve(port: RunWorkerPort) {
       case 'abort':
         running?.abort(message.reason);
         break;
+      case 'settled':
+        if (settling?.run === message.run) {
+          settling.resolve();
+        }
+        break;
     }
   });
 
-  async function runJob(job: Job, task: Uint8Array | undefined, signal: AbortSignal) {
+  async function runJob(job: Job, task: Uint8Array | undefined, signal: AbortSignal, settled: Promise<void>) {
     let docs: Repo | null = null;
     /** Every document's heads as the code was called: what it changed is what differs at the end. */
     let before: Map<string, string> | null = null;
@@ -145,6 +156,7 @@ export function serve(port: RunWorkerPort) {
         log: (...args) => sayWhileRunning({ type: 'log', message: args.map((arg) => String(arg)).join(' ') }),
         progress: (value) => sayWhileRunning({ type: 'progress', value: copy(value) }),
         signal,
+        settled,
         repo: patient(docs),
         taskUrl: job.taskUrl,
         run: job.runId,
@@ -173,6 +185,42 @@ export function serve(port: RunWorkerPort) {
     over = true;
     say(outcome);
   }
+}
+
+// Settled
+//
+// `ctx.settled` resolves when the pool says the run has settled (see
+// `settles` in task-rules.js), at most once, and never once the run's signal
+// has aborted: then it rejects, saying why. Its rejection is handled here, so
+// that code that never looks at it leaves nothing unhandled.
+
+interface Settling {
+  run: string;
+  promise: Promise<void>;
+  resolve(): void;
+}
+
+/** The `settled` of run `run`, which `signal` aborting rejects. */
+function settlingOf(run: string, signal: AbortSignal): Settling {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  promise.catch(() => {});
+  const aborted = () => reject(new Error(`the run stopped before it settled (${String(signal.reason)})`));
+  signal.addEventListener('abort', aborted, { once: true });
+  return {
+    run,
+    promise,
+    resolve() {
+      if (!signal.aborted) {
+        signal.removeEventListener('abort', aborted);
+        resolve();
+      }
+    },
+  };
 }
 
 // What a task is handed can be found
