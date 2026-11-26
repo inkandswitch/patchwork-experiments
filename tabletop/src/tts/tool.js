@@ -368,6 +368,13 @@ export default function TtsImportTool(handle, element) {
     render(s);
   }
 
+  // Whether this browser takes part (poolHere) changes when the tasks package
+  // registers this page's pool host, a moment after doWork joins the pool: the
+  // waiting words are worked out again then, where the package says so.
+  const tasksHere = (globalThis.patchworkTasks ??= {});
+  const hostsChanged = (tasksHere.hostsChanged ??= new EventTarget());
+  hostsChanged.addEventListener("change", update);
+
   update();
   handle.on("change", update);
 
@@ -376,6 +383,7 @@ export default function TtsImportTool(handle, element) {
     // a drop still being kept, before doWork is called, is this page's alone and ends with it; work asked of the person's queue goes on
     if (job && underWay(job.view.state) && job.view.request === null) job.controller.abort();
     seen?.stop();
+    hostsChanged.removeEventListener("change", update);
     handle.off("change", update);
     root.removeEventListener("dragover", onDragOver);
     root.removeEventListener("dragleave", onDragLeave);

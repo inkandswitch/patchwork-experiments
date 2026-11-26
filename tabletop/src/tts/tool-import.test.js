@@ -154,6 +154,30 @@ describe("dropping a mod", () => {
     expect($(".progress .phase").textContent).toBe("Translating the game");
   });
 
+  it("waiting, asked before this page's pool host has started: says this browser takes no part, and stops saying so once the host is there", async () => {
+    // doWork's joinPool appends the pool's component, which registers its
+    // host only once the package's component is loaded and mounted; a view
+    // that arrives before then is shown with poolHere() false. The tool works
+    // the words out again on window.patchworkTasks's hostsChanged, with no new
+    // view, and lets go of that listener when it closes.
+    const { element, unmount, $ } = mounted();
+    drop(element);
+    await settle();
+    calls.doWork[0].options.onProgress(view({ taskUrl: TASK, state: "waiting" }));
+    expect($(".progress .phase").textContent).toBe(LINES.waitingWithoutThisBrowser);
+    // the pool's component mounts: its host is registered, as pool-host.ts's startPoolHost does it
+    const hosts = (window.patchworkTasks ??= {});
+    hosts.poolHosts ??= {};
+    hosts.hostsChanged ??= new EventTarget();
+    hosts.poolHosts[1] = {};
+    hosts.hostsChanged.dispatchEvent(new Event("change"));
+    await settle();
+    expect($(".progress .phase").textContent).toBe(LINES.waiting);
+    const added = vi.spyOn(hosts.hostsChanged, "removeEventListener");
+    unmount();
+    expect(added).toHaveBeenCalledWith("change", expect.any(Function));
+  });
+
   it("Cancel aborts the work's signal; the tool says it stopped and offers the drop zone and Import again", async () => {
     const { element, $ } = mounted();
     drop(element);

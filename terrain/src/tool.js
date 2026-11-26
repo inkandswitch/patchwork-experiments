@@ -144,9 +144,11 @@ export default function TerrainTool(handle, element) {
     logEl.dataset.state = state;
     logEl.textContent = state === "error" ? s : logEl.textContent ? `${logEl.textContent}\n${s}` : s;
   };
+  let shownView = null; // the view the where line was last worked out from
   /** Shows a fetch as its task's view has it: its log, and where and how far it is. */
   const showView = (view) => {
     if (dead) return;
+    shownView = view;
     const lines = view.logs.map((l) => l.message);
     logEl.hidden = !lines.length;
     logEl.dataset.state = "";
@@ -164,6 +166,7 @@ export default function TerrainTool(handle, element) {
     const mine = (job = { controller, state: null });
     logEl.textContent = "";
     logEl.hidden = true;
+    shownView = null;
     whereEl.hidden = false;
     whereEl.textContent = "Starting…";
     render();
@@ -349,6 +352,16 @@ export default function TerrainTool(handle, element) {
     } else if (fits) drawMap(d);
   }
 
+  // Whether this browser takes part (poolHere) changes when the tasks package
+  // registers this page's pool host, a moment after doWork joins the pool: the
+  // waiting words are worked out again then, where the package says so.
+  const tasksHere = (globalThis.patchworkTasks ??= {});
+  const hostsChanged = (tasksHere.hostsChanged ??= new EventTarget());
+  const hostsSeen = () => {
+    if (shownView && !whereEl.hidden) showView(shownView);
+  };
+  hostsChanged.addEventListener("change", hostsSeen);
+
   const changed = () => {
     render();
     followKey();
@@ -360,6 +373,7 @@ export default function TerrainTool(handle, element) {
     dead = true;
     // the fetch is on the person's queue, and goes on
     following?.stop();
+    hostsChanged.removeEventListener("change", hostsSeen);
     handle.off("change", changed);
     root.remove();
     style.remove();
