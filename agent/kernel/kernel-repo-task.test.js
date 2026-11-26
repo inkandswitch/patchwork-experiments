@@ -54,6 +54,18 @@ describe("a session's task through kernelRepo", () => {
     expect(() => live.doc()).toThrow(TASK_REFUSAL)
   })
 
+  it("is not merged into, or cloned as, a document a tool owns", async () => {
+    const { guarded, agentTask } = world()
+    const task = await guarded.find(agentTask.url)
+    const mine = guarded.create({ note: "a tool's own document" })
+    // Enough changes that this document's `key` would win the merge's conflict.
+    for (let i = 0; i < 50; i++) mine.change((d) => (d.n = i))
+    mine.change((d) => (d.key = "mine"))
+    expect(() => mine.merge(task)).toThrow(TASK_REFUSAL)
+    expect(mine.doc().input).toBeUndefined()
+    expect(() => guarded.clone(task)).toThrow(TASK_REFUSAL)
+  })
+
   it("leaves another package's task, the queue and the session readable", async () => {
     const { guarded, otherTask, queue, session } = world()
     expect((await guarded.find(otherTask.url)).doc().input.mesh).toBe(3)

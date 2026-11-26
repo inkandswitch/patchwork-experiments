@@ -17,7 +17,8 @@
  *
  * Nor does it let a tool read a session's task (runners/ask.js asks for one
  * under `agent:<session>`, with its asker's keys in its input): a handle on
- * one answers nothing but whether it is ready, and the repo exports none.
+ * one answers nothing but whether it is ready, and the repo exports, clones
+ * and merges none into another document.
  * Other packages' tasks read as any document does, so their tools can follow
  * them.
  */
@@ -148,7 +149,10 @@ const WRITES = {
     })
   },
   merge(handle, _write, [other]) {
-    return judgedWrite(handle, (doc) => ({ doc: A.merge(doc, unguarded(other).fullDoc()) }))
+    // A session's task is not read by merging it into another document either.
+    const theirs = whole(unguarded(other))
+    if (isSessionTask(theirs)) refuseTask()
+    return judgedWrite(handle, (doc) => ({ doc: A.merge(doc, theirs) }))
   },
   update(handle, _write, [fn]) {
     return judgedWrite(handle, (doc) => ({ doc: fn(doc) }))
@@ -296,6 +300,7 @@ export function kernelRepo(repo, { known = null, record = null } = {}) {
         return (source) => {
           const original = unguarded(source)
           if (isKernel(whole(original))) refuse()
+          if (isSessionTask(whole(original))) refuseTask()
           return kernelHandle(value.call(target, original), record)
         }
       }

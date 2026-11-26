@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { generateAutomergeUrl, parseAutomergeUrl, encodeHeads } from "@automerge/automerge-repo"
 import { initSession } from "../session/schema.js"
-import { isSensitive } from "../session/grants.js"
+import { isSensitive, askOf, needsApproval } from "../session/grants.js"
 import { waits } from "../fixtures/asking.js"
 import { documentIdOf } from "../documents/doc-urls.js"
 import { BUILTIN_TOOLS } from "./builtin.js"
@@ -75,6 +75,27 @@ describe("sensitive documents always ask", () => {
 
   it("but not a different document", () => {
     expect(isSensitive(generateAutomergeUrl(), sensitive)).toBe(false)
+  })
+})
+
+describe("reading a sensitive document", () => {
+  const QUEUE = generateAutomergeUrl()
+  const sensitive = [SETTINGS, ACCOUNT, QUEUE]
+  const readAsks = (input, { subject = "automerge:subject", sensitiveReads }) => {
+    const read = tool("doc_read")
+    return needsApproval(fresh(), read, input, askOf(read, input, { subject, sensitive }), { sensitiveReads })
+  }
+
+  it("asks in a burst (sensitiveReads): the own queue, by url or as the subject, and the account", () => {
+    expect(readAsks({ url: QUEUE }, { sensitiveReads: true })).toBe(true)
+    expect(readAsks({}, { subject: QUEUE, sensitiveReads: true })).toBe(true)
+    expect(readAsks({ url: ACCOUNT }, { sensitiveReads: true })).toBe(true)
+    expect(readAsks({ url: generateAutomergeUrl() }, { sensitiveReads: true })).toBe(false)
+  })
+
+  it("runs silently in today's runners, which leave it off", () => {
+    expect(readAsks({ url: ACCOUNT }, {})).toBe(false)
+    expect(readAsks({ url: QUEUE }, {})).toBe(false)
   })
 })
 

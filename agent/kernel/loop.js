@@ -87,6 +87,8 @@ export const OUTCOME = {
  *   result it returns ends the run with that result (default none)
  * @param {boolean} [opts.oneChangePerCall] a call's move, result and `made` are one change,
  *   through `store.changeOwn` when the store has it (default: the batch's results at its end)
+ * @param {boolean} [opts.sensitiveReads] a read of a sensitive document asks too
+ *   (session/grants.js needsApproval; default false: only other calls to one ask)
  */
 export async function run(opts) {
   const {
@@ -154,6 +156,7 @@ export async function run(opts) {
     afterCall: opts.afterCall ?? [],
     checkMark: opts.checkMark === true,
     oneChangePerCall: opts.oneChangePerCall === true,
+    sensitiveReads: opts.sensitiveReads === true,
   }
 
   // What is added to the system prompt, in order: each section a function of
@@ -714,7 +717,7 @@ async function streamTurn(opts) {
         const ask = tool ? askOf(tool, call.input, { subject: opts.subject ?? null, sensitive: opts.sensitive ?? [] }) : null
         // A question is not approved or refused, it is answered — so it goes
         // in as `asking` and no runner will ever pick it up.
-        const status = tool?.asksHuman ? CALL.asking : needsApproval(d, tool, call.input, ask) ? CALL.pending : CALL.approved
+        const status = tool?.asksHuman ? CALL.asking : needsApproval(d, tool, call.input, ask, { sensitiveReads: opts.sensitiveReads }) ? CALL.pending : CALL.approved
         t.blocks.push(
           callBlock(call.name, call.input, {
             id: call.id,

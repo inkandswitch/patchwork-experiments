@@ -202,10 +202,16 @@ export function askOf(tool, input, { subject = null, sensitive = [] } = {}) {
  *     it. Those calls fall back to needing a grant, like `write`.
  *
  * `ask` is what `askOf` gave for the call. A call to no known tool needs one.
+ *
+ * With `sensitiveReads` (a burst's loop, kernel/burst.js), a read or a self
+ * call that asks every time asks too: the person's own queue is among the
+ * sensitive documents there (runners/ask.js), and its entries lead to tasks
+ * whose inputs hold keys. Today's runners leave it off, so reading the
+ * account or the module settings runs silently there as before.
  */
-export function needsApproval(doc, tool, input, ask) {
+export function needsApproval(doc, tool, input, ask, { sensitiveReads = false } = {}) {
   if (!tool) return true
-  if (tool.risk === "read" || tool.risk === "self") return false
+  if (tool.risk === "read" || tool.risk === "self") return sensitiveReads && !!ask?.always
   if (ask.always) return true
   if (tool.risk === "edit" && !writesCode(tool, input)) return false
   return !covered(doc, { tool: tool.id, ask })
