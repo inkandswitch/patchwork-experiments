@@ -350,7 +350,8 @@ site's Repo as a network adapter (the MessageChannel adapter of the site's impor
 Patchwork's core adds its public reader), and the other is the worker Repo's one network adapter.
 A run worker's link is made by the pool's worker as the run worker starts, and taken out of the
 site's Repo when that run worker ends; every link of a pool is taken out when its worker ends
-(stopped, failed, silent, handing over, or the page hidden). Run workers keep storage of their own,
+(stopped, failed, silent, handing over, or the page left or frozen; a page only hidden behind
+another tab keeps its pool and links). Run workers keep storage of their own,
 and no worker holds the person's keys. A linked worker has no socket of its own to the sync
 server: the site's Repo is its way to everything, the server included. (A Repo asks its link for a
 document only once its Subduction source has given up, and one whose server cannot be reached
@@ -372,7 +373,7 @@ above it (a Node host's thread) has no link.
 |---|---|
 | Making your own queue; the pool starting | works: making writes in the page's Repo and waits on nothing, and the pool starts and serves it |
 | A task asked in this browser, run by this browser's pool, its progress and result | works: asked through the task system's own Repo (`tasks-repo.ts`, as the queue browser asks), or by a page tool through the site's Repo in the tab that runs the pool, which reaches the pool by the local link, so `doWork` hears the pool through that Repo and asks it; from another tab, whose site Repo hears the pool only by way of the sync server, `doWork` hears none and does the work in the page |
-| What a pool-run task writes into a document the page has open | reaches the site's Repo in the tab that runs the pool, through the link, before the run's ending is said; the site's other tabs have it as they have that tab's own changes; the site's Repo sends it to the sync server once there is one |
+| What a pool-run task writes into a document the page has open | reaches the site's Repo in the tab that runs the pool, through the link, before the run's ending is said; the site's other tabs have it as they have that tab's own changes; the site's Repo sends it to the sync server once there is one. Until that Repo has saved it, it is in memory only: a tab reloaded the moment `doWork` resolves does not have it after (browser-run `--lifetimes` check 39), and it stays in the run worker's storage |
 | Work that needs another machine (`needs: ['node']`) | waits in the queue, and the queue browser says what it waits for; where this browser does not have the list of the person's queues (the account names a storage document that has not arrived), `doWork` looks for it as `findWhenThere` does, about half a minute, and then rejects with "This work needs a device with node, and it could not be asked of your task queue: The list of your task queues could not be found, so nothing was changed." |
 | Stopping work | works for work in this browser: work done in the page by its signal, and work the pool runs by a stop written through the task system's own Repo (the queue browser's Stop) |
 
@@ -393,7 +394,11 @@ Repo when `doWork` resolves, liveness and progress arrive, a run worker ended in
 writing leaves that Repo working, and the pool handed over to another tab links that tab's Repo.
 The unit tests show the rest: the link's gate for every kind of message both ways, and Repos of
 both kinds joined by a gated link (documents named cross both ways, others do not, a protected one
-never, a run's report waits for the page; `link.test.ts`); two replicas that each made a queue
+never, a run's report waits for the page; `link.test.ts`); what a worker's code posts on its port
+by hand gets it no protected document by any other field or spelling, no offer the gate drops
+carries a change, ten links write at once and each run is reported once the page has its writes,
+and a 5 MB document crosses, also after a link taken out in the middle of it
+(`link-check.test.ts`); two replicas that each made a queue
 apart agree on own when they meet, lose no task and run none twice; a replica that sees a pointer
 to a queue it does not have asks a queue of its own and folds it into own once own arrives;
 folding with one replica cut off part way, then healed, converges; a run that finished while its
@@ -478,7 +483,24 @@ processes and say what they saw, one line per check or measurement:
   its link out and leaves the page and the next task working; and closing the tab that runs the
   pool, the next tab's pool is linked to its own site Repo and runs its work. With `--no-network` Chrome resolves no host
   but the probe's own 127.0.0.1, and every check runs but 22, which needs the sync server and is
-  skipped, saying so.
+  skipped, saying so. With `--lifetimes` (about ten minutes more) it runs checks 31 to 39 too, on
+  the same `?site` pages, each counting the holder's links after (one for the pool and one per
+  live run worker): two minutes of a change every 3 s each way through the link, none slower
+  than 2 s (31); a 5 MB document a task makes is in the site's Repo when `doWork` resolves (32);
+  the holder hidden behind another tab keeps its pool and links, and nothing stalls (33); the
+  holder frozen, the other tab's pool is linked to its own site Repo and runs its work, and the
+  frozen tab resumed has no link left and has that work's writes (34; it fails when the tab was
+  frozen holding the database the two tabs' site Repos share: the other tab's site Repo then saves
+  nothing until the frozen tab resumes, and its `doWork` waits too, since asking saves the task
+  before listing it: so in four runs with `--no-network` and one of three with the network);
+  the holder navigated away,
+  the waiting tab takes the pool, linked (35); the page reloaded takes the pool again, linked,
+  with what a run wrote 2 s before (36), and asked the same of what a run wrote the moment before
+  the reload, it has it with the network and not without (39 fails with `--no-network`: PLANS,
+  "What a stopped worker leaves behind"); and, with
+  the network only, a page cut off by DevTools' network emulation has what a task wrote reach
+  the sync server once it is mended, the task run once (37), and a page of another context, given
+  the account, hears this browser's pool serving through the server alone (38).
 - `probes/real-run.mjs <automerge:package url>` (in the chrome slot): a published copy of the
   package (a staging package will do) in the real Patchwork, https://patchwork.inkandswitch.com/,
   in a throwaway profile, 20 checks, the last two that neither the page nor the task system's
@@ -514,7 +536,8 @@ Not shown yet, of Offline and partition:
 - A partition healed through a real sync server. Every "When a partition heals" row is shown by
   unit tests that merge the documents by hand (`task-client.test.ts`, `offline-check.test.ts`,
   `rules-fold.test.ts`, `merge-storages.test.ts`, and `pool.test.ts` for a run finished while cut
-  off); no probe cuts a browser or a host off from the server and lets it back.
+  off). One probe cuts one browser page off and lets it back (`browser-run.mjs --lifetimes`, check
+  37); none does so to a Node host, or to two devices that each wrote while apart.
 - A cold start whose storage is slow. `own-load.test.ts` shows own waited for while this browser's
   storage reads it, on both Repo kinds, with a storage adapter of the test's own; no probe times a
   real IndexedDB.

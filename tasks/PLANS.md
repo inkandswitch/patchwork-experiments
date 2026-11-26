@@ -140,10 +140,28 @@ that one machine serves.
     does the work in the page. A BroadcastChannel adapter on the site's Repo (measured as D1 in
     notes/LINK.md) would join every tab, with every Repo on the channel hearing all its traffic.
     Waits on the lead's call on that cost.
+  - *The handshake is not gated.* A worker's code can say `arrive` or `leave` on its port in
+    another peer's name and so take the page's messages for that peer, or make the page forget it
+    (README; `link-check.test.ts` keeps the case as `it.fails`). A page end that keeps the one peer
+    its link first announced, and drops any later `arrive`, any `leave`, and any message in another
+    peer's name, would close it. Waits on nothing.
+  - *A frozen holder that held the site's database.* On the stand-in page, when the holder tab
+    is frozen the other tab takes the pool and links it, but if the frozen tab held the database
+    the two tabs' site Repos share, the other tab's site Repo saves nothing until the frozen one
+    resumes, and its `doWork` waits with it (`ask` saves the task before listing it): 47 s, and
+    over a minute, in the runs where it happened (browser-run `--lifetimes` check 34: every run
+    with `--no-network`, one of three with the network). This is the site's database and the
+    client's save, not the link, and DevTools' freeze may hold a transaction a browser's own
+    freezing would not. A linked pool needs no save before the listing (it has the task from the
+    page's memory), but a pool elsewhere does. Waits on the lead's call.
   - *Not shown on the deployed site* (keyhive's Repo): only on a stand-in page and in unit tests.
     Nor is it shown that the sync server accepts a document a plain worker made offline once the
-    keyhive page takes it in and the network returns, nor hours of use, large documents, or ten
-    links at once. Waits on a staging package for `real-run.mjs`.
+    keyhive page takes it in and the network returns, nor hours of use. On the stand-in page,
+    `browser-run.mjs --lifetimes` shows two minutes (check 31), a 5 MB document (32), a hidden,
+    frozen, navigated and reloaded holder (33 to 36, 39), a write made cut off reaching the server
+    once mended (37), and another context hearing the pool through the server (38); ten links at
+    once only `link-check.test.ts` shows (a browser's pool has at most eight run workers). Waits
+    on a staging package for `real-run.mjs`.
   - *Rule 2 is the conservative one.* The page gives a worker only documents keyhive leaves
     unprotected; sharing a protected document a person may read with a task they run is the
     lead's call.
@@ -163,7 +181,11 @@ that one machine serves.
   to the page's Repo as it writes (in milliseconds), so a worker ended mid-run (a stopped run not
   done within five seconds) leaves behind at most what it wrote in its last moments; the page's
   Repo keeps the rest and sends it on (browser-run check 29). A tab that dies takes the page's Repo
-  with it, and what that Repo had not yet saved or sent stays only in the run worker's storage. On a
+  with it, and what that Repo had not yet saved or sent stays only in the run worker's storage. A
+  tab reloaded the moment `doWork` resolves is enough: with no network the reloaded page does not
+  have what the run wrote, though its Repo had it when the run was reported (browser-run
+  `--lifetimes` check 39), and the page cannot ask a run worker for it, since the gate answers the
+  page's request for a document the worker has not named as unavailable. On a
   Node host, a thread ended before the server acknowledged what its run wrote (a stopped run, a
   process that died, a run written offline) leaves it in that thread's storage. Either way the next
   worker on the same storage does not send it: the Repo loads a stored document only when something
