@@ -5,8 +5,8 @@
  *
  * A burst never runs a call that needs a page (`where: "host"`): it parks,
  * clears `burst` and ends (kernel/burst.js). A page acts when its copy of the
- * session shows no stop, a null `burst`, and a first runnable call that needs
- * a page:
+ * session shows no stop, a null `burst`, no mark left (debris, which a burst
+ * settles first), and a first runnable call that needs a page:
  *   1. it writes `burst` = a fresh id, only while `burst` is null and no stop
  *      is in force, and waits BEAT_MS;
  *   2. only if `burst` still names its id does it claim the call, and run it
@@ -38,7 +38,7 @@ import { stopOf } from "../session/status.js"
 import { findCall, findResult, move, runnableCalls, results, callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
 import { makeTurn, resultBlock } from "../session/blocks.js"
 import { recordArtifact } from "../session/made.js"
-import { INTERRUPTED } from "../session/recovery.js"
+import { INTERRUPTED, hasDebris } from "../session/recovery.js"
 import { WHERE } from "../session/schema.js"
 
 /**
@@ -52,11 +52,14 @@ export const BEAT_MS = 2000
 
 /**
  * The call a page would take now: none under a stop or a `burst`, none while
- * the session waits on a person (an approval or a question, as needsWork
- * says), and only when the first runnable call needs a page.
+ * a mark is left with `burst` null (debris, a burst's to settle first), none
+ * while the session waits on a person (an approval or a question, as
+ * needsWork says), and only when the first runnable call needs a page.
  */
 export function pageCall(doc) {
   if (!doc || stopOf(doc) || doc.burst != null) return null
+  // Debris first, as needsWork orders it: a burst settles it, then parks.
+  if (hasDebris(doc, null)) return null
   if (callsAwaitingApproval(doc).length || questionsAwaitingAnswer(doc).length) return null
   const first = runnableCalls(doc)[0]
   return first && first.where === WHERE.host ? first : null

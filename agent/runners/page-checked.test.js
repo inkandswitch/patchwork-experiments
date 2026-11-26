@@ -437,16 +437,13 @@ describe("pagehide, and a page that dies without it", () => {
   })
 
   /**
-   * The author's third doubt, shown. Take over pressed in a page that shows
-   * the session (where the button is) with a page call behind the dead one:
-   * the page hears `burst` go null and writes its own claim at once, before
-   * Take over's askWork looks, so that ask stands back under the page's
-   * claim, and the page runs c2 while c1 is still debris. needsWork settles
-   * debris before anything else; pageCall does not look at debris. The
-   * session recovers (the page asks once c2 is done), but Take over itself
-   * did not ask.
+   * The author's third doubt. Take over pressed in a page that shows the
+   * session (where the button is) with a page call behind the dead one: the
+   * page hears `burst` go null, but c1 is still debris, and a page takes no
+   * call while there is debris (needsWork's order). So Take over's askWork
+   * asks, and the page leaves c2 to after the burst that settles c1.
    */
-  it.fails("Take over in a page that shows the session asks once, ahead of the page's next call", async () => {
+  it("Take over in a page that shows the session asks once, ahead of the page's next call", async () => {
     const { b, repoB, time, asks, opts } = await deadPage()
     const tb = tool("doc_create")
     pageOf(b, { tools: [tb], time, name: "b" }).page.tick()
