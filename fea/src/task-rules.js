@@ -1,5 +1,5 @@
 /**
- * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v8]
+ * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v9]
  *
  * What the documents are, and what may be read from them. Everything else (a
  * pool, an asker, a view) is these rules applied to documents and to what has
@@ -96,14 +96,17 @@
  *   do better. Stopped code is told through its signal, and its worker is
  *   ended GRACE_MS later whatever it does.
  * - A run SETTLES (`settles`) once its pool has held it for BEAT_MS, counted
- *   from when its taking was saved, and nothing stops it. A pool that can be
- *   heard says each of its runs every BEAT_MS, and an earlier open run counts
- *   as heard from first sight for LAPSE_MS, so an earlier run that can be
- *   heard at all is heard within the beat, and stops this one before it
- *   settles. Settled is the point from which code may do what cannot be
- *   undone. It is not exclusivity: an earlier run cut off for longer than
- *   the beat is not heard, and hearing it later still makes this run yield,
- *   with what it did already done.
+ *   from when its taking was saved, and nothing stops it. Only runs in this
+ *   pool's copy of the task count: an earlier open run counts as heard from
+ *   first sight for LAPSE_MS, and a pool that can be heard says each of its
+ *   runs every BEAT_MS. So an earlier run stops this one before it settles
+ *   when its record reaches this pool within the beat: one taken before this
+ *   run by a pool heard within the beat, and one taken at about the same
+ *   moment by a pool whose round trip to this one is under the beat. Settled
+ *   is the point from which code may do what cannot be undone. It is not
+ *   exclusivity: an earlier run whose record arrives later than that (its
+ *   pool cut off for longer than the beat, or a round trip longer than the
+ *   beat) still makes this run yield, with what it did already done.
  * - A run it started and no longer has (the pool stopped, or crashed and
  *   came back) it completes as what it would have been stopped for, or else
  *   as `lost`; the task's third loss is recorded `failed`, which ends it
@@ -138,12 +141,13 @@
  * tasks afresh, and applies the step `foldStep` gives, unless an entry
  * changed meanwhile. A task the folder does not have (`NOT_HAD`) is never
  * read as ended. An entry leaves the spare only when its task's own document
- * says the task has ended (`drop`), or when own's key names another task that
- * is wanted (`adopt`): the spare's key then names that one too, as when two
- * asks under one key merge in one queue, so the spare's task yields to it and
- * its asker follows the key. A wanted task that own names nothing for, or an
- * ended task for, is listed in own and stays in the spare (`list`); anything
- * else stays as it is (`keep`). So nothing listed is lost, a step applied
+ * says the task has ended, or is no task (`drop`), or when own's key names
+ * another task that is wanted (`adopt`): the spare's key then names that one
+ * too, as when two asks under one key merge in one queue, so the spare's task
+ * yields to it and its asker follows the key. A wanted task that own names
+ * nothing for, or an ended task or no task for, is listed in own and stays in
+ * the spare (`list`); anything else stays as it is (`keep`). An entry is
+ * moved as `listTask` writes one, so it reads as it read before. So nothing listed is lost, a step applied
  * leaves nothing for the next pass to do, and once every replica has every
  * change and a pass has had the tasks, own names a wanted task under every
  * key the spare listed one, and the spare lists only what own lists. A task
@@ -646,9 +650,10 @@ export function stopReason(task, runId, is, heard) {
 /**
  * Whether a pool's run has settled: the pool has held it for BEAT_MS or more
  * since `heldSince` (its own clock, from when its taking was saved), and
- * nothing stops it (`stopReason` is null). Within the beat, any earlier run
- * the pool can hear has been heard, so a run that settles is the one its pool
- * goes on with unless an earlier run cut off for longer turns up later.
+ * nothing stops it (`stopReason` is null). Only runs in the pool's copy of
+ * `task` count: an earlier run whose record reaches the pool within the beat
+ * stops this one first (see HOW A RUN GOES), and one whose record arrives
+ * later still makes it yield, after it settled.
  * @param {Pick<Task, 'runs'>} task
  * @param {string} runId
  * @param {Named} is
@@ -931,7 +936,9 @@ export function checkNeeds(needs) {
  *
  * The entry's needs are the task's, copied as they are: none written are
  * written as none, and needs that are not a list of labels stay so, which no
- * pool satisfies. `near` is written only when it names a pool.
+ * pool satisfies. `askedAt` is written as `waitingWork` reads it, a number
+ * (0 when it is none), so an entry from anywhere can be listed. `near` is
+ * written only when it names a pool.
  * @param {Queue} queue
  * @param {string} key
  * @param {Omit<Entry, 'needs'> & { needs?: unknown }} entry
@@ -946,7 +953,7 @@ export function listTask(queue, key, entry, over) {
   if (!listed || (over !== undefined && listed.taskUrl === over)) {
     queue.jobs[key] = {
       taskUrl: entry.taskUrl,
-      askedAt: entry.askedAt,
+      askedAt: Number(entry.askedAt) || 0,
       package: entry.package ?? null,
       needs: entry.needs === undefined || entry.needs === null ? [] : JSON.parse(JSON.stringify(entry.needs)),
       ...(typeof entry.near === 'string' && entry.near !== '' ? { near: entry.near } : {}),

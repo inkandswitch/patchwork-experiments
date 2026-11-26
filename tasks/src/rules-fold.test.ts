@@ -328,40 +328,49 @@ describe('foldStep', () => {
 
   const urlOf = (q: A.Doc<any>, k: string) => (isEntry(q.jobs?.[k]) ? q.jobs[k].taskUrl : null);
 
+  // Every entry isEntry accepts, those with no askedAt included: each step
+  // the rules give can be applied to it.
   it('each step, applied to Automerge documents, loses no task and leaves nothing for a second step', () => {
     const k = 'k';
     const wrong: string[] = [];
     let applied = 0;
-    const wellFormedOwns = OWNS.filter(([, o]) => o === undefined || (isEntry(o) && 'askedAt' in (o as object)));
-    for (const [tName, t, tKind] of TASKS) {
-      for (const [oName, o, oKind] of wellFormedOwns) {
-        for (const [xName, other, xKind] of TASKS) {
-          if (oKind !== "T'" && xName !== 'NOT_HAD') continue; // other is not read
-          let spare = A.from<any>({ jobs: { [k]: entryFor(U) } });
-          let own = A.from<any>({ jobs: o === undefined ? {} : { [k]: o } });
-          const step = foldStep(spare.jobs[k], t, own.jobs[k], other);
-          ({ spare, own } = apply(step, spare, own, k));
-          applied++;
-          const row = `T ${tName} / own ${oName} / T' ${xName} (${step})`;
-          const inSpare = urlOf(spare, k);
-          const inOwn = urlOf(own, k);
-          // F1: T leaves the spare only when it has ended or is no task (drop),
-          // or when own's key names a wanted other (adopt), which the spare then names.
-          if (tKind === 'wanted' || tKind === 'notHad') {
-            const kept = inSpare === U || inOwn === U;
-            const adopted = step === 'adopt' && inSpare === V && inOwn === V && xKind === 'wanted';
-            if (!kept && !adopted) wrong.push(`${row}: T is in neither queue`);
-          }
-          // own's entry is replaced only when it named nothing, or a task had and not wanted
-          if (oKind === "T'" && inOwn !== V && !(xKind === 'ended' || xKind === 'notTask')) {
-            wrong.push(`${row}: own's entry for T' was replaced`);
-          }
-          // a second step, on what is there now, does nothing
-          if (spare.jobs[k] !== undefined) {
-            const tNow = inSpare === U ? t : other;
-            const xNow = inOwn !== null && inOwn !== inSpare ? (inOwn === U ? t : other) : NOT_HAD;
-            const again = foldStep(spare.jobs[k], tNow, own.jobs[k], xNow);
-            if (again !== 'keep') wrong.push(`${row}: then ${again}`);
+    const spareEntries = SPARES.filter(([, , kind]) => kind === 'entry');
+    for (const [pName, p] of spareEntries) {
+      for (const [tName, t, tKind] of TASKS) {
+        for (const [oName, o, oKind] of OWNS) {
+          for (const [xName, other, xKind] of TASKS) {
+            if (oKind !== "T'" && xName !== 'NOT_HAD') continue; // other is not read
+            let spare = A.from<any>({ jobs: { [k]: p } });
+            let own = A.from<any>({ jobs: o === undefined ? {} : { [k]: o } });
+            const step = foldStep(spare.jobs[k], t, own.jobs[k], other);
+            try {
+              ({ spare, own } = apply(step, spare, own, k));
+            } catch (error) {
+              wrong.push(`spare ${pName} / T ${tName} / own ${oName} / T' ${xName} (${step}): ${(error as Error).message}`);
+              continue;
+            }
+            applied++;
+            const row = `spare ${pName} / T ${tName} / own ${oName} / T' ${xName} (${step})`;
+            const inSpare = urlOf(spare, k);
+            const inOwn = urlOf(own, k);
+            // F1: T leaves the spare only when it has ended or is no task (drop),
+            // or when own's key names a wanted other (adopt), which the spare then names.
+            if (tKind === 'wanted' || tKind === 'notHad') {
+              const kept = inSpare === U || inOwn === U;
+              const adopted = step === 'adopt' && inSpare === V && inOwn === V && xKind === 'wanted';
+              if (!kept && !adopted) wrong.push(`${row}: T is in neither queue`);
+            }
+            // own's entry is replaced only when it named nothing, or a task had and not wanted
+            if (oKind === "T'" && inOwn !== V && !(xKind === 'ended' || xKind === 'notTask')) {
+              wrong.push(`${row}: own's entry for T' was replaced`);
+            }
+            // a second step, on what is there now, does nothing
+            if (spare.jobs[k] !== undefined) {
+              const tNow = inSpare === U ? t : other;
+              const xNow = inOwn !== null && inOwn !== inSpare ? (inOwn === U ? t : other) : NOT_HAD;
+              const again = foldStep(spare.jobs[k], tNow, own.jobs[k], xNow);
+              if (again !== 'keep') wrong.push(`${row}: then ${again}`);
+            }
           }
         }
       }

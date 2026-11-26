@@ -260,8 +260,8 @@ half a minute, and makes nothing. Every marked
 queue that is not own is a **spare**: it stays served, so what it lists runs whether or not it has
 been moved, and passes **fold** it into own (FOLDING in `src/task-rules.js`): an entry is listed
 in own, or, when own's key names another task that is still wanted, the spare's key comes to name
-that one too, so the spare's task yields to it and its asker follows the key; an ended task's
-entry leaves the spare. A pass starts with every `ownQueue` call, and the page whose pool host
+that one too, so the spare's task yields to it and its asker follows the key; the entry of a task
+that has ended, or of a document that is no task, leaves the spare. A pass starts with every `ownQueue` call, and the page whose pool host
 follows the account runs one whenever the account or the storage changes and there is a spare.
 Spares are kept for good (see PLANS.md). The frame's provider can also make the storage document
 twice (two devices that both found none); the account then keeps one link, and the pool host

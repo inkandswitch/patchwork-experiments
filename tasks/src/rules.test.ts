@@ -1723,6 +1723,23 @@ describe('listTask', () => {
     expect(queue.jobs.K).toEqual({ taskUrl: url('T1'), askedAt: 1, package: null, needs: [] });
   });
 
+  it('writes askedAt as waitingWork reads it, a number and 0 for none, so an entry with no usable askedAt can be listed through a real Automerge change', () => {
+    for (const [askedAt, written] of [
+      [5, 5],
+      ['5', 5],
+      [undefined, 0],
+      [null, 0],
+      [Number.NaN, 0],
+      ['soon', 0],
+      [{}, 0],
+    ] as const) {
+      let doc = A.from<Queue>({ jobs: {} });
+      doc = A.change(doc, (q) => listTask(q, 'K', { taskUrl: url('T1'), askedAt: askedAt as never, package: null }));
+      expect(A.toJS(doc).jobs.K.askedAt, String(askedAt)).toBe(written);
+      expect(waitingWork(doc)[0].askedAt, String(askedAt)).toBe(written);
+    }
+  });
+
   it('writes the needs it is given as a copy, and needs that are not a list of labels as they are, so that no pool satisfies them', () => {
     for (const needs of [[], ['unix'], ['unix', 'pool:P'], 'unix', [''], [7], { 0: 'unix' }]) {
       const given = JSON.parse(JSON.stringify(needs));
