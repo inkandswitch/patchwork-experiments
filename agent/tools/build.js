@@ -15,7 +15,7 @@
  *
  * So: esbuild compiled to wasm, a resolver that reads source out of the package
  * document, and dependencies fetched as ESM and inlined. Worker tier, because
- * none of it needs a DOM — it runs in a tab or in a SharedWorker.
+ * none of it needs a DOM — it runs in a page or in a pool's run worker.
  *
  * The result goes back into the package document as `dist/index.js`, so the
  * package is still a folder of files and installs exactly like any other.
@@ -429,7 +429,7 @@ export const packageBuild = {
     "",
     "Afterwards, point package.json's `main` at './dist/index.js', then tool_check the package before installing it.",
   ].join("\n"),
-  // No DOM required, so a SharedWorker can do this off the main thread.
+  // No DOM required, so a pool's run worker can do this off the main thread.
   where: "worker",
   risk: "write",
   input_schema: {

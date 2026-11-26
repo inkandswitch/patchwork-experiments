@@ -19,7 +19,7 @@
  *       scopeOk,                         for a running research step: confined as its plan says
  *     } },
  *     orchestratorCost,                  what the orchestrating session has spent, when known
- *     reasons: { [sessionUrl]: text },   why a step's runner stopped, from its events
+ *     reasons: { [sessionUrl]: text },   why asking for a step's work failed, or its run ended, when not quietly
  *   }
  *
  * The actions, in the order they come:
@@ -35,7 +35,7 @@
  *   { type: "usage", usage }              the plan's spend, when it has changed
  *   { type: "shareGrants" }               one job, one set of permissions
  *   { type: "fileSources" }               what research steps kept, filed for people
- *   { type: "run", sessionUrl }           a running step's session has a runner
+ *   { type: "run", sessionUrl }           a running step's work is asked for, and its session followed here
  *   { type: "ledger" }                    open the plan's ledger: a research step is about to start, and there is none
  *   { type: "start", stepId }             a ready step begins, in a new session
  *   { type: "continue", stepId }          a reopened step carries on in its own
@@ -51,7 +51,7 @@ import { PLAN, STEP, toStart, isSettled, shouldPause, orchestratorSpend, newRequ
 /** Why a research step whose scope was changed is cancelled. */
 export const SCOPE_REMOVED = "its research scope was removed"
 
-/** Why a step failed, when its runner did not say. */
+/** Why a step failed, when its run did not say. */
 export const UNKNOWN_FAILURE = "Its session stopped with an error. Open it to see what happened."
 
 /** What a plan's step sessions cost, summed. */
@@ -76,7 +76,7 @@ export function decide(plan, observations = {}, now = Date.now()) {
   const next = JSON.parse(JSON.stringify(plan))
   const actions = []
 
-  // A research step runs confined or not at all. Its runner refuses an
+  // A research step runs confined or not at all. Its run refuses an
   // unconfined session too (kernel/scope.js); this ends the step in the plan.
   const broken = next.steps.filter((s) => s.access === "web" && s.status === STEP.running && seen(s)?.scopeOk === false).map((s) => s.id)
   if (broken.length) {
@@ -138,7 +138,8 @@ export function decide(plan, observations = {}, now = Date.now()) {
 
   actions.push({ type: "shareGrants" }, { type: "fileSources" })
 
-  // Running steps keep a runner: after a reload theirs are gone.
+  // Running steps' work is asked for on every tick, and askWork's rule keeps
+  // that from asking twice for what a task already saw (runners/ask.js).
   for (const step of next.steps) if (step.status === STEP.running && step.sessionUrl) actions.push({ type: "run", sessionUrl: step.sessionUrl })
 
   // Start what is ready. A research step keeps into the plan's ledger and

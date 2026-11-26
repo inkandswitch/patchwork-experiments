@@ -191,7 +191,7 @@ document. Capturing and failing are the view's own state, not the document's:
 a capture abandoned when the tab closed leaves the snapshot empty, not stuck.
 
 The view has no agent behind it, so it builds its own guarded fetch
-(`snapshot/fetch.js`), refusing exactly what the agent's tab runner refuses:
+(`snapshot/fetch.js`), refusing exactly what the agent's page fetch (`tabFetch`) refuses:
 this page's origin and the sync servers, as well as everything `guard.js`
 refuses. It is the only place in the package that names the platform's
 `fetch`.

@@ -1806,3 +1806,19 @@ is still spent, so a cap a person lifted while a page was reading holds. A
 reopen's instructions are spoken only into a session whose `workflow.run` is
 behind the step's run, so a page that spoke them and went away before it began
 the step does not have them said twice by the next.
+
+## 2026-11-26: a reader's findings, tidied
+
+A reader who built none of it checked the documents against the code. An ask
+that failed was thrown away by the view and asked again by nothing, so a
+message could wait in silence (one way: a burst the task client ran in the
+page, whose first look had no task). A failed ask is now said under the
+composer, without urls, and asked again on the next change, when a pool
+serving the person's queue is heard, or when the network is back, within
+askWork's two asks at one copy's heads. The workflow driver followed every
+running step's session on every tick and never let go, and nothing stopped a
+driver; it now holds one follow per running step, lets go when the step
+leaves `running` or it stops, and stops when the last view, or the session
+whose workflow tool started it, lets go. The field tables, the list of what
+clears `burst`, TOOLS.md's ctx table and comments still naming the deleted
+runners were brought in line with the code; retireEarlier says why it is kept.

@@ -3,7 +3,7 @@
  *
  * Without these the model is guessing: it does not know which datatypes exist,
  * what a tool is called, or what the page currently looks like. `dom_snapshot`
- * is the one host-tier tool in the built-in set, because a SharedWorker has no
+ * is the one host-tier tool in the built-in set, because a run worker has no
  * document to look at.
  */
 

@@ -18,7 +18,7 @@ import { formatCost, dollars } from "../session/usage.js"
 import { STATUS } from "../session/schema.js"
 import { sessionTitle } from "../session/title.js"
 import { activityOf } from "./attention.js"
-import { getDriver, keptCounts } from "../workflow/driver.js"
+import { getDriver, keptCounts, letGo } from "../workflow/driver.js"
 import { drivePlanHere } from "../runners/page.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { renderWaitingItem } from "./waiting.js"
@@ -303,13 +303,13 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       render()
     },
     async stop() {
-      const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo }))
+      const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo, holder: root }))
       await driver.cancel()
     },
   }
   async function resume(stepId) {
     changePlan(handle, (d) => reopenSteps(d, [stepId], { note: "Resumed by the person: carry on from where you were.", cascade: false, by: "person" }))
-    const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo }))
+    const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo, holder: root }))
     driver.kick()
   }
   const onClick = (event) => {
@@ -408,7 +408,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     // Paused for its budget: say so first, with Resume.
     const paused = budgetWaiting(plan, handle.url, handle)
     if (paused && isCurrent(plan)) {
-      const banner = whole(renderBudgetItem({ ...paused, repo }, { showStep: false }))
+      const banner = whole(renderBudgetItem({ ...paused, repo }, { showStep: false, holder: root }))
       banner.classList.add("agent-wf-paused")
       header.append(banner)
     }
@@ -437,9 +437,10 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
   handle.on("change", onChange)
   render()
 
-  // Drive it from this page too. Nothing holds a plan: every page that has
-  // it open drives it, and their writes agree (workflow/driver.js perform).
-  if (repo && handle.doc()?.status === PLAN.running) drivePlanHere(handle.url, { repo }).catch(() => {})
+  // Drive it from this page too, while this view is open. Nothing holds a
+  // plan: every page that has it open drives it, and their writes agree
+  // (workflow/driver.js perform).
+  if (repo && handle.doc()?.status === PLAN.running) drivePlanHere(handle.url, { repo, holder: root }).catch(() => {})
 
   return () => {
     disposed = true
@@ -447,6 +448,7 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
     root.removeEventListener("click", onClick)
     root.removeEventListener("focusout", onFocusOut)
     for (const entry of sessions.values()) entry.off()
+    letGo(root)
     root.remove()
   }
 }

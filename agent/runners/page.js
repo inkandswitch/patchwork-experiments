@@ -8,20 +8,23 @@
  *       (askFor), runs its parked calls (pageCalls), owns its events and
  *       opens its watches (restoreWatches, again whenever `watches` changes),
  *       and is told the hashes a run reports as its own (runners/ask.js).
- *       Counted: the session view and the workflow driver each hold it, and
- *       the last to let go ends it. A burst under way is the pool's, and
- *       goes on.
+ *       Counted: a session view holds it, a workflow driver holds it while
+ *       the session is a running step's (workflow/driver.js), the plan's
+ *       channel to its orchestrator holds that while it is open, and the
+ *       last to let go ends it, letting go of the drivers its workflow
+ *       tools started. A burst under way is the pool's, and goes on.
  *   askFor(repo, sessionUrl)  ask for a session's work with this page's
  *       keys, account and catalogue in the input (runners/ask.js askWork).
  *       Every write of work asks: a message, an approval, an answer, a
  *       lifted budget, a reopen, a parked call's result, a watch's wake.
- *   drivePlanHere(planUrl, { repo })  drive a plan from this page: its steps
- *       are asked for, and the orchestrator and the running steps followed.
+ *   drivePlanHere(planUrl, { repo, holder })  drive a plan from this page
+ *       for `holder` (a view), until it calls `letGo(holder)`: its running
+ *       steps are asked for and followed here.
  *   tabFetch, accountContext, pageContext  what a page's tools are handed.
  *
  * On load it retires what earlier code left in this page: the runners an
- * older version kept on globalThis (each finishes the turn it is in, then
- * stops), and the followers of another version of this module.
+ * older version kept on globalThis (each given up, so it writes nothing
+ * more, then stopped), and the followers of another version of this module.
  *
  * Parked calls. A burst never runs a call that needs a page (`where:
  * "host"`): it parks, clears `burst` and ends. A page acts when its copy of
@@ -64,7 +67,7 @@ import { WHERE, unknownBlocks, versionStanding } from "../session/schema.js"
 import { AGENT } from "../assembly/agent.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { loadPluginTools, pluginCatalogue } from "../assembly/plugins.js"
-import { ensureDriver, getDriver } from "../workflow/driver.js"
+import { ensureDriver, getDriver, letGo, sessionHolder } from "../workflow/driver.js"
 import { readKey, readRelay, SEARCH_KEY_ID } from "../providers/keys.js"
 import { relayFetch } from "../net/relay.js"
 import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "../net/guard.js"
@@ -81,6 +84,8 @@ export const CODE_VERSION = import.meta.url
 /** A url without its heads. */
 const bare = (url) => String(url).split("#")[0]
 
+export { letGo }
+
 // ---------------------------------------------------------------- retiring
 
 /**
@@ -96,6 +101,14 @@ const bare = (url) => String(url).split("#")[0]
  * off and unmarked, which is no work for this code, and the person's message
  * is left half answered. Given up, it writes nothing more, and the reply
  * stays marked: debris, which the next burst settles and answers.
+ *
+ * The runners half is runtime code for an older version, kept on purpose
+ * though the package carries no migrations: Patchwork loads a new version
+ * into a page without a reload, so a page open since before bursts ran on
+ * the task system still holds that version's runners. It can go once no
+ * such page can be open: every page that loaded a version with
+ * `__patchworkAgentRunners` has since loaded this one or been closed. The
+ * followers half is not: it retires another version of this module itself.
  */
 export function retireEarlier(scope = globalThis) {
   const runners = scope.__patchworkAgentRunners
@@ -394,7 +407,8 @@ function startFollowing(handle, repo) {
       builtins: AGENT.builtins,
       plugins: () => loadPluginTools(),
       afterCall: AGENT.afterCall,
-      startSession: followAndAsk(repo),
+      startSession: askOnly(repo),
+      followSession: followFor(repo),
       ask,
       onRunning: (tool) => {
         entry.running = tool
@@ -445,43 +459,54 @@ function startFollowing(handle, repo) {
     contextReady.then(() => calls?.dispose())
     events.stop()
     forget(url)
+    // The drivers this session's workflow tools started here.
+    letGo(sessionHolder(url))
   }
   return entry
 }
 
-/** How the workflow tools and the driver start a step's session from this page: followed here, and asked for. */
-const followAndAsk = (repo) => async (handle) => {
-  follow(handle, { repo })
-  return askFor(repo, handle.url)
+/** How a driver asks for a step's work from this page. */
+const askOnly = (repo) => (handle) => askFor(repo, handle.url)
+
+/** How a driver holds a follow on a step's session in this page: returns how to let go. */
+const followFor = (repo) => (handle) => {
+  const held = follow(handle, { repo })
+  return () => held.release()
 }
 
 /** Every tool this page has, as a driver reads them (workflow/step-tools.js). */
 const pageTools = async () => ({ builtins: BUILTIN_TOOLS, plugins: await loadPluginTools().catch(() => []) })
 
 /**
- * Drive a plan from this page, for a view: its steps are asked for and
- * followed here (followAndAsk), and news goes to the orchestrating session
- * through its events in this page, which ask when they wake it. The
- * workflow tools start a driver themselves, with what their page hands them
- * (workflow/tools.js). `startSession` is for a caller with its own way of
- * running sessions.
+ * Drive a plan from this page for `holder` (a view), until it calls
+ * `letGo(holder)`: its running steps are asked for and followed here, and
+ * news goes to the orchestrating session through its events in this page,
+ * which ask when they wake it; the orchestrator is followed here while that
+ * channel is open. The workflow tools start a driver themselves, with what
+ * their page hands them (workflow/tools.js). `startSession` is for a caller
+ * with its own way of running sessions.
  */
-export async function drivePlanHere(planUrl, { repo, events = null, startSession = null }) {
-  const existing = getDriver(planUrl)
-  if (existing) {
-    existing.kick()
-    return existing
-  }
-  let channels = events
-  if (!channels) {
-    const plan = (await repo.find(planUrl)).doc()
-    if (plan?.sessionUrl) channels = follow(await repo.find(plan.sessionUrl), { repo }).events.forTool("workflow")
+export async function drivePlanHere(planUrl, { repo, holder = null, events = null, startSession = null }) {
+  // One already here is joined as it is.
+  if (getDriver(planUrl)) return ensureDriver(planUrl, { repo, holder })
+  let notify = events ? (url, title) => events.open(url, { label: `workflow: ${title}` }) : null
+  if (!notify) {
+    const sessionUrl = (await repo.find(planUrl)).doc()?.sessionUrl ?? null
+    const orchestrator = sessionUrl ? await repo.find(sessionUrl) : null
+    if (orchestrator) {
+      notify = (url, title) => {
+        const held = follow(orchestrator, { repo })
+        return held.events.forTool("workflow").open(url, { label: `workflow: ${title}`, onClose: () => held.release() })
+      }
+    }
   }
   return ensureDriver(planUrl, {
     repo,
-    startSession: startSession ?? followAndAsk(repo),
+    holder,
+    startSession: startSession ?? askOnly(repo),
+    follow: followFor(repo),
     tools: pageTools,
-    notify: channels ? (url, title) => channels.open(url, { label: `workflow: ${title}` }) : null,
+    notify,
   })
 }
 
@@ -524,7 +549,8 @@ const mountOf = (call) => (typeof call?.input?.mountId === "string" ? call.input
  * @param {()=>Promise<object[]>} [opts.plugins]
  * @param {(doc:object)=>Promise<object>} [opts.buildToolset]
  * @param {Function[]} [opts.afterCall]  as the loop's (kernel/loop.js)
- * @param {Function} [opts.startSession] how this page runs a step's session, for the workflow tools
+ * @param {Function} [opts.startSession] how this page asks for a step's work, for the workflow tools
+ * @param {Function} [opts.followSession] how this page holds a follow on a step's session, for the workflow tools
  * @param {(mountId:string)=>boolean} [opts.hasMount]  default: the context's getMount
  * @param {()=>Promise<unknown>} [opts.ask]  asks for the session's work once this page has run its calls
  * @param {number} [opts.beatMs]
@@ -683,6 +709,7 @@ export function pageCalls(handle, opts) {
         plugins: opts.plugins ?? (async () => []),
         buildToolset: opts.buildToolset ?? null,
         startSession: opts.startSession ?? null,
+        followSession: opts.followSession ?? null,
       })
       tool = prepared.toolset.get(call.tool)
       const ctx = prepared.ctx

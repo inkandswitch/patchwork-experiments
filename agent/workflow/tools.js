@@ -43,7 +43,7 @@ import {
   changePlan,
 } from "./plan.js"
 import { liftBudget, dollars } from "../session/usage.js"
-import { ensureDriver, getDriver, keptCounts } from "./driver.js"
+import { ensureDriver, getDriver, keptCounts, sessionHolder } from "./driver.js"
 import { truncate } from "../documents/format.js"
 import { createFolder } from "../documents/tree.js"
 import { answerQuestion } from "../kernel/loop.js"
@@ -103,18 +103,21 @@ function workflows(ctx) {
 
 /**
  * The plan's driver here: the one already at it, or one started with what
- * this page hands these tools. Null in a burst (a pool's worker), which is
- * handed no way of starting a step's session: the plan is then driven from a
- * page that has it open, which hears every change to it and asks for every
- * running step whose session has work.
+ * this page hands these tools, held for the calling session until its page
+ * stops following it (driver.js `sessionHolder`). Null in a burst (a pool's
+ * worker), which is handed no way of asking for a step's work: the plan is
+ * then driven from a page that has it open, which hears every change to it
+ * and asks for every running step whose session has work.
  */
 async function drive(url, ctx) {
-  const { repo, startSession, tools } = workflows(ctx)
+  const { repo, startSession, follow, tools } = workflows(ctx)
   if (!startSession) return getDriver(url)
   const events = ctx.events ?? null
   return ensureDriver(url, {
     repo,
+    holder: sessionHolder(ctx.session?.url),
     startSession,
+    follow: follow ?? null,
     tools,
     // News goes to the orchestrating session, through the calling tool's own events.
     notify: events ? (planUrl, title) => events.open(planUrl, { label: `workflow: ${title}` }) : null,

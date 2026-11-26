@@ -24,7 +24,7 @@
 
 import { handleStore } from "../kernel/store.js"
 import { decide, answerQuestion } from "../kernel/loop.js"
-import { accountContext, follow, askFor, followWorkFor, stopFor, takeOverFor } from "../runners/page.js"
+import { accountContext, follow, askFor, followWorkFor, stopFor, takeOverFor, letGo } from "../runners/page.js"
 import { stopSession } from "../session/recovery.js"
 import { STOP } from "../session/status.js"
 import { POOL_ID_KEY } from "../host/task-client.js"
@@ -155,12 +155,14 @@ export function AgentTool(handle, element, options = {}) {
   // burst under way is a pool's, and closing the view does not stop it.
   const followed = repo ? follow(handle, { repo, element: root }) : null
   const offRunning = followed?.onRunning(() => render()) ?? (() => {})
-  // What the queue says of the session's task (runners/ask.js), for the line
-  // under the composer.
+  // What the queue says of the session's task, and why the last ask for it
+  // failed (runners/ask.js), for the line under the composer.
   let work = null
+  let askFailed = null
   const offWork = repo
-    ? followWorkFor(repo, handle.url, (view) => {
+    ? followWorkFor(repo, handle.url, (view, failed) => {
         work = view
+        askFailed = failed ?? null
         render()
       })
     : () => {}
@@ -214,6 +216,8 @@ export function AgentTool(handle, element, options = {}) {
     // `burst` cleared, whoever it named, and asked.
     onTakeOver: () => (repo ? takeOverFor(repo, handle.url) : null),
     onChange: () => render(),
+    // A plan a choice here drives is driven while this view is open.
+    holder: root,
   })
   const side = sidePane()
   // The inline views: what each call made or opened, live, beside the call.
@@ -270,6 +274,7 @@ export function AgentTool(handle, element, options = {}) {
       hasKey: !!readKey(doc.config?.providerId ?? "openrouter"),
       keysSettled,
       work,
+      askFailed,
       pool: poolHere(),
       pageTool: followed?.running() ?? null,
       pageClaim: followed?.claim() ?? null,
@@ -282,7 +287,7 @@ export function AgentTool(handle, element, options = {}) {
   }
 
   function renderStrip(v = !disposed && handle.doc() ? value(handle.doc()) : null) {
-    if (v && waiting) renderWaiting(strip, v.strip, { onOpen: openDoc, subject: handle.doc()?.subject ?? null })
+    if (v && waiting) renderWaiting(strip, v.strip, { onOpen: openDoc, subject: handle.doc()?.subject ?? null, holder: root })
   }
 
   function render() {
@@ -310,7 +315,7 @@ export function AgentTool(handle, element, options = {}) {
       inline: () =>
         [
           ...v.inline.session.map((item) => renderWaitingItem({ ...item, handle }, { showStep: false })),
-          ...v.inline.workflows.map((item) => renderWaitingItem(item, { showStep: false, onOpen: openDoc })),
+          ...v.inline.workflows.map((item) => renderWaitingItem(item, { showStep: false, onOpen: openDoc, holder: root })),
         ].map((card) => {
           card.classList.add("agent-inline-waiting")
           return card
@@ -362,6 +367,7 @@ export function AgentTool(handle, element, options = {}) {
     offRunning()
     offWork()
     followed?.release()
+    letGo(root)
     root.remove()
   }
 }

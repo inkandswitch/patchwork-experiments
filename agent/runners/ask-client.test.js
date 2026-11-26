@@ -41,8 +41,8 @@ function client({ own } = {}) {
 }
 
 describe("the task client askWork uses", () => {
-  it("is the kit copy's doWork, watchWork, stopWork and ownQueue by default", () => {
-    expect(TASK_CLIENT).toEqual({ doWork: kit.doWork, watchWork: kit.watchWork, stopWork: kit.stopWork, ownQueue: kit.ownQueue })
+  it("is the kit copy's doWork, watchWork, stopWork, ownQueue and served by default", () => {
+    expect(TASK_CLIENT).toEqual({ doWork: kit.doWork, watchWork: kit.watchWork, stopWork: kit.stopWork, ownQueue: kit.ownQueue, served: kit.served })
     expect(Object.isFrozen(TASK_CLIENT)).toBe(true)
   })
 

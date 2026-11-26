@@ -22,7 +22,7 @@ const value = (doc, local = {}) => sessionValue(doc, { ...LOCAL, ...local })
 
 describe("the hint line", () => {
   // Facts under which no row applies, and for each row what makes it apply.
-  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, work: null, foreign: false, pageTool: null, claimed: null, parked: null, asking: 0, pending: 0, status: STATUS.idle, reason: null }
+  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, work: null, foreign: false, pageTool: null, claimed: null, parked: null, asking: 0, pending: 0, status: STATUS.idle, reason: null, failed: null }
   const ROWS = [
     ["voice", { voice: "Listening…" }, "Listening…"],
     ["earlier", { version: "earlier" }, "This session is from an earlier version of the agent and does not run. Start a new one to carry on."],
@@ -38,6 +38,7 @@ describe("the hint line", () => {
     ["here", { work: "here" }, "Working on this browser… Enter to steer, Stop to interrupt"],
     ["elsewhere", { work: "elsewhere" }, "Working on another device… Enter to steer, Stop to interrupt"],
     ["waiting", { work: "waiting" }, "Waiting for a device to take it"],
+    ["failed", { failed: "Invalid AutomergeUrl: 'a document'." }, "The work could not be asked for: Invalid AutomergeUrl: 'a document'. Asks again on the next change, when a device is heard, or when the network is back"],
     ["parked", { status: STATUS.parked, parked: "view_mount" }, "Waiting for an open page to run view_mount"],
     ["running", { status: STATUS.running }, "Working… Enter to steer, Stop to interrupt"],
   ]
@@ -116,7 +117,18 @@ describe("the hint line", () => {
       pending: 1,
       status: STATUS.awaitingAnswer,
       reason: "offline",
+      failed: null,
     })
+  })
+
+  it("says a failed ask only while the copy shows work a run can do", () => {
+    const waiting = session({}, (d) => d.turns.push(makeTurn("user", [textBlock("hi")])))
+    const answered = session({}, (d) => d.turns.push(makeTurn("user", [textBlock("hi")]), makeTurn("assistant", [textBlock("hello")])))
+    const local = { ...LOCAL, askFailed: "no pool was heard" }
+    expect(hintFacts(waiting, local).failed).toBe("no pool was heard")
+    expect(value(waiting, { askFailed: "no pool was heard" }).hint).toMatch(/^The work could not be asked for: no pool was heard\. Asks again/)
+    expect(hintFacts(answered, local).failed).toBe(null)
+    expect(hintFacts(waiting, LOCAL).failed).toBe(null)
   })
 })
 

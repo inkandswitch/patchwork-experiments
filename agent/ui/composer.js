@@ -50,6 +50,7 @@ export function createComposer({
   onStop = () => {},
   onTakeOver = () => {},
   onChange = () => {},
+  holder = null,
 }) {
   const element = el("div", "agent-composer")
   const field = document.createElement("textarea")
@@ -130,7 +131,7 @@ export function createComposer({
         field.value = ""
         openDoc(await askAside(repo, handle, text || "(attached)", { author: await myContactUrl(), context: ctx, attachments: taken }))
       } else {
-        const driver = getDriver(now.planUrl) ?? (await drivePlanHere(now.planUrl, { repo }))
+        const driver = getDriver(now.planUrl) ?? (await drivePlanHere(now.planUrl, { repo, holder }))
         await driver.reopen([now.stepId], { note: text, cascade: choice === "reopen-later", by: "person" })
         field.value = ""
       }

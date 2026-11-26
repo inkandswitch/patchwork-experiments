@@ -3,8 +3,8 @@
  *
  * A request that never reached the other end did nothing, so nothing about it
  * is worth telling the model or the person as an error. The run stops where it
- * is, the session says it is reconnecting, and the runner tries again when the
- * network comes back (kernel/runner.js). Nothing is written to the transcript for it.
+ * is, the session says it is reconnecting, and the run tries again when the
+ * network comes back (kernel/burst.js). Nothing is written to the transcript for it.
  *
  * What is an interruption is decided where it is certain, and nowhere else:
  *

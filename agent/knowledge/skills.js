@@ -81,8 +81,9 @@ export function describeFrom(body) {
  * skill is read. Installing the package is what puts its guidance here, the
  * same trust boundary as its `agent:tool`s.
  *
- * `registry` is the host's `patchwork:skill` registry, which the tab runner
- * puts on the context as `skillRegistry`; without one there are none.
+ * `registry` is the host's `patchwork:skill` registry, which a page puts on
+ * the context as `skillRegistry` (runners/page.js pageContext); without one
+ * there are none.
  */
 export async function packageSkills({ registry } = {}) {
   if (!registry) return [] // a worker, node, or a test: no plugin registry

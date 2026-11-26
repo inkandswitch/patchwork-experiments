@@ -30,7 +30,7 @@ export const LAYERS = [
   "knowledge", // notes, guides and skills
   "workflow", // plans and the driver that runs them
   "assembly", // the tools put together
-  "runners", // a tab, a shared worker, node
+  "runners", // asking for a session's work, its task, and what a page does for it
   "ui", // views
 ]
 

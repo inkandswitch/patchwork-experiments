@@ -11,8 +11,10 @@ import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { STOP, stopOf } from "../session/status.js"
-import { follow, askFor, takeOverFor, stopFor, followWorkFor, ASK_SETTLE_MS, _reset, _followers } from "./page.js"
+import { follow, askFor, takeOverFor, stopFor, followWorkFor, drivePlanHere, letGo, ASK_SETTLE_MS, _reset, _followers } from "./page.js"
 import { forget, workKey } from "./ask.js"
+import { getDriver, sessionHolder, _resetDrivers } from "../workflow/driver.js"
+import { initPlan, beginStep, cancelStep, changePlan, STEP } from "../workflow/plan.js"
 
 await initSubduction()
 
@@ -28,7 +30,10 @@ beforeEach(() => {
   localStorage.clear()
   localStorage.setItem(KEY, "sk-test")
 })
-afterEach(() => _reset())
+afterEach(() => {
+  _resetDrivers()
+  _reset()
+})
 
 function sessionIn(repo, turns = [makeTurn("user", [textBlock("hello")])], fields = {}) {
   const handle = repo.create()
@@ -173,5 +178,68 @@ describe("Stop, Take over and the queue's view", () => {
     await vi.waitFor(() => expect(asks.map((a) => a.opts.keys.model)).toEqual(["sk-test"]))
     off()
     forget(handle.url)
+  })
+})
+
+describe("held by a workflow driver", () => {
+  /** A plan whose step `a` runs in its own session, and an orchestrator. */
+  function planIn(repo) {
+    const orchestrator = sessionIn(repo, [makeTurn("assistant", [textBlock("started")])])
+    // Its instructions not yet answered: the step runs.
+    const step = sessionIn(repo, [makeTurn("user", [textBlock("do a")])])
+    const plan = repo.create()
+    plan.change((d) => {
+      initPlan(d, { title: "t", goal: "g", sessionUrl: orchestrator.url, steps: [{ id: "a", title: "A", prompt: "do a", why: "w", where: "worker", tier: "fast", after: [] }] })
+      beginStep(d, "a", { session: { url: step.url, model: null } })
+    })
+    return { orchestrator, step, plan }
+  }
+  const quiet = async () => ({ asked: false, why: "a test asks nothing" })
+  const holdersOf = (url) => (_followers().get(url)?.disposed ? 0 : (_followers().get(url)?.holders ?? 0))
+
+  it("holds one follow on a running step's session, however often it ticks; lets go when the step leaves running", async () => {
+    const repo = new Repo({ network: [] })
+    const { step, plan } = planIn(repo)
+    const view = {}
+    const driver = await drivePlanHere(plan.url, { repo, holder: view, startSession: quiet })
+    for (let i = 0; i < 4; i++) await driver.kick()
+    expect(holdersOf(step.url)).toBe(1)
+    changePlan(plan, (d) => cancelStep(d, "a"))
+    await driver.kick()
+    expect(plan.doc().steps[0].status).toBe(STEP.cancelled)
+    expect(_followers().has(step.url)).toBe(false)
+    letGo(view)
+    expect(getDriver(plan.url)).toBe(null)
+  })
+
+  it("stops when the last view that started or joined it lets go, and lets go of its follows", async () => {
+    const repo = new Repo({ network: [] })
+    const { step, plan } = planIn(repo)
+    const [first, second] = [{}, {}]
+    const driver = await drivePlanHere(plan.url, { repo, holder: first, startSession: quiet })
+    expect(await drivePlanHere(plan.url, { repo, holder: second })).toBe(driver)
+    await driver.kick()
+    expect(holdersOf(step.url)).toBe(1)
+    letGo(first)
+    expect(getDriver(plan.url)).toBe(driver)
+    expect(holdersOf(step.url)).toBe(1)
+    letGo(second)
+    expect(getDriver(plan.url)).toBe(null)
+    expect(driver.stopped).toBe(true)
+    expect(_followers().has(step.url)).toBe(false)
+  })
+
+  it("one a session's workflow tool started stops when this page stops following that session: the last to let go ends it", async () => {
+    const repo = new Repo({ network: [] })
+    const { orchestrator, step, plan } = planIn(repo)
+    const shown = follow(orchestrator, { repo })
+    // As workflow/tools.js drive() does in a page: held for the calling session.
+    const driver = await drivePlanHere(plan.url, { repo, holder: sessionHolder(orchestrator.url), startSession: quiet })
+    await driver.kick()
+    expect(holdersOf(step.url)).toBe(1)
+    shown.release()
+    expect(getDriver(plan.url)).toBe(null)
+    expect(_followers().has(step.url)).toBe(false)
+    expect(_followers().has(orchestrator.url)).toBe(false)
   })
 })

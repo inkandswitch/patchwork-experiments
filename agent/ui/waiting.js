@@ -108,10 +108,11 @@ function askAfter(item) {
  *
  *   item     from watchWaiting, or { ...waitingIn(doc)[i], handle, stepTitle, sessionUrl }
  *   onOpen   (url) => open the step's session
+ *   holder   the view a Resume drives the plan for, until it lets go (runners/page.js drivePlanHere)
  */
-export function renderWaitingItem(item, { onOpen = null, subject = null, splice = null, showStep = true } = {}) {
+export function renderWaitingItem(item, { onOpen = null, subject = null, splice = null, showStep = true, holder = null } = {}) {
   if (item.kind === "budget" && item.scope === "session") return renderLiftItem(item, { onOpen, showStep, splice })
-  if (item.kind === "budget") return renderBudgetItem(item, { onOpen, showStep })
+  if (item.kind === "budget") return renderBudgetItem(item, { onOpen, showStep, holder })
 
   const node = el("div", "agent-waiting-item")
   node.dataset.kind = item.kind
@@ -181,7 +182,7 @@ function opener(label, open) {
  * Resume with a little more or a lot more. Resuming is a person's decision,
  * made here or in the workflow view; no agent tool can do it.
  */
-export function renderBudgetItem(item, { onOpen = null, showStep = true } = {}) {
+export function renderBudgetItem(item, { onOpen = null, showStep = true, holder = null } = {}) {
   const node = el("div", "agent-waiting-item")
   node.dataset.kind = "budget"
   if (showStep && item.planTitle) node.append(el("p", "agent-waiting-step", item.planTitle))
@@ -200,9 +201,10 @@ export function renderBudgetItem(item, { onOpen = null, showStep = true } = {}) 
         return
       }
       // A driver must be running for anything to start: the plan view starts
-      // one, and so does this, for a person who never opened it.
+      // one, and so does this, for a person who never opened it, held by the
+      // view this is in.
       if (item.repo && item.planUrl) {
-        drivePlanHere(item.planUrl, { repo: item.repo }).catch(() => {})
+        drivePlanHere(item.planUrl, { repo: item.repo, holder }).catch(() => {})
       }
     })
     actions.append(resume)

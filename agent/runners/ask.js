@@ -6,8 +6,9 @@
  *
  * The task client is the task system's (host/task-client.js, a kit copy):
  * `doWork(repo, request)`, `watchWork(repo, key, onChange)`, `stopWork(repo,
- * key)`, and `ownQueue(repo)` for the queue whose url goes in the input's
- * `sensitiveDocs`. A caller may hand in another as `client` (the tests'
+ * key)`, `ownQueue(repo)` for the queue whose url goes in the input's
+ * `sensitiveDocs`, and `served(repo, queueUrl, onChange)` for the pools heard
+ * serving it. A caller may hand in another as `client` (the tests'
  * stand-ins). What is asked for is this package's own runners/session-task.js,
  * at the version the asker loaded (`inSamePackage`), unless `importUrl` names
  * another.
@@ -27,6 +28,12 @@
  *     copy behind them, it waits (at most HEADS_WAIT_MS) to have them;
  *   - it has asked fewer than twice at these heads. Then only a change or
  *     the network coming back (`online`) asks again.
+ *
+ * An ask that fails is said: followWork's listeners are told why, in words
+ * without urls, until the next ask is made or the copy shows no work. While
+ * it is said, the pools serving the person's own queue are listened to, and
+ * the first heard asks again, as one of the two asks at these heads; a
+ * change and the network coming back ask again as they always do.
  *
  * Why it never loops: every ask needs heads no ended task saw, or is one of
  * at most two at one copy's heads. A burst's code returns for everything it
@@ -49,10 +56,10 @@ import { STOP } from "../session/status.js"
 import { WHERE } from "../session/schema.js"
 import { onOnline } from "../net/network.js"
 import { Automerge, AutomergeRepo } from "../host/modules.js"
-import { doWork, watchWork, stopWork, ownQueue, inSamePackage } from "../host/task-client.js"
+import { doWork, watchWork, stopWork, ownQueue, served, inSamePackage } from "../host/task-client.js"
 
 /** The task system's own client, which asks the person's own queue. */
-export const TASK_CLIENT = Object.freeze({ doWork, watchWork, stopWork, ownQueue })
+export const TASK_CLIENT = Object.freeze({ doWork, watchWork, stopWork, ownQueue, served })
 
 /** The asker's own loaded session task, in its package and at its heads; null outside a package (tests). */
 export const SESSION_TASK = inSamePackage(import.meta.url, "runners/session-task.js")
@@ -100,7 +107,7 @@ const sessions = new Map() // bare url -> entry
  * Resolves `{ asked: false, why }` at once, or `{ asked: true, outcome }`
  * when the task ends (its result's outcome). It passes doWork no signal: a
  * view that closes must not stop a burst. A rejection is worded without
- * urls, since a queue's leads to every key on it.
+ * urls, since a queue's leads to every key on it, and said (see the header).
  *
  * @param {object} repo  the page's Repo
  * @param {string} sessionUrl
@@ -122,32 +129,41 @@ export async function askWork(repo, sessionUrl, opts = {}) {
   const entry = entryFor(repo, sessionUrl, opts)
   entry.opts = opts
   if (opts.reask) entry.reask = opts.reask
-  const handle = await repo.find(bare(sessionUrl))
-  const doc = handle.doc()
-  const heads = [...(handle.heads?.() ?? [])]
-  const facts = factsOf(entry, doc, heads)
-  const decision = shouldAsk(facts)
-  if (!decision.ask) return { asked: false, why: decision.why }
-
-  const at = headsKey(heads)
-  entry.asked = { at, count: (entry.asked.at === at ? entry.asked.count : 0) + 1 }
-  const client = clientOf(opts)
-  // In this order: what the queue browser shows first is the session and its
-  // heads, and the keys last.
-  const input = {
-    session: bare(sessionUrl),
-    heads,
-    account: await withOwnQueue(repo, client, opts.account ?? { rootFolderUrl: null, sensitiveDocs: [] }),
-    catalogue: opts.catalogue ?? { tools: [], skills: [] },
-    keys: opts.keys ?? { model: null, search: null, relay: null },
-  }
   try {
+    const handle = await repo.find(bare(sessionUrl))
+    const doc = handle.doc()
+    const heads = [...(handle.heads?.() ?? [])]
+    const facts = factsOf(entry, doc, heads)
+    const decision = shouldAsk(facts)
+    if (!decision.ask) {
+      if (!facts.work) said(entry, null)
+      return { asked: false, why: decision.why }
+    }
+
+    const at = headsKey(heads)
+    entry.asked = { at, count: (entry.asked.at === at ? entry.asked.count : 0) + 1 }
+    said(entry, null)
+    const client = clientOf(opts)
+    // In this order: what the queue browser shows first is the session and its
+    // heads, and the keys last.
+    const input = {
+      session: bare(sessionUrl),
+      heads,
+      account: await withOwnQueue(repo, client, opts.account ?? { rootFolderUrl: null, sensitiveDocs: [] }),
+      catalogue: opts.catalogue ?? { tools: [], skills: [] },
+      keys: opts.keys ?? { model: null, search: null, relay: null },
+    }
     const result = await client.doWork(repo, { importUrl: opts.importUrl ?? SESSION_TASK, key: workKey(sessionUrl), input })
     return { asked: true, outcome: result?.outcome ?? null }
   } catch (err) {
-    throw new Error(withoutUrls(String(err?.message ?? err)))
+    const why = withoutUrls(String(err?.message ?? err))
+    said(entry, why)
+    throw new Error(why)
   }
 }
+
+/** Why the last ask of a session failed, worded without urls, or null. */
+export const failedAskOf = (sessionUrl) => sessions.get(bare(sessionUrl))?.failed ?? null
 
 /**
  * Take over: `burst` cleared, whoever it named, then asked. What the run it
@@ -178,9 +194,10 @@ export async function stop(repo, sessionUrl, { client = TASK_CLIENT, author = nu
 }
 
 /**
- * Follow a session's work for a view: `onView` is told what the watch of its
- * key says now (null until it has said anything) and whenever that changes.
- * Returns how to stop. The view's line under the composer is read off it
+ * Follow a session's work for a view: `onView(view, failed)` is told what the
+ * watch of its key says now (null until it has said anything) and why the
+ * last ask failed (null when it did not), and again whenever either changes.
+ * Returns how to stop. The view's line under the composer is read off them
  * (ui/session-value.js).
  */
 export function followWork(repo, sessionUrl, onView, opts = {}) {
@@ -188,7 +205,7 @@ export function followWork(repo, sessionUrl, onView, opts = {}) {
   if (opts.reask) entry.reask = opts.reask
   entry.listeners.add(onView)
   try {
-    onView(entry.view)
+    onView(entry.view, entry.failed)
   } catch {}
   return () => entry.listeners.delete(onView)
 }
@@ -203,6 +220,7 @@ export function forget(sessionUrl) {
   sessions.delete(bare(sessionUrl))
   entry.unwatch?.()
   entry.unlisten?.()
+  entry.unhear?.()
   if (entry.timer != null) entry.clearTimer(entry.timer)
 }
 
@@ -215,6 +233,8 @@ function entryFor(repo, sessionUrl, opts) {
     repo,
     opts,
     view: null,
+    failed: null, // why the last ask failed, or null
+    unhear: null, // stops listening for the pools, while a failure is said
     listeners: new Set(),
     asked: { at: null, count: 0 },
     behind: null, // { at, since }: the last task's heads the copy has waited for
@@ -231,11 +251,7 @@ function entryFor(repo, sessionUrl, opts) {
     entry.view = view
     rememberOwn(url, view?.progress?.own)
     rememberOwn(url, view?.result?.own)
-    for (const listener of [...entry.listeners]) {
-      try {
-        listener(view)
-      } catch {}
-    }
+    tell(entry)
     // The task it followed has ended: judge once more.
     if (was && !FINISHED.has(was.state) && was.state !== "missing" && FINISHED.has(view?.state)) again()
   })
@@ -244,6 +260,58 @@ function entryFor(repo, sessionUrl, opts) {
     again()
   })
   return entry
+}
+
+/** Tell the entry's listeners what the watch says and why the last ask failed. */
+function tell(entry) {
+  for (const listener of [...entry.listeners]) {
+    try {
+      listener(entry.view, entry.failed)
+    } catch {}
+  }
+}
+
+/**
+ * Say why the last ask failed (`why`), or that nothing has (null). While a
+ * failure is said, the pools serving the person's own queue are listened
+ * to, and the first heard asks again; once it is not, they are not.
+ */
+function said(entry, why) {
+  if (why) hearPools(entry)
+  else entry.unhear?.()
+  if (entry.failed === why) return
+  entry.failed = why
+  tell(entry)
+}
+
+/** Listen for a pool serving the person's own queue; the first heard asks again, once. */
+function hearPools(entry) {
+  const client = clientOf(entry.opts)
+  if (entry.unhear || typeof client.served !== "function" || typeof client.ownQueue !== "function") return
+  let done = false
+  let off = null
+  const stop = () => {
+    if (done) return
+    done = true
+    if (entry.unhear === stop) entry.unhear = null
+    off?.()
+  }
+  entry.unhear = stop
+  Promise.resolve()
+    .then(() => client.ownQueue(entry.repo))
+    .then((queue) => {
+      if (done || typeof queue !== "string") return
+      const heard = (pools) => {
+        if (done || !pools?.length) return
+        stop()
+        entry.again()
+      }
+      // As doWork hears them: only what reaches this Repo.
+      const unserve = client.served(entry.repo, queue, heard, { local: false })
+      if (done) unserve?.()
+      else off = unserve
+    })
+    .catch(() => {})
 }
 
 /**

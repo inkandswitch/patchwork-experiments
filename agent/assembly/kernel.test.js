@@ -463,7 +463,7 @@ describe("the legitimate writers", () => {
         expect(Object.keys(given), t.id).toEqual(["workflows"])
         // A burst runs in a pool's worker, and is handed no way of starting
         // a step's session: the plan is driven from a page (workflow/tools.js drive).
-        expect(given.workflows).toEqual({ repo: runner.repo, startSession: null, tools: expect.any(Function) })
+        expect(given.workflows).toEqual({ repo: runner.repo, startSession: null, follow: null, tools: expect.any(Function) })
       } else if (t.id === "session_title") {
         expect(Object.keys(given), t.id).toEqual(["session"])
         expect(given.session.change).toBeTypeOf("function")

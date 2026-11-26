@@ -22,6 +22,13 @@
  * plan, and its driver picks up where the document says things are. A
  * workflow goes on only while some page has the plan open or drives it.
  *
+ * Who holds what in a page. A driver is held by whoever started or joined
+ * it (`holder`: a view, or `sessionHolder` of the session whose workflow
+ * tool did), and stops when the last of them lets go (`letGo`). While it
+ * runs it holds a follow (`follow`: runners/page.js) on each running step's
+ * session it asks for, and lets go of it when the step leaves `running` and
+ * when the driver stops.
+ *
  * A step's burst runs in a pool's worker (kernel/burst.js); its session's
  * `burst` mark keeps two from running it at once, and a burst of a session
  * its plan does not name ends before it writes (`not-the-step`).
@@ -129,29 +136,48 @@ export const EMPTY_RESULT = "(the step finished without saying anything)"
 const drivers = new Map()
 
 /**
- * Start driving a plan, or return the driver already doing so here.
+ * Start driving a plan for `holder`, or join the driver already doing so
+ * here; either way `holder` holds it until `letGo(holder)`.
  *
  *   repo           the page's repo
  *   startSession   (handle) => Promise<{ asked, outcome?, why? }> — asks for a step's work (runners/page.js)
+ *   follow         (handle) => release — holds a follow on a step's session in this page, or null
+ *   holder         who holds the driver (any value; null holds nothing, and such a driver runs until stop())
  *   stopWork       (repo, sessionUrl) => Promise<boolean> — stops a session's task on this person's queue
  *   notify         (planUrl) => channel with notify(render)/close(), to wake the orchestrator
  */
 export async function ensureDriver(planUrl, opts) {
   const existing = drivers.get(planUrl)
-  if (existing) {
-    existing.kick()
-    return existing
-  }
+  if (existing) return joined(existing, opts.holder)
   const handle = await opts.repo.find(planUrl)
+  // Another start may have finished while this one found the plan.
+  const raced = drivers.get(planUrl)
+  if (raced) return joined(raced, opts.holder)
   const driver = new WorkflowDriver({ ...opts, handle })
   drivers.set(planUrl, driver)
+  driver.hold(opts.holder)
   driver.start()
+  return driver
+}
+
+function joined(driver, holder) {
+  driver.hold(holder)
+  driver.kick()
   return driver
 }
 
 export function getDriver(planUrl) {
   return drivers.get(planUrl) ?? null
 }
+
+/** `holder` lets go of every driver it holds here; one nobody holds stops. */
+export function letGo(holder) {
+  if (holder == null) return
+  for (const driver of [...drivers.values()]) driver.letGo(holder)
+}
+
+/** The holder a session's workflow tools hold drivers as, let go when its page stops following it. */
+export const sessionHolder = (sessionUrl) => (sessionUrl ? `session:${String(sessionUrl).split("#")[0]}` : null)
 
 /** Tests only. */
 export function _resetDrivers() {
@@ -160,13 +186,16 @@ export function _resetDrivers() {
 }
 
 export class WorkflowDriver {
-  constructor({ repo, handle, startSession, stopWork = null, notify = null, tools = null, now = () => Date.now(), settleMs = SETTLE_MS }) {
+  constructor({ repo, handle, startSession, follow = null, stopWork = null, notify = null, tools = null, now = () => Date.now(), settleMs = SETTLE_MS }) {
     this.repo = repo
     this.handle = handle
     this.startSession = startSession
+    this.follow = follow
+    this.follows = new Map() // sessionUrl -> release, for each running step's session followed here
+    this.holders = new Set()
     this.stopWork = stopWork ?? ((r, url) => stopTaskWork(r, workKey(url)))
     this.notify = notify
-    // Every tool the runner that started this has, as `{ builtins, plugins }`,
+    // Every tool the page that started this has, as `{ builtins, plugins }`,
     // for checking a step's prompt before it starts (step-tools.js). Without
     // it that is not done.
     this.tools = tools
@@ -191,13 +220,47 @@ export class WorkflowDriver {
     this.kick()
   }
 
+  /** Stop: no more ticks, every follow and watch let go, the orchestrator's channel closed (what it had not delivered is told by the next driver). */
   stop() {
     this.stopped = true
     clearTimeout(this.soon)
     this.handle.off("change", this.onPlanChange)
     for (const off of this.watched.values()) off()
     this.watched.clear()
-    drivers.delete(this.handle.url)
+    for (const release of this.follows.values()) release()
+    this.follows.clear()
+    this.channel?.close()
+    this.channel = null
+    this.holders.clear()
+    if (drivers.get(this.handle.url) === this) drivers.delete(this.handle.url)
+  }
+
+  hold(holder) {
+    if (holder != null && !this.stopped) this.holders.add(holder)
+  }
+
+  letGo(holder) {
+    if (this.holders.delete(holder) && this.holders.size === 0) this.stop()
+  }
+
+  /** Hold a follow on a running step's session, once. */
+  holdFollow(sessionUrl, handle) {
+    if (!this.follow || this.stopped || this.follows.has(sessionUrl)) return
+    try {
+      this.follows.set(sessionUrl, this.follow(handle))
+    } catch {
+      /* no follow here: the step is asked for all the same */
+    }
+  }
+
+  /** Let go of the follows of sessions no running step names. */
+  releaseFollows() {
+    const running = new Set((this.handle.doc()?.steps ?? []).filter((s) => s.status === STEP.running && s.sessionUrl).map((s) => s.sessionUrl))
+    for (const [url, release] of [...this.follows]) {
+      if (running.has(url)) continue
+      this.follows.delete(url)
+      release?.()
+    }
   }
 
   /**
@@ -247,6 +310,7 @@ export class WorkflowDriver {
     const plan = this.handle.doc()
     const observations = plan.status === PLAN.running ? await this.observe(plan) : {}
     await this.perform(decide(plan, observations, this.now()), plan)
+    if (!this.stopped) this.releaseFollows()
   }
 
   /**
@@ -529,12 +593,14 @@ export class WorkflowDriver {
 
   /**
    * Ask for a step's work (`startSession`), without waiting for the task to
-   * end: its outcome, when it is not a quiet one (QUIET), is kept as the
-   * reason a failed step gives (decide.js), worded without urls.
+   * end, holding a follow on its session here: its outcome, when it is not a
+   * quiet one (QUIET), is kept as the reason a failed step gives (decide.js),
+   * worded without urls.
    */
   async run(sessionUrl) {
     const handle = await this.session(sessionUrl)
     if (!handle) return
+    this.holdFollow(sessionUrl, handle)
     Promise.resolve()
       .then(() => this.startSession(handle))
       .then(
@@ -548,7 +614,7 @@ export class WorkflowDriver {
       )
   }
 
-  /** Start one step: its session, its first message, its runner. */
+  /** Start one step: its session, its first message, and its work asked for. */
   async begin(stepId) {
     const plan = this.handle.doc()
     const step = plan.steps.find((s) => s.id === stepId)

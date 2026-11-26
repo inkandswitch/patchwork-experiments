@@ -3,10 +3,10 @@
  *
  * A page cannot read most sites (CORS), so without help a browser's agent
  * keeps a reader's text of a page and rarely the PDF itself. A relay fetches
- * for it and hands back what the site sent; with one configured, a tab's
- * runner keeps originals as a node runner does.
+ * for it and hands back what the site sent; with one configured, a page's
+ * tools and a browser pool's runs keep originals as a Node host's do.
  *
- * This is the `fetch` a runner's guardedFetch wraps, so every target is still
+ * This is the `fetch` a page's or a run's guardedFetch wraps, so every target is still
  * checked by the guard first; the relay checks again, and follows redirects
  * itself, checking each hop. Only GET and HEAD go through it: anything else
  * is sent from the page as before.

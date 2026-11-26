@@ -431,11 +431,12 @@ letting an agent reimplement you.
   at.
 - **where** — \`worker\` if a repo is all you need, \`host\` if you need the DOM or
   the plugin registry. A \`worker\` tool is offered to workflow steps placed on
-  a worker and runs in the agent's shared worker too, loaded from your package
+  a worker and runs in a pool's run worker too, loaded from your package
   there; code that imports a bare specifier (\`@automerge/automerge\`) cannot
   load in a worker, so its calls wait for a tab instead. Work through
-  \`ctx.repo\`, \`ctx.automerge\` (automerge, initialised) and \`ctx.plugins\`
-  (the plugin registry) and you need no import.
+  \`ctx.repo\` and \`ctx.splice\` (automerge's splice), and in a page
+  \`ctx.automerge\` (automerge, initialised) and \`ctx.plugins\` (the plugin
+  registry), and you need no import.
 - **risk** — \`read\` runs silently; \`write\` and \`external\` ask the user once and
   can then be granted more broadly; \`alwaysAsk: true\` asks every time, for
   anything that carries credentials somewhere.

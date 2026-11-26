@@ -1,12 +1,11 @@
 # The session document
 
 A session is one automerge document. A burst running it (a task's run, in a
-pool's worker: README.md), every page showing it and every workflow driver read
-and write it; nothing about a session lives anywhere else. `session/` is functions over that document as plain data:
-no repo, no handle, no network.
-
-Automerge cannot hold `undefined`, so an optional field is present or `null`.
-A document an older version wrote may keep a `lease`; nothing reads it.
+pool's worker: README.md), every page showing it and every workflow driver read and write
+it; nothing about it lives anywhere else. `session/` is functions over it as plain
+data: no repo, no handle, no network. Automerge cannot hold `undefined`, so an
+optional field is present or `null`. A document an older version wrote may keep
+a `lease`; nothing reads it. There is no `status` field (*Status*).
 
 ## Fields
 
@@ -15,7 +14,7 @@ A document an older version wrote may keep a `lease`; nothing reads it.
 | `schemaVersion` | the shape the document is in (`session/schema.js` `versionStanding`). A burst leaves a session of another version alone and its view says why; the sidebar and the floating box, which each keep one session, start a new one in place of one from an earlier version |
 | `title` | `string \| null`. Null until named: a view shows a title derived from the first message |
 | `subject` | the document the session is about, or null |
-| `config` | `{ providerId, model, params, workflows: { enabled }, budget?, skillsFolderUrl? }`. `budget` is dollars; most sessions have none, a workflow step always does |
+| `config` | `{ providerId, model, params, workflows: { enabled, tiers?, parallel?, steps?, cost? }, budget?, skillsFolderUrl? }`. `workflows` is what the settings panel sets for the plans it starts. `budget` is dollars; most sessions have none, a workflow step always does. `skillsFolderUrl` is read, and nothing in the agent writes it |
 | `turns` | `Turn[]`, the transcript |
 | `burst` | `{ run } \| null`: the run working on it, or a page's claim on a call only a page runs (*The burst mark*) |
 | `reconnecting` | `{ reason, since, attempts } \| null`, while its run waits for the network. Cleared when it is heard again, by the next run's settling, and by any stop |
@@ -23,12 +22,11 @@ A document an older version wrote may keep a `lease`; nothing reads it.
 | `made` | the documents it created or kept, newest first |
 | `usage` | `{ in, out, turns, cached?, cost?, costEstimated? }` |
 | `watches` | `{ [id]: watch }`, once `doc_watch` makes one |
-| `tools` | `{ enabled?, disabled?, where? }`: which tools it leaves out, and `where: "worker"` for a step placed on one |
+| `tools` | `{ enabled?, disabled?, where? }`: the driver writes `where: "worker"` for a step placed on one; `enabled` and `disabled`, which tools it leaves out, are read, and nothing in the agent writes them |
+| `pinSeq` | the number the newest pinned result was given (a result's `pinned`); the lowest are released first |
 | `workflow` | `{ planUrl, stepId, orchestratorUrl, run }` when it is a step of a plan; `run`, which run of the step its last instructions start (WORKFLOW.md, *The driver*) |
 | `scope` | `{ kind: "web", planUrl, stepId }` when it is a research step: the step it is, whose plan names the ledger it reads and keeps into (`kernel/scope.js`) |
 | `aside`, `asides` | a side thread's pointer to the step it was copied from, and a step's list of its side threads |
-
-There is no `status` field. See *Status* below.
 
 ## Turns and blocks
 
@@ -36,16 +34,16 @@ There is no `status` field. See *Status* below.
 
 `streaming: { runner }` marks a reply still being written, naming its run, and
 is removed when the stream ends. A reply marked by a run that `burst` does not
-name was cut off: the next run takes it out and asks again.
+name was cut off: the next run takes it out and asks again. Every block has an `id`.
 
 | block | fields | |
 |---|---|---|
 | `text` | `text` | what the model or a person said |
 | `reasoning` | `text` | the model's thinking, when it shows it |
 | `call` | `tool, input, where, status, runner, ask, shown` | a tool call. `shown` is how it reads in the log and opens, `{ verb, detail, body?, format? }`, when its tool says |
-| `result` | `callId, output, isError, image, doc, file, facts, summary, placeholder, pinned?` | a call's answer, in a `tool` turn. `output` is for the model; `facts` is what the call did as plain data, for code (TOOLS.md). `placeholder` marks one written for a call whose own result may still arrive: a run's for a call it found cut off, or one closed not run by a Stop |
+| `result` | `callId, output, isError, image, doc, file, facts, summary, placeholder, pinned?, imageRejected?` | a call's answer, in a `tool` turn. `output` is for the model; `facts` is what the call did as plain data, for code (TOOLS.md). `placeholder` marks one written for a call whose own result may still arrive: a run's for a call it found cut off, or one closed not run by a Stop. `imageRejected` marks an image the provider refused, which no later request carries |
 | `context` | `focused, open` | what the person had focused and open when they spoke |
-| `attachment` | `url, name, docType, mimeType, image` | a document attached to a message |
+| `attachment` | `url, name, docType, mimeType, image, imageRejected?` | a document attached to a message |
 | `event` | `source, label, text, count, at` | news a tool delivered after its call was over |
 | `summary` | `text, upToTurnId` | stands in for the turns before it |
 | `notice` | `kind, text, data` | the harness speaking |
@@ -85,9 +83,10 @@ call with an error.
   page). A burst parks a `host` call; a page showing or driving the session
   runs it (`runners/page.js`).
 - `running` carries the `runner` that claimed it (a run's id or a page's
-  claim id), which a later move must name. One still `running` under a claim
-  `burst` does not name was interrupted: a read is run again, anything else is
-  answered with an error saying it may or may not have happened.
+  claim id). A run or a page names it in each later move it makes; settling
+  debris and an aside close the call whatever it names. One still `running`
+  under a claim `burst` does not name was interrupted: a read is run again,
+  anything else is answered with an error saying it may or may not have happened.
 - `asking` is a question to the person (`ask_user`). Nobody approves or
   refuses it; their answer becomes its result.
 - Every outcome is a `result` block, a refusal included, so the model always
@@ -149,7 +148,8 @@ Not a lease: nothing refreshes it and no clock reads it.
 - Written by a run at each turn boundary, when it is null or names another
   run of the same task (`settleDebris`), and by a page claiming a parked call,
   only while it is null. Cleared by a run's end, by the page's result change,
-  by any stop, by Take over, and by a page's pagehide for its own claim.
+  by any stop, by Take over, by a page's pagehide for its own claim, by a page
+  letting go of a claim that lost its beat or met a stop, and in a copy and an aside.
 - A mark (a reply's `streaming`, a running call's `runner`) not naming
   `burst.run`, or any while it is null, is debris, settled by the next run.
 - A run finding a run its task does not list stands back (`held`); a view offers Take over.

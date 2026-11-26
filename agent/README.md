@@ -15,6 +15,9 @@ host's thread serving the queue. `runners/session-task.js` is the task's entry.
 
 - Asking under a key whose task has not ended is asking once, so any number of
   views and writers may ask; a re-ask needs heads no ended task saw.
+- An ask that fails is said under the composer, in words without urls, and
+  asked again on the next change, when a pool is heard, or when the network
+  is back, within the same rule.
 - The session holds no lease. A run writes only once the task system says it
   holds the task, only while its signal stands, never under a stop; it marks
   the session `burst: { run }` (SESSION.md, *The burst mark*).

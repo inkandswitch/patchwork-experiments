@@ -31,7 +31,7 @@ import { renderWaitingItem } from "./waiting.js"
 import { createNotifier, notificationsEnabled, notificationsSupported, setNotifications } from "./notify.js"
 import { say } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
-import { askFor } from "../runners/page.js"
+import { askFor, letGo } from "../runners/page.js"
 
 export const STORAGE_TOOL_ID = "agent-ambient"
 /** How long the box waits for the account's storage before saying it is waiting. */
@@ -442,7 +442,7 @@ export function AmbientAgent(element, options = {}) {
     card.append(head)
 
     if (item.kind === "question" || item.kind === "approval" || item.kind === "budget") {
-      card.append(renderWaitingItem(item, { showStep: false, onOpen: (url) => openDocument(pop, url, "agent-workflow") }))
+      card.append(renderWaitingItem(item, { showStep: false, onOpen: (url) => openDocument(pop, url, "agent-workflow"), holder: pop }))
     } else if (item.kind === "asked") {
       card.append(el("p", "agent-peek-question", item.question))
       const row = el("div", "cluster")
@@ -539,6 +539,7 @@ export function AmbientAgent(element, options = {}) {
     attention?.dispose()
     workspace.dispose()
     cleanupTool?.()
+    letGo(pop)
     pop.remove()
   }
 }

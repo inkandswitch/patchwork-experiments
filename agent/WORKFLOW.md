@@ -6,9 +6,8 @@ each other run in order and the rest side by side. Because the plan is a
 document and not a script, it can be watched, edited while it runs, resumed
 after a reload, and driven from every page that has it open at once.
 
-`workflow/plan.js` is the model, as functions over the plan as plain data.
-`workflow/driver.js` runs a plan. `workflow/tools.js` is what an orchestrator
-and a step do to one.
+`workflow/plan.js` is the model, as functions over the plan as plain data. `workflow/driver.js`
+runs a plan. `workflow/tools.js` is what an orchestrator and a step do to one.
 
 ## The plan document
 
@@ -17,13 +16,13 @@ and a step do to one.
 | `schemaVersion` | the shape it is in. Nothing writes a plan of another version: every writer — the driver, the workflow tools, the views — goes through one gate (`writable` in `workflow/plan.js`), which says why in words a person can act on |
 | `title`, `goal`, `subject` | what the job is, and the document it is about |
 | `sessionUrl` | the orchestrator's session |
-| `status` | `running`, `done` or `stopped` |
+| `status`, `createdAt`, `finishedAt` | `running`, `done` or `stopped`; when it was made, and when it last settled or was stopped (null once it runs again) |
 | `steps` | the steps, below |
 | `requests` | `[{ id, stepId, why, add, reopen, status, at, decidedAt, note }]`: what steps asked for |
 | `tiers` | `{ deep, standard, fast }`: the model each tier names |
 | `limits` | `{ parallel, hostParallel, steps, cost }`. `cost` is dollars for the whole job |
 | `usage`, `orchestratorFrom` | what the steps have spent, and the orchestrator since the plan began |
-| `paused` | `{ reason: "budget", at, spent, limit, stopped } \| null` while it waits for a person to raise the cap |
+| `paused` | `{ reason: "budget", at, spent, limit, stopped, ask? } \| null` while it waits for a person to raise the cap; `ask`, `{ stepId, stepTitle, need, why }`, when a step's request for more brought it on |
 | `resumes` | `[{ add, limit, at }]`: each time a person did |
 | `runs` | how many times it has been set running |
 | `told` | `{ [key]: true }`: what the orchestrator has been told |
@@ -34,14 +33,14 @@ A step:
 
 | field | |
 |---|---|
-| `id`, `title`, `prompt`, `why` | what it is to do, and why it is a step |
+| `id`, `title`, `prompt`, `why`, `subject?` | what it is to do, why it is a step, and the document it is about when it names one |
 | `after` | the ids of the steps it waits for |
-| `where` | `"worker"`: a repo is all it needs, so its calls run in its bursts. `"host"`: it needs a page, which runs its page calls |
+| `where`, `moved?` | `"worker"`: a repo is all it needs, so its calls run in its bursts. `"host"`: it needs a page, which runs its page calls. `moved` says why the driver moved it to the page before it began |
 | `access` | `"web"` for a research step: the web and what research steps kept, and none of the person's documents |
 | `tier`, `budget`, `tools` | which model; dollars its session starts with (*Money*); tools it must have |
 | `budgetLog` | `[{ add, limit, why, at }]`: each time the orchestrator raised its budget |
 | `status` | `pending`, `running`, `done`, `failed` or `cancelled` |
-| `sessionUrl`, `result`, `error`, `startedAt`, `finishedAt` | its session, and how it went |
+| `sessionUrl`, `model`, `result`, `error`, `startedAt`, `finishedAt` | its session and the model it began on, and how it went |
 | `version` | how many times it has finished |
 | `inputs` | `{ [stepId]: version }`: the versions of what it was built on |
 | `reopen` | `{ note, at, by }` while it is pending again, to continue in its own session |
@@ -113,10 +112,9 @@ is ever reset: a reopened step's next finish is a different key.
 
 ## The driver
 
-Every page with the plan open drives it, and none holds it: no lease (an old
-plan's `lease` is read by nobody), no heartbeat, no timer that writes. Each
-page's one driver for the plan ticks when the plan, a step's session or the
-ledger changes:
+Every page with the plan open drives it, and none holds the plan: no lease (an
+old plan's `lease` is read by nobody), no heartbeat, no timer that writes. Each page's
+one driver for the plan ticks when the plan, a step's session or the ledger changes:
 
 1. **Read** the plan, and of each step's session what a decision needs.
 2. **Decide.** `decide(plan, observations, now)` (`workflow/decide.js`) is
@@ -142,9 +140,11 @@ number (`workflow.run`) with that run's instructions, and a copy showing an
 earlier run reads as running or waiting (`sessionOutcome`): a page whose
 copies lag a reopen never files the old answer.
 
-A workflow goes on only while some page has the plan open or drives it (the
-workflow view; a page whose workflow tool or person acted on it); with none,
-nothing ticks. Workflows that progress with no page open are not built.
+A page's driver is held by the views that started or joined it and by the sessions
+whose workflow tools did, while the page follows them, and stops when the last lets go.
+It holds a follow on each running step's session it asks for (`runners/page.js`) until
+the step leaves `running` or it stops. With no driver nothing ticks: workflows that
+progress with no page open are not built.
 
 A step's session is made with its scope, its tools' placement, its budget and
 the orchestrator's grants in one write, so it never exists half set up. A step

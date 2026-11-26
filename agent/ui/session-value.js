@@ -12,6 +12,8 @@
  *     keysSettled   the account's LLM settings have answered, or failed to
  *     work          what the queue says of the session's task (runners/ask.js
  *                   followWork: a task view), or null before it has said
+ *     askFailed     why the last ask for its work failed, without urls
+ *                   (runners/ask.js followWork), or null
  *     pool          this browser's pool id (the tasks package's POOL_ID_KEY),
  *                   or null
  *     pageTool      the tool of the parked call this page runs now, or null
@@ -34,6 +36,7 @@ import { statusOf } from "../session/status.js"
 import { workflowOf } from "../workflow/plan.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { gateOf } from "./standing.js"
+import { needsWork } from "../kernel/runner.js"
 
 export const PLACEHOLDER = "Ask for a change…"
 
@@ -65,6 +68,12 @@ export const HINTS = [
   { name: "here", when: (f) => f.work === "here", says: () => "Working on this browser… Enter to steer, Stop to interrupt" },
   { name: "elsewhere", when: (f) => f.work === "elsewhere", says: () => "Working on another device… Enter to steer, Stop to interrupt" },
   { name: "waiting", when: (f) => f.work === "waiting", says: () => "Waiting for a device to take it" },
+  // An ask that failed is said while there is work, until the next ask (runners/ask.js).
+  {
+    name: "failed",
+    when: (f) => f.failed != null,
+    says: (f) => `The work could not be asked for: ${String(f.failed).replace(/[.\s]+$/, "")}. Asks again on the next change, when a device is heard, or when the network is back`,
+  },
   { name: "parked", when: (f) => f.status === STATUS.parked, says: (f) => `Waiting for an open page to run ${f.parked ?? "a page tool"}` },
   { name: "running", when: (f) => f.status === STATUS.running, says: () => "Working… Enter to steer, Stop to interrupt" },
 ]
@@ -128,6 +137,8 @@ export function hintFacts(doc, local) {
     pending: callsAwaitingApproval(doc).length,
     status: statusOf(doc),
     reason: doc.reconnecting?.reason ?? null,
+    // Said only while this copy shows work a run can do, as askFor asks.
+    failed: local.askFailed != null && needsWork(doc, (where) => where === WHERE.worker) ? local.askFailed : null,
   }
 }
 

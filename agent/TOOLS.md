@@ -52,7 +52,7 @@ decides anything about a tool.
 
 | need | a session has it when | a built-in is handed |
 |---|---|---|
-| `workflows` | its Workflows switch is on, and it is not itself a step | `ctx.workflows`: the real repo, the page's step starter (none in a burst), every tool the run has |
+| `workflows` | its Workflows switch is on, and it is not itself a step | `ctx.workflows`: the real repo, how the page asks for a step's work and follows its session (neither in a burst), every tool the run has |
 | `step` | it is a step of a plan | nothing: it only decides the offer |
 | `session.write` | it is a full-access session | `ctx.session` with `change` |
 | `watches` | it is a full-access session | `ctx.watches`: the session's `watches` map, writable |
@@ -74,7 +74,7 @@ in a document.
 
 | | |
 |---|---|
-| `ctx.repo` | the repo. For a full-access session it refuses to change a session, a plan or a research ledger, or to make a document into one (`kernel/kernel-repo.js`), and records each write as the session's own |
+| `ctx.repo` | the repo. For a full-access session it refuses to change a session, a plan or a research ledger, or to make a document into one (`kernel/kernel-repo.js`), and records each write as the session's own. Nor does it read, export, clone or merge a session's task (a task under an `agent:` key): its input holds its asker's keys |
 | `ctx.subject` | the document the session is about |
 | `ctx.session` | `{ url, doc() }`: this conversation, to read |
 | `ctx.signal` | aborted when the person stops the run, or its task is cancelled or taken by another run |
@@ -84,17 +84,17 @@ in a document.
 | `ctx.fetchImpl` | the only way to the network: a guarded fetch (`net/guard.js`). There is no fallback to the platform's |
 | `ctx.search`, `ctx.direct` | web search, with the key from the task's input or the page, and whether fetches reach sites directly (a Node host, or the relay) |
 | `ctx.rootFolderUrl`, `ctx.sensitiveDocs` | the account's root folder, and the documents that always ask |
-| `ctx.automerge`, `ctx.splice` | the host's automerge, initialised. Take it from here: a worker cannot resolve a bare `@automerge/automerge` |
+| `ctx.splice`, `ctx.automerge` | automerge's `splice`, everywhere; the host's whole automerge, initialised, in a page only. Take them from here: a worker cannot resolve a bare `@automerge/automerge` |
 | `ctx.plugins` | the plugin registry module, in a page only |
 | `ctx.packageOf(type, id)` | the package a plugin came from: `{ url, heads, name }`. In a burst, for an agent tool only, from the input's catalogue |
-| `ctx.skillsFolderUrl`, `ctx.skillRegistry`, `ctx.notesFolderUrl` | where the person's skills and notes are kept, and the skills packages bring |
+| `ctx.skillsFolderUrl`, `ctx.skillRegistry`, `ctx.notesFolderUrl` | where the person's skills and notes are kept, and the skills packages bring. No host gives `notesFolderUrl`, so notes go in a folder in the account's root |
 | `ctx.element`, `ctx.getMount`, `ctx.pageFetch` | in a page only: where a host tool mounts, the views `view_mount` opened, and a fetch of the page's own origin for `plugin_source` |
 | `ctx.reader` | the reader service a fetch goes through when it is not direct, where a host replaces the default |
 | `ctx.importModule`, `ctx.importMap`, `ctx.packageBaseUrl`, `ctx.workerPreparation`, `ctx.runBundle`, `ctx.runInWorker` | how this host loads and runs a package's code, where it replaces the platform's way (`package_build`, `package_test`, `tool_check`) |
 | `ctx.scope` | in a research step only: `{ stepId }` |
 | `ctx.workflows`, `ctx.watches` | only for a tool that declares the need (above) |
 
-A burst has no `plugins`, `element` or page; its skills come from the
+A burst has no `automerge`, `plugins`, `element` or page; its skills come from the
 catalogue, named and read only in a page. A tool reaches nothing global: a
 `"worker"` tool that touches `document`, the platform's `fetch` or a bare
 import works in a page by accident and nowhere else.

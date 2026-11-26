@@ -110,10 +110,11 @@ export function needsWork(doc, canRun = () => true, holder = undefined) {
  *   plugins       () => this run's plugin tools
  *   buildToolset  (doc) => a full-access session's toolset
  *   privileged    () => the privileges of a full-access session's tools
- *   startSession  how this host runs a workflow step's session, when
+ *   startSession  how this host asks for a workflow step's work, when
  *                 `privileged` is not given
+ *   followSession how this host holds a follow on a step's session, likewise
  */
-export async function prepareRun(doc, { ctx, store, fullCtx = null, builtins = [], plugins = async () => [], buildToolset = null, privileged = null, startSession = null }) {
+export async function prepareRun(doc, { ctx, store, fullCtx = null, builtins = [], plugins = async () => [], buildToolset = null, privileged = null, startSession = null, followSession = null }) {
   const scope = scopeOf(doc)
   await assertScopeAgrees(doc, scope, ctx.repo)
   if (scope) return { toolset: scopedToolset(doc, { builtins, plugins: await plugins() }), ctx: await confine(ctx, scope), privileged: () => null }
@@ -121,7 +122,7 @@ export async function prepareRun(doc, { ctx, store, fullCtx = null, builtins = [
   return {
     toolset,
     ctx: fullCtx ?? fullContext(ctx, store),
-    privileged: privileged ? privileged() : privileges(ctx, store, { builtins, plugins, startSession }),
+    privileged: privileged ? privileged() : privileges(ctx, store, { builtins, plugins, startSession, followSession }),
   }
 }
 
@@ -171,10 +172,11 @@ export function fullContext(base, store, { record = null } = {}) {
  * What only some of a full session's tools get beyond its context: each
  * thing a tool `needs` (session/capabilities.js) that stands for a value.
  *
- *   workflows      the real repo, how this host runs a step's session
- *                  (`startSession`, the host's: it is never in the
- *                  context) and every tool this run has, for the tools
- *                  that write plans and drive step sessions
+ *   workflows      the real repo, how this host asks for a step's work
+ *                  and holds a follow on its session (`startSession`,
+ *                  `follow`, the host's: never in the context) and every
+ *                  tool this run has, for the tools that write plans and
+ *                  drive step sessions
  *   session.write  this conversation's own document, writable
  *   watches        only the `watches` map in it, writable
  *
@@ -182,13 +184,14 @@ export function fullContext(base, store, { record = null } = {}) {
  * built-in's id, and a tool that is not one of them gets nothing whatever it
  * declares.
  */
-export function privileges(base, store, { builtins = [], plugins = async () => [], startSession = null } = {}) {
+export function privileges(base, store, { builtins = [], plugins = async () => [], startSession = null, followSession = null } = {}) {
   const own = new Set(builtins)
   const values = {
     workflows: {
       workflows: {
         repo: base.repo ?? null,
         startSession,
+        follow: followSession,
         tools: async () => ({ builtins, plugins: await plugins() }),
       },
     },

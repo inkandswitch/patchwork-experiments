@@ -15,9 +15,9 @@
  */
 
 /**
- * The shape a session document is in. A runner leaves alone a session that
- * says another (kernel/runner.js): one a newer agent wrote, or one from
- * before the shapes were brought to this one.
+ * The shape a session document is in. A burst leaves alone a session that
+ * says another (kernel/burst.js `outdated`): one a newer agent wrote, or one
+ * from before the shapes were brought to this one.
  */
 export const SCHEMA_VERSION = 2
 
@@ -45,7 +45,7 @@ export const STATUS = {
   awaitingAnswer: "awaiting-answer",
   parked: "parked",
   // The network went away mid-run. Not an error: nothing was written for it,
-  // and the runner carries on when it comes back (net/network.js, kernel/runner.js).
+  // and the run carries on when it comes back (net/network.js, kernel/burst.js).
   reconnecting: "reconnecting",
   error: "error",
 }
