@@ -879,6 +879,13 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
 // Repo without the code having it; one the code took from `handles`; one
 // made by each way of making; and the log line at the limit, by kind.
 
+describe('the words for what stays on this machine', () => {
+  it('say one document as one and several as several', () => {
+    expect(staysHere(1, 'made by this run: doc1…')).toContain('(1 document: made by this run: doc1…)');
+    expect(staysHere(2)).toContain('(2 documents)');
+  });
+});
+
 describe('what a run wrote', () => {
   const findable = (id: string) => new FakeHandle(id);
   /** Code that finds `urls` through ctx.repo and then runs `then` with their handles. */
