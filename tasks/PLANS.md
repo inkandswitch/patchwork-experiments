@@ -149,6 +149,15 @@ that one machine serves.
     client's save, not the link, and DevTools' freeze may hold a transaction a browser's own
     freezing would not. A linked pool needs no save before the listing (it has the task from the
     page's memory), but a pool elsewhere does. Waits on the lead's call.
+  - *An announcement before the worker's own.* The page's end of a link keeps the first peer
+    announced on it, and a run worker's code can speak first: its Repo announces itself only once
+    it has its storage id, and `run-worker.ts` imports the code without waiting for that (on the
+    stand-in page, 6 of 6 fresh run workers ran their code at import 5 to 17 ms before their Repo
+    announced itself, and an IndexedDB read there finished first in 5 of 6). Code that has the
+    pool's id then (an earlier run's, kept in the origin's IndexedDB) and says `arrive` and
+    `leave` in its name cuts the pool off, with no network (`link-check.test.ts` keeps the case as
+    `it.fails`). A page end that refuses an announcement in the name of a peer the site's Repo
+    already has would close it whatever the worker's order. Waits on nothing.
   - *Not shown on the deployed site* (keyhive's Repo): only on a stand-in page and in unit tests.
     Nor is it shown that the sync server accepts a document a plain worker made offline once the
     keyhive page takes it in and the network returns, nor hours of use. On the stand-in page,

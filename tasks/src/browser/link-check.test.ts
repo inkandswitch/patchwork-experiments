@@ -9,7 +9,10 @@
 //   a protected document named in any other field, or in another spelling,
 //   gets it nothing.
 // - The handshake, and messages in another peer's name or addressed to
-//   another peer, posted on a run worker's port: the pool stays linked.
+//   another peer, posted on a run worker's port: the pool stays linked;
+//   but not when the forged announcement comes before the worker's Repo's
+//   own, a known defect kept as `it.fails`; a worker's Repo that ends is
+//   forgotten alone.
 // - The gate's claim that a dropped message never carries a change, read
 //   off every message it drops: with a page that changes a document many
 //   times before the worker names it, and a later worker on the same
@@ -221,6 +224,65 @@ describe('the handshake', () => {
     expect(await until(() => poolQueue.doc()?.jobs === 3 && runQueue.doc()?.jobs === 3, 2000)).toBe(true);
     runQueue.change((d) => void (d.by = 'run'));
     expect(await until(() => queue.doc()?.by === 'run' && poolQueue.doc()?.by === 'run', 2000)).toBe(true);
+  }, 15_000);
+
+  // A known defect, kept as the case that shows it (`it.fails`: it passes
+  // while the defect is there, and fails once it is mended, to be turned
+  // into an `it` then). The page's end keeps the first peer a link
+  // announces, so a forged arrive posted on a run worker's port before that
+  // worker's Repo announces itself is taken as the link's peer. A worker's
+  // Repo announces itself only once it has its storage id (NetworkSubsystem
+  // connects its adapters after the Repo's peer metadata resolves), and
+  // run-worker.ts imports a task's code without waiting for that: on the
+  // stand-in page, in 6 of 6 fresh run workers, the code ran at import with
+  // its Repo not yet announced, 5 to 17 ms before it was, and an IndexedDB
+  // read at import finished first in 5 of 6. Code that has the pool's id
+  // there (an earlier run's, kept in the origin's IndexedDB) cut the pool off
+  // with no network. Refusing an announcement in the name of a peer the page
+  // already has would mend it whatever the worker's order; a run worker that
+  // waits for its link to be announced before importing code makes the
+  // order true but leaves the gate trusting it.
+  it.fails("a forged arrive and leave in the pool's name, posted before the run worker's Repo announces itself, do not cut the page off from the pool", async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const pool = keep(make([new MessageChannelNetworkAdapter(links.open('pool') as any)]));
+    const queue = page.create<{ jobs: number }>({ jobs: 0 });
+    const poolQueue = await pool.find<{ jobs: number }>(queue.url);
+    const adaptersBefore = page.networkSubsystem.adapters.length;
+
+    // the run worker's code, first on its port (no Repo of its own is made: what it would hear is addressed to the pool)
+    const runPort = links.open('run 1');
+    runPort.postMessage({ type: 'arrive', senderId: pool.peerId, peerMetadata: { isEphemeral: true } });
+    runPort.postMessage({ type: 'leave', senderId: pool.peerId });
+    await quiet(300);
+
+    queue.change((d) => void (d.jobs = 1));
+    expect({
+      reached: await until(() => poolQueue.doc()?.jobs === 1, 2000),
+      poolIsPeer: page.peers.includes(pool.peerId),
+      adapters: page.networkSubsystem.adapters.length - adaptersBefore,
+    }).toEqual({ reached: true, poolIsPeer: true, adapters: 1 });
+  }, 15_000);
+
+  it("a run worker whose Repo ends says leave in its own name: the page forgets it alone, its adapter leaves the Repo, and taking the link out after is harmless", async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const pool = keep(make([new MessageChannelNetworkAdapter(links.open('pool') as any)]));
+    const run = make([new MessageChannelNetworkAdapter(links.open('run 1') as any)]);
+    const queue = page.create<{ jobs: number }>({ jobs: 0 });
+    const poolQueue = await pool.find<{ jobs: number }>(queue.url);
+    await run.find<{ jobs: number }>(queue.url);
+    expect(page.networkSubsystem.adapters.length).toBe(2);
+
+    await run.shutdown();
+    expect(await until(() => !page.peers.includes(run.peerId))).toBe(true);
+    expect(page.networkSubsystem.adapters.length).toBe(1);
+    links.remove('run 1');
+    expect({ links: links.size, adapters: page.networkSubsystem.adapters.length, peers: page.peers }).toEqual({ links: 1, adapters: 1, peers: [pool.peerId] });
+    queue.change((d) => void (d.jobs = 1));
+    expect(await until(() => poolQueue.doc()?.jobs === 1, 2000)).toBe(true);
   }, 15_000);
 });
 

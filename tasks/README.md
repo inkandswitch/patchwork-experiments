@@ -367,7 +367,10 @@ message addressed to another peer are dropped before the adapter sees them. A Re
 messages for a peer through the adapter that last announced that peer, so without this a worker's
 code that knew another peer's id (the pool's, which the ephemeral messages the page relays carry)
 could turn the page's messages for that peer to itself, or make the page forget it and so cut the
-pool off (`link-check.test.ts`, "the handshake"). A worker with no page
+pool off (`link-check.test.ts`, "the handshake"). The first announcement need not be the
+worker's Repo's own: a run worker imports its task's code before its Repo has announced itself,
+so code that already has the pool's id can speak first, take the link in the pool's name and cut
+the pool off (kept as `it.fails`; PLANS, "What the local link still lacks"). A worker with no page
 above it (a Node host's thread) has no link.
 
 | On one device with no network | |
