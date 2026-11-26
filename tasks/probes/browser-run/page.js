@@ -26,7 +26,7 @@ import * as client from '/vendor/task-client.js';
 // the two are one Repo, the tasks Repo. Two `?site` pages of one profile
 // are joined as the site's tabs are: their site Repos share one database
 // (`probe-site`) and one heads channel (`probe-site-heads`), and nothing else
-// (checks 40 and 41).
+// (checks 41 and 42).
 const params = new URLSearchParams(location.search);
 const SYNC = params.get('sync') ?? 'ws://127.0.0.1:9';
 
