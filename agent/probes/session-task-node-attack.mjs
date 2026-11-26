@@ -17,6 +17,8 @@
 //   tools    a worker tool (doc_read) runs on the host and its result goes
 //            back to the model in the same burst; a page tool (doc_create)
 //            parks and the burst ends 'parked' with one request
+//   sensitive  doc_read of the own queue asks; doc_read of the session's own
+//            task is refused and its keys never reach the model
 //   message  a message written by the asker while the burst streams is
 //            answered in the same burst; askWork (with a client over the
 //            same queue) then does not ask again; and the same message from a
@@ -208,17 +210,17 @@ try {
     sessions.push(handle);
     return handle;
   };
-  const inputOf = (session) => ({
+  const inputOf = (session, sensitiveDocs = []) => ({
     session: session.url,
     heads: [...session.heads()],
-    account: { rootFolderUrl: root.url, sensitiveDocs: [] },
+    account: { rootFolderUrl: root.url, sensitiveDocs },
     catalogue: { tools: [], skills: [] },
     providerUrl: STAND,
     keys: { model: MODEL_KEY, search: SEARCH_KEY, relay: null },
   });
-  const ask = (session) => {
+  const ask = (session, sensitiveDocs = []) => {
     const views = [];
-    const result = run(repo, queueUrl, { importUrl: IMPORT, input: inputOf(session), key: workKey(session.url) }, (view) => {
+    const result = run(repo, queueUrl, { importUrl: IMPORT, input: inputOf(session, sensitiveDocs), key: workKey(session.url) }, (view) => {
       views.push(view);
       if (view?.taskUrl) taskUrls.add(view.taskUrl);
     }).catch((error) => ({ error: String(error?.message ?? error) }));
@@ -340,6 +342,43 @@ try {
         "a page tool (doc_create) parks: the burst ends 'parked' after one request, the call left approved for a page, burst cleared",
         result?.outcome === "parked" && of("page").length === 1 && call?.status === "approved" && call?.where === "host" && doc.burst === null,
         `${J(result)}; requests ${of("page").length}; call ${J({ tool: call?.tool, status: call?.status, where: call?.where ?? null })}; burst ${J(doc.burst)}; runs ${J(runsOf(asked.views))}`,
+      );
+    }
+  }
+
+  // ---- sensitive: a read of the own queue asks; a read of the session's own task is refused.
+  if (wants("sensitive")) {
+    scripts.queue = () => ({ pieces: ["Looking at the queue. "], everyMs: 100, calls: [{ id: "call_q1", name: "doc_read", args: { url: queueUrl } }] });
+    {
+      const session = newSession("Read the queue. (queue)");
+      const asked = ask(session, [queueUrl]);
+      const result = await within(120_000, asked.result, "a burst reading the own queue").catch((e) => ({ error: e.message }));
+      const doc = session.doc();
+      const call = doc.turns.flatMap((t) => t.blocks ?? []).find((b) => b.type === "call");
+      const results = doc.turns.flatMap((t) => t.blocks ?? []).filter((b) => b.type === "result" || b.type === "tool_result");
+      check(
+        "sensitive.1",
+        "in a burst on a host, doc_read of the own queue (in the input's sensitiveDocs) asks: the call is left pending, no result, one request, the burst ends awaiting approval",
+        result?.outcome === "awaiting-approval" && call?.status === "pending" && results.length === 0 && of("queue").length === 1 && doc.burst === null,
+        `${J(result)}; call ${J({ tool: call?.tool, status: call?.status, always: call?.ask?.always ?? null })}; results ${results.length}; requests ${of("queue").length}; burst ${J(doc.burst)}`,
+      );
+    }
+    let ownTask = null;
+    scripts.owntask = (body) => (hasToolResult(body) ? { pieces: ["Could not."], everyMs: 100 } : { pieces: ["Reading my task. "], everyMs: 100, calls: [{ id: "call_t1", name: "doc_read", args: { url: ownTask } }] });
+    {
+      const session = newSession("Read your own task. (owntask)");
+      const asked = ask(session);
+      for (const t0 = Date.now(); !asked.views.at(-1)?.taskUrl && Date.now() - t0 < 30_000; ) await sleep(50);
+      ownTask = asked.views.at(-1)?.taskUrl ?? null;
+      const result = await within(120_000, asked.result, "a burst reading its own task").catch((e) => ({ error: e.message }));
+      const doc = session.doc();
+      const call = doc.turns.flatMap((t) => t.blocks ?? []).find((b) => b.type === "call");
+      const toolMsg = (of("owntask")[1]?.body?.messages ?? []).find((m) => m.role === "tool");
+      check(
+        "sensitive.2",
+        "in a burst on a host, doc_read of the session's own task (its url handed to the model) is refused: the tool message sent back holds no key, the burst ends idle",
+        !!ownTask && result?.outcome === "idle" && !!toolMsg && !KEYS.some((k) => J(toolMsg).includes(k)) && !KEYS.some((k) => everHeld(doc).includes(k)),
+        `task url known ${!!ownTask}; ${J(result)}; call ${J({ tool: call?.tool, status: call?.status })}; tool message ${toolMsg ? J(toolMsg.content ?? toolMsg).slice(0, 220) : "absent"}; requests ${of("owntask").length}`,
       );
     }
   }
