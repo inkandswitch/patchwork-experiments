@@ -19,28 +19,41 @@
 // says it has connected, when the browser says it is online, and every
 // PASS_MS while anything is listed), it finds each listed document in the
 // site's Repo, which then syncs it, and takes it off the list once the
-// server has its heads, or once it has been tried for TRY_MS while the
-// server could be reached. Nothing waits on this: it is done in the
+// server has its heads. Nothing waits on this: it is done in the
 // background, and a run's report never depends on it.
 //
 // Whether the server can be reached is the Repo's word
 // (`connectedSubductionPeerIds`), or, for a Repo that cannot say, the
-// browser's (`navigator.onLine`). Whether the server has a document is the
-// Repo's 'subduction-remote-heads' event; with a Repo that has none, each
-// listed document is kept open for TRY_MS of trying, and then let go.
+// browser's (`navigator.onLine`), which is enough to try but not to count
+// time by: it stays true with no network. Whether the server has a document
+// is the Repo's 'subduction-remote-heads' event.
+//
+// The bound. Each entry keeps `tried`, the milliseconds it has been tried
+// with the server reachable, in this page and earlier ones together. It is
+// added to only between two looks of this page that both found the server
+// reachable by the Repo's own word, with the entry listed at both, and by at
+// most PASS_MS a time (so a sleep, or a drop and return between looks, adds
+// no more than one interval); a look that finds the server unreachable, the
+// Repo saying it has disconnected, and the pool's stop each start the count
+// afresh at the next look. An entry with `tried` of TRY_MS or more is let
+// go. So an entry leaves the list only once the server has its heads, or
+// after TRY_MS of trying with the server reachable; time cut off, or a page
+// closed, never counts. With a Repo that cannot say whether it is
+// connected, no entry is let go by time: the list's cap, MAX_UNSENT with the
+// newest kept, is then its only bound.
 
-/** This origin's localStorage entry for the list: `{ [documentId]: { since?: ms } }`, `since` when it was first tried with the server reachable. */
+/** This origin's localStorage entry for the list: `{ [documentId]: { tried?: ms } }`, `tried` how long it has been tried with the server reachable (see "The bound"). */
 export const UNSENT_KEY = 'patchwork-tasks-unsent';
 /** How often the list is looked at while anything is on it. */
 export const PASS_MS = 10_000;
-/** How long a document is tried for while the server can be reached before it is let go. */
+/** How long a document is tried for while the server can be reached, by the Repo's word, before it is let go. */
 export const TRY_MS = 10 * 60_000;
 /** The most documents listed; the oldest are let go first. */
 export const MAX_UNSENT = 200;
 /** How many documents' latest reports are kept. */
 const REPORTS_KEPT = 1000;
 
-type Listed = Record<string, { since?: number }>;
+type Listed = Record<string, { tried?: number }>;
 
 /** What the list needs of the site's Repo; every member but `handles` and `find` is optional. */
 export interface UnsentRepo {
@@ -91,24 +104,20 @@ export function readUnsent(store: UnsentStore = localStore): Listed {
   }
 }
 
-function writeUnsent(listed: Listed, store: UnsentStore) {
-  const ids = Object.keys(listed);
-  if (ids.length === 0) {
-    store.write(null);
-    return;
-  }
-  // the newest kept, as they were added
-  const kept = Object.fromEntries(ids.slice(-MAX_UNSENT).map((id) => [id, listed[id]]));
-  store.write(JSON.stringify(kept));
+/** Writes the list, the newest MAX_UNSENT as they were added; returns the ids kept. */
+function writeUnsent(listed: Listed, store: UnsentStore): string[] {
+  const ids = Object.keys(listed).slice(-MAX_UNSENT);
+  store.write(ids.length === 0 ? null : JSON.stringify(Object.fromEntries(ids.map((id) => [id, listed[id]]))));
+  return ids;
 }
 
-/** Whether the site's Repo can reach the sync server now. */
-async function reachable(repo: UnsentRepo): Promise<boolean> {
+/** Whether the site's Repo can reach the sync server now: 'repo' on the Repo's word, 'browser' on the browser's alone (a Repo that cannot say), or false. */
+async function reachable(repo: UnsentRepo): Promise<'repo' | 'browser' | false> {
   if (typeof repo.connectedSubductionPeerIds === 'function') {
     const peers = await repo.connectedSubductionPeerIds().catch(() => [] as string[]);
-    return peers.length > 0;
+    return peers.length > 0 && 'repo';
   }
-  return typeof navigator === 'undefined' || navigator.onLine !== false;
+  return (typeof navigator === 'undefined' || navigator.onLine !== false) && 'browser';
 }
 
 /**
@@ -121,6 +130,10 @@ export class Unsent {
   private readonly reports = new Map<string, string>();
   /** The listed documents this page has asked its Repo for. */
   private readonly asked = new Set<string>();
+  /** When this page last looked at each listed document with the server reachable by the Repo's word, since the count last started afresh. */
+  private readonly seen = new Map<string, number>();
+  /** The listed ids, as this page last read or wrote them: a report is checked against these, not the store. */
+  private listedIds: Set<string>;
   private running = false;
   private passing: Promise<void> | null = null;
   private again = false;
@@ -129,7 +142,9 @@ export class Unsent {
     private readonly repo: UnsentRepo,
     private readonly store: UnsentStore = localStore,
     private readonly now: () => number = Date.now,
-  ) {}
+  ) {
+    this.listedIds = new Set(Object.keys(readUnsent(store)));
+  }
 
   /** Lists `documents`, at once, so that they are sent to the server when it can be reached; looks at the list in the background. */
   remember(documents: readonly string[]) {
@@ -143,7 +158,7 @@ export class Unsent {
       delete listed[id];
       listed[id] = entry;
     }
-    writeUnsent(listed, this.store);
+    this.save(listed);
     void this.pass();
   }
 
@@ -159,11 +174,11 @@ export class Unsent {
       if (this.reports.size > REPORTS_KEPT) {
         this.reports.delete(this.reports.keys().next().value!);
       }
-      if (documentId in readUnsent(this.store)) {
+      if (this.listedIds.has(documentId)) {
         void this.pass();
       }
     };
-    const connected = ({ connected }: { connected?: unknown }) => connected && this.pass();
+    const connected = ({ connected }: { connected?: unknown }) => (connected ? this.pass() : this.seen.clear());
     const online = () => this.pass();
     this.repo.on?.('subduction-remote-heads', report);
     this.repo.on?.('subduction-connection', connected);
@@ -178,6 +193,7 @@ export class Unsent {
     this.pass();
     return () => {
       this.running = false;
+      this.seen.clear();
       clearInterval(timer);
       this.repo.off?.('subduction-remote-heads', report);
       this.repo.off?.('subduction-connection', connected);
@@ -209,7 +225,12 @@ export class Unsent {
   }
 
   private async look() {
-    if (Object.keys(readUnsent(this.store)).length === 0 || !(await reachable(this.repo))) {
+    if (Object.keys(readUnsent(this.store)).length === 0) {
+      return;
+    }
+    const reach = await reachable(this.repo);
+    if (!reach) {
+      this.seen.clear();
       return;
     }
     // read again after the wait: only this page writes the list, but `remember` may have meanwhile
@@ -220,11 +241,17 @@ export class Unsent {
         this.forget(listed, id);
         continue;
       }
-      entry.since ??= now;
-      if (now - entry.since >= TRY_MS) {
-        console.warn(`tasks: a document a task wrote (${id.slice(0, 6)}…) was not seen at the sync server after ${TRY_MS / 60_000} minutes of trying; it stays in this browser, and is sent when something opens it`);
-        this.forget(listed, id);
-        continue;
+      if (reach === 'repo') {
+        // see "The bound"; on the browser's word alone, no time is counted
+        const last = this.seen.get(id);
+        const tried = typeof entry.tried === 'number' ? entry.tried : 0;
+        entry.tried = last === undefined ? tried : tried + Math.min(Math.max(0, now - last), PASS_MS);
+        this.seen.set(id, now);
+        if (entry.tried >= TRY_MS) {
+          console.warn(`tasks: a document a task wrote (${id.slice(0, 6)}…) was not seen at the sync server after ${TRY_MS / 60_000} minutes of trying; it stays in this browser, and is sent when something opens it`);
+          this.forget(listed, id);
+          continue;
+        }
       }
       if (!this.asked.has(id)) {
         // Opened in the site's Repo, which then syncs it with the server. Not
@@ -238,12 +265,17 @@ export class Unsent {
         this.repo.resyncSubduction?.(id);
       }
     }
-    writeUnsent(listed, this.store);
+    this.save(listed);
+  }
+
+  private save(listed: Listed) {
+    this.listedIds = new Set(writeUnsent(listed, this.store));
   }
 
   private forget(listed: Listed, id: string) {
     delete listed[id];
     this.asked.delete(id);
+    this.seen.delete(id);
   }
 
   /** Whether the server has reported heads equal to the site's Repo's for `id`. */

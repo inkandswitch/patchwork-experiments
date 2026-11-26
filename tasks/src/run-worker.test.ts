@@ -172,7 +172,7 @@ vi.mock('./webworker-lib', () => ({
   },
 }));
 
-const { serve, REACH_LIMIT_MS, RESYNC_EVERY_MS, STAYS_HERE, notReached } = await import('./run-worker');
+const { serve, REACH_LIMIT_MS, RESYNC_EVERY_MS, staysHere, notReached } = await import('./run-worker');
 
 const job = (importUrl: string): Job => ({
   taskUrl: 'automerge:2KYqboWHPS5rvWsheoLnHgFvE7ou' as Job['taskUrl'],
@@ -755,7 +755,7 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     tell({ type: 'job', job: job('w') });
     await settle();
     expect(said).toEqual([
-      { type: 'log', message: STAYS_HERE },
+      { type: 'log', message: staysHere(3, 'made by this run: doc1…, doc2…, doc3…') },
       { type: 'done', result: ['doc1', 'doc2', 'doc3'] },
     ]);
   });
@@ -789,7 +789,7 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     connectNow();
     await settle();
     expect(said).toEqual([
-      { type: 'log', message: STAYS_HERE },
+      { type: 'log', message: staysHere(1, 'made by this run: doc1…') },
       { type: 'done', result: ['doc1'] },
     ]);
   });
@@ -806,7 +806,7 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     expect(said).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(said).toEqual([
-      { type: 'log', message: STAYS_HERE },
+      { type: 'log', message: staysHere(1, 'made by this run: doc1…') },
       { type: 'done', result: ['doc1'] },
     ]);
   });
@@ -819,7 +819,7 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     tell({ type: 'job', job: job('w') });
     await settle();
     expect(said).toEqual([
-      { type: 'log', message: STAYS_HERE },
+      { type: 'log', message: staysHere(2, 'made by this run: doc1…, doc2…') },
       { type: 'done', result: ['doc1', 'doc2'] },
     ]);
   });

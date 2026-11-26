@@ -173,7 +173,8 @@ that one machine serves.
     reaching the sync server once it does. browser-run check 40 shows it on the stand-in page
     (whose site Repo is 2.6.0-rabbit.1, which says when it is connected and reports the server's
     heads); on keyhive's build, where the members it uses may be missing, the list falls back to
-    `navigator.onLine` (which stays true when only DNS fails) and to ten minutes of trying.
+    `navigator.onLine` (which stays true when only DNS fails) to try, counts no time on that, and
+    is bounded only by its cap of 200.
   - *What the page writes itself with no network.* The list holds only what runs wrote. A
     document the page makes or changes with no network, and closes before the network returns,
     is not sent when it does either, until something opens it (check 40's control shows it on the

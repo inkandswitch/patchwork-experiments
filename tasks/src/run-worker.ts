@@ -441,9 +441,9 @@ export const RESYNC_EVERY_MS = 10_000;
 /** How often to look again without a report: this Repo's heads can come to equal a report already heard (a change from the server arriving after its report). */
 const LOOK_AGAIN_MS = 250;
 
-/** Said once in a run's log when what it wrote cannot be sent now. */
-export const STAYS_HERE =
-  'Not connected to the sync server: what this run wrote stays on this machine, and is sent only if this worker is still running when it connects.';
+/** Said once in a run's log when what it wrote cannot be sent now: how many documents, and which kind. */
+export const staysHere = (of: number, which = '') =>
+  `Not connected to the sync server: what this run wrote stays on this machine (${of} documents${which ? `: ${which}` : ''}), and is sent only if this worker is still running when it connects.`;
 /** Said in a run's log when the server has not acknowledged everything by REACH_LIMIT_MS. */
 export const notReached = (left: number, of: number, which = '') =>
   `${left} of the ${of} documents this run wrote had not reached the sync server after ${REACH_LIMIT_MS / 1000} s${which ? ` (${which})` : ''}.`;
@@ -573,8 +573,13 @@ function reachServer(
   if (changed().size === 0) {
     return null;
   }
+  /** That what the run wrote stays here: how many, and which kind. */
+  const stayingHere = () => {
+    const ids = [...changed().keys()];
+    return staysHere(ids.length, whichLeft(ids, had, input));
+  };
   if (!reports) {
-    log(STAYS_HERE);
+    log(stayingHere());
     return null;
   }
   const server = repo as unknown as ServerRepo;
@@ -592,7 +597,7 @@ function reachServer(
       peers = await connectedPeers();
     }
     if (peers.size === 0) {
-      log(STAYS_HERE);
+      log(stayingHere());
       return;
     }
     const left = () =>

@@ -3,8 +3,10 @@
 // cases: a list kept across a reload; nothing done while the server cannot
 // be reached; each listed document found once it can be, and taken off once
 // the server reports its heads, a report heard before the listing too; the
-// bound for one never reported; what starts a look (the pool's start, the
-// Repo connecting, the browser online, the interval); the list's size; a
+// bound for one never reported, counted only while the server is reachable
+// by the Repo's word, across pages, never on the browser's word alone, and
+// at most PASS_MS between two looks; what starts a look (the pool's start,
+// the Repo connecting, the browser online, the interval); the list's size; a
 // Repo that cannot say whether it is connected; and nothing after the stop.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,6 +56,11 @@ class StandInRepo {
   connect() {
     this.connected = true;
     this.emit('subduction-connection', { connected: true });
+  }
+  /** The Repo loses the server. */
+  disconnect() {
+    this.connected = false;
+    this.emit('subduction-connection', { connected: false });
   }
 }
 
@@ -108,7 +115,7 @@ describe('the list of what runs wrote', () => {
     await vi.advanceTimersByTimeAsync(PASS_MS * 3);
     expect(repo.asked).toEqual([]);
     expect(listed()).toEqual(['a']);
-    expect(readUnsent(store).a.since).toBeUndefined();
+    expect(readUnsent(store).a.tried).toBeUndefined();
   });
 
   it('once the Repo connects, finds each listed document, and takes it off once the server reports the page\'s heads', async () => {
@@ -196,6 +203,97 @@ describe('the list of what runs wrote', () => {
     repo.connect();
     await tick();
     expect(listed()).toEqual(['a']);
+    repo.report('a');
+    await tick();
+    expect(listed()).toEqual([]);
+  });
+
+  it('tried once, then cut off for longer than TRY_MS and the page closed: the next page finds it and keeps it listed', async () => {
+    repo.connected = true;
+    repo.stored.add('a');
+    const unsent = new Unsent(repo, store);
+    const stop = unsent.start();
+    unsent.remember(['a']);
+    await tick();
+    expect(repo.asked).toEqual(['a']);
+    // the network goes before the server has reported it; the page is closed
+    repo.disconnect();
+    stop();
+    await vi.advanceTimersByTimeAsync(TRY_MS + PASS_MS);
+    // a new page, with the network
+    const next = new StandInRepo();
+    next.connected = true;
+    next.stored.add('a');
+    stops.push(new Unsent(next, store).start());
+    await tick();
+    expect({ asked: next.asked, listed: listed() }).toEqual({ asked: ['a'], listed: ['a'] });
+  });
+
+  it("a Repo that cannot say whether it is connected never lets an entry go by time: the browser's word, true though cut off, counts no time", async () => {
+    const cutOff = { handles: {}, find: vi.fn(async () => ({})) };
+    const first = new Unsent(cutOff, store);
+    const stop = first.start();
+    first.remember(['a']);
+    await vi.advanceTimersByTimeAsync(TRY_MS * 3);
+    stop();
+    expect(listed()).toEqual(['a']);
+    const online = { handles: {}, find: vi.fn(async () => ({})) };
+    stops.push(new Unsent(online, store).start());
+    await vi.advanceTimersByTimeAsync(TRY_MS * 3);
+    expect({ asked: online.find.mock.calls.length, listed: listed() }).toEqual({ asked: 1, listed: ['a'] });
+  });
+
+  it('the time tried adds up across pages, only while the Repo says it is reachable', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    repo.connected = true;
+    repo.stored.add('a');
+    const first = new Unsent(repo, store);
+    const stopFirst = first.start();
+    first.remember(['a']);
+    await vi.advanceTimersByTimeAsync(TRY_MS / 2);
+    expect(readUnsent(store).a.tried).toBe(TRY_MS / 2);
+    // a drop and a return between two looks: the count starts afresh at the next look
+    repo.disconnect();
+    repo.connect();
+    await tick();
+    expect(readUnsent(store).a.tried).toBe(TRY_MS / 2);
+    stopFirst();
+    // closed for an hour, then a new page
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    stops.push(new Unsent(repo, store).start());
+    await tick();
+    expect(readUnsent(store).a.tried).toBe(TRY_MS / 2);
+    await vi.advanceTimersByTimeAsync(TRY_MS / 2 - PASS_MS);
+    expect(listed()).toEqual(['a']);
+    expect(warn).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(PASS_MS);
+    expect(listed()).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('a jump of the clock between two looks (a sleep the Repo has not noticed) adds at most PASS_MS', async () => {
+    let now = 0;
+    repo.connected = true;
+    repo.stored.add('a');
+    const unsent = started(new Unsent(repo, store, () => now));
+    unsent.remember(['a']);
+    await tick();
+    expect(readUnsent(store).a.tried).toBe(0);
+    now += 24 * 60 * 60_000;
+    await unsent.pass();
+    expect(readUnsent(store).a.tried).toBe(PASS_MS);
+    expect(listed()).toEqual(['a']);
+  });
+
+  it("a server's report does not read the store: the listed ids are kept in memory", async () => {
+    repo.connected = true;
+    repo.stored.add('a');
+    const unsent = started();
+    unsent.remember(['a']);
+    await tick();
+    const read = vi.spyOn(store, 'read');
+    for (let i = 0; i < 50; i++) repo.report(`other${i}`, ['x']);
+    expect(read).not.toHaveBeenCalled();
     repo.report('a');
     await tick();
     expect(listed()).toEqual([]);

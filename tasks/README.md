@@ -418,8 +418,13 @@ site's Repo, which then syncs it. A document the server has not reported after t
 trying with the server reachable is let go, said in the console (it stays in the browser, and is
 sent when something opens it); at most 200 are listed, the newest. Nothing waits on this: a run's
 report never depends on it. Whether the server can be reached is the Repo's word
-(`connectedSubductionPeerIds`), or the browser's (`navigator.onLine`) for a Repo that cannot say;
-a Repo with no `subduction-remote-heads` event keeps each listed document open for the ten minutes.
+(`connectedSubductionPeerIds`), or the browser's (`navigator.onLine`) for a Repo that cannot say.
+The ten minutes are counted per document, in this page and earlier ones together, only between two
+looks that both found the server reachable by the Repo's own word, and at most 10 s between two
+looks; a look that finds it unreachable, the Repo saying it has disconnected, or the page's pool
+stopping starts the count afresh at the next look. So time cut off, or with the page closed, never
+counts. On the browser's word alone no time is counted: with a Repo that cannot say whether it is
+connected, nothing is let go by time, and the cap of 200 is the list's only bound.
 (The page lists what it saved whether or not the server could be reached then: the simpler rule,
 and the one that also covers a network lost, or a page reloaded, a moment after the save.)
 
