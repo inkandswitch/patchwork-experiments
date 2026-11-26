@@ -242,6 +242,35 @@ describe("the composer", () => {
     expect(stoppable((d) => d.turns.push(makeTurn("assistant", [noticeBlock(STOP.error, "failed")])))).toBe(false)
   })
 
+  // Seen live: right after Stop the line said "Working on this browser…" with
+  // Stop again, for as long as the queue still said the task ran.
+  it("a stop in force wins over what the queue says of the task, in the line and in Stop, for every place the queue may say it is", () => {
+    const pool = "pool-a"
+    const QUEUE_SAYS = [
+      { state: "running", runs: [{ id: "r1", pool, start: 1 }] },
+      { state: "running", runs: [{ id: "r1", pool: "pool-b", start: 1 }] },
+      { state: "stopping", runs: [{ id: "r1", pool, start: 1 }] },
+      { state: "waiting", runs: [] },
+      { state: "stalled", runs: [{ id: "r1", pool, start: 1 }] },
+    ]
+    const STOPS = [
+      [STOP.stopped, "Stopped by a person."],
+      [STOP.halted, "Stopped by its workflow."],
+      [STOP.error, "OpenRouter refused the API key (401). Change it in this session's settings."],
+      [STOP.budget, "Stopped: this session has spent its budget."],
+    ]
+    for (const work of QUEUE_SAYS) {
+      for (const [kind, text] of STOPS) {
+        const doc = session({}, (d) => d.turns.push(makeTurn("user", [textBlock("go")]), makeTurn("assistant", [noticeBlock(kind, text)])))
+        const shown = value(doc, { work, pool })
+        expect(shown).toMatchObject({ work: "none", canStop: false, hint: "" })
+      }
+      // Once something is said after the stop, the queue is heard again.
+      const spoken = session({}, (d) => d.turns.push(makeTurn("assistant", [noticeBlock(STOP.stopped, "Stopped by a person.")]), makeTurn("user", [textBlock("again")])))
+      expect(value(spoken, { work, pool }).canStop).toBe(true)
+    }
+  })
+
   it("says what a message to a step that takes none straight will be", () => {
     expect(value(session()).placeholder).toBe(PLACEHOLDER)
     const done = { role: "step", standing: { steer: false, reopen: true, later: [], label: "done" } }

@@ -10,7 +10,8 @@ import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
 import { STOP, stopOf } from "../session/status.js"
 import { isOwn } from "../kernel/own-changes.js"
 import { HEADS_WAIT_MS } from "../kernel/burst.js"
-import { askWork, takeOver, stop, forget, workKey } from "./ask.js"
+import { askWork, takeOver, stop, forget, workKey, followWork, failedAskOf, CANCELLED } from "./ask.js"
+import { doWork } from "../host/task-client.js"
 
 await initSubduction()
 
@@ -271,5 +272,49 @@ describe("askWork", () => {
     expect(await stop(repo, h.url, { client: s.client, author: "automerge:person" })).toBe(true)
     expect(stopOf(h.doc())?.kind).toBe(STOP.stopped)
     expect(s.asks).toEqual([["stop", repo, `agent:${h.url}`]])
+  })
+})
+
+// Seen live: after a Stop, the next message first said "The work could not be
+// asked for: The task was cancelled. …" before it worked.
+describe("a task that ended cancelled is not an ask that failed", () => {
+  it("the task client's own cancellation is the one this package knows", async () => {
+    const repo = new Repo({ network: [] })
+    const err = await doWork(repo, { importUrl: IMPORT, key: "agent:automerge:made-up", input: {} }, { signal: AbortSignal.abort() }).catch((e) => e)
+    expect(err.message).toBe(CANCELLED)
+  })
+
+  it("Stop while the ask waits: nothing is said, and the next message asks as any message does", async () => {
+    const repo = new Repo({ network: [] })
+    const h = session(repo)
+    const s = standIn()
+    const told = []
+    const unfollow = followWork(repo, h.url, (view, failed) => told.push(failed), { client: s.client })
+    const asking = askWork(repo, h.url, optsOf(s.client))
+    await flush()
+    expect(s.asks).toHaveLength(1)
+    await stop(repo, h.url, { client: s.client, author: "automerge:person" })
+    s.show({ state: "cancelled", runs: [{ id: "run-1", end: 2 }], input: { heads: s.asks[0][1].input.heads } })
+    s.fail(0, new Error(`${CANCELLED}.`))
+    expect(await asking).toEqual({ asked: true, outcome: "cancelled" })
+    expect(failedAskOf(h.url)).toBe(null)
+
+    h.change((d) => d.turns.push(makeTurn("user", [textBlock("go on")])))
+    askWork(repo, h.url, optsOf(s.client))
+    await flush()
+    expect(s.asks.filter((a) => a[0] !== "stop")).toHaveLength(2)
+    expect(told.every((failed) => failed == null)).toBe(true)
+    unfollow()
+  })
+
+  it("any other rejection is still said", async () => {
+    const repo = new Repo({ network: [] })
+    const h = session(repo)
+    const s = standIn()
+    const asking = askWork(repo, h.url, optsOf(s.client))
+    await flush()
+    s.fail(0, new Error("The task failed"))
+    expect((await asking.catch((e) => e)).message).toBe("The task failed")
+    expect(failedAskOf(h.url)).toBe("The task failed")
   })
 })
