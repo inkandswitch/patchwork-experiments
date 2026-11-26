@@ -1822,3 +1822,21 @@ leaves `running` or it stops, and stops when the last view, or the session
 whose workflow tool started it, lets go. The field tables, the list of what
 clears `burst`, TOOLS.md's ctx table and comments still naming the deleted
 runners were brought in line with the code; retireEarlier says why it is kept.
+
+## 2026-11-26: the task system's step 5, no work in the page
+
+The task client's doWork (kit v18) now always asks the person's own queue, from
+any tab, and never runs the task's code in the page; it listens for no pool
+before asking. A tab that does not hold its browser's pool never heard a pool
+through its own Repo, so the old client ran its work in the page after 3 s, and
+a burst cannot run in a page. A failed ask used to listen, through this page's
+Repo, for a pool serving the queue, and ask again when one was heard
+(`hearPools`, with the client's `served` in askWork's client). doWork no longer
+fails for want of a pool heard: what it rejects for is no account open, nowhere
+to keep the queues, the list of queues not on this device within its bound, or
+a task that threw, and hearing a pool changes none of them. So `hearPools` and
+`served` went with their tests, and a failed ask is asked again on the next
+change or when the network is back. The line under the composer says, while a
+task waits, when this browser takes no part in running it because the tasks
+package is not installed here, using the client's `poolHere()`, worked out
+again when the tasks package puts a pool host in the page.

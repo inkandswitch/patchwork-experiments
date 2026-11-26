@@ -50,6 +50,7 @@ beforeEach(() => {
   resetRunners()
   document.body.replaceChildren()
   localStorage.clear()
+  delete globalThis.patchworkTasks
 })
 
 describe("the render contract", () => {
@@ -261,6 +262,8 @@ describe("asking for the work, and the line under the composer", () => {
     const { watch } = standIns()
     localStorage.setItem("patchwork-agent:key:openrouter", "sk-or-test")
     localStorage.setItem("patchwork-tasks-pool-id", "pool-here")
+    // The tasks package has put a pool host in this page.
+    globalThis.patchworkTasks = { poolHosts: { 1: {} }, hostsChanged: new EventTarget() }
     const handle = fakeHandle()
     const { element, cleanup } = mount(handle)
     const hint = () => element.querySelector(".agent-hint").textContent
@@ -273,6 +276,26 @@ describe("asking for the work, and the line under the composer", () => {
     watch.say({ state: "running", runs: [{ id: "r1", pool: "pool-there", start: 1 }] })
     expect(hint()).toBe("Working on another device… Enter to steer, Stop to interrupt")
     cleanup()
+  })
+
+  it("where the tasks package has put no pool host, waiting says only another device can take it, and says again once one is put here", async () => {
+    const { watch } = standIns()
+    localStorage.setItem("patchwork-agent:key:openrouter", "sk-or-test")
+    const handle = fakeHandle()
+    const { element, cleanup } = mount(handle)
+    const hint = () => element.querySelector(".agent-hint").textContent
+    watch.say({ state: "waiting", runs: [] })
+    expect(hint()).toBe("Waiting for another of your devices to take it: the tasks package is not installed in this browser")
+    // The package's host comes: it says so on hostsChanged, as pool-host.ts does, with no news of the task.
+    globalThis.patchworkTasks.poolHosts = { 1: {} }
+    globalThis.patchworkTasks.hostsChanged.dispatchEvent(new Event("change"))
+    expect(hint()).toBe("Waiting for a device to take it")
+    const line = element.querySelector(".agent-hint")
+    cleanup()
+    // A closed view hears no more.
+    globalThis.patchworkTasks.poolHosts = {}
+    globalThis.patchworkTasks.hostsChanged.dispatchEvent(new Event("change"))
+    expect(line.textContent).toBe("Waiting for a device to take it")
   })
 
   it("a mark nobody here hears is someone else's: Take over clears it and asks", async () => {

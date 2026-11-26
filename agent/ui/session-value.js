@@ -16,7 +16,10 @@
  *                   (runners/ask.js followWork), or null
  *     pool          this browser's pool id (the tasks package's POOL_ID_KEY),
  *                   or null
- *     pageTool      the tool of the parked call this page runs now, or null
+ *     poolHere      whether this page takes part in its browser's pool: the
+ *                   task client's poolHere(), false where the tasks package
+ *                   is not installed; only false says so
+ *     pageTool     the tool of the parked call this page runs now, or null
  *     pageClaim     the id this page's follower wrote into `burst` to take a
  *                   parked call (runners/page.js follow `claim()`), or null
  *     voiceStatus   what dictation is doing, or null when it is off
@@ -67,12 +70,15 @@ export const HINTS = [
   },
   { name: "here", when: (f) => f.work === "here", says: () => "Working on this browser… Enter to steer, Stop to interrupt" },
   { name: "elsewhere", when: (f) => f.work === "elsewhere", says: () => "Working on another device… Enter to steer, Stop to interrupt" },
+  // Without the tasks package this browser runs none of it: only another of
+  // the person's devices serving their queue can take it.
+  { name: "waiting-elsewhere", when: (f) => f.work === "waiting" && !f.poolHere, says: () => "Waiting for another of your devices to take it: the tasks package is not installed in this browser" },
   { name: "waiting", when: (f) => f.work === "waiting", says: () => "Waiting for a device to take it" },
   // An ask that failed is said while there is work, until the next ask (runners/ask.js).
   {
     name: "failed",
     when: (f) => f.failed != null,
-    says: (f) => `The work could not be asked for: ${String(f.failed).replace(/[.\s]+$/, "")}. Asks again on the next change, when a device is heard, or when the network is back`,
+    says: (f) => `The work could not be asked for: ${String(f.failed).replace(/[.\s]+$/, "")}. Asks again on the next change, or when the network is back`,
   },
   { name: "parked", when: (f) => f.status === STATUS.parked, says: (f) => `Waiting for an open page to run ${f.parked ?? "a page tool"}` },
   { name: "running", when: (f) => f.status === STATUS.running, says: () => "Working… Enter to steer, Stop to interrupt" },
@@ -133,6 +139,7 @@ export function hintFacts(doc, local) {
     outdated: unknownBlocks(doc).length > 0,
     hasKey: !!local.hasKey,
     work: stopped ? null : workOf(local.work ?? null, local.pool ?? null),
+    poolHere: local.poolHere !== false,
     foreign: !here && foreignBurst(doc, local.work ?? null),
     pageTool,
     claimed,

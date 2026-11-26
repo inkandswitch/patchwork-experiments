@@ -10,14 +10,23 @@ One task is one burst of one session (`kernel/burst.js`): from "there is work"
 until the session waits on a person, has nothing to do, is stopped, or has a
 call only a page can run. Whoever writes work asks for it (`runners/ask.js`
 askWork, through `runners/page.js` askFor) under the key `agent:<session>` on
-their own queue, and a pool takes it: a browser pool's run worker, or a Node
-host's thread serving the queue. `runners/session-task.js` is the task's entry.
+their own queue, from any tab, and a pool takes it: that browser's pool, in
+the run worker of whichever tab holds it, or another of the person's machines
+serving the queue (a browser, or a Node host's thread). No burst runs in the
+page that asks. `runners/session-task.js` is the task's entry.
 
+- With no network it is the same: the queue and the session are written in
+  this browser, its pool takes the task, and the burst runs up to its model
+  request, which waits for the network (SESSION.md, `reconnecting`).
+- Where the tasks package is not installed in the browser, the work is still
+  asked of the person's queue and waits there for another of their machines;
+  the line under the composer says so.
 - Asking under a key whose task has not ended is asking once, so any number of
   views and writers may ask; a re-ask needs heads no ended task saw.
-- An ask that fails is said under the composer, in words without urls, and
-  asked again on the next change, when a pool is heard, or when the network
-  is back, within the same rule.
+- An ask that fails (no account open, nowhere to keep the queues, the list of
+  queues not on this device in time, a task that threw) is said under the
+  composer, in words without urls, and asked again on the next change or when
+  the network is back, within the same rule.
 - The session holds no lease. A run writes only once the task system says it
   holds the task, only while its signal stands, never under a stop; it marks
   the session `burst: { run }` (SESSION.md, *The burst mark*).
@@ -110,6 +119,7 @@ Add that URL to your account's module settings (the Packages tool, or
 A model key is kept in the account's settings (or the browser's storage) and
 put in each task's input by the page that asks; it never enters a session.
 Work is asked of the person's own queue, which the tasks package makes on
-first need, and runs in that browser's pool. `web_search` needs a Brave Search
+first need, and runs in that browser's pool or on another of their machines
+serving it. `web_search` needs a Brave Search
 API key and, in a browser, the fetch relay (`fetch-relay/` beside this
 package).

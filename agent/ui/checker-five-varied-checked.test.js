@@ -3,8 +3,8 @@
  * checker's case varied once: a plan reopened twice and three workflow views
  * (ui/workflow-view.js joining the driver whenever the plan runs); the
  * orchestrator followed only for its channel (runners/page.js follow
- * `channel`); a session that can never be found with two pools heard, over a
- * simulated minute, and a failure whose words hold a web address, a file url
+ * `channel`); a session that can never be found, over a simulated minute,
+ * and a failure whose words hold a web address, a file url
  * and a document url (runners/ask.js).
  * Then two of the three it found, fixed: a view that holds its plan's driver
  * already does not join it on every change, and a document url leaves the
@@ -26,10 +26,6 @@ await initSubduction()
 
 /** Made up. */
 const QUEUE = "automerge:3vQm8zKXyT1pRwNbHc4LdFsEaGj"
-const POOLS = [
-  { pool: "pool-a", name: "", slots: 1, busy: 0, has: [] },
-  { pool: "pool-b", name: "", slots: 1, busy: 0, has: [] },
-]
 
 let used = []
 beforeEach(() => {
@@ -253,8 +249,8 @@ describe("a workflow view open on a running plan, through a burst of plan change
   })
 })
 
-describe("a session that can never be found, with two pools heard", () => {
-  it("asks once over a simulated minute, however often the pools are heard", async () => {
+describe("a session that can never be found", () => {
+  it("looks once over a simulated minute, and asks nothing", async () => {
     vi.useFakeTimers()
     let finds = 0
     const repo = {
@@ -265,30 +261,19 @@ describe("a session that can never be found, with two pools heard", () => {
     }
     const url = "automerge:2Lh9xQpR7sWmTnVbYc3KdJfGeAz"
     used.push(url)
-    const listeners = []
     const client = {
       doWork: vi.fn(async () => ({ outcome: "idle" })),
       watchWork: () => () => {},
       stopWork: async () => false,
       ownQueue: async () => QUEUE,
-      served: vi.fn((r, queue, onChange) => {
-        const l = { onChange, stopped: false }
-        listeners.push(l)
-        setTimeout(() => !l.stopped && onChange(POOLS), 0)
-        return () => (l.stopped = true)
-      }),
     }
-    // The pools heard again every second.
-    const beat = setInterval(() => listeners.filter((l) => !l.stopped).forEach((l) => l.onChange(POOLS)), 1000)
     await askWork(repo, url, { client, onOnline: () => () => {} }).catch(() => {})
     await vi.advanceTimersByTimeAsync(60_000)
-    clearInterval(beat)
     expect(finds).toBe(1)
-    expect(client.served).not.toHaveBeenCalled()
     expect(client.doWork).not.toHaveBeenCalled()
   })
 
-  it("found once, then never: a counted failure asks once more for a pool, and that is all", async () => {
+  it("found once, then never: a counted failure asks nothing more by itself", async () => {
     vi.useFakeTimers()
     const real = new Repo({ network: [] })
     const handle = sessionIn(real, [makeTurn("user", [textBlock("hello")])])
@@ -300,7 +285,6 @@ describe("a session that can never be found, with two pools heard", () => {
         throw new Error("Document 4abc is unavailable")
       },
     }
-    const listeners = []
     const client = {
       doWork: vi.fn(async () => {
         throw new Error("fetch failed")
@@ -308,20 +292,11 @@ describe("a session that can never be found, with two pools heard", () => {
       watchWork: () => () => {},
       stopWork: async () => false,
       ownQueue: async () => QUEUE,
-      served: vi.fn((r, queue, onChange) => {
-        const l = { onChange, stopped: false }
-        listeners.push(l)
-        setTimeout(() => !l.stopped && onChange(POOLS), 0)
-        return () => (l.stopped = true)
-      }),
     }
-    const beat = setInterval(() => listeners.filter((l) => !l.stopped).forEach((l) => l.onChange(POOLS)), 1000)
     await askWork(repo, handle.url, { client, onOnline: () => () => {} }).catch(() => {})
     await vi.advanceTimersByTimeAsync(60_000)
-    clearInterval(beat)
     expect(client.doWork).toHaveBeenCalledTimes(1)
-    expect(client.served).toHaveBeenCalledTimes(1)
-    expect(finds).toBe(2)
+    expect(finds).toBe(1)
   })
 })
 

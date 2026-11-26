@@ -419,33 +419,15 @@ describe("why it never loops", () => {
   })
 })
 
-describe("an ask that fails is said, and asked again when it can succeed", () => {
-  /** The stand-in, with the person's own queue and the pools heard serving it, moved by hand. */
-  function withPools(client) {
-    const hearing = []
-    client.ownQueue = vi.fn(async () => QUEUE)
-    client.served = vi.fn((repo, queue, onChange, options) => {
-      const h = { queue, onChange, options, stopped: false }
-      hearing.push(h)
-      return () => (h.stopped = true)
-    })
-    /** Every listener still hearing is told these pools. */
-    client.hear = async (pools) => {
-      for (const h of hearing.filter((x) => !x.stopped)) h.onChange(pools)
-      await flush()
-    }
-    client.hearing = () => hearing.filter((x) => !x.stopped).length
-    return client
-  }
-
-  /** The current task fails without being taken, as a run that cannot start would. */
+describe("an ask that fails is said, and asked again on the next change or when the network is back", () => {
+  /** The current task fails without being taken, as a task whose code threw at once would. */
   function failTask(client, why) {
     const task = client.tasks.at(-1)
     task.state = "failed"
     task.reject(new Error(why))
   }
 
-  it("said in words without urls; a pool heard asks again, a change and the network as always, and nothing loops", async () => {
+  it("said in words without urls; a change and the network ask again, nothing else does, and nothing loops", async () => {
     const repo = new Repo({ network: [] })
     const h = repo.create()
     h.change((d) => {
@@ -455,63 +437,46 @@ describe("an ask that fails is said, and asked again when it can succeed", () =>
     })
     used.push(h.url)
     const clock = clockOf()
-    const client = withPools(standIn())
+    const client = standIn()
+    client.ownQueue = vi.fn(async () => QUEUE)
     const online = []
     const opts = optsOf(client, clock, online)
     const said = []
     followWork(repo, h.url, (_view, failed) => said.push(failed), opts)
     expect(said).toEqual([null])
 
-    // The way the reader found: a burst run in the page, whose first look fails.
-    const fail = () =>
-      client.doWork.mockImplementationOnce(async () => {
-        throw new Error(`Invalid AutomergeUrl: 'null' while opening ${QUEUE}#abc`)
-      })
-    fail()
-    await expect(askWork(repo, h.url, opts)).rejects.toThrow(/Invalid AutomergeUrl/)
+    // doWork's own refusal, naming the list of queues by its url.
+    client.doWork.mockImplementationOnce(async () => {
+      throw new Error(`The list of your task queues could not be found (${QUEUE}#abc), so nothing was changed.`)
+    })
+    await expect(askWork(repo, h.url, opts)).rejects.toThrow(/could not be found/)
     await flush()
     const words = failedAskOf(h.url)
-    expect(words).toMatch(/^Invalid AutomergeUrl: 'null' while opening a document/)
+    expect(words).toBe("The list of your task queues could not be found (a document), so nothing was changed.")
     expect(words).not.toMatch(/automerge:|4GUzmm/)
     expect(said.at(-1)).toBe(words)
-    // The person's own queue is listened to, as doWork hears it.
-    expect(client.served).toHaveBeenCalledTimes(1)
-    expect(client.served.mock.calls[0][1]).toBe(QUEUE)
-    expect(client.served.mock.calls[0][3]).toEqual({ local: false })
 
-    // Nobody heard: nothing asked.
-    await client.hear([])
+    // Left alone, over a minute of the clock: nothing more is asked, and it is still said.
+    await clock.advance(60_000)
     expect(client.doWork).toHaveBeenCalledTimes(1)
-    // A pool heard: asked again, the second ask at these heads; the failure is no longer said.
-    await client.hear([{ pool: "pool-a", name: "", slots: 1, busy: 0, has: [] }])
-    expect(client.doWork).toHaveBeenCalledTimes(2)
-    expect(failedAskOf(h.url)).toBe(null)
-    expect(said.at(-1)).toBe(null)
-    expect(client.hearing()).toBe(0)
+    expect(failedAskOf(h.url)).toBe(words)
 
-    // It fails again: said again, and a pool heard asks nothing more at these heads.
-    failTask(client, "the pool's worker could not start")
-    await flush()
-    expect(failedAskOf(h.url)).toBe("the pool's worker could not start")
-    await client.hear([{ pool: "pool-a", name: "", slots: 1, busy: 0, has: [] }])
-    await client.hear([{ pool: "pool-b", name: "", slots: 1, busy: 0, has: [] }])
-    expect(client.doWork).toHaveBeenCalledTimes(2)
-    expect(failedAskOf(h.url)).toBe("the pool's worker could not start")
-
-    // The network coming back asks again.
+    // The network coming back asks again; the failure is no longer said.
     for (const fn of online) fn()
     await flush()
-    expect(client.doWork).toHaveBeenCalledTimes(3)
+    expect(client.doWork).toHaveBeenCalledTimes(2)
     expect(failedAskOf(h.url)).toBe(null)
-    failTask(client, "still no worker")
+    failTask(client, "the task's code threw")
     await flush()
-    expect(failedAskOf(h.url)).toBe("still no worker")
+    expect(failedAskOf(h.url)).toBe("the task's code threw")
+    await clock.advance(60_000)
+    expect(client.doWork).toHaveBeenCalledTimes(2)
 
     // A change to the session asks again.
     h.change((d) => d.turns.push(makeTurn("user", [textBlock("again")])))
     askWork(repo, h.url, opts).catch(() => {})
     await flush()
-    expect(client.doWork).toHaveBeenCalledTimes(4)
+    expect(client.doWork).toHaveBeenCalledTimes(3)
     expect(failedAskOf(h.url)).toBe(null)
   })
 
@@ -524,18 +489,17 @@ describe("an ask that fails is said, and asked again when it can succeed", () =>
       WORK.worker(d)
     })
     used.push(h.url)
-    const client = withPools(standIn())
+    const client = standIn()
     const opts = optsOf(client, clockOf())
     client.doWork.mockImplementationOnce(async () => {
-      throw new Error("no pool")
+      throw new Error("Task queues can only be kept from a Patchwork page with your account open.")
     })
     await askWork(repo, h.url, opts).catch(() => {})
-    expect(failedAskOf(h.url)).toBe("no pool")
+    expect(failedAskOf(h.url)).toBe("Task queues can only be kept from a Patchwork page with your account open.")
     // Another device answered it.
     h.change((d) => d.turns.push(makeTurn("assistant", [textBlock("hello")])))
     expect((await askWork(repo, h.url, opts)).why).toBe("no work")
     expect(failedAskOf(h.url)).toBe(null)
-    expect(client.hearing()).toBe(0)
   })
 })
 

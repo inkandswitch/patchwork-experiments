@@ -27,7 +27,7 @@ import { decide, answerQuestion } from "../kernel/loop.js"
 import { accountContext, follow, askFor, followWorkFor, stopFor, takeOverFor, letGo } from "../runners/page.js"
 import { stopSession } from "../session/recovery.js"
 import { STOP } from "../session/status.js"
-import { POOL_ID_KEY } from "../host/task-client.js"
+import { POOL_ID_KEY, poolHere } from "../host/task-client.js"
 import { workflowOf } from "../workflow/plan.js"
 import { getMount, mountForPerson, parkMount } from "../tools/checking.js"
 import { readKey, onKeyChange, connectAccountKeys } from "../providers/keys.js"
@@ -48,12 +48,24 @@ import { ensureStyles } from "./styles.js"
 ensureStyles()
 
 /** This browser's pool id, as the tasks package keeps it, or null. */
-function poolHere() {
+function poolIdHere() {
   try {
     return globalThis.localStorage?.getItem(POOL_ID_KEY) || null
   } catch {
     return null
   }
+}
+
+/**
+ * Calls `fn` whenever the tasks package puts a pool host in this page, which
+ * it says on `window.patchworkTasks.hostsChanged` (made here as the package
+ * makes it, if it has not yet). Returns how to stop.
+ */
+function onPoolHosts(fn) {
+  const tasks = (globalThis.patchworkTasks ??= {})
+  const changed = (tasks.hostsChanged ??= new EventTarget())
+  changed.addEventListener("change", fn)
+  return () => changed.removeEventListener("change", fn)
 }
 
 const el = (tag, className, text) => {
@@ -275,7 +287,8 @@ export function AgentTool(handle, element, options = {}) {
       keysSettled,
       work,
       askFailed,
-      pool: poolHere(),
+      pool: poolIdHere(),
+      poolHere: poolHere(),
       pageTool: followed?.running() ?? null,
       pageClaim: followed?.claim() ?? null,
       voiceStatus: composer.dictation.status(),
@@ -344,6 +357,9 @@ export function AgentTool(handle, element, options = {}) {
     render()
     ask()
   })
+  // Whether this page takes part in its browser's pool is read at each
+  // render, and again when the tasks package puts a pool host here.
+  const offPoolHosts = onPoolHosts(() => render())
   connectAccountKeys(element, repo).then(() => {
     keysSettled = true
     render()
@@ -356,6 +372,7 @@ export function AgentTool(handle, element, options = {}) {
     disposed = true
     handle.off("change", onChange)
     offKeys()
+    offPoolHosts()
     views.dispose()
     composer.dispose()
     workspace?.dispose()

@@ -7,8 +7,7 @@
  * The task client is the task system's (host/task-client.js, a kit copy):
  * `doWork(repo, request)`, `watchWork(repo, key, onChange)`, `stopWork(repo,
  * key)`, `ownQueue(repo)` for the queue whose url goes in the input's
- * `sensitiveDocs`, and `served(repo, queueUrl, onChange)` for the pools heard
- * serving it. A caller may hand in another as `client` (the tests'
+ * `sensitiveDocs`. A caller may hand in another as `client` (the tests'
  * stand-ins). What is asked for is this package's own runners/session-task.js,
  * at the version the asker loaded (`inSamePackage`), unless `importUrl` names
  * another.
@@ -31,12 +30,12 @@
  *
  * An ask that fails is said: followWork's listeners are told why, in words
  * without urls (document urls and web addresses alike), until the next ask
- * is made or the copy shows no work. When an ask counted at these heads
- * fails, the pools serving the person's own queue are listened to while the
- * failure is said, and the first heard asks again, as one of the two asks at
- * these heads; a change and the network coming back ask again as they
- * always do. A failure before an ask is counted (the session not found) is
- * said, and asks nothing by itself.
+ * is made or the copy shows no work. doWork asks the person's own queue
+ * whether or not any pool is heard, so it fails only for what no pool
+ * changes: no account open, nowhere to keep the queues, the list of queues
+ * not on this device within its bound, or a task that threw. A failed ask is
+ * asked again as any ask is: on the next change (a message, a steer, an
+ * answer, Take over), or when the network comes back, and by nothing else.
  *
  * A task that ended cancelled is not an ask that failed: someone stopped it
  * (a person's Stop, a workflow's halt, a cancel in the queue browser). It is
@@ -44,7 +43,7 @@
  * next change asks as any change does.
  *
  * Why it never loops: every ask needs heads no ended task saw, or is one of
- * at most two at one copy's heads, and only a counted ask listens for pools. A burst's code returns for everything it
+ * at most two at one copy's heads. A burst's code returns for everything it
  * can record, so a task that ended at the heads asked at asks nothing more.
  *
  * Besides asking when called, it judges once more when the watch sees the
@@ -64,10 +63,10 @@ import { STOP } from "../session/status.js"
 import { WHERE } from "../session/schema.js"
 import { onOnline } from "../net/network.js"
 import { Automerge, AutomergeRepo } from "../host/modules.js"
-import { doWork, watchWork, stopWork, ownQueue, served, inSamePackage } from "../host/task-client.js"
+import { doWork, watchWork, stopWork, ownQueue, inSamePackage } from "../host/task-client.js"
 
 /** The task system's own client, which asks the person's own queue. */
-export const TASK_CLIENT = Object.freeze({ doWork, watchWork, stopWork, ownQueue, served })
+export const TASK_CLIENT = Object.freeze({ doWork, watchWork, stopWork, ownQueue })
 
 /** The asker's own loaded session task, in its package and at its heads; null outside a package (tests). */
 export const SESSION_TASK = inSamePackage(import.meta.url, "runners/session-task.js")
@@ -172,13 +171,12 @@ export async function askWork(repo, sessionUrl, opts = {}) {
     const result = await client.doWork(repo, { importUrl: opts.importUrl ?? SESSION_TASK, key: workKey(sessionUrl), input })
     return { asked: true, outcome: result?.outcome ?? null }
   } catch (err) {
-    // Stopped, not failed: nothing to say, and nothing to listen for.
+    // Stopped, not failed: nothing to say.
     if (counted && wasCancelled(err)) {
       said(entry, null)
       return { asked: true, outcome: "cancelled" }
     }
     const why = withoutUrls(String(err?.message ?? err))
-    if (counted) hearPools(entry)
     said(entry, why)
     throw new Error(why)
   }
@@ -242,7 +240,6 @@ export function forget(sessionUrl) {
   sessions.delete(bare(sessionUrl))
   entry.unwatch?.()
   entry.unlisten?.()
-  entry.unhear?.()
   if (entry.timer != null) entry.clearTimer(entry.timer)
 }
 
@@ -256,7 +253,6 @@ function entryFor(repo, sessionUrl, opts) {
     opts,
     view: null,
     failed: null, // why the last ask failed, or null
-    unhear: null, // stops listening for the pools, while a failure is said
     listeners: new Set(),
     asked: { at: null, count: 0 },
     behind: null, // { at, since }: the last task's heads the copy has waited for
@@ -293,45 +289,11 @@ function tell(entry) {
   }
 }
 
-/**
- * Say why the last ask failed (`why`), or that nothing has (null). Once
- * nothing is said, the pools are not listened to (hearPools).
- */
+/** Say why the last ask failed (`why`), or that nothing has (null). */
 function said(entry, why) {
-  if (!why) entry.unhear?.()
   if (entry.failed === why) return
   entry.failed = why
   tell(entry)
-}
-
-/** Listen for a pool serving the person's own queue; the first heard asks again, once. */
-function hearPools(entry) {
-  const client = clientOf(entry.opts)
-  if (entry.unhear || typeof client.served !== "function" || typeof client.ownQueue !== "function") return
-  let done = false
-  let off = null
-  const stop = () => {
-    if (done) return
-    done = true
-    if (entry.unhear === stop) entry.unhear = null
-    off?.()
-  }
-  entry.unhear = stop
-  Promise.resolve()
-    .then(() => client.ownQueue(entry.repo))
-    .then((queue) => {
-      if (done || typeof queue !== "string") return
-      const heard = (pools) => {
-        if (done || !pools?.length) return
-        stop()
-        entry.again()
-      }
-      // As doWork hears them: only what reaches this Repo.
-      const unserve = client.served(entry.repo, queue, heard, { local: false })
-      if (done) unserve?.()
-      else off = unserve
-    })
-    .catch(() => {})
 }
 
 /**

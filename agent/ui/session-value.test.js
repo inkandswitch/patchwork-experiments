@@ -22,7 +22,7 @@ const value = (doc, local = {}) => sessionValue(doc, { ...LOCAL, ...local })
 
 describe("the hint line", () => {
   // Facts under which no row applies, and for each row what makes it apply.
-  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, work: null, foreign: false, pageTool: null, claimed: null, parked: null, asking: 0, pending: 0, status: STATUS.idle, reason: null, failed: null }
+  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, work: null, poolHere: true, foreign: false, pageTool: null, claimed: null, parked: null, asking: 0, pending: 0, status: STATUS.idle, reason: null, failed: null }
   const ROWS = [
     ["voice", { voice: "Listening…" }, "Listening…"],
     ["earlier", { version: "earlier" }, "This session is from an earlier version of the agent and does not run. Start a new one to carry on."],
@@ -37,8 +37,9 @@ describe("the hint line", () => {
     ["reconnecting", { status: STATUS.reconnecting, reason: "offline" }, "Waiting for the network; carries on when it is back (offline)"],
     ["here", { work: "here" }, "Working on this browser… Enter to steer, Stop to interrupt"],
     ["elsewhere", { work: "elsewhere" }, "Working on another device… Enter to steer, Stop to interrupt"],
+    ["waiting-elsewhere", { work: "waiting", poolHere: false }, "Waiting for another of your devices to take it: the tasks package is not installed in this browser"],
     ["waiting", { work: "waiting" }, "Waiting for a device to take it"],
-    ["failed", { failed: "Invalid AutomergeUrl: 'a document'." }, "The work could not be asked for: Invalid AutomergeUrl: 'a document'. Asks again on the next change, when a device is heard, or when the network is back"],
+    ["failed", { failed: "Invalid AutomergeUrl: 'a document'." }, "The work could not be asked for: Invalid AutomergeUrl: 'a document'. Asks again on the next change, or when the network is back"],
     ["parked", { status: STATUS.parked, parked: "view_mount" }, "Waiting for an open page to run view_mount"],
     ["running", { status: STATUS.running }, "Working… Enter to steer, Stop to interrupt"],
   ]
@@ -74,11 +75,14 @@ describe("the hint line", () => {
     }
     expect(exclusive).toEqual([
       "no-key-elsewhere+here",
+      "no-key-elsewhere+waiting-elsewhere",
       "no-key-elsewhere+waiting",
       "reconnecting+parked",
       "reconnecting+running",
       "here+elsewhere",
+      "here+waiting-elsewhere",
       "here+waiting",
+      "elsewhere+waiting-elsewhere",
       "elsewhere+waiting",
       "parked+running",
     ])
@@ -109,6 +113,7 @@ describe("the hint line", () => {
       outdated: true,
       hasKey: false,
       work: "elsewhere",
+      poolHere: true,
       foreign: false,
       pageTool: null,
       claimed: null,
@@ -119,6 +124,16 @@ describe("the hint line", () => {
       reason: "offline",
       failed: null,
     })
+  })
+
+  it("says this browser takes no part only when the view says poolHere is false", () => {
+    const doc = session({}, (d) => d.turns.push(makeTurn("user", [textBlock("hi")])))
+    const waiting = { state: "waiting", runs: [] }
+    expect(value(doc, { work: waiting }).hint).toBe("Waiting for a device to take it")
+    expect(value(doc, { work: waiting, poolHere: true }).hint).toBe("Waiting for a device to take it")
+    expect(value(doc, { work: waiting, poolHere: false }).hint).toBe("Waiting for another of your devices to take it: the tasks package is not installed in this browser")
+    // Taken by a pool, it says where, as anywhere.
+    expect(value(doc, { work: { state: "running", runs: [{ id: "r1", pool: "pool-b", start: 1 }] }, poolHere: false }).hint).toMatch(/^Working on another device/)
   })
 
   it("says a failed ask only while the copy shows work a run can do", () => {
