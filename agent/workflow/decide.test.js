@@ -8,7 +8,17 @@
 
 import { describe, it, expect } from "vitest"
 import { decide, SCOPE_REMOVED, UNKNOWN_FAILURE, sumUsage } from "./decide.js"
-import { initPlan, STEP, PLAN } from "./plan.js"
+import { initPlan, STEP, PLAN, tell, stoppedKey } from "./plan.js"
+import { sessionOutcome, untold, describeProgress } from "./driver.js"
+import { waitingIn } from "./waiting.js"
+import { initSession } from "../session/schema.js"
+import { makeTurn, textBlock } from "../session/blocks.js"
+import { STOP, statusOf } from "../session/status.js"
+import { stopSession } from "../session/recovery.js"
+import { say } from "../kernel/loop.js"
+import { memoryStore } from "../kernel/store.js"
+
+const handleOf = (doc) => memoryStore(doc)
 
 const step = (id, over = {}) => ({ id, title: id, prompt: "p", why: "w", where: "worker", tier: "fast", after: [], ...over })
 
@@ -171,6 +181,54 @@ describe("decide", () => {
     const before = JSON.stringify(plan)
     decide(plan, { sessions: { "automerge:a": session({ outcome: { state: "done", result: "A" } }) }, orchestratorCost: 1 }, 1)
     expect(JSON.stringify(plan)).toBe(before)
+  })
+
+  /** A step's session, read the way the driver reads it (driver.js observe). */
+  const seenAs = (doc) => {
+    const outcome = sessionOutcome(doc)
+    return session({ status: statusOf(doc), outcome, waiting: outcome.waiting ? waitingIn(doc) : undefined })
+  }
+  const sessionDoc = (...turns) => {
+    const doc = {}
+    initSession(doc, {})
+    doc.turns = [makeTurn("user", [textBlock("go")]), ...turns]
+    return doc
+  }
+
+  it("a step a person stopped is news, told once, and not done: it waits for a word", () => {
+    // Stopped while a runner had it, part-way through a reply.
+    const doc = sessionDoc(makeTurn("assistant", [textBlock("half of it")]))
+    doc.lease = { runner: "tab-a", generation: 1, at: 1 }
+    expect(stopSession(doc, STOP.stopped, null, "automerge:person")).toBe(true)
+    const at = doc.turns.at(-1).at
+    const plan = planOf([running("a"), step("b", { after: ["a"] })])
+    const actions = decide(plan, { sessions: { "automerge:a": seenAs(doc) } }, 7)
+    expect(types(actions)).not.toContain("finish")
+    expect(types(actions)).not.toContain("settle")
+    const { waiting } = actions.find((a) => a.type === "waiting")
+    expect(waiting).toEqual([{ stepId: "a", kind: "stopped", at }])
+
+    // Told once: after it is told, the same stop is no news; a later stop is.
+    expect(untold(plan, waiting).keys).toEqual([stoppedKey("a", at)])
+    tell(plan, stoppedKey("a", at))
+    expect(untold(plan, waiting).keys).toEqual([])
+    expect(untold(plan, [{ stepId: "a", kind: "stopped", at: at + 1 }]).keys).toEqual([stoppedKey("a", at + 1)])
+    expect(describeProgress(plan, [], waiting, [], { stopped: waiting })).toMatch(/## Stopped by the person: a \(a\)\n.*workflow_stop/)
+
+    // A word carries it on: running, and no longer stopped.
+    say(handleOf(doc), "carry on")
+    expect(sessionOutcome(doc)).toEqual({ state: "running" })
+  })
+
+  it("a step halted, then reopened, is not finished by a driver whose copy has not yet seen the reopening", () => {
+    // The plan says running again (continue); the session still shows the halt.
+    const doc = sessionDoc(makeTurn("assistant", [textBlock("the old result")]))
+    stopSession(doc, STOP.halted, "reopened: something it is built on changed")
+    const plan = planOf([running("a", { reopen: null, previous: [{ status: STEP.done }] })])
+    const actions = decide(plan, { sessions: { "automerge:a": seenAs(doc) } }, 7)
+    expect(types(actions)).not.toContain("finish")
+    expect(types(actions)).not.toContain("settle")
+    expect(actions.find((a) => a.type === "waiting")).toEqual({ type: "waiting", waiting: [], outOfBudget: [] })
   })
 
   it("sums what the step sessions cost, with a cost only once one is known", () => {

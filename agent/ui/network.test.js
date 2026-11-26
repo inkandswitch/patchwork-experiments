@@ -11,17 +11,19 @@
  *      workflow step in that state is still running;
  *   5. the runner tries again on the network's return, or after a backoff,
  *      and not on every poll in between;
- *   6. a person can stop it, and then nothing is left to run.
+ *   6. a person can stop it, and then nothing is left to run: what waited for
+ *      the network is closed, not run, by the message that carries it on.
  */
 import { describe, it, expect, vi } from "vitest"
-import { run, OUTCOME } from "../kernel/loop.js"
+import { run, say, OUTCOME } from "../kernel/loop.js"
 import { SessionRunner, needsWork } from "../kernel/runner.js"
 import { memoryStore } from "../kernel/store.js"
 import { initSession, STATUS, CALL, _resetIds } from "../session/schema.js"
 import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { findCall, findResult } from "../session/calls.js"
-import { stopReconnecting, STOPPED_OFFLINE } from "../session/recovery.js"
+import { stopSession, NOT_RUN } from "../session/recovery.js"
+import { STOP } from "../session/status.js"
 import { Interruption, isInterruption, networkDown, asInterruption, reconnectDelay, onOnline, RECONNECT_MAX_MS } from "../net/network.js"
 import { relayFetch } from "../net/relay.js"
 import { webSearch } from "../tools/web.js"
@@ -212,25 +214,38 @@ describe("the loop, when the network goes", () => {
     expect(blocks(store).at(-1)).toMatchObject({ type: "notice", kind: "error", text: expect.stringMatching(/^OpenRouter 401/) })
   })
 
-  it("stopped by the person while a call waits: the call is answered, the session says so once, and nothing is left to run", async () => {
+  it("stopped by the person while a call waits: the session says so once, nothing is left to run, and the call is closed by the next message, not run", async () => {
     const store = session([makeTurn("user", [textBlock("fetch")])])
-    const tools = [{ id: "web_fetch", where: "worker", risk: "read", execute: async () => { throw new Interruption("no relay") } }]
-    await go(store, scripted([[{ type: "call", id: "c1", name: "web_fetch", input: {} }]]), tools)
+    let fetches = 0
+    const tools = [{ id: "web_fetch", where: "worker", risk: "read", execute: async () => { fetches++; throw new Interruption("no relay") } }]
+    await go(store, scripted([[{ type: "call", id: "c1", name: "web_fetch", input: {} }], [{ type: "text", delta: "Fine." }]]), tools)
     expect(settled(store.doc())).toBe(STATUS.reconnecting)
 
     let stopped
-    store.change((d) => (stopped = stopReconnecting(d)))
+    store.change((d) => (stopped = stopSession(d, STOP.stopped, null, "automerge:person")))
     expect(stopped).toBe(true)
-    const doc = store.doc()
-    expect(String(findResult(doc, "c1").block.output)).toBe(STOPPED_OFFLINE)
-    expect(findCall(doc, "c1").block.status).toBe(CALL.error)
-    expect(blocks(store).at(-1)).toMatchObject({ type: "notice", kind: "stopped", text: expect.stringMatching(/^Stopped while waiting for the network \(no relay\)/) })
-    expect(settled(doc)).toBe(STATUS.idle)
-    expect(doc.reconnecting).toBe(null)
-    expect(needsWork(doc)).toBe(false)
-    // Only from reconnecting.
-    store.change((d) => (stopped = stopReconnecting(d)))
+    let doc = store.doc()
+    // Put back for the network, it stays cleared to run under the stop, unanswered.
+    expect(findCall(doc, "c1").block.status).toBe(CALL.approved)
+    expect(findResult(doc, "c1")).toBeNull()
+    expect(doc.turns.at(-1)).toMatchObject({ role: "assistant", author: "automerge:person" })
+    expect(blocks(store).at(-1)).toMatchObject({ type: "notice", kind: "stopped", text: "Stopped while waiting for the network (no relay)." })
+    expect([settled(doc), doc.reconnecting, doc.lease, needsWork(doc)]).toEqual([STATUS.idle, null, null, false])
+    // Said once.
+    store.change((d) => (stopped = stopSession(d, STOP.stopped)))
     expect(stopped).toBe(false)
+    expect(blocks(store).filter((b) => b.type === "notice")).toHaveLength(1)
+
+    // A message carries it on; the call is answered as not run, and never runs.
+    say(store, "never mind that")
+    doc = store.doc()
+    expect(findCall(doc, "c1").block.status).toBe(CALL.error)
+    expect(String(findResult(doc, "c1").block.output)).toBe(NOT_RUN)
+    expect(needsWork(doc)).toBe(true)
+    store.change((d) => claimLease(d, "runner-a", Date.now()))
+    expect((await go(store, scripted([[{ type: "text", delta: "Fine." }]]), tools)).outcome).toBe(OUTCOME.idle)
+    expect(fetches).toBe(1)
+    expect(blocks(store).at(-1).text).toBe("Fine.")
   })
 })
 

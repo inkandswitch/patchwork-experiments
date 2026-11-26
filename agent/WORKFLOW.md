@@ -97,7 +97,7 @@ step's transcript, and only the orchestrator decides.
 ## Told once
 
 The orchestrator is woken with news: a step finished, a step asks something,
-the plan is over or out of money. Each thing is said once. `told` holds a key
+a person stopped a step, the plan is over or out of money. Each thing is said once. `told` holds a key
 for each, and the key names the occurrence, not just the kind, so nothing is
 ever reset: a reopened step's next finish is a different key.
 
@@ -107,6 +107,7 @@ ever reset: a reopened step's next finish is a different key.
 | `end:<runs>` | the plan settled, that time it ran |
 | `pause:<resumes>` | the plan paused for its budget |
 | `budget:<step>:<at>:<resumes>` | a step stopped for its own budget |
+| `stopped:<step>:<at>` | a person stopped a step, at that stop |
 | `stale:<step>:<run>:<inputs>` | a done step is out of date, by those inputs |
 | `question:<callId>`, `request:<id>` | a step's question to a person, and its request |
 
@@ -130,7 +131,11 @@ A tick is three parts:
 A step's session is made with its scope, its tools' placement, its budget and
 the orchestrator's grants in one write, so it never exists half set up. A
 step is done when its session has nothing left to do and its last turn is the
-agent's: no call unanswered, no reply still streaming, no live runner on it.
+agent's: no call unanswered, no reply still streaming, no live runner on it,
+and no stop in force. A step whose session stopped with an error fails. One
+stopped for its budget, by a person, or by its workflow is still running and
+waits: a person's stop is told to the orchestrator once, a word in the session
+carries it on, and `workflow_stop` cancels it.
 
 One job has one set of permissions: a grant given in any full-access step
 reaches the orchestrator and the other full-access steps, and releases what

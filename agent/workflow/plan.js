@@ -500,6 +500,7 @@ export function runAgain(doc) {
  *   endKey        the plan ending, in this run of it
  *   pauseKey      the plan pausing for its budget, until a person resumes it
  *   budgetKey     a step stopping for its own budget, under this cap
+ *   stoppedKey    a person stopping a step, at this stop
  *   staleKey      a step out of date over these versions of its inputs
  *   questionKey   a question a step asked
  *   requestKey    a request a step made
@@ -519,6 +520,7 @@ export const finishedKey = (step) => `finished:${step.id}:${attempt(step)}`
 export const endKey = (plan) => `end:${plan.runs ?? 1}`
 export const pauseKey = (plan) => `pause:${plan.resumes?.length ?? 0}`
 export const budgetKey = (plan, stepId, at) => `budget:${stepId}:${at}:${plan.resumes?.length ?? 0}`
+export const stoppedKey = (stepId, at) => `stopped:${stepId}:${at}`
 export const questionKey = (callId) => `question:${callId}`
 export const requestKey = (request) => `request:${request.id}`
 

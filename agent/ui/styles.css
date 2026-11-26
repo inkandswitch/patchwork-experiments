@@ -335,6 +335,7 @@
 .patchwork-agent .agent-call[data-status="error"] { border-color: var(--agent-danger); }
 .patchwork-agent .agent-call[data-status="error"] > summary { color: var(--agent-danger-text); }
 .patchwork-agent .agent-call[data-status="denied"] > summary { text-decoration: line-through; }
+.patchwork-agent .agent-call[data-status="not-run"] > summary { color: var(--agent-muted); }
 
 /* ---- The body of an opened call -------------------------------------- */
 

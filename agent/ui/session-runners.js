@@ -17,13 +17,14 @@
  *     kick()          nudge whoever should be working
  *     wake()          take host-tier work the worker parked
  *     elsewhere(doc)  another runner holds a live lease on the session
- *     stop()          interrupt the run, or stop waiting for the network
+ *     stop({author})  a person's Stop: written into the session, and this tab's runs interrupted
  *     setKey(key)     hand the worker a new model key
  *     dispose()       stop listening; the runners carry on
  */
 
 import { heldElsewhere, needsWork } from "../kernel/runner.js"
-import { stopReconnecting } from "../session/recovery.js"
+import { stopSession } from "../session/recovery.js"
+import { STOP } from "../session/status.js"
 import { attachView } from "../runners/registry.js"
 import { startTabRunner, accountContext } from "../runners/tab.js"
 import { connectWorkerRunner } from "../runners/worker-client.js"
@@ -125,12 +126,17 @@ export function sessionRunners({ handle, store, repo, element = null, subject = 
       if (needsWork(handle.doc(), hostOnly)) ensureRunner().then((r) => r?.tick())
     },
     elsewhere: (doc) => heldElsewhere(doc, runner?.runnerUrl, runner?.live),
-    stop() {
+    /**
+     * A person's Stop: a change to the session first (session/recovery.js
+     * stopSession), so it holds wherever the session is being run — this
+     * tab, another, another device, a Node runner — each of which hears it
+     * and stops (kernel/runner.js heedStop). Then this tab's own runners are
+     * interrupted at once, without waiting to hear their own change.
+     */
+    stop({ author = null } = {}) {
+      store.change((d) => stopSession(d, STOP.stopped, null, author))
       runner?.interrupt()
       workerRunner?.interrupt()
-      // Waiting for the network, no run is under way to interrupt: stopping is
-      // a change to the session, so every runner stops trying.
-      if (store.doc()?.reconnecting) store.change((d) => stopReconnecting(d))
     },
     // The worker cannot read this page's localStorage, so it is handed the key.
     setKey: (key) => workerRunner?.setKey(key),

@@ -17,7 +17,7 @@
  */
 
 import { CALL, WHERE } from "../session/schema.js"
-import { STOP } from "../session/status.js"
+import { STOP, stopOf } from "../session/status.js"
 import { askOf, covered, needsApproval, ownGrant } from "../session/grants.js"
 import { addUsage, costOf, dollars } from "../session/usage.js"
 import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTokens, DENIED_RESULT } from "../session/request.js"
@@ -25,7 +25,7 @@ import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlo
 import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult, move, results as landed } from "../session/calls.js"
 import { recordArtifact } from "../session/made.js"
 import { holdsLease } from "../session/lease.js"
-import { markReconnecting } from "../session/recovery.js"
+import { markReconnecting, speak } from "../session/recovery.js"
 import { batchedAppender } from "./store.js"
 import { presentCall, runTool } from "./tool.js"
 import { withFileData } from "../documents/files.js"
@@ -167,6 +167,10 @@ export async function run(opts) {
   for (let turnNumber = 0; turnNumber < maxTurns; turnNumber++) {
     if (signal?.aborted) return stopped()
     if (!stillOurs()) return { outcome: OUTCOME.aborted, reason: "lease lost" }
+    // A stop in force, written from anywhere (session/recovery.js stopSession):
+    // nothing more is asked or run, and nothing is written. A nudge or a
+    // summary this run wrote after it does not end it (session/status.js).
+    if (stopOf(store.doc())) return { outcome: OUTCOME.aborted, reason: "stopped" }
     const spent = spentBudget(store.doc())
     if (spent) return stopForBudget(store, spent, emit)
 
@@ -875,7 +879,13 @@ function nudge(store, text) {
  * someone speaks to it (session/status.js).
  */
 function fail(store, text, outcome, emit, reason = text) {
-  appendTurn(store, makeTurn("assistant", [noticeBlock(STOP.error, text)]))
+  // In the notice's own change: no copy ever shows the stop and a wait for
+  // the network at once.
+  store.change((d) => {
+    if (!d.turns) d.turns = []
+    d.turns.push(makeTurn("assistant", [noticeBlock(STOP.error, text)]))
+    if (d.reconnecting != null) d.reconnecting = null
+  })
   return finish(store, outcome, emit, reason)
 }
 
@@ -950,6 +960,7 @@ export function spentBudget(doc) {
 function stopForBudget(store, { spent, limit }, emit) {
   store.change((d) => {
     d.turns.push(makeTurn("assistant", [noticeBlock(STOP.budget, `Stopped: this session has spent its ${dollars(limit)} budget (${dollars(spent)}). It carries on only if it is given more.`, { spent, limit })]))
+    if (d.reconnecting != null) d.reconnecting = null
   })
   return finish(store, OUTCOME.budgetExhausted, emit, "budget")
 }
@@ -1060,8 +1071,10 @@ export function say(store, text, author = null, context = null, attachments = []
       if (attachment.kept) recordArtifact(d, { url: attachment.url, name: attachment.name, kind: "file" })
     }
     // Speaking to a session that was stopped is deciding it should carry on:
-    // a user turn after the stop is what ends it (session/status.js stopOf).
-    d.turns.push(makeTurn("user", blocks, { author }))
+    // a user turn after the stop is what ends it (session/status.js stopOf),
+    // and what was left cleared to run under the stop is closed, not run
+    // (session/recovery.js speak).
+    speak(d, makeTurn("user", blocks, { author }))
   })
 }
 

@@ -179,7 +179,8 @@ export function AgentTool(handle, element, options = {}) {
     contextFor,
     openDoc,
     onSent: () => runners.kick(),
-    onStop: () => runners.stop(),
+    // Who stopped it goes on the notice's turn.
+    onStop: async () => runners.stop({ author: await myContactUrl() }),
     onChange: () => render(),
   })
   const side = sidePane()

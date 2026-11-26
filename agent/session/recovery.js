@@ -1,13 +1,14 @@
 /**
  * Putting a session right after its runner went away: calls left running,
- * replies left half-streamed, and the network coming and going.
+ * replies left half-streamed, and the network coming and going. And stopping
+ * one, and speaking to one that was stopped.
  */
 
 import { livenessOf } from "./lease.js"
 import { findCall, move, runnableCalls, unansweredCalls } from "./calls.js"
 import { CALL } from "./schema.js"
-import { makeTurn, resultBlock, noticeBlock } from "./blocks.js"
-import { STOP } from "./status.js"
+import { makeTurn, resultBlock, noticeBlock, lastTurn } from "./blocks.js"
+import { STOP, stopOf, stoppedFromOutside } from "./status.js"
 
 /**
  * Calls a runner claimed and never finished.
@@ -97,28 +98,87 @@ export function markReconnecting(doc, reason, now = Date.now()) {
   doc.reconnecting = { reason: String(reason ?? "the network went away"), since: was?.since ?? now, attempts: (was?.attempts ?? 0) + 1 }
 }
 
-/** What a call put back for the network says, when a person stops the session instead. */
-export const STOPPED_OFFLINE = "Not run: the network went away before it could, and the person stopped the session rather than wait for it."
+/**
+ * Is anything under way in this session, or due to be? A runner's lease, a
+ * wait for the network, a reply still marked as streaming, a call running or
+ * cleared to run, or a last word that wants an answer (a person's or a
+ * tool's). What a person's Stop has to stop; with none of it there is nothing.
+ */
+function underWay(doc) {
+  if (doc.lease || doc.reconnecting) return true
+  if ((doc.turns ?? []).some((turn) => turn.streaming)) return true
+  if (unansweredCalls(doc).some((call) => call.status === CALL.running || call.status === CALL.approved)) return true
+  const last = lastTurn(doc)
+  return last?.role === "user" || last?.role === "tool"
+}
 
 /**
- * A person stopping a session that is waiting for the network, inside a
- * change. Every call put back to wait gets its answer, the session says in
- * one line that it stopped, and nothing is left to run — otherwise the next
- * look would find work and try again. Returns whether there was anything to stop.
+ * Stop a session, inside a change: one change, written from any page or
+ * device, and the stop holds wherever the session is run.
+ *
+ *   kind     STOP.stopped (a person) or STOP.halted (a workflow)
+ *   text     what the notice says; null for the kind's own words
+ *   author   who stopped it (a contact url), recorded on the notice's turn
+ *
+ * It writes an assistant turn with the notice, takes every streaming mark off
+ * (what was streamed stays, as what was said), and clears `reconnecting` and
+ * `lease`. The lease goes so that the runner holding it, in this tab or any
+ * other, stops writing at its next look (kernel/loop.js), and none takes the
+ * session up again: a stop in force is no work (kernel/runner.js needsWork).
+ * Calls cleared to run and not yet run are left as they are, shown "Not run:
+ * stopped", and closed by the message that ends the stop (`speak`); closing
+ * them here would cross a runner's claim on the same call.
+ *
+ * Said once: no second notice while a stop of this kind is in force, and a
+ * person's stop writes no notice over any stop in force or on a session with
+ * nothing under way. Returns whether it changed anything.
  */
-export function stopReconnecting(doc) {
-  if (!doc.reconnecting) return false
-  const reason = doc.reconnecting.reason ?? "the network went away"
-  const waiting = runnableCalls(doc)
-  for (const call of waiting) {
-    const found = findCall(doc, call.id)
-    if (found) move(found.block, "abandon")
-  }
+export function stopSession(doc, kind, text = null, author = null) {
   if (!doc.turns) doc.turns = []
-  if (waiting.length) doc.turns.push(makeTurn("tool", waiting.map((call) => resultBlock(call.id, STOPPED_OFFLINE, { isError: true, summary: "stopped" }))))
-  doc.turns.push(makeTurn("assistant", [noticeBlock(STOP.stopped, `Stopped while waiting for the network (${reason}).`)]))
-  doc.reconnecting = null
-  return true
+  const inForce = stopOf(doc)
+  const person = kind === STOP.stopped
+  if (person && !inForce && !underWay(doc)) return false
+  let changed = false
+  for (const turn of doc.turns) {
+    if (turn.streaming) {
+      delete turn.streaming
+      changed = true
+    }
+  }
+  const says = text ?? (person ? (doc.reconnecting ? `Stopped while waiting for the network (${doc.reconnecting.reason ?? "the network went away"}).` : "Stopped by a person.") : "Stopped by its workflow.")
+  if (person ? !inForce : inForce?.kind !== STOP.halted) {
+    doc.turns.push(makeTurn("assistant", [noticeBlock(kind, String(says))], { author }))
+    changed = true
+  }
+  if (doc.reconnecting != null) {
+    doc.reconnecting = null
+    changed = true
+  }
+  if (doc.lease != null) {
+    doc.lease = null
+    changed = true
+  }
+  return changed
+}
+
+/** The result a call cleared to run, and never run, gets when a message ends the stop it was left under. */
+export const NOT_RUN = "Not run: the session was stopped before this call ran. Ask again if it is still wanted."
+
+/**
+ * Say something to a session, inside a change: push `turn`, which ends any
+ * stop in force (session/status.js stopOf). Under a person's or a workflow's
+ * stop, the calls left cleared to run from before it are closed first, each
+ * answered NOT_RUN: speaking is deciding to carry on, not to do what was
+ * stopped. A budget's stop leaves them, to run once the budget is lifted.
+ */
+export function speak(doc, turn) {
+  if (!doc.turns) doc.turns = []
+  if (stoppedFromOutside(doc)) {
+    const left = runnableCalls(doc)
+    for (const call of left) move(findCall(doc, call.id)?.block, "abandon")
+    if (left.length) doc.turns.push(makeTurn("tool", left.map((call) => resultBlock(call.id, NOT_RUN, { isError: true, summary: "not run: stopped" }))))
+  }
+  doc.turns.push(turn)
 }
 
 /** Is this the result a takeover writes for a call it found cut off? */

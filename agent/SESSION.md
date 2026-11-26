@@ -18,7 +18,7 @@ Automerge cannot hold `undefined`, so an optional field is present or `null`.
 | `turns` | `Turn[]`, the transcript |
 | `lease` | `{ runner, at, generation } \| null`: which runner is driving it |
 | `lastGeneration` | the highest generation any lease has had; outlives the lease |
-| `reconnecting` | `{ reason, since, attempts } \| null`, while its runner waits for the network |
+| `reconnecting` | `{ reason, since, attempts } \| null`, while its runner waits for the network. Cleared when it is heard again, and by any stop |
 | `grants` | `{ [key]: true }`: what the person allowed |
 | `made` | the documents it created or kept, newest first |
 | `usage` | `{ in, out, turns, cached?, cost?, costEstimated? }` |
@@ -109,26 +109,34 @@ stores it, so it cannot disagree with what it summarises.
 | `parked` | a `host` call is `approved` and no runner holds the session |
 | `idle` | none of these |
 
-The first that applies wins, in that order.
+The first that applies wins, in that order: a stopped session is never running.
 
 ## Stops
 
-A run that ends other than by finishing says why in a notice, in an
-`assistant` turn of its own:
+A stop is a notice in an `assistant` turn of its own, in force wherever it runs.
 
 | kind | |
 |---|---|
 | `error` | the run failed: the provider, the output limit, a model going in circles or saying nothing, a run that could not start |
 | `budget` | the session spent its budget. `data: { spent, limit }` |
-| `halted` | stopped from outside: a workflow cancelled its step |
-| `stopped` | the person stopped it while it waited for the network |
+| `halted` | a workflow cancelled the step, or reopened one it is built on |
+| `stopped` | a person pressed Stop, in any view on any device; the turn's `author` is who |
 
-`stopOf(doc)` is the last stop notice with nothing said to the session after
-it. "Said" is a `user` turn that is not only events: a person's message, a
-reopened step's instructions, a lifted budget. A result that lands after the
-stop, or news a tool delivers later, changes nothing.
+A run writes its own two with clearing `reconnecting`, in one change. The others
+are `stopSession(doc, kind, text, author)` (`session/recovery.js`): one change
+that also drops every streaming mark (the text stays) and clears `reconnecting`
+and `lease`, said once, and by a person only with something under way and no
+stop in force. Runners hear it and abort stream and tool; the loop checks atop
+every turn. A call left running lands its result, or is answered as interrupted.
 
-A stopped session is not work for a runner. Speaking to it ends the stop.
+`stopOf(doc)` is the last stop notice with nothing said after it: a `user` turn
+with a person's text or attachments, a reopened step's instructions, or a
+lifted budget's notice. A result, a tool's news, a `nudge`, a `summary` is not.
+
+A stopped session is not work. Calls `approved` under it show "Not run: stopped";
+`speak(doc, turn)`, behind every `say` and reopened step, answers them as not
+run under a person's or a workflow's stop (a lifted budget lets them run). A
+step stopped but by an error is running in its plan, and waits (WORKFLOW.md).
 
 ## The lease
 
@@ -143,12 +151,12 @@ writes nothing more.
 - A fresh claim is believed only after any rival's has had time to meet it.
   Two claims merge to one, the same one everywhere, and the loser stands down.
 - A runner drops its lease when it has nothing to do, so another can take the
-  session at once.
+  session at once. A stop takes it away (*Stops*).
 
-`needsWork(doc, canRun)` in `kernel/runner.js` says whether there is anything
-for a runner to do: a call or reply left by a runner that died, a call cleared
-to run that this runner can run, or a last turn that is a person's or a
-tool's. Not a session that waits on a person, and not a stopped one.
+`needsWork(doc, canRun)` in `kernel/runner.js` says whether a runner has work.
+A stop in force, checked first, means none. Otherwise: a call or reply left by
+a runner that died, a call cleared to run that it can run, or a last turn that
+is a person's or a tool's; not a session that waits on a person.
 
 ## Approval
 
@@ -184,7 +192,8 @@ the pop-over and a workflow's driver decide the same way, with no toolset.
 ## What the model is sent
 
 `toRequest(doc)` in `session/request.js` turns the transcript into a
-provider-neutral request. Old large results stop travelling in full: each
+provider-neutral request, each call's result straight after its call whatever
+came between (a stop's notice). Old large results stop travelling in full: each
 becomes its summary and a note that `session_recall` returns it, unless it is
 small or pinned. Only the newest images are sent as images. A research step is
 not sent what the person had open.

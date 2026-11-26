@@ -10,17 +10,23 @@
  *     runner need not wait for the lease to go stale, and the stopping it
  *     does on the way out writes nothing;
  *   - stopping a reply on purpose is not that: what was said stays;
+ *   - a person's Stop, here or anywhere, holds: mid-reply or mid-call,
+ *     nothing takes the session up again until someone speaks, and then
+ *     what was said stays and a call cut off is answered;
  *   - no two claims of a session share a generation unless one renews the
  *     other, so a runner's own dead work never looks like work it is doing.
  */
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import { initSession, CALL, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
 import { claimLease } from "../session/lease.js"
-import { interruptedTurns, dropInterruptedTurns, resolveOrphans, orphanedCalls, INTERRUPTED } from "../session/recovery.js"
+import { interruptedTurns, dropInterruptedTurns, resolveOrphans, orphanedCalls, INTERRUPTED, stopSession } from "../session/recovery.js"
+import { findCall, findResult } from "../session/calls.js"
 import { SessionRunner, needsWork, STALE_AFTER_MS } from "./runner.js"
+import { say } from "./loop.js"
 import { memoryStore } from "./store.js"
-import { statusOf } from "../session/status.js"
+import { statusOf, stopOf, STOP } from "../session/status.js"
+import { Interruption } from "../net/network.js"
 
 beforeEach(() => _resetIds())
 
@@ -147,6 +153,142 @@ describe("stopping a reply on purpose", () => {
     expect(doc.turns.at(-1).streaming).toBeUndefined()
     expect(statusOf(doc)).toBe(STATUS.idle)
     expect(needsWork(doc)).toBe(false)
+    a.stop()
+  })
+})
+
+/**
+ * A person's Stop, as the view writes it (ui/session-runners.js stop): the
+ * stop into the session, then this tab's runner interrupted. `here: false`
+ * is a Stop pressed on another page or device: the change arrives, and the
+ * runner hears it as it hears any change (its tick is the change handler).
+ */
+function personStops(store, a, { here = true } = {}) {
+  store.change((d) => stopSession(d, STOP.stopped, null, "automerge:person"))
+  if (here) a.interrupt()
+  else a.tick()
+}
+
+/** As `hanging`, but the read that the abort cuts fails as OpenRouter's does: as an interruption (providers/openrouter.js readBody). */
+function hangingAsNetwork() {
+  const h = hanging()
+  return {
+    at: h.at,
+    provider: {
+      async *stream(request) {
+        try {
+          yield* h.provider.stream(request)
+        } catch {
+          throw new Interruption("Could not read the reply (aborted)")
+        }
+      },
+    },
+  }
+}
+
+const notices = (doc) => doc.turns.flatMap((t) => t.blocks.filter((b) => b.type === "notice"))
+
+describe("a person's Stop", () => {
+  const STREAMS = [
+    ["ends as aborted", hanging],
+    ["fails as an interruption", hangingAsNetwork],
+  ]
+  const WHERE = [
+    ["in this tab", true],
+    ["on another page or device", false],
+  ]
+  const CASES = STREAMS.flatMap(([how, make]) => WHERE.map(([where, here]) => [where, how, make, here]))
+
+  it.each(CASES)("mid-reply, pressed %s, its stream's read %s: the reply stays unmarked, the stop is said once, nothing takes it up, and the next run after a message keeps the reply", async (_where, _how, make, here) => {
+    const store = memoryStore(fresh())
+    const h = make()
+    const a = runner(store, "tab-A", h.provider)
+    const done = a.tick()
+    await h.at
+    await new Promise((r) => setTimeout(r, 200)) // the appender's batch
+    personStops(store, a, { here })
+    expect((await done).outcome).toBe("aborted")
+
+    const doc = store.doc()
+    expect(shape(doc)).toEqual([["user", "hello"], ["assistant", "Half a thou"], ["assistant", "Stopped by a person."]])
+    expect(doc.turns.at(-1)).toMatchObject({ role: "assistant", author: "automerge:person" })
+    expect(doc.turns.some((t) => t.streaming)).toBe(false)
+    expect([statusOf(doc), doc.lease, needsWork(doc)]).toEqual([STATUS.idle, null, false])
+    // The poll, and the same Stop again, change nothing.
+    const before = JSON.stringify(doc)
+    await a.tick()
+    personStops(store, a, { here })
+    expect(JSON.stringify(store.doc())).toBe(before)
+    a.stop()
+
+    say(store, "go on")
+    const model = answering("Going on.")
+    const b = runner(store, "tab-B", model)
+    await b.tick()
+    expect(shape(store.doc())).toEqual([["user", "hello"], ["assistant", "Half a thou"], ["assistant", "Stopped by a person."], ["user", "go on"], ["assistant", "Going on."]])
+    expect(JSON.stringify(model.requests[0].messages)).toContain("Half a thou")
+    expect(notices(store.doc())).toHaveLength(1)
+  })
+
+  /** A model that calls `tool` once, then answers in words. */
+  function callingOnce(tool) {
+    const requests = []
+    return {
+      requests,
+      async *stream(request) {
+        requests.push(request)
+        if (requests.length === 1) {
+          yield { type: "call", id: "c1", name: tool, input: {} }
+          yield { type: "stop", reason: "tool_use" }
+        } else {
+          yield { type: "text", delta: "Carried on." }
+          yield { type: "stop", reason: "stop" }
+        }
+      },
+    }
+  }
+  const toolsOf = (...tools) => async () => ({ tools, schemas: [], get: (id) => tools.find((t) => t.id === id) ?? null })
+
+  it.each(WHERE)("during a tool call, pressed %s: the call's result lands after the notice and changes nothing, and the model is not asked again until someone speaks", async (_where, here) => {
+    const store = memoryStore(fresh())
+    let a
+    const slow = { id: "slow", risk: "edit", where: "worker", execute: async () => (personStops(store, a, { here }), "done") }
+    const model = callingOnce("slow")
+    a = runner(store, "tab-A", model, { buildToolset: toolsOf(slow) })
+    expect((await a.tick()).outcome).toBe("aborted")
+
+    const doc = store.doc()
+    expect(shape(doc)).toEqual([["user", "hello"], ["assistant", "call:slow"], ["assistant", "Stopped by a person."], ["tool", "result:c1"]])
+    expect([statusOf(doc), doc.lease, needsWork(doc)]).toEqual([STATUS.idle, null, false])
+    // What the 5 s poll does: nothing.
+    expect(await a.tick()).toBeUndefined()
+    expect(model.requests).toHaveLength(1)
+
+    say(store, "go on")
+    await a.tick()
+    expect(model.requests).toHaveLength(2)
+    expect(shape(store.doc()).at(-1)).toEqual(["assistant", "Carried on."])
+    // The call's result goes to the model next to its call, the notice after it.
+    expect(model.requests[1].messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant", "user"])
+    a.stop()
+  })
+
+  it("during a tool call that never returns: the call stays running under no lease, and the run after the next message answers it as interrupted", async () => {
+    const store = memoryStore(fresh())
+    let a
+    const stuck = { id: "stuck", risk: "edit", where: "worker", execute: () => (personStops(store, a), new Promise(() => {})) }
+    const model = callingOnce("stuck")
+    a = runner(store, "tab-A", model, { buildToolset: toolsOf(stuck) })
+    a.tick() // never ends: its tool never returns
+    await vi.waitFor(() => expect(stopOf(store.doc())?.kind).toBe(STOP.stopped))
+    expect(findCall(store.doc(), "c1").block.status).toBe(CALL.running)
+    expect(needsWork(store.doc())).toBe(false)
+
+    say(store, "go on")
+    const b = runner(store, "tab-B", model, { buildToolset: toolsOf(stuck) })
+    await b.tick()
+    expect(String(findResult(store.doc(), "c1").block.output)).toBe(INTERRUPTED)
+    expect(shape(store.doc()).at(-1)).toEqual(["assistant", "Carried on."])
     a.stop()
   })
 })

@@ -25,12 +25,13 @@
 import { claimLease, holdsLease, LeaseWatch } from "../session/lease.js"
 import { initSession, CALL } from "../session/schema.js"
 import { STOP, stopOf, statusOf } from "../session/status.js"
-import { makeTurn, textBlock, noticeBlock, lastTurn } from "../session/blocks.js"
+import { makeTurn, textBlock, lastTurn } from "../session/blocks.js"
+import { stopSession, speak } from "../session/recovery.js"
 import { liftBudget, dollars } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
 import { AutomergeRepo } from "../host/modules.js"
-import { PLAN, isCurrent, writable, changePlan, PlanVersionError, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, staleKey, questionKey, requestKey } from "./plan.js"
+import { PLAN, isCurrent, writable, changePlan, PlanVersionError, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, stoppedKey, staleKey, questionKey, requestKey } from "./plan.js"
 import { decide } from "./decide.js"
 import { scopeOf, webScope, sameScope, initLedger } from "../kernel/scope.js"
 import { KERNEL_TYPES } from "../kernel/kernel-repo.js"
@@ -52,7 +53,9 @@ export const SETTLE_MS = 150
  *   { state: "running" | "done" | "failed", result?, waiting? }
  *
  * Done means the agent has stopped with nothing left to do and said something
- * last; that last message is the result. "Stopped" is read off the document,
+ * last; that last message is the result. A stop in force is never done: an
+ * error fails the step, and a budget's, a person's or the workflow's leaves it
+ * running and waiting. "Stopped" is read off the document,
  * all of it, so no gap between writes can pass for it:
  *   - no call anywhere is unanswered: a status that dropped to idle while a
  *     call was still running (or waiting) used to read as done, and the step
@@ -72,6 +75,13 @@ export function sessionOutcome(doc, { live = null } = {}) {
   // Out of budget is not done: it stopped part-way, and the orchestrator
   // decides whether it goes on.
   if (stop?.kind === STOP.budget) return { state: "running", outOfBudget: { spent: stop.data?.spent ?? null, limit: stop.data?.limit ?? null, at: stop.at } }
+  // Stopped part-way, by a person or by the workflow, is not done either: it
+  // waits for a word, which carries it on, or for workflow_stop. A person's
+  // stop is news for the orchestrator, once (decide.js); a workflow's was
+  // the workflow's own doing, and a session that still shows it to a driver
+  // whose copy lags a reopen is not filed with what it said before.
+  if (stop?.kind === STOP.stopped) return { state: "running", waiting: true, stopped: { at: stop.at } }
+  if (stop?.kind === STOP.halted) return { state: "running", waiting: true }
   if (waitingIn(doc).length) return { state: "running", waiting: true }
   if (doc.reconnecting || needsWork(doc)) return { state: "running" }
   if (unansweredCalls(doc).length || (doc.turns ?? []).some((t) => t.streaming)) return { state: "running" }
@@ -652,8 +662,9 @@ export class WorkflowDriver {
       d.reconnecting = null
       if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || stopOf(d)?.kind === STOP.budget) liftBudget(d, startBudget(step))
       // Its new instructions, which also end whatever stop it was under
-      // (session/status.js stopOf).
-      d.turns.push(makeTurn("user", [textBlock(message)]))
+      // (session/status.js stopOf) and close what that stop left cleared to
+      // run (session/recovery.js speak).
+      speak(d, makeTurn("user", [textBlock(message)]))
     })
     this.reasons.delete(step.sessionUrl)
     this.write((d) => beginStep(d, step.id, { now: this.now() }))
@@ -661,21 +672,18 @@ export class WorkflowDriver {
   }
 
   /**
-   * Stop these sessions from outside, and keep them stopped: their lease is
-   * taken away, so a runner on one stands down at its next look, and a notice
-   * says they are halted, so none takes one up again — not even one whose
-   * last call landed after the stop (kernel/runner.js needsWork). Spoken to,
+   * Stop these sessions from outside, and keep them stopped
+   * (session/recovery.js stopSession): a notice says they are halted, so none
+   * is taken up again — not even one whose last call landed after the stop
+   * (kernel/runner.js needsWork) — and their lease is taken away, so a runner
+   * on one, anywhere, stops at once (kernel/runner.js heedStop). Spoken to,
    * or continued by a reopen, they carry on.
    */
   async haltSessions(urls, reason) {
     for (const url of urls) {
       try {
         const session = await this.repo.find(url)
-        session.change((d) => {
-          if (d.lease) d.lease = null
-          if (d.reconnecting != null) d.reconnecting = null
-          if (stopOf(d)?.kind !== STOP.halted) d.turns.push(makeTurn("assistant", [noticeBlock(STOP.halted, String(reason ?? "Stopped by its workflow."))]))
-        })
+        session.change((d) => stopSession(d, STOP.halted, reason ?? null))
         ;(await this.startSession(session))?.runner?.interrupt?.()
       } catch {
         /* already gone */
@@ -754,7 +762,7 @@ export class WorkflowDriver {
       // A driver that has lost the plan leaves the telling to the one holding it.
       if (!recorded) return ""
       if (news.end) setTimeout(() => { this.channel?.close(); this.channel = null }, 0)
-      return describeProgress(now, news.finished, this.waiting, news.budgets, { stale: news.stale, requests: news.requests, ledger: ledger?.doc() ?? null })
+      return describeProgress(now, news.finished, this.waiting, news.budgets, { stale: news.stale, requests: news.requests, stopped: news.stopped, ledger: ledger?.doc() ?? null })
     })
   }
 }
@@ -785,6 +793,7 @@ function confinedAs(doc, scope) {
 export function untold(plan, waiting = [], outOfBudget = []) {
   const finished = (plan.steps ?? []).filter((s) => [STEP.done, STEP.failed].includes(s.status) && !told(plan, finishedKey(s)))
   const questions = waiting.filter((w) => w.kind === "question" && !told(plan, questionKey(w.callId)))
+  const stopped = waiting.filter((w) => w.kind === "stopped" && !told(plan, stoppedKey(w.stepId, w.at)))
   const end = plan.status !== PLAN.running && !told(plan, endKey(plan))
   const paused = !!plan.paused && !told(plan, pauseKey(plan))
   const budgets = (outOfBudget ?? []).filter((b) => !told(plan, budgetKey(plan, b.stepId, b.at)))
@@ -793,13 +802,14 @@ export function untold(plan, waiting = [], outOfBudget = []) {
   const keys = [
     ...finished.map(finishedKey),
     ...questions.map((q) => questionKey(q.callId)),
+    ...stopped.map((s) => stoppedKey(s.stepId, s.at)),
     ...(end ? [endKey(plan)] : []),
     ...(paused ? [pauseKey(plan)] : []),
     ...budgets.map((b) => budgetKey(plan, b.stepId, b.at)),
     ...stale.map((s) => staleKey(plan, s)),
     ...requests.map(requestKey),
   ]
-  return { finished, questions, end, paused, budgets, stale, requests, keys }
+  return { finished, questions, stopped, end, paused, budgets, stale, requests, keys }
 }
 
 const hasNews = (news) => news.keys.length > 0
@@ -822,7 +832,7 @@ export function staleSteps(plan) {
 }
 
 /** The news the orchestrator wakes to. `ledger` is the plan's ledger document, when it has one. */
-export function describeProgress(plan, news, waiting = [], outOfBudget = [], { stale = [], requests = [], ledger = null } = {}) {
+export function describeProgress(plan, news, waiting = [], outOfBudget = [], { stale = [], requests = [], stopped = [], ledger = null } = {}) {
   const derived = states(plan)
   const count = (state) => [...derived.values()].filter((s) => s === state).length
   const lines = [`Workflow "${plan.title}" (${plan.paused ? "paused" : plan.status === PLAN.running ? "running" : plan.status}).`]
@@ -854,6 +864,13 @@ export function describeProgress(plan, news, waiting = [], outOfBudget = [], { s
       money.remaining > 0
         ? `The workflow has ${dollars(money.remaining)} left under its ${dollars(money.limit)} cap (${dollars(money.spent)} spent, your own turns included). Extend it out of that with workflow_budget { step, add, why } — you need no one's leave while it fits — or stop it (workflow_stop; what depends on it will not run), or do the rest differently (workflow_add_steps). Always give a reason.`
         : `The workflow's cap is reached (${dollars(money.spent)} of ${dollars(money.limit)}, your own turns included), so the person is being asked to raise it; you are told once they do. Until then do not start work, and tell them briefly what is blocked.`
+    )
+  }
+  for (const s of stopped) {
+    lines.push(
+      "",
+      `## Stopped by the person: ${title(s.stepId)} (${s.stepId})`,
+      "They stopped it part-way; what it did so far is in its session. It is still running in the plan and waits for them: it carries on when someone speaks to it in its session. Leave it to them, or cancel it with workflow_stop if it is no longer wanted (what depends on it will not run). Do not start its work again elsewhere unless they ask."
     )
   }
   for (const q of waiting.filter((w) => w.kind === "question")) {

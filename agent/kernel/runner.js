@@ -19,7 +19,7 @@
  */
 
 import { versionStanding, unknownBlocks } from "../session/schema.js"
-import { STOP, stopOf } from "../session/status.js"
+import { STOP, stopOf, stoppedFromOutside } from "../session/status.js"
 import { canClaim, claimLease, holdsLease, leaseIsLive, LeaseWatch } from "../session/lease.js"
 import { lastTurn, makeTurn, noticeBlock } from "../session/blocks.js"
 import { runnableCalls, callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
@@ -92,10 +92,13 @@ export const DEFER_PER_BUSY_MS = 1000
  */
 export function needsWork(doc, canRun = () => true, live = null) {
   if (!doc) return false
-  // Stopped from outside — a workflow cancelled or reopened its step. Nothing
-  // it holds is work until it is spoken to again, not even a call that
-  // finished after the stop, its result landing last (session/status.js).
-  if (stopOf(doc)?.kind === STOP.halted) return false
+  // A stop in force, first: a person's, a workflow's, a failure, a budget.
+  // Nothing the session holds is work until it is spoken to again — not a
+  // call that finished after the stop, its result landing last, not a reply
+  // or a call a runner left marked, not a call cleared to run
+  // (session/status.js stopOf). Whatever was cut off is settled by the run
+  // that follows the word that ends the stop.
+  if (stopOf(doc)) return false
   // A call or a reply whose runner died mid-flight — a page reloaded or
   // closed — has to be settled before anything else can happen, whatever else
   // the session is waiting on.
@@ -312,6 +315,19 @@ export class SessionRunner {
     this.controller?.abort()
   }
 
+  /**
+   * A change came in while this runner works: if it is a stop written from
+   * outside the run — a person's from any page or device, or a workflow's —
+   * the run's signal is aborted at once, so the model's stream and the tool
+   * under way stop now rather than at the run's next look. Every runner hears
+   * its session's changes (tick is the change handler), so a stop written
+   * anywhere reaches it within one sync delay. The run's own failure and
+   * budget notices end it anyway.
+   */
+  heedStop() {
+    if (this.controller && !this.controller.signal.aborted && stoppedFromOutside(this.store.doc())) this.controller.abort()
+  }
+
   /** Keep the lease warm while we are working, so nobody takes over. */
   beat() {
     if (!this.running) return
@@ -327,7 +343,8 @@ export class SessionRunner {
    * the change handler as well as the poll.
    */
   async tick() {
-    if (this.stopped || this.running) return
+    if (this.stopped) return
+    if (this.running) return this.heedStop()
     const doc = this.store.doc()
     // Sampled on every tick, work or none, so the watch sees each heartbeat.
     this.live(doc?.lease)

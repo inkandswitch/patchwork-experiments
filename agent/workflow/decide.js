@@ -28,7 +28,9 @@
  *   { type: "finish", stepId, result, at }
  *   { type: "fail", stepId, error, at }
  *   { type: "requests", requests }        what steps asked for, new to the plan
- *   { type: "waiting", waiting, outOfBudget }  what running steps wait on, for the news
+ *   { type: "waiting", waiting, outOfBudget }  what running steps wait on, for the news:
+ *                                         a person's answer or yes, or a word after a person's stop
+ *                                         (`{ kind: "stopped", stepId, at }`)
  *   { type: "orchestratorFrom", cost }    what the orchestrator had spent when the plan began
  *   { type: "usage", usage }              the plan's spend, when it has changed
  *   { type: "shareGrants" }               one job, one set of permissions
@@ -99,6 +101,9 @@ export function decide(plan, observations = {}, now = Date.now()) {
     const outcome = seen(step)?.outcome ?? { state: "running" }
     if (outcome.state === "running") {
       for (const item of seen(step)?.waiting ?? []) waiting.push({ stepId: step.id, ...item })
+      // Stopped by a person: news, told once by when it was stopped
+      // (driver.js untold), and the step stays running until spoken to.
+      if (outcome.stopped) waiting.push({ stepId: step.id, kind: "stopped", at: outcome.stopped.at ?? null })
       if (outcome.outOfBudget) outOfBudget.push({ stepId: step.id, ...outcome.outOfBudget })
     } else if (outcome.state === "done") {
       actions.push({ type: "finish", stepId: step.id, result: outcome.result, at: now })

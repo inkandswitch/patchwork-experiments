@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from "vitest"
 import { initSession, STATUS, CALL } from "./schema.js"
-import { makeTurn, textBlock, noticeBlock, callBlock, resultBlock, eventBlock } from "./blocks.js"
+import { makeTurn, textBlock, noticeBlock, callBlock, resultBlock, eventBlock, attachmentBlock, summaryBlock } from "./blocks.js"
 import { STOP, stopOf, statusOf } from "./status.js"
 
 const session = (turns = [], over = {}) => {
@@ -42,6 +42,25 @@ describe("the stop in force", () => {
     expect(stopOf(session([user(), stop(STOP.halted), ...after])) !== null).toBe(inForce)
   })
 
+  // Every kind of stop × every kind of user-role turn after it → does the
+  // stop still hold? Only a turn that says something ends one; what a run
+  // writes for itself (a nudge, a summary) and a tool's news do not, so a
+  // run that crosses a stop never lifts it.
+  const AFTER = [
+    ["a person's message", () => user("carry on"), false],
+    ["a person's attachment alone", () => makeTurn("user", [attachmentBlock({ url: "automerge:attached", name: "a.png" })]), false],
+    ["a reopened step's instructions", () => makeTurn("user", [textBlock("Reopened: something it is built on changed.")]), false],
+    ["a lifted budget", () => makeTurn("user", [noticeBlock("budget", "[more]")]), false],
+    ["a tool's news", () => news(), true],
+    ["the loop's nudge", () => makeTurn("user", [noticeBlock("nudge", "(go on)")]), true],
+    ["a compaction's summary", () => makeTurn("user", [summaryBlock("so far", "t0")]), true],
+  ]
+  const CROSS = Object.values(STOP).flatMap((kind) => AFTER.map(([name, turn, holds]) => [kind, name, turn, holds]))
+  it.each(CROSS)("a %s stop, then %s → still in force: %s", (kind, _name, turn, holds) => {
+    const doc = session([user(), stop(kind), turn()])
+    expect(stopOf(doc)?.kind ?? null).toBe(holds ? kind : null)
+  })
+
   it("none without a notice, and a nudge is not a stop", () => {
     expect(stopOf(session([user(), said()]))).toBeNull()
     expect(stopOf(session([user(), makeTurn("user", [noticeBlock("nudge", "(go on)")])]))).toBeNull()
@@ -68,7 +87,7 @@ describe("status", () => {
     ["failed", session([user(), stop(STOP.error)]), STATUS.error],
     ["out of budget", session([user(), stop(STOP.budget)]), STATUS.idle],
     ["halted", session([user(), stop(STOP.halted)]), STATUS.idle],
-    ["stopped by the person offline", session([user(), stop(STOP.stopped)]), STATUS.idle],
+    ["stopped by a person", session([user(), stop(STOP.stopped)]), STATUS.idle],
   ])("%s", (_name, doc, status) => {
     expect(statusOf(doc)).toBe(status)
   })
@@ -78,6 +97,8 @@ describe("status", () => {
     ["a question, while a runner still holds it", session([user(), call(CALL.asking)], { lease: LEASE }), STATUS.awaitingAnswer],
     ["a call needing a yes, while a runner still holds it", session([user(), call(CALL.pending)], { lease: LEASE }), STATUS.awaitingApproval],
     ["halted, a stale lease left behind", session([user(), stop(STOP.halted)], { lease: LEASE }), STATUS.idle],
+    ["stopped by a person, a runner elsewhere not yet told", session([user(), stop(STOP.stopped)], { lease: LEASE }), STATUS.idle],
+    ["stopped by a person, then a nudge from a run that had not heard", session([user(), stop(STOP.stopped), makeTurn("user", [noticeBlock("nudge", "(go on)")])]), STATUS.idle],
     ["halted while it waited for the network", session([user(), stop(STOP.halted)], { reconnecting: { reason: "offline", since: 1, attempts: 1 } }), STATUS.idle],
     ["failed, then spoken to and taken up again", session([user(), stop(STOP.error), user("again")], { lease: LEASE }), STATUS.running],
     ["a page call cleared, and a runner on it", session([user(), call(CALL.approved, "host")], { lease: LEASE }), STATUS.running],

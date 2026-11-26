@@ -13,6 +13,7 @@
 
 import { CALL } from "../session/schema.js"
 import { questionOptions } from "../session/calls.js"
+import { stoppedFromOutside } from "../session/status.js"
 import { renderMarkdown } from "./markdown.js"
 import { describeCall } from "./calls.js"
 import { renderCallBody } from "./bodies.js"
@@ -47,11 +48,15 @@ export function callSummary(block, result, subject = null) {
   return describeCall(block, result, { subject })
 }
 
-function renderCall(block, result, state, handlers) {
+function renderCall(block, result, state, handlers, stopped = false) {
   const details = el("details", "agent-call")
+  // Cleared to run, and the session stopped before it ran: it will not run
+  // unless asked again (the message that ends the stop closes it,
+  // session/recovery.js speak).
+  const notRun = stopped && block.status === CALL.approved && !result
   // A refusal is a decision, not a failure: `denied` keeps its own styling even
   // though its result is recorded as an error for the model's benefit.
-  details.dataset.status = block.status === CALL.denied ? CALL.denied : result?.isError ? "error" : block.status
+  details.dataset.status = block.status === CALL.denied ? CALL.denied : result?.isError ? "error" : notRun ? "not-run" : block.status
   details.open = state.open.has(block.id) || !!result?.isError
 
   details.addEventListener("toggle", () => {
@@ -64,6 +69,7 @@ function renderCall(block, result, state, handlers) {
   summary.append(el("span", "agent-call-verb", verb))
   if (detail) summary.append(el("span", "agent-call-detail", detail))
   if (note) summary.append(el("span", "agent-call-detail", note))
+  if (notRun) summary.append(el("span", "agent-call-detail agent-not-run", "Not run: stopped"))
   details.append(summary)
 
   details.append(renderCallBody(block, result))
@@ -289,6 +295,7 @@ export function renderTranscript(container, doc, state, handlers) {
 
   const results = indexResults(doc)
   const turns = doc.turns ?? []
+  const stopped = stoppedFromOutside(doc)
 
   if (!turns.length) {
     container.append(
@@ -325,6 +332,9 @@ export function renderTranscript(container, doc, state, handlers) {
     if (turn.blocks?.length && turn.blocks.every((b) => b.type === "notice")) {
       const node = el("div", "agent-turn")
       node.dataset.role = "notice"
+      // Who, when a person did it: a Stop records who pressed it.
+      const author = turn.author ? state.names?.get(turn.author) : null
+      if (author) node.append(el("div", "agent-author", author))
       for (const block of turn.blocks) {
         node.dataset.kind = block.kind
         node.append(prose(turn.role === "assistant" ? `⚠ ${block.text ?? ""}` : (block.text ?? "")))
@@ -360,7 +370,7 @@ export function renderTranscript(container, doc, state, handlers) {
       } else if (block.type === "reasoning") {
         if (block.text) node.append(renderReasoning(block, state))
       } else if (block.type === "call") {
-        node.append(renderCall(block, results.get(block.id), state, handlers))
+        node.append(renderCall(block, results.get(block.id), state, handlers, stopped))
       }
     }
 

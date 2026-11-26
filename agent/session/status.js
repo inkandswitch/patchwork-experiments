@@ -18,29 +18,38 @@ export const STOP = {
   budget: "budget",
   // Stopped from outside: a workflow cancelled its step, or reopened one before it.
   halted: "halted",
-  // The person stopped it while it waited for the network.
+  // A person stopped it, from any page or device (session/recovery.js stopSession).
   stopped: "stopped",
 }
 
 const STOPS = new Set(Object.values(STOP))
 
 /**
+ * Does this user-role turn end a stop? Only when something was said to the
+ * session in it: a person's words or attachments, a reopened step's
+ * instructions (text, like a person's), or a lifted budget's notice.
+ */
+const endsStop = (turn) =>
+  (turn.blocks ?? []).some((block) => block.type === "text" || block.type === "attachment" || (block.type === "notice" && block.kind === "budget"))
+
+/**
  * The stop in force: the last stop notice (blocks.js noticeBlock) with
  * nothing said to the session after it, or null. With it goes the time of its
  * turn, as `at`.
  *
- * "After it" is a user-role turn: a person's message, a reopened step's new
- * instructions, a lifted budget. Not a tool's: a result that lands after the
- * stop, from a call still running when it came, changes nothing, and neither
- * does news a tool delivers later (kernel/events.js) — which is what keeps a
- * cancelled step cancelled.
+ * "After it" is a user-role turn that says something (`endsStop`): a person's
+ * message, a reopened step's new instructions, a lifted budget. Not a tool's:
+ * a result that lands after the stop, from a call still running when it came,
+ * changes nothing. Nor news a tool delivers later (kernel/events.js), nor the
+ * loop's own `nudge` or a compaction's summary written by a run that had not
+ * yet heard of the stop: none of those is anyone deciding it should carry on.
  */
 export function stopOf(doc) {
   const turns = doc?.turns ?? []
   for (let i = turns.length - 1; i >= 0; i--) {
     const turn = turns[i]
     if (turn.role === "user") {
-      if ((turn.blocks ?? []).every((block) => block.type === "event")) continue
+      if (!endsStop(turn)) continue
       return null
     }
     if (turn.role !== "assistant") continue
@@ -48,6 +57,12 @@ export function stopOf(doc) {
     if (notice) return { kind: notice.kind, text: notice.text, data: notice.data ?? null, at: turn.at ?? null }
   }
   return null
+}
+
+/** Is the stop in force one written from outside the run: a person's or a workflow's? */
+export function stoppedFromOutside(doc) {
+  const kind = stopOf(doc)?.kind
+  return kind === STOP.stopped || kind === STOP.halted
 }
 
 /**

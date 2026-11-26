@@ -286,7 +286,33 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
     messages.push({ role: turn.role, content })
   }
 
-  return { system, messages }
+  return { system, messages: resultsAfterTheirCalls(messages) }
+}
+
+/**
+ * Each call's result straight after the message that made the call.
+ *
+ * A provider takes a call's result only next to it. The document keeps them
+ * in the order they were written, and something can come between: a stop's
+ * notice written while the call ran, its result landing after it
+ * (session/recovery.js stopSession); a message that ended the stop after
+ * that. Each result is moved up to follow its call, in the order the results
+ * were written; one whose call is not in the request stays where it is. A
+ * transcript with nothing between is sent as it was.
+ */
+function resultsAfterTheirCalls(messages) {
+  const called = new Set(messages.flatMap((m) => m.content.filter((p) => p.type === "call").map((p) => p.id)))
+  const results = messages.flatMap((m) => m.content.filter((p) => p.type === "result" && called.has(p.callId)))
+  if (!results.length) return messages
+  const out = []
+  for (const m of messages) {
+    const rest = m.content.filter((p) => !(p.type === "result" && called.has(p.callId)))
+    if (rest.length) out.push(rest.length === m.content.length ? m : { ...m, content: rest })
+    const ids = new Set(m.content.filter((p) => p.type === "call").map((p) => p.id))
+    const answers = results.filter((r) => ids.has(r.callId))
+    if (answers.length) out.push({ role: "tool", content: answers })
+  }
+  return out
 }
 
 /**

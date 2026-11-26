@@ -12,6 +12,9 @@ import { _reset as resetRunners } from "../runners/registry.js"
 import { viewMount, _resetMounts } from "../tools/checking.js"
 import { pendingCall, toolOf } from "../fixtures/asking.js"
 import { written } from "../fixtures/calls.js"
+import { STOP, stopOf } from "../session/status.js"
+import { findCall, findResult } from "../session/calls.js"
+import { NOT_RUN } from "../session/recovery.js"
 
 /** A DocHandle double with the parts the tool actually uses. */
 let handleCounter = 0
@@ -190,6 +193,39 @@ describe("status", () => {
       d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
     })
     expect(stop.style.display).not.toBe("none")
+    cleanup()
+  })
+})
+
+describe("a person's Stop", () => {
+  it("writes the stop into the session, even for a runner elsewhere; a call cleared to run shows not run, and the next message closes it", async () => {
+    const handle = fakeHandle()
+    handle.change((d) => {
+      d.turns.push(makeTurn("user", [textBlock("read it")]))
+      d.turns.push(makeTurn("assistant", [callBlock("fs_read", { path: "tool.js" }, { id: "c1", status: CALL.approved })]))
+      // Another tab, another device or Node is running it: nothing here to interrupt.
+      d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
+    })
+    const { element, cleanup } = mount(handle)
+    const stop = element.querySelector("button[data-variant='danger']")
+    expect(stop.style.display).not.toBe("none")
+    expect(element.querySelector(".agent-call[data-status='not-run']")).toBeNull()
+
+    stop.click()
+    await vi.waitFor(() => expect(stopOf(handle.doc())?.kind).toBe(STOP.stopped))
+    expect(handle.doc().lease).toBeNull()
+    expect(stop.style.display).toBe("none")
+    expect(element.querySelector(".agent-call[data-status='not-run']")?.textContent).toContain("Not run: stopped")
+    expect(findCall(handle.doc(), "c1").block.status).toBe(CALL.approved)
+
+    const input = element.querySelector("textarea")
+    input.value = "never mind"
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    await vi.waitFor(() => expect(handle.doc().turns.at(-1).blocks.at(-1).text).toBe("never mind"))
+    expect(findCall(handle.doc(), "c1").block.status).toBe(CALL.error)
+    expect(String(findResult(handle.doc(), "c1").block.output)).toBe(NOT_RUN)
+    expect(stopOf(handle.doc())).toBeNull()
+    expect(element.querySelector(".agent-call[data-status='not-run']")).toBeNull()
     cleanup()
   })
 })
