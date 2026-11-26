@@ -128,10 +128,11 @@ export function initSession(doc, opts = {}) {
 
 /**
  * Every kind of block this version of the agent writes and reads. A newer
- * version may add one — attachments were added this way — and a runner from
+ * version may add one — attachments were added this way — and a burst from
  * before it would read past it as if it were not there: the model is sent the
- * words of a message and never the image that came with it. So a runner that
- * meets a block it does not know leaves the session to one that does.
+ * words of a message and never the image that came with it. So a burst that
+ * meets a block it does not know leaves the session to one that does
+ * (kernel/burst.js `outdated`).
  */
 export const BLOCK_TYPES = ["text", "reasoning", "call", "result", "context", "event", "summary", "attachment", "notice"]
 

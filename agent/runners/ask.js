@@ -30,13 +30,16 @@
  *     the network coming back (`online`) asks again.
  *
  * An ask that fails is said: followWork's listeners are told why, in words
- * without urls, until the next ask is made or the copy shows no work. While
- * it is said, the pools serving the person's own queue are listened to, and
- * the first heard asks again, as one of the two asks at these heads; a
- * change and the network coming back ask again as they always do.
+ * without urls (document urls and web addresses alike), until the next ask
+ * is made or the copy shows no work. When an ask counted at these heads
+ * fails, the pools serving the person's own queue are listened to while the
+ * failure is said, and the first heard asks again, as one of the two asks at
+ * these heads; a change and the network coming back ask again as they
+ * always do. A failure before an ask is counted (the session not found) is
+ * said, and asks nothing by itself.
  *
  * Why it never loops: every ask needs heads no ended task saw, or is one of
- * at most two at one copy's heads. A burst's code returns for everything it
+ * at most two at one copy's heads, and only a counted ask listens for pools. A burst's code returns for everything it
  * can record, so a task that ended at the heads asked at asks nothing more.
  *
  * Besides asking when called, it judges once more when the watch sees the
@@ -129,6 +132,7 @@ export async function askWork(repo, sessionUrl, opts = {}) {
   const entry = entryFor(repo, sessionUrl, opts)
   entry.opts = opts
   if (opts.reask) entry.reask = opts.reask
+  let counted = false
   try {
     const handle = await repo.find(bare(sessionUrl))
     const doc = handle.doc()
@@ -142,6 +146,7 @@ export async function askWork(repo, sessionUrl, opts = {}) {
 
     const at = headsKey(heads)
     entry.asked = { at, count: (entry.asked.at === at ? entry.asked.count : 0) + 1 }
+    counted = true
     said(entry, null)
     const client = clientOf(opts)
     // In this order: what the queue browser shows first is the session and its
@@ -157,6 +162,7 @@ export async function askWork(repo, sessionUrl, opts = {}) {
     return { asked: true, outcome: result?.outcome ?? null }
   } catch (err) {
     const why = withoutUrls(String(err?.message ?? err))
+    if (counted) hearPools(entry)
     said(entry, why)
     throw new Error(why)
   }
@@ -272,13 +278,11 @@ function tell(entry) {
 }
 
 /**
- * Say why the last ask failed (`why`), or that nothing has (null). While a
- * failure is said, the pools serving the person's own queue are listened
- * to, and the first heard asks again; once it is not, they are not.
+ * Say why the last ask failed (`why`), or that nothing has (null). Once
+ * nothing is said, the pools are not listened to (hearPools).
  */
 function said(entry, why) {
-  if (why) hearPools(entry)
-  else entry.unhear?.()
+  if (!why) entry.unhear?.()
   if (entry.failed === why) return
   entry.failed = why
   tell(entry)
@@ -375,7 +379,9 @@ function has(doc, heads) {
   }
 }
 
-/** A message with every document url taken out. */
+/** A message with every url taken out: a document's, and a web address. */
 function withoutUrls(text) {
-  return text.replace(/automerge:[1-9A-HJ-NP-Za-km-z]+(?:#[^\s'"`)]*)?/g, "a document")
+  return text
+    .replace(/automerge:[1-9A-HJ-NP-Za-km-z]+(?:#[^\s'"`)]*)?/g, "a document")
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s'"`)]*[^\s'"`).,;:]/gi, "a web address")
 }

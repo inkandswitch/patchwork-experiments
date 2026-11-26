@@ -21,7 +21,6 @@
  */
 
 import { say } from "../kernel/loop.js"
-import { getDriver } from "../workflow/driver.js"
 import { askAside } from "../workflow/aside.js"
 import { drivePlanHere } from "../runners/page.js"
 import { attachmentTray, carriesAttachments, pastedImages } from "./attachments.js"
@@ -131,7 +130,7 @@ export function createComposer({
         field.value = ""
         openDoc(await askAside(repo, handle, text || "(attached)", { author: await myContactUrl(), context: ctx, attachments: taken }))
       } else {
-        const driver = getDriver(now.planUrl) ?? (await drivePlanHere(now.planUrl, { repo, holder }))
+        const driver = await drivePlanHere(now.planUrl, { repo, holder })
         await driver.reopen([now.stepId], { note: text, cascade: choice === "reopen-later", by: "person" })
         field.value = ""
       }

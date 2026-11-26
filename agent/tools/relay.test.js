@@ -114,7 +114,7 @@ describe("a tab with a relay keeps originals", () => {
     expect(sent).toEqual([])
   })
 
-  it("web_fetch keeps the PDF itself, as a node runner would", async () => {
+  it("web_fetch keeps the PDF itself, as a Node host would", async () => {
     const { send } = relayed(() => new Response(pdf, { headers: { "content-type": "application/pdf", "x-relay-final-url": "https://site.test/cells.pdf" } }))
     const repo = fakeRepo()
     const ctx = { fetchImpl: guardedFetch({ fetch: relayFetch({ fetch: send, relay: () => RELAY }) }), direct: true, repo, reader: "https://reader.test/" }

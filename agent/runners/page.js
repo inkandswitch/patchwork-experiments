@@ -11,8 +11,10 @@
  *       Counted: a session view holds it, a workflow driver holds it while
  *       the session is a running step's (workflow/driver.js), the plan's
  *       channel to its orchestrator holds that while it is open, and the
- *       last to let go ends it, letting go of the drivers its workflow
- *       tools started. A burst under way is the pool's, and goes on.
+ *       last to let go ends it. The drivers its workflow tools started are
+ *       let go once every holder but a channel has: a channel is a driver's,
+ *       so it never keeps one going. A burst under way is the pool's, and
+ *       goes on.
  *   askFor(repo, sessionUrl)  ask for a session's work with this page's
  *       keys, account and catalogue in the input (runners/ask.js askWork).
  *       Every write of work asks: a message, an approval, an answer, a
@@ -316,8 +318,9 @@ const watchKey = (doc) =>
  * @param {object} opts
  * @param {object} opts.repo
  * @param {HTMLElement|null} [opts.element]  where page tools mount
+ * @param {boolean} [opts.channel]  held for a driver's channel to the session, which does not hold the drivers its workflow tools started
  */
-export function follow(handle, { repo, element = null } = {}) {
+export function follow(handle, { repo, element = null, channel = false } = {}) {
   const url = bare(handle.url)
   let entry = followers.get(url)
   if (!entry || entry.disposed) {
@@ -325,6 +328,7 @@ export function follow(handle, { repo, element = null } = {}) {
     followers.set(url, entry)
   }
   entry.holders++
+  if (!channel) entry.toolHolders++
   if (element) entry.view.element = element
   let released = false
   return {
@@ -343,7 +347,11 @@ export function follow(handle, { repo, element = null } = {}) {
       if (released) return
       released = true
       if (entry.view.element === element) entry.view.element = null
-      if (--entry.holders > 0) return
+      entry.holders--
+      // The drivers this session's workflow tools started here; a driver
+      // stopping closes its channel, which may be the last holder.
+      if (!channel && --entry.toolHolders === 0) letGo(sessionHolder(url))
+      if (entry.holders > 0) return
       if (followers.get(url) === entry) followers.delete(url)
       entry.dispose()
     },
@@ -379,6 +387,8 @@ function startFollowing(handle, repo) {
   const entry = {
     version: CODE_VERSION,
     holders: 0,
+    // Holders other than a driver's channel.
+    toolHolders: 0,
     disposed: false,
     view,
     events,
@@ -482,7 +492,7 @@ const pageTools = async () => ({ builtins: BUILTIN_TOOLS, plugins: await loadPlu
  * `letGo(holder)`: its running steps are asked for and followed here, and
  * news goes to the orchestrating session through its events in this page,
  * which ask when they wake it; the orchestrator is followed here while that
- * channel is open. The workflow tools start a driver themselves, with what
+ * channel is open, a follow that keeps no driver going (`follow` channel). The workflow tools start a driver themselves, with what
  * their page hands them (workflow/tools.js). `startSession` is for a caller
  * with its own way of running sessions.
  */
@@ -495,7 +505,7 @@ export async function drivePlanHere(planUrl, { repo, holder = null, events = nul
     const orchestrator = sessionUrl ? await repo.find(sessionUrl) : null
     if (orchestrator) {
       notify = (url, title) => {
-        const held = follow(orchestrator, { repo })
+        const held = follow(orchestrator, { repo, channel: true })
         return held.events.forTool("workflow").open(url, { label: `workflow: ${title}`, onClose: () => held.release() })
       }
     }

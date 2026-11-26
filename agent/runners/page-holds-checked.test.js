@@ -197,10 +197,10 @@ describe("the orchestrator, followed for the channel that wakes it", () => {
 
   // The case: a view drives the plan here (the orchestrator followed for its
   // channel) and the orchestrator's own workflow tool, run in this page, joins
-  // the driver as that session. Every view lets go; the channel holds the
-  // orchestrator's follow, which holds the driver, which holds the channel,
-  // until the plan's end news closes it.
-  it.fails("lets go of everything once every view has, while the plan runs on", async () => {
+  // the driver as that session. Every view lets go: the channel's follow does
+  // not hold the session's drivers, so the driver stops and the channel
+  // closes.
+  it("lets go of everything once every view has, while the plan runs on", async () => {
     const repo = new Repo({ network: [] })
     const { orchestrator, a, b, plan } = planIn(repo)
     const shown = follow(orchestrator, { repo })

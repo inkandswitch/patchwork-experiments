@@ -73,7 +73,8 @@ export function reconnectDelay(attempt) {
 
 /**
  * Be told when the network comes back. In a page or a worker that is the
- * `online` event; node has none, and the runner's backoff alone brings it back.
+ * `online` event; node has none, and a burst's backoff alone brings it back
+ * (kernel/burst.js waitForNetwork).
  * Returns an unsubscribe function.
  */
 export function onOnline(fn, target = globalThis) {

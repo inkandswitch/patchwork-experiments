@@ -1,7 +1,7 @@
 /**
  * A checker's cases of a failed ask (runners/ask.js, through runners/page.js
  * askFor and followWorkFor, as the session view uses them): it is said under
- * the composer in words without document urls, and asked again on the next
+ * the composer in words without urls, and asked again on the next
  * change, when a pool serving the person's queue is heard, and when the
  * network comes back, without looping. The asker is the real askWork; the
  * task client is a stand-in whose doWork rejects once and then succeeds, or
@@ -191,8 +191,8 @@ describe("rejects for ever, with a pool always heard", () => {
 
 describe("what the words leave in", () => {
   // The case: a failure whose message names a web address (a relay, a sync
-  // server). Only document urls are taken out (ask.js withoutUrls).
-  it.fails("a web address in the failure is not said under the composer", async () => {
+  // server). It is taken out as a document url is (ask.js withoutUrls).
+  it("a web address in the failure is not said under the composer", async () => {
     client = standIn({ why: "fetch failed: https://relay.example.invalid/v1/connect" })
     _reset(askWork, { with: client })
     const { repo, handle, told } = followed()
@@ -205,10 +205,10 @@ describe("what the words leave in", () => {
 
 describe("a failure before the ask is counted", () => {
   // The case: askWork's own look at the session rejects (its count at these
-  // heads is not yet taken), with a pool heard serving the queue. Each pool
-  // heard asks again, each failure listens again, and the pool answers again.
-  // Bounded here by a stand-in that stops answering after 40 listeners.
-  it.fails("does not ask again and again by itself", async () => {
+  // heads is not yet taken), with a pool heard serving the queue. Only a
+  // counted ask listens for pools, so nothing asks again. A stand-in that
+  // stops answering after 40 listeners bounds it, were it to loop.
+  it("does not ask again and again by itself", async () => {
     let finds = 0
     const repo = {
       find: async () => {

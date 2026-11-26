@@ -61,12 +61,10 @@ const quiet = async () => ({ asked: false, why: "a test asks nothing" })
 describe("a workflow view open on the plan", () => {
   // The case: the workflow view is opened on a finished plan, so it starts no
   // driver. The orchestrator's workflow tool, in this page, reopens a step:
-  // the plan runs again, driven here for that session. The person closes the
-  // orchestrator's view; this page's follow of it ends, and so does the
-  // driver, while the workflow view, which says it drives the plan "while
-  // this view is open", still shows it running. Its Resume and Stop use the
-  // driver they find without joining it (getDriver(url) ?? drivePlanHere).
-  it.fails("keeps a running plan driven here while it is open", async () => {
+  // the plan runs again, driven here for that session, and the view, seeing
+  // it run, joins that driver. The person closes the orchestrator's view;
+  // this page's follow of it ends, and the driver goes on for the view.
+  it("keeps a running plan driven here while it is open", async () => {
     const repo = new Repo({ network: [] })
     const { orchestrator, a, b, plan } = planIn(repo)
     changePlan(plan, (d) => {

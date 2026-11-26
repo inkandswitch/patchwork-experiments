@@ -18,7 +18,7 @@ import { formatCost, dollars } from "../session/usage.js"
 import { STATUS } from "../session/schema.js"
 import { sessionTitle } from "../session/title.js"
 import { activityOf } from "./attention.js"
-import { getDriver, keptCounts, letGo } from "../workflow/driver.js"
+import { keptCounts, letGo } from "../workflow/driver.js"
 import { drivePlanHere } from "../runners/page.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { renderWaitingItem } from "./waiting.js"
@@ -303,13 +303,13 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
       render()
     },
     async stop() {
-      const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo, holder: root }))
+      const driver = await drivePlanHere(handle.url, { repo, holder: root })
       await driver.cancel()
     },
   }
   async function resume(stepId) {
     changePlan(handle, (d) => reopenSteps(d, [stepId], { note: "Resumed by the person: carry on from where you were.", cascade: false, by: "person" }))
-    const driver = getDriver(handle.url) ?? (await drivePlanHere(handle.url, { repo, holder: root }))
+    const driver = await drivePlanHere(handle.url, { repo, holder: root })
     driver.kick()
   }
   const onClick = (event) => {
@@ -433,14 +433,25 @@ export function WorkflowView(handle, element, { repo = globalThis.repo } = {}) {
 
   // The plan itself changes rarely, and a test or a person acting on it wants
   // to see the result at once; it renders straight away.
-  const onChange = () => render()
+  // Drive it from this page too, whenever it runs while this view is open,
+  // joining the driver already here if there is one. Nothing holds a plan:
+  // every page that has it open drives it, and their writes agree
+  // (workflow/driver.js perform).
+  function driveWhileRunning() {
+    if (!repo || disposed || handle.doc()?.status !== PLAN.running) return
+    drivePlanHere(handle.url, { repo, holder: root }).then(
+      // A view closed while the driver was being found holds nothing.
+      () => disposed && letGo(root),
+      () => {}
+    )
+  }
+  const onChange = () => {
+    render()
+    driveWhileRunning()
+  }
   handle.on("change", onChange)
   render()
-
-  // Drive it from this page too, while this view is open. Nothing holds a
-  // plan: every page that has it open drives it, and their writes agree
-  // (workflow/driver.js perform).
-  if (repo && handle.doc()?.status === PLAN.running) drivePlanHere(handle.url, { repo, holder: root }).catch(() => {})
+  driveWhileRunning()
 
   return () => {
     disposed = true

@@ -96,11 +96,11 @@ describe("layers", () => {
 
   it("only host/modules.js imports automerge by its bare name", () => {
     // Everything else takes automerge from there: one bare `@automerge/...`
-    // import anywhere in the graph keeps the shared worker's runner from
-    // loading, since a worker has no importmap. A static import at a line's
+    // import anywhere in the graph keeps a pool's run worker from loading
+    // the burst, since a worker has no importmap. A static import at a line's
     // start, so prose quoting one in a skill or a tool description is not
-    // counted, or a dynamic one. The node runner (.mjs) is not in a worker's
-    // graph, and brings its own.
+    // counted, or a dynamic one. The probes (.mjs) are not in a worker's
+    // graph, and bring their own.
     const BARE = /^\s*(?:import|export)\b[^;]*?\bfrom\s*["']@automerge\/|\bimport\s*\(\s*["']@automerge\//m
     const offenders = files.filter((path) => path.endsWith(".js") && path !== "host/modules.js" && BARE.test(readFileSync(join(ROOT, path), "utf8")))
     expect(offenders).toEqual([])

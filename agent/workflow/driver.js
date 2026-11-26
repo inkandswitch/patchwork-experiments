@@ -663,7 +663,7 @@ export class WorkflowDriver {
         d.grants = { [WEB_GRANT]: true }
       } else {
         // A worker step gets every tool that runs without the page, built-in
-        // or plugin, decided by whichever runner builds its toolset — so it
+        // or plugin, decided by the burst that builds its toolset — so it
         // can run anywhere a repo is (kernel/placement.js). Neither kind can start a
         // workflow of its own: a step is not offered the tools for it
         // (session/capabilities.js).
