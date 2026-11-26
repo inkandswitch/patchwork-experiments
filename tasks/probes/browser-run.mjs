@@ -21,9 +21,11 @@
 // with watchWork and stopWork (42); and the pool handed over to that page
 // links its Repo and runs its next doWork (30); with --no-network they show
 // this with no network. The two pages' site Repos are joined as the
-// deployed site's tabs are, by one database and one heads channel, and by
-// nothing else: the pool's messages reach the second page only on the task
-// system's own BroadcastChannel. What the stand-in cannot show is the
+// deployed site's tabs are, by one database and one heads channel; in the
+// run with the network both are given the sync server too, which joins them
+// as well, so only --no-network shows the database and heads channel alone.
+// The pool's messages reach the second page only on the task system's own
+// BroadcastChannel. What the stand-in cannot show is the
 // site's own Repo (keyhive's): its are plain Repos of the version the site's
 // import map names. Check 40, in a context of its
 // own like 26's, shows what a task wrote cut off from the network reaching

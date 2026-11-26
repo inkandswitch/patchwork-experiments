@@ -228,6 +228,11 @@ that one machine serves.
   only while concurrent makings meet, but a host given what became a spare keeps serving it, and
   work needing `node` or `unix` asked through `doWork` waits until the host is given own. Waits on
   a host that reads account storage.
+- **Two pool ids made at once.** Where no pool has ever started in a profile, two tabs asking at
+  the same moment for code that cannot travel can each find no pool id and make one; the later
+  write is kept, and the task asked under the other id waits for a pool that will never be. It
+  concerns only code served from a dev server. Making the id under a Web Lock would close it.
+  Waits on a case that needs it.
 - **The base provider's storage map made twice.** Patchwork's tool-storage provider writes
   `toolStorage = {}` when its copy of the account has none, so two devices doing so apart keep one
   map, and every other tool's storage linked in the other is lost from the account. The task

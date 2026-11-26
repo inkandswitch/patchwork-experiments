@@ -578,9 +578,10 @@ processes and say what they saw, one line per check or measurement:
   made, and a document it made, are in that Repo when `doWork` resolves; progress and the pool's
   progress messages reach it; a run worker ended while it writes a document of the page's takes
   its link out and leaves the page and the next task working; (41, 42) a second tab of the
-  profile, whose site Repo is joined to the first's only by their one database and heads channel
+  profile, whose site Repo is joined to the first's by their one database and heads channel
   (as the site's tabs are; the stand-in's Repos are plain ones of the site's version, not
-  keyhive's), has its `doWork` run by the first tab's pool, with the result, the task's change to
+  keyhive's) and, in the run with the network, by the sync server both are given too, so that
+  only `--no-network` shows the database and heads channel alone, has its `doWork` run by the first tab's pool, with the result, the task's change to
   a document it has open, and the document the task made (given at once when asked) in its own
   site Repo when `doWork` resolves, and follows and stops its work with
   `watchWork` and `stopWork`; and (30) closing the tab that runs the pool, that second tab's pool
