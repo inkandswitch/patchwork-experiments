@@ -7,18 +7,6 @@ import { describeContext, describeEvent, describeNotice } from "./blocks.js"
 import { isInterruptedResult } from "./recovery.js"
 
 /**
- * Build the provider-neutral request from the session.
- *
- * This is the one place the transcript becomes a model input, and it is
- * deliberately lossy in exactly two ways:
- *
- *   - reasoning blocks are dropped. Replaying another model's chain of thought
- *     back at it is not portable, and this transcript is model-agnostic by
- *     decision — a session can change models halfway through.
- *   - a call with no result yet becomes a result saying so, because a dangling
- *     tool call with no answer is a protocol error for most providers.
- */
-/**
  * How many screenshots to carry in a request.
  *
  * Images are expensive on every subsequent turn, not just the one that took
@@ -167,9 +155,24 @@ export function rejectSentImages(doc, { maxImages = MAX_IMAGES_IN_REQUEST } = {}
   for (const block of sent.slice(-maxImages)) block.imageRejected = true
 }
 
+/**
+ * Build the provider-neutral request from the session.
+ *
+ * This is the one place the transcript becomes a model input, and it is
+ * deliberately lossy in three ways:
+ *
+ *   - reasoning blocks are dropped. Replaying another model's chain of thought
+ *     back at it is not portable, and this transcript is model-agnostic by
+ *     decision — a session can change models halfway through.
+ *   - a reply still marked as streaming is left out: it is half a reply, a
+ *     run's under way or one a run left (session/recovery.js).
+ *   - calls and results go only in pairs: a call with no result, a result
+ *     whose call is not sent, and a call's second result are left out, since
+ *     a provider refuses each of them.
+ */
 export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST } = {}) {
   const messages = []
-  const turns = doc.turns ?? []
+  const turns = (doc.turns ?? []).filter((turn) => !turn.streaming)
   const confined = doc.scope != null
 
   // Find which result blocks still get to carry their image, and which calls
@@ -297,18 +300,22 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
  * notice written while the call ran, its result landing after it
  * (session/recovery.js stopSession); a message that ended the stop after
  * that. Each result is moved up to follow its call, in the order the results
- * were written; one whose call is not in the request stays where it is. A
- * transcript with nothing between is sent as it was.
+ * were written. Only pairs travel: a call with no result in the request, and
+ * a result whose call is not in it (a call left out with its marked reply,
+ * or one before a summary), are both left out. A transcript with nothing
+ * between and nothing unpaired is sent as it was.
  */
 function resultsAfterTheirCalls(messages) {
   const called = new Set(messages.flatMap((m) => m.content.filter((p) => p.type === "call").map((p) => p.id)))
   const results = messages.flatMap((m) => m.content.filter((p) => p.type === "result" && called.has(p.callId)))
-  if (!results.length) return messages
+  const answered = new Set(results.map((r) => r.callId))
+  const unpaired = (p) => (p.type === "call" && !answered.has(p.id)) || (p.type === "result" && !called.has(p.callId))
+  if (!results.length && !messages.some((m) => m.content.some(unpaired))) return messages
   const out = []
   for (const m of messages) {
-    const rest = m.content.filter((p) => !(p.type === "result" && called.has(p.callId)))
+    const rest = m.content.filter((p) => p.type !== "result" && !unpaired(p))
     if (rest.length) out.push(rest.length === m.content.length ? m : { ...m, content: rest })
-    const ids = new Set(m.content.filter((p) => p.type === "call").map((p) => p.id))
+    const ids = new Set(rest.filter((p) => p.type === "call").map((p) => p.id))
     const answers = results.filter((r) => ids.has(r.callId))
     if (answers.length) out.push({ role: "tool", content: answers })
   }

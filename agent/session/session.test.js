@@ -61,6 +61,8 @@ describe("toRequest", () => {
     const doc = freshDoc()
     const call = callBlock("doc_read", {}, { status: CALL.done })
     doc.turns.push(makeTurn("assistant", [textBlock(""), call]))
+    // Answered: a call goes in a request only with its result.
+    doc.turns.push(makeTurn("tool", [resultBlock(call.id, "read")]))
     const { messages } = toRequest(doc)
     expect(messages[0].content).toHaveLength(1)
     expect(messages[0].content[0].type).toBe("call")

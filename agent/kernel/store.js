@@ -13,6 +13,7 @@
  */
 
 import { isOwn } from "./own-changes.js"
+import { stopOf } from "../session/status.js"
 
 /** Store over a real automerge DocHandle. */
 export function handleStore(handle, splice = null) {
@@ -27,14 +28,16 @@ export function handleStore(handle, splice = null) {
      */
     appendText(path, delta) {
       if (!delta) return
-      handle.change((draft) => {
-        let node = draft
-        for (let i = 0; i < path.length - 1; i++) node = node[path[i]]
-        const key = path[path.length - 1]
-        const current = node[key] ?? ""
-        if (splice) splice(draft, path, current.length, 0, delta)
-        else node[key] = current + delta
-      })
+      handle.change((draft) => this.appendTextIn(draft, path, delta))
+    },
+    /** The same append, inside a change already open. */
+    appendTextIn(draft, path, delta) {
+      let node = draft
+      for (let i = 0; i < path.length - 1; i++) node = node[path[i]]
+      const key = path[path.length - 1]
+      const current = node[key] ?? ""
+      if (splice) splice(draft, path, current.length, 0, delta)
+      else node[key] = current + delta
     },
     url: handle.url,
   }
@@ -52,13 +55,9 @@ export function memoryStore(initial = {}) {
     },
     appendText(path, delta) {
       if (!delta) return
-      this.change((draft) => {
-        let node = draft
-        for (let i = 0; i < path.length - 1; i++) node = node[path[i]]
-        const key = path[path.length - 1]
-        node[key] = (node[key] ?? "") + delta
-      })
+      this.change((draft) => this.appendTextIn(draft, path, delta))
     },
+    appendTextIn: textInto,
     onChange(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -108,6 +107,67 @@ export function batchedAppender(store, flushMs = 120) {
       flush()
     },
   }
+}
+
+/**
+ * A store a run writes through only while it may (kernel/burst.js).
+ *
+ *   change(fn)       runs `fn` only if `settled` has resolved, `signal` is not
+ *                    aborted and no stop is in force (session/status.js
+ *                    stopOf), each checked inside the change itself, so a
+ *                    stop that merged in a moment ago refuses it. Returns
+ *                    whether it ran.
+ *   changeOwn(fn)    a write of the run's own values: allowed after an abort
+ *                    or a stop, never before `settled`. `fn` checks inside
+ *                    the change that what it writes is still the run's (its
+ *                    reply's mark, a call it claimed, `burst` naming it).
+ *   appendText       through `change`.
+ *
+ * A refused write changes nothing, so it makes no change at all.
+ */
+export function guardedStore(store, { signal = null, settled }) {
+  let isSettled = false
+  Promise.resolve(settled).then(
+    () => (isSettled = true),
+    () => {}
+  )
+  const may = (d) => isSettled && !signal?.aborted && !stopOf(d)
+  const guarded = {
+    url: store.url,
+    doc: () => store.doc(),
+    change(fn) {
+      let ran = false
+      store.change((d) => {
+        if (!may(d)) return
+        fn(d)
+        ran = true
+      })
+      return ran
+    },
+    changeOwn(fn) {
+      if (!isSettled) return false
+      let ran = false
+      store.change((d) => {
+        fn(d)
+        ran = true
+      })
+      return ran
+    },
+    appendText(path, delta) {
+      if (!delta) return
+      guarded.change((d) => (store.appendTextIn ? store.appendTextIn(d, path, delta) : textInto(d, path, delta)))
+    },
+  }
+  if (store.onChange) guarded.onChange = (listener) => store.onChange(listener)
+  return guarded
+}
+
+/** Append to a string field inside a change, as a whole new value. */
+function textInto(draft, path, delta) {
+  let node = draft
+  for (let i = 0; i < path.length - 1; i++) node = node[path[i]]
+  const key = path[path.length - 1]
+  node[key] = (node[key] ?? "") + delta
 }
 
 /**

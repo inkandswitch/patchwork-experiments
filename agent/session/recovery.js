@@ -53,10 +53,62 @@ export function interruptedTurns(doc, opts = {}) {
  * same reason — nothing in it was acted on. Returns how many went.
  */
 export function dropInterruptedTurns(doc, opts = {}) {
-  const ids = new Set(interruptedTurns(doc, opts).map((turn) => turn.id))
+  return dropTurns(doc, interruptedTurns(doc, opts))
+}
+
+function dropTurns(doc, turns) {
+  const ids = new Set(turns.map((turn) => turn.id))
   if (!ids.size) return 0
   for (let i = doc.turns.length - 1; i >= 0; i--) if (ids.has(doc.turns[i].id)) doc.turns.splice(i, 1)
   return ids.size
+}
+
+// ---- Judged by the run a session's `burst` names (kernel/burst.js).
+//
+// A mark is a reply's `streaming` or a running call's claim, each naming a
+// run in `runner`. Debris is a mark that does not name `holder`, the run
+// `burst` names, or any mark while `burst` is null: equality, with no clock
+// and no judgement of whether anything is alive.
+
+/** Running calls whose claim does not name `holder`. */
+export function debrisCalls(doc, holder) {
+  return unansweredCalls(doc).filter((call) => call.status === CALL.running && (holder == null || call.runner !== holder))
+}
+
+/** Replies marked as streaming whose mark does not name `holder`. */
+export function debrisTurns(doc, holder) {
+  return (doc?.turns ?? []).filter((turn) => turn.role === "assistant" && turn.streaming && (holder == null || turn.streaming.runner !== holder))
+}
+
+/** Is there debris for `holder`? */
+export function hasDebris(doc, holder) {
+  return debrisCalls(doc, holder).length > 0 || debrisTurns(doc, holder).length > 0
+}
+
+/**
+ * Settle what other runs left, for run `run`, inside a change: one change at
+ * a run's turn boundary (kernel/burst.js). When `burst` is null or names
+ * another run of the same task (`ownRun`), it is rewritten to name `run`.
+ * Then every mark not naming `run` is settled as a takeover settles one:
+ * marked replies are dropped, to be asked for again whole; a running call
+ * that only reads (`rerun`) is put back to run; any other running call is
+ * answered INTERRUPTED. `reconnecting` is cleared: the run is going on.
+ *
+ * When `burst` names a run of another task, it is that run's session, and
+ * nothing is written: returns null. Otherwise returns how many marks were
+ * settled.
+ */
+export function settleDebris(doc, run, { ownRun = () => false, rerun = () => false } = {}) {
+  const named = doc.burst?.run ?? null
+  if (named != null && named !== run && !ownRun(named)) return null
+  if (named !== run) doc.burst = { run }
+  const calls = debrisCalls(doc, run)
+  const turns = debrisTurns(doc, run)
+  if (!doc.turns) doc.turns = []
+  dropTurns(doc, turns)
+  closeCalls(doc, calls, rerun)
+  if (doc.reconnecting != null) doc.reconnecting = null
+  return calls.length + turns.length
 }
 
 /** What an interrupted call's result says. */
@@ -76,9 +128,14 @@ export const INTERRUPTED =
 export function resolveOrphans(doc, opts = {}) {
   const orphans = orphanedCalls(doc, opts)
   if (!orphans.length) return 0
-  const rerun = typeof opts.rerun === "function" ? opts.rerun : () => false
+  closeCalls(doc, orphans, typeof opts.rerun === "function" ? opts.rerun : () => false)
+  return orphans.length
+}
+
+/** Put back the calls `rerun` says may run again; answer the rest INTERRUPTED. */
+function closeCalls(doc, calls, rerun) {
   const closed = []
-  for (const call of orphans) {
+  for (const call of calls) {
     const found = findCall(doc, call.id)
     if (!found) continue
     if (rerun(call)) move(found.block, "release")
@@ -86,7 +143,6 @@ export function resolveOrphans(doc, opts = {}) {
   }
   if (!doc.turns) doc.turns = []
   if (closed.length) doc.turns.push(makeTurn("tool", closed.map((call) => resultBlock(call.id, INTERRUPTED, { isError: true, summary: "interrupted", placeholder: true }))))
-  return orphans.length
 }
 
 /**
