@@ -122,7 +122,8 @@ describe("debris, judged by equality with burst.run", () => {
       expect(String(findResult(doc, id).block.output)).toBe(INTERRUPTED)
       expect(findResult(doc, id).block.placeholder).toBe(true)
     }
-    expect(doc.reconnecting).toBe(null)
+    // A wait for the network is not debris: it ends when a request gets through, or with the burst.
+    expect(doc.reconnecting).toEqual({ reason: "gone", since: 1, attempts: 1 })
   })
 
   it("settleDebris with burst naming another run of its task: rewrites burst and settles that run's marks", () => {
@@ -409,6 +410,93 @@ describe("a burst", () => {
     expect(doc.reconnecting).toBe(null)
     expect(doc.turns.at(-1).blocks.map((b) => b.text)).toEqual(["Back."])
     expect(doc.burst).toBe(null)
+  })
+
+  /** A model that is not reached `misses` times, then answers. */
+  const unreachable = (misses, answer = "Back.") => {
+    let asked = 0
+    return {
+      async *stream() {
+        if (asked++ < misses) throw new Interruption("no network")
+        yield { type: "text", delta: answer }
+        yield { type: "stop", reason: "stop" }
+      },
+    }
+  }
+
+  it("waiting through several tries: reconnecting stays set from the first refused request until one gets through, and no reply is written and taken back", async () => {
+    const repo = new Repo({ network: [] })
+    const handle = sessionIn(repo)
+    // What every change shows: the wait, and the replies in the transcript.
+    const seen = []
+    handle.on("change", ({ doc }) => seen.push({ waiting: doc.reconnecting ? { ...doc.reconnecting } : null, replies: doc.turns.filter((t) => t.role === "assistant").length }))
+    const waits = []
+    const result = await burstOf(handle, taskOf(repo), { provider: unreachable(3), waitForNetwork: async (attempt) => waits.push({ attempt, ...plain(handle).reconnecting }) })
+    expect(result.outcome).toBe(OUTCOME.idle)
+    expect(waits.map((w) => [w.attempt, w.attempts, w.reason])).toEqual([[1, 1, "no network"], [2, 2, "no network"], [3, 3, "no network"]])
+    expect(new Set(waits.map((w) => w.since)).size).toBe(1)
+    // Set once, cleared once: never cleared and set again while it waits.
+    const first = seen.findIndex((s) => s.waiting)
+    const cleared = seen.findIndex((s, i) => i > first && !s.waiting)
+    expect(first).toBeGreaterThanOrEqual(0)
+    expect(seen.slice(cleared).every((s) => !s.waiting)).toBe(true)
+    // No reply until the model answered: none written while it waited.
+    expect(seen.slice(0, cleared).every((s) => s.replies === 0)).toBe(true)
+    const doc = plain(handle)
+    expect(doc.turns.map((t) => [t.role, t.blocks.map((b) => b.text).join("")])).toEqual([["user", "hello"], ["assistant", "Back."]])
+    expect(doc.reconnecting).toBe(null)
+  })
+
+  it("a message written while the request waited stays after the reply that did not see it, and is answered next", async () => {
+    const repo = new Repo({ network: [] })
+    const handle = sessionIn(repo)
+    let asked = 0
+    const provider = {
+      async *stream() {
+        if (asked++ === 0) {
+          handle.change((d) => d.turns.push(makeTurn("user", [textBlock("and this")])))
+          yield { type: "text", delta: "To hello." }
+        } else yield { type: "text", delta: "To this." }
+        yield { type: "stop", reason: "stop" }
+      },
+    }
+    const result = await burstOf(handle, taskOf(repo), { provider })
+    expect(result.outcome).toBe(OUTCOME.idle)
+    expect(plain(handle).turns.map((t) => [t.role, t.blocks.map((b) => b.text).join("")])).toEqual([
+      ["user", "hello"],
+      ["assistant", "To hello."],
+      ["user", "and this"],
+      ["assistant", "To this."],
+    ])
+  })
+
+  it("a Stop while it waits for the network says so, and the burst ends", async () => {
+    const repo = new Repo({ network: [] })
+    const handle = sessionIn(repo)
+    const result = await burstOf(handle, taskOf(repo), {
+      provider: unreachable(Infinity),
+      waitForNetwork: async (attempt) => {
+        if (attempt === 2) handle.change((d) => stopSession(d, STOP.stopped, null, "automerge:person"))
+      },
+    })
+    expect(result.outcome).toBe(BURST.stopped)
+    const doc = plain(handle)
+    expect(stopOf(doc)).toMatchObject({ kind: STOP.stopped, text: "Stopped while waiting for the network (no network)." })
+    expect(doc.reconnecting).toBe(null)
+    expect(doc.burst).toBe(null)
+    expect(doc.turns.filter((t) => t.role === "assistant" && !t.blocks.length)).toEqual([])
+  })
+
+  it("a cancel while it waits for the network ends the wait with the burst", async () => {
+    const repo = new Repo({ network: [] })
+    const handle = sessionIn(repo)
+    const task = taskOf(repo)
+    const result = await burstOf(handle, task, { provider: unreachable(Infinity), waitForNetwork: async () => task.controller.abort("cancelled") })
+    expect(result.outcome).toBe("cancelled")
+    const doc = plain(handle)
+    expect(doc.reconnecting).toBe(null)
+    expect(doc.burst).toBe(null)
+    expect(doc.turns.map((t) => t.role)).toEqual(["user"])
   })
 
   it("stops mid-stream at a stop written elsewhere: the reply keeps its text, and nothing more is asked", async () => {

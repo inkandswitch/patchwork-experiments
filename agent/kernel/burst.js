@@ -164,13 +164,17 @@ export async function runBurst(ctx, opts) {
     const outcome = signal.aborted && TASK_REASONS.has(signal.reason) ? signal.reason : stopOf(store.doc()) && result.outcome === OUTCOME.aborted ? BURST.stopped : result.outcome
 
     // Its end: `burst` cleared while it names this run or another of its
-    // task, except when another run has the task now.
+    // task, except when another run has the task now; and with it a wait for
+    // the network (a cancel while it waited), except when another run will
+    // have the task (`stopping`), which takes the wait up.
     if (outcome !== "yielded") {
       // A task document it cannot read now still leaves it its own run.
       const runs = new Set(await taskRuns().catch(() => []))
       guarded.changeOwn((d) => {
         const named = d.burst?.run ?? null
-        if (named != null && (named === run || runs.has(named))) d.burst = null
+        if (named == null || (named !== run && !runs.has(named))) return
+        d.burst = null
+        if (outcome !== "stopping" && d.reconnecting != null) d.reconnecting = null
       })
     }
     return ended(outcome, result.reason)

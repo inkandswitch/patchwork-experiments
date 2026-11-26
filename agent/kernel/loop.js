@@ -229,10 +229,9 @@ export async function run(opts) {
     try {
       assistant = await streamTurn(settings)
     } catch (err) {
-      // streamTurn appends its assistant turn before the first token arrives,
-      // so a request that dies leaves an empty one behind, which renders as
-      // nothing and tells nobody anything.
-      dropTrailingEmptyTurn(store)
+      // A reply the model began and that has no block yet would render as
+      // nothing and tell nobody anything.
+      dropTurn(store, err?.turnId, { onlyEmpty: true })
       if (signal?.aborted) return stopped()
       // The network went away. What streamed of the turn is half a turn — no
       // call in it was committed — so it goes, and the turn is asked for again
@@ -497,13 +496,16 @@ async function maybeCompact(settings) {
 /**
  * Stream one model response into the document.
  *
- * Blocks are created lazily — an assistant turn that is pure tool use never
- * gets an empty text block — and text is appended through a batching appender
- * so a long answer is not one automerge change per token.
+ * The reply turn is written when the model first answers, and its blocks
+ * lazily — an assistant turn that is pure tool use never gets an empty text
+ * block — and text is appended through a batching appender so a long answer
+ * is not one automerge change per token.
  */
 async function streamTurn(opts) {
   const { store, provider, toolset, signal, system, flushMs = 120, emit, stillOurs } = opts
 
+  // The last turn the request is built from: the reply goes in after it.
+  const after = store.doc()?.turns?.at(-1)?.id ?? null
   const built = toRequest(store.doc(), { system })
   // Files the request refers to are loaded now, not kept in the session.
   built.messages = await withFileData(built.messages, opts.ctx?.repo ?? null)
@@ -526,9 +528,25 @@ async function streamTurn(opts) {
 
   // Marked while it streams, so a run that finds it after this one has gone
   // knows it is half a reply and asks again (session/recovery.js settleDebris).
+  //
+  // Written when the model first answers, not before the request: a request
+  // that never gets through (no network, a refused key) writes no reply, so a
+  // burst waiting for the network has none to take back at each try. It goes
+  // in after the last turn the request was built from (`after`), so a message
+  // written while the request waited stays after the reply that did not see
+  // it, and is answered next.
   const turn = makeTurn("assistant", [])
   turn.streaming = { runner: opts.runnerUrl ?? null }
-  appendTurn(store, turn)
+  let written = false
+  const writeReply = () => {
+    written = true
+    store.change((d) => {
+      if (!d.turns) d.turns = []
+      const i = after == null ? -1 : d.turns.findIndex((t) => t.id === after)
+      if (i < 0) d.turns.push(turn)
+      else d.turns.splice(i + 1, 0, turn)
+    })
+  }
   // Found by its id at every write, never by where it was pushed: a turn that
   // merges in before it (a Stop's notice from a copy that had not seen it)
   // moves it along the list.
@@ -611,6 +629,7 @@ async function streamTurn(opts) {
         lost = true
         break
       }
+      if (!written) writeReply()
 
       if (event.type === "text") {
         if (textPath === null) {
@@ -912,12 +931,18 @@ export function releaseNowPermitted({ store }) {
   return freed.length
 }
 
-/** Take back a turn by id: a half-streamed one an interruption cut off. */
-function dropTurn(store, turnId) {
+/**
+ * Take back a reply by id: a half-streamed one an interruption cut off, or
+ * (`onlyEmpty`) one that never received a block. Nothing is written when
+ * there is no such reply: a request that never got through wrote none.
+ */
+function dropTurn(store, turnId, { onlyEmpty = false } = {}) {
   if (!turnId) return
+  const drops = (t) => t?.id === turnId && t.role === "assistant" && (!onlyEmpty || !(t.blocks ?? []).length)
+  if (!(store.doc()?.turns ?? []).some(drops)) return
   store.change((d) => {
-    const i = (d.turns ?? []).findIndex((t) => t.id === turnId)
-    if (i >= 0 && d.turns[i].role === "assistant") d.turns.splice(i, 1)
+    const i = (d.turns ?? []).findIndex(drops)
+    if (i >= 0) d.turns.splice(i, 1)
   })
 }
 
@@ -931,14 +956,6 @@ function reconnect(store, err, emit) {
   store.change((d) => markReconnecting(d, reason))
   emit?.({ type: "finish", outcome: OUTCOME.reconnecting, reason })
   return { outcome: OUTCOME.reconnecting, reason }
-}
-
-/** Remove a just-appended assistant turn that never received anything. */
-function dropTrailingEmptyTurn(store) {
-  store.change((d) => {
-    const last = d.turns?.[d.turns.length - 1]
-    if (last && last.role === "assistant" && (last.blocks ?? []).length === 0) d.turns.pop()
-  })
 }
 
 /** Ask the model to go on, as the harness: a notice in a user-role turn (session/blocks.js). */

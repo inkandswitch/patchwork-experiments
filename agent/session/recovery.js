@@ -46,7 +46,10 @@ export function hasDebris(doc, holder) {
  * Then every mark not naming `run` is settled as a takeover settles one:
  * marked replies are dropped, to be asked for again whole; a running call
  * that only reads (`rerun`) is put back to run; any other running call is
- * answered INTERRUPTED. `reconnecting` is cleared: the run is going on.
+ * answered INTERRUPTED. `reconnecting` is left as it is: it stays set from a
+ * request the network refused until one gets through or the burst ends
+ * (kernel/loop.js, kernel/burst.js), so a burst waiting for the network does
+ * not say it is working at each try.
  *
  * When `burst` names a run of another task, it is that run's session, and
  * nothing is written: returns null. Otherwise returns how many marks were
@@ -61,7 +64,6 @@ export function settleDebris(doc, run, { ownRun = () => false, rerun = () => fal
   if (!doc.turns) doc.turns = []
   dropTurns(doc, turns)
   closeCalls(doc, calls, rerun)
-  if (doc.reconnecting != null) doc.reconnecting = null
   return calls.length + turns.length
 }
 
