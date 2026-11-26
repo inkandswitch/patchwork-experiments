@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v14]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v15]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -1193,6 +1193,7 @@ function foldSoon(repo, storage) {
   }
   const state = { again: false };
   mine.set(storage.url, state);
+  /** @returns {Promise<void>} */
   const next = () =>
     fold(repo, storage)
       .catch(() => {

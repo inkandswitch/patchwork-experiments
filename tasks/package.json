@@ -14,6 +14,7 @@
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json",
     "build:node": "node scripts/build-node.mjs",
     "host": "node dist-node/host.mjs"
   },
@@ -38,6 +39,7 @@
     "nodemon": "^3.1.14",
     "site-automerge-repo": "npm:@chee/automerge-repo@2.6.0-rabbit.1",
     "site-automerge-repo-storage-indexeddb": "npm:@chee/automerge-repo-storage-indexeddb@2.6.0-rabbit.1",
+    "typescript": "^5.9.3",
     "vite": "^5.4.21",
     "vite-plugin-css-injected-by-js": "^3.5.2",
     "vite-plugin-solid": "^2.11.17",

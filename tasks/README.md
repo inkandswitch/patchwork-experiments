@@ -376,7 +376,9 @@ only asks of) is in `PLANS.md`, each with what it waits on.
 
 ## Tests and probes
 
-`pnpm test` runs the unit tests (rules, client, pool, workers, views). The probes run real
+`pnpm test` runs the unit tests (rules, client, pool, workers, views), and `pnpm typecheck` checks
+the types of everything in `src/`, the JavaScript kit files included (`tsc`, as `tsconfig.json`
+says). The probes run real
 processes and say what they saw, one line per check or measurement:
 
 - `probes/node-run.mjs` (after `pnpm build:node`; `--only 1,16` runs only the checks named):

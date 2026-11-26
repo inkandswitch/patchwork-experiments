@@ -57,6 +57,9 @@ importers:
       site-automerge-repo-storage-indexeddb:
         specifier: npm:@chee/automerge-repo-storage-indexeddb@2.6.0-rabbit.1
         version: '@chee/automerge-repo-storage-indexeddb@2.6.0-rabbit.1'
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       vite:
         specifier: ^5.4.21
         version: 5.4.21(@types/node@20.19.43)
@@ -1232,6 +1235,11 @@ packages:
 
   touch@3.1.1:
     resolution: {integrity: sha512-r0eojU4bI8MnHr8c5bNo7lJDdI2qXlWWJk6a9EAFG7vbhTjElYhBVS3/miuE0uOuoLdb8Mc/rVfsmm6eo5o9GA==}
+    hasBin: true
+
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
     hasBin: true
 
   undefsafe@2.0.5:
@@ -2532,6 +2540,8 @@ snapshots:
       is-number: 7.0.0
 
   touch@3.1.1: {}
+
+  typescript@5.9.3: {}
 
   undefsafe@2.0.5: {}
 

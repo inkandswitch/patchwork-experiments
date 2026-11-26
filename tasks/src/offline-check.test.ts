@@ -253,7 +253,7 @@ function converged(d: ReturnType<typeof devices>, made: string[], asked: Asked[]
   expect(runsGoingOn.map((one) => one.taskUrl)).toEqual([kept]);
   // a pool that hears the kept task's run, or holds it, does not take it again, on any queue
   for (const url of made) {
-    expect(mayClaim(doc(kept), 'another pool', named(doc(url), 'shared', kept), allHeard)).toBe(false);
+    expect(mayClaim(doc(kept) as Task, 'another pool', named(doc(url) as Queue, 'shared', kept), allHeard)).toBe(false);
   }
   return own;
 }
@@ -274,7 +274,7 @@ function meetings(n: number): [number, number][][] {
 describe('devices that never met, each with no network, then meeting in every order (one storage document made before they parted)', () => {
   for (const n of [2, 3]) {
     it(`${n} devices: each has own at once, page work done in the page, and a task run alone; met pairwise in every order, with each pair folding as it meets, then all: they agree on own, nothing asked is lost, and the shared key ends with one run going on`, async () => {
-      const owns = new Set<string>();
+      const owns = new Set<number>();
       for (const actors of permutations(ACTORS.slice(0, n))) {
         for (const order of meetings(n)) {
           const d = devices(actors, { shareStorage: true });
