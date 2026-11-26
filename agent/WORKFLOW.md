@@ -97,7 +97,7 @@ step's transcript, and only the orchestrator decides.
 
 The orchestrator is woken with news: a step finished, a step asks something,
 a person stopped a step, the plan is over or out of money. Each thing is said
-once (twice at most in a crossing: *The driver*). `told` holds a key for each, and the key names the occurrence, not just the kind, so nothing is
+once (in a crossing, once by each page at most: *The driver*). `told` holds a key for each, and the key names the occurrence, not just the kind, so nothing is
 ever reset: a reopened step's next finish is a different key.
 
 | key | |
@@ -131,7 +131,7 @@ change; `usage`) or **set only if unset** (a step's `sessionUrl`,
 by id or key). Two pages in one crossing may still, accepted: begin a step
 in two sessions (the plan names one; the other's burst ends at its first
 boundary, `not-the-step`, before a paid request unless the merge is slower
-than a beat); tell news twice; add a request twice (one by id, decided on
+than a beat); tell news once each; add a request twice (one by id, decided on
 either entry); open two ledgers; speak a reopen twice; link a source twice.
 A page that missed both another's finish of a step and the reopen that
 followed may file it done too, and the merge may keep that.
