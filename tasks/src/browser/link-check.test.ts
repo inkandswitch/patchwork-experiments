@@ -23,6 +23,15 @@
 //   the page still syncing with a peer of its own.
 // - A 5 MB document across the link, and a link taken out in the middle of
 //   sending one.
+// - A worker's code in another's name and in its own: as the page, the pool,
+//   another run worker or a made-up id, before its Repo is made and after,
+//   and from a worker linked later, reaches nothing; a leave in its own name
+//   and an arrive after it cost no other link anything, and its link's end
+//   still takes it out. Two costs it can put on the page without bound, kept
+//   as it.fails: every arrive in its own name makes the page's Repo take it
+//   for a new peer again (on the stand-in page, with 200 documents open, 2000
+//   of them held the page's main thread for seconds), and every malformed
+//   message about a document it named makes the page's Repo log an error.
 //
 // Sample document ids are made up. Real time.
 
@@ -30,7 +39,7 @@ import { MessageChannelNetworkAdapter } from '@automerge/automerge-repo-network-
 import { stringifyAutomergeUrl, type AutomergeUrl, type DocHandle, type DocumentId, type Repo, type StorageAdapterInterface } from '@automerge/automerge-repo';
 import * as A from '@automerge/automerge';
 import { Repo as SiteRepo, initSubduction as initSiteSubduction } from 'site-automerge-repo';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PageLinks, gatedAdapterClass, type GatedAdapterClass, type PortAdapterClass } from './link';
 import { reachPage } from '../run-worker';
 
@@ -408,6 +417,117 @@ describe('ten links at once', () => {
     expect(page.peers).toEqual([other.peerId]);
     expect(await stillSyncing(page, other)).toBe(true);
   }, 30_000);
+});
+
+// A third checker's. A run worker's code can reach its own end of its link
+// (`ctx.repo.networkSubsystem.adapters[0].messagePortRef.port`) and post
+// anything on it, before its Repo is made and after.
+describe("a worker's code in another's name and in its own", () => {
+  const empty = () => A.generateSyncMessage(A.init(), A.initSyncState())[1]!.slice().buffer;
+
+  it('as the page, the pool, another run worker or a made-up id, before its Repo is made and after, and from a worker linked later: the page keeps its peers and goes on syncing', async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const pool = keep(linkedRepo(links, 'pool'));
+    const b = keep(linkedRepo(links, 'run 1'));
+    const doc = page.create<{ n: number; by?: string }>({ n: 0 });
+    const poolDoc = await pool.find<{ n: number; by?: string }>(doc.url);
+    const bDoc = await b.find<{ n: number; by?: string }>(doc.url);
+    const peersBefore = [...page.peers];
+
+    const { port: cPort, peer: cPeer } = links.open('run 2');
+    const speakAs = (port: MessagePort, ids: string[]) => {
+      for (const senderId of ids) {
+        port.postMessage({ type: 'arrive', senderId, peerMetadata: { isEphemeral: true } });
+        port.postMessage({ type: 'welcome', senderId, targetId: page.peerId, peerMetadata: {} });
+        port.postMessage({ type: 'sync', senderId, targetId: page.peerId, documentId: doc.documentId, data: empty() });
+        port.postMessage({ type: 'leave', senderId });
+        port.postMessage({ type: 'leave', senderId, targetId: page.peerId });
+      }
+    };
+    const others = [page.peerId, pool.peerId, b.peerId, 'made-up', `task-link-${crypto.randomUUID()}`];
+    speakAs(cPort, others);
+    await quiet(200);
+    const c = keep(make([new MessageChannelNetworkAdapter(cPort as any)], undefined, cPeer));
+    expect(await until(() => c.peers.length > 0)).toBe(true);
+    speakAs(cPort, others);
+    await quiet(200);
+    const { port: dPort, peer: dPeer } = links.open('run 3');
+    const d = keep(make([new MessageChannelNetworkAdapter(dPort as any)], undefined, dPeer));
+    expect(await until(() => d.peers.length > 0)).toBe(true);
+    speakAs(dPort, [...others, cPeer]);
+    await quiet(300);
+
+    expect([...page.peers].sort()).toEqual([...peersBefore, cPeer, dPeer].sort());
+    expect(page.networkSubsystem.adapters.length).toBe(4);
+    doc.change((x) => void (x.n = 1));
+    expect(await until(() => poolDoc.doc()?.n === 1 && bDoc.doc()?.n === 1)).toBe(true);
+    bDoc.change((x) => void (x.by = 'b'));
+    expect(await until(() => doc.doc()?.by === 'b' && poolDoc.doc()?.by === 'b')).toBe(true);
+  }, 20_000);
+
+  it("a leave in its own name, messages after it and an arrive again cost no other link anything; the link's end still takes the worker out", async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const pool = keep(linkedRepo(links, 'pool'));
+    const { port, peer } = links.open('run 1');
+    const run = keep(make([new MessageChannelNetworkAdapter(port as any)], undefined, peer));
+    const doc = page.create<{ n: number }>({ n: 0 });
+    const poolDoc = await pool.find<{ n: number }>(doc.url);
+    const runDoc = await run.find<{ n: number }>(doc.url);
+
+    port.postMessage({ type: 'leave', senderId: peer });
+    expect(await until(() => !page.peers.includes(peer as never))).toBe(true);
+    for (let i = 0; i < 20; i++) port.postMessage({ type: 'sync', senderId: peer, targetId: page.peerId, documentId: doc.documentId, data: empty() });
+    port.postMessage({ type: 'arrive', senderId: peer, peerMetadata: { isEphemeral: true } });
+    expect(await until(() => page.peers.includes(peer as never))).toBe(true);
+    runDoc.change((x) => void (x.n = 1));
+    expect(await until(() => doc.doc()?.n === 1 && poolDoc.doc()?.n === 1)).toBe(true);
+
+    links.remove('run 1');
+    expect(await until(() => !page.peers.includes(peer as never))).toBe(true);
+    expect({ peers: page.peers, adapters: page.networkSubsystem.adapters.length, links: links.size }).toEqual({ peers: [pool.peerId], adapters: 1, links: 1 });
+    doc.change((x) => void (x.n = 2));
+    expect(await until(() => poolDoc.doc()?.n === 2)).toBe(true);
+  }, 20_000);
+
+  it.fails('an arrive in its own name, said again and again, makes the page take it for a new peer once, not each time', async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const { port, peer } = links.open('run 1');
+    const run = keep(make([new MessageChannelNetworkAdapter(port as any)], undefined, peer));
+    expect(await until(() => run.peers.length > 0)).toBe(true);
+    let taken = 0;
+    page.networkSubsystem.on('peer', () => void taken++);
+    for (let i = 0; i < 500; i++) port.postMessage({ type: 'arrive', senderId: peer, peerMetadata: { isEphemeral: true } });
+    await quiet(500);
+    // today: 500, each running the page's Repo's addPeer over every document it has open
+    expect(taken).toBeLessThanOrEqual(1);
+  }, 15_000);
+
+  it.fails('malformed messages about a document it named do not make the page log without end', async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const { port, peer } = links.open('run 1');
+    const run = keep(make([new MessageChannelNetworkAdapter(port as any)], undefined, peer));
+    const doc = page.create<{ n: number }>({ n: 0 });
+    await run.find(doc.url);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 300; i++) {
+        port.postMessage({ type: 'sync', senderId: peer, targetId: page.peerId, documentId: doc.documentId, data: crypto.getRandomValues(new Uint8Array(64)).buffer });
+      }
+      await quiet(500);
+      // today: one "error handling inbound message" for each of the 300
+      expect(errors.mock.calls.length).toBeLessThan(10);
+    } finally {
+      errors.mockRestore();
+    }
+  }, 15_000);
 });
 
 describe('a 5 MB document', () => {

@@ -153,7 +153,16 @@ that one machine serves.
     as its own worker, and reaches no other worker's port, but its realm is the site's origin: it
     can use every BroadcastChannel and IndexedDB database of the origin, the origin's Web Locks,
     and fetches to it (README, "Offline and partition"). Waits on confinement (below, "A new
-    worker for every run").
+    worker for every run"). On the stand-in page, a run worker's code read a document the page
+    made and never gave it straight from the site's database (a third checker's scratch probe).
+  - *What task code costs the page in its own name.* The page's end admits any number of `arrive`
+    messages from its link's peer, and the page's Repo takes each for a new peer, which runs its
+    `addPeer` over every document the page has open: on the stand-in page, with 200 documents
+    open, 2000 such messages from one run worker's code held the page's main thread for 16 s, with
+    no network (a third checker's scratch probe; `link-check.test.ts` keeps it as `it.fails`).
+    Each malformed message about a document the worker named makes the page's Repo log an error
+    (2000 messages, 2050 errors; also `it.fails`). Admitting one `arrive` per link would end the
+    first; the second needs a bound on what one link may cost the page.
   - *Not shown on the deployed site* (keyhive's Repo): only on a stand-in page and in unit tests.
     Nor is it shown that the sync server accepts a document a plain worker made offline once the
     keyhive page takes it in and the network returns, nor hours of use. On the stand-in page,

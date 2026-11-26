@@ -369,7 +369,10 @@ end admits an `arrive` or `leave` only from that id and addressed to no one, and
 only from that id and addressed to the page; everything else is dropped before the adapter sees
 it. That holds whatever order things happen in: a run worker imports its task's code before its
 Repo has announced itself, and code that speaks first, in any peer's name, is heard by nothing.
-A task's code can speak on its link only as its own worker. (A Repo sends its messages for a peer
+A task's code can speak on its link only as its own worker. As its own worker, though, it can make
+the page work without bound: every `arrive` it repeats makes the page's Repo take it for a new peer
+again, over every document the page has open, and every malformed message about a document it
+named makes the page's Repo log an error (PLANS, "What the local link still lacks"). (A Repo sends its messages for a peer
 through the adapter that last announced that peer, and forgets a peer whose adapter says it left,
 so a link that admitted another peer's name would let code that knew the pool's id, which the
 ephemeral messages the page relays carry, take the page's messages for the pool or cut the pool
