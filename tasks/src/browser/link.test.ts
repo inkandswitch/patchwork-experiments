@@ -1,8 +1,9 @@
 // @vitest-environment node
 //
 // The local link (link.ts): the gate's verdict for every kind of message,
-// both ways, in a finite table, and for what arrives on the page's port (the
-// handshake, and whose message it is); then a page's Repo and a worker's, each with
+// both ways, in a finite table, for data the page could not read, and for
+// what arrives on the page's port (the handshake, whose message it is, and in
+// what order); then a page's Repo and a worker's, each with
 // storage of its own and no sync server, joined only by a MessageChannel
 // whose page end is gated, as pool-host.ts adds it, and whose worker end is
 // the plain MessageChannel adapter, as a worker's Repo takes it, with no
@@ -13,6 +14,7 @@
 
 import { MessageChannelNetworkAdapter } from '@automerge/automerge-repo-network-messagechannel';
 import {
+  cbor,
   initSubduction,
   Repo,
   stringifyAutomergeUrl,
@@ -88,7 +90,10 @@ describe('the gate, for every kind of message', () => {
   const OTHER = idOf(madeUp(16, 2));
   const SHUT = idOf(madeUp(32, 3));
   const TYPES = ['request', 'sync', 'ephemeral', 'doc-unavailable', 'remote-heads-changed', 'remote-subscription-change', 'subduction', 'arrive'];
-  const message = (type: string, documentId?: string) => ({ type, documentId, senderId: 'a', targetId: 'b' });
+  // each with data the page's Repo can read, as a worker's Repo sends it
+  const SYNC = A.generateSyncMessage(A.init(), A.initSyncState())[1]!;
+  const dataOf = (type: string) => (type === 'ephemeral' ? cbor.encode({ hello: 1 }) : type === 'request' || type === 'sync' ? SYNC : undefined);
+  const message = (type: string, documentId?: string) => ({ type, documentId, senderId: 'a', targetId: 'b', data: dataOf(type) });
 
   it('from the worker: request and sync name an unprotected document and pass, and are refused for a protected one; the rest pass only for a named document', () => {
     for (const type of TYPES) {
@@ -126,32 +131,66 @@ describe('the gate, for every kind of message', () => {
     }
   });
 
-  it("on the port: only the peer the page named speaks, and only to the page: its arrive and leave addressed to no one, its other messages addressed to the page; everything else is dropped, in any order", () => {
+  it('from the worker: a request, sync or ephemeral message that would pass but whose data the page could not read names nothing and ends the link; one that would not pass is judged as before', () => {
+    const garbage = new Uint8Array(64).fill(7);
+    for (const type of ['request', 'sync', 'ephemeral']) {
+      const naming = type !== 'ephemeral';
+      for (const data of [garbage, new Uint8Array(0), undefined, 'text', Array.from(dataOf(type)!)]) {
+        // about a named document, or naming an unprotected one
+        const named = new LinkGate('w');
+        named.named.add(OPEN);
+        expect([type, named.fromWorker({ type, documentId: OPEN, data })]).toEqual([type, 'end']);
+        const unnamed = new LinkGate('w');
+        expect([type, unnamed.fromWorker({ type, documentId: OTHER, data })]).toEqual([type, naming ? 'end' : 'drop']);
+        expect(unnamed.named.has(OTHER)).toBe(false);
+        // about a protected document: refused or dropped, whatever its data
+        expect([type, new LinkGate('w').fromWorker({ type, documentId: SHUT, data })]).toEqual([type, naming ? 'refuse' : 'drop']);
+      }
+      const named = new LinkGate('w');
+      named.named.add(OPEN);
+      expect([type, named.fromWorker({ type, documentId: OPEN, data: dataOf(type) })]).toEqual([type, 'pass']);
+    }
+    // the rest carry no data the page decodes
+    for (const type of ['doc-unavailable', 'remote-heads-changed']) {
+      const gate = new LinkGate('w');
+      gate.named.add(OPEN);
+      expect(gate.fromWorker({ type, documentId: OPEN, data: garbage })).toBe('pass');
+    }
+  });
+
+  it("on the port: only the peer the page named speaks, and only to the page: its first word once (an arrive to no one or a welcome to the page), then its messages to the page, then at most one leave to no one, then nothing; everything else is dropped", () => {
     const PAGE = 'page';
     const at = (type: string, senderId: unknown, targetId?: string) => ({ type, senderId, ...(targetId === undefined ? {} : { targetId }) });
-    const gate = new LinkGate('w');
-    expect(gate.peer).toBe('w');
-    // nothing that is not a message from the named peer, before or after it announces itself
     const others = [null, undefined, 'arrive', 7, {}, { type: 'arrive' }, at('arrive', ''), at('arrive', 'pool'), at('welcome', 'pool', PAGE), at('leave', 'pool'), at('sync', 'pool', PAGE), at('arrive', 7)];
-    expect(others.map((m) => gate.fromPort(m, PAGE))).toEqual(Array(others.length).fill(false));
-    // its messages to the page pass, whatever their type (what they name is the other half's to judge), before its announcement too
-    for (const type of [...TYPES.filter((type) => type !== 'arrive'), 'welcome']) {
-      expect([type, gate.fromPort(at(type, 'w', PAGE), PAGE)]).toEqual([type, true]);
+    const ownToPage = TYPES.filter((type) => type !== 'arrive').map((type) => at(type, 'w', PAGE));
+    const misaddressed = [at('sync', 'w', 'pool'), at('welcome', 'w', 'pool'), at('sync', 'w'), at('arrive', 'w', PAGE), at('leave', 'w', 'pool'), at('leave', 'w', PAGE)];
+    const none = (gate: LinkGate, messages: unknown[]) => expect(messages.map((m) => gate.fromPort(m, PAGE))).toEqual(Array(messages.length).fill(false));
+
+    for (const first of [at('arrive', 'w'), at('welcome', 'w', PAGE)]) {
+      const gate = new LinkGate('w');
+      expect(gate.peer).toBe('w');
+      // before its first word: nothing, not even its own messages to the page or its leave
+      none(gate, [...others, ...ownToPage, at('leave', 'w'), ...misaddressed]);
+      // nothing addressed while the page has no id
+      expect(gate.fromPort(at('welcome', 'w', PAGE), undefined)).toBe(false);
+      expect(gate.fromPort(first, PAGE)).toBe(true);
+      // its first word is not admitted again, as either kind
+      none(gate, [at('arrive', 'w'), at('welcome', 'w', PAGE), first]);
+      // its messages to the page pass, whatever their type (what they name is the other half's to judge)
+      expect(ownToPage.map((m) => gate.fromPort(m, PAGE))).toEqual(Array(ownToPage.length).fill(true));
+      none(gate, [...others, ...misaddressed]);
+      expect(gate.over).toBe(false);
+      // its leave, once; then nothing at all
+      expect(gate.fromPort(at('leave', 'w'), PAGE)).toBe(true);
+      expect(gate.over).toBe(true);
+      none(gate, [at('leave', 'w'), at('arrive', 'w'), at('welcome', 'w', PAGE), ...ownToPage]);
     }
-    // its announcements, and its leave, addressed to no one; again too, since it is still only itself
-    for (const own of [at('arrive', 'w'), at('leave', 'w'), at('arrive', 'w')]) {
-      expect(gate.fromPort(own, PAGE)).toBe(true);
-    }
-    // anything of its own addressed to another peer, or to no one where a target is needed
-    expect(gate.fromPort(at('sync', 'w', 'pool'), PAGE)).toBe(false);
-    expect(gate.fromPort(at('welcome', 'w', 'pool'), PAGE)).toBe(false);
-    expect(gate.fromPort(at('sync', 'w'), PAGE)).toBe(false);
-    expect(gate.fromPort(at('arrive', 'w', PAGE), PAGE)).toBe(false);
-    expect(gate.fromPort(at('leave', 'w', 'pool'), PAGE)).toBe(false);
-    // and nothing addressed while the page has no id
-    expect(gate.fromPort(at('sync', 'w', PAGE), undefined)).toBe(false);
-    expect(others.map((m) => gate.fromPort(m, PAGE))).toEqual(Array(others.length).fill(false));
-    expect(gate.peer).toBe('w');
+
+    // a link the page ended admits nothing more
+    const ended = new LinkGate('w');
+    expect(ended.fromPort(at('arrive', 'w'), PAGE)).toBe(true);
+    ended.end();
+    none(ended, [...ownToPage, at('leave', 'w'), at('arrive', 'w')]);
   });
 });
 

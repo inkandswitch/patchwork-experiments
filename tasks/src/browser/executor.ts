@@ -33,6 +33,8 @@
 // Before the pool hears the ending, the page is asked to save them
 // (`RunWorkerLink.keep`), waited for at most KEEP_LIMIT_MS; what could not be
 // done is said in the run's log, and the ending is then heard all the same.
+// An error that escapes the worker after its ending waits behind the ending
+// too, so a run that returned is not recorded as one whose worker died.
 
 import type { Executor, Job, RunWorker, StopReason, WorkerEvents } from '../pool';
 import type { FromRunWorker, RunWorkerSettings, ToRunWorker } from '../run-worker';
@@ -150,16 +152,20 @@ export class BrowserExecutor implements Executor {
       }
     };
     // An error that escapes the task's code, or a script that will not load.
-    // The worker is ended, so that what escaped cannot go on beside the next
-    // job, and the pool hears that it is gone.
+    // The worker is ended at once, so that what escaped cannot go on beside
+    // the next job, and the pool hears that it is gone in its turn, behind
+    // what the worker said before it: an ending said before the error, and
+    // waiting for the page's save, is heard first.
     worker.onerror = (event: ErrorEvent) => {
       event.preventDefault();
       if (over) {
         return;
       }
-      events.log(`its worker crashed: ${event.message || 'it could not be started'}`);
       worker.terminate();
-      exit();
+      hear(() => {
+        events.log(`its worker crashed: ${event.message || 'it could not be started'}`);
+        exit();
+      });
     };
     worker.onmessageerror = () => {
       if (!over) {

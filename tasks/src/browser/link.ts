@@ -32,7 +32,13 @@
 //   and pass; for a protected one they are dropped, and the worker is told,
 //   as a Repo says it, that the page does not have it (`doc-unavailable`).
 //   `ephemeral`, `doc-unavailable` and `remote-heads-changed` pass for a
-//   named document and are dropped for any other.
+//   named document and are dropped for any other. A `request`, `sync` or
+//   `ephemeral` that would pass, but whose data the page's Repo could not
+//   read (it decodes a sync message, and an ephemeral one's CBOR, as the
+//   gate does first), names nothing and ends the link
+//   from the page's side, as the worker's leave would: no worker of the task
+//   system's own sends one, and each the Repo were handed would cost the page
+//   a logged error, without bound.
 // - To the worker: the same five types pass for a named document. A
 //   `request` for any other is dropped, and the page's Repo is told that the
 //   worker does not have it, so that its find does not wait on the worker.
@@ -46,11 +52,17 @@
 // handed, it chooses a fresh random peer id (`PageLinks`), and that link's
 // worker's Repo is made with exactly that id (the pool's worker's from
 // 'start', a run worker's from its settings, both set by the task system's
-// own code before any task's code is loaded). The page's end admits an
-// `arrive` or `leave` only from that peer and addressed to no one, and any
-// other message only from that peer and addressed to the page; everything
-// else is dropped. So whatever order things happen in, a worker's code can
-// speak on its link only as its own worker. A Repo sends its messages for a
+// own code before any task's code is loaded). The page's end admits only that
+// peer, and from it, in this order: its first word (an `arrive` addressed to
+// no one, or a `welcome` addressed to the page), once; then any message
+// addressed to the page; then at most one `leave` addressed to no one, after
+// which nothing. Everything else is dropped. So whatever order things happen
+// in, a worker's code can speak on its link only as its own worker, and is
+// taken for a new peer once: each arrive or welcome a Repo hears makes it
+// offer the peer every document it has open, so one admitted again and again
+// would cost the page that much each time. (The two Repos each say `arrive`
+// as they connect and answer the other's with a `welcome`, so the page hears
+// both, and takes the first.) A Repo sends its messages for a
 // peer through the adapter that last announced that peer, and forgets a peer
 // whose adapter says it left; without the named peer, a worker's code that
 // knew another peer's id (the pool's, which the page's relayed ephemeral
@@ -76,10 +88,11 @@
 // executor.ts): a page reloaded the moment the run is reported has it, with
 // no network too. The page saves only documents that run's link carried.
 
-import { parseAutomergeUrl, type AutomergeUrl } from '@automerge/automerge-repo/slim';
+import { decodeSyncMessage } from '@automerge/automerge/slim';
+import { cbor, parseAutomergeUrl, type AutomergeUrl } from '@automerge/automerge-repo/slim';
 
-/** What the gate does with a message: passes it, drops it, or drops it and answers that the document is not there. */
-export type Verdict = 'pass' | 'drop' | 'refuse';
+/** What the gate does with a message: passes it, drops it, drops it and answers that the document is not there, or drops it and ends the link. */
+export type Verdict = 'pass' | 'drop' | 'refuse' | 'end';
 
 /** The messages that are about one document, and the only ones a link carries. */
 const ABOUT_A_DOCUMENT = new Set(['request', 'sync', 'ephemeral', 'doc-unavailable', 'remote-heads-changed']);
@@ -116,6 +129,27 @@ export function unprotected(documentId: string): boolean {
 interface AboutADocument {
   type?: unknown;
   documentId?: unknown;
+  data?: unknown;
+}
+
+/** Whether the page's Repo can read the data of a message of `type` (as the adapter emits it): a sync message, or an ephemeral message's CBOR. */
+function readable(type: string, data: unknown): boolean {
+  if (type !== 'request' && type !== 'sync' && type !== 'ephemeral') {
+    return true;
+  }
+  if (!(data instanceof Uint8Array)) {
+    return false;
+  }
+  try {
+    if (type === 'ephemeral') {
+      cbor.decode(data);
+    } else {
+      decodeSyncMessage(data);
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** One link's gate, on the page's end (see the header). */
@@ -123,23 +157,52 @@ export class LinkGate {
   /** The documents the worker has named, each unprotected. */
   readonly named = new Set<string>();
 
+  /** Where the link is: waiting for its peer's first word, open, or over (it left, or the page ended it). */
+  private state: 'waiting' | 'open' | 'over' = 'waiting';
+
   /** `peer`: the link's one peer, the id the page chose for its worker's Repo. */
   constructor(readonly peer: string) {}
 
+  /** Whether the link is over: nothing more from its worker is admitted. */
+  get over() {
+    return this.state === 'over';
+  }
+
+  /** Ends the link from the page's side: nothing more from its worker is admitted. */
+  end() {
+    this.state = 'over';
+  }
+
   /** Whether the adapter may read `message`, as it arrived on the page's port; `self` is the page's peer id. */
   fromPort(message: unknown, self: unknown): boolean {
-    if (typeof message !== 'object' || message === null) {
+    if (this.state === 'over' || typeof message !== 'object' || message === null) {
       return false;
     }
     const { type, senderId, targetId } = message as { type?: unknown; senderId?: unknown; targetId?: unknown };
     if (senderId !== this.peer) {
       return false;
     }
-    if (type === 'arrive' || type === 'leave') {
-      // the two the adapter sends addressed to no one
-      return !('targetId' in message);
+    const toNoOne = !('targetId' in message);
+    const toPage = typeof self === 'string' && targetId === self;
+    if (type === 'arrive' || type === 'welcome') {
+      // its first word, once
+      if (this.state !== 'waiting' || !(type === 'arrive' ? toNoOne : toPage)) {
+        return false;
+      }
+      this.state = 'open';
+      return true;
     }
-    return typeof self === 'string' && targetId === self;
+    if (this.state !== 'open') {
+      return false;
+    }
+    if (type === 'leave') {
+      if (!toNoOne) {
+        return false;
+      }
+      this.state = 'over';
+      return true;
+    }
+    return toPage;
   }
 
   /** What to do with a message from the worker to the page. */
@@ -149,14 +212,12 @@ export class LinkGate {
     if (!ABOUT_A_DOCUMENT.has(type) || typeof id !== 'string') {
       return 'drop';
     }
-    if (this.named.has(id)) {
-      return 'pass';
+    const passing = this.named.has(id) || (NAMING.has(type) && unprotected(id));
+    if (!passing) {
+      return NAMING.has(type) ? 'refuse' : 'drop';
     }
-    if (!NAMING.has(type)) {
-      return 'drop';
-    }
-    if (!unprotected(id)) {
-      return 'refuse';
+    if (!readable(type, message?.data)) {
+      return 'end';
     }
     this.named.add(id);
     return 'pass';
@@ -268,7 +329,13 @@ export function gatedAdapterClass(Adapter: PortAdapterClass): GatedAdapterClass 
       }
       const message = args[0] as RepoMessage;
       const verdict = this.gate.fromWorker(message);
-      if (verdict === 'refuse') {
+      if (verdict === 'end') {
+        // as its leave would: the page forgets the worker, and the adapter leaves the Repo
+        this.gate.end();
+        console.warn(`tasks: the page ended its link to a worker, which sent a ${message.type} message the page could not read`);
+        super.emit('peer-disconnected', { peerId: this.gate.peer });
+        super.emit('close');
+      } else if (verdict === 'refuse') {
         super.send({ type: 'doc-unavailable', senderId: String(this.peerId), targetId: message.senderId, documentId: message.documentId });
       }
       return verdict === 'pass' ? super.emit(event, ...args) : false;

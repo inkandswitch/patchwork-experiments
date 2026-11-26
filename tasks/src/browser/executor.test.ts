@@ -7,7 +7,8 @@
 // saved it, or KEEP_LIMIT_MS has passed, or the page said why not (both
 // said in the run's log); an ending that names nothing, and every ending
 // with no link, is heard at once; what the worker says after its ending
-// waits behind it; a worker ended meanwhile is heard of no more.
+// waits behind it, an error that escapes the worker included (the worker is
+// ended at once); a worker ended meanwhile is heard of no more.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserExecutor, KEEP_LIMIT_MS, notKept, type RunWorkerLink } from './executor';
@@ -178,6 +179,32 @@ describe('a linked run worker, in a browser', () => {
     await tick();
     expect(heard).toEqual([['exit']]);
     expect(link.ended).toBe(true);
+  });
+
+  it("an error that escapes the worker after its ending, while the page saves, ends the worker at once and is heard behind the ending; one with no ending before it, at once", async () => {
+    const { link, name, saves } = standInLink();
+    const { events: e, heard } = events();
+    new BrowserExecutor({ settings, taskBytes: async () => undefined, link: () => link }).start(e);
+    name('p');
+    await tick();
+    const worker = StandInWorker.made[0];
+    worker.say({ type: 'done', result: 7, wrote: ['a'] });
+    (worker.onerror as (event: unknown) => void)({ message: 'late', preventDefault() {} });
+    expect(worker.terminated).toBe(true);
+    await tick();
+    expect(heard).toEqual([]);
+    expect(link.ended).toBe(false);
+    saves[0].answer(null);
+    await tick();
+    expect(heard).toEqual([['done', 7], ['log', 'its worker crashed: late'], ['exit']]);
+    expect(link.ended).toBe(true);
+
+    const alone = events();
+    new BrowserExecutor({ settings, taskBytes: async () => undefined }).start(alone.events);
+    (StandInWorker.made[1].onerror as (event: unknown) => void)({ message: 'early', preventDefault() {} });
+    expect(StandInWorker.made[1].terminated).toBe(true);
+    await tick();
+    expect(alone.heard).toEqual([['log', 'its worker crashed: early'], ['exit']]);
   });
 
   it('a worker ended before the page named its peer is never told its settings', async () => {

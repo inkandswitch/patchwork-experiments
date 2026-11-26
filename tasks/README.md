@@ -365,14 +365,19 @@ own handshake (`arrive`, `welcome`, `leave`) included. The page names each link'
 every link it makes or is handed it chooses a fresh random peer id, and the worker at the other end
 makes its Repo with exactly that id (the pool's worker from `start`, a run worker from its
 settings, both set by the task system's own code before any task's code is loaded). The page's
-end admits an `arrive` or `leave` only from that id and addressed to no one, and any other message
-only from that id and addressed to the page; everything else is dropped before the adapter sees
-it. That holds whatever order things happen in: a run worker imports its task's code before its
-Repo has announced itself, and code that speaks first, in any peer's name, is heard by nothing.
-A task's code can speak on its link only as its own worker. As its own worker, though, it can make
-the page work without bound: every `arrive` it repeats makes the page's Repo take it for a new peer
-again, over every document the page has open, and every malformed message about a document it
-named makes the page's Repo log an error (PLANS, "What the local link still lacks"). (A Repo sends its messages for a peer
+end admits only that id, and from it, in this order: its first word (an `arrive` addressed to no
+one or a `welcome` addressed to the page), once; then messages addressed to the page; then at most
+one `leave` addressed to no one, after which nothing. Everything else is dropped before the adapter
+sees it. That holds whatever order things happen in: a run worker imports its task's code before
+its Repo has announced itself, and code that speaks first, in any peer's name, is heard by nothing.
+A task's code can speak on its link only as its own worker, and the page takes that worker for a
+new peer once (each arrive or welcome a Repo hears makes it offer the peer every document it has
+open); a worker that leaves and arrives again only cuts itself off. A message the gate would pass
+whose data the page's Repo could not read (a sync message, or an ephemeral message's CBOR, decoded
+by the gate first) ends the link from the page's side, as a leave would, and is said once in the
+page's console; so malformed messages cost the page one line, not one each. A message that reads
+but that the Repo still rejects (a change that decodes but cannot be applied) is logged by the page
+each time (PLANS, "What the local link still lacks"). (A Repo sends its messages for a peer
 through the adapter that last announced that peer, and forgets a peer whose adapter says it left,
 so a link that admitted another peer's name would let code that knew the pool's id, which the
 ephemeral messages the page relays carry, take the page's messages for the pool or cut the pool
@@ -382,7 +387,9 @@ Kept before reported. A linked run worker says how a run ended once the page's R
 run wrote, and names those documents. Before the pool reports the run, its worker asks the page to
 save them, and the page saves, in the site's Repo, those that run's link carried. The pool waits
 for that at most 10 s (`KEEP_LIMIT_MS` in `src/browser/executor.ts`), and a save that failed or did
-not come in time is said in the run's log; the run is then reported all the same. So a page
+not come in time is said in the run's log; the run is then reported all the same. An error that
+escapes the run worker after it said the run ended ends the worker at once, and is heard behind
+the ending, so the run is recorded as it ended, not as lost. So a page
 reloaded the moment a run is reported has what it wrote, with no network too (browser-run
 `--lifetimes` check 39).
 
@@ -427,14 +434,15 @@ never, a run's report waits for the page; `link.test.ts`); what a worker's code 
 by hand gets it no protected document by any other field or spelling, and an announcement, a
 `leave` or a message in the pool's name, or one addressed to another peer, before the worker's
 Repo announces itself or after, neither cuts the page off from the pool nor throws in the page, a
-worker's Repo made with another id than the one the page chose is not heard, the page saves of
+worker's Repo made with another id than the one the page chose is not heard, its own arrive said
+again and again is taken once and a malformed message ends its link alone, the page saves of
 the documents a run names only those its link carried, no offer the gate drops
 carries a change, ten links write at once and each run is reported once the page has its writes,
 and a 5 MB document crosses, also after a link taken out in the middle of it
 (`link-check.test.ts`); a linked run worker's Repo has the peer id its settings carry, and its
 ending names what the code wrote (`run-worker.test.ts`); its settings wait until the page has
 named its link's peer, and its ending is heard once the page has saved what it names, or at the
-bound with the log saying why not (`executor.test.ts`); the page names a fresh peer for each link,
+bound with the log saying why not, and an error after it waits behind it (`executor.test.ts`); the page names a fresh peer for each link,
 answers each save, and says why one failed (`pool-host.test.ts`); two replicas that each made a queue
 apart agree on own when they meet, lose no task and run none twice; a replica that sees a pointer
 to a queue it does not have asks a queue of its own and folds it into own once own arrives;

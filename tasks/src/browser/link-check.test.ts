@@ -26,12 +26,15 @@
 // - A worker's code in another's name and in its own: as the page, the pool,
 //   another run worker or a made-up id, before its Repo is made and after,
 //   and from a worker linked later, reaches nothing; a leave in its own name
-//   and an arrive after it cost no other link anything, and its link's end
-//   still takes it out. Two costs it can put on the page without bound, kept
-//   as it.fails: every arrive in its own name makes the page's Repo take it
-//   for a new peer again (on the stand-in page, with 200 documents open, 2000
-//   of them held the page's main thread for seconds), and every malformed
-//   message about a document it named makes the page's Repo log an error.
+//   and an arrive after it cost no other link anything (the page does not
+//   take it back: it only cuts itself off), and its link's end
+//   still takes it out. Two costs it could put on the page without bound
+//   until the page's end admitted one first word per link and read what it
+//   passes: every arrive in its own name made the page's Repo take it for a
+//   new peer again (on the stand-in page, with 200 documents open, 2000 of
+//   them held the page's main thread for seconds), and every malformed
+//   message about a document it named made the page's Repo log an error. Now
+//   the page takes it once, and the first malformed message ends its link.
 //
 // Sample document ids are made up. Real time.
 
@@ -467,33 +470,37 @@ describe("a worker's code in another's name and in its own", () => {
     expect(await until(() => doc.doc()?.by === 'b' && poolDoc.doc()?.by === 'b')).toBe(true);
   }, 20_000);
 
-  it("a leave in its own name, messages after it and an arrive again cost no other link anything; the link's end still takes the worker out", async () => {
+  it("a leave in its own name, messages after it and an arrive again cost no other link anything: the worker only cuts itself off; the link's end still takes it out", async () => {
     const page = keep(make());
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
     const pool = keep(linkedRepo(links, 'pool'));
     const { port, peer } = links.open('run 1');
     const run = keep(make([new MessageChannelNetworkAdapter(port as any)], undefined, peer));
-    const doc = page.create<{ n: number }>({ n: 0 });
-    const poolDoc = await pool.find<{ n: number }>(doc.url);
-    const runDoc = await run.find<{ n: number }>(doc.url);
+    const doc = page.create<{ n: number; by?: string }>({ n: 0 });
+    const poolDoc = await pool.find<{ n: number; by?: string }>(doc.url);
+    const runDoc = await run.find<{ n: number; by?: string }>(doc.url);
 
     port.postMessage({ type: 'leave', senderId: peer });
     expect(await until(() => !page.peers.includes(peer as never))).toBe(true);
     for (let i = 0; i < 20; i++) port.postMessage({ type: 'sync', senderId: peer, targetId: page.peerId, documentId: doc.documentId, data: empty() });
     port.postMessage({ type: 'arrive', senderId: peer, peerMetadata: { isEphemeral: true } });
-    expect(await until(() => page.peers.includes(peer as never))).toBe(true);
-    runDoc.change((x) => void (x.n = 1));
-    expect(await until(() => doc.doc()?.n === 1 && poolDoc.doc()?.n === 1)).toBe(true);
+    await quiet(300);
+    // the page does not take it back: what it writes no longer reaches the page
+    expect(page.peers).toEqual([pool.peerId]);
+    runDoc.change((x) => void (x.by = 'run'));
+    await quiet(300);
+    expect(doc.doc()?.by).toBeUndefined();
+    doc.change((x) => void (x.n = 1));
+    expect(await until(() => poolDoc.doc()?.n === 1)).toBe(true);
 
     links.remove('run 1');
-    expect(await until(() => !page.peers.includes(peer as never))).toBe(true);
     expect({ peers: page.peers, adapters: page.networkSubsystem.adapters.length, links: links.size }).toEqual({ peers: [pool.peerId], adapters: 1, links: 1 });
     doc.change((x) => void (x.n = 2));
     expect(await until(() => poolDoc.doc()?.n === 2)).toBe(true);
   }, 20_000);
 
-  it.fails('an arrive in its own name, said again and again, makes the page take it for a new peer once, not each time', async () => {
+  it('an arrive in its own name, said again and again, makes the page take it for a new peer once, not each time', async () => {
     const page = keep(make());
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
@@ -504,11 +511,11 @@ describe("a worker's code in another's name and in its own", () => {
     page.networkSubsystem.on('peer', () => void taken++);
     for (let i = 0; i < 500; i++) port.postMessage({ type: 'arrive', senderId: peer, peerMetadata: { isEphemeral: true } });
     await quiet(500);
-    // today: 500, each running the page's Repo's addPeer over every document it has open
+    // before the page admitted one first word per link: 500, each running the page's Repo's addPeer over every document it has open
     expect(taken).toBeLessThanOrEqual(1);
   }, 15_000);
 
-  it.fails('malformed messages about a document it named do not make the page log without end', async () => {
+  it('malformed messages about a document it named do not make the page log without end', async () => {
     const page = keep(make());
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
@@ -522,11 +529,43 @@ describe("a worker's code in another's name and in its own", () => {
         port.postMessage({ type: 'sync', senderId: peer, targetId: page.peerId, documentId: doc.documentId, data: crypto.getRandomValues(new Uint8Array(64)).buffer });
       }
       await quiet(500);
-      // today: one "error handling inbound message" for each of the 300
+      // before the gate read what it passes: one "error handling inbound message" for each of the 300
       expect(errors.mock.calls.length).toBeLessThan(10);
     } finally {
       errors.mockRestore();
     }
+  }, 15_000);
+
+  it('the first malformed message ends its link alone: the page forgets that worker, says so once, and goes on with the pool', async () => {
+    const page = keep(make());
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const pool = keep(linkedRepo(links, 'pool'));
+    const { port, peer } = links.open('run 1');
+    const run = keep(make([new MessageChannelNetworkAdapter(port as any)], undefined, peer));
+    const doc = page.create<{ n: number }>({ n: 0 });
+    const poolDoc = await pool.find<{ n: number }>(doc.url);
+    await run.find(doc.url);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 300; i++) {
+        port.postMessage({ type: 'sync', senderId: peer, targetId: page.peerId, documentId: doc.documentId, data: crypto.getRandomValues(new Uint8Array(64)).buffer });
+      }
+      await quiet(500);
+      // before the gate read what it passes: one "error handling inbound message" for each of the 300
+      expect(errors.mock.calls.length).toBeLessThan(10);
+      expect(warnings.mock.calls.filter(([line]) => String(line).startsWith('tasks: the page ended its link')).length).toBe(1);
+    } finally {
+      errors.mockRestore();
+      warnings.mockRestore();
+    }
+    // the page forgot the worker alone, and its adapter left the Repo; the pool goes on
+    expect({ peers: page.peers, adapters: page.networkSubsystem.adapters.length }).toEqual({ peers: [pool.peerId], adapters: 1 });
+    doc.change((x) => void (x.n = 1));
+    expect(await until(() => poolDoc.doc()?.n === 1)).toBe(true);
+    links.remove('run 1');
+    expect(links.size).toBe(1);
   }, 15_000);
 });
 
