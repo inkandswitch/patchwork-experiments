@@ -7,6 +7,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PoolHostStatus } from './pool-host';
 
+/** The class of the page's end of a link (link.ts), as loaded: none unless a case gives one. */
+let adapterClass: unknown = null;
+vi.mock('./link', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./link')>()),
+  linkAdapterClass: () => Promise.resolve(adapterClass),
+}));
+
 const ACCOUNT = 'automerge:tuasnaJMthhBUKLv9unCJSvTFrC';
 const STORAGE = 'automerge:3WewSgnLmFK4FjUXUCzPa939hyNe';
 const QUEUE = 'automerge:2XzPUSj52GAd1wnWv1vR5JXH94VZ';
@@ -130,6 +137,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  adapterClass = null;
   delete (navigator as any).locks;
   vi.unstubAllGlobals();
   delete (globalThis as any).accountDocHandle;
@@ -589,5 +597,98 @@ describe('a hidden page, and a newer build heard', () => {
     p.release();
     hide();
     p.unwatch();
+  });
+});
+
+describe('the local link', () => {
+  /** A stand-in for the page's end of a link: the port it was made on, and whether it was ended. */
+  class StandInAdapter {
+    static made: StandInAdapter[] = [];
+    ended = false;
+    constructor(readonly port: MessagePort) {
+      StandInAdapter.made.push(this);
+    }
+    send() {}
+    emit() {
+      return true;
+    }
+    disconnect() {
+      this.ended = true;
+    }
+  }
+
+  /** The site's Repo, with a network subsystem that keeps the adapters added to it. */
+  function linkableRepo(docs: Record<string, unknown>) {
+    const made = standInRepo(docs);
+    const adapters = new Set<StandInAdapter>();
+    made.repo.networkSubsystem = {
+      addNetworkAdapter: (adapter: StandInAdapter) => void adapters.add(adapter),
+      removeNetworkAdapter: (adapter: StandInAdapter) => {
+        adapters.delete(adapter);
+        adapter.disconnect();
+      },
+    };
+    return { ...made, adapters };
+  }
+
+  beforeEach(() => {
+    StandInAdapter.made = [];
+    adapterClass = StandInAdapter;
+  });
+
+  it("links the site's Repo to the pool's worker as it starts, and to each run worker it says, until that one ends or the pool does", async () => {
+    const { startPoolHost } = await import('./pool-host');
+    const { repo, adapters } = linkableRepo({ [ACCOUNT]: { toolStorage: { 'tasks-next': STORAGE } }, [STORAGE]: { [QUEUE]: true } });
+    const release = startPoolHost(repo);
+    await settle();
+    const worker = StandInWorker.made[0];
+    const start = worker.told.find((message) => message.type === 'start');
+    // (a port is compared by identity: printing one overflows the stack)
+    expect(typeof start.link?.postMessage).toBe('function');
+    expect(adapters.size).toBe(1);
+    worker.say({ type: 'ready' });
+
+    const { port1, port2 } = new MessageChannel();
+    worker.say({ type: 'link', id: 1, port: port1 });
+    expect(adapters.size).toBe(2);
+    expect(StandInAdapter.made.at(-1)!.port === port1).toBe(true);
+    const other = new MessageChannel();
+    worker.say({ type: 'link', id: 2, port: other.port1 });
+    expect(adapters.size).toBe(3);
+    worker.say({ type: 'unlink', id: 1 });
+    expect(adapters.size).toBe(2);
+    expect(StandInAdapter.made[1].ended).toBe(true);
+
+    // the pool's worker fails: every link it had leaves the Repo
+    worker.say({ type: 'failed', message: 'on purpose' });
+    expect(adapters.size).toBe(0);
+    expect(StandInAdapter.made.every((adapter) => adapter.ended)).toBe(true);
+    release();
+    for (const port of [port2, other.port2]) port.close();
+  });
+
+  it('a link said after the pool was ended is closed, not added', async () => {
+    const { startPoolHost } = await import('./pool-host');
+    const { repo, adapters } = linkableRepo({ [ACCOUNT]: { toolStorage: { 'tasks-next': STORAGE } }, [STORAGE]: { [QUEUE]: true } });
+    const release = startPoolHost(repo);
+    await settle();
+    const worker = StandInWorker.made[0];
+    worker.say({ type: 'ready' });
+    worker.say({ type: 'stopped' });
+    expect(adapters.size).toBe(0);
+    const { port1, port2 } = new MessageChannel();
+    worker.say({ type: 'link', id: 3, port: port1 });
+    expect(adapters.size).toBe(0);
+    release();
+    port2.close();
+  });
+
+  it("a Repo with no network subsystem, or no adapter to be had: the pool starts with no link, as before", async () => {
+    const { startPoolHost } = await import('./pool-host');
+    const { repo } = standInRepo({ [ACCOUNT]: { toolStorage: { 'tasks-next': STORAGE } }, [STORAGE]: { [QUEUE]: true } });
+    const release = startPoolHost(repo);
+    await settle();
+    expect(StandInWorker.made[0].told.find((message) => message.type === 'start').link).toBeUndefined();
+    release();
   });
 });

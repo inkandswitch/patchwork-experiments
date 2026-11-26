@@ -48,6 +48,17 @@
 //   that has started is ended only when its worker stops answering
 //   (UNANSWERED_MS); an error it reports is logged, and it goes on.
 //
+// The local link (link.ts). The page that runs the pool links the site's
+// Repo (the first Repo given to `followAccount`) to the pool's worker: a
+// MessageChannel made for each start, its page end added to the site's Repo,
+// the other handed to the worker in 'start'. The pool's worker makes one more
+// for each run worker it starts, hands that one its end, and sends this page
+// the other ('link'), which is added the same way, and taken out again when
+// the run worker ends ('unlink'). Every link of a pool's worker is taken out
+// when that worker ends here (`end`): it stopped, failed, stopped answering,
+// or the page was hidden. A host given no Repo, or whose page cannot load the
+// adapter, starts its pool with no link, as before there was one.
+//
 // A newer build. The tab holding the lock runs the build it loaded. Every
 // host says its build on BUILD_CHANNEL when it starts, and answers an
 // older one with its own. A host that hears of a newer build stands down for
@@ -67,6 +78,7 @@ import { ownQueue, sparesOf, storageUrlOf } from '../task-client.js';
 import { getRepoConfig } from '../repo-config';
 import { BEAT_MS, LAPSE_MS } from '../task-rules.js';
 import { browserPoolId, browserPoolName } from './pool-id';
+import { linkAdapterClass, PageLinks, type LinkableRepo, type PortAdapterClass } from './link';
 import type { FromPoolWorker, ServedQueues, ToPoolWorker } from './pool-worker';
 
 declare const __TASKS_BUILD__: number | undefined;
@@ -276,8 +288,13 @@ class BrowserPoolHost implements PoolHost {
   /** A newer build is here: never run the pool again. */
   private standing = false;
   private retry: ReturnType<typeof setTimeout> | undefined;
+  /** The site's Repo, which the pool's worker is linked to (the first given to `followAccount`). */
+  private siteRepo: LinkableRepo | null = null;
+  /** Given the lock, and loading the link's adapter before it starts the pool: said as starting. */
+  private granted = false;
 
   constructor() {
+    void linkAdapterClass(); // loaded ahead, so that the pool starts as soon as it is given the lock
     const channel = new BroadcastChannel(BUILD_CHANNEL);
     channel.onmessage = ({ data }) => {
       const build = Number(data?.build);
@@ -344,6 +361,7 @@ class BrowserPoolHost implements PoolHost {
    * Repo given is used.
    */
   followAccount(repo: Repo) {
+    this.siteRepo ??= repo as unknown as LinkableRepo;
     if (this.following) {
       return;
     }
@@ -556,6 +574,9 @@ class BrowserPoolHost implements PoolHost {
       }
       return this.held.ready ? 'running' : 'starting';
     }
+    if (this.granted && this.unwanted() === null) {
+      return 'starting';
+    }
     if (this.standing) {
       return 'stood down';
     }
@@ -615,8 +636,17 @@ class BrowserPoolHost implements PoolHost {
       });
   }
 
-  /** Runs the pool while this page holds the lock: the lock is let go when the promise settles. */
+  /** Runs the pool while this page holds the lock, once the link's adapter is loaded (or known not to load): the lock is let go when the promise settles. */
   private run(): Promise<void> {
+    this.granted = true;
+    this.show();
+    return linkAdapterClass().then((Adapter) => {
+      this.granted = false;
+      return this.runPool(Adapter);
+    });
+  }
+
+  private runPool(Adapter: PortAdapterClass | null): Promise<void> {
     if (this.unwanted() !== null) {
       // no longer wanted between asking and being given the lock
       this.show();
@@ -631,6 +661,7 @@ class BrowserPoolHost implements PoolHost {
       });
       let ended = false;
       let poll: ReturnType<typeof setInterval> | undefined;
+      const links = Adapter && typeof this.siteRepo?.networkSubsystem?.addNetworkAdapter === 'function' ? new PageLinks(this.siteRepo, Adapter) : null;
       const held: Held = {
         worker,
         ready: false,
@@ -642,6 +673,7 @@ class BrowserPoolHost implements PoolHost {
           ended = true;
           clearInterval(poll);
           worker.terminate();
+          links?.removeAll();
           if (this.held === held) {
             this.held = null;
             this.drain = null;
@@ -680,9 +712,22 @@ class BrowserPoolHost implements PoolHost {
       let unansweredSince: number | null = null;
       worker.onmessage = ({ data }: MessageEvent<FromPoolWorker>) => {
         if (ended) {
+          if (data?.type === 'link') {
+            data.port.close();
+          }
           return; // a message sent before the worker was ended
         }
         switch (data?.type) {
+          case 'link':
+            if (links) {
+              links.add(`run ${data.id}`, data.port);
+            } else {
+              data.port.close();
+            }
+            break;
+          case 'unlink':
+            links?.remove(`run ${data.id}`);
+            break;
           case 'ready':
             held.ready = true;
             unansweredSince = null;
@@ -711,16 +756,21 @@ class BrowserPoolHost implements PoolHost {
         }
       };
 
-      worker.postMessage({
-        type: 'start',
-        repoConfig: getRepoConfig(),
-        id,
-        name,
-        slots: SLOTS,
-        queues: this.queues,
-        importMap: pageImportMap(),
-        baseURI: document.baseURI,
-      } satisfies ToPoolWorker);
+      const link = links?.open('pool');
+      worker.postMessage(
+        {
+          type: 'start',
+          repoConfig: getRepoConfig(),
+          id,
+          name,
+          slots: SLOTS,
+          queues: this.queues,
+          importMap: pageImportMap(),
+          baseURI: document.baseURI,
+          link,
+        } satisfies ToPoolWorker,
+        link ? [link] : [],
+      );
       // The status the badge shows, and the pool's sign of life. A hidden
       // page's timers slow to one a minute after five minutes, so silence is
       // measured from when a request was sent, not counted in requests.

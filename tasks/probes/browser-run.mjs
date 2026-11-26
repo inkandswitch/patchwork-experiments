@@ -5,12 +5,18 @@
 // in the package's plugin list, and its real titlebar tool) and asks through
 // the built task-client. Task
 // code comes from data: URLs and from a file served here; the queue accepts
-// any code. No sync server is reached but by checks 24 and 22: the pages' Repos and
-// the pool's work from the profile's shared database, and each run worker's
-// from a database of its own. So what a task writes through ctx.repo, which
-// reaches the page only by the sync server, is not seen here (check 15 says
-// so; real-run.mjs checks it), and a run that wrote something says so in its
-// log (check 19). Check 22 runs probes/append-task.js, the task
+// any code. No sync server is reached but by checks 24, 22 and 26 to 30: the
+// pages' Repos and the pool's work from the profile's shared database, and
+// each run worker's from a database of its own. What a task writes through
+// ctx.repo reaches the page by the local link the pool host makes to the Repo
+// the page hands it (src/browser/link.ts; checks 15 and 19). Checks 26 to 30
+// run in a browser context whose pages have a site Repo of their own, sharing
+// no storage with the task system's, so that only the link joins it to the
+// pool: a tool's `doWork` through it is run by the pool (26), what the task
+// writes is there when doWork resolves (27), liveness and progress arrive
+// (28), a run worker ended mid-write leaves that Repo working (29), and the
+// pool handed over to another tab links that tab's Repo (30); with
+// --no-network they show this with no network. Check 22 runs probes/append-task.js, the task
 // append-run.mjs runs on a Node host, unchanged, in a browser context of its
 // own whose page and pool work through the real sync server (`--sync`, or
 // PATCHWORK_SYNC, or Ink & Switch's), and watches the text it appends to grow
@@ -39,19 +45,21 @@
 // sockets to the sync server, so a request that would fail quietly with no
 // network is caught too.
 //
-// What stands in for Patchwork: the site's modules (Repo, storage,
-// automerge, subduction, solid), bundled here from this package's own
+// What stands in for Patchwork: the site's modules (Repo, storage, the
+// MessageChannel network adapter, automerge, subduction, solid), bundled here from this package's own
 // node_modules and named in the page's import map as the site names them;
 // automerge.wasm and subduction.wasm at the root; an account document, its
 // handle where the site sets it, and the frame's tool-storage provider
 // (page.js), which makes the account's task storage the first time a tool
-// asks; and the page's tasks Repo, which the site would have. The account
+// asks; and the page's tasks Repo, which the site would have, standing in
+// for the site's Repo too (with `?site`, a Repo of its own does). The account
 // starts with no task storage (check 18); the probe's queue is then joined
 // through the queue browser's Join, and checks 1 to 17 ask it. Checks 20
 // and 21 run in a browser context of its own, where nothing mounts the
 // background component until 21 does, and then lets it go. Check 23 runs
-// on tab A's pool, after 19. Checks 24 and 22 run next to last, in a browser
-// context of their own, in that order, and 25 last, over every request seen.
+// on tab A's pool, after 19. Checks 24 and 22 run next, in a browser
+// context of their own, in that order, then 26 to 30 in another, and 25
+// last, over every request seen.
 // A copy of dist/ stamped as a newer build is served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
@@ -107,6 +115,16 @@ const WRITES = dataUrl(
 const SETTLES = dataUrl(
   "export default async ({ holdMs }, ctx) => { try { await ctx.settled; } catch (error) { ctx.log(error.message); return { settled: false }; } const at = Date.now(); ctx.log('settled at ' + at); await new Promise((r) => setTimeout(r, holdMs)); return { settled: true, at }; };",
 );
+// says where it ran: a pool's run worker has no window
+const WHERE = dataUrl("export default () => (typeof window === 'undefined' ? 'worker' : 'page');");
+// changes a document it is handed and makes one, and says where it ran
+const MAKES_AND_CHANGES = dataUrl(
+  "export default async ({ doc, tag }, ctx) => { const handle = await ctx.repo.find(doc); handle.change((d) => { d.changed = tag; }); const made = ctx.repo.create({ made: tag }); return { made: made.url, where: typeof window === 'undefined' ? 'worker' : 'page' }; };",
+);
+// writes a document it is handed every few ms, for ever, heeding no stop
+const KEEPS_WRITING = dataUrl(
+  "export default async ({ doc }, ctx) => { const handle = await ctx.repo.find(doc); for (let i = 1; ; i++) { handle.change((d) => { d.n = i; }); await new Promise((r) => setTimeout(r, 5)); } };",
+);
 const SLEEP = `http://127.0.0.1:${PORT}/probe/tasks/sleep.js`;
 // the task append-run.mjs runs on a Node host, served as it is
 const APPEND = `http://127.0.0.1:${PORT}/append-task.js`;
@@ -146,6 +164,7 @@ const vendor = {
   "automerge-slim": "@automerge/automerge/slim",
   "automerge-repo-slim": "site-automerge-repo/slim",
   "automerge-repo-storage-indexeddb": "site-automerge-repo-storage-indexeddb",
+  "automerge-repo-network-messagechannel": "@automerge/automerge-repo-network-messagechannel",
   "automerge-subduction-slim": "@automerge/automerge-subduction/slim",
   "solid-js": "solid-js",
   "solid-js-web": "solid-js/web",
@@ -176,6 +195,16 @@ await build({
         b.onResolve({ filter: /^@automerge\/automerge(-subduction)?$/ }, ({ path }) => ({ path, external: true }));
       },
     },
+    {
+      // The MessageChannel adapter extends the site's Repo's NetworkAdapter,
+      // as the site's import map gives it one Repo: not a copy of its own.
+      name: "one-repo-for-the-adapter",
+      setup(b) {
+        b.onResolve({ filter: /^@automerge\/automerge-repo\/slim$/ }, (args) =>
+          /automerge-repo-network-messagechannel/.test(args.importer) ? b.resolve("site-automerge-repo/slim", { resolveDir: PKG, kind: args.kind }) : undefined,
+        );
+      },
+    },
   ],
 });
 
@@ -186,10 +215,12 @@ for (const file of readdirSync(join(root, "dist-newer/assets"))) {
   const path = join(root, "dist-newer/assets", file);
   if (!file.endsWith(".js")) continue;
   const text = readFileSync(path, "utf8");
-  const found = text.match(/const (\w+) = (\d{13}), (\w+) = "patchwork-tasks-pool"/);
+  // BUILD, just before POOL_LOCK, as the bundler lays them out: one
+  // declaration (`const a = 1…, b = "…"`) or two assignments (`a = 1…; b = "…"`)
+  const found = text.match(/(\w+) = (\d{13})([,;]\s*)(\w+) = "patchwork-tasks-pool"/);
   if (found) {
     stamp = Number(found[2]);
-    writeFileSync(path, text.replace(found[0], `const ${found[1]} = ${stamp + 60_000}, ${found[3]} = "patchwork-tasks-pool"`));
+    writeFileSync(path, text.replace(found[0], `${found[1]} = ${stamp + 60_000}${found[3]}${found[4]} = "patchwork-tasks-pool"`));
   }
 }
 if (!stamp) throw new Error("the build stamp was not found in dist: has pool-host.ts changed shape?");
@@ -474,8 +505,10 @@ try {
 
   // 19. A task that writes a document through ctx.repo, with no sync server
   // to reach (this harness's Repos point at ws://127.0.0.1:9): its run
-  // worker waits for nothing, and the run's log says that what it wrote
-  // stays on this machine. Timed as check 1 is.
+  // worker waits only until the page's Repo has what it wrote, through the
+  // local link (src/browser/link.ts), so the page has the document as soon
+  // as it reads the run's ending, and the run's log says nothing of it
+  // staying anywhere. Timed as check 1 is.
   {
     const times = [];
     for (let i = 0; i < 10; i++) times.push((await A.js(`probe.timeRun(${J(WRITES)}, ${J({ tag: `nineteen-${i}`, ms: 0 })})`)).ms);
@@ -483,10 +516,11 @@ try {
     await A.waitFor(stateIs(key, "succeeded", "failed", "cancelled"), 20_000);
     const last = await A.js(`probe.last(${J(key)})`);
     const kept = last.runs.at(-1)?.logs ?? [];
+    const pageHas = typeof last.result === "string" ? await A.js(`probe.has(${J(last.result)}, 500)`) : false;
     check(
-      "19 a task that writes a document through ctx.repo, with no sync server: it completes at once, and its run's log says what it wrote stays on this machine",
-      last.state === "succeeded" && kept.some((line) => /stays on this machine/.test(line)) && Math.max(...times) < 1_000,
-      `ten in a row: median ${median(times).toFixed(1)} ms, worst ${Math.max(...times).toFixed(1)} ms; then ${last.state}, its run's log ${J(kept)}`,
+      "19 a task that writes a document through ctx.repo, with no sync server: it completes at once, the page's Repo has what it wrote (through the link), and its run's log says nothing stays behind",
+      last.state === "succeeded" && pageHas === true && !kept.some((line) => /stays on this machine|had not reached/.test(line)) && Math.max(...times) < 1_000,
+      `ten in a row: median ${median(times).toFixed(1)} ms, worst ${Math.max(...times).toFixed(1)} ms; then ${last.state}, the page's Repo has its document within 500 ms: ${pageHas}; its run's log ${J(kept)}`,
     );
   }
 
@@ -810,11 +844,9 @@ try {
   // own through ctx.repo. Shown: both run at once, each holding its own
   // database's lock; each result and record reaches the page (the pool writes
   // those); each document is stored in exactly one run worker's database, a
-  // different one for each, and not in the shared one. NOT shown: that the
-  // documents reach the page. They go by the sync server, and this harness
-  // has none (its Repos point at ws://127.0.0.1:9), so the page cannot have
-  // them here, and the check says that it does not. probes/real-run.mjs
-  // checks the documents arrive, against the real server.
+  // different one for each, and reaches the page's Repo through that run
+  // worker's link (this harness has no sync server: its Repos point at
+  // ws://127.0.0.1:9), which keeps it in the shared database.
   {
     const keys = [];
     for (const tag of ["fifteen-a", "fifteen-b"]) keys.push(await F.js(`probe.ask(${J(WRITES)}, ${J({ tag, ms: 3_000 })})`));
@@ -834,14 +866,14 @@ try {
     }
     const homes = stored.map((s) => s?.found ?? []);
     check(
-      "15 two tasks at once in two run workers, each writing its own document: both run, each document is stored in its own worker's database only; results and records reach the page (documents reaching the page through the sync server: NOT exercised here)",
+      "15 two tasks at once in two run workers, each writing its own document: both run, each document is stored in one run worker's database, its own, and reaches the page's Repo through that worker's link; results and records reach the page",
       lasts.every((l) => l.state === "succeeded" && J(runsOf(l)) === J(["succeeded"])) &&
         new Set(urls).size === 2 &&
         during.length >= 2 &&
-        homes.every((h) => h.length === 1 && /^patchwork-tasks-run-\d+$/.test(h[0])) &&
-        homes[0][0] !== homes[1][0] &&
-        pageHas.every((has) => has === false),
-      `run locks held while both ran ${J(during)}; ${lasts.map((l, i) => `${l.state} ${J(runsOf(l))} → ${String(urls[i]).slice(0, 22)}… stored in ${J(homes[i])}`).join("; ")}; task databases ${J(stored[0]?.databases)}; the page's Repo has the documents: ${J(pageHas)} (expected false: no sync server here). That a document a task writes reaches the page is NOT shown by this harness; real-run.mjs checks it.`,
+        homes.every((h) => h.filter((name) => /^patchwork-tasks-run-\d+$/.test(name)).length === 1 && h.every((name) => /^patchwork-tasks(-run-\d+)?$/.test(name))) &&
+        homes[0].find((name) => name !== "patchwork-tasks") !== homes[1].find((name) => name !== "patchwork-tasks") &&
+        pageHas.every((has) => has === true),
+      `run locks held while both ran ${J(during)}; ${lasts.map((l, i) => `${l.state} ${J(runsOf(l))} → ${String(urls[i]).slice(0, 22)}… stored in ${J(homes[i])}`).join("; ")}; task databases ${J(stored[0]?.databases)}; the page's Repo has the documents: ${J(pageHas)} (no sync server here: through the link)`,
     );
   }
 
@@ -989,6 +1021,122 @@ try {
           `22 a browser's run worker runs append-task.js unchanged, through the page's import map, appending each piece to the end of a text the page sees grow (through ${SYNC_SERVER})`,
           !!running && !!joined?.served && got.result === pieces.length && got.atEnd === pieces.join("") && got.well,
           `pool running ${!!running}, joined ${J(joined)}; returned ${J(got.result)} in ${got.ms.toFixed(0)} ms, the first piece seen after ${got.firstMs === null ? "never" : `${got.firstMs.toFixed(0)} ms`}; text when the ending was heard ${J(got.atEnd)}; the task's changes ${got.changes} for ${pieces.length} pieces, ${got.endAppends} of them appends at the end${got.notAppend ? `, first not: ${J(got.notAppend)}` : ""}; every text seen a run of whole pieces from the start: ${got.prefixes}; lengths seen on the way ${J(got.between)} of ${J(sums)}`,
+        );
+      }
+    } finally {
+      await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
+    }
+  }
+
+  // 26 to 30, the local link, in a browser context of its own whose pages
+  // have a site Repo of their own (`?site`: its own database and heads
+  // channel, sharing no storage with the task system's), named to the real
+  // sync server (with --no-network, one they cannot reach). A tool's work is
+  // asked as a tool asks it, with `doWork` through that Repo, and the only
+  // way between that Repo and the pool is the link.
+  {
+    const { browserContextId } = await send("Target.createBrowserContext", {});
+    try {
+      const path = `/probe/index.html?site&sync=${encodeURIComponent(SYNC_SERVER)}`;
+      const L = await tab("L", path, browserContextId);
+      await L.js("probe.makeAccount()");
+      await L.js("probe.mountBackground()");
+      const running = await L.waitFor("probe.status()?.state === 'running'", 30_000);
+      await sleep(LISTEN_MS);
+      const poolHere = await L.js("localStorage.getItem('patchwork-tasks-pool-id')");
+
+      // 26. Asked through the site's Repo, the work is run by this browser's
+      // pool: the pool is heard serving own through that Repo alone (as
+      // doWork hears pools), the code runs in a run worker, and the run is
+      // the pool's.
+      {
+        const heard = await L.js("probe.servedThroughSite(4000)");
+        const work = await L.js(`probe.work(${J(WHERE)})`, 60_000);
+        const runs = work.views.at(-1)?.runs ?? [];
+        check(
+          `26 a page's work asked through the site's Repo (sharing no storage with the task system's) is run by this browser's pool${NO_NETWORK ? ", with no network" : ""}: the pool is heard through that Repo, and the code runs in a run worker`,
+          !!running && heard.some((pool) => pool.pool === poolHere) && work.result === "worker" && runs.includes(poolHere),
+          `pool running ${!!running}; heard through the site's Repo ${J(heard.map((pool) => pool.pool === poolHere ? "this browser's pool" : pool.pool))}; doWork ${work.error ? `rejected ${J(work.error)}` : `gave ${J(work.result)}`} in ${work.ms.toFixed(0)} ms, states ${J(work.states)}, runs by ${J(runs.map((pool) => (pool === poolHere ? "this browser's pool" : pool)))}`,
+        );
+      }
+
+      // 27. A task that changes a document the page made and makes one: when
+      // doWork resolves, the site's Repo already has both, without asking.
+      {
+        const doc = await L.js(`probe.siteDoc({ made: 'by the page' })`);
+        const got = await L.js(
+          `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'twenty-seven' }).then((work) => ({ ...work, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? probe.siteNow(work.result.made) : null }))`,
+          60_000,
+        );
+        check(
+          "27 a task that changes a document the page made and makes a new one: when doWork resolves, the site's Repo has the change and the new document",
+          got.result?.where === "worker" && got.changed?.changed === "twenty-seven" && got.made?.made === "twenty-seven",
+          `doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms; the site's Repo then had the changed document as ${J(got.changed)} and the new one as ${J(got.made)}`,
+        );
+      }
+
+      // 28. Liveness and progress: doWork's onProgress hears the run going
+      // on, with its progress, and the site's Repo hears the pool's progress
+      // messages on the task's own channel, by its own route.
+      {
+        const got = await L.js(`probe.work(${J(LOGS)})`, 60_000);
+        const progress = got.views.map((view) => view.progress).filter((value) => typeof value === "number");
+        check(
+          "28 liveness and progress reach the page: onProgress hears the run going on with its progress, and the site's Repo hears the pool's progress messages itself",
+          got.result === "logged" && got.states.includes("running") && progress.length >= 1 && got.heard >= 1,
+          `doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`}; states ${J(got.states)}; progress heard ${J(progress)}; progress messages the site's Repo heard on the task's handle: ${got.heard}`,
+        );
+      }
+
+      // 29. A run worker ended mid-write: a task writes a document of the
+      // page's every few ms and heeds no stop; stopped, its worker is ended
+      // GRACE later, in the middle of its writing. Its link leaves the site's
+      // Repo (one link for the pool and one per run worker still there), the
+      // document stops changing, and the page and the next task go on with it.
+      {
+        const doc = await L.js(`probe.siteDoc({ n: 0 })`);
+        const stopped = await L.js(`probe.work(${J(KEEPS_WRITING)}, { doc: ${J(doc)} }, { stopAfterMs: 2000 })`, 30_000);
+        const nAtStop = (await L.js(`probe.siteNow(${J(doc)})`))?.n ?? 0;
+        await sleep(GRACE_MS + 2_000);
+        const nAfter = (await L.js(`probe.siteNow(${J(doc)})`))?.n ?? 0;
+        await sleep(1_000);
+        const nLater = (await L.js(`probe.siteNow(${J(doc)})`))?.n ?? 0;
+        const links = await L.js("probe.siteLinks()");
+        const runWorkers = liveWorkers(L, /run-worker-entry/).length;
+        const pageGoesOn = await L.js(
+          `(async () => { const url = await probe.siteDoc({ after: true }); return probe.siteNow(url)?.after === true; })()`,
+        );
+        const next = await L.js(
+          `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'after the stop' }).then((work) => ({ ...work, changed: probe.siteNow(${J(doc)}) }))`,
+          60_000,
+        );
+        check(
+          "29 a run worker ended in the middle of writing a page's document: its link leaves the site's Repo, the document stops changing, and the page and the next task go on with it",
+          /cancelled/i.test(stopped.error ?? "") && nAtStop > 0 && nAfter === nLater && links === runWorkers + 1 && pageGoesOn && next.result?.where === "worker" && next.changed?.changed === "after the stop",
+          `doWork ${stopped.error ? `rejected ${J(stopped.error)}` : `gave ${J(stopped.result)}`}; n in the page ${nAtStop} at the stop, ${nAfter} after GRACE + 2 s, ${nLater} a second later; the site's Repo has ${links} links, for ${runWorkers} live run workers and the pool; the page made a document: ${pageGoesOn}; the next task ${next.error ? `rejected ${J(next.error)}` : `gave ${J(next.result)}`}, the document then ${J(next.changed)}`,
+        );
+      }
+
+      // 30. The pool handed over to another tab: M, a second page of the
+      // same profile, waits; L closed, M's host takes the lock and starts a
+      // pool linked to M's own site Repo, and M's work runs in it and is
+      // seen there.
+      {
+        const M = await tab("M", path, browserContextId);
+        await M.js("probe.mountBackground()");
+        const waiting = await M.waitFor("probe.status()?.state === 'waiting'", 15_000);
+        await send("Target.closeTarget", { targetId: L.targetId });
+        const taken = await M.waitFor("probe.status()?.state === 'running'", 30_000);
+        await sleep(LISTEN_MS);
+        const doc = await M.js(`probe.siteDoc({ made: 'by M' })`);
+        const got = await M.js(
+          `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'thirty' }).then((work) => ({ ...work, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? probe.siteNow(work.result.made) : null, links: probe.siteLinks() }))`,
+          60_000,
+        );
+        check(
+          "30 the pool handed over to another tab re-links: that tab's pool is linked to its own site Repo, runs its work, and its Repo sees what the work wrote",
+          !!waiting && !!taken && got.result?.where === "worker" && got.changed?.changed === "thirty" && got.made?.made === "thirty" && got.links >= 2,
+          `M ${waiting ? "waited" : "did not wait"}, then ${taken ? "ran the pool" : `reads ${J(await M.js("probe.status()"))}`}; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms; M's site Repo then had ${J(got.changed)} and ${J(got.made)}, with ${got.links} links`,
         );
       }
     } finally {

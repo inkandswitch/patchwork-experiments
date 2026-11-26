@@ -106,7 +106,8 @@ function resolveImportMap(importMap: any, baseURI: string) {
 
 /**
  * A Repo for this worker: an ordinary Subduction node with a socket of its
- * own to the sync server.
+ * own to the sync server, or, linked to the page above its pool, with that
+ * link instead (see below).
  *
  * The pool's worker (no `place.database`) keeps its documents in the tasks
  * database and hears the other Repos of the family on the tasks heads
@@ -119,12 +120,12 @@ function resolveImportMap(importMap: any, baseURI: string) {
  * on that database until the thread is ended: on the shared database that
  * would hold up the page's stops and the pool's records, so a stop could not
  * even be saved. On its own database it holds up only itself. The cost: what
- * a task writes through `ctx.repo` reaches the page and the pool only by way
- * of the sync server (its run's record does not: the pool writes that, from
- * what the run worker says), which is why a run worker says how a run ended
- * only once the server has acknowledged what it wrote (run-worker.ts). The
- * job carries the task's own document, so a run worker never needs the
- * shared database.
+ * a task writes through `ctx.repo` reaches the page only by its link, or with
+ * none by way of the sync server (its run's record does not: the pool writes
+ * that, from what the run worker says), which is why a run worker says how a
+ * run ended only once the page, or with no link the server, has what it wrote
+ * (run-worker.ts). The job carries the task's own document, so a run worker
+ * never needs the shared database.
  *
  * It uses that database only while it holds the Web Lock of the same name,
  * which it keeps for its whole life. A browser passes a worker's locks on only
@@ -138,13 +139,27 @@ function resolveImportMap(importMap: any, baseURI: string) {
  * The Repo takes the channel as optional, and without one says and hears
  * nothing; a channel of its own would be the same with one more object.
  *
+ * A worker under a page that holds the site's Repo is handed its end of a link
+ * to it (`link`, browser/link.ts), which its Repo takes as its one network
+ * adapter, the MessageChannel adapter the page's import map names, and then
+ * it has no socket to the sync server: the page's Repo is its way to
+ * everything, the server included, network or no network. That is so because
+ * a Repo asks its classic peers (the link) for a document it does not have
+ * only once its Subduction source has given up, and a Subduction source that
+ * cannot reach its server is still trying, so with a socket of its own and no
+ * network a worker would never ask the page; and with the network, the page's
+ * Repo gets from the server what the worker asks it for, and sends the server
+ * what the worker writes (its ephemeral messages too, both ways). A worker
+ * handed no link (no page above it, or an adapter that would not load here)
+ * has its own socket, as before.
+ *
  * No `signer`, on purpose: the Repo makes itself a new identity each time. The
  * tabs on an origin all sign as one peer, and a worker that did the same would
  * be relying on the server to pass a peer's ephemeral messages back to that
  * same peer's other connections. As a peer of its own it is to the pool what
  * another machine would be.
  */
-export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSettings = {}) {
+export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSettings = {}, link?: MessagePort) {
   if (!importMapReady) {
     throw new Error('Import map must be configured before creating a worker repo');
   }
@@ -156,6 +171,7 @@ export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSe
 
   const { Repo, WebSocketEndpoint, IndexedDBStorageAdapter, initializeWasm, initSubductionSync } =
     await getRepoModules();
+  const network = link ? await linkAdapter(link) : [];
 
   const [automergeWasm, subductionWasm] = await Promise.all([
     fetch('/automerge.wasm').then((r) => r.arrayBuffer()),
@@ -167,17 +183,19 @@ export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSe
   console.log('Automerge & Subduction WASM initialized');
 
   // A Repo whose package does not offer endpoints is handed the url, and
-  // its first attempt counts as over from the start.
+  // its first attempt counts as over from the start; so does a linked one,
+  // which has none.
   let ended = () => {};
   const over = new Promise<void>((resolve) => (ended = resolve));
-  const endpoint = WebSocketEndpoint
-    ? watchedEndpoint(new WebSocketEndpoint(config.syncServerUrl), ended)
-    : (ended(), config.syncServerUrl);
+  const endpoints = network.length > 0
+    ? (ended(), [])
+    : [WebSocketEndpoint ? watchedEndpoint(new WebSocketEndpoint(config.syncServerUrl), ended) : (ended(), config.syncServerUrl)];
 
   const repo: Repo = new Repo({
     storage: new IndexedDBStorageAdapter(database ?? TASKS_DATABASE),
     peerId: peerId as any,
-    subductionWebsocketEndpoints: [endpoint],
+    subductionWebsocketEndpoints: endpoints,
+    network,
     ...(database ? {} : { headsChannel: TASKS_HEADS_CHANNEL }),
     enableRemoteHeadsGossiping: true,
   });
@@ -244,6 +262,18 @@ function holdForLife(name: string): Promise<void> {
       })
       .catch(failed);
   });
+}
+
+/** The worker's end of its link, as its Repo's network; none, said in the console, where the adapter cannot be loaded. */
+async function linkAdapter(port: MessagePort): Promise<unknown[]> {
+  try {
+    const { MessageChannelNetworkAdapter } = await (self as any).importShim('@automerge/automerge-repo-network-messagechannel');
+    return [new MessageChannelNetworkAdapter(port)];
+  } catch (error) {
+    console.warn(`tasks: this worker has no link to its page (the MessageChannel network adapter could not be loaded): ${(error as Error)?.message ?? error}`);
+    port.close();
+    return [];
+  }
 }
 
 async function getRepoModules() {

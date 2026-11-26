@@ -14,6 +14,9 @@ importers:
       '@automerge/automerge-repo':
         specifier: 2.6.0-subduction.20
         version: 2.6.0-subduction.20(supports-color@5.5.0)
+      '@automerge/automerge-repo-network-messagechannel':
+        specifier: 2.6.0-subduction.20
+        version: 2.6.0-subduction.20
       '@automerge/automerge-repo-node':
         specifier: npm:@automerge/automerge-repo@2.6.0-subduction.43
         version: '@automerge/automerge-repo@2.6.0-subduction.43(supports-color@5.5.0)'
@@ -84,6 +87,9 @@ packages:
   '@automerge/automerge-repo-network-broadcastchannel@2.6.0-subduction.48':
     resolution: {integrity: sha512-fyq/ZqWkrYOuNrQ917KeCaRSuY6fzqH6Q4KCb5czjwKPKO2zFIGKVfK5hZjYsHGWRKuh5BzViaONHn6bJ0Jk4w==}
     engines: {node: '>=22.13'}
+
+  '@automerge/automerge-repo-network-messagechannel@2.6.0-subduction.20':
+    resolution: {integrity: sha512-1cwnTLvidyFS6Vch4VntnmtvFPs8phvKJvd2lIhtX8rDdTyfoGkzHcpeIcuTOzuyGXn78bFUJsAOhw4fXuW+Kw==}
 
   '@automerge/automerge-repo-network-messagechannel@2.6.0-subduction.48':
     resolution: {integrity: sha512-pf+cmCi/TWQZpqrm+iinVpIM2Ecfzp8JpGEo28SPbE2Q8+eLyO2cz1Dssnuep1+KQ8k7Dfx7aUF9AD7/6jAvTQ==}
@@ -1404,6 +1410,16 @@ snapshots:
   '@automerge/automerge-repo-network-broadcastchannel@2.6.0-subduction.48(supports-color@5.5.0)':
     dependencies:
       '@automerge/automerge-repo': 2.6.0-subduction.48(supports-color@5.5.0)
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
+  '@automerge/automerge-repo-network-messagechannel@2.6.0-subduction.20':
+    dependencies:
+      '@automerge/automerge-repo': 2.6.0-subduction.20(supports-color@5.5.0)
+      debug: 4.4.3(supports-color@5.5.0)
+      eventemitter3: 5.0.4
     transitivePeerDependencies:
       - bufferutil
       - supports-color

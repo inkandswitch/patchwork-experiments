@@ -12,10 +12,20 @@ import * as client from '/vendor/task-client.js';
 
 // Nothing listens here, and no document leaves this machine. This tab's Repo
 // and the pool's work from the shared database alone; each run worker's
-// Repo has a database of its own, so what a task writes through ctx.repo
-// never reaches this page here (see check 15). A page opened with `?sync=`
-// works through that sync server instead, as a site does (check 22).
-const SYNC = new URLSearchParams(location.search).get('sync') ?? 'ws://127.0.0.1:9';
+// Repo has a database of its own, and what a task writes through ctx.repo
+// reaches this page by the local link the pool host makes to the Repo it is
+// given (src/browser/link.ts; checks 15 and 19). A page opened with `?sync=`
+// works through that sync server too, as a site does (check 22).
+//
+// A page opened with `?site` has, besides this tab's tasks Repo, a "site"
+// Repo of its own: its own database and heads channel, sharing no storage
+// with the task system's Repos, as the site's keyhive Repo shares none. The
+// account, the task storage the provider makes, and what the background
+// components and the titlebar tool are handed are that Repo's, so the only
+// way between it and the pool is the link (checks 26 to 30). Without `?site`
+// the two are one Repo, the tasks Repo.
+const params = new URLSearchParams(location.search);
+const SYNC = params.get('sync') ?? 'ws://127.0.0.1:9';
 
 const [automergeWasm, subductionWasm] = await Promise.all([
   fetch('/automerge.wasm').then((r) => r.arrayBuffer()),
@@ -35,11 +45,21 @@ const repo = new Repo({
 // The hook tasks-repo.ts leaves for a page that has a Repo of the family already.
 window.patchworkTasks = { repo: Promise.resolve(repo) };
 
+const site = params.has('site')
+  ? new Repo({
+      storage: new IndexedDBStorageAdapter('probe-site'),
+      peerId: `probe-site-${crypto.randomUUID()}`,
+      subductionWebsocketEndpoints: [SYNC],
+      headsChannel: 'probe-site-heads',
+      enableRemoteHeadsGossiping: true,
+    })
+  : repo;
+
 // The account's handle, where the site sets it, once the harness has made
 // the account (in this tab or an earlier one).
 const accountUrl = localStorage.getItem('tinyPatchworkAccountUrl');
 if (accountUrl) {
-  window.accountDocHandle = await repo.find(accountUrl);
+  window.accountDocHandle = await site.find(accountUrl);
 }
 
 // The frame's tool-storage provider, standing in as Patchwork's
@@ -66,7 +86,7 @@ document.addEventListener('patchwork:subscribe', (event) => {
   const { toolId } = selector;
   providerAsked.push(toolId);
   if (!account.doc()?.toolStorage?.[toolId]) {
-    const made = repo.create({ '@patchwork': { type: 'patchwork:tool-storage' } });
+    const made = site.create({ '@patchwork': { type: 'patchwork:tool-storage' } });
     account.change((doc) => {
       if (!doc.toolStorage) doc.toolStorage = {};
       if (!doc.toolStorage[toolId]) doc.toolStorage[toolId] = made.url;
@@ -84,6 +104,7 @@ let queueView = null;
 
 const probe = {
   repo,
+  site,
   statusLog,
   views,
   queueUrl,
@@ -91,9 +112,9 @@ const probe = {
 
   /** A fresh account, which serves nothing (it names no task storage), and a queue it does not serve yet. */
   async makeAccount() {
-    const queue = repo.create({ '@patchwork': { type: 'task-queue-next' }, title: 'Probe queue', jobs: {} });
-    const account = repo.create({});
-    await repo.flush();
+    const queue = site.create({ '@patchwork': { type: 'task-queue-next' }, title: 'Probe queue', jobs: {} });
+    const account = site.create({});
+    await site.flush();
     localStorage.setItem('probeQueue', queue.url);
     localStorage.setItem('tinyPatchworkAccountUrl', account.url);
     window.accountDocHandle = account;
@@ -103,7 +124,7 @@ const probe = {
   /** The task storage document the account names, as it is now, or null. */
   async storage() {
     const url = client.storageUrlOf(window.accountDocHandle?.doc());
-    return url ? (await repo.find(url)).doc() : null;
+    return url ? (await site.find(url)).doc() : null;
   },
 
   /** The queues the task storage document serves now, each with its setting, as the client reads them. */
@@ -123,7 +144,7 @@ const probe = {
 
   /** This person's own queue, through the built client, from the titlebar tool's element. */
   ownQueue() {
-    return client.ownQueue(repo, document.querySelector('#badge'));
+    return client.ownQueue(site, document.querySelector('#badge') ?? document.body);
   },
 
   /** Opens the queue browser on the probe's queue, presses Join queue as a person would, and closes it again once the list says so. */
@@ -158,7 +179,7 @@ const probe = {
     const TitlebarTool = await plugins.find((plugin) => plugin.id === 'task-titlebar-next').load();
     const element = document.createElement('div');
     element.id = 'badge';
-    element.repo = repo;
+    element.repo = site;
     document.body.append(element);
     TitlebarTool(null, element);
     const host = Object.values(window.patchworkTasks?.poolHosts ?? {})[0];
@@ -177,9 +198,9 @@ const probe = {
       const element = document.createElement('div');
       element.className = 'background';
       element.style.display = 'contents';
-      element.repo = repo;
+      element.repo = site;
       document.body.append(element);
-      const cleanup = (await plugin.load())(element, repo);
+      const cleanup = (await plugin.load())(element, site);
       backgrounds.push(() => (cleanup?.(), element.remove()));
     }
     return tagged.length;
@@ -290,6 +311,75 @@ const probe = {
       if (keys.some((key) => JSON.stringify(key).includes(sid))) found.push(name);
     }
     return { databases: names.sort(), found };
+  },
+
+  /**
+   * Has work done through the site's Repo with the built client's `doWork`,
+   * as a tool in a page does, and says what came of it: the result or the
+   * error, how long it took, every state and progress `onProgress` heard, the
+   * task's url, and how many of the pool's progress messages the site's Repo
+   * heard by its own route (the task's handle), not this browser's channel.
+   * With `stopAfterMs`, stops the work that long after asking, as a tool
+   * stops its own: by aborting the signal it passed.
+   */
+  async work(importUrl, input = null, { key = `probe:${crypto.randomUUID()}`, stopAfterMs } = {}) {
+    const views = [];
+    let taskUrl = null;
+    let heard = 0;
+    const t0 = performance.now();
+    const listening = new Set();
+    const onProgress = (view) => {
+      views.push({ state: view.state, progress: view.progress ?? null, logs: (view.logs ?? []).length, runs: (view.runs ?? []).map((run) => run.pool ?? null) });
+      if (view.taskUrl && !taskUrl) {
+        taskUrl = view.taskUrl;
+        site.find(taskUrl).then((handle) => {
+          if (listening.has(handle)) return;
+          listening.add(handle);
+          handle.on('ephemeral-message', ({ message }) => {
+            if (message?.type === 'task progress') heard++;
+          });
+        });
+      }
+    };
+    const stop = new AbortController();
+    if (stopAfterMs) setTimeout(() => stop.abort(), stopAfterMs);
+    const outcome = await client.doWork(site, { importUrl, input, key }, { onProgress, signal: stop.signal }).then(
+      (result) => ({ result }),
+      (error) => ({ error: String(error?.message ?? error) }),
+    );
+    return { ...outcome, ms: performance.now() - t0, taskUrl, heard, states: views.map((v) => v.state).filter((state, i, all) => state !== all[i - 1]), views };
+  },
+
+  /** A document made in the site's Repo, with `value`; its url. */
+  async siteDoc(value) {
+    const handle = site.create(value);
+    await site.flush([handle.documentId]);
+    return handle.url;
+  },
+
+  /** What the site's Repo has of `url` now, without asking anyone: its value, or null. */
+  siteNow(url) {
+    const handle = site.handles[parseAutomergeUrl(url).documentId];
+    try {
+      return handle?.isReady?.() ? JSON.parse(JSON.stringify(handle.doc())) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /** The pools heard serving own through the site's Repo alone (as `doWork` hears them), after `ms`. */
+  async servedThroughSite(ms = 4000) {
+    const own = await client.ownQueue(site, document.body);
+    return new Promise((resolve) => {
+      let pools = [];
+      const stop = client.served(site, own, (list) => (pools = list), { local: false });
+      setTimeout(() => (stop(), resolve(pools)), ms);
+    });
+  },
+
+  /** How many network adapters the site's Repo has: one per link to a worker of this page's pool. */
+  siteLinks() {
+    return site.networkSubsystem.adapters.length;
   },
 
   /** Whether this tab's Repo can get the document `url` within `ms`. */

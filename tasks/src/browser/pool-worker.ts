@@ -10,6 +10,12 @@
 // The page tells it once how to start, and from then on which queues to
 // serve; it answers with its status when asked, and stops when told.
 //
+// The local link (link.ts). The page hands it, in 'start', its end of a port
+// to the site's Repo, which its Repo adds as a network adapter. For each run
+// worker it starts, it makes another MessageChannel, hands the run worker one
+// end and sends the page the other ('link'), and says when that run worker
+// has ended ('unlink'). A pool given no port links none of its run workers.
+//
 // Its Pool starts only once this worker holds WORKER_LOCK, which it keeps
 // for as long as it lives. The page lets go of the pool's lock as soon as it
 // has called `terminate()` on this worker, but a worker busy in synchronous
@@ -43,6 +49,8 @@ export type ToPoolWorker =
       /** The page's import map and base URI, which the Repo's modules and a task's bare imports resolve by. */
       importMap: unknown;
       baseURI: string;
+      /** Its end of the link to the site's Repo, when the page has one (link.ts). */
+      link?: MessagePort;
     }
   /** The queues to serve from now on, with whose code to run from each. */
   | { type: 'serve'; queues: ServedQueues }
@@ -58,13 +66,27 @@ export type FromPoolWorker =
   | { type: 'ready' }
   | { type: 'failed'; message: string }
   | { type: 'status'; busy: number }
-  | { type: 'stopped' };
+  | { type: 'stopped' }
+  /** The page's end of a new run worker's link to the site's Repo, `id` naming it among this pool's links. */
+  | { type: 'link'; id: number; port: MessagePort }
+  /** The run worker of link `id` has ended. */
+  | { type: 'unlink'; id: number };
 
 const scope = self as unknown as {
-  postMessage(message: FromPoolWorker): void;
+  postMessage(message: FromPoolWorker, transfer?: Transferable[]): void;
   onmessage: ((event: MessageEvent<ToPoolWorker>) => void) | null;
 };
 const say = (message: FromPoolWorker) => scope.postMessage(message);
+
+let links = 0;
+
+/** A run worker's link: its end, and how to say it has ended; the page's end goes to the page now. */
+function linkRunWorker(): { port: MessagePort; end(): void } {
+  const id = ++links;
+  const { port1, port2 } = new MessageChannel();
+  scope.postMessage({ type: 'link', id, port: port1 }, [port1]);
+  return { port: port2, end: () => say({ type: 'unlink', id }) };
+}
 
 let pool: Promise<Pool | null> | null = null;
 let queues: ServedQueues = {};
@@ -108,7 +130,7 @@ scope.onmessage = ({ data }) => {
 async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promise<Pool> {
   await holdForLife(WORKER_LOCK);
   await setUpImportMap(settings.importMap ?? {}, settings.baseURI);
-  const repo = await getRepo(settings.repoConfig, `task-pool-${crypto.randomUUID()}`);
+  const repo = await getRepo(settings.repoConfig, `task-pool-${crypto.randomUUID()}`, {}, settings.link);
   const executor = new BrowserExecutor({
     settings: {
       repoConfig: settings.repoConfig,
@@ -116,6 +138,7 @@ async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promis
       baseURI: settings.baseURI,
     },
     taskBytes: (taskUrl) => repo.export(taskUrl),
+    link: settings.link ? linkRunWorker : undefined,
   });
   return new Pool({
     repo: repo as unknown as Docs,

@@ -8,10 +8,11 @@
 // `this` = ctx, and says what the code logs and reports, and then how it
 // ended. It never writes the task's document: the pool records everything,
 // from what this says. What the code wrote to other documents through
-// `ctx.repo` is saved, and acknowledged by the sync server, before this says
-// how the code ended (see "Reachable before it is said" below), so that
-// whoever reads the ending can find what the run wrote, and ending this
-// worker afterwards loses nothing.
+// `ctx.repo` is saved, and has reached the page's Repo through the link, or
+// with no link has been acknowledged by the sync server, before this says
+// how the code ended (see "Reachable before it is said" and "..., through
+// the link" below), so that whoever reads the ending can find what the run
+// wrote, and ending this worker afterwards loses nothing.
 //
 // The same script runs on both platforms. What differs is behind
 // ./webworker-lib (a Repo, and how code is imported; the Node build puts
@@ -34,6 +35,8 @@ export interface RunWorkerSettings {
   /** In a browser, the page's import map, which bare names in a task's code resolve by. */
   importMap?: unknown;
   baseURI?: string;
+  /** In a browser, its end of a link to the site's Repo in the page above its pool (browser/link.ts), when there is one. */
+  link?: MessagePort;
 }
 
 /** What is said to a run worker. */
@@ -53,9 +56,9 @@ export type ToRunWorker =
 export type FromRunWorker =
   | { type: 'log'; message: string }
   | { type: 'progress'; value: unknown }
-  /** Its code returned this, and what the code wrote is saved and has reached the sync server, or the log says why not. */
+  /** Its code returned this, and what the code wrote is saved and has reached the page's Repo (linked) or the sync server, or the log says why not. */
   | { type: 'done'; result: unknown }
-  /** Its code threw, would not load, or what it wrote could not be saved; said, like `done`, once what it wrote has reached the sync server or the log says why not. */
+  /** Its code threw, would not load, or what it wrote could not be saved; said, like `done`, once what it wrote has reached the page's Repo or the sync server, or the log says why not. */
   | { type: 'threw'; message: string };
 
 /** The two ends of a run worker's one channel, whatever the platform calls them. */
@@ -88,7 +91,7 @@ export function serve(port: RunWorkerPort) {
         // Made at once: a run worker is started only when there is a job for it.
         const { settings } = message;
         repo = setUpImportMap(settings.importMap ?? {}, settings.baseURI ?? '')
-          .then(() => getRepo(settings.repoConfig, `task-run-${crypto.randomUUID()}`, settings.place))
+          .then(() => getRepo(settings.repoConfig, `task-run-${crypto.randomUUID()}`, settings.place, settings.link))
           .then((made) => {
             reports = serverReports(made);
             return made;
@@ -177,7 +180,9 @@ export function serve(port: RunWorkerPort) {
     if (docs && before) {
       // Only a run that changed something waits, and then not in this tick:
       // a run that changed nothing says how it ended as soon as it did before.
-      const waiting = reachServer(docs, reports, before, documentIdOf(job.taskUrl), (message) => say({ type: 'log', message }));
+      const own = documentIdOf(job.taskUrl);
+      const log = (message: string) => say({ type: 'log', message });
+      const waiting = linked(docs) ? reachPage(docs, before, own, log) : reachServer(docs, reports, before, own, log);
       if (waiting) {
         await waiting;
       }
@@ -289,7 +294,8 @@ export function patient(repo: Repo): Repo {
 
 // Reachable before it is said
 //
-// A run worker's Repo keeps what the code wrote on this machine (its own
+// A run worker with no link (a Node host's thread, or a browser's whose page
+// gave none) keeps what the code wrote on this machine (its own
 // directory or database) and sends it to the sync server in the background.
 // Ending the worker first loses it, and the Repo does not send a stored
 // document again by itself later: it loads one only when something asks for
@@ -482,6 +488,111 @@ function reachServer(
       }
     });
   })();
+}
+
+// Reachable before it is said, through the link
+//
+// A run worker linked to the site's Repo in the page above its pool
+// (browser/link.ts) says how a run ended once the page's Repo has what the
+// code changed: for every document whose heads changed while the code ran
+// (the task's own apart, as above), the page has said, in the sync it runs
+// with this Repo over the link, heads equal to this Repo's latest. That is
+// the Repo's own record of a peer (`getSyncInfo` of the page's storage id,
+// kept from the sync state, and its 'remote-heads' event); nothing is asked
+// of the page beyond the sync itself. The page's Repo keeps what it has, and
+// sends it to the sync server when there is one, so a linked run does not
+// wait for the server, and does not wait on it when it cannot be reached.
+// A run that wrote a document the page will not take (one keyhive protects:
+// the link gives no such document over, either way) waits REACH_LIMIT_MS and
+// says so in its log.
+
+/** Said in a run's log when the page's Repo has not had everything by REACH_LIMIT_MS. */
+export const notReachedPage = (left: number, of: number) =>
+  `${left} of the ${of} documents this run wrote had not reached the page after ${REACH_LIMIT_MS / 1000} s.`;
+
+/** What a linked Repo says of its peers. */
+interface LinkedRepo {
+  networkSubsystem?: { adapters?: unknown[] };
+  peers: string[];
+  getStorageIdOfPeer(peerId: string): string | undefined;
+}
+interface PeerHandle {
+  getSyncInfo?(storageId: string): { lastHeads?: readonly string[] } | undefined;
+  on?(event: 'remote-heads', listener: () => void): unknown;
+  off?(event: 'remote-heads', listener: () => void): unknown;
+}
+
+/** Whether this worker's Repo is linked to a page: it has a network adapter, and the link is the only one a worker's Repo is given. */
+function linked(repo: Repo): boolean {
+  return ((repo as unknown as LinkedRepo).networkSubsystem?.adapters?.length ?? 0) > 0;
+}
+
+/**
+ * Waits until the page's Repo has what the code changed (see above), or
+ * REACH_LIMIT_MS has passed. Null, at once, when the code changed nothing.
+ */
+export function reachPage(
+  repo: Repo,
+  before: Map<string, string>,
+  own: DocumentId,
+  log: (message: string) => void,
+  limitMs = REACH_LIMIT_MS,
+): Promise<void> | null {
+  const changed = () => {
+    const now = changedSince(repo, before);
+    now.delete(own);
+    return now;
+  };
+  if (changed().size === 0) {
+    return null;
+  }
+  const peers = repo as unknown as LinkedRepo;
+  /** The page's storage id: its Repo's, as it said when the link was made; undefined until it has. */
+  const page = () => {
+    for (const peer of peers.peers) {
+      const storageId = peers.getStorageIdOfPeer(peer);
+      if (storageId) {
+        return storageId;
+      }
+    }
+    return undefined;
+  };
+  const left = () => {
+    const storageId = page();
+    return [...changed()].filter(([id, heads]) => {
+      const handle = repo.handles[id as DocumentId] as unknown as PeerHandle | undefined;
+      return !storageId || headsKey(handle?.getSyncInfo?.(storageId)?.lastHeads ?? []) !== heads;
+    });
+  };
+  return new Promise<void>((done) => {
+    const handles = [...changed().keys()].map((id) => repo.handles[id as DocumentId] as unknown as PeerHandle | undefined);
+    let over = false;
+    const look = () => {
+      if (!over && left().length === 0) {
+        finish();
+      }
+    };
+    const limit = setTimeout(() => {
+      log(notReachedPage(left().length, changed().size));
+      finish();
+    }, limitMs);
+    // The page's answers are heard as they come; looking again as well
+    // catches heads that came to match by a change of this Repo's own.
+    const lookAgain = setInterval(look, LOOK_AGAIN_MS);
+    for (const handle of handles) {
+      handle?.on?.('remote-heads', look);
+    }
+    function finish() {
+      over = true;
+      clearTimeout(limit);
+      clearInterval(lookAgain);
+      for (const handle of handles) {
+        handle?.off?.('remote-heads', look);
+      }
+      done();
+    }
+    look();
+  });
 }
 
 /** The document id an `automerge:` url names. */

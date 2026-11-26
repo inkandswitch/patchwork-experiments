@@ -407,17 +407,16 @@ try {
     const inNewRunWorker = [...workers.entries()].some(([id, w]) => kind(w.url) === "run" && !runWorkersBefore.has(id));
     report.writes = { runs: out, inNewRunWorker };
     check(
-      "a document a task writes through ctx.repo reaches the page by the sync server: this tab's tasks Repo and the site's Repo both have it",
+      "a document a task writes through ctx.repo reaches the page: the site's Repo (through the local link) and this tab's tasks Repo both have it",
       out.every((o) => typeof o.url === "string" && o.url.startsWith("automerge:") && o.tasksRepo !== null && o.siteRepo !== null),
       report.writes,
     );
-    // A run worker says nothing in the log only when the sync server has
-    // acknowledged what its run wrote: not connected, a Repo that cannot say
-    // what the server holds, and half a minute without the acknowledgement
-    // each leave a line (run-worker.ts).
+    // A linked run worker says nothing in the log only when the site's Repo
+    // has what its run wrote; half a minute without it leaves a line
+    // (run-worker.ts, "Reachable before it is said, through the link").
     check(
-      "the run workers waited for the sync server's acknowledgement, one of them started for its run: their logs say nothing was left behind",
-      inNewRunWorker && out.every((o) => !o.runLog.some((m) => /sync server/.test(m))),
+      "the run workers waited until the site's Repo had what they wrote, one of them started for its run: their logs say nothing was left behind",
+      inNewRunWorker && out.every((o) => !o.runLog.some((m) => /sync server|had not reached/.test(m))),
       report.writes,
     );
   });

@@ -27,8 +27,8 @@ export interface TaskContext {
    * something outside its worker (a child process, a lock on a file) lets go
    * of it when this aborts. What the code returns or throws after an abort
    * is not counted, but what it writes before returning (a run document's
-   * "cancelled") is sent to the sync server like any other write, within
-   * the same GRACE_MS.
+   * "cancelled") is sent like any other write (to the page's Repo in a
+   * browser, to the sync server on a Node host), within the same GRACE_MS.
    */
   signal: AbortSignal;
   /**
@@ -60,11 +60,13 @@ export interface TaskContext {
    * `find` aborting, end the asking at once. Everything else is the Repo's
    * own, and the Repo's own workings still use its own `find`.
    *
-   * What the code changes through it reaches the sync server before the run
-   * is said to have ended: the run worker waits for the server to report
-   * every changed document's heads (half a minute at most, then the run's
-   * log says how many had not arrived). With no connection to a server, the
-   * log says that what the run wrote stays on this machine.
+   * What the code changes through it has reached the page that holds the
+   * pool (in a browser, through the local link: browser/link.ts), or the sync
+   * server (on a Node host), before the run is said to have ended: the run
+   * worker waits for the page's Repo, or the server, to report every changed
+   * document's heads (half a minute at most, then the run's log says how
+   * many had not arrived). A Node host's thread with no connection to a
+   * server says in the log that what the run wrote stays on this machine.
    */
   repo: Repo;
   /** The task's own document. */

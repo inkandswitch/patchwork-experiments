@@ -125,28 +125,51 @@ that one machine serves.
   nobody is ranked (every pool heard full, or the only free one still listening): each then takes
   the task the moment a slot frees past the hold, in no order. Ranking full pools after free ones
   would narrow it to the time after every turn. Each waits on a case that needs it.
-- **A link in memory between a pool and its run workers.** A run worker's Repo has storage of its
-  own (a directory in Node, a database in a browser), so what a task writes through `ctx.repo`
-  reaches the page by the sync server, and a run's ending waits until the server has acknowledged
-  it. Measured on 2026-11-25 (FACTS.md, "What a task writes"), that costs a run from about 0.2 s
-  (10 KB) to 0.5 s (5 MB) and 1.1–1.8 s (20 MB) in Node, 0.2–1.7 s up to 5 MB in a browser, and
-  an asker in another process then fetches what it could have been handed: 0.1–0.5 s up to
-  1 MB, about 1 s at 5 MB, 3–10 s at 20 MB. With no server, what a run writes stays in its worker's storage. A
-  message-channel link to the pool's Repo would carry it directly and work offline. Waits on a
-  network adapter that works with the Repo in use.
+- **What the local link still lacks.** In a browser, the tab that runs the pool links the site's
+  Repo to the pool's worker and each run worker (`src/browser/link.ts`, README "Offline and
+  partition"). What is left:
+  - *Linked workers have no socket of their own.* The site's Repo asks its classic peers for a
+    document only once its Subduction source has given up, and one whose server cannot be reached
+    keeps trying (`link.test.ts` shows it), so a worker with both would never ask the page with
+    no network. So a linked worker reaches the sync server only through the page, which gives it
+    only unprotected documents it named. A Repo that asked its classic peers beside Subduction (or
+    a Subduction transport over the port, which needs core to build the site's Repo with
+    `subductionAdapters`) would let a worker keep its own socket. Waits on the Repo.
+  - *Another tab than the pool's.* Its site Repo hears the pool only by way of the sync server
+    (ephemeral messages do not cross between the site's tabs), so with no network its `doWork`
+    does the work in the page. A BroadcastChannel adapter on the site's Repo (measured as D1 in
+    notes/LINK.md) would join every tab, with every Repo on the channel hearing all its traffic.
+    Waits on the lead's call on that cost.
+  - *Not shown on the deployed site* (keyhive's Repo): only on a stand-in page and in unit tests.
+    Nor is it shown that the sync server accepts a document a plain worker made offline once the
+    keyhive page takes it in and the network returns, nor hours of use, large documents, or ten
+    links at once. Waits on a staging package for `real-run.mjs`.
+  - *Rule 2 is the conservative one.* The page gives a worker only documents keyhive leaves
+    unprotected; sharing a protected document a person may read with a task they run is the
+    lead's call.
+  - *A Node host has none.* Its threads' Repos have directories of their own and reach the asker
+    by the sync server, and a run's ending waits for the server's acknowledgement. Measured on
+    2026-11-25 (FACTS.md, "What a task writes"), that costs a run from about 0.2 s (10 KB) to
+    0.5 s (5 MB) and 1.1–1.8 s (20 MB). A MessageChannel link between the host's Repo and each
+    thread would carry it directly. Waits on a case that needs it.
 - **A new worker for every run.** A worker is reused after a run that ended by itself, so code one
   task leaves running shares a thread with the next. Confining task code (an opaque-origin worker in
   a browser) requires fresh workers, and so does treating tasks as strangers to each other. Ending
-  a worker once its run has ended loses nothing it wrote (the ending waits for the sync server;
-  offline, the run's log says the writes stayed on the machine), so this waits only on confinement
-  and on what a fresh worker costs: a run that wrote something ends only once the new worker's
-  Repo has made its first connection to the server (not measured on its own).
-- **What a stopped worker leaves behind.** A run worker ended before the server acknowledged what
-  its run wrote (a stopped run not done within five seconds, a process or tab that died, a run
-  written offline) leaves it in that worker's storage, and the next worker on the same storage does
-  not send it: the Repo loads a stored document only when something asks for it. Sending what a
-  slot's storage holds when a worker starts there would close this. Waits on a case that needs it;
-  the solver packages write their run documents as they go, so a lost tail is what is at risk.
+  a worker once its run has ended loses nothing it wrote (in a browser the ending waits until the
+  page's Repo has it, through the link; on a Node host, for the sync server), so this waits only on
+  confinement and on what a fresh worker costs: its start, and on a Node host its Repo's first
+  connection to the server (not measured on their own).
+- **What a stopped worker leaves behind.** In a browser, what a run worker writes crosses its link
+  to the page's Repo as it writes (in milliseconds), so a worker ended mid-run (a stopped run not
+  done within five seconds) leaves behind at most what it wrote in its last moments; the page's
+  Repo keeps the rest and sends it on (browser-run check 29). A tab that dies takes the page's Repo
+  with it, and what that Repo had not yet saved or sent stays only in the run worker's storage. On a
+  Node host, a thread ended before the server acknowledged what its run wrote (a stopped run, a
+  process that died, a run written offline) leaves it in that thread's storage. Either way the next
+  worker on the same storage does not send it: the Repo loads a stored document only when something
+  asks for it. Sending what a slot's storage holds when a worker starts there would close this.
+  Waits on a case that needs it; the solver packages write their run documents as they go, so a
+  lost tail is what is at risk.
 - **Finding queues.** A page with no document that names a queue asks its person's own queue
   (`ownQueue`). Queues one only asks of, and does not serve, have no place to be kept: the task
   storage could keep them as root keys of their own whose setting serves nothing, and tools pick
@@ -165,9 +188,10 @@ that one machine serves.
   `toolStorage = {}` when its copy of the account has none, so two devices doing so apart keep one
   map, and every other tool's storage linked in the other is lost from the account. The task
   system recovers its own (`mergeStorages`); the rest is base's to fix, and was reported.
-- **Acknowledged means equal heads.** A run waits until the sync server reports exactly the heads
-  its documents have. A document that others keep changing while the run waits may match only after
-  the limit, which costs the wait and never a write. Knowing that the server's heads *include* the
-  run's would be enough, and needs a question the Repo does not yet answer cheaply.
+- **Acknowledged means equal heads.** A run waits until the page's Repo (linked) or the sync server
+  reports exactly the heads its documents have. A document that others keep changing while the run
+  waits may match only after the limit, which costs the wait and never a write. Knowing that the
+  other side's heads *include* the run's would be enough, and needs a question the Repo does not
+  yet answer cheaply.
 - **Slots count threads, not kinds of work.** A run waiting on the network holds a slot a build
   could use. Waits on the first long-waiting work moving here.

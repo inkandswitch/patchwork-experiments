@@ -21,6 +21,10 @@
 // a loop goes on for about 2 s, lock and open database with it. So there can
 // be a few more databases than slots, and a worker waits for its lock only
 // behind a worker of an earlier pool of this browser.
+//
+// Under a pool linked to its page (link.ts), each run worker is handed its
+// end of a link of its own as it starts, with its settings, and the link is
+// ended with its `exit`.
 
 import type { Executor, Job, RunWorker, StopReason, WorkerEvents } from '../pool';
 import type { FromRunWorker, RunWorkerSettings, ToRunWorker } from '../run-worker';
@@ -33,6 +37,8 @@ export interface BrowserExecutorOptions {
   settings: RunWorkerSettings;
   /** The task's document as the pool has it, saved: handed to the worker with the job (see `ToRunWorker`). */
   taskBytes(taskUrl: Job['taskUrl']): Promise<Uint8Array | undefined>;
+  /** A new link to the page's Repo for a run worker that is starting, with how to end it; absent where the pool has no page linked. */
+  link?(): { port: MessagePort; end(): void };
 }
 
 export class BrowserExecutor implements Executor {
@@ -53,6 +59,7 @@ export class BrowserExecutor implements Executor {
       name: 'patchwork-task-run',
     });
     let over = false;
+    const link = this.options.link?.() ?? null;
     // Said after the current call returns, as a Node thread's 'exit' is: the
     // pool may be in the middle of ending this very worker.
     const exit = () => {
@@ -60,6 +67,7 @@ export class BrowserExecutor implements Executor {
         return;
       }
       over = true;
+      link?.end();
       this.free(n);
       queueMicrotask(() => events.exit());
     };
@@ -101,7 +109,13 @@ export class BrowserExecutor implements Executor {
         events.log('something its worker said could not be read');
       }
     };
-    tell({ type: 'settings', settings: { ...settings, place: { ...settings.place, database: runDatabase(n) } } });
+    worker.postMessage(
+      {
+        type: 'settings',
+        settings: { ...settings, place: { ...settings.place, database: runDatabase(n) }, ...(link ? { link: link.port } : {}) },
+      } satisfies ToRunWorker,
+      link ? [link.port] : [],
+    );
 
     // A job goes with the task's document, which takes a moment to read. What
     // is said after it waits its turn, so that neither an abort nor a settle overtakes its job.

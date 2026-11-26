@@ -233,10 +233,11 @@ describe('a run worker', () => {
     // `then` is the promise machinery asking whether the Repo is itself a
     // promise; `on` and the two methods beside it are looked at once, to hear
     // the server's reports for the Repo's whole life; `handles` gives the
-    // heads before and after the code ran. Code that wrote nothing has
+    // heads before and after the code ran; `networkSubsystem` says whether
+    // it is linked to a page (it has an adapter). Code that wrote nothing has
     // nothing saved.
     expect(new Set(calls)).toEqual(
-      new Set(['then', 'on', 'connectedSubductionPeerIds', 'resyncSubduction', 'import', 'handles']),
+      new Set(['then', 'on', 'connectedSubductionPeerIds', 'resyncSubduction', 'import', 'handles', 'networkSubsystem']),
     );
     expect(theRepo.peersAsked).toBe(0);
   });
