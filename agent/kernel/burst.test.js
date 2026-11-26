@@ -559,6 +559,37 @@ describe("a burst", () => {
     expect(JSON.parse(JSON.stringify(result))).toEqual(result)
   })
 
+  it("answers a message written while its reply streams, in the same burst", async () => {
+    const repo = new Repo({ network: [] })
+    const handle = sessionIn(repo)
+    let open
+    const gate = new Promise((r) => (open = r))
+    const provider = streaming("Begun", { gate, more: [" and done."] })
+    const running = burstOf(handle, taskOf(repo), { provider })
+    await provider.at
+    handle.change((d) => d.turns.push(makeTurn("user", [textBlock("And another thing.")])))
+    open()
+    const result = await running
+    expect(result.outcome).toBe(OUTCOME.idle)
+    expect(provider.requests).toHaveLength(2)
+    const doc = plain(handle)
+    expect(doc.turns.at(-1).blocks.map((b) => b.text)).toEqual(["Again."])
+    expect(doc.burst).toBe(null)
+    expect(result.heads).toEqual(heads(handle))
+  })
+
+  it("asks before a read of a sensitive document (the own queue) runs", async () => {
+    const repo = new Repo({ network: [] })
+    const queue = repo.create({ jobs: {} })
+    const handle = sessionIn(repo)
+    const provider = makeMock([[{ type: "call", id: "c1", name: "doc_read", input: { url: queue.url } }], [{ type: "text", delta: "never" }]])
+    const read = tool("doc_read", { risk: "read" })
+    const result = await burstOf(handle, taskOf(repo), { provider, tools: [read], context: { sensitiveDocs: [queue.url] } })
+    expect(result.outcome).toBe(OUTCOME.awaitingApproval)
+    expect(findCall(plain(handle), "c1").block.status).toBe(CALL.pending)
+    expect(read.runs).toBe(0)
+  })
+
   it("chains its loop past 24 turns", async () => {
     const repo = new Repo({ network: [] })
     const handle = sessionIn(repo)

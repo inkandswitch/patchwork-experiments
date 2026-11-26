@@ -1,7 +1,7 @@
 /**
  * A burst: one task's run of one session, from "there is work" until the
  * session waits on a person, has nothing to do, is stopped, or has a call
- * only a page can run.
+ * only a page can run. A message written while it runs is its work too.
  *
  * It is handed what a task's code is handed, `{ repo, signal, run, taskUrl,
  * settled, progress, log }`, and what its host gives it to run a session
@@ -202,6 +202,7 @@ export async function runBurst(ctx, opts) {
     let reconnects = 0
     for (;;) {
       let result
+      const before = String(handle.heads?.() ?? [])
       try {
         prepared ??= await prepare()
         result = await runLoop({
@@ -226,6 +227,8 @@ export async function runBurst(ctx, opts) {
           stillOurs,
           checkMark: true,
           oneChangePerCall: true,
+          // The own queue is among the sensitive documents (runners/ask.js): reading it asks.
+          sensitiveReads: true,
           boundary: () => boundary(prepared.toolset),
         })
       } catch (err) {
@@ -239,8 +242,22 @@ export async function runBurst(ctx, opts) {
       reconnects = 0
       // Out of turns, not of budget: the burst goes on.
       if (result.outcome === OUTCOME.budgetExhausted && result.reason == null) continue
+      // Work that arrived while the loop ran (a message during the reply) is
+      // this burst's too: after the model finished its turn (`idle`), it goes
+      // on while there is work and `burst` still names this run (not a
+      // page's claim, another run, or a Take over). Every other end is a
+      // stop, an abort, or a wait on a person or a page. Only a loop that
+      // changed the session goes round again, so a round that writes nothing
+      // cannot repeat.
+      if (result.outcome === OUTCOME.idle && String(handle.heads?.() ?? []) !== before && moreWork()) continue
       return result
     }
+  }
+
+  /** Work left that is still this run's: `burst` names it, and needsWork holds. */
+  function moreWork() {
+    const doc = store.doc()
+    return (doc?.burst?.run ?? null) === run && needsWork(doc, canRun, null, (d) => hasDebris(d, run))
   }
 
   async function prepare() {
