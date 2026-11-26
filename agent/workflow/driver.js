@@ -147,8 +147,6 @@ const drivers = new Map()
  *   notify         (planUrl) => channel with notify(render)/close(), to wake the orchestrator
  */
 export async function ensureDriver(planUrl, opts) {
-  // A holder that may not hold here joins nothing and starts nothing.
-  if (!mayHold(opts.holder)) return getDriver(planUrl)
   const existing = drivers.get(planUrl)
   if (existing) return joined(existing, opts.holder)
   const handle = await opts.repo.find(planUrl)
@@ -180,17 +178,6 @@ export function letGo(holder) {
 
 /** The holder a session's workflow tools hold drivers as, let go when its page stops following it. */
 export const sessionHolder = (sessionUrl) => (sessionUrl ? `session:${String(sessionUrl).split("#")[0]}` : null)
-
-/**
- * Who may hold a driver here: anyone, until the page says otherwise
- * (`holdersMay`). runners/page.js refuses `sessionHolder` of a session it
- * follows only for a driver's channel, so such a session's workflow tools
- * never hold a driver, as one whose other holders have all let go holds none.
- */
-let mayHold = () => true
-export function holdersMay(fn) {
-  mayHold = fn
-}
 
 /** Tests only. */
 export function _resetDrivers() {

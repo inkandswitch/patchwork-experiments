@@ -142,6 +142,8 @@ copies lag a reopen never files the old answer.
 
 A page's driver is held by the views that started or joined it and by the sessions
 whose workflow tools did, while the page follows them, and stops when the last lets go.
+One a workflow tool joined for a session this page follows only for that plan's channel
+is not let go when the last view closes: it stops when that plan ends or the page goes.
 It holds a follow on each running step's session it asks for (`runners/page.js`) until
 the step leaves `running` or it stops. With no driver nothing ticks: workflows that
 progress with no page open are not built.
@@ -166,15 +168,14 @@ they were waiting on. A research step neither gives nor receives.
 
 ## Money
 
-`limits.cost` caps what the steps and the orchestrator spend together. Each
-step has its own budget, by tier unless it says. That is what its session
-starts with; from then on the session's `config.budget` is the step's budget,
-the one it spends against and the one raised, by the orchestrator or a
-person (`stepBudget` in `workflow/plan.js`). A step that spends its budget
-stops part-way with a `budget` notice ([SESSION.md](SESSION.md), *Stops*) and
-the orchestrator is told; it can give the step more out of what the plan has
-left. When the plan itself is at its cap with work waiting, it pauses and asks
-the person, and only a person raises the cap.
+`limits.cost` caps what the steps and the orchestrator spend together. Each step has
+its own budget, by tier unless it says. That is what its session starts with; from
+then on the session's `config.budget` is the step's budget, the one it spends against
+and the one raised, by the orchestrator or a person (`stepBudget` in
+`workflow/plan.js`). A step that spends its budget stops part-way with a `budget`
+notice ([SESSION.md](SESSION.md), *Stops*) and the orchestrator is told; it can give
+the step more out of what the plan has left. When the plan itself is at its cap with
+work waiting, it pauses and asks the person, and only a person raises the cap.
 
 ## Research steps
 
@@ -193,7 +194,6 @@ kind, what, type, source, name, engine, chars, by, at, heads }`: `kind` is
 `source` (read-only) or `finding` (writable by research steps), `by` the step
 that kept it, `heads` the version a step reads. The driver opens it before the
 first research step starts, naming it in the plan only while the plan names
-none. Research steps' kernels write it, from any burst; the driver only reads
-it, and wakes when it changes to file what is new. No agent tool writes a
-ledger, and a step whose plan names none, or names something else, does not
-run.
+none. Research steps' kernels write it, from any burst; the driver only reads it,
+and wakes when it changes to file what is new. No agent tool writes a ledger, and a
+step whose plan names none, or names something else, does not run.

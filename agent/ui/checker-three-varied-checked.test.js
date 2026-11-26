@@ -1,15 +1,15 @@
 /**
  * A third checker's cases of the three fixes in 26d21ea0, each the second
  * checker's case varied once: the orchestrator followed only for its channel
- * running its real workflow tools on another plan (workflow/tools.js through
- * driver.js `holdersMay`); a workflow view opened on a plan another holder
- * already drives, through a burst of changes (ui/workflow-view.js); and two
- * document urls with heads, one before a comma and one inside brackets, and
- * one whose heads are empty (runners/ask.js withoutUrls).
- * Three are kept as it.fails, as they now behave: from a channel-only follow,
- * workflow_reopen and workflow_stop on a plan with no driver here throw
- * (`drive` hands back null, which they use as a driver), and a document url
- * with empty heads leaves its '#' behind.
+ * running its real workflow tools on another plan (workflow/tools.js); a
+ * workflow view opened on a plan another holder already drives, through a
+ * burst of changes (ui/workflow-view.js); and two document urls with heads,
+ * one before a comma and one inside brackets, and one whose heads are empty
+ * (runners/ask.js withoutUrls).
+ * The first fix, which let such a follow hold no driver, made workflow_reopen
+ * and workflow_stop on that other plan throw, and is taken back: they start a
+ * driver again and pass. One is kept as it.fails: a document url with empty
+ * heads leaves its '#' behind.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
@@ -103,8 +103,10 @@ describe("the orchestrator followed only for its channel, running its workflow t
     return { repo, one, two, view, driver, ctx }
   }
 
-  it.fails("workflow_reopen on the other plan, which had finished, runs it again and holds no driver for it", async () => {
-    const { two, view, driver, ctx } = await channelOnly()
+  // The driver each tool starts for plan two is held for the orchestrator,
+  // whose follow here is plan one's channel: it goes when that follow does.
+  it("workflow_reopen on the other plan, which had finished, runs it again; its driver goes with plan one's", async () => {
+    const { one, two, view, driver, ctx } = await channelOnly()
     changePlan(two.plan, (d) => {
       for (const step of d.steps) finishStep(d, step.id, { result: step.id })
       settlePlan(d)
@@ -112,18 +114,23 @@ describe("the orchestrator followed only for its channel, running its workflow t
     expect(two.plan.doc().status).toBe(PLAN.done)
     await workflowReopen.execute({ plan: two.plan.url, steps: ["a"], note: "again", cascade: false }, ctx)
     expect(two.plan.doc().status).toBe(PLAN.running)
-    expect(getDriver(two.plan.url)).toBe(null)
+    const other = getDriver(two.plan.url)
+    expect(other).not.toBe(null)
     letGo(view)
     expect(driver.stopped).toBe(true)
+    expect(other.stopped).toBe(true)
+    expect(holdersOf(one.orchestrator.url)).toBe(0)
   })
 
-  it.fails("workflow_stop on the other plan, while it runs, stops it", async () => {
-    const { two, view, driver, ctx } = await channelOnly()
+  it("workflow_stop on the other plan, while it runs, stops it; its driver goes with plan one's", async () => {
+    const { one, two, view, driver, ctx } = await channelOnly()
     expect(two.plan.doc().status).toBe(PLAN.running)
     await workflowStop.execute({ plan: two.plan.url }, ctx)
     expect(two.plan.doc().status).not.toBe(PLAN.running)
     letGo(view)
     expect(driver.stopped).toBe(true)
+    expect(getDriver(two.plan.url)).toBe(null)
+    expect(holdersOf(one.orchestrator.url)).toBe(0)
   })
 })
 
