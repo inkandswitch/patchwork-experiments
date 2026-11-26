@@ -109,14 +109,19 @@ the task returns. `ctx` holds:
   machine's pool is shutting down, and the task will be taken again). Code holding something
   outside its worker (a child process, a file lock) lets go of it here.
 - `settled`: a promise that resolves once the pool has held the run for a beat (two seconds from
-  when its taking was saved) and nothing stops it. A pool says each of its runs every beat, and an
-  earlier open run counts as heard from first sight, so within that beat an earlier run that can
-  be heard at all is heard, and this run yields instead of settling. Code awaits it before doing
-  what cannot be undone (a payment, a message sent to someone). It resolves at most once, and
+  when its taking was saved) and nothing stops it. Code awaits it before doing what cannot be
+  undone (a payment, a message sent to someone). An earlier run (one before it in `runs`) makes
+  this run yield instead of settling when its record, or its pool's word that it goes on, reaches
+  this pool within that beat: an earlier open run counts as heard from first sight, and a pool
+  says each of its runs every beat. That is so for an earlier run taken before this one by a pool
+  heard within a beat, and for one taken at about the same moment (before its pool had this run's
+  record) by a pool whose round trip to this one is under a beat. It resolves at most once, and
   never once `signal` has aborted: then it rejects with "the run stopped before it settled
-  (<reason>)". It is not exclusivity: an earlier run cut off for longer than the beat is not
-  heard, and hearing it later still makes this run yield, with what it did already done. Code that
-  never awaits it is not held up by it.
+  (<reason>)". It is not exclusivity: an earlier run heard later than that (its pool cut off for
+  longer than the beat, or taken a moment after this one by a pool whose round trip to this one
+  is longer than the beat) makes this run yield only after it settled, with what it did already
+  done. Code that never awaits it is not held up by it. Work done in the page (see Having work
+  done from a page) has no `settled` in its `ctx`.
 - `repo`: the worker's own Repo, which already has the task's document. Its `find` waits for a
   document made elsewhere a moment ago (asking again for about half a minute, as `findWhenThere`
   in `task-client.js` does), so an input the asker has just made is found, not refused; a url it

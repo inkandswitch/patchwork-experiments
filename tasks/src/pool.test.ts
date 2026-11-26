@@ -1590,6 +1590,238 @@ describe('settling', () => {
   });
 });
 
+describe('settling, as a checker attacks it', () => {
+  // Two pools on Repos of their own, each with its own copy of one queue and
+  // one task, deaf to each other's serving words so that neither holds back:
+  // what one writes reaches the other only when the test carries it there,
+  // at the time the table says. Their copies of the task have actors chosen
+  // so that the merge puts `first`'s run first (the higher actor's insert
+  // comes first among concurrent ones). A pool writes nothing after its claim
+  // until its yielded run is killed, GRACE_MS after the abort, and every case
+  // carries its last copy before then, so carrying a copy as it stands is
+  // carrying the claim.
+
+  /** Counts a Repo's finds and flushes as the world's, so that `settle` waits for them too. */
+  function countedAsTheWorlds(repo: Repo) {
+    const find = repo.find.bind(repo);
+    const flush = repo.flush.bind(repo);
+    const count = <T>(promise: Promise<T>) => {
+      w.repoWork.underWay++;
+      return promise.finally(() => w.repoWork.underWay--);
+    };
+    repo.find = ((...args: Parameters<Repo['find']>) => count(find(...args))) as Repo['find'];
+    repo.flush = ((...args: Parameters<Repo['flush']>) => count(flush(...args))) as Repo['flush'];
+    return repo;
+  }
+
+  async function apart(first: 'A' | 'B') {
+    const repoA = countedAsTheWorlds(new Repo({ network: [] } as any));
+    const repoB = countedAsTheWorlds(new Repo({ network: [] } as any));
+    const queueA = repoA.create<Queue>({ title: 'q', jobs: {} });
+    const taskA = repoA.create<Task>({ importUrl: CODE, input: null, key: 'k', runs: [] });
+    const queueB = repoB.import<Queue>(A.save(queueA.doc()), { docId: queueA.documentId } as any);
+    const taskB = repoB.import<Task>(A.save(taskA.doc()), { docId: taskA.documentId } as any);
+    const [high, low] = ['b'.repeat(32), 'a'.repeat(32)];
+    taskA.update((doc) => A.clone(doc, { actor: first === 'A' ? high : low }));
+    taskB.update((doc) => A.clone(doc, { actor: first === 'A' ? low : high }));
+    const start = (id: string, repo: Repo) => {
+      const executor = new FakeExecutor(w.clock);
+      const ears = w.net.ears();
+      const pool = new Pool({
+        repo: repo as Docs,
+        id,
+        name: id,
+        slots: 1,
+        has: [],
+        executor,
+        queues: { [queueA.url]: 'any' },
+        ears: deafToServing(ears),
+        clock: w.clock,
+      });
+      return { pool, executor, ears };
+    };
+    const a = start('A', repoA);
+    const b = start('B', repoB);
+    await settle();
+    await w.clock.advance(LISTEN_MS);
+    return { a, b, queueA, queueB, taskA, taskB };
+  }
+
+  /** What one pool's worker was told of its run: when it settled and when it was told to yield, each from t0, or null. */
+  type Told = { settled: number | null; yielded: number | null };
+
+  // [what, first, B takes it this long after A, A's word reaches B after, B's word reaches A after, cut off, A told, B told]
+  const crossings: [string, 'A' | 'B', number, number, number, boolean, Told, Told][] = [
+    ['taken at once, each heard in 300 ms', 'A', 0, 300, 300, false, { settled: BEAT_MS, yielded: null }, { settled: null, yielded: 300 }],
+    ['taken at once, each heard in 300 ms', 'B', 0, 300, 300, false, { settled: null, yielded: 300 }, { settled: BEAT_MS, yielded: null }],
+    ['B takes it 900 ms after A, each heard in 1000 ms (a round trip of a beat)', 'A', 900, 1_000, 1_000, false, { settled: BEAT_MS, yielded: null }, { settled: null, yielded: 1_000 }],
+    ['B takes it 900 ms after A, each heard in 1000 ms (a round trip of a beat)', 'B', 900, 1_000, 1_000, false, { settled: null, yielded: 1_900 }, { settled: 900 + BEAT_MS, yielded: null }],
+    // Each pool hears the other within the beat, but B's run, listed first,
+    // was taken 1900 ms into A's beat: its record reaches A after A settled.
+    // Both runs settle. The README's limit names only an earlier run cut off
+    // for longer than the beat; this is a round trip longer than the beat.
+    ['B takes it 1900 ms after A, each heard in 1950 ms', 'A', 1_900, 1_950, 1_950, false, { settled: BEAT_MS, yielded: null }, { settled: null, yielded: 1_950 }],
+    ['B takes it 1900 ms after A, each heard in 1950 ms', 'B', 1_900, 1_950, 1_950, false, { settled: BEAT_MS, yielded: 3_850 }, { settled: 1_900 + BEAT_MS, yielded: null }],
+    ['taken at once, A heard by B late (2500 ms), B by A in 100 ms', 'A', 0, 2_500, 100, false, { settled: BEAT_MS, yielded: null }, { settled: BEAT_MS, yielded: 2_500 }],
+    ['taken at once, A heard by B late (2500 ms), B by A in 100 ms', 'B', 0, 2_500, 100, false, { settled: null, yielded: 100 }, { settled: BEAT_MS, yielded: null }],
+    ['taken at once, B cut off for 5000 ms', 'A', 0, 5_000, 5_000, true, { settled: BEAT_MS, yielded: null }, { settled: BEAT_MS, yielded: 5_000 }],
+    ['taken at once, B cut off for 5000 ms', 'B', 0, 5_000, 5_000, true, { settled: BEAT_MS, yielded: 5_000 }, { settled: BEAT_MS, yielded: null }],
+  ];
+  for (const [what, first, gap, aToB, bToA, cut, toldA, toldB] of crossings) {
+    it(`two pools cross, ${what}, ${first}'s run listed first: A ${JSON.stringify(toldA)}, B ${JSON.stringify(toldB)}`, async () => {
+      const { a, b, queueA, queueB, taskA, taskB } = await apart(first);
+      if (cut) {
+        b.ears.deaf = true;
+        b.ears.mute = true;
+      }
+      const t0 = w.clock.now();
+      w.clock.setTimeout(() => queueB.merge(queueA), gap);
+      w.clock.setTimeout(() => taskB.merge(taskA), aToB);
+      w.clock.setTimeout(() => {
+        b.ears.deaf = false;
+        b.ears.mute = false;
+        taskA.merge(taskB);
+      }, gap + bToA);
+      // A sees the listing now, B `gap` later
+      queueA.change((doc) => listTask(doc, 'k', { taskUrl: taskA.url, askedAt: 1, package: null }));
+      await settle();
+      await w.clock.advance(6_000);
+
+      const runA = runsOf(taskA).find((run) => run.pool === 'A')!;
+      const runB = runsOf(taskB).find((run) => run.pool === 'B')!;
+      expect(runA.start).toBe(t0);
+      expect(runB.start).toBe(t0 + gap);
+      // the merge put `first`'s run first, on both copies
+      expect(runsOf(taskA).map((run) => run.pool)).toEqual(first === 'A' ? ['A', 'B'] : ['B', 'A']);
+      expect(runsOf(taskB).map((run) => run.pool)).toEqual(first === 'A' ? ['A', 'B'] : ['B', 'A']);
+
+      for (const [executor, run, told] of [
+        [a.executor, runA, toldA],
+        [b.executor, runB, toldB],
+      ] as const) {
+        const worker = executor.of(run.id);
+        const seen: Told = {
+          settled: worker.settles.length ? worker.settles[0].at - t0 : null,
+          yielded: worker.aborts.length ? worker.aborts[0].at - t0 : null,
+        };
+        expect(seen, `pool ${run.pool}`).toEqual(told);
+        // at most once, only for its own run, never after an abort
+        expect(worker.settles.length).toBeLessThanOrEqual(1);
+        expect(worker.settles.every((it) => it.run === run.id)).toBe(true);
+        expect(worker.aborts.map((it) => it.reason)).toEqual(told.yielded === null ? [] : ['yielded']);
+        if (told.settled !== null && told.yielded !== null) {
+          expect(told.settled).toBeLessThan(told.yielded);
+        }
+        // a run made to yield within the beat from its start never settles
+        if (told.yielded !== null && told.yielded < run.start - t0 + BEAT_MS) {
+          expect(told.settled).toBeNull();
+        }
+      }
+    });
+  }
+
+  it('a pool alone, its worker used again: the run that ended before its beat is never told; the next is told at its own beat, once', async () => {
+    const { executor } = await w.started('A');
+    const first = w.ask('first');
+    await settle();
+    const worker = executor.of(lastRun(first).id);
+    // it ends a millisecond before its beat, and the next is taken by the same worker at that moment
+    await w.clock.advance(BEAT_MS - 1);
+    const second = w.ask('second');
+    worker.events.done('one');
+    await settle();
+    expect(statuses(first)).toEqual(['succeeded']);
+    expect(executor.of(lastRun(second).id)).toBe(worker);
+    expect(lastRun(second).start).toBe(lastRun(first).start + BEAT_MS - 1);
+    // the moment the first run's beat would have come
+    await w.clock.advance(1);
+    expect(worker.settles).toEqual([]);
+    await w.clock.advance(BEAT_MS - 2);
+    expect(worker.settles).toEqual([]);
+    await w.clock.advance(1);
+    expect(worker.settles).toEqual([{ run: lastRun(second).id, at: lastRun(second).start + BEAT_MS }]);
+    // reviews by the dozen: logs, progress, more asks, beats
+    for (let i = 0; i < 12; i++) {
+      worker.events.log(`line ${i}`);
+      worker.events.progress(i);
+      w.ask(`more ${i}`);
+      await w.clock.advance(BEAT_MS / 4);
+    }
+    expect(worker.settles).toHaveLength(1);
+    expect(worker.jobs.map((job) => job.runId)).toEqual([lastRun(first).id, lastRun(second).id]);
+  });
+
+  it('a run retaken after its worker died is told at its own beat, by its new worker; the dead one never is', async () => {
+    const { executor } = await w.started('A');
+    const task = w.ask('k');
+    await settle();
+    const dead = executor.of(lastRun(task).id);
+    await w.clock.advance(BEAT_MS / 2);
+    dead.events.exit();
+    await settle();
+    expect(statuses(task)).toEqual(['lost', 'open']);
+    const again = lastRun(task);
+    expect(again.start).toBe(runsOf(task)[0].start + BEAT_MS / 2);
+    const alive = executor.of(again.id);
+    expect(alive).not.toBe(dead);
+    await w.clock.advance(BEAT_MS * 3);
+    expect(dead.settles).toEqual([]);
+    expect(alive.settles).toEqual([{ run: again.id, at: again.start + BEAT_MS }]);
+  });
+
+  it('a run retaken after a pool stopped within its beat: the stopped run is never told; the new pool tells its own run at its own beat', async () => {
+    const { pool, executor } = await w.started('A');
+    const task = w.ask('k');
+    await settle();
+    const before = executor.of(lastRun(task).id);
+    await w.clock.advance(BEAT_MS / 2);
+    void pool.stop();
+    await w.clock.advance(GRACE_MS);
+    expect(statuses(task)).toEqual(['lost']);
+    expect(before.settles).toEqual([]);
+    const next = w.pool('B');
+    await settle();
+    await w.clock.advance(LISTEN_MS + BEAT_MS * 2);
+    const again = lastRun(task);
+    expect(again.pool).toBe('B');
+    expect(next.executor.of(again.id).settles).toEqual([{ run: again.id, at: again.start + BEAT_MS }]);
+    expect(before.settles).toEqual([]);
+  });
+
+  // A stop, at each moment around the beat: before it, never told; after it,
+  // told once and then aborted.
+  for (const at of [1, BEAT_MS / 2, BEAT_MS - 1, BEAT_MS + 1, BEAT_MS * 3]) {
+    it(`a stop ${at} ms after the start was saved: ${at < BEAT_MS ? 'cancelled, never told it settled' : 'told it settled at the beat, then cancelled'}`, async () => {
+      const { executor } = await w.started('A');
+      const task = w.ask('k');
+      await settle();
+      const run = lastRun(task);
+      const worker = executor.of(run.id);
+      await w.clock.advance(at);
+      stop(task);
+      await settle();
+      await w.clock.advance(BEAT_MS * 4);
+      expect(worker.aborts).toEqual([{ reason: 'cancelled', at: run.start + at }]);
+      expect(worker.settles).toEqual(at < BEAT_MS ? [] : [{ run: run.id, at: run.start + BEAT_MS }]);
+    });
+  }
+
+  it('an earlier run heard after the beat: told it settled, then told to yield, and never told again', async () => {
+    const task = w.ask('k', { runs: [{ id: 'cut off', pool: 'X', start: 0 }] });
+    const { executor } = w.pool('B');
+    await settle();
+    await w.clock.advance(LAPSE_MS);
+    const mine = lastRun(task);
+    const worker = executor.of(mine.id);
+    await w.clock.advance(BEAT_MS + 1);
+    w.net.beat(task.url, 'cut off');
+    await settle();
+    await w.clock.advance(BEAT_MS * 4);
+    expect(worker.settles).toEqual([{ run: mine.id, at: mine.start + BEAT_MS }]);
+    expect(worker.aborts).toEqual([{ reason: 'yielded', at: mine.start + BEAT_MS + 1 }]);
+  });
+});
+
 describe('what a pool has', () => {
   /** A task with these needs, listed with these needs on its entry. */
   const askNeeding = (key: string, taskNeeds: unknown, entryNeeds: unknown = taskNeeds) => {

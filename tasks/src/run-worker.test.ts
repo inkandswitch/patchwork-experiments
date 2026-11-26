@@ -469,6 +469,98 @@ describe('ctx.settled', () => {
   });
 });
 
+describe('ctx.settled, as a checker attacks it', () => {
+  /** Code that records every way its `ctx.settled` went, and returns when told to. */
+  function recording(outcomes: string[], finishers: (() => void)[]) {
+    return {
+      default: (_: unknown, ctx: any) => {
+        ctx.settled.then(
+          () => outcomes.push(`${ctx.run} resolved`),
+          (error: Error) => outcomes.push(`${ctx.run} rejected: ${error.message}`),
+        );
+        return new Promise<string>((resolve) => finishers.push(() => resolve(ctx.run)));
+      },
+    };
+  }
+
+  it("a worker used for the next job: the previous job's settle, said while the next is still being imported, resolves nothing; the next job's own does", async () => {
+    const outcomes: string[] = [];
+    const finishers: (() => void)[] = [];
+    modules.first = recording(outcomes, finishers);
+    let imported!: (module: unknown) => void;
+    modules.second = new Promise((resolve) => (imported = resolve));
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: { ...job('first'), runId: 'run-1' } });
+    await settle();
+    finishers.shift()!();
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'run-1' }]);
+    tell({ type: 'job', job: { ...job('second'), runId: 'run-2' } });
+    tell({ type: 'settled', run: 'run-1' });
+    tell({ type: 'settled', run: 'run-1' });
+    await settle();
+    imported(recording(outcomes, finishers));
+    await settle();
+    // neither run-1's promise (no longer the worker's job) nor run-2's
+    expect(outcomes).toEqual([]);
+    tell({ type: 'settled', run: 'run-2' });
+    tell({ type: 'settled', run: 'run-2' });
+    await settle();
+    expect(outcomes).toEqual(['run-2 resolved']);
+    finishers.shift()!();
+    await settle();
+    expect(endings()).toEqual([
+      { type: 'done', result: 'run-1' },
+      { type: 'done', result: 'run-2' },
+    ]);
+  });
+
+  // Whatever follows the first word, the first word stands, once.
+  const sequences: [('settled' | 'abort')[], string][] = [
+    [['settled', 'settled', 'settled'], 'run-1 resolved'],
+    [['settled', 'abort', 'settled'], 'run-1 resolved'],
+    [['abort', 'settled', 'settled'], 'run-1 rejected: the run stopped before it settled (cancelled)'],
+    [['abort', 'abort', 'settled'], 'run-1 rejected: the run stopped before it settled (cancelled)'],
+  ];
+  for (const [words, outcome] of sequences) {
+    it(`told ${words.join(', ')}: ${outcome}, once`, async () => {
+      const outcomes: string[] = [];
+      const finishers: (() => void)[] = [];
+      modules.it = recording(outcomes, finishers);
+      const tell = start();
+      tell(settings);
+      tell({ type: 'job', job: { ...job('it'), runId: 'run-1' } });
+      await settle();
+      for (const word of words) {
+        tell(word === 'settled' ? { type: 'settled', run: 'run-1' } : { type: 'abort', reason: 'cancelled' });
+        await settle();
+      }
+      finishers.shift()!();
+      await settle();
+      expect(outcomes).toEqual([outcome]);
+    });
+  }
+
+  it('an abort said while the code is still being imported rejects it before the code first looks', async () => {
+    const outcomes: string[] = [];
+    const finishers: (() => void)[] = [];
+    let imported!: (module: unknown) => void;
+    modules.slow = new Promise((resolve) => (imported = resolve));
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: { ...job('slow'), runId: 'run-1' } });
+    tell({ type: 'abort', reason: 'yielded' });
+    tell({ type: 'settled', run: 'run-1' });
+    await settle();
+    imported(recording(outcomes, finishers));
+    await settle();
+    expect(outcomes).toEqual(['run-1 rejected: the run stopped before it settled (yielded)']);
+    finishers.shift()!();
+    await settle();
+  });
+});
+
 describe('a run ends only once what it wrote has reached the sync server', () => {
   /** Code that writes `count` new documents and returns their ids. */
   const writes = (count: number) => ({
