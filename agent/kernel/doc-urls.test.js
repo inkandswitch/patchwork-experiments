@@ -118,7 +118,11 @@ describe("a changed, dropped or extra character is mended to an id the conversat
 
   it("names the nearest ids it has seen when it cannot mend", () => {
     const meant = idOf(IDS[2])
-    const wrong = `automerge:${meant.slice(0, 5)}${"x".repeat(5)}${meant.slice(10)}` // five edits: too far to take as meant
+    // Five edits, too far to take as meant: each of the five is a character
+    // the id does not hold, so no alignment saves one. ("x" each time was
+    // fewer edits, and mended, whenever the id held two x's there.)
+    const absent = [...BASE58].find((c) => !meant.includes(c))
+    const wrong = `automerge:${meant.slice(0, 5)}${absent.repeat(5)}${meant.slice(10)}`
     let err
     try {
       repairDocUrl(wrong, IDS)
