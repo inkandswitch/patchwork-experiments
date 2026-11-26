@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { toOpenAIMessages, toOpenAITools, buildBody, sseEvents, decodeStream, stream, models, describeModel, describeDefaults, effortsOf, ALL_EFFORTS } from "./openrouter.js"
+import { toOpenAIMessages, toOpenAITools, buildBody, sseEvents, decodeStream, stream, models, describeModel, describeDefaults, effortsOf, ALL_EFFORTS, providerSays, refusal } from "./openrouter.js"
 import { DEFAULT_CONFIG } from "../session/schema.js"
 
 /** A ReadableStream of SSE chunks, the shape `response.body` actually has. */
@@ -419,5 +419,38 @@ describe("effort", () => {
 
   it("defaults new sessions to the latest Opus", () => {
     expect(DEFAULT_CONFIG.model).toBe("~anthropic/claude-opus-latest")
+  })
+})
+
+describe("a refused request, in words", () => {
+  // What OpenRouter answered a made-up key with, on the deployed site.
+  const NOT_FOUND = JSON.stringify({ error: { message: "User not found.", code: 401 } })
+
+  it.each([
+    [NOT_FOUND, "User not found."],
+    [JSON.stringify({ error: "no auth credentials found" }), "no auth credentials found"],
+    [JSON.stringify({ message: "upstream timed out" }), "upstream timed out"],
+    [JSON.stringify({ error: { code: 500 } }), JSON.stringify({ error: { code: 500 } })],
+    ["Bad Gateway", "Bad Gateway"],
+    ["", ""],
+  ])("the provider's own words out of %s", (detail, said) => {
+    expect(providerSays(detail)).toBe(said)
+  })
+
+  it.each([401])("%s: the API key refused, where to change it, then what the provider said", (status) => {
+    expect(refusal(status, NOT_FOUND)).toBe(`OpenRouter refused the API key (${status}). Change it in this session's settings. OpenRouter said: User not found.`)
+    expect(refusal(status, "")).toBe(`OpenRouter refused the API key (${status}). Change it in this session's settings.`)
+  })
+
+  it("any other status keeps it, and the message is read out of the JSON", () => {
+    expect(refusal(404, JSON.stringify({ error: { message: "No endpoints found for this model", code: 404 } }))).toBe("OpenRouter 404: No endpoints found for this model")
+    expect(refusal(500, "upstream")).toBe("OpenRouter 500: upstream")
+  })
+
+  it("stream throws it, with no JSON in what is said", async () => {
+    const fetchImpl = async () => ({ ok: false, status: 401, headers: { get: () => null }, text: async () => NOT_FOUND })
+    const err = await collect(stream({ system: "", messages: [], model: "m", key: "made-up", fetchImpl })).catch((e) => e)
+    expect(err.message).toBe("OpenRouter refused the API key (401). Change it in this session's settings. OpenRouter said: User not found.")
+    expect(err.message).not.toMatch(/[{}"]/)
   })
 })

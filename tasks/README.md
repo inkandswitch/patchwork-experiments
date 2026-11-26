@@ -22,11 +22,16 @@ The promise: **at least once** (a pool that falls silent for ten seconds has its
 again), **a throw is final** (the task fails, once, and is not run again for it), and **a stop is
 hard** (five seconds after code is told to stop, its worker is ended whatever it is doing).
 Two more about documents: **what a run wrote can be found once its ending is read** (a run
-worker says how its run ended, returned, threw or stopped, only once every document its code
-changed has reached the page that holds its browser's pool, through the local link (see Offline
+worker says how its run ended, returned, threw or stopped, only once every document the run
+wrote has reached the page that holds its browser's pool, through the local link (see Offline
 and partition), or, on a Node host, once the sync server has acknowledged it; half a minute at
-most, after which the run's log says how many had not; a Node host's thread with no server to
-reach says in the log that what was written stays on that machine), and **what a task is handed
+most, after which the run's log says how many had not, and of which kind: made by the run, named
+in its input, or another, each by the first six characters of its id; a Node host's thread with
+no server to reach says in the log that what was written stays on that machine). A document
+counts as written by a run only if the run made it, or its heads at the run's end differ from its
+heads when the run first had it (as the code was called, for what the worker's Repo already held;
+otherwise when `ctx.repo` first gave it to the code): one the code only read is never waited
+for. And **what a task is handed
 can be found** (its `ctx.repo.find` waits for a
 document that has not arrived yet, for about half a minute, instead of rejecting at once).
 
@@ -225,7 +230,7 @@ stop ends it for good, and every page of theirs, in any tab or on any machine, s
 (`watchWork`) and can stop it (`stopWork`). A tab that does not hold its browser's pool asks
 through its own site Repo all the same: what it writes reaches the tab that holds the pool
 through the database and heads channel the site's Repos share, and the pool's writes come back
-the same way (browser-run checks 40 and 41).
+the same way (browser-run checks 41 and 42).
 
 ## Serving a queue
 
@@ -402,6 +407,30 @@ the ending, so the run is recorded as it ended, not as lost. So a page
 reloaded the moment a run is reported has what it wrote, with no network too (browser-run
 `--lifetimes` check 39).
 
+Sent when the server can be reached (`src/browser/unsent.ts`). The site's Repo sends a document to
+the sync server only while it has it open, and loads a stored one only when something asks for
+it: what a run wrote with no network is in the page's Repo, through a reload, but once that page
+has been reloaded or the browser restarted, nothing sends it. So as the page saves what a run
+wrote, it also lists those documents, by id, in the task system's own entry in the origin's
+localStorage (`patchwork-tasks-unsent`), which survives a reload, and takes each off once the
+sync server has reported heads equal to the page's (with the network, within moments). While a
+pool runs in a page (so one page per browser profile writes the list), whenever the server can be
+reached (at the pool's start, when the site's Repo says it has connected, when the browser says it
+is online, and every 10 s while anything is listed), the page finds each listed document in the
+site's Repo, which then syncs it. A document the server has not reported after ten minutes of
+trying with the server reachable is let go, said in the console (it stays in the browser, and is
+sent when something opens it); at most 200 are listed, the newest. Nothing waits on this: a run's
+report never depends on it. Whether the server can be reached is the Repo's word
+(`connectedSubductionPeerIds`), or the browser's (`navigator.onLine`) for a Repo that cannot say.
+The ten minutes are counted per document, in this page and earlier ones together, only between two
+looks that both found the server reachable by the Repo's own word, and at most 10 s between two
+looks; a look that finds it unreachable, the Repo saying it has disconnected, or the page's pool
+stopping starts the count afresh at the next look. So time cut off, or with the page closed, never
+counts. On the browser's word alone no time is counted: with a Repo that cannot say whether it is
+connected, nothing is let go by time, and the cap of 200 is the list's only bound.
+(The page lists what it saved whether or not the server could be reached then: the simpler rule,
+and the one that also covers a network lost, or a page reloaded, a moment after the save.)
+
 What a run worker's code can reach besides its own link. Message ports cross only by transfer:
 the pool's worker's end of its link never leaves the pool's worker, and each run worker's end goes
 to that run worker alone, so a run worker's code has no way to another worker's port. Its realm
@@ -417,7 +446,7 @@ above it (a Node host's thread) has no link.
 |---|---|
 | Making your own queue; the pool starting | works: making writes in the page's Repo and waits on nothing, and the pool starts and serves it |
 | A tool's work (`doWork`), run by this browser's pool, its progress and result | works: asked of the person's own queue through the site's Repo and run by this browser's pool, from the tab that runs the pool (by the local link) and from any other tab of the browser (its site Repo shares a database and a heads channel with that tab's; the pool's messages reach it on the task system's own BroadcastChannel, not through its site Repo); also through the task system's own Repo (`tasks-repo.ts`, as the queue browser asks) |
-| What a pool-run task writes into a document the page has open | reaches the site's Repo in the tab that runs the pool, through the link, and is saved there, before the run is reported; a tab reloaded the moment `doWork` resolves has it (browser-run `--lifetimes` check 39); the site's other tabs have it as they have that tab's own changes, when their `doWork` resolves (check 40); the site's Repo sends it to the sync server once there is one |
+| What a pool-run task writes into a document the page has open | reaches the site's Repo in the tab that runs the pool, through the link, and is saved there, before the run is reported; a tab reloaded the moment `doWork` resolves has it (browser-run `--lifetimes` check 39); the site's other tabs have it as they have that tab's own changes, when their `doWork` resolves (check 41); the page that runs the pool lists it until the sync server has it, and sends it when the server can be reached, a reload or a restart between (`unsent.ts`; browser-run check 40) |
 | Work that needs a device this browser is not (`needs: ['node']`, another browser's `pool:` id) | waits in the queue until one of the person's machines that has it can be reached, and the queue browser says what it waits for; where this browser does not have the list of the person's queues (the account names a storage document that has not arrived), `doWork` looks for it as `findWhenThere` does, about half a minute, and then rejects with "The list of your task queues could not be found, so nothing was changed.", having asked nothing |
 | Work where the tasks package is not installed in this browser | `doWork` asks own all the same; nothing here runs it, and it waits on the queue for the person's other machines; `poolHere()` is false, and the tools that ask say so where they show it waiting ("this browser takes no part, because the tasks package is not installed here") |
 | Stopping work | works for work in this browser, from any of its tabs: `stopWork`, a tool's signal, or the queue browser's Stop writes a stop the pool reads |
@@ -437,10 +466,12 @@ sync server. Its checks 26 to 30 show the link with a site Repo that shares no s
 task system's: a tool's `doWork` through it is run by the pool, what the task writes is in that
 Repo when `doWork` resolves, liveness and progress arrive, a run worker ended in the middle of
 writing leaves that Repo working, and the pool handed over to another tab links that tab's Repo.
-Its checks 40 and 41 show a second tab that does not hold the pool: its `doWork` through its own
+Its checks 41 and 42 show a second tab that does not hold the pool: its `doWork` through its own
 site Repo is run by the first tab's pool, and when `doWork` resolves the result is there, the
 task's change to a document that tab has open is in its Repo, and a document the task made is
-given at once when asked; `watchWork` and `stopWork` work from it.
+given at once when asked; `watchWork` and `stopWork` work from it. Its check 40 shows that what a
+run wrote, its page closed the moment `doWork` resolved, is listed by the next page of the profile
+and in that page's site Repo; with the network, that the next page sends it.
 The unit tests show the rest: the link's gate for every kind of message both ways and for what
 arrives on the page's port, and Repos of
 both kinds joined by a gated link (documents named cross both ways, others do not, a protected one
@@ -457,7 +488,11 @@ and a 5 MB document crosses, also after a link taken out in the middle of it
 ending names what the code wrote (`run-worker.test.ts`); its settings wait until the page has
 named its link's peer, and its ending is heard once the page has saved what it names, or at the
 bound with the log saying why not, and an error after it waits behind it (`executor.test.ts`); the page names a fresh peer for each link,
-answers each save, and says why one failed (`pool-host.test.ts`); two replicas that each made a queue
+answers each save, lists what it saved, and says why one failed (`pool-host.test.ts`); the list
+survives a reload, does nothing while the server cannot be reached, finds each document once it
+can, takes it off when the server reports its heads, lets one go after its bound, and stops when
+the pool does (`unsent.test.ts`); a run that only read a document, one from its own database that
+the page will not take included, is not held for it (`link.test.ts`, `run-worker.test.ts`); two replicas that each made a queue
 apart agree on own when they meet, lose no task and run none twice; a replica that sees a pointer
 to a queue it does not have asks a queue of its own and folds it into own once own arrives;
 folding with one replica cut off part way, then healed, converges; a run that finished while its
@@ -518,7 +553,7 @@ processes and say what they saw, one line per check or measurement:
   the chrome slot) measures `out`, `in` and `ack` for a browser's run worker.
 - `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
   stand-in page in a throwaway Chrome profile, with no sync server but for checks 24, 22, 26
-  to 30, 40 and 41, 32 checks. The page mounts
+  to 30 and 40 to 42, 33 checks. The page mounts
   what a frame does: the components the package tags `background`, found by tag in its plugin
   list (the page has no registry), and the titlebar tool. One pool per profile across tabs; a
   closed, navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning
@@ -541,16 +576,24 @@ processes and say what they saw, one line per check or measurement:
   through it is run by the pool, which is heard through it; a task's change to a document the page
   made, and a document it made, are in that Repo when `doWork` resolves; progress and the pool's
   progress messages reach it; a run worker ended while it writes a document of the page's takes
-  its link out and leaves the page and the next task working; (40, 41) a second tab of the
+  its link out and leaves the page and the next task working; (41, 42) a second tab of the
   profile, whose site Repo is joined to the first's only by their one database and heads channel
   (as the site's tabs are; the stand-in's Repos are plain ones of the site's version, not
   keyhive's), has its `doWork` run by the first tab's pool, with the result, the task's change to
   a document it has open, and the document the task made (given at once when asked) in its own
   site Repo when `doWork` resolves, and follows and stops its work with
   `watchWork` and `stopWork`; and (30) closing the tab that runs the pool, that second tab's pool
-  is linked to its own site Repo and runs its next work. With `--no-network` Chrome resolves no host
+  is linked to its own site Repo and runs its next work; and (40) on such a
+  page, named the real sync server and cut off by DevTools' network emulation, a task counts its
+  runs in a document the page made online and makes one, the page makes one of its own, and the
+  page is closed the moment `doWork` resolves; a Node Repo of the probe's on the sync server
+  (another device) has none of the three; a new page of the profile opens with the network, as a
+  restarted browser does, and its list names the run's two; its pool started, that Node Repo
+  finds both, the count once, the list empties, and the page's own document, which nothing lists
+  or opens, is still not at the server. With `--no-network` Chrome resolves no host
   but the probe's own 127.0.0.1, and every check runs but 22, which needs the sync server and is
-  skipped, saying so. With `--lifetimes` (about ten minutes more) it runs checks 31 to 39 too, on
+  skipped, saying so, and 40, which shows only that the new page lists both documents and has
+  them. With `--lifetimes` (about ten minutes more) it runs checks 31 to 39 too, on
   the same `?site` pages, each counting the holder's links after (one for the pool and one per
   live run worker): two minutes of a change every 3 s each way through the link, none slower
   than 2 s (31); a 5 MB document a task makes is in the site's Repo when `doWork` resolves (32);
@@ -602,7 +645,13 @@ Not shown yet, of Offline and partition:
   document and a change, is in that Repo when `doWork` resolves, and still there after a reload
   at that moment; progress, `watchWork`, `stopWork` and the badge's words are right. With the
   network back, the sync server has what the run workers wrote, the documents they made with no
-  network included, each change once, and nothing runs again. A task cut off in its middle by a
+  network included, each change once, and nothing runs again, while the page that ran them is
+  still open. A second check on the deployed site the same day (Chrome restarted between) found what was written
+  with no network not at the sync server after the network came back, for two minutes and two
+  restarts, until the page opened those documents again; then within 2 s. That is what the list
+  of `unsent.ts` is for, and it is not yet shown there: the deployed site's Repo is keyhive's
+  build, and whether it says it is connected and reports the server's heads (the members
+  `unsent.ts` uses where it can) is seen only on the site itself. A task cut off in its middle by a
   proxy finishes, and the server has its one run and its writes once the cut is mended. Another
   device, a Node Repo on the real sync server, hears the browser's pool and has a task it asks
   run by it, and the page hears a Node host serving the same queue. No probe here repeats this.

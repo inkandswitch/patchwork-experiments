@@ -32,7 +32,7 @@ import { STATUS, WHERE, CALL, unknownBlocks, versionStanding } from "../session/
 import { callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, unansweredCalls } from "../session/calls.js"
 import { sessionTitle } from "../session/title.js"
 import { formatCost } from "../session/usage.js"
-import { statusOf } from "../session/status.js"
+import { statusOf, stopOf } from "../session/status.js"
 import { workflowOf } from "../workflow/plan.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { gateOf } from "./standing.js"
@@ -123,12 +123,16 @@ export function hintFacts(doc, local) {
   const pageTool = local.pageTool ?? (ours ? parked : null)
   const here = pageTool != null || ours
   const claimed = here ? null : claimedBy(doc, doc.burst?.run ?? null)
+  // A stop in force in the session (a person's, a workflow's, a run's own
+  // error or budget) wins over what the queue says of its task: a run that
+  // has not yet ended is ending, and there is nothing under way to stop.
+  const stopped = stopOf(doc) != null
   return {
     voice: local.voiceStatus ?? null,
     version: versionStanding(doc),
     outdated: unknownBlocks(doc).length > 0,
     hasKey: !!local.hasKey,
-    work: workOf(local.work ?? null, local.pool ?? null),
+    work: stopped ? null : workOf(local.work ?? null, local.pool ?? null),
     foreign: !here && foreignBurst(doc, local.work ?? null),
     pageTool,
     claimed,
@@ -240,7 +244,7 @@ export function sessionValue(doc, local) {
     gate,
     canSend: !!local.hasKey,
     // Stop on any device: while the session says something is under way, or
-    // the queue says its task is.
+    // the queue says its task is and no stop is in force (`hintFacts`).
     canStop: status === STATUS.running || status === STATUS.reconnecting || status === STATUS.parked || facts.work != null,
     // Take over: `burst` names a run nobody here hears, or another page's
     // claim. A claim names no pool (no liveness to judge it by), so a page

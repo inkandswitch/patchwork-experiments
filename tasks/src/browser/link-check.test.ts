@@ -44,7 +44,7 @@ import * as A from '@automerge/automerge';
 import { Repo as SiteRepo, initSubduction as initSiteSubduction } from 'site-automerge-repo';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PageLinks, gatedAdapterClass, type GatedAdapterClass, type PortAdapterClass } from './link';
-import { reachPage } from '../run-worker';
+import { patient, reachPage } from '../run-worker';
 
 await initSiteSubduction();
 
@@ -393,9 +393,10 @@ describe('ten links at once', () => {
 
     const runs = await Promise.all(
       workers.map(async (worker, i) => {
-        const there = await worker.find<{ counts: Record<string, number> }>(shared.url);
         const before = headsOf(worker);
-        const own = worker.create<{ by: number; n: number }>({ by: i, n: 0 });
+        const code = patient(worker, before);
+        const there = await code.find<{ counts: Record<string, number> }>(shared.url);
+        const own = code.create<{ by: number; n: number }>({ by: i, n: 0 });
         for (let k = 1; k <= 20; k++) {
           there.change((d) => void (d.counts[`w${i}`] = k));
           own.change((d) => void (d.n = k));
@@ -697,7 +698,7 @@ describe('a 5 MB document', () => {
     const worker = keep(linkedRepo(links, 'w'));
     expect(await until(() => worker.peers.length > 0)).toBe(true);
     const before = headsOf(worker);
-    const big = worker.create<{ blob: Uint8Array }>({ blob: blob(5 * 1024 * 1024) });
+    const big = patient(worker, before).create<{ blob: Uint8Array }>({ blob: blob(5 * 1024 * 1024) });
     const logs: string[] = [];
     await reachPage(worker, before, OWN, (line) => logs.push(line), 20_000);
     expect(logs).toEqual([]);

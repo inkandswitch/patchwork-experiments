@@ -172,7 +172,7 @@ vi.mock('./webworker-lib', () => ({
   },
 }));
 
-const { serve, REACH_LIMIT_MS, RESYNC_EVERY_MS, STAYS_HERE, notReached } = await import('./run-worker');
+const { serve, REACH_LIMIT_MS, RESYNC_EVERY_MS, staysHere, notReached } = await import('./run-worker');
 
 const job = (importUrl: string): Job => ({
   taskUrl: 'automerge:2KYqboWHPS5rvWsheoLnHgFvE7ou' as Job['taskUrl'],
@@ -717,9 +717,9 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     expect(endings()).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(theRepo.resynced).toEqual(['doc1', 'doc1']);
-    expect(logs()).toEqual([notReached(1, 2)]);
+    expect(logs()).toEqual([notReached(1, 2, 'made by this run: doc1…')]);
     expect(endings()).toEqual([{ type: 'done', result: ['doc1', 'doc2'] }]);
-    expect(said.at(-2)).toEqual({ type: 'log', message: notReached(1, 2) });
+    expect(said.at(-2)).toEqual({ type: 'log', message: notReached(1, 2, 'made by this run: doc1…') });
   });
 
   it('leaves no timer or interval behind once it has said how a run ended, by a report or at the limit, and the next job waits afresh', async () => {
@@ -739,7 +739,7 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     tell({ type: 'job', job: { ...job('w'), runId: 'run-2' } });
     await vi.advanceTimersByTimeAsync(REACH_LIMIT_MS);
     expect(said).toEqual([
-      { type: 'log', message: notReached(1, 1) },
+      { type: 'log', message: notReached(1, 1, 'made by this run: doc2…') },
       { type: 'done', result: ['doc2'] },
     ]);
     expect(vi.getTimerCount()).toBe(0);
@@ -755,7 +755,7 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     tell({ type: 'job', job: job('w') });
     await settle();
     expect(said).toEqual([
-      { type: 'log', message: STAYS_HERE },
+      { type: 'log', message: staysHere(3, 'made by this run: doc1…, doc2…, doc3…') },
       { type: 'done', result: ['doc1', 'doc2', 'doc3'] },
     ]);
   });
@@ -789,7 +789,7 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     connectNow();
     await settle();
     expect(said).toEqual([
-      { type: 'log', message: STAYS_HERE },
+      { type: 'log', message: staysHere(1, 'made by this run: doc1…') },
       { type: 'done', result: ['doc1'] },
     ]);
   });
@@ -806,7 +806,7 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     expect(said).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(said).toEqual([
-      { type: 'log', message: STAYS_HERE },
+      { type: 'log', message: staysHere(1, 'made by this run: doc1…') },
       { type: 'done', result: ['doc1'] },
     ]);
   });
@@ -819,7 +819,7 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     tell({ type: 'job', job: job('w') });
     await settle();
     expect(said).toEqual([
-      { type: 'log', message: STAYS_HERE },
+      { type: 'log', message: staysHere(2, 'made by this run: doc1…, doc2…') },
       { type: 'done', result: ['doc1', 'doc2'] },
     ]);
   });
@@ -867,6 +867,146 @@ describe('a run ends only once what it wrote has reached the sync server', () =>
     await settle();
     expect(events).toEqual(['done', 'next tick']);
     expect(theRepo.peersAsked).toBe(0);
+  });
+});
+
+// What a run wrote
+//
+// A document counts as written by a run only if the run made it, or its
+// heads at the run's end differ from its heads when the run first had it
+// (run-worker.ts). The cases: a document found and only read; found and
+// changed; found at heads others moved on meanwhile; one that came into the
+// Repo without the code having it; one the code took from `handles`; one
+// made by each way of making; and the log line at the limit, by kind.
+
+describe('what a run wrote', () => {
+  const findable = (id: string) => new FakeHandle(id);
+  /** Code that finds `urls` through ctx.repo and then runs `then` with their handles. */
+  const finds = (urls: string[], then: (handles: FakeHandle[], ctx: any) => unknown = () => 'read') => ({
+    default: async (_: unknown, ctx: any) => {
+      const handles: FakeHandle[] = [];
+      for (const url of urls) handles.push(await ctx.repo.find(url));
+      return then(handles, ctx);
+    },
+  });
+  /** Makes the next finds answer with `handles`, each put in the Repo's handles as it is found. */
+  const answering = (...handles: FakeHandle[]) => {
+    theRepo.answers = handles;
+    const find = theRepo.find.bind(theRepo);
+    theRepo.find = async (url: string) => {
+      const found = (await find(url)) as FakeHandle;
+      theRepo.byId[found.documentId] = found;
+      return found;
+    };
+  };
+  /** A run worker, set up, whose job `m` runs `module`. */
+  const run = async (module: unknown) => {
+    modules.m = module;
+    const tell = start();
+    tell(settings);
+    await settle();
+    return tell;
+  };
+
+  it('a document the code only read is not written: nothing saved, nothing waited for, nothing asked of the server', async () => {
+    const tell = await run(finds(['automerge:read1', 'automerge:read2']));
+    answering(findable('read1'), findable('read2'));
+    tell({ type: 'job', job: job('m') });
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'read' }]);
+    expect(flushes).toEqual([]);
+    expect(theRepo.peersAsked).toBe(0);
+    expect(logs()).toEqual([]);
+  });
+
+  it('a document found and changed is written: saved, and waited for until the server reports it', async () => {
+    const tell = await run(finds(['automerge:read1', 'automerge:changed'], ([, changed]) => (changed.change(), 'changed one')));
+    answering(findable('read1'), findable('changed'));
+    tell({ type: 'job', job: job('m') });
+    await settle();
+    expect(flushes).toEqual([['changed']]);
+    expect(endings()).toEqual([]);
+    theRepo.report(theRepo.byId.changed);
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'changed one' }]);
+  });
+
+  it('heads it was found at, not the empty heads of before it was found: a document others moved on before the code had it is not written', async () => {
+    const found = findable('moved');
+    found.change(); // others' change, before the run had it
+    const tell = await run(finds(['automerge:moved']));
+    answering(found);
+    tell({ type: 'job', job: job('m') });
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'read' }]);
+  });
+
+  it('a document that came into the Repo without the code having it (the Repo\'s own workings) is not written, changed or not', async () => {
+    const tell = await run({
+      default: () => {
+        const ghost = new FakeHandle('ghost');
+        theRepo.byId.ghost = ghost;
+        ghost.change();
+        return 'left alone';
+      },
+    });
+    tell({ type: 'job', job: job('m') });
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'left alone' }]);
+    expect(flushes).toEqual([]);
+  });
+
+  it('a document the code took from `handles` is the run\'s from then: changed after, it is written', async () => {
+    const tell = await run({
+      default: (_: unknown, ctx: any) => {
+        theRepo.byId.there = new FakeHandle('there');
+        ctx.repo.handles.there.change();
+        return 'took it';
+      },
+    });
+    tell({ type: 'job', job: job('m') });
+    await settle();
+    expect(flushes).toEqual([['there']]);
+    theRepo.report(theRepo.byId.there);
+    await settle();
+    expect(endings()).toEqual([{ type: 'done', result: 'took it' }]);
+  });
+
+  it('each way of making a document makes it the run\'s, whatever its heads: create, create2, clone and import', async () => {
+    let n = 0;
+    const handleFor = () => (theRepo.byId[`made${++n}`] = new FakeHandle(`made${n}`));
+    const tell = await run({
+      default: async (_: unknown, ctx: any) => {
+        Object.assign(theRepo, {
+          create2: async () => handleFor(),
+          clone: () => handleFor(),
+          import: (_bytes: Uint8Array, args?: { docId?: string }) => (theRepo.byId[args!.docId!] = new FakeHandle(args!.docId!), undefined),
+        });
+        ctx.repo.create({});
+        await ctx.repo.create2();
+        ctx.repo.clone(theRepo.byId.made1);
+        ctx.repo.import(new Uint8Array([1]), { docId: 'imported' });
+        return 'made four';
+      },
+    });
+    tell({ type: 'job', job: job('m') });
+    await settle();
+    expect(flushes).toEqual([['doc1', 'made1', 'made2', 'imported']]);
+  });
+
+  it('at the limit, the log line names how many are left and of what kind, by the start of each id', async () => {
+    const tell = await run(
+      finds(['automerge:sessionDocument'], ([session], ctx) => {
+        session.change();
+        ctx.repo.create({});
+        return 'wrote two';
+      }),
+    );
+    answering(findable('sessionDocument'));
+    vi.useFakeTimers();
+    tell({ type: 'job', job: { ...job('m'), input: { session: 'automerge:sessionDocument' } } });
+    await vi.advanceTimersByTimeAsync(REACH_LIMIT_MS);
+    expect(logs()).toEqual([notReached(2, 2, 'named in its input: sessio…; made by this run: doc2…')]);
   });
 });
 

@@ -38,6 +38,11 @@
  * always do. A failure before an ask is counted (the session not found) is
  * said, and asks nothing by itself.
  *
+ * A task that ended cancelled is not an ask that failed: someone stopped it
+ * (a person's Stop, a workflow's halt, a cancel in the queue browser). It is
+ * not said, the ask resolves `{ asked: true, outcome: "cancelled" }`, and the
+ * next change asks as any change does.
+ *
  * Why it never loops: every ask needs heads no ended task saw, or is one of
  * at most two at one copy's heads, and only a counted ask listens for pools. A burst's code returns for everything it
  * can record, so a task that ended at the heads asked at asks nothing more.
@@ -78,6 +83,12 @@ const bare = (url) => String(url).split("#")[0]
 export { workKey }
 
 const FINISHED = new Set(["succeeded", "failed", "cancelled"])
+
+/** What the task client's doWork rejects with when the task it waits on ended cancelled (host/task-client.js). */
+export const CANCELLED = "The task was cancelled"
+
+/** Did the task this ask waited on end cancelled? */
+const wasCancelled = (err) => String(err?.message ?? err).replace(/[.\s]+$/, "") === CANCELLED
 
 /**
  * The rule, on what it reads off the copy and the watch:
@@ -161,6 +172,11 @@ export async function askWork(repo, sessionUrl, opts = {}) {
     const result = await client.doWork(repo, { importUrl: opts.importUrl ?? SESSION_TASK, key: workKey(sessionUrl), input })
     return { asked: true, outcome: result?.outcome ?? null }
   } catch (err) {
+    // Stopped, not failed: nothing to say, and nothing to listen for.
+    if (counted && wasCancelled(err)) {
+      said(entry, null)
+      return { asked: true, outcome: "cancelled" }
+    }
     const why = withoutUrls(String(err?.message ?? err))
     if (counted) hearPools(entry)
     said(entry, why)
