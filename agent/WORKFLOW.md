@@ -95,10 +95,11 @@ step's transcript, and only the orchestrator decides.
 
 ## Told once
 
-The orchestrator is woken with news: a step finished, a step asks something,
-a person stopped a step, the plan is over or out of money. Each thing is said
-once (in a crossing, once by each page at most: *The driver*). `told` holds a key for each, and the key names the occurrence, not just the kind, so nothing is
-ever reset: a reopened step's next finish is a different key.
+The orchestrator is woken with news: a step finished, a step asks something, a
+person stopped a step, the plan is over or out of money. Each thing is said
+once (in a crossing, once by each page at most: *The driver*). `told` holds a
+key for each, and the key names the occurrence, not just the kind, so nothing
+is ever reset: a reopened step's next finish is a different key.
 
 | key | |
 |---|---|
@@ -112,9 +113,10 @@ ever reset: a reopened step's next finish is a different key.
 
 ## The driver
 
-Every page that has the plan open drives it, and none holds it: no lease (an
-older plan's `lease` is read by nobody), no heartbeat, no timer that writes. One driver per plan per page; it ticks when
-the plan, a step's session or the ledger changes:
+Every page with the plan open drives it, and none holds it: no lease (an old
+plan's `lease` is read by nobody), no heartbeat, no timer that writes. Each
+page's one driver for the plan ticks when the plan, a step's session or the
+ledger changes:
 
 1. **Read** the plan, and of each step's session what a decision needs.
 2. **Decide.** `decide(plan, observations, now)` (`workflow/decide.js`) is
@@ -125,40 +127,38 @@ the plan, a step's session or the ledger changes:
    halted. "Run" asks for its work (the page's askFor) and does not wait.
 
 A tick with nothing new writes nothing. Each write is **recomputed whole**
-(the transitions, each only from the state it leaves, checked inside the
-change; `usage`) or **set only if unset** (a step's `sessionUrl`,
+(the transitions, each checked inside the change from the state it leaves:
+finish and fail only on the run the session was judged for, pause only while
+the budget is spent; `usage`) or **set only if unset** (`sessionUrl`,
 `orchestratorFrom`, `ledgerUrl`; `requests`, `told`, `sourcesFiled`, grants,
-by id or key). Two pages in one crossing may still, accepted: begin a step
-in two sessions (the plan names one; the other's burst ends at its first
-boundary, `not-the-step`, before a paid request unless the merge is slower
-than a beat); tell news once each; add a request twice (one by id, decided on
-either entry); open two ledgers; speak a reopen twice; link a source twice.
-A page that missed both another's finish of a step and the reopen that
-followed may file it done too, and the merge may keep that.
-
-A step session is told which run of its step it is in (`workflow.run`,
-plan.js `attempt`) in the change that gives it that run's instructions, and
-a copy showing an earlier run reads as running (`sessionOutcome`), one with
-the halt and not the new instructions as waiting: a page whose session copy
-lags a reopen never files the step with what the run before said.
+by id or key; a reopen's instructions, by `workflow.run`). In one crossing two
+pages may, accepted: begin a step in two sessions (the plan names one; the
+other's burst ends at its first boundary, `not-the-step`, before a paid
+request unless the merge is slower than a beat); tell news once each; add a
+request twice (one by id); open two ledgers; speak a reopen twice; link a
+source twice; and, having heard neither another's finish nor the reopen after
+it, file a step done, which the merge may keep. A step session gets its run's
+number (`workflow.run`) with that run's instructions, and a copy showing an
+earlier run reads as running or waiting (`sessionOutcome`): a page whose
+copies lag a reopen never files the old answer.
 
 A workflow goes on only while some page has the plan open or drives it (the
-workflow view; a page whose workflow tool or person acted on it). With none,
-nothing ticks until a page drives it again. Workflows that progress with no
-page open are not built.
+workflow view; a page whose workflow tool or person acted on it); with none,
+nothing ticks. Workflows that progress with no page open are not built.
 
 A step's session is made with its scope, its tools' placement, its budget and
-the orchestrator's grants in one write, so it never exists half set up. A
-step is done when its session has nothing left to do and its last turn is the
+the orchestrator's grants in one write, so it never exists half set up. A step
+is done when its session has nothing left to do and its last turn is the
 agent's: no call unanswered, no reply still streaming, no `burst` marked on
-it, and no stop in force. A step whose session stopped with an error fails (not a
-run's error that crosses a person's or a workflow's stop: SESSION.md, *Stops*).
-One stopped for its budget, by a person, or by its workflow is still running and
-waits: a person's stop is told to the orchestrator once per notice (two pressed
-at once on two copies may be two), its card says it is stopped and waits for a word
-or for the orchestrator, a word in the session carries it on, and
-`workflow_stop` cancels it. `workflow_answer` and a reopen take the step's
-session over (clear `burst`, a mark nobody may release), and its work is asked.
+it, and no stop in force. A step whose session stopped with an error fails
+(not a run's error that crosses a person's or a workflow's stop: SESSION.md,
+*Stops*). One stopped for its budget, by a person, or by its workflow is still
+running and waits: a person's stop is told to the orchestrator once per notice
+(two pressed at once on two copies may be two), its card says it is stopped
+and waits for a word or for the orchestrator, a word in the session carries it
+on, and `workflow_stop` cancels it. `workflow_answer` and a reopen take the
+step's session over (clear `burst`, a mark nobody may release), and its work
+is asked.
 
 One job has one set of permissions: a grant given in any full-access step
 reaches the orchestrator and the other full-access steps, and releases what
@@ -187,12 +187,13 @@ plan's other research steps, and is filed by the driver in the plan's Sources
 folder for people. It is never handed the result of a step that had the
 person's documents.
 
-The ledger is a document of its own, `{ "@patchwork": { type: "agent-ledger" },
-sources }`, one per plan. `sources` maps each kept document's id to `{ url,
+The ledger is a document of its own, `{ "@patchwork": { type: "agent-ledger"
+}, sources }`, one per plan. `sources` maps each kept document's id to `{ url,
 kind, what, type, source, name, engine, chars, by, at, heads }`: `kind` is
 `source` (read-only) or `finding` (writable by research steps), `by` the step
 that kept it, `heads` the version a step reads. The driver opens it before the
 first research step starts, naming it in the plan only while the plan names
 none. Research steps' kernels write it, from any burst; the driver only reads
-it, and wakes when it changes to file what is new. No agent tool writes a ledger, and
-a step whose plan names none, or names something else, does not run.
+it, and wakes when it changes to file what is new. No agent tool writes a
+ledger, and a step whose plan names none, or names something else, does not
+run.

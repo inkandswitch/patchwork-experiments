@@ -312,10 +312,9 @@ describe("a page whose copies lag a reopen", () => {
   }
 
   for (const actors of BOTH_WAYS) {
-    // Defect, kept as it.fails: decide() is made on the plan as the tick read
-    // it, and finishStep checks only that the step is running, not that it
-    // is still the run the session was judged for (sessionOutcome `run`).
-    it.fails(`(actors ${actors}) the plan reaching page 1 while its tick reads the step's session: a is not filed with the run before's answer`, async () => {
+    // decide() is made on the plan as the tick read it; finishStep files the
+    // step only while it is still on the run its session was judged for.
+    it(`(actors ${actors}) the plan reaching page 1 while its tick reads the step's session: a is not filed with the run before's answer`, async () => {
       const { w, ps } = await reopenedOnPage0(actors)
       // Page 1 has the session as the run before left it, and the plan as it
       // was before page 0 filed it; the plan arrives while page 1 is reading.
@@ -349,9 +348,8 @@ describe("a page whose copies lag a reopen", () => {
   }
 
   for (const actors of BOTH_WAYS) {
-    // Defect, kept as it.fails: pausePlan checks only "running and not
-    // paused" inside its change, not that the budget is still spent.
-    it.fails(`(actors ${actors}) a resume reaching page 1 while its tick reads: the plan is not paused again under a lifted cap`, async () => {
+    // pausePlan pauses only while the budget is still spent, inside its change.
+    it(`(actors ${actors}) a resume reaching page 1 while its tick reads: the plan is not paused again under a lifted cap`, async () => {
       const w = world(actors)
       w.seed(PLAN_URL, (d) => {
         initPlan(d, { title: "W", goal: "G", limits: { cost: 1 }, steps: [step("a"), step("b", { after: ["a"] })] })
@@ -391,10 +389,9 @@ describe("a page whose copies lag a reopen", () => {
 // ---------------------------------------------------------------- a page that goes away
 
 describe("a page that goes away in the middle of perform", () => {
-  // Defect, kept as it.fails: continueStep speaks into the session whatever
-  // it holds; it is neither recomputed nor set only if unset, though the
-  // session's `workflow.run` already says this run's instructions are there.
-  it.fails("having spoken a reopened step's instructions but not begun it in the plan: the next page carries it on without saying them twice", async () => {
+  // continueStep speaks into the session only when its `workflow.run` is
+  // behind the step's run: set only if unset, by run.
+  it("having spoken a reopened step's instructions but not begun it in the plan: the next page carries it on without saying them twice", async () => {
     const w = world(["aa", "bb"])
     w.seed(PLAN_URL, (d) => {
       initPlan(d, { title: "W", goal: "G", steps: [step("a")] })

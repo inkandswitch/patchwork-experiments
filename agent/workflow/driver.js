@@ -246,7 +246,7 @@ export class WorkflowDriver {
     if (this.stopped || !isCurrent(this.handle.doc())) return
     const plan = this.handle.doc()
     const observations = plan.status === PLAN.running ? await this.observe(plan) : {}
-    await this.perform(decide(plan, observations, this.now()))
+    await this.perform(decide(plan, observations, this.now()), plan)
   }
 
   /**
@@ -278,12 +278,16 @@ export class WorkflowDriver {
    *
    *   recomputed whole   finish, fail, cancel, pause, settle (plan.js
    *                      transitions, each applied only from the state it
-   *                      leaves, checked inside the change); usage (the sum
-   *                      over the step sessions, assigned whole)
+   *                      leaves, checked inside the change: finish and fail
+   *                      only while the step is on the run its session was
+   *                      judged for, pause only while the budget is spent);
+   *                      usage (the sum over the step sessions, assigned whole)
    *   set only if unset  sessionUrl (beginStep, only from pending),
    *                      orchestratorFrom, ledgerUrl; requests, told,
    *                      sourcesFiled and the sessions' grants, added by
-   *                      key or id and never removed
+   *                      key or id and never removed; a reopened step's
+   *                      instructions, spoken into its session only when
+   *                      its `workflow.run` is behind the step's run
    *
    * What two pages in one crossing (each writing before it has the other's
    * write) can do twice, each accepted:
@@ -293,7 +297,7 @@ export class WorkflowDriver {
    *   - open two ledgers: the plan names one, and the other stays empty;
    *   - push one request twice: one request by its id (plan.js
    *     openRequests, decideRequest);
-   *   - tell the orchestrator one piece of news twice;
+   *   - tell the orchestrator one piece of news once from each page;
    *   - speak a reopened step's instructions into its session twice, and
    *     lift its budget once from each copy (the same value);
    *   - link one kept source into the Sources folder twice;
@@ -305,7 +309,10 @@ export class WorkflowDriver {
    * filed done only from a session copy that has its current run's
    * instructions (sessionOutcome `run`).
    */
-  async perform(actions) {
+  async perform(actions, plan) {
+    // The run each step's session was judged for: a step reopened while the
+    // tick read is not filed with the run before's answer.
+    const judged = (id) => attempt(plan.steps.find((s) => s.id === id))
     for (const action of actions) {
       if (this.stopped) return
       switch (action.type) {
@@ -313,10 +320,10 @@ export class WorkflowDriver {
           await this.stopSteps(action.stepIds, action.reason)
           break
         case "finish":
-          this.write((d) => finishStep(d, action.stepId, { result: action.result, now: action.at }))
+          this.write((d) => finishStep(d, action.stepId, { result: action.result, run: judged(action.stepId), now: action.at }))
           break
         case "fail":
-          this.write((d) => failStep(d, action.stepId, { error: action.error, now: action.at }))
+          this.write((d) => failStep(d, action.stepId, { error: action.error, run: judged(action.stepId), now: action.at }))
           break
         case "requests":
           this.write((d) => {
@@ -651,6 +658,9 @@ export class WorkflowDriver {
     if (!handle?.doc()) return
     const message = reopenPrompt(plan, step)
     handle.change((d) => {
+      // This run's instructions are there already (a page that spoke them went
+      // away before it began the step in the plan): set only if unset, by run.
+      if ((d.workflow?.run ?? 0) >= attempt(step)) return
       d.reconnecting = null
       // Taken over: whatever `burst` named is no run of this step's any more
       // (a page that died mid-call), and its marks are the next burst's to settle.

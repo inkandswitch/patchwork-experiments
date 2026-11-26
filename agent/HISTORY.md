@@ -1796,3 +1796,13 @@ clearing of its lease. A plan no longer has `lease` or `lastGeneration`
 written or read; one an older version wrote keeps a stale lease that nothing
 reads. A workflow goes on only while some page has the plan open or drives
 it; workflows that progress with no page open are not in this change.
+
+Step 5's checker found three writes that a page whose copy was only behind
+could get wrong, each now checked inside its change. A step is filed done or
+failed only while it is still on the run its session was judged for (finishStep
+and failStep take `run`), so a reopen that reaches a page while its tick reads
+is not undone by the run before's answer. A plan pauses only while its budget
+is still spent, so a cap a person lifted while a page was reading holds. A
+reopen's instructions are spoken only into a session whose `workflow.run` is
+behind the step's run, so a page that spoke them and went away before it began
+the step does not have them said twice by the next.

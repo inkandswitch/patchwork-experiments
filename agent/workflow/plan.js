@@ -412,6 +412,9 @@ function move(thing, transition) {
 
 const stepIn = (doc, id) => (doc.steps ?? []).find((s) => s.id === id) ?? null
 
+/** Is the step still on `run` (any run when none is given)? */
+const sameRun = (step, run) => run == null || attempt(step) === run
+
 /**
  * Start a pending step, inside a change: in a new session (`session`, with
  * the model it runs on), or continuing the one it has. What it is built on is
@@ -433,10 +436,14 @@ export function beginStep(doc, id, { session = null, now = Date.now() } = {}) {
 /** How much of a step's result the plan keeps. The whole thing is its session's last message. */
 export const RESULT_KEPT = 8000
 
-/** A running step finished with `result`, inside a change: a new version, so whatever was built on the last one is out of date. */
-export function finishStep(doc, id, { result, now = Date.now() }) {
+/**
+ * A running step finished with `result`, inside a change: a new version, so
+ * whatever was built on the last one is out of date. `run`, when given, is the
+ * run the result was judged for: a step reopened since is not filed with it.
+ */
+export function finishStep(doc, id, { result, run = null, now = Date.now() }) {
   const step = stepIn(doc, id)
-  if (!move(step, STEP_TRANSITIONS.finish)) return false
+  if (!sameRun(step, run) || !move(step, STEP_TRANSITIONS.finish)) return false
   const text = String(result ?? "")
   step.finishedAt = now
   step.version = (step.version ?? 0) + 1
@@ -444,10 +451,10 @@ export function finishStep(doc, id, { result, now = Date.now() }) {
   return true
 }
 
-/** A step that broke, or cannot start as written, inside a change. */
-export function failStep(doc, id, { error, now = Date.now() }) {
+/** A step that broke, or cannot start as written, inside a change; `run` as for finishStep. */
+export function failStep(doc, id, { error, run = null, now = Date.now() }) {
   const step = stepIn(doc, id)
-  if (!move(step, STEP_TRANSITIONS.fail)) return false
+  if (!sameRun(step, run) || !move(step, STEP_TRANSITIONS.fail)) return false
   step.finishedAt = now
   step.error = String(error)
   return true
@@ -826,10 +833,11 @@ export function canExtend(plan, add) {
 /**
  * The plan has spent its budget, with work ready or steps stopped for their
  * own (`stopped`, their ids): pause it, inside a change, until a person
- * resumes it. Only a running plan that is not paused already pauses.
+ * resumes it. Only a running plan that is not paused already, and whose
+ * budget is still spent, pauses: a cap lifted since the decision holds.
  */
 export function pausePlan(doc, { stopped = [], now = Date.now() } = {}) {
-  if (doc.status !== PLAN.running || doc.paused) return false
+  if (doc.status !== PLAN.running || doc.paused || !overBudget(doc)) return false
   const { spent, limit } = budgetOf(doc)
   doc.paused = { reason: "budget", at: now, spent, limit, stopped: [...stopped] }
   return true
