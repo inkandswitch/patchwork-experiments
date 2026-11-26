@@ -76,6 +76,10 @@ export function memoryStore(initial = {}) {
  * so deltas are coalesced on a short timer. The text still lands in the
  * document, in order, and still streams visibly; there is just ~20x less of it
  * on the wire.
+ *
+ * A path is an array, or a function giving one when the text is written (or
+ * null, and the text is dropped): a reply is found by its id at each flush,
+ * since a turn merged in before it moves it along the list.
  */
 export function batchedAppender(store, flushMs = 120) {
   const pending = new Map() // path key -> { path, text }
@@ -84,7 +88,8 @@ export function batchedAppender(store, flushMs = 120) {
   const flush = () => {
     timer = null
     for (const { path, text } of pending.values()) {
-      if (text) store.appendText(path, text)
+      const at = typeof path === "function" ? path() : path
+      if (text && at) store.appendText(at, text)
     }
     pending.clear()
   }
@@ -92,7 +97,7 @@ export function batchedAppender(store, flushMs = 120) {
   return {
     append(path, delta) {
       if (!delta) return
-      const key = path.join("/")
+      const key = typeof path === "function" ? path : path.join("/")
       const entry = pending.get(key) ?? { path, text: "" }
       entry.text += delta
       pending.set(key, entry)

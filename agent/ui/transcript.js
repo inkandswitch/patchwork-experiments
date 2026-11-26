@@ -62,8 +62,11 @@ function renderCall(block, result, state, handlers, stopped = false) {
   // session/recovery.js speak).
   const notRun = stopped && block.status === CALL.approved && !result
   // A refusal is a decision, not a failure: `denied` keeps its own styling even
-  // though its result is recorded as an error for the model's benefit.
-  details.dataset.status = block.status === CALL.denied ? CALL.denied : result?.isError ? "error" : notRun ? "not-run" : block.status
+  // though its result is recorded as an error for the model's benefit. A call
+  // with a result is styled by the result shown, which is what it did: one
+  // that ran across a Stop and a message keeps the abandon in its status, and
+  // its real result says it did it.
+  details.dataset.status = block.status === CALL.denied ? CALL.denied : result ? (result.isError ? "error" : CALL.done) : notRun ? "not-run" : block.status
   details.open = state.open.has(block.id) || !!result?.isError
 
   details.addEventListener("toggle", () => {

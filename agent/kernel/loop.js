@@ -269,7 +269,7 @@ export async function run(opts) {
         // wholly: a turn that thinks at length and then has its long write
         // cut off would otherwise keep the same thinking and run out the same
         // way every time.
-        if (mostlyThinking(store.doc().turns[assistant.turnIndex], assistant.broken)) {
+        if (mostlyThinking(turnById(store.doc(), assistant.turnId), assistant.broken)) {
           const current = settings.paramsOverride.reasoning ?? store.doc().config?.params?.reasoning ?? null
           settings.paramsOverride.reasoning = quieterReasoning(current, settings.capabilities, maxTokens)
         }
@@ -341,7 +341,7 @@ export async function run(opts) {
       // same, and a workflow step that did it read as done — "finished without
       // saying anything", its document unwritten. Ask once; a model that does
       // it again has stopped working, and says so.
-      if (saidNothing(store.doc().turns[assistant.turnIndex])) {
+      if (saidNothing(turnById(store.doc(), assistant.turnId))) {
         silences++
         emit({ type: "silent", turn: turnNumber, attempt: silences })
         if (silences <= 1) {
@@ -510,12 +510,19 @@ async function streamTurn(opts) {
   const turn = makeTurn("assistant", [])
   turn.streaming = { runner: opts.runnerUrl ?? null, generation: opts.generation ?? null }
   appendTurn(store, turn)
-  const turnIndex = store.doc().turns.length - 1
+  // Found by its id at every write, never by where it was pushed: a turn that
+  // merges in before it (a Stop's notice from a copy that had not seen it)
+  // moves it along the list.
+  const reply = (d) => (d?.turns ?? []).find((t) => t.id === turn.id) ?? null
+  const turnPath = () => {
+    const i = (store.doc()?.turns ?? []).findIndex((t) => t.id === turn.id)
+    return i < 0 ? null : ["turns", i]
+  }
 
   const appender = batchedAppender(store, flushMs)
   const calls = []
-  let textIndex = null
-  let reasoningIndex = null
+  let textPath = null
+  let reasoningPath = null
   let stopReason = "end"
   let lost = false
 
@@ -534,7 +541,23 @@ async function streamTurn(opts) {
     if (repeatsItself(streamed, repeatWindow)) repeated = true
   }
 
-  const blockPath = (blockIndex) => ["turns", turnIndex, "blocks", blockIndex, "text"]
+  // Where a block's text is now, or null when the turn has gone.
+  const blockPath = (blockIndex) => () => {
+    const at = turnPath()
+    return at ? [...at, "blocks", blockIndex, "text"] : null
+  }
+  // Push a block onto this reply and say where it went, or null when the
+  // turn has gone.
+  const pushBlock = (block) => {
+    let index = null
+    store.change((d) => {
+      const t = reply(d)
+      if (!t) return
+      t.blocks.push(block)
+      index = t.blocks.length - 1
+    })
+    return index
+  }
 
   let heard = false
   let interrupted = false
@@ -555,25 +578,21 @@ async function streamTurn(opts) {
       }
 
       if (event.type === "text") {
-        if (textIndex === null) {
+        if (textPath === null) {
           appender.flush()
-          store.change((d) => {
-            d.turns[turnIndex].blocks.push(textBlock(""))
-          })
-          textIndex = store.doc().turns[turnIndex].blocks.length - 1
+          const index = pushBlock(textBlock(""))
+          if (index !== null) textPath = blockPath(index)
         }
-        appender.append(blockPath(textIndex), event.delta)
+        if (textPath) appender.append(textPath, event.delta)
         emit({ type: "text", delta: event.delta })
         watch(event.delta)
       } else if (event.type === "reasoning") {
-        if (reasoningIndex === null) {
+        if (reasoningPath === null) {
           appender.flush()
-          store.change((d) => {
-            d.turns[turnIndex].blocks.push(reasoningBlock(""))
-          })
-          reasoningIndex = store.doc().turns[turnIndex].blocks.length - 1
+          const index = pushBlock(reasoningBlock(""))
+          if (index !== null) reasoningPath = blockPath(index)
         }
-        appender.append(blockPath(reasoningIndex), event.delta)
+        if (reasoningPath) appender.append(reasoningPath, event.delta)
         watch(event.delta)
       } else if (event.type === "call") {
         calls.push(event)
@@ -602,20 +621,21 @@ async function streamTurn(opts) {
     // while it still names this run, and the text stays.
     const ours = !lost && !interrupted && (!stillOurs || stillOurs())
     const mine = (mark) => mark?.runner === turn.streaming.runner && mark?.generation === turn.streaming.generation
-    if (ours || (stoppedFromOutside(store.doc()) && mine(store.doc().turns?.[turnIndex]?.streaming))) {
+    if (ours || (stoppedFromOutside(store.doc()) && mine(reply(store.doc())?.streaming))) {
       store.change((d) => {
-        const t = d.turns?.[turnIndex]
-        const mark = t?.id === turn.id ? t.streaming : null
+        const t = reply(d)
+        const mark = t?.streaming ?? null
         if (mark && (ours || mine(mark))) delete t.streaming
       })
     }
   }
 
-  if (lost) return { calls: [], stopReason: "lease-lost", turnIndex, lost: true }
+  const turnId = turn.id
+  if (lost) return { calls: [], stopReason: "lease-lost", turnId, lost: true }
 
   // Stopped for going round in circles. Whatever was streamed stays in the
   // transcript — it is what happened — but no call is committed from it.
-  if (repeated) return { calls: [], stopReason: "repetition", turnIndex }
+  if (repeated) return { calls: [], stopReason: "repetition", turnId }
 
   // A call whose arguments did not parse is a call that was cut off mid-JSON.
   //
@@ -626,13 +646,15 @@ async function streamTurn(opts) {
   // start, so this is the only signal there is.
   const broken = calls.filter((call) => call.parseError)
   if (broken.length) {
-    return { calls: [], stopReason: "length", turnIndex, broken }
+    return { calls: [], stopReason: "length", turnId, broken }
   }
 
   // Commit the calls once the stream is complete, so the transcript never shows
   // a half-parsed call. Approval state is decided here, at write time.
   if (calls.length && stillOurs()) {
     store.change((d) => {
+      const t = reply(d)
+      if (!t) return
       for (const call of calls) {
         const tool = toolset.get(call.name)
         // What the call asks of the person, worked out here, where the tool is
@@ -642,7 +664,7 @@ async function streamTurn(opts) {
         // A question is not approved or refused, it is answered — so it goes
         // in as `asking` and no runner will ever pick it up.
         const status = tool?.asksHuman ? CALL.asking : needsApproval(d, tool, call.input, ask) ? CALL.pending : CALL.approved
-        d.turns[turnIndex].blocks.push(
+        t.blocks.push(
           callBlock(call.name, call.input, {
             id: call.id,
             where: tool?.where ?? WHERE.worker,
@@ -655,7 +677,12 @@ async function streamTurn(opts) {
     })
   }
 
-  return { calls, stopReason, turnIndex }
+  return { calls, stopReason, turnId }
+}
+
+/** A turn of the session by its id, or null. */
+function turnById(doc, id) {
+  return (doc?.turns ?? []).find((t) => t.id === id) ?? null
 }
 
 // ---------------------------------------------------------------- calls

@@ -66,8 +66,8 @@ describe("a call run across a Stop and a message (stop-elsewhere D3)", () => {
     const call = render(doc).querySelector(".agent-call")
     expect(sent(doc)).toEqual(["slow did it"])
     expect(call.textContent).toContain("slow did it")
-    // Its status register kept the abandon, so the call is styled "error"
-    // although what it says is that it did it (reported, not changed here).
-    expect(call.dataset.status).toBe("error")
+    // Its status register kept the abandon; it is styled by the result shown,
+    // which says it did it.
+    expect(call.dataset.status).toBe(CALL.done)
   })
 })
