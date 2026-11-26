@@ -4,7 +4,6 @@ import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { buildBody } from "./openrouter.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
-import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { settled } from "../fixtures/session.js"
 
@@ -20,7 +19,6 @@ function session() {
   const doc = {}
   initSession(doc, { title: "T", subject: "automerge:subject" })
   doc.turns = [makeTurn("user", [textBlock("do the thing")])]
-  claimLease(doc, "local", Date.now())
   return memoryStore(doc)
 }
 

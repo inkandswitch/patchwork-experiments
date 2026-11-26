@@ -24,7 +24,8 @@ describe("initSession", () => {
     }
     expect(statusOf(doc)).toBe(STATUS.idle)
     expect(doc.turns).toEqual([])
-    expect(doc.lease).toBeNull()
+    expect(doc.burst).toBeNull()
+    expect("lease" in doc).toBe(false)
   })
 })
 

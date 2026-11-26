@@ -9,9 +9,11 @@
  * session. Change hashes name changes everywhere, so this needs no actor ids
  * and no guess about who was busy when.
  *
- * In memory, per page, on globalThis (as runners/registry.js keeps its runners), so a
- * newer version of this code loaded in place still knows what the older one
- * wrote. A reload forgets; what is lost is only that, not the edits.
+ * In memory, per page, on globalThis, so a newer version of this code loaded
+ * in place still knows what the older one wrote. A burst in a pool's worker
+ * reports its hashes through the queue, and the page that follows it is told
+ * them (runners/ask.js). A reload forgets; what is lost is only that, not the
+ * edits.
  */
 
 /** Most hashes kept per session; the oldest go first. */

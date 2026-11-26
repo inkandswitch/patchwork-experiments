@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { SessionRunner, needsWork } from "../kernel/runner.js"
+import { needsWork } from "../kernel/runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { memoryStore, handleStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
@@ -18,9 +19,10 @@ await initSubduction()
 /**
  * A store that notifies on every change, the way a live automerge handle does.
  *
- * Views used to own the document subscription; now the runner does, so a write
- * from inside `tick()` comes straight back as a call to `tick()`. That
- * re-entrancy is the whole point of these tests.
+ * A page asks for a session's work on every change it hears (runners/page.js
+ * follow), and a burst's own writes are changes it hears. Asking while a
+ * burst is under way is asking once (fixtures/burst.js `ask`), so the asks
+ * its own writes make never start another.
  */
 function notifyingStore(doc, onChange) {
   const inner = memoryStore(doc)
@@ -49,8 +51,7 @@ function pending() {
 }
 
 function runnerOver(store, extra = {}) {
-  return new SessionRunner({
-    confirmMs: 0,
+  return burstRunner({
     store,
     runnerUrl: "runner-test",
     buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
@@ -60,56 +61,37 @@ function runnerOver(store, extra = {}) {
   })
 }
 
-describe("a runner whose own writes call it back", () => {
-  it("does not re-enter itself when it claims the lease", async () => {
-    // Before the guard moved ahead of the lease write, this blew the stack:
-    // claim -> change -> handler -> tick -> claim -> ...
-    let ticks = 0
+describe("a page that asks on every change of its session", () => {
+  it("starts one burst, which finishes the turn rather than looping on its own changes", async () => {
     let store
+    let asks = 0
     store = notifyingStore(pending(), () => {
-      ticks++
-      store && runner.tick()
+      asks++
+      runner.ask()
     })
     const runner = runnerOver(store)
 
-    await runner.tick()
-
-    expect(ticks).toBeGreaterThan(0)
-    expect(store.doc().turns.length).toBe(2)
-  })
-
-  it("finishes the turn rather than looping on its own changes", async () => {
-    let store
-    const seen = []
-    store = notifyingStore(pending(), () => {
-      seen.push(store.doc().turns.length)
-      runner.tick()
-    })
-    const runner = runnerOver(store)
-
-    await runner.tick()
+    await runner.ask()
     await new Promise((resolve) => setTimeout(resolve, 20))
 
+    expect(asks).toBeGreaterThan(0)
+    expect(runner.runs).toHaveLength(1)
     expect(needsWork(store.doc(), () => true)).toBe(false)
-    expect(runner.running).toBe(false)
     // One assistant turn, not one per change notification.
     expect(store.doc().turns.filter((t) => t.role === "assistant").length).toBe(1)
   })
 
-  it("clears the busy flag when the lease write itself throws", async () => {
+  it("a burst whose session cannot be written fails its task, saying why", async () => {
     const doc = pending()
     const store = {
+      url: "memory:session",
       doc: () => doc,
       change: () => {
         throw new Error("document is gone")
       },
     }
     const runner = runnerOver(store)
-
-    const result = await runner.tick()
-
-    expect(runner.running).toBe(false)
-    expect(result?.reason).toMatch(/document is gone/)
+    await expect(runner.tick()).rejects.toThrow(/document is gone/)
   })
 })
 
@@ -160,13 +142,19 @@ function sessionIn(w, { scope = null, workflow = null } = {}) {
     if (workflow) d.workflow = workflow
     d.turns.push(makeTurn("user", [contextBlock({ focused: { url: w.subject.url, title: "SENTINEL subject" } }), textBlock("research packs")]))
   })
+  // A step's session is the one its plan names: a burst on any other stands back.
+  if (workflow) {
+    w.plan.change((d) => {
+      const step = d.steps.find((s) => s.id === workflow.stepId)
+      if (step) step.sessionUrl = handle.url
+    })
+  }
   return handle
 }
 
 async function runOnce(w, handle) {
   const provider = makeMock([[{ type: "text", delta: "done" }]])
-  const runner = new SessionRunner({
-    confirmMs: 0,
+  const runner = burstRunner({
     ...AGENT,
     store: handleStore(handle),
     ctx: w.ctx,
@@ -230,8 +218,9 @@ describe("I6: a session runs confined exactly when its scope says so, and its pl
   it("a step whose plan has no ledger does not run, and none is made for it", async () => {
     const w = await account()
     w.plan.change((d) => { d.ledgerUrl = null })
+    const session = sessionIn(w, { scope: webScope(w.plan.url, "r"), workflow: { planUrl: w.plan.url, stepId: "r" } })
     const before = w.plan.heads()
-    const { provider, doc } = await runOnce(w, sessionIn(w, { scope: webScope(w.plan.url, "r"), workflow: { planUrl: w.plan.url, stepId: "r" } }))
+    const { provider, doc } = await runOnce(w, session)
     expect(provider.requests).toHaveLength(0)
     refused(doc, /no ledger/)
     expect(w.plan.heads()).toEqual(before)
@@ -245,7 +234,7 @@ describe("I6: a session runs confined exactly when its scope says so, and its pl
     refused(doc, /not one/)
   })
 
-  it("and once refused it is not work, so the runner does not try again on every change", async () => {
+  it("and once refused it is not work, so nothing asks again on every change", async () => {
     const w = await account()
     const { doc } = await runOnce(w, sessionIn(w, { scope: { kind: "web" } }))
     expect(needsWork(doc)).toBe(false)

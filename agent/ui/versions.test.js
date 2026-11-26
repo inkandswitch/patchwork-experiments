@@ -1,17 +1,21 @@
 /**
  * Two versions of the agent's code meeting one session.
  *
- * Patchwork reloads a package in place when a new version arrives. The view
- * came up with the new code while the runner, made by the old code, went on
- * running the session — and sent the model a message without the image
- * attached to it, because the old code did not know attachments. Now a newer
- * version takes over from an older runner, and no runner runs a session
- * holding something it cannot read.
+ * Patchwork reloads a package in place when a new version arrives. An old
+ * runner, made by the old code, once went on running the session under a
+ * view of the new code — and sent the model a message without the image
+ * attached to it, because the old code did not know attachments. Now:
+ *   - a burst runs the module its asker loaded (runners/ask.js asks for this
+ *     package's runners/session-task.js at the version the page runs);
+ *   - a page retires, on load, the runners an older version left on
+ *     globalThis, and the followers of another version of runners/page.js;
+ *   - no burst runs a session holding something it cannot read.
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { SessionRunner } from "../kernel/runner.js"
-import { ensureRunner, getEntry, CODE_VERSION, _reset } from "../runners/registry.js"
+import { burstRunner } from "../fixtures/burst.js"
+import { retireEarlier, CODE_VERSION, _reset } from "../runners/page.js"
+import { askWork, SESSION_TASK, forget } from "../runners/ask.js"
 import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, unknownBlocks, BLOCK_TYPES, _resetIds } from "../session/schema.js"
@@ -31,35 +35,32 @@ function session(extraBlocks = []) {
   return memoryStore(doc)
 }
 
-function runnerFor(store, events = []) {
+function runnerFor(store) {
   const provider = makeMock([[{ type: "text", delta: "seen" }]])
-  const runner = new SessionRunner({
+  const runner = burstRunner({
     store,
     runnerUrl: "r",
     buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
     getProvider: async () => provider,
     canRun: () => true,
-    confirmMs: 0,
-    onEvent: (event) => events.push(event),
   })
   return { runner, provider }
 }
 
-describe("a runner meets something it cannot read", () => {
+describe("a burst meets something it cannot read", () => {
   it("knows every kind of block this version writes, and names any other", () => {
     const store = session(BLOCK_TYPES.filter((t) => t !== "text").map((type) => ({ type })))
     expect(unknownBlocks(store.doc())).toEqual([])
     expect(unknownBlocks(session([{ type: "hologram" }, { type: "hologram" }, { type: "smell" }]).doc())).toEqual(["hologram", "smell"])
   })
 
-  it("leaves the session for a runner that can, and says why", async () => {
-    const events = []
+  it("leaves the session for a version that can, writing nothing", async () => {
     const store = session([{ type: "hologram", url: "automerge:x" }])
-    const { runner, provider } = runnerFor(store, events)
-    await runner.tick()
+    const before = JSON.stringify(store.doc())
+    const { runner, provider } = runnerFor(store)
+    expect((await runner.tick()).outcome).toBe("outdated")
     expect(provider.requests).toHaveLength(0)
-    expect(store.doc().lease).toBe(null)
-    expect(events).toContainEqual({ type: "outdated", unknown: ["hologram"] })
+    expect(JSON.stringify(store.doc())).toBe(before)
   })
 
   it("and runs it as usual when it knows everything in it", async () => {
@@ -70,44 +71,56 @@ describe("a runner meets something it cannot read", () => {
   })
 })
 
-describe("an older runner hands over to a newer version", () => {
-  it("an idle runner, retired, stops at once and is told so", () => {
-    const { runner } = runnerFor(session())
-    let done = 0
-    runner.retire(() => done++)
-    expect([runner.stopped, done]).toEqual([true, 1])
+describe("a burst runs the version its asker runs", () => {
+  it("what is asked for is the module the asking page loaded, unless the asker names another", async () => {
+    const asked = []
+    const client = {
+      doWork: async (_repo, request) => (asked.push(request.importUrl), { outcome: "idle" }),
+      watchWork: () => () => {},
+      stopWork: async () => false,
+    }
+    const doc = {}
+    initSession(doc, {})
+    doc.turns.push(makeTurn("user", [textBlock("go")]))
+    doc.burst = null
+    const repo = { find: async () => ({ doc: () => doc, heads: () => ["h1"] }) }
+    await askWork(repo, "automerge:versions-a", { client })
+    await askWork(repo, "automerge:versions-b", { client, importUrl: "automerge:other-build/runners/session-task.js" })
+    forget("automerge:versions-a")
+    forget("automerge:versions-b")
+    expect(asked).toEqual([SESSION_TASK, "automerge:other-build/runners/session-task.js"])
+  })
+})
+
+describe("a page retires what an older version left", () => {
+  it("every runner on globalThis: an idle one retired at once, a busy one when its turn ends, and the map goes", () => {
+    const scope = {}
+    const told = []
+    const runner = (name) => ({ retire: (done) => (told.push(name), done()) })
+    scope.__patchworkAgentRunners = new Map([
+      ["automerge:a", { runner: runner("a"), dispose: () => told.push("disposed a") }],
+      ["automerge:b", { runner: { stop: () => told.push("stopped b") }, dispose: () => told.push("disposed b") }],
+    ])
+    retireEarlier(scope)
+    expect(told).toEqual(["a", "disposed a", "stopped b", "disposed b"])
+    expect("__patchworkAgentRunners" in scope).toBe(false)
   })
 
-  it("a busy one finishes its turn, then stops, and takes no more work", async () => {
-    const store = session()
-    const { runner, provider } = runnerFor(store)
-    let done = 0
-    const turn = runner.tick()
-    runner.retire(() => done++)
-    expect(done).toBe(0)
-    await turn
-    expect([store.doc().turns.at(-1).role, runner.stopped, done]).toEqual(["assistant", true, 1])
-    store.change((d) => d.turns.push(makeTurn("user", [textBlock("again")])))
-    await runner.tick()
-    expect(provider.requests).toHaveLength(1)
+  it("and the followers another version of runners/page.js made, but not this version's", () => {
+    const scope = {}
+    const disposed = []
+    scope.__patchworkAgentFollowers = new Map([
+      ["automerge:old", { version: "an older build", dispose: () => disposed.push("old") }],
+      ["automerge:new", { version: CODE_VERSION, dispose: () => disposed.push("new") }],
+    ])
+    retireEarlier(scope)
+    expect(disposed).toEqual(["old"])
+    expect([...scope.__patchworkAgentFollowers.keys()]).toEqual(["automerge:new"])
   })
 
-  it("the registry retires a runner another version made, and starts one of its own", async () => {
-    const store = session()
-    const first = runnerFor(store)
-    let disposed = 0
-    await ensureRunner("automerge:s", async () => ({ runner: first.runner, dispose: () => disposed++ }))
-    expect(getEntry("automerge:s").version).toBe(CODE_VERSION)
-    // The same session's runner, as an older build of this code left it.
-    getEntry("automerge:s").version = "an older build"
-    const second = runnerFor(store)
-    const entry = await ensureRunner("automerge:s", async () => ({ runner: second.runner }))
-    expect(entry.runner).toBe(second.runner)
-    expect([first.runner.retired, first.runner.stopped, disposed]).toEqual([true, true, 1])
-  })
-
-  it("lives where a reloaded module finds it", () => {
-    expect(globalThis.__patchworkAgentRunners).toBeInstanceOf(Map)
+  it("and it ran on load: nothing of an older version's runners is left here", () => {
+    expect(globalThis.__patchworkAgentRunners).toBeUndefined()
+    expect(globalThis.__patchworkAgentFollowers).toBeInstanceOf(Map)
   })
 })
 

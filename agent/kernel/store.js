@@ -4,7 +4,7 @@
  * The loop never touches a DocHandle directly; it goes through this narrow
  * interface, which has exactly two implementations: one backed by automerge
  * and one backed by a plain object. That is what lets the entire loop —
- * streaming, tool dispatch, approvals, lease handling — be unit-tested in node
+ * streaming, tool dispatch, approvals, stops — be unit-tested in node
  * with no automerge, no browser, and no network.
  *
  *   doc()                     -> current snapshot
@@ -14,18 +14,19 @@
 
 import { isOwn } from "./own-changes.js"
 import { stopOf } from "../session/status.js"
+import { Automerge } from "../host/modules.js"
 
-/** Store over a real automerge DocHandle. */
+/**
+ * Store over a real automerge DocHandle. Streaming appends go through
+ * automerge's `splice` (host/modules.js, unless another is given), so a
+ * growing reply is a sequence of text insertions rather than a whole-string
+ * rewrite per token, and concurrent edits merge.
+ */
 export function handleStore(handle, splice = null) {
+  const spliceText = splice ?? Automerge.splice
   return {
     doc: () => handle.doc(),
     change: (fn) => handle.change(fn),
-    /**
-     * Streaming appends go through automerge's `splice` when it is available,
-     * so a growing assistant message is a sequence of text insertions rather
-     * than a whole-string rewrite per token. That keeps concurrent edits (two
-     * people in the same session) merging correctly.
-     */
     appendText(path, delta) {
       if (!delta) return
       handle.change((draft) => this.appendTextIn(draft, path, delta))
@@ -35,9 +36,7 @@ export function handleStore(handle, splice = null) {
       let node = draft
       for (let i = 0; i < path.length - 1; i++) node = node[path[i]]
       const key = path[path.length - 1]
-      const current = node[key] ?? ""
-      if (splice) splice(draft, path, current.length, 0, delta)
-      else node[key] = current + delta
+      spliceText(draft, path, (node[key] ?? "").length, 0, delta)
     },
     url: handle.url,
   }
@@ -186,9 +185,9 @@ function textInto(draft, path, delta) {
 }
 
 /**
- * The session's watches, writable, and nothing else in it: what the runner
- * hands doc_watch (runner.js privileges) and what a starting runner restores
- * with (tools/watch.js). `doc()` reads the whole session, which every tool may.
+ * The session's watches, writable, and nothing else in it: what a run hands
+ * doc_watch (runner.js privileges) and what a page restores them with
+ * (tools/watch.js). `doc()` reads the whole session, which every tool may.
  */
 export function watchesWriter(store) {
   return {

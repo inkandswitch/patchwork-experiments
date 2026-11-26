@@ -20,15 +20,18 @@ await initSubduction()
 const step = (id, over = {}) => ({ id, title: `Step ${id}`, prompt: `do ${id}`, why: "test", where: "worker", tier: "fast", after: [], ...over })
 
 /**
- * A stand-in for running a step's session: it reads the step it was given and
- * answers, or fails, the way a real runner would leave the document.
+ * A stand-in for asking for a step's work (runners/page.js askFor): it reads
+ * the step it was given and answers, or fails, the way a burst would leave
+ * the document. `stopWork` stands in for stopping its task on the queue.
  */
 function fakeRunner(behaviour = {}) {
   const started = []
   const interrupted = []
+  const ids = new Map()
   const startSession = async (handle) => {
     const doc = handle.doc()
     const id = doc.workflow?.stepId
+    ids.set(handle.url, id)
     if (!started.includes(handle.url)) {
       started.push(handle.url)
       const act = behaviour[id] ?? "answer"
@@ -45,9 +48,13 @@ function fakeRunner(behaviour = {}) {
         })
       } // "hang": leave it running
     }
-    return { runner: { interrupt: () => interrupted.push(id) }, listen: () => {} }
+    return { asked: true, outcome: "idle" }
   }
-  return { startSession, started, interrupted }
+  const stopWork = (_repo, url) => {
+    interrupted.push(ids.get(url))
+    return Promise.resolve(true)
+  }
+  return { startSession, stopWork, started, interrupted }
 }
 
 async function setup(steps, { behaviour = {}, limits = {}, grants = {} } = {}) {
@@ -62,7 +69,7 @@ async function setup(steps, { behaviour = {}, limits = {}, grants = {} } = {}) {
   const runner = fakeRunner(behaviour)
   const news = []
   const notify = () => ({ notify: (render) => news.push(render()), close: () => {} })
-  const make = () => new WorkflowDriver({ repo, handle: plan, startSession: runner.startSession, notify, heartbeatMs: 1e9, confirmMs: 0 })
+  const make = () => new WorkflowDriver({ repo, handle: plan, startSession: runner.startSession, stopWork: runner.stopWork, notify, heartbeatMs: 1e9, confirmMs: 0 })
   return { repo, plan, orchestrator, runner, news, make }
 }
 
@@ -194,7 +201,7 @@ describe("sessionOutcome", () => {
   }
   it.each([
     ["just created", session({ turns: [makeTurn("user", [textBlock("go")])] }), "running"],
-    ["thinking", session({ lease: { runner: "r", generation: 1, at: 1 }, turns: [makeTurn("user", [textBlock("go")])] }), "running"],
+    ["thinking", session({ burst: { run: "r" }, turns: [makeTurn("user", [textBlock("go")])] }), "running"],
     ["waiting on a person", session({ turns: [makeTurn("user", [textBlock("go")]), makeTurn("assistant", [{ type: "call", id: "c1", tool: "http_request", input: {}, status: CALL.pending }])] }), "running"],
     ["answered", session({ turns: [makeTurn("user", [textBlock("go")]), makeTurn("assistant", [textBlock("done it")])] }), "done"],
     ["broke", session({ turns: [makeTurn("user", [textBlock("go")]), makeTurn("assistant", [noticeBlock(STOP.error, "it broke")])] }), "failed"],

@@ -77,9 +77,10 @@ export function toSchema(tool) {
 
 /**
  * The metadata of an `agent:tool` plugin a toolset reads. Plain JSON at the
- * top level of the plugin entry, which is what lets it cross into a worker
- * (runners/worker-client.js hands the shared runner every entry's metadata, and the
- * worker loads the code from `importUrl` itself: runners/worker-plugins.js).
+ * top level of the plugin entry, which is what lets it cross into a worker:
+ * a task's input carries every entry's metadata as the catalogue
+ * (assembly/plugins.js pluginCatalogue), and a burst offers the tools and
+ * parks their calls for a page.
  */
 export const PLUGIN_FIELDS = ["id", "name", "description", "input_schema", "where", "risk", "alwaysAsk", "scoped", "target", "group", "groupCovers", "importUrl"]
 

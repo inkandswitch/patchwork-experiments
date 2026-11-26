@@ -69,7 +69,6 @@ const ON_DISK = Object.fromEntries(
     "documents/tree.js",
     "tools/folders.js",
     "host/import.js",
-    "runners/worker-client.js",
   ].map((path) => [path, readFileSync(join(here, "..", path), "utf8")])
 )
 const CHROME = option("chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")

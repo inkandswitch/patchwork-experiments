@@ -9,17 +9,17 @@
  *      claimed, and runs again; a call that ran before it in the batch stands;
  *   4. the session says it is reconnecting, never that it failed — and a
  *      workflow step in that state is still running;
- *   5. the runner tries again on the network's return, or after a backoff,
- *      and not on every poll in between;
+ *   5. a burst waits inside itself and tries again on the network's return,
+ *      or after a backoff, and nothing else asks meanwhile;
  *   6. a person can stop it, and then nothing is left to run: what waited for
  *      the network is closed, not run, by the message that carries it on.
  */
 import { describe, it, expect, vi } from "vitest"
 import { run, say, OUTCOME } from "../kernel/loop.js"
-import { SessionRunner, needsWork } from "../kernel/runner.js"
+import { needsWork } from "../kernel/runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { memoryStore } from "../kernel/store.js"
 import { initSession, STATUS, CALL, _resetIds } from "../session/schema.js"
-import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { findCall, findResult } from "../session/calls.js"
 import { stopSession, markReconnecting, NOT_RUN } from "../session/recovery.js"
@@ -59,12 +59,11 @@ function session(turns) {
   const doc = {}
   initSession(doc, { title: "Net", subject: "automerge:subject" })
   doc.turns = turns
-  claimLease(doc, "runner-a", Date.now())
   return memoryStore(doc)
 }
 
 const go = (store, provider, tools = []) =>
-  run({ store, provider, toolset: toolset(tools), runnerUrl: "runner-a", generation: store.doc().lease.generation, flushMs: 0, canRun: () => true })
+  run({ store, provider, toolset: toolset(tools), runnerUrl: "runner-a", flushMs: 0, canRun: () => true })
 
 const blocks = (store) => store.doc().turns.flatMap((t) => t.blocks.map((b) => ({ role: t.role, ...b })))
 const offlineErr = () => new Interruption("Could not reach OpenRouter (Failed to fetch)")
@@ -230,7 +229,7 @@ describe("the loop, when the network goes", () => {
     expect(findResult(doc, "c1")).toBeNull()
     expect(doc.turns.at(-1)).toMatchObject({ role: "assistant", author: "automerge:person" })
     expect(blocks(store).at(-1)).toMatchObject({ type: "notice", kind: "stopped", text: "Stopped while waiting for the network (no relay)." })
-    expect([settled(doc), doc.reconnecting, doc.lease, needsWork(doc)]).toEqual([STATUS.idle, null, null, false])
+    expect([settled(doc), doc.reconnecting, doc.burst, needsWork(doc)]).toEqual([STATUS.idle, null, null, false])
     // Said once.
     store.change((d) => (stopped = stopSession(d, STOP.stopped)))
     expect(stopped).toBe(false)
@@ -242,64 +241,59 @@ describe("the loop, when the network goes", () => {
     expect(findCall(doc, "c1").block.status).toBe(CALL.error)
     expect(String(findResult(doc, "c1").block.output)).toBe(NOT_RUN)
     expect(needsWork(doc)).toBe(true)
-    store.change((d) => claimLease(d, "runner-a", Date.now()))
     expect((await go(store, scripted([[{ type: "text", delta: "Fine." }]]), tools)).outcome).toBe(OUTCOME.idle)
     expect(fetches).toBe(1)
     expect(blocks(store).at(-1).text).toBe("Fine.")
   })
 })
 
-describe("the runner, waiting for the network", () => {
+describe("a burst, waiting for the network", () => {
   function runnerOver(store, provider, extra = {}) {
-    return new SessionRunner({
+    return burstRunner({
       store,
       runnerUrl: "runner-a",
       buildToolset: async () => toolset([]),
       getProvider: async () => provider,
       canRun: () => true,
-      confirmMs: 0,
       system: "",
       ...extra,
     })
   }
 
-  it("does not try again on every poll, but at the end of the backoff or when the network is back", async () => {
-    vi.useFakeTimers()
-    try {
-      const store = session([makeTurn("user", [textBlock("hello")])])
-      const provider = scripted([[offlineErr()], [offlineErr()], [{ type: "text", delta: "Back." }]])
-      let back = null
-      const events = []
-      const runner = runnerOver(store, provider, { onOnline: (fn) => ((back = fn), () => (back = null)), now: () => Date.now(), onEvent: (e) => events.push(e) })
-      runner.unlisten = runner.onOnline(() => runner.resume())
+  it("waits inside itself and tries again when the wait ends, and the session says it is reconnecting meanwhile", async () => {
+    const store = session([makeTurn("user", [textBlock("hello")])])
+    const provider = scripted([[offlineErr()], [offlineErr()], [{ type: "text", delta: "Back." }]])
+    const waits = []
+    const runner = runnerOver(store, provider, {
+      waitForNetwork: async (attempt) => {
+        waits.push([attempt, settled(store.doc()), provider.requests.length])
+      },
+    })
+    expect((await runner.tick()).outcome).toBe(OUTCOME.idle)
+    // One wait after each failed try, the session reconnecting through each.
+    expect(waits).toEqual([
+      [1, STATUS.reconnecting, 1],
+      [2, STATUS.reconnecting, 2],
+    ])
+    expect(provider.requests).toHaveLength(3)
+    expect(store.doc().reconnecting).toBe(null)
+    expect(store.doc().burst).toBe(null)
+    expect(blocks(store).map((b) => b.text)).toEqual(["hello", "Back."])
+  })
 
-      await runner.tick()
-      expect(provider.requests).toHaveLength(1)
-      expect(events.find((e) => e.type === "reconnecting")).toMatchObject({ attempt: 1, delay: 2000 })
-
-      // Polls and changes in the meantime do nothing.
-      await runner.tick()
-      await runner.tick()
-      expect(provider.requests).toHaveLength(1)
-
-      // The backoff ends: one more try, which fails, and the wait doubles.
-      await vi.advanceTimersByTimeAsync(2000)
-      expect(provider.requests).toHaveLength(2)
-      expect(events.filter((e) => e.type === "reconnecting").at(-1)).toMatchObject({ attempt: 2, delay: 4000 })
-
-      // The network is back before that: at once.
-      back()
-      await vi.advanceTimersByTimeAsync(0)
-      await vi.waitFor(() => expect(settled(store.doc())).toBe(STATUS.idle))
-      expect(provider.requests).toHaveLength(3)
-      expect(store.doc().reconnecting).toBe(null)
-      expect(runner.reconnects).toBe(0)
-      expect(blocks(store).map((b) => b.text)).toEqual(["hello", "Back."])
-      runner.stop()
-      expect(back).toBe(null)
-    } finally {
-      vi.useRealTimers()
-    }
+  it("while it waits, asking again is asking once: no second burst, no second request", async () => {
+    const store = session([makeTurn("user", [textBlock("hello")])])
+    const provider = scripted([[offlineErr()], [{ type: "text", delta: "Back." }]])
+    let release
+    const back = new Promise((r) => (release = r))
+    const runner = runnerOver(store, provider, { waitForNetwork: () => back })
+    const first = runner.ask()
+    await vi.waitFor(() => expect(settled(store.doc())).toBe(STATUS.reconnecting))
+    expect(runner.ask()).toBe(first)
+    expect(provider.requests).toHaveLength(1)
+    release()
+    expect((await first).outcome).toBe(OUTCOME.idle)
+    expect(runner.runs).toHaveLength(1)
   })
 
   it("an interruption before the run starts is waited out too, not recorded as an error", async () => {
@@ -309,8 +303,8 @@ describe("the runner, waiting for the network", () => {
         throw new Interruption("Could not start the run: this machine has no network")
       },
     })
+    // The fixture's burst ends rather than waits (fixtures/burst.js), leaving the session as it waits.
     const result = await runner.tick()
-    runner.stop()
     expect(result.outcome).toBe(OUTCOME.reconnecting)
     expect(settled(store.doc())).toBe(STATUS.reconnecting)
     expect(store.doc().turns).toHaveLength(1)
@@ -333,7 +327,6 @@ describe("the runner, waiting for the network", () => {
       },
     })
     const result = await runner.tick()
-    runner.stop()
     expect(result.outcome).toBe(OUTCOME.error)
     expect(seen).not.toContainEqual([true, true])
     expect(store.doc().reconnecting).toBe(null)

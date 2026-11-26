@@ -16,7 +16,6 @@ import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
-import { claimLease } from "../session/lease.js"
 import { initPlan, STEP, PLAN_VERSION, DEFAULT_STEP_BUDGETS, stepBudget, resumePlan, told, pauseKey } from "../workflow/plan.js"
 import { WorkflowDriver, sessionOutcome, _resetDrivers } from "../workflow/driver.js"
 import { workflowBudget } from "../workflow/tools.js"
@@ -36,7 +35,6 @@ function sessionStore({ budget = null, cost = 0 } = {}) {
   initSession(doc, { config: budget == null ? {} : { budget } })
   doc.turns = [makeTurn("user", [textBlock("go")])]
   doc.usage = { in: 0, out: 0, turns: 0, cost }
-  claimLease(doc, "r", Date.now())
   return memoryStore(doc)
 }
 
@@ -44,7 +42,7 @@ describe("a session with a budget", () => {
   it("stops before calling the model once it has spent it, says so, and records why", async () => {
     const store = sessionStore({ budget: 1, cost: 1.2 })
     const provider = makeMock([[{ type: "text", delta: "should not happen" }]])
-    const result = await run({ store, provider, toolset, runnerUrl: "r", generation: 1, flushMs: 0 })
+    const result = await run({ store, provider, toolset, runnerUrl: "r", flushMs: 0 })
     expect(result.outcome).toBe(OUTCOME.budgetExhausted)
     expect(provider.requests).toHaveLength(0)
     const doc = store.doc()
@@ -56,7 +54,7 @@ describe("a session with a budget", () => {
   it("runs as usual under its budget, or with none", async () => {
     for (const store of [sessionStore({ budget: 1, cost: 0.4 }), sessionStore({ cost: 99 })]) {
       const provider = makeMock([[{ type: "text", delta: "ok" }]])
-      const result = await run({ store, provider, toolset, runnerUrl: "r", generation: 1, flushMs: 0 })
+      const result = await run({ store, provider, toolset, runnerUrl: "r", flushMs: 0 })
       expect(result.outcome).toBe(OUTCOME.idle)
       expect(provider.requests).toHaveLength(1)
     }

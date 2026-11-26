@@ -2,7 +2,7 @@
  * What a session is doing, read off its document. Nothing stores it.
  *
  * A stored status had to be moved by hand with everything it summarised — a
- * call approved, a lease dropped, a question answered — and every place that
+ * call approved, a run ended, a question answered — and every place that
  * forgot left a session that looked stuck, or finished, when it was neither.
  * Read off the document, it cannot disagree with it.
  */
@@ -76,28 +76,30 @@ export function stoppedFromOutside(doc) {
 }
 
 /**
- * A session's status.
+ * A session's status, the first that applies:
  *
  *   awaiting-answer    it asked the person something
  *   awaiting-approval  a call waits for the person's yes
  *   error              its last run failed, and nothing was said to it since
- *   reconnecting       its runner waits for the network
- *   running            a runner holds it
- *   parked             a call that needs the page is cleared to run, and no
- *                      runner with a page has taken it
+ *   idle               another stop is in force (a person's, a workflow's, a
+ *                      budget's)
+ *   reconnecting       its run waits for the network
+ *   running            `burst` names a run, or a page's claim
+ *   parked             a call that needs a page is cleared to run, and no
+ *                      page has taken it
  *   idle               none of these
  *
- * `live` is the observer's own judgement of whether a lease is alive
- * (lease.js LeaseWatch); without one, a lease that is there counts.
+ * Every reader sees the same status: whether the run `burst` names is alive
+ * is heard through the queue (runners/ask.js), not read here.
  */
-export function statusOf(doc, { live = null } = {}) {
+export function statusOf(doc) {
   if (!doc) return STATUS.idle
   if (questionsAwaitingAnswer(doc).length) return STATUS.awaitingAnswer
   if (callsAwaitingApproval(doc).length) return STATUS.awaitingApproval
   const stop = stopOf(doc)
   if (stop) return stop.kind === STOP.error ? STATUS.error : STATUS.idle
   if (doc.reconnecting) return STATUS.reconnecting
-  if (doc.lease && (live ? live(doc.lease) : true)) return STATUS.running
+  if (doc.burst != null) return STATUS.running
   if (runnableCalls(doc).some((call) => call.where === WHERE.host)) return STATUS.parked
   return STATUS.idle
 }

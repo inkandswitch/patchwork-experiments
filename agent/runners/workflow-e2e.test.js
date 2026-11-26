@@ -1,26 +1,29 @@
 /**
- * A whole workflow, with real sessions and real runners; only the model is
- * scripted.
+ * A whole workflow, with real sessions run as bursts and a page; only the
+ * model is scripted.
  *
- * The orchestrator calls workflow_start through the ordinary loop. Its steps
- * become sessions, each run by a SessionRunner on the step's own scripted
- * model; the third step waits for the first two and is handed what they found;
- * and when it is all over the orchestrator is woken with the results.
+ * The orchestrator calls workflow_start through the ordinary loop, in a
+ * burst; the call needs a page, so it parks, and the page showing the
+ * orchestrator runs it (runners/page.js pageCalls), driving the plan from
+ * there. Its steps become sessions, each asked for and run in bursts on the
+ * step's own scripted model; the third step waits for the first two and is
+ * handed what they found; and when it is all over the orchestrator is woken
+ * through the page's events, which ask for its work.
  */
 import { describe, it, expect, afterEach } from "vitest"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { SessionRunner } from "../kernel/runner.js"
+import { showSession } from "../fixtures/page.js"
 import { handleStore } from "../kernel/store.js"
 import { createEvents } from "../kernel/events.js"
-import { buildToolset } from "./toolset.js"
+import { buildToolset } from "../assembly/toolset.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { PLAN, STEP, DEFAULT_TIER_MODELS } from "../workflow/plan.js"
 import { _resetDrivers } from "../workflow/driver.js"
 import { guardedFetch } from "../net/guard.js"
-import { BUILTIN_TOOLS } from "./builtin.js"
+import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { statusOf } from "../session/status.js"
 
 await initSubduction()
@@ -31,22 +34,10 @@ const STEPS = [
   { id: "judge", title: "Judge", prompt: "Decide which problems matter.", where: "worker", tier: "deep", why: "judgement", after: ["read-a", "read-b"] },
 ]
 
-/** Run a session on a scripted model: it answers from what its first message says. */
-function runSession(handle, { provider, toolset = { tools: [], schemas: [], get: () => null }, ctx = {}, startStepSession = null }) {
-  const store = handleStore(handle, A.splice)
-  const runner = new SessionRunner({
-    builtins: BUILTIN_TOOLS,
-    store,
-    ctx,
-    startStepSession,
-    buildToolset: async (doc) => (typeof toolset === "function" ? toolset(doc) : toolset),
-    getProvider: async () => provider,
-    getKey: () => "test",
-    canRun: () => true,
-  })
-  handle.on("change", () => runner.tick())
-  runner.start()
-  return { runner, store }
+/** A session shown in a page, on a scripted model (fixtures/page.js). */
+function runSession(handle, opts) {
+  const shown = showSession(handle, opts)
+  return { runner: shown, store: shown.store }
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -80,10 +71,10 @@ describe("a workflow, end to end", () => {
         id === "judge"
           ? `Judged: ${prompt.includes("A has a stale cache") && prompt.includes("B leaks a handle") ? "both matter" : "missing input"}`
           : id === "read-a" ? "A has a stale cache" : "B leaks a handle"
-      // With the repo: a runner checks a step's session against its plan.
+      // With the repo: a burst checks a step's session against its plan.
       const { runner } = runSession(handle, { provider: makeMock([[{ type: "text", delta: answer }]]), ctx: { repo } })
       runners.push(runner)
-      return { runner, listen: () => {} }
+      return { asked: true, outcome: "idle" }
     }
 
     // The orchestrator: starts the workflow, says so, and on being woken sums up.
@@ -101,13 +92,14 @@ describe("a workflow, end to end", () => {
         { type: "text", delta: JSON.stringify(request.messages).includes("The workflow is over") ? "Both problems matter." : "Noted." },
       ]),
     ])
+    // The page's events: a wake is a change to the session, which the page asks on.
     const store = handleStore(orchestrator, A.splice)
     const events = createEvents(store, { policy: { settleMs: 10, maxDelayMs: 50, minGapMs: 0 } })
     const { runner } = runSession(orchestrator, {
       provider,
       toolset: (doc) => buildToolset(doc, { skipPlugins: true }),
       ctx: { repo, subject: "automerge:subject", events },
-      startStepSession: stepSession,
+      startSession: stepSession,
     })
     runners.push(runner)
 
@@ -179,7 +171,7 @@ describe("a workflow, end to end", () => {
       const id = handle.doc().workflow.stepId
       const { runner } = runSession(handle, { provider: scripts[id](), ctx: { repo, fetchImpl, reader: "https://reader.test/" } })
       runners.push(runner)
-      return { runner, listen: () => {} }
+      return { asked: true, outcome: "idle" }
     }
 
     const orchestrator = repo.create({})
@@ -200,7 +192,7 @@ describe("a workflow, end to end", () => {
       provider,
       toolset: (doc) => buildToolset(doc, { skipPlugins: true }),
       ctx: { repo, events },
-      startStepSession: stepSession,
+      startSession: stepSession,
     })
     runners.push(runner)
 

@@ -6,8 +6,8 @@
  * turns on, not something the agent reaches for unasked.
  *
  * Plans and step sessions are documents no other tool may change (kernel/scope.js
- * kernelRepo), so these work through `ctx.workflows` — the runner's own repo
- * and its way of starting a step's session — which the runner adds to a
+ * kernelRepo), so these work through `ctx.workflows` — the host's own repo
+ * and its way of starting a step's session — which a run adds to a
  * full-access session's calls of these tools and of no other (kernel/runner.js
  * `privileges`). This is the only module that uses it.
  */
@@ -95,15 +95,16 @@ const STEP_SCHEMA = {
 
 /** What these tools work through, or why they cannot work here. */
 function workflows(ctx) {
-  if (!ctx.workflows?.repo) throw new Error("This runner cannot run workflows.")
+  if (!ctx.workflows?.repo) throw new Error("This session cannot run workflows here.")
   return ctx.workflows
 }
 
 /**
  * The plan's driver here: the one already at it, or one started with what
- * this runner hands these tools. Null where the runner cannot run a plan's
- * steps (a shared worker, node) and no driver is here: the plan is then
- * driven from a page that has it open, which hears every change to it.
+ * this page hands these tools. Null in a burst (a pool's worker), which is
+ * handed no way of starting a step's session: the plan is then driven from a
+ * page that has it open, which hears every change to it and asks for every
+ * running step whose session has work.
  */
 async function drive(url, ctx) {
   const { repo, startSession, tools } = workflows(ctx)
@@ -373,6 +374,13 @@ export const workflowAnswer = {
       )
     }
     answerQuestion(handleStore(handle, ctx.splice ?? null), question.callId, input.answer)
+    // Taken over: an answer is a write of work, and whatever `burst` named (a
+    // page that died mid-call) is no longer the step's. The plan's driver
+    // asks for the step's work when it sees the answer.
+    handle.change((d) => {
+      if (d.burst != null) d.burst = null
+    })
+    ;(await drive(url, ctx))?.kick()
     return `Answered step '${input.step}': "${question.question}" → ${truncate(input.answer, 200)}`
   },
   summarize(input) {

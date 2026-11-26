@@ -102,7 +102,8 @@ window.__agentProbe = async function (opts) {
     const textarea = host.querySelector("textarea")
     const sendButton = host.querySelector(".agent-composer button[data-variant='primary']")
     step("mounted", {
-      runnerMode: host.querySelector(".patchwork-agent")?.dataset.runner,
+      // Where the session's task is, as the queue says it ("here", "elsewhere", "waiting", "none").
+      work: host.querySelector(".patchwork-agent")?.dataset.work,
       hasTextarea: !!textarea,
       hasSend: !!sendButton,
       sendDisabled: sendButton?.disabled,
@@ -115,11 +116,10 @@ window.__agentProbe = async function (opts) {
     const runnersSeen = new Set()
     const recordStatus = () => {
       const d = session.doc()
-      const s = d?.status
-      // Which runner claimed it? "worker-…" means the SharedWorker took the
-      // session; "tab-…" means the in-tab runner did (host-tier work, or no
-      // worker available).
-      if (d?.lease?.runner) runnersSeen.add(String(d.lease.runner).split("-")[0])
+      const s = d ? statusOf(d) : null
+      // Which runs marked it (`burst`): a pool's run id, or a page's claim
+      // on a call only a page runs.
+      if (d?.burst?.run) runnersSeen.add(String(d.burst.run))
       if (statusTrail.at(-1)?.status !== s) statusTrail.push({ t: at(), status: s })
     }
     const statusTimer = setInterval(recordStatus, 100)
@@ -136,7 +136,7 @@ window.__agentProbe = async function (opts) {
     // failed, or when the agent has actually had the last word.
     const settled = () => {
       const d = session.doc()
-      if (["awaiting-approval", "awaiting-answer", "error", "parked"].includes(d.status)) return true
+      if (["awaiting-approval", "awaiting-answer", "error", "parked"].includes(statusOf(d))) return true
       // A call that has been approved but not yet run is not a finished
       // session. Releasing several at once makes the status idle while three
       // fetches are still queued, and without this the probe declared victory
@@ -146,7 +146,7 @@ window.__agentProbe = async function (opts) {
         .some((b) => b.type === "call" && (b.status === "approved" || b.status === "running"))
       if (queued) return false
       const last = d.turns[d.turns.length - 1]
-      return d.status === "idle" && d.turns.length > 1 && last?.role === "assistant"
+      return statusOf(d) === "idle" && d.turns.length > 1 && last?.role === "assistant"
     }
     const patience = opts.waitMs ?? 90000
     // --- optionally throw the view away mid-run -----------------------
@@ -428,7 +428,7 @@ window.__agentProbe = async function (opts) {
       steps,
       statusTrail,
       runnersSeen: [...runnersSeen],
-      runnerMode: host.querySelector(".patchwork-agent")?.dataset.runner ?? null,
+      work: host.querySelector(".patchwork-agent")?.dataset.work ?? null,
       approved,
       installed,
       denied,

@@ -4,6 +4,7 @@ import { tryHostImport } from "../host/import.js"
 import { describePlugin, pluginTool } from "../kernel/tool.js"
 import { HOST } from "../kernel/placement.js"
 import { builtinIds, takesBuiltin } from "./builtin.js"
+import { packageOfPlugin } from "../knowledge/guides.js"
 
 /** A registry of the host's, or null outside Patchwork (tests, node, a worker with no registry). */
 async function hostRegistry(type) {
@@ -73,6 +74,16 @@ export function catalogueSkills(catalogue) {
       throw new Error(`The skill '${id}' comes from an installed package, and is read in a page: it cannot be read here.`)
     },
   }
+}
+
+/**
+ * `ctx.packageOf` for a run with only the catalogue (a pool's): the package
+ * behind an agent tool, from the `importUrl` its metadata carries
+ * (knowledge/guides.js packageOfPlugin). A view or a datatype is not in the
+ * catalogue, and is found in a page (runners/page.js pageContext).
+ */
+export function cataloguePackageOf(catalogue) {
+  return async (type, id) => (type === "agent:tool" ? packageOfPlugin((catalogue?.tools ?? []).find((tool) => tool?.id === id)) : null)
 }
 
 /** Every `agent:tool` plugin's metadata, without loading any of them. */

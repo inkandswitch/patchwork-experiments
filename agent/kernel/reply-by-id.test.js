@@ -2,7 +2,7 @@
  * A reply found by its id: a Stop's notice that merges in BEFORE a reply the
  * stopper had not seen (the stopper wrote more than the runner has heard)
  * moves the reply along the list, and the run still takes its own mark off
- * and keeps its text. On two Automerge copies, with the real SessionRunner.
+ * and keeps its text. On two Automerge copies, with a real burst (fixtures/burst.js).
  */
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import * as A from "@automerge/automerge"
@@ -10,7 +10,7 @@ import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { stopSession } from "../session/recovery.js"
 import { STOP, stopOf } from "../session/status.js"
-import { SessionRunner } from "./runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { say } from "./loop.js"
 
 beforeEach(() => _resetIds())
@@ -23,7 +23,10 @@ function copies(actors = ["aa", "bb"], turns = []) {
     initSession(d, {})
     d.turns.push(makeTurn("user", [textBlock("hello")]), ...turns)
   })
-  const sides = actors.map((a) => ({ doc: A.clone(base, { actor: a.repeat(16) }), heard: () => {} }))
+  const sides = actors.map((a) => ({ doc: A.clone(base, { actor: a.repeat(16) }), listeners: new Set() }))
+  const heard = (i) => {
+    for (const fn of [...sides[i].listeners]) fn(sides[i].doc)
+  }
   const store = (i) => ({
     url: "automerge:session",
     doc: () => sides[i].doc,
@@ -31,7 +34,11 @@ function copies(actors = ["aa", "bb"], turns = []) {
       sides[i].doc = A.change(sides[i].doc, (d) => {
         fn(d)
       })
-      sides[i].heard()
+      heard(i)
+    },
+    onChange(fn) {
+      sides[i].listeners.add(fn)
+      return () => sides[i].listeners.delete(fn)
     },
     appendText(path, delta) {
       if (!delta) return
@@ -45,7 +52,7 @@ function copies(actors = ["aa", "bb"], turns = []) {
   })
   const deliver = (from, to) => {
     sides[to].doc = A.merge(sides[to].doc, A.clone(sides[from].doc))
-    sides[to].heard()
+    heard(to)
   }
   return { sides, stores: [store(0), store(1)], deliver }
 }
@@ -78,13 +85,12 @@ const hangs = (text, reached) =>
   }
 
 function runnerOn(store, url, provider, tools = []) {
-  return new SessionRunner({
+  return burstRunner({
     store,
     runnerUrl: url,
     buildToolset: async () => ({ tools, schemas: [], get: (id) => tools.find((t) => t.id === id) ?? null }),
     getProvider: async () => provider,
     canRun: () => true,
-    confirmMs: 0,
   })
 }
 
@@ -106,20 +112,21 @@ describe("item 1 with the Stop's notice merged before the reply", () => {
     const m = model(hangs("Begun on A", reached), says("Going on."))
     const a = runnerOn(stores[0], "tab-A", m)
     stores[1].change(pad)
-    sides[0].heard = () => a.tick()
     const run = a.tick()
     await at
     await flushed()
-    // B has not seen A's claim or reply; it sees the user's word, so the Stop is said.
+    // B has not seen A's mark or reply; it sees the user's word, so the Stop is said.
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
     deliver(1, 0)
-    expect((await run).outcome).toBe("aborted")
+    expect((await run).outcome).toBe("stopped")
     deliver(0, 1)
     const doc = plain(sides[0].doc)
     expect(stopOf(doc)?.kind).toBe(STOP.stopped)
     const mark = doc.turns.find((t) => t.blocks.some((b) => String(b.text).includes("Begun on A")))?.streaming ?? null
     say(stores[1], "go on")
     deliver(1, 0)
+    // Speaking is a write of work, and asks: the next burst.
+    await a.tick()
     await vi.waitFor(() => expect(texts(sides[0].doc).at(-1)).toEqual(["assistant", "Going on.", false]))
     expect(mark).toBe(null)
     expect(JSON.stringify(plain(sides[0].doc).turns)).toContain("Begun on A")
@@ -133,7 +140,6 @@ describe("item 1 with the Stop's notice merged before the reply", () => {
     const m = model(hangs("Buffered", reached))
     const a = runnerOn(stores[0], "tab-A", m)
     stores[1].change(pad)
-    sides[0].heard = () => a.tick()
     const run = a.tick()
     await at
     // no flush wait: "Buffered" is still in the appender

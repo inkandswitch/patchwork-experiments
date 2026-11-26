@@ -1,7 +1,7 @@
 /**
  * A workflow's graph changes as the work goes: closed steps reopen, the
  * dependencies of steps not yet started are edited, and steps ask for more.
- * Real sessions, real runners and a real driver; only the models are scripted.
+ * Real sessions run as bursts, and a real driver; only the models are scripted.
  *
  * What must hold:
  *   - a reopened step — done, failed or cancelled — continues in its own
@@ -17,7 +17,8 @@
 import { describe, it, expect, afterEach } from "vitest"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { SessionRunner, needsWork } from "../kernel/runner.js"
+import { needsWork } from "../kernel/runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { handleStore } from "../kernel/store.js"
 import { buildToolset } from "./toolset.js"
 import { initSession, STATUS } from "../session/schema.js"
@@ -67,28 +68,36 @@ afterEach(() => {
 
 const step = (id, over = {}) => ({ id, title: id.toUpperCase(), prompt: `Do ${id}.`, where: "worker", tier: "fast", why: "test", ...over })
 
-/** A plan driven here, its steps run on `models[stepId]`. */
+/**
+ * A plan driven here, its steps run on `models[stepId]`: each step's work
+ * asked for as a page asks (fixtures/burst.js `ask`), whenever the driver
+ * asks and whenever the step's session changes, and its task stopped
+ * (`stopWork`) as a halt stops it.
+ */
 async function workflow(steps, models) {
   const repo = new Repo({ network: [] })
+  const bySession = new Map()
   const startSession = async (handle) => {
-    const id = handle.doc().workflow.stepId
-    const runner = new SessionRunner({
-      store: handleStore(handle, A.splice),
-      ctx: { repo, sessionUrl: handle.url },
-      buildToolset: (doc) => buildToolset(doc, { skipPlugins: true }),
-      getProvider: async () => models[id],
-      getKey: () => "test",
-      canRun: () => true,
-      confirmMs: 0,
-    })
-    handle.on("change", () => runner.tick())
-    runner.start()
-    runners.push(runner)
-    return { runner, listen: () => {} }
+    let runner = bySession.get(handle.url)
+    if (!runner) {
+      const id = handle.doc().workflow.stepId
+      runner = burstRunner({
+        store: handleStore(handle, A.splice),
+        ctx: { repo, sessionUrl: handle.url },
+        buildToolset: (doc) => buildToolset(doc, { skipPlugins: true }),
+        getProvider: async () => models[id],
+        getKey: () => "test",
+      })
+      bySession.set(handle.url, runner)
+      handle.on("change", () => runner.ask())
+      runners.push(runner)
+    }
+    return runner.ask()
   }
+  const stopWork = async (_repo, url) => (bySession.get(url)?.interrupt("cancelled"), true)
   const plan = repo.create({})
   plan.change((d) => initPlan(d, { title: "W", goal: "G", steps }))
-  await ensureDriver(plan.url, { repo, startSession, confirmMs: 0, settleMs: 10, heartbeatMs: 200 })
+  await ensureDriver(plan.url, { repo, startSession, stopWork, confirmMs: 0, settleMs: 10, heartbeatMs: 200 })
   const ctx = { workflows: { repo, startSession }, events: null }
   const run = (tool, input) => tool.execute({ plan: plan.url, ...input }, ctx)
   const at = (id) => plan.doc().steps.find((s) => s.id === id)

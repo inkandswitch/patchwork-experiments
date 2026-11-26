@@ -7,7 +7,7 @@ import { renderBudgetItem } from "./waiting.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { _resetDrivers, ensureDriver } from "../workflow/driver.js"
 import { AgentTool } from "./session-view.js"
-import { _reset as resetRunners } from "../runners/registry.js"
+import { _reset as resetRunners } from "../runners/page.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { stopSession } from "../session/recovery.js"
 import { STOP } from "../session/status.js"
@@ -105,7 +105,7 @@ describe("the workflow view", () => {
     child.change((d) => {
       initSession(d, {})
       d.turns.push(makeTurn("user", [textBlock("go")]), makeTurn("assistant", [textBlock("Working")]))
-      d.lease = { runner: "tab-A", generation: 1, at: 0 }
+      d.burst = { run: "run-A" }
     })
     plan.change((d) => Object.assign(d.steps[0], { status: STEP.running, sessionUrl: child.url }))
     const { element, cleanup } = mount(plan, repo)
@@ -321,7 +321,7 @@ describe("the workflow view keeps your place", () => {
   it("a step streaming leaves an opened result open, scrolled where you left it, and its buttons in place", async () => {
     const { repo, plan } = await planWith([step("a"), step("b")], { status: PLAN.stopped })
     const child = repo.create({})
-    child.change((d) => { initSession(d, {}); d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() } })
+    child.change((d) => { initSession(d, {}); d.burst = { run: "run-elsewhere" } })
     plan.change((d) => {
       Object.assign(d.steps[0], { status: STEP.done, result: "Found 3 problems\nmore detail" })
       Object.assign(d.steps[1], { status: STEP.running, sessionUrl: child.url })

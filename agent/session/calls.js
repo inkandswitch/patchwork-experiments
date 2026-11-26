@@ -104,10 +104,10 @@ export const MOVES = Object.freeze({
  * made: a move that is not one of the call's from where it stands changes
  * nothing.
  *
- * `by` is `{ runner, generation }`. A claim records it on the call. Given to
- * any later move, it must be the claim the call carries, which is how a
- * runner that has lost the session leaves alone a call another has since
- * settled.
+ * `by` is `{ runner }`, a run's id or a page's claim id. A claim records it
+ * on the call. Given to any later move, it must be the claim the call
+ * carries, which is how a run that is no longer the session's leaves alone a
+ * call another has since settled.
  */
 export function move(block, name, by = null) {
   const step = MOVES[name]
@@ -115,15 +115,11 @@ export function move(block, name, by = null) {
   if (!block || !step.from.includes(block.status)) return false
   if (name === "claim") {
     block.runner = by?.runner ?? null
-    block.generation = by?.generation ?? null
-  } else if (by && (block.runner !== by.runner || block.generation !== by.generation)) {
+  } else if (by && block.runner !== by.runner) {
     return false
   }
   block.status = step.to
   // Put back to run again, it is nobody's.
-  if (name === "release") {
-    if (block.runner != null) block.runner = null
-    if (block.generation != null) block.generation = null
-  }
+  if (name === "release" && block.runner != null) block.runner = null
   return true
 }

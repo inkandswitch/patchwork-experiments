@@ -4,7 +4,6 @@ import { needsWork } from "./runner.js"
 import { memoryStore } from "./store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, CALL, _resetIds } from "../session/schema.js"
-import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock, noticeBlock } from "../session/blocks.js"
 import { findCall, callsAwaitingApproval } from "../session/calls.js"
 import { settled } from "../fixtures/session.js"
@@ -44,11 +43,10 @@ const hostTool = () => ({
   execute: async () => "<html>",
 })
 
-function session({ turns = [], runner = "runner-a" } = {}) {
+function session({ turns = [] } = {}) {
   const doc = {}
   initSession(doc, { title: "Test", subject: "automerge:subject" })
   doc.turns = turns
-  claimLease(doc, runner, Date.now())
   return memoryStore(doc)
 }
 
@@ -69,7 +67,6 @@ describe("a plain text turn", () => {
       provider,
       toolset: fakeToolset([]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
     })
 
@@ -83,7 +80,7 @@ describe("a plain text turn", () => {
     const store = session({ turns: [makeTurn("user", [textBlock("hello")])] })
     const provider = makeMock([[{ type: "text", delta: "ok" }]])
 
-    await run({ store, provider, toolset: fakeToolset([]), system: "You are terse.", runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset: fakeToolset([]), system: "You are terse.", runnerUrl: "runner-a", flushMs: 0 })
 
     const request = provider.requests[0]
     expect(request.system).toBe("You are terse.")
@@ -102,7 +99,6 @@ describe("a plain text turn", () => {
       provider,
       toolset: fakeToolset([readTool()]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
     })
 
@@ -125,7 +121,6 @@ describe("tool calls", () => {
       provider,
       toolset: fakeToolset([readTool(async () => { ran++; return "a list" })]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
     })
 
@@ -151,7 +146,6 @@ describe("tool calls", () => {
       toolset: fakeToolset([readTool(async (input, ctx) => { seen = { input, ctx }; return "x" })]),
       ctx: { repo: "REPO", subject: "automerge:subject" },
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
     })
 
@@ -173,7 +167,6 @@ describe("tool calls", () => {
       toolset: fakeToolset([readTool(async (input, ctx) => { seen = ctx; ctx.events.open("k"); return "x" })]),
       ctx: { events },
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
     })
 
@@ -193,7 +186,6 @@ describe("tool calls", () => {
       provider,
       toolset: fakeToolset([readTool(async () => { throw new Error("no such document") })]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
     })
 
@@ -219,7 +211,6 @@ describe("tool calls", () => {
       provider,
       toolset: fakeToolset([readTool(async (input) => `read ${input.n}`)]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
     })
 
@@ -239,7 +230,6 @@ describe("approvals", () => {
       provider,
       toolset: fakeToolset([writeTool(async () => { ran++; return "edited" })]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
     })
 
@@ -258,9 +248,9 @@ describe("approvals", () => {
     ])
     const toolset = fakeToolset([writeTool(async () => { ran++; return "edited" })])
 
-    await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
     decide(store, "c1", "once")
-    const result = await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    const result = await run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
 
     expect(ran).toBe(1)
     expect(result.outcome).toBe(OUTCOME.idle)
@@ -276,9 +266,9 @@ describe("approvals", () => {
     ])
     const toolset = fakeToolset([writeTool()])
 
-    await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
     decide(store, "c1", "always")
-    const result = await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    const result = await run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
 
     expect(store.doc().grants.doc_edit).toBe(true)
     expect(findCall(store.doc(), "c2").block.status).toBe(CALL.done)
@@ -294,9 +284,9 @@ describe("approvals", () => {
     ])
     const toolset = fakeToolset([writeTool(async () => { ran++; return "edited" })])
 
-    await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
     decide(store, "c1", "deny")
-    await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
 
     expect(ran).toBe(0)
     expect(findCall(store.doc(), "c1").block.status).toBe(CALL.denied)
@@ -319,7 +309,7 @@ describe("approvals", () => {
     ])
     const toolset = fakeToolset([writeTool()])
 
-    await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
     expect(settled(store.doc())).toBe(STATUS.awaitingApproval)
 
     decide(store, "c1", "deny")
@@ -334,7 +324,7 @@ describe("approvals", () => {
     expect(result.blocks[0]).toMatchObject({ callId: "c1", isError: true })
     expect(String(result.blocks[0].output)).toMatch(/^Declined by the user\./)
 
-    await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
     expect(transcript(store).map((b) => b.text).join(" ")).toContain("understood, leaving it")
     expect(settled(store.doc())).toBe(STATUS.idle)
   })
@@ -351,7 +341,7 @@ describe("approvals", () => {
       [{ type: "text", delta: "and again" }],
     ])
     const toolset = fakeToolset([writeTool()])
-    const turn = () => run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    const turn = () => run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
 
     await turn()
     decide(store, "c1", "deny")
@@ -382,7 +372,6 @@ describe("tiers", () => {
       provider,
       toolset: fakeToolset([hostTool()]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
       canRun: (where) => where === "worker",
     })
@@ -405,7 +394,6 @@ describe("tiers", () => {
       provider,
       toolset: fakeToolset([hostTool()]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
       canRun: () => true,
     })
@@ -415,20 +403,21 @@ describe("tiers", () => {
   })
 })
 
-describe("the lease", () => {
-  it("stands down without executing when it has been taken over", async () => {
+describe("another run has the session (`stillOurs`)", () => {
+  it("stands down without executing when another run has its task mid-turn", async () => {
     const store = session()
     let ran = 0
+    let ours = true
     const provider = makeMock([
       [{ type: "call", id: "c1", name: "doc_read", input: {} }],
       [{ type: "text", delta: "should never happen" }],
     ])
 
-    // another runner takes over while the first is mid-turn
+    // another run takes the task while the first is mid-turn
     const provider2 = {
       id: "racing",
       async *stream(request) {
-        claimLease(store.doc(), "runner-b", Date.now())
+        ours = false
         yield* provider.stream(request)
       },
     }
@@ -438,17 +427,17 @@ describe("the lease", () => {
       provider: provider2,
       toolset: fakeToolset([readTool(async () => { ran++; return "x" })]),
       runnerUrl: "runner-a",
-      generation: 1,
+      stillOurs: () => ours,
       flushMs: 0,
     })
 
     expect(result.outcome).toBe(OUTCOME.aborted)
-    expect(result.reason).toBe("lease lost")
+    expect(result.reason).toBe("another run has the session")
     expect(ran).toBe(0)
   })
 
-  it("refuses to start at all without the lease", async () => {
-    const store = session({ runner: "someone-else" })
+  it("refuses to start at all when it is not", async () => {
+    const store = session()
     const provider = makeMock([[{ type: "text", delta: "nope" }]])
 
     const result = await run({
@@ -456,7 +445,7 @@ describe("the lease", () => {
       provider,
       toolset: fakeToolset([]),
       runnerUrl: "runner-a",
-      generation: 99,
+      stillOurs: () => false,
       flushMs: 0,
     })
 
@@ -480,7 +469,6 @@ describe("the lease", () => {
             where: "worker",
             status: CALL.running,
             runner: "runner-dead",
-            generation: 1,
           },
         ])
       )
@@ -492,7 +480,6 @@ describe("the lease", () => {
       provider,
       toolset: fakeToolset([writeTool(async () => { ran++; return "edited" })]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
     })
 
@@ -519,7 +506,6 @@ describe("interruption and budget", () => {
         }),
       ]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
       signal: controller.signal,
     })
@@ -543,7 +529,6 @@ describe("interruption and budget", () => {
       provider,
       toolset: fakeToolset([readTool()]),
       runnerUrl: "runner-a",
-      generation: 1,
       flushMs: 0,
       maxTurns: 3,
     })
@@ -558,14 +543,14 @@ describe("a call as it is written", () => {
     const store = session()
     const provider = makeMock([[{ type: "call", id: "c1", name: "doc_read", input: { n: 7 } }], [{ type: "text", delta: "done" }]])
     const tool = { ...readTool(), present: { verb: "read", detail: (input) => `entry ${input.n}` } }
-    await run({ store, provider, toolset: fakeToolset([tool]), runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset: fakeToolset([tool]), runnerUrl: "runner-a", flushMs: 0 })
     expect(findCall(store.doc(), "c1").block.shown).toEqual({ verb: "read", detail: "entry 7" })
   })
 
   it("and nothing, for a tool that does not say", async () => {
     const store = session()
     const provider = makeMock([[{ type: "call", id: "c1", name: "doc_read", input: {} }], [{ type: "text", delta: "done" }]])
-    await run({ store, provider, toolset: fakeToolset([readTool()]), runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset: fakeToolset([readTool()]), runnerUrl: "runner-a", flushMs: 0 })
     expect(findCall(store.doc(), "c1").block.shown).toBeNull()
   })
 })
@@ -574,7 +559,7 @@ describe("what a call did, as data", () => {
   const once = (tool, afterCall = []) => {
     const store = session()
     const provider = makeMock([[{ type: "call", id: "c1", name: "doc_read", input: {} }], [{ type: "text", delta: "done" }]])
-    return run({ store, provider, toolset: fakeToolset([tool]), afterCall, runnerUrl: "runner-a", generation: 1, flushMs: 0 }).then(() => ({ store, provider }))
+    return run({ store, provider, toolset: fakeToolset([tool]), afterCall, runnerUrl: "runner-a", flushMs: 0 }).then(() => ({ store, provider }))
   }
   const result = (store) => transcript(store).find((b) => b.type === "result")
 
@@ -605,7 +590,7 @@ describe("what a call did, as data", () => {
       return earlier.some((facts) => facts.told) ? null : { text: "Told once.", facts: { told: true } }
     }
     const tool = readTool(async () => ({ text: "read", facts: { n: 1 } }))
-    await run({ store, provider, toolset: fakeToolset([tool]), afterCall: [after], runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset: fakeToolset([tool]), afterCall: [after], runnerUrl: "runner-a", flushMs: 0 })
 
     const results = transcript(store).filter((b) => b.type === "result")
     expect(results.map((r) => String(r.output))).toEqual(["read\n\nTold once.", "read", "read"])

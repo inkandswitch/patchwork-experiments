@@ -10,11 +10,11 @@
  * so a package installed after the step began is in it, and no list of tool
  * ids is ever frozen into a session.
  *
- * A runner may be unable to run a tool it lists — the SharedWorker cannot run
- * a plugin whose code will not load without the page. Such a tool keeps its
- * declaration (`declared`) for deciding who gets it, and carries `where:
- * "host"` for who runs it: its calls park until a tab takes them
- * (runners/worker-plugins.js, kernel/loop.js).
+ * A run may be unable to run a tool it lists — a burst in a pool's worker
+ * imports no plugin code. Such a tool keeps its declaration (`declared`) for
+ * deciding who gets it, and carries `where: "host"` for who runs it: its
+ * calls park until a page takes them (assembly/plugins.js catalogueTools,
+ * kernel/loop.js, runners/page.js).
  */
 
 import { WHERE } from "../session/schema.js"

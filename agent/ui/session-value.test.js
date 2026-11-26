@@ -3,7 +3,7 @@
  * hint line's precedence walked row by row and pair by pair.
  */
 import { describe, it, expect, beforeEach } from "vitest"
-import { HINTS, hintOf, hintFacts, sessionValue, PLACEHOLDER } from "./session-value.js"
+import { HINTS, hintOf, hintFacts, sessionValue, workOf, PLACEHOLDER } from "./session-value.js"
 import { initSession, CALL, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, callBlock, noticeBlock } from "../session/blocks.js"
 import { STOP } from "../session/status.js"
@@ -17,23 +17,28 @@ const session = (seed = {}, fill = () => {}) => {
   return doc
 }
 
-const LOCAL = { mode: "panel", hasKey: true, keysSettled: true, runner: "tab", elsewhere: false, voiceStatus: null, place: null, waiting: [], subjectTitle: null, workflowTitle: null }
+const LOCAL = { mode: "panel", hasKey: true, keysSettled: true, work: null, pool: null, pageTool: null, voiceStatus: null, place: null, waiting: [], subjectTitle: null, workflowTitle: null }
 const value = (doc, local = {}) => sessionValue(doc, { ...LOCAL, ...local })
 
 describe("the hint line", () => {
   // Facts under which no row applies, and for each row what makes it apply.
-  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, elsewhere: false, asking: 0, pending: 0, status: STATUS.idle, reason: null }
+  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, work: null, foreign: false, pageTool: null, claimed: null, parked: null, asking: 0, pending: 0, status: STATUS.idle, reason: null }
   const ROWS = [
     ["voice", { voice: "Listening…" }, "Listening…"],
     ["earlier", { version: "earlier" }, "This session is from an earlier version of the agent and does not run. Start a new one to carry on."],
     ["outdated", { outdated: true }, "Waiting for a newer version of the agent: something in this session needs it"],
-    ["no-key-elsewhere", { hasKey: false, elsewhere: true }, "Running in another browser — this one has no API key"],
+    ["no-key-elsewhere", { hasKey: false, work: "elsewhere" }, "Working on another device — this browser has no API key"],
     ["no-key", { hasKey: false }, "Add an API key to start"],
     ["asking", { asking: 1 }, "Waiting on your answer"],
     ["pending", { pending: 1 }, "1 call needs approval"],
-    ["elsewhere", { elsewhere: true }, "Another runner is working on this session"],
-    ["parked", { status: STATUS.parked }, "Waiting for a tab to run a page tool"],
-    ["reconnecting", { status: STATUS.reconnecting, reason: "offline" }, "Waiting for the network — carries on when it is back (offline)"],
+    ["page-here", { pageTool: "view_mount" }, "Running view_mount in this page"],
+    ["page-elsewhere", { claimed: "view_mount" }, "Running view_mount in another page"],
+    ["foreign", { foreign: true }, "Someone else's work is under way here, or work that stopped without saying"],
+    ["reconnecting", { status: STATUS.reconnecting, reason: "offline" }, "Waiting for the network; carries on when it is back (offline)"],
+    ["here", { work: "here" }, "Working on this browser… Enter to steer, Stop to interrupt"],
+    ["elsewhere", { work: "elsewhere" }, "Working on another device… Enter to steer, Stop to interrupt"],
+    ["waiting", { work: "waiting" }, "Waiting for a device to take it"],
+    ["parked", { status: STATUS.parked, parked: "view_mount" }, "Waiting for an open page to run view_mount"],
     ["running", { status: STATUS.running }, "Working… Enter to steer, Stop to interrupt"],
   ]
 
@@ -50,8 +55,9 @@ describe("the hint line", () => {
   })
 
   it("of any two rows that hold at once, the earlier says its words", () => {
-    // Three pairs cannot hold at once, since a session has one status; and
-    // no key with another runner working is a row of its own, above both.
+    // Some pairs cannot hold at once, since a session has one status and its
+    // task is in one place; and no key with work on another device is a row
+    // of its own, above both.
     const exclusive = []
     for (let i = 0; i < ROWS.length; i++) {
       for (let j = i + 1; j < ROWS.length; j++) {
@@ -65,7 +71,16 @@ describe("the hint line", () => {
         expect([first.name, second.name, hintOf(facts)]).toEqual([first.name, second.name, expected])
       }
     }
-    expect(exclusive).toEqual(["parked+reconnecting", "parked+running", "reconnecting+running"])
+    expect(exclusive).toEqual([
+      "no-key-elsewhere+here",
+      "no-key-elsewhere+waiting",
+      "reconnecting+parked",
+      "reconnecting+running",
+      "here+elsewhere",
+      "here+waiting",
+      "elsewhere+waiting",
+      "parked+running",
+    ])
   })
 
   it("a session a newer agent wrote waits for one, whether it says so by its version or by a block this one cannot read", () => {
@@ -76,7 +91,8 @@ describe("the hint line", () => {
   it("counts answers and approvals", () => {
     expect(hintOf({ ...NONE, asking: 3 })).toBe("Waiting on 3 answers")
     expect(hintOf({ ...NONE, pending: 2 })).toBe("2 calls need approval")
-    expect(hintOf({ ...NONE, status: STATUS.reconnecting })).toBe("Waiting for the network — carries on when it is back (no connection)")
+    expect(hintOf({ ...NONE, status: STATUS.reconnecting })).toBe("Waiting for the network; carries on when it is back (no connection)")
+    expect(hintOf({ ...NONE, status: STATUS.parked })).toBe("Waiting for an open page to run a page tool")
   })
 
   it("reads its facts off the document and the view's own state", () => {
@@ -85,17 +101,57 @@ describe("the hint line", () => {
       d.turns.push(makeTurn("assistant", [callBlock("ask_user", { question: "?" }, { id: "q", status: CALL.asking }), callBlock("web_fetch", {}, { id: "p", status: CALL.pending })]))
       d.reconnecting = { reason: "offline", since: 1, attempts: 1 }
     })
-    expect(hintFacts(doc, { ...LOCAL, voiceStatus: "Listening…", hasKey: false, elsewhere: true })).toEqual({
+    const view = { state: "running", runs: [{ id: "run-1", pool: "pool-b", start: 1 }] }
+    expect(hintFacts(doc, { ...LOCAL, voiceStatus: "Listening…", hasKey: false, work: view, pool: "pool-a" })).toEqual({
       voice: "Listening…",
       version: "current",
       outdated: true,
       hasKey: false,
-      elsewhere: true,
+      work: "elsewhere",
+      foreign: false,
+      pageTool: null,
+      claimed: null,
+      parked: null,
       asking: 1,
       pending: 1,
       status: STATUS.awaitingAnswer,
       reason: "offline",
     })
+  })
+})
+
+describe("where the session's task is, as the queue says", () => {
+  const view = (state, runs = []) => ({ state, runs })
+  it.each([
+    ["nothing said yet", null, null],
+    ["no task", view("missing"), null],
+    ["ended", view("succeeded", [{ id: "r1", pool: "pool-a", start: 1, end: 2 }]), null],
+    ["not yet taken", view("waiting"), "waiting"],
+    ["its pool not heard", view("stalled", [{ id: "r1", pool: "pool-a", start: 1 }]), "waiting"],
+    ["a run of this browser's pool", view("running", [{ id: "r1", pool: "pool-a", start: 1 }]), "here"],
+    ["a run of another pool", view("running", [{ id: "r1", pool: "pool-b", start: 1 }]), "elsewhere"],
+    ["a later run, after this browser's ended", view("running", [{ id: "r1", pool: "pool-a", start: 1, end: 2, status: "lost" }, { id: "r2", pool: "pool-b", start: 3 }]), "elsewhere"],
+    ["being stopped", view("stopping", [{ id: "r1", pool: "pool-a", start: 1 }]), "here"],
+  ])("%s → %s", (_name, work, where) => {
+    expect(workOf(work, "pool-a")).toBe(where)
+  })
+
+  it("`burst` naming a run the queue lists is this person's; one it does not list, or before it has said, is not foreign until it has", () => {
+    const doc = session({}, (d) => (d.burst = { run: "run-x" }))
+    expect(hintFacts(doc, { ...LOCAL, work: null }).foreign).toBe(false)
+    expect(hintFacts(doc, { ...LOCAL, work: view("running", [{ id: "run-x", pool: "pool-a", start: 1 }]) }).foreign).toBe(false)
+    expect(hintFacts(doc, { ...LOCAL, work: view("missing") }).foreign).toBe(true)
+    expect(value(doc, { work: view("missing") })).toMatchObject({ canTakeOver: true, canStop: true })
+  })
+
+  it("a page's claim on a call it runs is not foreign: it says the tool, in another page", () => {
+    const doc = session({}, (d) => {
+      d.burst = { run: "claim-1" }
+      d.turns.push(makeTurn("assistant", [callBlock("view_mount", {}, { id: "c1", where: "host", status: CALL.running, runner: "claim-1" })]))
+    })
+    const facts = hintFacts(doc, { ...LOCAL, work: view("missing") })
+    expect([facts.foreign, facts.claimed]).toEqual([false, "view_mount"])
+    expect(hintFacts(doc, { ...LOCAL, work: view("missing"), pageTool: "view_mount" })).toMatchObject({ foreign: false, claimed: null, pageTool: "view_mount" })
   })
 })
 
@@ -143,12 +199,15 @@ describe("the header", () => {
 })
 
 describe("the composer", () => {
-  it("can send with a key, and stop while running or waiting for the network", () => {
+  it("can send with a key, and stop while running, waiting for the network or for a page, or while the queue says its task goes on", () => {
     expect(value(session(), { hasKey: false }).canSend).toBe(false)
     expect(value(session()).canSend).toBe(true)
-    const stoppable = (fill) => value(session({}, fill)).canStop
+    const stoppable = (fill, local = {}) => value(session({}, fill), local).canStop
     expect(stoppable(() => {})).toBe(false)
-    expect(stoppable((d) => (d.lease = { runner: "r", generation: 1, at: 1 }))).toBe(true)
+    expect(stoppable((d) => (d.burst = { run: "r" }))).toBe(true)
+    expect(stoppable((d) => d.turns.push(makeTurn("assistant", [callBlock("view_mount", {}, { id: "c1", where: "host", status: CALL.approved })])))).toBe(true)
+    expect(stoppable(() => {}, { work: { state: "waiting", runs: [] } })).toBe(true)
+    expect(stoppable(() => {}, { work: { state: "succeeded", runs: [] } })).toBe(false)
     expect(stoppable((d) => (d.reconnecting = { reason: "offline", since: 1, attempts: 1 }))).toBe(true)
     expect(stoppable((d) => d.turns.push(makeTurn("assistant", [noticeBlock(STOP.error, "failed")])))).toBe(false)
   })

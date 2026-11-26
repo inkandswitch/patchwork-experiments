@@ -110,7 +110,7 @@ describe("a long run that is stopped", () => {
   async function announced(end) {
     let t = 0
     const doc = session([makeTurn("assistant", [textBlock("Working on it")])])
-    doc.lease = { runner: "tab-A", generation: 1, at: 0 }
+    doc.burst = { run: "run-A" }
     const listeners = new Set()
     const handle = { url: "automerge:session", doc: () => doc, on: (_e, f) => listeners.add(f), off: (_e, f) => listeners.delete(f) }
     const watcher = watchAttention({ find: async () => handle }, () => ["automerge:session"], () => {}, { now: () => t })
@@ -129,6 +129,6 @@ describe("a long run that is stopped", () => {
   })
 
   it("that ends on its own still is", async () => {
-    expect(await announced((doc) => (doc.lease = null))).toEqual(["finished"])
+    expect(await announced((doc) => (doc.burst = null))).toEqual(["finished"])
   })
 })

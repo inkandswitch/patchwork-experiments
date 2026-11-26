@@ -3,33 +3,37 @@
  *
  * The plan (plan.js) decides what may run; this makes it happen. Each step
  * becomes an agent session of its own — a full transcript you can open, steer
- * and approve in — started on the tier's model and run by an ordinary runner.
+ * and approve in — started on the tier's model, its work asked for under its
+ * key as any session's is (`startSession`: runners/page.js).
  * The driver watches those sessions, writes each one's result back into the
  * plan when it finishes, starts whatever that made ready, and tells the
  * orchestrating session what came in. A tick reads the plan and its step
  * sessions, decides what to do from those alone (decide.js), and does it.
  *
- * The driver holds a lease on the plan document, exactly as a runner holds one
- * on a session, so two tabs with the plan open cannot both start the same
- * step: liveness judged on its own clock, and a fresh claim believed only
- * after CONFIRM_MS, as a runner's is (kernel/runner.js). Nothing about the run lives
- * only in memory: close the tab and reopen the plan, and a new driver picks up
- * where the document says things are.
+ * The driver holds a lease on the plan document, so two tabs with the plan
+ * open cannot both start the same step: liveness judged on its own clock
+ * (session/lease.js LeaseWatch), and a fresh claim believed only after
+ * CONFIRM_MS. Nothing about the run lives only in memory: close the tab and
+ * reopen the plan, and a new driver picks up where the document says things
+ * are.
  *
- * Driving and running are separate. One browser drives — starts steps, files
- * their results — but every browser with the plan open starts runners for its
- * running steps, and each step's session lease decides which browser runs it.
- * So steps spread over the browsers that have a key, and none runs twice.
+ * Driving and running are separate. One page drives — starts steps, files
+ * their results — and every page with the plan open asks for its running
+ * steps' work (`help`); a step's burst runs in a pool's worker
+ * (kernel/burst.js), and its session's `burst` mark keeps two from running
+ * it at once.
  */
 
-import { claimLease, holdsLease, LeaseWatch } from "../session/lease.js"
+import { claimLease, holdsLease, LeaseWatch, leaseIsLive } from "../session/lease.js"
 import { initSession, CALL } from "../session/schema.js"
 import { STOP, stopOf, statusOf } from "../session/status.js"
 import { makeTurn, textBlock, lastTurn } from "../session/blocks.js"
 import { stopSession, speak } from "../session/recovery.js"
 import { liftBudget, dollars } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
-import { heldElsewhere, needsWork, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "../kernel/runner.js"
+import { needsWork } from "../kernel/runner.js"
+import { workKey } from "../kernel/burst.js"
+import { stopWork as stopTaskWork } from "../host/task-client.js"
 import { AutomergeRepo } from "../host/modules.js"
 import { PLAN, isCurrent, writable, changePlan, PlanVersionError, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, stoppedKey, staleKey, questionKey, requestKey } from "./plan.js"
 import { decide } from "./decide.js"
@@ -47,6 +51,32 @@ const { stringifyAutomergeUrl } = AutomergeRepo
 /** How long a burst of changes is gathered before the tick it asks for. */
 export const SETTLE_MS = 150
 
+/** How often the driver renews its lease on the plan, and looks again. */
+export const HEARTBEAT_MS = 5000
+/** How long a plan's lease goes unchanged, by this page's clock, before it is free. */
+export const STALE_AFTER_MS = 15000
+/**
+ * How long a driver waits after claiming a plan before it believes the
+ * claim: two pages that claim within one round trip of each other both
+ * think they won until the writes meet, and the merge picks one of them.
+ */
+export const CONFIRM_MS = 2000
+
+/**
+ * Is some other driver holding this plan right now? `live` is a driver's own
+ * judgement (its LeaseWatch), which is right across machines; without one,
+ * the lease's stamp is compared with this clock, which is only right when the
+ * clocks agree, and is for display.
+ */
+export function heldElsewhere(plan, runnerUrl, live = null) {
+  const lease = plan?.lease
+  if (!lease || lease.runner === runnerUrl) return false
+  return live ? live(lease) : leaseIsLive(lease, { staleAfterMs: STALE_AFTER_MS })
+}
+
+/** How a step's work ended, when that is not news enough to keep: the model finished, or it waits on a person or a page. */
+const QUIET = new Set(["idle", "awaiting-approval", "awaiting-answer", "parked", "nothing"])
+
 /**
  * Where a step's session stands, read off its document.
  *
@@ -61,14 +91,14 @@ export const SETTLE_MS = 150
  *     call was still running (or waiting) used to read as done, and the step
  *     was filed while its session went on editing;
  *   - no reply is still streaming;
- *   - no live runner holds the session (`live`, the driver's own judgement of a
- *     lease; a runner drops its lease when it finishes, so a held one is work).
+ *   - no burst is marked on it (`burst`: a run clears it when it ends, so a
+ *     mark that is there is work).
  *
  * An empty last message is not an empty result: the result is then the last
  * thing the session said in words. That costs nothing and cannot come back
  * empty a second time, which asking it to report again could.
  */
-export function sessionOutcome(doc, { live = null } = {}) {
+export function sessionOutcome(doc) {
   if (!doc) return { state: "running" }
   const stop = stopOf(doc)
   if (stop?.kind === STOP.error) return { state: "failed" }
@@ -85,7 +115,7 @@ export function sessionOutcome(doc, { live = null } = {}) {
   if (waitingIn(doc).length) return { state: "running", waiting: true }
   if (doc.reconnecting || needsWork(doc)) return { state: "running" }
   if (unansweredCalls(doc).length || (doc.turns ?? []).some((t) => t.streaming)) return { state: "running" }
-  if (doc.lease && live?.(doc.lease)) return { state: "running" }
+  if (doc.burst != null) return { state: "running" }
   const last = lastTurn(doc)
   if (!last || last.role !== "assistant") return { state: "running" }
   const textOf = (turn) =>
@@ -114,7 +144,8 @@ const drivers = new Map()
  * Start driving a plan, or return the driver already doing so here.
  *
  *   repo           the page's repo
- *   startSession   (handle) => { runner, ctx } — runs a step's session (default: a tab runner)
+ *   startSession   (handle) => Promise<{ asked, outcome?, why? }> — asks for a step's work (runners/page.js)
+ *   stopWork       (repo, sessionUrl) => Promise<boolean> — stops a session's task on this person's queue
  *   notify         (planUrl) => channel with notify(render)/close(), to wake the orchestrator
  */
 export async function ensureDriver(planUrl, opts) {
@@ -141,10 +172,11 @@ export function _resetDrivers() {
 }
 
 export class WorkflowDriver {
-  constructor({ repo, handle, startSession, notify = null, tools = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
+  constructor({ repo, handle, startSession, stopWork = null, notify = null, tools = null, now = () => Date.now(), heartbeatMs = HEARTBEAT_MS, settleMs = SETTLE_MS, confirmMs = CONFIRM_MS }) {
     this.repo = repo
     this.handle = handle
     this.startSession = startSession
+    this.stopWork = stopWork ?? ((r, url) => stopTaskWork(r, workKey(url)))
     this.notify = notify
     // Every tool the runner that started this has, as `{ builtins, plugins }`,
     // for checking a step's prompt before it starts (step-tools.js). Without
@@ -163,8 +195,7 @@ export class WorkflowDriver {
     this.claimedAt = null
     this.confirming = null
     this.watched = new Map() // sessionUrl -> unsubscribe
-    this.reasons = new Map() // sessionUrl -> why its runner stopped, from its events
-    this.listening = new Set() // sessionUrls whose runner events we hear
+    this.reasons = new Map() // sessionUrl -> how its last asked task ended, when that was not quiet
     this.waiting = [] // what running steps wait on a person for, as of the last tick
     this.outOfBudget = [] // which running steps are stopped for their own budgets, likewise
     this.channel = null
@@ -294,7 +325,7 @@ export class WorkflowDriver {
       const doc = (await this.session(step.sessionUrl))?.doc()
       const seen = { status: doc ? statusOf(doc) : null, usage: doc?.usage ?? null, requests: requestCalls(doc).map((call) => ({ id: call.id, input: call.input ?? {} })) }
       if (step.status === STEP.running) {
-        seen.outcome = sessionOutcome(doc, { live: this.live })
+        seen.outcome = sessionOutcome(doc)
         if (seen.outcome.waiting) seen.waiting = waitingIn(doc)
         if (step.access === "web" && doc) seen.scopeOk = confinedAs(doc, webScope(this.handle.url, step.id))
       }
@@ -370,9 +401,10 @@ export class WorkflowDriver {
   }
 
   /**
-   * What a page that is not driving the plan does: keep a runner here for
-   * each running step, so this browser can take any step nobody is running.
-   * Writes nothing to the plan; the step's own lease decides who runs it.
+   * What a page that is not driving the plan does: ask for each running
+   * step's work, so a step whose driver is in a page with no key, or gone,
+   * still runs. Writes nothing to the plan; asking is asking once, and a
+   * step's `burst` mark keeps two runs apart.
    */
   async help() {
     const plan = this.handle.doc()
@@ -533,24 +565,25 @@ export class WorkflowDriver {
     }
   }
 
-  /** Make sure a step's session has a runner here. */
+  /**
+   * Ask for a step's work (`startSession`), without waiting for the task to
+   * end: its outcome, when it is not a quiet one (QUIET), is kept as the
+   * reason a failed step gives (decide.js), worded without urls.
+   */
   async run(sessionUrl) {
     const handle = await this.session(sessionUrl)
     if (!handle) return
-    try {
-      const entry = await this.startSession(handle)
-      // Every heartbeat comes through here; listen once, not once per beat.
-      if (entry?.listen && !this.listening.has(sessionUrl)) {
-        this.listening.add(sessionUrl)
-        entry.listen((event) => {
-          if (event?.type === "error" || (event?.type === "finish" && event.outcome === "error")) {
-            this.reasons.set(sessionUrl, String(event.error ?? event.reason ?? "error"))
-          }
-        })
-      }
-    } catch (err) {
-      this.reasons.set(sessionUrl, `Could not start the step's session: ${err?.message ?? err}`)
-    }
+    Promise.resolve()
+      .then(() => this.startSession(handle))
+      .then(
+        (answer) => {
+          if (!answer?.asked && !answer?.error) return
+          if (answer.error) return this.reasons.set(sessionUrl, `Could not ask for the step's work: ${answer.why}`)
+          if (QUIET.has(answer.outcome)) this.reasons.delete(sessionUrl)
+          else this.reasons.set(sessionUrl, `The step's run ended: ${answer.outcome ?? "with no outcome"}`)
+        },
+        (err) => this.reasons.set(sessionUrl, `Could not ask for the step's work: ${String(err?.message ?? err).replace(/automerge:\S+/g, "a document")}`)
+      )
   }
 
   /** Start one step: its session, its first message, its runner. */
@@ -660,6 +693,9 @@ export class WorkflowDriver {
     const message = reopenPrompt(plan, step)
     handle.change((d) => {
       d.reconnecting = null
+      // Taken over: whatever `burst` named is no run of this step's any more
+      // (a page that died mid-call), and its marks are the next burst's to settle.
+      if (d.burst != null) d.burst = null
       if ((d.usage?.cost ?? 0) >= (d.config?.budget ?? Infinity) || stopOf(d)?.kind === STOP.budget) liftBudget(d, startBudget(step))
       // Its new instructions, which also end whatever stop it was under
       // (session/status.js stopOf) and close what that stop left cleared to
@@ -675,19 +711,22 @@ export class WorkflowDriver {
    * Stop these sessions from outside, and keep them stopped
    * (session/recovery.js stopSession): a notice says they are halted, so none
    * is taken up again — not even one whose last call landed after the stop
-   * (kernel/runner.js needsWork) — and their lease is taken away, so a runner
-   * on one, anywhere, stops at once (kernel/runner.js heedStop). Spoken to,
-   * or continued by a reopen, they carry on.
+   * (kernel/runner.js needsWork) — and a burst on one, anywhere, hears it and
+   * stops (kernel/burst.js). Then its task on this person's queue is stopped,
+   * which only makes it quicker. Spoken to, or continued by a reopen, they
+   * carry on.
    */
   async haltSessions(urls, reason) {
     for (const url of urls) {
       try {
         const session = await this.repo.find(url)
         session.change((d) => stopSession(d, STOP.halted, reason ?? null))
-        ;(await this.startSession(session))?.runner?.interrupt?.()
       } catch {
-        /* already gone */
+        continue /* already gone */
       }
+      Promise.resolve()
+        .then(() => this.stopWork(this.repo, url))
+        .catch(() => {})
     }
   }
 
@@ -724,9 +763,8 @@ export class WorkflowDriver {
     const targets = plan.steps.filter(
       (s) => (stepIds ? stepIds.includes(s.id) : true) && (s.status === STEP.pending || s.status === STEP.running)
     )
-    // Through the document, not only the runner in this tab: the one doing
-    // the work may be in another tab, or gone with a reload — then an
-    // interrupt here reached nothing and the session said "running" for good.
+    // Through the document: the burst doing the work may be in any pool,
+    // and a stop written into the session reaches it wherever it is.
     await this.haltSessions(
       targets.filter((s) => s.status === STEP.running && s.sessionUrl).map((s) => s.sessionUrl),
       reason ?? "cancelled by its workflow"

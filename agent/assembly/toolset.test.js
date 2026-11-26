@@ -13,7 +13,7 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { SessionRunner } from "../kernel/runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { memoryStore, handleStore } from "../kernel/store.js"
 import { initSession } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
@@ -117,8 +117,7 @@ describe("the toolset a session gets", () => {
       doc.workflow = { planUrl: plan.url, stepId: "r" }
     }
     let built = 0
-    const runner = new SessionRunner({
-      confirmMs: 0,
+    const runner = burstRunner({
       builtins: BUILTIN_TOOLS,
       store: memoryStore(doc),
       ctx: { repo },
@@ -234,10 +233,10 @@ describe("the plugins a research step admits", () => {
     initSession(doc, {})
     doc.scope = webScope(plan.url, "r")
     doc.workflow = { planUrl: plan.url, stepId: "r" }
-    const runner = new SessionRunner({ builtins: BUILTIN_TOOLS, store: memoryStore(doc), ctx: { repo }, buildToolset: async () => null, getProvider: async () => null })
+    const runner = burstRunner({ builtins: BUILTIN_TOOLS, store: memoryStore(doc), ctx: { repo }, buildToolset: async () => null, getProvider: async () => null })
     expect((await runner.prepare(doc)).toolset.tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
     // And a registry that fails to load is no plugins, not no run.
-    const failing = new SessionRunner({ builtins: BUILTIN_TOOLS, store: memoryStore(doc), ctx: { repo }, pluginTools: async () => { throw new Error("no registry") }, buildToolset: async () => null, getProvider: async () => null })
+    const failing = burstRunner({ builtins: BUILTIN_TOOLS, store: memoryStore(doc), ctx: { repo }, pluginTools: async () => { throw new Error("no registry") }, buildToolset: async () => null, getProvider: async () => null })
     expect((await failing.prepare(doc)).toolset.tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
   })
 
@@ -248,8 +247,7 @@ describe("the plugins a research step admits", () => {
     doc.workflow = { planUrl: plan.url, stepId: "r" }
     let entries = [KINDS[1][1]]
     let asked = 0
-    const runner = new SessionRunner({
-      confirmMs: 0,
+    const runner = burstRunner({
       builtins: BUILTIN_TOOLS,
       store: memoryStore(doc),
       ctx: { repo },
@@ -275,11 +273,14 @@ describe("the plugins a research step admits", () => {
       d.workflow = { planUrl: stepPlan.url, stepId: "r" }
       d.turns.push(makeTurn("user", [textBlock("research")]))
     })
+    // The plan names the step's session: a burst on a step session its plan does not name stands back.
+    stepPlan.change((d) => {
+      d.steps[0].sessionUrl = handle.url
+    })
     const seen = []
     const provider = makeMock([[{ type: "call", id: "c1", name: "declared_tool", input: {} }], [{ type: "text", delta: "done" }]])
     const fetchImpl = Object.assign(async () => null, { policy: { deny: [], direct: false, dns: false } })
-    const runner = new SessionRunner({
-      confirmMs: 0,
+    const runner = burstRunner({
       builtins: BUILTIN_TOOLS,
       store: handleStore(handle),
       // A runner's context with things of the person's in it, none of which the plugin may see.

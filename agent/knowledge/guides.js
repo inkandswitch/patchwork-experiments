@@ -91,9 +91,8 @@ export function packageRef(importUrl) {
 
 /**
  * The package behind one registered plugin, as `ctx.packageOf` answers:
- * `{ url, heads, name }`, or null. Each runner looks the plugin up in what it
- * has — the page in its registry (runners/tab.js), the SharedWorker in the
- * index the page sends it (runners/worker-plugins.js) — and both answer through this.
+ * `{ url, heads, name }`, or null. A page looks the plugin up in its registry
+ * (runners/page.js pageContext) and answers through this.
  */
 export function packageOfPlugin(plugin) {
   const ref = plugin?.importUrl ? packageRef(plugin.importUrl) : null

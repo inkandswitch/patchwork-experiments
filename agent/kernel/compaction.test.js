@@ -3,7 +3,6 @@ import { run, OUTCOME } from "./loop.js"
 import { memoryStore } from "./store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, _resetIds } from "../session/schema.js"
-import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock, summaryBlock } from "../session/blocks.js"
 import { toRequest, estimateTokens } from "../session/request.js"
 
@@ -15,7 +14,6 @@ function longSession(turnCount, filler = 400) {
   for (let i = 0; i < turnCount; i++) {
     doc.turns.push(makeTurn(i % 2 ? "assistant" : "user", [textBlock(`turn ${i} ${"x".repeat(filler)}`)]))
   }
-  claimLease(doc, "runner-a", Date.now())
   return doc
 }
 
@@ -79,7 +77,7 @@ describe("the loop compacts when it needs to", () => {
 
     const events = []
     const result = await run({
-      store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0,
+      store, provider, toolset, runnerUrl: "runner-a", flushMs: 0,
       onEvent: (e) => events.push(e.type),
     })
 
@@ -103,7 +101,7 @@ describe("the loop compacts when it needs to", () => {
     const events = []
     await run({
       store, provider: makeMock([[{ type: "text", delta: "hi" }]]), toolset,
-      runnerUrl: "runner-a", generation: 1, flushMs: 0, onEvent: (e) => events.push(e.type),
+      runnerUrl: "runner-a", flushMs: 0, onEvent: (e) => events.push(e.type),
     })
     expect(events).not.toContain("compacting")
   })
@@ -126,7 +124,7 @@ describe("the loop compacts when it needs to", () => {
 
     const events = []
     const result = await run({
-      store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0,
+      store, provider, toolset, runnerUrl: "runner-a", flushMs: 0,
       onEvent: (e) => events.push(e.type),
     })
 
@@ -141,7 +139,7 @@ describe("the loop compacts when it needs to", () => {
     const store = memoryStore(doc)
     const provider = makeMock([[{ type: "text", delta: "notes" }], [{ type: "text", delta: "ok" }]])
 
-    await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    await run({ store, provider, toolset, runnerUrl: "runner-a", flushMs: 0 })
 
     const summarized = JSON.stringify(provider.requests[0].messages)
     expect(summarized).toContain("turn 0")

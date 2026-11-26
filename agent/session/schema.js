@@ -8,7 +8,7 @@
  * real DocHandle; the loop reads and writes through that.
  *
  * The document's fields, its turns and blocks, a call's life, status, stops,
- * the lease and approval are written out in SESSION.md, and only there.
+ * the burst mark and approval are written out in SESSION.md, and only there.
  *
  * Automerge cannot hold `undefined`, so every optional field is either present
  * or `null`, never assigned undefined.
@@ -58,7 +58,7 @@ export const CALL = {
   pending: "pending", // waiting on approval
   asking: "asking", // waiting on a human's answer; no runner will execute it
   approved: "approved", // cleared to run, not yet claimed
-  running: "running", // claimed by a runner (see `runner` + `generation`)
+  running: "running", // claimed by a run or a page (`runner` names it)
   done: "done",
   error: "error",
   denied: "denied",
@@ -120,7 +120,7 @@ export function initSession(doc, opts = {}) {
   doc.subject = opts.subject ?? null
   doc.config = { ...DEFAULT_CONFIG, ...(opts.config ?? {}) }
   doc.turns = []
-  doc.lease = null
+  doc.burst = null
   doc.grants = {}
   doc.made = []
   doc.usage = { in: 0, out: 0, turns: 0 }

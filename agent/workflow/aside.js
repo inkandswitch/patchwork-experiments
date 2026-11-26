@@ -43,7 +43,7 @@ export function asideOf(doc) {
  * Turn a copy of a step's session into a side thread, inside a change.
  *
  * What makes it a step goes (`workflow`, its budget, its record of side
- * threads); what was mid-flight is settled (lease, status, a call that had not
+ * threads); what was mid-flight is settled (`burst`, status, a call that had not
  * finished); what it can do and reach stays exactly as it was — `scope`,
  * `tools`, `grants` — so a research step's copy is confined as the step was.
  */
@@ -53,7 +53,7 @@ export function makeAside(doc, { sessionUrl, now = Date.now() }) {
   delete doc.workflow
   delete doc.asides
   doc.title = `Question · ${sessionTitle(doc) ?? step.stepId ?? "step"}`
-  doc.lease = null
+  if (doc.burst != null) doc.burst = null
   if (doc.reconnecting != null) doc.reconnecting = null
   if (doc.config) {
     delete doc.config.budget

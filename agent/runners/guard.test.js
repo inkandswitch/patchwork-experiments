@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { readFileSync } from "node:fs"
 import { checkTarget, guardedFetch, isPrivateAddress, Refused, SYNC_SERVERS } from "../net/guard.js"
-import { tabFetch } from "./tab.js"
+import { tabFetch } from "./page.js"
+import { runFetch } from "./session-task.js"
 import { nodeFetch } from "../net/node-fetch.mjs"
 
 /**
@@ -485,15 +486,25 @@ describe("the fetch each runner hands its tools", () => {
       expect(calls).toHaveLength(0)
     })
 
-    it.each(["runners/node.mjs", "probes/node-session.mjs"])("%s builds its fetch with nodeFetch and nothing else", (file) => {
-      const source = readFileSync(`${process.cwd()}/${file}`, "utf8")
-      expect(source).toMatch(/fetchImpl[^\n]*nodeFetch\(\{ sync: SYNC \}\)/)
-      expect(source).not.toMatch(/guardedFetch/)
+    it("a burst on a Node host builds its fetch with nodeFetch and nothing else (runners/session-task.js)", async () => {
+      const { fetchImpl, direct } = await runFetch({ node: true })
+      expect(fetchImpl.policy).toEqual({ deny: SYNC_ORIGINS, direct: true, dns: true })
+      expect(direct).toBe(true)
+      const source = readFileSync(`${process.cwd()}/runners/session-task.js`, "utf8")
+      expect(source).toMatch(/nodeFetch\(\{ sync: process\.env\.PATCHWORK_SYNC \?\? null \}\)/)
     })
   })
 
-  it("a worker refuses the same places a tab does", () => {
-    const source = readFileSync(`${process.cwd()}/runners/worker.js`, "utf8")
-    expect(source).toContain("deny: [self.location.origin, ...SYNC_SERVERS]")
+  describe("a burst in a browser's run worker", () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    it("refuses the same places a page does, its own origin and the sync servers, and goes through the relay when there is one", async () => {
+      window.happyDOM.setURL("https://patchwork.example.org/#doc")
+      const plain = await runFetch({ node: false })
+      expect(plain.fetchImpl.policy).toEqual({ deny: ["https://patchwork.example.org", ...SYNC_ORIGINS], direct: false, dns: false })
+      expect(plain.direct).toBe(false)
+      const relayed = await runFetch({ node: false, relay: { url: "https://relay.example.org", key: null } })
+      expect(relayed.direct).toBe(true)
+    })
   })
 })

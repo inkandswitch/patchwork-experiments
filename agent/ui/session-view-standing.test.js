@@ -11,7 +11,7 @@ import { initSession, STATUS } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { initPlan, STEP } from "../workflow/plan.js"
 import { ensureDriver, _resetDrivers } from "../workflow/driver.js"
-import { _reset as resetRunners } from "../runners/registry.js"
+import { _reset as resetRunners } from "../runners/page.js"
 
 await initSubduction()
 

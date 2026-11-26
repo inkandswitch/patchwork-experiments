@@ -14,7 +14,6 @@ import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
-import { claimLease } from "../session/lease.js"
 import { sessionOutcome } from "./driver.js"
 import { domSnapshot } from "../tools/environment.js"
 import { settled } from "../fixtures/session.js"
@@ -27,12 +26,11 @@ function sessionWith(params = {}) {
   const doc = {}
   initSession(doc, { config: { params } })
   doc.turns = [makeTurn("user", [textBlock("write the assembly instructions")])]
-  claimLease(doc, "r", Date.now())
   return memoryStore(doc)
 }
 
 const go = (store, provider, modelInfo = { efforts: null, maxOutput: 64000 }) =>
-  run({ store, provider, toolset, runnerUrl: "r", generation: 1, flushMs: 0, modelInfo })
+  run({ store, provider, toolset, runnerUrl: "r", flushMs: 0, modelInfo })
 
 describe("a turn with neither words nor a call", () => {
   it("is told so, once, and goes on", async () => {

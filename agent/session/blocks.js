@@ -130,7 +130,6 @@ export function callBlock(tool, input, opts = {}) {
     // How it reads in the log, `{ verb, detail }`, when its tool says (kernel/tool.js presentCall).
     shown: opts.shown ?? null,
     runner: opts.runner ?? null,
-    generation: opts.generation ?? null,
   }
 }
 

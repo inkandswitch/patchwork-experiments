@@ -15,7 +15,7 @@ import { approvalOf, drawApproval } from "./approval.js"
 import { waitingIn, budgetWaiting } from "../workflow/waiting.js"
 import { STEP, RESUME_AMOUNTS, resumePlan, changePlan } from "../workflow/plan.js"
 import { liftBudget, liftAmounts, dollars } from "../session/usage.js"
-import { drivePlanHere } from "../runners/tab.js"
+import { drivePlanHere, askFor } from "../runners/page.js"
 import { morph } from "./morph.js"
 
 
@@ -94,6 +94,16 @@ export function watchWaiting(repo, sessionHandle, onChange) {
 }
 
 /**
+ * An answer, an approval or a lifted budget is a write of work: the session's
+ * work is asked for at once (runners/page.js askFor), with the page's repo.
+ */
+function askAfter(item) {
+  const repo = item.repo ?? globalThis.repo ?? null
+  const url = item.handle?.url ?? item.sessionUrl ?? null
+  if (repo && url) askFor(repo, url).catch?.(() => {})
+}
+
+/**
  * One waiting item, answerable in place.
  *
  *   item     from watchWaiting, or { ...waitingIn(doc)[i], handle, stepTitle, sessionUrl }
@@ -111,7 +121,10 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
   let actions
   if (item.kind === "approval") {
     // Asked in brief, as the call's own card asks in full (ui/approval.js).
-    const drawn = drawApproval(approvalOf(item, { brief: true, subject }), (decision) => decide(store(), item.callId, decision))
+    const drawn = drawApproval(approvalOf(item, { brief: true, subject }), (decision) => {
+      decide(store(), item.callId, decision)
+      askAfter(item)
+    })
     node.append(...drawn.nodes)
     actions = drawn.actions
   } else {
@@ -123,6 +136,7 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
       button.addEventListener("click", (event) => {
         event.preventDefault()
         answerQuestion(store(), item.callId, option.label)
+        askAfter(item)
       })
       actions.append(button)
     }
@@ -131,7 +145,9 @@ export function renderWaitingItem(item, { onOpen = null, subject = null, splice 
     input.placeholder = "Answer…"
     const send = el("button", null, "Answer")
     const submit = () => {
-      if (input.value.trim()) answerQuestion(store(), item.callId, input.value)
+      if (!input.value.trim()) return
+      answerQuestion(store(), item.callId, input.value)
+      askAfter(item)
     }
     send.addEventListener("click", (event) => {
       event.preventDefault()
@@ -212,6 +228,7 @@ export function renderLiftItem(item, { onOpen = null, showStep = true, splice = 
     give.addEventListener("click", (event) => {
       event.preventDefault()
       handleStore(item.handle, splice).change((d) => liftBudget(d, amount))
+      askAfter(item)
     })
     actions.append(give)
   })

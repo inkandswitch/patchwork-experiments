@@ -29,9 +29,9 @@ export const AgentSessionDatatype = {
 
   markCopy(doc) {
     doc.title = `Copy of ${this.getTitle(doc)}`
-    // A copied session must not inherit a lease: the runner named in it is
-    // working on the original, and would otherwise look live here too.
-    doc.lease = null
+    // A copied session must not inherit the burst mark: the run named in it
+    // works on the original. Its marks are debris for the copy's first burst.
+    if (doc.burst != null) doc.burst = null
   },
 }
 

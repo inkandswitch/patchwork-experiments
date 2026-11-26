@@ -1,13 +1,14 @@
 /**
- * A person's Stop, written on one copy of a session while a runner works on
+ * A person's Stop, written on one copy of a session while a burst works on
  * another: two Automerge copies, each change reaching the other only when the
- * test delivers it, and the runner hearing each delivery as its host's change
- * handler makes it hear one (runners/tab.js, worker.js, node.mjs: tick).
+ * test delivers it. The burst hears each delivery as it hears any change to
+ * its session (kernel/burst.js), and a page asks on hearing one
+ * (fixtures/burst.js `ask`).
  *
  * What holds, case by case:
  *   - a Stop pressed during a tool call or a reply, on the other copy, stops
  *     the run when it is heard; the call keeps what it did; the reply keeps
- *     its text and loses its mark; the lease is gone on both copies, and
+ *     its text and loses its mark; `burst` is cleared on both copies, and
  *     nothing asks the model again, however often either side looks, until
  *     someone speaks;
  *   - a Stop crossing the end of the run, or the claim of the session, holds
@@ -38,7 +39,8 @@ import { stopSession, NOT_RUN } from "../session/recovery.js"
 import { findCall, findResult } from "../session/calls.js"
 import { STOP, stopOf, statusOf } from "../session/status.js"
 import { sessionOutcome } from "./driver.js"
-import { SessionRunner, needsWork } from "../kernel/runner.js"
+import { needsWork } from "../kernel/runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { say } from "../kernel/loop.js"
 import { toRequest } from "../session/request.js"
 
@@ -56,7 +58,13 @@ function copies(actors = ["aa", "bb"]) {
     initSession(d, {})
     d.turns.push(makeTurn("user", [textBlock("hello")]))
   })
-  const sides = actors.map((a) => ({ doc: A.clone(base, { actor: a.repeat(16) }), heard: () => {} }))
+  const sides = actors.map((a) => ({ doc: A.clone(base, { actor: a.repeat(16) }), heard: () => {}, listeners: new Set() }))
+  // A burst hears its copy's changes (its handle's change event), and so
+  // does whatever the test hangs on `heard`: a page asking on change.
+  const hear = (i) => {
+    for (const fn of [...sides[i].listeners]) fn(sides[i].doc)
+    sides[i].heard()
+  }
   const store = (i) => ({
     url: "automerge:session",
     doc: () => sides[i].doc,
@@ -64,7 +72,11 @@ function copies(actors = ["aa", "bb"]) {
       sides[i].doc = A.change(sides[i].doc, (d) => {
         fn(d)
       })
-      sides[i].heard()
+      hear(i)
+    },
+    onChange(fn) {
+      sides[i].listeners.add(fn)
+      return () => sides[i].listeners.delete(fn)
     },
     appendText(path, delta) {
       if (!delta) return
@@ -78,7 +90,7 @@ function copies(actors = ["aa", "bb"]) {
   })
   const deliver = (from, to) => {
     sides[to].doc = A.merge(sides[to].doc, A.clone(sides[from].doc))
-    sides[to].heard()
+    hear(to)
   }
   return { sides, stores: [store(0), store(1)], deliver, sync: () => (deliver(0, 1), deliver(1, 0)) }
 }
@@ -139,13 +151,12 @@ function counted(id) {
 }
 
 function runnerOn(store, url, provider, tools = []) {
-  return new SessionRunner({
+  return burstRunner({
     store,
     runnerUrl: url,
     buildToolset: async () => ({ tools, schemas: [], get: (id) => tools.find((t) => t.id === id) ?? null }),
     getProvider: async () => provider,
     canRun: () => true,
-    confirmMs: 0,
   })
 }
 
@@ -161,7 +172,7 @@ function expectStoppedOnBoth(sides) {
   for (const doc of [a, b]) {
     expect(stopOf(doc)?.kind).toBe(STOP.stopped)
     expect(doc.turns.some((t) => t.streaming)).toBe(false)
-    expect(doc.lease).toBe(null)
+    expect(doc.burst).toBe(null)
     expect(needsWork(doc)).toBe(false)
     expect(statusOf(doc)).toBe(STATUS.idle)
     expect(sessionOutcome(doc)).toMatchObject({ state: "running", waiting: true, stopped: {} })
@@ -170,7 +181,7 @@ function expectStoppedOnBoth(sides) {
 
 /** Every look either side could take — the change handler, the poll — finds nothing to do. */
 async function nothingAsksAgain(runners, provider, asked) {
-  for (let i = 0; i < 3; i++) for (const r of runners) expect(await r.tick()).toBeUndefined()
+  for (let i = 0; i < 3; i++) for (const r of runners) expect((await r.ask()).asked).toBe(false)
   expect(provider.requests).toHaveLength(asked)
 }
 
@@ -182,14 +193,14 @@ describe("a person's Stop written on another copy", () => {
     const slow = untilAborted("slow", inTool)
     const m = model(calls(["c1", "slow"]), says("Carried on."))
     const a = runnerOn(stores[0], "tab-A", m, [slow])
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await started
     deliver(0, 1)
     expect(statusOf(sides[1].doc)).toBe(STATUS.running)
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
     deliver(1, 0)
-    expect((await run).outcome).toBe("aborted")
+    expect((await run).outcome).toBe("stopped")
     deliver(0, 1)
 
     expectStoppedOnBoth(sides)
@@ -224,15 +235,15 @@ describe("a person's Stop written on another copy", () => {
       yield* hangs("Half a thou", reached)(request)
     }, says("Going on."))
     const a = runnerOn(stores[0], "tab-A", m)
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await at
     await flushed()
     deliver(0, 1)
     expect(shape(sides[1].doc).at(-1)).toEqual(["assistant", "Half a thou"])
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
     deliver(1, 0)
-    expect((await run).outcome).toBe("aborted")
+    expect((await run).outcome).toBe("stopped")
     expect(cancelled).toBe(true)
     deliver(0, 1)
 
@@ -260,8 +271,8 @@ describe("a person's Stop written on another copy", () => {
       yield { type: "stop", reason: "stop" }
     })
     const a = runnerOn(stores[0], "tab-A", m)
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await at
     await flushed()
     deliver(0, 1)
@@ -278,27 +289,27 @@ describe("a person's Stop written on another copy", () => {
     await nothingAsksAgain([a, runnerOn(stores[1], "tab-B", m)], m, 1)
   })
 
-  it.each([["aa", "bb"], ["bb", "aa"]])("crossing a claim of the session (actors %s, %s): once heard, the run stops and the lease is let go on both copies", async (...actors) => {
+  it.each([["aa", "bb"], ["bb", "aa"]])("crossing a claim of the session (actors %s, %s): once heard, the run stops and `burst` is cleared on both copies", async (...actors) => {
     const { sides, stores, deliver } = copies(actors)
     let reached
     const at = new Promise((r) => (reached = r))
     const m = model(hangs("Begun", reached))
     const a = runnerOn(stores[0], "tab-A", m)
-    sides[0].heard = () => a.tick()
+    sides[0].heard = () => a.ask()
     // B saw the message and nothing else: there is a word waiting for an
     // answer, so the Stop is said, while A claims the session.
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
     expect(stops(sides[1].doc)).toHaveLength(1)
-    const run = a.tick()
+    const run = a.ask()
     await at
     deliver(1, 0)
-    expect((await run).outcome).toBe("aborted")
+    expect((await run).outcome).toBe("stopped")
     deliver(0, 1)
     deliver(1, 0)
     expect(plain(sides[0].doc).turns).toEqual(plain(sides[1].doc).turns)
     for (const side of sides) {
       expect(stopOf(side.doc)?.kind).toBe(STOP.stopped)
-      expect(side.doc.lease).toBe(null)
+      expect(side.doc.burst).toBe(null)
       expect(needsWork(side.doc)).toBe(false)
     }
     await nothingAsksAgain([a, runnerOn(stores[1], "tab-B", m)], m, 1)
@@ -320,8 +331,8 @@ describe("a person's Stop written on another copy", () => {
       hangs("Now then", () => {})
     )
     const a = runnerOn(stores[0], "tab-A", m)
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await at
     deliver(0, 1)
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
@@ -329,7 +340,7 @@ describe("a person's Stop written on another copy", () => {
     await vi.waitFor(() => expect(m.requests).toHaveLength(2))
     expect(sides[0].doc.turns.some((t) => t.blocks.some((b) => b.kind === "nudge"))).toBe(true)
     deliver(1, 0)
-    expect((await run).outcome).toBe("aborted")
+    expect((await run).outcome).toBe("stopped")
     deliver(0, 1)
     for (const side of sides) {
       expect(stopOf(side.doc)?.kind).toBe(STOP.stopped)
@@ -346,8 +357,8 @@ describe("a person's Stop written on another copy", () => {
     const slow = { id: "slow", risk: "edit", where: "worker", execute: () => (inTool(), new Promise((r) => (finish = r))) }
     const m = model(calls(["c1", "slow"]), says("On it."))
     const a = runnerOn(stores[0], "tab-A", m, [slow])
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await started
     deliver(0, 1)
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
@@ -356,7 +367,7 @@ describe("a person's Stop written on another copy", () => {
     finish("slow done")
     await run
     // The run that followed the message (the poll, here) answers it.
-    await a.tick()
+    await a.ask()
     await vi.waitFor(() => expect(shape(sides[0].doc).at(-1)).toEqual(["assistant", "On it."]))
     const doc = plain(sides[0].doc)
     expect(doc.turns.flatMap((t) => t.blocks).filter((b) => b.type === "result" && b.callId === "c1")).toHaveLength(1)
@@ -373,19 +384,19 @@ describe("a person's Stop written on another copy", () => {
     const at = new Promise((r) => (reached = r))
     const m = model(hangs("Part of a result", reached))
     const a = runnerOn(stores[0], "tab-A", m)
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await at
     await flushed()
     deliver(0, 1)
     stores[1].change((d) => stopSession(d, STOP.halted, "cancelled by its workflow"))
     deliver(1, 0)
-    expect((await run).outcome).toBe("aborted")
+    expect((await run).outcome).toBe("stopped")
     deliver(0, 1)
     for (const side of sides) {
       expect(stopOf(side.doc)?.kind).toBe(STOP.halted)
       expect(side.doc.turns.some((t) => t.streaming)).toBe(false)
-      expect([side.doc.lease, needsWork(side.doc)]).toEqual([null, false])
+      expect([side.doc.burst, needsWork(side.doc)]).toEqual([null, false])
       expect(sessionOutcome(side.doc)).toEqual({ state: "running", waiting: true })
     }
     await nothingAsksAgain([a, runnerOn(stores[1], "tab-B", m)], m, 1)
@@ -397,15 +408,16 @@ describe("a person's Stop written on another copy", () => {
     const at = new Promise((r) => (reached = r))
     const m = model(hangs("Half", reached))
     const a = runnerOn(stores[0], "tab-A", m)
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await at
     await flushed()
     deliver(0, 1)
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
     stores[0].change((d) => stopSession(d, STOP.stopped, null, PERSON))
-    a.interrupt()
-    expect((await run).outcome).toBe("aborted")
+    // The Stop pressed here also stops the task on this person's queue.
+    a.interrupt("cancelled")
+    expect((await run).outcome).toBe("cancelled")
     deliver(1, 0)
     deliver(0, 1)
     expectStoppedOnBoth(sides)
@@ -422,8 +434,8 @@ describe("calls cleared to run when a Stop lands", () => {
     const second = counted("second")
     const m = model(calls(["c1", "first"], ["c2", "second"]), says("Fine."))
     const a = runnerOn(stores[0], "tab-A", m, [first, second])
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await started
     deliver(0, 1)
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
@@ -455,11 +467,11 @@ describe("calls cleared to run when a Stop lands", () => {
     })
     const m = model(says("Done."))
     const a = runnerOn(stores[0], "tab-A", m, [tool])
-    expect(await a.tick()).toBeUndefined()
+    expect((await a.ask()).asked).toBe(false)
     expect(tool.runs).toBe(0)
     stores[0].change((d) => liftBudget(d, 1))
     expect(findCall(sides[0].doc, "c1").block.status).toBe(CALL.approved)
-    expect((await a.tick()).outcome).toBe("idle")
+    expect((await a.ask()).outcome).toBe("idle")
     expect(tool.runs).toBe(1)
     expect(String(findResult(sides[0].doc, "c1").block.output)).toBe("later done")
   })
@@ -470,22 +482,24 @@ describe("calls cleared to run when a Stop lands", () => {
     const fetch = { id: "web_fetch", risk: "read", where: "worker", execute: async () => (fetches++, Promise.reject(new Interruption("no relay"))) }
     const m = model(calls(["c1", "web_fetch"]), says("Fine."))
     const a = runnerOn(stores[0], "tab-A", m, [fetch])
-    expect((await a.tick()).outcome).toBe("reconnecting")
+    expect((await a.ask()).outcome).toBe("reconnecting")
     expect(statusOf(sides[0].doc)).toBe(STATUS.reconnecting)
     deliver(0, 1)
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
     expect(stops(sides[1].doc)[0].text).toBe("Stopped while waiting for the network (no relay).")
     deliver(1, 0)
     expect([sides[0].doc.reconnecting, statusOf(sides[0].doc), needsWork(sides[0].doc)]).toEqual([null, STATUS.idle, false])
-    // The backoff's own retry, the network back, the poll: nothing.
-    a.resume()
-    expect(await a.tick()).toBeUndefined()
+    // Asking again (the network back, a page looking): nothing runs. The
+    // page's own look once the burst ended may still be under way, and it
+    // finds the stop.
+    const again = await a.ask()
+    expect(again.asked === false || again.outcome === "stopped").toBe(true)
     expect([fetches, m.requests.length]).toEqual([1, 1])
 
     say(stores[1], "never mind")
     expect(String(findResult(sides[1].doc, "c1").block.output)).toBe(NOT_RUN)
     deliver(1, 0)
-    a.resume()
+    a.ask()
     await vi.waitFor(() => expect(shape(sides[0].doc).at(-1)).toEqual(["assistant", "Fine."]))
     expect(fetches).toBe(1)
     a.stop()
@@ -518,8 +532,8 @@ describe("crossings a Stop could lose to, put right", () => {
     const quick = { id: "quick", risk: "edit", where: "worker", execute: async () => (inTool(), await gate, "quick done") }
     const m = model(calls(["c1", "quick"]), hangs("Second reply, seen on A", reached), says("Going on."))
     const a = runnerOn(stores[0], "tab-A", m, [quick])
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await started
     deliver(0, 1) // B sees the call running, and no more
     go()
@@ -527,7 +541,7 @@ describe("crossings a Stop could lose to, put right", () => {
     await flushed()
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
     deliver(1, 0)
-    expect((await run).outcome).toBe("aborted")
+    expect((await run).outcome).toBe("stopped")
     deliver(0, 1)
     expectStoppedOnBoth(sides)
     const second = plain(sides[1].doc).turns.find((t) => t.blocks.some((b) => b.text === "Second reply, seen on A"))
@@ -549,22 +563,22 @@ describe("crossings a Stop could lose to, put right", () => {
     // B hears A's claim, and nothing after it.
     let heard = false
     sides[0].heard = () => {
-      if (!heard && sides[0].doc.lease) (heard = true), deliver(0, 1)
-      a.tick()
+      if (!heard && sides[0].doc.burst) (heard = true), deliver(0, 1)
+      a.ask()
     }
-    const run = a.tick()
+    const run = a.ask()
     await at
     await flushed()
     // Before A hears the Stop, its turn's mark is made another's (a crossing
     // claim): A takes nothing off that is not its own.
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
     sides[0].doc = A.change(sides[0].doc, (d) => {
-      d.turns[d.turns.length - 1].streaming = { runner: "tab-C", generation: 9 }
+      d.turns[d.turns.length - 1].streaming = { runner: "tab-C" }
     })
     deliver(1, 0)
-    expect((await run).outcome).toBe("aborted")
-    expect(plain(sides[0].doc).lease).toBe(null)
-    expect(plain(sides[0].doc).turns.find((t) => t.blocks.some((b) => b.text === "Mine")).streaming).toEqual({ runner: "tab-C", generation: 9 })
+    expect((await run).outcome).toBe("stopped")
+    expect(plain(sides[0].doc).burst).toBe(null)
+    expect(plain(sides[0].doc).turns.find((t) => t.blocks.some((b) => b.text === "Mine")).streaming).toEqual({ runner: "tab-C" })
   })
 
   /**
@@ -594,9 +608,9 @@ describe("crossings a Stop could lose to, put right", () => {
         stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
         say(stores[1], "do something else")
       }
-      a.tick()
+      a.ask()
     }
-    const run = a.tick()
+    const run = a.ask()
     await started
     finish("slow did it")
     await run
@@ -623,8 +637,8 @@ describe("crossings a Stop could lose to, put right", () => {
       throw new Error("OpenRouter 500: upstream")
     })
     const a = runnerOn(stores[0], "tab-A", m)
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await at
     await flushed()
     deliver(0, 1)

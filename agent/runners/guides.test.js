@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { guideRead, guideChanges, guidePin, guideWrite, guidesSection, surfaceGuides, guideFor, guideState, guidesOverview, listGuides, packageRef, lineDiff, describeState } from "../knowledge/guides.js"
 import { noteRead, notesSection } from "../knowledge/notes.js"
-import { createPluginCatalogue, packageIndex, PACKAGE_TYPES } from "./worker-plugins.js"
+import { cataloguePackageOf } from "../assembly/plugins.js"
 
 await initSubduction()
 
@@ -228,63 +228,37 @@ describe("surfacing", () => {
   })
 })
 
-describe("surfacing in the shared worker", () => {
+describe("surfacing in a burst, which has only the catalogue", () => {
   const call = (tool, input = {}) => ({ id: "c", tool, input })
 
-  /** A page registry holding the package's view, datatype and agent tool, all from one folder. */
-  function pageRegistry(pkgUrl) {
-    const from = `${pkgUrl}#h1|h2`
-    const registries = {
-      "patchwork:tool": [{ id: "pkgtool", name: "Pkg tool", importUrl: from }, { id: "nourl" }],
-      "patchwork:datatype": [{ id: "pkgdata", name: "Pkg data", importUrl: from }],
-      "agent:tool": [{ id: "pkg_do", name: "Pkg do", importUrl: from }],
-    }
-    return (type) => (registries[type] ? { all: () => registries[type] } : null)
+  /** A task input's catalogue: the package's agent tool, with the url it was registered from. */
+  const catalogueOf = (pkgUrl) => ({ tools: [{ id: "pkg_do", name: "Pkg do", importUrl: `${pkgUrl}#h1|h2` }], skills: [] })
+
+  /** A burst's ctx: packageOf from the catalogue in its input (runners/session-task.js), nothing else from the page. */
+  async function burstCtx(w) {
+    return { repo: w.repo, rootFolderUrl: w.root.url, packageOf: cataloguePackageOf(catalogueOf(w.pkg.url)) }
   }
 
-  /** A worker session's ctx: packageOf from the catalogue the page sent, nothing else from the page. */
-  async function workerCtx(w) {
-    const getRegistry = pageRegistry(w.pkg.url)
-    const catalogue = createPluginCatalogue({ importPlugin: async () => ({ execute: () => "ok" }) })
-    catalogue.set(getRegistry("agent:tool").all(), packageIndex(getRegistry))
-    return { repo: w.repo, rootFolderUrl: w.root.url, packageOf: (type, id) => catalogue.packageOf(type, id) }
-  }
-
-  it("the page's index holds every kind a guide can be about, and skips plugins with no URL", () => {
-    const index = packageIndex(pageRegistry("automerge:p"))
-    expect(index.map((p) => `${p.type} ${p.id}`)).toEqual(["agent:tool pkg_do", "patchwork:tool pkgtool", "patchwork:datatype pkgdata"])
-    expect(PACKAGE_TYPES).toEqual(["agent:tool", "patchwork:tool", "patchwork:datatype"])
-    // A registry that is missing or throws is no entries, not no index.
-    expect(packageIndex((type) => { if (type === "agent:tool") throw new Error("x"); return null })).toEqual([])
-  })
-
-  it("packageOf answers as a tab's does: url, the pinned heads, and the plugin's name", async () => {
+  it("packageOf answers for an agent tool as a page's does: url, the pinned heads, and the plugin's name", async () => {
     const w = await world()
-    const ctx = await workerCtx(w)
-    expect(await ctx.packageOf("patchwork:datatype", "pkgdata")).toEqual({ url: w.pkg.url, heads: ["h1", "h2"], name: "Pkg data" })
-    expect(await ctx.packageOf("patchwork:tool", "missing")).toBeNull()
-    expect(await ctx.packageOf("patchwork:tool", "nourl")).toBeNull()
-    // An agent tool is found in the catalogue itself, even before any index came.
-    const bare = createPluginCatalogue()
-    bare.set([{ id: "pkg_do", importUrl: w.pkg.url }])
-    expect(await bare.packageOf("agent:tool", "pkg_do")).toEqual({ url: w.pkg.url, heads: null, name: "pkg_do" })
-    expect(await bare.packageOf("patchwork:datatype", "pkgdata")).toBeNull()
+    const ctx = await burstCtx(w)
+    expect(await ctx.packageOf("agent:tool", "pkg_do")).toEqual({ url: w.pkg.url, heads: ["h1", "h2"], name: "Pkg do" })
+    expect(await ctx.packageOf("agent:tool", "missing")).toBeNull()
+    // A view or a datatype is not in the catalogue: found in a page.
+    expect(await ctx.packageOf("patchwork:datatype", "pkgdata")).toBeNull()
+    expect(await cataloguePackageOf(null)("agent:tool", "pkg_do")).toBeNull()
   })
 
-  it.each([
-    ["a tool", { type: "patchwork:tool", id: "pkgtool" }],
-    ["a datatype", { type: "patchwork:datatype", id: "pkgdata" }],
-    ["an agent tool", { type: "agent:tool", id: "pkg_do" }],
-  ])("a call that used %s brings the guide in a worker session", async (name, plugin) => {
+  it("a call that used an agent tool brings the guide in a burst", async () => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    expect((await surfaceGuides(await workerCtx(w), call("anything"), null, { output: "ok", facts: { plugins: [plugin] } })).text).toMatch(/Usage guide for Pkg/)
+    expect((await surfaceGuides(await burstCtx(w), call("anything"), null, { output: "ok", facts: { plugins: [{ type: "agent:tool", id: "pkg_do" }] } })).text).toMatch(/Usage guide for Pkg/)
   })
 
-  it("guide_read finds a package by plugin id in the worker", async () => {
+  it("guide_read finds a package by an agent tool's id in a burst", async () => {
     const w = await world()
     await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    expect(await guideRead.execute({ package: "pkgtool" }, await workerCtx(w))).toContain("pass `thing`")
+    expect(await guideRead.execute({ package: "pkg_do", type: "agent:tool" }, await burstCtx(w))).toContain("pass `thing`")
   })
 })
 

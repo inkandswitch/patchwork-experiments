@@ -3,7 +3,7 @@
  *
  * The tab builds the bundle, with Patchwork's importmap already applied — a
  * module worker has no importmap, so the externals arrive as absolute URLs
- * (the same table runners/worker-client.js hands the shared runner). This side only
+ * (host/urls.js resolveImportMap). This side only
  * imports it under the runtime and posts the report back. One worker per
  * file, so a file that never finishes can be terminated without taking the
  * tab with it.

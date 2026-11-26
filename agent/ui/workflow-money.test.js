@@ -6,7 +6,7 @@
  *   - a step out of budget is the orchestrator's decision, and becomes a
  *     person's only when the cap is reached;
  *   - "done" is read off the whole session document, so a call still running,
- *     a reply still streaming or a live runner is never done;
+ *     a reply still streaming or a burst marked on it is never done;
  *   - an empty last message takes the last words the session said.
  */
 
@@ -55,7 +55,7 @@ describe("what the workflow has spent", () => {
     })
     const plan = repo.create({})
     plan.change((d) => initPlan(d, { title: "W", goal: "G", sessionUrl: orchestrator.url, limits: { cost: 10 }, steps: [step("a")] }))
-    const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => ({ runner: { interrupt() {} }, listen() {} }), heartbeatMs: 1e9, confirmMs: 0, toolIds: { worker: [] } })
+    const driver = new WorkflowDriver({ repo, handle: plan, startSession: async () => ({ asked: false }), stopWork: async () => false, heartbeatMs: 1e9, confirmMs: 0, toolIds: { worker: [] } })
     driver.start()
     for (let i = 0; i < 10; i++) await driver.kick()
     // The first look fixes what it had already spent; nothing before the plan counts.
@@ -194,14 +194,14 @@ describe("when a step is done", () => {
 
   it("a reply still streaming keeps it running", () => {
     const turn = said("half a sent")
-    turn.streaming = { runner: "r", generation: 1 }
+    turn.streaming = { runner: "r" }
     expect(sessionOutcome(session([user(), turn])).state).toBe("running")
   })
 
-  it("a live runner holding the session keeps it running; a stale one does not", () => {
-    const doc = session([user(), said("done?")], { lease: { runner: "r", generation: 1, at: 1 } })
-    expect(sessionOutcome(doc, { live: () => true }).state).toBe("running")
-    expect(sessionOutcome(doc, { live: () => false }).state).toBe("done")
+  it("a burst marked on the session keeps it running; with the mark cleared it is done", () => {
+    const doc = session([user(), said("done?")], { burst: { run: "r" } })
+    expect(sessionOutcome(doc).state).toBe("running")
+    expect(sessionOutcome({ ...doc, burst: null }).state).toBe("done")
   })
 
   it("waiting for the network, or with a call cleared and not yet run, it is still running", () => {

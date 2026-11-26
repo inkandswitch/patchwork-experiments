@@ -1,7 +1,8 @@
 /**
  * Asking for a session's work: one task, one burst (kernel/burst.js), under
- * the key `agent:<session>` on the asker's own queue. Not yet used: today's
- * runners still run sessions.
+ * the key `agent:<session>` on the asker's own queue. Whoever writes work
+ * asks (runners/page.js askFor, which fills in the input); a page showing or
+ * driving the session also asks whenever its copy shows work.
  *
  * The task client is the task system's (host/task-client.js, a kit copy):
  * `doWork(repo, request)`, `watchWork(repo, key, onChange)`, `stopWork(repo,
@@ -41,9 +42,9 @@
  */
 
 import { needsWork } from "../kernel/runner.js"
-import { HEADS_WAIT_MS } from "../kernel/burst.js"
+import { HEADS_WAIT_MS, workKey } from "../kernel/burst.js"
 import { rememberOwn } from "../kernel/own-changes.js"
-import { hasDebris, stopSession } from "../session/recovery.js"
+import { stopSession } from "../session/recovery.js"
 import { STOP } from "../session/status.js"
 import { WHERE } from "../session/schema.js"
 import { onOnline } from "../net/network.js"
@@ -64,8 +65,7 @@ export const MAX_ASKS = 2
 /** A url without its heads. */
 const bare = (url) => String(url).split("#")[0]
 
-/** The key a session's work is asked under. */
-export const workKey = (sessionUrl) => `agent:${bare(sessionUrl)}`
+export { workKey }
 
 const FINISHED = new Set(["succeeded", "failed", "cancelled"])
 
@@ -114,10 +114,14 @@ const sessions = new Map() // bare url -> entry
  * @param {Function} [opts.setTimeout]
  * @param {Function} [opts.clearTimeout]
  * @param {(fn:Function)=>Function} [opts.onOnline]
+ * @param {()=>Promise<unknown>} [opts.reask]  how to judge and ask once more, when the
+ *   followed task ends or the network comes back: the asker's own (runners/page.js
+ *   askFor fills in the keys); default askWork with these options
  */
 export async function askWork(repo, sessionUrl, opts = {}) {
   const entry = entryFor(repo, sessionUrl, opts)
   entry.opts = opts
+  if (opts.reask) entry.reask = opts.reask
   const handle = await repo.find(bare(sessionUrl))
   const doc = handle.doc()
   const heads = [...(handle.heads?.() ?? [])]
@@ -173,6 +177,25 @@ export async function stop(repo, sessionUrl, { client = TASK_CLIENT, author = nu
     .catch(() => false)
 }
 
+/**
+ * Follow a session's work for a view: `onView` is told what the watch of its
+ * key says now (null until it has said anything) and whenever that changes.
+ * Returns how to stop. The view's line under the composer is read off it
+ * (ui/session-value.js).
+ */
+export function followWork(repo, sessionUrl, onView, opts = {}) {
+  const entry = entryFor(repo, sessionUrl, opts)
+  if (opts.reask) entry.reask = opts.reask
+  entry.listeners.add(onView)
+  try {
+    onView(entry.view)
+  } catch {}
+  return () => entry.listeners.delete(onView)
+}
+
+/** What the watch of a session's key last said, or null. */
+export const workViewOf = (sessionUrl) => sessions.get(bare(sessionUrl))?.view ?? null
+
 /** Stop following a session: its watch, its timers, what it remembered. */
 export function forget(sessionUrl) {
   const entry = sessions.get(bare(sessionUrl))
@@ -192,6 +215,7 @@ function entryFor(repo, sessionUrl, opts) {
     repo,
     opts,
     view: null,
+    listeners: new Set(),
     asked: { at: null, count: 0 },
     behind: null, // { at, since }: the last task's heads the copy has waited for
     timer: null,
@@ -200,13 +224,18 @@ function entryFor(repo, sessionUrl, opts) {
     clearTimer: opts.clearTimeout ?? ((t) => clearTimeout(t)),
   }
   sessions.set(url, entry)
-  const again = () => askWork(entry.repo, entry.url, entry.opts).catch(() => {})
+  const again = () => Promise.resolve(entry.reask ? entry.reask() : askWork(entry.repo, entry.url, entry.opts)).catch(() => {})
   entry.again = again
   entry.unwatch = clientOf(opts).watchWork(repo, workKey(url), (view) => {
     const was = entry.view
     entry.view = view
     rememberOwn(url, view?.progress?.own)
     rememberOwn(url, view?.result?.own)
+    for (const listener of [...entry.listeners]) {
+      try {
+        listener(view)
+      } catch {}
+    }
     // The task it followed has ended: judge once more.
     if (was && !FINISHED.has(was.state) && was.state !== "missing" && FINISHED.has(view?.state)) again()
   })
@@ -239,7 +268,7 @@ function factsOf(entry, doc, heads) {
   const runs = new Set((view?.runs ?? []).map((run) => run?.id))
   const named = doc?.burst?.run ?? null
   const burst = named == null ? "none" : runs.has(named) ? "own" : "foreign"
-  const work = needsWork(doc, (where) => where === WHERE.worker, null, (d) => hasDebris(d, named))
+  const work = needsWork(doc, (where) => where === WHERE.worker, named)
   const at = headsKey(heads)
   const asked = entry.asked.at === at ? entry.asked.count : 0
   return { work, burst, last: lastOf(entry, view, doc, heads), asked }

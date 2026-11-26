@@ -24,7 +24,6 @@ import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTok
 import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock, noticeBlock } from "../session/blocks.js"
 import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult, move, results as landed } from "../session/calls.js"
 import { recordArtifact } from "../session/made.js"
-import { holdsLease } from "../session/lease.js"
 import { markReconnecting, speak } from "../session/recovery.js"
 import { batchedAppender } from "./store.js"
 import { presentCall, runTool } from "./tool.js"
@@ -61,8 +60,11 @@ export const OUTCOME = {
   reconnecting: "reconnecting", // the network went away; the runner resumes when it is back
   error: "error",
   budgetExhausted: "budget-exhausted",
-  superseded: "superseded", // its reply, or the reply's mark, is gone: another run settled it (`checkMark`)
+  superseded: "superseded", // its reply, or the reply's mark, is gone: another run settled it
 }
+
+/** Why a run stopped writing: another run has its task now (`stillOurs`). */
+const NOT_OURS = "another run has the session"
 
 /**
  * Take turns until there is nothing left to do.
@@ -73,22 +75,22 @@ export const OUTCOME = {
  * @param {object} opts.toolset    from tools/buildToolset
  * @param {object} opts.ctx        tool execution context { repo, subject, ... }
  * @param {(tool:object)=>object|null} [opts.privileged] fields one tool gets beyond `ctx`
- * @param {string} opts.runnerUrl  identity of this runner, for the lease
- * @param {number} opts.generation lease generation this runner believes it holds
+ * @param {string} opts.runnerUrl  this run's id, which its marks name (a reply's `streaming`, a call's claim)
  * @param {AbortSignal} [opts.signal]
  * @param {number} [opts.maxTurns] iteration budget (default 24)
  * @param {(where:string)=>boolean} [opts.canRun] may this runner execute a tier?
  *
- * What a burst (kernel/burst.js) injects; each default is the SessionRunner's:
- * @param {()=>boolean} [opts.stillOurs] may this run go on writing? (default: it holds the lease)
- * @param {boolean} [opts.checkMark] every streamed write checks that its reply still carries
- *   this run's mark; a reply or mark gone ends the run `superseded` (default false)
+ * What a burst (kernel/burst.js) injects:
+ * @param {()=>boolean} [opts.stillOurs] may this run go on writing? (default: yes; a burst says
+ *   no once another run has its task)
  * @param {()=>Promise<object|null>} [opts.boundary] called at the top of every turn; a
  *   result it returns ends the run with that result (default none)
- * @param {boolean} [opts.oneChangePerCall] a call's move, result and `made` are one change,
- *   through `store.changeOwn` when the store has it (default: the batch's results at its end)
- * @param {boolean} [opts.sensitiveReads] a read of a sensitive document asks too
- *   (session/grants.js needsApproval; default false: only other calls to one ask)
+ *
+ * Always: every streamed write checks that its reply still carries this run's
+ * mark, and a reply or mark gone ends the run `superseded`; a call's move,
+ * result and `made` are one change, through `store.changeOwn` when the store
+ * has it (kernel/store.js guardedStore); a read of a sensitive document asks
+ * (session/grants.js needsApproval).
  */
 export async function run(opts) {
   const {
@@ -97,7 +99,6 @@ export async function run(opts) {
     toolset,
     ctx = {},
     runnerUrl = "local",
-    generation = 1,
     signal,
     maxTurns = 24,
     system = "",
@@ -114,11 +115,11 @@ export async function run(opts) {
     }
   }
 
-  const stillOurs = opts.stillOurs ?? (() => holdsLease(store.doc(), runnerUrl, generation))
-  // Stopped. Said in the session only while it is still this runner's: a
-  // page going away gives its leases up first (runners/registry.js), and must leave
-  // what it was in the middle of for the next runner, not mark it idle.
-  const stopped = () => (stillOurs() ? finish(store, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: "lease lost" })
+  const stillOurs = opts.stillOurs ?? (() => true)
+  // Stopped. Said in the session only while it is still this run's: a run
+  // whose task another run has now leaves what it was in the middle of for
+  // that run to settle (session/recovery.js settleDebris), not marked idle.
+  const stopped = () => (stillOurs() ? finish(store, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: NOT_OURS })
 
   // Defaults are applied above by destructuring, which does not write them back
   // onto `opts`. The helpers below read their settings from this normalized
@@ -131,7 +132,6 @@ export async function run(opts) {
     ctx,
     privileged: opts.privileged ?? (() => null),
     runnerUrl,
-    generation,
     signal,
     system,
     canRun,
@@ -154,9 +154,6 @@ export async function run(opts) {
     repeatWindow: opts.repeatWindow ?? REPEAT_WINDOW,
     sessionUrl: opts.sessionUrl ?? null,
     afterCall: opts.afterCall ?? [],
-    checkMark: opts.checkMark === true,
-    oneChangePerCall: opts.oneChangePerCall === true,
-    sensitiveReads: opts.sensitiveReads === true,
   }
 
   // What is added to the system prompt, in order: each section a function of
@@ -181,7 +178,7 @@ export async function run(opts) {
 
   for (let turnNumber = 0; turnNumber < maxTurns; turnNumber++) {
     if (signal?.aborted) return stopped()
-    if (!stillOurs()) return { outcome: OUTCOME.aborted, reason: "lease lost" }
+    if (!stillOurs()) return { outcome: OUTCOME.aborted, reason: NOT_OURS }
     // A stop in force, written from anywhere (session/recovery.js stopSession):
     // nothing more is asked or run, and nothing is written. A nudge or a
     // summary this run wrote after it does not end it (session/status.js).
@@ -250,8 +247,8 @@ export async function run(opts) {
 
     if (signal?.aborted) return stopped()
     if (assistant.superseded) return { outcome: OUTCOME.superseded, reason: "its reply was settled by another run" }
-    // Lost mid-stream: the session is another runner's, so write nothing more.
-    if (assistant.lost) return { outcome: OUTCOME.aborted, reason: "lease lost" }
+    // Lost mid-stream: the session is another run's, so write nothing more.
+    if (assistant.lost) return { outcome: OUTCOME.aborted, reason: NOT_OURS }
 
     // ---- 4. Was it cut off?
     //
@@ -527,24 +524,23 @@ async function streamTurn(opts) {
     },
   }
 
-  // Marked while it streams, so a runner that finds it after this page has
-  // gone knows it is half a reply and asks again (session/recovery.js interruptedTurns).
+  // Marked while it streams, so a run that finds it after this one has gone
+  // knows it is half a reply and asks again (session/recovery.js settleDebris).
   const turn = makeTurn("assistant", [])
-  turn.streaming = { runner: opts.runnerUrl ?? null, generation: opts.generation ?? null }
+  turn.streaming = { runner: opts.runnerUrl ?? null }
   appendTurn(store, turn)
   // Found by its id at every write, never by where it was pushed: a turn that
   // merges in before it (a Stop's notice from a copy that had not seen it)
   // moves it along the list.
   const reply = (d) => (d?.turns ?? []).find((t) => t.id === turn.id) ?? null
-  const mine = (mark) => mark?.runner === turn.streaming.runner && mark?.generation === turn.streaming.generation
-  // With `checkMark`, a streamed write goes in only while the reply still
-  // carries this run's mark: a reply another run dropped, or whose mark it
-  // took off, is not this run's to write any more, and the run is
-  // superseded.
+  const mine = (mark) => mark?.runner === turn.streaming.runner
+  // A streamed write goes in only while the reply still carries this run's
+  // mark: a reply another run dropped, or whose mark it took off, is not this
+  // run's to write any more, and the run is superseded.
   let superseded = false
   const ours = (t) => {
-    if (t && (!opts.checkMark || mine(t.streaming))) return t
-    if (opts.checkMark) superseded = true
+    if (t && mine(t.streaming)) return t
+    superseded = true
     return null
   }
   const turnPath = () => {
@@ -609,8 +605,8 @@ async function streamTurn(opts) {
         heard = true
         if (store.doc().reconnecting) store.change((d) => (d.reconnecting = null))
       }
-      // Another runner has the session now (a claim that won a merge late):
-      // stop writing into its transcript at once, not at the end of the turn.
+      // Another run has the session now (its task was taken again): stop
+      // writing into its transcript at once, not at the end of the turn.
       if (stillOurs && !stillOurs()) {
         lost = true
         break
@@ -650,17 +646,17 @@ async function streamTurn(opts) {
     interrupted = isInterruption(err)
     throw err
   } finally {
-    // With `checkMark`, the text still buffered goes in with the mark's
-    // removal below, in the run's own change, and only while the mark names
-    // this run: a cancel or a stop refuses an ordinary write, and would lose it.
-    const left = opts.checkMark ? appender.take() : (appender.flush(), [])
-    // The stream is over and this runner saw it end — finished, stopped by
-    // the person, or failed — so what is there is what happened. Not when it
-    // was cut off by the network (the turn is taken back), nor when another
-    // runner has the session (it is that runner's to settle). Nor, then, when
-    // a stop from outside took the lease, except that the stop took off only
-    // the marks its copy could see: this turn's, begun after, comes off here
-    // while it still names this run, and the text stays.
+    // The text still buffered goes in with the mark's removal below, in the
+    // run's own change, and only while the mark names this run: a cancel or a
+    // stop refuses an ordinary write, and would lose it.
+    const left = appender.take()
+    // The stream is over and this run saw it end — finished, stopped by the
+    // person, or failed — so what is there is what happened. Not when it was
+    // cut off by the network (the turn is taken back), nor when another run
+    // has the session (it is that run's to settle). Nor, then, under a stop
+    // from outside, except that the stop took off only the marks its copy
+    // could see: this turn's, begun after, comes off here while it still
+    // names this run, and the text stays.
     //
     // Taking the mark off is the run's own value, so a store that keeps own
     // writes apart (kernel/store.js guardedStore) takes it after an abort or
@@ -671,7 +667,7 @@ async function streamTurn(opts) {
       own((d) => {
         const t = reply(d)
         const mark = t?.streaming ?? null
-        if (!mark || !(saw ? !opts.checkMark || mine(mark) : mine(mark))) return
+        if (!mark || !mine(mark)) return
         const at = ["turns", d.turns.findIndex((x) => x.id === turn.id)]
         for (const { path, text } of left) if (text) store.appendTextIn(d, [...at, "blocks", path.blockIndex, "text"], text)
         delete t.streaming
@@ -681,7 +677,7 @@ async function streamTurn(opts) {
 
   const turnId = turn.id
   if (superseded) return { calls: [], stopReason: "superseded", turnId, lost: true, superseded: true }
-  if (lost) return { calls: [], stopReason: "lease-lost", turnId, lost: true }
+  if (lost) return { calls: [], stopReason: "not-ours", turnId, lost: true }
 
   // Stopped for going round in circles. Whatever was streamed stays in the
   // transcript — it is what happened — but no call is committed from it.
@@ -706,7 +702,7 @@ async function streamTurn(opts) {
       // Its mark is off by now, taken off above: the reply is found by id.
       const t = reply(d)
       if (!t) {
-        if (opts.checkMark) superseded = true
+        superseded = true
         return
       }
       for (const call of calls) {
@@ -717,7 +713,7 @@ async function streamTurn(opts) {
         const ask = tool ? askOf(tool, call.input, { subject: opts.subject ?? null, sensitive: opts.sensitive ?? [] }) : null
         // A question is not approved or refused, it is answered — so it goes
         // in as `asking` and no runner will ever pick it up.
-        const status = tool?.asksHuman ? CALL.asking : needsApproval(d, tool, call.input, ask, { sensitiveReads: opts.sensitiveReads }) ? CALL.pending : CALL.approved
+        const status = tool?.asksHuman ? CALL.asking : needsApproval(d, tool, call.input, ask, { sensitiveReads: true }) ? CALL.pending : CALL.approved
         t.blocks.push(
           callBlock(call.name, call.input, {
             id: call.id,
@@ -743,46 +739,41 @@ function turnById(doc, id) {
 // ---------------------------------------------------------------- calls
 
 /**
- * Execute every runnable call, appending results as one tool turn.
+ * Execute every runnable call. Each call that runs is one change of the run's
+ * own: its move, its result in the batch's tool turn (made by the first
+ * result, found by id after), and what it made.
  *
  * Returns a terminal result object when the loop must stop (parked, aborted,
- * lease lost); returns null when it should continue to the next model turn.
+ * another run has the session); returns null when it should continue to the
+ * next model turn.
  */
 async function executeCalls(opts) {
-  const { store, toolset, ctx, privileged, signal, runnerUrl, generation, canRun, emit, stillOurs } = opts
+  const { store, toolset, ctx, privileged, signal, runnerUrl, canRun, emit, stillOurs } = opts
 
   const runnable = runnableCalls(store.doc())
   if (!runnable.length) return null
 
   // This run's claim on a call: what it records when it takes one, and what a
   // call must still carry for this run to settle it (session/calls.js move).
-  const mine = { runner: runnerUrl, generation }
-  const results = []
-  // The batch's tool turn, with `oneChangePerCall`: made by its first result.
+  const mine = { runner: runnerUrl }
+  // The batch's tool turn: made by its first result.
   let toolTurn = null
+  // The run's own writes (kernel/store.js guardedStore changeOwn), allowed
+  // after an abort or a stop; a plain store's change otherwise.
+  const own = store.changeOwn ? (fn) => store.changeOwn(fn) : (fn) => store.change(fn)
 
   for (const call of runnable) {
-    if (signal?.aborted) {
-      commitResults(store, results)
-      return stillOurs() ? finish(store, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: "lease lost" }
-    }
-    if (!stillOurs()) {
-      // What already ran, ran: record it. Its calls are marked done, and a
-      // call marked done with no result is one no runner will ever answer.
-      commitResults(store, results)
-      return { outcome: OUTCOME.aborted, reason: "lease lost" }
-    }
+    if (signal?.aborted) return stillOurs() ? finish(store, OUTCOME.aborted, emit) : { outcome: OUTCOME.aborted, reason: NOT_OURS }
+    if (!stillOurs()) return { outcome: OUTCOME.aborted, reason: NOT_OURS }
 
     const tool = toolset.get(call.tool)
     const where = callNeeds(call, tool)
 
-    // A call this runner cannot execute parks the session rather than failing
-    // it: a host-tier call waits for a tab, it does not error. What it needs
-    // is written on the call, so the runner that can run it is the one that
-    // sees work in it — a plugin the worker cannot load here was recorded as
-    // a worker call by whichever runner made it (kernel/placement.js callNeeds).
+    // A call this run cannot execute parks the session rather than failing
+    // it: a call that needs a page waits for one (runners/page.js), it does
+    // not error. What it needs is written on the call, so the page that can
+    // run it is the one that sees work in it (kernel/placement.js callNeeds).
     if (!canRun(where)) {
-      commitResults(store, results)
       if (call.where !== where) {
         store.change((d) => {
           const found = findCall(d, call.id)
@@ -792,9 +783,9 @@ async function executeCalls(opts) {
       return finish(store, OUTCOME.parked, emit, `needs ${where}`)
     }
 
-    // Claim the call before running it. A runner that took over mid-flight
-    // sees a live claim and leaves it alone; this is what keeps a takeover
-    // from double-executing a side effect.
+    // Claim the call before running it. A run that settles another's marks
+    // sees a claim not its own and settles it; this is what keeps two runs
+    // from both executing a side effect.
     let claimed = false
     store.change((d) => {
       claimed = move(findCall(d, call.id)?.block, "claim", mine)
@@ -806,7 +797,7 @@ async function executeCalls(opts) {
     // later says where it came from (kernel/events.js).
     const events = ctx.events?.forTool(call.tool)
     // `recall` reads this conversation's own transcript through the store, the
-    // same way in every runner and whatever else the context lacks: it is the
+    // same way in every run and whatever else the context lacks: it is the
     // one thing of the session's a research step may read. What only this
     // tool may have — the capability to write a plan or this session — is
     // added for this call alone, so no other tool ever holds it.
@@ -827,7 +818,6 @@ async function executeCalls(opts) {
         move(findCall(d, call.id)?.block, "release", mine)
       })
       emit({ type: "call-end", tool: call.tool, summary: "interrupted: no network", isError: false })
-      commitResults(store, results)
       return reconnect(store, { message: outcome.reason }, emit)
     }
     emit({ type: "call-end", tool: call.tool, summary: outcome.summary, isError: outcome.isError })
@@ -837,9 +827,11 @@ async function executeCalls(opts) {
     // guide along (knowledge/guides.js surfaceGuides). A hook answers as a
     // tool does, with text or `{ text, facts }`, and is shown what the
     // session's results have said so far, this turn's included: that is all
-    // the memory it has, so it holds for whichever runner takes the next call.
+    // the memory it has, so it holds for whichever run takes the next call.
     for (const after of opts.afterCall ?? []) {
-      const earlier = [...landed(store.doc()), ...results].map((result) => result.facts).filter(Boolean)
+      const earlier = landed(store.doc())
+        .map((result) => result.facts)
+        .filter(Boolean)
       const more = await after(ctx, call, tool, outcome, earlier)
       const text = typeof more === "string" ? more : more?.text
       if (text) outcome.output = `${outcome.output}\n\n${text}`
@@ -858,46 +850,24 @@ async function executeCalls(opts) {
     // it stays reachable after the transcript has scrolled past it.
     const made = [outcome.doc, ...(outcome.made ?? [])].filter((ref) => ref?.url)
 
-    if (opts.oneChangePerCall) {
-      // One change, the run's own (kernel/store.js changeOwn), and only while
-      // the call is still running under this run: its move, its result in the
-      // batch's tool turn (made by the first result, found by id after) and
-      // what it made. A call another run settled meanwhile keeps what that
-      // run wrote, and this run writes nothing on it.
-      const own = store.changeOwn ? (fn) => store.changeOwn(fn) : (fn) => store.change(fn)
-      own((d) => {
-        if (!move(findCall(d, call.id)?.block, outcome.isError ? "fail" : "succeed", mine)) return
-        if (!findResult(d, call.id)) {
-          const batch = toolTurn ? (d.turns ?? []).find((t) => t.id === toolTurn) : null
-          if (batch) batch.blocks.push(result)
-          else {
-            const turn = makeTurn("tool", [result])
-            toolTurn = turn.id
-            if (!d.turns) d.turns = []
-            d.turns.push(turn)
-          }
+    // One change, and only while the call is still running under this run.
+    // A call another run settled meanwhile keeps what that run wrote, and
+    // this run writes nothing on it; a call already answered keeps its answer.
+    own((d) => {
+      if (!move(findCall(d, call.id)?.block, outcome.isError ? "fail" : "succeed", mine)) return
+      if (!findResult(d, call.id)) {
+        const batch = toolTurn ? (d.turns ?? []).find((t) => t.id === toolTurn) : null
+        if (batch) batch.blocks.push(result)
+        else {
+          const turn = makeTurn("tool", [result])
+          toolTurn = turn.id
+          if (!d.turns) d.turns = []
+          d.turns.push(turn)
         }
-        for (const ref of made) recordArtifact(d, ref)
-      })
-      continue
-    }
-
-    // Only while the claim is still this run's: a runner that took the session
-    // over meanwhile may have closed the call as interrupted, and that stands.
-    store.change((d) => {
-      move(findCall(d, call.id)?.block, outcome.isError ? "fail" : "succeed", mine)
+      }
+      for (const ref of made) recordArtifact(d, ref)
     })
-
-    results.push(result)
-
-    if (made.length) {
-      store.change((d) => {
-        for (const ref of made) recordArtifact(d, ref)
-      })
-    }
   }
-
-  commitResults(store, results)
   return null
 }
 
@@ -919,17 +889,6 @@ export function storeRecall(store) {
     return outcome
   }
   return recall
-}
-
-function commitResults(store, results) {
-  if (!results.length) return
-  // A call already answered — closed as interrupted by a runner that took
-  // over while it ran — keeps the answer it has; a second is never written.
-  // (Two can still meet in a merge; toRequest sends one of them.)
-  const doc = store.doc()
-  const fresh = results.filter((r) => !findResult(doc, r.callId))
-  results.length = 0
-  if (fresh.length) appendTurn(store, makeTurn("tool", fresh))
 }
 
 // ---------------------------------------------------------------- helpers

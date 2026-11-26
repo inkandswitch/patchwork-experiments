@@ -52,8 +52,7 @@ const AUTOMERGE_WASM = /\/automerge[^/]*\.wasm(\?|$)/
 
 /**
  * What a fresh worker needs before automerge works in it as it does in the
- * page — package_test's worker (tools/test-worker.js) and the shared runner
- * (runners/worker.js) alike. Patchwork's importmap serves automerge's slim
+ * page — package_test's worker (tools/test-worker.js). Patchwork's importmap serves automerge's slim
  * build, which the page's boot initialises with its wasm (initializeWasm); a
  * worker gets the module uninitialised, and the first Repo dies with
  * "Automerge.use() not called".

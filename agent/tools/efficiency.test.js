@@ -9,7 +9,7 @@ import { listRegistries } from "./environment.js"
 import { initSession, DEFAULT_CONFIG } from "../session/schema.js"
 import { addUsage } from "../session/usage.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
-import { SessionRunner } from "../kernel/runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 
@@ -39,9 +39,8 @@ describe("prompt caching", () => {
     const provider = makeMock([[{ type: "text", delta: "hello" }]])
     // The key is the store's URL: the session's own, which no context holds.
     const store = memoryStore(doc)
-    const runner = new SessionRunner({
+    const runner = burstRunner({
       store,
-      confirmMs: 0,
       buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
       getProvider: async () => provider,
       canRun: () => true,

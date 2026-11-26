@@ -25,12 +25,17 @@
  * tool that already reported the news inline (because the agent happened to
  * call it) returns "" and the wake dissolves.
  *
- * An open channel is a session listening, so the runner holding it is not
- * reaped for idleness (runners/registry.js). Closing it drops anything pending, and
- * `onClose` (an option to `open`) is told when it ends for any reason.
+ * Closing a channel drops anything pending, and `onClose` (an option to
+ * `open`) is told when it ends for any reason.
  *
  * `onWake` (an option to `createEvents`) is told after each wake is written,
  * so whoever owns the events can ask for the work it made.
+ *
+ * Events are a page's: the page that shows or drives a session owns them
+ * (runners/page.js follow). A burst runs in a pool's worker, where nothing
+ * outlives it to listen, so its tools get `recordingEvents()`: a channel
+ * opened there delivers nothing, and a tool that keeps what it listens to in
+ * the session (doc_watch's `watches`) leaves the listening to the page.
  */
 
 import { STATUS } from "../session/schema.js"
@@ -180,4 +185,20 @@ export function createEvents(store, opts = {}) {
       pending.clear()
     },
   }
+}
+
+/**
+ * Events in a burst (kernel/burst.js): every channel opened is inert, and
+ * `recording` says so, so a tool writes what it would listen to into the
+ * session and opens nothing (tools/watch.js). The page showing the session
+ * listens instead.
+ */
+export function recordingEvents() {
+  const inert = Object.freeze({ notify() {}, close() {}, closed() {} })
+  return Object.freeze({
+    recording: true,
+    forTool: () => Object.freeze({ recording: true, open: () => inert }),
+    listening: () => 0,
+    stop() {},
+  })
 }

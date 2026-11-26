@@ -90,7 +90,7 @@ describe("guardedStore", () => {
 describe("debris, judged by equality with burst.run", () => {
   const marked = (runner) => {
     const turn = makeTurn("assistant", [textBlock("half a")])
-    turn.streaming = { runner, generation: null }
+    turn.streaming = { runner }
     return turn
   }
   const running = (id, runner, tool = "doc_edit") => callBlock(tool, {}, { id, status: CALL.running, runner })
@@ -164,7 +164,7 @@ describe("a request carries calls and results only in pairs", () => {
 
   it("a reply still marked as streaming is left out, and with it the result of a call it made", () => {
     const reply = makeTurn("assistant", [textBlock("half"), callBlock("doc_read", {}, { id: "c1", status: CALL.done })])
-    reply.streaming = { runner: "run-1", generation: null }
+    reply.streaming = { runner: "run-1" }
     const doc = fresh([reply, makeTurn("tool", [resultBlock("c1", "read")])])
     expect(parts(doc)).toEqual([["user", "hello"]])
   })
@@ -269,7 +269,7 @@ function streaming(text, { gate = null, more = [] } = {}) {
 
 const marked = (runner, text = "half a") => {
   const turn = makeTurn("assistant", [textBlock(text)])
-  turn.streaming = { runner, generation: null }
+  turn.streaming = { runner }
   return turn
 }
 
@@ -467,7 +467,7 @@ describe("a burst", () => {
     const doc = plain(handle)
     expect(doc.burst).toEqual({ run: "run-1" })
     // Its reply stays marked: debris for the run that has the task now.
-    expect(doc.turns.at(-1).streaming).toEqual({ runner: "run-1", generation: null })
+    expect(doc.turns.at(-1).streaming).toEqual({ runner: "run-1" })
   })
 
   it("its reply deleted mid-stream: it ends superseded and writes no more into it", async () => {

@@ -31,6 +31,7 @@ import { renderWaitingItem } from "./waiting.js"
 import { createNotifier, notificationsEnabled, notificationsSupported, setNotifications } from "./notify.js"
 import { say } from "../kernel/loop.js"
 import { handleStore } from "../kernel/store.js"
+import { askFor } from "../runners/page.js"
 
 export const STORAGE_TOOL_ID = "agent-ambient"
 /** How long the box waits for the account's storage before saying it is waiting. */
@@ -453,6 +454,7 @@ export function AmbientAgent(element, options = {}) {
         const text = input.value.trim()
         if (!text || !item.handle) return
         say(handleStore(item.handle, null), text)
+        if (repo) askFor(repo, item.handle.url).catch?.(() => {})
       }
       send.addEventListener("click", (event) => {
         event.preventDefault()

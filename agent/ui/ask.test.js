@@ -8,7 +8,6 @@ import { renderTranscript } from "./transcript.js"
 import { initSession, STATUS, CALL, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { findCall, questionsAwaitingAnswer, questionOptions, callsAwaitingApproval } from "../session/calls.js"
-import { claimLease } from "../session/lease.js"
 import { settled } from "../fixtures/session.js"
 
 function toolset(tools) {
@@ -29,7 +28,6 @@ function session() {
   const doc = {}
   initSession(doc, { title: "Q", subject: "automerge:subject" })
   doc.turns = [makeTurn("user", [textBlock("do the thing")])]
-  claimLease(doc, "local", Date.now()) // `run` defaults runnerUrl to "local"
   return memoryStore(doc)
 }
 

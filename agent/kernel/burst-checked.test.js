@@ -436,7 +436,7 @@ describe("a run retaken after a loss", () => {
   it("rewrites burst at its first boundary and settles the lost run's marks: reply dropped, read released, write INTERRUPTED", async () => {
     const repo = new Repo({ network: [] })
     const lostReply = makeTurn("assistant", [textBlock("half")])
-    lostReply.streaming = { runner: "run-1", generation: null }
+    lostReply.streaming = { runner: "run-1" }
     const handle = sessionIn(
       repo,
       [
@@ -448,8 +448,8 @@ describe("a run retaken after a loss", () => {
     )
     handle.change((d) => {
       const turn = d.turns.at(-1)
-      turn.blocks.push({ type: "call", id: "w1", tool: "edit", input: {}, status: CALL.running, runner: "run-1", generation: null, where: "worker" })
-      turn.blocks.push({ type: "call", id: "r1", tool: "read", input: {}, status: CALL.running, runner: "run-1", generation: null, where: "worker" })
+      turn.blocks.push({ type: "call", id: "w1", tool: "edit", input: {}, status: CALL.running, runner: "run-1", where: "worker" })
+      turn.blocks.push({ type: "call", id: "r1", tool: "read", input: {}, status: CALL.running, runner: "run-1", where: "worker" })
       d.turns.push(lostReply)
     })
     const seen = []
@@ -474,7 +474,7 @@ describe("B: the burst mark", () => {
   it("a foreign burst with marks present: held, writes nothing, settles nothing", async () => {
     const repo = new Repo({ network: [] })
     const reply = makeTurn("assistant", [textBlock("theirs")])
-    reply.streaming = { runner: "their-run", generation: null }
+    reply.streaming = { runner: "their-run" }
     const handle = sessionIn(repo, [reply], { burst: { run: "their-run" } })
     handle.change((d) => d.turns.push(makeTurn("user", [textBlock("me too")])))
     const before = heads(handle)
@@ -487,7 +487,7 @@ describe("B: the burst mark", () => {
   it("burst null with marks present (and nothing else to do) is work: debris settled", async () => {
     const repo = new Repo({ network: [] })
     const reply = makeTurn("assistant", [textBlock("left")])
-    reply.streaming = { runner: "gone-run", generation: null }
+    reply.streaming = { runner: "gone-run" }
     const handle = sessionIn(repo, [makeTurn("assistant", [textBlock("Earlier.")]), reply])
     const provider = makeMock([[{ type: "text", delta: "Again." }]])
     const result = await burstOf(handle, taskOf(repo), { provider })

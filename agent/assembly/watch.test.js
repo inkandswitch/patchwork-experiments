@@ -12,7 +12,6 @@ vi.mock("../host/import.js", () => ({
 const { Repo, initSubduction } = await import("@automerge/automerge-repo")
 await initSubduction()
 const { docWatch, restoreWatches, splitTarget, KEPT_EDITS } = await import("../tools/watch.js")
-const { AGENT } = await import("./agent.js")
 const { createEvents } = await import("../kernel/events.js")
 const { handleStore, watchesWriter } = await import("../kernel/store.js")
 const { initSession, STATUS } = await import("../session/schema.js")
@@ -167,7 +166,7 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     // The repo a runner hands this session's tools: every write noted as its own.
     const agentRepo = fullContext({ repo }, store).repo
     const id = idOf(await watch({ url: run.url, path: ["status"] }, { repo: agentRepo, store, events }))
-    store.change((d) => { d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() } })
+    store.change((d) => { d.burst = { run: "run-elsewhere" } })
 
     // The agent cancels the run, through its own tools' repo.
     ;(await agentRepo.find(run.url)).change((d) => { d.status = "cancelled" })
@@ -216,7 +215,7 @@ describe("doc_watch: woken by what matters, not by every change", () => {
     const store = sessionStore(repo)
     const events = recordingEvents()
     const id = idOf(await watch({ url: run.url, path: ["status"] }, { repo, store, events }))
-    store.change((d) => { d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() } })
+    store.change((d) => { d.burst = { run: "run-elsewhere" } })
 
     // The daemon's edit, arriving as changes from elsewhere.
     const elsewhere = A.change(A.clone(run.doc()), (d) => { d.status = "failed" })
@@ -421,26 +420,23 @@ describe("doc_watch through events.js: a real wake", () => {
   })
 })
 
-describe("doc_watch: a runner that starts listens again", () => {
-  it("SessionRunner.start restores the session's watches and the next edit wakes it", async () => {
-    const { SessionRunner } = await import("../kernel/runner.js")
+describe("doc_watch: the page that shows the session listens again", () => {
+  it("restoreWatches opens the session's watches and the next edit wakes it (runners/page.js follow)", async () => {
     const repo = new Repo({ network: [] })
     const run = runDoc(repo)
     const store = sessionStore(repo)
     const first = recordingEvents()
     const id = idOf(await watch({ url: run.url, path: ["status"], match: "done" }, { repo, store, events: first }))
-    first.stopAll() // the tab that made it is gone
+    first.stopAll() // the page that made it is gone
 
     const events = createEvents(store, { policy: { settleMs: 5, maxDelayMs: 20, minGapMs: 0 } })
-    const runner = new SessionRunner({ onStart: AGENT.onStart, store, runnerUrl: "runner-watch", ctx: { repo, events }, buildToolset: () => null, getProvider: async () => null, canRun: () => true })
-    runner.start()
-    await vi.waitFor(() => expect(events.listening()).toBe(1), { timeout: 1000 })
+    await restoreWatches({ repo, events, store })
+    expect(events.listening()).toBe(1)
 
     run.change((d) => { d.status = "done" })
     await vi.waitFor(() => expect(store.doc().turns.length).toBe(1), { timeout: 1000 })
     expect(store.doc().turns[0].blocks[0].text).toContain(`set /status = "done" (was "queued")`)
     expect(store.doc().turns[0].blocks[0].text).toContain(`Still watching (${id})`)
-    runner.stop()
     events.stop()
   })
 })

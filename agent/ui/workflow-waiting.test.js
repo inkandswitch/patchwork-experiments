@@ -5,7 +5,7 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest"
 import * as A from "@automerge/automerge"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { SessionRunner } from "../kernel/runner.js"
+import { showSession } from "../fixtures/page.js"
 import { handleStore } from "../kernel/store.js"
 import { createEvents } from "../kernel/events.js"
 import { buildToolset } from "../assembly/toolset.js"
@@ -18,7 +18,7 @@ import { waitingIn } from "../workflow/waiting.js"
 import { workflowAnswer } from "../workflow/tools.js"
 import { watchWaiting, renderWaiting } from "./waiting.js"
 import { WorkflowView } from "./workflow-view.js"
-import { _reset as resetRunners } from "../runners/registry.js"
+import { _reset as resetRunners } from "../runners/page.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 
 await initSubduction()
@@ -204,24 +204,12 @@ describe("end to end: a step asks, the orchestrator answers", () => {
   it("the question wakes the orchestrator, its answer reaches the step, and the step finishes with it", async () => {
     const repo = new Repo({ network: [] })
     const runners = []
-    const run = (handle, provider, toolset, ctx = {}, startStepSession = null) => {
-      const runner = new SessionRunner({
-        builtins: BUILTIN_TOOLS,
-        store: handleStore(handle, A.splice),
-        ctx,
-        startStepSession,
-        buildToolset: toolset,
-        getProvider: async () => provider,
-        getKey: () => "test",
-        // One repo, nobody to race: no wait before believing a claim.
-        confirmMs: 0,
-        canRun: () => true,
-      })
-      handle.on("change", () => runner.tick())
-      runner.start()
-      runners.push(runner)
-      stops.push(() => runner.stop())
-      return runner
+    // Each session shown in a page: its work asked for on every change, its page calls run here.
+    const run = (handle, provider, toolset, ctx = {}, startSession = null) => {
+      const shown = showSession(handle, { provider, toolset, ctx, startSession })
+      runners.push(shown.runner)
+      stops.push(() => shown.stop())
+      return shown
     }
 
     // The step asks which units to use, then answers with what it was told.
@@ -233,9 +221,9 @@ describe("end to end: a step asks, the orchestrator answers", () => {
           return [{ type: "text", delta: `Specs in ${told} units.` }]
         },
       ])
-      // With the repo: a runner checks a step's session against its plan.
-      const runner = run(handle, provider, (doc) => buildToolset(doc, { skipPlugins: true }), { repo })
-      return { runner, listen: () => {} }
+      // With the repo: a burst checks a step's session against its plan.
+      run(handle, provider, (doc) => buildToolset(doc, { skipPlugins: true }), { repo })
+      return { asked: true, outcome: "idle" }
     }
 
     const orchestrator = repo.create({})

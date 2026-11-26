@@ -9,7 +9,7 @@ import { toRequest } from "../session/request.js"
 import { initSession } from "../session/schema.js"
 import { say } from "../kernel/loop.js"
 import { memoryStore } from "../kernel/store.js"
-import { _reset as resetRunners } from "../runners/registry.js"
+import { _reset as resetRunners } from "../runners/page.js"
 
 // ---- doubles -------------------------------------------------------------
 

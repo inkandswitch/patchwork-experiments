@@ -10,9 +10,11 @@
  *     mode          "full" | "panel"
  *     hasKey        a model key is stored for the session's provider
  *     keysSettled   the account's LLM settings have answered, or failed to
- *     runner        "worker" | "tab" | "pending": which runner this tab has
- *     elsewhere     another runner holds a live lease, as this tab judges it
- *                   (liveness is the observer's call, on its own clock)
+ *     work          what the queue says of the session's task (runners/ask.js
+ *                   followWork: a task view), or null before it has said
+ *     pool          this browser's pool id (the tasks package's POOL_ID_KEY),
+ *                   or null
+ *     pageTool      the tool of the parked call this page runs now, or null
  *     voiceStatus   what dictation is doing, or null when it is off
  *     place         where the session stands in its workflow (ui/standing.js
  *                   `current()`), or null
@@ -22,8 +24,8 @@
  *   }
  */
 
-import { STATUS, unknownBlocks, versionStanding } from "../session/schema.js"
-import { callsAwaitingApproval, questionsAwaitingAnswer } from "../session/calls.js"
+import { STATUS, WHERE, CALL, unknownBlocks, versionStanding } from "../session/schema.js"
+import { callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, unansweredCalls } from "../session/calls.js"
 import { sessionTitle } from "../session/title.js"
 import { formatCost } from "../session/usage.js"
 import { statusOf } from "../session/status.js"
@@ -42,32 +44,78 @@ export const PLACEHOLDER = "Ask for a change…"
 export const HINTS = [
   // Dictation's status wins while it is on: it is what you are doing now.
   { name: "voice", when: (f) => f.voice != null, says: (f) => f.voice },
-  // No runner takes a session of another version (kernel/runner.js turnFor),
+  // No run takes a session of another version (kernel/burst.js `outdated`),
   // so it must say why nothing happens in it.
   { name: "earlier", when: (f) => f.version === "earlier", says: () => "This session is from an earlier version of the agent and does not run. Start a new one to carry on." },
   { name: "outdated", when: (f) => f.outdated || f.version === "newer", says: () => "Waiting for a newer version of the agent: something in this session needs it" },
-  { name: "no-key-elsewhere", when: (f) => !f.hasKey && f.elsewhere, says: () => "Running in another browser — this one has no API key" },
+  { name: "no-key-elsewhere", when: (f) => !f.hasKey && f.work === "elsewhere", says: () => "Working on another device — this browser has no API key" },
   { name: "no-key", when: (f) => !f.hasKey, says: () => "Add an API key to start" },
   { name: "asking", when: (f) => f.asking > 0, says: (f) => (f.asking === 1 ? "Waiting on your answer" : `Waiting on ${f.asking} answers`) },
   { name: "pending", when: (f) => f.pending > 0, says: (f) => `${f.pending} call${f.pending === 1 ? " needs" : "s need"} approval` },
-  { name: "elsewhere", when: (f) => f.elsewhere, says: () => "Another runner is working on this session" },
-  { name: "parked", when: (f) => f.status === STATUS.parked, says: () => "Waiting for a tab to run a page tool" },
+  { name: "page-here", when: (f) => f.pageTool != null, says: (f) => `Running ${f.pageTool} in this page` },
+  { name: "page-elsewhere", when: (f) => f.claimed != null, says: (f) => `Running ${f.claimed} in another page` },
+  { name: "foreign", when: (f) => f.foreign, says: () => "Someone else's work is under way here, or work that stopped without saying" },
   {
     name: "reconnecting",
     when: (f) => f.status === STATUS.reconnecting,
-    says: (f) => `Waiting for the network — carries on when it is back (${f.reason ?? "no connection"})`,
+    says: (f) => `Waiting for the network; carries on when it is back (${f.reason ?? "no connection"})`,
   },
+  { name: "here", when: (f) => f.work === "here", says: () => "Working on this browser… Enter to steer, Stop to interrupt" },
+  { name: "elsewhere", when: (f) => f.work === "elsewhere", says: () => "Working on another device… Enter to steer, Stop to interrupt" },
+  { name: "waiting", when: (f) => f.work === "waiting", says: () => "Waiting for a device to take it" },
+  { name: "parked", when: (f) => f.status === STATUS.parked, says: (f) => `Waiting for an open page to run ${f.parked ?? "a page tool"}` },
   { name: "running", when: (f) => f.status === STATUS.running, says: () => "Working… Enter to steer, Stop to interrupt" },
 ]
 
+const UNDER_WAY = new Set(["running", "stopping"])
+const NOT_TAKEN = new Set(["waiting", "stalled"])
+
+/**
+ * Where the session's task is, as the queue says it (`view`, a task view):
+ * "here" (a run of this browser's pool has it), "elsewhere" (another pool's
+ * run), "waiting" (no pool has it yet, or the one that had it is not heard),
+ * or null (no task under way, or nothing said yet).
+ */
+export function workOf(view, pool = null) {
+  const state = view?.state ?? null
+  if (NOT_TAKEN.has(state)) return "waiting"
+  if (!UNDER_WAY.has(state)) return null
+  const open = [...(view.runs ?? [])].reverse().find((run) => run && run.pool && run.end == null)
+  return open && pool && open.pool === pool ? "here" : "elsewhere"
+}
+
+/**
+ * Is `burst` someone else's: a run the queue's view of the key does not
+ * list, and not a page's claim on a call it runs? Only once the queue has
+ * said something: until then nothing is known to be foreign.
+ */
+function foreignBurst(doc, view) {
+  const named = doc.burst?.run ?? null
+  if (named == null || view == null) return false
+  if ((view.runs ?? []).some((run) => run?.id === named)) return false
+  return !claimedBy(doc, named)
+}
+
+/** The tool of a call that needs a page and runs under `claim`, if any. */
+function claimedBy(doc, claim) {
+  if (claim == null) return null
+  return unansweredCalls(doc).find((call) => call.status === CALL.running && call.where === WHERE.host && call.runner === claim)?.tool ?? null
+}
+
 /** The facts the hint is decided from. */
 export function hintFacts(doc, local) {
+  const pageTool = local.pageTool ?? null
+  const claimed = pageTool ? null : claimedBy(doc, doc.burst?.run ?? null)
   return {
     voice: local.voiceStatus ?? null,
     version: versionStanding(doc),
     outdated: unknownBlocks(doc).length > 0,
     hasKey: !!local.hasKey,
-    elsewhere: !!local.elsewhere,
+    work: workOf(local.work ?? null, local.pool ?? null),
+    foreign: !pageTool && foreignBurst(doc, local.work ?? null),
+    pageTool,
+    claimed,
+    parked: runnableCalls(doc).find((call) => call.where === WHERE.host)?.tool ?? null,
     asking: questionsAwaitingAnswer(doc).length,
     pending: callsAwaitingApproval(doc).length,
     status: statusOf(doc),
@@ -137,7 +185,8 @@ function modelLabel(config) {
 /**
  * What the view shows:
  *
- *   runner        which runner this tab has, for the root's data-runner
+ *   work          where the session's task is ("here", "elsewhere",
+ *                 "waiting" or "none"), for the root's data-work
  *   status        the session's status, for the dot and its tooltip
  *   title         { text, tooltip } for the header
  *   cost          { text, tooltip }, or null before anything is spent
@@ -147,7 +196,7 @@ function modelLabel(config) {
  *   hint          the line beside the composer
  *   placeholder   the composer's
  *   gate          what a message to a step that is not running needs, or null
- *   canSend, canStop
+ *   canSend, canStop, canTakeOver
  *   openSettings  the settings panel opens itself
  *   strip         waiting items for the strip above the transcript
  *   inline        { session, workflows }: spent budgets for the transcript's end
@@ -157,20 +206,25 @@ export function sessionValue(doc, local) {
   const status = statusOf(doc)
   const gate = gateOf(local.place ?? null)
   const waiting = local.waiting ?? []
+  const facts = hintFacts(doc, local)
   return {
-    runner: local.runner,
+    work: facts.work ?? "none",
     status,
     title: titleLine(doc, local.subjectTitle ?? null),
     cost: costLine(doc.usage),
     model: modelLabel(doc.config),
     workflow: workflowLink(doc, local.workflowTitle ?? null),
     place: local.place ?? null,
-    hint: hintOf(hintFacts(doc, local)),
+    hint: hintOf(facts),
     placeholder: gate?.placeholder ?? PLACEHOLDER,
     // A message to a step that is not running needs a choice before it goes.
     gate,
     canSend: !!local.hasKey,
-    canStop: status === STATUS.running || status === STATUS.reconnecting,
+    // Stop on any device: while the session says something is under way, or
+    // the queue says its task is.
+    canStop: status === STATUS.running || status === STATUS.reconnecting || status === STATUS.parked || facts.work != null,
+    // Take over: `burst` names a run nobody here hears.
+    canTakeOver: facts.foreign,
     // Not before the account has had its say: the key is usually there, and
     // opening the panel only to have it found a moment later is just noise.
     openSettings: !!local.keysSettled && !local.hasKey && !doc.turns?.length,

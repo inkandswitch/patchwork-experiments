@@ -329,7 +329,7 @@ try {
   }
 
   if (report.runnersSeen?.length) {
-    console.log(`\nrunners that held the lease: ${report.runnersSeen.join(", ")}`)
+    console.log(`\nruns that marked the session (burst): ${report.runnersSeen.join(", ")}`)
   }
 
   if (report.statusTrail?.length) {

@@ -11,7 +11,7 @@ import { stream } from "./openrouter.js"
 import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, resultBlock } from "../session/blocks.js"
 import { toRequest, rejectSentImages } from "../session/request.js"
-import { SessionRunner } from "../kernel/runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 
@@ -112,8 +112,7 @@ describe("the session, once an image is refused", () => {
       },
     ])
     const store = memoryStore(doc)
-    await new SessionRunner({
-      confirmMs: 0,
+    await burstRunner({
       store,
       buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
       getProvider: async () => provider,

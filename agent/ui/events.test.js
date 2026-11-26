@@ -5,7 +5,6 @@ import { initSession, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { toRequest } from "../session/request.js"
 import { needsWork } from "../kernel/runner.js"
-import { ensureRunner, attachView, reapIdle, liveCount, _reset } from "../runners/registry.js"
 import { renderTranscript } from "./transcript.js"
 
 /** A clock and timers that only move when the test says so. */
@@ -98,13 +97,13 @@ describe("events", () => {
 
   it("waits while the session is busy, then delivers", () => {
     const store = idleSession()
-    store.change((d) => (d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }))
+    store.change((d) => (d.burst = { run: "run-elsewhere" }))
     const events = createEvents(store, time)
     events.forTool("t").open("k").notify(() => "news")
     time.advance(SETTLE_MS * 5)
     expect(eventTurns(store)).toHaveLength(0)
 
-    store.change((d) => (d.lease = null))
+    store.change((d) => (d.burst = null))
     time.advance(SETTLE_MS)
     expect(eventTurns(store)).toHaveLength(1)
   })
@@ -205,22 +204,6 @@ describe("events", () => {
     time.advance(MAX_DELAY_MS)
     expect(eventTurns(store)).toHaveLength(0)
     expect(events.listening()).toBe(0)
-  })
-})
-
-describe("a listening session is not reaped", () => {
-  beforeEach(() => _reset())
-
-  it("keeps an unwatched runner alive while a channel is open", async () => {
-    const events = createEvents(idleSession(), time)
-    const channel = events.forTool("t").open("k")
-    await ensureRunner("automerge:listening", async () => ({ runner: { running: false, stop() {} }, events }))
-    attachView("automerge:listening")() // a view came and went
-    expect(reapIdle({ now: Date.now() + 60 * 60 * 1000 })).toEqual([])
-    expect(liveCount()).toBe(1)
-
-    channel.close()
-    expect(reapIdle({ now: Date.now() + 60 * 60 * 1000 })).toEqual(["automerge:listening"])
   })
 })
 

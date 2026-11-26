@@ -17,8 +17,9 @@
  *     off (on a cancel, or under a stop, keeping the text), one change per
  *     call, and clearing `burst` at its end.
  *   - Before it writes anything it looks: no work, a stop in force, a
- *     foreign `burst` (`held`), a step session its plan does not name
- *     (`not-the-step`), or `settled` rejecting, and it ends having written
+ *     session of another version (`outdated`), a foreign `burst` (`held`),
+ *     a step session its plan does not name (`not-the-step`), or `settled`
+ *     rejecting, and it ends having written
  *     nothing. When its only work is `burst` left naming an earlier run of
  *     its task, it clears that at its end (`nothing`) and asks no model.
  *   - At the top of every turn it looks again (`held`, `not-the-step`), then
@@ -26,6 +27,9 @@
  *     change, before any request.
  *   - A stop written anywhere aborts its loop's signal as soon as its copy
  *     has it.
+ *   - Its tools' events only record (kernel/events.js recordingEvents):
+ *     doc_watch writes `watches` and opens nothing, and the page showing the
+ *     session listens (runners/page.js follow).
  *   - Its result is `{ outcome, heads, own }`: how it ended, the session's
  *     heads at the end (null when the session there still needs work, so
  *     that an asker asks for what it did not see), and the hashes of its
@@ -34,12 +38,13 @@
  */
 
 import { STOP, stopOf, stoppedFromOutside } from "../session/status.js"
-import { hasDebris, settleDebris, markReconnecting } from "../session/recovery.js"
+import { settleDebris, markReconnecting } from "../session/recovery.js"
 import { makeTurn, noticeBlock } from "../session/blocks.js"
-import { WHERE } from "../session/schema.js"
+import { WHERE, unknownBlocks, versionStanding } from "../session/schema.js"
 import { needsWork, prepareRun, fullContext } from "./runner.js"
 import { run as runLoop, OUTCOME } from "./loop.js"
 import { guardedStore, handleStore } from "./store.js"
+import { recordingEvents } from "./events.js"
 import { asInterruption, reconnectDelay, onOnline } from "../net/network.js"
 import { Automerge, AutomergeRepo } from "../host/modules.js"
 
@@ -49,10 +54,14 @@ export const BURST = {
   held: "held", // `burst` names a run that is not of its task: written nothing more
   notTheStep: "not-the-step", // a step session its plan does not name
   stopped: "stopped", // a stop is in force
+  outdated: "outdated", // the session is another version's: blocks this one cannot read, or another shape
 }
 
 /** The reasons a task's signal aborts with (tasks/src/job-context.ts). */
 const TASK_REASONS = new Set(["cancelled", "yielded", "stopping"])
+
+/** The key a session's work is asked under, on the asker's own queue: a burst is that task's run. */
+export const workKey = (sessionUrl) => `agent:${bare(sessionUrl)}`
 
 /** How long a burst waits for its copy of the session to have the heads it was asked at. */
 export const HEADS_WAIT_MS = 30_000
@@ -122,7 +131,7 @@ export async function runBurst(ctx, opts) {
   const ended = (outcome, reason = null) => {
     if (reason) ctx.log?.(`${outcome}: ${reason}`)
     const doc = handle.doc()
-    const left = needsWork(doc, canRun, null, (d) => hasDebris(d, d.burst?.run ?? null))
+    const left = needsWork(doc, canRun)
     return { outcome, heads: left ? null : [...(handle.heads?.() ?? [])], own: [...own] }
   }
   // Another run has the task (`yielded`), or will have it (`stopping`): this
@@ -134,12 +143,15 @@ export async function runBurst(ctx, opts) {
     // ---- Looking, before anything is written.
     if (signal.aborted) return ended(String(signal.reason))
     if (stopOf(store.doc())) return ended(BURST.stopped)
+    // A session this version cannot read whole is left to one that can,
+    // rather than sent to the model without what it does not know.
+    if (unknownBlocks(store.doc()).length || versionStanding(store.doc()) !== "current") return ended(BURST.outdated)
     const first = await standBack()
     if (first.ended) return ended(first.ended)
     // Work for this run: what needsWork says, its debris judged against this
     // run; or only `burst` left naming an earlier run of its task, which it
     // clears at its end without asking the model.
-    const work = needsWork(store.doc(), canRun, null, (d) => hasDebris(d, run))
+    const work = needsWork(store.doc(), canRun, run)
     if (!work && !staleOwn(store.doc(), first.runs)) return ended(BURST.nothing)
     try {
       await ctx.settled
@@ -216,7 +228,6 @@ export async function runBurst(ctx, opts) {
           afterCall: opts.afterCall ?? [],
           sessionUrl: opts.session,
           runnerUrl: run,
-          generation: null,
           signal: controller.signal,
           canRun,
           key: opts.key ?? null,
@@ -225,10 +236,6 @@ export async function runBurst(ctx, opts) {
           flushMs: opts.flushMs,
           maxTurns: MAX_TURNS,
           stillOurs,
-          checkMark: true,
-          oneChangePerCall: true,
-          // The own queue is among the sensitive documents (runners/ask.js): reading it asks.
-          sensitiveReads: true,
           boundary: () => boundary(prepared.toolset),
         })
       } catch (err) {
@@ -257,11 +264,13 @@ export async function runBurst(ctx, opts) {
   /** Work left that is still this run's: `burst` names it, and needsWork holds. */
   function moreWork() {
     const doc = store.doc()
-    return (doc?.burst?.run ?? null) === run && needsWork(doc, canRun, null, (d) => hasDebris(d, run))
+    return (doc?.burst?.run ?? null) === run && needsWork(doc, canRun, run)
   }
 
   async function prepare() {
-    const base = { ...(opts.context ?? {}), repo }
+    // Its tools' events only record (kernel/events.js recordingEvents): a
+    // watch is written into the session and the page showing it listens.
+    const base = { events: recordingEvents(), ...(opts.context ?? {}), repo }
     const fullCtx = fullContext(base, guarded, { record })
     const built = await prepareRun(store.doc(), { ctx: base, store: guarded, fullCtx, builtins: opts.builtins ?? [], plugins: opts.plugins ?? (async () => []), buildToolset: opts.buildToolset ?? null })
     const provider = await opts.getProvider()

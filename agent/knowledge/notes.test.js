@@ -6,7 +6,6 @@ import { run } from "../kernel/loop.js"
 import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, _resetIds } from "../session/schema.js"
-import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 
 await initSubduction()
@@ -239,7 +238,6 @@ describe("the prompt", () => {
     const doc = {}
     initSession(doc, { title: "T", subject: "automerge:subject" })
     doc.turns = [makeTurn("user", [textBlock("hi")])]
-    claimLease(doc, "local", Date.now())
     const provider = makeMock([[{ type: "text", delta: "hello" }]])
     const toolset = { tools: [], schemas: [], get: () => null }
     await run({ store: memoryStore(doc), provider, toolset, ctx: ctx(), sections: [notesSection], canRun: () => true, flushMs: 0, system: "BASE" })

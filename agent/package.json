@@ -3,13 +3,12 @@
   "type": "module",
   "private": true,
   "main": "./index.js",
-  "description": "An agentic harness that lives inside Patchwork: a session document, a leased runner, and tools that read and write automerge documents.",
+  "description": "An agentic harness that lives inside Patchwork: a session document, a burst of work asked for as a task on the person's own queue, and tools that read and write automerge documents.",
   "scripts": {
     "sync": "pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "runner": "node runners/node.mjs",
     "vendor:vitest": "node scripts/vendor-vitest.mjs",
     "vendor:pdfjs": "node scripts/vendor-pdfjs.mjs"
   },

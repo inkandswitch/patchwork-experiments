@@ -20,7 +20,7 @@ import { AgentTool } from "./session-view.js"
 import { WorkflowView } from "./workflow-view.js"
 import { initPlan, PLAN, STEP } from "../workflow/plan.js"
 import { _resetDrivers } from "../workflow/driver.js"
-import { _reset as resetRunners } from "../runners/registry.js"
+import { _reset as resetRunners } from "../runners/page.js"
 import { STOP, stopOf } from "../session/status.js"
 
 await initSubduction()

@@ -10,8 +10,8 @@ import { callBlock } from "./blocks.js"
 import { MOVES, move } from "./calls.js"
 
 const STATES = Object.values(CALL)
-const A = { runner: "tab-a", generation: 3 }
-const B = { runner: "tab-b", generation: 4 }
+const A = { runner: "run-a" }
+const B = { runner: "run-b" }
 
 /** A call in `status`, claimed by A if it has got as far as being claimed. */
 const call = (status) => callBlock("a_tool", {}, { id: "c1", status, ...([CALL.running, CALL.done, CALL.error].includes(status) ? A : {}) })
@@ -48,14 +48,13 @@ describe("a call's moves", () => {
   it("a claim names the runner that made it", () => {
     const block = call(CALL.approved)
     expect(move(block, "claim", A)).toBe(true)
-    expect([block.status, block.runner, block.generation]).toEqual([CALL.running, "tab-a", 3])
+    expect([block.status, block.runner]).toEqual([CALL.running, "run-a"])
   })
 
   // Who may settle a claimed call: the claim it carries, or nobody in particular.
   it.each([
     ["succeed", A, true],
     ["succeed", B, false],
-    ["succeed", { runner: "tab-a", generation: 4 }, false],
     ["fail", A, true],
     ["fail", B, false],
     ["release", A, true],
@@ -71,7 +70,7 @@ describe("a call's moves", () => {
   it("a call put back to run again is nobody's", () => {
     const block = call(CALL.running)
     move(block, "release", A)
-    expect([block.status, block.runner, block.generation]).toEqual([CALL.approved, null, null])
+    expect([block.status, block.runner]).toEqual([CALL.approved, null])
   })
 
   it("a move that does not exist is a mistake, and no call at all is not", () => {

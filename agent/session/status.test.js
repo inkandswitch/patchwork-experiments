@@ -21,7 +21,7 @@ const stop = (kind, data = null) => makeTurn("assistant", [noticeBlock(kind, `st
 const call = (status, where = "worker") => makeTurn("assistant", [Object.assign(callBlock("a_tool", {}, { id: "c1", where }), { status })])
 const result = () => makeTurn("tool", [resultBlock("c1", "late")])
 const news = () => makeTurn("user", [eventBlock("doc_watch", "it changed")])
-const LEASE = { runner: "tab-a", generation: 1, at: 1 }
+const BURST = { run: "run-a" }
 
 describe("the stop in force", () => {
   it.each(Object.values(STOP))("a %s notice, with nothing said after it", (kind) => {
@@ -97,12 +97,12 @@ describe("status", () => {
     ["nothing happening", session([user(), said()]), STATUS.idle],
     ["a new session", session(), STATUS.idle],
     ["no document", null, STATUS.idle],
-    ["a runner holds it", session([user()], { lease: LEASE }), STATUS.running],
+    ["a burst is marked on it", session([user()], { burst: BURST }), STATUS.running],
     ["a question to the person", session([user(), call(CALL.asking)]), STATUS.awaitingAnswer],
     ["a call needing a yes", session([user(), call(CALL.pending)]), STATUS.awaitingApproval],
     ["a page call cleared, nobody on it", session([user(), call(CALL.approved, "host")]), STATUS.parked],
     ["a worker call cleared, nobody on it yet", session([user(), call(CALL.approved, "worker")]), STATUS.idle],
-    ["waiting for the network", session([user()], { lease: LEASE, reconnecting: { reason: "offline", since: 1, attempts: 1 } }), STATUS.reconnecting],
+    ["waiting for the network", session([user()], { burst: BURST, reconnecting: { reason: "offline", since: 1, attempts: 1 } }), STATUS.reconnecting],
     ["failed", session([user(), stop(STOP.error)]), STATUS.error],
     ["out of budget", session([user(), stop(STOP.budget)]), STATUS.idle],
     ["halted", session([user(), stop(STOP.halted)]), STATUS.idle],
@@ -113,22 +113,21 @@ describe("status", () => {
 
   // Two at once: which one shows.
   it.each([
-    ["a question, while a runner still holds it", session([user(), call(CALL.asking)], { lease: LEASE }), STATUS.awaitingAnswer],
-    ["a call needing a yes, while a runner still holds it", session([user(), call(CALL.pending)], { lease: LEASE }), STATUS.awaitingApproval],
-    ["halted, a stale lease left behind", session([user(), stop(STOP.halted)], { lease: LEASE }), STATUS.idle],
-    ["stopped by a person, a runner elsewhere not yet told", session([user(), stop(STOP.stopped)], { lease: LEASE }), STATUS.idle],
+    ["a question, while a burst is still marked", session([user(), call(CALL.asking)], { burst: BURST }), STATUS.awaitingAnswer],
+    ["a call needing a yes, while a burst is still marked", session([user(), call(CALL.pending)], { burst: BURST }), STATUS.awaitingApproval],
+    ["halted, a burst mark left behind", session([user(), stop(STOP.halted)], { burst: BURST }), STATUS.idle],
+    ["stopped by a person, a run elsewhere not yet told", session([user(), stop(STOP.stopped)], { burst: BURST }), STATUS.idle],
     ["stopped by a person, then a nudge from a run that had not heard", session([user(), stop(STOP.stopped), makeTurn("user", [noticeBlock("nudge", "(go on)")])]), STATUS.idle],
     ["halted while it waited for the network", session([user(), stop(STOP.halted)], { reconnecting: { reason: "offline", since: 1, attempts: 1 } }), STATUS.idle],
-    ["failed, then spoken to and taken up again", session([user(), stop(STOP.error), user("again")], { lease: LEASE }), STATUS.running],
-    ["a page call cleared, and a runner on it", session([user(), call(CALL.approved, "host")], { lease: LEASE }), STATUS.running],
+    ["failed, then spoken to and taken up again", session([user(), stop(STOP.error), user("again")], { burst: BURST }), STATUS.running],
+    ["a page call cleared, and a page's claim on it", session([user(), call(CALL.approved, "host")], { burst: BURST }), STATUS.running],
   ])("%s", (_name, doc, status) => {
     expect(statusOf(doc)).toBe(status)
   })
 
-  it("a lease the observer judges dead is nobody running", () => {
-    const doc = session([user()], { lease: LEASE })
-    expect(statusOf(doc, { live: () => true })).toBe(STATUS.running)
-    expect(statusOf(doc, { live: () => false })).toBe(STATUS.idle)
+  it("a lease an older version wrote is read by nobody", () => {
+    const doc = session([user()], { lease: { runner: "tab-a", generation: 1, at: 1 } })
+    expect(statusOf(doc)).toBe(STATUS.idle)
   })
 
   it("a new session stores no status", () => {

@@ -2,7 +2,7 @@
  * The composer: the box a person writes to the session in, what goes with a
  * message, and sending it.
  *
- *   createComposer({ handle, store, repo, root, place, contextFor, openDoc, onSent, onStop, onChange })
+ *   createComposer({ handle, store, repo, root, place, contextFor, openDoc, onSent, onStop, onTakeOver, onChange })
  *     element      the composer
  *     field        its text box
  *     dictation    speech into the box (ui/dictation.js)
@@ -12,8 +12,8 @@
  * `place()` is where the session stands in its workflow now (ui/standing.js
  * `current()`), or null; `contextFor()` what the person has open, for a
  * session with no subject. `onSent` is called once a message is in the
- * session, `onStop` when Stop is pressed, `onChange` when what it shows may
- * differ.
+ * session, `onStop` when Stop is pressed, `onTakeOver` when Take over is,
+ * `onChange` when what it shows may differ.
  *
  * A message to a step that is not running needs a choice before it goes: a
  * question in a side thread, or reopening the step (ui/standing.js). Until
@@ -23,7 +23,7 @@
 import { say } from "../kernel/loop.js"
 import { getDriver } from "../workflow/driver.js"
 import { askAside } from "../workflow/aside.js"
-import { drivePlanHere } from "../runners/tab.js"
+import { drivePlanHere } from "../runners/page.js"
 import { attachmentTray, carriesAttachments, pastedImages } from "./attachments.js"
 import { gateOf, placeOf, renderChoices } from "./standing.js"
 import { createDictation } from "./dictation.js"
@@ -48,6 +48,7 @@ export function createComposer({
   openDoc = () => {},
   onSent = () => {},
   onStop = () => {},
+  onTakeOver = () => {},
   onChange = () => {},
 }) {
   const element = el("div", "agent-composer")
@@ -59,10 +60,14 @@ export function createComposer({
   const stopButton = el("button", null, "Stop")
   stopButton.dataset.variant = "danger"
   stopButton.style.display = "none"
+  // Clears a mark nobody here hears (a page that died mid-call, another
+  // person's run) and asks for the work: shown with the hint that says so.
+  const takeOverButton = el("button", null, "Take over")
+  takeOverButton.style.display = "none"
   const hint = el("span", "agent-hint", "")
   const dictation = createDictation({ field, root, onChange })
   const row = el("div", "agent-composer-row")
-  row.append(hint, dictation.button, stopButton, sendButton)
+  row.append(hint, dictation.button, takeOverButton, stopButton, sendButton)
   // What is waiting to go with the next message: documents dragged in,
   // files dropped, images pasted (ui/attachments.js).
   const tray = attachmentTray({ repo, onChange })
@@ -186,6 +191,10 @@ export function createComposer({
     event.preventDefault()
     onStop()
   })
+  takeOverButton.addEventListener("click", (event) => {
+    event.preventDefault()
+    onTakeOver()
+  })
 
   return {
     element,
@@ -198,6 +207,7 @@ export function createComposer({
       if (!v.gate) choices.hidden = true
       sendButton.disabled = !v.canSend
       stopButton.style.display = v.canStop ? "" : "none"
+      takeOverButton.style.display = v.canTakeOver ? "" : "none"
     },
     dispose() {
       dictation.dispose()

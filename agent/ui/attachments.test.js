@@ -234,7 +234,7 @@ describe("the tray of what goes with the next message", () => {
 })
 
 import { AgentTool } from "./session-view.js"
-import { _reset as resetRunners } from "../runners/registry.js"
+import { _reset as resetRunners } from "../runners/page.js"
 
 describe("in the session view", () => {
   it("a document dropped on the composer goes with the next message", async () => {

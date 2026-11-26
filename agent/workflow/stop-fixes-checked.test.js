@@ -1,6 +1,6 @@
 /**
  * A second checker's cases for the Stop fixes (a5dffec3), on two Automerge
- * copies as in stop-elsewhere.test.js, with the real SessionRunner and loop.
+ * copies as in stop-elsewhere.test.js, with a real burst (fixtures/burst.js) and loop.
  *
  *   - a Stop and a message at once, the reply unseen by the stopper: its
  *     text is kept;
@@ -17,7 +17,8 @@ import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
 import { stopSession, NOT_RUN } from "../session/recovery.js"
 import { findCall } from "../session/calls.js"
 import { STOP, stopOf } from "../session/status.js"
-import { SessionRunner, needsWork } from "../kernel/runner.js"
+import { needsWork } from "../kernel/runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { say, decide } from "../kernel/loop.js"
 import { toRequest } from "../session/request.js"
 
@@ -31,7 +32,13 @@ function copies(actors = ["aa", "bb"], turns = []) {
     initSession(d, {})
     d.turns.push(makeTurn("user", [textBlock("hello")]), ...turns)
   })
-  const sides = actors.map((a) => ({ doc: A.clone(base, { actor: a.repeat(16) }), heard: () => {} }))
+  const sides = actors.map((a) => ({ doc: A.clone(base, { actor: a.repeat(16) }), heard: () => {}, listeners: new Set() }))
+  // A burst hears its copy's changes (its handle's change event), and so
+  // does whatever the test hangs on `heard`: a page asking on change.
+  const hear = (i) => {
+    for (const fn of [...sides[i].listeners]) fn(sides[i].doc)
+    sides[i].heard()
+  }
   const store = (i) => ({
     url: "automerge:session",
     doc: () => sides[i].doc,
@@ -39,7 +46,11 @@ function copies(actors = ["aa", "bb"], turns = []) {
       sides[i].doc = A.change(sides[i].doc, (d) => {
         fn(d)
       })
-      sides[i].heard()
+      hear(i)
+    },
+    onChange(fn) {
+      sides[i].listeners.add(fn)
+      return () => sides[i].listeners.delete(fn)
     },
     appendText(path, delta) {
       if (!delta) return
@@ -53,7 +64,7 @@ function copies(actors = ["aa", "bb"], turns = []) {
   })
   const deliver = (from, to) => {
     sides[to].doc = A.merge(sides[to].doc, A.clone(sides[from].doc))
-    sides[to].heard()
+    hear(to)
   }
   return { sides, stores: [store(0), store(1)], deliver }
 }
@@ -75,13 +86,12 @@ const says = (text) =>
     yield { type: "stop", reason: "stop" }
   }
 function runnerOn(store, url, provider, tools = []) {
-  return new SessionRunner({
+  return burstRunner({
     store,
     runnerUrl: url,
     buildToolset: async () => ({ tools, schemas: [], get: (id) => tools.find((t) => t.id === id) ?? null }),
     getProvider: async () => provider,
     canRun: () => true,
-    confirmMs: 0,
   })
 }
 
@@ -104,8 +114,8 @@ describe("item 1, a Stop and a message at once, the reply unseen by the stopper"
       yield { type: "stop", reason: "stop" }
     }, says("Other thing."))
     const a = runnerOn(stores[0], "tab-A", m)
-    sides[0].heard = () => a.tick()
-    const run = a.tick()
+    sides[0].heard = () => a.ask()
+    const run = a.ask()
     await at
     await flushed()
     stores[1].change((d) => stopSession(d, STOP.stopped, null, PERSON))
@@ -114,7 +124,7 @@ describe("item 1, a Stop and a message at once, the reply unseen by the stopper"
     go()
     // The message ended the stop before the run heard it: the reply is finished.
     expect((await run).outcome).toBe("idle")
-    await a.tick()
+    await a.ask()
     await vi.waitFor(() => expect(texts(sides[0].doc).at(-1)).toEqual(["assistant", "Other thing.", false]))
     expect(JSON.stringify(plain(sides[0].doc).turns)).toContain("Unseen reply")
     a.stop()
@@ -146,7 +156,7 @@ describe("item 3 on two copies", () => {
     const one = counted("one")
     const two = counted("two")
     const r = runnerOn(stores[0], "tab-A", model(says("ok")), [one, two])
-    await r.tick()
+    await r.ask()
     expect([one.runs, two.runs]).toEqual([0, 1])
   })
 

@@ -198,7 +198,7 @@ describe("decide", () => {
   it("a step a person stopped is news, told once, and not done: it waits for a word", () => {
     // Stopped while a runner had it, part-way through a reply.
     const doc = sessionDoc(makeTurn("assistant", [textBlock("half of it")]))
-    doc.lease = { runner: "tab-a", generation: 1, at: 1 }
+    doc.burst = { run: "run-a" }
     expect(stopSession(doc, STOP.stopped, null, "automerge:person")).toBe(true)
     const at = doc.turns.at(-1).at
     const plan = planOf([running("a"), step("b", { after: ["a"] })])

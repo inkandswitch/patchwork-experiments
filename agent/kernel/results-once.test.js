@@ -10,7 +10,8 @@
  * below, and each must send one result, a real one if there is one.
  *
  * The loop's own part is to never add the second: a call answered while it
- * ran keeps its answer, and what did run before a lease was lost is recorded.
+ * ran keeps its answer, and what did run before another run took the session
+ * is recorded.
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
@@ -18,9 +19,8 @@ import { run, OUTCOME } from "./loop.js"
 import { memoryStore } from "./store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, CALL, _resetIds } from "../session/schema.js"
-import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock, callBlock, resultBlock } from "../session/blocks.js"
-import { resolveOrphans, INTERRUPTED } from "../session/recovery.js"
+import { settleDebris, INTERRUPTED } from "../session/recovery.js"
 import { toRequest } from "../session/request.js"
 import { findCall } from "../session/calls.js"
 
@@ -115,50 +115,49 @@ function pendingCalls(ids) {
     makeTurn("user", [textBlock("go")]),
     makeTurn("assistant", ids.map((id) => callBlock("work", { id }, { id, status: CALL.approved }))),
   ]
-  claimLease(doc, "runner-a", Date.now())
   return memoryStore(doc)
 }
 
 const resultsFor = (store, id) => store.doc().turns.flatMap((t) => (t.blocks ?? []).filter((b) => b.type === "result" && b.callId === id))
 
 describe("the loop never writes a second result", () => {
-  it("a call another runner closed as interrupted while it ran keeps that answer", async () => {
+  it("a call another run closed as interrupted while it ran keeps that answer", async () => {
     const store = pendingCalls(["c1"])
+    let ours = true
     const work = {
       id: "work",
       where: "worker",
-      risk: "read",
+      risk: "edit",
       execute: async () => {
-        // Meanwhile another browser decides this runner is gone, takes over,
-        // and closes the call.
-        store.change((d) => {
-          claimLease(d, "runner-b", Date.now())
-          resolveOrphans(d, { live: () => true })
-        })
+        // Meanwhile another run of the task takes the session and settles
+        // what this one left (kernel/burst.js).
+        store.change((d) => settleDebris(d, "runner-b"))
+        ours = false
         return "what it found"
       },
     }
-    const result = await run({ store, provider: makeMock([]), toolset: toolset([work]), runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    const result = await run({ store, provider: makeMock([]), toolset: toolset([work]), runnerUrl: "runner-a", stillOurs: () => ours, flushMs: 0 })
 
     expect(result.outcome).toBe(OUTCOME.aborted)
     expect(resultsFor(store, "c1").map((r) => String(r.output))).toEqual([INTERRUPTED])
     expect(findCall(store.doc(), "c1").block.status).toBe(CALL.error)
   })
 
-  it("what ran before the lease was lost is recorded, and the call it did not reach is left for the new runner", async () => {
+  it("what ran before another run took the session is recorded, and the call it did not reach is left for that run", async () => {
     const store = pendingCalls(["c1", "c2"])
+    let ours = true
     const work = {
       id: "work",
       where: "worker",
       risk: "read",
       execute: async ({ id }) => {
-        // The other browser claims the session while c1 runs, before it gets
-        // round to closing anything.
-        if (id === "c1") store.change((d) => claimLease(d, "runner-b", Date.now()))
+        // Another run takes the task while c1 runs, before it gets round to
+        // settling anything.
+        if (id === "c1") ours = false
         return `ran ${id}`
       },
     }
-    const result = await run({ store, provider: makeMock([]), toolset: toolset([work]), runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    const result = await run({ store, provider: makeMock([]), toolset: toolset([work]), runnerUrl: "runner-a", stillOurs: () => ours, flushMs: 0 })
 
     expect(result.outcome).toBe(OUTCOME.aborted)
     expect(resultsFor(store, "c1").map((r) => String(r.output))).toEqual(["ran c1"])

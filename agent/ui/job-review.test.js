@@ -16,7 +16,6 @@ import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, CALL, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
-import { claimLease } from "../session/lease.js"
 import { needsApproval } from "../session/grants.js"
 import { sessionOutcome, _resetDrivers } from "../workflow/driver.js"
 import { initPlan, PLAN, STEP } from "../workflow/plan.js"
@@ -80,12 +79,11 @@ describe("a turn that was all thinking is retried with less thinking", () => {
     const doc = {}
     initSession(doc, { config: { params: { maxTokens: 4000 } } })
     doc.turns = [makeTurn("user", [textBlock("model the pack")])]
-    claimLease(doc, "r", Date.now())
     const store = memoryStore(doc)
     const thinking = [{ type: "reasoning", delta: "Let me consider every option…" }, { type: "stop", reason: "length" }]
     const provider = makeMock([thinking, thinking, [{ type: "text", delta: "Here is the model." }, { type: "stop", reason: "end" }]])
     const toolset = { tools: [], schemas: [], get: () => null }
-    const result = await run({ store, provider, toolset, runnerUrl: "r", generation: 1, flushMs: 0, modelInfo: { efforts: null, maxOutput: 64000 } })
+    const result = await run({ store, provider, toolset, runnerUrl: "r", flushMs: 0, modelInfo: { efforts: null, maxOutput: 64000 } })
     expect(result.outcome).toBe(OUTCOME.idle)
     expect(provider.requests.map((r) => r.params.reasoning?.effort ?? null)).toEqual([null, "medium", "low"])
     expect(provider.requests.map((r) => r.params.maxTokens)).toEqual([4000, 8000, 16000])

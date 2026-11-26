@@ -20,11 +20,12 @@
  *   watches: { [id]: { url, path, match, label, heads, at } }
  *
  * `heads` is the version of the watched document up to which every matching
- * edit has been reported. A runner that starts — a reload, another tab, a
- * newer version of this code — opens every watch again (restoreWatches) and
- * first reports what matched between `heads` and now, so nothing that happened
- * while no runner was alive is lost. While no runner is alive, nothing is
- * listening; there is no runner outside the browser.
+ * edit has been reported. A burst only writes the watch: its events record
+ * (kernel/events.js recordingEvents). The page that shows or drives the
+ * session opens every watch (restoreWatches, again whenever `watches`
+ * changes: runners/page.js follow) and first reports what matched between
+ * `heads` and now, so nothing that happened while no page listened is lost.
+ * While no page shows the session, nothing is listening.
  *
  * The session's own edits are not reported: it made them, and a watch that
  * woke the agent about its own edits would be a loop kernel/events.js could only slow
@@ -55,19 +56,33 @@ export const KEPT_EDITS = 20
 export const PERSIST_MS = 5 * 60 * 1000
 const EDIT_PREVIEW = { maxString: 200, maxItems: 6, maxDepth: 3 }
 
-/** Did the session make this change event, every head it added? (kernel/own-changes.js) */
-export function ownEvent(automerge, payload, isOwnHash) {
+/** The heads one change event added (kernel/own-changes.js), or none when it cannot say. */
+export function eventHeads(automerge, payload) {
   const before = payload.patchInfo?.before
   const after = payload.patchInfo?.after
-  if (!before || !after) return false
-  const added = addedHeads(automerge.getHeads(before), automerge.getHeads(after))
+  if (!before || !after) return []
+  return addedHeads(automerge.getHeads(before), automerge.getHeads(after))
+}
+
+/** The hashes of every change `doc` has beyond `heads`, or none when it cannot say. */
+export function changesSince(automerge, doc, heads) {
+  try {
+    return automerge.getChanges(automerge.view(doc, heads), doc).map((change) => automerge.decodeChange(change).hash)
+  } catch {
+    return []
+  }
+}
+
+/** Did the session make this change event, every head it added? (kernel/own-changes.js) */
+export function ownEvent(automerge, payload, isOwnHash) {
+  const added = eventHeads(automerge, payload)
   return added.length > 0 && added.every(isOwnHash)
 }
 
 /**
- * The watches open in this page, by session and id. On globalThis, as the
- * runners are (runners/registry.js): a newer version of this module, loaded in place,
- * must find and replace the older one's watches, not run beside them.
+ * The watches open in this page, by session and id. On globalThis: a newer
+ * version of this module, loaded in place, must find and replace the older
+ * one's watches, not run beside them.
  */
 const open = (globalThis.__patchworkAgentWatches ??= new Map())
 const keyOf = (sessionUrl, id) => `${sessionUrl}\u0000${id}`
@@ -204,6 +219,10 @@ export async function openWatch({ id, spec, repo, events, watches, catchUp = fal
       watch.close()
       return ""
     }
+    // An edit judged someone else's when it arrived may since be known as the
+    // session's own: a burst in a pool's worker reports its hashes through
+    // the queue (runners/ask.js), which can arrive after the edit itself.
+    watch.pending = watch.pending.filter((edit) => !(edit.heads?.length && edit.heads.every(watches.isOwn)))
     if (!watch.pending.length) return ""
     const total = watch.pending.length + watch.dropped
     const lines = [
@@ -219,8 +238,8 @@ export async function openWatch({ id, spec, repo, events, watches, catchUp = fal
     return lines.join("\n")
   }
 
-  const take = (edits) => {
-    const kept = selectEdits(edits, spec.path, pattern)
+  const take = (edits, heads = null) => {
+    const kept = selectEdits(edits, spec.path, pattern).map((edit) => (heads?.length ? Object.assign(edit, { heads }) : edit))
     if (!kept.length) return false
     if (watch.since == null) watch.since = now()
     watch.pending.push(...kept)
@@ -261,8 +280,9 @@ export async function openWatch({ id, spec, repo, events, watches, catchUp = fal
     let took = false
     let own = false
     for (const payload of payloads) {
-      if (ownEvent(automerge, payload, watches.isOwn)) own = true
-      else if (take(editsOfChange(payload, spec.path))) took = true
+      const heads = eventHeads(automerge, payload)
+      if (heads.length && heads.every(watches.isOwn)) own = true
+      else if (take(editsOfChange(payload, spec.path), heads)) took = true
     }
     if (took) channel.notify(render)
     // The session's own edit is recorded as seen at once when nothing is
@@ -277,15 +297,19 @@ export async function openWatch({ id, spec, repo, events, watches, catchUp = fal
     const doc = root.doc()
     const from = repoModule.decodeHeads([...spec.heads])
     const to = automerge.getHeads(doc)
-    if (take(editsBetween(automerge, doc, from, to))) channel.notify(render)
+    // What changed while nobody listened, unless every change of it is the
+    // session's own (a burst that watched, then edited, before the page
+    // opened the watch): those it is not told of.
+    const since = changesSince(automerge, doc, from)
+    if (!(since.length && since.every(watches.isOwn)) && take(editsBetween(automerge, doc, from, to), since)) channel.notify(render)
   }
   return watch
 }
 
 /**
- * Open every watch a session has, on a runner that is starting. Each reports
- * first what matched while nobody was listening. A watch whose document cannot
- * be found now is left in place for the next runner, and said so.
+ * Open every watch a session has, in the page that shows or drives it. Each
+ * reports first what matched while nobody was listening. A watch whose
+ * document cannot be found now is left in place, and said so.
  */
 export async function restoreWatches({ repo, events, store }) {
   const watches = watchesWriter(store)
@@ -385,7 +409,10 @@ export const docWatch = {
     session.change((all) => {
       all[id] = { ...spec, path: [...spec.path], heads: [...handle.heads()], at: Date.now() }
     })
-    await openWatch({ id, spec, repo: ctx.repo, events: ctx.events, watches: session })
+    // In a burst the events only record (kernel/events.js recordingEvents):
+    // what is written above is the watch, and the page showing the session
+    // opens it (restoreWatches). Elsewhere it is opened here.
+    if (!ctx.events.recording) await openWatch({ id, spec, repo: ctx.repo, events: ctx.events, watches: session })
 
     const now = valueAt(doc, target.path)
     const there = now === undefined ? "Nothing is there yet; you will hear when something is." : `Now: ${JSON.stringify(preview(now, EDIT_PREVIEW))}`

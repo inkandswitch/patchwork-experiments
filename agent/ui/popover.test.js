@@ -9,7 +9,7 @@ import { initSession, CALL, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
 import { activityOf, askedInText, watchAttention, LONG_RUN_MS } from "./attention.js"
 import { createNotifier, setNotifications, notificationsEnabled, describe as describeNotice } from "./notify.js"
-import { _reset as resetRunners } from "../runners/registry.js"
+import { _reset as resetRunners } from "../runners/page.js"
 
 // ---- doubles -------------------------------------------------------------
 
@@ -80,7 +80,8 @@ function session(state, { title = "Battery pack" } = {}) {
     const call = callBlock("doc_edit", { url: "automerge:pack", ops: [] }, { id: "c1" })
     call.status = CALL.running
     doc.turns.push(makeTurn("assistant", [call]))
-    doc.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
+    doc.burst = { run: "run-elsewhere" }
+    call.runner = "run-elsewhere"
   } else if (state === "asking") {
     const call = callBlock("ask_user", { question: "Target voltage?", options: ["400 V", "48 V"] }, { id: "q1" })
     call.status = CALL.asking
@@ -129,7 +130,7 @@ describe("what a session is doing", () => {
     expect(activityOf(session("working"))).toMatch(/…$/)
     expect(activityOf(session("working"))).not.toBe("Thinking…")
     const writing = session("idle")
-    writing.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
+    writing.burst = { run: "run-elsewhere" }
     writing.turns.push(makeTurn("assistant", [textBlock("Here is")]))
     expect(activityOf(writing)).toBe("Writing…")
     expect(activityOf(session("done"))).toBeNull()
@@ -165,7 +166,7 @@ describe("following sessions", () => {
     const watcher = watchAttention(repo, () => ["automerge:s1", "automerge:s2"], () => {}, { now: () => t })
     await tick()
     const finish = (url) => repo.handles.get(url).change((d) => {
-      d.lease = null
+      d.burst = null
       d.turns.push(makeTurn("assistant", [textBlock("Pack designed.\nDetails follow.")]))
     })
 
@@ -187,7 +188,7 @@ describe("following sessions", () => {
     await tick()
     t = LONG_RUN_MS * 2
     repo.handles.get("automerge:s1").change((d) => {
-      d.lease = null
+      d.burst = null
       d.turns.push(makeTurn("assistant", [Object.assign(callBlock("web_fetch", { url: "https://dnv.com/rules" }, { id: "p9" }), { status: CALL.pending })]))
     })
     expect(watcher.snapshot().finished).toEqual([])

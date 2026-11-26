@@ -1,7 +1,7 @@
 /**
  * The task entry for one burst of a session (kernel/burst.js), as the task
- * system calls it: `default (input, ctx) => result`. Not yet used: today's
- * runners still run sessions.
+ * system calls it: `default (input, ctx) => result`. Every burst of every
+ * session runs here, asked for by runners/ask.js.
  *
  * It runs in a pool's worker: a Node host's thread, or a browser pool's run
  * worker. So it imports only what both resolve: its own neighbours, and
@@ -30,7 +30,7 @@
 
 import { runBurst } from "../kernel/burst.js"
 import { AGENT } from "../assembly/agent.js"
-import { catalogueTools, catalogueSkills } from "../assembly/plugins.js"
+import { catalogueTools, catalogueSkills, cataloguePackageOf } from "../assembly/plugins.js"
 import { getProvider } from "../providers/index.js"
 import { modelInfo } from "../providers/catalogue.js"
 import { guardedFetch, SYNC_SERVERS } from "../net/guard.js"
@@ -100,6 +100,8 @@ export default async function sessionTask(input, ctx) {
     rootFolderUrl: account.rootFolderUrl ?? null,
     sensitiveDocs: (account.sensitiveDocs ?? []).filter((url) => typeof url === "string" && url),
     skillRegistry: catalogueSkills(catalogue),
+    // Which package an agent tool came from, for usage guides (knowledge/guides.js).
+    packageOf: cataloguePackageOf(catalogue),
     get subject() {
       return handle.doc()?.subject ?? null
     },

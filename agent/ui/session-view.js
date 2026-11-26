@@ -11,7 +11,8 @@
  * value (ui/session-value.js) worked out from the session and the little this
  * view knows; each part copies its share of that value onto the page:
  *
- *   ui/session-runners.js  the tab and SharedWorker runners
+ *   runners/page.js        following the session here: asking for its work,
+ *                          its parked calls, its events and watches
  *   ui/settings-panel.js   model, effort, workflows, keys
  *   ui/composer.js         the box, attachments, dictation, sending
  *   ui/install.js          installing what the session made
@@ -23,8 +24,10 @@
 
 import { handleStore } from "../kernel/store.js"
 import { decide, answerQuestion } from "../kernel/loop.js"
-import { needsWork } from "../kernel/runner.js"
-import { accountContext } from "../runners/tab.js"
+import { accountContext, follow, askFor, followWorkFor, stopFor, takeOverFor } from "../runners/page.js"
+import { stopSession } from "../session/recovery.js"
+import { STOP } from "../session/status.js"
+import { POOL_ID_KEY } from "../host/task-client.js"
 import { workflowOf } from "../workflow/plan.js"
 import { getMount, mountForPerson, parkMount } from "../tools/checking.js"
 import { readKey, onKeyChange, connectAccountKeys } from "../providers/keys.js"
@@ -37,13 +40,21 @@ import { createInlineViews } from "./views.js"
 import { watchInstalls } from "./install.js"
 import { watchWorkspace } from "./workspace.js"
 import { createComposer } from "./composer.js"
-import { sessionRunners } from "./session-runners.js"
 import { createSettingsPanel } from "./settings-panel.js"
 import { sessionValue } from "./session-value.js"
 import { watchNames, myContactUrl } from "./names.js"
 import { ensureStyles } from "./styles.js"
 
 ensureStyles()
+
+/** This browser's pool id, as the tasks package keeps it, or null. */
+function poolHere() {
+  try {
+    return globalThis.localStorage?.getItem(POOL_ID_KEY) || null
+  } catch {
+    return null
+  }
+}
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag)
@@ -139,7 +150,21 @@ export function AgentTool(handle, element, options = {}) {
   }
 
   // ---- the parts -------------------------------------------------------
-  const runners = sessionRunners({ handle, store, repo, element: root, subject: subjectUrl, onEvent: () => render() })
+  // This page keeps the session going while it is shown (runners/page.js):
+  // asks for its work, runs its parked calls, listens to its watches. A
+  // burst under way is a pool's, and closing the view does not stop it.
+  const followed = repo ? follow(handle, { repo, element: root }) : null
+  const offRunning = followed?.onRunning(() => render()) ?? (() => {})
+  // What the queue says of the session's task (runners/ask.js), for the line
+  // under the composer.
+  let work = null
+  const offWork = repo
+    ? followWorkFor(repo, handle.url, (view) => {
+        work = view
+        render()
+      })
+    : () => {}
+  const ask = () => (repo ? askFor(repo, handle.url) : Promise.resolve(null))
   const names = watchNames({ repo, onChange: () => render() })
   const installs = watchInstalls({ repo, onChange: () => render() })
   // Where this session stands in its workflow, kept up with the plan: a
@@ -164,7 +189,7 @@ export function AgentTool(handle, element, options = {}) {
   standingLine.hidden = true
   const strip = el("div", "agent-waiting")
   strip.hidden = true
-  const settings = createSettingsPanel({ store, onKey: (key) => runners.setKey(key), onChange: () => render() })
+  const settings = createSettingsPanel({ store, onKey: () => ask(), onChange: () => render() })
   // What the session makes and opens lives IN the transcript, beside the call
   // that made or opened it (ui/views.js), and nowhere else: a strip of things
   // made, or a pane for the agent's mounts, would be a place to look other
@@ -178,9 +203,16 @@ export function AgentTool(handle, element, options = {}) {
     place: () => standing?.current() ?? null,
     contextFor,
     openDoc,
-    onSent: () => runners.kick(),
-    // Who stopped it goes on the notice's turn.
-    onStop: async () => runners.stop({ author: await myContactUrl() }),
+    onSent: () => ask(),
+    // Who stopped it goes on the notice's turn; then its task on this
+    // person's queue is stopped, which only makes it quicker.
+    onStop: async () => {
+      const author = await myContactUrl()
+      if (repo) await stopFor(repo, handle.url, { author }).catch(() => {})
+      else store.change((d) => stopSession(d, STOP.stopped, null, author))
+    },
+    // `burst` cleared, whoever it named, and asked.
+    onTakeOver: () => (repo ? takeOverFor(repo, handle.url) : null),
     onChange: () => render(),
   })
   const side = sidePane()
@@ -221,12 +253,12 @@ export function AgentTool(handle, element, options = {}) {
     decide(callId, decision) {
       decide(store, callId, decision)
       render()
-      runners.kick()
+      ask()
     },
     async answer(callId, text) {
       answerQuestion(store, callId, text, await myContactUrl())
       render()
-      runners.kick()
+      ask()
     },
   }
 
@@ -237,8 +269,9 @@ export function AgentTool(handle, element, options = {}) {
       mode,
       hasKey: !!readKey(doc.config?.providerId ?? "openrouter"),
       keysSettled,
-      runner: runners.kind(),
-      elsewhere: runners.elsewhere(doc),
+      work,
+      pool: poolHere(),
+      pageTool: followed?.running() ?? null,
       voiceStatus: composer.dictation.status(),
       place: standing?.current() ?? null,
       waiting: waiting?.items() ?? [],
@@ -259,7 +292,7 @@ export function AgentTool(handle, element, options = {}) {
     standing?.refresh(doc)
     const v = value(doc)
 
-    root.dataset.runner = v.runner
+    root.dataset.work = v.work
     header.render(v)
     renderStandingLine(standingLine, v.place)
     renderStrip(v)
@@ -290,20 +323,20 @@ export function AgentTool(handle, element, options = {}) {
   }
 
   // ---- connecting it up ------------------------------------------------
+  // Asking on change is the follower's (runners/page.js follow).
   const onChange = () => {
     render()
     installs.refresh(handle.doc())
-    runners.wake()
   }
   handle.on("change", onChange)
 
   // The key can change under us — found in the account a moment after mount,
-  // or replaced from another LLM tool or device — and the worker cannot read
-  // the account for itself, so it is handed each new one.
+  // or replaced from another LLM tool or device. A key that arrives may be
+  // what work was waiting for.
   const offKeys = onKeyChange(() => {
     if (disposed) return
-    runners.setKey(readKey(handle.doc()?.config?.providerId ?? "openrouter"))
     render()
+    ask()
   })
   connectAccountKeys(element, repo).then(() => {
     keysSettled = true
@@ -312,9 +345,6 @@ export function AgentTool(handle, element, options = {}) {
 
   render()
   installs.refresh(handle.doc())
-  // A session that already has work (reloaded mid-turn, or handed over) starts
-  // immediately rather than waiting for someone to type.
-  if (needsWork(handle.doc())) runners.kick()
 
   return () => {
     disposed = true
@@ -327,8 +357,10 @@ export function AgentTool(handle, element, options = {}) {
     installs.dispose()
     waiting?.dispose()
     standing?.dispose()
-    // The runners carry on: closing a view never aborts the work it shows.
-    runners.dispose()
+    // A burst carries on: closing a view never aborts the work it shows.
+    offRunning()
+    offWork()
+    followed?.release()
     root.remove()
   }
 }

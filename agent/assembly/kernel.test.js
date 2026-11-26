@@ -23,7 +23,8 @@ import { initPlan } from "../workflow/plan.js"
 import { runTool } from "../kernel/tool.js"
 import { buildToolset } from "./toolset.js"
 import { BUILTIN_TOOLS } from "./builtin.js"
-import { SessionRunner, fullContext } from "../kernel/runner.js"
+import { fullContext } from "../kernel/runner.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { kernelRepo, KERNEL_REFUSAL, KERNEL_TYPES } from "../kernel/kernel-repo.js"
@@ -419,30 +420,26 @@ describe("the legitimate writers", () => {
     expect(using(/ctx\.watches/)).toEqual(["tools/watch.js"])
   })
 
-  /** A full session with Workflows on, a plugin of its own, and a runner over it. */
+  /** A full session with Workflows on, a plugin of its own, and a burst over it. */
   function fullSession(execute = () => "plugin ran") {
     const w = world()
     const doc = {}
     initSession(doc, { config: { workflows: { enabled: true } } })
     const store = memoryStore(doc)
-    const startStepSession = () => null
     const registry = {
       all: () => [{ id: "extra_tool", name: "extra_tool", description: "", where: "worker", risk: "read" }],
       load: async (id) => ({ id, module: { execute } }),
     }
-    const runner = new SessionRunner({
+    const runner = burstRunner({
       builtins: BUILTIN_TOOLS,
       store,
       runnerUrl: "runner-test",
       ctx: { repo: w.repo, element: "a" },
-      startStepSession,
-      // One runner, nobody to race: no wait before believing a claim.
-      confirmMs: 0,
       buildToolset: (d) => buildToolset(d, { registry }),
       getProvider: async () => null,
       canRun: () => true,
     })
-    return { w, store, runner, startStepSession }
+    return { w, store, runner }
   }
 
   it("a full session's shared context has neither, a guarded repo, and no starter of step sessions", async () => {
@@ -457,14 +454,16 @@ describe("the legitimate writers", () => {
   })
 
   it("each capability goes to its own built-in tools, and to nothing else in the toolset", async () => {
-    const { w, runner, startStepSession } = fullSession()
+    const { runner } = fullSession()
     const { toolset, privileged } = await runner.prepare(runner.store.doc())
     expect(toolset.get("extra_tool")).toBeTruthy()
     for (const t of toolset.tools) {
       const given = privileged(t)
       if (WORKFLOW_TOOL_IDS.includes(t.id)) {
         expect(Object.keys(given), t.id).toEqual(["workflows"])
-        expect(given.workflows).toEqual({ repo: w.repo, startSession: startStepSession, tools: expect.any(Function) })
+        // A burst runs in a pool's worker, and is handed no way of starting
+        // a step's session: the plan is driven from a page (workflow/tools.js drive).
+        expect(given.workflows).toEqual({ repo: runner.repo, startSession: null, tools: expect.any(Function) })
       } else if (t.id === "session_title") {
         expect(Object.keys(given), t.id).toEqual(["session"])
         expect(given.session.change).toBeTypeOf("function")

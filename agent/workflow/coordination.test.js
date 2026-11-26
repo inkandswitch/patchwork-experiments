@@ -1,26 +1,26 @@
 /**
- * Two browsers, one session.
+ * Two browsers, one plan.
  *
- * Each browser has its own replica of the session document and its own
- * clock. Changes reach the other replica after a delay, and the clocks may
- * disagree by minutes. Whatever the delay (under CONFIRM_MS / 2), the clocks
- * (within DEAD_ON_SIGHT_MS of each other) and the moment each browser looks,
- * the session is run exactly once, by a browser with a key, and a browser
- * without one writes nothing at all.
+ * Each browser has its own replica of the plan document and its own clock.
+ * Changes reach the other replica after a delay, and the clocks may disagree
+ * by minutes. Whatever the delay (under CONFIRM_MS / 2), the clocks (within
+ * DEAD_ON_SIGHT_MS of each other) and the moment each browser looks, at no
+ * moment do both drive the plan.
  *
- * Every combination of a small set of delays, offsets, skews and keys is run,
- * not a random sample: the cases are few enough to enumerate.
+ * (Two browsers with one session: a burst is a task's run, and two pools on
+ * one task are kept apart by the task system's `settled`; two people's
+ * bursts by the session's `burst` mark. kernel/burst.test.js and
+ * kernel/burst-checked.test.js enumerate those crossings.)
+ *
+ * Every combination of a small set of delays, offsets and skews is run, not
+ * a random sample: the cases are few enough to enumerate.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest"
 import * as A from "@automerge/automerge"
-import { SessionRunner, CONFIRM_MS, STALE_AFTER_MS, HEARTBEAT_MS, needsWork } from "../kernel/runner.js"
-import { WorkflowDriver } from "./driver.js"
+import { WorkflowDriver, HEARTBEAT_MS, STALE_AFTER_MS, CONFIRM_MS } from "./driver.js"
 import { PLAN_VERSION } from "./plan.js"
-import { initSession, _resetIds } from "../session/schema.js"
-import { makeTurn, textBlock } from "../session/blocks.js"
 import { LeaseWatch, DEAD_ON_SIGHT_MS } from "../session/lease.js"
-import { makeMock } from "../fixtures/mock-provider.js"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -125,140 +125,6 @@ function replicas(base, delay) {
   })
   return { sides, stores: [store(0), store(1)] }
 }
-
-function sessionWithMessage() {
-  _resetIds()
-  return A.change(A.init({ actor: "cc".repeat(16) }), (d) => {
-    initSession(d, { title: "Two browsers" })
-    d.turns.push(makeTurn("user", [textBlock("hello")]))
-  })
-}
-
-/** How long a model's answer takes to stream: long enough that heartbeats, not the first claim, keep the session. */
-const ANSWER_MS = 3 * STALE_AFTER_MS
-
-function browser(store, { name, key, skew }) {
-  const words = Array.from({ length: 8 }, (_, i) => ({ type: "text", delta: `${name}${i} ` }))
-  const provider = makeMock([[...words, { type: "stop", reason: "end" }]], { delayMs: ANSWER_MS / words.length })
-  const runner = new SessionRunner({
-    store,
-    runnerUrl: name,
-    buildToolset: async () => ({ tools: [], schemas: [], get: () => null }),
-    getProvider: async () => provider,
-    getKey: () => (key ? "sk-test" : null),
-    canRun: () => true,
-    now: () => Date.now() + skew,
-  })
-  return { runner, provider }
-}
-
-describe("two browsers with one session open run it exactly once, by one that has a key", () => {
-  const DELAYS = [0, 50, 400, CONFIRM_MS / 2 - 1]
-  const OFFSETS = [0, 30, 300, CONFIRM_MS / 2 - 1, CONFIRM_MS / 2, 1200, 4000]
-  const SKEWS = [-9 * 60_000, -60_000, 0, 60_000, 9 * 60_000]
-  const KEYS = [
-    [true, true],
-    [true, false],
-    [false, true],
-    [false, false],
-  ]
-
-  it("for every delay, offset, skew and key", async () => {
-    let cases = 0
-    for (const delay of DELAYS) {
-      for (const offset of OFFSETS) {
-        for (const skew of SKEWS) {
-          for (const keys of KEYS) {
-            vi.useFakeTimers({ now: 1_000_000_000 })
-            const { sides, stores } = replicas(sessionWithMessage(), delay)
-            const browsers = [
-              browser(stores[0], { name: "a", key: keys[0], skew: 0 }),
-              browser(stores[1], { name: "b", key: keys[1], skew }),
-            ]
-            sides.forEach((side, i) => (side.onRemote = () => browsers[i].runner.tick()))
-            // Each starts watching when its tab opens: the poll as well as the change handler.
-            setTimeout(() => browsers[0].runner.start(), 0)
-            setTimeout(() => browsers[1].runner.start(), offset)
-
-            await vi.advanceTimersByTimeAsync(offset + 4 * CONFIRM_MS + ANSWER_MS + 2 * STALE_AFTER_MS)
-            for (const { runner } of browsers) runner.stop()
-            await vi.advanceTimersByTimeAsync(2 * delay + 10)
-
-            const label = `delay ${delay}, offset ${offset}, skew ${skew}, keys ${keys}`
-            const streams = browsers.map(({ provider }) => provider.requests.length)
-            const anyKey = keys.some(Boolean)
-            expect(streams[0] + streams[1], `${label}: model calls`).toBe(anyKey ? 1 : 0)
-            keys.forEach((has, i) => {
-              if (!has) {
-                expect(streams[i], `${label}: keyless browser ${i} called the model`).toBe(0)
-                expect(sides[i].writes, `${label}: keyless browser ${i} wrote`).toBe(0)
-              }
-            })
-            // Both replicas agree: one question, one answer, nobody holding it.
-            for (const side of sides) {
-              const turns = side.doc.turns.map((t) => t.role)
-              expect(turns, `${label}: transcript`).toEqual(anyKey ? ["user", "assistant"] : ["user"])
-              if (anyKey) expect(side.doc.lease ?? null, `${label}: lease`).toBe(null)
-            }
-            vi.useRealTimers()
-            cases++
-          }
-        }
-      }
-    }
-    expect(cases).toBe(DELAYS.length * OFFSETS.length * SKEWS.length * KEYS.length)
-  }, 120_000)
-
-  it("a browser that loses the claim says nothing in the session — not even that the last runner's calls were cut off", async () => {
-    vi.useFakeTimers({ now: 1_000_000_000 })
-    const { sides, stores } = replicas(sessionWithMessage(), 400)
-    const browsers = [browser(stores[0], { name: "a", key: true, skew: 0 }), browser(stores[1], { name: "b", key: true, skew: 0 })]
-    sides.forEach((side, i) => (side.onRemote = () => browsers[i].runner.tick()))
-    // Heartbeats as start() keeps them, with the first ticks in our hands.
-    for (const { runner } of browsers) runner.heartbeat = setInterval(() => runner.beat(), HEARTBEAT_MS)
-    const results = Promise.all(browsers.map(({ runner }) => runner.tick()))
-    await vi.advanceTimersByTimeAsync(CONFIRM_MS + ANSWER_MS + 2 * STALE_AFTER_MS)
-    for (const { runner } of browsers) runner.stop()
-    const outcomes = (await results).map((r) => r?.outcome)
-    expect(outcomes.filter((o) => o === "aborted")).toHaveLength(1)
-    const loser = outcomes.indexOf("aborted")
-    // The loser's only write was its claim.
-    expect(sides[loser].writes).toBe(1)
-  })
-})
-
-describe("a browser busy with other sessions holds back, so an idle one takes the next", () => {
-  it("the idle browser runs it, and the busy one does not even claim", async () => {
-    vi.useFakeTimers({ now: 1_000_000_000 })
-    const { sides, stores } = replicas(sessionWithMessage(), 200)
-    const idle = browser(stores[0], { name: "idle", key: true, skew: 0 })
-    const busy = browser(stores[1], { name: "busy", key: true, skew: 0 })
-    busy.runner.deferMs = () => 3 * 1000
-    sides.forEach((side, i) => (side.onRemote = () => [idle, busy][i].runner.tick()))
-    busy.runner.start()
-    idle.runner.start()
-    await vi.advanceTimersByTimeAsync(10_000 + ANSWER_MS)
-    idle.runner.stop()
-    busy.runner.stop()
-    expect(idle.provider.requests.length).toBe(1)
-    expect(busy.provider.requests.length).toBe(0)
-    expect(sides[1].writes).toBe(0)
-  })
-
-  it("and alone, it takes the session anyway, only later", async () => {
-    vi.useFakeTimers({ now: 1_000_000_000 })
-    const { stores } = replicas(sessionWithMessage(), 200)
-    const busy = browser(stores[1], { name: "busy", key: true, skew: 0 })
-    busy.runner.deferMs = () => 3 * 1000
-    busy.runner.start()
-    await vi.advanceTimersByTimeAsync(2_900)
-    expect(busy.provider.requests.length).toBe(0)
-    await vi.advanceTimersByTimeAsync(CONFIRM_MS + ANSWER_MS + 1_000)
-    busy.runner.stop()
-    expect(busy.provider.requests.length).toBe(1)
-    expect(needsWork(stores[1].doc())).toBe(false)
-  })
-})
 
 // ---------------------------------------------------------------- the plan's driver
 

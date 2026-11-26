@@ -19,7 +19,7 @@ import { AgentTool } from "./session-view.js"
 import { createDictation, isDictationShortcut } from "./dictation.js"
 import { AmbientAgent } from "./ambient.js"
 import { initSession } from "../session/schema.js"
-import { _reset as resetRunners } from "../runners/registry.js"
+import { _reset as resetRunners } from "../runners/page.js"
 
 // ---- the seam itself (real implementation) --------------------------------
 

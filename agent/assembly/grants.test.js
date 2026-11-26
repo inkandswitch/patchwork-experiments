@@ -3,7 +3,6 @@ import { initSession, CALL, STATUS, _resetIds } from "../session/schema.js"
 import { grantCandidates, grantOffers, urlPrefixes, callScope } from "../session/grants.js"
 import { waits, pendingCall, about, toolOf } from "../fixtures/asking.js"
 import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
-import { claimLease } from "../session/lease.js"
 import { callsAwaitingApproval, findCall } from "../session/calls.js"
 import { decide, run } from "../kernel/loop.js"
 import { FULL_TOOLS as BUILTIN_TOOLS } from "../fixtures/tool-ids.js"
@@ -393,7 +392,6 @@ describe("one answer releases every call it covers", () => {
     const doc = {}
     initSession(doc, {})
     doc.turns = [makeTurn("user", [textBlock("fetch three pages")])]
-    claimLease(doc, "local", Date.now())
     const store = memoryStore(doc)
 
     const provider = makeMock([
@@ -433,7 +431,6 @@ describe("one answer releases every call it covers", () => {
     const doc = {}
     initSession(doc, {})
     doc.turns = [makeTurn("user", [textBlock("go")])]
-    claimLease(doc, "local", Date.now())
     const store = memoryStore(doc)
     const provider = makeMock([
       [
@@ -479,7 +476,6 @@ describe("one answer releases every call it covers", () => {
     initSession(doc, {})
     doc.turns = [makeTurn("user", [textBlock("go")])]
     doc.grants["web@*"] = true
-    claimLease(doc, "local", Date.now())
     const store = memoryStore(doc)
     const asksAlways = { ...fetchTool, id: "http_request", alwaysAsk: () => true }
     const provider = makeMock([

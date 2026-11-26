@@ -8,7 +8,6 @@ import { initPlan, PLAN, STEP, validateSteps } from "../workflow/plan.js"
 import { WorkflowDriver, WEB_GRANT, _resetDrivers } from "../workflow/driver.js"
 import { initSession, CALL, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
-import { claimLease } from "../session/lease.js"
 import { renderWaitingItem } from "./waiting.js"
 import { waitingIn } from "../workflow/waiting.js"
 import { WORKFLOW_TOOL_IDS } from "../fixtures/tool-ids.js"
@@ -46,18 +45,20 @@ function setup(steps, { behaviour = {} } = {}) {
         d.turns.push(makeTurn("assistant", [textBlock(`result of ${d.workflow.stepId}`)]))
       })
     }
-    return { runner: { interrupt: () => {} }, listen: () => {} }
+    return { asked: true, outcome: "idle" }
   }
+  const stopped = []
+  const stopWork = async (_repo, url) => (stopped.push(url), true)
   const make = () => {
     const driver = new WorkflowDriver({
-      repo, handle: plan, startSession, heartbeatMs: 1e9, confirmMs: 0, settleMs: 5, sensitive: () => [],
+      repo, handle: plan, startSession, stopWork, heartbeatMs: 1e9, confirmMs: 0, settleMs: 5, sensitive: () => [],
       tools: async () => ({ builtins: BUILTIN_TOOLS, plugins: [] }),
       notify: () => ({ notify: (render) => { const text = render(); if (text) news.push(text) }, close: () => {} }),
     })
     drivers.push(driver)
     return driver
   }
-  return { repo, plan, orchestrator, news, make }
+  return { repo, plan, orchestrator, news, make, stopped }
 }
 
 async function settle(driver, rounds = 8) {
@@ -208,19 +209,20 @@ describe("news, told once", () => {
 })
 
 describe("cancelling", () => {
-  it("stops a step whose runner is somewhere else: the session's lease is taken and it says it stopped", async () => {
-    const { repo, plan, make } = setup([step("a")])
+  it("stops a step whose burst runs somewhere else: `burst` is cleared, it says it stopped, and its task is stopped", async () => {
+    const { repo, plan, make, stopped } = setup([step("a")])
     const driver = make()
     driver.start()
     await settle(driver)
     const a = await sessionOf(repo, plan, "a")
     a.change((d) => {
-      claimLease(d, "tab-elsewhere", Date.now())
+      d.burst = { run: "run-elsewhere" }
     })
     expect(statusOf(a.doc())).toBe(STATUS.running)
     await driver.cancel(["a"])
     expect(statusOf(a.doc())).toBe(STATUS.idle)
-    expect(a.doc().lease).toBeNull()
+    expect(a.doc().burst).toBeNull()
+    expect(stopped).toEqual([a.url])
     expect(stopOf(a.doc())?.kind).toBe(STOP.halted)
     expect(plan.doc().steps[0].status).toBe(STEP.cancelled)
   })

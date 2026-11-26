@@ -7,18 +7,19 @@
  * and none declared "host", a step on the page gets everything, a research
  * step gets its research built-ins and the plugins that declare `scoped:
  * true` on a worker. Checked over every kind of plugin a registry can hold,
- * from a tab's registry and from the SharedWorker's catalogue, where a plugin
- * whose code will not load is listed but runs in a tab.
+ * from a page's registry and from a task's catalogue (assembly/plugins.js
+ * catalogueTools), where every plugin is listed as it declares itself but
+ * runs in a page: a burst imports no plugin code.
  */
 import { describe, it, expect } from "vitest"
 import { buildToolset } from "../assembly/toolset.js"
-import { loadPluginTools } from "../assembly/plugins.js"
+import { loadPluginTools, pluginCatalogue, catalogueTools } from "../assembly/plugins.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { initPlan } from "../workflow/plan.js"
-import { createPluginCatalogue } from "./worker-plugins.js"
+import { pageCalls } from "./page.js"
 import { callNeeds, declaredWhere, fitsPlacement } from "../kernel/placement.js"
 import { checkStepTools, namedIn, stepToolIds } from "../workflow/step-tools.js"
-import { SessionRunner } from "../kernel/runner.js"
+import { burstRunner, memoryHandle } from "../fixtures/burst.js"
 import { memoryStore } from "../kernel/store.js"
 import { initSession } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
@@ -49,16 +50,10 @@ const registryOf = (entries) => ({
   load: async (id) => ({ ...entries.find((e) => e.id === id), module: { execute: () => `ran ${id}` } }),
 })
 
-/** The SharedWorker's catalogue holding them; `broken` ids fail to load there. */
-function catalogueOf(entries, broken = []) {
-  const catalogue = createPluginCatalogue({
-    importPlugin: async (d) => {
-      if (broken.includes(d.id)) throw new Error(`Failed to resolve module specifier "@x/y"`)
-      return { execute: () => `ran ${d.id} in the worker` }
-    },
-  })
-  catalogue.set(entries.map((e) => ({ ...e, importUrl: `https://p.example/${e.id}/index.js` })))
-  return catalogue
+/** A task's catalogue holding them, as its input carries it, made into tools as a burst makes them. */
+async function catalogueOf(entries) {
+  const catalogue = await pluginCatalogue({ registry: registryOf(entries.map((e) => ({ ...e, importUrl: `https://p.example/${e.id}/index.js` }))), skillRegistry: { all: () => [] } })
+  return catalogueTools(JSON.parse(JSON.stringify(catalogue)))
 }
 
 const ids = (toolset) => toolset.tools.map((t) => t.id)
@@ -77,9 +72,8 @@ function expected(placement, present) {
 
 describe("the toolset a step gets", () => {
   const sources = [
-    ["a tab's registry", async (entries) => () => loadPluginTools({ registry: registryOf(entries) })],
-    ["the worker's catalogue", async (entries) => () => catalogueOf(entries).tools()],
-    ["the worker's catalogue, nothing loading", async (entries) => () => catalogueOf(entries, entries.map((e) => e.id)).tools()],
+    ["a page's registry", async (entries) => () => loadPluginTools({ registry: registryOf(entries) })],
+    ["a task's catalogue", async (entries) => () => catalogueOf(entries)],
   ]
   const presences = [["no plugins", []], ["one worker plugin", ["repo_tool"]], ["one page-only plugin", ["page_tool"]], ["every kind", PLUGINS.map((p) => p.id)]]
 
@@ -119,26 +113,20 @@ describe("the toolset a step gets", () => {
 describe("the toolset a research step gets", () => {
   // [source, broken] → admitted: scoped and declared for a worker, wherever it runs.
   it.each([
-    ["a tab's registry", null],
-    ["the worker's catalogue", []],
-    ["the worker's catalogue, nothing loading", PLUGINS.map((p) => p.id)],
-  ])("from %s: the research built-ins and scoped_tool alone", async (_, broken) => {
-    const plugins = broken ? await catalogueOf(PLUGINS, broken).tools() : await loadPluginTools({ registry: registryOf(PLUGINS) })
+    ["a page's registry", false],
+    ["a task's catalogue", true],
+  ])("from %s: the research built-ins and scoped_tool alone", async (_, fromCatalogue) => {
+    const plugins = fromCatalogue ? await catalogueOf(PLUGINS) : await loadPluginTools({ registry: registryOf(PLUGINS) })
     const toolset = await researchToolset({ plugins })
     expect(ids(toolset)).toEqual([...SCOPED_TOOL_IDS, "scoped_tool"])
   })
 
-  it("a scoped plugin that cannot load in the worker is listed, and its calls go to a tab", async () => {
-    const plugins = await catalogueOf(PLUGINS, ["scoped_tool"]).tools()
-    const tool = (await researchToolset({ plugins })).get("scoped_tool")
+  it("a scoped plugin from the catalogue is listed, and its calls go to a page", async () => {
+    const tool = (await researchToolset({ plugins: await catalogueOf(PLUGINS) })).get("scoped_tool")
     expect(tool.where).toBe("host")
     expect(callNeeds({ where: "worker" }, tool)).toBe("host")
-  })
-
-  it("one that loads runs in the worker", async () => {
-    const tool = (await researchToolset({ plugins: await catalogueOf(PLUGINS).tools() })).get("scoped_tool")
-    expect(tool.where).toBe("worker")
-    expect(await tool.execute({}, {})).toBe("ran scoped_tool in the worker")
+    // Its code is not in a burst: run there, it says so.
+    await expect(tool.execute({}, {})).rejects.toThrow(/runs only in a page/)
   })
 })
 
@@ -263,66 +251,69 @@ describe("a step's prompt, checked before it starts", () => {
   })
 })
 
-describe("a worker step calling a plugin the worker cannot load", () => {
-  // The SharedWorker records the call as it sees the tool (host-tier, since
-  // it will not load there); a tab — taking only host-tier work while the
-  // worker is up — runs it with its own registry, where the tool is a worker
-  // tool. And the other way round: a tab recorded it as a worker call, the
-  // worker cannot run it, so it parks it as host-tier for the tab.
+describe("a worker step calling a plugin, which a burst offers from the catalogue", () => {
+  // A burst offers the plugin as its package describes it, and parks a call
+  // to it for a page (`where: "host"`); the page showing the session runs it
+  // with its own registry (runners/page.js pageCalls) and asks again.
   function setup() {
     const doc = {}
     initSession(doc, {})
     doc.workflow = { planUrl: plan.url, stepId: "s" }
     doc.tools = { where: "worker" }
     doc.turns = [makeTurn("user", [textBlock("record the value")])]
+    doc.burst = null
     const store = memoryStore(doc)
     const ran = []
     const registry = {
-      all: () => [{ id: "assumptions_set", where: "worker", risk: "edit" }],
+      all: () => [{ id: "assumptions_set", where: "worker", risk: "edit", importUrl: "automerge:pkg#h" }],
       load: async (id) => ({ id, where: "worker", risk: "edit", module: { execute: (input, ctx) => (ran.push(ctx.runnerName), "set") } }),
     }
-    const catalogue = createPluginCatalogue({ importPlugin: async () => { throw new Error("Failed to resolve module specifier") } })
-    catalogue.set([{ id: "assumptions_set", where: "worker", risk: "edit", importUrl: "automerge:pkg#h" }])
-    const runner = (name, plugins, canRun, provider) =>
-      new SessionRunner({ store, runnerUrl: name, ctx: { repo, runnerName: name }, buildToolset: (d) => buildToolset(d, { plugins }), getProvider: async () => provider, canRun, confirmMs: 0 })
-    return { store, ran, registry, catalogue, runner }
+    return { store, ran, registry }
   }
   const callBlock = (store) => findCall(store.doc(), "c1")?.block
 
-  it("recorded by the worker: it parks host-tier, and the tab runs it", async () => {
-    const { store, ran, registry, catalogue, runner } = setup()
+  it("it parks host-tier in the burst, the page runs it, and the next burst carries on", async () => {
+    const { store, ran, registry } = setup()
+    // The plan names this session for its step: a burst on any other stands back.
+    plan.change((d) => {
+      d.steps[0].sessionUrl = store.url
+    })
     const provider = makeMock([[{ type: "call", id: "c1", name: "assumptions_set", input: { register: "automerge:r" } }], [{ type: "text", delta: "done" }]])
-    const worker = runner("worker", () => catalogue.tools(), (w) => w === "worker", provider)
-    await worker.tick()
-    // The model was offered the plugin in the worker, and the call waits for a tab.
+    const burst = burstRunner({
+      store,
+      runnerUrl: "burst",
+      ctx: { repo, runnerName: "burst" },
+      buildToolset: async (d) => buildToolset(d, { plugins: async () => catalogueOf(registry.all()) }),
+      getProvider: async () => provider,
+    })
+    expect((await burst.tick()).outcome).toBe("parked")
+    // The model was offered the plugin, and the call waits for a page.
     expect(provider.requests[0].tools.map((t) => t.id ?? t.name)).toContain("assumptions_set")
     expect(callBlock(store).where).toBe("host")
     expect(settled(store.doc())).toBe("parked")
-    const tab = runner("tab", () => loadPluginTools({ registry }), (w) => w === "host", provider)
-    await tab.tick()
-    expect(ran).toEqual(["tab"])
-    expect(store.doc().turns.at(-1).blocks[0].text).toBe("done")
-  })
-
-  it("recorded by a tab as a worker call: the worker parks it host-tier for the tab", async () => {
-    const { store, ran, registry, catalogue, runner } = setup()
-    // The tab records the call and stops at it: worker calls are the worker's while it is up.
-    const provider = makeMock([[{ type: "call", id: "c1", name: "assumptions_set", input: {} }], [{ type: "text", delta: "done" }]])
-    const tab = runner("tab", () => loadPluginTools({ registry }), (w) => w === "host", provider)
-    await tab.tick()
-    expect(callBlock(store).where).toBe("worker")
-    const worker = runner("worker", () => catalogue.tools(), (w) => w === "worker", provider)
-    await worker.tick()
-    expect(callBlock(store).where).toBe("host")
     expect(ran).toEqual([])
-    await tab.tick()
-    expect(ran).toEqual(["tab"])
+
+    let asked = null
+    const page = pageCalls(memoryHandle(store), {
+      context: { repo, runnerName: "page" },
+      buildToolset: async (d) => buildToolset(d, { plugins: () => loadPluginTools({ registry }) }),
+      ask: () => (asked = burst.tick()),
+      beatMs: 0,
+      target: null,
+    })
+    await page.tick()
+    expect(ran).toEqual(["page"])
+    expect(await asked).toMatchObject({ outcome: "idle" })
     expect(store.doc().turns.at(-1).blocks[0].text).toBe("done")
+    page.dispose()
+    plan.change((d) => {
+      d.steps[0].sessionUrl = null
+    })
   })
 })
 
 describe("the driver, starting a step", () => {
-  // A stand-in runner: it answers every step it is given, as a real one would leave the document.
+  // A stand-in asker: it answers every step it is given, as a burst would leave the document.
   async function run(steps, { limits = {}, plugins = [] } = {}) {
     const { WorkflowDriver, _resetDrivers } = await import("../workflow/driver.js")
     const repo = new Repo({ network: [] })
@@ -337,10 +328,10 @@ describe("the driver, starting a step", () => {
           d.turns.push(makeTurn("assistant", [textBlock(`result of ${d.workflow.stepId}`)]))
         })
       }
-      return { runner: { interrupt() {} }, listen() {} }
+      return { asked: true, outcome: "idle" }
     }
     const tools = async () => ({ builtins: BUILTIN_TOOLS, plugins })
-    const driver = new WorkflowDriver({ repo, handle, startSession, tools, heartbeatMs: 1e9, confirmMs: 0 })
+    const driver = new WorkflowDriver({ repo, handle, startSession, stopWork: async () => false, tools, heartbeatMs: 1e9, confirmMs: 0 })
     driver.start()
     for (let i = 0; i < 20; i++) await driver.kick()
     driver.stop()

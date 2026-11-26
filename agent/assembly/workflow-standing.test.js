@@ -134,7 +134,7 @@ async function stepSession(repo, { scoped = false } = {}) {
     if (scoped) d.scope = webScope("automerge:2ZB7EhdqPcSAApFM3bwf7gNxh7fv", "b")
     d.turns.push(makeTurn("user", [textBlock("Find the rig loads.")]))
     d.turns.push(makeTurn("assistant", [textBlock("Working."), callBlock("web_fetch", { url: "https://x" }, { id: "c1", status: CALL.running })]))
-    d.lease = { runner: "tab-x", at: 1, generation: 3 }
+    d.burst = { run: "run-x" }
     d.reconnecting = { reason: "offline", since: 1, attempts: 1 }
   })
   return handle
@@ -159,7 +159,7 @@ describe("a question in a side thread", () => {
     expect(aside.grants).toEqual(step.doc().grants)
     expect(aside.tools).toEqual(step.doc().tools)
     // What was mid-flight is settled, and it starts with nothing spent and no step budget.
-    expect(aside.lease).toBeNull()
+    expect(aside.burst).toBeNull()
     expect(aside.reconnecting ?? null).toBeNull()
     expect(aside.config.budget).toBeUndefined()
     expect(aside.config.workflows).toEqual({ enabled: false })

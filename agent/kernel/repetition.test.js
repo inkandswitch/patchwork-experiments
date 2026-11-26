@@ -3,7 +3,6 @@ import { run, OUTCOME, REPEAT_WINDOW, repeatsItself } from "./loop.js"
 import { memoryStore } from "./store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, STATUS, _resetIds } from "../session/schema.js"
-import { claimLease } from "../session/lease.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { settled } from "../fixtures/session.js"
 
@@ -20,7 +19,6 @@ function session() {
   initSession(doc, { title: "T", subject: "automerge:subject" })
   doc.turns = [makeTurn("user", [textBlock("fix the bug")])]
   doc.grants = { fs_edit: true }
-  claimLease(doc, "local", Date.now())
   return memoryStore(doc)
 }
 

@@ -8,7 +8,7 @@ import { AgentTool } from "./session-view.js"
 import { initSession, CALL, STATUS, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock, callBlock, resultBlock } from "../session/blocks.js"
 import { renderTranscript, callSummary } from "./transcript.js"
-import { _reset as resetRunners } from "../runners/registry.js"
+import { _reset as resetRunners } from "../runners/page.js"
 import { viewMount, _resetMounts } from "../tools/checking.js"
 import { pendingCall, toolOf } from "../fixtures/asking.js"
 import { written } from "../fixtures/calls.js"
@@ -24,8 +24,8 @@ function fakeHandle(seed = {}) {
   initSession(doc, seed)
   const listeners = new Set()
   return {
-    // Distinct per handle: runners are registered by session url, so a shared
-    // one would let a runner from an earlier test drive a later one's document.
+    // Distinct per handle: a page follows a session by its url, so a shared
+    // one would let an earlier test's follower act on a later one's document.
     url: `automerge:session${++handleCounter}`,
     doc: () => doc,
     change(fn) {
@@ -41,7 +41,7 @@ function fakeHandle(seed = {}) {
 const mount = (handle, options = {}) => {
   const element = document.createElement("div")
   document.body.append(element)
-  const cleanup = AgentTool(handle, element, { repo: { find: async () => ({ doc: () => ({}) }) }, ...options })
+  const cleanup = AgentTool(handle, element, { repo: { find: async (url) => (String(url).split("#")[0] === handle.url ? handle : { doc: () => ({}) }) }, ...options })
   return { element, cleanup }
 }
 
@@ -61,10 +61,11 @@ describe("the render contract", () => {
     cleanup()
   })
 
-  it("removes its DOM and its change listener on cleanup", () => {
+  it("removes its DOM and every change listener it added on cleanup", () => {
     const handle = fakeHandle()
     const { element, cleanup } = mount(handle)
-    expect(handle.listenerCount()).toBe(1)
+    // The view's own, and the page's following of the session (runners/page.js follow).
+    expect(handle.listenerCount()).toBeGreaterThan(0)
 
     cleanup()
     expect(element.querySelector(".patchwork-agent")).toBeNull()
@@ -98,8 +99,8 @@ describe("the composer", () => {
     input.value = "rename the title to Soup"
     element.querySelector(".agent-composer button[data-variant='primary']").click()
 
-    // Assert on the first turn, not the count: once a key exists the runner
-    // starts and appends its own turns, so the total is a moving target.
+    // Assert on the first turn, not the count: once a key exists the page
+    // asks for the work, and a burst could append its own turns.
     await vi.waitFor(() => {
       expect(handle.doc().turns.length).toBeGreaterThan(0)
     })
@@ -177,7 +178,7 @@ describe("status", () => {
     const handle = fakeHandle()
     const { element, cleanup } = mount(handle)
     handle.change((d) => {
-      d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
+      d.burst = { run: "run-elsewhere" }
     })
     expect(element.querySelector(".agent-status").dataset.status).toBe("running")
     cleanup()
@@ -190,7 +191,7 @@ describe("status", () => {
     expect(stop.style.display).toBe("none")
 
     handle.change((d) => {
-      d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
+      d.burst = { run: "run-elsewhere" }
     })
     expect(stop.style.display).not.toBe("none")
     cleanup()
@@ -198,13 +199,13 @@ describe("status", () => {
 })
 
 describe("a person's Stop", () => {
-  it("writes the stop into the session, even for a runner elsewhere; a call cleared to run shows not run, and the next message closes it", async () => {
+  it("writes the stop into the session, even for a burst elsewhere; a call cleared to run shows not run, and the next message closes it", async () => {
     const handle = fakeHandle()
     handle.change((d) => {
       d.turns.push(makeTurn("user", [textBlock("read it")]))
       d.turns.push(makeTurn("assistant", [callBlock("fs_read", { path: "tool.js" }, { id: "c1", status: CALL.approved })]))
-      // Another tab, another device or Node is running it: nothing here to interrupt.
-      d.lease = { runner: "tab-elsewhere", generation: 1, at: Date.now() }
+      // A burst in a pool somewhere is running it: nothing here to interrupt.
+      d.burst = { run: "run-elsewhere" }
     })
     const { element, cleanup } = mount(handle)
     const stop = element.querySelector("button[data-variant='danger']")
@@ -213,7 +214,7 @@ describe("a person's Stop", () => {
 
     stop.click()
     await vi.waitFor(() => expect(stopOf(handle.doc())?.kind).toBe(STOP.stopped))
-    expect(handle.doc().lease).toBeNull()
+    expect(handle.doc().burst).toBeNull()
     expect(stop.style.display).toBe("none")
     expect(element.querySelector(".agent-call[data-status='not-run']")?.textContent).toContain("Not run: stopped")
     expect(findCall(handle.doc(), "c1").block.status).toBe(CALL.approved)
@@ -226,6 +227,87 @@ describe("a person's Stop", () => {
     expect(String(findResult(handle.doc(), "c1").block.output)).toBe(NOT_RUN)
     expect(stopOf(handle.doc())).toBeNull()
     expect(element.querySelector(".agent-call[data-status='not-run']")).toBeNull()
+    cleanup()
+  })
+})
+
+describe("asking for the work, and the line under the composer", () => {
+  /** The page's asker and task client, stood in: what was asked, and a watch of the key the test speaks for. */
+  function standIns() {
+    const asked = []
+    const watch = { say: () => {} }
+    const client = {
+      doWork: async () => ({ outcome: "idle" }),
+      watchWork: (_repo, _key, onChange) => ((watch.say = onChange), () => {}),
+      stopWork: vi.fn(async () => true),
+    }
+    resetRunners(async (_repo, url, opts) => (asked.push({ url, keys: opts.keys }), { asked: true, outcome: "idle" }), { with: client })
+    return { asked, watch, client }
+  }
+
+  it("a message sent asks for the session's work, with this browser's key", async () => {
+    const { asked } = standIns()
+    localStorage.setItem("patchwork-agent:key:openrouter", "sk-or-test")
+    const handle = fakeHandle()
+    const { element, cleanup } = mount(handle)
+    element.querySelector("textarea").value = "hello"
+    element.querySelector(".agent-composer button[data-variant='primary']").click()
+    await vi.waitFor(() => expect(asked.length).toBeGreaterThan(0))
+    expect(asked[0]).toEqual({ url: handle.url, keys: { model: "sk-or-test", search: null, relay: null } })
+    cleanup()
+  })
+
+  it("says where the task is, as the queue says it, and offers Stop while it goes on", async () => {
+    const { watch } = standIns()
+    localStorage.setItem("patchwork-agent:key:openrouter", "sk-or-test")
+    localStorage.setItem("patchwork-tasks-pool-id", "pool-here")
+    const handle = fakeHandle()
+    const { element, cleanup } = mount(handle)
+    const hint = () => element.querySelector(".agent-hint").textContent
+    const stop = element.querySelector("button[data-variant='danger']")
+    watch.say({ state: "waiting", runs: [] })
+    expect([hint(), stop.style.display]).toEqual(["Waiting for a device to take it", ""])
+    handle.change((d) => (d.burst = { run: "r1" }))
+    watch.say({ state: "running", runs: [{ id: "r1", pool: "pool-here", start: 1 }] })
+    expect(hint()).toBe("Working on this browser… Enter to steer, Stop to interrupt")
+    watch.say({ state: "running", runs: [{ id: "r1", pool: "pool-there", start: 1 }] })
+    expect(hint()).toBe("Working on another device… Enter to steer, Stop to interrupt")
+    cleanup()
+  })
+
+  it("a mark nobody here hears is someone else's: Take over clears it and asks", async () => {
+    const { asked, watch } = standIns()
+    localStorage.setItem("patchwork-agent:key:openrouter", "sk-or-test")
+    const handle = fakeHandle()
+    handle.change((d) => {
+      d.turns.push(makeTurn("user", [textBlock("go")]))
+      d.burst = { run: "someone-elses" }
+    })
+    const { element, cleanup } = mount(handle)
+    watch.say({ state: "missing", runs: [] })
+    expect(element.querySelector(".agent-hint").textContent).toBe("Someone else's work is under way here, or work that stopped without saying")
+    const takeOver = [...element.querySelectorAll(".agent-composer button")].find((b) => b.textContent === "Take over")
+    expect(takeOver.style.display).toBe("")
+    asked.length = 0
+    takeOver.click()
+    await vi.waitFor(() => expect(asked.length).toBeGreaterThan(0))
+    expect(handle.doc().burst).toBe(null)
+    expect(takeOver.style.display).toBe("none")
+    cleanup()
+  })
+
+  it("Stop also stops the task under the key on this person's queue", async () => {
+    const { client } = standIns()
+    const handle = fakeHandle()
+    handle.change((d) => {
+      d.turns.push(makeTurn("user", [textBlock("go")]))
+      d.burst = { run: "r1" }
+    })
+    const { element, cleanup } = mount(handle)
+    element.querySelector("button[data-variant='danger']").click()
+    await vi.waitFor(() => expect(client.stopWork).toHaveBeenCalled())
+    expect(client.stopWork.mock.calls[0][1]).toBe(`agent:${handle.url}`)
+    expect(stopOf(handle.doc())?.kind).toBe(STOP.stopped)
     cleanup()
   })
 })
