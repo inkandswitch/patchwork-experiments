@@ -14,11 +14,18 @@
  *
  * Every write through it is also reported to `record`, as the heads it added
  * (own-changes.js), so a session's own edits can be told from everyone else's.
+ *
+ * Nor does it let a tool read a session's task (runners/ask.js asks for one
+ * under `agent:<session>`, with its asker's keys in its input): a handle on
+ * one answers nothing but whether it is ready, and the repo exports none.
+ * Other packages' tasks read as any document does, so their tools can follow
+ * them.
  */
 
 import { addedHeads } from "./own-changes.js"
 import { Automerge as A, AutomergeRepo } from "../host/modules.js"
 import { repairDocUrl, documentIdOf } from "../documents/doc-urls.js"
+import { isTask } from "../host/task-rules.js"
 
 const { decodeHeads, encodeHeads } = AutomergeRepo
 
@@ -44,6 +51,18 @@ const whole = (handle) => (typeof handle.fullDoc === "function" ? handle.fullDoc
 export const refuse = () => {
   throw new Error(KERNEL_REFUSAL)
 }
+
+/** A task asked for a session's work: its input holds its asker's keys. */
+export const isSessionTask = (doc) => isTask(doc) && typeof doc.key === "string" && doc.key.startsWith("agent:")
+
+export const TASK_REFUSAL = "That document is an agent session's task: its input holds its asker's keys, so no tool reads it."
+
+const refuseTask = () => {
+  throw new Error(TASK_REFUSAL)
+}
+
+/** What a handle on a session's task still answers: whether it is there, and letting go of a listener. */
+const TASK_ANSWERS = new Set(["whenReady", "isReady", "isDeleted", "isUnavailable", "inState", "off", "removeListener"])
 
 /**
  * Each guarded handle, by the handle beneath it, and back: one guard per handle
@@ -143,6 +162,15 @@ const WRITES = {
   },
 }
 
+/** The whole document behind a handle, or null when it has none to give (not loaded, deleted). */
+const wholeOrNull = (handle) => {
+  try {
+    return whole(handle)
+  } catch {
+    return null
+  }
+}
+
 /** The heads of the whole document behind a handle, or null if it has none now (deleted). */
 const headsOf = (handle) => {
   try {
@@ -172,6 +200,7 @@ function kernelHandle(handle, record = null) {
     get(target, key) {
       const value = Reflect.get(target, key)
       if (typeof value !== "function") return value
+      if (!TASK_ANSWERS.has(key) && isSessionTask(wholeOrNull(target))) refuseTask()
       if (Object.hasOwn(WRITES, key)) {
         return (...args) => {
           // Judged at the moment of writing and on the whole document, so
@@ -276,6 +305,13 @@ export function kernelRepo(repo, { known = null, record = null } = {}) {
           // A document this repo has not loaded cannot be judged, so it is not deleted.
           if (!live || isKernel(whole(live))) refuse()
           return value.call(target, name)
+        }
+      }
+      if (key === "export") {
+        return async (...args) => {
+          const bytes = await value.apply(target, mend(args))
+          if (bytes && isSessionTask(A.load(bytes))) refuseTask()
+          return bytes
         }
       }
       if (key === "import") {
