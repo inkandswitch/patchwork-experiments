@@ -182,7 +182,8 @@ never names a queue:
   travel is asked of a queue: a file in a package kept in automerge, or a `data:` URL; any other
   url (a dev server's `http://localhost`, a `file:` url) is done in the page. Work that needs more
   than a page and cannot be asked of a queue (its code cannot travel, or no queue can be had: no
-  account open, or nowhere to keep it) is rejected with a sentence saying what it needs and why.
+  account open, nowhere to keep it, or the list of the person's queues not found within about half
+a minute) is rejected with a sentence saying what it needs and why.
 - `watchWork(repo, key, onChange)` follows the work under the key on the person's queues (own,
   and every spare, see below), so that a page opened later, or another tab, shows work already
   going on instead of offering it again. It follows them as they change, makes nothing, and
@@ -341,14 +342,14 @@ trying, and work from what this browser keeps.
 | Making your own queue; the pool starting | works: making writes in the page's Repo and waits on nothing, and the pool starts and serves it |
 | A task asked in this browser, run by this browser's pool, its progress and result | works when asked through the task system's own Repo (`tasks-repo.ts`, as the queue browser asks); a page tool asks through the site's Repo, which reaches the pool only by way of the sync server, so `doWork` counts only pools heard through that Repo, hears none, and does the work in the page (until the local link holds) |
 | What a pool-run task writes into a document the page has open | waits for the network (until the local link holds): it stays in its run worker's storage, and the run's log says so; this is why the in-page path stays |
-| Work that needs another machine (`needs: ['node']`) | waits in the queue, and the queue browser says what it waits for |
+| Work that needs another machine (`needs: ['node']`) | waits in the queue, and the queue browser says what it waits for; where this browser does not have the list of the person's queues (the account names a storage document that has not arrived), `doWork` looks for it as `findWhenThere` does, about half a minute, and then rejects with "This work needs a device with node, and it could not be asked of your task queue: The list of your task queues could not be found, so nothing was changed." |
 | Stopping work | works for work in this browser: work done in the page by its signal, and work the pool runs by a stop written through the task system's own Repo (the queue browser's Stop) |
 
 | When a partition heals | |
 |---|---|
 | Two devices each made a queue | one becomes own everywhere (Automerge's winner among the pointer writes); the other is a spare, folded into it by the next pass; both stay served; no task is lost |
 | A task was listed on both for a while | one list of runs; a second run yields when it hears the first |
-| A run finished while cut off | its record and what it wrote arrive; if another machine took the task meanwhile, the later run's writes are the task code's to guard (as before) |
+| A run finished while cut off | its record and what it wrote arrive; if another machine took the task meanwhile, its run, still going, gives way once it has the finished run's record, whichever of the two is first in the list, and what it wrote meanwhile is the task code's to guard (as before) |
 | Two devices each had the storage document made | the account keeps one; the pool host moves what the other lists into it, and its own becomes a spare |
 
 A task's code imports by bare name with no network as it does online. `probes/browser-run.mjs
@@ -358,7 +359,9 @@ sees each page and each worker make, that none leaves the machine but the Repos'
 sync server. The unit tests show the rest: two replicas that each made a queue apart agree on own
 when they meet, lose no task and run none twice; a replica that sees a pointer to a queue it does
 not have asks a queue of its own and folds it into own once own arrives; folding with one replica
-cut off part way, then healed, converges.
+cut off part way, then healed, converges; a run that finished while its pool was cut off arrives
+with what it wrote, and a run another pool took meanwhile gives way to it. What none of them shows
+yet is said at the end of Tests and probes.
 
 ## Using it from another package
 
@@ -458,3 +461,18 @@ processes and say what they saw, one line per check or measurement:
   than one file).
 - `probes/cdp.mjs` and `probes/chrome-guard.mjs`: how the browser probes start, drive and always
   close a throwaway Chrome.
+
+Not shown yet, of Offline and partition:
+
+- A page tool's work with no network on the site's own Repo. That `doWork` through the site's Repo
+  hears no pool and does the work in the page is shown only by unit tests on network-less Repos of
+  both kinds (`offline-check.test.ts`, `offline-recheck.test.ts`). `browser-run.mjs --no-network`
+  has a stand-in page with no site Repo, and `real-run.mjs` runs the real site only with the
+  network.
+- A partition healed through a real sync server. Every "When a partition heals" row is shown by
+  unit tests that merge the documents by hand (`task-client.test.ts`, `offline-check.test.ts`,
+  `rules-fold.test.ts`, `merge-storages.test.ts`, and `pool.test.ts` for a run finished while cut
+  off); no probe cuts a browser or a host off from the server and lets it back.
+- A cold start whose storage is slow. `own-load.test.ts` shows own waited for while this browser's
+  storage reads it, on both Repo kinds, with a storage adapter of the test's own; no probe times a
+  real IndexedDB.

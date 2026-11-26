@@ -428,6 +428,87 @@ describe('the design cases', () => {
     expect(queueB.doc().jobs.k).toBeUndefined();
   });
 
+  // The README's Offline and partition, "a run finished while cut off": once
+  // healed, its record and what it wrote arrive, and one ending stands. Which
+  // run is first in the merged list is Automerge's to say; giving one side's
+  // copy an extra change before it takes moves its insert in op order, and
+  // the test sees both orders between the two cases.
+  const firstPools = new Set<string>();
+  for (const ahead of ['A', 'B'] as const) {
+    it(`a run finished while its pool was cut off, another pool having taken the task meanwhile: healed, its record and what it wrote arrive, and one ending stands (${ahead}'s copy one change ahead)`, async () => {
+      const clock = new ManualClock();
+      const net = new Loopback();
+      const repoA = new Repo({ network: [] } as any);
+      const repoB = new Repo({ network: [] } as any);
+      const queueA = repoA.create<Queue>({ title: 'q', jobs: {} });
+      const taskA = repoA.create<Task>({ importUrl: CODE, input: null, key: 'k', runs: [] });
+      queueA.change((doc) => listTask(doc, 'k', { taskUrl: taskA.url, askedAt: 1, package: null }));
+      const queueB = repoB.import<Queue>(A.save(queueA.doc()), { docId: queueA.documentId } as any);
+      const taskB = repoB.import<Task>(A.save(taskA.doc()), { docId: taskA.documentId } as any);
+      (ahead === 'A' ? taskA : taskB).change((doc) => void (doc.title = 'one change ahead'));
+      const heal = () => {
+        for (const [a, b] of [
+          [taskA, taskB],
+          [queueA, queueB],
+        ] as const) {
+          a.merge(b as any);
+          b.merge(a as any);
+        }
+      };
+      // B is cut off: it hears nothing, and nothing it says is heard
+      const earsB = net.ears();
+      earsB.deaf = earsB.mute = true;
+      const start = (id: string, repo: Repo, ears: Ears) => {
+        const executor = new FakeExecutor(clock);
+        const pool = new Pool({ repo: repo as Docs, id, name: id, slots: 1, has: [], executor, queues: { [queueA.url]: 'any' }, ears: deafToServing(ears), clock });
+        return { pool, executor };
+      };
+      const a = start('A', repoA, net.ears());
+      const b = start('B', repoB, earsB);
+      await settle();
+      await clock.advance(LISTEN_MS);
+      const [runA] = runsOf(taskA);
+      const [runB] = runsOf(taskB);
+      expect([runA.pool, runB.pool]).toEqual(['A', 'B']);
+
+      // B's code writes a document of its own, naming its run, and returns its url; B's pool records it
+      const out = repoB.create<{ run: string; text: string }>({ run: runB.id, text: 'written while cut off' });
+      b.executor.of(runB.id).events.done({ out: out.url });
+      await settle();
+      expect(statuses(taskB)).toEqual(['succeeded']);
+      expect(queueB.doc().jobs.k).toBeUndefined();
+      expect(a.executor.of(runA.id).aborts).toEqual([]);
+
+      // healed: the documents meet, as the sync server would bring them, and B is heard again
+      earsB.deaf = earsB.mute = false;
+      heal();
+      const outHere = repoA.import<{ run: string; text: string }>(A.save(out.doc()), { docId: out.documentId } as any);
+      await settle();
+      expect(runsOf(taskA).map((run) => run.id)).toEqual(runsOf(taskB).map((run) => run.id));
+      expect(runById(taskA, runB.id)).toMatchObject({ status: 'succeeded', result: { out: out.url } });
+      expect(outHere.doc()).toEqual({ run: runB.id, text: 'written while cut off' });
+
+      // whichever run is first in the list, B's success ends the task: A's run, still going, gives way
+      // (its code is told so; what it wrote meanwhile is the task code's to guard), and B's ending stands
+      firstPools.add(runsOf(taskA)[0].pool ?? 'none');
+      expect(a.executor.of(runA.id).aborts.map((it) => it.reason)).toEqual(['yielded']);
+      await clock.advance(GRACE_MS);
+      expect(a.executor.of(runA.id).terminations).toEqual([clock.now()]);
+      heal();
+      await settle();
+      const order = runsOf(taskA)[0].pool === 'B' ? ['succeeded', 'yielded'] : ['yielded', 'succeeded'];
+      for (const task of [taskA, taskB]) {
+        expect(statuses(task)).toEqual(order);
+        expect(taskResult(task.doc())).toEqual({ out: out.url });
+      }
+      expect(queueA.doc().jobs.k).toBeUndefined();
+    });
+  }
+
+  it('a run finished while cut off: both orders of the merged runs were seen', () => {
+    expect([...firstPools].sort()).toEqual(['A', 'B']);
+  });
+
   it('(c) a holder gone for good: unheard for LAPSE_MS, then taken; the dead run stays open', async () => {
     const task = w.ask('k', { runs: [{ id: 'dead', pool: 'gone', start: 0 }] });
     const { executor } = w.pool('B');
