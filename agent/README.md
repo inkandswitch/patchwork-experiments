@@ -88,6 +88,7 @@ pnpm test                                    # every unit and mount test, no net
 npx vitest run kernel/                       # one layer and what is under it
 node probes/session-task-node.mjs            # bursts on two Node hosts, a stand-in model (tasks/ built)
 node probes/session-task-browser.mjs         # a burst in a browser pool's run worker (tasks/ built)
+node probes/session-task-second-tab.mjs      # askWork from a tab not holding the pool, no network (tasks/ built)
 node probes/session-view.mjs                 # the session view in headless Chrome: clicks, typing, redraws
 OPENROUTER_KEY_FILE=… node probes/patchwork-e2e.mjs    # the whole thing, in real Patchwork
 ```
