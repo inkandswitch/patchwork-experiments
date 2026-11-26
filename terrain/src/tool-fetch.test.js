@@ -1,7 +1,8 @@
 // The Terrain tool's Fetch data, through the task system's doWork, watchWork
 // and stopWork (stood in for: their own tests are the tasks package's), on a
 // page with the stand-in Repo: what it asks for and under which key, what a
-// person sees while it runs here or on their own machines, Cancel, a fetch
+// person sees while it waits for and runs on their own machines (and when
+// this browser takes no part), Cancel, a rejection shown as written, a fetch
 // already under way being shown instead of offered again, and where the
 // task's code is.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -29,9 +30,10 @@ vi.mock("./task-client.js", async (importOriginal) => ({
   },
 }));
 
-const { default: TerrainTool, fetchTaskUrl } = await import("./tool.js");
+const { default: TerrainTool, fetchTaskUrl, NOT_FROM_A_PACKAGE } = await import("./tool.js");
 
-const view = (more) => ({ key: "k", state: "running", taskUrl: null, importUrl: "x", input: null, progress: null, logs: [], result: undefined, error: null, runs: [], ...more });
+const TASK = "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P";
+const view = (more) => ({ key: "k", state: "running", taskUrl: TASK, importUrl: "x", input: null, progress: null, logs: [], result: undefined, error: null, runs: [], ...more });
 const lines = (...messages) => messages.map((message) => ({ timestampMillis: 0, message }));
 const settle = async () => {
   for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -44,10 +46,11 @@ beforeEach(() => {
 });
 afterEach(() => {
   document.body.innerHTML = "";
+  delete window.patchworkTasks;
 });
 
 /** The tool mounted on a Terrain doc with no data. */
-function mounted() {
+function mounted(Tool = TerrainTool) {
   const repo = new FakeRepo();
   const doc = terrainDoc();
   doc.data = null;
@@ -55,7 +58,7 @@ function mounted() {
   const element = document.createElement("div");
   element.repo = repo;
   document.body.append(element);
-  const unmount = TerrainTool(handle, element);
+  const unmount = Tool(handle, element);
   const $ = (s) => element.querySelector(s);
   return { repo, handle, element, unmount, $, fetchButton: $(".fetch"), cancelButton: $(".cancel") };
 }
@@ -73,7 +76,7 @@ describe("Fetch data", () => {
     expect(request.importUrl).toMatch(/\/src\/fetch-task\.js$/);
   });
 
-  it("done in this page: shows its log and stage, says it is running here, offers Cancel, and when done shows the last line", async () => {
+  it("asked of the person's own queue: shows its log and stage, says closing this does not stop it, offers Cancel, and when done shows the last line", async () => {
     const { $, fetchButton, cancelButton } = mounted();
     expect(cancelButton.hidden).toBe(true);
     fetchButton.click();
@@ -84,7 +87,7 @@ describe("Fetch data", () => {
     expect(fetchButton.textContent).toBe("Fetching…");
     expect(cancelButton.hidden).toBe(false);
     expect($(".where").hidden).toBe(false);
-    expect($(".where").textContent).toBe(`${STAGES.fetching} In this page: closing it stops the fetch.`);
+    expect($(".where").textContent).toBe(`${STAGES.fetching} On your own machines: closing this does not stop it.`);
     expect($(".log").textContent).toBe("Asking NCEI for 65 × 65 heights…");
     options.onProgress(view({ state: "succeeded", logs: lines("Asking NCEI for 65 × 65 heights…", "Storing…", "Done: 2 coastline ways") }));
     resolve({ stored: true, message: "Done: 2 coastline ways" });
@@ -95,14 +98,47 @@ describe("Fetch data", () => {
     expect(fetchButton.disabled).toBe(false);
   });
 
-  it("asked of the person's own queue: says closing this does not stop it", async () => {
+  it("waiting: says it waits for one of the person's machines, and, where the tasks package is not installed here, that this browser takes no part", async () => {
     const { $, fetchButton } = mounted();
     fetchButton.click();
     await settle();
-    calls.doWork[0].options.onProgress(view({ taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P", progress: STAGES.storing }));
-    expect($(".where").textContent).toBe(`${STAGES.storing} On your own machines: closing this does not stop it.`);
-    calls.doWork[0].options.onProgress(view({ taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P", state: "waiting" }));
+    window.patchworkTasks = { poolHosts: { 1: {} } };
+    calls.doWork[0].options.onProgress(view({ state: "waiting" }));
     expect($(".where").textContent).toBe("Waiting for one of your machines to take it up… On your own machines: closing this does not stop it.");
+    delete window.patchworkTasks;
+    calls.doWork[0].options.onProgress(view({ state: "waiting" }));
+    expect($(".where").textContent).toBe(
+      "Waiting for one of your machines to take it up: this browser takes no part, because the tasks package is not installed here. On your own machines: closing this does not stop it.",
+    );
+  });
+
+  it("a rejection of doWork (no queue could be had) is shown as written, and nothing is under way", async () => {
+    const { $, fetchButton, cancelButton } = mounted();
+    fetchButton.click();
+    await settle();
+    calls.doWork[0].reject(new Error("This page has nowhere to keep your task queues, so nothing was changed."));
+    await settle();
+    expect($(".log").textContent).toBe("This page has nowhere to keep your task queues, so nothing was changed.");
+    expect($(".log").dataset.state).toBe("error");
+    expect(cancelButton.hidden).toBe(true);
+    expect(fetchButton.disabled).toBe(false);
+  });
+
+  it("a copy not loaded from a package (built, served from anywhere else): Fetch data says it cannot be asked of the queue, and asks nothing", async () => {
+    vi.stubEnv("PROD", true);
+    vi.resetModules();
+    try {
+      const { default: BuiltTool } = await import("./tool.js");
+      const { $, fetchButton } = mounted(BuiltTool);
+      fetchButton.click();
+      await settle();
+      expect(calls.doWork).toHaveLength(0);
+      expect($(".log").textContent).toBe(NOT_FROM_A_PACKAGE);
+      expect($(".log").dataset.state).toBe("error");
+      expect(fetchButton.disabled).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("Cancel aborts the work's signal, and the tool says it stopped", async () => {
@@ -121,7 +157,7 @@ describe("Fetch data", () => {
     const { $, fetchButton } = mounted();
     fetchButton.click();
     await settle();
-    calls.doWork[0].options.onProgress(view({ taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P", state: "cancelled" }));
+    calls.doWork[0].options.onProgress(view({ state: "cancelled" }));
     calls.doWork[0].reject(new Error("The task was cancelled"));
     await settle();
     expect($(".log").textContent).toBe("Stopped.");
@@ -156,17 +192,17 @@ describe("Fetch data", () => {
     expect(calls.doWork).toHaveLength(1);
   });
 
-  it("closing the tool stops work done in this page, and leaves work on the person's queue going", async () => {
-    const here = mounted();
-    here.fetchButton.click();
+  it("closing the tool leaves the fetch going: it is on the person's queue, asked or still being asked", async () => {
+    const asking = mounted();
+    asking.fetchButton.click();
     await settle();
-    here.unmount();
-    expect(calls.doWork[0].options.signal.aborted).toBe(true);
+    asking.unmount();
+    expect(calls.doWork[0].options.signal.aborted).toBe(false);
 
     const asked = mounted();
     asked.fetchButton.click();
     await settle();
-    calls.doWork[1].options.onProgress(view({ taskUrl: "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P" }));
+    calls.doWork[1].options.onProgress(view({}));
     asked.unmount();
     expect(calls.doWork[1].options.signal.aborted).toBe(false);
   });
@@ -255,7 +291,7 @@ describe("where the fetch task's code is", () => {
     expect(fetchTaskUrl("file:///x/terrain/src/tool.js", false)).toBe("file:///x/terrain/src/fetch-task.js");
     expect(fetchTaskUrl("http://localhost:5173/src/tool.js", false)).toBe("http://localhost:5173/src/fetch-task.js");
   });
-  it("built, not in a package: unknown, so the tool does the work itself", () => {
+  it("built, not in a package: unknown, so Fetch data cannot be asked", () => {
     expect(fetchTaskUrl("http://localhost:4173/dist/assets/tool-1234.js", true)).toBeNull();
   });
 });

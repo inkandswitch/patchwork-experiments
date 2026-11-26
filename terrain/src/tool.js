@@ -4,19 +4,17 @@
 // this package besides the template), and every source with its licence.
 //
 // Fetch data is work done through the task system (fetch-task.js, asked with
-// doWork under a key naming this doc and what it asks for): on the person's
-// own queue when one of their machines serves it, so that it finishes when
-// this page closes and two pages asking are one fetch; otherwise in this
-// page. A fetch already under way for this doc and frame on the person's own
-// queue, asked from another tab or before a reload, is shown (watchWork)
-// rather than offered again; one done in another page is not seen here.
+// doWork under a key naming this doc and what it asks for) on the person's
+// own queue, by one of their machines, so that it finishes when this page
+// closes and two pages asking are one fetch. A fetch already under way for
+// this doc and frame, asked from another tab or before a reload, is shown
+// (watchWork) rather than offered again.
 
 import css from "./tool.css?inline";
 import { NCEI } from "./fetch-data.js";
 import { readTerrainData, dataFits, hasData } from "./store.js";
-import fetchTerrainTask from "./fetch-task.js";
 import { fetchRequest } from "./fetch-spec.js";
-import { doWork, inSamePackage, stopWork, watchWork } from "./task-client.js";
+import { doWork, inSamePackage, poolHere, stopWork, watchWork } from "./task-client.js";
 import { shape, HEIGHT_SCALE } from "./build.js";
 import { hexAt } from "./colors.js";
 import { localFrame } from "./tmerc.js";
@@ -28,11 +26,12 @@ import { QUALITY } from "./burn.js";
 const BUILT = import.meta.env?.PROD === true;
 
 /**
- * Where Fetch data's code is, as an import url both this page and a pool can
- * import: the package's own file, named by the package's url and not this
- * site's, when this module was loaded from a package in automerge; the file
- * beside this one when it runs unbuilt from anywhere else (tests, a dev
- * server); null when neither can be known, and the tool then calls it itself.
+ * Where Fetch data's code is, as an import url a pool can import: the
+ * package's own file, named by the package's url and not this site's, when
+ * this module was loaded from a package in automerge; the file beside this
+ * one when it runs unbuilt from anywhere else (tests, a dev server: only this
+ * browser's pool can reach it); null when neither can be known, and Fetch
+ * data then cannot be asked.
  */
 export function fetchTaskUrl(here = import.meta.url, built = BUILT) {
   const inPackage = inSamePackage(here, built ? "dist/fetch-task.js" : "src/fetch-task.js");
@@ -43,6 +42,13 @@ export function fetchTaskUrl(here = import.meta.url, built = BUILT) {
     return null;
   }
 }
+
+/** What is said when this copy has no url its fetch task could be imported by. */
+export const NOT_FROM_A_PACKAGE = "This copy of Terrain is not loaded from a package, so Fetch data cannot be asked of your queue.";
+
+/** What is said while the fetch waits for a machine to take it up: whose, and, where the tasks package is not installed here, that this browser takes no part. */
+export const waitingWords = (here = poolHere()) =>
+  here ? "Waiting for one of your machines to take it up…" : "Waiting for one of your machines to take it up: this browser takes no part, because the tasks package is not installed here.";
 
 /** Whether a fetch in this state is still under way, as far as a person can tell. */
 const underWay = (state) => state === "waiting" || state === "running" || state === "stalled" || state === "stopping";
@@ -102,7 +108,7 @@ export default function TerrainTool(handle, element) {
   const canvas = $("canvas");
   const ctx2d = canvas.getContext("2d");
   let dead = false;
-  // the fetch this tool started: { controller, here } while it runs
+  // the fetch this tool started: { controller, state } while it runs
   let job = null;
   // a fetch under way for this doc and frame that this tool did not start: { key, view }
   let elsewhere = null;
@@ -145,9 +151,9 @@ export default function TerrainTool(handle, element) {
     logEl.hidden = !lines.length;
     logEl.dataset.state = "";
     logEl.textContent = lines.join("\n");
-    const stage = view.state === "waiting" || view.state === "stalled" ? "Waiting for one of your machines to take it up…" : view.state === "stopping" ? "Stopping…" : typeof view.progress === "string" ? view.progress : "";
+    const stage = view.state === "waiting" || view.state === "stalled" ? waitingWords() : view.state === "stopping" ? "Stopping…" : typeof view.progress === "string" ? view.progress : "";
     // Asked of the person's queue, it is theirs to stop, not this page's; whether it finishes is up to their machines.
-    const where = view.taskUrl ? "On your own machines: closing this does not stop it." : "In this page: closing it stops the fetch.";
+    const where = "On your own machines: closing this does not stop it.";
     whereEl.hidden = !underWay(view.state);
     whereEl.textContent = [stage, where].filter(Boolean).join(" ");
   };
@@ -155,7 +161,7 @@ export default function TerrainTool(handle, element) {
   $(".fetch").addEventListener("click", async () => {
     if (busy()) return;
     const controller = new AbortController();
-    const mine = (job = { controller, here: true });
+    const mine = (job = { controller, state: null });
     logEl.textContent = "";
     logEl.hidden = true;
     whereEl.hidden = false;
@@ -165,23 +171,17 @@ export default function TerrainTool(handle, element) {
       const repo = repoOf();
       const { input, key } = fetchRequest(handle.url, handle.doc());
       const importUrl = fetchTaskUrl();
-      let result;
-      if (importUrl) {
-        result = await doWork(repo, { importUrl, input, key }, {
-          signal: controller.signal,
-          onProgress: (view) => {
-            mine.here = !view.taskUrl;
-            mine.state = view.state;
-            showView(view);
-          },
-        });
-      } else {
-        // nowhere a pool could import it from: done here, as a task done here would be
-        result = await fetchTerrainTask(input, { repo, signal: controller.signal, log: (s) => log(s), progress: (stage) => !dead && (whereEl.textContent = String(stage)) });
-      }
+      if (!importUrl) throw new Error(NOT_FROM_A_PACKAGE);
+      const result = await doWork(repo, { importUrl, input, key }, {
+        signal: controller.signal,
+        onProgress: (view) => {
+          mine.state = view.state;
+          showView(view);
+        },
+      });
       if (!dead && !result?.stored) log(result?.message ?? "Nothing was stored.", "error");
     } catch (err) {
-      // Stopped here or from another page. What was stored, if a stop came too late to prevent it, the status above says.
+      // Stopped here or from another page, or not asked at all (doWork's sentence, shown as written). What was stored, if a stop came too late to prevent it, the status above says.
       if (!dead) log(controller.signal.aborted || mine.state === "cancelled" ? "Stopped." : String(err?.message ?? err), "error");
     } finally {
       if (job === mine) job = null;
@@ -358,8 +358,7 @@ export default function TerrainTool(handle, element) {
   handle.on("change", changed);
   return () => {
     dead = true;
-    // work done in this page ends with it; work on the person's queue goes on
-    if (job?.here) job.controller.abort();
+    // the fetch is on the person's queue, and goes on
     following?.stop();
     handle.off("change", changed);
     root.remove();

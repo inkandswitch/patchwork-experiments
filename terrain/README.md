@@ -780,14 +780,21 @@ The tool asks for it with the task kit's `doWork` (`src/task-client.js` and
 doc's url and the SHA-256 of that same spec, so a task fetches exactly what
 its key names. So:
 
-- When one of the person's machines serves their own queue, the fetch runs
-  there: closing the page does not stop it, and two pages pressing Fetch for
-  the same place and grid are one fetch. The tool says so, and follows the
-  doc's key with the kit's `watchWork` from the moment it opens (also when
-  their queue is made while it is open), showing a fetch already
-  under way instead of offering another; Cancel stops it with `stopWork`.
-  Otherwise it runs in the page, and the tool says that closing the page
-  stops it; a fetch done in another page is not seen from this one.
+- It is asked of the person's own queue (made the first time it is needed),
+  and one of their machines runs it: this browser's pool, when the tasks
+  package is installed here, with no network too. Closing the page does not
+  stop it, and two pages pressing Fetch for the same place and grid are one
+  fetch. The tool says so, and follows the doc's key with the kit's
+  `watchWork` from the moment it opens, showing a fetch already under way
+  instead of offering another; Cancel stops it with `stopWork`. While it
+  waits, the tool says it waits for one of the person's machines, and, where
+  the tasks package is not installed in this browser, that this browser
+  takes no part. Where no queue can be had (no account open, nowhere to keep
+  the list of queues), `doWork`'s sentence is shown as written and nothing is
+  fetched; so is "This copy of Terrain is not loaded from a package, so Fetch
+  data cannot be asked of your queue." for a built copy served from anywhere
+  but a package. Unbuilt, from a dev server, its code is asked of this
+  browser's pool alone.
 - It stores only if the doc still asks for what it was asked for, looked at
   when it starts and again in the change that stores: a frame moved
   meanwhile stores nothing, and the log says so. A changed frame is a new
@@ -915,9 +922,10 @@ land in the mesh is stretched; the heightfield stays true.
   during Overpass's retry wait rejects at once and stores nothing; NCEI's
   error is the message a person sees; the key changes with each field a
   fetch reads and with none of the others; the tool's button through a
-  stand-in `doWork`, `watchWork` and `stopWork` (`tool-fetch.test.js`): here and on the
-  person's queue, Cancel, a fetch already under way shown, where the task's
-  code is, a doc whose data does not say what it was fetched for shown as
+  stand-in `doWork`, `watchWork` and `stopWork` (`tool-fetch.test.js`): on the
+  person's queue, waiting (with this browser taking part or not), a rejection
+  shown as written, a copy not from a package, Cancel, a fetch already under
+  way shown, where the task's code is, a doc whose data does not say what it was fetched for shown as
   having none (and refused by the source as having none, `source.test.js`);
 - what a store writes (`store.test.js`, on real automerge documents): one
   value, `data`; two stores at once on two machines keep one whole, each way
