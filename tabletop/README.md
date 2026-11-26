@@ -345,21 +345,20 @@ open, nowhere to keep the list of queues), `doWork`'s sentence is shown as
 written; so is "This copy of the Tabletop Simulator import is not loaded
 from a package, so Import cannot be asked of your queue." for a built copy
 served from anywhere but a package. Only keeping what was dropped is this
-page's own, and closing the page while it does stops it. It writes the outcome (`imported`: the game and the
-report, or why it failed) in one change, only while the doc still asks for
-that request; a second run of it finds the first one's game and returns it.
-Nothing writes that an import is under way: what a person sees is read from
-the doc and from the work (`src/tts/status.js`): this page's own asking, or
-the work under the request's key on the person's own queue, followed with
-the kit's `watchWork` (which says within ten seconds, also when their queue
-is made while the tool is open or cannot be had) and stopped with
-`stopWork`. An
-asked import with neither an outcome nor work going on shows as interrupted,
-with the drop zone and **Import again** (the kept files, with the settings
-as they are now). The build puts the task at `dist/import-task.js`. On a
-machine without a canvas (a Node host) an image over the size limit is not
-made smaller and so is not kept: whatever uses it is drawn without it, and
-the report says so.
+page's own, and closing the page while it does stops it. It writes the outcome
+(`imported`: the game and the report, or why it failed) in one change, only
+while the doc still asks for that request; a second run of it finds the first
+one's game and returns it. Nothing writes that an import is under way: what a
+person sees is read from the doc and from the work (`src/tts/status.js`): this
+page's own asking, or the work under the request's key on the person's own
+queue, followed with the kit's `watchWork` (which says within ten seconds,
+also when their queue is made while the tool is open or cannot be had) and
+stopped with `stopWork`. An asked import with neither an outcome nor work
+going on shows as interrupted, with the drop zone and **Import again** (the
+kept files, with the settings as they are now). The build puts the task at
+`dist/import-task.js`. On a machine without a canvas (a Node host) an image
+over the size limit is not made smaller and so is not kept: whatever uses it
+is drawn without it, and the report says so.
 
 ## Layout
 

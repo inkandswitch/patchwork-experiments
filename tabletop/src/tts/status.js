@@ -38,8 +38,8 @@ export const underWay = (state) => GOING.has(state);
  */
 
 export const LINES = Object.freeze({
-  // Work done in another page is not seen from this one, so this line must not claim that nothing is importing.
-  interrupted: "This import has not finished, and nothing this page can see is working on it: it stopped, or it is going on in another page. Drop the mod again, or import it again.",
+  // Another page's import is on the person's queue, and this page sees it by watching; only while that page still keeps its drop or looks for the queue is there nothing to see, so this line must not claim that nothing is importing.
+  interrupted: "This import has not finished, and nothing on your queue is working on it: it stopped, or another page is still putting it there. Drop the mod again, or import it again.",
   stopped: "Stopped.",
   looking: "Looking for the import…",
   waiting: "Waiting for one of your machines to take it up…",
