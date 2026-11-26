@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v15]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v16]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -1027,14 +1027,85 @@ function findHere(repo, url) {
 }
 
 /**
- * A new queue of one's own in `repo`, saved there before anything names it.
+ * How long this Repo's own storage is waited on, once HERE_MS has passed, for
+ * a document it is still reading: a document kept here but slow to load (a
+ * cold start) is not taken as not here. Storage that has not answered by then
+ * is taken as not having it.
+ */
+const LOAD_MS = 30_000;
+
+/**
+ * The handle on a document this Repo keeps: as `findHere`, except that a
+ * document this Repo's storage is still reading when HERE_MS has passed is
+ * waited for until the storage answers (no longer than LOAD_MS). So null
+ * means that this Repo's storage does not have it, not only that loading it
+ * is slow. A Repo that does not say what its storage is doing (one that keeps
+ * nothing, or reports no `storage` source on `findWithProgress`) is given
+ * HERE_MS, as `findHere` gives it. Nothing here waits on the network.
+ * @param {any} repo
+ * @param {string} url
+ * @returns {Promise<any | null>}
+ */
+async function findKept(repo, url) {
+  const handle = await findHere(repo, url);
+  if (handle) {
+    return handle;
+  }
+  /** @type {any} */
+  let query = null;
+  try {
+    query = repo.findWithProgress?.(url) ?? null;
+  } catch {
+    query = null;
+  }
+  if (typeof query?.peek !== 'function' || typeof query?.subscribe !== 'function') {
+    return null;
+  }
+  return new Promise((resolve) => {
+    let answered = false;
+    /** @type {() => void} */
+    let unsubscribe = () => {};
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timer;
+    const answer = (/** @type {any} */ found) => {
+      if (answered) {
+        return;
+      }
+      answered = true;
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(found);
+    };
+    const look = (/** @type {any} */ state) => {
+      if (state?.state === 'ready') {
+        answer(state.handle?.doc?.() ? state.handle : null);
+      } else if (state?.sources?.storage !== 'pending') {
+        answer(null);
+      }
+    };
+    timer = setTimeout(() => answer(null), LOAD_MS);
+    unsubscribe = query.subscribe(look);
+    look(query.peek());
+  });
+}
+
+/**
+ * A new queue of one's own in `repo`, saved there before anything names it,
+ * unless this Repo's storage has not answered within LOAD_MS: it is named
+ * then all the same, as a storage that answers nothing keeps nothing anyway.
  * @param {any} repo
  */
 async function newOwnQueue(repo) {
   const queue = repo.create({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} });
-  await repo.flush([queue.documentId]).catch(() => {
-    // it is saved a moment later all the same
-  });
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let timer;
+  await Promise.race([
+    repo.flush([queue.documentId]).catch(() => {
+      // it is saved a moment later all the same
+    }),
+    new Promise((resolve) => (timer = setTimeout(resolve, LOAD_MS))),
+  ]);
+  clearTimeout(timer);
   return queue;
 }
 
@@ -1060,12 +1131,14 @@ const makings = new WeakMap();
  * client on the same Repo, or arrived from another replica as this one saved
  * its queue: then it writes nothing, and the queue it made is named, served
  * and asked by nothing, unless it is needed as the spare below. With an
- * `own` whose document this Repo has, that is the answer. With an `own`
- * whose document it does not have (made on another device, and not yet
- * here), the answer is a spare this Repo holds, or else a queue made here
- * with its mark and its url key and no pointer, which is folded into own
- * once own's document comes. None of it waits on the network: it writes in
- * this Repo and resolves.
+ * `own` whose document this Repo has, that is the answer, and so is one its
+ * storage is still reading: that is waited for until the storage answers
+ * (`findKept`), and makes nothing. With an `own` whose document it does not
+ * have (made on another device, and not yet here), the answer is a spare
+ * this Repo holds (had, or being read from its storage), or else a queue
+ * made here with its mark and its url key and no pointer, which is folded
+ * into own once own's document comes. None of it waits on the network: it
+ * writes in this Repo and resolves.
  *
  * Each call also starts a pass that folds every spare into own (`fold`), not
  * waited for; a pass that fails is done again by the next.
@@ -1118,7 +1191,7 @@ async function settleOwn(repo, storage) {
     unnamed = ownQueueOf(storage.doc()) === queue.url ? null : queue;
   }
   const own = /** @type {string} */ (ownQueueOf(storage.doc()));
-  const found = (await findHere(repo, own)) ? own : await spareHere(repo, storage, unnamed);
+  const found = (await findKept(repo, own)) ? own : await spareHere(repo, storage, unnamed);
   if (sparesOf(storage.doc()).length > 0) {
     foldSoon(repo, storage);
   }
@@ -1143,7 +1216,7 @@ async function spareHere(repo, storage, unnamed) {
   const seen = new Set();
   for (;;) {
     const spares = sparesOf(storage.doc()).filter((url) => !seen.has(url));
-    const held = await Promise.all(spares.map((url) => findHere(repo, url)));
+    const held = await Promise.all(spares.map((url) => findKept(repo, url)));
     const spare = spares.find((_, i) => held[i]);
     if (spare) {
       return spare;
@@ -1538,7 +1611,9 @@ function deviceWords(needs) {
  * browser's pool (`joinPool`); for work the page can do, the task storage
  * document is looked for only as `findHere` looks (no longer than HERE_MS),
  * and where this Repo does not have it the work is done here, so nothing
- * here waits on the network. Resolves to what the code returned; rejects
+ * here waits on the network (own's document, where this browser's storage is
+ * still reading it, is waited for as `ownQueue` waits for it: a read from
+ * this machine). Resolves to what the code returned; rejects
  * with what it threw, or "The task was cancelled" once `signal` is aborted,
  * or, for work that needs what this page cannot give it and no queue of
  * theirs can be asked (its code cannot travel, or `ownQueue` could not give

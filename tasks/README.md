@@ -254,7 +254,9 @@ nothing: it writes in the page's Repo and is done, with no network too. Several 
 client in one page (a package's kit copy beside this one) on one Repo make one: a making's change
 reads `own` again before it writes. A page whose Repo sees a pointer to a queue whose document it
 does not have yet (made on another device, not yet arrived) makes a queue of its own instead,
-with its mark and url key and no pointer, and uses it until own's document comes. Every marked
+with its mark and url key and no pointer, and uses it until own's document comes; a document
+this browser keeps but is still reading from its storage (a cold start) is waited for, up to
+half a minute, and makes nothing. Every marked
 queue that is not own is a **spare**: it stays served, so what it lists runs whether or not it has
 been moved, and passes **fold** it into own (FOLDING in `src/task-rules.js`): an entry is listed
 in own, or, when own's key names another task that is still wanted, the spare's key comes to name
