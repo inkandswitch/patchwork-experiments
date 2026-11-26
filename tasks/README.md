@@ -578,11 +578,18 @@ processes and say what they saw, one line per check or measurement:
 
 Not shown yet, of Offline and partition:
 
-- The link on the deployed site, whose Repo is keyhive's. `browser-run.mjs` shows it on a stand-in
-  page whose site Repo is a plain one with a database of its own, and `link.test.ts` with Repos of
-  the two kinds this package has; `real-run.mjs` does not check it yet. Nor is it shown that the
-  sync server accepts a document a worker made with no network once the keyhive page takes it
-  in and the network returns.
+- The link on the deployed site, whose Repo is keyhive's, with no network, by a probe of this
+  package. `real-run.mjs` checks it there with the network only. It was run by hand on
+  2026-11-26, with a staging copy of the package at c4a62987 in a throwaway profile, the tiling
+  frame, and Chrome restarted with every host name unresolvable: `doWork` from the page through
+  the keyhive Repo is run by the pool in about 100 ms (as online); what the task writes, a new
+  document and a change, is in that Repo when `doWork` resolves, and still there after a reload
+  at that moment; progress, `watchWork`, `stopWork` and the badge's words are right. With the
+  network back, the sync server has what the run workers wrote, the documents they made with no
+  network included, each change once, and nothing runs again. A task cut off in its middle by a
+  proxy finishes, and the server has its one run and its writes once the cut is mended. Another
+  device, a Node Repo on the real sync server, hears the browser's pool and has a task it asks
+  run by it, and the page hears a Node host serving the same queue. No probe here repeats this.
 - A partition healed through a real sync server. Every "When a partition heals" row is shown by
   unit tests that merge the documents by hand (`task-client.test.ts`, `offline-check.test.ts`,
   `rules-fold.test.ts`, `merge-storages.test.ts`, and `pool.test.ts` for a run finished while cut
