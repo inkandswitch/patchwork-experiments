@@ -28,6 +28,7 @@
     "@inkandswitch/patchwork-bootloader": "^0.7.2",
     "@inkandswitch/patchwork-elements": "^6.0.2",
     "@inkandswitch/patchwork-plugins": "^1.2.5",
+    "es-module-shims": "1.6.2",
     "solid-js": "^1.9.13"
   },
   "devDependencies": {

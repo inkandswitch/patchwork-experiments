@@ -32,17 +32,23 @@ export interface PlaceSettings {
 export const importModule = (importUrl: string): Promise<any> =>
   (self as any).importShim(onOrigin(importUrl, self.location.origin));
 
-const shimCodeUrl = 'https://ga.jspm.io/npm:es-module-shims@1.6.2/dist/es-module-shims.wasm.js';
-
 let importMapReady: Promise<void> | null = null;
 let repoModulesReady: Promise<any> | null = null;
 
+/**
+ * Gives this worker the page's import map, through es-module-shims (a worker
+ * has no import map of its own). The shim is carried in this package, built
+ * into a file beside the worker's, so a pool or a run worker starts with
+ * nothing fetched from the network: the shim comes with the worker, and the
+ * Repo's modules and wasm (getRepo) from what the page's import map names
+ * and its origin serves, as the page's own do.
+ */
 export async function setUpImportMap(importMap: any, baseURI: string) {
   if (!importMapReady) {
     importMapReady = (async () => {
       try {
         console.log('importing es-module-shims...');
-        await import(shimCodeUrl);
+        await import('es-module-shims/wasm');
         console.log('done');
       } catch (error) {
         console.error('failed to import es-module-shims:', error);

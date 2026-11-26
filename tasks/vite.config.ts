@@ -52,6 +52,7 @@ export default defineConfig({
   // has no import map, so nothing they import may be left external: what
   // they need from the site's modules (the Repo) they load at run time
   // through es-module-shims and the page's import map (src/webworker-lib.ts).
+  // The shim itself is this package's dependency, built in beside them.
   worker: {
     format: 'es',
     rollupOptions: {

@@ -32,6 +32,9 @@ importers:
       '@inkandswitch/patchwork-plugins':
         specifier: ^1.2.5
         version: 1.2.5(@automerge/automerge-repo@2.6.0-subduction.20(supports-color@5.5.0))(@automerge/automerge@3.2.6)(@inkandswitch/patchwork-filesystem@0.2.9(@automerge/automerge-repo@2.6.0-subduction.20(supports-color@5.5.0))(@automerge/automerge@3.2.6))(supports-color@5.5.0)
+      es-module-shims:
+        specifier: 1.6.2
+        version: 1.6.2
       solid-js:
         specifier: ^1.9.13
         version: 1.9.15
@@ -50,7 +53,7 @@ importers:
         version: 3.1.14
       site-automerge-repo:
         specifier: npm:@chee/automerge-repo@2.6.0-rabbit.1
-        version: '@chee/automerge-repo@2.6.0-rabbit.1'
+        version: '@chee/automerge-repo@2.6.0-rabbit.1(supports-color@5.5.0)'
       site-automerge-repo-storage-indexeddb:
         specifier: npm:@chee/automerge-repo-storage-indexeddb@2.6.0-rabbit.1
         version: '@chee/automerge-repo-storage-indexeddb@2.6.0-rabbit.1'
@@ -940,6 +943,9 @@ packages:
   es-module-lexer@1.7.0:
     resolution: {integrity: sha512-jEQoCwk8hyb2AZziIOLhDqpm5+2ww5uIE6lkO/6jcOCusfk6LhMHpXXfBLXTZ7Ydyt0j4VoUQv6uGNYbdW+kBA==}
 
+  es-module-shims@1.6.2:
+    resolution: {integrity: sha512-VISkM/sF/TlQzFY3WlyCXj3Fkv7+L3pErEFmrDHj0URx54EMY9GpSbW3CE04ZqWk6qrC/YsRDBTu9QvU2n0dZw==}
+
   esbuild@0.21.5:
     resolution: {integrity: sha512-mg3OPMV4hXywwpoDxu3Qda5xCKQi+vCTZq8S9J/EpkhB2HzKXq4SNFZE3+NK93JYxc8VMSep+lOUSC/RVKaBqw==}
     engines: {node: '>=12'}
@@ -1641,13 +1647,13 @@ snapshots:
 
   '@chee/automerge-repo-storage-indexeddb@2.6.0-rabbit.1':
     dependencies:
-      '@automerge/automerge-repo': '@chee/automerge-repo@2.6.0-rabbit.1'
+      '@automerge/automerge-repo': '@chee/automerge-repo@2.6.0-rabbit.1(supports-color@5.5.0)'
     transitivePeerDependencies:
       - bufferutil
       - supports-color
       - utf-8-validate
 
-  '@chee/automerge-repo@2.6.0-rabbit.1':
+  '@chee/automerge-repo@2.6.0-rabbit.1(supports-color@5.5.0)':
     dependencies:
       '@automerge/automerge': 3.5.0
       '@automerge/automerge-subduction': 0.21.0
@@ -2244,6 +2250,8 @@ snapshots:
   entities@6.0.1: {}
 
   es-module-lexer@1.7.0: {}
+
+  es-module-shims@1.6.2: {}
 
   esbuild@0.21.5:
     optionalDependencies:
