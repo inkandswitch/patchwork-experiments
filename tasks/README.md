@@ -96,8 +96,9 @@ const stop = watch(repo, queueUrl, key, (view) => {
 });
 ```
 
-A secret a task needs (an API key) goes in its input. Everyone who can read the queue can read it,
-for good, so ask such work only of queues whose audience may have it.
+A secret a task needs (an API key) goes in its input under `keys`, which the queue browser does
+not show (it reads `keys: (hidden)`, at any depth of the input). Everyone who can read the queue
+can still read it, for good, so ask such work only of queues whose audience may have it.
 
 ## Writing a task
 
@@ -300,7 +301,12 @@ the queue's document, what is heard on the queue's channel), and never starting 
   it lists moves to their queue), and each
   listed task: its state (waiting, with what it needs when no pool heard has it; stalled, with
   since when this view has seen it so), its records (which pool took it, when, how it went; a
-  stop as a stop), its log, and a Stop while it has not ended.
+  stop as a stop), its log, its input (with `keys` hidden), and a Stop while it has not ended.
+  Opened, a task also says where its code is (which file of which package, or that it is written
+  into the task as a `data:` URL), links to the file when a browser can open it, and has Show
+  code, which loads the source (a `data:` URL decoded where it stands, anything else with
+  `fetch`, which the site's service worker answers for a package's files) and shows up to about
+  200 KB of it. Nothing is loaded until a person asks, and once per opening.
 
 **On a machine.** `pnpm build:node`, then `node dist-node/host.mjs` with:
 

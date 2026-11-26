@@ -14,6 +14,7 @@ import type { Acceptance } from './acceptance';
 import { inSamePackage } from './import-url';
 import { WAIT_TASK_PATH } from './ids';
 import { useRepo } from './use-doc';
+import { MAX_SOURCE_CHARS, showValue, TaskCode } from './task-code';
 
 /** How many listed tasks to show. */
 const MAX_JOBS_SHOWN = 20;
@@ -141,8 +142,11 @@ const Job = (props: {
     <Show when={view()?.state !== 'missing' ? view() : null}>
       {(job) => {
         const state = () => job().state as TaskState;
+        // What is in the details is made while they are open and let go as
+        // they close, so a task's code is loaded at most once per opening.
+        const [open, setOpen] = createSignal(false);
         return (
-          <details class={`tq-task tq-task--${LOOKS[state()]}`}>
+          <details class={`tq-task tq-task--${LOOKS[state()]}`} onToggle={(event) => setOpen(event.currentTarget.open)}>
             <summary class="tq-task-row">
               <span class="tq-task-mark" aria-label={state()}>
                 {MARKS[state()]}
@@ -166,29 +170,37 @@ const Job = (props: {
                 </button>
               </Show>
             </summary>
-            <div class="tq-task-detail">
-              <p class="tq-choice-note">
-                Asked for as <code class="tq-code">{props.jobKey}</code>
-              </p>
-              <Show when={job().runs.length > 0}>
-                <ul class="tq-runs">
-                  <For each={job().runs}>{(run) => <RunLine run={run} names={props.names} />}</For>
-                </ul>
-              </Show>
-              <Show when={job().logs.length > 0}>
-                <ul class="tq-logs">
-                  <For each={job().logs}>
-                    {(line) => (
-                      <li>
-                        <span class="tq-muted">{new Date(line.timestampMillis).toLocaleTimeString()}</span>{' '}
-                        {line.message}
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-              <pre class="tq-source">{job().importUrl ?? '…'}</pre>
-            </div>
+            <Show when={open()}>
+              <div class="tq-task-detail">
+                <p class="tq-choice-note">
+                  Asked for as <code class="tq-code">{props.jobKey}</code>
+                </p>
+                <Show when={job().runs.length > 0}>
+                  <ul class="tq-runs">
+                    <For each={job().runs}>{(run) => <RunLine run={run} names={props.names} />}</For>
+                  </ul>
+                </Show>
+                <Show when={job().logs.length > 0}>
+                  <ul class="tq-logs">
+                    <For each={job().logs}>
+                      {(line) => (
+                        <li>
+                          <span class="tq-muted">{new Date(line.timestampMillis).toLocaleTimeString()}</span>{' '}
+                          {line.message}
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+                <div class="tq-input">
+                  <p class="tq-choice-note">Input</p>
+                  <pre class="tq-source tq-input-value">{showAll(job().input)}</pre>
+                </div>
+                <Show when={job().importUrl} keyed fallback={<pre class="tq-source">…</pre>}>
+                  {(importUrl) => <TaskCode importUrl={importUrl} />}
+                </Show>
+              </div>
+            </Show>
           </details>
         );
       }}
@@ -459,15 +471,16 @@ function listed(words: string[]) {
   return words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
 }
 
-/** A value as it would be typed, cut short. */
+/** A value as it would be typed, cut short, with what it keeps under `keys` hidden. */
 function show(value: unknown) {
-  let text: string;
-  try {
-    text = JSON.stringify(value) ?? String(value);
-  } catch {
-    text = String(value);
-  }
+  const text = showValue(value);
   return text.length > 80 ? `${text.slice(0, 79)}…` : text;
+}
+
+/** A value as it would be typed, laid out, with what it keeps under `keys` hidden, cut only where it is very long. */
+function showAll(value: unknown) {
+  const text = showValue(value, 2);
+  return text.length > MAX_SOURCE_CHARS ? `${text.slice(0, MAX_SOURCE_CHARS - 1)}…` : text;
 }
 
 /** A short name for where a task's code is: a file's name, or what kind of URL it is. */
