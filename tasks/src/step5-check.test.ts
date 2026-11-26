@@ -238,11 +238,9 @@ describe('(a) no combination has doWork import the code in the page', () => {
 
 describe('(d) a rejection writes nothing but what its sentence says', () => {
   beforeEach(fake);
-  it.fails('code that cannot travel, no account open: rejects with the account sentence, yet a pool id has been written to localStorage first', async () => {
-    // Shows: browserPoolIdHere({ make: true }) runs before ownQueue, so a
-    // refused asking leaves POOL_ID_KEY behind in localStorage. The sentence
-    // says nothing was asked; this is the only write, and it is what the
-    // pool's host would make anyway, so it is minor.
+  it('code that cannot travel, no account open: rejects with the account sentence, and no pool id has been written to localStorage', async () => {
+    // doWork makes this browser's pool id only once ownQueue has given the
+    // queue, so a refused asking leaves nothing in localStorage either.
     const repo = newRepo();
     const local = localStorageOf({});
     g.localStorage = local;

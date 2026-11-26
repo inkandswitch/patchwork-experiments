@@ -188,8 +188,9 @@ never names a queue:
   kept in automerge, or a `data:` URL) may run on any of the person's machines that serves the
   queue; any other url (a dev server's `http://localhost`, a `file:` url) is asked with the need
   `pool:<this browser's pool id>`, so that only this browser's pool takes it (where no pool has
-  started here yet, the page makes the id under the key the pool's host keeps it under, and the
-  host keeps it). Where no queue can be had, it rejects, having asked and run nothing, with one
+  started here yet, the page makes the id under the key the pool's host keeps it under, once the
+  queue is had, and the host keeps it). Where no queue can be had, it rejects, having asked and
+  run nothing and kept no pool id, with one
   sentence saying why: no account open ("Task queues can only be kept from a Patchwork page with
   your account open."), nowhere to keep the list of queues ("This page has nowhere to keep your
   task queues, so nothing was changed."), or that list not on this device within about half a

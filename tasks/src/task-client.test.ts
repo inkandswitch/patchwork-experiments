@@ -2507,10 +2507,17 @@ describe('doWork', () => {
       expect(entryOf(queue!, 'dev').needs).toEqual(['pool:this-browser']);
     });
 
-    it("where this browser cannot keep a pool id (no localStorage, or one that refuses): rejects at once with a sentence saying why, and writes nothing", async () => {
-      for (const local of [undefined, { getItem: () => null, setItem: () => { throw new Error('blocked'); } }]) {
+    it("where this browser cannot keep a pool id (no localStorage, or one that refuses): rejects with a sentence saying why, and writes nothing", async () => {
+      // With no localStorage it rejects before looking for the queue. One that
+      // refuses is found out only as the id is made, once the queue is had (so
+      // where there was no own queue, own is made first, as any asking makes it).
+      const cases = [
+        [undefined, 'no own queue'],
+        [{ getItem: () => null, setItem: () => { throw new Error('blocked'); } }, 'an own queue'],
+      ] as const;
+      for (const [local, setup] of cases) {
         g.localStorage = local;
-        const { repo } = page('no own queue');
+        const { repo } = page(setup);
         await settle();
         const before = everything(repo);
         const work = doing(repo, { importUrl: URLS[0], key: 'dev' });

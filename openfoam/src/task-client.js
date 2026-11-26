@@ -1,5 +1,5 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v17]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v18]
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
@@ -1446,6 +1446,24 @@ function browserPoolIdHere({ make = false } = {}) {
 }
 
 /**
+ * Whether this page can read the browser's pool id, or keep one: its
+ * localStorage is there and reads. Writes nothing.
+ * @returns {boolean}
+ */
+function poolIdsKeptHere() {
+  try {
+    const storage = /** @type {any} */ (globalThis).localStorage;
+    if (!storage) {
+      return false;
+    }
+    storage.getItem(POOL_ID_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The person's queues this Repo holds now: own and every spare, of those the
  * storage document marks, whose documents it has (as `findHere` has them).
  * None with no account open, no storage, or a storage document not had.
@@ -1518,8 +1536,8 @@ export function poolHere() {
  * browser's pool (`joinPool`), and waits for the task. Its key and needs are
  * checked, and so is where its code is, before anything is written. Code
  * that cannot travel is asked with the need `pool:<this browser's pool id>`
- * (the id is made here, as the pool's host would make it, where no pool has
- * started yet).
+ * (where no pool has started yet, the id is made here, as the pool's host
+ * would make it, once the queue is had, so a refused asking writes nothing).
  *
  * Resolves to what the code returned; rejects with what it threw, with "The
  * task was cancelled" once `signal` is aborted (aborted while it still looks
@@ -1542,20 +1560,27 @@ export async function doWork(repo, request, { onProgress, signal } = {}) {
     checkKey(request.key);
   }
   checkNeeds(request.needs);
+  const stays = !travels(request.importUrl);
+  const noPoolId = () =>
+    new Error(
+      `This work's code is only on this machine (${schemeOf(request.importUrl)} url), and this browser keeps no id for its pool, so no pool can be asked to run it.`,
+    );
+  if (stays && !poolIdsKeptHere()) {
+    throw noPoolId();
+  }
+  const own = await unlessStopped(ownQueue(repo), signal);
   let needs = request.needs ?? [];
   let near = request.near ?? browserPoolIdHere() ?? undefined;
-  if (!travels(request.importUrl)) {
+  if (stays) {
+    // made only now that the queue is had, so a refused asking writes nothing
     const pool = browserPoolIdHere({ make: true });
     if (!pool) {
-      throw new Error(
-        `This work's code is only on this machine (${schemeOf(request.importUrl)} url), and this browser keeps no id for its pool, so no pool can be asked to run it.`,
-      );
+      throw noPoolId();
     }
     const mine = `pool:${pool}`;
     needs = needs.includes(mine) ? needs : [...needs, mine];
     near = request.near ?? pool;
   }
-  const own = await unlessStopped(ownQueue(repo), signal);
   joinPool();
   return run(repo, own, { ...request, needs, near }, onProgress, signal);
 }
