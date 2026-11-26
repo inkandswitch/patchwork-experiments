@@ -20,8 +20,10 @@ let imported: { docId: string; bytes: Uint8Array }[];
 /** What each save named: its documents, or 'all'. */
 let flushes: (string[] | 'all')[];
 let calls: string[];
-/** How the next Repo is made: whether it records every use, offers the server's reports, and which peers it is connected to. */
-let made: { recorded: boolean; event: boolean; connected: string[] };
+/** How the next Repo is made: whether it records every use, offers the server's reports, which peers it is connected to, and whether it is linked to a page that has everything it has. */
+let made: { recorded: boolean; event: boolean; connected: string[]; linked?: boolean };
+/** The peer id each Repo was made with. */
+let repoPeers: string[];
 let theRepo: FakeRepo;
 /** What `flush` does once it has saved (the same-tick case schedules a marker). */
 let afterFlush: () => void;
@@ -50,6 +52,10 @@ class FakeHandle {
   change() {
     this.headsNow = [`${this.documentId}@${++this.#n}`];
   }
+  /** What the page last said it has: everything, on a linked Repo (see `made.linked`). */
+  getSyncInfo(storageId: string) {
+    return storageId === 'page-storage' ? { lastHeads: this.headsNow } : undefined;
+  }
 }
 
 class FakeRepo {
@@ -67,7 +73,17 @@ class FakeRepo {
   declare connectedSubductionPeerIds?: () => Promise<string[]>;
   declare resyncSubduction?: (documentId: string) => void;
 
+  declare networkSubsystem?: { adapters: unknown[] };
+  peers: string[] = [];
+  getStorageIdOfPeer(peer: string) {
+    return peer === 'page' ? 'page-storage' : undefined;
+  }
+
   constructor(event: boolean) {
+    if (made.linked) {
+      this.networkSubsystem = { adapters: [{}] };
+      this.peers = ['page'];
+    }
     if (event) {
       this.on = (name, listener) => {
         if (!this.listeners.has(name)) {
@@ -129,7 +145,8 @@ class FakeRepo {
 vi.mock('./webworker-lib', () => ({
   setUpImportMap: async () => {},
   firstAttempt: () => firstAttemptOver,
-  getRepo: async () => {
+  getRepo: async (_config: unknown, peerId: string) => {
+    repoPeers.push(peerId);
     if (repoFails) {
       throw new Error('no repo here');
     }
@@ -194,6 +211,7 @@ beforeEach(() => {
   flushes = [];
   calls = [];
   made = { recorded: false, event: true, connected: [SERVER] };
+  repoPeers = [];
   afterFlush = () => {};
   firstAttemptOver = Promise.resolve();
   connectNow = () => {};
@@ -934,6 +952,50 @@ describe('a run saves what its code changed, and only that', () => {
     await settle();
     expect(flushes).toEqual(['all']);
     expect(endings()).toEqual([{ type: 'threw', message: expect.stringMatching(/could not be saved: disk full/) }]);
+  });
+});
+
+// Linked to a page (browser/link.ts), a run worker's Repo is made with the
+// peer id the page chose for its link, the one id the page's end admits; and
+// its ending names the documents the code wrote, which the page saves before
+// the run is reported (browser/executor.ts).
+describe('a linked run worker', () => {
+  const own = '2KYqboWHPS5rvWsheoLnHgFvE7ou';
+  const linkedSettings = (peerId?: string): ToRunWorker => {
+    const { port1, port2 } = new MessageChannel();
+    port2.close();
+    return { type: 'settings', settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' }, link: port1, ...(peerId ? { peerId } : {}) } };
+  };
+
+  it("makes its Repo with the peer id its settings carry with the link, and with an id of its own without a link", async () => {
+    start()(linkedSettings('task-link-chosen'));
+    start()(settings);
+    start()({ type: 'settings', settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' }, peerId: 'no-link-no-name' } });
+    await settle();
+    expect(repoPeers[0]).toBe('task-link-chosen');
+    expect(repoPeers[1]).toMatch(/^task-run-/);
+    expect(repoPeers[2]).toMatch(/^task-run-/);
+  });
+
+  it("names in its ending the documents the code wrote, its task's own apart; none when it wrote nothing", async () => {
+    made.linked = true;
+    modules.write = { default: (_: unknown, ctx: any) => (theRepo.byId[own].change(), ctx.repo.create({ x: 1 }).documentId) };
+    modules.idle = { default: () => 'idle' };
+    modules.boom = { default: (_: unknown, ctx: any) => { ctx.repo.create({}); throw new Error('boom'); } };
+    const tell = start();
+    tell(linkedSettings('task-link-chosen'));
+    tell({ type: 'job', job: job('write'), task: new Uint8Array([1]) });
+    await settle();
+    tell({ type: 'job', job: { ...job('idle'), runId: 'run-2' } });
+    await settle();
+    tell({ type: 'job', job: { ...job('boom'), runId: 'run-3' } });
+    await settle();
+    expect(endings()).toEqual([
+      { type: 'done', result: 'doc2', wrote: ['doc2'] },
+      { type: 'done', result: 'idle' },
+      { type: 'threw', message: 'boom', wrote: ['doc3'] },
+    ]);
+    expect(logs()).toEqual([]);
   });
 });
 

@@ -41,17 +41,22 @@
 //   `remote-subscription-change`, or Subduction's own) is dropped both ways.
 //
 // Before any of that, the gate reads what arrives on the page's port, ahead
-// of the adapter, which does not see what it drops (`LinkGate.fromPort`). A
-// link has one peer: the first the worker's end announces (`arrive` or
-// `welcome`; a worker's Repo announces itself before its task's code runs).
-// Any later `arrive` or `welcome`, a `leave` in another's name, and any
-// message whose `senderId` is not that peer or whose `targetId` is not the
-// page are dropped. A Repo sends its messages for a peer through the adapter
-// that last announced that peer, and forgets a peer whose adapter says it
-// left; so without this a worker's code that knew another peer's id (the
-// pool's, which the page's relayed ephemeral messages carry) could take the
-// page's messages for that peer, or have the page forget it, and could make
-// the adapter throw in the page with a message addressed to another peer.
+// of the adapter, which does not see what it drops (`LinkGate.fromPort`).
+// The page names each link's one peer: for every link it makes or is
+// handed, it chooses a fresh random peer id (`PageLinks`), and that link's
+// worker's Repo is made with exactly that id (the pool's worker's from
+// 'start', a run worker's from its settings, both set by the task system's
+// own code before any task's code is loaded). The page's end admits an
+// `arrive` or `leave` only from that peer and addressed to no one, and any
+// other message only from that peer and addressed to the page; everything
+// else is dropped. So whatever order things happen in, a worker's code can
+// speak on its link only as its own worker. A Repo sends its messages for a
+// peer through the adapter that last announced that peer, and forgets a peer
+// whose adapter says it left; without the named peer, a worker's code that
+// knew another peer's id (the pool's, which the page's relayed ephemeral
+// messages carry) could take the page's messages for that peer, or have the
+// page forget it, and could make the adapter throw in the page with a
+// message addressed to another peer.
 //
 // What a dropped message costs. The page's Repo sends a `sync` to a new peer
 // for each document it has open (its announce), and the gate drops those for
@@ -64,6 +69,12 @@
 //
 // A link ends when its worker does (PageLinks.remove): the adapter is taken
 // out of the site's Repo, which then forgets the worker as a peer.
+//
+// Kept before reported. A run's ending is said once the page's Repo has
+// what the run wrote (run-worker.ts), and the pool reports it only once the
+// page has also saved it (`PageLinks.keep`, asked through the pool's worker;
+// executor.ts): a page reloaded the moment the run is reported has it, with
+// no network too. The page saves only documents that run's link carried.
 
 import { parseAutomergeUrl, type AutomergeUrl } from '@automerge/automerge-repo/slim';
 
@@ -112,8 +123,8 @@ export class LinkGate {
   /** The documents the worker has named, each unprotected. */
   readonly named = new Set<string>();
 
-  /** The link's one peer: the first the worker's end announced; null until it has. */
-  peer: string | null = null;
+  /** `peer`: the link's one peer, the id the page chose for its worker's Repo. */
+  constructor(readonly peer: string) {}
 
   /** Whether the adapter may read `message`, as it arrived on the page's port; `self` is the page's peer id. */
   fromPort(message: unknown, self: unknown): boolean {
@@ -121,28 +132,14 @@ export class LinkGate {
       return false;
     }
     const { type, senderId, targetId } = message as { type?: unknown; senderId?: unknown; targetId?: unknown };
-    if (typeof senderId !== 'string' || senderId === '') {
+    if (senderId !== this.peer) {
       return false;
     }
     if (type === 'arrive' || type === 'leave') {
       // the two the adapter sends addressed to no one
-      if (type === 'arrive' && this.peer === null && !('targetId' in message)) {
-        this.peer = senderId;
-        return true;
-      }
-      return type === 'leave' && senderId === this.peer && !('targetId' in message);
+      return !('targetId' in message);
     }
-    if (targetId !== self || typeof self !== 'string') {
-      return false;
-    }
-    if (type === 'welcome') {
-      if (this.peer !== null) {
-        return false;
-      }
-      this.peer = senderId;
-      return true;
-    }
-    return senderId === this.peer;
+    return typeof self === 'string' && targetId === self;
   }
 
   /** What to do with a message from the worker to the page. */
@@ -195,6 +192,8 @@ export interface PortAdapter {
   disconnect(): void;
 }
 export type PortAdapterClass = new (port: MessagePort) => PortAdapter;
+/** The page's end of a link: an adapter gated for the one peer `peer`. */
+export type GatedAdapterClass = new (port: MessagePort, peer: string) => PortAdapter & { gate: LinkGate };
 
 /**
  * `port` as the adapter is given it: the same port, but a 'message' listener
@@ -228,17 +227,17 @@ function admittingPort(port: MessagePort, admit: (data: unknown) => boolean): Me
 
 /**
  * The class of the page's end of a link: the MessageChannel network adapter
- * with a `LinkGate` between it and the Repo. What arrives on the port reaches
+ * with a `LinkGate` for the link's one peer between it and the Repo. What arrives on the port reaches
  * the adapter only as `fromPort` admits it (the handshake included); what the
  * Repo sends goes through `send`; what comes from the worker reaches the
  * Repo as a 'message' event.
  */
-export function gatedAdapterClass(Adapter: PortAdapterClass): new (port: MessagePort) => PortAdapter & { gate: LinkGate } {
+export function gatedAdapterClass(Adapter: PortAdapterClass): GatedAdapterClass {
   return class GatedPortAdapter extends Adapter {
     readonly gate: LinkGate;
 
-    constructor(port: MessagePort) {
-      const gate = new LinkGate();
+    constructor(port: MessagePort, peer: string) {
+      const gate = new LinkGate(peer);
       // the page's peer id is read as each message arrives: the Repo gives it the adapter as it connects
       let adapter: PortAdapter | undefined;
       super(admittingPort(port, (data) => gate.fromPort(data, adapter?.peerId)));
@@ -277,7 +276,7 @@ export function gatedAdapterClass(Adapter: PortAdapterClass): new (port: Message
   };
 }
 
-let loading: Promise<PortAdapterClass | null> | null = null;
+let loading: Promise<GatedAdapterClass | null> | null = null;
 
 /** The longest the page waits for the adapter's module before starting its pool with no link. */
 const LOAD_MS = 10_000;
@@ -288,8 +287,8 @@ const LOAD_MS = 10_000;
  * be loaded within LOAD_MS (the pool then runs with no link, as before there
  * was one).
  */
-export function linkAdapterClass(): Promise<PortAdapterClass | null> {
-  loading ??= new Promise<PortAdapterClass | null>((resolve) => {
+export function linkAdapterClass(): Promise<GatedAdapterClass | null> {
+  loading ??= new Promise<GatedAdapterClass | null>((resolve) => {
     const none = (why: string) => {
       console.warn(`tasks: no local link between this page and its pool: the MessageChannel network adapter ${why}`);
       resolve(null);
@@ -315,34 +314,56 @@ export interface LinkableRepo {
     addNetworkAdapter(adapter: never): void;
     removeNetworkAdapter(adapter: never): void;
   };
+  flush(documents?: never[]): Promise<void>;
 }
+
+/** A peer id for a link's worker: fresh and random, so no other peer of the page's Repo has it. */
+const newPeer = () => `task-link-${crypto.randomUUID()}`;
 
 /**
  * The links of one pool's worker to the site's Repo, by name: the pool's own
  * and one per run worker. Each is added to the Repo when opened and taken out
- * when removed; `removeAll` ends them all, when the pool's worker ends.
+ * when removed; `removeAll` ends them all, when the pool's worker ends. The
+ * page names each link's peer (see the header): `open` and `add` choose it,
+ * and the worker at the other end must make its Repo with it.
  */
 export class PageLinks {
-  private readonly links = new Map<string, { adapter: PortAdapter; port: MessagePort }>();
+  private readonly links = new Map<string, { adapter: PortAdapter & { gate: LinkGate }; port: MessagePort }>();
 
   constructor(
     private readonly repo: LinkableRepo,
-    private readonly Adapter: PortAdapterClass,
+    private readonly Adapter: GatedAdapterClass,
   ) {}
 
-  /** A new link named `name`, its page end in the Repo: returns the worker's end, to be handed down. */
-  open(name: string): MessagePort {
+  /** A new link named `name`, its page end in the Repo: returns the worker's end, to be handed down, and the peer id its worker's Repo must have. */
+  open(name: string): { port: MessagePort; peer: string } {
     const { port1, port2 } = new MessageChannel();
-    this.add(name, port1);
-    return port2;
+    return { port: port2, peer: this.add(name, port1) };
   }
 
-  /** Adds `port`, the page's end of a link a worker made, to the Repo, as `name` (ending any link of that name first). */
-  add(name: string, port: MessagePort) {
+  /** Adds `port`, the page's end of a link a worker made, to the Repo, as `name` (ending any link of that name first): returns the peer id its worker's Repo must have. */
+  add(name: string, port: MessagePort): string {
     this.remove(name);
-    const adapter = new this.Adapter(port);
+    const peer = newPeer();
+    const adapter = new this.Adapter(port, peer);
     this.links.set(name, { adapter, port });
     this.repo.networkSubsystem.addNetworkAdapter(adapter as never);
+    return peer;
+  }
+
+  /**
+   * Saves, in the Repo, those of `documents` that the link named `name`
+   * carried (the ones its worker named): what a run wrote, before the run is
+   * reported. Rejects when there is no such link. Not bounded here: whoever
+   * waits on it bounds the wait.
+   */
+  keep(name: string, documents: readonly unknown[]): Promise<void> {
+    const link = this.links.get(name);
+    if (!link) {
+      return Promise.reject(new Error('its link to the page had ended'));
+    }
+    const carried = [...new Set(documents)].filter((id): id is string => typeof id === 'string' && link.adapter.gate.named.has(id));
+    return carried.length > 0 ? this.repo.flush(carried as never[]) : Promise.resolve();
   }
 
   /** Ends the link named `name`, if there is one: its adapter leaves the Repo, which forgets its worker as a peer. */

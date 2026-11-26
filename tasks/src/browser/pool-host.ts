@@ -51,10 +51,16 @@
 // The local link (link.ts). The page that runs the pool links the site's
 // Repo (the first Repo given to `followAccount`) to the pool's worker: a
 // MessageChannel made for each start, its page end added to the site's Repo,
-// the other handed to the worker in 'start'. The pool's worker makes one more
-// for each run worker it starts, hands that one its end, and sends this page
-// the other ('link'), which is added the same way, and taken out again when
-// the run worker ends ('unlink'). Every link of a pool's worker is taken out
+// the other handed to the worker in 'start' with the peer id this page chose
+// for it. The pool's worker makes one more for each run worker it starts and
+// sends this page one end ('link'), which is added the same way; this page
+// answers with the peer id it chose for that link ('link'), which the run
+// worker's Repo is then made with, and takes the link out again when the run
+// worker ends ('unlink'). A page end admits nothing but its chosen peer's
+// own messages to this page. Before a linked run is reported, the pool's
+// worker names the documents it wrote ('keep'), and this page saves those
+// its link carried in the site's Repo and says so ('kept'), or why it could
+// not. Every link of a pool's worker is taken out
 // when that worker ends here (`end`): it stopped, failed, stopped answering,
 // or the page was hidden. A host given no Repo, or whose page cannot load the
 // adapter, starts its pool with no link, as before there was one.
@@ -78,7 +84,7 @@ import { ownQueue, sparesOf, storageUrlOf } from '../task-client.js';
 import { getRepoConfig } from '../repo-config';
 import { BEAT_MS, LAPSE_MS } from '../task-rules.js';
 import { browserPoolId, browserPoolName } from './pool-id';
-import { linkAdapterClass, PageLinks, type LinkableRepo, type PortAdapterClass } from './link';
+import { linkAdapterClass, PageLinks, type GatedAdapterClass, type LinkableRepo } from './link';
 import type { FromPoolWorker, ServedQueues, ToPoolWorker } from './pool-worker';
 
 declare const __TASKS_BUILD__: number | undefined;
@@ -646,7 +652,7 @@ class BrowserPoolHost implements PoolHost {
     });
   }
 
-  private runPool(Adapter: PortAdapterClass | null): Promise<void> {
+  private runPool(Adapter: GatedAdapterClass | null): Promise<void> {
     if (this.unwanted() !== null) {
       // no longer wanted between asking and being given the lock
       this.show();
@@ -661,7 +667,10 @@ class BrowserPoolHost implements PoolHost {
       });
       let ended = false;
       let poll: ReturnType<typeof setInterval> | undefined;
-      const links = Adapter && typeof this.siteRepo?.networkSubsystem?.addNetworkAdapter === 'function' ? new PageLinks(this.siteRepo, Adapter) : null;
+      const links =
+        Adapter && typeof this.siteRepo?.networkSubsystem?.addNetworkAdapter === 'function' && typeof this.siteRepo.flush === 'function'
+          ? new PageLinks(this.siteRepo, Adapter)
+          : null;
       const held: Held = {
         worker,
         ready: false,
@@ -718,13 +727,24 @@ class BrowserPoolHost implements PoolHost {
           return; // a message sent before the worker was ended
         }
         switch (data?.type) {
-          case 'link':
+          case 'link': {
+            let peer: string | null = null;
             if (links) {
-              links.add(`run ${data.id}`, data.port);
+              peer = links.add(`run ${data.id}`, data.port);
             } else {
               data.port.close();
             }
+            worker.postMessage({ type: 'link', id: data.id, peer } satisfies ToPoolWorker);
             break;
+          }
+          case 'keep': {
+            const { id, ask } = data;
+            (links ? links.keep(`run ${id}`, data.documents) : Promise.reject(new Error('this page has no link to it'))).then(
+              () => !ended && worker.postMessage({ type: 'kept', ask } satisfies ToPoolWorker),
+              (error) => !ended && worker.postMessage({ type: 'kept', ask, problem: (error as Error)?.message ?? String(error) } satisfies ToPoolWorker),
+            );
+            break;
+          }
           case 'unlink':
             links?.remove(`run ${data.id}`);
             break;
@@ -767,9 +787,9 @@ class BrowserPoolHost implements PoolHost {
           queues: this.queues,
           importMap: pageImportMap(),
           baseURI: document.baseURI,
-          link,
+          ...(link ? { link: link.port, peer: link.peer } : {}),
         } satisfies ToPoolWorker,
-        link ? [link] : [],
+        link ? [link.port] : [],
       );
       // The status the badge shows, and the pool's sign of life. A hidden
       // page's timers slow to one a minute after five minutes, so silence is

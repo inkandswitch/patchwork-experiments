@@ -37,6 +37,8 @@ export interface RunWorkerSettings {
   baseURI?: string;
   /** In a browser, its end of a link to the site's Repo in the page above its pool (browser/link.ts), when there is one. */
   link?: MessagePort;
+  /** With `link`: the peer id its Repo must have, which the page chose for the link and its end of it admits alone. */
+  peerId?: string;
 }
 
 /** What is said to a run worker. */
@@ -56,10 +58,15 @@ export type ToRunWorker =
 export type FromRunWorker =
   | { type: 'log'; message: string }
   | { type: 'progress'; value: unknown }
-  /** Its code returned this, and what the code wrote is saved and has reached the page's Repo (linked) or the sync server, or the log says why not. */
-  | { type: 'done'; result: unknown }
+  /**
+   * Its code returned this, and what the code wrote is saved and has reached
+   * the page's Repo (linked) or the sync server, or the log says why not.
+   * Linked, `wrote` names the documents the code wrote, which the page is
+   * asked to save before the run is reported (browser/executor.ts).
+   */
+  | { type: 'done'; result: unknown; wrote?: string[] }
   /** Its code threw, would not load, or what it wrote could not be saved; said, like `done`, once what it wrote has reached the page's Repo or the sync server, or the log says why not. */
-  | { type: 'threw'; message: string };
+  | { type: 'threw'; message: string; wrote?: string[] };
 
 /** The two ends of a run worker's one channel, whatever the platform calls them. */
 export interface RunWorkerPort {
@@ -81,7 +88,8 @@ export function serve(port: RunWorkerPort) {
       port.post(message);
     } catch (error) {
       // only a value that cannot cross between threads gets here
-      port.post({ type: 'threw', message: `what its code gave could not be sent from its worker: ${messageOf(error)}` });
+      const wrote = 'wrote' in message ? { wrote: message.wrote } : {};
+      port.post({ type: 'threw', message: `what its code gave could not be sent from its worker: ${messageOf(error)}`, ...wrote });
     }
   };
 
@@ -91,7 +99,8 @@ export function serve(port: RunWorkerPort) {
         // Made at once: a run worker is started only when there is a job for it.
         const { settings } = message;
         repo = setUpImportMap(settings.importMap ?? {}, settings.baseURI ?? '')
-          .then(() => getRepo(settings.repoConfig, `task-run-${crypto.randomUUID()}`, settings.place, settings.link))
+          // Linked, with the peer id the page chose: its end of the link admits no other.
+          .then(() => getRepo(settings.repoConfig, (settings.link && settings.peerId) || `task-run-${crypto.randomUUID()}`, settings.place, settings.link))
           .then((made) => {
             reports = serverReports(made);
             return made;
@@ -182,9 +191,16 @@ export function serve(port: RunWorkerPort) {
       // a run that changed nothing says how it ended as soon as it did before.
       const own = documentIdOf(job.taskUrl);
       const log = (message: string) => say({ type: 'log', message });
-      const waiting = linked(docs) ? reachPage(docs, before, own, log) : reachServer(docs, reports, before, own, log);
+      const toPage = linked(docs);
+      const waiting = toPage ? reachPage(docs, before, own, log) : reachServer(docs, reports, before, own, log);
       if (waiting) {
         await waiting;
+      }
+      if (toPage) {
+        const wrote = [...changedSince(docs, before).keys()].filter((id) => id !== own);
+        if (wrote.length > 0) {
+          outcome = { ...outcome, wrote };
+        }
       }
     }
     over = true;
@@ -502,6 +518,9 @@ function reachServer(
 // of the page beyond the sync itself. The page's Repo keeps what it has, and
 // sends it to the sync server when there is one, so a linked run does not
 // wait for the server, and does not wait on it when it cannot be reached.
+// The ending names the documents the code changed (`wrote`), and the pool
+// has the page save them before it reports the run (browser/executor.ts),
+// so that a page reloaded at that moment still has them.
 // A run that wrote a document the page will not take (one keyhive protects:
 // the link gives no such document over, either way) waits REACH_LIMIT_MS and
 // says so in its log.

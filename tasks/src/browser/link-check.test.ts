@@ -9,10 +9,12 @@
 //   a protected document named in any other field, or in another spelling,
 //   gets it nothing.
 // - The handshake, and messages in another peer's name or addressed to
-//   another peer, posted on a run worker's port: the pool stays linked;
-//   but not when the forged announcement comes before the worker's Repo's
-//   own, a known defect kept as `it.fails`; a worker's Repo that ends is
-//   forgotten alone.
+//   another peer, posted on a run worker's port, after its Repo announced
+//   itself or before it did: the pool stays linked; a worker's Repo that
+//   ends is forgotten alone; a Repo made with an id other than the one the
+//   page chose for its link is not heard at all.
+// - Kept before reported: the page saves, of the documents a run names,
+//   those its link carried, and no other.
 // - The gate's claim that a dropped message never carries a change, read
 //   off every message it drops: with a page that changes a document many
 //   times before the worker names it, and a later worker on the same
@@ -29,7 +31,7 @@ import { stringifyAutomergeUrl, type AutomergeUrl, type DocHandle, type Document
 import * as A from '@automerge/automerge';
 import { Repo as SiteRepo, initSubduction as initSiteSubduction } from 'site-automerge-repo';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PageLinks, gatedAdapterClass, type PortAdapterClass } from './link';
+import { PageLinks, gatedAdapterClass, type GatedAdapterClass, type PortAdapterClass } from './link';
 import { reachPage } from '../run-worker';
 
 await initSiteSubduction();
@@ -48,8 +50,14 @@ function memoryStorage(): StorageAdapterInterface {
   } as StorageAdapterInterface;
 }
 
-const make = (network: unknown[] = [], storage = memoryStorage()) =>
-  new SiteRepo({ storage, network, peerId: `peer-${crypto.randomUUID()}` } as any) as unknown as Repo;
+const make = (network: unknown[] = [], storage = memoryStorage(), peerId = `peer-${crypto.randomUUID()}`) =>
+  new SiteRepo({ storage, network, peerId } as any) as unknown as Repo;
+
+/** A worker's Repo on a new link named `name`, made with the peer id the page chose for it, as a worker's is. */
+function linkedRepo(links: PageLinks, name: string, storage = memoryStorage()) {
+  const { port, peer } = links.open(name);
+  return make([new MessageChannelNetworkAdapter(port as any)], storage, peer);
+}
 
 const Gated = gatedAdapterClass(MessageChannelNetworkAdapter as unknown as PortAdapterClass);
 
@@ -117,10 +125,10 @@ describe("what a worker's code posts on its port by hand", () => {
     const other = everyoneElse(page);
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
-    const port = links.open('worker');
+    const { port, peer } = links.open('worker');
     const heard: any[] = [];
     (port as any).addEventListener('message', (event: MessageEvent) => heard.push(event.data));
-    const worker = keep(make([new MessageChannelNetworkAdapter(port as any)]));
+    const worker = keep(make([new MessageChannelNetworkAdapter(port as any)], undefined, peer));
     expect(await until(() => worker.peers.length > 0)).toBe(true);
 
     const data = A.generateSyncMessage(A.init(), A.initSyncState())[1]!;
@@ -159,8 +167,9 @@ describe("what a worker's code posts on its port by hand", () => {
 // peer's id (here the pool's, from an ephemeral message the page relays with
 // its sender's id) and says 'arrive' and 'leave' in that peer's name on its
 // own port would, were the handshake not gated, turn the page's messages for
-// that peer to itself and then cut the pool off. The page's end keeps the one
-// peer its link first announced (link.ts, `LinkGate.fromPort`). A message
+// that peer to itself and then cut the pool off. The page names each link's
+// one peer, and its end admits that peer's own messages to the page alone
+// (link.ts, `LinkGate.fromPort`), whatever order they come in. A message
 // addressed to another peer would make the adapter throw in the page; it is
 // dropped before the adapter sees it.
 describe('the handshake', () => {
@@ -168,9 +177,9 @@ describe('the handshake', () => {
     const page = keep(make());
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
-    const pool = keep(make([new MessageChannelNetworkAdapter(links.open('pool') as any)]));
-    const runPort = links.open('run 1');
-    const run = keep(make([new MessageChannelNetworkAdapter(runPort as any)]));
+    const pool = keep(linkedRepo(links, 'pool'));
+    const { port: runPort, peer: runPeer } = links.open('run 1');
+    const run = keep(make([new MessageChannelNetworkAdapter(runPort as any)], undefined, runPeer));
     const queue = page.create<{ jobs: number }>({ jobs: 0 });
     const poolQueue = await pool.find<{ jobs: number }>(queue.url);
     const runQueue = await run.find<{ jobs: number }>(queue.url);
@@ -198,9 +207,9 @@ describe('the handshake', () => {
     const page = keep(make());
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
-    const pool = keep(make([new MessageChannelNetworkAdapter(links.open('pool') as any)]));
-    const runPort = links.open('run 1');
-    const run = keep(make([new MessageChannelNetworkAdapter(runPort as any)]));
+    const pool = keep(linkedRepo(links, 'pool'));
+    const { port: runPort, peer: runPeer } = links.open('run 1');
+    const run = keep(make([new MessageChannelNetworkAdapter(runPort as any)], undefined, runPeer));
     const queue = page.create<{ jobs: number; by?: string }>({ jobs: 0 });
     const poolQueue = await pool.find<{ jobs: number; by?: string }>(queue.url);
     const runQueue = await run.find<{ jobs: number; by?: string }>(queue.url);
@@ -226,33 +235,25 @@ describe('the handshake', () => {
     expect(await until(() => queue.doc()?.by === 'run' && poolQueue.doc()?.by === 'run', 2000)).toBe(true);
   }, 15_000);
 
-  // A known defect, kept as the case that shows it (`it.fails`: it passes
-  // while the defect is there, and fails once it is mended, to be turned
-  // into an `it` then). The page's end keeps the first peer a link
-  // announces, so a forged arrive posted on a run worker's port before that
-  // worker's Repo announces itself is taken as the link's peer. A worker's
-  // Repo announces itself only once it has its storage id (NetworkSubsystem
-  // connects its adapters after the Repo's peer metadata resolves), and
-  // run-worker.ts imports a task's code without waiting for that: on the
-  // stand-in page, in 6 of 6 fresh run workers, the code ran at import with
-  // its Repo not yet announced, 5 to 17 ms before it was, and an IndexedDB
-  // read at import finished first in 5 of 6. Code that has the pool's id
-  // there (an earlier run's, kept in the origin's IndexedDB) cut the pool off
-  // with no network. Refusing an announcement in the name of a peer the page
-  // already has would mend it whatever the worker's order; a run worker that
-  // waits for its link to be announced before importing code makes the
-  // order true but leaves the gate trusting it.
-  it.fails("a forged arrive and leave in the pool's name, posted before the run worker's Repo announces itself, do not cut the page off from the pool", async () => {
+  // A worker's Repo announces itself only once it has its storage id
+  // (NetworkSubsystem connects its adapters after the Repo's peer metadata
+  // resolves), and run-worker.ts imports a task's code without waiting for
+  // that: on the stand-in page, in 6 of 6 fresh run workers, the code ran at
+  // import 5 to 17 ms before its Repo announced itself. Code that has the
+  // pool's id there (an earlier run's, kept in the origin's IndexedDB) and
+  // speaks first in the pool's name is heard by nothing, since the page named
+  // the link's peer, and not as the pool.
+  it("a forged arrive and leave in the pool's name, posted before the run worker's Repo announces itself, do not cut the page off from the pool", async () => {
     const page = keep(make());
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
-    const pool = keep(make([new MessageChannelNetworkAdapter(links.open('pool') as any)]));
+    const pool = keep(linkedRepo(links, 'pool'));
     const queue = page.create<{ jobs: number }>({ jobs: 0 });
     const poolQueue = await pool.find<{ jobs: number }>(queue.url);
     const adaptersBefore = page.networkSubsystem.adapters.length;
 
     // the run worker's code, first on its port (no Repo of its own is made: what it would hear is addressed to the pool)
-    const runPort = links.open('run 1');
+    const { port: runPort } = links.open('run 1');
     runPort.postMessage({ type: 'arrive', senderId: pool.peerId, peerMetadata: { isEphemeral: true } });
     runPort.postMessage({ type: 'leave', senderId: pool.peerId });
     await quiet(300);
@@ -269,8 +270,8 @@ describe('the handshake', () => {
     const page = keep(make());
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
-    const pool = keep(make([new MessageChannelNetworkAdapter(links.open('pool') as any)]));
-    const run = make([new MessageChannelNetworkAdapter(links.open('run 1') as any)]);
+    const pool = keep(linkedRepo(links, 'pool'));
+    const run = linkedRepo(links, 'run 1');
     const queue = page.create<{ jobs: number }>({ jobs: 0 });
     const poolQueue = await pool.find<{ jobs: number }>(queue.url);
     await run.find<{ jobs: number }>(queue.url);
@@ -286,6 +287,50 @@ describe('the handshake', () => {
   }, 15_000);
 });
 
+describe('the page names the peer', () => {
+  it("a worker's Repo made with another id than the one the page chose is not heard: the page has no such peer and gives it nothing", async () => {
+    const page = keep(make());
+    const doc = page.create<{ n: number }>({ n: 1 });
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const { port } = links.open('run 1');
+    const stranger = keep(make([new MessageChannelNetworkAdapter(port as any)]));
+    const found = stranger.find(doc.url).then(
+      () => 'found',
+      () => 'unavailable',
+    );
+    expect(await Promise.race([found, quiet(1500).then(() => 'nothing')])).not.toBe('found');
+    expect(page.peers).not.toContain(stranger.peerId);
+  }, 15_000);
+});
+
+// Kept before reported. Before a linked run is reported, the page saves in
+// its Repo the documents the run names (pool-host.ts, `keep`), and of those
+// only the ones its link carried: what the worker named on it.
+describe('kept before reported', () => {
+  it("the page saves, of the documents a run names, those its link carried, and no other; a link that has ended says so", async () => {
+    const page = keep(make());
+    const flushed: unknown[] = [];
+    const flush = page.flush.bind(page);
+    (page as any).flush = (documents?: unknown[]) => (flushed.push(documents), flush(documents as never));
+    const carried = page.create<{ n: number }>({ n: 1 });
+    const notCarried = page.create<{ n: number }>({ n: 1 });
+    const links = new PageLinks(page as any, Gated);
+    linkSets.push(links);
+    const worker = keep(linkedRepo(links, 'run 1'));
+    const there = await worker.find<{ n: number }>(carried.url);
+    there.change((d) => void (d.n = 2));
+    expect(await until(() => carried.doc()?.n === 2)).toBe(true);
+
+    await links.keep('run 1', [carried.documentId, notCarried.documentId, 'not-an-id', 7, carried.documentId]);
+    expect(flushed).toEqual([[carried.documentId]]);
+    await links.keep('run 1', [notCarried.documentId]);
+    expect(flushed).toEqual([[carried.documentId]]);
+    links.remove('run 1');
+    await expect(links.keep('run 1', [carried.documentId])).rejects.toThrow(/ended/);
+  }, 15_000);
+});
+
 describe('a dropped message never carries a change', () => {
   it('a page that changes a document many times before the worker names it, and a later worker on storage the page keeps a sync state for', async () => {
     const page = keep(make());
@@ -294,9 +339,9 @@ describe('a dropped message never carries a change', () => {
 
     // a first worker names it, syncs, and goes
     const storage = memoryStorage();
-    const links = new PageLinks(page as any, Watched as unknown as PortAdapterClass);
+    const links = new PageLinks(page as any, Watched as unknown as GatedAdapterClass);
     linkSets.push(links);
-    const first = make([new MessageChannelNetworkAdapter(links.open('first') as any)], storage);
+    const first = linkedRepo(links, 'first', storage);
     const there = await first.find<{ n: number }>(doc.url);
     expect(await until(() => there.doc()?.n === 100)).toBe(true);
     await first.flush();
@@ -305,7 +350,7 @@ describe('a dropped message never carries a change', () => {
 
     // the page changes it on; a later worker on the same storage (the same storage id) is linked, and the page changes it more before it names it
     for (let i = 101; i <= 130; i++) doc.change((d) => void ((d.n = i), d.log.push(i)));
-    const later = keep(make([new MessageChannelNetworkAdapter(links.open('later') as any)], storage));
+    const later = keep(linkedRepo(links, 'later', storage));
     expect(await until(() => later.peers.length > 0)).toBe(true);
     for (let i = 131; i <= 150; i++) {
       doc.change((d) => void ((d.n = i), d.log.push(i)));
@@ -330,7 +375,7 @@ describe('ten links at once', () => {
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
     const adaptersBefore = page.networkSubsystem.adapters.length;
-    const workers = Array.from({ length: 10 }, (_, i) => keep(make([new MessageChannelNetworkAdapter(links.open(`run ${i}`) as any)])));
+    const workers = Array.from({ length: 10 }, (_, i) => keep(linkedRepo(links, `run ${i}`)));
     expect(links.size).toBe(10);
     expect(page.networkSubsystem.adapters.length).toBe(adaptersBefore + 10);
 
@@ -376,7 +421,7 @@ describe('a 5 MB document', () => {
     const page = keep(make());
     const links = new PageLinks(page as any, Gated);
     linkSets.push(links);
-    const worker = keep(make([new MessageChannelNetworkAdapter(links.open('w') as any)]));
+    const worker = keep(linkedRepo(links, 'w'));
     expect(await until(() => worker.peers.length > 0)).toBe(true);
     const before = headsOf(worker);
     const big = worker.create<{ blob: Uint8Array }>({ blob: blob(5 * 1024 * 1024) });
@@ -393,7 +438,7 @@ describe('a 5 MB document', () => {
     linkSets.push(links);
     const adaptersBefore = page.networkSubsystem.adapters.length;
     const storage = memoryStorage();
-    const worker = make([new MessageChannelNetworkAdapter(links.open('w') as any)], storage);
+    const worker = linkedRepo(links, 'w', storage);
     expect(await until(() => worker.peers.length > 0)).toBe(true);
     const value = blob(5 * 1024 * 1024);
     const big = worker.create<{ blob: Uint8Array }>({ blob: value });
@@ -405,7 +450,7 @@ describe('a 5 MB document', () => {
     expect(page.peers).toEqual([other.peerId]);
     expect(await stillSyncing(page, other)).toBe(true);
 
-    const later = keep(make([new MessageChannelNetworkAdapter(links.open('later') as any)], storage));
+    const later = keep(linkedRepo(links, 'later', storage));
     const mine = await later.find<{ blob: Uint8Array }>(big.url);
     expect(mine.doc()?.blob.byteLength).toBe(value.byteLength);
     const before = headsOf(later);

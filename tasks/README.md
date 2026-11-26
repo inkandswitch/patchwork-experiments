@@ -361,23 +361,44 @@ documents keyhive leaves unprotected, and of those only the ones the worker has 
 `request` or a `sync` of its own for that document; it neither offers a worker the documents it has
 open nor answers it about any other (the header of `link.ts` says which of the Repo's messages
 pass). Before the Repo's messages, the gate reads what arrives on the page's port, the adapter's
-own handshake (`arrive`, `welcome`, `leave`) included: a link has one peer, the first its worker's
-end announces, and any later announcement, any `leave` or message in another peer's name, and any
-message addressed to another peer are dropped before the adapter sees them. A Repo sends its
-messages for a peer through the adapter that last announced that peer, so without this a worker's
-code that knew another peer's id (the pool's, which the ephemeral messages the page relays carry)
-could turn the page's messages for that peer to itself, or make the page forget it and so cut the
-pool off (`link-check.test.ts`, "the handshake"). The first announcement need not be the
-worker's Repo's own: a run worker imports its task's code before its Repo has announced itself,
-so code that already has the pool's id can speak first, take the link in the pool's name and cut
-the pool off (kept as `it.fails`; PLANS, "What the local link still lacks"). A worker with no page
+own handshake (`arrive`, `welcome`, `leave`) included. The page names each link's one peer: for
+every link it makes or is handed it chooses a fresh random peer id, and the worker at the other end
+makes its Repo with exactly that id (the pool's worker from `start`, a run worker from its
+settings, both set by the task system's own code before any task's code is loaded). The page's
+end admits an `arrive` or `leave` only from that id and addressed to no one, and any other message
+only from that id and addressed to the page; everything else is dropped before the adapter sees
+it. That holds whatever order things happen in: a run worker imports its task's code before its
+Repo has announced itself, and code that speaks first, in any peer's name, is heard by nothing.
+A task's code can speak on its link only as its own worker. (A Repo sends its messages for a peer
+through the adapter that last announced that peer, and forgets a peer whose adapter says it left,
+so a link that admitted another peer's name would let code that knew the pool's id, which the
+ephemeral messages the page relays carry, take the page's messages for the pool or cut the pool
+off; `link-check.test.ts`, "the handshake".)
+
+Kept before reported. A linked run worker says how a run ended once the page's Repo has what the
+run wrote, and names those documents. Before the pool reports the run, its worker asks the page to
+save them, and the page saves, in the site's Repo, those that run's link carried. The pool waits
+for that at most 10 s (`KEEP_LIMIT_MS` in `src/browser/executor.ts`), and a save that failed or did
+not come in time is said in the run's log; the run is then reported all the same. So a page
+reloaded the moment a run is reported has what it wrote, with no network too (browser-run
+`--lifetimes` check 39).
+
+What a run worker's code can reach besides its own link. Message ports cross only by transfer:
+the pool's worker's end of its link never leaves the pool's worker, and each run worker's end goes
+to that run worker alone, so a run worker's code has no way to another worker's port. Its realm
+is the site's origin, though, and that gives it ways round the link that no gate here sees: every
+BroadcastChannel of the origin (the task system's `patchwork-tasks-heads`,
+`patchwork-tasks-messages` and `patchwork-tasks-build` among them), every IndexedDB database of the
+origin (the tasks database, other run workers', the site's own), the origin's Web Locks, and
+fetches to the origin. These are not closed here; closing them needs task code in a worker of an
+opaque origin (PLANS, "A new worker for every run"). A worker with no page
 above it (a Node host's thread) has no link.
 
 | On one device with no network | |
 |---|---|
 | Making your own queue; the pool starting | works: making writes in the page's Repo and waits on nothing, and the pool starts and serves it |
 | A task asked in this browser, run by this browser's pool, its progress and result | works: asked through the task system's own Repo (`tasks-repo.ts`, as the queue browser asks), or by a page tool through the site's Repo in the tab that runs the pool, which reaches the pool by the local link, so `doWork` hears the pool through that Repo and asks it; from another tab, whose site Repo hears the pool only by way of the sync server, `doWork` hears none and does the work in the page |
-| What a pool-run task writes into a document the page has open | reaches the site's Repo in the tab that runs the pool, through the link, before the run's ending is said; the site's other tabs have it as they have that tab's own changes; the site's Repo sends it to the sync server once there is one. Until that Repo has saved it, it is in memory only: a tab reloaded the moment `doWork` resolves does not have it after (browser-run `--lifetimes` check 39), and it stays in the run worker's storage |
+| What a pool-run task writes into a document the page has open | reaches the site's Repo in the tab that runs the pool, through the link, and is saved there, before the run is reported; a tab reloaded the moment `doWork` resolves has it (browser-run `--lifetimes` check 39); the site's other tabs have it as they have that tab's own changes; the site's Repo sends it to the sync server once there is one |
 | Work that needs another machine (`needs: ['node']`) | waits in the queue, and the queue browser says what it waits for; where this browser does not have the list of the person's queues (the account names a storage document that has not arrived), `doWork` looks for it as `findWhenThere` does, about half a minute, and then rejects with "This work needs a device with node, and it could not be asked of your task queue: The list of your task queues could not be found, so nothing was changed." |
 | Stopping work | works for work in this browser: work done in the page by its signal, and work the pool runs by a stop written through the task system's own Repo (the queue browser's Stop) |
 
@@ -401,11 +422,17 @@ arrives on the page's port, and Repos of
 both kinds joined by a gated link (documents named cross both ways, others do not, a protected one
 never, a run's report waits for the page; `link.test.ts`); what a worker's code posts on its port
 by hand gets it no protected document by any other field or spelling, and an announcement, a
-`leave` or a message in the pool's name, or one addressed to another peer, neither cuts the page
-off from the pool nor throws in the page, no offer the gate drops
+`leave` or a message in the pool's name, or one addressed to another peer, before the worker's
+Repo announces itself or after, neither cuts the page off from the pool nor throws in the page, a
+worker's Repo made with another id than the one the page chose is not heard, the page saves of
+the documents a run names only those its link carried, no offer the gate drops
 carries a change, ten links write at once and each run is reported once the page has its writes,
 and a 5 MB document crosses, also after a link taken out in the middle of it
-(`link-check.test.ts`); two replicas that each made a queue
+(`link-check.test.ts`); a linked run worker's Repo has the peer id its settings carry, and its
+ending names what the code wrote (`run-worker.test.ts`); its settings wait until the page has
+named its link's peer, and its ending is heard once the page has saved what it names, or at the
+bound with the log saying why not (`executor.test.ts`); the page names a fresh peer for each link,
+answers each save, and says why one failed (`pool-host.test.ts`); two replicas that each made a queue
 apart agree on own when they meet, lose no task and run none twice; a replica that sees a pointer
 to a queue it does not have asks a queue of its own and folds it into own once own arrives;
 folding with one replica cut off part way, then healed, converges; a run that finished while its
@@ -502,9 +529,8 @@ processes and say what they saw, one line per check or measurement:
   before listing it: so in four runs with `--no-network` and one of three with the network);
   the holder navigated away,
   the waiting tab takes the pool, linked (35); the page reloaded takes the pool again, linked,
-  with what a run wrote 2 s before (36), and asked the same of what a run wrote the moment before
-  the reload, it has it with the network and not without (39 fails with `--no-network`: PLANS,
-  "What a stopped worker leaves behind"); and, with
+  with what a run wrote 2 s before (36), and with what a run wrote the moment before the reload,
+  which the page saved before the run was reported (39); and, with
   the network only, a page cut off by DevTools' network emulation has what a task wrote reach
   the sync server once it is mended, the task run once (37), and a page of another context, given
   the account, hears this browser's pool serving through the server alone (38).

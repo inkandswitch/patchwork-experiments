@@ -149,15 +149,11 @@ that one machine serves.
     client's save, not the link, and DevTools' freeze may hold a transaction a browser's own
     freezing would not. A linked pool needs no save before the listing (it has the task from the
     page's memory), but a pool elsewhere does. Waits on the lead's call.
-  - *An announcement before the worker's own.* The page's end of a link keeps the first peer
-    announced on it, and a run worker's code can speak first: its Repo announces itself only once
-    it has its storage id, and `run-worker.ts` imports the code without waiting for that (on the
-    stand-in page, 6 of 6 fresh run workers ran their code at import 5 to 17 ms before their Repo
-    announced itself, and an IndexedDB read there finished first in 5 of 6). Code that has the
-    pool's id then (an earlier run's, kept in the origin's IndexedDB) and says `arrive` and
-    `leave` in its name cuts the pool off, with no network (`link-check.test.ts` keeps the case as
-    `it.fails`). A page end that refuses an announcement in the name of a peer the site's Repo
-    already has would close it whatever the worker's order. Waits on nothing.
+  - *Task code reaches the origin beside its link.* A run worker's code can speak on its link only
+    as its own worker, and reaches no other worker's port, but its realm is the site's origin: it
+    can use every BroadcastChannel and IndexedDB database of the origin, the origin's Web Locks,
+    and fetches to it (README, "Offline and partition"). Waits on confinement (below, "A new
+    worker for every run").
   - *Not shown on the deployed site* (keyhive's Repo): only on a stand-in page and in unit tests.
     Nor is it shown that the sync server accepts a document a plain worker made offline once the
     keyhive page takes it in and the network returns, nor hours of use. On the stand-in page,
@@ -184,12 +180,12 @@ that one machine serves.
 - **What a stopped worker leaves behind.** In a browser, what a run worker writes crosses its link
   to the page's Repo as it writes (in milliseconds), so a worker ended mid-run (a stopped run not
   done within five seconds) leaves behind at most what it wrote in its last moments; the page's
-  Repo keeps the rest and sends it on (browser-run check 29). A tab that dies takes the page's Repo
-  with it, and what that Repo had not yet saved or sent stays only in the run worker's storage. A
-  tab reloaded the moment `doWork` resolves is enough: with no network the reloaded page does not
-  have what the run wrote, though its Repo had it when the run was reported (browser-run
-  `--lifetimes` check 39), and the page cannot ask a run worker for it, since the gate answers the
-  page's request for a document the worker has not named as unavailable. On a
+  Repo keeps the rest and sends it on (browser-run check 29). A run that is reported has had the
+  page save what it wrote (browser-run `--lifetimes` check 39), unless its log says the page could
+  not; but a tab that dies while a run goes on takes the page's Repo with it, and what that Repo
+  had not yet saved or sent stays only in the run worker's storage, and the page cannot ask a run
+  worker for it, since the gate answers the page's request for a document the worker has not named
+  as unavailable. On a
   Node host, a thread ended before the server acknowledged what its run wrote (a stopped run, a
   process that died, a run written offline) leaves it in that thread's storage. Either way the next
   worker on the same storage does not send it: the Repo loads a stored document only when something
