@@ -425,6 +425,36 @@ async function* readBody(response, dog = null) {
  * `key` is passed per call rather than held in module state so that nothing
  * here ever caches a credential.
  */
+/**
+ * What the provider said in an answer that was not ok, as plain text: the
+ * message out of its JSON (`{ error: { message } }`, `{ error }` or
+ * `{ message }`), or the body as it came when there is none to read out.
+ */
+export function providerSays(detail) {
+  const text = String(detail ?? "").trim()
+  try {
+    const json = JSON.parse(text)
+    const said = [json?.error?.message, json?.error, json?.message].find((x) => typeof x === "string" && x.trim())
+    if (said) return said.trim()
+  } catch {
+    /* not JSON: the body is what it said */
+  }
+  return text
+}
+
+/**
+ * The error a refused request is said with. A 401 or 403 is the provider
+ * refusing the API key, said as what a person can do about it, with the
+ * provider's own words after it; any other keeps its status.
+ */
+export function refusal(status, detail) {
+  const said = providerSays(detail).slice(0, 400)
+  if (status === 401 || status === 403) {
+    return `OpenRouter refused the API key (${status}). Change it in this session's settings.${said ? ` OpenRouter said: ${said}` : ""}`
+  }
+  return `OpenRouter ${status}: ${said}`
+}
+
 /** Is this worth trying again? Rate limits and server faults are; 4xx is not. */
 function isRetryable(status) {
   return status === 429 || status === 408 || (status >= 500 && status < 600)
@@ -556,7 +586,7 @@ export async function* stream({
     dog.stop()
 
     const detail = await response.text().catch(() => "")
-    lastError = new Error(`OpenRouter ${response.status}: ${detail.slice(0, 400)}`)
+    lastError = new Error(refusal(response.status, detail))
 
     // A model that cannot read images rejects the ENTIRE request, so one
     // screenshot in the transcript kills every turn after it — permanently,
