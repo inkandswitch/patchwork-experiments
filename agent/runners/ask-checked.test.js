@@ -501,15 +501,14 @@ describe("own hashes", () => {
 
 describe("a burst's end and the asker, together (kernel/burst.js with askWork)", () => {
   /**
-   * The author's first doubt, shown. A person's message reaches the run's
-   * copy after the loop's last look and before the burst ends (here, while it
-   * reads its task's runs to clear `burst`). The result's heads are the
-   * session's at the end, the message among them, so the asker's copy, which
-   * has the message and the run's writes, reads "equal" and asks nothing: the
-   * message waits for the next write or Take over. Promise A: "every re-ask
-   * needs a change the ended run did not see" — this change it did not see.
+   * The author's first doubt. A person's message reaches the run's copy
+   * after the loop's last look and before the burst ends (here, while it
+   * reads its task's runs to clear `burst`). The session at the end still
+   * needs work, so the result's heads are null, and the asker judges against
+   * the heads it asked at: the message is asked for. Promise A: "every re-ask
+   * needs a change the ended run did not see" — this is one.
    */
-  it.fails("a message that lands between the loop's last look and the burst's end is asked for", async () => {
+  it("a message that lands between the loop's last look and the burst's end is asked for", async () => {
     const { runBurst } = await import("../kernel/burst.js")
     const { makeMock } = await import("../fixtures/mock-provider.js")
     const { needsWork } = await import("../kernel/runner.js")
@@ -558,9 +557,10 @@ describe("a burst's end and the asker, together (kernel/burst.js with askWork)",
     page.merge(runCopy)
     client.end({ result })
     await flush()
-    // The page's copy has work, and nothing is asked for it.
+    // The page's copy has work, and it is asked for.
     expect(needsWork(page.doc())).toBe(true)
-    await askWork(pageRepo, page.url, optsOf(client, clock))
+    // Not awaited: an ask resolves only when its task ends.
+    askWork(pageRepo, page.url, optsOf(client, clock))
     await flush()
     expect(client.tasks).toHaveLength(2)
   })

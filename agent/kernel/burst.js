@@ -27,8 +27,10 @@
  *   - A stop written anywhere aborts its loop's signal as soon as its copy
  *     has it.
  *   - Its result is `{ outcome, heads, own }`: how it ended, the session's
- *     heads at the end, and the hashes of its tools' writes, which it also
- *     reports as `progress({ own })` as they grow.
+ *     heads at the end (null when the session there still needs work, so
+ *     that an asker asks for what it did not see), and the hashes of its
+ *     tools' writes, which it also reports as `progress({ own })` as they
+ *     grow.
  */
 
 import { STOP, stopOf, stoppedFromOutside } from "../session/status.js"
@@ -113,9 +115,15 @@ export async function runBurst(ctx, opts) {
     ctx.progress?.({ own: [...own] })
   }
 
+  // The heads it ends at, only when the session there needs no work a run can
+  // do, judged as an asker judges it (runners/ask.js). Otherwise null: a
+  // write it did not see (a message after the loop's last look), a cancel,
+  // or what it left, and the asker judges against the heads it asked at.
   const ended = (outcome, reason = null) => {
     if (reason) ctx.log?.(`${outcome}: ${reason}`)
-    return { outcome, heads: [...(handle.heads?.() ?? [])], own: [...own] }
+    const doc = handle.doc()
+    const left = needsWork(doc, canRun, null, (d) => hasDebris(d, d.burst?.run ?? null))
+    return { outcome, heads: left ? null : [...(handle.heads?.() ?? [])], own: [...own] }
   }
   // Another run has the task (`yielded`), or will have it (`stopping`): this
   // one is no longer the session's. A cancel ends only this burst, which

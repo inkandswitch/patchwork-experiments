@@ -17,7 +17,8 @@
  *   - the last task under the key has ended (none, or one that has, but not
  *     one still under way, which reads the session at each of its turns);
  *   - the copy's heads differ from that task's: its result's `heads`, or the
- *     heads it was asked at when it has no result. Equal, nothing new; the
+ *     heads it was asked at when it has no result or its result's heads are
+ *     null (it ended with work left: kernel/burst.js). Equal, nothing new; the
  *     copy behind them, it waits (at most HEADS_WAIT_MS) to have them;
  *   - it has asked fewer than twice at these heads. Then only a change or
  *     the network coming back (`online`) asks again.
