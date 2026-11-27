@@ -8,13 +8,15 @@
 // own queue, by one of their machines, so that it finishes when this page
 // closes and two pages asking are one fetch. A fetch already under way for
 // this doc and frame, asked from another tab or before a reload, is shown
-// (watchWork) rather than offered again.
+// (watchWork) rather than offered again. The task client is the Tasks
+// package's library "tasks-next", from the plugin registry: until it is there,
+// Fetch data says it needs that package and asks nothing.
 
 import css from "./tool.css?inline";
 import { NCEI } from "./fetch-data.js";
 import { readTerrainData, dataFits, hasData } from "./store.js";
 import { fetchRequest } from "./fetch-spec.js";
-import { doWork, inSamePackage, poolHere, stopWork, watchWork } from "./task-client.js";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { shape, HEIGHT_SCALE } from "./build.js";
 import { hexAt } from "./colors.js";
 import { localFrame } from "./tmerc.js";
@@ -33,8 +35,8 @@ const BUILT = import.meta.env?.PROD === true;
  * browser's pool can reach it); null when neither can be known, and Fetch
  * data then cannot be asked.
  */
-export function fetchTaskUrl(here = import.meta.url, built = BUILT) {
-  const inPackage = inSamePackage(here, built ? "dist/fetch-task.js" : "src/fetch-task.js");
+export function fetchTaskUrl(tasks, here = import.meta.url, built = BUILT) {
+  const inPackage = tasks.inSamePackage(here, built ? "dist/fetch-task.js" : "src/fetch-task.js");
   if (inPackage || built) return inPackage;
   try {
     return new URL("./fetch-task.js", here).href;
@@ -46,9 +48,8 @@ export function fetchTaskUrl(here = import.meta.url, built = BUILT) {
 /** What is said when this copy has no url its fetch task could be imported by. */
 export const NOT_FROM_A_PACKAGE = "This copy of Terrain is not loaded from a package, so Fetch data cannot be asked of your queue.";
 
-/** What is said while the fetch waits for a machine to take it up: whose, and, where the tasks package is not installed here, that this browser takes no part. */
-export const waitingWords = (here = poolHere()) =>
-  here ? "Waiting for one of your machines to take it up…" : "Waiting for one of your machines to take it up: this browser takes no part, because the tasks package is not installed here.";
+/** What is said where the Tasks package, which Fetch data is asked through, is not installed. */
+export const NO_TASKS = "Fetch data needs the Tasks package, which is not installed here.";
 
 /** Whether a fetch in this state is still under way, as far as a person can tell. */
 const underWay = (state) => state === "waiting" || state === "running" || state === "stalled" || state === "stopping";
@@ -108,6 +109,7 @@ export default function TerrainTool(handle, element) {
   const canvas = $("canvas");
   const ctx2d = canvas.getContext("2d");
   let dead = false;
+  let tasks = null; // the task client, once the Tasks package is here
   // the fetch this tool started: { controller, state } while it runs
   let job = null;
   // a fetch under way for this doc and frame that this tool did not start: { key, view }
@@ -144,16 +146,14 @@ export default function TerrainTool(handle, element) {
     logEl.dataset.state = state;
     logEl.textContent = state === "error" ? s : logEl.textContent ? `${logEl.textContent}\n${s}` : s;
   };
-  let shownView = null; // the view the where line was last worked out from
   /** Shows a fetch as its task's view has it: its log, and where and how far it is. */
   const showView = (view) => {
     if (dead) return;
-    shownView = view;
     const lines = view.logs.map((l) => l.message);
     logEl.hidden = !lines.length;
     logEl.dataset.state = "";
     logEl.textContent = lines.join("\n");
-    const stage = view.state === "waiting" || view.state === "stalled" ? waitingWords() : view.state === "stopping" ? "Stopping…" : typeof view.progress === "string" ? view.progress : "";
+    const stage = view.state === "waiting" || view.state === "stalled" ? "Waiting for one of your machines to take it up…" : view.state === "stopping" ? "Stopping…" : typeof view.progress === "string" ? view.progress : "";
     // Asked of the person's queue, it is theirs to stop, not this page's; whether it finishes is up to their machines.
     const where = "On your own machines: closing this does not stop it.";
     whereEl.hidden = !underWay(view.state);
@@ -161,21 +161,20 @@ export default function TerrainTool(handle, element) {
   };
 
   $(".fetch").addEventListener("click", async () => {
-    if (busy()) return;
+    if (busy() || !tasks) return;
     const controller = new AbortController();
     const mine = (job = { controller, state: null });
     logEl.textContent = "";
     logEl.hidden = true;
-    shownView = null;
     whereEl.hidden = false;
     whereEl.textContent = "Starting…";
     render();
     try {
       const repo = repoOf();
       const { input, key } = fetchRequest(handle.url, handle.doc());
-      const importUrl = fetchTaskUrl();
+      const importUrl = fetchTaskUrl(tasks);
       if (!importUrl) throw new Error(NOT_FROM_A_PACKAGE);
-      const result = await doWork(repo, { importUrl, input, key }, {
+      const result = await tasks.doWork(repo, { importUrl, input, key }, {
         signal: controller.signal,
         onProgress: (view) => {
           mine.state = view.state;
@@ -197,7 +196,7 @@ export default function TerrainTool(handle, element) {
 
   $(".cancel").addEventListener("click", () => {
     if (job) job.controller.abort();
-    else if (elsewhere) void stopWork(repoOf(), elsewhere.key);
+    else if (elsewhere) void tasks.stopWork(repoOf(), elsewhere.key);
   });
 
   // Follows the fetch asked under this doc's key now, so that one already
@@ -206,14 +205,14 @@ export default function TerrainTool(handle, element) {
   let following = null; // { key, stop }
   function followKey() {
     const { key } = fetchRequest(handle.url, handle.doc());
-    if (dead || following?.key === key) return;
+    if (dead || !tasks || following?.key === key) return;
     following?.stop();
     const mine = (following = { key, stop: () => {} });
     if (elsewhere) {
       elsewhere = null;
       render();
     }
-    mine.stop = watchWork(repoOf(), key, (view) => {
+    mine.stop = tasks.watchWork(repoOf(), key, (view) => {
       // a fetch this tool started shows itself
       if (dead || following !== mine || job) return;
       if (underWay(view.state)) {
@@ -330,7 +329,7 @@ export default function TerrainTool(handle, element) {
     status.dataset.state = has && !fits ? "stale" : "";
     status.textContent = !has ? "No data yet. Fetch data asks NOAA NCEI for the heights and OpenStreetMap for the shore, the docks and the marks, and keeps them in this doc." : fits ? `Fetched ${new Date(d.data.fetched).toLocaleString()} (OpenStreetMap as of ${d.data.summary?.osmBase ?? "?"}).` : "The place, the grid or its settings changed since the data was fetched: fetch it again.";
     const btn = $(".fetch");
-    btn.disabled = busy();
+    btn.disabled = busy() || !tasks;
     btn.textContent = busy() ? "Fetching…" : has ? "Fetch again" : "Fetch data";
     $(".cancel").hidden = !busy();
     const sources = d.data?.sources?.length ? d.data.sources : [{ name: NCEI.name, licence: NCEI.licence, url: NCEI.metadata }];
@@ -352,15 +351,18 @@ export default function TerrainTool(handle, element) {
     } else if (fits) drawMap(d);
   }
 
-  // Whether this browser takes part (poolHere) changes when the tasks package
-  // registers this page's pool host, a moment after doWork joins the pool: the
-  // waiting words are worked out again then, where the package says so.
-  const tasksHere = (globalThis.patchworkTasks ??= {});
-  const hostsChanged = (tasksHere.hostsChanged ??= new EventTarget());
-  const hostsSeen = () => {
-    if (shownView && !whereEl.hidden) showView(shownView);
-  };
-  hostsChanged.addEventListener("change", hostsSeen);
+  const libraries = getRegistry("patchwork:library");
+  if (!libraries.has("tasks-next")) {
+    whereEl.hidden = false;
+    whereEl.textContent = NO_TASKS;
+  }
+  libraries.loadWhenReady("tasks-next").then(({ module }) => {
+    if (dead) return;
+    tasks = module;
+    whereEl.hidden = true;
+    render();
+    followKey();
+  });
 
   const changed = () => {
     render();
@@ -373,7 +375,6 @@ export default function TerrainTool(handle, element) {
     dead = true;
     // the fetch is on the person's queue, and goes on
     following?.stop();
-    hostsChanged.removeEventListener("change", hostsSeen);
     handle.off("change", changed);
     root.remove();
     style.remove();

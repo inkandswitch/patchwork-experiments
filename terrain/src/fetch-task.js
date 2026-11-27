@@ -1,9 +1,10 @@
 // Fetch data as work: what the Terrain tool's Fetch data button does,
-// wherever it runs. The tool asks for it through the task system's doWork
-// (task-client.js), so it runs on the person's own queue when one of their
-// machines serves it (in a browser's run worker, or a Node run thread), and
-// otherwise in the page. So it touches no DOM, and imports nothing a worker
-// could not: everything it needs is in this package.
+// wherever it runs. The tool asks for it through the task system's doWork,
+// so it runs on the person's own queue when one of their machines serves it
+// (in a browser's run worker, or a Node run thread). So it touches no DOM, and
+// imports by bare name only the plugin registry, which every pool has: the
+// task client is the library "tasks-next" there, and the rest is in this
+// package.
 //
 // Its input is { terrain: <the Terrain doc's url>, spec: <what it asks for> }
 // (fetchRequest in fetch-spec.js), and its key is the SHA-256 of that spec, so
@@ -18,7 +19,7 @@
 // second run fetches and stores again, which leaves the doc pointing at data
 // that is as good as the first.
 
-import { findWhenThere } from "./task-client.js";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { fetchTerrainData, STOPPED } from "./fetch-data.js";
 import { storeTerrainData } from "./store.js";
 import { fetchSpec, sameSpec } from "./fetch-spec.js";
@@ -54,8 +55,9 @@ export async function fetchTerrain(input, ctx, fetch = (...a) => globalThis.fetc
   const spec = input?.spec;
   if (typeof url !== "string" || !url.startsWith("automerge:") || !spec || typeof spec !== "object") throw new Error("No terrain was named to fetch data for.");
   ctx.progress(STAGES.finding);
+  const { module: tasks } = await getRegistry("patchwork:library").loadWhenReady("tasks-next");
   // what findWhenThere throws names the doc by its url, which is no message for a person
-  const handle = await findWhenThere(ctx.repo, url).catch(() => {
+  const handle = await tasks.findWhenThere(ctx.repo, url).catch(() => {
     throw new Error(UNREACHABLE);
   });
   // asked for still: not stopped, and the doc wants what was asked for

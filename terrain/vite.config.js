@@ -7,7 +7,8 @@ import external from "@inkandswitch/patchwork-bootloader/externals";
 //
 // The second entry is Fetch data's task (src/fetch-task.js), at
 // dist/fetch-task.js in every build: a task names its code by that path, and a
-// pool imports it in a run worker, so it too stays free of DOM and bare imports.
+// pool imports it in a run worker, so it too stays free of DOM, and imports by
+// bare name only the plugin registry, which every pool has.
 export default defineConfig({
   base: "./",
   build: {

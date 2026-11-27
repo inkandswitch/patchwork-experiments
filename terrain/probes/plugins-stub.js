@@ -15,6 +15,12 @@ function makeRegistry() {
       if (!p.module) p.module = await p.load();
       return p;
     },
+    loadWhenReady(id) {
+      if (plugins.has(id)) return this.load(id);
+      return new Promise((resolve) => {
+        const off = this.on("registered", () => plugins.has(id) && (off(), resolve(this.load(id))));
+      });
+    },
     on(ev, fn) { listeners.add(fn); return () => listeners.delete(fn); },
   };
 }

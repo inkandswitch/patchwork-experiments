@@ -5,6 +5,8 @@
 // ../tasks/dist-node/task-client.mjs, the way a Terrain tool on another
 // machine would ask, through the real sync server and the real data sources
 // (NOAA NCEI and Overpass, for a 65 × 65 grid 8 m apart off Cadboro Bay).
+// The task's code, in the host's run thread, gets the task client from that
+// thread's plugin registry, which has the host's own build of it.
 //
 //   (in terrain/) node probes/fetch-task-run.mjs [--sync wss://…] [--verbose]
 //

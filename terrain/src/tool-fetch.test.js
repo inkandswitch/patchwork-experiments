@@ -1,19 +1,23 @@
-// The Terrain tool's Fetch data, through the task system's doWork, watchWork
-// and stopWork (stood in for: their own tests are the tasks package's), on a
-// page with the stand-in Repo: what it asks for and under which key, what a
-// person sees while it waits for and runs on their own machines (and when
-// this browser takes no part), Cancel, a rejection shown as written, a fetch
-// already under way being shown instead of offered again, and where the
-// task's code is.
+// The Terrain tool's Fetch data, through the task client's doWork, watchWork,
+// stopWork and inSamePackage (a stand-in registered as the library
+// "tasks-next": the real client's own tests are the tasks package's), on a
+// page with the stand-in Repo: what it says where the Tasks package is not
+// installed and that it carries on when it arrives, what it asks for and
+// under which key, what a person sees while it waits for and runs on their
+// own machines, Cancel, a rejection shown as written, a fetch already under
+// way being shown instead of offered again, and where the task's code is.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./test/fake-repo.js";
 import { terrainDoc } from "./test/fixture.js";
 import { fetchSpec, fetchKey } from "./fetch-spec.js";
 import { MOVED, STAGES } from "./fetch-task.js";
 
-const calls = vi.hoisted(() => ({ doWork: [], watch: [], stop: [] }));
-vi.mock("./task-client.js", async (importOriginal) => ({
-  ...(await importOriginal()),
+const calls = { doWork: [], watch: [], stop: [] };
+const PKG = "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P";
+const client = {
+  // a package's file, by the package's url, for a module loaded from https://site.example/<package>/…
+  inSamePackage: (here, path) => (here.startsWith("https://site.example/") ? `/${encodeURIComponent(PKG)}/${path}` : null),
   doWork: (repo, request, options) =>
     new Promise((resolve, reject) => {
       calls.doWork.push({ repo, request, options, resolve, reject });
@@ -28,9 +32,11 @@ vi.mock("./task-client.js", async (importOriginal) => ({
     calls.stop.push({ repo, key });
     return true;
   },
-}));
+};
+const libraries = getRegistry("patchwork:library");
+const installTasks = () => libraries.register({ type: "patchwork:library", id: "tasks-next", name: "Tasks client (stand-in)", load: async () => client }, "https://site.example/tasks/dist/index.js");
 
-const { default: TerrainTool, fetchTaskUrl, NOT_FROM_A_PACKAGE } = await import("./tool.js");
+const { default: TerrainTool, fetchTaskUrl, NOT_FROM_A_PACKAGE, NO_TASKS } = await import("./tool.js");
 
 const TASK = "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P";
 const view = (more) => ({ key: "k", state: "running", taskUrl: TASK, importUrl: "x", input: null, progress: null, logs: [], result: undefined, error: null, runs: [], ...more });
@@ -41,16 +47,17 @@ const settle = async () => {
 
 beforeEach(() => {
   calls.doWork.length = calls.watch.length = calls.stop.length = 0;
+  installTasks();
   // the map is drawn on a canvas, which this page has no 2D context for
   HTMLCanvasElement.prototype.getContext = () => new Proxy({}, { get: () => () => ({ data: { set() {} } }) });
 });
 afterEach(() => {
   document.body.innerHTML = "";
-  delete window.patchworkTasks;
+  libraries.remove("tasks-next");
 });
 
-/** The tool mounted on a Terrain doc with no data. */
-function mounted(Tool = TerrainTool) {
+/** The tool mounted on a Terrain doc with no data, once it has the task client. */
+async function mounted(Tool = TerrainTool) {
   const repo = new FakeRepo();
   const doc = terrainDoc();
   doc.data = null;
@@ -60,24 +67,45 @@ function mounted(Tool = TerrainTool) {
   document.body.append(element);
   const unmount = Tool(handle, element);
   const $ = (s) => element.querySelector(s);
+  await settle();
   return { repo, handle, element, unmount, $, fetchButton: $(".fetch"), cancelButton: $(".cancel") };
 }
 
 describe("Fetch data", () => {
+  it("where the Tasks package is not installed, says so, asks and follows nothing, and carries on when it arrives", async () => {
+    libraries.remove("tasks-next");
+    const { $, fetchButton } = await mounted();
+    expect($(".where").hidden).toBe(false);
+    expect($(".where").textContent).toBe(NO_TASKS);
+    expect(fetchButton.disabled).toBe(true);
+    fetchButton.click();
+    await settle();
+    expect(calls.doWork).toHaveLength(0);
+    expect(calls.watch).toHaveLength(0);
+    installTasks();
+    await settle();
+    expect($(".where").hidden).toBe(true);
+    expect(fetchButton.disabled).toBe(false);
+    expect(calls.watch).toHaveLength(1);
+    fetchButton.click();
+    await settle();
+    expect(calls.doWork).toHaveLength(1);
+  });
+
   it("asks doWork for this package's fetch task, with the doc's url as input, under the doc's key", async () => {
-    const { repo, handle, fetchButton } = mounted();
+    const { repo, handle, fetchButton } = await mounted();
     fetchButton.click();
     await settle();
     expect(calls.doWork).toHaveLength(1);
     const { request, repo: asked } = calls.doWork[0];
     expect(asked).toBe(repo);
     const spec = fetchSpec(handle.doc());
-    expect(request).toEqual({ importUrl: fetchTaskUrl(), input: { terrain: handle.url, spec }, key: fetchKey(handle.url, spec) });
+    expect(request).toEqual({ importUrl: fetchTaskUrl(client), input: { terrain: handle.url, spec }, key: fetchKey(handle.url, spec) });
     expect(request.importUrl).toMatch(/\/src\/fetch-task\.js$/);
   });
 
   it("asked of the person's own queue: shows its log and stage, says closing this does not stop it, offers Cancel, and when done shows the last line", async () => {
-    const { $, fetchButton, cancelButton } = mounted();
+    const { $, fetchButton, cancelButton } = await mounted();
     expect(cancelButton.hidden).toBe(true);
     fetchButton.click();
     await settle();
@@ -98,22 +126,16 @@ describe("Fetch data", () => {
     expect(fetchButton.disabled).toBe(false);
   });
 
-  it("waiting: says it waits for one of the person's machines, and, where the tasks package is not installed here, that this browser takes no part", async () => {
-    const { $, fetchButton } = mounted();
+  it("waiting: says it waits for one of the person's machines", async () => {
+    const { $, fetchButton } = await mounted();
     fetchButton.click();
     await settle();
-    window.patchworkTasks = { poolHosts: { 1: {} } };
     calls.doWork[0].options.onProgress(view({ state: "waiting" }));
     expect($(".where").textContent).toBe("Waiting for one of your machines to take it up… On your own machines: closing this does not stop it.");
-    delete window.patchworkTasks;
-    calls.doWork[0].options.onProgress(view({ state: "waiting" }));
-    expect($(".where").textContent).toBe(
-      "Waiting for one of your machines to take it up: this browser takes no part, because the tasks package is not installed here. On your own machines: closing this does not stop it.",
-    );
   });
 
   it("a rejection of doWork (no queue could be had) is shown as written, and nothing is under way", async () => {
-    const { $, fetchButton, cancelButton } = mounted();
+    const { $, fetchButton, cancelButton } = await mounted();
     fetchButton.click();
     await settle();
     calls.doWork[0].reject(new Error("This page has nowhere to keep your task queues, so nothing was changed."));
@@ -129,7 +151,7 @@ describe("Fetch data", () => {
     vi.resetModules();
     try {
       const { default: BuiltTool } = await import("./tool.js");
-      const { $, fetchButton } = mounted(BuiltTool);
+      const { $, fetchButton } = await mounted(BuiltTool);
       fetchButton.click();
       await settle();
       expect(calls.doWork).toHaveLength(0);
@@ -142,7 +164,7 @@ describe("Fetch data", () => {
   });
 
   it("Cancel aborts the work's signal, and the tool says it stopped", async () => {
-    const { $, fetchButton, cancelButton } = mounted();
+    const { $, fetchButton, cancelButton } = await mounted();
     fetchButton.click();
     await settle();
     cancelButton.click();
@@ -154,7 +176,7 @@ describe("Fetch data", () => {
   });
 
   it("stopped from another page (its task ended cancelled): says it stopped, in words a person reads", async () => {
-    const { $, fetchButton } = mounted();
+    const { $, fetchButton } = await mounted();
     fetchButton.click();
     await settle();
     calls.doWork[0].options.onProgress(view({ state: "cancelled" }));
@@ -164,7 +186,7 @@ describe("Fetch data", () => {
   });
 
   it("a fetch that failed shows its message", async () => {
-    const { $, fetchButton } = mounted();
+    const { $, fetchButton } = await mounted();
     fetchButton.click();
     await settle();
     calls.doWork[0].reject(new Error("NCEI answered 500"));
@@ -174,7 +196,7 @@ describe("Fetch data", () => {
   });
 
   it("a fetch whose frame moved meanwhile shows that nothing was stored", async () => {
-    const { $, fetchButton } = mounted();
+    const { $, fetchButton } = await mounted();
     fetchButton.click();
     await settle();
     calls.doWork[0].resolve({ stored: false, message: MOVED });
@@ -183,7 +205,7 @@ describe("Fetch data", () => {
   });
 
   it("pressing Fetch again while it runs asks nothing more", async () => {
-    const { fetchButton } = mounted();
+    const { fetchButton } = await mounted();
     fetchButton.click();
     await settle();
     fetchButton.disabled = false;
@@ -193,13 +215,13 @@ describe("Fetch data", () => {
   });
 
   it("closing the tool leaves the fetch going: it is on the person's queue, asked or still being asked", async () => {
-    const asking = mounted();
+    const asking = await mounted();
     asking.fetchButton.click();
     await settle();
     asking.unmount();
     expect(calls.doWork[0].options.signal.aborted).toBe(false);
 
-    const asked = mounted();
+    const asked = await mounted();
     asked.fetchButton.click();
     await settle();
     calls.doWork[1].options.onProgress(view({}));
@@ -210,7 +232,7 @@ describe("Fetch data", () => {
 
 describe("a fetch already under way", () => {
   it("is followed under this doc's key with watchWork from the start, shown instead of offered again, and Cancel stops it by its key", async () => {
-    const { repo, handle, $, fetchButton, cancelButton } = mounted();
+    const { repo, handle, $, fetchButton, cancelButton } = await mounted();
     expect(calls.watch).toHaveLength(1);
     const key = fetchKey(handle.url, fetchSpec(handle.doc()));
     expect(calls.watch[0]).toMatchObject({ repo, key });
@@ -229,7 +251,7 @@ describe("a fetch already under way", () => {
   });
 
   it("follows the key the doc names now: a changed frame is another fetch, and a change elsewhere in the doc is not", async () => {
-    const { handle } = mounted();
+    const { handle } = await mounted();
     await settle();
     handle.change((d) => (d.title = "Renamed"));
     await settle();
@@ -242,7 +264,7 @@ describe("a fetch already under way", () => {
   });
 
   it("a fetch this tool started is shown from its own progress, not twice", async () => {
-    const { $, fetchButton } = mounted();
+    const { $, fetchButton } = await mounted();
     await settle();
     fetchButton.click();
     await settle();
@@ -271,27 +293,26 @@ describe("a fetch already under way", () => {
   });
 
   it("closing the tool stops following", async () => {
-    const { unmount } = mounted();
+    const { unmount } = await mounted();
     await settle();
     unmount();
     expect(calls.watch[0].stopped).toBe(true);
   });
 });
 
-describe("where the fetch task's code is", () => {
-  const PKG = "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P";
-  const inPackage = (path) => `https://site.example/${encodeURIComponent(`${PKG}#abc`)}/${path}`;
-  it("built, in a package: the package's dist/fetch-task.js, by the package's url and its heads, with no origin", () => {
-    expect(fetchTaskUrl(inPackage("dist/assets/tool-1234.js"), true)).toBe(`/${encodeURIComponent(`${PKG}#abc`)}/dist/fetch-task.js`);
+describe("where the fetch task's code is (the client's inSamePackage stood in for)", () => {
+  const inPackage = (path) => `https://site.example/${encodeURIComponent(PKG)}/${path}`;
+  it("built, in a package: the package's dist/fetch-task.js, as inSamePackage names it", () => {
+    expect(fetchTaskUrl(client, inPackage("dist/assets/tool-1234.js"), true)).toBe(`/${encodeURIComponent(PKG)}/dist/fetch-task.js`);
   });
   it("unbuilt, in a package: its src/fetch-task.js", () => {
-    expect(fetchTaskUrl(inPackage("src/tool.js"), false)).toBe(`/${encodeURIComponent(`${PKG}#abc`)}/src/fetch-task.js`);
+    expect(fetchTaskUrl(client, inPackage("src/tool.js"), false)).toBe(`/${encodeURIComponent(PKG)}/src/fetch-task.js`);
   });
   it("unbuilt, anywhere else: the file beside this one", () => {
-    expect(fetchTaskUrl("file:///x/terrain/src/tool.js", false)).toBe("file:///x/terrain/src/fetch-task.js");
-    expect(fetchTaskUrl("http://localhost:5173/src/tool.js", false)).toBe("http://localhost:5173/src/fetch-task.js");
+    expect(fetchTaskUrl(client, "file:///x/terrain/src/tool.js", false)).toBe("file:///x/terrain/src/fetch-task.js");
+    expect(fetchTaskUrl(client, "http://localhost:5173/src/tool.js", false)).toBe("http://localhost:5173/src/fetch-task.js");
   });
   it("built, not in a package: unknown, so Fetch data cannot be asked", () => {
-    expect(fetchTaskUrl("http://localhost:4173/dist/assets/tool-1234.js", true)).toBeNull();
+    expect(fetchTaskUrl(client, "http://localhost:4173/dist/assets/tool-1234.js", true)).toBeNull();
   });
 });

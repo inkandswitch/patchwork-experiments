@@ -775,21 +775,25 @@ there, so its trees stand in OSM's woods at an assumed canopy.)
 Fetch data is a task: `src/fetch-task.js`, whose input is the Terrain doc's
 url and what the doc asks for (`fetchRequest` in `src/fetch-spec.js`: the
 place, the grid, the datum, OSM's date, a layered place's heights and look).
-The tool asks for it with the task kit's `doWork` (`src/task-client.js` and
-`src/task-rules.js`, copies of the tasks package's), under a key made of the
-doc's url and the SHA-256 of that same spec, so a task fetches exactly what
-its key names. So:
+The tool asks for it with the task client's `doWork`, under a key made of
+the doc's url and the SHA-256 of that same spec, so a task fetches exactly
+what its key names. The client is the Tasks package's library `tasks-next`
+(type `patchwork:library`), which the tool gets from the plugin registry as
+it opens and the task gets from its pool's registry as it runs; this package
+carries no copy of it. Where the Tasks package is not installed in this
+browser, the tool says "Fetch data needs the Tasks package, which is not
+installed here.", keeps its button off and follows nothing, and carries on
+when the package arrives. So:
 
 - It is asked of the person's own queue (made the first time it is needed),
-  and one of their machines runs it: this browser's pool, when the tasks
-  package is installed here, with no network too. Closing the page does not
+  and one of their machines runs it, this browser's pool among them, with no
+  network too. Closing the page does not
   stop it, and two pages pressing Fetch for the same place and grid are one
-  fetch. The tool says so, and follows the doc's key with the kit's
-  `watchWork` from the moment it opens, showing a fetch already under way
-  instead of offering another; Cancel stops it with `stopWork`. While it
-  waits, the tool says it waits for one of the person's machines, and, where
-  the tasks package is not installed in this browser, that this browser
-  takes no part. Where no queue can be had (no account open, nowhere to keep
+  fetch. The tool says so, and follows the doc's key with the client's
+  `watchWork` from the moment it has the client, showing a fetch already
+  under way instead of offering another; Cancel stops it with `stopWork`.
+  While it waits, the tool says it waits for one of the person's machines.
+  Where no queue can be had (no account open, nowhere to keep
   the list of queues), `doWork`'s sentence is shown as written and nothing is
   fetched; so is "This copy of Terrain is not loaded from a package, so Fetch
   data cannot be asked of your queue." for a built copy served from anywhere
@@ -921,10 +925,11 @@ land in the mesh is stretched; the heightfield stays true.
   fetched (or while it made the files) stores nothing; a stop mid-request or
   during Overpass's retry wait rejects at once and stores nothing; NCEI's
   error is the message a person sees; the key changes with each field a
-  fetch reads and with none of the others; the tool's button through a
-  stand-in `doWork`, `watchWork` and `stopWork` (`tool-fetch.test.js`): on the
-  person's queue, waiting (with this browser taking part or not), a rejection
-  shown as written, a copy not from a package, Cancel, a fetch already under
+  fetch reads and with none of the others (its `findWhenThere`, from the
+  registry, stood in for); the tool's button through a stand-in client
+  registered as `tasks-next` (`tool-fetch.test.js`): the sentence where the
+  Tasks package is not installed and carrying on when it arrives, on the
+  person's queue, waiting, a rejection shown as written, a copy not from a package, Cancel, a fetch already under
   way shown, where the task's code is, a doc whose data does not say what it was fetched for shown as
   having none (and refused by the source as having none, `source.test.js`);
 - what a store writes (`store.test.js`, on real automerge documents): one

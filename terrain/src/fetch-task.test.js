@@ -2,8 +2,11 @@
 // Fetch data as a task (fetch-task.js) on the made-up place of the test
 // fixture, with a stand-in for the network and a ctx like a pool's: what it
 // stores and returns, the two guards (the frame moved meanwhile; a stop), a
-// fetch error as a person reads it, and the key a fetch is asked under.
-import { describe, it, expect, vi } from "vitest";
+// fetch error as a person reads it, and the key a fetch is asked under. The
+// task client it gets from the registry is a stand-in whose findWhenThere is
+// the Repo's find.
+import { describe, it, expect } from "vitest";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { fetchTerrain, MOVED, STAGES, UNREACHABLE } from "./fetch-task.js";
 import { fetchSpec, fetchKey, fetchRequest, canonicalJson } from "./fetch-spec.js";
 import { nceiUrl, OVERPASS, STOPPED } from "./fetch-data.js";
@@ -11,6 +14,11 @@ import { readTerrainData, dataFits } from "./store.js";
 import { FakeRepo } from "./test/fake-repo.js";
 import { GRID, OSM, frame, heightAtLocal, terrainDoc } from "./test/fixture.js";
 import { writeTiff } from "./test/tiff-writer.js";
+
+getRegistry("patchwork:library").register(
+  { type: "patchwork:library", id: "tasks-next", name: "Tasks client (stand-in)", load: async () => ({ findWhenThere: (repo, url) => repo.find(url) }) },
+  "https://site.example/tasks/dist/index.js",
+);
 
 /** The fixture's DEM as NCEI sends it: a TIFF in the frame, tied at the grid's north-west cell corner. */
 function nceiTiff() {
@@ -162,15 +170,7 @@ describe("the fetch task", () => {
   it("a terrain that cannot be had fails with a line a person reads, naming no url", async () => {
     const { ctx } = world();
     const missing = { terrain: "automerge:3mv3rTpAcL5aUfYiQqb1RnQkQi3P", spec: { origin: { lat: 0, lon: 0 } } };
-    const nowhere = { ...ctx, repo: { find: async () => ({ doc: () => undefined }) } };
-    vi.useFakeTimers();
-    try {
-      const failing = expect(fetchTerrain(missing, nowhere, network().fetch)).rejects.toThrow(UNREACHABLE);
-      await vi.advanceTimersByTimeAsync(60_000);
-      await failing;
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(fetchTerrain(missing, ctx, network().fetch)).rejects.toThrow(UNREACHABLE);
   });
 
   it("stores when only what a fetch does not read changed meanwhile (title, exaggeration, places, wind)", async () => {
