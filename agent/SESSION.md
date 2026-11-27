@@ -81,8 +81,8 @@ call with an error.
 
 - A call is written when the model's turn is complete, never half-parsed.
 - `where` is `"worker"` (a repo is all it needs) or `"host"` (it needs a
-  page). A burst parks a `host` call; a page showing or driving the session
-  runs it (`runners/page.js`).
+  page), as its tool declares. A burst parks a `host` call; a page showing or
+  driving the session runs it (`runners/page.js`).
 - `running` carries the `runner` that claimed it (a run's id or a page's
   claim id). A run or a page names it in each later move it makes; settling
   debris and an aside close the call whatever it names. One still `running`

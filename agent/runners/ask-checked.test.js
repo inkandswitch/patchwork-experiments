@@ -113,7 +113,6 @@ function optsOf(client, clock, online = []) {
     client,
     importUrl: IMPORT,
     account: { rootFolderUrl: null, sensitiveDocs: [QUEUE] },
-    catalogue: { tools: [], skills: [] },
     keys: { model: "sk-made-up", search: null, relay: null },
     now: clock.now,
     setTimeout: clock.setTimeout,
@@ -525,7 +524,7 @@ describe("what askWork asks with, and what it writes", () => {
     expect(Object.keys(request).sort()).toEqual(["importUrl", "input", "key"])
     expect(request.key).toBe(workKey(h.url))
     expect(request.key).toBe(`agent:${h.url}`)
-    expect(Object.keys(request.input)).toEqual(["session", "heads", "account", "catalogue", "keys"])
+    expect(Object.keys(request.input)).toEqual(["session", "heads", "account", "keys"])
     expect(request.input.session).toBe(h.url)
     expect(request.input.heads).toEqual(headsOf(h))
     client.start()

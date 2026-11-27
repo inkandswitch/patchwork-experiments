@@ -215,7 +215,6 @@ try {
     session: session.url,
     heads: [...session.heads()],
     account: { rootFolderUrl: root.url, sensitiveDocs },
-    catalogue: { tools: [], skills: [] },
     providerUrl: STAND,
     keys: { model: MODEL_KEY, search: SEARCH_KEY, relay: null },
   });

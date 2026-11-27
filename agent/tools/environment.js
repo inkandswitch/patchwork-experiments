@@ -68,8 +68,8 @@ export const registryList = {
   name: "List installed plugins",
   description:
     "List what is installed in this Patchwork: tools, datatypes, components, themes, and any other plugin type. Use this before doc_create (to find a datatype id) or before opening a view (to find a tool id).\n\nPass type: 'agent:tool' to see the capabilities packages have exposed for YOU rather than for a person. Those are already in your tool list — this tells you which package each came from, and whether the thing the user is asking for exists as a tool you can simply call.",
-  // Host tier: the plugin registry lives in the page, not in the repo, so a
-  // worker sees an empty one.
+  // Host tier: a page's registry has the site's own plugins as well as the
+  // installed packages; a pool's has only packages kept in automerge.
   where: "host",
   risk: "read",
   input_schema: {

@@ -1,7 +1,8 @@
 // A stand-in for the model provider, for probes: a small HTTP server that
 // answers the provider's chat completions request (providers/openrouter.js)
 // in its streaming format, one piece of text every `everyMs`, as a canned
-// stream (providers/openrouter.test.js frames them the same way). No model,
+// stream (providers/openrouter.test.js frames them the same way), or with
+// tool calls (`calls: [{ id, name, input }]`), each whole in one frame. No model,
 // no real key: a probe hands the session task `providerUrl` (runners/
 // session-task.js) and a made-up key.
 //
@@ -23,7 +24,7 @@ const CORS = {
   "access-control-allow-headers": "content-type, authorization, http-referer, x-title",
 };
 
-/** `script(body, n)` gives `{ pieces, everyMs }` for the n-th request (from 0). */
+/** `script(body, n)` gives `{ pieces, everyMs }` or `{ calls }` for the n-th request (from 0). */
 export function standInHandler(script, requests = []) {
   return (req, res) => {
     if (req.method === "OPTIONS") return void res.writeHead(204, CORS).end();
@@ -37,8 +38,15 @@ export function standInHandler(script, requests = []) {
       const seen = { n: requests.length, at: Date.now(), path: new URL(req.url, "http://x").pathname, authorization: req.headers.authorization ?? null, body, done: false, aborted: false, sent: 0 };
       requests.push(seen);
       if (req.method !== "POST" || !/\/chat\/completions$/.test(seen.path)) return void res.writeHead(404, CORS).end();
-      const { pieces = ["ok"], everyMs = 200 } = script(body, seen.n) ?? {};
+      const { pieces = ["ok"], everyMs = 200, calls = null } = script(body, seen.n) ?? {};
       res.writeHead(200, { ...CORS, "content-type": "text/event-stream", "cache-control": "no-cache" });
+      if (calls) {
+        calls.forEach((c, index) => res.write(frame({ tool_calls: [{ index, id: c.id, function: { name: c.name, arguments: JSON.stringify(c.input ?? {}) } }] })));
+        res.write(frame({}, "tool_calls"));
+        res.end("data: [DONE]\n\n");
+        seen.done = true;
+        return;
+      }
       let i = 0;
       let timer = null;
       res.on("close", () => {

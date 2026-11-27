@@ -2,17 +2,26 @@
  * The session task (runners/session-task.js): one burst built from a task's
  * input, run on an in-memory Repo with the provider's requests answered here.
  * The task client its pool's registry gives is a stand-in whose rules read
- * runs and stops as the test says; the probes run it with the real one.
+ * runs and stops as the test says; the probes run it with the real one. The
+ * pool's registry is a stand-in too (fixtures/pool-registry.js), which a test
+ * fills.
  */
-import { describe, it, expect, afterEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { join } from "node:path"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { splice } from "@automerge/automerge/slim"
 import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { noteWrite } from "../knowledge/notes.js"
 import { SYNC_SERVERS } from "../net/guard.js"
-import { _holdClient } from "../host/import.js"
+import { _holdClient, setHostUrls } from "../host/import.js"
 import { standIn } from "../fixtures/tasks-stand-in.js"
+import { installed } from "../fixtures/pool-registry.js"
+import { findCall, findResult } from "../session/calls.js"
+import { fullTools } from "../kernel/toolset.js"
+import { AGENT } from "../assembly/agent.js"
+import { loadPluginTools } from "../assembly/plugins.js"
+import { pageCalls } from "./page.js"
 import sessionTask, { runFetch, rebased, runsOfTask } from "./session-task.js"
 
 await initSubduction()
@@ -38,12 +47,20 @@ function streamOf(chunks) {
 }
 const frame = (delta, finish = null) => `data: ${JSON.stringify({ choices: [{ delta, finish_reason: finish }] })}\n\n`
 
-/** The platform's fetch, answering the provider's requests with `pieces` and keeping each request. */
-function provider(pieces) {
+/**
+ * The platform's fetch, answering the provider's n-th request with the n-th
+ * step (the last for any after it), and keeping each request. A step is the
+ * reply's pieces of text, or `{ calls: [{ id, name, input }] }`.
+ */
+function provider(...steps) {
   const requests = []
   vi.stubGlobal("fetch", async (url, init) => {
     requests.push({ url: String(url), headers: init?.headers ?? {}, body: JSON.parse(init?.body ?? "null") })
-    return { ok: true, status: 200, headers: { get: () => null }, body: streamOf([...pieces.map((p) => frame({ content: p })), frame({}, "stop"), "data: [DONE]\n\n"]) }
+    const step = steps[Math.min(requests.length, steps.length) - 1]
+    const frames = step.calls
+      ? [...step.calls.map((c, index) => frame({ tool_calls: [{ index, id: c.id, function: { name: c.name, arguments: JSON.stringify(c.input ?? {}) } }] })), frame({}, "tool_calls")]
+      : [...step.map((p) => frame({ content: p })), frame({}, "stop")]
+    return { ok: true, status: 200, headers: { get: () => null }, body: streamOf([...frames, "data: [DONE]\n\n"]) }
   })
   return requests
 }
@@ -64,7 +81,6 @@ async function world({ burst = null, runs = ["run-1"] } = {}) {
     session: session.url,
     heads: [...session.heads()],
     account: { rootFolderUrl: root.url, sensitiveDocs: [] },
-    catalogue: { tools: [], skills: [] },
     providerUrl: STAND_IN,
     keys: { model: MODEL_KEY, search: SEARCH_KEY, relay: null },
   }
@@ -146,5 +162,90 @@ describe("what a run fetches with", () => {
     moved.stream({ model: "m" })
     vi.stubGlobal("fetch", async (url) => url)
     return given.fetchImpl("https://openrouter.ai/api/v1/chat/completions?a=1").then((url) => expect(url).toBe("http://127.0.0.1:9/x/api/v1/chat/completions?a=1"))
+  })
+})
+
+describe("the tools a burst has: its pool's registry", () => {
+  const PACKAGE = "automerge:2madeUpPackageForThisTest#h1"
+  /** An agent tool of another package, as it registers: its metadata, and its code behind load(). */
+  const tool = (id, where, execute) => ({ id, name: id, description: `${id}, from another package`, where, risk: "read", importUrl: PACKAGE, load: async () => ({ execute }) })
+  const offered = (request) => request.body.tools.map((t) => t.function.name)
+  const resultText = (doc, id) => String(findResult(doc, id)?.block.output ?? "")
+  /** What the session's last turn says. */
+  const lastWords = (doc) => doc.turns.at(-1).blocks.map((b) => b.text ?? "").join("")
+  const builtins = (doc) => fullTools(doc, { builtins: AGENT.builtins }).map((t) => t.id)
+
+  beforeEach(() => {
+    setHostUrls({ "@inkandswitch/patchwork-plugins": join(process.cwd(), "fixtures", "pool-registry.js") })
+    for (const type of Object.keys(installed)) delete installed[type]
+  })
+  afterEach(() => setHostUrls(null))
+
+  it("offers what the registry has: its agent tools after the built-ins, a page's among them, and its skills in the prompt", async () => {
+    installed["agent:tool"] = [tool("pkg_count", "worker", () => "3"), tool("pkg_draw", "host", () => "drawn")]
+    installed["patchwork:skill"] = [{ id: "pkg-howto", name: "Pkg how-to", description: "How to count with the package", load: async () => "Count twice." }]
+    const requests = provider(["Fine."])
+    const { session, input, ctx } = await world()
+    expect((await sessionTask(input, ctx)).outcome).toBe("idle")
+    expect(offered(requests[0])).toEqual([...builtins(session.doc()), "pkg_count", "pkg_draw"])
+    expect(JSON.stringify(requests[0].body.messages[0])).toContain("pkg-howto")
+  })
+
+  it("runs a worker tool of another package in the burst, with the burst's context, and its result lands in the session", async () => {
+    const seen = []
+    installed["agent:tool"] = [tool("pkg_count", "worker", (input, ctx) => (seen.push({ input, ctx }), `counted ${input.what}`))]
+    const requests = provider({ calls: [{ id: "c1", name: "pkg_count", input: { what: "boats" } }] }, ["There are boats."])
+    const { session, input, ctx } = await world()
+    expect((await sessionTask(input, ctx)).outcome).toBe("idle")
+    expect(seen).toHaveLength(1)
+    // The context every tool of a burst gets: its repo, its guarded fetch, this session.
+    expect(seen[0].ctx.session.url).toBe(session.url)
+    expect(seen[0].ctx.fetchImpl.policy.dns).toBe(true)
+    expect(typeof seen[0].ctx.repo.find).toBe("function")
+    const doc = session.doc()
+    expect(findCall(doc, "c1").block.where).toBe("worker")
+    expect(resultText(doc, "c1")).toMatch(/^counted boats/)
+    expect(requests).toHaveLength(2)
+    expect(lastWords(doc)).toBe("There are boats.")
+  })
+
+  it("parks a page tool's call; a page runs it from its own registry, and the next burst carries on", async () => {
+    const ranIn = []
+    installed["agent:tool"] = [tool("pkg_draw", "host", (input, ctx) => (ranIn.push(ctx.where), "drawn"))]
+    provider({ calls: [{ id: "c1", name: "pkg_draw", input: {} }] }, ["Drawn."])
+    const { repo, session, input, ctx } = await world()
+    expect((await sessionTask(input, ctx)).outcome).toBe("parked")
+    expect(findCall(session.doc(), "c1").block.where).toBe("host")
+    expect(ranIn).toEqual([])
+
+    // The page: its context, and its own registry's tools (here the same stand-in).
+    const page = pageCalls(session, { context: { repo, where: "the page" }, builtins: AGENT.builtins, plugins: () => loadPluginTools(), beatMs: 0, target: null, splice })
+    await page.tick()
+    page.dispose()
+    expect(ranIn).toEqual(["the page"])
+    expect(resultText(session.doc(), "c1")).toMatch(/^drawn/)
+
+    expect((await sessionTask({ ...input, heads: [...session.heads()] }, ctx)).outcome).toBe("idle")
+    expect(lastWords(session.doc())).toBe("Drawn.")
+  })
+
+  it("a tool whose code does not load in the pool fails that call, saying so, and the burst goes on", async () => {
+    installed["agent:tool"] = [{ ...tool("pkg_view", "worker"), load: async () => { throw new ReferenceError("document is not defined") } }]
+    const requests = provider({ calls: [{ id: "c1", name: "pkg_view", input: {} }] }, ["It would not load."])
+    const { session, input, ctx } = await world()
+    expect((await sessionTask(input, ctx)).outcome).toBe("idle")
+    const result = findResult(session.doc(), "c1").block
+    expect(result.isError).toBe(true)
+    expect(resultText(session.doc(), "c1")).toMatch(/^Error: The code of pkg_view did not load here: document is not defined/)
+    expect(requests).toHaveLength(2)
+    expect(lastWords(session.doc())).toBe("It would not load.")
+  })
+
+  it("with no such plugins in the pool, offers the built-ins alone", async () => {
+    const requests = provider(["Fine."])
+    const { session, input, ctx, logs } = await world()
+    expect((await sessionTask(input, ctx)).outcome).toBe("idle")
+    expect(offered(requests[0])).toEqual(builtins(session.doc()))
+    expect(logs.filter((line) => /left out|error/.test(line))).toEqual([])
   })
 })

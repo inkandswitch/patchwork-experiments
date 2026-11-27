@@ -19,7 +19,7 @@ import { findCall, findResult } from "../session/calls.js"
 import { runBurst } from "../kernel/burst.js"
 import { needsWork } from "../kernel/runner.js"
 import { AGENT } from "../assembly/agent.js"
-import { catalogueTools } from "../assembly/plugins.js"
+import { loadPluginTools } from "../assembly/plugins.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { setHostUrls } from "../host/urls.js"
 import { asInterruption } from "../net/network.js"
@@ -96,7 +96,7 @@ function makePool({ repo, provider, poolId = "pool-here", waitForNetwork = undef
                   fetchImpl: async () => new Response("<p>a page</p>", { headers: { "content-type": "text/html" } }),
                 },
                 builtins: AGENT.builtins,
-                plugins: async () => catalogueTools(input.catalogue),
+                plugins: () => loadPluginTools(),
                 sections: [],
                 afterCall: [],
                 system: "test",
@@ -394,7 +394,7 @@ describe("page and plugin tools", () => {
     expect(pool.asks.length).toBe(2)
   }, 20_000)
 
-  it("a plugin tool from the catalogue parks in the pool, and the open view runs its code", async () => {
+  it("a plugin tool declared for a page parks in the pool, and the open view runs its code", async () => {
     setHostUrls({ "@inkandswitch/patchwork-plugins": pluginsFile })
     const { ran } = await import("../fixtures/plugins-page.js")
     ran.length = 0
@@ -405,7 +405,8 @@ describe("page and plugin tools", () => {
     const view = mount(repo, handle)
     await send(view, "echo")
     expect(await until(() => lastText(handle) === "echo heard", 15_000)).toBe(true)
-    expect(pool.asks[0].input.catalogue.tools.map((t) => t.id)).toEqual(["fake_echo"])
+    expect(findCall(handle.doc(), "f1").block.where).toBe("host")
+    expect(ran).toEqual(["hi"])
   }, 20_000)
 })
 

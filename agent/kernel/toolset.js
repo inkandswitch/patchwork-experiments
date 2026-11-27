@@ -17,7 +17,7 @@
  */
 
 import { sessionCapabilities } from "../session/capabilities.js"
-import { fitsPlacement, declaredWhere, WORKER } from "./placement.js"
+import { fitsPlacement, WORKER } from "./placement.js"
 import { toSchema } from "./tool.js"
 
 /** Tools as a toolset: what the loop is given, and what a view asks about calls. */
@@ -29,7 +29,7 @@ export function toolsetOf(tools) {
 const offered = (tool, has) => (tool.needs ?? []).every((need) => has.has(need))
 
 /** Does this plugin declare a tool a research step may have? Scoped as exactly true, and declared a worker tool. */
-export const declaresScoped = (meta) => meta?.scoped === true && declaredWhere(meta) === WORKER
+export const declaresScoped = (meta) => meta?.scoped === true && (meta.where ?? WORKER) === WORKER
 
 /**
  * A full-access session's tools: every built-in not kept for research steps,

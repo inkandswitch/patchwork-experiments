@@ -32,8 +32,10 @@ page that asks. `runners/session-task.js` is the task's entry.
 - The session holds no lease. A run writes only once the task system says it
   holds the task, only while its signal stands, never under a stop; it marks
   the session `burst: { run }` (SESSION.md, *The burst mark*).
-- A call that needs a page parks; a page that shows the session, or drives its
-  plan, runs it and asks again (TOOLS.md, *Where a call runs*).
+- The tools a burst offers are its pool's registry's, as a page's are its
+  own: a tool declared for a worker runs in the burst, whichever package
+  provides it. A call that needs a page parks; a page that shows the session,
+  or drives its plan, runs it and asks again (TOOLS.md, *Where a call runs*).
 - Stop is a notice written into the session from any page or device, then the
   task stopped on the stopper's queue. A run hears the notice and stops.
 - Closing a page does not stop a burst: the pool's run carries on, and another
@@ -88,8 +90,8 @@ browser or in node; `scripts/` vendors the two bundled engines.
 pnpm install
 pnpm test                                    # every unit and mount test, no network
 npx vitest run kernel/                       # one layer and what is under it
-node probes/session-task-node.mjs            # bursts on two Node hosts, a stand-in model (tasks/ built)
-node probes/session-task-browser.mjs         # a burst in a browser pool's run worker (tasks/ built)
+node probes/session-task-node.mjs            # bursts on Node hosts, with and without --modules, a stand-in model (tasks/ built)
+node probes/session-task-browser.mjs         # bursts in a browser pool's run worker, a package's tools among them (tasks/ built)
 node probes/session-task-second-tab.mjs      # askWork from a tab not holding the pool, no network (tasks/ built)
 node probes/session-view.mjs                 # the session view in headless Chrome: clicks, typing, redraws
 OPENROUTER_KEY_FILE=… node probes/patchwork-e2e.mjs    # the whole thing, in real Patchwork
@@ -107,7 +109,10 @@ node tasks/dist-node/host.mjs --queue <own queue> --accept <agent package> --wor
 
 It gives a burst `nodeFetch` (every name resolved and checked, redirects
 followed by hand, the sync servers refused) and Brave search with the input's
-key. It runs no page or plugin tools: those calls park until a page takes them.
+key. Its plugin registry is what the burst offers beyond the built-in tools:
+given `--modules <module settings>`, the agent tools of those packages, each
+declared for a worker run there; with no module list, none (TOOLS.md, *What a
+pool has*). Page tools' calls park until a page takes them.
 
 ## Installing
 

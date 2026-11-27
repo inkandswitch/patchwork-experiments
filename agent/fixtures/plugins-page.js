@@ -1,13 +1,14 @@
-// Stands in for @inkandswitch/patchwork-plugins in ui/switch-checked.test.js:
-// one installed agent tool (`fake_echo`, which a pool run offers from the
-// catalogue and parks for a page), and one datatype (`note`) for doc_create,
-// a built-in page tool.
+// Stands in for @inkandswitch/patchwork-plugins in ui/switch-checked.test.js,
+// the page's registry and the in-process pool's alike: one installed agent
+// tool declared for a page (`fake_echo`, which a burst offers and parks), and
+// one datatype (`note`) for doc_create, a built-in page tool.
 
 export const ECHO = {
   id: "fake_echo",
   name: "Echo",
   description: "Echo text back, from a page.",
   input_schema: { type: "object", properties: { text: { type: "string" } } },
+  where: "host",
   risk: "read",
 }
 

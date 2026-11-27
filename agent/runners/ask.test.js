@@ -140,7 +140,7 @@ describe("askWork", () => {
     const repo = new Repo({ network: [] })
     const h = session(repo)
     const s = standIn()
-    const asking = askWork(repo, h.url, optsOf(s.client, { account: { rootFolderUrl: null, sensitiveDocs: [] }, catalogue: { tools: [], skills: [] }, keys: { model: "k", search: null, relay: null } }))
+    const asking = askWork(repo, h.url, optsOf(s.client, { account: { rootFolderUrl: null, sensitiveDocs: [] }, keys: { model: "k", search: null, relay: null } }))
     await flush()
     expect(s.asks).toHaveLength(1)
     const [repoGiven, request, options] = s.asks[0]
@@ -149,7 +149,7 @@ describe("askWork", () => {
     expect(request.key).toBe(`agent:${h.url}`)
     expect(request.key).toBe(workKey(`${h.url}#somewhere`))
     expect(request.importUrl).toBe(IMPORT)
-    expect(Object.keys(request.input)).toEqual(["session", "heads", "account", "catalogue", "keys"])
+    expect(Object.keys(request.input)).toEqual(["session", "heads", "account", "keys"])
     expect(request.input.session).toBe(h.url)
     expect(request.input.heads).toEqual(heads(h))
     expect(JSON.stringify(h.doc())).not.toContain("agent:")

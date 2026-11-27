@@ -6,20 +6,17 @@
  * built-in or plugin alike — a worker step gets every tool declared "worker"
  * and none declared "host", a step on the page gets everything, a research
  * step gets its research built-ins and the plugins that declare `scoped:
- * true` on a worker. Checked over every kind of plugin a registry can hold,
- * from a page's registry and from a task's catalogue (assembly/plugins.js
- * catalogueTools), where every plugin is listed as it declares itself but
- * runs in a page: a burst imports no plugin code.
+ * true` on a worker. Checked over every kind of plugin a registry can hold;
+ * a page's registry and a pool's are read alike (assembly/plugins.js).
  */
 import { describe, it, expect } from "vitest"
 import { buildToolset } from "../assembly/toolset.js"
-import { loadPluginTools, pluginCatalogue, catalogueTools } from "../assembly/plugins.js"
+import { loadPluginTools } from "../assembly/plugins.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { initPlan } from "../workflow/plan.js"
-import { pageCalls } from "./page.js"
-import { callNeeds, declaredWhere, fitsPlacement } from "../kernel/placement.js"
+import { callNeeds, fitsPlacement } from "../kernel/placement.js"
 import { checkStepTools, namedIn, stepToolIds } from "../workflow/step-tools.js"
-import { burstRunner, memoryHandle } from "../fixtures/burst.js"
+import { burstRunner } from "../fixtures/burst.js"
 import { memoryStore } from "../kernel/store.js"
 import { initSession } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
@@ -27,7 +24,6 @@ import { findCall } from "../session/calls.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { SCOPED_TOOL_IDS, WORKFLOW_TOOL_IDS, STEP_TOOL_IDS, researchToolset, FULL_TOOLS } from "../fixtures/tool-ids.js"
-import { settled } from "../fixtures/session.js"
 
 await initSubduction()
 const repo = new Repo({ network: [] })
@@ -44,17 +40,11 @@ const PLUGINS = [
 ]
 const declared = (id) => PLUGINS.find((p) => p.id === id).where ?? "worker"
 
-/** A tab's registry holding them. */
+/** A registry holding them. */
 const registryOf = (entries) => ({
   all: () => entries,
   load: async (id) => ({ ...entries.find((e) => e.id === id), module: { execute: () => `ran ${id}` } }),
 })
-
-/** A task's catalogue holding them, as its input carries it, made into tools as a burst makes them. */
-async function catalogueOf(entries) {
-  const catalogue = await pluginCatalogue({ registry: registryOf(entries.map((e) => ({ ...e, importUrl: `https://p.example/${e.id}/index.js` }))), skillRegistry: { all: () => [] } })
-  return catalogueTools(JSON.parse(JSON.stringify(catalogue)))
-}
 
 const ids = (toolset) => toolset.tools.map((t) => t.id)
 const stepDoc = (tools) => ({ config: {}, workflow: { planUrl: "automerge:plan", stepId: "s" }, tools })
@@ -71,23 +61,17 @@ function expected(placement, present) {
 }
 
 describe("the toolset a step gets", () => {
-  const sources = [
-    ["a page's registry", async (entries) => () => loadPluginTools({ registry: registryOf(entries) })],
-    ["a task's catalogue", async (entries) => () => catalogueOf(entries)],
-  ]
   const presences = [["no plugins", []], ["one worker plugin", ["repo_tool"]], ["one page-only plugin", ["page_tool"]], ["every kind", PLUGINS.map((p) => p.id)]]
 
-  for (const [source, make] of sources) {
-    for (const [presence, present] of presences) {
-      for (const [placement, doc] of [["worker", WORKER_STEP], ["host", HOST_STEP]]) {
-        it(`on the ${placement}, ${presence}, from ${source}`, async () => {
-          const plugins = await make(PLUGINS.filter((p) => present.includes(p.id)))
-          const toolset = await buildToolset(doc, { plugins })
-          expect(ids(toolset)).toEqual(expected(placement, present))
-          // Every tool of a worker step was declared for a worker.
-          if (placement === "worker") for (const tool of toolset.tools) expect(declaredWhere(tool)).toBe("worker")
-        })
-      }
+  for (const [presence, present] of presences) {
+    for (const [placement, doc] of [["worker", WORKER_STEP], ["host", HOST_STEP]]) {
+      it(`on the ${placement}, ${presence}`, async () => {
+        const plugins = () => loadPluginTools({ registry: registryOf(PLUGINS.filter((p) => present.includes(p.id))) })
+        const toolset = await buildToolset(doc, { plugins })
+        expect(ids(toolset)).toEqual(expected(placement, present))
+        // Every tool of a worker step was declared for a worker.
+        if (placement === "worker") for (const tool of toolset.tools) expect(tool.where).toBe("worker")
+      })
     }
   }
 
@@ -111,22 +95,9 @@ describe("the toolset a step gets", () => {
 })
 
 describe("the toolset a research step gets", () => {
-  // [source, broken] → admitted: scoped and declared for a worker, wherever it runs.
-  it.each([
-    ["a page's registry", false],
-    ["a task's catalogue", true],
-  ])("from %s: the research built-ins and scoped_tool alone", async (_, fromCatalogue) => {
-    const plugins = fromCatalogue ? await catalogueOf(PLUGINS) : await loadPluginTools({ registry: registryOf(PLUGINS) })
-    const toolset = await researchToolset({ plugins })
+  it("the research built-ins and scoped_tool alone: scoped and declared for a worker", async () => {
+    const toolset = await researchToolset({ plugins: await loadPluginTools({ registry: registryOf(PLUGINS) }) })
     expect(ids(toolset)).toEqual([...SCOPED_TOOL_IDS, "scoped_tool"])
-  })
-
-  it("a scoped plugin from the catalogue is listed, and its calls go to a page", async () => {
-    const tool = (await researchToolset({ plugins: await catalogueOf(PLUGINS) })).get("scoped_tool")
-    expect(tool.where).toBe("host")
-    expect(callNeeds({ where: "worker" }, tool)).toBe("host")
-    // Its code is not in a burst: run there, it says so.
-    await expect(tool.execute({}, {})).rejects.toThrow(/runs only in a page/)
   })
 })
 
@@ -144,8 +115,8 @@ describe("where a call runs", () => {
 
   it("fitsPlacement: only a worker placement filters, and only by the declaration", () => {
     for (const placement of [null, undefined, "worker"]) {
-      for (const tool of [{ where: "worker" }, { where: "host" }, { where: "host", declared: "worker" }, {}]) {
-        const want = placement !== "worker" || (tool.declared ?? tool.where ?? "worker") === "worker"
+      for (const tool of [{ where: "worker" }, { where: "host" }, {}]) {
+        const want = placement !== "worker" || (tool.where ?? "worker") === "worker"
         expect(fitsPlacement(tool, placement)).toBe(want)
       }
     }
@@ -251,11 +222,8 @@ describe("a step's prompt, checked before it starts", () => {
   })
 })
 
-describe("a worker step calling a plugin, which a burst offers from the catalogue", () => {
-  // A burst offers the plugin as its package describes it, and parks a call
-  // to it for a page (`where: "host"`); the page showing the session runs it
-  // with its own registry (runners/page.js pageCalls) and asks again.
-  function setup() {
+describe("a worker step calling a package's tool declared for a worker", () => {
+  it("runs it in the burst, as a built-in, and the burst carries on", async () => {
     const doc = {}
     initSession(doc, {})
     doc.workflow = { planUrl: plan.url, stepId: "s" }
@@ -268,12 +236,6 @@ describe("a worker step calling a plugin, which a burst offers from the catalogu
       all: () => [{ id: "assumptions_set", where: "worker", risk: "edit", importUrl: "automerge:pkg#h" }],
       load: async (id) => ({ id, where: "worker", risk: "edit", module: { execute: (input, ctx) => (ran.push(ctx.runnerName), "set") } }),
     }
-    return { store, ran, registry }
-  }
-  const callBlock = (store) => findCall(store.doc(), "c1")?.block
-
-  it("it parks host-tier in the burst, the page runs it, and the next burst carries on", async () => {
-    const { store, ran, registry } = setup()
     // The plan names this session for its step: a burst on any other stands back.
     plan.change((d) => {
       d.steps[0].sessionUrl = store.url
@@ -283,29 +245,14 @@ describe("a worker step calling a plugin, which a burst offers from the catalogu
       store,
       runnerUrl: "burst",
       ctx: { repo, runnerName: "burst" },
-      buildToolset: async (d) => buildToolset(d, { plugins: async () => catalogueOf(registry.all()) }),
+      buildToolset: async (d) => buildToolset(d, { plugins: () => loadPluginTools({ registry }) }),
       getProvider: async () => provider,
     })
-    expect((await burst.tick()).outcome).toBe("parked")
-    // The model was offered the plugin, and the call waits for a page.
+    expect((await burst.tick()).outcome).toBe("idle")
     expect(provider.requests[0].tools.map((t) => t.id ?? t.name)).toContain("assumptions_set")
-    expect(callBlock(store).where).toBe("host")
-    expect(settled(store.doc())).toBe("parked")
-    expect(ran).toEqual([])
-
-    let asked = null
-    const page = pageCalls(memoryHandle(store), {
-      context: { repo, runnerName: "page" },
-      buildToolset: async (d) => buildToolset(d, { plugins: () => loadPluginTools({ registry }) }),
-      ask: () => (asked = burst.tick()),
-      beatMs: 0,
-      target: null,
-    })
-    await page.tick()
-    expect(ran).toEqual(["page"])
-    expect(await asked).toMatchObject({ outcome: "idle" })
+    expect(findCall(store.doc(), "c1").block.where).toBe("worker")
+    expect(ran).toEqual(["burst"])
     expect(store.doc().turns.at(-1).blocks[0].text).toBe("done")
-    page.dispose()
     plan.change((d) => {
       d.steps[0].sessionUrl = null
     })

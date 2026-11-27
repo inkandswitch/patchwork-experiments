@@ -119,7 +119,6 @@ const sessions = new Map() // bare url -> entry
  * @param {{ doWork: Function, watchWork: Function, stopWork: Function, ownQueue?: Function, inSamePackage: Function }} [opts.client]  default the task client
  * @param {string} [opts.importUrl]  default the asker's loaded session task, in its package and at its heads: a burst runs the version the asker runs
  * @param {{ rootFolderUrl: string|null, sensitiveDocs: string[] }} [opts.account]
- * @param {{ tools: object[], skills: object[] }} [opts.catalogue]
  * @param {{ model: string|null, search: string|null, relay: object|null }} [opts.keys]
  * @param {()=>number} [opts.now]
  * @param {Function} [opts.setTimeout]
@@ -156,7 +155,6 @@ export async function askWork(repo, sessionUrl, opts = {}) {
       session: bare(sessionUrl),
       heads,
       account: await withOwnQueue(repo, client, opts.account ?? { rootFolderUrl: null, sensitiveDocs: [] }),
-      catalogue: opts.catalogue ?? { tools: [], skills: [] },
       keys: opts.keys ?? { model: null, search: null, relay: null },
     }
     const importUrl = opts.importUrl ?? client.inSamePackage(import.meta.url, "runners/session-task.js")

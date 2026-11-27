@@ -86,7 +86,7 @@ in a document.
 | `ctx.rootFolderUrl`, `ctx.sensitiveDocs` | the account's root folder, and the documents that always ask |
 | `ctx.splice`, `ctx.automerge` | automerge's `splice`, everywhere; the host's whole automerge, initialised, in a page only. Take them from here: a worker cannot resolve a bare `@automerge/automerge` |
 | `ctx.plugins` | the plugin registry module, in a page only |
-| `ctx.packageOf(type, id)` | the package a plugin came from: `{ url, heads, name }`. In a burst, for an agent tool only, from the input's catalogue |
+| `ctx.packageOf(type, id)` | the package a plugin came from: `{ url, heads, name }`, from the registry of the realm the call runs in |
 | `ctx.skillsFolderUrl`, `ctx.skillRegistry`, `ctx.notesFolderUrl` | where the person's skills and notes are kept, and the skills packages bring. No host gives `notesFolderUrl`, so notes go in a folder in the account's root |
 | `ctx.element`, `ctx.getMount`, `ctx.pageFetch` | in a page only: where a host tool mounts, the views `view_mount` opened, and a fetch of the page's own origin for `plugin_source` |
 | `ctx.reader` | the reader service a fetch goes through when it is not direct, where a host replaces the default |
@@ -94,8 +94,8 @@ in a document.
 | `ctx.scope` | in a research step only: `{ stepId }` |
 | `ctx.workflows`, `ctx.watches` | only for a tool that declares the need (above) |
 
-A burst has no `automerge`, `plugins`, `element` or page; its skills come from the
-catalogue, named and read only in a page. A tool reaches nothing global: a
+A burst has no `automerge`, `plugins`, `element` or page; its skills are its
+pool's registry's. A tool reaches nothing global: a
 `"worker"` tool that touches `document`, the platform's `fetch` or a bare
 import works in a page by accident and nowhere else.
 
@@ -159,13 +159,10 @@ leaves out edits whose change hashes the run reported as its own.
   `made` written in one change. A batch shares one tool turn.
 - A call that waits on a person (approval, a question) ends the burst; the
   answer is a write of work, and asks again.
-- A `"host"` call, and every plugin's (a burst imports no plugin code), parks:
-  the burst clears `burst` and ends. A page that shows the session, or drives
-  its plan, runs it: it writes `burst` to a fresh claim id, waits a beat, and
-  only if the claim still stands runs the call with its own context and
-  writes its move, result and `made` and clears `burst` in one change; then
-  it asks. So page and plugin tools run while the session is shown, or its
-  plan is driven, in a page.
+- A `"host"` call parks: the burst clears `burst` and ends. A page showing the
+  session, or driving its plan, writes `burst` to a fresh claim id, waits a
+  beat, and only if the claim still stands runs the call with its own context
+  and writes its move, result and `made` and clears `burst` in one change.
 - A call naming a `mountId` is taken at once only by the page that has that
   mount; another waits one more beat and answers that there is no such mount.
 - A page going away abandons the call it holds, INTERRUPTED. A claim slower
@@ -182,13 +179,21 @@ A package registers an `agent:tool` plugin beside its views and datatypes:
       async load() { return (await import("./agent.js")).default },   // { execute, summarize? }
     }
 
-- The metadata is plain JSON at the top level, because the host clones plugin
-  entries into a worker; the code is behind `load()`. `kernel/tool.js`
-  `PLUGIN_FIELDS` is what is read.
-- It cannot take a built-in's id.
-- Its code is looked up again at every call, so a package edited mid-run runs
-  as it is now, and one that no longer loads says so.
-- A burst is handed every entry's metadata in its input's catalogue
-  (`assembly/plugins.js`): it offers the tool as declared, and parks every
-  call to it for a page, where the registry loads the code.
+- The metadata is plain JSON at the top level, as a registry's entries cross
+  into a pool's workers as plain descriptions; the code is behind `load()`.
+- It cannot take a built-in's id. Its code is looked up again at every call,
+  so a package edited mid-run runs as it is now.
+- A burst offers each tool of its pool's registry as declared, read with the
+  lookups a page makes in its own (`assembly/plugins.js`). A `"worker"`
+  tool's code loads and runs in the burst, with the burst's context; a
+  `"host"` tool's calls park for a page, whether or not its code loads in the
+  pool. Code that does not load fails the call that needed it, saying so.
+- What a burst offers is what its pool has: in a browser, the page's packages
+  kept in automerge (not the site's built-in plugins, served over http:
+  tasks/PLANS.md); on a Node host, what its `--modules` settings name that
+  loads in Node. A Node host with no module list has only the task client, so
+  a burst there offers the agent's built-in tools alone.
 - `risk` defaults to `write`, `where` to `"worker"`.
+
+**What this exposes, for the isolation work:** other packages' tool code now
+runs inside a burst, in the realm that holds the session's keys.

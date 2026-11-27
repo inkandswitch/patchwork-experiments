@@ -1,7 +1,7 @@
 /**
  * A page following a session it shows or drives (runners/page.js follow,
  * askFor, takeOverFor, stopFor): it asks for the session's work when its copy
- * shows some, with the person's keys, account and catalogue in the input; it
+ * shows some, with the person's keys and account in the input; it
  * opens the session's watches, again whenever which watches it has changes,
  * and a wake asks; it is counted, and the last holder ends it. The asker and
  * the task client are stand-ins (`_reset`), so nothing here needs a queue.
@@ -66,7 +66,7 @@ describe("asking", () => {
     followed.release()
   })
 
-  it("puts the person's keys, the account and the catalogue in the input, and asks again the same way", async () => {
+  it("puts the person's keys and the account in the input, and asks again the same way", async () => {
     const repo = new Repo({ network: [] })
     const handle = sessionIn(repo)
     localStorage.setItem("patchwork-agent:key:agentBraveSearch", "brave-test")
@@ -74,7 +74,6 @@ describe("asking", () => {
     const { opts } = asks[0]
     expect(opts.keys).toEqual({ model: "sk-test", search: "brave-test", relay: null })
     expect(opts.account).toEqual({ rootFolderUrl: null, sensitiveDocs: [] })
-    expect(opts.catalogue).toEqual({ tools: [], skills: [] })
     await opts.reask()
     expect(asks).toHaveLength(2)
   })

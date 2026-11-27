@@ -2,7 +2,7 @@
  * Where a tool runs, and which tools a session placed somewhere gets.
  *
  * A tool declares `where`: "worker" when a repo is all it needs, "host" when
- * it needs the page (a DOM, mounted views, the plugin registry). Built-in or
+ * it needs the page (a DOM, mounted views, what only a page holds). Built-in or
  * plugin, the declaration is the only thing that decides. A workflow step on
  * a worker gets every tool declared "worker", whoever provides it, and none
  * declared "host"; its session says so with `tools.where = "worker"`, and the
@@ -10,11 +10,9 @@
  * so a package installed after the step began is in it, and no list of tool
  * ids is ever frozen into a session.
  *
- * A run may be unable to run a tool it lists — a burst in a pool's worker
- * imports no plugin code. Such a tool keeps its declaration (`declared`) for
- * deciding who gets it, and carries `where: "host"` for who runs it: its
- * calls park until a page takes them (assembly/plugins.js catalogueTools,
- * kernel/loop.js, runners/page.js).
+ * A burst runs a "worker" tool's calls itself, whoever provides the tool, and
+ * parks a "host" tool's until a page takes them (kernel/loop.js,
+ * runners/page.js).
  */
 
 import { WHERE } from "../session/schema.js"
@@ -22,14 +20,9 @@ import { WHERE } from "../session/schema.js"
 export const WORKER = WHERE.worker
 export const HOST = WHERE.host
 
-/** What a tool declared, whatever this runner can do with it. */
-export function declaredWhere(tool) {
-  return tool?.declared ?? tool?.where ?? WORKER
-}
-
 /** Does a session placed at `placement` get this tool? Unplaced sessions get every tool. */
 export function fitsPlacement(tool, placement) {
-  return placement !== WORKER || declaredWhere(tool) === WORKER
+  return placement !== WORKER || (tool?.where ?? WORKER) === WORKER
 }
 
 /**

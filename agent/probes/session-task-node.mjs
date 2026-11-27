@@ -19,11 +19,24 @@
 //   4 the keys are in the task's input and nowhere else; the session never holds the task's url
 //   5 SIGTERM of the host running a burst mid-reply: the other retakes, drops the marked reply, finishes
 //   6 a stop written into the session by the asker ends the run within a sync delay
+//   7 a host with no --modules has only the task client in its registry: the burst offers the
+//     built-in tools alone, and nothing is said of it
+//
+// Then a third host, given --modules: a module-settings document made here
+// naming a scratch package kept in automerge (made here too, every url made
+// up by the Repo), which registers two agent tools, one declared for a worker
+// and one for a page, each answering with the realm and process that ran it.
+// This process stands in for the page: it runs a parked call with
+// runners/page.js pageCalls and a registry of its own holding the package's
+// code.
+//   8 the burst offers both of the package's tools, from its host's registry
+//   9 the worker tool runs in the burst, in the host's run thread, and its result lands in the session
+//  10 the page tool's call parks; the page runs it, and the next burst carries on
 //
 // Every host, the stand-in and the Repo are stopped at the end, pass or fail;
 // the process exits 1 if any check failed.
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -35,6 +48,10 @@ import { stopSession } from "../session/recovery.js";
 import { STOP } from "../session/status.js";
 import { noteWrite } from "../knowledge/notes.js";
 import { workKey } from "../runners/ask.js";
+import { pageCalls } from "../runners/page.js";
+import { AGENT as AGENT_PARTS } from "../assembly/agent.js";
+import { loadPluginTools } from "../assembly/plugins.js";
+import { fullTools } from "../kernel/toolset.js";
 import { standIn } from "./stand-in-provider.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -74,9 +91,36 @@ const lastUser = (body) => {
   const user = [...(body?.messages ?? [])].reverse().find((m) => m.role === "user");
   return typeof user?.content === "string" ? user.content : J(user?.content ?? "");
 };
+// The scratch package's two tools, each saying which realm and process ran it.
+const TOOLS = [
+  { type: "agent:tool", id: "probe_realm_worker", name: "Realm (worker)", description: "Say which realm runs this tool.", where: "worker", risk: "read", input_schema: { type: "object", properties: {} } },
+  { type: "agent:tool", id: "probe_realm_page", name: "Realm (page)", description: "Say which realm runs this tool, from a page.", where: "host", risk: "read", input_schema: { type: "object", properties: {} } },
+];
+const REALM = `export default {
+  async execute() {
+    if (globalThis.document) return "ran in a page";
+    if (globalThis.process?.versions?.node) {
+      const threads = await import("node:worker_threads");
+      return \`ran in node, \${threads.isMainThread ? "main thread" : "thread " + threads.threadId}, pid \${process.pid}\`;
+    }
+    return "ran in " + globalThis.constructor?.name;
+  },
+};
+`;
+const PACKAGE_FILES = {
+  "package.json": J({ name: "probe-realm-tools", type: "module", main: "index.js" }),
+  "index.js": `export const plugins = ${J(TOOLS)}.map((t) => ({ ...t, load: () => import("./realm.js").then((m) => m.default) }));\n`,
+  "realm.js": REALM,
+};
+const TOOL_WORDS = "Run both realm tools.";
+
 let retaken = false;
 const stand = await standIn((body) => {
   const said = lastUser(body);
+  if (J(body?.messages ?? []).includes(TOOL_WORDS)) {
+    if (!(body.messages ?? []).some((m) => m.role === "tool")) return { calls: TOOLS.map((t, i) => ({ id: `call_${i}`, name: t.id, input: {} })) };
+    return { pieces: ["Both ", "realms ", "answered."], everyMs: 100 };
+  }
   if (/\blong\b/.test(said)) return retaken ? SCRIPTS.again : SCRIPTS.long;
   return SCRIPTS.plain;
 });
@@ -191,7 +235,6 @@ try {
     session: session.url,
     heads: [...session.heads()],
     account: { rootFolderUrl: root.url, sensitiveDocs: [] },
-    catalogue: { tools: [], skills: [] },
     providerUrl: stand.url,
     keys: { model: MODEL_KEY, search: SEARCH_KEY, relay: null },
   });
@@ -227,6 +270,16 @@ try {
       "the module imports on a host, and the burst answers { outcome, heads, own }",
       !result?.error && J(Object.keys(result ?? {}).sort()) === J(["heads", "outcome", "own"]) && result.outcome === "idle" && Array.isArray(result.heads) && Array.isArray(result.own),
       `in ${Date.now() - t0} ms on host ${ranOn}: ${J(result)}; runs ${J(last?.runs?.map((r) => r.status ?? "open"))}; its log ${J(last?.logs?.map((l) => l.message))}`,
+    );
+    const offered = (requests[0]?.body?.tools ?? []).map((t) => t.function?.name);
+    const builtins = fullTools(session.doc(), { builtins: AGENT_PARTS.builtins }).map((t) => t.id);
+    const saidOfTools = hosts.flatMap((h) => h.lines.filter((l) => /left out|agent:tool|did not load/i.test(l)));
+    const registries = hosts.flatMap((h) => h.lines.filter((l) => /plugins: /.test(l)).map((l) => `${h.label}: ${l.slice(l.indexOf("plugins: "))}`));
+    check(
+      7,
+      "a host with no --modules has only the task client in its registry: the burst offers the built-in tools alone, and nothing is said of it",
+      offered.length > 0 && J(offered) === J(builtins) && saidOfTools.length === 0,
+      `${offered.length} tools offered, the built-ins ${J(offered) === J(builtins) ? "exactly" : `not: ${J(offered.filter((id) => !builtins.includes(id)))} beyond them`}; the hosts' registries ${registries.length ? J(registries) : "(said nothing of their registry)"}; said of agent tools ${J(saidOfTools)}`,
     );
     const system = J(requests[0]?.body?.messages?.[0] ?? null);
     check(
@@ -351,6 +404,72 @@ try {
       !!stoppedAt && result?.outcome === "stopped" && endedMs !== null && endedMs < 10_000 && request?.aborted === true && !reply.streaming && doc.burst === null,
       `stopped after ${piecesAtStop} pieces had arrived; the task ended ${endedMs} ms later: ${J(result)}; the text last grew ${lastGrowth === null ? "never after the stop" : `${lastGrowth - stoppedAt} ms after it`}; the stand-in's stream ${request?.aborted ? `dropped after ${request.sent} of ${SCRIPTS.long.pieces.length} pieces` : "not dropped"}; mark ${J(reply.streaming)}; burst ${J(doc.burst)}`,
     );
+  }
+
+  // 8-10. A host with --modules, a scratch package of two tools in its registry.
+  {
+    // A package kept in automerge as pushwork keeps one (tasks/probes/node-run.mjs `publish`).
+    const pin = (handle) => handle.view(handle.heads()).url;
+    const files = Object.fromEntries(Object.entries(PACKAGE_FILES).map(([path, content]) => [path, repo.create({ "@patchwork": { type: "file" }, content })]));
+    const pkg = repo.create({ "@patchwork": { type: "directory" }, ...Object.fromEntries(Object.entries(files).map(([path, h]) => [path, pin(h)])) });
+    const settings = repo.create({ "@patchwork": { type: "patchwork:module-settings" }, modules: [pkg.url] });
+    await repo.flush();
+    // Once a Repo of no one's finds each from the sync server: a source the host's watcher cannot find as it starts is skipped.
+    const other = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
+    for (const url of [settings.url, pkg.url, ...Object.values(files).map((h) => h.url)]) await within(30_000, other.find(url), "a scratch package's document on the sync server");
+    await other.shutdown();
+
+    // The page this process stands in for: its own registry, the same package's code, from disk.
+    const pageDir = mkdtempSync(join(SCRATCH, "page-registry-"));
+    dirs.push(pageDir);
+    for (const [path, content] of Object.entries(PACKAGE_FILES)) writeFileSync(join(pageDir, path), content);
+    const { plugins: pagePlugins } = await import(pathToFileURL(join(pageDir, "index.js")).href);
+    const pageRegistry = { all: () => pagePlugins, load: async (id) => ({ ...pagePlugins.find((p) => p.id === id), module: await pagePlugins.find((p) => p.id === id).load() }) };
+    const runPage = async (handle, pageRepo) => {
+      const page = pageCalls(handle, { context: { repo: pageRepo }, builtins: AGENT_PARTS.builtins, plugins: () => loadPluginTools({ registry: pageRegistry }), beatMs: 0, target: null, splice: A.splice });
+      await page.tick();
+      page.dispose();
+    };
+    const callsOf = (doc) => {
+      const blocks = (doc?.turns ?? []).flatMap((t) => t.blocks ?? []);
+      return Object.fromEntries(blocks.filter((b) => b.type === "call").map((b) => [b.tool, { where: b.where, status: b.status, result: String(blocks.find((r) => r.type === "result" && r.callId === b.id)?.output ?? "") || null }]));
+    };
+    const lastWords = (doc) => (doc?.turns?.at(-1)?.blocks ?? []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    const toolAsks = () => stand.requests.filter((r) => J(r.body?.messages ?? []).includes(TOOL_WORDS));
+    const offeredIn = (request) => (request?.body?.tools ?? []).map((t) => t.function?.name).filter((id) => id.startsWith("probe_"));
+
+    const C = startHost("c", ["--new-queue", "agent tools probe", "--modules", settings.url]);
+    await untilSaid(C, (h) => h.pool && h.queue);
+    await untilSaid(C, (h) => h.lines.some((l) => /plugins: .*probe_realm_worker/.test(l)), 30_000);
+    const asked = (session) => within(120_000, run(repo, C.queue, { importUrl: IMPORT, input: inputOf(session), key: workKey(session.url) }), "a burst on host c");
+    const session = newSession(TOOL_WORDS);
+    const before = toolAsks().length;
+    const first = await asked(session).catch((error) => ({ error: String(error?.message ?? error) }));
+    for (const t0 = Date.now(); !callsOf(session.doc()).probe_realm_worker?.result && Date.now() - t0 < 10_000; ) await sleep(100);
+    const parked = callsOf(session.doc());
+    check(
+      8,
+      "a host with --modules: the burst offers both of the scratch package's tools, from its registry",
+      J(offeredIn(toolAsks()[before])) === J(TOOLS.map((t) => t.id)),
+      `the host's registry ${J(C.lines.find((l) => /plugins: .*probe_realm/.test(l))?.slice(C.lines.find((l) => /plugins: .*probe_realm/.test(l)).indexOf("plugins: ")))}; offered ${J(offeredIn(toolAsks()[before]))}`,
+    );
+    check(
+      9,
+      "the worker tool runs in the burst, in the host's run thread, and its result lands in the session",
+      parked.probe_realm_worker?.where === "worker" && new RegExp(`^ran in node, thread \\d+, pid ${C.child.pid}`).test(parked.probe_realm_worker?.result ?? ""),
+      `host c is pid ${C.child.pid}, this process ${process.pid}; the call ${J(parked.probe_realm_worker)}`,
+    );
+    await runPage(session, repo);
+    const ranByPage = callsOf(session.doc());
+    const second = await asked(session).catch((error) => ({ error: String(error?.message ?? error) }));
+    for (const t0 = Date.now(); lastWords(session.doc()) !== "Both realms answered." && Date.now() - t0 < 10_000; ) await sleep(100);
+    check(
+      10,
+      "the page tool's call parks; the page (this process) runs it, and the next burst carries on",
+      first?.outcome === "parked" && parked.probe_realm_page?.where === "host" && parked.probe_realm_page?.result === null && ranByPage.probe_realm_page?.result === `ran in node, main thread, pid ${process.pid}` && second?.outcome === "idle" && lastWords(session.doc()) === "Both realms answered.",
+      `the first burst ${J(first)}, the page call then ${J(parked.probe_realm_page)}, after the page ${J(ranByPage.probe_realm_page)}; the second burst ${J(second)}, last words ${J(lastWords(session.doc()))}`,
+    );
+
   }
 
   const problems = hosts.flatMap((h) => h.lines.filter((l) => /error|crash|threw|cannot import/i.test(l)).map((l) => `${h.label}: ${l}`));

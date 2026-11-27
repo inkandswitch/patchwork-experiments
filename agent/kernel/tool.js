@@ -20,8 +20,8 @@
  *
  * A tool comes from this package (assembly/builtin.js) or from an `agent:tool`
  * plugin of any installed package, whose metadata is plain JSON at the top
- * level of its entry (it has to be: the host structured-clones plugin entries
- * into a worker) and whose executor comes back from `load()`.
+ * level of its entry (it has to be: a registry's entries cross into a pool's
+ * workers as plain descriptions) and whose executor comes back from `load()`.
  */
 
 import { isInterruption } from "../net/network.js"
@@ -76,47 +76,17 @@ export function toSchema(tool) {
 }
 
 /**
- * The metadata of an `agent:tool` plugin a toolset reads. Plain JSON at the
- * top level of the plugin entry, which is what lets it cross into a worker:
- * a task's input carries every entry's metadata as the catalogue
- * (assembly/plugins.js pluginCatalogue), and a burst offers the tools and
- * parks their calls for a page.
- */
-export const PLUGIN_FIELDS = ["id", "name", "description", "input_schema", "where", "risk", "alwaysAsk", "scoped", "target", "group", "groupCovers", "importUrl"]
-
-/** One plugin entry's metadata, and nothing that cannot be cloned. Null for an entry with no id. */
-export function describePlugin(entry) {
-  if (typeof entry?.id !== "string") return null
-  const out = {}
-  for (const field of PLUGIN_FIELDS) {
-    const value = entry[field]
-    if (value === undefined || typeof value === "function") continue
-    try {
-      out[field] = JSON.parse(JSON.stringify(value))
-    } catch {
-      /* not plain data; left out, as a worker could not be handed it */
-    }
-  }
-  return out
-}
-
-/**
  * A plugin tool, from its metadata and `current`, which loads the plugin as
  * registered now: `{ ...metadata, module }`. `impl` is the module loaded
- * already, for its `summarize`. `where` is who runs it when that is not what
- * it declared — a runner that cannot load it here (kernel/placement.js).
+ * already, for its `summarize` and `present`.
  */
-export function pluginTool(description, current, { impl = null, where = null } = {}) {
-  const declared = description.where ?? "worker"
+export function pluginTool(description, current, { impl = null } = {}) {
   return {
     id: description.id,
     name: description.name ?? description.id,
     description: description.description ?? "",
     input_schema: description.input_schema ?? { type: "object", properties: {} },
-    where: where ?? declared,
-    // What the package declared, which decides who gets the tool even where
-    // this runner hands its calls to another (kernel/placement.js declaredWhere).
-    declared,
+    where: description.where ?? "worker",
     risk: description.risk ?? "write",
     alwaysAsk: description.alwaysAsk ?? false,
     // The package's word that this tool works only through the context

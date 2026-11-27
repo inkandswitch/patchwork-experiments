@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { guideRead, guideChanges, guidePin, guideWrite, guidesSection, surfaceGuides, guideFor, guideState, guidesOverview, listGuides, packageRef, lineDiff, describeState } from "../knowledge/guides.js"
 import { noteRead, notesSection } from "../knowledge/notes.js"
-import { cataloguePackageOf } from "../assembly/plugins.js"
 
 await initSubduction()
 
@@ -225,40 +224,6 @@ describe("surfacing", () => {
     expect(await surfaceGuides(w.ctx(), call("plugin_source", { id: "pkgtool" }), null, did())).toBeNull()
     expect(await surfaceGuides(w.ctx(), call("registry_list"), null, { output: "1 plugin:\n\npatchwork:tool (1)\n  pkgtool — Pkg tool\n", facts: null })).toBeNull()
     expect(await surfaceGuides({ repo: w.repo }, call("anything"), null, did({ plugins: [TOOL] }))).toBeNull()
-  })
-})
-
-describe("surfacing in a burst, which has only the catalogue", () => {
-  const call = (tool, input = {}) => ({ id: "c", tool, input })
-
-  /** A task input's catalogue: the package's agent tool, with the url it was registered from. */
-  const catalogueOf = (pkgUrl) => ({ tools: [{ id: "pkg_do", name: "Pkg do", importUrl: `${pkgUrl}#h1|h2` }], skills: [] })
-
-  /** A burst's ctx: packageOf from the catalogue in its input (runners/session-task.js), nothing else from the page. */
-  async function burstCtx(w) {
-    return { repo: w.repo, rootFolderUrl: w.root.url, packageOf: cataloguePackageOf(catalogueOf(w.pkg.url)) }
-  }
-
-  it("packageOf answers for an agent tool as a page's does: url, the pinned heads, and the plugin's name", async () => {
-    const w = await world()
-    const ctx = await burstCtx(w)
-    expect(await ctx.packageOf("agent:tool", "pkg_do")).toEqual({ url: w.pkg.url, heads: ["h1", "h2"], name: "Pkg do" })
-    expect(await ctx.packageOf("agent:tool", "missing")).toBeNull()
-    // A view or a datatype is not in the catalogue: found in a page.
-    expect(await ctx.packageOf("patchwork:datatype", "pkgdata")).toBeNull()
-    expect(await cataloguePackageOf(null)("agent:tool", "pkg_do")).toBeNull()
-  })
-
-  it("a call that used an agent tool brings the guide in a burst", async () => {
-    const w = await world()
-    await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    expect((await surfaceGuides(await burstCtx(w), call("anything"), null, { output: "ok", facts: { plugins: [{ type: "agent:tool", id: "pkg_do" }] } })).text).toMatch(/Usage guide for Pkg/)
-  })
-
-  it("guide_read finds a package by an agent tool's id in a burst", async () => {
-    const w = await world()
-    await guideWrite.execute({ package: w.pkg.url, name: "Pkg", content: GUIDE }, w.ctx())
-    expect(await guideRead.execute({ package: "pkg_do", type: "agent:tool" }, await burstCtx(w))).toContain("pass `thing`")
   })
 })
 

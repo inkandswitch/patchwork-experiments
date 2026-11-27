@@ -16,7 +16,7 @@ import { _resetDrivers } from "../workflow/driver.js"
 import { initSession, _resetIds } from "../session/schema.js"
 import { runBurst } from "../kernel/burst.js"
 import { AGENT } from "../assembly/agent.js"
-import { catalogueTools } from "../assembly/plugins.js"
+import { loadPluginTools } from "../assembly/plugins.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { setHostUrls } from "../host/urls.js"
 import { askWork } from "../runners/ask.js"
@@ -89,7 +89,7 @@ function makePool({ repo, provider, poolId = "pool-here", waitForNetwork = undef
                   fetchImpl: async () => new Response("<p>a page</p>", { headers: { "content-type": "text/html" } }),
                 },
                 builtins: AGENT.builtins,
-                plugins: async () => catalogueTools(input.catalogue),
+                plugins: () => loadPluginTools(),
                 sections: [],
                 afterCall: [],
                 system: "test",

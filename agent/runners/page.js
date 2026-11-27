@@ -18,7 +18,7 @@
  *       so it never keeps one going. A burst under way is the pool's, and
  *       goes on.
  *   askFor(repo, sessionUrl)  ask for a session's work with this page's
- *       keys, account and catalogue in the input (runners/ask.js askWork).
+ *       keys and account in the input (runners/ask.js askWork).
  *       Every write of work asks: a message, an approval, an answer, a
  *       lifted budget, a reopen, a parked call's result, a watch's wake.
  *   drivePlanHere(planUrl, { repo, holder })  drive a plan from this page
@@ -70,7 +70,7 @@ import { INTERRUPTED, hasDebris } from "../session/recovery.js"
 import { WHERE, unknownBlocks, versionStanding } from "../session/schema.js"
 import { AGENT } from "../assembly/agent.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
-import { loadPluginTools, pluginCatalogue } from "../assembly/plugins.js"
+import { loadPluginTools, packageOf } from "../assembly/plugins.js"
 import { ensureDriver, getDriver, letGo, sessionHolder } from "../workflow/driver.js"
 import { readKey, readRelay, SEARCH_KEY_ID } from "../providers/keys.js"
 import { relayFetch } from "../net/relay.js"
@@ -79,7 +79,6 @@ import { hostImport, taskClient, clientHere, _holdClient } from "../host/import.
 import { getMount } from "../tools/checking.js"
 import { braveSearch } from "../tools/web.js"
 import { restoreWatches } from "../tools/watch.js"
-import { packageOfPlugin } from "../knowledge/guides.js"
 import { askWork, forget, followWork, stop } from "./ask.js"
 
 /** Which build of this code made a follower: its module url, which changes with every version Patchwork loads. */
@@ -204,9 +203,8 @@ export async function pageContext(handle, { repo, events = null, view = { elemen
     },
     // Skills installed packages contribute (knowledge/skills.js packageSkills).
     skillRegistry: plugins?.getRegistry?.("patchwork:skill") ?? null,
-    // Which package a plugin came from, for usage guides (knowledge/guides.js):
-    // `{ url, heads, name }` for the package folder behind a plugin id.
-    packageOf: async (type, id) => packageOfPlugin((await hostImport("plugins")).getRegistry(type).all().find((p) => p.id === id)),
+    // Which package a plugin came from, for usage guides (knowledge/guides.js).
+    packageOf,
     // So view_screenshot can photograph a view that view_mount opened.
     getMount,
     fetchImpl,
@@ -233,9 +231,8 @@ let asker = askWork
 
 /**
  * Ask for a session's work, if askWork's rule says to, with what this page
- * puts in the input: the person's keys, the account context, and the
- * catalogue of installed packages' tools and skills. Nothing is asked
- * without the task client (the Tasks package not installed here), for a
+ * puts in the input: the person's keys and the account context. Nothing is
+ * asked without the task client (the Tasks package not installed here), for a
  * session with no model key here ("Add an API key to start"), or of another
  * version. Resolves as askWork does; never throws.
  *
@@ -249,17 +246,15 @@ export async function askFor(repo, sessionUrl, opts = {}) {
     const doc = (await repo.find(bare(sessionUrl))).doc()
     if (!doc) return { asked: false, why: "no session" }
     if (outdated(doc)) return { asked: false, why: "another version's session" }
-    // askWork's first rule, before the catalogue is read: most looks find nothing to do.
+    // askWork's first rule first: most looks find nothing to do.
     if (!needsWork(doc, (where) => where === WHERE.worker, doc.burst?.run ?? null)) return { asked: false, why: "no work" }
     const model = readKey(doc.config?.providerId ?? "openrouter")
     if (!model) return { asked: false, why: "no key" }
-    const catalogue = await pluginCatalogue().catch(() => ({ tools: [], skills: [] }))
     return await asker(repo, sessionUrl, {
       ...opts,
       // When the task it follows ends, or the network is back, it asks again this way: with the keys.
       reask: () => askFor(repo, sessionUrl),
       account: accountContext(),
-      catalogue,
       keys: { model, search: readKey(SEARCH_KEY_ID) ?? null, relay: readRelay() },
     })
   } catch (err) {

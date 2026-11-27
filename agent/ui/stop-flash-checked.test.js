@@ -119,8 +119,8 @@ function mounted(opts) {
   // Read after the view has drawn: its own listeners were added first.
   handle.on("change", () => read("change"))
   q.onSay = () => read("queue")
-  // Each step of the clock also lets real work finish (the asker reads the
-  // catalogue of installed packages through a dynamic import).
+  // Each step of the clock also lets real work finish (dynamic imports
+  // among it).
   const step = async (ms, by = "clock") => {
     for (let t = 0; t < ms; t += 50) {
       await vi.advanceTimersByTimeAsync(50)

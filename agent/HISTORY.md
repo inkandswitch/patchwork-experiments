@@ -1840,3 +1840,17 @@ change or when the network is back. The line under the composer says, while a
 task waits, when this browser takes no part in running it because the tasks
 package is not installed here, using the client's `poolHere()`, worked out
 again when the tasks package puts a pool host in the page.
+
+## 2026-11-26: a burst asks its pool's registry for its tools
+
+A pool now has the plugin registry (the tasks package's README, "A pool has
+the plugin registry"), so a burst reads the agent tools and skills it offers
+from its pool's registry with the lookups a page makes in its own. The
+catalogue a page used to copy into each task's input (every agent tool's
+metadata and every skill's name: `pluginCatalogue`, `catalogueTools`,
+`catalogueSkills`, `cataloguePackageOf`, `describePlugin`, `PLUGIN_FIELDS`)
+is gone, and with it the split between what a tool declared and where a burst
+ran it (`declared`, `declaredWhere`): a package's tool declared for a worker
+runs in the burst, and only a tool declared for a page parks. A tool whose
+code does not load is offered all the same, and the call that needs it fails
+saying so, in a page as in a pool.

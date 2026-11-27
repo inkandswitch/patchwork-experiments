@@ -1,8 +1,8 @@
 /**
  * What a plugin tool's ctx holds in a page (runners/page.js pageContext):
  * the page's plugin registry (`ctx.plugins`) and its automerge, initialised
- * (`ctx.automerge`). A burst in a pool's worker imports no plugin code: its
- * plugin calls park for a page (runners/placement.test.js).
+ * (`ctx.automerge`). A burst's plugin tools are its pool's registry's
+ * (runners/session-task.test.js).
  */
 import { describe, it, expect } from "vitest"
 import { join } from "node:path"

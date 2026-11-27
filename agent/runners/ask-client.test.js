@@ -87,7 +87,7 @@ describe("the task client", () => {
     await askWork(repo, h.url, { client: c, importUrl: "data:text/javascript,", onOnline: () => () => {}, account: { rootFolderUrl: null, sensitiveDocs: ["automerge:settings", own] }, keys: { model: "k", search: null, relay: null } })
     const [, request] = c.asks[0]
     expect(request.key).toBe(workKey(h.url))
-    expect(Object.keys(request.input)).toEqual(["session", "heads", "account", "catalogue", "keys"])
+    expect(Object.keys(request.input)).toEqual(["session", "heads", "account", "keys"])
     expect(request.input.account.sensitiveDocs).toEqual(["automerge:settings", own])
   })
 

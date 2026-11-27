@@ -6,17 +6,18 @@
  * It runs in a pool's worker: a Node host's thread, or a browser pool's run
  * worker. So it imports only what both resolve: its own neighbours, and
  * automerge through host/modules.js (a task's bare imports, tasks/README.md).
- * The task client is the pool's registry's, as a page's is (host/import.js).
- * What only Node has (net/node-fetch.mjs, with its DNS check) is imported
- * only where `process` says this is Node.
+ * A pool has the plugin registry (tasks/README.md), and the burst asks it
+ * what a page asks its own: the task client (host/import.js), the agent
+ * tools it offers and runs (assembly/plugins.js), the skills packages bring,
+ * and which package a plugin came from. What only Node has
+ * (net/node-fetch.mjs, with its DNS check) is imported only where `process`
+ * says this is Node.
  *
  * The input (runners/ask.js), in this order:
  *   session    the session's url
  *   heads      the heads its asker saw, waited for
  *   account    { rootFolderUrl, sensitiveDocs }: where notes are kept, and
  *              the documents that always ask
- *   catalogue  { tools, skills }: installed packages' tools, offered and
- *              parked for a page, and their skills, named
  *   keys       { model, search, relay }
  * and, for probes only, `providerUrl`: where the model provider's requests
  * go instead of its own address. Nothing that asks for a session's work
@@ -31,14 +32,14 @@
 
 import { runBurst } from "../kernel/burst.js"
 import { AGENT } from "../assembly/agent.js"
-import { catalogueTools, catalogueSkills, cataloguePackageOf } from "../assembly/plugins.js"
+import { loadPluginTools, packageOf } from "../assembly/plugins.js"
 import { getProvider } from "../providers/index.js"
 import { modelInfo } from "../providers/catalogue.js"
 import { guardedFetch, SYNC_SERVERS } from "../net/guard.js"
 import { relayFetch } from "../net/relay.js"
 import { braveSearch } from "../tools/web.js"
 import { Automerge } from "../host/modules.js"
-import { taskClient } from "../host/import.js"
+import { taskClient, tryHostImport } from "../host/import.js"
 
 /** Whether this is a Node host's thread rather than a browser's run worker. */
 const inNode = () => typeof process !== "undefined" && !!process.versions?.node
@@ -85,7 +86,6 @@ export async function runsOfTask(repo, taskUrl) {
 export default async function sessionTask(input, ctx) {
   const keys = { model: input?.keys?.model ?? null, search: input?.keys?.search ?? null, relay: input?.keys?.relay ?? null }
   const account = input?.account ?? {}
-  const catalogue = input?.catalogue ?? { tools: [], skills: [] }
   const providerUrl = typeof input?.providerUrl === "string" && input.providerUrl ? input.providerUrl : null
   if (typeof input?.session !== "string") throw new Error("A session task needs the session's url.")
 
@@ -93,6 +93,7 @@ export default async function sessionTask(input, ctx) {
   const config = () => handle.doc()?.config ?? {}
   const providerId = () => config().providerId ?? "openrouter"
   const { fetchImpl, direct } = await runFetch({ relay: keys.relay })
+  const plugins = await tryHostImport("plugins")
 
   const context = {
     splice: Automerge.splice,
@@ -101,9 +102,9 @@ export default async function sessionTask(input, ctx) {
     search: braveSearch({ key: () => keys.search, fetchImpl }),
     rootFolderUrl: account.rootFolderUrl ?? null,
     sensitiveDocs: (account.sensitiveDocs ?? []).filter((url) => typeof url === "string" && url),
-    skillRegistry: catalogueSkills(catalogue),
-    // Which package an agent tool came from, for usage guides (knowledge/guides.js).
-    packageOf: cataloguePackageOf(catalogue),
+    skillRegistry: plugins?.getRegistry("patchwork:skill") ?? null,
+    // Which package a plugin came from, for usage guides (knowledge/guides.js).
+    packageOf,
     get subject() {
       return handle.doc()?.subject ?? null
     },
@@ -122,7 +123,7 @@ export default async function sessionTask(input, ctx) {
     getModelInfo: providerUrl ? undefined : (model, id) => modelInfo(id ?? providerId(), model, { key: keys.model }),
     context,
     builtins: AGENT.builtins,
-    plugins: async () => catalogueTools(catalogue, { onError: (id, why) => ctx.log?.(`left out ${id}: ${why}`) }),
+    plugins: () => loadPluginTools({ onError: (id, why) => ctx.log?.(`left out ${id}: ${why}`) }),
     sections: AGENT.sections,
     afterCall: AGENT.afterCall,
     system: AGENT.system,

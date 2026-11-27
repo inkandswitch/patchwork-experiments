@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { loadPluginTools, pluginCatalogue, catalogueTools, catalogueSkills } from "./plugins.js"
-import { skillRead } from "../knowledge/skills.js"
+import { loadPluginTools } from "./plugins.js"
 import { runTool } from "../kernel/tool.js"
 import { buildToolset } from "./toolset.js"
 import { BUILTIN_TOOLS } from "./builtin.js"
@@ -44,7 +43,19 @@ describe("agent:tool plugins", () => {
     registry.load = async () => {
       throw new Error("SyntaxError in agent.js")
     }
-    expect((await runTool(tool, {}, {})).output).toMatch(/SyntaxError in agent\.js/)
+    expect((await runTool(tool, {}, {})).output).toBe("Error: The code of lm_eval did not load here: SyntaxError in agent.js")
+  })
+
+  it("are offered as declared when their code does not load here, and a call to one fails saying so", async () => {
+    const registry = {
+      all: () => [{ id: "needs_dom", where: "host", risk: "read" }, { id: "broken", where: "worker", risk: "read" }],
+      load: async (id) => {
+        throw new ReferenceError(`document is not defined (${id})`)
+      },
+    }
+    const tools = await loadPluginTools({ registry })
+    expect(tools.map((t) => [t.id, t.where, t.risk])).toEqual([["needs_dom", "host", "read"], ["broken", "worker", "read"]])
+    expect(await runTool(tools[1], {}, {})).toMatchObject({ isError: true, output: "Error: The code of broken did not load here: document is not defined (broken)" })
   })
 })
 
@@ -151,37 +162,5 @@ describe("the Web snapshot package's web_capture", () => {
     expect((await researchToolset({ plugins: declared })).tools.map((t) => t.id)).toEqual([...SCOPED_TOOL_IDS, "web_capture"])
     const undeclared = await loadPluginTools({ registry: { ...registry, all: () => [{ ...WEB_CAPTURE, scoped: undefined }] } })
     expect((await researchToolset({ plugins: undeclared })).tools.map((t) => t.id)).toEqual(SCOPED_TOOL_IDS)
-  })
-})
-
-describe("the catalogue a task carries", () => {
-  const tools = [
-    { id: "fea_solve", name: "Solve", description: "Runs a solve", where: "worker", risk: "write", input_schema: { type: "object", properties: { model: { type: "string" } } }, importUrl: "automerge:pkg#h", execute: () => "never" },
-    { id: "web_fetch", name: "Not the built-in", where: "worker" },
-  ]
-  const skills = [{ id: "fea-guide", name: "FEA", description: "How to set up a solve", load: async () => ({ module: "body" }) }]
-  const registryOf = (entries) => ({ all: () => entries, load: async () => { throw new Error("loaded") } })
-
-  it("is plain JSON that loads nothing, and survives the trip as it is", async () => {
-    const catalogue = await pluginCatalogue({ registry: registryOf(tools), skillRegistry: registryOf(skills) })
-    expect(JSON.parse(JSON.stringify(catalogue))).toEqual(catalogue)
-    expect(catalogue.tools[0]).toEqual({ id: "fea_solve", name: "Solve", description: "Runs a solve", where: "worker", risk: "write", input_schema: tools[0].input_schema, importUrl: "automerge:pkg#h" })
-    expect(catalogue.skills).toEqual([{ name: "fea-guide", description: "How to set up a solve" }])
-  })
-
-  it("offers its tools as the package describes them, to run in a page, and none that takes a built-in's id", async () => {
-    const errors = []
-    const catalogue = JSON.parse(JSON.stringify(await pluginCatalogue({ registry: registryOf(tools), skillRegistry: registryOf([]) })))
-    const offered = catalogueTools(catalogue, { onError: (id) => errors.push(id) })
-    expect(offered.map((t) => [t.id, t.where, t.declared, t.risk])).toEqual([["fea_solve", "host", "worker", "write"]])
-    expect(offered[0].input_schema).toEqual(tools[0].input_schema)
-    expect(errors).toEqual(["web_fetch"])
-  })
-
-  it("names its skills, and reading one says it is read in a page", async () => {
-    const skillRegistry = catalogueSkills(await pluginCatalogue({ registry: registryOf([]), skillRegistry: registryOf(skills) }))
-    expect(skillRegistry.all().map((s) => [s.id, s.description])).toEqual([["fea-guide", "How to set up a solve"]])
-    const repo = { find: async () => { throw new Error("no folder") } }
-    await expect(skillRead.execute({ name: "fea-guide" }, { repo, skillRegistry })).rejects.toThrow(/read in a page/)
   })
 })
