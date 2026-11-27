@@ -344,26 +344,6 @@ try {
     );
   });
 
-  // 5. whose code this browser runs from the queue: only this package's, then any again (written to the task storage, as the queue browser's control writes it)
-  await part("told to run only this package's code, the pool leaves a data: URL waiting, and runs it once told it may", async () => {
-    const out = await call(`
-      const storage = await site.find(window.__probe.storageUrl);
-      const data = "data:text/javascript," + encodeURIComponent("export default () => 'ran'");
-      storage.change((d) => C.setServed(d, Q, { packages: [${J(pkg)}] }));
-      await new Promise((r) => setTimeout(r, 2000));
-      const { key } = await C.ask(T, Q, { importUrl: data });
-      const fromPackage = await C.run(T, Q, { importUrl: ${J(`/${encodeURIComponent(pkg)}/dist/tasks/wait.js`)}, input: { ms: 100, value: "accepted" } });
-      await new Promise((r) => setTimeout(r, 3000));
-      const waiting = (await T.find((await T.find(Q)).doc().jobs[key].taskUrl)).doc().runs.length;
-      storage.change((d) => C.setServed(d, Q, true));
-      const afterwards = await Promise.race([
-        new Promise((r) => { const stop = C.watch(T, Q, key, (v) => { if (v.state === "succeeded") { stop(); r(v.result); } }); }),
-        new Promise((r) => setTimeout(() => r("not run in 30 s"), 30000)),
-      ]);
-      return { fromPackage, runsWhileRefused: waiting, afterwards };`, "what the pool accepts", 90_000);
-    check("told to run only this package's code, the pool leaves a data: URL waiting, and runs it once told it may", out.fromPackage === "accepted" && out.runsWhileRefused === 0 && out.afterwards === "ran", out);
-  });
-
   // 6. served() lists this browser's pool; the queue browser marks it; the badge says what the pool is doing
   await part("served() lists this browser's pool with its name and slots", async () => {
     const pools = await call(`return await new Promise((r) => { let pools = []; const stop = C.served(T, Q, (p) => (pools = p)); setTimeout(() => (stop(), r(pools)), 5000); });`, "served");

@@ -31,7 +31,6 @@
 // other's live runs as its own lost ones.
 
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
-import type { Acceptance } from '../acceptance';
 import { Pool, type Docs } from '../pool';
 import type { RepoConfig } from '../repo-config';
 import type { Snapshot } from '../registry-snapshot';
@@ -39,7 +38,7 @@ import { getRepo, setUpImportMap } from '../webworker-lib';
 import { WORKER_PEER } from '../ids';
 import { BrowserExecutor, type RunWorkerLink } from './executor';
 
-export type ServedQueues = Record<AutomergeUrl, Acceptance>;
+export type ServedQueues = AutomergeUrl[];
 
 /** Held by the pool's worker for its whole life, so that one pool's worker has ended before the next one's Pool starts. */
 export const WORKER_LOCK = 'patchwork-tasks-pool-worker';
@@ -60,7 +59,7 @@ export type ToPoolWorker =
       /** Its end of the pipe to the site's Repo, when the page has one. */
       link?: MessagePort;
     }
-  /** The queues to serve from now on, with whose code to run from each. */
+  /** The queues to serve from now on. */
   | { type: 'serve'; queues: ServedQueues }
   /** The page's registry, as it is now. */
   | { type: 'plugins'; snapshot: Snapshot }
@@ -101,7 +100,7 @@ function linkRunWorker(): RunWorkerLink {
 let pool: Promise<Pool | null> | null = null;
 let executor: BrowserExecutor | null = null;
 let plugins: Snapshot = [];
-let queues: ServedQueues = {};
+let queues: ServedQueues = [];
 let stopping = false;
 
 scope.onmessage = ({ data }) => {
@@ -166,7 +165,7 @@ async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promis
     has: ['browser'],
     executor,
     // the latest the page has said, which may have come while this was starting
-    queues: stopping ? {} : queues,
+    queues: stopping ? [] : queues,
   });
 }
 
@@ -194,7 +193,7 @@ async function stop(drain: boolean) {
   const it = await (pool ?? Promise.resolve(null));
   if (it) {
     if (drain) {
-      it.serve({});
+      it.serve([]);
       // Looked at on this worker's own clock, which keeps time in a hidden tab.
       await new Promise<void>((resolve) => {
         const check = () => (it.busy === 0 ? resolve() : setTimeout(check, 100));

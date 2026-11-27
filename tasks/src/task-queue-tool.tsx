@@ -7,15 +7,12 @@ import { ownQueueOf, served, sparesOf, storageUrlOf, tasksStorage, type Serving,
 import { waitingWork } from './task-rules.js';
 import {
   getAccountDocUrl,
-  getAcceptance,
   isOnTaskQueue,
   joinTaskQueue,
   leaveTaskQueue,
-  setAcceptance,
 } from './helpers';
-import type { Acceptance } from './acceptance';
 import { useDoc, useHandle, useHandleDoc, useRepo, WithTasksRepo } from './use-doc';
-import { AcceptanceChoice, JobsSection } from './jobs-view';
+import { JobsSection } from './jobs-view';
 import { readBrowserPoolId } from './browser/pool-id';
 import { NOT_STARTED, watchPoolHost, type PoolHostStatus } from './browser/pool-host';
 import { poolWords } from './pool-words';
@@ -100,9 +97,6 @@ function useMembership(queueUrl: AutomergeUrl, hostRepo: Repo, element: HTMLElem
     spare: () => sparesOf(storage()).includes(queueUrl),
     join: () => change('join', (doc) => joinTaskQueue(doc, queueUrl)),
     leave: () => change('leave', (doc) => leaveTaskQueue(doc, queueUrl)),
-    /** Whose code this person's browsers run from the queue (see acceptance.ts). */
-    acceptance: () => getAcceptance(storage(), queueUrl),
-    accept: (acceptance: Acceptance) => change('accept', (doc) => setAcceptance(doc, queueUrl, acceptance)),
     /** Which change is being made, while one is. */
     working,
     /** Why the last change could not be made, for the person. */
@@ -110,8 +104,8 @@ function useMembership(queueUrl: AutomergeUrl, hostRepo: Repo, element: HTMLElem
   };
 }
 
-/** The changes a person can make to whether, and how, this browser serves a queue. */
-type Work = 'join' | 'leave' | 'accept';
+/** The changes a person can make to whether this browser serves a queue. */
+type Work = 'join' | 'leave';
 
 const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; element: HTMLElement }) => {
   const repo = useRepo();
@@ -148,8 +142,8 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
 
         <Show when={membership.own()}>
           <p class="tq-choice-note tq-whose">
-            {membership.joined() && membership.acceptance() === 'any'
-              ? 'Your own queue, made for you: your browsers serve it, for any code.'
+            {membership.joined()
+              ? 'Your own queue, made for you: your browsers serve it.'
               : 'Your own queue, made for you.'}
           </p>
         </Show>
@@ -210,12 +204,6 @@ const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; ele
               </div>
             }
           >
-            <AcceptanceChoice
-              acceptance={membership.acceptance()}
-              onChange={membership.accept}
-              working={membership.working() === 'accept'}
-              disabled={!!membership.working()}
-            />
             <p class="tq-choice-note">
               <button class="tq-link" disabled={!!membership.working()} onClick={membership.leave}>
                 {membership.working() === 'leave' ? 'Leaving…' : 'Leave this queue'}

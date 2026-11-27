@@ -4,8 +4,7 @@
 // background component, which starts the page's pool host, found by its tag
 // in the package's plugin list, and its real titlebar tool) and asks through
 // the built task client (the package's library). Task
-// code comes from data: URLs and from a file served here; the queue accepts
-// any code. No sync server is reached but by checks 24, 22, 26 to 30, 41
+// code comes from data: URLs and from a file served here. No sync server is reached but by checks 24, 22, 26 to 30, 41
 // and 42: the pages' Repos and the pool's work from the profile's shared database, and
 // each run worker's from a database of its own. What a task writes through
 // ctx.repo reaches the page by the pipe the pool host makes to the Repo the

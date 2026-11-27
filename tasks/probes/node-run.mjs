@@ -90,8 +90,6 @@ const SETTLES = code(`export default async function ({ holdMs }, ctx) {
 const MB = 1024 * 1024;
 const sha256 = async (bytes) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
 const LOCAL = given ? [] : ["--local", `${PKG}=${ROOT}`];
-const ANY = ["--accept-any", ...LOCAL];
-const PACKAGE_ONLY = given ? ["--accept", PKG] : LOCAL;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const within = (ms, p, what) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`${what}: nothing after ${ms / 1000} s`)), ms))]);
@@ -130,8 +128,8 @@ const freshDir = (label) => {
   return dir;
 };
 /** Starts a host and resolves once it has said who it is. Every line it says is kept with when it was heard. */
-function startHost(label, { queue, dataDir, accept = ANY, workers = 2, wait = true, has = [], extra = [] }) {
-  const child = spawn(process.execPath, [join(ROOT, "dist-node/host.mjs"), "--queue", queue, ...accept, "--data-dir", dataDir, "--workers", String(workers), "--name", label, "--sync", SYNC, "--verbose", ...has.flatMap((label) => ["--has", label]), ...extra], { stdio: ["ignore", "pipe", "pipe"] });
+function startHost(label, { queue, dataDir, workers = 2, wait = true, has = [], extra = [] }) {
+  const child = spawn(process.execPath, [join(ROOT, "dist-node/host.mjs"), "--queue", queue, ...LOCAL, "--data-dir", dataDir, "--workers", String(workers), "--name", label, "--sync", SYNC, "--verbose", ...has.flatMap((label) => ["--has", label]), ...extra], { stdio: ["ignore", "pipe", "pipe"] });
   const host = { label, child, dataDir, lines: [], pool: null, exit: null };
   host.exited = new Promise((r) => child.on("exit", (code) => ((host.exit = { code, at: Date.now() }), r(host.exit))));
   for (const stream of [child.stdout, child.stderr]) {
@@ -250,7 +248,7 @@ try {
       const made = offline.create({ importUrl: NOOP, input: `late ${i}`, key, runs: [] });
       const bytes = await offline.export(made.url);
       const listed = Date.now();
-      queue.change((doc) => listTask(doc, key, { taskUrl: made.url, askedAt: listed, package: null }));
+      queue.change((doc) => listTask(doc, key, { taskUrl: made.url, askedAt: listed }));
       await repo.flush([queue.documentId]);
       await sleep(LATE_MS);
       const task = repo.import(bytes, { docId: made.documentId });
@@ -523,19 +521,6 @@ try {
       const goneAfter = gone ? gone - tTerm : null;
       check(10, "served() lists a host while it is up, and drops it within a second of its stopping (its last word says it has no slots), not a lapse later", bothHeard.join() === "A,B" && goneAfter !== null && goneAfter <= 1000 && pools.some((p) => p.pool === A.pool), { whileUp: bothHeard, droppedAfterStopMs: goneAfter, exitedAfterStopMs: B.exit.at - tTerm, stillServing: pools.map((p) => p.name) });
     }
-  }
-
-  // 12. code a host does not accept is never taken and holds nothing up
-  if (want(12)) {
-    const strict = await newQueue("node probe queue, packages only");
-    const C = await startHost("C", { queue: strict.url, dataDir: freshDir("C"), accept: PACKAGE_ONLY });
-    const inline = await ask(repo, strict.url, { importUrl: NOOP, input: 1, key: "inline" });
-    const behind = await within(60000, runKey(strict.url, { importUrl: SOLVE, input: { steps: 2, stepMs: 100, tag: "behind" }, key: "behind" }), "a package task behind it").catch((e) => e.message);
-    await sleep(3000);
-    const t = await readTask(inline.taskUrl);
-    check(12, "code a host does not accept (a data: URL, with --accept of one package) is never taken and holds nothing up", behind?.input === "behind" && t.runs.length === 0 && strict.doc().jobs.inline?.taskUrl === inline.taskUrl, { dataTaskRuns: t.runs.length, stillListed: !!strict.doc().jobs.inline, behind: behind?.input ?? behind });
-    sigterm(C);
-    await within(2 * GRACE_MS + 5000, C.exited, "host C to stop");
   }
 
   // 13. what a task writes reaches the asker as the Repos sync it: found with

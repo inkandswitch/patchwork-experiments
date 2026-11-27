@@ -1709,18 +1709,18 @@ describe('stops', () => {
 // The changes
 
 describe('listTask', () => {
-  const entry = (name: string, askedAt = 1) => ({ taskUrl: url(name), askedAt, package: 'pkg', needs: [] as string[] });
+  const entry = (name: string, askedAt = 1) => ({ taskUrl: url(name), askedAt, needs: [] as string[] });
 
   it('makes `jobs` if a queue has none, and lists under an empty key', () => {
     const queue = {} as Queue;
     listTask(queue, 'K', entry('T1'));
-    expect(queue.jobs).toEqual({ K: { taskUrl: url('T1'), askedAt: 1, package: 'pkg', needs: [] } });
+    expect(queue.jobs).toEqual({ K: { taskUrl: url('T1'), askedAt: 1, needs: [] } });
   });
 
   it("keeps only an entry's fields, and turns a missing package into null and missing needs into none", () => {
     const queue: Queue = { jobs: {} };
     listTask(queue, 'K', { taskUrl: url('T1'), askedAt: 1, key: 'K', extra: 1 } as never);
-    expect(queue.jobs.K).toEqual({ taskUrl: url('T1'), askedAt: 1, package: null, needs: [] });
+    expect(queue.jobs.K).toEqual({ taskUrl: url('T1'), askedAt: 1, needs: [] });
   });
 
   it('writes askedAt as waitingWork reads it, a number and 0 for none, so an entry with no usable askedAt can be listed through a real Automerge change', () => {
@@ -1734,7 +1734,7 @@ describe('listTask', () => {
       [{}, 0],
     ] as const) {
       let doc = A.from<Queue>({ jobs: {} });
-      doc = A.change(doc, (q) => listTask(q, 'K', { taskUrl: url('T1'), askedAt: askedAt as never, package: null }));
+      doc = A.change(doc, (q) => listTask(q, 'K', { taskUrl: url('T1'), askedAt: askedAt as never }));
       expect(A.toJS(doc).jobs.K.askedAt, String(askedAt)).toBe(written);
       expect(waitingWork(doc)[0].askedAt, String(askedAt)).toBe(written);
     }
@@ -1774,7 +1774,7 @@ describe('listTask', () => {
   it('writes needs and near through a real Automerge change, and they read back the same', () => {
     let doc = A.from<Queue>({ jobs: {} });
     doc = A.change(doc, (q) => listTask(q, 'K', { ...entry('T1'), needs: ['unix'], near: 'P' }));
-    expect(A.toJS(doc).jobs.K).toEqual({ taskUrl: url('T1'), askedAt: 1, package: 'pkg', needs: ['unix'], near: 'P' });
+    expect(A.toJS(doc).jobs.K).toEqual({ taskUrl: url('T1'), askedAt: 1, needs: ['unix'], near: 'P' });
     expect(waitingWork(doc)[0]).toMatchObject({ key: 'K', needs: ['unix'], near: 'P' });
   });
 
@@ -1832,7 +1832,7 @@ describe('listTask', () => {
 });
 
 describe('delistTask', () => {
-  const entry = (name: string) => ({ taskUrl: url(name), askedAt: 1, package: null });
+  const entry = (name: string) => ({ taskUrl: url(name), askedAt: 1 });
 
   it('deletes the entry when it names the task', () => {
     const queue: Queue = { jobs: { K: entry('T1'), J: entry('T1') } };
@@ -1859,7 +1859,7 @@ describe('delistTask', () => {
 
 describe('named, entryAt and waitingWork', () => {
   it("named says 'this', 'other' or 'none', and treats what is not an entry as none", () => {
-    const queue = { jobs: { K: { taskUrl: url('T1'), askedAt: 1, package: null }, J: 'junk' } } as unknown as Queue;
+    const queue = { jobs: { K: { taskUrl: url('T1'), askedAt: 1 }, J: 'junk' } } as unknown as Queue;
     expect(named(queue, 'K', url('T1'))).toBe('this');
     expect(named(queue, 'K', url('T2'))).toBe('other');
     expect(named(queue, 'J', url('T1'))).toBe('none');
@@ -1891,7 +1891,7 @@ describe('named, entryAt and waitingWork', () => {
     expect(agree(empty, 'empty')).toEqual([]);
     const full: Queue = { jobs: {} };
     for (const key of KEYS.filter((it) => it !== '__proto__')) {
-      listTask(full, key, { taskUrl: url(`T${key}`), askedAt: 1, package: null });
+      listTask(full, key, { taskUrl: url(`T${key}`), askedAt: 1 });
     }
     expect(agree(full, 'full').sort()).toEqual(KEYS.filter((it) => it !== '__proto__').sort());
   });
@@ -1901,10 +1901,10 @@ describe('named, entryAt and waitingWork', () => {
     expect(agree(base, 'empty')).toEqual([]);
     const doc = A.change(replica(base, 'a'), (queue) => {
       for (const key of KEYS.filter((it) => it !== '__proto__')) {
-        listTask(queue, key, { taskUrl: url(`T${key}`), askedAt: 1, package: null });
+        listTask(queue, key, { taskUrl: url(`T${key}`), askedAt: 1 });
       }
       // anyone can write a queue: a key the rules refuse, written directly
-      (queue.jobs as any)['__proto__'] = { taskUrl: url('Tproto'), askedAt: 0, package: null };
+      (queue.jobs as any)['__proto__'] = { taskUrl: url('Tproto'), askedAt: 0 };
     });
     const merged = A.merge(replica(base, 'b'), doc);
     for (const it of [doc, merged]) {
@@ -1917,10 +1917,10 @@ describe('named, entryAt and waitingWork', () => {
     const doc = A.from<Queue>({ jobs: {} }, actor('0'));
     const heads = A.getHeads(doc);
     expect(() =>
-      A.change(doc, (queue) => listTask(queue, '__proto__', { taskUrl: url('T1'), askedAt: 1, package: null })),
+      A.change(doc, (queue) => listTask(queue, '__proto__', { taskUrl: url('T1'), askedAt: 1 })),
     ).toThrow(/__proto__/);
     expect(A.getHeads(doc)).toEqual(heads);
-    const next = A.change(doc, (queue) => listTask(queue, 'K', { taskUrl: url('T2'), askedAt: 1, package: null }));
+    const next = A.change(doc, (queue) => listTask(queue, 'K', { taskUrl: url('T2'), askedAt: 1 }));
     expect(waitingWork(next).map((it) => it.key)).toEqual(['K']);
   });
 });
@@ -2219,7 +2219,7 @@ describe('merges', () => {
 
   describe('a queue key', () => {
     const baseQueue = (jobs: Queue['jobs'] = {}) => A.from<Queue>({ jobs }, actor('0'));
-    const entry = (name: string) => ({ taskUrl: url(name), askedAt: 1, package: null });
+    const entry = (name: string) => ({ taskUrl: url(name), askedAt: 1 });
 
     it("listed by two replicas at once keeps one entry, the same on both, 'this' for one task and 'other' for the other", () => {
       const base = baseQueue();
@@ -2462,7 +2462,7 @@ describe('merges', () => {
 
   describe('a queue key over a longer history', () => {
     const baseQueue = (jobs: Queue['jobs'] = {}) => A.from<Queue>({ jobs }, actor('0'));
-    const entry = (name: string) => ({ taskUrl: url(name), askedAt: 1, package: null });
+    const entry = (name: string) => ({ taskUrl: url(name), askedAt: 1 });
 
     it('a replica that last saw the first entry and delists it leaves an entry listed after that one was replaced and delisted in turn', () => {
       for (const [staleActor, liveActor] of [
@@ -2544,18 +2544,17 @@ describe('taskResult and taskError', () => {
 
 describe('waitingWork', () => {
   const jobs = {
-    b: { taskUrl: url('Tb'), askedAt: 5, package: 'pkg' },
-    a: { taskUrl: url('Ta'), askedAt: 5, package: null },
+    b: { taskUrl: url('Tb'), askedAt: 5 },
+    a: { taskUrl: url('Ta'), askedAt: 5 },
     c: { taskUrl: url('Tc'), askedAt: 1 },
     d: 'junk',
     e: { taskUrl: url('Te') },
   };
 
-  it('lists every entry, oldest ask first and by key among asks made at once; a missing ask time counts as 0 and a missing package as null', () => {
+  it('lists every entry, oldest ask first and by key among asks made at once; a missing ask time counts as 0', () => {
     const work = waitingWork({ jobs } as unknown as Queue);
     expect(work.map((it) => it.key)).toEqual(['e', 'c', 'a', 'b']);
-    expect(work.find((it) => it.key === 'c')?.package).toBeNull();
-    expect(work.find((it) => it.key === 'b')).toEqual({ key: 'b', taskUrl: url('Tb'), askedAt: 5, package: 'pkg', needs: [] });
+    expect(work.find((it) => it.key === 'b')).toEqual({ key: 'b', taskUrl: url('Tb'), askedAt: 5, needs: [] });
     expect(waitingWork(undefined)).toEqual([]);
     expect(waitingWork({} as Queue)).toEqual([]);
   });
@@ -2563,15 +2562,15 @@ describe('waitingWork', () => {
   it('carries needs as written, none where none are, and near only where it is a string', () => {
     const work = waitingWork({
       jobs: {
-        a: { taskUrl: url('Ta'), askedAt: 1, package: null, needs: ['unix'], near: 'P' },
-        b: { taskUrl: url('Tb'), askedAt: 2, package: null },
-        c: { taskUrl: url('Tc'), askedAt: 3, package: null, needs: 'unix', near: 7 },
+        a: { taskUrl: url('Ta'), askedAt: 1, needs: ['unix'], near: 'P' },
+        b: { taskUrl: url('Tb'), askedAt: 2 },
+        c: { taskUrl: url('Tc'), askedAt: 3, needs: 'unix', near: 7 },
       },
     } as unknown as Queue);
     expect(work).toEqual([
-      { key: 'a', taskUrl: url('Ta'), askedAt: 1, package: null, needs: ['unix'], near: 'P' },
-      { key: 'b', taskUrl: url('Tb'), askedAt: 2, package: null, needs: [] },
-      { key: 'c', taskUrl: url('Tc'), askedAt: 3, package: null, needs: 'unix' },
+      { key: 'a', taskUrl: url('Ta'), askedAt: 1, needs: ['unix'], near: 'P' },
+      { key: 'b', taskUrl: url('Tb'), askedAt: 2, needs: [] },
+      { key: 'c', taskUrl: url('Tc'), askedAt: 3, needs: 'unix' },
     ]);
     expect(work.map((it) => satisfies(['unix'], it.needs))).toEqual([true, true, false]);
   });
@@ -2885,10 +2884,10 @@ describe('settles', () => {
 describe('foldStep', () => {
   const T = url('T1');
   const T2 = url('T2');
-  const SPARE_ENTRY: Entry = { taskUrl: T, askedAt: 1, package: 'pkg', needs: ['unix'], near: 'P' };
-  const OWN_NAMES_T: Entry = { taskUrl: T, askedAt: 2, package: 'pkg', needs: ['unix'] };
-  const OWN_NAMES_T2: Entry = { taskUrl: T2, askedAt: 3, package: null, needs: [] };
-  const OTHER_KEY: Entry = { taskUrl: url('T9'), askedAt: 9, package: null, needs: [] };
+  const SPARE_ENTRY: Entry = { taskUrl: T, askedAt: 1, needs: ['unix'], near: 'P' };
+  const OWN_NAMES_T: Entry = { taskUrl: T, askedAt: 2, needs: ['unix'] };
+  const OWN_NAMES_T2: Entry = { taskUrl: T2, askedAt: 3, needs: [] };
+  const OTHER_KEY: Entry = { taskUrl: url('T9'), askedAt: 9, needs: [] };
 
   const record = (kind: Kind, index: number) => makeRun({ kind, pool: kind === 'stop' ? null : 'P' }, index);
 
@@ -3088,7 +3087,7 @@ describe('foldStep', () => {
         return `${step}: Automerge and plain objects differ`;
       }
 
-      const listed = (entry: Entry) => ({ taskUrl: entry.taskUrl, askedAt: entry.askedAt, package: entry.package, needs: entry.needs, ...(entry.near ? { near: entry.near } : {}) });
+      const listed = (entry: Entry) => ({ taskUrl: entry.taskUrl, askedAt: entry.askedAt, needs: entry.needs, ...(entry.near ? { near: entry.near } : {}) });
       const expectSpare =
         step === 'drop' ? { jobs: { J: OTHER_KEY } } : step === 'adopt' ? { jobs: { K: listed(OWN_NAMES_T2), J: OTHER_KEY } } : spareBefore;
       const expectOwn = step === 'list' ? { jobs: { ...ownBefore.jobs, K: listed(SPARE_ENTRY) } } : ownBefore;

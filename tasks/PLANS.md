@@ -204,8 +204,9 @@ that one machine serves.
   origin, beside the run's input and keys; on a Node host, in a thread with its user's privileges
   (their files, environment, processes and network), and a host's main thread imports every
   listed package's entry to describe it. A lookup by id is not pinned to a package or a version:
-  whichever installed package last registered that id answers, in the version installed. These
-  are the isolation work's to answer, with trust as a whole.
+  whichever installed package last registered that id answers, in the version installed. A pool
+  runs whatever code its served queues' tasks name, with no per-package choice; on a Node host
+  that is its user's privileges. These are the isolation work's to answer, with trust as a whole.
 - **What package management will own.** Two devices with different versions of a package
   installed run different code for the same task. A plugin whose package imports another
   package's files by automerge url loads only where that package is on the device. Packages the

@@ -81,7 +81,7 @@ the site's Repo, in Node one of your own.
   browser's pool, through the site's Repo, that is nothing, since the pool's messages reach
   another tab only on the task system's own BroadcastChannel. Asking does not depend on it.
 - `ownQueue(repo, element)` gives a page the url of its person's own queue, served by their
-  browsers for any code, making it the first time anything asks, with nothing pressed and nothing
+  browsers, making it the first time anything asks, with nothing pressed and nothing
   waited for on the network (see Serving a queue).
 
 ```js
@@ -290,18 +290,16 @@ mounts nothing, and the work waits on the queue for the person's other machines.
 Which queues it serves is kept in the account's tool storage for this package
 (`account.toolStorage['tasks-next']`, a document Patchwork's frame makes the first time it is
 needed). Its root is the list: each served queue is a key of its own, the queue's url, holding
-`true` (any code) or `{ packages }`; `own` names one's own queue; and `own:<queueUrl>`, holding
+`true`; `own` names one's own queue; and `own:<queueUrl>`, holding
 `true`, marks each queue made to be one's own. With nothing to make before writing, changes made
-at once on devices that have not synced all keep: two joins both stand, and two settings of one
-queue keep one whole. `servedOf`, `ownQueueOf`, `marksOf`, `sparesOf`, `setServed` and `ownQueue`
+at once on devices that have not synced all keep: two joins both stand. `servedOf`, `ownQueueOf`, `marksOf`, `sparesOf`, `setServed` and `ownQueue`
 in `src/task-client.js` are the only code that knows this. To serve a queue, open it in the Task
-Queue Browser and press Join queue; there you also choose whose code it runs (any, or named
-packages) and Leave.
+Queue Browser and press Join queue; there you can also Leave.
 
 **One's own queue.** A person always has one: whatever first needs it makes it (a page asking for
 work, the background component as it mounts, the badge as it mounts), and nobody presses
 anything. Making writes, in one change and only where it sees no `own`, the pointer, the new
-queue's mark and its url key, serving it for any code; nothing deletes or rewrites `own` or a
+queue's mark and its url key, serving it; nothing deletes or rewrites `own` or a
 mark. So every write of `own` is concurrent with every other, and the one that stands is
 Automerge's winner among them, the same on every replica with the same changes. Making waits on
 nothing: it writes in the page's Repo and is done, with no network too. Several copies of the
@@ -356,11 +354,9 @@ the queue's document, what is heard on the queue's channel), and never starting 
 **On a machine.** `pnpm build:node`, then `node dist-node/host.mjs` with:
 
 - `--queue automerge:…` a queue to serve; repeat for more.
-- `--accept automerge:<package>` run code in that package, at any version; repeat for more.
-- `--accept-any` run whatever a queue's tasks bring, `data:` URLs included.
 - `--new-queue "title"` make a queue, print its url, and serve it.
 - `--local automerge:<package>=<dir>` run that package's code from this directory instead of
-  fetching it from automerge, whichever version a task names; it also accepts the package. For a
+  fetching it from automerge, whichever version a task names. For a
   machine with the package checked out and installed beside the programs its code drives (a
   solver). This is task code only: on a host given `--modules`, the package's plugins come from
   the copy the host writes from automerge, not from this directory.
@@ -381,8 +377,7 @@ the queue's document, what is heard on the queue's channel), and never starting 
 - `--sync wss://…` the sync server (`PATCHWORK_SYNC`, or Ink & Switch's).
 - `--verbose` say more.
 
-A host needs at least one `--queue` or `--new-queue`, and says whose code it runs: `--accept` or
-`--local` packages, or else `--accept-any`, never both. SIGINT or SIGTERM stops it: its runs are
+A host needs at least one `--queue` or `--new-queue`. SIGINT or SIGTERM stops it: its runs are
 told `stopping`, their threads ended at most five seconds later, and each run recorded lost, to be
 taken again. What a run that has ended wrote is in its thread's storage, and reaches the sync
 server as that thread's Repo syncs it.
@@ -506,8 +501,7 @@ processes and say what they saw, one line per check or measurement:
   run lost and exits in time, a restart runs it again, and a guarded task fails rather than run
   twice; 7, kill -9 and a restart take it again; 8, two hosts fail over; 9, two hosts share four
   tasks listed at once, one run each and none yielded; 10, `served()` lists a host, and drops it
-  within a second of its stopping, on its last word that it has no slots; 11, a second host on one data directory refuses; 12, code a host does not accept
-  is never taken; 13, 1 MB written by a task is found by the asker within 30 s; 16, a task whose document reaches the
+  within a second of its stopping, on its last word that it has no slots; 11, a second host on one data directory refuses; 13, 1 MB written by a task is found by the asker within 30 s; 16, a task whose document reaches the
   server after its listing is taken within 1.5 s; 17, ten tasks needing a label only one of two
   hosts has all run there, once each; 18, a task needing a label no host has stays listed,
   untaken, until a third host with it starts and runs it; 19, a task asked `near` a host runs on
@@ -605,7 +599,7 @@ processes and say what they saw, one line per check or measurement:
   Then: the pool worker and the run workers load from the package through the site's service
   worker; ten do-nothing tasks are asked through this tab's tasks Repo and ten through the
   site's own (keyhive) Repo; the package's own task module, a throw, a spin cancelled and its
-  run worker gone, serving only named packages, `served()`, and the queue browser's and badge's
+  run worker gone, `served()`, and the queue browser's and badge's
   lines; documents tasks write reach the site's Repo and this tab's tasks Repo within 30 s;
   `doWork`, `watchWork` and `stopWork` from the page.
 - `probes/append-run.mjs` (after `pnpm build:node`): a Node host, through the real sync server,

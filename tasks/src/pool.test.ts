@@ -11,7 +11,6 @@ import { initSubduction, Repo, type AutomergeUrl, type DocHandle } from '@autome
 import type { Repo as NodeRepo } from '@automerge/automerge-repo-node';
 import type { Repo as SiteRepo } from 'site-automerge-repo';
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Acceptance } from './acceptance';
 import {
   Pool,
   type Clock,
@@ -246,14 +245,14 @@ function world() {
   const repoWork = countingWork(repo);
   const queue = repo.create<Queue>({ title: 'q', jobs: {} });
   let asked = 0;
-  type AskMore = { importUrl?: string; package?: string | null; askedAt?: number; runs?: Run[]; queue?: Handle<Queue> };
+  type AskMore = { importUrl?: string; askedAt?: number; runs?: Run[]; queue?: Handle<Queue> };
   /** A task made and not yet listed. */
   const make = (key: string, more: AskMore = {}) =>
     repo.create<Task>({ importUrl: more.importUrl ?? CODE, input: { key }, key, runs: more.runs ?? [] });
   /** Lists a task made by `make` under its key. */
   const list = (task: Handle<Task>, more: AskMore = {}) =>
     (more.queue ?? queue).change((doc) =>
-      listTask(doc, task.doc()!.key, { taskUrl: task.url, askedAt: more.askedAt ?? ++asked, package: more.package ?? null }),
+      listTask(doc, task.doc()!.key, { taskUrl: task.url, askedAt: more.askedAt ?? ++asked }),
     );
   const ask = (key: string, more: AskMore = {}) => {
     const task = make(key, more);
@@ -270,7 +269,7 @@ function world() {
       slots: 1,
       has: [],
       executor,
-      queues: { [queue.url]: 'any' },
+      queues: [queue.url],
       ears,
       clock,
       ...more,
@@ -365,7 +364,7 @@ describe('the design cases', () => {
     const repoB = new Repo({ network: [] } as any);
     const queueA = repoA.create<Queue>({ title: 'q', jobs: {} });
     const taskA = repoA.create<Task>({ importUrl: CODE, input: null, key: 'k', runs: [] });
-    queueA.change((doc) => listTask(doc, 'k', { taskUrl: taskA.url, askedAt: 1, package: null }));
+    queueA.change((doc) => listTask(doc, 'k', { taskUrl: taskA.url, askedAt: 1 }));
     const queueB = repoB.import<Queue>(A.save(queueA.doc()), { docId: queueA.documentId } as any);
     const taskB = repoB.import<Task>(A.save(taskA.doc()), { docId: taskA.documentId } as any);
     const merge = () => {
@@ -386,7 +385,7 @@ describe('the design cases', () => {
         slots: 1,
         has: [],
         executor,
-        queues: { [queueA.url]: 'any' },
+        queues: [queueA.url],
         // not knowing of each other, neither holds back for the other
         ears: deafToServing(net.ears()),
         clock,
@@ -442,7 +441,7 @@ describe('the design cases', () => {
       const repoB = new Repo({ network: [] } as any);
       const queueA = repoA.create<Queue>({ title: 'q', jobs: {} });
       const taskA = repoA.create<Task>({ importUrl: CODE, input: null, key: 'k', runs: [] });
-      queueA.change((doc) => listTask(doc, 'k', { taskUrl: taskA.url, askedAt: 1, package: null }));
+      queueA.change((doc) => listTask(doc, 'k', { taskUrl: taskA.url, askedAt: 1 }));
       const queueB = repoB.import<Queue>(A.save(queueA.doc()), { docId: queueA.documentId } as any);
       const taskB = repoB.import<Task>(A.save(taskA.doc()), { docId: taskA.documentId } as any);
       (ahead === 'A' ? taskA : taskB).change((doc) => void (doc.title = 'one change ahead'));
@@ -460,7 +459,7 @@ describe('the design cases', () => {
       earsB.deaf = earsB.mute = true;
       const start = (id: string, repo: Repo, ears: Ears) => {
         const executor = new FakeExecutor(clock);
-        const pool = new Pool({ repo: repo as Docs, id, name: id, slots: 1, has: [], executor, queues: { [queueA.url]: 'any' }, ears: deafToServing(ears), clock });
+        const pool = new Pool({ repo: repo as Docs, id, name: id, slots: 1, has: [], executor, queues: [queueA.url], ears: deafToServing(ears), clock });
         return { pool, executor };
       };
       const a = start('A', repoA, net.ears());
@@ -568,7 +567,7 @@ describe('the design cases', () => {
       slots: 1,
       has: [],
       executor,
-      queues: { [savedQueue.url]: 'any' },
+      queues: [savedQueue.url],
       ears: w.net.ears(),
       clock: w.clock,
     });
@@ -667,7 +666,7 @@ describe('the design cases', () => {
     // the merge of the two asks kept the other one under the key
     const second = w.repo.create<Task>({ importUrl: CODE, input: null, key: 'k', runs: [] });
     w.queue.change((doc) => {
-      doc.jobs.k = { taskUrl: second.url, askedAt: 1, package: null };
+      doc.jobs.k = { taskUrl: second.url, askedAt: 1 };
     });
     await settle();
     expect(executor.of(firstRun).aborts.map((it) => it.reason)).toEqual(['yielded']);
@@ -831,11 +830,11 @@ describe('the pool', () => {
     const second = w.repo.create<Queue>({ title: 'second', jobs: {} });
     const task = w.ask('k');
     // the same task listed twice, in two queues it serves
-    second.change((doc) => listTask(doc, 'other key', { taskUrl: task.url, askedAt: 0, package: null }));
+    second.change((doc) => listTask(doc, 'other key', { taskUrl: task.url, askedAt: 0 }));
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const docs: Docs = { find: (url) => w.repo.find(url) as any, flush: () => gate };
-    const { executor } = w.pool('A', { repo: docs, slots: 3, queues: { [w.queue.url]: 'any', [second.url]: 'any' } });
+    const { executor } = w.pool('A', { repo: docs, slots: 3, queues: [w.queue.url, second.url] });
     await settle();
     await w.clock.advance(BEAT_MS * 2); // looked at again while its start is being saved
     expect(runsOf(task)).toHaveLength(1);
@@ -857,7 +856,7 @@ describe('the pool', () => {
       ['cancel', (_, task) => stop(task), 'cancelled'],
       [
         'yield',
-        (_, task) => w.queue.change((doc) => void (doc.jobs[task.doc().key] = { taskUrl: 'automerge:x' as AutomergeUrl, askedAt: 0, package: null })),
+        (_, task) => w.queue.change((doc) => void (doc.jobs[task.doc().key] = { taskUrl: 'automerge:x' as AutomergeUrl, askedAt: 0 })),
         'yielded',
       ],
     ];
@@ -934,7 +933,7 @@ describe('the pool', () => {
   it('ends a stopped worker within GRACE_MS on its clock, for every reason, unless it finished first', async () => {
     const reasons: [StopReason, (task: Handle<Task>, pool: Pool) => void][] = [
       ['cancelled', (task) => stop(task)],
-      ['yielded', (task) => w.queue.change((doc) => void (doc.jobs.k = { taskUrl: 'automerge:x' as AutomergeUrl, askedAt: 0, package: null }))],
+      ['yielded', (task) => w.queue.change((doc) => void (doc.jobs.k = { taskUrl: 'automerge:x' as AutomergeUrl, askedAt: 0 }))],
       ['stopping', (_, pool) => void pool.stop()],
     ];
     for (const [reason, stop] of reasons) {
@@ -1000,32 +999,12 @@ describe('the pool', () => {
     expect(executor.workers).toHaveLength(2);
   });
 
-  it('checks the importUrl before taking, and leaves a task it does not accept with no run', async () => {
-    const accepted = w.ask('accepted', { importUrl: codeIn(PKG), package: PKG });
-    // listed as in the package, but its code is somewhere else
-    const elsewhere = w.ask('elsewhere', { importUrl: codeIn(OTHER_PKG), package: PKG });
-    const inline = w.ask('inline', { importUrl: CODE, package: null });
-    const { executor } = w.pool('A', { slots: 3, queues: { [w.queue.url]: [PKG] satisfies Acceptance } });
-    await settle();
-    await w.clock.advance(LAPSE_MS);
-    expect(runsOf(accepted)).toHaveLength(1);
-    expect(runsOf(elsewhere)).toEqual([]);
-    expect(runsOf(inline)).toEqual([]);
-    expect(executor.workers.map((it) => it.job!.importUrl)).toEqual([codeIn(PKG)]);
-    // a pool that accepts any code takes them, once it has listened to the queue
-    w.pool('B', { slots: 3 });
-    await settle();
-    await w.clock.advance(LISTEN_MS);
-    expect(runsOf(elsewhere).map((run) => run.pool)).toEqual(['B']);
-    expect(runsOf(inline).map((run) => run.pool)).toEqual(['B']);
-  });
-
   it('hands over the importUrl and input as read when it checked, not as they are once saved', async () => {
-    const task = w.ask('k', { importUrl: codeIn(PKG), package: PKG });
+    const task = w.ask('k', { importUrl: codeIn(PKG) });
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const docs: Docs = { find: (url) => w.repo.find(url) as any, flush: () => gate };
-    const { executor } = await w.started('A', { repo: docs, queues: { [w.queue.url]: [PKG] } });
+    const { executor } = await w.started('A', { repo: docs });
     await settle();
     task.change((doc) => {
       doc.importUrl = codeIn(OTHER_PKG);
@@ -1219,7 +1198,7 @@ describe('the pool', () => {
 
   it('says it serves, on every queue it serves, the moment how many of its slots are busy changes; stopping, it says once that it has no slots, and nothing after', async () => {
     const other = w.repo.create<Queue>({ title: 'other', jobs: {} });
-    const { pool, executor } = await w.started('A', { slots: 2, queues: { [w.queue.url]: 'any', [other.url]: 'any' } });
+    const { pool, executor } = await w.started('A', { slots: 2, queues: [w.queue.url, other.url] });
     const said = (url: string) =>
       w.net.sent.filter((it) => it.url === url && it.message.type === 'serving').map((it) => [it.message.slots, it.message.busy]);
     const [before, otherBefore] = [said(w.queue.url).length, said(other.url).length];
@@ -1413,7 +1392,7 @@ describe('the pool', () => {
     for (const runs of [null, {}, 5, 'r']) {
       w = world();
       const broken = w.repo.create<any>({ importUrl: CODE, input: null, key: 'broken', runs });
-      w.queue.change((doc) => listTask(doc, 'broken', { taskUrl: broken.url, askedAt: 0, package: null }));
+      w.queue.change((doc) => listTask(doc, 'broken', { taskUrl: broken.url, askedAt: 0 }));
       const heads = broken.heads();
       const good = w.ask('good');
       const { pool } = w.pool('A');
@@ -1584,7 +1563,7 @@ describe('settling', () => {
       () => {
         const other = w.make('k');
         w.queue.change((doc) => {
-          doc.jobs.k = { taskUrl: other.url, askedAt: 1, package: null };
+          doc.jobs.k = { taskUrl: other.url, askedAt: 1 };
         });
       },
       'yielded',
@@ -1715,7 +1694,7 @@ describe('settling, as a checker attacks it', () => {
         slots: 1,
         has: [],
         executor,
-        queues: { [queueA.url]: 'any' },
+        queues: [queueA.url],
         ears: deafToServing(ears),
         clock: w.clock,
       });
@@ -1764,7 +1743,7 @@ describe('settling, as a checker attacks it', () => {
         taskA.merge(taskB);
       }, gap + bToA);
       // A sees the listing now, B `gap` later
-      queueA.change((doc) => listTask(doc, 'k', { taskUrl: taskA.url, askedAt: 1, package: null }));
+      queueA.change((doc) => listTask(doc, 'k', { taskUrl: taskA.url, askedAt: 1 }));
       await settle();
       await w.clock.advance(6_000);
 
@@ -1907,7 +1886,7 @@ describe('what a pool has', () => {
   /** A task with these needs, listed with these needs on its entry. */
   const askNeeding = (key: string, taskNeeds: unknown, entryNeeds: unknown = taskNeeds) => {
     const task = w.repo.create<Task>({ importUrl: CODE, input: null, key, needs: taskNeeds as string[], runs: [] });
-    w.queue.change((doc) => listTask(doc, key, { taskUrl: task.url, askedAt: 1, package: null, needs: entryNeeds }));
+    w.queue.change((doc) => listTask(doc, key, { taskUrl: task.url, askedAt: 1, needs: entryNeeds }));
     return task;
   };
 
@@ -1966,7 +1945,7 @@ describe('the preferred pool', () => {
   const list = (tasks: Handle<Task> | Handle<Task>[], near?: string) =>
     w.queue.change((doc) => {
       for (const task of [tasks].flat()) {
-        listTask(doc, task.doc()!.key, { taskUrl: task.url, askedAt: ++askedAt, package: null, needs: task.doc()!.needs, near });
+        listTask(doc, task.doc()!.key, { taskUrl: task.url, askedAt: ++askedAt, needs: task.doc()!.needs, near });
       }
     });
   /** Two pool ids for a task: the one `preferred` names when both have a free slot, then the other. */
@@ -2071,7 +2050,7 @@ describe('the preferred pool', () => {
       const start = (id: string, repo: Repo) => {
         const executor = new FakeExecutor(w.clock);
         const ears = w.net.ears();
-        new Pool({ repo: repo as Docs, id, name: id, slots: 1, has: [], executor, queues: { [queueP.url]: 'any' }, ears, clock: w.clock });
+        new Pool({ repo: repo as Docs, id, name: id, slots: 1, has: [], executor, queues: [queueP.url], ears, clock: w.clock });
         return { executor, ears };
       };
       const p = start('P', repoP);
@@ -2099,8 +2078,8 @@ describe('the preferred pool', () => {
       }
       const listedAt = w.clock.now();
       queueP.change((doc) => {
-        listTask(doc, 'busy', { taskUrl: busy.url, askedAt: 1, package: null, needs: [], near: 'P' });
-        listTask(doc, 'task', { taskUrl: task.url, askedAt: 2, package: null, needs: [], near: 'P' });
+        listTask(doc, 'busy', { taskUrl: busy.url, askedAt: 1, needs: [], near: 'P' });
+        listTask(doc, 'task', { taskUrl: task.url, askedAt: 2, needs: [], near: 'P' });
       });
       merge();
       await settleBoth();
@@ -2164,14 +2143,14 @@ describe('the preferred pool', () => {
     };
     const start = (id: string, repo: Docs) => {
       const executor = new FakeExecutor(w.clock);
-      new Pool({ repo, id, name: id, slots: 1, has: [], executor, queues: { [queueP.url]: 'any' }, ears: w.net.ears(), clock: w.clock });
+      new Pool({ repo, id, name: id, slots: 1, has: [], executor, queues: [queueP.url], ears: w.net.ears(), clock: w.clock });
       return executor;
     };
     const p = start('P', repoP as Docs);
     const o = start('O', docsO);
     await settleBoth();
     await w.clock.advance(LISTEN_MS);
-    const entry = { taskUrl: taskP.url, askedAt: 1, package: null, needs: [], near: 'P' };
+    const entry = { taskUrl: taskP.url, askedAt: 1, needs: [], near: 'P' };
     // the listing reaches O first; then P, which takes it and says it is full
     queueO.change((doc) => listTask(doc, 'k', entry));
     await settleBoth();
@@ -2260,36 +2239,6 @@ describe('the preferred pool', () => {
     expect(p.executor.workers).toHaveLength(1);
   });
 
-  it('the preferred pool does not accept the code: the other takes it HOLD_MS after first seeing it, not before', async () => {
-    const task = made('k');
-    const [P, O] = byPreference(task);
-    const [p, o] = await w.startedAll([P, { queues: { [w.queue.url]: [PKG] satisfies Acceptance } }], [O]);
-    const seenAt = w.clock.now();
-    list(task);
-    await settle();
-    expect(runsOf(task)).toEqual([]);
-    await w.clock.advance(HOLD_MS - 1);
-    expect(runsOf(task)).toEqual([]);
-    await w.clock.advance(1);
-    expect(poolsOf(task)).toEqual([O]);
-    expect(startsOf(task)).toEqual([seenAt + HOLD_MS]);
-    expect(p.executor.workers).toHaveLength(0);
-    expect(o.executor.workers).toHaveLength(1);
-  });
-
-  it('a pool stopped while it holds back leaves no timer behind', async () => {
-    const task = made('k');
-    const [P, O] = byPreference(task);
-    const [p, o] = await w.startedAll([P, { queues: { [w.queue.url]: [PKG] satisfies Acceptance } }], [O]);
-    list(task);
-    await settle();
-    await w.clock.advance(HOLD_MS / 2);
-    // O first: P's last word, no slots, would have O rank the task anew and take it at once
-    await Promise.all([o.pool.stop(), p.pool.stop()]);
-    expect(w.clock.pending).toBe(0);
-    expect(runsOf(task)).toEqual([]);
-  });
-
   it('a pool that stops says it has no slots and is not waited for: the run it had, recorded lost, and work listed near it afterwards are taken by the other at once, whatever its slots', async () => {
     for (const slots of [1, 2]) {
       w = world();
@@ -2348,7 +2297,7 @@ describe('the preferred pool', () => {
     const lastWord = w.clock.now();
     expect(w.net.sent.filter((it) => it.message.type === 'serving' && it.message.pool === 'P').length).toBeGreaterThan(0);
     p.ears.mute = true;
-    p.pool.serve({});
+    p.pool.serve([]);
 
     const [early, edge, lapsed] = ['early', 'edge', 'lapsed'].map((key) => made(key));
     list(early, 'P');
@@ -2468,7 +2417,7 @@ describe('the preferred pool', () => {
     const pools = specs.map(([id, more], i) => {
       const executor = new FakeExecutor(w.clock);
       const ears = w.net.ears();
-      const pool = new Pool({ repo: repos[i] as Docs, id, name: id, slots: more?.slots ?? 1, has: [], executor, queues: { [queue.url]: 'any' }, ears, clock: w.clock });
+      const pool = new Pool({ repo: repos[i] as Docs, id, name: id, slots: more?.slots ?? 1, has: [], executor, queues: [queue.url], ears, clock: w.clock });
       return { id, pool, executor, ears };
     });
     await settleAll();
@@ -2487,7 +2436,7 @@ describe('the preferred pool', () => {
       },
       /** Lists a task on the first machine's copy of the queue, as `ask` would; it crosses with the queue. */
       list(task: DocHandle<Task>, near?: string) {
-        queue.change((doc) => listTask(doc, task.doc()!.key, { taskUrl: task.url, askedAt: ++askedAt, package: null, needs: task.doc()!.needs, near }));
+        queue.change((doc) => listTask(doc, task.doc()!.key, { taskUrl: task.url, askedAt: ++askedAt, needs: task.doc()!.needs, near }));
       },
       /** The queue's copies cross, and those of each document given, or of every document when none is. */
       async cross(...only: DocHandle<any>[]) {
@@ -2603,7 +2552,7 @@ describe('the preferred pool', () => {
     };
     const start = (id: string, repo: Docs) => {
       const executor = new FakeExecutor(w.clock);
-      new Pool({ repo, id, name: id, slots: 1, has: [], executor, queues: { [queueP.url]: 'any' }, ears: w.net.ears(), clock: w.clock });
+      new Pool({ repo, id, name: id, slots: 1, has: [], executor, queues: [queueP.url], ears: w.net.ears(), clock: w.clock });
       return executor;
     };
     const p = start('P', docsP);
@@ -2611,7 +2560,7 @@ describe('the preferred pool', () => {
     await settleBoth();
     await w.clock.advance(LISTEN_MS);
     const listedAt = w.clock.now();
-    queueP.change((doc) => listTask(doc, 'k', { taskUrl: taskO.url, askedAt: 1, package: null, needs: [], near: 'P' }));
+    queueP.change((doc) => listTask(doc, 'k', { taskUrl: taskO.url, askedAt: 1, needs: [], near: 'P' }));
     queueO.merge(queueP);
     await settleBoth();
     expect(runsOf(taskO)).toEqual([]);
@@ -2697,7 +2646,7 @@ describe('the preferred pool', () => {
       if (how === 'stops') {
         await p.pool.stop();
       } else {
-        p.pool.serve({});
+        p.pool.serve([]);
       }
       await settle();
       expect(w.net.sent.filter((it) => it.message.type === 'serving' && it.message.pool === 'P').at(-1)?.message).toMatchObject({ slots: 0 });
@@ -2729,40 +2678,6 @@ describe('the preferred pool', () => {
     expect(p.executor.workers).toHaveLength(1);
     expect(o.executor.workers).toHaveLength(1);
   });
-
-  // Three pools on three machines, each ranked by `ranked`, and each set of
-  // them that never takes the task (they accept only a package it is not in):
-  // the first ranked of the rest takes it in its turn, rank × HOLD_MS after it
-  // was listed, and no other ever does, though a run crosses between machines
-  // only at the next half hold.
-  for (let never = 0; never < 8; never++) {
-    const ranks = [0, 1, 2].filter((rank) => never & (1 << rank));
-    const taker = [0, 1, 2].find((rank) => !(never & (1 << rank)));
-    const which = (rank: number) => ['the first', 'the second', 'the third'][rank];
-    it(`three machines, ${ranks.length === 0 ? 'every pool taking' : `${ranks.map(which).join(' and ')} ranked never taking`}: ${taker === undefined ? 'nobody takes the task' : `${which(taker)} takes it ${taker} HOLD_MS after it was listed, and only it`}`, async () => {
-      const m = await machines([['A'], ['B'], ['C']]);
-      const copies = m.make('k');
-      const order = ranked(copies[0].url, null, ['A', 'B', 'C'].map((pool) => ({ pool, slots: 1, busy: 0 })));
-      for (const rank of ranks) {
-        m.pools.find((it) => it.id === order[rank])!.pool.serve({ [m.queue.url]: [PKG] });
-      }
-      const listedAt = w.clock.now();
-      m.list(copies[0]);
-      await m.cross(m.queue);
-      for (let step = 0; step < 8; step++) {
-        await w.clock.advance(HOLD_MS / 2);
-        await m.settleAll();
-        await m.cross();
-      }
-      await w.clock.advance(LAPSE_MS);
-      await m.cross();
-      for (const copy of copies) {
-        expect(poolsOf(copy)).toEqual(taker === undefined ? [] : [order[taker]]);
-        expect(startsOf(copy)).toEqual(taker === undefined ? [] : [listedAt + taker * HOLD_MS]);
-      }
-      expect(m.pools.map((it) => it.executor.workers.length)).toEqual(m.pools.map((it) => (it.id === order[taker ?? -1] ? 1 : 0)));
-    });
-  }
 });
 
 describe('the pool, when something it uses throws', () => {
@@ -2811,7 +2726,7 @@ describe('the pool, when something it uses throws', () => {
 
   it('a task document without runs (anyone can write one) does not keep it from taking the next task', async () => {
     const broken = w.repo.create<any>({ importUrl: CODE, input: null, key: 'broken' });
-    w.queue.change((doc) => listTask(doc, 'broken', { taskUrl: broken.url, askedAt: 0, package: null }));
+    w.queue.change((doc) => listTask(doc, 'broken', { taskUrl: broken.url, askedAt: 0 }));
     const good = w.ask('good');
     const { pool } = await w.started('A');
     await settle();
@@ -3117,7 +3032,7 @@ describe('the pool, when a document arrives after its listing', () => {
     const { pool } = w.pool('A', { repo: late.docs });
     await settle();
     expect(late.live()).toBe(1);
-    pool.serve({});
+    pool.serve([]);
     expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
     late.arrive(w.queue.url);
     await settle();
@@ -3128,7 +3043,7 @@ describe('the pool, when a document arrives after its listing', () => {
     const other = w.repo.create<Queue>({ title: 'other', jobs: {} });
     const task = w.ask('k', { queue: other });
     const late = lateDocs([w.queue.url, task.url]);
-    const { pool } = w.pool('A', { repo: late.docs, queues: { [w.queue.url]: 'any', [other.url]: 'any' } });
+    const { pool } = w.pool('A', { repo: late.docs, queues: [w.queue.url, other.url] });
     await settle();
     expect(late.counts).toEqual({ subscribed: 2, unsubscribed: 0 });
     await pool.stop();
@@ -3251,7 +3166,7 @@ describe('the pool, when a document arrives after its listing', () => {
     w.queue.change((doc) => void delete doc.jobs.k);
     await settle();
     expect(late.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
-    w.queue.change((doc) => listTask(doc, 'k', { taskUrl: task.url, askedAt: 99, package: null }));
+    w.queue.change((doc) => listTask(doc, 'k', { taskUrl: task.url, askedAt: 99 }));
     await settle();
     expect(late.counts).toEqual({ subscribed: 2, unsubscribed: 1 });
     late.arrive(task.url);

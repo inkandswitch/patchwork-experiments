@@ -34,7 +34,6 @@ import {
   marksOf,
   ownQueue,
   ownQueueOf,
-  packageOf,
   parseAutomergeImport,
   run,
   send,
@@ -51,7 +50,7 @@ import {
   type Serving,
   type TaskView,
 } from './task-client.js';
-import { getAcceptance, getTaskQueues, isOnTaskQueue, joinTaskQueue, leaveTaskQueue, setAcceptance } from './helpers';
+import { getTaskQueues, isOnTaskQueue, joinTaskQueue, leaveTaskQueue } from './helpers';
 import { BEAT_MS, LAPSE_MS, LOST_TOO_OFTEN, MAX_LOG_LINES, allHeard, claimRun, delistTask, endRun, isWanted, listTask, mayClaim, named, stopReason, type Queue, type RunStatus, type Task } from './task-rules.js';
 
 await initSubduction();
@@ -149,7 +148,7 @@ const entryOf = (queue: DocHandle<Queue>, key: string) => queue.doc()!.jobs[key]
 /** Lists a document under `key` as an asker that wrote the documents itself would, and returns its handle: a task with these runs, unless `doc` is given. */
 function listed(repo: Repo, queue: DocHandle<Queue>, key: string, runs: Task['runs'] = [], doc?: unknown) {
   const task = repo.create<Task>((doc ?? { importUrl: CODE, input: null, key, runs }) as Task);
-  queue.change((it) => listTask(it, key, { taskUrl: task.url, askedAt: Date.now(), package: null }));
+  queue.change((it) => listTask(it, key, { taskUrl: task.url, askedAt: Date.now() }));
   return task;
 }
 
@@ -183,14 +182,13 @@ describe('ask', () => {
       runs: [],
     });
     expect(Object.keys(task.doc()!).sort()).toEqual(['importUrl', 'input', 'key', 'runs']);
-    expect(queue.doc()!.jobs).toEqual({ k: { taskUrl: got.taskUrl, askedAt, package: PKG, needs: [] } });
+    expect(queue.doc()!.jobs).toEqual({ k: { taskUrl: got.taskUrl, askedAt, needs: [] } });
     input.n = 2;
     expect((task.doc()!.input as { n: number }).n).toBe(1);
 
-    // with no input, null; code in no package, a null package
+    // with no input, null
     const bare = await ask(repo, queue.url, { importUrl: CODE, key: 'bare' });
     expect((await repo.find<Task>(bare.taskUrl as AutomergeUrl)).doc()!.input).toBeNull();
-    expect(entryOf(queue, 'bare').package).toBeNull();
   });
 
   it('writes needs on the task and copies them onto the entry; near goes on the entry alone', async () => {
@@ -212,7 +210,7 @@ describe('ask', () => {
     const again = await ask(repo, queue.url, { importUrl: CODE, key: 'k', needs: ['gpu'], near: 'P' });
     expect(again.taskUrl).toBe(first.taskUrl);
     expect((await repo.find<Task>(first.taskUrl as AutomergeUrl)).doc()!.needs).toEqual(['unix']);
-    expect(entryOf(queue, 'k')).toEqual({ taskUrl: first.taskUrl, askedAt: expect.any(Number), package: null, needs: ['unix'] });
+    expect(entryOf(queue, 'k')).toEqual({ taskUrl: first.taskUrl, askedAt: expect.any(Number), needs: ['unix'] });
   });
 
   it('refuses needs that are not a list of labels, and a near that is not a string, writing nothing', async () => {
@@ -292,7 +290,7 @@ describe('ask', () => {
   it('asking under a key whose task cannot be found (nobody could run it either) lists a new task over it', async () => {
     const { repo, queue } = world();
     const nowhere = generateAutomergeUrl();
-    queue.change((doc) => listTask(doc, 'k', { taskUrl: nowhere, askedAt: 0, package: null }));
+    queue.change((doc) => listTask(doc, 'k', { taskUrl: nowhere, askedAt: 0 }));
     const asking = ask(repo, queue.url, { importUrl: CODE, input: 3, key: 'k' });
     await settle();
     const got = await asking;
@@ -435,7 +433,7 @@ describe('cancel', () => {
   it('on a key whose task cannot be found: removes the entry, makes and writes no task, and is false', async () => {
     const { repo, queue } = world();
     const nowhere = generateAutomergeUrl();
-    queue.change((doc) => listTask(doc, 'k', { taskUrl: nowhere, askedAt: 0, package: null }));
+    queue.change((doc) => listTask(doc, 'k', { taskUrl: nowhere, askedAt: 0 }));
     const other = listed(repo, queue, 'other');
     const otherHeads = other.heads();
     const create = vi.spyOn(repo, 'create');
@@ -455,7 +453,7 @@ describe('cancel', () => {
     expect(await cancel(repo, queue.url, 'k')).toBe(false);
     expect(task.doc()!.runs.map((run) => run.status)).toEqual(['cancelled']);
     // and twice while the key still names it (another replica listed it again meanwhile): still one stop
-    queue.change((doc) => listTask(doc, 'k', { taskUrl: task.url, askedAt: Date.now(), package: null }));
+    queue.change((doc) => listTask(doc, 'k', { taskUrl: task.url, askedAt: Date.now() }));
     expect(await cancel(repo, queue.url, 'k')).toBe(false);
     expect(task.doc()!.runs.map((run) => run.status)).toEqual(['cancelled']);
     expect(entryOf(queue, 'k')).toBeUndefined();
@@ -527,7 +525,7 @@ describe('watch', () => {
     expect(watcher.last).toMatchObject({ state: 'stalled', taskUrl: first.url });
     // a copy carrying the same run name takes the key: first sight of its run counts as heard
     const second = repo.create<Task>({ importUrl: CODE, input: 'copy', key: 'k', runs: [opened('r')] });
-    queue.change((doc) => listTask(doc, 'k', { taskUrl: second.url, askedAt: Date.now(), package: null }, first.url));
+    queue.change((doc) => listTask(doc, 'k', { taskUrl: second.url, askedAt: Date.now() }, first.url));
     await settle();
     expect(watcher.last).toMatchObject({ state: 'running', taskUrl: second.url });
     // and a beat on the first task's channel says nothing of the second's run of that name
@@ -793,7 +791,7 @@ describe('watch with keep', () => {
     await vi.advanceTimersByTimeAsync(LAPSE_MS - 1);
     expect(entryOf(queue, 'k')).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1 + LAPSE_MS / 4);
-    expect(entryOf(queue, 'k')).toMatchObject({ taskUrl, package: PKG });
+    expect(entryOf(queue, 'k')).toMatchObject({ taskUrl });
     expect(entryOf(queue, 'k').askedAt).toBeGreaterThanOrEqual(goneAt + LAPSE_MS);
     expect(entryOf(queue, 'k').needs).toEqual([]);
     expect(writes).toBe(1);
@@ -811,7 +809,7 @@ describe('watch with keep', () => {
     queue.change((doc) => delistTask(doc, 'k', taskUrl));
     await settle();
     await vi.advanceTimersByTimeAsync(LAPSE_MS + LAPSE_MS / 4);
-    expect(entryOf(queue, 'k')).toEqual({ taskUrl, askedAt: expect.any(Number), package: null, needs: ['unix'] });
+    expect(entryOf(queue, 'k')).toEqual({ taskUrl, askedAt: expect.any(Number), needs: ['unix'] });
     watcher.stop();
   });
 
@@ -947,7 +945,7 @@ describe('run', () => {
     const { repo, queue, task, settled, promise } = await started();
     const theirs = repo.create<Task>({ importUrl: CODE, input: 'theirs', key: 'k', runs: [] });
     queue.change((doc) => {
-      doc.jobs.k = { taskUrl: theirs.url, askedAt: 0, package: null };
+      doc.jobs.k = { taskUrl: theirs.url, askedAt: 0 };
     });
     await settle();
     take(task, 'mine');
@@ -1171,7 +1169,7 @@ describe('import URLs', () => {
     const from = `https://site.example/automerge%3A${ID}%23${HEADS}/dist/assets/chunk.js?v=1`;
     expect(inSamePackage(from, 'dist/task.js')).toBe(`/automerge%3A${ID}%23${HEADS}/dist/task.js`);
     expect(inSamePackage(`https://site.example/automerge%3A${ID}/dist/x.js`, 'dist/task.js')).toBe(`/automerge%3A${ID}/dist/task.js`);
-    expect(packageOf(inSamePackage(from, 'dist/task.js')!)).toBe(PKG);
+    expect(parseAutomergeImport(inSamePackage(from, 'dist/task.js')!)?.packageUrl).toBe(PKG);
   });
 
   it('inSamePackage is null from anything that is not a file in a package', () => {
@@ -1200,7 +1198,6 @@ describe('import URLs', () => {
       'http://[::1',
     ]) {
       expect(parseAutomergeImport(odd), odd).toBeNull();
-      expect(packageOf(odd), odd).toBeNull();
     }
   });
 });
@@ -1818,7 +1815,7 @@ describe('fold', () => {
     const ended = listed(repo, spare, 'ended', [closed('r', 'succeeded')]);
     const elsewhere = newRepo();
     const away = elsewhere.create<Task>({ importUrl: CODE, input: null, key: 'away', runs: [] });
-    spare.change((doc) => listTask(doc, 'away', { taskUrl: away.url, askedAt: 0, package: null }));
+    spare.change((doc) => listTask(doc, 'away', { taskUrl: away.url, askedAt: 0 }));
     await outcome(fold(repo, storage), HERE_MS);
     expect(entryOf(spare, 'ended')).toBeUndefined();
     expect(entryOf(own, 'ended')).toBeUndefined();
@@ -1845,7 +1842,7 @@ describe('fold', () => {
     const find = repo.find.bind(repo);
     (repo as any).find = async (url: any) => {
       const found = await find(url);
-      if (url === first.url) spare.change((doc) => listTask(doc, 'k', { taskUrl: second.url, askedAt: 1, package: null }, first.url));
+      if (url === first.url) spare.change((doc) => listTask(doc, 'k', { taskUrl: second.url, askedAt: 1 }, first.url));
       return found;
     };
     await outcome(fold(repo, storage));
@@ -1958,16 +1955,6 @@ describe('the served queues on two replicas at once (helpers.ts writers on real 
     }
   });
 
-  it('a leave and a new setting of the same queue at once: the setting wins, on both, in either order (a leave removes only what it saw)', () => {
-    for (const served of race(
-      (d) => setAcceptance(d, Q1, ['automerge:pkg']),
-      (d) => leaveTaskQueue(d, Q1),
-      (d) => setAcceptance(d, Q1, 'any'),
-    )) {
-      expect(served).toEqual({ [Q1]: true });
-    }
-  });
-
   it('a join and a leave of the same queue at once, where the leaver had served it unseen: the join wins, on both, in either order', () => {
     for (const served of race(
       () => {},
@@ -1986,27 +1973,6 @@ describe('the served queues on two replicas at once (helpers.ts writers on real 
     )) {
       expect(served).toEqual({});
     }
-  });
-
-  it('two different settings of one queue at once: one of them, whole, the same on both; the actor orders reach both', () => {
-    const one = { [Q1]: { packages: ['automerge:p1'] } };
-    const other = { [Q1]: { packages: ['automerge:p2', 'automerge:p3'] } };
-    const results = race(
-      (d) => joinTaskQueue(d, Q1),
-      (d) => setAcceptance(d, Q1, ['automerge:p1']),
-      (d) => setAcceptance(d, Q1, ['automerge:p2', 'automerge:p3']),
-    ).map((served) => JSON.stringify(served));
-    expect(new Set(results)).toEqual(new Set([JSON.stringify(one), JSON.stringify(other)]));
-  });
-
-  it('a setting for named packages and one for any code at once: one of them, whole, the same on both; the actor orders reach both', () => {
-    // served at first for a third setting, so that each of the two writes something
-    const results = race(
-      (d) => setAcceptance(d, Q1, ['automerge:p0']),
-      (d) => setAcceptance(d, Q1, ['automerge:p1']),
-      (d) => setAcceptance(d, Q1, 'any'),
-    ).map((served) => JSON.stringify(served));
-    expect(new Set(results)).toEqual(new Set([JSON.stringify({ [Q1]: { packages: ['automerge:p1'] } }), JSON.stringify({ [Q1]: true })]));
   });
 
   it('keys on a real document that are not queue urls are never read as served', () => {
@@ -2461,7 +2427,6 @@ describe('doWork', () => {
     const { repo, queue } = await asked();
     doing(repo, { importUrl: codeIn(PKG), key: 'packaged' });
     await until(() => !!entryOf(queue, 'packaged'));
-    expect(entryOf(queue, 'packaged').package).toBe(PKG);
     expect(entryOf(queue, 'packaged').needs).toEqual([]);
     expect(g.__work).not.toHaveBeenCalled();
   });
@@ -2484,7 +2449,7 @@ describe('doWork', () => {
         await until(() => !!entryOf(queue!, 'dev'));
         const task = await repo.find<Task>(entryOf(queue!, 'dev').taskUrl as AutomergeUrl);
         expect(task.doc()).toMatchObject({ importUrl, needs: ['unix', 'pool:this-browser'] });
-        expect(entryOf(queue!, 'dev')).toMatchObject({ package: null, needs: ['unix', 'pool:this-browser'], near: 'this-browser' });
+        expect(entryOf(queue!, 'dev')).toMatchObject({ needs: ['unix', 'pool:this-browser'], near: 'this-browser' });
         expect(g.__work).not.toHaveBeenCalled();
       });
     }
@@ -3091,7 +3056,7 @@ describe('stopWork', () => {
       doc[spare.url] = true;
     });
     const task = listed(repo, spare, 'k');
-    queue!.change((doc) => listTask(doc, 'k', { taskUrl: task.url, askedAt: 0, package: null }));
+    queue!.change((doc) => listTask(doc, 'k', { taskUrl: task.url, askedAt: 0 }));
     expect((await outcome(stopWork(repo, 'k'))).value).toBe(true);
     expect(task.doc()!.runs.filter((run) => run.status === 'cancelled')).toHaveLength(1);
     expect(entryOf(spare, 'k')).toBeUndefined();

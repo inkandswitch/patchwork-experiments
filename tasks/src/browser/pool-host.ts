@@ -79,7 +79,6 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
 import { MessageChannelNetworkAdapter } from '@automerge/automerge-repo-network-messagechannel';
 import { getAllRegistries } from '@inkandswitch/patchwork-plugins';
-import { acceptanceOf } from '../acceptance';
 import { getAccountDocUrl, getTaskQueues, mergeStorages, storageLosersOf } from '../helpers';
 import { ownQueue, sparesOf, storageUrlOf } from '../task-client.js';
 import { getRepoConfig } from '../repo-config';
@@ -279,7 +278,7 @@ type Drain = 'let go' | 'nothing served' | 'newer build';
 class BrowserPoolHost implements PoolHost {
   private current: PoolHostStatus = NOT_STARTED;
   private readonly listeners = new Set<(status: PoolHostStatus) => void>();
-  private queues: ServedQueues = {};
+  private queues: ServedQueues = [];
   /** Whether `queues` has been read from the account (an account that names no storage is read as serving nothing). */
   private known = false;
   private following = false;
@@ -377,7 +376,7 @@ class BrowserPoolHost implements PoolHost {
       // no account can be found here: nothing is served
     }
     if (!url) {
-      this.setQueues({});
+      this.setQueues([]);
       return;
     }
     this.following = true;
@@ -399,7 +398,7 @@ class BrowserPoolHost implements PoolHost {
       storage = null;
       if (!next) {
         unfollowStorage = () => {};
-        this.setQueues({});
+        this.setQueues([]);
         return;
       }
       // Until the newly named document is here, the list being served stays
@@ -520,7 +519,7 @@ class BrowserPoolHost implements PoolHost {
     if (!this.known) {
       return 'unread';
     }
-    if (Object.keys(this.queues).length === 0) {
+    if (this.queues.length === 0) {
       return 'nothing served';
     }
     return null;
@@ -588,7 +587,7 @@ class BrowserPoolHost implements PoolHost {
     if (!this.known) {
       return 'reading';
     }
-    if (Object.keys(this.queues).length === 0) {
+    if (this.queues.length === 0) {
       return 'serves nothing';
     }
     return this.failure ? 'unavailable' : 'waiting';
@@ -812,16 +811,9 @@ export function pipe(repo: Repo, port: MessagePort): () => void {
   };
 }
 
-/** What the task storage document says to serve: each queue with whose code to run from it. */
+/** What the task storage document says to serve. */
 function servedQueuesOf(storage: unknown): ServedQueues {
-  const queues: ServedQueues = {};
-  for (const [url, setting] of Object.entries(getTaskQueues(storage))) {
-    const acceptance = acceptanceOf(setting);
-    if (acceptance !== undefined) {
-      queues[url as AutomergeUrl] = acceptance;
-    }
-  }
-  return queues;
+  return Object.keys(getTaskQueues(storage)) as AutomergeUrl[];
 }
 
 /** The page's import map, which the pool's Repo and a task's bare imports resolve by. */

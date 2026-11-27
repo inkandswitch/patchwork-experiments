@@ -1,6 +1,5 @@
 import { getConflicts } from '@automerge/automerge/slim';
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
-import { acceptanceOf, type Acceptance, type QueueSetting } from './acceptance';
 import {
   TASKS_STORAGE_ID,
   findWhenThere,
@@ -34,42 +33,28 @@ export function getAccountDocUrl(): AutomergeUrl {
   );
 }
 
-export type TaskQueues = { [taskQueueUrl: AutomergeUrl]: QueueSetting };
+export type TaskQueues = { [taskQueueUrl: AutomergeUrl]: true };
 
-/** The queues this person's browsers lend their workers to, from the task storage document, each with a setting that serves it. No document serves none. */
+/** The queues this person's browsers lend their workers to, from the task storage document: each one it lists under any truthy value. No document serves none. */
 export function getTaskQueues(storage: unknown): TaskQueues {
   const queues: TaskQueues = {};
   for (const [url, setting] of Object.entries(servedOf(storage))) {
-    if (acceptanceOf(setting) !== undefined) {
-      queues[url as AutomergeUrl] = setting as QueueSetting;
+    if (setting) {
+      queues[url as AutomergeUrl] = true;
     }
   }
   return queues;
 }
 
 export function isOnTaskQueue(storage: unknown, taskQueueUrl: AutomergeUrl) {
-  return getAcceptance(storage, taskQueueUrl) !== undefined;
+  return Object.hasOwn(getTaskQueues(storage), taskQueueUrl);
 }
 
-/** Serves a queue for any code, unless it is served already (when its setting stands). Call it inside a change to the storage document. */
+/** Serves a queue, unless it is served already. Call it inside a change to the storage document. */
 export function joinTaskQueue(storage: TasksStorage, taskQueueUrl: AutomergeUrl) {
   if (!isOnTaskQueue(storage, taskQueueUrl)) {
     setServed(storage, taskQueueUrl, true);
   }
-}
-
-/** Whose code this person's browsers run from a queue they serve (see acceptance.ts). */
-export function getAcceptance(storage: unknown, taskQueueUrl: AutomergeUrl): Acceptance | undefined {
-  const served = servedOf(storage);
-  return Object.hasOwn(served, taskQueueUrl) ? acceptanceOf(served[taskQueueUrl]) : undefined;
-}
-
-/**
- * Says whose code this person's browsers run from a queue: any, or only
- * what is in these packages. Call it inside a change to the storage document.
- */
-export function setAcceptance(storage: TasksStorage, taskQueueUrl: AutomergeUrl, acceptance: Acceptance) {
-  setServed(storage, taskQueueUrl, acceptance === 'any' ? true : { packages: [...acceptance] });
 }
 
 /** Stops serving a queue. Call it inside a change to the storage document. */
@@ -162,9 +147,9 @@ export async function mergeStorages(repo: any, account: unknown): Promise<void> 
         if (own && !ownQueueOf(doc)) {
           doc.own = own;
         }
-        for (const [queue, setting] of Object.entries(served)) {
+        for (const queue of Object.keys(served)) {
           if (lacking(doc, queue)) {
-            setServed(doc, queue, setting === true ? true : { packages: [...(setting as { packages: string[] }).packages] });
+            setServed(doc, queue, true);
           }
         }
       });

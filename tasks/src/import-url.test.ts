@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inSamePackage, onOrigin, packageOf, parseAutomergeImport } from './import-url';
-import { acceptanceOf, accepts, acceptsPackage } from './acceptance';
+import { inSamePackage, onOrigin, parseAutomergeImport } from './import-url';
 
 const ID = '2KYqboWHPS5rvWsheoLnHgFvE7ou';
 const HEADS = '2iYYnqERhPWhH9VN5HunnB5bzATxTBYAWDBdnS4CjKpbjmjVXU';
@@ -35,8 +34,8 @@ describe('reading an import URL', () => {
   });
 
   it('whatever the origin, the package is the same', () => {
-    expect(packageOf(pinned)).toBe(`automerge:${ID}`);
-    expect(packageOf(pinned.replace('patchwork.example', 'elsewhere.example:8080'))).toBe(`automerge:${ID}`);
+    expect(parseAutomergeImport(pinned)?.packageUrl).toBe(`automerge:${ID}`);
+    expect(parseAutomergeImport(pinned.replace('patchwork.example', 'elsewhere.example:8080'))?.packageUrl).toBe(`automerge:${ID}`);
   });
 
   it('is in no package when it is anything else', () => {
@@ -52,7 +51,6 @@ describe('reading an import URL', () => {
       '',
     ]) {
       expect(parseAutomergeImport(url), url).toBeNull();
-      expect(packageOf(url), url).toBeNull();
     }
   });
 });
@@ -79,44 +77,5 @@ describe('moving an import to the site a worker is on', () => {
     expect(made).toBe(`/automerge%3A${ID}%23${HEADS}/dist/tasks/wait.js`);
     expect(parseAutomergeImport(made)).toMatchObject({ heads: HEADS, path: 'dist/tasks/wait.js' });
     expect(inSamePackage('http://localhost:5173/src/x.ts', 'dist/tasks/wait.js')).toBeNull();
-  });
-});
-
-describe('whose code a worker runs', () => {
-  const pkg = `automerge:${ID}`;
-  const other = 'automerge:3TTwvn7oDHx8mEBVfvkW7TVFKsXe';
-  const data = 'data:text/javascript,export default 1';
-
-  it('a queue listed as true takes any code; one listed with packages, only theirs', () => {
-    expect(acceptanceOf(true)).toBe('any');
-    expect(acceptanceOf({ packages: [pkg] })).toEqual([pkg]);
-    expect(acceptanceOf({ packages: [pkg, 7, null] })).toEqual([pkg]);
-    for (const none of [undefined, null, false, 'any', {}, { packages: 'x' }]) {
-      expect(acceptanceOf(none)).toBeUndefined();
-    }
-  });
-
-  // every kind of acceptance against every kind of code
-  const cases: [string, any, Record<string, boolean>][] = [
-    ['none', undefined, { pinned: false, data: false, cdn: false }],
-    ['any', 'any', { pinned: true, data: true, cdn: true }],
-    ['its package', [pkg], { pinned: true, data: false, cdn: false }],
-    ['another package', [other], { pinned: false, data: false, cdn: false }],
-    ['no packages', [], { pinned: false, data: false, cdn: false }],
-  ];
-  for (const [name, acceptance, want] of cases) {
-    it(`accepting ${name}`, () => {
-      expect(accepts(acceptance, pinned)).toBe(want.pinned);
-      expect(accepts(acceptance, data)).toBe(want.data);
-      expect(accepts(acceptance, 'https://cdn.example/x.js')).toBe(want.cdn);
-      // a pool deciding from a queue's entry, which has only the package, comes to the same answers
-      expect(acceptsPackage(acceptance, packageOf(pinned))).toBe(want.pinned);
-      expect(acceptsPackage(acceptance, packageOf(data))).toBe(want.data);
-    });
-  }
-
-  it('a package is accepted at any version, and from any site', () => {
-    expect(accepts([pkg], `https://other.example/automerge%3A${ID}/dist/x.js`)).toBe(true);
-    expect(accepts([pkg], `/automerge%3A${ID}%23someOtherHeads/dist/x.js`)).toBe(true);
   });
 });

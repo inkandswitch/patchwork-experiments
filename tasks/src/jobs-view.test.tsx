@@ -26,9 +26,9 @@ vi.mock('./task-client.js', async (importOriginal) => ({
   },
 }));
 
-const { AcceptanceChoice, JobsSection, unmetNeeds } = await import('./jobs-view');
+const { JobsSection, unmetNeeds } = await import('./jobs-view');
 
-const entry = (n: number, needs: unknown = []) => ({ taskUrl: `automerge:task${n}`, askedAt: n, package: null, needs: needs as string[] });
+const entry = (n: number, needs: unknown = []) => ({ taskUrl: `automerge:task${n}`, askedAt: n, needs: needs as string[] });
 const pool = (id: string, has: string[]) => ({ pool: id, name: `pool ${id}`, slots: 1, busy: 0, has });
 
 describe('the queue view', () => {
@@ -88,35 +88,6 @@ describe('why a task waits', () => {
     expect(outcome()).toEqual(['waiting', 'waiting']);
     setPools([pool('B', ['browser'])]);
     expect(outcome()).toEqual(['waiting', 'waiting: it needs unix, and no device serving this queue has it']);
-    dispose();
-  });
-});
-
-describe('whose code a queue runs', () => {
-  const buttons = (element: HTMLElement) => [...element.querySelectorAll('button')];
-
-  it('says it is saving while a change it asked for is made, and takes no other change until then', () => {
-    const [state, setState] = createSignal({ working: false, disabled: false });
-    const changes: unknown[] = [];
-    const element = document.createElement('div');
-    const dispose = render(
-      () => (
-        <AcceptanceChoice acceptance="any" onChange={(a) => changes.push(a)} working={state().working} disabled={state().disabled} />
-      ),
-      element,
-    );
-    expect(element.textContent).not.toContain('Saving…');
-    expect(buttons(element).every((button) => !button.disabled)).toBe(true);
-
-    setState({ working: true, disabled: true });
-    expect(element.textContent).toContain('Saving…');
-    expect(buttons(element).length).toBeGreaterThan(0);
-    expect(buttons(element).every((button) => button.disabled)).toBe(true);
-
-    setState({ working: false, disabled: false });
-    expect(element.textContent).not.toContain('Saving…');
-    expect(buttons(element).every((button) => !button.disabled)).toBe(true);
-    expect(changes).toEqual([]);
     dispose();
   });
 });

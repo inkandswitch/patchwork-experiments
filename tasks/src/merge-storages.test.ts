@@ -88,7 +88,7 @@ describe('mergeStorages', () => {
       // both storage documents are had in the first device's Repo, as they are once the devices meet
       const first = await storageWithOwn(one);
       const second = await storageWithOwn(one);
-      second.storage.change((doc: any) => setServed(doc, OTHER, { packages: ['automerge:pkg'] }));
+      second.storage.change((doc: any) => setServed(doc, OTHER, true));
       if (how === 'two links written into one map at once') {
         a.change((doc: any) => (doc.toolStorage[TASKS_STORAGE_ID] = first.storage.url));
         b.change((doc: any) => (doc.toolStorage[TASKS_STORAGE_ID] = second.storage.url));
@@ -107,7 +107,7 @@ describe('mergeStorages', () => {
       expect(ownQueueOf(w)).toBe(won.own);
       expect(marksOf(w)).toEqual([won.own, lostOwn].sort());
       expect(sparesOf(w)).toEqual([lostOwn]);
-      expect(servedOf(w)).toEqual({ [won.own]: true, [lostOwn]: true, [OTHER]: { packages: ['automerge:pkg'] } });
+      expect(servedOf(w)).toEqual({ [won.own]: true, [lostOwn]: true, [OTHER]: true });
       const l = lost.storage.doc();
       expect(ownQueueOf(l)).toBe(lostOwn);
       expect(l[markOf(lostOwn)]).toBe(true);

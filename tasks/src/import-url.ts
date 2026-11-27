@@ -8,17 +8,16 @@
 //
 // that is: a package's folder doc (at those heads, when it says which), then
 // a path within it. `new URL("./task.js", import.meta.url)` in a package's own
-// code makes one. This file reads such a URL, for the three things done with
-// it: deciding whether a worker accepts code from that package (acceptance.ts
-// has the rule), moving it to the origin a worker is actually on, and, where
-// there is no service worker (src/node), fetching the files it names.
+// code makes one. This file reads such a URL, for the two things done with
+// it: moving it to the origin a worker is actually on, and, where there is
+// no service worker (src/node), fetching the files it names.
 //
 // The reading itself is in task-client.js, which askers have too; this file
 // adds what only a worker needs.
 
 import { parseAutomergeImport } from './task-client.js';
 
-export { inSamePackage, packageOf, parseAutomergeImport } from './task-client.js';
+export { inSamePackage, parseAutomergeImport } from './task-client.js';
 export type { AutomergeImport } from './task-client.js';
 
 /**

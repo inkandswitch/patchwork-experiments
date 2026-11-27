@@ -104,7 +104,7 @@ Without a browser open, a Node host serving the person's queue runs their
 bursts (the tasks package's README):
 
 ```sh
-node tasks/dist-node/host.mjs --queue <own queue> --accept <agent package> --workers 4
+node tasks/dist-node/host.mjs --queue <own queue> --workers 4
 ```
 
 It gives a burst `nodeFetch` (every name resolved and checked, redirects

@@ -131,7 +131,7 @@ const freshDir = (name) => {
   return dir;
 };
 function startHost(name, queue, dataDir) {
-  const child = spawn(process.execPath, [join(ROOT, "dist-node/host.mjs"), "--queue", queue, "--accept-any", "--data-dir", dataDir, "--workers", "1", "--name", name, "--sync", SYNC, "--verbose"], { stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [join(ROOT, "dist-node/host.mjs"), "--queue", queue, "--data-dir", dataDir, "--workers", "1", "--name", name, "--sync", SYNC, "--verbose"], { stdio: ["ignore", "pipe", "pipe"] });
   const host = { name, child, lines: [], pool: null, exit: null };
   host.exited = new Promise((r) => child.on("exit", (code, signal) => ((host.exit = { code, signal, at: now() }), r(host.exit))));
   for (const stream of [child.stdout, child.stderr]) {

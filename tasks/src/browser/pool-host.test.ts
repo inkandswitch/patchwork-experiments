@@ -192,7 +192,7 @@ describe("a page's pool host, by what the storage lists", () => {
     await settle();
     expect(locks.asked).toBe(1);
     expect(StandInWorker.made).toHaveLength(1);
-    expect(StandInWorker.made[0].orders()).toEqual([{ type: 'start', queues: { [QUEUE]: 'any' } }]);
+    expect(StandInWorker.made[0].orders()).toEqual([{ type: 'start', queues: [QUEUE] }]);
     p.release();
     p.unwatch();
   });
@@ -203,7 +203,7 @@ describe("a page's pool host, by what the storage lists", () => {
     expect(locks.asked).toBe(1);
     expect(StandInWorker.made).toHaveLength(1);
     const worker = StandInWorker.made[0];
-    expect(worker.orders()).toEqual([{ type: 'start', queues: { [QUEUE]: 'any' } }]);
+    expect(worker.orders()).toEqual([{ type: 'start', queues: [QUEUE] }]);
     expect(p.last().state).toBe('starting');
     worker.say({ type: 'ready' });
     expect(p.last().state).toBe('running');
@@ -221,8 +221,8 @@ describe("a page's pool host, by what the storage lists", () => {
 
     await p.serve({});
     expect(worker.orders()).toEqual([
-      { type: 'start', queues: { [QUEUE]: 'any' } },
-      { type: 'serve', queues: {} },
+      { type: 'start', queues: [QUEUE] },
+      { type: 'serve', queues: [] },
       { type: 'stop', drain: true },
     ]);
     expect(p.last()).toMatchObject({ state: 'winding down', busy: 1 });
@@ -247,7 +247,7 @@ describe("a page's pool host, by what the storage lists", () => {
     first.say({ type: 'ready' });
     first.say({ type: 'status', busy: 1 });
     await p.serve({});
-    await p.serve({ [QUEUE]: { packages: ['automerge:pkg'] } });
+    await p.serve({ [QUEUE]: true });
     // Told the list, which a draining pool's worker does not act on, and told to stop only once.
     expect(first.orders().filter((order) => order.type === 'stop')).toHaveLength(1);
     expect(p.last().state).toBe('winding down');
@@ -260,7 +260,7 @@ describe("a page's pool host, by what the storage lists", () => {
     expect(locks.asked).toBe(2);
     expect(StandInWorker.made).toHaveLength(2);
     const second = StandInWorker.made[1];
-    expect(second.orders()).toEqual([{ type: 'start', queues: { [QUEUE]: ['automerge:pkg'] } }]);
+    expect(second.orders()).toEqual([{ type: 'start', queues: [QUEUE] }]);
     second.say({ type: 'ready' });
     // Between the drain's end and the lock given again, a moment of asking for it, as any tab might.
     expect(p.states().slice(-5)).toEqual(['running', 'winding down', 'waiting', 'starting', 'running']);

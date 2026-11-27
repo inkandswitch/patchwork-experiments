@@ -25,7 +25,7 @@ vi.mock('./task-client.js', async (importOriginal) => ({
 const { JobsSection } = await import('./jobs-view');
 const { showValue, decodeDataUrl, openableUrl } = await import('./task-code');
 
-const entry = (n: number) => ({ taskUrl: `automerge:task${n}`, askedAt: n, package: null, needs: [] as string[] });
+const entry = (n: number) => ({ taskUrl: `automerge:task${n}`, askedAt: n, needs: [] as string[] });
 
 // made up
 const PACKAGE_PATH = `/${encodeURIComponent('automerge:3xMadeUpCheckerPkg99#HeadsMadeUp77')}/lib/deep/work.js`;

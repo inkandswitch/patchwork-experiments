@@ -1,8 +1,7 @@
 // A machine's pool, in a Node process: it serves task queues from a machine
 // with no browser.
 //
-//   node dist-node/host.mjs --queue automerge:… --accept automerge:<package>
-//                           [--queue automerge:…]… [--accept automerge:…]… | --accept-any
+//   node dist-node/host.mjs --queue automerge:… [--queue automerge:…]…
 //                           [--workers 1] [--sync wss://…] [--new-queue "title"]
 //                           [--data-dir ~/.patchwork-tasks] [--name <host name>]
 //                           [--code-dir <dir>] [--local automerge:<package>=<dir>]…
@@ -25,14 +24,8 @@
 // it no longer has as lost, and the task is taken again. One host to a
 // directory; a second one refuses to start.
 //
-// A task says where its code is (see ../import-url.ts), and a process on a
-// machine can reach everything that machine can. So this must be told whose
-// code it runs (see ../acceptance.ts), and there is no default:
-//
-//   --accept automerge:<package>   code that is in that package, at any
-//                                  version; repeat for more
-//   --accept-any                   whatever a queue's tasks bring, `data:`
-//                                  URLs included: for a queue only you write to
+// A task says where its code is (see ../import-url.ts), and this host runs
+// whatever the tasks of its queues name, with the privileges of its user.
 //
 // Code kept in automerge is fetched through the thread's Repo and imported
 // from the code directory (see package-files.ts). It runs in Node: it can
@@ -46,7 +39,7 @@
 // package, whose code imports its own source and its dependencies and drives
 // programs installed beside it. A task names the package's code the way it
 // always does; this host answers from its own copy, whichever version the
-// task named. Naming a package this way accepts it.
+// task named.
 //
 // --has says what this machine has, as plain labels: a task that needs a
 // label (`unix`, `ollama`, `gpu`) is taken only by a pool that has it, and
@@ -86,7 +79,6 @@ import { ModuleWatcher } from '@inkandswitch/patchwork-filesystem';
 import { getAllRegistries, registerPlugins, unregisterPlugins } from '@inkandswitch/patchwork-plugins';
 import { Pool, type Docs } from '../pool';
 import { GRACE_MS } from '../task-rules.js';
-import type { Acceptance } from '../acceptance';
 import type { Queue } from '../datatype';
 import { QUEUE_DATATYPE_ID } from '../ids';
 import { DEFAULT_MAX_HEAP_MB, NodeExecutor } from './executor';
@@ -102,8 +94,6 @@ const STOP_DEADLINE_MS = 2 * GRACE_MS + 2_000;
 
 interface Options {
   queues: string[];
-  accept: string[];
-  acceptAny: boolean;
   /** Packages to run from a directory here: `automerge:<package>` to an absolute path. */
   local: Record<string, string>;
   /** What this machine has, as labels; `node` always. */
@@ -123,8 +113,6 @@ interface Options {
 function parseArgs(argv: string[]): Options {
   const options: Options = {
     queues: [],
-    accept: [],
-    acceptAny: false,
     local: {},
     has: ['node'],
     workers: 1,
@@ -149,12 +137,6 @@ function parseArgs(argv: string[]): Options {
     switch (flag) {
       case '--queue':
         options.queues.push(value());
-        break;
-      case '--accept':
-        options.accept.push(value());
-        break;
-      case '--accept-any':
-        options.acceptAny = true;
         break;
       case '--local': {
         const given = value();
@@ -209,7 +191,7 @@ function parseArgs(argv: string[]): Options {
         throw new Error(`unknown option ${flag}`);
     }
   }
-  for (const url of [...options.queues, ...options.accept, ...(options.modules ? [options.modules] : [])]) {
+  for (const url of [...options.queues, ...(options.modules ? [options.modules] : [])]) {
     if (!AUTOMERGE_URL.test(url)) {
       throw new Error(`${url} isn't an automerge: url (a package's is given without its heads)`);
     }
@@ -222,21 +204,6 @@ function parseArgs(argv: string[]): Options {
   }
   if (options.queues.length === 0 && !options.newQueue) {
     throw new Error('say which queue to work on: --queue automerge:…, or --new-queue "a title"');
-  }
-  // a package this host has a copy of is one it runs
-  if (!options.acceptAny) {
-    for (const packageUrl of Object.keys(options.local)) {
-      if (!options.accept.includes(packageUrl)) {
-        options.accept.push(packageUrl);
-      }
-    }
-  }
-  if (options.acceptAny === options.accept.length > 0) {
-    throw new Error(
-      options.acceptAny
-        ? "--accept-any already takes every package's code: leave --accept out"
-        : 'say whose code this process runs: --accept automerge:<package> (repeat for more), or --accept-any',
-    );
   }
   return options;
 }
@@ -365,7 +332,6 @@ export async function main(argv = process.argv.slice(2)) {
     });
   }
 
-  const acceptance: Acceptance = options.acceptAny ? 'any' : options.accept;
   const pool = new Pool({
     repo: repo as unknown as Docs,
     id: poolId,
@@ -373,14 +339,11 @@ export async function main(argv = process.argv.slice(2)) {
     slots: options.workers,
     has: options.has,
     executor,
-    queues: Object.fromEntries(queues.map((url) => [url as AutomergeUrl, acceptance])),
+    queues: queues as AutomergeUrl[],
   });
 
-  const whose = options.acceptAny
-    ? 'any code'
-    : `code from ${options.accept.length} package${options.accept.length === 1 ? '' : 's'}`;
   console.log(
-    `${options.name}: pool ${poolId}, ${options.workers} slot${options.workers === 1 ? '' : 's'} on ${queues.length} queue${queues.length === 1 ? '' : 's'}, running ${whose}`,
+    `${options.name}: pool ${poolId}, ${options.workers} slot${options.workers === 1 ? '' : 's'} on ${queues.length} queue${queues.length === 1 ? '' : 's'}`,
   );
   for (const url of queues) {
     console.log(`  queue ${url}`);
@@ -389,10 +352,8 @@ export async function main(argv = process.argv.slice(2)) {
   if (options.modules) {
     console.log(`  packages from ${options.modules}`);
   }
-  if (!options.acceptAny) {
-    for (const url of options.accept) {
-      console.log(`  code from ${url}${options.local[url] ? ` (from ${options.local[url]})` : ''}`);
-    }
+  for (const [url, dir] of Object.entries(options.local)) {
+    console.log(`  code from ${url} (from ${dir})`);
   }
 
   let stopping = false;

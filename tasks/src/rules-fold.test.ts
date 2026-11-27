@@ -208,7 +208,7 @@ describe('settles', () => {
 const U = madeUp(1); // the task the spare's key names: T
 const V = madeUp(2); // another task own's key may name: T′
 
-const entryFor = (url: string) => ({ taskUrl: url, askedAt: 1, package: null, needs: [] });
+const entryFor = (url: string) => ({ taskUrl: url, askedAt: 1, needs: [] });
 
 const task = (runs: any[]) => ({ importUrl: 'data:text/javascript,', input: null, key: 'k', runs });
 const ran = (status?: string, id = 'r') =>

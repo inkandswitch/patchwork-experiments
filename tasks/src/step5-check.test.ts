@@ -346,7 +346,7 @@ function loopback() {
 
 const pool = (repo: Repo, id: string, queue: string, ears: Ears, executor = new Recording()) => ({
   executor,
-  pool: new Pool({ repo: repo as unknown as Docs, id, name: id, slots: 1, has: ['browser'], executor, queues: { [queue as AutomergeUrl]: 'any' }, ears }),
+  pool: new Pool({ repo: repo as unknown as Docs, id, name: id, slots: 1, has: ['browser'], executor, queues: [queue as AutomergeUrl], ears }),
 });
 
 describe('(c) code that cannot travel is run only by this browser\'s pool', () => {

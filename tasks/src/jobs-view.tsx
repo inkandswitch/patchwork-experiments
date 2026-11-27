@@ -2,15 +2,13 @@
 // for one that waits because no pool heard serving the queue has what it
 // needs, what that is), its runs (which pool, this browser's marked, and how
 // each went), and a way to ask for one or stop one. Everything a tool can do
-// through task-client.js a person can do here. Also where an account says
-// whose code its browsers run from a queue (see acceptance.ts).
+// through task-client.js a person can do here.
 
 import { createSignal, For, onCleanup, Show } from 'solid-js';
 import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
 import type { Queue, Run, TaskState } from './datatype';
 import { isFinished, satisfies, waitingWork } from './task-rules.js';
 import { ask, cancel, watch, type Ask, type Serving, type TaskView } from './task-client.js';
-import type { Acceptance } from './acceptance';
 import { inSamePackage } from './import-url';
 import { WAIT_TASK_PATH } from './ids';
 import { useRepo } from './use-doc';
@@ -338,106 +336,6 @@ const NewJobForm = (props: { onAsk: (request: Ask) => Promise<unknown> }) => {
         </Show>
       </div>
     </details>
-  );
-};
-
-/**
- * Whose code this account's browsers run from this queue (see acceptance.ts),
- * and a way to change it. Shown to someone whose browsers work on the queue.
- */
-export const AcceptanceChoice = (props: {
-  acceptance: Acceptance | undefined;
-  onChange: (acceptance: Acceptance) => void;
-  /** A change this control asked for is being made. */
-  working?: boolean;
-  /** Nothing can be changed just now (a change is being made). */
-  disabled?: boolean;
-}) => {
-  const packages = () => (Array.isArray(props.acceptance) ? (props.acceptance as string[]) : []);
-  const [editing, setEditing] = createSignal<string | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
-
-  function save() {
-    const wanted = (editing() ?? '')
-      .split(/\s+/)
-      .map((url) => url.trim())
-      .filter(Boolean);
-    const bad = wanted.find((url) => !/^automerge:[1-9A-HJ-NP-Za-km-z]{16,64}$/.test(url));
-    if (bad) {
-      setError(`${bad} isn't a package's automerge: url`);
-      return;
-    }
-    setError(null);
-    setEditing(null);
-    props.onChange(wanted);
-  }
-
-  return (
-    <div class="tq-accept">
-      <Show
-        when={editing() === null}
-        fallback={
-          <>
-            <label class="tq-field">
-              <span class="tq-field-label">Run only code from these packages</span>
-              <span class="tq-field-hint">
-                one automerge: url a line; a task whose code is anywhere else, a data: URL
-                included, is left for other pools
-              </span>
-              <textarea
-                class="tq-textarea"
-                rows={3}
-                spellcheck={false}
-                value={editing() ?? ''}
-                onInput={(e) => setEditing(e.currentTarget.value)}
-              />
-            </label>
-            <div class="tq-new-actions">
-              <button class="tq-button" disabled={props.disabled} onClick={save}>
-                Save
-              </button>
-              <button class="tq-link" onClick={() => (setEditing(null), setError(null))}>
-                Cancel
-              </button>
-              <Show when={error()}>
-                <span class="tq-error">{error()}</span>
-              </Show>
-            </div>
-          </>
-        }
-      >
-        <p class="tq-choice-note">
-          <Show
-            when={props.acceptance === 'any'}
-            fallback={
-              <>
-                From this queue your browsers run only code from{' '}
-                {packages().length === 0
-                  ? 'no package at all'
-                  : `${packages().length} package${packages().length === 1 ? '' : 's'}`}
-                .{' '}
-                <button class="tq-link" disabled={props.disabled} onClick={() => setEditing(packages().join('\n'))}>
-                  Change
-                </button>{' '}
-                <button class="tq-link" disabled={props.disabled} onClick={() => props.onChange('any')}>
-                  Run any code
-                </button>
-              </>
-            }
-          >
-            From this queue your browsers run any code its tasks bring: whatever anyone who can
-            write the queue puts in it.{' '}
-            <button class="tq-link" disabled={props.disabled} onClick={() => setEditing('')}>
-              Only named packages…
-            </button>
-          </Show>
-          <Show when={props.working}>
-            {' '}
-            <span class="tq-muted">Saving…</span>
-          </Show>
-        </p>
-      </Show>
-    </div>
   );
 };
 

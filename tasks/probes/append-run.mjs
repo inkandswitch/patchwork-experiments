@@ -6,7 +6,7 @@
 //   (in tasks/, after `pnpm build:node`) node probes/append-run.mjs [--sync wss://…] [--verbose]
 //
 // One host (dist-node/host.mjs, a real process with a fresh data directory)
-// serves a new queue, with any code accepted and this directory as its copy of
+// serves a new queue, with this directory as its copy of
 // a made-up package (--local). This process asks it from a Repo of its own
 // through dist-node/task-client.mjs, the way a tool on another machine
 // would, twice: the task named as a file of that package, then the same
@@ -71,7 +71,7 @@ try {
   let pool = null;
   child = spawn(
     process.execPath,
-    [join(ROOT, "dist-node/host.mjs"), "--queue", queue.url, "--accept-any", "--local", `${PKG}=${ROOT}`, "--data-dir", dataDir, "--workers", "1", "--name", "append-probe", "--sync", SYNC, "--verbose"],
+    [join(ROOT, "dist-node/host.mjs"), "--queue", queue.url, "--local", `${PKG}=${ROOT}`, "--data-dir", dataDir, "--workers", "1", "--name", "append-probe", "--sync", SYNC, "--verbose"],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
   for (const stream of [child.stdout, child.stderr]) {

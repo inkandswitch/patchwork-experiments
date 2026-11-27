@@ -106,7 +106,7 @@ describe('askRun', () => {
     const { repo, queue, run } = world();
     const taskUrl = await askRun(repo, queue.url, run, CODE, { message: 'asked by Ann' });
     expect(Object.keys(queue.doc().jobs)).toEqual([run.url]);
-    expect(queue.doc().jobs[run.url]).toMatchObject({ taskUrl, package: PACKAGE });
+    expect(queue.doc().jobs[run.url]).toMatchObject({ taskUrl });
     expect((await repo.find<Task>(taskUrl as any)).doc()).toEqual({ importUrl: CODE, input: { run: run.url }, key: run.url, runs: [] });
     expect(run.doc().task).toBe(taskUrl);
     expect(A.getHistory(run.doc()).at(-1)?.change.message).toBe('asked by Ann');
@@ -216,7 +216,7 @@ describe('hearServing', () => {
 });
 
 describe('a queue as people see it', () => {
-  const jobs = (...keys: string[]) => ({ jobs: Object.fromEntries(keys.map((key, i) => [key, { taskUrl: `automerge:t${key}`, askedAt: i, package: null }])) });
+  const jobs = (...keys: string[]) => ({ jobs: Object.fromEntries(keys.map((key, i) => [key, { taskUrl: `automerge:t${key}`, askedAt: i }])) });
   it('running is what its machines say they are busy with, never more than it lists', () => {
     expect(queueCounts(jobs('a', 'b', 'c'), [{ busy: 1, slots: 2 }])).toEqual({ listed: 3, running: 1, waiting: 2, slots: 2 });
     expect(queueCounts(jobs('a'), [{ busy: 3, slots: 4 }])).toEqual({ listed: 1, running: 1, waiting: 0, slots: 4 });

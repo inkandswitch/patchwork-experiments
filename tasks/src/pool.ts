@@ -39,7 +39,6 @@
 // worker in a browser).
 
 import type { AutomergeUrl, DocumentId } from '@automerge/automerge-repo/slim';
-import { accepts, acceptsPackage, type Acceptance } from './acceptance';
 import * as channel from './task-client.js';
 import type { RunProgressMessage, ServingMessage } from './task-client.js';
 import {
@@ -173,8 +172,8 @@ export interface PoolOptions {
    */
   has: string[];
   executor: Executor;
-  /** The queues it serves, and the code it runs from each. Changed later with `serve`. */
-  queues?: Record<AutomergeUrl, Acceptance>;
+  /** The queues it serves. Changed later with `serve`. */
+  queues?: AutomergeUrl[];
   ears?: Ears;
   clock?: Clock;
 }
@@ -250,7 +249,6 @@ interface HeardPool {
 }
 
 interface Served extends Followed<Queue> {
-  acceptance: Acceptance;
   /** The other pools heard serving it, by id. */
   heard: Map<string, HeardPool>;
   /** When this pool began listening to the queue's channel, on its own clock. */
@@ -321,7 +319,7 @@ export class Pool {
       }
       this.review();
     }, BEAT_MS);
-    this.serve(options.queues ?? {});
+    this.serve(options.queues ?? []);
   }
 
   /** How many slots have a run in them, from the moment it is taken until its end is saved. */
@@ -340,20 +338,17 @@ export class Pool {
   }
 
   /** Sets the queues served. A run from a queue no longer served goes on to its end. */
-  serve(queues: Record<AutomergeUrl, Acceptance>) {
+  serve(queues: AutomergeUrl[]) {
     for (const [url, queue] of this.queues) {
-      if (!(url in queues)) {
+      if (!queues.includes(url)) {
         this.sayServing(queue, true);
         letGo(queue);
         this.queues.delete(url);
       }
     }
-    for (const [url, acceptance] of Object.entries(queues) as [AutomergeUrl, Acceptance][]) {
-      const queue = this.queues.get(url);
-      if (queue) {
-        queue.acceptance = acceptance;
-      } else {
-        this.queues.set(url, { acceptance, heard: new Map() });
+    for (const url of queues) {
+      if (!this.queues.has(url)) {
+        this.queues.set(url, { heard: new Map() });
       }
     }
     this.review();
@@ -484,10 +479,8 @@ export class Pool {
         continue;
       }
       attempt('looking at a task its queue lists', () => {
-        const { acceptance } = served;
-        // Whose code it is and what it needs are asked of the entry first and
-        // of the task last (see `mayClaim`).
-        if (this.stopped || !acceptsPackage(acceptance, work.package) || !satisfies(this.has, work.needs)) {
+        // What it needs is asked of the entry first and of the task last (see `mayClaim`).
+        if (this.stopped || !satisfies(this.has, work.needs)) {
           followed.firstSight = undefined;
           followed.unhold?.();
           return;
@@ -508,7 +501,7 @@ export class Pool {
           queue.change((doc) => delistTask(doc, work.key, work.taskUrl));
         }
         // A task that has ended is not wanted, so `mayClaim` refuses one just let go above.
-        const takeable = mayClaim(task, id, is, heard) && accepts(acceptance, task.importUrl) && satisfies(this.has, task.needs);
+        const takeable = mayClaim(task, id, is, heard) && satisfies(this.has, task.needs);
         if (!takeable) {
           followed.firstSight = undefined;
           followed.unhold?.();

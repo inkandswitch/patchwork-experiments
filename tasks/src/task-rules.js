@@ -18,8 +18,7 @@
  * work, so the queue is what is shared and what is lent workers.
  *
  * A pool is the one set of workers a machine has. It serves the queues it has
- * been told to, runs only the code it accepts from each, and has a name that
- * outlives its restarts. It has labels (`has`): what kind of machine it is
+ * been told to, and has a name that outlives its restarts. It has labels (`has`): what kind of machine it is
  * (`node`, `browser`), what the machine was said to have (`unix`), and
  * `pool:<its name>`, so that work can need one machine in particular.
  *
@@ -36,7 +35,7 @@
  *
  * Everything about a task is read from its own document. A queue's entry
  * says which task a key names and that the task is wanted, with copies of
- * what a pool asks first (the package its code is in, its needs) and, as
+ * what a pool asks first (its needs) and, as
  * advice, the pool its asker is next to (`near`); it never says how the task
  * went. The two documents travel separately, so a rule that read
  * "the entry is gone" as "the task is over" or "was stopped" would be wrong
@@ -73,7 +72,7 @@
  * - A pool may TAKE a task that is still wanted (no record has ended it),
  *   that its queue lists under the task's key, that nobody heard holds, and
  *   that the pool has no open run of already (`mayClaim`). Beside that it
- *   asks whether it accepts the code and has every need (`satisfies`), of
+ *   asks whether it has every need (`satisfies`), of
  *   the entry before it reads the task and of the task before it takes it.
  *   Work that no pool has what it needs for waits; it never fails for want
  *   of a machine.
@@ -213,7 +212,6 @@
  * @typedef {object} Entry
  * @property {string} taskUrl  The task's `automerge:` url.
  * @property {number} askedAt  When it was asked for, by the asker's clock: only the order pools take work in.
- * @property {string | null} package  The package its code is in, or null for code that is in none.
  * @property {string[]} [needs]  The task's `needs`, copied, so that a reader of the queue knows what its work needs without reading each task. `listTask` always writes it; an entry without it needs nothing.
  * @property {string} [near]  The pool its asker is next to, preferred for it whenever that pool may take it (see `preferred`). Advice only.
  */
@@ -563,7 +561,6 @@ export function waitingWork(queue) {
       key,
       taskUrl: entry.taskUrl,
       askedAt: entry.askedAt,
-      package: entry.package ?? null,
       // as written, so that needs that are not a list stay what nobody has
       needs: entry.needs ?? [],
       ...(typeof entry.near === 'string' ? { near: entry.near } : {}),
@@ -583,9 +580,8 @@ export function waitingWork(queue) {
  * (A pool that finds an open run of its own that it is not running completes
  * it first; see `gone`.)
  *
- * Whether the pool accepts the task's code, and has what it needs, are
- * separate questions (`accepts`, `satisfies`), asked of the entry before
- * this and of the task with it.
+ * Whether the pool has what the task needs is a separate question
+ * (`satisfies`), asked of the entry before this and of the task with it.
  * @param {Pick<Task, 'runs'> | undefined} task
  * @param {string} pool
  * @param {Named} is
@@ -954,7 +950,6 @@ export function listTask(queue, key, entry, over) {
     queue.jobs[key] = {
       taskUrl: entry.taskUrl,
       askedAt: Number(entry.askedAt) || 0,
-      package: entry.package ?? null,
       needs: entry.needs === undefined || entry.needs === null ? [] : JSON.parse(JSON.stringify(entry.needs)),
       ...(typeof entry.near === 'string' && entry.near !== '' ? { near: entry.near } : {}),
     };

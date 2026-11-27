@@ -6,13 +6,11 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  getAcceptance,
   getAccountDocUrl,
   getTaskQueues,
   isOnTaskQueue,
   joinTaskQueue,
   leaveTaskQueue,
-  setAcceptance,
 } from './helpers';
 import { QUEUE_DATATYPE_ID, TASKS_STORAGE_ID } from './ids';
 import { ownQueueOf, servedOf, setServed, storageUrlOf } from './task-client.js';
@@ -80,20 +78,18 @@ describe('the served list', () => {
     expect(isOnTaskQueue(storage, one)).toBe(false);
   });
 
-  it('a queue whose setting is neither true nor a package list is not served', () => {
-    const storage = { [one]: false, [other]: { packages: 'x' } };
+  it('a queue is served under any truthy setting, an old { packages } one included, and not under a falsy one', () => {
+    const storage = { [one]: false, [other]: { packages: ['automerge:pkg'] } };
     expect(isOnTaskQueue(storage, one)).toBe(false);
-    expect(isOnTaskQueue(storage, other)).toBe(false);
-    expect(getAcceptance(storage, one)).toBeUndefined();
-    expect(getTaskQueues(storage)).toEqual({});
+    expect(isOnTaskQueue(storage, other)).toBe(true);
+    expect(getTaskQueues(storage)).toEqual({ [other]: true });
   });
 
-  it("joining writes the queue's own key, for any code, and nothing else", () => {
+  it("joining writes the queue's own key, and nothing else", () => {
     const storage: any = { '@patchwork': { type: 'patchwork:tool-storage' } };
     joinTaskQueue(storage, one);
     expect(storage).toEqual({ '@patchwork': { type: 'patchwork:tool-storage' }, [one]: true });
     expect(isOnTaskQueue(storage, one)).toBe(true);
-    expect(getAcceptance(storage, one)).toBe('any');
   });
 
   it('joins and leaves without disturbing the other queues, or `own`', () => {
@@ -115,38 +111,19 @@ describe('the served list', () => {
     expect(storage).toEqual({ [one]: true });
   });
 
-  it('joining a queue already served for named packages keeps that narrowing', () => {
-    const storage: any = {};
-    setAcceptance(storage, one, ['automerge:pkg']);
+  it('joining a queue already served under an old { packages } setting leaves it as it is', () => {
+    const storage: any = { [one]: { packages: ['automerge:pkg'] } };
     joinTaskQueue(storage, one);
-    expect(getAcceptance(storage, one)).toEqual(['automerge:pkg']);
+    expect(storage).toEqual({ [one]: { packages: ['automerge:pkg'] } });
   });
 
-  it('keeps whose code it runs from each queue, written whole as a fresh value, and setting it serves the queue', () => {
-    const storage: any = {};
-    const packages = ['automerge:pkg'];
-    setAcceptance(storage, one, packages);
-    expect(storage[one]).toEqual({ packages: ['automerge:pkg'] });
-    expect(storage[one].packages).not.toBe(packages);
-    expect(isOnTaskQueue(storage, one)).toBe(true);
-    setAcceptance(storage, one, 'any');
-    expect(storage[one]).toBe(true);
-    expect(getAcceptance(storage, one)).toBe('any');
-    expect(getAcceptance(storage, other)).toBeUndefined();
-  });
-
-  it('never writes a key that is not a queue url, or a setting that is not one', () => {
+  it('never writes a key that is not a queue url', () => {
     for (const key of ['own', '@patchwork', 'served', '__proto__', '', 'https://example.com']) {
       const storage: any = { own: one };
       expect(() => setServed(storage, key, true)).toThrow();
       expect(() => joinTaskQueue(storage, key as any)).toThrow();
       expect(() => leaveTaskQueue(storage, key as any)).toThrow();
       expect(storage).toEqual({ own: one });
-    }
-    for (const setting of [false, 'any', {}, { packages: 'x' }, { packages: [7] }]) {
-      const storage: any = {};
-      expect(() => setServed(storage, one, setting as any)).toThrow();
-      expect(storage).toEqual({});
     }
   });
 });

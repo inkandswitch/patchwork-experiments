@@ -226,16 +226,6 @@ export function parseAutomergeImport(importUrl) {
 }
 
 /**
- * The package an import URL's code is in (`automerge:<id>`), or null: a
- * `data:` URL, or code from elsewhere.
- * @param {string} importUrl
- * @returns {string | null}
- */
-export function packageOf(importUrl) {
-  return parseAutomergeImport(importUrl)?.packageUrl ?? null;
-}
-
-/**
  * The import URL of `path` in the same package as `fromUrl` (a module's own
  * `import.meta.url`), with no origin, so that it means "this package's file"
  * on whatever machine runs it; null if `fromUrl` is not in a package.
@@ -316,7 +306,7 @@ export async function ask(repo, queueUrl, { importUrl, input, key, needs, near }
     listTask(
       doc,
       jobKey,
-      { taskUrl: task.url, askedAt: Date.now(), package: packageOf(importUrl), needs: needs ?? [], near: near ?? undefined },
+      { taskUrl: task.url, askedAt: Date.now(), needs: needs ?? [], near: near ?? undefined },
       over,
     ),
   );
@@ -436,7 +426,7 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
         const again = following;
         noneSince = null;
         queue.change((/** @type {Queue} */ q) =>
-          listTask(q, key, { taskUrl: again, askedAt: Date.now(), package: packageOf(doc.importUrl), needs: doc.needs }),
+          listTask(q, key, { taskUrl: again, askedAt: Date.now(), needs: doc.needs }),
         );
       }
     }
@@ -719,13 +709,13 @@ export function served(repo, queueUrl, onChange, options = {}) {
 // makes nothing.
 //
 // The storage document's root is the list. A served queue is a root key that
-// is the queue's url, whose value is its setting; `own` is a root key holding
+// is the queue's url, holding `true`; `own` is a root key holding
 // a url; and `own:<queueUrl>`, holding `true`, marks a queue made to be one's
 // own. Nothing in it is a container a writer has to make first: the root is
 // there from the moment the provider makes the document. So writes to
 // different queues never meet, whatever the order or timing; writes to one
 // queue's key keep one value, whole (Automerge keeps a value written
-// alongside a delete it did not see, so a join or a new setting outlasts a
+// alongside a delete it did not see, so a join outlasts a
 // leave made at the same moment). Keys that are not queue urls (the
 // provider's `@patchwork`, `own`, the marks) are never read as queues.
 //
@@ -756,14 +746,8 @@ export const OWN_QUEUE_TITLE = 'My tasks';
 export const PROVIDER_WAIT_MS = 5_000;
 
 /**
- * How a served queue is listed: `true` runs any code from it; `{ packages }`
- * only code in those packages.
- * @typedef {true | { packages: string[] }} QueueSetting
- */
-
-/**
  * The task system's storage document: each served queue's url as a key of
- * its own, holding its setting, `own`, and a mark `own:<queueUrl>` for each
+ * its own, holding `true`, `own`, and a mark `own:<queueUrl>` for each
  * queue made to be one's own. Write it only through `setServed`, `ownQueue`
  * and `mergeStorages` (helpers.ts); read it through `servedOf`, `ownQueueOf`,
  * `marksOf` and `sparesOf`.
@@ -791,9 +775,9 @@ export function storageUrlOf(account) {
 }
 
 /**
- * The queues a storage document says to serve, each with its setting as it
- * is written (acceptance.ts says what a setting amounts to); none for a
- * document that is not there. Only the document's own keys that are queue
+ * The queues a storage document says to serve, each under the value it is
+ * written with (any truthy one serves it); none for a document that is not
+ * there. Only the document's own keys that are queue
  * urls count.
  * @param {unknown} storage
  * @returns {{ [queueUrl: string]: unknown }}
@@ -852,15 +836,13 @@ export function sparesOf(storage) {
 }
 
 /**
- * Serves a queue with `setting`, or, given null, stops serving it: one write
- * of the queue's own root key. Call it inside a change to the storage
- * document. A setting is written as a fresh value each time, never edited in
- * place, so two settings made at once keep one of the two, whole. Throws on a
- * url that is no queue's, or a setting that is neither `true` nor a list of
- * packages, so that nothing but a queue's setting is ever written as one.
+ * Serves a queue (`true`), or, given null, stops serving it: one write of the
+ * queue's own root key. Call it inside a change to the storage document.
+ * Throws on a url that is no queue's, so that nothing but a queue is ever
+ * written as one.
  * @param {TasksStorage} storage
  * @param {string} queueUrl
- * @param {QueueSetting | null} setting
+ * @param {true | null} setting
  */
 export function setServed(storage, queueUrl, setting) {
   if (!isQueueKey(queueUrl)) {
@@ -872,15 +854,7 @@ export function setServed(storage, queueUrl, setting) {
     }
     return;
   }
-  if (setting === true) {
-    storage[queueUrl] = true;
-    return;
-  }
-  const packages = /** @type {any} */ (setting)?.packages;
-  if (!Array.isArray(packages) || !packages.every((url) => typeof url === 'string')) {
-    throw new Error('A queue is served for any code (true) or for a list of packages ({ packages }).');
-  }
-  storage[queueUrl] = { packages: [...packages] };
+  storage[queueUrl] = true;
 }
 
 /**

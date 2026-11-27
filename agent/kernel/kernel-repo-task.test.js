@@ -16,7 +16,7 @@ function world() {
   const session = repo.create({ title: "a session" })
   const agentTask = repo.create({ importUrl: "data:text/javascript,", input: { session: session.url, keys: { model: KEY } }, key: `agent:${session.url}`, runs: [] })
   const otherTask = repo.create({ importUrl: "data:text/javascript,", input: { mesh: 3 }, key: "fea:run", runs: [{ id: "r", pool: "p", start: 0 }] })
-  const queue = repo.create({ "@patchwork": { type: "task-queue-next" }, jobs: { [`agent:${session.url}`]: { taskUrl: agentTask.url, askedAt: 0, package: null } } })
+  const queue = repo.create({ "@patchwork": { type: "task-queue-next" }, jobs: { [`agent:${session.url}`]: { taskUrl: agentTask.url, askedAt: 0 } } })
   return { repo, guarded: kernelRepo(repo), session, agentTask, otherTask, queue }
 }
 
