@@ -58,6 +58,26 @@ Four pages say what the code promises. Each describes the code as it is.
 
 ## Layers are directories
 
+## Model providers
+
+A session's `config.providerId` names who runs it; the settings dialog (the
+header's model button) chooses, and keeps each provider's credential where it
+belongs, never in the session.
+
+- **OpenRouter** (`providers/openrouter.js`): every lab's models for an API
+  key, kept with the account's LLM settings.
+- **ChatGPT plan** (`providers/chatgpt.js`): OpenAI's Responses API, paid for
+  by the person's ChatGPT plan through Sign in with ChatGPT
+  (`providers/chatgpt-auth.js`). The sign-in's callback is a 127.0.0.1 address
+  no page can serve, so the person pastes it back; the page exchanges the code
+  itself. Tokens stay on the device (refresh tokens rotate, and two devices
+  refreshing one would end it); the registration (client id, account) is kept
+  with the account so other devices sign in to it. The page renews the hour-long
+  token when it asks for a run; a run whose token runs out ends for a fresh
+  one. Each reply's encrypted reasoning and message phases go back with it
+  (the turn's `carry`), the system prompt is a cached developer message, and a
+  feature the plan route refuses is dropped and the request sent again.
+
 A module imports from its own directory and the directories below it, and from
 nowhere else. `boundary.test.js` holds the order and fails on anything that
 breaks it, tests included: a test lives in the lowest layer that holds what it
@@ -72,7 +92,7 @@ Lowest first:
 | `documents/` | what documents hold, read and written with no session in sight: URLs, values, edits, history, files, images, PDFs, citations |
 | `session/` | the session document as plain data: its shape, blocks, calls, status, stops, debris, approval, the request sent to a model |
 | `kernel/` | running a session: the store, the loop, a burst, tools as the loop sees them, which tools a session is offered, research confinement |
-| `providers/` | model providers, which turn the kernel's request into theirs |
+| `providers/` | model providers, which turn the kernel's request into theirs, and how this browser pays for them: keys, a ChatGPT sign-in |
 | `tools/` | tool definitions |
 | `knowledge/` | notes, usage guides and skills: tools, and what they add to the prompt |
 | `workflow/` | plans, and the driver, in every page that has a plan open, that asks for their steps as sessions |

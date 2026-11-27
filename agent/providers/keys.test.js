@@ -1,5 +1,18 @@
-import { describe, it, expect, beforeEach } from "vitest"
-import { readKey, writeKey, onKeyChange, connectAccountKeys, _resetAccountKeys } from "./keys.js"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import {
+  readKey,
+  writeKey,
+  onKeyChange,
+  connectAccountKeys,
+  _resetAccountKeys,
+  signsIn,
+  hasCredential,
+  freshCredential,
+  beginChatGPTSignIn,
+  finishChatGPTSignIn,
+  forgetChatGPT,
+  chatgptAuth,
+} from "./keys.js"
 
 const SETTINGS = "automerge:llm-settings"
 const LOCAL = "patchwork-agent:key:openrouter"
@@ -111,5 +124,67 @@ describe("API keys", () => {
     const settings = fakeHandle({})
     expect(await connectAccountKeys(frame().element, repoWith(settings))).toBe(true)
     expect(settings.doc().openrouter.apiKey).toBe("sk-or-local")
+  })
+})
+
+describe("credentials for a provider that signs in", () => {
+  const b64 = (value) => btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+  const jwt = (claims) => `${b64({ alg: "RS256" })}.${b64(claims)}.c2ln`
+  const SCOPES = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
+
+  beforeEach(() => {
+    localStorage.clear()
+    _resetAccountKeys()
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("is a key for OpenRouter and a sign-in for ChatGPT", async () => {
+    expect([signsIn("openrouter"), signsIn("chatgpt")]).toEqual([false, true])
+    writeKey("openrouter", "sk-or-1")
+    expect([hasCredential("openrouter"), await freshCredential("openrouter")]).toEqual([true, "sk-or-1"])
+    expect(hasCredential("chatgpt")).toBe(false)
+    await expect(freshCredential("chatgpt")).rejects.toBeInstanceOf(chatgptAuth.SignInNeeded)
+  })
+
+  it("hands a run the token with the expiry this page reckons for it", async () => {
+    localStorage.setItem("patchwork-agent:chatgpt", JSON.stringify({ clientId: "oaiapp_made_up", accessToken: "access-0", refreshToken: "r", expiresAt: Date.now() + 3600_000, scopes: SCOPES.split(" ") }))
+    expect(hasCredential("chatgpt")).toBe(true)
+    const credential = await freshCredential("chatgpt")
+    expect(credential.token).toBe("access-0")
+    expect(credential.expiresAt).toBe(JSON.parse(localStorage.getItem("patchwork-agent:chatgpt")).expiresAt)
+  })
+
+  it("keeps the registration with the account, not the tokens, so another device signs in to the same one", async () => {
+    const handle = fakeHandle({})
+    const { element } = frame()
+    await connectAccountKeys(element, repoWith(handle), { timeoutMs: 200 })
+    const url = new URL(await beginChatGPTSignIn())
+    const pending = JSON.parse(localStorage.getItem("patchwork-agent:chatgpt-pending"))
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            access_token: jwt({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+            refresh_token: "refresh-secret",
+            id_token: jwt({ iss: "https://auth.openai.com", aud: "oaiapp_made_up", sub: "user-1", email: "someone@example.test", exp: Math.floor(Date.now() / 1000) + 600, nonce: pending.nonce }),
+            expires_in: 3600,
+            scope: SCOPES,
+          }),
+          { status: 200 }
+        )
+      )
+    )
+    await finishChatGPTSignIn(`http://127.0.0.1:1455/auth/callback?code=c&state=${url.searchParams.get("state")}&client_id=oaiapp_made_up`)
+    expect(handle.doc().agentChatGPT).toEqual({ clientId: "oaiapp_made_up", subject: "user-1", email: "someone@example.test" })
+    expect(JSON.stringify(handle.doc())).not.toMatch(/refresh-secret|access/)
+
+    // Another device: nothing of its own yet, the account's registration to sign in to.
+    localStorage.clear()
+    const again = new URL(await beginChatGPTSignIn())
+    expect([again.searchParams.get("client_id"), again.searchParams.get("login_hint"), again.searchParams.get("agent_name_hint")]).toEqual(["oaiapp_made_up", "someone@example.test", null])
+
+    await forgetChatGPT()
+    expect(handle.doc().agentChatGPT).toBeUndefined()
   })
 })

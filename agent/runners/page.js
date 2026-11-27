@@ -72,7 +72,7 @@ import { AGENT } from "../assembly/agent.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { loadPluginTools, packageOf } from "../assembly/plugins.js"
 import { ensureDriver, getDriver, letGo, sessionHolder } from "../workflow/driver.js"
-import { readKey, readRelay, SEARCH_KEY_ID } from "../providers/keys.js"
+import { readKey, readRelay, freshCredential, SEARCH_KEY_ID } from "../providers/keys.js"
 import { relayFetch } from "../net/relay.js"
 import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "../net/guard.js"
 import { hostImport, taskClient, clientHere, _holdClient } from "../host/import.js"
@@ -248,7 +248,15 @@ export async function askFor(repo, sessionUrl, opts = {}) {
     if (outdated(doc)) return { asked: false, why: "another version's session" }
     // askWork's first rule first: most looks find nothing to do.
     if (!needsWork(doc, (where) => where === WHERE.worker, doc.burst?.run ?? null)) return { asked: false, why: "no work" }
-    const model = readKey(doc.config?.providerId ?? "openrouter")
+    // A sign-in's token is renewed here, by the page, so a run is handed one
+    // with time in it; one that runs out mid-run ends the run, and this asks
+    // again (providers/chatgpt.js renewal).
+    let model
+    try {
+      model = await freshCredential(doc.config?.providerId ?? "openrouter")
+    } catch (err) {
+      return { asked: false, why: err?.interruption ? String(err.message) : "no key" }
+    }
     if (!model) return { asked: false, why: "no key" }
     return await asker(repo, sessionUrl, {
       ...opts,

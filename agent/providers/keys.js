@@ -2,6 +2,7 @@
 
 import { subscribe } from "../host/context.js"
 import { listProviders } from "./index.js"
+import * as chatgptAuth from "./chatgpt-auth.js"
 
 /**
  * Keys live in the account's LLM settings, and never in the session document.
@@ -133,10 +134,14 @@ export function writeRelay(relay, storage = globalThis.localStorage) {
   return true
 }
 
-/** Hear about keys changing, here or from another tool or device. */
+/** Hear about keys changing, here or from another tool or device, and this device's ChatGPT sign-in. */
 export function onKeyChange(listener) {
   keyListeners.add(listener)
-  return () => keyListeners.delete(listener)
+  const off = chatgptAuth.onSignInChange(listener)
+  return () => {
+    keyListeners.delete(listener)
+    off()
+  }
 }
 
 function keysChanged() {
@@ -167,7 +172,7 @@ export function connectAccountKeys(
         return
       }
       accountSettings = handle
-      for (const providerId of [...listProviders().map((provider) => provider.id), SEARCH_KEY_ID]) {
+      for (const providerId of [...listProviders().filter((provider) => !provider.signIn).map((provider) => provider.id), SEARCH_KEY_ID]) {
         const local = localKey(providerId, storage)
         if (local && !accountKey(providerId)) {
           writeAccountKey(providerId, local)
@@ -198,3 +203,83 @@ export function _resetAccountKeys() {
 export function hasKey(providerId, storage = globalThis.localStorage) {
   return !!readKey(providerId, storage)
 }
+
+// ---------------------------------------------------------------- sign-ins
+
+/** Does this provider take a sign-in rather than a pasted key? */
+export function signsIn(providerId) {
+  return !!listProviders().find((provider) => provider.id === providerId)?.signIn
+}
+
+/**
+ * Whether this browser can run the provider: a key stored, or, for a
+ * sign-in, one that holds tokens and granted plan use.
+ */
+export function hasCredential(providerId, storage = globalThis.localStorage) {
+  if (!signsIn(providerId)) return hasKey(providerId, storage)
+  const status = chatgptAuth.status(storage)
+  return status.signedIn && status.planEnabled
+}
+
+/**
+ * The credential a run is handed: the stored key, or for a sign-in
+ * `{ token, expiresAt }` — an access token with time left in it, renewed
+ * first if need be (which is why this is async), and when it runs out by
+ * this page's clock. The run judges the token's end by that same number, so
+ * the page and the run cannot disagree about it (providers/chatgpt.js).
+ * Rejects with chatgpt-auth's SignInNeeded when the person must sign in, and
+ * with an Interruption when renewing could not reach OpenAI.
+ */
+export async function freshCredential(providerId, opts = {}) {
+  if (!signsIn(providerId)) return readKey(providerId, opts.storage)
+  const token = await chatgptAuth.accessToken(opts)
+  const record = chatgptAuth.readRecord(opts.storage ?? globalThis.localStorage)
+  return { token, expiresAt: record?.accessToken === token ? record.expiresAt : null }
+}
+
+/**
+ * The account's ChatGPT registration: the client Patchwork was registered as
+ * and for whom, kept in the account's settings so each device signs in to
+ * it rather than registering Patchwork again. Not a secret: the tokens stay
+ * on each device (providers/chatgpt-auth.js).
+ */
+const REGISTRATION_FIELD = "agentChatGPT"
+
+export function chatGPTRegistration(storage = globalThis.localStorage) {
+  const own = accountSettings?.doc()?.[REGISTRATION_FIELD]
+  if (typeof own?.clientId === "string" && own.clientId) return { clientId: own.clientId, email: own.email ?? null, subject: own.subject ?? null }
+  const local = chatgptAuth.readRecord(storage)
+  return local ? { clientId: local.clientId, email: local.email ?? null, subject: local.subject ?? null } : null
+}
+
+/** Begin signing in to ChatGPT: the address to open in a new tab. */
+export function beginChatGPTSignIn(opts = {}) {
+  return chatgptAuth.begin({ ...opts, registration: chatGPTRegistration(opts.storage) })
+}
+
+/** Finish it from the pasted address, and keep the registration with the account. */
+export async function finishChatGPTSignIn(pasted, opts = {}) {
+  const record = await chatgptAuth.finish(pasted, opts)
+  if (accountSettings) {
+    accountSettings.change((d) => {
+      d[REGISTRATION_FIELD] = { clientId: record.clientId, subject: record.subject ?? null, email: record.email ?? null }
+    })
+  }
+  keysChanged()
+  return record
+}
+
+/** Sign this device out of ChatGPT (the registration stays, for signing in again). */
+export function signOutChatGPT(opts = {}) {
+  return chatgptAuth.signOut(opts)
+}
+
+/** Sign out and forget the registration everywhere, to sign in as a different ChatGPT account. */
+export async function forgetChatGPT(opts = {}) {
+  const out = await chatgptAuth.forget(opts)
+  if (accountSettings?.doc()?.[REGISTRATION_FIELD]) accountSettings.change((d) => delete d[REGISTRATION_FIELD])
+  keysChanged()
+  return out
+}
+
+export { chatgptAuth }

@@ -22,7 +22,7 @@ const value = (doc, local = {}) => sessionValue(doc, { ...LOCAL, ...local })
 
 describe("the hint line", () => {
   // Facts under which no row applies, and for each row what makes it apply.
-  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, tasks: true, work: null, poolHere: true, foreign: false, pageTool: null, claimed: null, parked: null, asking: 0, pending: 0, status: STATUS.idle, reason: null, failed: null }
+  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, signIn: false, tasks: true, work: null, poolHere: true, foreign: false, pageTool: null, claimed: null, parked: null, asking: 0, pending: 0, status: STATUS.idle, reason: null, failed: null }
   const ROWS = [
     ["voice", { voice: "Listening…" }, "Listening…"],
     ["earlier", { version: "earlier" }, "This session is from an earlier version of the agent and does not run. Start a new one to carry on."],
@@ -94,6 +94,11 @@ describe("the hint line", () => {
     expect(hintOf({ ...NONE, outdated: true })).toBe(ROWS[2][2])
   })
 
+  it("asks for a ChatGPT sign-in, not a key, when the provider signs in", () => {
+    expect(hintOf({ ...NONE, hasKey: false, signIn: true })).toBe("Sign in to ChatGPT to start")
+    expect(hintOf({ ...NONE, hasKey: false, signIn: true, work: "elsewhere" })).toBe("Working on another device — this browser is not signed in to ChatGPT")
+  })
+
   it("counts answers and approvals", () => {
     expect(hintOf({ ...NONE, asking: 3 })).toBe("Waiting on 3 answers")
     expect(hintOf({ ...NONE, pending: 2 })).toBe("2 calls need approval")
@@ -113,6 +118,7 @@ describe("the hint line", () => {
       version: "current",
       outdated: true,
       hasKey: false,
+      signIn: false,
       tasks: true,
       work: "elsewhere",
       poolHere: true,

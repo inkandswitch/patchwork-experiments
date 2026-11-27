@@ -246,6 +246,10 @@ export async function runBurst(ctx, opts) {
         result = failed(err)
       }
       if (controller.signal.aborted) return result
+      // A credential that ran out (a sign-in's hour-long token) is not the
+      // network: the run ends, and the page that asks for the session's work
+      // asks again with a fresh one (runners/page.js askFor).
+      if (result.outcome === OUTCOME.reconnecting && result.renew) return result
       if (result.outcome === OUTCOME.reconnecting) {
         await (opts.waitForNetwork ?? waitForNetwork)(++reconnects, controller.signal)
         continue

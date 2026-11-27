@@ -412,6 +412,52 @@ describe("a burst", () => {
     expect(doc.burst).toBe(null)
   })
 
+  it("ends at once when the credential it was handed ran out, so the page asks again with a fresh one", async () => {
+    const repo = new Repo({ network: [] })
+    const handle = sessionIn(repo)
+    let asked = 0
+    const provider = {
+      async *stream() {
+        asked++
+        const err = new Interruption("The ChatGPT sign-in token ran out; waiting for a fresh one")
+        err.renew = true
+        throw err
+      },
+    }
+    const waits = []
+    const result = await burstOf(handle, taskOf(repo), { provider, waitForNetwork: async (attempt) => waits.push(attempt) })
+    // It does not wait for a network that is there: it ends after the one ask.
+    expect([result.outcome, asked, waits]).toEqual([OUTCOME.reconnecting, 1, []])
+    const doc = plain(handle)
+    // No reply was begun, the run let go, nothing says it is waiting, and the work is still there to ask for.
+    expect(doc.turns.filter((t) => t.role === "assistant")).toEqual([])
+    expect(doc.burst).toBe(null)
+    expect(doc.reconnecting).toBe(null)
+    expect(needsWork(doc, (where) => where === "worker")).toBe(true)
+  })
+
+  it("keeps what a provider asks to have back on the reply's turn, and sends it with that turn next time", async () => {
+    const repo = new Repo({ network: [] })
+    const handle = sessionIn(repo)
+    const kept = { items: [{ type: "reasoning", id: "rs_1", summary: [], encrypted_content: "sealed" }] }
+    const provider = makeMock([
+      [{ type: "text", delta: "Looking." }, { type: "call", id: "c1", name: "look", input: {} }, { type: "carry", data: kept }],
+      (request) => {
+        const reply = request.messages.find((m) => m.role === "assistant")
+        expect(reply.carry).toEqual({ provider: "mock", data: kept })
+        return [{ type: "text", delta: "Done." }]
+      },
+    ])
+    const result = await burstOf(handle, taskOf(repo), { provider, tools: [tool("look", { risk: "read" })] })
+    expect(result.outcome).toBe(OUTCOME.idle)
+    expect(provider.turnsUsed).toBe(2)
+    const turn = handle.doc().turns.find((t) => t.role === "assistant")
+    // One opaque string, not text a person could edit.
+    expect(turn.carry.provider).toBe("mock")
+    expect(turn.carry.data).toBeInstanceOf(A.ImmutableString)
+    expect(turn.blocks.map((b) => b.type)).toEqual(["text", "call"])
+  })
+
   /** A model that is not reached `misses` times, then answers. */
   const unreachable = (misses, answer = "Back.") => {
     let asked = 0

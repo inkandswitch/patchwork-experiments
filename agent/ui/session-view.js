@@ -30,7 +30,7 @@ import { STOP } from "../session/status.js"
 import { taskClient, clientHere } from "../host/import.js"
 import { workflowOf } from "../workflow/plan.js"
 import { getMount, mountForPerson, parkMount } from "../tools/checking.js"
-import { readKey, onKeyChange, connectAccountKeys } from "../providers/keys.js"
+import { hasCredential, signsIn, onKeyChange, connectAccountKeys } from "../providers/keys.js"
 import { watchWaiting, renderWaiting, renderWaitingItem } from "./waiting.js"
 import { watchStanding, renderStandingLine } from "./standing.js"
 import { markCitations } from "./citations.js"
@@ -87,7 +87,7 @@ function sessionHeader(guides) {
   // What this session has spent, as OpenRouter reports it.
   const cost = el("span", "agent-cost", "")
   const model = el("button", "agent-model", "model")
-  model.title = "Change model or API key"
+  model.title = "Settings: model, provider, sign-in and keys"
   element.append(status, title, workflow, guides.button, cost, model)
   return {
     element,
@@ -289,7 +289,8 @@ export function AgentTool(handle, element, options = {}) {
     const tasks = clientHere()
     return sessionValue(doc, {
       mode,
-      hasKey: !!readKey(doc.config?.providerId ?? "openrouter"),
+      hasKey: hasCredential(doc.config?.providerId ?? "openrouter"),
+      signIn: signsIn(doc.config?.providerId ?? "openrouter"),
       keysSettled,
       work,
       askFailed,
@@ -388,6 +389,7 @@ export function AgentTool(handle, element, options = {}) {
     handle.off("change", onChange)
     offKeys()
     offPoolHosts()
+    settings.destroy()
     views.dispose()
     composer.dispose()
     workspace?.dispose()

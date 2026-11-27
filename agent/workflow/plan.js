@@ -18,6 +18,8 @@
  * cannot hold a state that contradicts itself.
  */
 
+import { defaultsOf } from "../providers/index.js"
+
 export const TIERS = ["deep", "standard", "fast"]
 
 /** The tool a step asks its orchestrator for more work with. It writes nothing: the call is the request. */
@@ -28,6 +30,14 @@ export const DEFAULT_TIER_MODELS = {
   deep: "~anthropic/claude-opus-latest",
   standard: "~anthropic/claude-sonnet-latest",
   fast: "~anthropic/claude-haiku-latest",
+}
+
+/**
+ * Each tier's model for a session on `providerId`: the provider's own when it
+ * names them (a ChatGPT plan's slugs are not OpenRouter's), else the above.
+ */
+export function tierModelsFor(providerId) {
+  return { ...DEFAULT_TIER_MODELS, ...(defaultsOf(providerId ?? "openrouter").tiers ?? {}) }
 }
 
 /**
